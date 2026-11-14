@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 
@@ -27,6 +27,10 @@ try {
     {...process.env, ELECTRON_RUN_AS_NODE: '1'}));
   assert.equal(facts.durationMs, 1000); assert.equal(facts.width, 48); assert.equal(facts.height, 64);
   assert.equal(facts.audioTracks, 1);
+  const bundleFacts = JSON.parse(run(runtime, [join(app, 'worker.js'), join(app, 'native/apparent-engine-media'), movie, 'bundle-v1'],
+    {...process.env, ELECTRON_RUN_AS_NODE: '1'}));
+  assert.equal(bundleFacts.durationMs, 1000); assert.equal(bundleFacts.width, 48); assert.equal(bundleFacts.height, 64);
+  assert.equal(bundleFacts.audioTracks, 1);
   writeFileSync(join(bundle, 'apparent.json'), JSON.stringify({
     version: 1, id: 'synthetic-engine-adoption', createdAtMs: 0, durationMs: 1000, source: 'iphone',
     target: {mode: 'display', displayId: 0, frame: {x: 0, y: 0, width: 48, height: 64, scale: 1}},
@@ -45,5 +49,31 @@ try {
   assert(Math.abs(Number(result.format.duration) - 1) <= 0.1);
   ffmpeg(['-xerror', '-i', output, '-f', 'null', '-']);
   assert.equal(hash(movie), original); assert.equal(hash(join(bundle, 'apparent.json')), metadata);
-  console.log('Packaged Record/Engine worker and CLI exported decodable rotated audio/video; source bundle unchanged.');
+  // The normal file-ingestion caller uses the same container metadata contract.
+  // A silent fixture avoids installing/running a speech model in package proof.
+  const input = join(root, 'ingest.apparent'), rebuilt = join(root, 'rebuilt.apparent');
+  mkdirSync(input, {mode: 0o700});
+  const silent = join(input, 'recording.mp4');
+  ffmpeg(['-i', movie, '-c:v', 'copy', '-an', silent]);
+  const incoming = {...JSON.parse(readFileSync(join(bundle, 'apparent.json'), 'utf8')),
+    device: {name: 'Synthetic file', capture: 'mirror', width: 1, height: 1}};
+  incoming.target.frame.width = 1; incoming.target.frame.height = 1;
+  writeFileSync(join(input, 'apparent.json'), JSON.stringify(incoming));
+  const beforeIngestion = hash(silent), beforeManifest = hash(join(input, 'apparent.json'));
+  const runtimeDirectory = join(home, 'runtime'); mkdirSync(runtimeDirectory, {mode: 0o700});
+  run('/bin/sh', ['-c', 'umask 002; exec "$@"', 'record-package', binary, 'reprocess', input, '--out', rebuilt], {...process.env, HOME: home, CFFIXED_USER_HOME: home,
+    XDG_CONFIG_HOME: join(home, 'config'), XDG_DATA_HOME: join(home, 'data'), XDG_RUNTIME_DIR: runtimeDirectory,
+    DISPLAY: '', WAYLAND_DISPLAY: '', DBUS_SESSION_BUS_ADDRESS: '', APPIMAGE_EXTRACT_AND_RUN: '1'});
+  const assembled = JSON.parse(readFileSync(join(rebuilt, 'apparent.json'), 'utf8'));
+  assert.equal(statSync(rebuilt).mode & 0o777, 0o700, 'bundle privacy must not depend on caller umask');
+  assert.equal(assembled.target.frame.width, 48); assert.equal(assembled.target.frame.height, 64);
+  assert.equal(assembled.durationMs, 1000); assert(assembled.keyframes.length > 0);
+  for (const frame of assembled.keyframes) {
+    const file = join(rebuilt, frame.file);
+    const decoded = JSON.parse(run('ffprobe', ['-v', 'error', '-show_streams', '-of', 'json', file])).streams[0];
+    assert.equal(decoded.width, 48); assert.equal(decoded.height, 64);
+    ffmpeg(['-xerror', '-i', file, '-f', 'null', '-']);
+  }
+  assert.equal(hash(silent), beforeIngestion); assert.equal(hash(join(input, 'apparent.json')), beforeManifest);
+  console.log('Packaged Record/Engine worker and CLI exported and ingested rotated media; decoded keyframes and source preservation verified.');
 } finally { rmSync(root, {recursive: true, force: true}); }

@@ -304,7 +304,7 @@ fn publication_recovery_reconciles_only_durable_typed_notes_before_journal_valid
         old,
         Some(None),
         &recover::Media {
-            probe: helper::probe,
+            probe: crate::composition::media_probe::bundle_probe,
             frames,
             transcribe: |_, _| TranscriptData::default(),
         },

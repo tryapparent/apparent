@@ -258,16 +258,13 @@ fn publication_rejects_marker_cleanup_failure_and_readonly_leaf_without_root_byp
         crate::capture::engine::bundle::recover::write(
             &fixture.0,
             &crate::capture::engine::bundle::recover::orphan_recipe(
-                &crate::capture::desktop::helper::Probe {
+                &crate::composition::media_probe::BundleProbe {
+                    version: 1,
                     duration_ms: 200,
                     width: 16,
                     height: 16,
                     fps: 10.0,
                     audio_tracks: 0,
-                    #[cfg(target_os = "macos")]
-                    audio_overlaps_video: false,
-                    #[cfg(target_os = "macos")]
-                    video_duration_ms: None,
                 },
                 None
             )

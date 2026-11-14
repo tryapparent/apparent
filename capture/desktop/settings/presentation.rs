@@ -1,6 +1,7 @@
-//! Installed Electron presentations. Policy and settings persistence stay in Rust.
+//! Installed Electron routing and native adapters. Page workflows live in TypeScript;
+//! persistence uses the existing shared config transaction.
 use std::{path::PathBuf, process::{Command, Stdio}, sync::Arc};
-use super::settings::{Action, Event, Transport};
+use super::settings::{Action, Event, Transport, Pane};
 
 /// Unique across Settings sessions too: late events from a closed session must
 /// never match the first window of a newly opened session.
@@ -112,11 +113,12 @@ fn settings_assets() -> Result<(PathBuf, PathBuf), OnboardingAssetFailure> {
     Err(failure)
 }
 
-pub(super) fn open(about: bool, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyhow::Result<Transport> {
+pub(super) fn open(pane: Pane, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyhow::Result<Transport> {
     use std::io::BufRead;
-    let (app, runtime) = assets().ok_or_else(|| anyhow::anyhow!("Packaged Storage Settings unavailable"))?;
+    let (app, runtime) = assets().ok_or_else(|| anyhow::anyhow!("Packaged Settings unavailable"))?;
     let mut launch = command(runtime, app);
-    if about { launch.arg("--settings-about"); }
+    if pane == Pane::About { launch.arg("--settings-about"); }
+    if pane == Pane::Agents { launch.arg("--settings-agents"); }
     let mut child = launch
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
     let stdin = child.stdin.take();
@@ -125,11 +127,12 @@ pub(super) fn open(about: bool, events: Arc<dyn Fn(Event) + Send + Sync>) -> any
     std::thread::spawn(move || {
         if let Some(stdout) = stdout {
             for line in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
-                // This presentation may navigate or reveal the effective folder;
-                // it cannot invoke other native Settings actions through this pipe.
+                // Each page receives only its bounded native capabilities.
                 if let Ok(action) = serde_json::from_str::<Action>(&line)
-                    && (matches!(action, Action::Navigate { .. } | Action::ShowCaptures | Action::Close)
-                        || about && (matches!(action, Action::CheckForUpdates | Action::DismissUpdateCheck | Action::UpdateNow | Action::UpdateLater | Action::Tour)
+                    && (matches!(action, Action::Navigate { .. } | Action::Close)
+                        || pane != Pane::Agents && matches!(action, Action::ShowCaptures)
+                        || pane == Pane::Agents && matches!(action, Action::AgentsPreference { .. })
+                        || pane == Pane::About && (matches!(action, Action::CheckForUpdates | Action::DismissUpdateCheck | Action::UpdateNow | Action::UpdateLater | Action::Tour)
                             || matches!(&action, Action::Set { key, value } if key == "updateChannel" && matches!(value.as_str(), Some("stable" | "main")))))
                 {
                     events(Event::Action(action));

@@ -4,6 +4,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSy
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { select, selection, owners, changedPaths, captureToolTests, commands, contractTests, installationContracts, execute, root, recordMediaCommands } from './run.ts';
+import {runnerFixture} from './fixtures/runner.ts';
+import './fixtures/runner.test.ts';
 
 test('Record metadata adoption keeps its real app consumers and one headless inventory', () => {
   const selected = select(['record/media/engine.json']);
@@ -330,9 +332,7 @@ test('actual feature push runs selected package tests and rejects their failure'
     const result = spawnSync('git', args, { cwd: dir, env, encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr); return result.stdout.trim();
   };
-  mkdirSync(join(dir, 'enablement/local-tests'), { recursive: true });
-  copyFileSync(join(root, 'enablement/local-tests/run.ts'), join(dir, 'enablement/local-tests/run.ts'));
-  copyInputHelpers(dir);
+  runnerFixture(dir);
   mkdirSync(join(dir, 'public/site'), { recursive: true });
   writeFileSync(join(dir, 'public/site/app.ts'), 'base');
   git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'test@example.invalid');
@@ -363,9 +363,7 @@ test('installed hook proves control-only selection, mandatory commands, failure 
     assert.equal(result.status, 0, result.stderr); return result.stdout.trim();
   };
   git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'test@example.invalid');
-  mkdirSync(join(dir, 'enablement/local-tests'), {recursive: true});
-  copyFileSync(join(root, 'enablement/local-tests/run.ts'), join(dir, 'enablement/local-tests/run.ts'));
-  copyInputHelpers(dir);
+  runnerFixture(dir);
   mkdirSync(join(dir, '.github/workflows'), {recursive: true});
   const path = '.github/workflows/checks.yml';
   const before = readFileSync(join(root, path), 'utf8').replace(/  cancel-in-progress: .*/, '  cancel-in-progress: true');
@@ -418,20 +416,6 @@ test('installed hook proves control-only selection, mandatory commands, failure 
   assert.equal(readFileSync(join(dir, '.git/config'), 'utf8'), config);
   assert.deepEqual(readFileSync(join(dir, '.git/index')), index);
 }));
-
-function copyInputHelpers(dir: string) {
-  mkdirSync(join(dir, 'enablement/local-tests/preview'), {recursive: true});
-  copyFileSync(join(root, 'enablement/local-tests/preview/explain.ts'), join(dir, 'enablement/local-tests/preview/explain.ts'));
-  mkdirSync(join(dir, 'enablement/ci/routing'), {recursive: true});
-  copyFileSync(join(root, 'enablement/ci/routing/consumers.ts'), join(dir, 'enablement/ci/routing/consumers.ts'));
-  for (const name of ['service.ts', 'receipt.ts', 'desktop-install.ts'])
-    copyFileSync(join(root, 'enablement/local-tests', name), join(dir, 'enablement/local-tests', name));
-  // Finite downstream boundary: do not recursively run real npm fixtures here.
-  writeFileSync(join(dir, 'enablement/local-tests/desktop-install.test.ts'), "import {test} from 'node:test'; test('install contract fixture', () => {});\n");
-  mkdirSync(join(dir, 'enablement/ci'), {recursive: true});
-  for (const name of ['inputs.ts', 'workflow-controls.ts', 'select.ts'])
-    copyFileSync(join(root, 'enablement/ci', name), join(dir, 'enablement/ci', name));
-}
 
 test('Record command plans keep package tests and native integration without unrelated owners', () => {
   const frontend = 'capture/desktop/ui/frontend';

@@ -35,3 +35,24 @@ test('complete archive installs in empty profile; partial install is preserved',
   await assert.rejects(install(path.join(unpack,'apparent'),writable),/untrusted/);
  } finally {await rm(job,{recursive:true,force:true});}
 });
+
+test('standard group-mode plugin directory is trusted only inside an owner-private profile', async () => {
+ const job=await mkdtemp('/tmp/apparent-dev-hermes-private-profile-');
+ try {
+  const release=path.join(job,'release');
+  execFileSync(process.execPath,['--experimental-strip-types','hermes/desktop/package.ts',release]);
+  const source=path.join(release,'apparent');
+  const profile=path.join(job,'private-profile');
+  await mkdir(path.join(profile,'plugins'),{recursive:true});
+  await chmod(profile,0o700);await chmod(path.join(profile,'plugins'),0o775);
+  await install(source,profile);
+  assert.ok(await readFile(path.join(profile,'plugins/apparent/__init__.py')));
+  const shared=path.join(job,'shared-profile');
+  await mkdir(shared);await chmod(shared,0o770);
+  // No private boundary outside the selected profile may justify a shared profile.
+  await assert.rejects(install(source,shared),/untrusted/);
+  const world=path.join(job,'world-profile');await mkdir(path.join(world,'plugins'),{recursive:true});
+  await chmod(world,0o700);await chmod(path.join(world,'plugins'),0o777);
+  await assert.rejects(install(source,world),/untrusted/);
+ } finally {await rm(job,{recursive:true,force:true});}
+});

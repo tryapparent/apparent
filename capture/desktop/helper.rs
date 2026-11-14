@@ -261,30 +261,6 @@ fn install_with(
     Ok(())
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Probe {
-    pub duration_ms: u64,
-    #[serde(default)]
-    pub width: u32,
-    #[serde(default)]
-    pub height: u32,
-    #[serde(default)]
-    pub audio_tracks: u32,
-    /// Native track time range intersects the video's export interval.
-    #[serde(default)]
-    pub audio_overlaps_video: bool,
-    #[serde(default)]
-    pub video_duration_ms: Option<u64>,
-    /// The video track's nominal frame rate (0 when unknown).
-    #[serde(default)]
-    pub fps: f64,
-}
-
-pub fn probe(movie: &Path) -> Result<Probe> {
-    run(&[os("probe"), movie.as_os_str()], Duration::from_secs(30))
-}
-
 /// Re-encodes `movie` into `out` as HEVC with its long edge at most `max_edge`, audio copied and
 /// every sample at its original time. Runs at utility priority; minutes of video take seconds.
 pub fn shrink(movie: &Path, out: &Path, max_edge: u32) -> Result<crate::capture::engine::bundle::retention::Shrunk> {

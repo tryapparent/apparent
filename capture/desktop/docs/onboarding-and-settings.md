@@ -110,8 +110,9 @@ join/write/checkpoint/read, and WAV encode/read/format failures on both macOS an
 Linux. `finalization.wav_error_kind` allows only `io`, `format`, `too_wide`,
 `unfinished_sample`, `unsupported` or `invalid_sample_format` (otherwise null).
 WAV-wrapped I/O failures retain their structured I/O kind and OS code. Neither
-WAV format messages nor sample data are reported. These diagnostics do not
-change the writer's backlog limit, save failure behavior or recovery guarantees.
+WAV format messages nor sample data are reported. The writer drains retained backlog
+in bounded batches; only expired history, rather than a two-second delay, fails saving.
+Write/sync failures and recovery guarantees remain unchanged.
 Finalization fingerprints include the innermost known stage so unrelated failures
 are not grouped solely by the Desktop completion call site. Historical groups
 and installed older releases retain their old reports. No raw error/panic text, logs, recordings,
@@ -265,6 +266,31 @@ clears `resume` immediately. `onboarding.firstCaptureCompleted` separately track
 the guided capture lesson. Permission-repair windows retain their existing behavior.
 
 ## Settings (`capture/desktop/settings/settings.rs`, `capture/desktop/native/Settings.swift`)
+
+### Agents
+
+Installed Settings routes Agents to the shared Electron shell on macOS and Linux.
+Desktop's `ui/frontend/src/agents` owns the default-on preference, save/readback
+workflow, recovery and fixed skill command. The private parent pipe exposes only
+the saved `experiments.agentDemoVideo` boolean (or absence) and bounded errors;
+`settings/agents/mod.rs` uses the existing shared config transaction. No second
+config writer is introduced. Copy replaces the clipboard with the canonical
+command only after a successful main-process call; it never runs the command.
+
+The switch waits for persistence acknowledgement. Failed or uncertain writes
+offer Refresh preference before another edit. File edits appear on the existing
+Settings refresh and affect subsequent handoffs without restarting. Changing it
+does not interrupt recording. Missing assets, spawn failure or renderer loss restores
+the same native Agents page. Retain that fallback until installed navigation,
+clipboard, persistence and failure recovery are accepted on both platforms.
+Rollback reverts the paired routing and bridge; the existing config key and
+bundle readers remain compatible.
+
+After building the frontend, run its `tests/settings/agents/smoke.ts` under Electron
+(`xvfb-run` on Linux). The ignored Rust test
+`capture::desktop::settings::agents::tests::agents_electron_rust_roundtrip`
+exercises the real writer with the built renderer; it is separate from installed
+desktop/compositor acceptance.
 
 ### Apparent Connect (experiment)
 

@@ -19,7 +19,7 @@ function fixture(t: any) {
   const electron = put('capture/desktop/ui/frontend/node_modules/electron/bin', 'synthetic executable');
   chmodSync(electron, 0o700);
   put('capture/desktop/ui/frontend/node_modules/electron/index.js', 'module.exports = __dirname + "/bin"');
-  for (const file of ['tests/reference-native.cjs', 'electron/main.cjs', 'electron/preload.cjs', 'electron/runtime.cjs', 'electron/connect.cjs', 'electron/storage-policy.cjs']) {
+  for (const file of ['tests/reference-native.cjs', 'electron/main.cjs', 'electron/preload.cjs', 'electron/runtime.cjs', 'electron/connect.cjs', 'electron/settings/agents.cjs', 'electron/storage-policy.cjs']) {
     put('capture/desktop/ui/frontend/' + file);
   }
   for (const name of ['worker.js', 'policy.js', 'package.json']) {
@@ -37,7 +37,7 @@ function fixture(t: any) {
 function generators(f: ReturnType<typeof fixture>, fail = '') {
   const outputs = {
     'storage-policy': ['electron/storage-policy.cjs', ...['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json'].map(name => 'electron/storage-owner/' + name)],
-    'connect-transport': ['electron/connect.cjs'],
+    'connect-transport': ['electron/connect.cjs', 'electron/settings/agents.cjs'],
     'pill': ['worker.js', 'policy.js', 'package.json'].map(name => 'electron/record-completion/' + name),
     'record-media': ['worker.js', 'policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/manifest.json'].map(name => 'electron/record-media/' + name),
   };

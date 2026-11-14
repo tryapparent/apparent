@@ -44,33 +44,14 @@ class PrePushGuardTests(unittest.TestCase):
                      "test_temp_preflight.py", "test_owner_lanes.py"):
             (self.repo / "enablement" / "tests" / name).write_text(fixture_test)
         shutil.copy2(SELECTOR, self.repo / "enablement" / "verification.py")
-        local_tests = self.repo / "enablement/local-tests"
-        local_tests.mkdir()
-        shutil.copy2(SELECTOR.parent / "local-tests/run.ts", local_tests / "run.ts")
-        (local_tests / "preview").mkdir()
-        shutil.copy2(SELECTOR.parent / "local-tests/preview/explain.ts", local_tests / "preview/explain.ts")
-        for name in ("service.ts", "receipt.ts", "desktop-install.ts"):
-            shutil.copy2(SELECTOR.parent / "local-tests" / name, local_tests / name)
-        # Finite TS contract fixtures, just like the Python fixtures above.
-        for name in ("local-tests/run.test.ts", "local-tests/reuse.test.ts", "local-tests/preview/explain.test.ts", "local-tests/desktop-install.test.ts", "prerequisites/native.test.ts", "timing/command.test.ts", "timing/mac-cache.test.ts", "ci/select.test.ts"):
-            path = self.repo / "enablement" / name
-            path.parent.mkdir(exist_ok=True)
-            path.write_text("import {test} from 'node:test'; test('fixture', () => {});\n")
-        for name in ("hermes/distribution/package.test.ts", "hermes/desktop/controller.test.ts", "hermes/desktop/plugin.test.ts",
-                     "capture/desktop/ui/frontend/tests/connect/flow-hook.test.ts",
-                     "capture/desktop/ui/frontend/src/hermes/protocol.test.ts",
-                     "capture/desktop/ui/frontend/src/hermes/mailbox.test.ts"):
-            path = self.repo / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text("import {test} from 'node:test'; test('fixture', () => {});\n")
-        for name in ("inputs.ts", "workflow-controls.ts", "select.ts"):
-            shutil.copy2(SELECTOR.parent / "ci" / name, self.repo / "enablement/ci" / name)
+        # Share the real runner source closure and derive finite TS checks from
+        # its command inventories. Never copy recursively executing hook tests.
+        materialized = run("node", "--experimental-strip-types",
+                           str(SELECTOR.parent / "local-tests/fixtures/runner.ts"),
+                           str(self.repo), cwd=HOOK.parents[1])
+        self.assertEqual(materialized.returncode, 0, materialized.stderr)
         # The real verifier now runs the shared frontend color guard. Preserve
         # its actual dependency closure in this disposable hook repository.
-        routing = self.repo / "enablement/ci/routing"
-        routing.mkdir()
-        for name in ("consumers.ts", "legacy.ts"):
-            shutil.copy2(SELECTOR.parent / "ci/routing" / name, routing / name)
         theme = self.repo / "shared/ui/scripts"
         theme.mkdir(parents=True)
         for name in ("check-theme.py", "legacy-colors.json"):

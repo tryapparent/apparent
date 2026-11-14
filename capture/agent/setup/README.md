@@ -86,3 +86,56 @@ real OS, then unregisters the fixture app and removes its files. Selection can
 leave an OS-owned preference for that unique scheme until the disposable account
 is destroyed. The actual `apparent` handler is untouched and nothing is launched.
 Local Mac and Linux runs skip this contract; those skips are not Mac proof.
+
+## Headless Hermes receivers (SSH or cloud)
+
+The composer plugin runs on the recording computer. The **Agent plugin must also
+be installed and enabled in the receiving Hermes profile**, including an SSH or
+cloud profile. A local button is not evidence that a remote agent has its tools.
+
+Use the same verified release package and its published checksum for each profile:
+
+```sh
+apparent setup hermes --receiver --check --json \
+  --profile /absolute/receiver-profile --hermes-executable /absolute/hermes
+apparent setup hermes --receiver --profile /absolute/receiver-profile \
+  --package /absolute/apparent-hermes-VERSION.tar.gz --sha256 EXPECTED_DIGEST \
+  --hermes-executable /absolute/hermes --enable --verify-runtime --json
+```
+
+Receiver mode checks the selected **Apparent** CLI's `inspect` and `fetch`
+commands. `--hermes-executable` selects the separate **Hermes** CLI. Native
+capture state, a URL handler and a Desktop plugin are not receiver prerequisites.
+The profile is explicit; only that subprocess's `HERMES_HOME` is overridden.
+`--check` reads package files and Apparent CLI capabilities without invoking
+Hermes: even a Hermes config read can provision its managed Python environment
+on first use. Runtime and activation therefore remain unknown in passive mode.
+Repair mode allows up to three minutes per normal Hermes invocation (which may
+prepare its managed Python environment), then reads only public plugin activation
+config values. If Hermes reports an unprepared dependency environment, complete
+its normal installation/runtime setup first; this command does not repair shared
+dependency stores. Errors stay unknown;
+missing settings are distinguished from failed reads without echoing stderr.
+
+`--enable` delegates activation to Hermes and rereads its saved state. It does
+not alter built-in tool override grants, approve Python dependency installation, log
+in, change Connect grants, enable uploads or restart a gateway/session. If
+Hermes needs dependency consent, complete its normal setup flow interactively.
+`--verify-runtime` explicitly runs `hermes plugins doctor apparent --ci`, which
+imports the installed plugin in a fresh process. These flags are incompatible
+with passive `--check`. A failed archive repair prevents activation.
+
+`prerequisitesReady` covers receiver CLI, Hermes runtime and package checks; `setupReady` additionally
+requires enabled-state readback and no failed repairs. `ready` remains false
+while live-session availability is unknown. A doctor pass proves registration
+in its check process, not availability in an already-running conversation.
+Start a **fresh receiving conversation** and verify that `apparent_inspect` can
+inspect the exact supplied source. Hermes defers Python tools for existing
+sessions; setup does not silently widen their tool access. Repeating setup
+preserves matching installed files and skips an already-enabled plugin.
+
+Recorder and receiver versions need not be identical, but both must satisfy
+their actual command/plugin contracts. Use normal app/plugin distribution for
+updates; copying a Desktop bundle or repointing one CLI symlink does not set up
+another backend. The existing writer still refuses modified or conflicting
+package files rather than replacing them during repair.

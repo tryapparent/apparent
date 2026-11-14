@@ -146,6 +146,14 @@ plugin neither enables uploads nor reads credential stores. Follow the normal
 CLI read-approval flow when needed. A 150-second subprocess deadline bounds
 each CLI invocation; `--wait 120` is the fetch readiness budget.
 
+For SSH/cloud reception, install and enable the Agent half in **each receiving
+profile**, not just on the recording computer. The repeatable
+[receiver setup flow](../capture/agent/setup/README.md#headless-hermes-receivers-ssh-or-cloud)
+checks the receiver's CLI and plugin, applies the verified package through the
+same installer, and delegates activation to Hermes. Start a fresh conversation
+after enabling Python tools. Installed files, enabled config and a successful
+registration check are reported separately from actual session availability.
+
 ## Evidence and privacy
 
 Image reads stay inside the selected bundle and reject traversal, symlinks and

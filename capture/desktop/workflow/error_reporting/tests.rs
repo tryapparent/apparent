@@ -3,21 +3,21 @@ use super::*;
 use std::net::{TcpListener, TcpStream};
 
 #[test]
-fn finalization_audio_report_identifies_real_writer_backlog_and_retains_saved_bytes() {
+fn finalization_audio_report_identifies_expired_writer_history_and_retains_saved_bytes() {
     use crate::capture::engine::runtime::{audio::persistence::{Lease, Samples, Writer}, recording::diagnostics::{Diagnose, Stage}};
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
 
     let scratch = Scratch::new();
-    // No microphone: admit more than the existing two-second writer limit in
-    // one batch, so the real writer must fail before Stop rather than race it.
-    let samples = Arc::new(Mutex::new(Samples::from(vec![0.25; 48_000])));
+    // No microphone: exceed the retained 60-second history. Retained backlog
+    // is recoverable; actual sample loss must still fail before Stop.
+    let samples = Arc::new(Mutex::new(Samples::from(vec![0.25; 60 * 16_000 + 1])));
     let failure = Arc::new(Mutex::new(None));
     let mut writer = Writer::start(&scratch.0, samples, failure.clone()).unwrap();
     let saved = std::fs::read(scratch.0.join("audio.wav")).unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
     while failure.lock().unwrap().is_none() {
-        assert!(Instant::now() < deadline, "writer did not report its backlog failure");
+        assert!(Instant::now() < deadline, "writer did not report expired history");
         std::thread::sleep(Duration::from_millis(5));
     }
     let error = writer.finish().stage(Stage::AudioStop).unwrap_err();
@@ -26,9 +26,9 @@ fn finalization_audio_report_identifies_real_writer_backlog_and_retains_saved_by
     let payload = Report::finalization(&error, std::panic::Location::caller(), Consent { generation: "private-audio-consent".into() }).payload("phc_synthetic").unwrap();
     assert_eq!(payload["properties"]["diagnostics_schema_version"], 3);
     let stages = payload["properties"]["finalization"]["stages"].as_array().unwrap();
-    assert_eq!(stages.last().unwrap()["stage"], "audio_writer_backlog");
-    assert!(payload["properties"]["$exception_fingerprint"].as_str().unwrap().contains("AudioWriterBacklog"));
-    for private in [scratch.0.to_str().unwrap(), "private-audio-consent", "Narration disk writer fell"] {
+    assert_eq!(stages.last().unwrap()["stage"], "audio_writer_history");
+    assert!(payload["properties"]["$exception_fingerprint"].as_str().unwrap().contains("AudioWriterHistory"));
+    for private in [scratch.0.to_str().unwrap(), "private-audio-consent", "Narration history expired"] {
         assert!(!payload.to_string().contains(private), "leaked {private}");
     }
     drop(writer);

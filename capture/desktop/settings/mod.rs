@@ -1,4 +1,5 @@
 pub(crate) mod connect;
+mod agents;
 pub(crate) mod onboarding;
 pub(crate) mod onboarding_window;
 pub(crate) mod settings;

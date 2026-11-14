@@ -1,10 +1,13 @@
-//! Native resource boundary for Record's finite export-metadata workflow.
+//! Native resource boundary for Record's finite movie-metadata workflows.
 //! Record owns interpretation; this adapter owns paths, bounded IO and cleanup.
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 use std::{
     io::{ErrorKind, Read},
-    os::{fd::AsRawFd, unix::process::CommandExt},
+    os::{
+        fd::AsRawFd,
+        unix::{fs::PermissionsExt, process::CommandExt},
+    },
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     time::{Duration, Instant},
@@ -20,6 +23,17 @@ pub(crate) struct ExportProbe {
     pub fps: f64,
     pub audio_tracks: u32,
     pub embedded_audio: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct BundleProbe {
+    pub(crate) version: u32,
+    pub duration_ms: u64,
+    pub width: u32,
+    pub height: u32,
+    pub fps: f64,
+    pub audio_tracks: u32,
 }
 
 fn assets() -> Result<(PathBuf, PathBuf, PathBuf)> {
@@ -63,15 +77,22 @@ fn assets() -> Result<(PathBuf, PathBuf, PathBuf)> {
     )
 }
 
-pub(crate) fn probe(movie: &Path) -> Result<ExportProbe> {
+fn private_movie_alias(movie: &Path) -> Result<tempfile::TempDir> {
+    let directory = tempfile::Builder::new()
+        .permissions(std::fs::Permissions::from_mode(0o700))
+        .tempdir()
+        .context("Could not prepare media path")?;
+    std::os::unix::fs::symlink(movie, directory.path().join("movie.mp4"))?;
+    Ok(directory)
+}
+
+fn request(movie: &Path, operation: &str) -> Result<Vec<u8>> {
     let (node, worker, engine) = assets()?;
     let movie = std::fs::canonicalize(movie).context("Could not locate export movie")?;
     // Node's argv is UTF-8. Preserve Unix filenames losslessly through a private
     // read-only alias rather than passing a replacement-character path to the SDK.
     let alias = if movie.to_str().is_none() {
-        let directory = tempfile::tempdir().context("Could not prepare media path")?;
-        std::os::unix::fs::symlink(&movie, directory.path().join("movie.mp4"))?;
-        Some(directory)
+        Some(private_movie_alias(&movie)?)
     } else {
         None
     };
@@ -79,14 +100,36 @@ pub(crate) fn probe(movie: &Path) -> Result<ExportProbe> {
         .as_ref()
         .map(|directory| directory.path().join("movie.mp4"))
         .unwrap_or(movie);
-    let bytes = run(
+    run(
         Command::new(node)
             .env("ELECTRON_RUN_AS_NODE", "1")
             .arg(worker)
             .arg(engine)
-            .arg(input),
+            .arg(input)
+            .arg(operation),
         Duration::from_secs(35),
-    )?;
+    )
+}
+
+pub(crate) fn bundle_probe(movie: &Path) -> Result<BundleProbe> {
+    let bytes = request(movie, "bundle-v1")?;
+    let result: BundleProbe =
+        serde_json::from_slice(&bytes).context("Invalid Record bundle metadata")?;
+    ensure!(
+        result.version == 1
+            && result.duration_ms > 0
+            && result.width > 0
+            && result.height > 0
+            && result.fps.is_finite()
+            && result.fps >= 0.0
+            && result.audio_tracks <= 1024,
+        "Invalid Record bundle metadata"
+    );
+    Ok(result)
+}
+
+pub(crate) fn probe(movie: &Path) -> Result<ExportProbe> {
+    let bytes = request(movie, "export-v1")?;
     let result: ExportProbe =
         serde_json::from_slice(&bytes).context("Invalid Record media result")?;
     ensure!(
@@ -211,6 +254,26 @@ fn run(command: &mut Command, timeout: Duration) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn media_alias_is_private_and_preserves_filename_bytes() {
+        use std::os::unix::ffi::OsStringExt;
+        let source = PathBuf::from(std::ffi::OsString::from_vec(
+            b"/synthetic/non-utf8-\xff.mp4".to_vec(),
+        ));
+        let alias = private_movie_alias(&source).unwrap();
+        assert_eq!(
+            std::fs::metadata(alias.path())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+        assert_eq!(
+            std::fs::read_link(alias.path().join("movie.mp4")).unwrap(),
+            source
+        );
+    }
     #[test]
     fn finite_output_is_returned_only_after_successful_exit() {
         let mut command = Command::new("/bin/sh");

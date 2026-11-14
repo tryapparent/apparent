@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 import * as age from 'age-encryption';
 import {verifyEnvelope, type Asset, type Context, type Signed} from './index.js';
 import {captureId, record, transportPath, type PublicKey} from './mcp-wire.js';
-import {fileHash, readPrivate, requireValue as check, trustedDirectory} from './mcp-files.js';
+import {fileHash, readPrivate, requireValue as check, trustedDirectory, writePrivate} from './mcp-files.js';
 
 export type Peer = {grantId:string;scope:'read'|'upload';key:PublicKey};
 export type Peers = {accountId:string;grantId:string;scope:'read';devices:Peer[]};
@@ -96,12 +96,15 @@ function context(value:unknown, expected:{origin:string;accountId:string;capture
   return {origin:expected.origin,accountId:expected.accountId,captureId:expected.captureId,
     senderGrantId:value.senderGrantId as string,...(expected.group===undefined?{}:{group:expected.group})};
 }
-type DecryptOptions={spool:string;files:Asset[];identity:string;origin:string;captureId:string;peers:Peers;out:string};
+export function inspectionAssets(files:Asset[],inspection=false):Asset[] {
+  return inspection && files.some(f=>f.path.startsWith('evidence/'))?files.filter(f=>f.path.startsWith('evidence/')):files;
+}
+type DecryptOptions={spool:string;files:Asset[];identity:string;origin:string;captureId:string;peers:Peers;out:string;inspection?:boolean};
 export async function decryptBundle(options:DecryptOptions):Promise<{stage:string;sender:Peer}> {
   const files=transportAssets(options.files),grouped=files.some(f=>f.path.startsWith('evidence/'));
   let stage:string|undefined,sender:Peer|undefined;const ordinary:Asset[]=[];
   try {
-    for(const group of grouped?['evidence','media'] as const:[undefined]) {
+    for(const group of grouped?(options.inspection?['evidence'] as const:['evidence','media'] as const):[undefined]) {
       const prefix=group?group+'/':'';
       const decoded=await decryptGroup({...options,group,stage,spool:group?path.join(options.spool,group):options.spool,
         files:files.filter(f=>f.path.startsWith(prefix)).map(f=>({...f,path:f.path.slice(prefix.length)}))});
@@ -110,7 +113,8 @@ export async function decryptBundle(options:DecryptOptions):Promise<{stage:strin
       sender=decoded.sender;ordinary.push(...decoded.files);
     }
     check(stage && sender,'invalid_encryption_manifest');
-    assets(ordinary,assetPath);await validateReferences(stage,ordinary);
+    assets(ordinary,assetPath);await validateReferences(stage,ordinary,grouped && options.inspection===true);
+    if(options.inspection)await writePrivate(path.join(stage,'inspection.json'),{version:1,kind:'apparent-mcp-inspection',captureId:options.captureId,mediaDownloaded:!grouped,completeRecording:!grouped});
     return {stage,sender};
   } catch(error){if(stage)await fs.rm(stage,{recursive:true,force:true});throw error;}
 }
@@ -177,12 +181,17 @@ async function decryptGroup(options:DecryptOptions & {group?:Context['group'];st
   finally {await cursor.reader.cancel().catch(()=>{});}
 }
 
-async function validateReferences(stage:string,ordinary:Asset[]):Promise<void> {
+async function validateReferences(stage:string,ordinary:Asset[],inspection=false):Promise<void> {
   const metadata=JSON.parse((await readPrivate(path.join(stage,'apparent.json'))).toString('utf8'));
   check(record(metadata),'invalid_bundle_metadata');
   const names=new Set(ordinary.map(f=>f.path));
   const reference=(v:unknown)=>check(v===null || (typeof v==='string' && assetPath(v) && names.has(v)),'invalid_bundle_reference');
-  for(const field of ['contactSheet','contact_sheet','video','audio'])if(field in metadata)reference(metadata[field]);
+  for(const field of ['contactSheet','contact_sheet','video','audio'])if(field in metadata) {
+    // An inspection artifact has complete authenticated evidence, not media.
+    // Only media references may be absent; every visual reference must resolve.
+    if(inspection && ['video','audio'].includes(field) && typeof metadata[field]==='string' && mediaPath(metadata[field] as string))continue;
+    reference(metadata[field]);
+  }
   if('keyframes' in metadata){check(Array.isArray(metadata.keyframes),'invalid_bundle_metadata');for(const frame of metadata.keyframes){check(record(frame) && 'file' in frame,'invalid_bundle_reference');reference(frame.file);}}
   if(metadata.autocrop!==null && metadata.autocrop!==undefined) {
     check(record(metadata.autocrop),'invalid_bundle_metadata');
