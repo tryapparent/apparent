@@ -3,7 +3,7 @@ export type Rect = readonly [number, number, number, number];
 export type Area = {x: number; y: number; width: number; height?: number};
 
 export function coachDimensions(area: Area, phase: string) {
-  return {width: Math.min(area.width, phase === 'screen-ink' && area.width >= 720 ? 720 : 380),
+  return {width: Math.min(area.width, phase === 'screen-ink' && area.width >= 720 ? 720 : phase==='whiteboard' ? 520 : 380),
     height: Math.min(area.height ?? 440, 440)};
 }
 
@@ -35,7 +35,7 @@ export function coachPosition(area: Area, anchor: Rect | undefined | null, board
   const position = options.find(p => !overlap(p, board) && !overlap(p, anchor)) ??
     options.reduce((best, p) => overlap(p, board) + overlap(p, anchor) < overlap(best, board) + overlap(best, anchor) ? p : best);
   return {x: position[0], y: position[1], arrow: Math.max(45, Math.min(width - 45, x + w / 2 - position[0])),
-    pointsUp: !board && !!anchor && ['screen', 'whiteboard', 'stop', 'copied', 'locate'].includes(phase)};
+    pointsUp: !board && !!anchor && ['screen', 'whiteboard', 'stop', 'copied', 'locate', 'complete'].includes(phase)};
 }
 
 export function setupDimensions(area: {width:number;height:number}, _shortcut?:boolean) {

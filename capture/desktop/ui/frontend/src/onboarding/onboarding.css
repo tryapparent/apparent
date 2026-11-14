@@ -2,10 +2,10 @@
 
 .native-agent-setup { width: 100%; }
 .native-setup[data-agent-setup=true] footer { display: none; }
-.native-agent-setup h1 { text-align: left; }
+.native-agent-setup h1 { text-align: center; }
 .native-agent-setup h1:focus { outline: none; }
 .native-agent-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
-.native-agent-choices button { display: flex; flex-direction: column; height: auto; min-height: 44px; padding: 0 0 16px; border: 1px solid var(--apparent-foreground); border-radius: 0; background: var(--apparent-background); color: var(--apparent-foreground); white-space: normal; }
+.native-agent-choices button { display: flex; flex-direction: column; height: auto; min-height: 44px; padding: 0 0 16px; border: 0; border-radius: 0; background: transparent; color: var(--apparent-foreground); white-space: normal; }
 .native-agent-choices img { display: block; width: 100%; aspect-ratio: 620 / 490; object-fit: contain; }
 .native-agent-choices strong { font-size: 1.125rem; font-weight: 700; padding: 0 8px; }
 .native-agent-setup .native-agent-idk { display: block; margin: 24px auto 0; color: var(--apparent-primary); font-weight: 700; }
@@ -118,17 +118,20 @@ html.native-onboarding-shell body { background: transparent !important; margin: 
 .native-pencils button span { width: 25px; height: 95px; background: var(--pencil); border-radius: 4px 4px 1px 1px; position: relative; box-shadow: inset -7px 0 var(--apparent-shadow); }
 .native-pencils button span:after { content: ''; position: absolute; bottom: -17px; left: 0; border-left: 12.5px solid transparent; border-right: 12.5px solid transparent; border-top: 18px solid var(--apparent-foreground); }
 .native-pencils button[aria-pressed=true] { border-color: var(--apparent-ring); transform: translateY(-5px); }
-.native-pen-picker { height: 100%; min-height: min-content; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.native-pen-picker { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; text-align: center; }
+.native-pen-picker .native-pencils { margin-top: 16px; }
 .native-pen-picker h1 { margin-bottom: 16px; }
-.native-pond { width: 100%; max-width: 360px; height: 210px; position: relative; flex-shrink: 0; }
+.native-pond { width: 100%; max-width: 360px; height: 160px; position: relative; flex-shrink: 0; }
 .native-puddle { position: absolute; left: 35%; bottom: 20px; width: 61%; height: 80px; overflow: visible; }
 .native-puddle path { fill: var(--pond-colour); transition: fill .16s ease-out; }
 .native-puddle-ring { fill: none; stroke: var(--apparent-paper); stroke-width: 3; opacity: 0; transform-origin: 150px 49px; }
-.native-pond-frog { position: absolute; left: 5%; top: 24px; width: 29%; height: 80px; object-fit: contain; transform-origin: center bottom; }
+.native-pond-frog { position: absolute; left: 5%; top: 4px; width: 29%; height: 80px; object-fit: contain; transform-origin: center bottom; }
 .native-pond[data-landing=true] .native-pond-frog { animation: native-pen-hop .9s linear forwards; }
 .native-pond[data-landing=true] .native-puddle-ring { animation: native-pen-splash .3s .6s ease-out both; }
 @media (max-width: 560px) {
   .native-setup section { padding: 16px; }
+  .native-pencils { gap: 8px; }
+  .native-pencils button { padding-inline: 12px; }
   .native-setup footer { flex-wrap: wrap; }
   .native-permissions > div { align-items: flex-start; flex-direction: column; gap: 16px; }
 }
@@ -163,9 +166,9 @@ html.native-onboarding-shell:has(.native-setup) .apparent-build-identity { top: 
 .native-trackpad-helper p { margin: 0; text-wrap: balance; }
 @media (min-width: 700px) {
   .native-coach[data-paired=true] { right: auto; width: 332px; }
-  body > #root > .native-trackpad-helper { position: absolute; left: 388px; top: 164px; width: 308px; margin: 0; }
+  body > #root > .native-trackpad-helper { position: absolute; left: 388px; top: 56px; width: 308px; margin: 0; }
   body > #root > .native-trackpad-helper .native-trackpad-helper-content { max-height: calc(100vh - 222px); overflow: auto; }
-  body > #root > .native-trackpad-helper:before { content: ''; position: absolute; left: -7px; top: calc(50% - 6px); width: 12px; height: 12px; transform: rotate(45deg); background: var(--apparent-surface); border-left: 1px solid var(--apparent-border); border-bottom: 1px solid var(--apparent-border); }
+  body > #root > .native-trackpad-helper:before { content: ''; position: absolute; left: -7px; top: 64px; width: 12px; height: 12px; transform: rotate(45deg); background: var(--apparent-surface); border-left: 1px solid var(--apparent-border); border-bottom: 1px solid var(--apparent-border); }
 }
 
 .native-wordmark { width: 138px; height: auto; }
@@ -180,8 +183,8 @@ html.native-onboarding-shell:has(.native-setup) .apparent-build-identity { top: 
 .native-held-keys { min-height:64px;display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap; }
 
 .native-agent-art { display:block;width:100%;aspect-ratio:1.25;background-repeat:no-repeat;background-size:200% auto;background-position:left center; }
-.native-agent-art.cloud { background-position:right center; }
-.native-agent-art.local { background-position:left center; }
+.native-agent-art.cloud { background-position:96% center; }
+.native-agent-art.local { background-position:-8% center; }
 .native-agent-setup > .native-agent-art { max-width:180px;margin-inline:auto; }
 
 .native-coach[data-stage=preparing] { display:none; }
@@ -189,3 +192,7 @@ html.native-onboarding-shell:has(.native-setup) .apparent-build-identity { top: 
 .native-held-keys > button {font-size:40px;line-height:1.2;min-width:96px;padding:12px 20px;}
 
 .native-held-keys + .native-shortcut-choices {margin-top:8px;}
+
+/* Recorded review: let spacing carry setup chrome and the complete pill guide. */
+.native-setup header,.native-setup footer {border:0;}
+.native-coach[data-stage=whiteboard] {max-width:472px;}

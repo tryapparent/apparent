@@ -150,3 +150,11 @@ test('Done finishes after both real drawing milestones and copied capture, witho
  const p=throughDrawing();p.send('processing');p.send('saved',{copied:true});assert(p.action('practice-finish'));p.stage('complete');assert.equal(p.state.pasted,true);assert.equal(p.state.latest,false);
  const early=practice();early.send('started');early.send('processing');early.send('saved',{copied:true});assert.equal(early.action('practice-finish'),false);early.stage('retry');
 });
+
+test('Done opens optional Settings orientation without finishing or requiring latest capture',()=>{
+ const p=throughDrawing();p.send('processing');p.send('saved',{copied:true});
+ assert(p.action('practice-review'));p.stage('complete');assert.equal(p.state.orientation,true);assert.equal(p.state.latest,false);
+ assert(p.action('practice-settings'));assert(p.action('practice-finish'));
+ const early=practice();early.send('started');early.send('processing');early.send('saved',{copied:true});
+ assert.equal(early.action('practice-review'),false);early.stage('retry');assert.equal(early.action('practice-settings'),false);
+});

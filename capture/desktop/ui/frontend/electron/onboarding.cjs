@@ -31,7 +31,7 @@ const {completedSelection}=require(process.versions.electron?'../dist/onboarding
 // A private, Rust-owned presentation transport. No capture commands or filesystem IPC.
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const actions = new Set(['continue','back','later','close','change-shortcut','grant:screen-recording','grant:microphone','grant:accessibility','grant:speech-recognition','grant:camera','practice-paste','practice-locate','practice-pasted','practice-finish','pen:coral','pen:purple','pen:blue','pen:green']);
+const actions = new Set(['continue','back','later','close','change-shortcut','grant:screen-recording','grant:microphone','grant:accessibility','grant:speech-recognition','grant:camera','practice-review','practice-settings','practice-paste','practice-locate','practice-pasted','practice-finish','pen:coral','pen:purple','pen:blue','pen:green']);
 const steps = new Set(['welcome','how-it-works','permissions','shortcut','try-it','done']);
 const phases = new Set(['start','screen','whiteboard','board-ink','screen-ink','note','stop','preparing','copied','paste','locate','complete','retry','copy-failed']);
 function project(v) {

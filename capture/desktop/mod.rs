@@ -1632,12 +1632,12 @@ impl ApparentCoordinator {
         #[cfg(target_os="macos")]
         let anchor=if self.onboarding.as_ref().is_some_and(|s|s.practice_locating()) {crate::capture::desktop::ui::macos::status_bar_anchor()} else {self.native_pill.as_ref().and_then(|p|p.coach_anchor())};
         #[cfg(target_os="linux")]
-        let anchor=crate::capture::desktop::ui::linux::coach_anchor();
+        let anchor=if self.onboarding.as_ref().is_some_and(|s|s.practice_locating()) {None}else{crate::capture::desktop::ui::linux::coach_anchor()};
         #[cfg(not(any(target_os="macos",target_os="linux")))]
         let anchor=None;
         #[cfg(any(target_os="macos",target_os="linux"))]
         let anchor = if self.electron_pill_routed
-            && !(cfg!(target_os="macos") && self.onboarding.as_ref().is_some_and(|s| s.practice_locating())) {
+            && !self.onboarding.as_ref().is_some_and(|s| s.practice_locating()) {
             self.electron_pill.as_ref().and_then(|pill| pill.note_badge_anchor())
                 .map(|rect| rect.map(|value| value as f32))
         } else { anchor };

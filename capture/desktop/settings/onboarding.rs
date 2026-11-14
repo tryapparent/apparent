@@ -1630,7 +1630,7 @@ impl Session {
         }
 
         if action.starts_with("practice-") {
-            if !["practice-paste","practice-pasted","practice-locate","practice-finish"].contains(&action)||!self.practice_active() {return Effect::None;}
+            if !["practice-review","practice-settings","practice-paste","practice-pasted","practice-locate","practice-finish"].contains(&action)||!self.practice_active() {return Effect::None;}
             let effect=self.practice_events(vec![serde_json::json!({"type":"action","action":action})],true);
             self.sync();return effect;
         }
@@ -1792,6 +1792,7 @@ impl Session {
         if let Transport::Renderer {input,..}=&self.transport {
             if !input.ack(&sequence) {self.restore_native();return Effect::None;}
         }
+        let open_settings=self.practice.as_ref().unwrap().pending.front().is_some_and(|batch|batch["events"].as_array().is_some_and(|events|events.iter().any(|e|e["action"]=="practice-settings")));
         let result=self.practice.as_mut().unwrap().admit(value);
         let Ok((finish,_))=result else {self.restore_native();return Effect::None;};
         // Navigation can overtake a timely reply. Retire its deadline without
@@ -1800,8 +1801,8 @@ impl Session {
         if finish && self.practice_completed && self.practice_receipt.is_some() && self.practice_bundle.is_some() {
             self.flow.first_capture_completed=true;self.flow.step=Step::Done;self.sync();
             #[cfg(test)]
-            if matches!(self.transport,Transport::InProcess(None)) {return self.input(Input::Continue);}
-            if self.saved_first_capture_completed {return self.input(Input::Continue);}
+            if matches!(self.transport,Transport::InProcess(None)) {let effect=self.input(Input::Continue);return if open_settings && effect==Effect::Close {Effect::Settings}else{effect};}
+            if self.saved_first_capture_completed {let effect=self.input(Input::Continue);return if open_settings && effect==Effect::Close {Effect::Settings}else{effect};}
             // A failed native config transaction leaves the lesson retryable.
             self.flow.first_capture_completed=false;self.flow.step=Step::TryIt;
         }
@@ -2241,15 +2242,16 @@ mod tests {
         if let Some(path)=std::env::var_os(CHILD) {
             let path=std::path::PathBuf::from(path);
             assert_eq!(crate::shared::handoff::default_config_path(),path);
-            for (failure,direct) in [(false,false),(true,false),(false,true),(true,true)] {
+            for (failure,direct,settings) in [(false,false,false),(true,false,false),(false,true,false),(true,true,false),(false,true,true),(true,true,true)] {
+                let finish_action=if settings {"practice-settings"}else{"practice-finish"};
                 std::fs::write(&path,br#"{"secret":"synthetic","unrelated":{"nested":7},"microphoneEnabled":false}"#).unwrap();
                 let mut s=coached_session();let (tx,_rx)=flume::unbounded();s.transport=Transport::InProcess(Some(tx));
                 s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);s.practice_whiteboard();
                 s.observe_practice(true,0,false,None);s.observe_practice(false,1,false,None);
                 // Host completion alone is not native durability evidence.
                 s.observe_practice(false,0,true,Some(true));s.input(Input::CaptureEnded{completed:true});
-                if !direct {s.action("practice-paste");s.action("practice-pasted");s.practice_latest();}
-                assert_eq!(s.action("practice-finish"),Effect::None);
+                if settings {s.action("practice-review");}else if !direct {s.action("practice-paste");s.action("practice-pasted");s.practice_latest();}
+                assert_eq!(s.action(finish_action),Effect::None);
                 assert!(!s.flow.first_capture_completed);
                 // Start another admitted real capture and provide its first native receipt.
                 s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);s.practice_whiteboard();
@@ -2259,12 +2261,13 @@ mod tests {
                 s.input(Input::CaptureEnded{completed:true});
                 if !direct {s.action("practice-paste");s.action("practice-pasted");s.practice_opened_bundle(bundle);}
                 else {assert!(!s.practice.as_ref().unwrap().latest,"Done needs no locate receipt");}
+                if settings {assert_eq!(s.action("practice-review"),Effect::None);assert!(!s.flow.first_capture_completed,"orientation alone cannot finish setup");}
                 if failure {std::fs::write(&path,b"invalid config").unwrap();}
-                assert_eq!(s.action("practice-finish"),if failure{Effect::None}else{Effect::Close});
+                assert_eq!(s.action(finish_action),if failure{Effect::None}else if settings{Effect::Settings}else{Effect::Close});
                 assert_eq!(s.flow.first_capture_completed,!failure);
                 if failure {assert_eq!(std::fs::read(&path).unwrap(),b"invalid config");
                     std::fs::write(&path,br#"{"secret":"synthetic","unrelated":{"nested":7},"microphoneEnabled":false}"#).unwrap();
-                    assert_eq!(s.action("practice-finish"),Effect::Close,"retry after native storage recovery");
+                    assert_eq!(s.action(finish_action),if settings{Effect::Settings}else{Effect::Close},"retry after native storage recovery");
                 }
                 else {let saved:serde_json::Value=serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
                     assert_eq!(saved["secret"],"synthetic");assert_eq!(saved["unrelated"]["nested"],7);

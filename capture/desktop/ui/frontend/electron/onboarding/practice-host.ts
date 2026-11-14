@@ -1,6 +1,6 @@
 /** Private parent pipe policy. Never import this module in preload or renderer. */
 import {initialPractice, reducePractice, type Event, type Practice} from './practice.ts';
-export const intents = ['practice-paste','practice-pasted','practice-locate','practice-finish'] as const;
+export const intents = ['practice-review','practice-settings','practice-paste','practice-pasted','practice-locate','practice-finish'] as const;
 export type Batch = {type:'practice-batch';version:1;source:string;transport:string;
   attempt:string;capture:string;sequence:string;intent:string|null;board:string|null;events:(Event|{type:'reset'})[]};
 const identity=(v:unknown):v is string=>typeof v==='string'&&/^(0|[1-9][0-9]{0,19})$/.test(v)&&BigInt(v)<=18446744073709551615n;
@@ -40,7 +40,7 @@ export class PracticeHost {
     const desktopStage=['note','screen-ink'].includes(this.state.stage);
     return {type:'practice-disposition',version:1,source:b.source,transport:b.transport,attempt:b.attempt,capture:b.capture,
       sequence:b.sequence,intent:b.intent,board:b.board,stage:this.state.stage,latest:this.state.latest,
-      locating:this.state.stage==='locate',desktopStage,closeBoard:!['note','screen-ink'].includes(before)&&desktopStage,
+      locating:this.state.stage==='locate'||this.state.stage==='complete'&&this.state.orientation===true,desktopStage,closeBoard:!['note','screen-ink'].includes(before)&&desktopStage,
       accepted};
   }
 }

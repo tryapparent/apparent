@@ -8,7 +8,7 @@ export const stages = ['start', 'screen', 'whiteboard', 'board-ink', 'note', 'sc
 export type Stage = typeof stages[number];
 export type Practice = Readonly<{
   stage: Stage; boardInk: boolean; screenInk: boolean; latest: boolean;
-  screenBaseline: number; pasted: boolean;
+  screenBaseline: number; pasted: boolean; orientation?:boolean;
 }>;
 export type Observation =
   | {type: 'selecting' | 'started' | 'whiteboard' | 'processing' | 'cancelled' | 'opened-latest'}
@@ -67,7 +67,10 @@ export function reducePractice(state: Practice, event: Event): {state: Practice;
     case 'action':
       // Done confirms the paste directly; finding the bundle is optional.
       // Native admission still requires this attempt's durable capture receipt.
-      if (['copied', 'paste'].includes(stage) && event.action === 'practice-finish') {
+      if (['copied','paste'].includes(stage) && event.action==='practice-review') {
+        next={...state,pasted:true,orientation:true,stage:state.boardInk&&state.screenInk?'complete':'retry'};accepted=next.stage==='complete';
+      } else if (stage==='complete' && event.action==='practice-settings') accepted=state.boardInk&&state.screenInk&&state.pasted;
+      else if (['copied', 'paste'].includes(stage) && event.action === 'practice-finish') {
         next = {...state, pasted: true, stage: state.boardInk && state.screenInk ? 'complete' : 'retry'};
         accepted = next.stage === 'complete';
       } else if (stage === 'copied' && event.action === 'practice-paste') {

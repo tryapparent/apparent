@@ -680,8 +680,9 @@ existing notes editor, save receipts and bundle output are unchanged. Old in-mem
 practice state at the removed `note` stage maps to screen drawing and requires a
 fresh stroke, so it cannot mistake earlier screen ink for the next action.
 Whiteboard and screen ink remain required native milestones. In Electron, Done
-after the paste illustration confirms paste and completes a successfully saved
-practice capture; opening the latest bundle is optional. The trackpad helper still appears
+after the paste illustration confirms paste and opens a separate Settings orientation.
+Open Settings or its corner close completes a successfully saved practice capture;
+opening the latest bundle is optional. The trackpad helper still appears
 during screen drawing. Installed Mac/Linux acceptance remains required for native
 focus, capture and bundle behavior; renderer simulation is not native proof.
 
@@ -744,9 +745,12 @@ Coaches use a corner close control. Illustrations loop without replay controls,
 stop under reduced motion, and never send input. During processing the owning
 Electron window hides, then returns inactive for copied/error recovery; the pill
 provides the processing status and a reduced-motion-aware spinner. The paste
-coach shows the platform gesture, brief tray/menu-bar guidance, and Done.
-TypeScript admits Done only after both drawing milestones and copied capture;
-the native adapter still requires the current durable completion receipt and
-performs the sole progress mutation. Early-stop and copy failure keep recovery.
+coach shows the platform gesture and Done. Done leads to “Want to change more settings?”
+with a tray/menu-bar illustration and Open Settings. Only a known native menu-bar
+anchor receives an external coach arrow; Linux uses the illustrative guide when
+tray bounds are unavailable. TypeScript admits this orientation only after both
+drawing milestones and copied capture. Open Settings and the final corner close
+still require the current durable completion receipt and the sole native progress
+mutation; a failed save remains retryable. Early-stop and copy failure keep recovery.
 Rollback reverts this presentation/policy slice together; the native fallback
 retains its previous lesson, and the practice-host transport contract is unchanged.

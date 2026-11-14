@@ -1,5 +1,5 @@
 /* Compact action illustrations. No video player chrome or result screens. */
-.native-gesture { position: relative; margin: 8px 0; padding: 8px; min-height: 72px; background: var(--apparent-background); border: 1px solid var(--apparent-border); }
+.native-gesture { position: relative; margin: 8px 0; padding: 8px; min-height: 72px; background: transparent; border: 0; }
 .native-gesture-motion { min-height: 48px; display: flex; justify-content: center; align-items: center; gap: 8px; }
 .native-gesture kbd { font: 500 1.125rem/1.2 var(--font-sans); color: var(--apparent-foreground); background: var(--apparent-surface); border: 1px solid var(--apparent-input); border-radius: 5px; padding: 8px; box-shadow: 0 3px 0 var(--apparent-border); overflow-wrap: anywhere; text-align: center; }
 .native-gesture-keys { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 8px; }

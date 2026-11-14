@@ -123,7 +123,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.locator('.native-control')).toHaveCount(0);
   send({ step:'try-it', practice:'whiteboard', anchor:[300,30,320,50] });
   await expect(page.getByRole('heading', { name:'Open Whiteboard.', exact:true })).toBeVisible();
-  await expect.poll(() => page.evaluate(() => innerWidth)).toBe(380);
+  await expect.poll(() => page.evaluate(() => innerWidth)).toBe(520);
   assert.equal(await page.evaluate(() => {
     const main=document.querySelector<HTMLElement>('main');if(!main)throw new Error('Missing main');const rect=main.getBoundingClientRect();
     return rect.left>=0 && rect.right<=innerWidth && rect.bottom<=innerHeight;
@@ -260,7 +260,9 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   assert.equal(await page.getByText('Click Whiteboard in the recording controls.',{exact:true}).count(),0);
   await expect(page.getByRole('figure',{name:'Example: click Whiteboard',exact:true})).toBeVisible();
   await expect(page.locator('.control-screen')).toBeHidden();
-  await expect(page.locator('.control-action-label')).toHaveText('✎ Whiteboard');
+  await expect(page.locator('.control-board')).toContainText('Whiteboard');
+  await expect(page.locator('.control-board')).toContainText('Finish');
+  await expect(page.locator('.control-waveform')).toBeVisible();
   // Guides use the saved keys, finish once, and replay without invoking app actions.
   send({step:'try-it',practice:'retry',shortcut:'⌃⌘9',firstCaptureRequired:true});
   await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','record');
@@ -289,7 +291,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await page.emulateMedia({colorScheme:'dark'});
   await page.locator('.native-gesture').evaluate(el=>{for(const animation of el.getAnimations({subtree:true})){animation.pause();animation.currentTime=2000}});
   await expect(page.locator('.native-gesture kbd').first()).toHaveCSS('color','rgb(2, 1, 2)');
-  await expect(page.locator('.native-gesture')).toHaveCSS('background-color','rgb(2, 1, 2)');
+  await expect(page.locator('.native-gesture')).toHaveCSS('background-color','rgba(0, 0, 0, 0)');
 
   send({step:'try-it',practice:'screen-ink',firstCaptureRequired:true});
   await expect(page.locator('.native-gesture')).toHaveAttribute('data-kind','draw');
@@ -477,6 +479,9 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
     await page.setViewportSize({width,height:600});
     await page.getByRole('button',{name:'blue pen',exact:true}).focus();
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    const pond=await page.locator('.native-puddle').boundingBox(),pickerSection=await page.locator('.native-setup section').boundingBox();
+    assert.ok(pond&&pickerSection);
+    assert.ok(pond.y+pond.height<=pickerSection.y+pickerSection.height-24,'the whole pond stays clear of the footer at normal and narrow widths');
     const back=await page.getByRole('button',{name:'Back',exact:true}).boundingBox();assert.ok(back);
     assert.ok(back.x<60,'Back stays at the leading edge after removing confirmation');
     if(process.env.APPARENT_PEN_EVIDENCE)await page.screenshot({path:path.join(process.env.APPARENT_PEN_EVIDENCE,`picker-${scheme}-${width}.png`)});
