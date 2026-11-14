@@ -17,6 +17,7 @@ test('module parsing ignores synthetic source strings but sees same-line product
   assert.deepEqual(moduleImports(`function before() {} /* consumer */ import './native.ts';`), ['./native.ts']);
   assert.equal(moduleImports('import {'), null);
   assert.deepEqual(moduleImports("import type {Foo} from './native.ts'; export type {Bar} from './other.ts';"), ['./native.ts','./other.ts']);
+  assert.deepEqual(moduleImports("import {type Foo} from './native.ts'; export {type Bar} from './other.ts';"), ['./native.ts','./other.ts']);
   assert.deepEqual(moduleImports("import typeThing from './value.ts';"), ['./value.ts']);
   assert.equal(moduleImports("import /* unreviewed form */ type {Foo} from './native.ts';"), null);
   assert.equal(moduleImports("const other = require /* unreviewed form */ ('./native.ts');"), null);
