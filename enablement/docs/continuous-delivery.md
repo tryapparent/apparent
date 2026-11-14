@@ -73,6 +73,16 @@ Connect client consumers. Public and Hermes do not acquire native dependencies
 from root Cargo version/config changes. CI orchestration and unknown global
 inputs retain conservative coverage; isolated prerequisite tests stay tooling.
 
+Audited finite hook fixtures can select tooling without app/native builds.
+Qualification reads candidate Git blobs, parses module imports and checks the
+test-only consumer closure. Unknown imports, changed native probes, unsafe modes,
+deletions and moves keep conservative consumers. Reachable helper additions and
+discovered fixture tests retain their actual shared contract inventory. The
+`fixtureMac` flag separately requires `run.ts --fixture-mac`: real installed-hook
+and dependency-install tests on Mac, without Cargo or the native application.
+Its own selector/executor/workflow changes also exercise that lane. Mac admission
+and shared receipts require fresh fixture success; Linux admission stays independent.
+
 Unknown history, unsafe boundary changes and newly imported dependencies in the
 exact pure onboarding policy closure retain the full named plan and reasons.
 Ordinary pushes with known history and automatic workflow selectors use the same

@@ -1,4 +1,5 @@
 import {posix} from 'node:path';
+import {moduleImports} from './imports.ts';
 
 // Finite test consumers, never production verifier/build definitions. Qualification
 // is over candidate Git blobs, not the working tree or file extensions alone.
@@ -22,7 +23,7 @@ function imports(text: string): string[] | null {
   text = text.replace(/\brequire\(['"](?:node:)?(?:fs|path|url|assert\/strict|child_process|os)['"]\)/g, 'builtin');
   // Unknown module loaders and computed dependencies cannot earn the exception.
   if (/\b(?:import|require)\s*\(/m.test(text)) return null;
-  return [...text.matchAll(/^\s*(?:import\s+(?:[^;]*?\s+from\s+)?|export\s+[^;]*?\s+from\s+)['"]([^'"]+)['"]/gm)].map(match => match[1]);
+  return moduleImports(text);
 }
 const resolveImport = (path: string, name: string) => posix.normalize(posix.join(posix.dirname(path), name.endsWith('.ts') ? name : name + '.ts'));
 
@@ -35,7 +36,7 @@ export function qualifyFixtures(files: Map<string, string>, changed: string[]): 
     if (!fixtureInputs.has(path) && fixturePlatformBoundary('', text ?? '')) return false;
     if (text === undefined) return false;
     if (path.endsWith('.py')) {
-      const modules = [...text.matchAll(/^(?:import ([\w.]+)|from ([\w.]+) import )/gm)].map(match => match[1] ?? match[2]);
+      const modules = [...text.matchAll(/^\s*(?:import ([\w.]+)|from ([\w.]+) import )/gm)].map(match => match[1] ?? match[2]);
       return modules.length === 7 && modules.every(name => ['os', 'pathlib', 'shutil', 'subprocess', 'sys', 'tempfile', 'unittest'].includes(name)) &&
         !/\b(?:__import__|importlib|ctypes)\b/.test(text);
     }
@@ -66,7 +67,14 @@ export function qualifyFixtures(files: Map<string, string>, changed: string[]): 
     if (reachable.has(path) || path.endsWith('.md') || ['enablement/ci/routing/fixture-portability/qualify.ts', 'enablement/ci/routing/fixture-portability/qualify.test.ts', 'enablement/ci/select.test.ts'].includes(path)) continue;
     const modules = imports(text);
     if (modules === null) return [];
-    if (modules.some(name => name.startsWith('.') && reachable.has(resolveImport(path, name))) ||
+    const consumesFixture = modules.some(name => {
+      if (name.startsWith('node:')) return false;
+      const target = resolveImport(path, name);
+      const index = posix.join(target.replace(/\.ts$/, ''), 'index.ts');
+      return reachable.has(target) || reachable.has(index) || (!name.startsWith('.') &&
+        [...reachable].some(file => posix.basename(file, '.ts') === posix.basename(name, '.ts')));
+    });
+    if (consumesFixture || (path !== 'enablement/local-tests/run.ts' && text.includes(fixtureRoot.slice(0, -1))) ||
         [...reachable].some(target => text.includes(target) && !(path === 'enablement/local-tests/run.ts' && (target.endsWith('.test.ts') || target === 'enablement/tests/test_pre_push_guard.py')))) return [];
   }
   return candidates.filter(path => reachable.has(path));

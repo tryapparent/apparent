@@ -156,7 +156,7 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
       const fixtureEntries = entries.filter(entry => fixtureCandidate(entry.path));
       if (fixtureEntries.some(entry => entry.mode !== '100644')) throw Error('Unsupported fixture mode');
       const fixtures = fixtureEntries.map(entry => entry.path);
-      const patterns = [...new Set(fixtures.flatMap(path => {
+      const patterns = ['/local-tests/fixtures', "/fixtures'", '/fixtures"', ...new Set(fixtures.flatMap(path => {
         const name = path.split('/').at(-1)!;
         return ['/' + name, '/' + name.replace(/\.ts$/, '') + "'", '/' + name.replace(/\.ts$/, '') + '"'];
       }))];
@@ -174,7 +174,11 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
   const plan = routing.plan;
   const mac = macDecision(effective?.filter(path => !qualifiedFixtures.includes(path)) ?? null, delta?.filter(change => unsupported(change) && !qualifiedFixtures.includes(change.path) && needsPlatform([change.path])).map(change => change.path) ?? null);
   if (effective?.length && effective.every(path => qualifiedFixtures.includes(path))) {mac.macos = false; mac.reasons = [];}
-  const fixtureMac = fixtureMacRequired(qualifiedFixtures);
+  // Exercise this lane when its executor, selector or workflow definition changes
+  // too; qualification never exempts those production verification inputs.
+  const fixtureMac = fixtureMacRequired(qualifiedFixtures) || !!effective?.some(path =>
+    ['enablement/local-tests/run.ts', 'enablement/ci/select.ts', '.github/workflows/checks.yml'].includes(path) ||
+    path.startsWith('enablement/ci/routing/fixture-portability/'));
   const platform = plan.root || plan.engine || plan.desktop || plan.client;
   return {...routing, paths: paths ?? [], historyKnown: paths !== null, inputProofKnown: paths !== null && !unsafe, workflowControls, ...mac, fixtureMac, qualifiedFixtures, platform, plan,
     hermes: plan.hermes, portable: plan.browser || plan.service || plan.tools || plan.foreground,

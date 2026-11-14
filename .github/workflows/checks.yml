@@ -233,6 +233,7 @@ jobs:
     outputs:
       macos: ${{ steps.shared.outputs.macos }}
       mac_rust: ${{ steps.shared.outputs.mac_rust }}
+      fixtureMac: ${{ steps.paths.outputs.fixtureMac }}
       public: ${{ steps.paths.outputs.public }}
       updater: ${{ steps.paths.outputs.updater }}
       platform: ${{ steps.shared.outputs.platform }}
@@ -368,8 +369,34 @@ jobs:
         with:
           args: -shellcheck= -pyflakes= .github/workflows/checks.yml .github/workflows/linux-updater-harness.yml .github/workflows/verification.yml .github/workflows/verification-platform.yml .github/workflows/release-linux.yml .github/workflows/release-mac-preview.yml .github/workflows/stream-public.yml .github/workflows/stream-connect.yml .github/workflows/hermes.yml
 
+  fixture-mac:
+    name: Mac hook fixtures
+    needs: [select, contracts]
+    if: >-
+      !cancelled() && needs.contracts.result == 'success' &&
+      (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)) &&
+      (needs.select.result != 'success' || needs.select.outputs.fixtureMac == 'true')
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.10'
+      - name: Real hook and dependency-install fixtures without native application builds
+        run: node --experimental-strip-types enablement/local-tests/run.ts --fixture-mac
+
   tree-evidence:
-    needs: [select, contracts, linux, macos, portable, onboarding-policy, record-media]
+    needs: [select, contracts, linux, macos, portable, onboarding-policy, record-media, fixture-mac]
     if: always() && !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.select.result == 'success'
     runs-on: ubuntu-24.04
     steps:
@@ -412,7 +439,7 @@ jobs:
 
   macos-admission:
     name: Mac verification
-    needs: [select, contracts, reuse, macos, portable, onboarding-policy, record-media]
+    needs: [select, contracts, reuse, macos, portable, onboarding-policy, record-media, fixture-mac]
     if: always() && !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     steps:
@@ -428,10 +455,11 @@ jobs:
           VERIFICATION_PLAN: ${{ needs.select.outputs.plan }}
           MAC_VERIFICATION_PLAN: ${{ needs.select.outputs.mac_plan }}
           VERIFY_PLATFORM: macos
+          FIXTURE_MAC: ${{ needs.select.outputs.fixtureMac }}
         run: node --experimental-strip-types enablement/ci/routing/evidence.ts --admit
 
   native-evidence:
-    needs: [select, contracts, reuse, linux, macos]
+    needs: [select, contracts, reuse, linux, macos, fixture-mac]
     if: >-
       !cancelled() && needs.select.result == 'success' &&
       (github.event_name == 'push' || github.event.pull_request.draft == false)
@@ -450,6 +478,7 @@ jobs:
           CI_NEEDS: ${{ toJSON(needs) }}
           VERIFICATION_PLAN: ${{ needs.select.outputs.plan }}
           MAC_VERIFICATION_PLAN: ${{ needs.select.outputs.mac_plan }}
+          FIXTURE_MAC: ${{ needs.select.outputs.fixtureMac }}
         run: node --experimental-strip-types enablement/ci/routing/native-sharing/run.ts --receipt
 
   connect:

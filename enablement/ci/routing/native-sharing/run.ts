@@ -47,7 +47,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
     const plan = parsePlan(process.env.VERIFICATION_PLAN), macPlan = parsePlan(process.env.MAC_VERIFICATION_PLAN);
     const needs = JSON.parse(process.env.CI_NEEDS!);
     const reuse = needs.reuse?.result === 'success' ? needs.reuse.outputs : {};
-    const required = {linux: nativeRequired(plan), macos: nativeRequired(macPlan)};
+    const required = {linux: nativeRequired(plan), macos: nativeRequired(macPlan), 'fixture-mac': process.env.FIXTURE_MAC === 'true'};
     if (!accepted(needs, required, {linux: reuse?.linux === 'true', macos: reuse?.macos === 'true'})) throw Error('Shared native producer did not pass');
     output({receipt: {...identity(), schema: 1, plan, macPlan, linux: true, macos: true}});
   }

@@ -4,11 +4,31 @@ import {execFileSync} from 'node:child_process';
 import {readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {fixtureInputs, qualifyFixtures, fixturePlatformBoundary} from './qualify.ts';
+import {moduleImports} from './imports.ts';
 import {selectRange} from '../../select.ts';
 import {selection, commands, contractTests, toolingCommands} from '../../../local-tests/run.ts';
 
 const source = process.cwd();
 const blobs = () => new Map([...fixtureInputs].map(path => [path, readFileSync(join(source, path), 'utf8')]));
+test('module parsing ignores synthetic source strings but sees same-line production imports', () => {
+  assert.deepEqual(moduleImports(`const fixture = "import './native.ts';";`), []);
+  assert.deepEqual(moduleImports(`const before = 1; import './native.ts';`), ['./native.ts']);
+  assert.deepEqual(moduleImports(`function before() {} /* consumer */ import './native.ts';`), ['./native.ts']);
+  assert.equal(moduleImports('import {'), null);
+  const files = blobs();
+  files.set('enablement/local-tests/run.ts', `const before = 1; import './fixtures/runner.ts';`);
+  assert.deepEqual(qualifyFixtures(files, [...fixtureInputs]), []);
+  files.delete('enablement/local-tests/run.ts');
+  files.set('capture/desktop/consumer.ts', "import '@fixtures/runner';");
+  assert.deepEqual(qualifyFixtures(files, [...fixtureInputs]), []);
+  files.delete('capture/desktop/consumer.ts');
+  files.set('tsconfig.json', JSON.stringify({compilerOptions:{paths:{'@hooks/*':['enablement/local-tests/fixtures/*']}}}));
+  assert.deepEqual(qualifyFixtures(files, [...fixtureInputs]), []);
+  files.delete('tsconfig.json');
+  const py = 'enablement/tests/test_pre_push_guard.py';
+  files.set(py, files.get(py) + '\ndef added():\n    import unknown_provider\n');
+  assert.deepEqual(qualifyFixtures(files, [...fixtureInputs]), []);
+});
 test('audited real fixture sources qualify; new reachable helpers/tests execute, unknown files do not', () => {
   const files = blobs();
   for (const path of ['enablement/local-tests/run.ts', 'enablement/ci/select.test.ts']) files.set(path, readFileSync(join(source, path), 'utf8'));
@@ -74,6 +94,7 @@ test('complete Git deltas use one local/CI authority, safe additions execute and
     for (const path of ['capture/desktop/provider.rs', 'enablement/local-tests/run.ts', 'enablement/verification.py', 'enablement/local-tests/unknown.ts']) {
       git('reset', '--hard', good); put(path, '// native or unknown boundary'); head = commit();
       assert.equal(selectRange(base, head, dir).plan.root, true, path);
+      if (path === 'enablement/local-tests/run.ts') assert.equal(selectRange(base, head, dir).fixtureMac, true);
     }
     git('reset', '--hard', good);
     chmodSync(join(dir, 'enablement/local-tests/fixtures/runner.ts'), 0o755); head = commit();

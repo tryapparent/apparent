@@ -117,8 +117,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const required = {linux: !mac && (plan.root || plan.engine || plan.desktop || plan.client),
       macos: mac && (macPlan.root || macPlan.engine || macPlan.desktop || macPlan.client),
       portable: plan.browser || plan.service || plan.tools || plan.foreground, 'onboarding-policy': plan.onboarding,
-      'record-media': plan.root};
+      'record-media': plan.root, 'fixture-mac': mac && process.env.FIXTURE_MAC === 'true'};
     const reuse = Object.fromEntries(Object.entries(JSON.parse(process.env.CI_REUSE || '{}')).map(([key,value]) => [key, value === 'true']));
-    if (!accepted(JSON.parse(process.env.CI_NEEDS!), required, {...reuse, 'hermes-macos': reuse.hermes_macos})) process.exit(1);
+    if (!accepted(JSON.parse(process.env.CI_NEEDS!), required, {...reuse, 'fixture-mac': false, 'hermes-macos': reuse.hermes_macos})) process.exit(1);
   }
 }
