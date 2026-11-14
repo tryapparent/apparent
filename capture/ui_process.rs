@@ -16,6 +16,13 @@ impl UiChild {
         Self(child)
     }
 
+    pub(crate) fn id(&self)->u32 { self.0.lock().unwrap().id() }
+    /// Reader-thread-only snapshot; observes exit without owning or retiring the child.
+    pub(crate) fn private_exit_probe(&self, observe:impl FnOnce(u32,std::io::Result<Option<ExitStatus>>)+Send+'static)->Box<dyn FnOnce()+Send> {
+        let child=self.0.clone();
+        Box::new(move||{let mut child=child.lock().unwrap();let id=child.id();let status=child.try_wait();
+            observe(id,status);})
+    }
     pub(crate) fn try_wait(&mut self) -> std::io::Result<Option<ExitStatus>> {
         self.0.lock().unwrap().try_wait()
     }

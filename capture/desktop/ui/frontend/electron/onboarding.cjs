@@ -1,3 +1,28 @@
+// Temporary PRIVATE diagnostic: armed once by reset or first terminal, never setup.
+// Async writes; opt-in terminal settlement changes exit timing by up to a 25ms
+// timer plus event-loop scheduling delay. This is not a durability guarantee.
+function privateTrace(directory=process.env.APPARENT_PRIVATE_PRACTICE_TRACE_DIR,io=require('node:fs/promises')){
+ if(!directory)return {arm(){},armBatch(){},emit(){},settle(){return null}};
+ let start=null,ready,expiry,handle,pending=null,sealed=false,dead=false,capped=false,expiring=false;
+ let bytes=0,dropped=0,first=null,firstWritten=false;const queue=[],limit=1024*1024;
+ const elapsed=()=>start===null?0:Number((process.hrtime.bigint()-start)/1000n);
+ function close(){if(handle){const h=handle;handle=null;void h.close().catch(()=>{});}}
+ function arm(){if(start!==null)return;start=process.hrtime.bigint();
+  ready=(async()=>{const m=await io.lstat(directory);if(!m.isDirectory()||(m.mode&0o777)!==0o700||m.uid!==process.getuid())throw Error('private trace directory');return io.open(require('node:path').join(directory,'host-'+process.pid+'.jsonl'),require('node:fs').constants.O_CREAT|require('node:fs').constants.O_EXCL|require('node:fs').constants.O_WRONLY|require('node:fs').constants.O_NOFOLLOW,0o600)})().catch(()=>{dead=true;queue.length=0;return null});
+  expiry=setTimeout(()=>{expiring=true;queue.length=0;void drain();},30000);expiry.unref();
+ }
+ function drain(){if(pending)return pending;if(dead)return Promise.resolve();
+  pending=(async()=>{try{handle=await ready;if(!handle)return;while(!dead){const priority=(!firstWritten&&first)||expiring;const r=!firstWritten&&first?(firstWritten=true,first):expiring?{event:'trace-expired',pid:process.pid,monoUs:elapsed(),wallMs:Date.now()}:queue.shift();if(!r)break;const line=JSON.stringify({...r,dropped})+'\n';if(!priority&&bytes+Buffer.byteLength(line)>limit-4096){capped=true;await handle.writeFile(JSON.stringify({event:'trace-cap',dropped,pid:process.pid,wallMs:Date.now(),monoUs:elapsed()})+'\n');queue.length=0;continue;}bytes+=Buffer.byteLength(line);await handle.writeFile(line);if(r.event==='trace-expired'){dead=true;break;}}}catch{dead=true;queue.length=0;}finally{pending=null;if(dead)close();}})();return pending;
+ }
+ return {arm,armBatch(batch){if(Array.isArray(batch.events)&&batch.events.some(e=>e?.type==='reset'))arm();},emit(event,fields={},terminal=false){try{if(terminal)arm();if(start===null||sealed||dead||expiring||elapsed()>=30000000)return;if(capped&&(!terminal||first)){dropped++;return;}
+  let r={event,...(typeof fields==='function'?fields():fields),pid:process.pid,monoUs:elapsed(),wallMs:Date.now()};
+  if(Buffer.byteLength(JSON.stringify(r))>2048){dropped++;r={event,pid:process.pid,monoUs:elapsed(),wallMs:Date.now(),detailDropped:true};}
+  if(terminal&&!first)first=r;else if(queue.length<256)queue.push(r);else dropped++;void drain();}catch{}},
+  settle(){if(start===null)return null;sealed=true;return new Promise(resolve=>{let done=false;const finish=()=>{if(done)return;done=true;clearTimeout(timer);dead=true;queue.length=0;if(!pending)close();resolve();};const timer=setTimeout(finish,25);void drain().then(finish,finish);});}
+ };
+}
+const trace=privateTrace();
+function traceIdentity(v){const out={};for(const k of ['source','transport','attempt','capture','sequence','intent'])out[k]=typeof v?.[k]==='string'&&/^[0-9]{1,20}$/.test(v[k])?v[k]:'invalid-or-null';return out;}
 const {PracticeHost}=require(process.versions.electron?'../dist/onboarding-practice-host.cjs':'./onboarding/practice-host.ts');
 const {transparentBackgroundColor}=require('@apparent/ui/window-theme');
 const {parseAction}=require('./onboarding-protocol.cjs');
@@ -39,13 +64,13 @@ function parentChannel(output,onLost){
   return {
     send(action){
       if(!connected)return false;
-      try{output.write(JSON.stringify(typeof action==='string'?{action}:action)+'\n',error=>{if(error)lost(error)});return true;}
+      try{trace.emit('reply-write-request',()=>traceIdentity(action));output.write(JSON.stringify(typeof action==='string'?{action}:action)+'\n',error=>{trace.emit(error?'reply-write-error':'reply-write-callback',()=>traceIdentity(action),!!error);if(error)lost(error)});return true;}
       catch(error){lost(error);return false;}
     },
     close(){connected=false},
   };
 }
-module.exports={project,actions,coachDimensions,setupDimensions,nativeRectangle,coachPosition,parentChannel};
+module.exports={privateTrace,traceIdentity,project,actions,coachDimensions,setupDimensions,nativeRectangle,coachPosition,parentChannel};
 if(!process.versions.electron) return;
 const { app, BrowserWindow, ipcMain, screen, session } = require('electron');
 const {removeCompositorBorder}=require('../dist/onboarding-hyprland.cjs');
@@ -64,10 +89,14 @@ const channel=parentChannel(process.stdout,error=>{
   if(!expected)console.error('Onboarding parent channel failed:',error);
   shutdown(expected?0:1);
 });
-function shutdown(code=0){
+function shutdown(code=0,reason='shutdown'){
   if(closing)return;
+  // Record the decision before diagnostic settlement; close admission immediately.
   closing=true;channel.close();connect?.close();
-  if(code)app.exit(code);else app.quit();
+  trace.emit(reason,{code},true);
+  const exit=()=>{if(code)app.exit(code);else app.quit();};
+  const settlement=trace.settle();
+  if(settlement)void settlement.then(exit,exit);else exit();
 }
 app.whenReady().then(()=>{
   app.dock?.hide();session.defaultSession.setPermissionRequestHandler((_w,_p,cb)=>cb(false));
@@ -99,7 +128,7 @@ app.whenReady().then(()=>{
   window.webContents.on('render-process-gone',()=>connect.close());
   ipcMain.handle('onboarding:state',(e,...args)=>{if(!valid(e)||args.length)throw Error('Forbidden state request');return state});
   ipcMain.handle('onboarding:action',(e,...args)=>{if(!valid(e)||args.length!==1)throw Error('Forbidden onboarding action');return channel.send(parseAction(args[0]))});
-  window.webContents.on('render-process-gone',()=>shutdown(1));
+  window.webContents.on('render-process-gone',(_e,details)=>{trace.emit('render-process-gone',{reason:['clean-exit','abnormal-exit','killed','crashed','oom','launch-failed','integrity-failure'].includes(details.reason)?details.reason:'other',exitCode:details.exitCode},true);shutdown(1,'render-gone-shutdown')});
   window.webContents.on('did-finish-load',()=>{if(state)present(state)});
   window.on('close',event=>{if(!closing&&state?.boardView){event.preventDefault();channel.send({action:'board',id:state.boardView.id,operation:'close'});}});
   window.on('closed',()=>{if(!closing)channel.send('close');shutdown()});
@@ -108,20 +137,22 @@ app.whenReady().then(()=>{
   process.stdin.on('data',chunk=>{
     if(closing)return;
     buffer+=chunk;
-    if(buffer.length>16777216){shutdown(1);return;}
+    if(buffer.length>16777216){shutdown(1,'stdin-overflow');return;}
     let end;
-    while((end=buffer.indexOf('\n'))>=0){
+    while(!closing&&(end=buffer.indexOf('\n'))>=0){
       const line=buffer.slice(0,end);buffer=buffer.slice(end+1);
       let v;
-      try{v=JSON.parse(line)}catch{console.error('Invalid onboarding parent message');shutdown(1);return;}
-      if(!v||typeof v!=='object'||Array.isArray(v)){shutdown(1);return;}
+      try{v=JSON.parse(line)}catch{console.error('Invalid onboarding parent message');shutdown(1,'malformed-json');return;}
+      if(!v||typeof v!=='object'||Array.isArray(v)){shutdown(1,'non-object');return;}
       if(v.type==='practice-batch'){
-        try{const reply=practiceHost.accept(v);practiceEnabled=true;channel.send(reply);
-          if(state){state={...state,practice:reply.stage};present(state);}}
-        catch{shutdown(1);return;}
+        trace.armBatch(v);
+        let stage='host-accept';trace.emit('batch-receive',()=>traceIdentity(v));
+        try{const reply=practiceHost.accept(v);trace.emit('host-accept',()=>traceIdentity(reply));practiceEnabled=true;stage='reply-send';channel.send(reply);
+          if(state){stage='present';state={...state,practice:reply.stage};present(state);}}
+        catch{trace.emit(stage==='host-accept'?'protocol-reject':stage==='present'?'present-exception':'reply-send-exception',()=>traceIdentity(v),true);shutdown(1,'practice-failure');return;}
         continue;
       }
-      if(v.type==='close'){shutdown();return;}
+      if(v.type==='close'){shutdown(0,'parent-close');return;}
       if(v.type==='hide'){if(state?.step!=='try-it')window.hide();continue;}
       if(v.type==='show'){if(state)present(state,true);continue;}
       if(v.type==='desktop-shortcut'){
@@ -134,9 +165,11 @@ app.whenReady().then(()=>{
       if(next){if(practiceEnabled)next.practice=practiceHost.state.stage;state=next;const accepted=completedSelection(next);if(accepted)channel.send(accepted);present(next);}
     }
   });
-  process.stdin.on('end',()=>shutdown());process.stdin.on('error',error=>{console.error('Onboarding input failed:',error);shutdown(1)});process.stdin.resume();
+  process.stdin.on('end',()=>shutdown(0,'stdin-eof'));process.stdin.on('error',error=>{console.error('Onboarding input failed:',error);shutdown(1)});process.stdin.resume();
 });
 function present(v,activate=false){
+ let diagnosticStage='entry';try{
+  trace.emit('present-request',{phase:phases.has(v.practice)?v.practice:null});
   if(closing||!window||window.isDestroyed())return;
   // Linux adapters report X11 pixels; Electron places windows in logical DIP.
   // macOS adapter coordinates are already points.
@@ -148,31 +181,33 @@ function present(v,activate=false){
   const area=target.workArea;
   const shortcut=v.step==='shortcut'||(v.step==='try-it'&&!coach);
   const {width,height}=board?{width:Math.min(area.width,720),height:Math.min(area.height,540)}:coach?coachDimensions(area,v.practice):setupDimensions(area,shortcut);
+  trace.emit('present-layout',()=>({area,width,height}));
   const mode=`${board}:${coach}:${width}:${height}`;
   if(lastMode!==mode){
-    window.setAlwaysOnTop(coach||board,'floating');
-    window.setHasShadow(!coach); // The coach card paints its own shaped shadow, not a rectangular window shadow.
+    (diagnosticStage='setAlwaysOnTop',window.setAlwaysOnTop).call(window,coach||board,'floating');
+    (diagnosticStage='setHasShadow',window.setHasShadow).call(window,!coach); // The coach card paints its own shaped shadow, not a rectangular window shadow.
     // X11 fixed-size constraints must change together, only when the mode changes.
-    window.setMaximumSize(0,0);window.setMinimumSize(width,height);window.setMaximumSize(width,height);
-    window.setSize(width,height,false);
-    window.setVisibleOnAllWorkspaces(coach||board,{visibleOnFullScreen:coach||board});
+    (diagnosticStage='setMaximumSize',window.setMaximumSize).call(window,0,0);(diagnosticStage='setMinimumSize',window.setMinimumSize).call(window,width,height);(diagnosticStage='setMaximumSize',window.setMaximumSize).call(window,width,height);
+    (diagnosticStage='setSize',window.setSize).call(window,width,height,false);
+    (diagnosticStage='setVisibleOnAllWorkspaces',window.setVisibleOnAllWorkspaces).call(window,coach||board,{visibleOnFullScreen:coach||board});
     lastMode=mode;lastPlacement='';
   }
   if(board){
-    if(lastPlacement!==v.boardView.id){const rect=v.practiceBoard;window.setPosition(Math.round(rect[0]),Math.round(rect[1]),false);window.focus();lastPlacement=v.boardView.id;}
+    if(lastPlacement!==v.boardView.id){const rect=v.practiceBoard;(diagnosticStage='setPosition',window.setPosition).call(window,Math.round(rect[0]),Math.round(rect[1]),false);(diagnosticStage='focus',window.focus).call(window,);lastPlacement=v.boardView.id;}
   } else if(coach){
     const placement=coachPosition(area,v.anchor,v.practiceBoard,v.practice);
     // Reposition on stage/target changes; leave a user's manual adjustment alone between ticks.
     const key=JSON.stringify([v.practice,v.anchor,v.practiceBoard,area]);
-    if(key!==lastPlacement){window.setPosition(placement.x,placement.y,false);lastPlacement=key;}
-    const actual=window.getBounds();
+    if(key!==lastPlacement){(diagnosticStage='setPosition',window.setPosition).call(window,placement.x,placement.y,false);lastPlacement=key;}
+    const actual=(diagnosticStage='getBounds',window.getBounds).call(window,);
     v={...v,coachArrow:placement.arrow,coachPointsUp:placement.pointsUp&&actual.x===placement.x&&actual.y===placement.y};
   } else {
     const key=JSON.stringify(['setup',height,area]);
-    if(key!==lastPlacement){window.setPosition(area.x+Math.max(0,Math.round((area.width-width)/2)),area.y+Math.max(0,Math.round((area.height-height)/2)),false);lastPlacement=key;}
+    if(key!==lastPlacement){(diagnosticStage='setPosition',window.setPosition).call(window,area.x+Math.max(0,Math.round((area.width-width)/2)),area.y+Math.max(0,Math.round((area.height-height)/2)),false);lastPlacement=key;}
   }
-  window.webContents.send('onboarding:state',v);
-  if(!window.isVisible()||activate){if(coach)window.showInactive();else window.show();}
+  diagnosticStage='send-state';window.webContents.send('onboarding:state',v);
+  diagnosticStage='show';if(!window.isVisible()||activate){if(coach)window.showInactive();else window.show();}
+  trace.emit('present-result',()=>({bounds:(diagnosticStage='getBounds',window.getBounds).call(window,),visible:window.isVisible(),loading:window.webContents.isLoading(),crashed:window.webContents.isCrashed()}));
   if(!borderReady&&!borderPending&&borderAttempts<8){
     borderPending=true;borderAttempts++;
     void removeCompositorBorder(process.pid,window.getTitle()).then(()=>{borderReady=true},()=>{
@@ -180,4 +215,5 @@ function present(v,activate=false){
       // mapping readiness; never change a different window as a fallback.
     }).finally(()=>{borderPending=false});
   }
+ }catch(error){trace.emit('present-exception',{stage:diagnosticStage},true);throw error;}
 }

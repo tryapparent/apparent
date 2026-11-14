@@ -24,6 +24,10 @@ use serde::{Deserialize, Serialize};
 
 #[path = "onboarding/pipe.rs"]
 mod pipe;
+mod private_trace;
+fn private_child_exit(pid:u32,status:std::io::Result<Option<std::process::ExitStatus>>) {
+    private_trace::emit("stdout-child-status",||match status {Ok(Some(s))=>format!("child={pid} exited={s}"),Ok(None)=>format!("child={pid} alive=true"),Err(e)=>format!("child={pid} error={:?}",e.kind())});
+}
 #[path = "onboarding/practice_host.rs"]
 mod practice_host;
 
@@ -1001,6 +1005,7 @@ pub enum Event {
 
 impl Event {
     pub fn for_current_transport(self, active: Option<u64>) -> Option<Self> {
+        if let Self::Transport{generation,..}=&self {private_trace::emit("gui-transport-scope",||format!("generation={generation} active={active:?}"));}
         match self {
             Self::Transport { generation, event } if Some(generation) == active => match *event {
                 Self::Transport { .. } | Self::Session { .. } => None,
@@ -1011,6 +1016,7 @@ impl Event {
         }
     }
     pub fn for_current_session(self, active: Option<u64>) -> Option<Self> {
+        if let Self::Session{source,..}=&self {private_trace::emit("gui-session-scope",||format!("source={source} active={active:?}"));}
         match self {
             Self::Session { source, event } if Some(source) == active => match *event {
                 Self::Session { .. } => None,
@@ -1342,19 +1348,21 @@ impl Session {
                 return Err(error.into());
             }
         };
-        if let Some(stdout) = child.stdout.take() { Self::read_actions(stdout, events); }
-        Ok(Transport::Renderer { child: crate::capture::ui_process::UiChild::new(child), input })
+        let stdout=child.stdout.take();
+        let child=crate::capture::ui_process::UiChild::new(child);
+        if let Some(stdout)=stdout {Self::read_actions(stdout,events,if std::env::var_os("APPARENT_PRIVATE_PRACTICE_TRACE_DIR").is_some(){Some(child.private_exit_probe(private_child_exit))}else{None});}
+        Ok(Transport::Renderer { child, input })
     }
 
     fn spawn_transport(command: &mut std::process::Command, events: impl Fn(Event) + Send + Sync + Clone + 'static) -> anyhow::Result<Transport> {
         command.stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null());
         let mut child = command.spawn()?;
         let stdin = child.stdin.take();
-        if let Some(stdout) = child.stdout.take() { Self::read_actions(stdout, events); }
+        if let Some(stdout) = child.stdout.take() { Self::read_actions(stdout, events, None); }
         Ok(Transport::Helper { child: crate::capture::ui_process::UiChild::new(child), stdin })
     }
 
-    fn read_actions(stdout: std::process::ChildStdout, events: impl Fn(Event)+Send+Sync+Clone+'static) {
+    fn read_actions(stdout: std::process::ChildStdout, events: impl Fn(Event)+Send+Sync+Clone+'static, exit_probe:Option<Box<dyn FnOnce()+Send>>) {
         std::thread::spawn(move || {
             let mut closed = false;
             {
@@ -1362,16 +1370,17 @@ impl Session {
                 loop {
                     let mut line = Vec::new();
                     let read = read_protocol_line(&mut reader, &mut line);
-                    if !matches!(read, Ok(n) if n > 0 && n <= 65_536) { break; }
-                    let Ok(line) = std::str::from_utf8(&line) else { continue; };
+                    if !matches!(read, Ok(n) if n > 0 && n <= 65_536) {
+                        private_trace::failure("stdout-end",||match &read {Ok(0)=>"eof".into(),Ok(n)=>format!("oversize={n}"),Err(e)=>format!("error={:?}",e.kind())});break; }
+                    let Ok(line) = std::str::from_utf8(&line) else { private_trace::emit("stdout-invalid-utf8",||String::new());continue; };
                     let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) else {
-                        continue;
+                        private_trace::emit("stdout-invalid-json",||String::new());continue;
                     };
                     if value.get("action").and_then(|v| v.as_str()) == Some("board") {
                         events(Event::Board(value));
                         continue;
                     }
-                    if value["type"]=="practice-disposition" {events(Event::Practice(value));continue;}
+                    if value["type"]=="practice-disposition" {private_trace::emit("raw-reply-before-gui",||private_trace::identity(&value));events(Event::Practice(value));continue;}
                     let Some(action) = value.get("action").and_then(|v| v.as_str()) else {
                         continue;
                     };
@@ -1428,6 +1437,7 @@ impl Session {
                     events(Event::Action(action));
                 }
             }
+            if let Some(probe)=exit_probe {probe();}
             if !closed {
                 crate::capture::engine::runtime::apparent_log("onboarding renderer transport stdout closed");
                 events(Event::Exited);
@@ -1436,6 +1446,7 @@ impl Session {
     }
 
     pub fn restore_native(&mut self) -> bool {
+        private_trace::failure("restore-native",||format!("source={} transport={} hidden={}",self.source,self.transport_generation,self.flow.hidden));
         // Invalidate queued actions/EOF before dropping the old child's input.
         if self.fallback.is_some() { self.transport_generation = next_session_source(); }
         if self.fallback.is_some() && self.flow.hidden {
@@ -1496,6 +1507,7 @@ impl Session {
     /// Feeds the flow and carries out what the window can do itself. Returns what needs the
     /// app: `Close` or `Relaunch`.
     pub fn input(&mut self, input: Input) -> Effect {
+        if matches!(&input,Input::CaptureStarted){private_trace::arm();}
         if matches!(&input, Input::ShortcutChosen) { self.shortcut_choice_down = true; }
         if self.practice.is_some() && self.flow.step()==Step::TryIt && !self.fallback_pending {
             match &input {
@@ -1761,8 +1773,9 @@ impl Session {
         if self.fallback_pending {return Effect::None;}
         let board=self.board_view.as_ref().and_then(|v|v["id"].as_str()).map(str::to_owned);
         let Some(p)=self.practice.as_mut() else {return Effect::None;};
-        if p.pending.len()>=32 {self.restore_native();return Effect::None;}
+        if p.pending.len()>=32 {private_trace::failure("practice-pending-overflow",||format!("source={} transport={}",self.source,self.transport_generation));self.restore_native();return Effect::None;}
         let batch=p.batch(self.source,self.transport_generation,board,events,intent);
+        private_trace::emit("batch",||private_trace::identity(&batch));
         #[cfg(test)]
         if matches!(self.transport,Transport::InProcess(_)) {
             let reply=self.practice.as_ref().unwrap().test_reply();return self.practice_disposition(reply);
@@ -1771,9 +1784,10 @@ impl Session {
         self.send(&batch);Effect::None
     }
     pub fn practice_disposition(&mut self, value:serde_json::Value)->Effect {
+        private_trace::emit("gui-disposition",||private_trace::identity(&value));
         if self.practice.is_none() || self.fallback_pending {return Effect::None;}
         let active=self.practice_active();
-        let Ok(sequence)=self.practice.as_ref().unwrap().acknowledgement(&value) else {self.restore_native();return Effect::None;};
+        let Ok(sequence)=self.practice.as_ref().unwrap().acknowledgement(&value) else {private_trace::failure("disposition-identity",||private_trace::identity(&value));self.restore_native();return Effect::None;};
         if let Transport::Renderer {input,..}=&self.transport {
             if !input.ack(&sequence) {self.restore_native();return Effect::None;}
         }
@@ -1997,11 +2011,13 @@ fn retire_transport(transport: Transport) {
         Transport::InProcess(_) => None,
     };
     if let Some(mut child) = child {
+        private_trace::emit("parent-retire",||format!("child={}",child.id()));
         std::thread::spawn(move || {
             for _ in 0..20 {
-                if !matches!(child.try_wait(), Ok(None)) { return; }
+                match child.try_wait(){Ok(None)=>{},Ok(Some(status))=>{private_trace::emit("child-exit-before-kill",||format!("child={} status={status}",child.id()));return},Err(e)=>{private_trace::emit("child-wait-error",||format!("kind={:?}",e.kind()));return}}
                 std::thread::sleep(std::time::Duration::from_millis(50));
             }
+            private_trace::emit("parent-kill",||format!("child={}",child.id()));
             let _ = child.kill();
             let _ = child.wait();
         });
