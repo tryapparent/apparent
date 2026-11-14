@@ -34,8 +34,15 @@ export function checkNativeInputs(root: string, platform = process.platform): st
     'capture/desktop/ui/frontend/electron/record-completion/worker.js',
     'capture/desktop/ui/frontend/electron/record-completion/policy.js',
     'capture/desktop/ui/frontend/electron/record-completion/package.json',
+    'capture/desktop/ui/frontend/electron/record-media/worker.js',
+    'capture/desktop/ui/frontend/electron/record-media/policy.js',
+    'capture/desktop/ui/frontend/electron/record-media/package.json',
+    'capture/desktop/ui/frontend/electron/record-media/node_modules/@apparent/engine-sdk/dist/index.js',
+    'capture/desktop/ui/frontend/electron/record-media/native/apparent-engine-media',
+    'capture/desktop/ui/frontend/electron/record-media/native/manifest.json',
   ];
   if (platform === 'darwin') inputs.push(
+    'capture/desktop/ui/frontend/electron/record-media/native/apparent-engine-probe',
     'capture/desktop/ui/frontend/tests/mac-storage-native.cjs',
     'capture/desktop/scripts/native/copy-capture-id.swift',
     'capture/desktop/assets/Apparent.icns',
@@ -58,7 +65,7 @@ export function prepareNativeInputs(root: string, platform = process.platform): 
   // Refuse a missing runtime before paying for any TypeScript compilation.
   checkElectron(root);
   const frontend = resolve(root, 'capture/desktop/ui/frontend');
-  for (const generator of ['storage-policy', 'connect-transport', 'pill']) {
+  for (const generator of ['storage-policy', 'connect-transport', 'pill', 'record-media']) {
     execFileSync(process.execPath, ['--experimental-strip-types', `scripts/build-${generator}.ts`],
       {cwd: frontend, stdio: 'inherit'});
   }

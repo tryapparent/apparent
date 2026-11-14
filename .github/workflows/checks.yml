@@ -120,6 +120,28 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  record-media:
+    name: Record media policy
+    needs: select
+    if: >-
+      !cancelled() && (needs.select.result != 'success' || fromJSON(needs.select.outputs.plan).root)
+    runs-on: ubuntu-24.04
+    container: node:22.23.0-bookworm-slim
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: record/media
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check Record policy without Rust, Electron or native outputs
+        run: |
+          if command -v cargo || command -v rustc; then exit 1; fi
+          test ! -d ../../target
+          test ! -d ../../capture/desktop/ui/frontend/node_modules
+          node --experimental-strip-types ../../enablement/local-tests/run.ts --record-media
+
   onboarding-policy:
     name: Onboarding policy
     needs: select
@@ -155,9 +177,9 @@ jobs:
   # PR checkout is GitHub's proposed merge, so these checks cover integration.
   # Draft updates retain cheap feedback without allocating full platform suites.
   linux:
-    needs: [contracts, select, reuse, portable]
+    needs: [contracts, select, reuse, portable, record-media]
     if: >-
-      !cancelled() && needs.contracts.result == 'success' && (needs.portable.result == 'success' || needs.portable.result == 'skipped') &&
+      !cancelled() && needs.contracts.result == 'success' && (needs['record-media'].result == 'success' || needs['record-media'].result == 'skipped') && (needs.portable.result == 'success' || needs.portable.result == 'skipped') &&
       (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))
       && (needs.select.result != 'success' || needs.select.outputs.platform != 'false')
       && needs.reuse.outputs.linux != 'true'
@@ -189,12 +211,12 @@ jobs:
 
   macos:
     # Share the cheap admission barrier; neither full platform waits for the other.
-    needs: [contracts, select, reuse, portable]
+    needs: [contracts, select, reuse, portable, record-media]
     # Only a successful explicit false can exempt a reviewed ready-PR delta.
     # Renderer-only PRs retain Electron; only their root Rust job is omitted.
     # Failed/unknown selection keeps Mac coverage after the cheap guards pass.
     if: >-
-      !cancelled() && needs.contracts.result == 'success' && (needs.portable.result == 'success' || needs.portable.result == 'skipped') &&
+      !cancelled() && needs.contracts.result == 'success' && (needs['record-media'].result == 'success' || needs['record-media'].result == 'skipped') && (needs.portable.result == 'success' || needs.portable.result == 'skipped') &&
       (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))
       && (needs.select.result != 'success' || needs.select.outputs.macos != 'false' || needs.select.outputs.mac_rust == 'false')
       && (needs.select.result != 'success' || needs.select.outputs.platform != 'false')
@@ -341,7 +363,7 @@ jobs:
           args: -shellcheck= -pyflakes= .github/workflows/checks.yml .github/workflows/linux-updater-harness.yml .github/workflows/verification.yml .github/workflows/verification-platform.yml .github/workflows/release-linux.yml .github/workflows/release-mac-preview.yml .github/workflows/stream-public.yml .github/workflows/stream-connect.yml .github/workflows/hermes.yml
 
   tree-evidence:
-    needs: [select, contracts, linux, macos, portable, onboarding-policy]
+    needs: [select, contracts, linux, macos, portable, onboarding-policy, record-media]
     if: always() && !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.select.result == 'success'
     runs-on: ubuntu-24.04
     steps:
@@ -364,7 +386,7 @@ jobs:
 
   linux-admission:
     name: Linux verification
-    needs: [select, contracts, reuse, linux, portable, onboarding-policy]
+    needs: [select, contracts, reuse, linux, portable, onboarding-policy, record-media]
     if: always() && !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     steps:
@@ -384,7 +406,7 @@ jobs:
 
   macos-admission:
     name: Mac verification
-    needs: [select, contracts, reuse, macos, portable, onboarding-policy]
+    needs: [select, contracts, reuse, macos, portable, onboarding-policy, record-media]
     if: always() && !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     steps:
