@@ -78,6 +78,11 @@ function Pill() {
   if(view.phase==='hidden')return null;
   const uploading=view.phase==='completed' && view.actions.some(action=>action.label==='Cancel upload');
   const uploadStopped=view.phase==='completed' && (view.label.startsWith('Upload failed') || view.label.startsWith('Upload cancelled'));
+  // Keep the named X at the trailing edge in both visual and keyboard order,
+  // independent of the backend's action admission order.
+  const isClose=(id:string)=>id==='cancel'||id==='dismiss';
+  const controls=view.actions.filter(action=>action.id!=='notes')
+    .sort((a,b)=>Number(isClose(a.id))-Number(isClose(b.id)));
   return <main data-revision={view.revision} className="pill settings-shell" aria-label={view.phase==='selecting'?view.label:undefined} data-phase={view.phase} data-reduced={view.reducedMotion} data-warning={view.warning!==null}>
     <div className="pill-surface">
     <div className="pill-row">
@@ -95,7 +100,7 @@ function Pill() {
     {view.notice && <span className="notice" role="status">{view.notice}</span>}
     {error && <span role="alert">Action not confirmed. Use the recording shortcut or tray menu.</span>}
     {view.actions.length>0 && <div className="controls" role="group" aria-label="Recording controls" aria-busy={pending}>
-      {view.actions.filter(action=>action.id!=='notes').map(action=>{const Icon=action.label==='Cancel upload'?X:actionIcons[action.id];const iconOnly=action.id==='cancel'||action.id==='dismiss';return <Button key={action.id} variant={action.primary?'default':action.selected?'secondary':'ghost'}
+      {controls.map(action=>{const Icon=action.label==='Cancel upload'?X:actionIcons[action.id];const iconOnly=isClose(action.id);return <Button key={action.id} variant={action.primary?'default':action.selected?'secondary':'ghost'}
         size={iconOnly?'icon':'default'} data-icon-only={iconOnly} aria-label={action.label} title={iconOnly?action.label:undefined}
         data-primary={action.primary}
         aria-pressed={action.id.startsWith('select-')?action.selected:undefined}
