@@ -123,10 +123,20 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
   }).map(change => change.path) ?? [];
   const toolingManifests = new Set(['package.json', 'package-lock.json', 'renderer/window-coach.smoke.ts', 'renderer/tsconfig.json'].map(name => 'capture/desktop/ui/frontend/tests/onboarding/' + name));
   const supportedToolingAddition = (change: Change) => toolingManifests.has(change.path) && change.status === 'A' && regularFileChange(change);
+  // These reviewed adoption inputs retain the existing native/host consumers.
+  // This is addition admission, never a pure-policy/native-check exemption.
+  const practiceAdoptionInputs = new Set([
+    'capture/desktop/settings/onboarding/practice_host.rs',
+    ...['electron/onboarding/practice.ts','electron/onboarding/practice-host.ts',
+      'tests/onboarding/renderer/practice.smoke.ts','tests/onboarding/practice/practice-native.ts',
+      ...['README.md','corpus.json','generator.json','provenance.json'].map(name=>'tests/onboarding/practice/fixtures/'+name)]
+      .map(path=>'capture/desktop/ui/frontend/'+path),
+  ]);
   const supportedOnboardingAddition = (change: Change) => change.status === 'A' && regularFileChange(change) && (
     // Audited native resource adapter. This admits its existing native consumers;
     // it does not grant the pure-policy or portable renderer exemption.
     change.path === 'capture/desktop/settings/onboarding/pipe.rs' ||
+    practiceAdoptionInputs.has(change.path) ||
     onboardingPureInputs.has(change.path) ||
     (change.path.startsWith('capture/desktop/ui/frontend/src/onboarding/') && /\.(tsx|css)$/.test(change.path)) ||
     (change.path.startsWith('capture/desktop/ui/frontend/tests/onboarding/') && /\.test\.ts$/.test(change.path))
