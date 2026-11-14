@@ -22,6 +22,9 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+#[path = "onboarding/pipe.rs"]
+mod pipe;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Permission {
@@ -1070,6 +1073,10 @@ fn reconcile_native_grants(
 /// in-process GPUI window (`crate::onboarding_window`) on Windows. Both take the same JSON
 /// messages and report the same button actions.
 enum Transport {
+    Renderer {
+        child: crate::capture::ui_process::UiChild,
+        input: pipe::Input,
+    },
     Helper {
         child: crate::capture::ui_process::UiChild,
         stdin: Option<std::process::ChildStdin>,
@@ -1319,7 +1326,21 @@ impl Session {
         generation: u64,
         events: impl Fn(Event) + Send + Sync + Clone + 'static,
     ) -> anyhow::Result<Transport> {
-        Self::spawn_transport(command, Self::scope_transport(generation, events))
+        let events = Self::scope_transport(generation, events);
+        command.stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null());
+        let mut child = command.spawn()?;
+        let stdin = child.stdin.take().ok_or_else(|| anyhow::anyhow!("missing onboarding input"))?;
+        let lost = events.clone();
+        let input = match pipe::Input::new(stdin, move || lost(Event::Exited)) {
+            Ok(input) => input,
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error.into());
+            }
+        };
+        if let Some(stdout) = child.stdout.take() { Self::read_actions(stdout, events); }
+        Ok(Transport::Renderer { child: crate::capture::ui_process::UiChild::new(child), input })
     }
 
     fn spawn_transport(command: &mut std::process::Command, events: impl Fn(Event) + Send + Sync + Clone + 'static) -> anyhow::Result<Transport> {
@@ -1864,6 +1885,11 @@ impl Session {
     fn send(&mut self, message: &serde_json::Value) {
         use std::io::Write;
         match &mut self.transport {
+            Transport::Renderer { input, .. } => {
+                let mut line = message.to_string().into_bytes();
+                line.push(b'\n');
+                input.send(line);
+            }
             Transport::Helper { stdin, .. } => {
                 if let Some(pipe) = stdin.as_mut()
                     && writeln!(pipe, "{message}")
@@ -1918,8 +1944,12 @@ fn read_protocol_line(reader: &mut impl std::io::BufRead, line: &mut Vec<u8>) ->
 }
 
 fn retire_transport(transport: Transport) {
-    if let Transport::Helper { mut child, stdin } = transport {
-        drop(stdin);
+    let child = match transport {
+        Transport::Helper { child, stdin } => { drop(stdin); Some(child) }
+        Transport::Renderer { child, input } => { drop(input); Some(child) }
+        Transport::InProcess(_) => None,
+    };
+    if let Some(mut child) = child {
         std::thread::spawn(move || {
             for _ in 0..20 {
                 if !matches!(child.try_wait(), Ok(None)) { return; }
@@ -3334,6 +3364,66 @@ mod local_practice_tests {
 #[cfg(test)]
 mod adapter_regressions {
     use super::*;
+    #[test]
+    fn live_renderer_nonreader_exits_through_scoped_hidden_fallback() {
+        let mut session = Session::for_test(Flow::tour(Step::TryIt, None));
+        session.flow.hidden = true;
+        let source = session.source();
+        let generation = session.transport_generation();
+        let (tx, rx) = flume::unbounded();
+        let events = Session::scope_events(source, move |event| { let _ = tx.send(event); });
+        let mut command = std::process::Command::new("sleep");
+        command.arg("30");
+        session.transport = Session::spawn_renderer_transport(&mut command, generation, events).unwrap();
+        let start = std::time::Instant::now();
+        session.send(&serde_json::json!({"type":"state", "payload":"x".repeat(1024*1024)}));
+        assert!(start.elapsed() < std::time::Duration::from_millis(500), "capture thread waited on child input");
+        let event = rx.recv_timeout(std::time::Duration::from_secs(5)).expect("nonreader must trigger fallback without EOF");
+        assert!(matches!(event.for_current_session(Some(source)).unwrap()
+            .for_current_transport(Some(generation)), Some(Event::Exited)));
+        if let Transport::Renderer { child, .. } = &mut session.transport {
+            assert!(child.try_wait().unwrap().is_none(), "timeout must precede child EOF");
+            child.kill().unwrap();
+            child.wait().unwrap();
+        }
+        let (tx, _rx) = flume::unbounded();
+        session.fallback = Some(Box::new(move |_| Ok(Transport::InProcess(Some(tx.clone())))));
+        assert!(session.restore_native());
+        assert_ne!(generation, session.transport_generation());
+        assert!(session.flow.hidden && session.fallback_pending);
+        assert!(!session.flow.first_capture_completed);
+        assert!(Event::Transport { generation, event: Box::new(Event::Action("practice-finish".into())) }
+            .for_current_transport(Some(session.transport_generation())).is_none());
+    }
+
+    #[test]
+    #[ignore = "requires built Electron host and an isolated display; set APPARENT_TEST_ONBOARDING_APP"]
+    fn renderer_parent_pipe_delivers_to_the_production_electron_host() {
+        let app = std::env::var_os("APPARENT_TEST_ONBOARDING_APP").expect("built host directory");
+        let runtime = std::env::var_os("APPARENT_TEST_ELECTRON").expect("Electron executable");
+        struct Profile(std::path::PathBuf);
+        impl Drop for Profile { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); } }
+        let profile = Profile(std::env::temp_dir().join(format!("onboarding-pipe-{}", crate::shared::ids::make_bundle_id())));
+        std::fs::create_dir(&profile.0).unwrap();
+        let mut command = std::process::Command::new(runtime);
+        command.arg(app).args(["--onboarding", "--no-sandbox"])
+            .env("APPARENT_UI_PROFILE", &profile.0);
+        let (tx, rx) = flume::unbounded();
+        let mut session = Session::for_test(Flow::tour(Step::TryIt, None));
+        let generation = session.transport_generation();
+        session.transport = Session::spawn_renderer_transport(&mut command, generation,
+            move |event| { let _ = tx.send(event); }).unwrap();
+        // Real parent serialization -> bounded writer -> production host stdin.
+        // The accepted native choice makes the trusted host return its existing receipt.
+        session.send(&serde_json::json!({"type":"state", "step":"shortcut", "ready":true, "rows":[],
+            "shortcut":"Test", "shortcutChosen":true, "shortcutSelectionReleased":true, "firstCaptureRequired":true}));
+        let event = rx.recv_timeout(std::time::Duration::from_secs(15)).expect("host receipt");
+        assert!(matches!(event.for_current_transport(Some(generation)),
+            Some(Event::Action(action)) if action=="accept-shortcut-choice:Test"));
+        session.send(&serde_json::json!({"type":"close"}));
+        assert!(matches!(rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap()
+            .for_current_transport(Some(generation)), Some(Event::Exited)));
+    }
     #[test]
     fn bounded_reader_limits_each_line_without_limiting_the_stream() {
         let mut reader = std::io::Cursor::new(b"{}\n{}\n");
