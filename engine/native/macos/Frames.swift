@@ -61,7 +61,12 @@ private actor SequentialFrames {
       let rawWidth = CVPixelBufferGetWidth(buffer), rawHeight = CVPixelBufferGetHeight(buffer)
       guard rawWidth > 0, rawHeight > 0, rawWidth <= 16384, rawHeight <= 16384,
             Int64(rawWidth) * Int64(rawHeight) <= 64 * 1024 * 1024 else { throw Failure.resourceLimit }
-      let image = CIImage(cvPixelBuffer: buffer).transformed(by: transform)
+      // Video transforms use a downward Y axis; Core Image uses an upward Y
+      // axis. Change basis on both sides (F * T * F). Normalizing the resulting
+      // extent below removes the origin translations without reversing rotation.
+      let flip = CGAffineTransform(scaleX: 1, y: -1)
+      let image = CIImage(cvPixelBuffer: buffer).transformed(by: flip)
+        .transformed(by: transform).transformed(by: flip)
       let bounds = image.extent
       guard bounds.minX.isFinite, bounds.minY.isFinite, bounds.width.isFinite, bounds.height.isFinite,
             bounds.width > 0, bounds.height > 0 else { throw Failure.sequentialImage }

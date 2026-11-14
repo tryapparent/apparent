@@ -61,7 +61,8 @@ export async function qualifyFrames(executable: string, directory: string, movie
   const oriented = readFileSync(orientation[0].file);
   for (const [y, channel] of [[16, 2], [48, 0]]) {
     const index = (y * 48 + 24) * 4;
-    assert(oriented[index + channel] > oriented[index + (2 - channel)] + 40, 'display rotation must preserve image orientation');
+    assert(oriented[index + channel] > oriented[index + (2 - channel)] + 40,
+      `display rotation must preserve image orientation: row=${y} rgba=${[...oriented.subarray(index, index + 4)]}`);
   }
 
   // Real source-time changes, with B frames and an open GOP. Unsorted requests,
