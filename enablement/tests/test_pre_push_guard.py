@@ -91,7 +91,7 @@ class PrePushGuardTests(unittest.TestCase):
         self.env.pop("T3_BUILD_JOBS", None)
         # Complete owner-level fallback is intentional for unknown history.
         # Stub expensive package tools, retaining the real selector and guards.
-        for directory in ("connect/client", "connect/service", "connect/web", "public/site",
+        for directory in ("connect/client", "connect/service", "connect/web", "connect/tooling/hosting", "public/site",
                           "capture/desktop/ui/frontend", "enablement/directory-width/tests", "hermes/tests"):
             (self.repo / directory).mkdir(parents=True, exist_ok=True)
         browser_tests = self.repo / "connect/web/test"
@@ -297,6 +297,7 @@ class PrePushGuardTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.log.read_text().splitlines(), [
             "bun install --frozen-lockfile", "npm test",
+            "npm ci --no-audit --no-fund", "npm test",
         ])
         result = self.push(env=dict(self.env, MOCK_STATUS="1"))
         self.assertNotEqual(result.returncode, 0)

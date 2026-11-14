@@ -309,6 +309,22 @@ jobs:
           node scripts/pages/prepare-pages.mjs
           node scripts/site-build/verify-composed.mjs
           npm run test:hosted
+      - name: Verify and seal the mounted production gateway
+        working-directory: connect/tooling/hosting
+        env:
+          VITE_HOSTED_API_ORIGIN: https://app.tryapparent.com/connect
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          node --experimental-strip-types scripts/seal.ts "${{ needs.admit.outputs.sha }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: connect-production-${{ needs.admit.outputs.sha }}
+          path: connect/tooling/hosting/.output/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -325,14 +341,11 @@ jobs:
     if: github.repository == 'tryapparent/apparent' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.HOSTED_CD_ENABLED == 'true'
     environment:
       name: hosted-production
-      url: https://hosted.tryapparent.com
+      url: https://app.tryapparent.com/connect
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-      HOSTED_D1_ID: ${{ vars.HOSTED_D1_ID }}
-      HOSTED_R2_BUCKET: ${{ vars.HOSTED_R2_BUCKET }}
-      HOSTED_GOOGLE_CLIENT_ID: ${{ vars.HOSTED_GOOGLE_CLIENT_ID }}
       WRANGLER_SEND_METRICS: 'false'
     steps:
       - uses: actions/checkout@v4
@@ -344,24 +357,20 @@ jobs:
         with:
           node-version: '22.23.0'
           cache: npm
-          cache-dependency-path: connect/service/package-lock.json
-      - run: npm ci && npm run build
-        working-directory: connect/service
-      - name: Render approved resource bindings (never apply migrations)
-        run: python3 public/site/scripts/cd/hosted_config.py
-      - name: Deploy current checked main and read back version and anonymous CORS
+          cache-dependency-path: connect/tooling/hosting/package-lock.json
+      - run: npm ci --no-audit --no-fund
+        working-directory: connect/tooling/hosting
+      - uses: actions/download-artifact@v4
+        with:
+          name: connect-production-${{ needs.admit.outputs.sha }}
+          path: connect/tooling/hosting/.output/
+      - name: Publish the tested artifact and verify its version, assets and anonymous CORS
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           set -euo pipefail
-          export GITHUB_SHA="${{ needs.admit.outputs.sha }}"
           test -n "$CLOUDFLARE_API_TOKEN"
-          git fetch origin main
-          node --experimental-strip-types enablement/ci/routing/streams.ts connect "$GITHUB_SHA"
-          cd connect/service
-          ./node_modules/.bin/wrangler deploy --config wrangler.cd.json --tag "$GITHUB_SHA" --message "GitHub Actions $GITHUB_RUN_ID commit $GITHUB_SHA" --strict --no-autoconfig
-          cd ../..
-          python3 public/site/scripts/cd/verify_worker.py "$GITHUB_SHA" > connect-service-receipt.json
+          node --experimental-strip-types connect/tooling/hosting/scripts/deploy.ts "${{ needs.admit.outputs.sha }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

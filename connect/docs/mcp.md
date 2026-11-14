@@ -141,8 +141,7 @@ Rollback removes the MCP route/package entrypoint and leaves stored formats,
 encryption defaults and consent unchanged. No schema migration, new cloud
 resource, directory listing or automatic public sharing is required.
 
-The live beta has a separately deployed mounted gateway and analytics behavior.
-Preserve its current assets, exact binding/secret profile, routes and cleanup
-schedule when adding MCP. The repository's hosted deployment template names a
-different Worker; it is not the live deployment profile. This feature does not
-activate that continuous-deployment gate or replace the published gateway.
+The mounted beta gateway is built from `connect/tooling/hosting` and automatically
+published after affected main verification. Delivery preserves its binding/secret
+profile, routes and cleanup schedule; the sealed browser assets and Worker version
+are checked after publication. See the Connect delivery section in the CI guide.
