@@ -541,7 +541,7 @@ pub struct Shrunk {
 /// then swaps it in. The new movie is written beside the bundle, not in it, so a copy to
 /// another Mac never picks up half of it. `None` when it was already small.
 pub fn shrink_video(bundle: &Path, video: &Path) -> Result<Option<Shrunk>> {
-    let probe = crate::capture::desktop::helper::probe(video)?;
+    let probe = crate::composition::media_probe::bundle_probe(video)?;
     if probe.width.max(probe.height) <= SHRINK_EDGE * 115 / 100 {
         return Ok(None);
     }
@@ -826,6 +826,21 @@ fn shrink_now(dir: &Path) -> std::result::Result<(), ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn small_movie_retention_observation_uses_engine_without_rewriting_media() {
+        let root = tempfile::tempdir().unwrap();
+        let video = root.path().join("recording.mp4");
+        let made = std::process::Command::new("ffmpeg").args([
+            "-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i", "color=c=blue:s=64x48:r=10:d=1",
+            "-c:v", "libx264", "-threads", "1", "-pix_fmt", "yuv420p",
+        ]).arg(&video).output().unwrap();
+        assert!(made.status.success(), "{}", String::from_utf8_lossy(&made.stderr));
+        let original = std::fs::read(&video).unwrap();
+        assert!(shrink_video(root.path(), &video).unwrap().is_none());
+        assert_eq!(std::fs::read(video).unwrap(), original);
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 1);
+    }
 
     struct TempDir(PathBuf);
 

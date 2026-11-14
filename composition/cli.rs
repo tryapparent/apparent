@@ -1,3 +1,4 @@
+use std::os::unix::fs::DirBuilderExt;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -1191,7 +1192,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 return Ok(());
             }
             ensure!(!out.exists(), "{} already exists", out.display());
-            std::fs::create_dir_all(&out)?;
+            std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&out)?;
             let copied = out.join(video.file_name().context("Bad video name")?);
             std::fs::copy(&video, &copied)?;
             let timeline_src = dir.join("timeline.json");

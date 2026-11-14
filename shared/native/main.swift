@@ -8,7 +8,6 @@
 //   apparent-helper speech-model [--install] [--locale ID] the speech model's status; install it (JSON lines)
 //   apparent-helper frames MOVIE --out-dir DIR (--every MS | --at MS,MS…) [--max-edge PX]
 //   apparent-helper audio MOVIE OUT.wav                   16 kHz mono PCM of every audio track, mixed
-//   apparent-helper probe MOVIE                           duration and video size
 //   apparent-helper shrink MOVIE --out FILE.mov [--max-edge PX] [--bitrate BPS]   HEVC copy, same timeline
 //   apparent-helper export PLAN.json                      shareable .mp4: crop/camera, burned-in ink, audio (Export.swift)
 //   apparent-helper permissions                           what Apparent has been granted, as JSON
@@ -147,9 +146,6 @@ case "shrink":
 case "export":
   guard arguments.count >= 2 else { fail("export needs PLAN.json") }
   runAsync { try await Exporter.run(plan: URL(filePath: arguments[1])) }
-case "probe":
-  guard arguments.count >= 2 else { fail("probe needs MOVIE") }
-  runAsync { emit(try await Media.probe(URL(filePath: arguments[1]))) }
 case "permission-panel":
   PermissionPanel.run(arguments: arguments)
 case "permissions":
@@ -169,5 +165,5 @@ case "qr":
   }
   emit(["qr": qr])
 default:
-  fail("usage: apparent-helper devices|mirror|transcribe|transcribe-stream|speech-model|frames|audio|probe|export|shrink|permission-panel|permissions|sck-probe|onboarding|settings|qr …")
+  fail("usage: apparent-helper devices|mirror|transcribe|transcribe-stream|speech-model|frames|audio|export|shrink|permission-panel|permissions|sck-probe|onboarding|settings|qr …")
 }

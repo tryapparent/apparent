@@ -10,6 +10,28 @@ export interface ExportProbe {
   embeddedAudio: number | null;
 }
 
+export interface BundleProbe {
+  version: 1;
+  durationMs: number;
+  width: number;
+  height: number;
+  fps: number;
+  audioTracks: number;
+}
+
+/** Assembly/recovery preserve the container clock, including a longer audio
+ * tail. Audio track presence is metadata, never proof that decoding succeeded.
+ * A missing container clock may use the video clock; an explicitly empty one
+ * is not silently replaced by another timeline. */
+export function bundleProbe(info: MovieInfo): BundleProbe {
+  const video = info.video;
+  const durationMs = info.durationMs ?? video?.durationMs;
+  if (!video || !durationMs || durationMs < 0 || !video.width || !video.height)
+    throw new Error('The recording has no video');
+  return {version: 1, durationMs, width: video.width, height: video.height,
+    fps: video.fps ?? 0, audioTracks: info.audio.length};
+}
+
 /** Export follows the video clock, including when container audio has a tail.
  * Missing segment detail uses the track interval; an empty segment list means
  * the native provider found no actual audio edits. This policy is shared by both OSes.

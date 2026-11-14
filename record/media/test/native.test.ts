@@ -31,9 +31,9 @@ test('staged Record worker consumes the published native provider with real medi
   ffmpeg(['-display_rotation:v:0','90','-i',source,'-c','copy',rotated]);
   ffmpeg(['-i',source,'-c:v','copy','-an',silent]);
   const hash = (file: string) => createHash('sha256').update(readFileSync(file)).digest('hex');
-  const inspect = (file: string) => {
+  const inspect = (file: string, operation?: string) => {
     const before = hash(file);
-    const result = spawnSync(process.execPath, [worker, engine, file], {encoding:'utf8', timeout:40_000});
+    const result = spawnSync(process.execPath, [worker, engine, file, ...(operation ? [operation] : [])], {encoding:'utf8', timeout:40_000});
     assert.equal(result.status,0,result.stderr); assert.equal(hash(file),before);
     return JSON.parse(result.stdout);
   };
@@ -44,6 +44,16 @@ test('staged Record worker consumes the published native provider with real medi
   const turned = inspect(rotated);
   assert.equal(turned.width,48); assert.equal(turned.height,64);
   assert.equal(inspect(silent).embeddedAudio,null);
+  const bundle = inspect(rotated, 'bundle-v1');
+  assert.equal(bundle.width,48); assert.equal(bundle.height,64); assert.equal(bundle.audioTracks,1);
+  const tail = join(root, 'audio-tail.mp4');
+  ffmpeg(['-f','lavfi','-i','color=c=blue:s=64x48:r=25:d=1','-f','lavfi','-i','sine=frequency=440:duration=2',
+    '-c:v','libx264','-threads','1','-pix_fmt','yuv420p','-c:a','aac',tail]);
+  assert.equal(inspect(tail, 'export-v1').durationMs,1000);
+  assert(Math.abs(inspect(tail, 'bundle-v1').durationMs - 2000) <= 50);
+  const invalidOperation = spawnSync(process.execPath,[worker,engine,source,'arbitrary-operation'],{encoding:'utf8',timeout:5_000});
+  assert.equal(invalidOperation.status,1); assert.equal(invalidOperation.stdout,'');
+  assert.equal(invalidOperation.stderr,'Record could not inspect the export movie\n');
   writeFileSync(join(root,'invalid.mp4'),'SYNTHETIC PRIVATE SENTINEL');
   for (const file of [join(root,'invalid.mp4'),join(root,'missing.mp4'),'https://example.invalid/private.mp4']) {
     const result=spawnSync(process.execPath,[worker,engine,file],{encoding:'utf8',timeout:40_000});
