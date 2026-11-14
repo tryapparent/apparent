@@ -1,10 +1,10 @@
 import {CompactEncrypt, compactDecrypt, exportJWK, generateKeyPair, importJWK, type JWK} from 'jose';
 import {ApiError, bearer, body, bounded, envelope, fail, hash, isRecord, json, rate, stmt} from '../common.ts';
 import {authRoutes} from '../auth.ts';
-import {captureForAccount} from '../captures.ts';
+import {captureForAccount,evidenceReady} from '../captures.ts';
 import {getObject} from '../storage.ts';
 import type {Env, FileRow} from '../types.ts';
-import {CAPTURE_FORMAT, RELAY_BYTES, RELAY_TTL_MS, REQUEST_TYPE, RESPONSE_TYPE, captureId, transportPath, transportKey} from '../../../client/typescript/src/mcp-wire.ts';
+import {CAPTURE_FORMAT, RELAY_BYTES, MAX_RELAY_BYTES, MAX_RELAY_REPLY_BYTES, RELAY_TTL_MS, REQUEST_TYPE, RESPONSE_TYPE, captureId, transportPath, transportKey} from '../../../client/typescript/src/mcp-wire.ts';
 
 export async function publicKey(value: unknown): Promise<JWK> {
   if (!transportKey(value)) fail('invalid_request');
@@ -21,7 +21,7 @@ export async function openRelay(env: Env, recipient: unknown, nonce: string, ip:
   // stateless, expires promptly and uses the existing service secret envelope.
   const ticket = await envelope(env, JSON.stringify({purpose:'mcp-relay-v1', origin:env.API_ORIGIN,
     expiresAt, responseKey, key:await exportJWK(privateKey)}));
-  return {version:1, origin:env.API_ORIGIN, nonce, expiresAt, key:await exportJWK(key), ticket};
+  return {version:1, origin:env.API_ORIGIN, nonce, expiresAt, key:await exportJWK(key), ticket,maxPartBytes:MAX_RELAY_BYTES};
 }
 
 async function dispatch(env: Env, value: unknown, ip: string): Promise<Response> {
@@ -54,19 +54,23 @@ async function dispatch(env: Env, value: unknown, ip: string): Promise<Response>
   const capture = await captureForAccount(env,value.captureId,account.account_id);
   if (capture.format !== CAPTURE_FORMAT) fail('encrypted_capture_required',409);
   if (operation === 'manifest') return json({id:capture.id,status:capture.status,format:capture.format,
-    files:JSON.parse(capture.manifest),expiresAt:new Date(capture.expires_at).toISOString()});
-  if (capture.status !== 'ready') fail('not_ready',409);
+    files:JSON.parse(capture.manifest),expiresAt:new Date(capture.expires_at).toISOString(),evidenceReady:await evidenceReady(env,capture)});
   if (!transportPath(value.path) || !Number.isSafeInteger(value.offset) || (value.offset as number) < 0) fail('invalid_request');
+  if (capture.status !== 'ready' && !(value.path.startsWith('evidence/') && await evidenceReady(env,capture))) fail('not_ready',409);
+  const requested=value.length===undefined?RELAY_BYTES:value.length;
+  if(!Number.isSafeInteger(requested) || (requested as number)<1 || (requested as number)>MAX_RELAY_BYTES)fail('invalid_request');
   const file = await stmt(env,'SELECT * FROM files WHERE capture_id=? AND path=?',capture.id,value.path).first<FileRow>();
   if (!file?.object_key || (value.offset as number) >= file.size) fail('not_found',404);
-  const offset = value.offset as number, length = Math.min(RELAY_BYTES,file.size-offset);
+  const offset = value.offset as number, length = Math.min(requested as number,file.size-offset);
   const object = await getObject(env,file.object_key,{range:{offset,length}});
   if (!object) fail('not_found',404);
   const bytes = await bounded(new Response(object.body),length);
   if (bytes.length !== length) fail('size_mismatch',409);
   await bearer(request,env);
   await captureForAccount(env,capture.id,account.account_id);
-  return json({path:file.path,offset,total:file.size,data:btoa(String.fromCharCode(...bytes))});
+  // Spreading a recording-sized range into one function call overflows the JS stack.
+  const binary:string[]=[];for(let i=0;i<bytes.length;i+=32768)binary.push(String.fromCharCode(...bytes.subarray(i,i+32768)));
+  return json({path:file.path,offset,total:file.size,data:btoa(binary.join(''))});
 }
 
 async function native(env: Env, path: string, data?: Record<string,unknown>, token?: string, ip?: string) {
@@ -97,7 +101,7 @@ export async function relay(env: Env, ticket: string, sealed: string, ip: string
   let response: Response;
   try { response = await dispatch(env,value,ip); }
   catch (error) { response = Response.json({error:{code:error instanceof ApiError?error.code:'internal_error'}},{status:error instanceof ApiError?error.status:500}); }
-  const result = {id,status:response.status,body:await body(response)};
+  const result = {id,status:response.status,body:await body(response,MAX_RELAY_REPLY_BYTES)};
   return {sealed:await new CompactEncrypt(new TextEncoder().encode(JSON.stringify(result)))
     .setProtectedHeader({alg:'ECDH-ES',enc:'A256GCM',typ:RESPONSE_TYPE})
     .encrypt(await importJWK(await publicKey(session.responseKey),'ECDH-ES'))};

@@ -4,7 +4,9 @@ import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {execFileSync} from 'node:child_process';
-import {initEndpoint,fetchEndpoint} from '../../dist/mcp-endpoint.js';
+import {initEndpoint,fetchEndpoint,acceptEndpoint,nextEndpoint} from '../../dist/mcp-endpoint.js';
+import {generateKeyPair,exportJWK} from 'jose';
+import {MAX_RELAY_BYTES,RELAY_BYTES} from '../../dist/mcp-wire.js';
 import {publishBundle} from '../../dist/mcp-bundle.js';
 
 test('endpoint setup refuses shared state, redirected parents and existing keys without changing permissions',async()=>{
@@ -48,4 +50,36 @@ test('publication cannot replace an existing destination, even an empty director
     await assert.rejects(publishBundle(stage,out),{code:'EEXIST'});
     assert.equal(await fs.readFile(path.join(stage,'summary.md'),'utf8'),'verified fixture');
   } finally {await fs.rm(root,{recursive:true,force:true});}
+});
+
+test('new readers negotiate bounded ranges and retain the legacy default for old servers',async t=>{
+  const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'apparent-dev-mcp-negotiate-'));await fs.chmod(root,0o700);
+  t.after(()=>fs.rm(root,{recursive:true,force:true}));
+  const {publicKey}=await generateKeyPair('ECDH-ES',{crv:'P-256',extractable:true}),key=await exportJWK(publicKey);
+  for(const [index,maxPartBytes]of [undefined,MAX_RELAY_BYTES,MAX_RELAY_BYTES*2,0,1.5].entries()) {
+    const directory=path.join(root,String(index));await initEndpoint(directory);
+    const state=JSON.parse(await fs.readFile(path.join(directory,'endpoint.json'),'utf8'));
+    const reply={version:1,origin:state.origin,nonce:state.transport.nonce,key,ticket:'synthetic-ticket',expiresAt:Date.now()+300000,...(maxPartBytes===undefined?{}:{maxPartBytes})};
+    await assert.rejects(acceptEndpoint(directory,{isError:true,structuredContent:reply}),/relay_tool_failed/);
+    if(maxPartBytes===0||maxPartBytes===1.5)await assert.rejects(acceptEndpoint(directory,reply),/invalid_relay_handshake/);
+    else {
+      await acceptEndpoint(directory,{structuredContent:{content:[{type:'text',text:JSON.stringify(reply)}]}});
+      const saved=JSON.parse(await fs.readFile(path.join(directory,'endpoint.json'),'utf8'));
+      assert.equal(saved.transport.maxPartBytes,maxPartBytes===undefined?RELAY_BYTES:Math.min(maxPartBytes,MAX_RELAY_BYTES));
+      assert.equal(saved.age,state.age,'Negotiation must retain the approved reader identity');
+    }
+  }
+});
+
+test('an existing reader renegotiates an old channel without replacing its identity or pending request',async t=>{
+  const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'apparent-dev-mcp-upgrade-'));await fs.chmod(root,0o700);
+  t.after(()=>fs.rm(root,{recursive:true,force:true}));
+  const directory=path.join(root,'reader');await initEndpoint(directory);
+  const file=path.join(directory,'endpoint.json'),state=JSON.parse(await fs.readFile(file,'utf8'));
+  state.transport.ticket='synthetic-old-channel';state.transport.key={kty:'EC'};state.transport.expiresAt=Date.now()+300000;
+  state.pending={id:'a'.repeat(32),kind:'poll',operation:{operation:'poll',deviceCode:'b'.repeat(64)}};
+  await fs.writeFile(file,JSON.stringify(state),{mode:0o600});
+  assert.equal((await nextEndpoint(directory)).tool,'connect_relay_open');
+  const saved=JSON.parse(await fs.readFile(file,'utf8'));
+  assert.equal(saved.age,state.age);assert.deepEqual(saved.key,state.key);assert.deepEqual(saved.pending,state.pending);
 });

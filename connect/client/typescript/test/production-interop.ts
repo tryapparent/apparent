@@ -66,6 +66,15 @@ const prepared=await decryptBundle({spool:mcpSpool,files:mcpFiles,
     grantId:fixture.context.senderGrantId,scope:'upload',key:{version:1,...fixture.senderKey}}]},out:join(root,'mcp-output.apparent')});
 for(const expected of fixture.expected)assert.equal((await readFile(join(prepared.stage,expected.path))).toString('hex'),expected.hex);
 await rm(prepared.stage,{recursive:true});
+if(fixture.context.group==='evidence') {
+  const inspection=await decryptBundle({spool:mcpSpool,files:mcpFiles,inspection:true,
+    identity:reader.age,origin:fixture.context.origin,captureId:fixture.context.captureId,
+    peers:{accountId:fixture.context.accountId,grantId:'interop-reader',scope:'read',devices:[{
+      grantId:fixture.context.senderGrantId,scope:'upload',key:{version:1,...fixture.senderKey}}]},out:join(root,'mcp-inspection')});
+  for(const expected of fixture.expected)assert.equal((await readFile(join(inspection.stage,expected.path))).toString('hex'),expected.hex);
+  assert.equal(JSON.parse(await readFile(join(inspection.stage,'inspection.json'),'utf8')).completeRecording,false);
+  await rm(inspection.stage,{recursive:true});
+}
 if(mcpSpool!==join(root,'spool'))await rm(mcpSpool,{recursive:true});
 const rustParts = await Promise.all(envelope.signed.chunks.map(async (chunk: Asset) => {
   assert.match(chunk.path, /^sealed\/part-\d{6}\.age$/);

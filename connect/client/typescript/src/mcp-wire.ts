@@ -1,5 +1,9 @@
 /** The relay wraps existing read authorization; it never decrypts capture content. */
 export const RELAY_BYTES = 16 * 1024;
+/** Negotiated v1 extension; requests without a length retain the legacy bound. */
+export const MAX_RELAY_BYTES = 1024 * 1024;
+// Base64 inside a JWE adds two encoding layers. Includes MCP/host JSON framing.
+export const MAX_RELAY_REPLY_BYTES = 2 * MAX_RELAY_BYTES + 65536;
 export const RELAY_TTL_MS = 10 * 60 * 1000;
 export const REQUEST_TYPE = 'apparent-mcp-request+jwe';
 export const RESPONSE_TYPE = 'apparent-mcp-response+jwe';
@@ -12,7 +16,7 @@ export type RelayOperation =
   | {operation: 'revoke'; accessToken: string; refreshToken: string}
   | {operation: 'peers'; accessToken: string}
   | {operation: 'manifest'; accessToken: string; captureId: string}
-  | {operation: 'part'; accessToken: string; captureId: string; path: string; offset: number};
+  | {operation: 'part'; accessToken: string; captureId: string; path: string; offset: number; length?: number};
 export type RelayRequest = RelayOperation & {id: string};
 export type RelayResponse = {id: string; status: number; body: unknown};
 export function record(value: unknown): value is Record<string, unknown> {
