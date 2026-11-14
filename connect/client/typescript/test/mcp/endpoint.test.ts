@@ -4,8 +4,8 @@ import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {execFileSync} from 'node:child_process';
-import {initEndpoint,fetchEndpoint} from '../dist/mcp-endpoint.js';
-import {publishBundle} from '../dist/mcp-bundle.js';
+import {initEndpoint,fetchEndpoint} from '../../dist/mcp-endpoint.js';
+import {publishBundle} from '../../dist/mcp-bundle.js';
 
 test('endpoint setup refuses shared state, redirected parents and existing keys without changing permissions',async()=>{
   const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'apparent-dev-mcp-paths-'));await fs.chmod(root,0o700);

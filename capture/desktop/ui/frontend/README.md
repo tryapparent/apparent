@@ -609,6 +609,12 @@ Ready are delivered together at Ready. Electron main applies the generated
 entrypoint. Generated policy is excluded from Git. Repeated list requests request
 fresh popup focus even when its mode has not changed.
 
+`src/notes/lifecycle.ts` owns the child startup/Finish ordering. A Finish received
+while either document is starting stays pending until the child has announced
+Ready; only an actual finish notification can authorize its acknowledgement.
+The generated `electron/notes/lifecycle.cjs` is a required packaging input.
+Rust's existing Ready and durable-save drain checks remain authoritative.
+
 `npm run test:notes-policy` builds and tests this boundary using Node/TypeScript
 alone, without Rust tools, cached Rust output or Electron APIs/runtime. The pure
 policy tests can also run directly with Node's type stripping before npm install:
@@ -708,3 +714,18 @@ The installed basic pill uses the shared React controls with a bounded Rust-auth
 bridge; Settings and onboarding routing remain independent. See
 [the pill contract](../electron_pill/README.md) for lifecycle, fallback and acceptance.
 Build includes the pill host and page; `npm run test:pill` runs synthetic Electron checks.
+
+### Foreground upload pill trial
+
+The temporary `connectForegroundUpload` config experiment routes new uploads
+through the Connect-owned TypeScript policy. The existing completed pill shows
+upload progress, Cancel upload, Retry upload and Link copied. It retains Paste
+for local handoff and the existing consent requirements. The selected backend
+never changes during an operation. `tests/pill/foreground/smoke.cts` exercises the
+built Electron renderer with synthetic parent states, light/dark themes, narrow
+workarea, keyboard retry and private action payloads; set
+`APPARENT_FOREGROUND_EVIDENCE` to a private job directory for screenshots. This is
+renderer proof, not installed native capture/upload acceptance. Native fallback
+controls retain their existing presentation and are not the accepted foreground
+control surface. Trial/rollback and native ownership debt are documented in
+`connect/docs/hosted-client.md`.

@@ -2,10 +2,10 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
-import {decodeArchive, decryptAge, joinAgeParts, verifyEnvelope} from '../src/index.ts';
+import {decodeArchive, decryptAge, joinAgeParts, verifyEnvelope} from '../../src/index.ts';
 
 test('the TypeScript consumer reads actual native producer bytes, not its own encoder output', async () => {
-  const fixture = JSON.parse(await readFile(new URL('./fixtures/rust-v1.json', import.meta.url), 'utf8'));
+  const fixture = JSON.parse(await readFile(new URL('./rust-v1.json', import.meta.url), 'utf8'));
   const bytes = (path: string) => Buffer.from(fixture.transport.find((file: {path:string}) => file.path === path).hex, 'hex');
   const envelope = JSON.parse(bytes('envelope.json').toString('utf8'));
   assert.deepEqual(envelope.signed.context, fixture.context);

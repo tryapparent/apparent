@@ -4,6 +4,7 @@ playwright-report/
 test-results/
 
 /electron/pill/*.cjs
+/electron/pill/native/
 /dist
 /tests/pill/*.cjs
 /electron/record-completion/
@@ -11,3 +12,4 @@ test-results/
 /electron/settings/*.cjs
 
 /electron/notes/presentation.cjs
+/electron/notes/lifecycle.cjs

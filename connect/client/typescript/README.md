@@ -84,3 +84,26 @@ declarations from `dist`; ordinary packed consumers need plain Node22.18+, not
 TypeScript loaders, Cargo or rustc. The explicit Rust interoperability lane
 requires the compiled package first; it does not belong in ordinary npm install
 or build hooks. No activation or writer cutover is included.
+
+`src/foreground.ts` supplies the dependency-free foreground upload policy. It
+requests only reserve, indexed PUT, complete, exact manifest readback and optional
+share capabilities over the existing private pipe. Native retains credential,
+filesystem and encryption enforcement; no token or local path enters this policy.
+`test/foreground.test.ts` checks sequencing, format/manifest/link rejection and
+failure-without-retry. Ordinary package commands still require no Rust tools.
+See `connect/docs/hosted-client.md` for trial routing and remaining native gates.
+
+`node --experimental-strip-types test/push-proof.ts` is an opt-in ordinary-hook
+execution proof (on Clanker, wrap it once in `t3-build`). It materializes immutable
+HEAD in a private synthetic Git repository and pushes only to a local bare
+remote. A policy-only refactor must run the real package install/tests/typecheck/
+build; an injected failing test must reject the next push without changing that
+remote. It checks local/hosted plan agreement and records timing/logs under its
+private `/tmp/apparent-dev-fgp-*` job directory. PATH guards detect attempted
+`cargo`, `rustc` and `electron` command resolution; they are not an OS sandbox.
+The fixture's accepted implementation base is synthetic: this does not prove a
+live portable-only GitHub PR or waive the initial adoption/platform gates. No
+GitHub push, workflow dispatch, installed config mutation or activation occurs.
+The proof deliberately stays outside `npm test` to avoid recursively invoking
+its own pre-push contract suite. Re-run it after adopting the shared routing
+authority; record the exact source SHA rather than reusing an older plan result.
