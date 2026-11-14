@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import {cp, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
-import {savedForeground} from '../foreground/saved.ts';
+import {savedForeground, withRetainedEvidence} from '../foreground/saved.ts';
 
 // Virtual time models slow AX admission and disk proof, not native Mac behavior.
 function scenario() {
@@ -73,5 +73,14 @@ test('failed setup or Stop never admits input or invents a saved bundle', async 
     await assert.rejects(savedForeground({...current, [operation]: async () => { throw failure; }}), e => e === failure);
     assert.ok(!current.events.includes('fresh-click'));
     assert.ok(!current.events.includes('proof'));
+  }
+});
+
+test('native and media failures survive secondary timing and copy failures', async () => {
+  for (const label of ['native', 'media']) {
+    const original = Error(label + ' failed'), secondary = Error(label + ' evidence failed'), reported: unknown[] = [];
+    await assert.rejects(withRetainedEvidence(async () => { throw original; }, async () => { throw secondary; }, error => { reported.push(error); }), error => error === original);
+    assert.deepEqual(reported, [secondary]);
+    await assert.rejects(withRetainedEvidence(async () => 1, async () => { throw secondary; }, () => assert.fail('no first failure to preserve')), error => error === secondary);
   }
 });
