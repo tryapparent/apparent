@@ -56,12 +56,14 @@ test('foreground upload states stay private, bounded, and use one authorized pil
     try{adapter.preventActivation(value);refused.push(false);}catch(error){refused.push(error.code==='APPARENT_PILL_WINDOW');}
    }
    const other=new BrowserWindow({show:false,type:'panel',title:'Synthetic unrelated window'});
-   try{adapter.preventActivation(Number(other.getMediaSourceId().split(':')[1]));refused.push(false);}
+   const otherId=Number(other.getMediaSourceId().split(':')[1]);
+   try{adapter.preventActivation(otherId);refused.push(false);}
    catch(error){refused.push(error.code==='APPARENT_PILL_WINDOW');}
    finally{other.destroy();}
-   return {focusable:window.isFocusable(),refused};
+   return {focusable:window.isFocusable(),otherId,refused};
   },path.resolve(__dirname,'../../../electron/pill/native/window.node'));
   assert.equal(native.focusable,true,'Native admission must preserve keyboard eligibility');
+  assert.ok(Number.isSafeInteger(native.otherId)&&native.otherId>0,'Other-window negative needs a real native window ID');
   assert.deepEqual(native.refused,[true,true,true,true,true,true],'Native adapter refuses invalid IDs and other surfaces');
  }
  await assertNoOverflow('normal workarea');
