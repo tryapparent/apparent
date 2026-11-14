@@ -14,7 +14,7 @@ export function moduleImports(source: string): string[] | null {
   try {
     // Compiler-only imports are consumers too. Preserve their module edges
     // before stripping types; unusual commented keyword forms fail broad.
-    if (/\b(?:import|export)\s*\//.test(source)) throw Error('Unsupported commented module keyword');
+    if (/\b(?:import|export|require)\s*\//.test(source)) throw Error('Unsupported commented module keyword');
     const typedEdges = source.replace(/\bimport\s+type\b(?!\s*(?:from\b|['";,]))/g, 'import')
       .replace(/\bexport\s+type(?=\s*(?:\{|\*|\/))/g, 'export');
     if (!process.versions.bun && typeof vm.SourceTextModule === 'function')
