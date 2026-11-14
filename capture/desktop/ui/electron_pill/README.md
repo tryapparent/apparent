@@ -53,6 +53,10 @@ action admission or fallback.
 Each new semantic snapshot is laid out before a hidden window becomes visible.
 Clock and microphone snapshots do not request layout; a ResizeObserver handles
 actual content/font size changes. The host has no periodic layout measurement.
+Phase changes retain the visible pill's horizontal center, excluding the hidden
+notes reserve. Display placement uses the same visible width. Note-count changes
+within recording keep the existing control positions; work-area clamping still
+takes priority near screen edges.
 Window move/resize/layout events publish physical geometry for the notes anchor,
 instead of the GUI thread polling X11 geometry. Hidden Linux rendering is not
 background-throttled, so preloading can finish before the first capture.

@@ -13,6 +13,7 @@ nativeTheme.themeSource='system';
 const page=pathToFileURL(path.join(__dirname,'../../dist/pill/index.html')).href;
 let window,current=null,buffer='',pending=false,loaded=false,placed=false,activated=false,pendingPlace=null;
 let lastInput=Date.now(),hovered=false,expected=null,rendererReady=false,readySent=false,renderDeadline=Date.now()+5000,pasteGesture=null,lastFrame='',lastRaise=0;
+let visibleWidth=0,layoutPhase=null;
 const diagnostics=require('./diagnostics.cjs');
 function diagnosticSnapshot(){
  const now=Date.now(),stateAge=current?Math.max(0,Math.min(86400000,now-lastInput)):null;
@@ -34,7 +35,7 @@ function applyPlacement(point){
   const anchor=process.platform==='linux'?screen.screenToDipPoint(physical):physical;
   const area=screen.getDisplayNearestPoint(anchor).workArea;
   const bounds=window.getBounds();
-  position({x:Math.round(area.x+(area.width-bounds.width)/2),y:area.y+34});placed=true;
+  position({x:Math.round(area.x+(area.width-(visibleWidth||bounds.width))/2),y:area.y+34});placed=true;
 }
 function emit(message){process.stdout.write(JSON.stringify(message)+'\n');}
 function reportFrame(){
@@ -50,6 +51,7 @@ function publish(value){
   if(!current || next.revision!==current.revision)pending=false;
   if(current && next.revision!==current.revision)pasteGesture=null;
   if(!current || next.revision!==current.revision || next.phase!==current.phase){rendererReady=false;renderDeadline=Date.now()+5000;}
+  if(next.phase==='hidden')layoutPhase=null;
   current=next;lastInput=Date.now();
   if(loaded){window.webContents.send('pill:state',current);visibility();}
 }
@@ -137,7 +139,7 @@ app.whenReady().then(()=>{
   });
   // Renderer never chooses native dimensions or screen coordinates.
   // Parent's bounded state defines content; main measures its own trusted document.
-  let appliedShape=null,visibleWidth=0;
+  let appliedShape=null;
   async function measure(revision){
     if(!loaded || window.isDestroyed())return;
     if(current?.phase!=='hidden' && Date.now()-lastInput>5000){fail('parent_state_timeout');return;}
@@ -152,11 +154,17 @@ app.whenReady().then(()=>{
       const height=Math.min(160,Math.max(58,Math.ceil(size.height)));
       const before=window.getBounds();
       const resized=before.width!==width || before.height!==height;
+      const nextVisibleWidth=current.phase==='recording' && current.noteCount===0?width-72:width;
+      const phaseChanged=layoutPhase!==current.phase;
+      // Phase changes pivot around the painted pill, not the invisible notes
+      // reserve. Within Recording, note-count changes must keep controls fixed.
+      const oldCenterWidth=phaseChanged && visibleWidth>0?visibleWidth:before.width;
+      const newCenterWidth=phaseChanged?nextVisibleWidth:width;
       // Keep layout resizes mapped. Hyprland can lose a transparent XWayland
       // surface during hide/setBounds/showInactive even when Electron reports
       // it visible. Update its bounds and input shape in place, then repaint.
-      if(resized)position({x:Math.round(before.x+(before.width-width)/2),y:before.y,width,height});
-      visibleWidth=current.phase==='recording' && current.noteCount===0?width-72:width;
+      if(resized || phaseChanged)position({x:Math.round(before.x+(oldCenterWidth-newCenterWidth)/2),y:before.y,width,height});
+      visibleWidth=nextVisibleWidth;layoutPhase=current.phase;
       if(process.platform==='linux'){
         const scale=screen.getDisplayMatching(window.getBounds()).scaleFactor;
         const key=JSON.stringify([visibleWidth,height,scale]);
