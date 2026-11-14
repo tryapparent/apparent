@@ -1771,10 +1771,17 @@ impl Session {
         self.send(&batch);Effect::None
     }
     pub fn practice_disposition(&mut self, value:serde_json::Value)->Effect {
-        if !self.practice_active() || self.fallback_pending {return Effect::None;}
+        if self.practice.is_none() || self.fallback_pending {return Effect::None;}
+        let active=self.practice_active();
+        let Ok(sequence)=self.practice.as_ref().unwrap().acknowledgement(&value) else {self.restore_native();return Effect::None;};
+        if let Transport::Renderer {input,..}=&self.transport {
+            if !input.ack(&sequence) {self.restore_native();return Effect::None;}
+        }
         let result=self.practice.as_mut().unwrap().admit(value);
-        let Ok((finish,sequence))=result else {self.restore_native();return Effect::None;};
-        if let Transport::Renderer {input,..}=&self.transport {input.ack(&sequence);}
+        let Ok((finish,_))=result else {self.restore_native();return Effect::None;};
+        // Navigation can overtake a timely reply. Retire its deadline without
+        // applying lesson effects outside the current practice route.
+        if !active {self.practice.as_mut().unwrap().close_board=None;return Effect::None;}
         if finish && self.practice_completed && self.practice_receipt.is_some() && self.practice_bundle.is_some() {
             self.flow.first_capture_completed=true;self.flow.step=Step::Done;self.sync();
             #[cfg(test)]
@@ -1789,7 +1796,7 @@ impl Session {
         let p=self.practice.as_mut()?;Some((self.source,self.transport_generation,p.attempt,p.close_board.take()?))
     }
     pub fn current_practice_scope(&self,source:u64,transport:u64,attempt:u64)->bool {
-        self.source==source && self.transport_generation==transport && !self.fallback_pending
+        self.practice_active() && self.source==source && self.transport_generation==transport && !self.fallback_pending
             && self.practice.as_ref().is_some_and(|p|p.attempt==attempt)
     }
     pub fn observe_practice_batch(&mut self, frame:Option<[f32;4]>, board:bool,screen:usize,processing:bool) {
@@ -2130,6 +2137,35 @@ mod tests {
         assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"), "child must execute the exact provider test");
     }
 
+    #[test]
+    fn delayed_practice_reply_drains_after_navigation_but_never_after_deadline() {
+        for navigate in [false,true] {
+            let mut session=coached_session();
+            let (tx,rx)=flume::unbounded();
+            let mut command=std::process::Command::new("cat");
+            session.transport=Session::spawn_renderer_transport(&mut command,session.transport_generation(),move |event|{let _=tx.send(event);}).unwrap();
+            session.practice_events(vec![serde_json::json!({"type":"selecting"})],false);
+            let reply=session.practice.as_ref().unwrap().test_reply();
+            if navigate {
+                session.input(Input::Back);
+                assert!(!session.practice_active());
+                assert!(matches!(session.practice_disposition(reply),Effect::None));
+                assert!(session.practice.as_ref().unwrap().pending.is_empty());
+                assert!(session.take_practice_board_close().is_none());
+                assert!(!session.current_practice_scope(session.source(),session.transport_generation(),0));
+                assert!(rx.recv_timeout(std::time::Duration::from_millis(2200)).is_err(),"timely navigation reply must disarm deadline");
+            } else {
+                // Leave the monitor's Exited event queued, as a busy UI loop can.
+                std::thread::sleep(std::time::Duration::from_millis(2200));
+                assert!(matches!(session.practice_disposition(reply),Effect::None));
+                assert_eq!(session.practice.as_ref().unwrap().stage,practice_host::Stage::Start,"late reply cannot mutate projection");
+                assert_eq!(session.practice.as_ref().unwrap().pending.len(),1);
+                assert!(matches!(rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap().for_current_transport(Some(session.transport_generation())),Some(Event::Exited)));
+            }
+            assert!(!session.flow.first_capture_completed);
+            if let Transport::Renderer{child,..}=&mut session.transport {let _=child.kill();let _=child.wait();}
+        }
+    }
     #[test]
     fn practice_host_admission_rejects_duplicate_reordered_and_wrong_identity() {
         for field in ["source","transport","attempt","capture","sequence","intent","board"] {

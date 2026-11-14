@@ -44,6 +44,7 @@ export const onboardingPureInputs = new Set([
 // unproven boundary changes.
 export const retiredOnboardingInputs = new Set([
   'capture/desktop/settings/onboarding/account.rs',
+  'capture/desktop/settings/practice.rs',
   'capture/desktop/ui/frontend/electron/onboarding/account.ts',
   'capture/desktop/ui/frontend/src/onboarding/account.tsx',
   'capture/desktop/ui/frontend/tests/onboarding/account.test.ts',
