@@ -28,6 +28,13 @@ files are ignored and included by the existing Settings packaging route.
 `npm run test:pill` exercises the real Electron main/preload/renderer with a
 synthetic parent; it is not native capture acceptance.
 
+Foreground upload holds the existing completion dismissal while an operation is
+pending. Cancel and an admitted current upload result start a fresh 15-second
+completion interval, so recovery or recopy controls do not inherit an expired
+save timestamp. Revoked tokens, changed captures and stale results cannot refresh
+the current presentation. Ordinary completion and manual-handoff recovery keep
+their existing dismissal behavior.
+
 The existing Desktop coordinator owns child startup and readiness. A failed
 launch, expired readiness or child exit restores the native pill without
 stopping capture. Linux warms the hidden child at startup and retains native
