@@ -679,7 +679,7 @@ mod tests {
         let rotated = Command::new("ffmpeg").args(["-v", "error", "-nostdin", "-y", "-display_rotation:v:0", "90", "-i"])
             .arg(source).args(["-map", "0", "-c", "copy"]).arg(&movie).output().unwrap();
         assert!(rotated.status.success(), "{}", String::from_utf8_lossy(&rotated.stderr));
-        // FFmpeg inherits the process umask; the provider requires a private artifact.
+        // Match private bundle artifacts regardless of FFmpeg's inherited umask.
         std::fs::set_permissions(&movie, std::fs::Permissions::from_mode(0o600)).unwrap();
         let original = std::fs::read(&movie).unwrap();
         let reference = Command::new("ffmpeg").args(["-v", "error", "-nostdin", "-i"]).arg(&movie)

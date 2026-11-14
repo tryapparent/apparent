@@ -891,14 +891,12 @@ mod tests {
                 .status()
                 .is_ok_and(|status| status.success());
             assert!(made, "Recovery provider proof requires FFmpeg to create its real fixture");
-            #[cfg(target_os = "macos")]
-            assert!(crate::capture::desktop::helper::path().is_ok(), "Mac frame decoding requires the built helper");
-        }
-        // Match the private movie contract enforced by the published metadata provider.
-        #[cfg(unix)]
-        {
+            // FFmpeg inherits the host umask; bundle artifacts must not depend
+            // on a developer's group-write default.
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&video, std::fs::Permissions::from_mode(0o600)).unwrap();
+            #[cfg(target_os = "macos")]
+            assert!(crate::capture::desktop::helper::path().is_ok(), "Mac frame decoding requires the built helper");
         }
         let media = Media {
             transcribe: fake_transcript,
