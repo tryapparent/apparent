@@ -3,15 +3,23 @@ import {lstat, readFile, mkdir, writeFile, open, realpath} from 'node:fs/promise
 import {constants} from 'node:fs';
 import {createHash} from 'node:crypto';
 import path from 'node:path';
-async function safe(directory: string) {
+async function safe(directory: string, profile: string) {
   const parts=path.resolve(directory).split(path.sep).filter(Boolean);
   let current=path.parse(directory).root;
+  let privateProfile=false;
   for(const part of parts) {
     current=path.join(current,part);
     await mkdir(current,{mode:0o700}).catch(error=>{if(error.code!=='EEXIST')throw error;});
     const info=await lstat(current);
-    if ((info.uid !== process.getuid!() && info.uid !== 0) || ((info.mode & 0o022) && !(info.uid === 0 && (info.mode & 0o1000)))) throw Error('Refusing untrusted writable ancestor');
+    const rootSticky=info.uid === 0 && !!(info.mode & 0o1000);
+    // A group-writable child is unreachable to other users through an owner-only
+    // selected profile. Do not extend that trust above the selected boundary,
+    // to world-writable directories, foreign owners or symlinks.
+    if ((info.uid !== process.getuid!() && info.uid !== 0) ||
+        ((info.mode & 0o002) && !rootSticky) ||
+        ((info.mode & 0o020) && !rootSticky && !privateProfile)) throw Error('Refusing untrusted writable ancestor');
     if(!info.isDirectory() || info.isSymbolicLink())throw Error('Refusing unsafe profile/package directory');
+    if(current===profile && info.uid===process.getuid!() && !(info.mode & 0o077))privateProfile=true;
   }
 }
 async function nofollow(file:string) {const handle=await open(file,constants.O_RDONLY|constants.O_NOFOLLOW);try{return await handle.readFile();}finally{await handle.close();}}
@@ -22,22 +30,23 @@ export async function install(source: string, profile: string) {
   const files=JSON.parse(manifest.toString()) as Record<string,string>;
   // macOS exposes its OS-owned temporary root through /tmp -> /private/tmp.
   if(process.platform==='darwin' && profile.startsWith('/tmp/'))profile=path.join(await realpath('/tmp'),profile.slice(5));
+  profile=path.resolve(profile);
   const target=path.join(profile,'plugins/apparent');
-  await safe(target);
+  await safe(target,profile);
   const pending:{name:string;data:Buffer}[]=[];
   // Validate every existing owned file before filling any missing file.
   for(const [name,digest] of Object.entries(files)) {
     if(!name || name.split('/').some(part=>!part || part==='.' || part==='..') || path.isAbsolute(name) || name.includes('\\'))throw Error('Unsafe package path');
     const data=await readFile(path.join(source,name));
     if(hash(data)!==digest)throw Error('Package checksum mismatch: '+name);
-    await safe(path.dirname(path.join(target,name)));
+    await safe(path.dirname(path.join(target,name)),profile);
     try {
       const info=await lstat(path.join(target,name));
       if(!info.isFile() || info.isSymbolicLink() || hash(await nofollow(path.join(target,name)))!==digest)throw Error('Existing modified package file: '+name);
     } catch(error) {if(error.code!=='ENOENT')throw error;pending.push({name,data});}
   }
   for(const {name,data} of pending) {
-    await safe(path.dirname(path.join(target,name)));
+    await safe(path.dirname(path.join(target,name)),profile);
     const handle=await open(path.join(target,name),constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL|constants.O_NOFOLLOW,0o600);
     try{await handle.writeFile(data);}finally{await handle.close();}
   }
