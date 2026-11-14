@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@apparent/ui/button';
+import {Keycap} from '@apparent/ui/keycap';
 import { Whiteboard, type BoardView } from './board/whiteboard';
 import { recordKeys } from './shortcut/keys';
 import frog from '../../../../assets/onboarding/frog.png';
 import './onboarding.css';
 import { savePen } from './pen/save';
 import { GestureGuide } from './gesture-guide';
-import { ControlGuide } from './control-guide';
+import { ControlGuide } from './controls/control-guide';
 import { AgentSetup } from './agent-setup';
 import { subscribeOnboardingState } from './state';
 import { desktopShortcutSelection, fnSelectionActions, shortcutCapture, shortcutInput } from '../../electron/onboarding/shortcut-editor.ts';
@@ -46,7 +47,7 @@ export function NativeOnboarding(){
   }),[]);
   const shortcutAdvance=useRef<string|null>(null);
   useEffect(()=>{
-    const ready=state?.step==='shortcut'&&state.firstCaptureRequired&&state.shortcutChosen&&state.shortcutTested&&!state.shortcutEditing&&!state.shortcutEditor?.recording;
+    const ready=state?.step==='shortcut'&&state.shortcutChosen&&(state.shortcutTested||!state.firstCaptureRequired)&&!state.shortcutEditing&&!state.shortcutEditor?.recording;
     if(!ready){shortcutAdvance.current=null;return;}
     if(shortcutAdvance.current===state.shortcut)return;
     shortcutAdvance.current=state.shortcut;
@@ -127,13 +128,13 @@ export function NativeOnboarding(){
       copied:{title:'Paste into your agent.',text:'',button:'Done',action:'practice-review'},
       paste:{title:'Paste into your agent.',text:'',button:'Done',action:'practice-review'},
       locate:{title:'apparent lives here.',text:state.platform==='linux'?'Right-click the tray icon. Open Latest Capture.':'Click the a in your menu bar, then Open Latest Capture.'},
-      complete:{title:'Want to change more settings?',text:state.platform==='linux'?'Open Settings from apparent’s tray menu.':'Open Settings from apparent’s menu bar icon.',button:'Open Settings',action:'practice-settings'},
+      complete:{title:'One last thing.',text:state.platform==='linux'?'Open Settings from apparent’s tray icon.':'Open Settings from apparent’s menu bar icon.'},
       retry:{title:'Try another capture.',text:`Press ${state.shortcut} to start again, then follow the drawing prompts. Your previous capture is saved.`},
       'copy-failed':{title:'Saved, but not copied.',text:'Your capture is saved. Find it in apparent’s menu.',button:'Find saved capture',action:'practice-locate'},
     };
     const c=content[practiceStage??'start']??content.start;
     const guideKind=state.practice==='screen-ink'||state.practice==='note'?'draw':state.practice==='copied'||state.practice==='paste'?'paste':'record';
-    return <><main className="native-coach" data-paired={trackpadHint&&wideCoach} data-stage={practiceStage} data-arrow={state.coachPointsUp} style={{'--coach-arrow':`${(state.coachArrow??190)-24}px`} as React.CSSProperties}><img key={practiceStage} src={frog} alt="Frog guide"/><div className="native-coach-content">{c.title&&<h1>{c.title}</h1>}{c.text&&<p>{c.text}</p>}{state.practice==='stop'&&<div className="native-saved-keys" aria-label={state.shortcut}>{recordKeys(state.shortcut).map((key,index)=><kbd key={index}>{key}</kbd>)}</div>}{(['start','retry','screen-ink','note','copied','paste'].includes(practiceStage??'start'))&&<GestureGuide key={practiceStage} kind={guideKind} shortcut={state.shortcut} platform={state.platform}/>} {(['whiteboard','locate','complete'].includes(state.practice??'')||(state.practice==='screen'&&state.platform!=='linux'))&&<ControlGuide key={state.practice} kind={['locate','complete'].includes(state.practice??'')?'locate':'whiteboard'} settings={state.practice==='complete'} screenOnly={state.practice==='screen'} directWhiteboard={state.platform==='linux'&&state.practice==='whiteboard'}/>} {c.button&&<Button onClick={()=>void action(c.action!)}>{c.button}</Button>}{trackpadHint&&!wideCoach&&helper}{error&&<p role="alert">{error}</p>}{<Button variant="ghost" size="icon" className="native-finish-close" aria-label={state.practice==='complete'?'Finish setup':'Close guide'} onClick={()=>void action(state.practice==='complete'?'practice-finish':'later')}>×</Button>}</div></main>{trackpadHint&&wideCoach&&helper}</>;
+    return <><main className="native-coach" data-paired={trackpadHint&&wideCoach} data-stage={practiceStage} data-arrow={state.coachPointsUp} style={{'--coach-arrow':`${(state.coachArrow??190)-24}px`} as React.CSSProperties}><img key={practiceStage} src={frog} alt="Frog guide"/><div className="native-coach-content">{c.title&&<h1>{c.title}</h1>}{c.text&&<p>{c.text}</p>}{state.practice==='stop'&&<div className="native-saved-keys" aria-label={state.shortcut}>{recordKeys(state.shortcut).map((key,index)=><Keycap key={index}>{key}</Keycap>)}</div>}{(['start','retry','screen-ink','note','copied','paste'].includes(practiceStage??'start'))&&<GestureGuide key={practiceStage} kind={guideKind} shortcut={state.shortcut} platform={state.platform}/>} {(['whiteboard','locate'].includes(state.practice??'')||(state.practice==='screen'&&state.platform!=='linux'))&&<ControlGuide key={state.practice} kind={state.practice==='locate'?'locate':'whiteboard'} screenOnly={state.practice==='screen'}/>} {c.button&&<Button onClick={()=>void action(c.action!)}>{c.button}</Button>}{trackpadHint&&!wideCoach&&helper}{error&&<p role="alert">{error}</p>}{<Button variant="ghost" size="icon" className="native-finish-close" aria-label={state.practice==='complete'?'Finish setup':'Close guide'} onClick={()=>void action(state.practice==='complete'?'practice-finish':'later')}>×</Button>}</div></main>{trackpadHint&&wideCoach&&helper}</>;
   }
   return <main className="native-setup" data-agent-setup={state.step==='welcome'&&!state.penPicker} data-shortcut-state={state.step==='shortcut'||goAgain}><header><span>{state.testInstance?'apparent · onboarding preview 9':'apparent · setup'}</span><Button variant="ghost" size="icon" aria-label="Close setup" onClick={()=>void action('close')}>×</Button></header><section>
     {state.step==='welcome'&&!state.penPicker&&<AgentSetup onContinue={()=>action('continue')}/>}
@@ -152,13 +153,13 @@ export function NativeOnboarding(){
       if(!pressed){setError(state.platform==='linux'?'Apparent cannot use that key. Try Copilot, a letter or a number.':'Apparent cannot use that key. Choose Fn alone, a letter or a number.');return;}
       setError('');
       void action({action:'shortcut',kind:'record',...pressed,reserved:false});
-      }}><div className="native-held-keys" aria-live="polite">{heldKeys.length?heldKeys.map(key=><kbd key={key}>{key}</kbd>):<Button aria-label="Choose suggested Fn shortcut" onClick={chooseFn}>Fn</Button>}</div><div className="native-shortcut-choices"><Button variant="outline" onClick={()=>void action('cancel-shortcut')}>Cancel</Button></div></div>:<>
-        {state.shortcutChosen?<kbd>{state.shortcut}</kbd>:state.shortcutEditor?.externallyManaged?null:<p>No shortcut selected.</p>}
-        <div className="native-shortcut-choices">{state.platform==='macos'&&!state.shortcutChosen&&<Button aria-label="Choose suggested Fn shortcut" onClick={chooseFn}>Fn</Button>}{state.shortcutEditor?.externallyManaged&&<Button aria-label={`Choose ${state.shortcut}`} onClick={()=>void action('use-desktop-shortcut')}>{state.shortcut}</Button>}
+      }}><div className="native-held-keys" aria-live="polite">{heldKeys.length?heldKeys.map(key=><Keycap key={key} pressed>{key}</Keycap>):<Button variant="keycap" aria-label="Choose suggested Fn shortcut" onClick={chooseFn}>Fn</Button>}</div><div className="native-shortcut-choices"><Button variant="outline" onClick={()=>void action('cancel-shortcut')}>Cancel</Button></div></div>:<>
+        {state.shortcutChosen?<Keycap>{state.shortcut}</Keycap>:state.shortcutEditor?.externallyManaged?null:<p>No shortcut selected.</p>}
+        <div className="native-shortcut-choices">{state.platform==='macos'&&!state.shortcutChosen&&<Button variant="keycap" aria-label="Choose suggested Fn shortcut" onClick={chooseFn}>Fn</Button>}{state.shortcutEditor?.externallyManaged&&<Button aria-label={`Choose ${state.shortcut}`} onClick={()=>void action('use-desktop-shortcut')}>{state.shortcut}</Button>}
         <Button variant="outline" onClick={()=>void action('change-shortcut')}>{state.shortcutEditor?.externallyManaged?'Choose another shortcut':state.shortcutChosen?'Change shortcut':'Choose shortcut'}</Button></div>
       </>}{state.shortcutEditor?.error&&<p role="alert">{state.shortcutEditor.error}</p>}</div></>}
-    {goAgain&&<><h1 className="native-shortcut-prompt">One more time.</h1><div className="native-shortcut"><kbd>{state.shortcut}</kbd></div></>}
+    {goAgain&&<><h1 className="native-shortcut-prompt">One more time.</h1><div className="native-shortcut"><Keycap>{state.shortcut}</Keycap></div></>}
     {state.step==='done'&&<><h1>Ready for your next idea.</h1><div className="native-explain"><img src={frog} alt=""/></div><p>apparent stays in the menu bar, ready when you are.</p></>}
     {error&&!penPage&&<p role="alert">{error}</p>}
-    </section><footer><Button variant="ghost" onClick={()=>void action('back')} disabled={(state.index===0&&!penPage)||penBusy}>Back</Button>{!penPage&&<span>{state.index+1} / {state.count}</span>}{!goAgain&&!penPage&&<Button onClick={()=>void action('continue')} disabled={(state.step==='permissions'&&!state.ready)||(state.step==='shortcut'&&state.firstCaptureRequired&&(!state.shortcutChosen||!state.shortcutTested||state.shortcutEditor?.recording))}>{state.step==='welcome'?'Choose a pen':state.step==='done'?'Finish setup':state.step==='permissions'?(state.fix?'Finish permission setup':'Choose recording shortcut'):state.step==='shortcut'?'Continue':'Try a capture'}</Button>}</footer></main>;
+    </section><footer><Button variant="ghost" onClick={()=>void action('back')} disabled={(state.index===0&&!penPage)||penBusy}>Back</Button>{!penPage&&<progress className="native-setup-progress" aria-label="Setup progress" value={state.index+1} max={state.count}/>}{!goAgain&&!penPage&&state.step!=='shortcut'&&<Button onClick={()=>void action('continue')} disabled={(state.step==='permissions'&&!state.ready)||(state.step==='shortcut'&&state.firstCaptureRequired&&(!state.shortcutChosen||!state.shortcutTested||state.shortcutEditor?.recording))}>{state.step==='welcome'?'Choose a pen':state.step==='done'?'Finish setup':state.step==='permissions'?(state.fix?'Finish permission setup':'Choose recording shortcut'):state.step==='shortcut'?'Continue':'Try a capture'}</Button>}</footer></main>;
 }

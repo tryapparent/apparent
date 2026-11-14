@@ -61,7 +61,7 @@ html.native-onboarding-shell body { background: transparent !important; margin: 
 .native-setup p { font-size: 1.125rem; line-height: 1.5; max-width: 65ch; margin: 0 0 16px; }
 .native-setup footer { min-height: 80px; flex-shrink: 0; border-top: 1px solid var(--apparent-border); display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; }
 .native-setup footer > span { font-size: 1rem; font-variant-numeric: tabular-nums; }
-.native-setup button, .native-coach button { font-family: inherit; font-size: 1.125rem; font-weight: 500; line-height: 1.5; min-height: 44px; min-width: 44px; height: auto; padding: 8px 16px; border-radius: 0; white-space: normal; box-shadow: none; transition-duration: 160ms; transition-timing-function: ease-out; }
+.native-setup button, .native-coach button { font-family: inherit; font-size: 1.125rem; font-weight: 500; line-height: 1.5; min-height: 44px; min-width: 44px; height: auto; padding: 8px 16px; border-radius: 6px; white-space: normal; transition-duration: 160ms; transition-timing-function: ease-out; }
 .native-setup button:disabled, .native-coach button:disabled { opacity: .45; }
 .native-setup button:focus-visible, .native-coach button:focus-visible, .native-shortcut [role=group]:focus-visible { outline: 2px solid var(--apparent-ring); outline-offset: 3px; }
 .native-setup button[class~="bg-primary"]:hover:not(:disabled), .native-coach button[class~="bg-primary"]:hover:not(:disabled) { background: var(--apparent-primary); text-decoration: underline; text-underline-offset: .15em; }
@@ -85,16 +85,13 @@ html.native-onboarding-shell body { background: transparent !important; margin: 
 .native-shortcut { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 24px; margin: 48px 0; }
 .native-setup[data-shortcut-state=true] section { display: flex; flex-direction: column; }
 .native-setup[data-shortcut-state=true] .native-shortcut { flex: 1; margin: 0; }
-.native-shortcut kbd { font-family: inherit; display: grid; place-items: center; min-width: 120px; min-height: 100px; max-width: 100%; overflow-wrap: anywhere; text-align: center; padding: 20px 28px; background: var(--apparent-secondary); font-size: 2.5rem; font-weight: 500; color: var(--apparent-secondary-foreground); }
+.native-shortcut .apparent-key { --key-size:40px; min-width:96px; min-height:84px; padding:20px 28px; }
 .native-shortcut [role=group] { max-width: 100%; }
 .native-setup[data-shortcut-state=true] section { justify-content:center; text-align:center; gap:16px; }
 .native-setup[data-shortcut-state=true] section > h1 { margin:0; }
 .native-setup[data-shortcut-state=true] .native-shortcut { flex:0; }
 .native-shortcut-prompt { animation:shortcut-prompt-pop 320ms ease-out; }
-.native-shortcut kbd { border-bottom:5px solid var(--apparent-primary); transform:translateY(0); transition:transform 90ms ease-out,border-color 90ms ease-out; animation:shortcut-key-press 240ms ease-out; }
-.native-shortcut kbd:active { transform:translateY(4px); border-bottom-color:transparent; }
 @keyframes shortcut-prompt-pop { 0% {transform:scale(.92)} 55% {transform:scale(1.09)} 100% {transform:scale(1)} }
-@keyframes shortcut-key-press { 0%,45% {transform:translateY(4px);border-bottom-color:transparent} 100% {transform:translateY(0)} }
 @media(prefers-reduced-motion:reduce) { .native-shortcut-prompt,.native-shortcut kbd {animation:none;transition:none;} }
 .native-coach { position: absolute; top: 56px; left: 24px; right: 24px; max-width: 332px; background: var(--apparent-surface); border: 1px solid var(--apparent-border); border-radius: 24px 24px 24px 6px; padding: 24px; }
 /* Keep the frog outside the scroll area, including at 200% text size. */
@@ -173,9 +170,9 @@ html.native-onboarding-shell:has(.native-setup) .apparent-build-identity { top: 
 
 .native-wordmark { width: 138px; height: auto; }
 .native-saved-keys { display:flex; flex-wrap:wrap; justify-content:center; gap:12px; }
-.native-saved-keys kbd { min-width:76px; min-height:84px; padding:16px 24px; border-radius:6px; box-shadow:0 4px 0 var(--apparent-border); }
 
-.native-coach .native-saved-keys kbd { min-width:44px; min-height:48px; padding:8px 12px; font-size:24px; background:var(--apparent-lilac); color:var(--apparent-carbon); }
+
+.native-coach .native-saved-keys .apparent-key { --key-size:24px; }
 
 /* One compact dismissal in every coach, away from the primary instruction. */
 .native-coach h1 { padding-inline-end:48px; }
@@ -195,4 +192,13 @@ html.native-onboarding-shell:has(.native-setup) .apparent-build-identity { top: 
 
 /* Recorded review: let spacing carry setup chrome and the complete pill guide. */
 .native-setup header,.native-setup footer {border:0;}
-.native-coach[data-stage=whiteboard] {max-width:472px;}
+.native-coach[data-stage=whiteboard] {max-width:672px;}
+
+.native-setup-progress { appearance:none;width:120px;height:6px;border:0;border-radius:3px;overflow:hidden;background:var(--apparent-muted);color:var(--apparent-primary); }
+.native-setup-progress::-webkit-progress-bar {background:var(--apparent-muted);}
+.native-setup-progress::-webkit-progress-value {background:var(--apparent-primary);}
+.native-setup-progress::-moz-progress-bar {background:var(--apparent-primary);}
+.native-coach button:focus-visible {outline-offset:-4px;}
+.native-setup footer {position:relative;}
+.native-setup-progress {position:absolute;left:50%;top:calc(50% - 3px);transform:translateX(-50%);}
+@media(max-width:560px){.native-setup-progress{position:static;transform:none;order:3;flex-basis:100%;width:100%;}}

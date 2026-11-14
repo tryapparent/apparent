@@ -987,6 +987,8 @@ pub fn launch_plan(progress: &Progress, grants: &Grants) -> Option<Flow> {
 /// From the welcome window's helper process and the permission poller.
 #[derive(Clone, Debug)]
 pub enum Event {
+    /// Emitted only after the OS tray/menu-bar Settings request is admitted.
+    MenuSettingsOpened,
     Board(serde_json::Value),
     Practice(serde_json::Value),
     /// Grants read at launch, to decide whether onboarding opens (`launch_plan`).
@@ -1630,7 +1632,7 @@ impl Session {
         }
 
         if action.starts_with("practice-") {
-            if !["practice-review","practice-settings","practice-paste","practice-pasted","practice-locate","practice-finish"].contains(&action)||!self.practice_active() {return Effect::None;}
+            if !["practice-review","practice-paste","practice-pasted","practice-locate","practice-finish"].contains(&action)||!self.practice_active() {return Effect::None;}
             let effect=self.practice_events(vec![serde_json::json!({"type":"action","action":action})],true);
             self.sync();return effect;
         }
@@ -1768,6 +1770,10 @@ impl Session {
         }
     }
     pub fn practice_opened_bundle(&mut self, path: &Path) { if self.practice_bundle.as_deref()==Some(path) {self.practice_latest();} }
+    pub fn practice_settings_opened(&mut self)->Effect {
+        let effect=self.practice_events(vec![serde_json::json!({"type":"action","action":"practice-settings"})],true);
+        self.sync();effect
+    }
     pub fn practice_latest(&mut self) {self.practice_events(vec![serde_json::json!({"type":"opened-latest"})],false);self.sync();}
 
     fn practice_events(&mut self, events:Vec<serde_json::Value>, intent:bool)->Effect {
@@ -1792,7 +1798,6 @@ impl Session {
         if let Transport::Renderer {input,..}=&self.transport {
             if !input.ack(&sequence) {self.restore_native();return Effect::None;}
         }
-        let open_settings=self.practice.as_ref().unwrap().pending.front().is_some_and(|batch|batch["events"].as_array().is_some_and(|events|events.iter().any(|e|e["action"]=="practice-settings")));
         let result=self.practice.as_mut().unwrap().admit(value);
         let Ok((finish,_))=result else {self.restore_native();return Effect::None;};
         // Navigation can overtake a timely reply. Retire its deadline without
@@ -1801,8 +1806,8 @@ impl Session {
         if finish && self.practice_completed && self.practice_receipt.is_some() && self.practice_bundle.is_some() {
             self.flow.first_capture_completed=true;self.flow.step=Step::Done;self.sync();
             #[cfg(test)]
-            if matches!(self.transport,Transport::InProcess(None)) {let effect=self.input(Input::Continue);return if open_settings && effect==Effect::Close {Effect::Settings}else{effect};}
-            if self.saved_first_capture_completed {let effect=self.input(Input::Continue);return if open_settings && effect==Effect::Close {Effect::Settings}else{effect};}
+            if matches!(self.transport,Transport::InProcess(None)) {return self.input(Input::Continue);}
+            if self.saved_first_capture_completed {return self.input(Input::Continue);}
             // A failed native config transaction leaves the lesson retryable.
             self.flow.first_capture_completed=false;self.flow.step=Step::TryIt;
         }
@@ -2252,6 +2257,7 @@ mod tests {
                 s.observe_practice(false,0,true,Some(true));s.input(Input::CaptureEnded{completed:true});
                 if settings {s.action("practice-review");}else if !direct {s.action("practice-paste");s.action("practice-pasted");s.practice_latest();}
                 assert_eq!(s.action(finish_action),Effect::None);
+                if settings {assert_eq!(s.practice_settings_opened(),Effect::None);}
                 assert!(!s.flow.first_capture_completed);
                 // Start another admitted real capture and provide its first native receipt.
                 s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);s.practice_whiteboard();
@@ -2263,11 +2269,12 @@ mod tests {
                 else {assert!(!s.practice.as_ref().unwrap().latest,"Done needs no locate receipt");}
                 if settings {assert_eq!(s.action("practice-review"),Effect::None);assert!(!s.flow.first_capture_completed,"orientation alone cannot finish setup");}
                 if failure {std::fs::write(&path,b"invalid config").unwrap();}
-                assert_eq!(s.action(finish_action),if failure{Effect::None}else if settings{Effect::Settings}else{Effect::Close});
+                assert_eq!(s.action("practice-settings"),Effect::None,"renderer intent cannot certify a tray click");
+                assert_eq!(if settings{s.practice_settings_opened()}else{s.action(finish_action)},if failure{Effect::None}else{Effect::Close});
                 assert_eq!(s.flow.first_capture_completed,!failure);
                 if failure {assert_eq!(std::fs::read(&path).unwrap(),b"invalid config");
                     std::fs::write(&path,br#"{"secret":"synthetic","unrelated":{"nested":7},"microphoneEnabled":false}"#).unwrap();
-                    assert_eq!(s.action(finish_action),if settings{Effect::Settings}else{Effect::Close},"retry after native storage recovery");
+                    assert_eq!(if settings{s.practice_settings_opened()}else{s.action(finish_action)},Effect::Close,"retry after native storage recovery");
                 }
                 else {let saved:serde_json::Value=serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
                     assert_eq!(saved["secret"],"synthetic");assert_eq!(saved["unrelated"]["nested"],7);

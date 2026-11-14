@@ -1680,6 +1680,7 @@ impl ApparentCoordinator {
         let Some(event) = event.for_current_transport(self.onboarding.as_ref().map(|s|s.transport_generation())) else {return;};
         let effect = match event {
             Event::Session { .. } | Event::Transport { .. } => Effect::None,
+            Event::MenuSettingsOpened => self.onboarding.as_mut().map(|session|session.practice_settings_opened()).unwrap_or(Effect::None),
             Event::Launch(grants) => {
                 self.note_grants(&grants);
                 let mut progress = Progress::load();
@@ -7225,7 +7226,12 @@ pub fn run_app(
                                 }
                                 MenuAction::ExportVideo => start_video_export(),
                                 MenuAction::Settings => {
-                                    loop_coord.update(cx, |coord, _| coord.open_settings(None));
+                                    loop_coord.update(cx, |coord, cx| {
+                                        coord.open_settings(None);
+                                        if coord.settings.is_some() {
+                                            coord.onboarding_event(crate::capture::desktop::settings::onboarding::Event::MenuSettingsOpened,cx);
+                                        }
+                                    });
                                 }
                                 MenuAction::CheckForUpdates => {
                                     platform::check_for_updates();

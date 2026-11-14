@@ -1,0 +1,7 @@
+.native-pill-guide { margin:16px 0 0; }
+.native-pill-example { position:relative;width:100%;overflow:hidden; }
+.native-pill-example-surface { position:absolute;left:0;top:0;width:max-content;transform:scale(var(--preview-scale,1));transform-origin:top left;pointer-events:none; }
+.native-pill-pointer { position:absolute;left:0;top:0;width:22px;height:26px;fill:var(--apparent-paper);stroke:var(--apparent-carbon);stroke-width:1.4;animation:pill-guide-pointer 4s ease-in-out infinite; }
+@keyframes pill-guide-pointer {0%,10%{transform:translate(calc(var(--target-x) - 32px),calc(var(--target-y) + 22px));}40%,85%{transform:translate(var(--target-x),var(--target-y));}100%{transform:translate(calc(var(--target-x) - 32px),calc(var(--target-y) + 22px));}}
+@media(prefers-reduced-motion:reduce){.native-pill-pointer{animation:none;transform:translate(var(--target-x),var(--target-y));}}
+.native-control.native-pill-guide {margin:12px 0 0;padding:0;}

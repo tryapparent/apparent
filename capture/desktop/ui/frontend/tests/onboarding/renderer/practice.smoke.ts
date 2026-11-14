@@ -41,9 +41,10 @@ test('production host alone reduces admitted practice; renderer intents wait for
  const before=output;await page.getByRole('button',{name:'Done',exact:true}).press('Enter');
  await expect.poll(()=>output.slice(before.length)).toContain('practice-review');await stage('copied');
  await batch([{type:'action',action:'practice-review'}]);await inspect('complete');
- await expect(page.getByRole('heading',{name:'Want to change more settings?'})).toBeVisible();
- const settingsBefore=output;await page.getByRole('button',{name:'Open Settings',exact:true}).press('Enter');
- await expect.poll(()=>output.slice(settingsBefore.length)).toContain('practice-settings');
+ await expect(page.getByRole('heading',{name:'One last thing.'})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Open Settings',exact:true})).toHaveCount(0);
+ await expect(page.locator('.native-control')).toHaveCount(0);
+ assert.equal(await page.evaluate(async()=>{try{await window.nativeOnboarding.action('practice-settings');return false;}catch{return true;}}),true,'only a native menu request can finish Settings practice');
  // Renderer cannot manufacture facts through its existing preload action API.
  assert.equal(await page.evaluate(async()=>{try{await window.nativeOnboarding.action({type:'saved',copied:true} as unknown as string);return false;}catch{return true;}}),true);
  await batch([{type:'reset'},{type:'started'},{type:'processing'},{type:'saved',copied:false}],true);await inspect('copy-failed');
