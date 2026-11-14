@@ -113,6 +113,7 @@ const server = createServer(async (req, res) => {
       if (scenario.paginated) assert.equal(url.searchParams.get('before'),sharesCursor)
       return res.end(JSON.stringify({shares: scenario.empty ? [] : [{id:'share-1',captureId:'a'.repeat(32),title:'<script>Captured title</script>',status:revoked?'revoked':'ready',createdAt:'2026-10-31T10:00:00Z',expiresAt:new Date(Date.now()+604800000).toISOString(),...(!revoked ? {url:'https://share.example/s/synthetic'} : {})}],nextCursor:null}))
     }
+    if (url.pathname === '/v1/analytics/consent') return res.end(JSON.stringify({available:false,consented:false,revision:null,noticeVersion:'product-analytics-v1'}))
     if (url.pathname === '/v1/device') return res.end(JSON.stringify({ scope: approved && scenario.changedScope ? 'upload' : scenario.scope || 'read', status: approved && !scenario.unconfirmed ? 'approved' : scenario.status || 'pending', ...(scenario.withExpiry || scenario.clockExpiry ? { expiresAt: new Date(scenario.clockExpiry ? scenario.expiresAt : Date.now() + 600000).toISOString() } : {}) }))
     if (scenario.anonymous || signedOut) return res.end('{"authenticated":false,"csrfToken":null,"account":null,"slots":{"used":0,"limit":20,"remaining":20}}')
     return res.end(JSON.stringify({ authenticated: true, csrfToken: 'synthetic-csrf', account: { email: 'verified@example.com', beta: scenario.waitlist ? 'waitlist' : 'active', quotaBytes: 500000000, usedBytes: 0, waitlist: { interestedAtFiveDollars: interest } }, slots: { used: scenario.full ? 20 : 0, limit: scenario.invalid ? 50 : 20, remaining: scenario.full ? 0 : 20 }, accessToken: 'must-not-render' }))
@@ -251,11 +252,12 @@ try {
       await lock.click(); await page.getByRole('dialog').waitFor()
       assert.match(await page.getByRole('dialog').innerText(), /all current and future uploads/)
       await page.keyboard.press('Escape'); assert.equal(await lock.evaluate(e => e === document.activeElement), true)
-      const details = page.locator('.hosted-details > summary')
+      const details = page.getByText('Read details', { exact: true })
+      const readDetails = details.locator('..')
       await details.focus(); await page.keyboard.press('Enter')
-      assert.equal(await page.locator('.hosted-details').getAttribute('open'), '')
-      await page.locator('.hosted-details .hosted-limits > summary').click()
-      assert.match(await page.locator('.hosted-details').innerText(), /500,000,000[\s\S]*90,000,000[\s\S]*20 accounts[\s\S]*renew each approved device connection automatically/)
+      assert.equal(await readDetails.getAttribute('open'), '')
+      await readDetails.locator('.hosted-limits > summary').click()
+      assert.match(await readDetails.innerText(), /500,000,000[\s\S]*90,000,000[\s\S]*20 accounts[\s\S]*renew each approved device connection automatically/)
       await page.getByRole('button', { name: 'Review access', exact: true }).click()
       if (!test.anonymous) {
         assert.equal(await page.getByRole('dialog').locator('pre code').innerText(), `apparent connect login --server ${apiOrigin || 'https://YOUR-HOSTED-API-ORIGIN'} --scope read --no-browser`)
@@ -266,7 +268,7 @@ try {
       assert.equal(await computer.getAttribute('aria-selected'), 'true')
       assert.match(await page.locator('.hosted-source').getAttribute('src'), /source-pond-v4/)
       assert.equal(await page.locator('.hosted-agent').count(), 1)
-      assert.equal(await page.locator('.hosted-details').getAttribute('open'), null)
+      assert.equal(await page.getByText('Upload details', { exact: true }).locator('..').getAttribute('open'), null)
       const connect = page.getByRole('button', { name: 'Connect', exact: true })
       await connect.click()
       if (!test.anonymous) {
@@ -297,7 +299,7 @@ try {
       assert.equal(await selectedTab.getAttribute('aria-selected'), 'true')
       assert.equal(await page.getByRole('tab', { name: test.scope === 'upload' ? 'Your agent' : 'This computer', exact: true }).isDisabled(), true)
       await selectedTab.focus(); await page.keyboard.press('ArrowRight'); assert.equal(await selectedTab.getAttribute('aria-selected'), 'true')
-      if (test.scope === 'upload') { assert.equal(await allow.isDisabled(), true); await page.getByRole('checkbox').check(); assert.equal(writes.length, 0) }
+      if (test.scope === 'upload') { assert.equal(await allow.isDisabled(), false); assert.equal(await page.getByRole('checkbox').count(), 0); assert.equal(writes.length, 0, 'no upload consent before the explicit approval click') }
       assert.match(await page.locator('main').innerText(), test.scope === 'upload' ? /add, read and delete/ : /All your current and future uploads/)
       await page.screenshot({ path: `${evidence}/${test.name}-pending.png`, fullPage: true })
       await allow.evaluate(e => { e.click(); e.click() })
