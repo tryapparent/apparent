@@ -6,7 +6,7 @@ import { lstatSync, mkdirSync } from 'node:fs';
 // Keep the existing Electron/main and package consumer path. Authored source is
 // TypeScript; emitted CommonJS is a build artifact and has no Rust prerequisite.
 const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-const program = ts.createProgram([`${root}/electron/connect.cts`, `${root}/electron/settings/frame.cts`], {
+const program = ts.createProgram([`${root}/electron/connect.cts`, `${root}/electron/settings/frame.cts`, `${root}/src/agents/policy.ts`], {
   target: ts.ScriptTarget.ES2022,
   module: ts.ModuleKind.CommonJS,
   moduleResolution: ts.ModuleResolutionKind.Node10,
@@ -28,6 +28,7 @@ if (diagnostics.length) {
 if (program.emit(undefined, (file, content) => {
   // Type-only renderer contracts participate in checking, never runtime output.
   if (file === `${root}/electron/connect.cjs` || file === `${root}/electron/settings/frame.cjs`) ts.sys.writeFile(file, content);
+  if (file === `${root}/src/agents/policy.js`) ts.sys.writeFile(`${root}/electron/settings/agents.cjs`, content);
 }).emitSkipped) throw Error('Connect transport emission failed');
 
 // Native composition checks use an unchanged prebuilt Node host. Prepare its

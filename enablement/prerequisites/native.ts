@@ -25,6 +25,7 @@ export function checkNativeInputs(root: string, platform = process.platform): st
     'capture/desktop/ui/frontend/electron/preload.cjs',
     'capture/desktop/ui/frontend/electron/runtime.cjs',
     'capture/desktop/ui/frontend/electron/connect.cjs',
+    'capture/desktop/ui/frontend/electron/settings/agents.cjs',
     'capture/desktop/ui/frontend/electron/storage-policy.cjs',
     'capture/desktop/ui/frontend/electron/storage-owner/location-workflow.js',
     'capture/desktop/ui/frontend/electron/storage-owner/location-policy.js',

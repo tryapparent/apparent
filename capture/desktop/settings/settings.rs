@@ -1172,6 +1172,7 @@ pub(crate) fn external_record_owned(kind: ShortcutKind) -> bool {
 #[serde(tag = "action", rename_all = "kebab-case")]
 pub enum Action {
     Navigate { pane: Pane },
+    AgentsPreference { request: u32, enabled: Option<bool> },
     #[cfg(target_os = "linux")]
     Storage { command: super::storage::Command },
     Connect { command: super::connect::Command },
@@ -1428,7 +1429,7 @@ impl Panel {
                     Effect::None
                 }
             }
-            Action::Navigate { .. } => Effect::None, // Session owns presentation routing.
+            Action::Navigate { .. } | Action::AgentsPreference { .. } => Effect::None, // Session owns presentation routing.
             Action::ShowCaptures => Effect::ShowCaptures,
             Action::CheckForUpdates => {
                 if cfg!(target_os = "linux") && self.update_check.checking {
@@ -1884,8 +1885,8 @@ pub(super) enum Transport {
 /// The open Settings window.
 pub struct Session {
     generation: u64,
-    storage: bool,
-    about: bool,
+    electron: bool,
+    pane: Option<Pane>,
     panel: Panel,
     connect: Option<super::connect::Controller>,
     transport: Transport,
@@ -1913,7 +1914,7 @@ impl Session {
 
         let events: std::sync::Arc<dyn Fn(Event) + Send + Sync> = std::sync::Arc::new(events);
         let generation = super::presentation::generation();
-        let (transport, storage) = Self::open_presentation(pane, generation, &events, true)?;
+        let (transport, electron) = Self::open_presentation(pane, generation, &events, true)?;
 
         let polling = std::sync::Arc::new(AtomicBool::new(true));
         let alive = std::sync::Arc::clone(&polling);
@@ -1980,8 +1981,8 @@ impl Session {
         panel.connect = connect.as_ref().map(|controller| controller.view());
         Ok(Self {
             generation,
-            storage,
-            about: pane == Some(Pane::About),
+            electron,
+            pane,
             panel,
             connect,
             transport,
@@ -1997,16 +1998,16 @@ impl Session {
     fn open_presentation(
         pane: Option<Pane>, generation: u64,
         events: &std::sync::Arc<dyn Fn(Event) + Send + Sync>,
-        allow_storage: bool,
+        allow_electron: bool,
     ) -> anyhow::Result<(Transport, bool)> {
         let target = events.clone();
         let events: std::sync::Arc<dyn Fn(Event) + Send + Sync> = std::sync::Arc::new(move |event| {
             target(Event::Presentation { generation, event: Box::new(event) });
         });
-        if allow_storage && (pane == Some(Pane::About) || electron_storage(pane, crate::shared::handoff::experiment("electronCaptureLocation"))) {
-            match super::presentation::open(pane == Some(Pane::About), events.clone()) {
+        if allow_electron && (matches!(pane, Some(Pane::About | Pane::Agents)) || electron_storage(pane, crate::shared::handoff::experiment("electronCaptureLocation"))) {
+            match super::presentation::open(pane.unwrap_or(Pane::Storage), events.clone()) {
                 Ok(transport) => return Ok((transport, true)),
-                Err(error) => crate::capture::engine::runtime::apparent_log(format!("Storage Settings fallback: {error:#}")),
+                Err(error) => crate::capture::engine::runtime::apparent_log(format!("Settings fallback: {error:#}")),
             }
         }
         let transport = if cfg!(not(target_os = "macos")) {
@@ -2084,6 +2085,12 @@ impl Session {
                 self.show(Some(pane));
                 Effect::None
             }
+            Event::Action(Action::AgentsPreference { request, enabled }) => {
+                if self.electron && self.pane == Some(Pane::Agents) {
+                    self.send(&super::agents::request(&host.config_path(), request, enabled));
+                }
+                Effect::None
+            }
             Event::Connect(event) => {
                 if self.connect.as_mut().is_some_and(|controller| controller.receive(event)) {
                     crate::connect::hosted::start_worker();
@@ -2120,13 +2127,13 @@ impl Session {
                 Effect::None
             }
             Event::Tick => Effect::None,
-            Event::Exited if self.storage => {
+            Event::Exited if self.electron => {
                 // EOF without a normal Close means Electron crashed or failed to
                 // launch. Keep Settings usable without touching saved policy.
                 let generation = super::presentation::generation();
-                if let Ok((transport, storage)) = Self::open_presentation(Some(if self.about { Pane::About } else { Pane::Storage }), generation, &self.events, false) {
+                if let Ok((transport, electron)) = Self::open_presentation(self.pane, generation, &self.events, false) {
                     self.generation = generation;
-                    self.storage = storage;
+                    self.electron = electron;
                     self.last_view.clear();
                     super::presentation::retire(std::mem::replace(&mut self.transport, transport));
                     self.sync(host);
@@ -2225,22 +2232,26 @@ impl Session {
 
     pub fn show(&mut self, pane: Option<Pane>) {
         if let Some(pane) = pane {
-            let storage = pane == Pane::About || electron_storage(Some(pane), crate::shared::handoff::experiment("electronCaptureLocation"));
-            if storage != self.storage || (self.storage && self.about != (pane == Pane::About)) {
+            let electron = matches!(pane, Pane::About | Pane::Agents) || electron_storage(Some(pane), crate::shared::handoff::experiment("electronCaptureLocation"));
+            if electron != self.electron || (self.electron && self.pane != Some(pane)) {
                 let generation = super::presentation::generation();
                 match Self::open_presentation(Some(pane), generation, &self.events, true) {
-                    Ok((transport, storage)) => {
+                    Ok((transport, electron)) => {
                         self.send(&serde_json::json!({"type": "close"}));
                         self.generation = generation;
-                        self.storage = storage;
-                        self.about = pane == Pane::About;
+                        self.electron = electron;
+                        self.pane = Some(pane);
                         self.last_view.clear();
                         super::presentation::retire(std::mem::replace(&mut self.transport, transport));
                     }
-                    Err(error) => crate::capture::engine::runtime::apparent_log(format!("Settings navigation failed: {error:#}")),
+                    Err(error) => {
+                        crate::capture::engine::runtime::apparent_log(format!("Settings navigation failed: {error:#}"));
+                        return;
+                    }
                 }
             }
         }
+        if pane.is_some() { self.pane = pane; }
         self.send(&serde_json::json!({"type": "show", "pane": pane}));
     }
 
@@ -2264,9 +2275,14 @@ impl Session {
     pub fn sync(&mut self, host: &dyn Host) {
         // Storage reads its narrow projected socket contract. Do not forward the
         // other pages' state to a renderer which does not present those pages.
-        if self.storage {
-            if self.about {
+        if self.electron {
+            if self.pane == Some(Pane::About) {
                 let message = self.panel.about_state(&host.config_path());
+                let text = message.to_string();
+                if text != self.last_view { self.send(&message); self.last_view = text; }
+            }
+            if self.pane == Some(Pane::Agents) {
+                let message = serde_json::json!({"type": "agents-state", "facts": super::agents::facts(&host.config_path())});
                 let text = message.to_string();
                 if text != self.last_view { self.send(&message); self.last_view = text; }
             }

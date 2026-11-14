@@ -705,7 +705,7 @@ Other panes retain their existing routes. Missing assets or a failed child resto
 native About; retain that fallback until packaged Linux/macOS update, restart,
 navigation and failure acceptance verifies its replacement and all consumers.
 Run the focused renderer/bridge check with
-`xvfb-run -a node --experimental-strip-types --test tests/about/smoke.ts`
+`xvfb-run -a node --experimental-strip-types --test tests/settings/about.ts`
 on Linux after building. This synthetic parent-state test is not native update proof.
 
 ## Recording pill
