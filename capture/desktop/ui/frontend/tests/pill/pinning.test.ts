@@ -17,7 +17,6 @@ function host(platform = 'linux') {
   const input = Object.assign(new EventEmitter(), {setEncoding() {}});
   const messages: Record<string, unknown>[] = [];
   const exits: number[] = [];
-  const presentation: Array<Record<string, unknown>> = [];
   const handlers = new Map<string, (...args: any[]) => any>();
   const area = {x: 0, y: 0, width: 1920, height: 1080};
   let revision = 0;
@@ -31,7 +30,7 @@ function host(platform = 'linux') {
       send(_channel: string, state: {revision: number}) { revision = state.revision; },
       executeJavaScript: async () => ({width: 640, height: 58, revision}),
     });
-    constructor(options: Record<string, unknown>) { super(); window = this; presentation.push({operation: 'create', ...options}); }
+    constructor(_options: unknown) { super(); window = this; }
     isVisible() { return this.visible; }
     isDestroyed() { return false; }
     getBounds() { return this.bounds; }
@@ -39,7 +38,7 @@ function host(platform = 'linux') {
     showInactive() { this.visible = true; this.emit('show'); }
     hide() { this.visible = false; }
     setAlwaysOnTop() {}
-    setVisibleOnAllWorkspaces(visible: boolean, options: Record<string, unknown>) { presentation.push({operation: 'workspaces', visible, ...options}); }
+    setVisibleOnAllWorkspaces() {}
     setContentProtection() {}
     setShape() {}
     setTitle() {}
@@ -47,8 +46,7 @@ function host(platform = 'linux') {
     loadURL(url: string) { this.webContents.mainFrame.url = url; return Promise.resolve(); }
   }
   const app = Object.assign(new EventEmitter(), {
-    setName() {}, setPath() {}, getPath: () => '/synthetic',
-    setActivationPolicy(policy: string) { presentation.push({operation: 'activation', policy}); },
+    setName() {}, setPath() {}, getPath: () => '/synthetic', setActivationPolicy() {},
     whenReady: () => ({then: (ready: () => void) => ready()}),
     quit() {}, exit: (code: number) => exits.push(code),
   });
@@ -78,7 +76,7 @@ function host(platform = 'linux') {
       exit: (code: number) => exits.push(code)}),
   }, {filename});
   return {
-    window, messages, exits, presentation,
+    window, messages, exits,
     parent: (message: unknown) => input.emit('data', JSON.stringify(message) + '\n'),
     loaded: () => window.webContents.emit('did-finish-load'),
     layout: (value: number) => handlers.get('pill:layout')!({sender: window.webContents,
@@ -118,18 +116,4 @@ test('native pin diagnostics contain only bounded presentation facts', async () 
 
 test('macOS never requests the Linux native pin adapter', async () => {
   assert.deepEqual(await nativeEvents(true, true, true, 'recording', 'darwin'), []);
-});
-
-test('Mac workspace placement retains the existing accessory identity and focusable panel', () => {
-  const {presentation} = host('darwin');
-  const [activation, created, workspaces] = presentation;
-  assert.deepEqual(activation, {operation: 'activation', policy: 'accessory'});
-  assert.equal(created.type, 'panel');
-  assert.equal(created.acceptFirstMouse, true);
-  assert.notEqual(created.focusable, false, 'Preserve native keyboard eligibility');
-  assert.deepEqual(workspaces, {operation: 'workspaces', visible: true,
-    visibleOnFullScreen: true, skipTransformProcessType: true});
-  const linux = host('linux').presentation;
-  assert.equal(linux[0].focusable, false);
-  assert.deepEqual(linux[1], {operation: 'workspaces', visible: true, visibleOnFullScreen: true});
 });

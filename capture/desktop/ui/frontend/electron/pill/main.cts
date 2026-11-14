@@ -104,9 +104,7 @@ app.whenReady().then(()=>{
     webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,sandbox:true,nodeIntegration:false,webSecurity:true,spellcheck:false,backgroundThrottling:false}});
   if(pendingPlace)applyPlacement(pendingPlace);
   window.setAlwaysOnTop(true,'screen-saver');
-  // The Mac child is already an accessory app. Keep that identity when
-  // assigning workspaces instead of asking Electron to transform it again.
-  window.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true,...(process.platform==='darwin'?{skipTransformProcessType:true}:{})});
+  window.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
   window.setContentProtection(false);
   window.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   window.webContents.on('will-navigate',event=>event.preventDefault());
