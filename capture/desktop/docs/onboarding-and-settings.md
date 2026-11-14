@@ -602,6 +602,18 @@ and packaged acceptance remain separate from renderer and state-machine tests.
 
 ### First-capture drawing sequence
 
+The private Electron input pipe uses an ordered native writer with at most 32
+queued messages and 16 MiB total pending bytes (including the in-flight line).
+Each line has a two-second delivery deadline including queue residence. Overflow,
+write failure or a live child that stops reading sends the existing scoped
+transport-exit event; capture/finalization never waits for pipe capacity. Existing
+native fallback still defers replacement while capture is hidden, invalidates
+old transport events and retains the sole progress writer. Native permission
+helpers keep their existing transport. This bounds delivery only: trusted host
+observation acknowledgements, attempt admission and lesson-policy migration are
+still required before retiring `settings/practice.rs`. Rollback reverts the
+writer and its Session transport variant together; there is no config change.
+
 After a real whiteboard stroke, the whiteboard closes and the Electron coach
 continues directly to **Draw on your screen.** The person must make a later,
 separate screen stroke before the coach advances to Finish. The note lesson and
