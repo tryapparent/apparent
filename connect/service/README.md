@@ -26,11 +26,15 @@ D1 has no interactive transaction. The pinned library consumes a predecessor wit
 
 Lifecycle tests use real library SQL with deterministic fault/barrier wrappers, shared D1 across two workerd isolates, response loss and isolate reload. They are local persistence/race evidence, not a physical D1 outage or live Google test. Scheduled cleanup clears expired device/replay envelopes and terminal per-grant client credentials, preserving live devices, grant tombstones and spent budgets. Retained identity/grant metadata still needs growth monitoring.
 
-## Deployment checklist (parent authorization required)
+## Resource bootstrap (separate from automatic delivery)
 
-The gated main-branch delivery workflow and its separate activation prerequisites
-are documented in [`../../enablement/docs/continuous-delivery.md`](../../enablement/docs/continuous-delivery.md).
-It never applies migrations or initializes the budget ledger.
+Affected main changes publish the tested gateway/service/browser artifact to the
+existing beta Worker automatically. Its fixed live profile, exact-byte checks and
+emergency stop are documented in
+[`../../enablement/docs/continuous-delivery.md`](../../enablement/docs/continuous-delivery.md).
+CD preserves resources, credentials and configuration; it never applies migrations
+or initializes the budget ledger. The checklist below governs a new target or a
+separately authorized resource/schema cutover, not each ordinary deployment.
 
 - Discover the actual Cloudflare account/routes and existing resources first; do not deploy this template blindly.
 - **Local SQL budgets pass; remote Free verification is still blocked.** See the measured operation counts below. The template omits the Paid-only `limits.cpu_ms` override. Local native-checksum tests and statement counts do not prove Free's 10ms CPU limit. Do not activate Paid or deploy without the parent's separate decision.

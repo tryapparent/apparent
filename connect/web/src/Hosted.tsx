@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react"
 import * as api from "./api"
 import "./hosted.css"
 import { SharedLinks } from "./SharedLinks"
+import { AnalyticsConsent } from "./AnalyticsConsent"
+import { invalidateAnalyticsAccount, syncAnalyticsAccount, setAnalyticsAccountReader } from "../../../shared/analytics/browser"
 
 export function isHostedPath(path: string) { return /^\/(?:connect|hosted)(?:\/(?:device|shares))?\/?$/.test(path) }
 export function Hosted({ devicePage = false, sharesPage = false }: { devicePage?: boolean; sharesPage?: boolean }) {
@@ -24,6 +26,8 @@ function Account({ devicePage }: { devicePage: boolean }) {
   const generation = useRef(0)
   async function load() {
     const current = ++generation.current
+    setAnalyticsAccountReader(async () => { const result = await api.session(); return result.authenticated ? result.analyticsId : null })
+    const linkEpoch = invalidateAnalyticsAccount()
     let sessionLoaded = false
     setLoading(true); setError(""); setSessionUnavailable(false); setAccount(null); setRequest(null)
     const value = new URLSearchParams(window.location.search).get("code") ?? ""
@@ -33,6 +37,7 @@ function Account({ devicePage }: { devicePage: boolean }) {
       if (current !== generation.current) return
       sessionLoaded = true
       setAccount(result)
+      syncAnalyticsAccount(result.authenticated ? result.analyticsId : null, linkEpoch)
       if (!result.authenticated && devicePage && /^[A-F0-9]{12}$/.test(value)) {
         window.location.replace(api.signInUrl(true, value))
         return
@@ -48,7 +53,7 @@ function Account({ devicePage }: { devicePage: boolean }) {
     } catch (e) { if (current === generation.current) { setSessionUnavailable(!sessionLoaded); setError(message(e)) } }
     finally { if (current === generation.current) setLoading(false) }
   }
-  useEffect(() => { void load(); return () => { generation.current++ } }, [])
+  useEffect(() => { void load(); return () => { generation.current++; setAnalyticsAccountReader(null); invalidateAnalyticsAccount() } }, [])
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer) }, [])
   async function act(action: () => Promise<void>) {
     if (guard.current) return
@@ -140,7 +145,8 @@ function Account({ devicePage }: { devicePage: boolean }) {
           <Limits />
         </details>
       </section>
-      {authenticated && <div className="hosted-identity"><p>{authenticated.user.email}</p>{authenticated.beta.access && <a className="hosted-manage-link" href="/connect/shares">Manage shared links</a>}<button disabled={busy || loading} onClick={() => void act(async () => { await api.logout(authenticated.csrfToken); const next = await api.session(); if (next.authenticated) throw new Error("Sign-out could not be confirmed. Reload and try again."); setAccount(next); setRequest(null) })}>Log out</button></div>}
+      {authenticated && !devicePage && <AnalyticsConsent csrf={authenticated.csrfToken} />}
+      {authenticated && <div className="hosted-identity"><p>{authenticated.user.email}</p>{authenticated.beta.access && <a className="hosted-manage-link" href="/connect/shares">Manage shared links</a>}<button disabled={busy || loading} onClick={() => void act(async () => { const linkEpoch = invalidateAnalyticsAccount(); await api.logout(authenticated.csrfToken); const next = await api.session(); if (next.authenticated) throw new Error("Sign-out could not be confirmed. Reload and try again."); syncAnalyticsAccount(null, linkEpoch); setAccount(next); setRequest(null) })}>Log out</button></div>}
       <noscript><p>Enable JavaScript to sign in and review permissions. No approval happens without an explicit confirmation.</p></noscript>
     </main>
     <dialog ref={dialog} className="hosted-dialog" aria-labelledby="hosted-dialog-title">

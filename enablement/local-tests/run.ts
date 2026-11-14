@@ -152,6 +152,12 @@ export function commands(selected: Owner[], base: string, head: string, platform
     add(['bun', 'install', '--frozen-lockfile'], 'connect/web');
     add(['npm', 'test'], 'connect/web');
   }
+  if (selected.includes('service') || selected.includes('web')) {
+    // Exercise the same mounted gateway and static artifact that CD publishes.
+    if (!selected.includes('web')) add(['bun', 'install', '--frozen-lockfile'], 'connect/web');
+    add(['npm', 'ci', '--no-audit', '--no-fund'], 'connect/tooling/hosting');
+    add(['npm', 'test'], 'connect/tooling/hosting');
+  }
   if (selected.includes('public')) add(['node', 'scripts/site-build/verify.mjs'], 'public/site');
   return result;
 }
