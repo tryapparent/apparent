@@ -1,4 +1,4 @@
-# Connect crypto compatibility primitives
+# Connect crypto primitives and encrypted MCP endpoint
 
 This package is the bounded TypeScript prerequisite for migrating Connect crypto callers. It preserves the current Rust `encryption.rs` wire rules:
 
@@ -7,7 +7,7 @@ This package is the bounded TypeScript prerequisite for migrating Connect crypto
 - `apparent-encrypted-v1\0signed-envelope\0` followed by the signed JSON in Rust struct field order;
 - strict Ed25519 verification (canonical encodings, weak public keys and small-order `R` rejected).
 
-It does not implement identity persistence, filesystem permissions, envelope/asset policy validation, service authorization, or production transfer lifecycle. Those remain migration work. In particular, this package's synthetic tests do not replace exercising the production Rust `pack`/`unpack` functions against TypeScript output.
+The exported primitives remain a migration prerequisite; they do not replace native identity, consent, queue or config writers. The separate `apparent-connect-mcp` executable owns an explicitly selected private MCP reader endpoint: local keys/state, sealed relay requests, validated streaming decryption and bundle publication. It runs without Rust or a direct server connection. See [MCP setup and limits](../../docs/mcp.md). Native transfer migration and actual Cowork acceptance remain separate gates.
 
 ## Local commands
 

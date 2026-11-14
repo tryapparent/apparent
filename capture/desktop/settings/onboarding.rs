@@ -18,7 +18,6 @@
 //! AppKit mouse monitor that needs no permission, keys from an Accessibility event tap.
 
 use std::collections::{BTreeMap, BTreeSet};
-mod account;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -979,6 +978,7 @@ pub fn launch_plan(progress: &Progress, grants: &Grants) -> Option<Flow> {
 /// From the welcome window's helper process and the permission poller.
 #[derive(Clone, Debug)]
 pub enum Event {
+    Board(serde_json::Value),
     /// Grants read at launch, to decide whether onboarding opens (`launch_plan`).
     Launch(Grants),
     Grants(Grants),
@@ -1099,7 +1099,6 @@ pub fn poll_grants(
 /// The open welcome window: the `Flow` and the window drawing it. On macOS the app
 /// supplies permission updates even while this window is closed; other platforms poll here.
 pub struct Session {
-    account: Option<account::Account>,
     source: u64,
     transport_generation: u64,
     flow: Flow,
@@ -1121,6 +1120,7 @@ pub struct Session {
     practice: Option<super::practice::Practice>,
     anchor: Option<[f32;4]>,
     practice_board: Option<[f32;4]>,
+    board_view: Option<serde_json::Value>,
     practice_completed: bool,
     practice_bundle: Option<std::path::PathBuf>,
     practice_receipt: Option<(u64, String, Option<String>)>,
@@ -1136,7 +1136,6 @@ impl Session {
     #[cfg(test)]
     pub(crate) fn for_test(flow: Flow) -> Self {
         Self {
-            account: None,
             source: next_session_source(),
             transport_generation: next_session_source(),
             flow,
@@ -1158,6 +1157,7 @@ impl Session {
             practice: None,
             anchor: None,
             practice_board: None,
+            board_view: None,
             practice_completed:false,practice_bundle:None,practice_receipt:None,editor:None,pen_picker: false,pen_selected:false,pen_error:false,pen_save_id:None,
         }
     }
@@ -1242,7 +1242,6 @@ impl Session {
         let progress = Progress::load();
         let allowed = relaunch_allowed(&progress, unix_ms());
         let mut session = Self {
-            account: Some(account::Account::new(crate::shared::handoff::default_config_path())),
             source,
             transport_generation,
             flow: flow
@@ -1272,6 +1271,7 @@ impl Session {
             practice: shell.then(super::practice::Practice::default),
             anchor: None,
             practice_board: None,
+            board_view: None,
             practice_completed:false,practice_bundle:None,practice_receipt:None,editor:None,pen_picker: false,pen_selected:false,pen_error:false,pen_save_id:None,
         };
         session.shortcut_changed(shortcut);
@@ -1343,6 +1343,10 @@ impl Session {
                     let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) else {
                         continue;
                     };
+                    if value.get("action").and_then(|v| v.as_str()) == Some("board") {
+                        events(Event::Board(value));
+                        continue;
+                    }
                     let Some(action) = value.get("action").and_then(|v| v.as_str()) else {
                         continue;
                     };
@@ -1407,7 +1411,6 @@ impl Session {
     }
 
     pub fn restore_native(&mut self) -> bool {
-        if let Some(account) = self.account.as_mut() { account.cancel(); }
         // Invalidate queued actions/EOF before dropping the old child's input.
         if self.fallback.is_some() { self.transport_generation = next_session_source(); }
         if self.fallback.is_some() && self.flow.hidden {
@@ -1554,21 +1557,17 @@ impl Session {
 
     /// An action string from the helper as an `Input`.
     pub fn action(&mut self, action: &str) -> Effect {
-        if self.flow.step() == Step::Welcome && !self.pen_picker && matches!(action, "sign-in" | "cancel-sign-in" | "open-sign-in") {
-            if let Some(account) = self.account.as_mut() {
-                match action {
-                    "sign-in" => account.start(),
-                    "cancel-sign-in" => account.cancel(),
-                    "open-sign-in" => if let Some(uri) = account.browser_uri() {
-                        if crate::shared::handoff::open_path(Path::new(uri)).is_err() { account.browser_failed(); }
-                    },
-                    _ => (),
-                }
-            }
-            self.sync(); return Effect::None;
-        }
-        if matches!(action, "continue" | "later" | "close" | "back") {
-            if let Some(account) = self.account.as_mut() { account.cancel(); }
+        // TypeScript owns the choice-as-first-practice policy. This adapter
+        // admits only the current native selection after release, never capture.
+        // The existing native progress writer remains authoritative.
+        if let Some(label) = action.strip_prefix("accept-shortcut-choice:") {
+            if self.practice.is_some() && self.fallback.is_some() && !self.fallback_pending
+                && self.flow.step() == Step::Shortcut
+                && self.flow.shortcut_chosen && !self.flow.shortcut_editing
+                && !self.shortcut_choice_down && !label.is_empty() && label == self.shortcut_label
+                && !self.editor.as_ref().is_some_and(|editor| editor.recording)
+            { return self.input(Input::ShortcutTriggered); }
+            return Effect::None;
         }
         if self.practice.is_some() && self.flow.step()==Step::Welcome {
             if action=="continue" && !self.pen_picker {self.pen_picker=true;self.sync();return Effect::None;}
@@ -1709,10 +1708,9 @@ impl Session {
         self.practice_board=frame;
         if let Some(p)=self.practice.as_mut() { p.whiteboard_visible(frame.is_some()); }
     }
+    pub fn board_view(&mut self, view: Option<serde_json::Value>) { self.board_view=view; }
+    pub fn electron_practice(&self)->bool { self.practice_active() && self.fallback.is_some() && !self.fallback_pending }
     pub fn practice_active(&self)->bool {self.practice.is_some() && self.flow.step()==Step::TryIt}
-    pub fn refresh_account(&mut self) {
-        if self.account.as_mut().is_some_and(|account| account.poll()) { self.sync(); }
-    }
     pub fn practice_locating(&self)->bool {self.practice.as_ref().is_some_and(|p|p.stage==super::practice::Stage::Locate)}
     pub fn practice_desktop_stage(&self)->bool {self.practice.as_ref().is_some_and(|p|matches!(p.stage,super::practice::Stage::Note|super::practice::Stage::ScreenInk))}
     pub fn practice_whiteboard(&mut self) {if let Some(p)=self.practice.as_mut(){p.whiteboard();}self.sync();}
@@ -1750,13 +1748,14 @@ impl Session {
         }
         let mut view = serde_json::to_value(self.flow.view()).unwrap_or_default();
         view["type"] = "state".into();
-        view["account"] = serde_json::to_value(self.account.as_ref().map(|a| a.view())).unwrap_or_default();
         if let Some(practice)=self.practice.as_ref() {view["practice"]=serde_json::json!(practice.stage);}
         view["shortcut"]=self.shortcut_label.clone().into();
+        view["shortcutSelectionReleased"]=(!self.shortcut_choice_down).into();
         view["platform"]=std::env::consts::OS.into();
         view["shortcutEditor"]=serde_json::json!(self.editor);
         view["anchor"]=serde_json::json!(self.anchor);
         view["practiceBoard"]=serde_json::json!(self.practice_board);
+        view["boardView"]=serde_json::json!(self.board_view);
         view["testInstance"]=false.into();
         view["penSaveId"]=serde_json::json!(self.pen_save_id);
         view["penPicker"]=self.pen_picker.into();view["penSelected"]=self.pen_selected.into();view["penError"]=self.pen_error.into();
@@ -1934,7 +1933,6 @@ fn retire_transport(transport: Transport) {
 
 impl Drop for Session {
     fn drop(&mut self) {
-        if let Some(account) = self.account.as_mut() { account.cancel(); }
         self.polling
             .store(false, std::sync::atomic::Ordering::Release);
         if let Some(adapter) = self.permission_adapter.take() { retire_transport(adapter); }
@@ -3495,4 +3493,29 @@ fn shortcut_native_process_failures_reject_without_accepting_renderer_claims() {
     assert!(query("printf invalid"));
     assert!(query("exec sleep 2"));
     assert!(query_shortcut_reservation(&mut Command::new("/nonexistent/apparent-test-helper"), Duration::from_millis(100)));
+}
+
+#[test]
+fn electron_choice_receipt_is_bound_to_the_released_native_selection() {
+    let mut session=Session::for_test(Flow::tour(Step::Shortcut,None).with_first_capture(true,true,false,false));
+    session.shortcut_label="Fn".into();
+    session.practice=Some(super::practice::Practice::default());
+    let (sender,_receiver)=flume::unbounded();
+    session.fallback=Some(Box::new(move |_|Ok(Transport::InProcess(Some(sender.clone())))));
+    session.shortcut_choice_down=true;
+    session.action("accept-shortcut-choice:Fn");
+    assert!(!session.flow.shortcut_tested,"a held choice cannot admit capture");
+    session.shortcut_selection_released(true);
+    session.action("accept-shortcut-choice:Copilot");
+    assert!(!session.flow.shortcut_tested,"stale shortcut receipt is rejected");
+    session.action("accept-shortcut-choice:Fn");
+    assert!(session.flow.shortcut_tested);
+    assert_eq!(session.flow.step(),Step::Shortcut,"receipt never starts capture");
+    session.action("continue");
+    assert_eq!(session.flow.step(),Step::TryIt);
+    assert_eq!(session.shortcut_policy(),ShortcutPolicy::Record,"next press records without another trial");
+    session.flow.step=Step::Shortcut;session.flow.shortcut_tested=false;
+    session.fallback=None;
+    session.action("accept-shortcut-choice:Fn");
+    assert!(!session.flow.shortcut_tested,"retired Electron cannot change fallback progression");
 }

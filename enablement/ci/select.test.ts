@@ -1,8 +1,10 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync, readdirSync, mkdtempSync, rmSync, mkdirSync, writeFileSync, symlinkSync, unlinkSync, chmodSync} from 'node:fs';
-import {execFileSync} from 'node:child_process';
+import {execFileSync, spawnSync} from 'node:child_process';
 import {YAML} from 'bun';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
 import {select, changedPaths, macDecision, requiresMacRust, selectRange, documentationOnlyPath, needsPlatform, requiresMacRustRange, presentationInputs} from './select.ts';
 import {selectedOwners, suitePlan, routeDecision, routingProblems, publicMarkdown, linuxDrivers, owners} from './routing/consumers.ts';
 import {selection as localSelection, commands as localCommands, contractTests} from '../local-tests/run.ts';
@@ -396,4 +398,51 @@ test('Hermes owns independent package verification and publication; native admis
  assert.deepEqual(selectedOwners(['.github/workflows/hermes.yml']),['hermes']);
  assert.deepEqual(selectedOwners(['hermes/desktop/package-lock.json']),['hermes']);
  assert.deepEqual(selectedOwners(['hermes/skills/recordings/SKILL.md']),['hermes']);
+});
+
+test('Mac release admits a selected source before checkout, version resolution or signing', () => {
+  const releaseWorkflow = YAML.parse(readFileSync('.github/workflows/release-mac-preview.yml', 'utf8')) as any;
+  const steps = releaseWorkflow.jobs.preview.steps;
+  const sha = 'a'.repeat(40);
+  assert.equal(releaseWorkflow.on.workflow_dispatch.inputs.source_sha.required, false);
+  assert.equal(releaseWorkflow.jobs.preview.env.RELEASE_SOURCE_SHA, '${{ inputs.source_sha || github.sha }}');
+  assert.equal(releaseWorkflow.jobs.preview.outputs.tag, '${{ steps.release.outputs.tag }}');
+  assert.equal(releaseWorkflow.jobs.preview.outputs.sha, '${{ steps.release.outputs.sha }}');
+  assert.equal(releaseWorkflow.jobs.homebrew.env.RELEASE_SHA, '${{ needs.preview.outputs.sha }}');
+  const gate = steps.findIndex((s: any) => s.run?.includes('release_gate.py'));
+  const checkout = steps.findIndex((s: any) => s.with?.ref === '${{ env.RELEASE_SOURCE_SHA }}');
+  const version = steps.findIndex((s: any) => s.name === 'Resolve version from the admitted source');
+  const credentials = steps.findIndex((s: any) => s.name === 'Prepare Developer ID credentials');
+  assert.ok(gate >= 0 && gate < checkout && checkout < version && version < credentials);
+  const dir = mkdtempSync(join(tmpdir(), 'apparent-dev-release-source-'));
+  try {
+    mkdirSync(join(dir, 'bin'));
+    writeFileSync(join(dir, 'bin/python3'), '#!/bin/sh\nprintf "%s\\n" "$@" > "$TRACE"\nexit "$ADMISSION_EXIT"\n', {mode: 0o700});
+    const invoke = (ref: string, source: string, admission: string) => spawnSync('bash', ['-e', '-c', steps[gate].run], {
+      cwd: dir, encoding: 'utf8', env: {...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH,
+        GITHUB_REF: ref, GITHUB_SHA: 'b'.repeat(40), RELEASE_SOURCE_SHA: source,
+        APPARENT_PREVIEW_NOTARIZE: 'true',
+        ADMISSION_EXIT: admission, TRACE: join(dir, 'trace'), GITHUB_ENV: join(dir, 'env'),
+        GITHUB_RUN_NUMBER: '26', GITHUB_RUN_ATTEMPT: '1'},
+    });
+    assert.equal(invoke('refs/heads/main', sha, '0').status, 0);
+    assert.deepEqual(readFileSync(join(dir, 'trace'), 'utf8').trim().split('\n'),
+      ['enablement/release_gate.py', '--platform', 'macos', '--sha', sha]);
+    assert.notEqual(invoke('refs/heads/main', sha, '19').status, 0, 'failed admission must stop the step');
+    assert.equal(invoke('refs/heads/t3/onboarding-mac-release-baseline', 'b'.repeat(40), '0').status, 0);
+    assert.notEqual(invoke('refs/heads/t3/onboarding-mac-release-baseline', sha, '0').status, 0,
+      'the historical exception cannot select another source');
+    // The version resolver supplies the tag; the real workflow shell must hand
+    // that tag and the admitted source (not the dispatch SHA) to Homebrew.
+    assert.equal(steps[version].id, 'release');
+    writeFileSync(join(dir, 'bin/node'), '#!/bin/sh\nprintf "APPARENT_PREVIEW_TAG=preview-mac-22-3\\n" >> "$GITHUB_ENV"\n', {mode: 0o700});
+    const output = join(dir, 'release-output');
+    const resolved = spawnSync('bash', ['-e', '-c', steps[version].run], {
+      cwd: dir, encoding: 'utf8', env: {...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH,
+        GITHUB_REF: 'refs/heads/main', GITHUB_SHA: 'b'.repeat(40), RELEASE_SOURCE_SHA: sha,
+        GITHUB_ENV: join(dir, 'env'), GITHUB_OUTPUT: output},
+    });
+    assert.equal(resolved.status, 0, resolved.stderr);
+    assert.equal(readFileSync(output, 'utf8'), `tag=preview-mac-22-3\nsha=${sha}\n`);
+  } finally { rmSync(dir, {recursive: true, force: true}); }
 });
