@@ -47,8 +47,11 @@ falls back to the saved WAV. Stop joins the input first, drains the writer, upda
 flushes and calls `sync_all` before normal bundle processing. It does not overwrite a saved WAV.
 
 The intended healthy-writer process-crash tail is one 100 ms polling interval plus one input
-callback and scheduling/I/O latency. Two seconds of writer backlog is the failure threshold, not
-a promise that a stalled disk loses at most two seconds: a write/sync failure stops persistence,
+callback and scheduling/I/O latency. Retained backlog drains immediately in batches of at most
+two seconds, including at Stop; a scheduling or sync delay alone does not fail a capture.
+If unwritten samples expire from the 60-second history, persistence fails rather than dropping
+or shifting narration. This is not a promise that a stalled disk loses at most two seconds:
+a history or write/sync failure stops persistence,
 keeps its saved prefix, logs the error and makes Stop report failure instead of a successful
 silent recording. Recording-time memory stays bounded even after that failure. A slow or hung
 filesystem can exceed the intended tail; the actual lost tail is unknown without a separate

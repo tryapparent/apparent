@@ -110,8 +110,9 @@ join/write/checkpoint/read, and WAV encode/read/format failures on both macOS an
 Linux. `finalization.wav_error_kind` allows only `io`, `format`, `too_wide`,
 `unfinished_sample`, `unsupported` or `invalid_sample_format` (otherwise null).
 WAV-wrapped I/O failures retain their structured I/O kind and OS code. Neither
-WAV format messages nor sample data are reported. These diagnostics do not
-change the writer's backlog limit, save failure behavior or recovery guarantees.
+WAV format messages nor sample data are reported. The writer drains retained backlog
+in bounded batches; only expired history, rather than a two-second delay, fails saving.
+Write/sync failures and recovery guarantees remain unchanged.
 Finalization fingerprints include the innermost known stage so unrelated failures
 are not grouped solely by the Desktop completion call site. Historical groups
 and installed older releases retain their old reports. No raw error/panic text, logs, recordings,
