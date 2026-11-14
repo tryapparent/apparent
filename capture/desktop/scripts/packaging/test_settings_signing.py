@@ -23,7 +23,11 @@ class SigningTests(unittest.TestCase):
                              "dist/onboarding-presentation.cjs", "dist/onboarding-hyprland.cjs", "dist/onboarding-selection.cjs",
                              "dist/src/installer/index.html", "dist/pill/index.html",
                              "dist/assets/controls.js", "node_modules/electron/dist/electron",
-                             "electron/pill/native/window.node"):
+                             "electron/pill/native/window.node",
+                             "electron/record-media/worker.js", "electron/record-media/policy.js",
+                             "electron/record-media/node_modules/@apparent/engine-sdk/dist/index.js",
+                             "electron/record-media/native/apparent-engine-media",
+                             "electron/record-media/native/apparent-engine-probe"):
                 file = frontend / relative
                 file.parent.mkdir(parents=True, exist_ok=True)
                 file.write_text(relative)
@@ -59,6 +63,8 @@ class SigningTests(unittest.TestCase):
                 relative = f"dist/onboarding-{name}.cjs"
                 self.assertEqual((destination / "app" / relative).read_text(), relative)
             self.assertTrue((destination / "runtime/electron").is_file())
+            self.assertTrue((destination / "app/electron/record-media/worker.js").is_file())
+            self.assertTrue((destination / "app/electron/record-media/native/apparent-engine-media").is_file())
             self.assertFalse((destination / "app/electron/pill/native/window.node").exists())
             for identity in ("-", "Developer ID Application: Synthetic"):
                 mac = root / ("mac-ad-hoc" if identity == "-" else "mac-release")
@@ -71,6 +77,10 @@ class SigningTests(unittest.TestCase):
                 def runtime_signer(runtime, sign, entitlements):
                     self.assertIn(sign + [str(addon)], signed)
                     self.assertIn(["codesign", "--verify", "--strict", str(addon)], signed)
+                    for name in ("apparent-engine-media", "apparent-engine-probe"):
+                        binary = mac / "app/electron/record-media/native" / name
+                        self.assertIn(sign + [str(binary)], signed)
+                        self.assertIn(["codesign", "--verify", "--strict", str(binary)], signed)
                     self.assertEqual("--timestamp" in sign, identity != "-")
 
                 with patch.object(stage, "__file__", str(script)), \

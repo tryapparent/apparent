@@ -248,6 +248,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tempfile",
  "transcribe-cpp",
  "tray-icon",
  "windows 0.61.3",

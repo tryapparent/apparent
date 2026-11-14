@@ -84,7 +84,9 @@ async function main() {
   const executables = ['Contents/MacOS/apparent', 'Contents/MacOS/apparent-helper',
     'Contents/Resources/settings/runtime/Electron.app/Contents/MacOS/Electron',
     'Contents/Resources/settings/runtime/Electron.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework',
-    'Contents/Resources/settings/app/electron/pill/native/window.node'];
+    'Contents/Resources/settings/app/electron/pill/native/window.node',
+    'Contents/Resources/settings/app/electron/record-media/native/apparent-engine-media',
+    'Contents/Resources/settings/app/electron/record-media/native/apparent-engine-probe'];
   for (const relative of executables) {
     assert.equal(output('lipo', ['-archs', join(app, relative)]), retainInstalled ? 'x86_64' : 'arm64', relative);
   }

@@ -22,7 +22,7 @@ function admitted(expression: string, needs: any, event = 'pull_request', draft 
     {event_name: event, repository: context.repository ?? 'tryapparent/apparent', ref: context.ref ?? (event === 'push' ? 'refs/heads/main' : 'refs/pull/1/merge'), event: {pull_request: {draft}}}, needs, () => cancelled, () => true);
 }
 function parents(outputs: any = {}, reuse: any = {}) {
-  return {contracts: {result: 'success'}, hermes: {result: 'success'}, select: {result: 'success', outputs}, reuse: {result: 'success', outputs: reuse}, portable: {result: 'success'}};
+  return {contracts: {result: 'success'}, hermes: {result: 'success'}, select: {result: 'success', outputs}, reuse: {result: 'success', outputs: reuse}, portable: {result: 'success'}, 'record-media': {result: 'success'}};
 }
 test('independent stream workflows, manual diagnostics, PR integration checkout and read-only verification', () => {
   assert.deepEqual(readdirSync(new URL('.github/workflows/', root)).filter(name =>
@@ -47,7 +47,7 @@ test('PR updates coalesce but main commits cannot cancel earlier code verificati
 test('source suites run on ready PRs and main; unknown selection broadens and cancellation prevents allocation', () => {
   for (const name of ['linux', 'macos']) {
     const job = ci().jobs[name];
-    assert.deepEqual(job.needs, ['contracts', 'select', 'reuse', 'portable']);
+    assert.deepEqual(job.needs, ['contracts', 'select', 'reuse', 'portable', 'record-media']);
     for (const result of ['success', 'failure', 'skipped', 'cancelled']) {
       const needs = parents({platform: 'true', macos: 'true', mac_rust: 'true', hermes: 'true'});
       needs.select.result = result;
@@ -58,6 +58,13 @@ test('source suites run on ready PRs and main; unknown selection broadens and ca
       needs.contracts.result = 'failure';
       assert.equal(admitted(job.if, needs), false);
     }
+  }
+});
+test('failed Record policy blocks native allocation; an unselected suite does not', () => {
+  for (const name of ['linux', 'macos']) for (const result of ['success', 'skipped', 'failure', 'cancelled']) {
+    const needs = parents({platform: 'true', macos: 'true', mac_rust: 'true'});
+    needs['record-media'].result = result;
+    assert.equal(admitted(ci().jobs[name].if, needs), ['success', 'skipped'].includes(result));
   }
 });
 test('each consumer can be skipped independently; skipping Hermes does not block unrelated suites', () => {

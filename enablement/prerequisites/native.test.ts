@@ -25,6 +25,9 @@ function fixture(t: any) {
   for (const name of ['worker.js', 'policy.js', 'package.json']) {
     put('capture/desktop/ui/frontend/electron/record-completion/' + name);
   }
+  for (const name of ['worker.js', 'policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/manifest.json']) {
+    put('capture/desktop/ui/frontend/electron/record-media/' + name);
+  }
   for (const name of ['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json']) {
     put('capture/desktop/ui/frontend/electron/storage-owner/' + name);
   }
@@ -36,6 +39,7 @@ function generators(f: ReturnType<typeof fixture>, fail = '') {
     'storage-policy': ['electron/storage-policy.cjs', ...['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json'].map(name => 'electron/storage-owner/' + name)],
     'connect-transport': ['electron/connect.cjs'],
     'pill': ['worker.js', 'policy.js', 'package.json'].map(name => 'electron/record-completion/' + name),
+    'record-media': ['worker.js', 'policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/manifest.json'].map(name => 'electron/record-media/' + name),
   };
   for (const [name, files] of Object.entries(outputs)) {
     for (const file of files) rmSync(resolve(f.root, 'capture/desktop/ui/frontend', file));
@@ -56,9 +60,9 @@ for (const file of ${JSON.stringify(files)}) {
 test('one preparation entrypoint rebuilds absent native artifacts and can run again', t => {
   const f = fixture(t), trace = generators(f);
   assert.equal(prepareNativeInputs(f.root, 'linux'), f.electron);
-  assert.equal(trace(), 'storage-policy\nconnect-transport\npill\n');
+  assert.equal(trace(), 'storage-policy\nconnect-transport\npill\nrecord-media\n');
   assert.equal(prepareNativeInputs(f.root, 'linux'), f.electron);
-  assert.equal(trace(), 'storage-policy\nconnect-transport\npill\nstorage-policy\nconnect-transport\npill\n');
+  assert.equal(trace(), 'storage-policy\nconnect-transport\npill\nrecord-media\nstorage-policy\nconnect-transport\npill\nrecord-media\n');
 });
 test('missing runtime stops before generating artifacts', t => {
   const f = fixture(t);
