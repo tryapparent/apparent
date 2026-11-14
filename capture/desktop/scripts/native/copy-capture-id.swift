@@ -66,6 +66,7 @@ func run(_ path: String, _ args: [String], cap: TimeInterval = 5) throws -> Stri
 }
 func stop() throws {
     guard let child = owned else { return }
+    observeCleanupProcesses("beforeRootStop", root: child.processIdentifier)
     if child.isRunning {
         child.terminate()
         let until = Date().addingTimeInterval(2)
@@ -75,7 +76,117 @@ func stop() throws {
         while child.isRunning && Date() < killedUntil { Thread.sleep(forTimeInterval: 0.05) }
     }
     try require(!child.isRunning, "Owned preview did not stop")
+    var exits = report["cleanupRootExits"] as? [[String: Any]] ?? []
+    exits.append(["pid": child.processIdentifier, "exitStatus": child.terminationStatus,
+                  "terminationReason": child.terminationReason.rawValue])
+    report["cleanupRootExits"] = exits
+    observeCleanupProcesses("afterRootStop", root: nil)
     owned = nil
+}
+// Diagnostic only: no PID collected here is ever used to authorize a signal.
+// Keep identities across both previews so reparenting after root exit is visible.
+var observedCleanupPIDs = Set<pid_t>()
+func observeCleanupProcesses(_ stage: String, root: pid_t?) {
+    guard let home = fixture else { return }
+    // One shared budget per snapshot, inside the unchanged overall deadline.
+    // Always reserve eight seconds for existing cleanup/reporting. No probe waits
+    // for quiescence, retries a deletion or changes the fixture's pass criteria.
+    let until = min(deadline.addingTimeInterval(-8), Date().addingTimeInterval(2))
+    var snapshot: [String: Any] = ["stage": stage,
+        "uptime": ProcessInfo.processInfo.systemUptime,
+        "identityUse": "read-only; birth time has one-second resolution; never signal these PIDs"]
+    func probe(_ path: String, _ args: [String]) -> String? {
+        guard until.timeIntervalSinceNow > 0.1 else { return nil }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: path)
+        process.arguments = args; process.environment = env
+        let name = "cleanup-probe-\(sequence).log"
+        sequence += 1
+        let file = output.appendingPathComponent(name)
+        var receipt: [String: Any] = ["executable": path, "arguments": args, "file": name]
+        var text: String?
+        do {
+            try require(fm.createFile(atPath: file.path, contents: nil,
+                                     attributes: [.posixPermissions: 0o600]), "Cannot create cleanup probe log")
+            let handle = try FileHandle(forWritingTo: file)
+            defer { try? handle.close() }
+            process.standardOutput = handle; process.standardError = handle
+            try process.run()
+            while process.isRunning && Date() < until { Thread.sleep(forTimeInterval: 0.01) }
+            let timedOut = process.isRunning
+            // This is the exact unreaped Process launched above, never a census PID.
+            if timedOut { kill(process.processIdentifier, SIGKILL) }
+            receipt["timedOut"] = timedOut
+            if !process.isRunning {
+                receipt["exitStatus"] = process.terminationStatus
+                receipt["terminationReason"] = process.terminationReason.rawValue
+                // Do not let malformed/oversized diagnostics consume reporting time.
+                let size = (try fm.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.intValue ?? 0
+                receipt["bytes"] = size
+                if !timedOut && size <= 262144 {
+                    text = String(data: try Data(contentsOf: file), encoding: .utf8)
+                }
+            } else { receipt["exitStatusUnavailable"] = true }
+        } catch { receipt["error"] = String(describing: error) }
+        var probes = snapshot["probes"] as? [[String: Any]] ?? []
+        probes.append(receipt); snapshot["probes"] = probes
+        return text
+    }
+    if let root {
+        observedCleanupPIDs.insert(root)
+        // The only system-wide census is numeric PID/PPID metadata. No argv,
+        // environment or foreign executable names are requested or retained.
+        if let table = probe("/bin/ps", ["-axo", "pid=,ppid="]) {
+            let edges = table.split(separator: "\n").compactMap { line -> (pid_t, pid_t)? in
+                let fields = line.split(whereSeparator: { $0.isWhitespace })
+                guard fields.count == 2, let pid = pid_t(fields[0]), let parent = pid_t(fields[1]) else { return nil }
+                return (pid, parent)
+            }
+            var descendants: Set<pid_t> = [root]
+            for _ in 0..<8 {
+                let next = Set(edges.filter { descendants.contains($0.1) }.map { $0.0 })
+                let combined = descendants.union(next)
+                if combined.count > 64 { snapshot["descendantLimitReached"] = true; break }
+                if combined == descendants { break }
+                descendants = combined
+            }
+            snapshot["descendantDepthLimitReached"] = edges.contains {
+                descendants.contains($0.1) && !descendants.contains($0.0)
+            }
+            snapshot["descendantPIDs"] = descendants.sorted()
+            observedCleanupPIDs.formUnion(descendants)
+        }
+    }
+    if !observedCleanupPIDs.isEmpty {
+        // comm is executable identity, not command/args. Retain the raw birth
+        // time alongside PID/PPID; a reused PID is an observation, never ownership.
+        snapshot["retainedPIDMetadata"] = probe("/bin/ps", ["-ww", "-p",
+            observedCleanupPIDs.sorted().map { String($0) }.joined(separator: ","),
+            "-o", "pid=,ppid=,lstart=,comm="]) as Any? ?? NSNull()
+    }
+    // Include writers not present in the retained ancestry. +D limits names to
+    // this generated fixture; p/f/a/n omit argv, environment and file contents.
+    // lsof exit 1 may mean no matches OR an error: retain raw status and output,
+    // never turn an empty/unavailable observation into proof of quiescence.
+    snapshot["fixtureHandles"] = probe("/usr/sbin/lsof", ["-nP", "-Fpfan", "+D", home.path]) as Any? ?? NSNull()
+    snapshot["finishedUptime"] = ProcessInfo.processInfo.systemUptime
+    snapshot["budgetExhausted"] = Date() >= until
+    var observations = report["cleanupProcessObservations"] as? [[String: Any]] ?? []
+    observations.append(snapshot); report["cleanupProcessObservations"] = observations
+}
+
+// Failure-specific names only, never values or ACL principals. NOFOLLOW also
+// covers a failed symlink entry. Observe once; there is no removal retry.
+func cleanupXattrNames(_ url: URL) -> [String: Any] {
+    var bytes = [CChar](repeating: 0, count: 4096)
+    let count = url.path.withCString { path in
+        bytes.withUnsafeMutableBufferPointer { listxattr(path, $0.baseAddress, $0.count, XATTR_NOFOLLOW) }
+    }
+    guard count >= 0 else { return ["errno": errno, "namesAvailable": false] }
+    let names = bytes.prefix(count).split(separator: 0).map {
+        String(decoding: $0.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+    }
+    return ["names": names, "namesAvailable": true, "valuesRead": false]
 }
 // Preserve the entry that Foundation actually refused, without suppressing the
 // error, retrying deletion or changing permissions. Returning false is the
@@ -93,6 +204,9 @@ final class CleanupFailureObserver: NSObject, FileManagerDelegate {
             let native = error as NSError
             var entry: [String: Any] = ["entry": relative,
                 "domain": String(native.domain.prefix(128)), "code": native.code]
+            if path == root.path || path.hasPrefix(root.path + "/") {
+                entry["xattrs"] = cleanupXattrNames(url)
+            }
             if let underlying = native.userInfo[NSUnderlyingErrorKey] as? NSError {
                 entry["underlyingDomain"] = String(underlying.domain.prefix(128))
                 entry["underlyingCode"] = underlying.code
@@ -674,10 +788,12 @@ if let home = fixture {
         let removal = FileManager()
         let observer = CleanupFailureObserver(root: home)
         removal.delegate = observer
+        observeCleanupProcesses("beforeRemoval", root: nil)
         do { try removal.removeItem(at: home); report["fixtureRemoved"] = true }
         catch {
             failure = error; report["passed"] = false; report["cleanupError"] = String(describing: error)
             report["cleanupDiagnosticsFailure"] = String(describing: error)
+            observeCleanupProcesses("afterRemovalFailure", root: nil)
             if deadline.timeIntervalSinceNow > 6 {
                 report["cleanupRemaining"] = cleanupDiagnostics(home)
             }

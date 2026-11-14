@@ -6,6 +6,7 @@ import path from 'node:path';
 import {spawn, execFileSync, type ChildProcess} from 'node:child_process';
 import {constants} from 'node:fs';
 import {prepareForegroundScene, type LaunchObservation, type LaunchWindow} from './startup.ts';
+import {savedForeground, withRetainedEvidence} from './saved.ts';
 import {auditedControl, type ControlOperation, type ControlReceipt} from './control.ts';
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
@@ -74,13 +75,18 @@ async function poll<T>(read: () => Promise<T>, accept: (value: T) => boolean, la
   while (Date.now() < end) { try { const value = await read(); if (accept(value)) return value; } catch (e) { last = redact(e); } await sleep(100); }
   throw Error(`${label} not observed: ${last.slice(-1000)}`);
 }
-async function native(operation: 'snapshot' | 'prepare' | 'click' | 'startup' | 'close-settings', label?: string, settings?: LaunchWindow) {
+async function native(operation: 'snapshot' | 'prepare' | 'click' | 'startup' | 'close-settings', label?: string, settings?: LaunchWindow, preparedPid?: number) {
   const stem = `${++sequence}-${operation}`;
   const request = path.join(output, stem + '.request.json');
   await writeFile(request, JSON.stringify({operation, app, rootPid: rustPid, output: path.join(output, stem + '.png'), ...(label ? {label} : {}),
+    ...(preparedPid ? {preparedPid} : {}),
     ...(settings ? {settingsPid: settings.pid, settingsWindowId: settings.windowId} : {})}), {mode: 0o600, flag: 'wx'});
-  const result = JSON.parse(await command(hostEnv.APPARENT_FOREGROUND_NATIVE_INPUT!, [request], {env: hostEnv}));
-  await evidence(stem, result); return result as LaunchObservation & {windowId: number; words: Array<{text: string}>; prepared?: boolean};
+  const startedAt = Date.now(), started = performance.now();
+  return withRetainedEvidence(async () => {
+    const result = JSON.parse(await command(hostEnv.APPARENT_FOREGROUND_NATIVE_INPUT!, [request], {env: hostEnv}));
+    await evidence(stem, result); return result as LaunchObservation & {pid: number; windowId: number; words: Array<{text: string}>; prepared?: boolean};
+  }, () => evidence(stem + '-timing', {startedAt, elapsedMs: performance.now() - started}),
+  error => { cleanupErrors.push('native timing: ' + redact(error)); });
 }
 const text = (snapshot: {words: Array<{text: string}>}) => snapshot.words.map(word => word.text).join(' ').toLowerCase();
 async function ui(label: string, predicate: (value: string) => boolean, scenePid: number, cap = 12_000) {
@@ -232,52 +238,80 @@ async function main() {
     const start = await startOwnedCapture(captureId);
     assert.equal(start.capture_id, captureId); assert.equal(start.status, 'recording', 'A real captured frame is required');
     await sleep(2000);
-    const saved = await captureControl('stop', captureId, ['capture', 'stop', captureId, '--wait', '--timeout', '45'], 51_000);
-    assert.equal(saved.capture_id, captureId); assert.equal(saved.status, 'saved');
-    const bundle = await realpath(saved.bundle_path); assert.equal(path.dirname(bundle), appEnv.APPARENT_CAPTURES_DIR);
-    for (const name of ['apparent.json', 'summary.md', 'contact-sheet.png']) assert.ok((await stat(path.join(bundle, name))).size > 0);
-    const metadata = JSON.parse(await readFile(path.join(bundle, 'apparent.json'), 'utf8'));
-    assert.equal(metadata.context?.microphoneCapture, 'off');
-    assert.ok(typeof metadata.video === 'string' && metadata.video.length > 0, 'Saved recording must include a movie');
-    const movie = await realpath(path.join(bundle, metadata.video));
-    assert.ok(movie.startsWith(bundle + path.sep) && (await stat(movie)).size > 0);
-    if (metadata.audio) assert.ok((await stat(path.join(bundle, metadata.audio))).size <= 44, 'Microphone-off capture contains audio bytes');
-    assert.equal(JSON.parse(await readFile(configFile, 'utf8')).microphoneEnabled, false);
-    await cp(bundle, path.join(output, 'synthetic.apparent'), {recursive: true, errorOnExist: true, force: false});
-    await ui('saved foreground pill', value => value.includes('copy link'), generated.pid);
-    const accessible = await native('prepare', 'Copy link');
-    assert.equal(accessible.prepared, true, 'Native accessibility bootstrap did not acknowledge an actual button');
-    assert.equal(accessible.frontPid, generated.pid, 'Accessibility bootstrap changed the foreground');
-    const before = await status(); assert.equal(before.captures.length, 0); assert.equal(before.uploadedBytes, 0); assert.deepEqual(await jobs(), []);
-    await native('click', 'Copy link');
-    await ui('upload progress', value => value.includes('uploading') && value.includes('cancel upload'), generated.pid);
-    const during = await poll(status, value => value.putCount > 0, 'actual PUT body receipt', 5000);
-    await native('click', 'Cancel upload');
-    await ui('cancelled local recording', value => value.includes('cancelled') && value.includes('retry upload'), generated.pid);
-    const cancelled = await poll(status, value => value.cancelledPuts === 1, 'cancelled PUT connection', 5000);
-    assert.equal(cancelled.uploadedBytes, 0, 'Cancelled transfer committed bytes');
-    await native('click', 'Retry upload');
-    await ui('link copied', value => value.includes('link copied') && value.includes('copy link'), generated.pid, 30_000);
-    const completed = await status();
-    assert.equal(completed.syntheticOnly, true); assert.equal(completed.shareCalls, 1);
-    assert.ok(completed.putAttempts > cancelled.putAttempts, 'Retry did not start a fresh transfer');
-    assert.ok(completed.captures.some((capture: any) => capture.ready && capture.format === 'plaintext-v1' && capture.received && capture.files >= 3));
-    const copied = await command('/usr/bin/pbpaste', [], {env: hostEnv});
-    assert.ok(copied.includes('Anyone with this link'), 'Existing public-access disclosure must be preserved');
-    const matches = copied.match(new RegExp(String.raw`http://127\.0\.0\.1:\d+/s/[a-f0-9]{64}`, 'g')) ?? [];
-    assert.equal(matches.length, 1, 'Expected one synthetic destination');
-    const destination = new URL(matches[0]!); assert.equal(destination.origin, origin);
-    const expected = 'I recorded some feedback in Apparent. Open this link for the recording, transcript and original image evidence: ' + matches[0] + '. Anyone with this link can view this capture; shared captures are not end-to-end encrypted.';
-    assert.ok(copied === expected, 'Complete public handoff/disclosure differs');
-    const sentinel = 'synthetic-recopy-' + randomBytes(8).toString('hex');
-    await command('/usr/bin/pbcopy', [], {env: hostEnv, input: sentinel});
-    assert.ok((await command('/usr/bin/pbpaste', [], {env: hostEnv})) === sentinel, 'Clipboard sentinel did not settle');
-    await ui('fresh recopy target', value => value.includes('link copied') && value.includes('copy link'), generated.pid);
-    await native('click', 'Copy link');
-    await poll(() => command('/usr/bin/pbpaste', [], {env: hostEnv}), value => value === copied, 'native clipboard restoration', 3000);
-    const recopied = await status(); assert.deepEqual(footprint(recopied), footprint(completed)); assert.deepEqual(await jobs(), []);
-    await evidence('foreground-result', {passed: true, scope: 'Native installed Mac pill; explicit synthetic plaintext share; encrypted CLI proof separate',
-      automaticBefore: footprint(before), duringPut: footprint(during), cancelled: footprint(cancelled), completed: footprint(completed), recopied: footprint(recopied), clipboardSha256: digest(copied)});
+    await savedForeground({
+      waitForRecordingControls: async () => {
+        // Mac's initial target-switch reveal folds into these controls. Wait
+        // for the real surface rather than bootstrapping during that morph.
+        await ui('recording Finish control', value => value.includes('finish'), generated.pid);
+      },
+      prepareRecording: async () => {
+        // Read-only: never Finish through this input adapter. Enable the real
+        // Electron AX tree while Recording has no saved-dismissal deadline.
+        const prepared = await native('prepare', 'Finish');
+        assert.equal(prepared.prepared, true, 'Native accessibility bootstrap did not acknowledge an actual button');
+        assert.ok(Number.isSafeInteger(prepared.pid) && prepared.pid > 1, 'Prepared accessibility lacks an exact pill PID');
+        assert.equal(prepared.frontPid, generated.pid, 'Accessibility bootstrap changed the foreground');
+        return prepared;
+      },
+      stop: async () => {
+        const saved = await captureControl('stop', captureId!, ['capture', 'stop', captureId!, '--wait', '--timeout', '45'], 51_000);
+        assert.equal(saved.capture_id, captureId); assert.equal(saved.status, 'saved');
+        return saved;
+      },
+      interact: async (_saved, prepared) => {
+        await ui('saved foreground pill', value => value.includes('copy link'), generated.pid);
+        const before = await status(); assert.equal(before.captures.length, 0); assert.equal(before.uploadedBytes, 0); assert.deepEqual(await jobs(), []);
+        await native('click', 'Copy link', undefined, prepared.pid);
+        await ui('upload progress', value => value.includes('uploading') && value.includes('cancel upload'), generated.pid);
+        const during = await poll(status, value => value.putCount > 0, 'actual PUT body receipt', 5000);
+        await native('click', 'Cancel upload');
+        await ui('cancelled local recording', value => value.includes('cancelled') && value.includes('retry upload'), generated.pid);
+        const cancelled = await poll(status, value => value.cancelledPuts === 1, 'cancelled PUT connection', 5000);
+        assert.equal(cancelled.uploadedBytes, 0, 'Cancelled transfer committed bytes');
+        await native('click', 'Retry upload');
+        await ui('link copied', value => value.includes('link copied') && value.includes('copy link'), generated.pid, 30_000);
+        const completed = await status();
+        assert.equal(completed.syntheticOnly, true); assert.equal(completed.shareCalls, 1);
+        assert.ok(completed.putAttempts > cancelled.putAttempts, 'Retry did not start a fresh transfer');
+        assert.ok(completed.captures.some((capture: any) => capture.ready && capture.format === 'plaintext-v1' && capture.received && capture.files >= 3));
+        const copied = await command('/usr/bin/pbpaste', [], {env: hostEnv});
+        assert.ok(copied.includes('Anyone with this link'), 'Existing public-access disclosure must be preserved');
+        const matches = copied.match(new RegExp(String.raw`http://127\.0\.0\.1:\d+/s/[a-f0-9]{64}`, 'g')) ?? [];
+        assert.equal(matches.length, 1, 'Expected one synthetic destination');
+        const destination = new URL(matches[0]!); assert.equal(destination.origin, origin);
+        const expected = 'I recorded some feedback in Apparent. Open this link for the recording, transcript and original image evidence: ' + matches[0] + '. Anyone with this link can view this capture; shared captures are not end-to-end encrypted.';
+        assert.ok(copied === expected, 'Complete public handoff/disclosure differs');
+        const sentinel = 'synthetic-recopy-' + randomBytes(8).toString('hex');
+        await command('/usr/bin/pbcopy', [], {env: hostEnv, input: sentinel});
+        assert.ok((await command('/usr/bin/pbpaste', [], {env: hostEnv})) === sentinel, 'Clipboard sentinel did not settle');
+        await ui('fresh recopy target', value => value.includes('link copied') && value.includes('copy link'), generated.pid);
+        await native('click', 'Copy link');
+        await poll(() => command('/usr/bin/pbpaste', [], {env: hostEnv}), value => value === copied, 'native clipboard restoration', 3000);
+        const recopied = await status(); assert.deepEqual(footprint(recopied), footprint(completed)); assert.deepEqual(await jobs(), []);
+        await evidence('foreground-result', {passed: true, scope: 'Native installed Mac pill; explicit synthetic plaintext share; encrypted CLI proof separate',
+          automaticBefore: footprint(before), duringPut: footprint(during), cancelled: footprint(cancelled), completed: footprint(completed), recopied: footprint(recopied), clipboardSha256: digest(copied)});
+      },
+      retain: async saved => {
+        const startedAt = Date.now(), started = performance.now();
+        const bundle = await realpath(saved.bundle_path); assert.equal(path.dirname(bundle), appEnv.APPARENT_CAPTURES_DIR);
+        await withRetainedEvidence(async () => {
+          for (const name of ['apparent.json', 'summary.md', 'contact-sheet.png']) assert.ok((await stat(path.join(bundle, name))).size > 0);
+          const metadata = JSON.parse(await readFile(path.join(bundle, 'apparent.json'), 'utf8'));
+          assert.equal(metadata.context?.microphoneCapture, 'off');
+          assert.ok(typeof metadata.video === 'string' && metadata.video.length > 0, 'Saved recording must include a movie');
+          const movie = await realpath(path.join(bundle, metadata.video));
+          assert.ok(movie.startsWith(bundle + path.sep) && (await stat(movie)).size > 0);
+          if (metadata.audio) assert.ok((await stat(path.join(bundle, metadata.audio))).size <= 44, 'Microphone-off capture contains audio bytes');
+          assert.equal(JSON.parse(await readFile(configFile, 'utf8')).microphoneEnabled, false);
+        }, async () => {
+          // Retain private bundle evidence even if a media assertion failed.
+          await withRetainedEvidence(() => cp(bundle, path.join(output, 'synthetic.apparent'), {recursive: true, errorOnExist: true, force: false}),
+            () => evidence('bundle-proof-timing', {startedAt, elapsedMs: performance.now() - started}),
+            error => { cleanupErrors.push('bundle timing: ' + redact(error)); });
+        }, error => { cleanupErrors.push('bundle retention: ' + redact(error)); });
+      },
+      reportRetentionFailure: error => { cleanupErrors.push('saved bundle proof: ' + redact(error)); },
+    });
   } catch (error) { primary = error; }
   finally {
     finishing = true;
