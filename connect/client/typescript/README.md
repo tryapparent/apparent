@@ -35,9 +35,12 @@ TypeScript verifies Rust's signed bytes/signature, stored identities, multipart
 stream and original bytes, and publishes a newly encrypted/signed stream for
 Rust to unpack. Both sides reject wrong recipients and tampering; strict
 Ed25519 negative vectors are checked against Rust's `verify_strict` result.
-All generated identities and payloads stay in the private test fixture and are
-removed by its existing cleanup. No static private keys or large binaries are
-checked in. Run this migration-only compatibility lane from the repository root:
+That lane’s generated identities and payloads stay in its private fixture and
+are removed by its existing cleanup. Ordinary `npm test` also reads a small
+[checked-in Rust producer vector](test/fixtures/README.md), including an explicitly
+synthetic test identity. It requires no Rust toolchain and certifies only the
+current single-archive format. Run the larger migration-only compatibility lane
+from the repository root:
 
 ```sh
 APPARENT_CONNECT_INTEROP_NODE="$(command -v node)" \

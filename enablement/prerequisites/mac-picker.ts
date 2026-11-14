@@ -6,6 +6,10 @@ import {spawn, type ChildProcessWithoutNullStreams} from 'node:child_process';
 // AX query. Give the complete picker command a finite allowance for that startup;
 // the caller still clips every call to the original 95s overall test deadline.
 export const pickerCommandMs = 5000;
+export const pickerObservations = ['inspect-window', 'inspect', 'inspect-go', 'inspect-go-path', 'diagnose'] as const;
+export const pickerActions = ['focus-change', 'open-go', 'enter-go-path', 'navigate-go', 'choose', 'cancel'] as const;
+export type PickerObservation = typeof pickerObservations[number];
+export type PickerAction = typeof pickerActions[number];
 export type PickerDriver = {
   storageIdle: () => Promise<void>;
   change: () => Promise<void>;
@@ -367,6 +371,19 @@ export class PickerProcess {
   readonly stats = {starts: 0, requests: 0};
   constructor(launch: () => ChildProcessWithoutNullStreams = () =>
     spawn('/usr/bin/osascript', ['-e', persistentPanelScript], {stdio: 'pipe'})) { this.launch = launch; }
+
+  /** Read-only AX state may be polled. It does not establish clickability or focus. */
+  observe(args: string[], timeout: number): Promise<string> {
+    if (!(pickerObservations as readonly string[]).includes(args[2]))
+      return Promise.reject(new Error('Picker observation refuses input or activation'));
+    return this.request(args, timeout);
+  }
+  /** Input/activation is dispatched once; timeout means unknown outcome, never replay. */
+  act(args: string[], timeout: number): Promise<string> {
+    if (!(pickerActions as readonly string[]).includes(args[2]))
+      return Promise.reject(new Error('Picker action requires an explicit input operation'));
+    return this.request(args, timeout);
+  }
 
   private abort(message: string) {
     this.retired = true;

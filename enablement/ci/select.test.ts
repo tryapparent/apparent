@@ -26,11 +26,11 @@ function parents(outputs: any = {}, reuse: any = {}) {
 }
 test('independent stream workflows, manual diagnostics, PR integration checkout and read-only verification', () => {
   assert.deepEqual(readdirSync(new URL('.github/workflows/', root)).filter(name =>
-    Object.keys(workflow(name).on).some(event => !['workflow_dispatch', 'workflow_call'].includes(event))).sort(), ['checks.yml', 'hermes.yml', 'stream-connect.yml', 'stream-engine.yml', 'stream-public.yml']);
+    Object.keys(workflow(name).on).some(event => !['workflow_dispatch', 'workflow_call'].includes(event))).sort(), ['checks.yml', 'hermes.yml', 'stream-connect.yml', 'stream-engine.yml', 'stream-public.yml', 'verification.yml']);
   assert.deepEqual(Object.keys(ci().on), ['pull_request', 'push']);
   assert.deepEqual(ci().on.pull_request.types, ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft']);
   assert.equal(ci().permissions.contents, 'read');
-  for (const name of ['verification.yml']) assert.deepEqual(Object.keys(workflow(name).on), ['workflow_dispatch']);
+  assert.deepEqual(Object.keys(workflow('verification.yml').on), ['workflow_dispatch', 'workflow_run']);
   for (const job of Object.values(ci().jobs) as any[]) for (const step of job.steps ?? []) {
     if (step.uses === 'actions/checkout@v4') {
       assert.equal(step.with.ref, undefined, 'verify the proposed merge, not only the branch head');
@@ -205,6 +205,21 @@ function repository(action: (git: (...args: string[]) => string, dir: string) =>
   try {git('init', '-qb', 'main');git('config', 'user.name', 'CI fixture');git('config', 'user.email', 'ci@example.invalid');action(git, dir);}
   finally {process.chdir(previous);Object.assign(process.env, inherited);rmSync(dir, {recursive: true, force: true});}
 }
+test('executable comment changes explain exactly which input prevents narrow proof', () => repository((git, dir) => {
+  mkdirSync('enablement/directory-width', {recursive:true});
+  const path = 'enablement/directory-width/check.py';
+  writeFileSync(path, '# original checker\n'); chmodSync(path, 0o755);
+  git('add', '.'); git('commit', '-qm', 'baseline');
+  const base = git('rev-parse', 'HEAD');
+  writeFileSync(path, '# documentation-only comment\n');
+  git('add', '.'); git('commit', '-qm', 'comment');
+  const head = git('rev-parse', 'HEAD');
+  const decision = selectRange(base, head, dir);
+  assert.equal(decision.inputProofKnown, false);
+  assert.ok(decision.reasons.includes(`fallback:unproven-input:${path}:M:100755->100755`));
+  assert.deepEqual(decision.plan, routeDecision(null).plan, 'Explanation does not weaken fallback');
+}));
+
 function cli(base: string, head: string, dir: string) {
   const output = dir + '/.git/selection'; writeFileSync(output, '');
   const result = JSON.parse(execFileSync(process.execPath, [new URL('enablement/ci/select.ts', root).pathname], {
