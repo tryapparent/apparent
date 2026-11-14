@@ -6,7 +6,7 @@ import path from 'node:path';
 import {spawn, execFileSync, type ChildProcess} from 'node:child_process';
 import {constants} from 'node:fs';
 import {prepareForegroundScene, type LaunchObservation, type LaunchWindow} from './startup.ts';
-import {savedForeground} from './saved.ts';
+import {savedForeground, withRetainedEvidence} from './saved.ts';
 import {auditedControl, type ControlOperation, type ControlReceipt} from './control.ts';
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
@@ -82,10 +82,11 @@ async function native(operation: 'snapshot' | 'prepare' | 'click' | 'startup' | 
     ...(preparedPid ? {preparedPid} : {}),
     ...(settings ? {settingsPid: settings.pid, settingsWindowId: settings.windowId} : {})}), {mode: 0o600, flag: 'wx'});
   const startedAt = Date.now(), started = performance.now();
-  try {
+  return withRetainedEvidence(async () => {
     const result = JSON.parse(await command(hostEnv.APPARENT_FOREGROUND_NATIVE_INPUT!, [request], {env: hostEnv}));
     await evidence(stem, result); return result as LaunchObservation & {pid: number; windowId: number; words: Array<{text: string}>; prepared?: boolean};
-  } finally { await evidence(stem + '-timing', {startedAt, elapsedMs: performance.now() - started}); }
+  }, () => evidence(stem + '-timing', {startedAt, elapsedMs: performance.now() - started}),
+  error => { cleanupErrors.push('native timing: ' + redact(error)); });
 }
 const text = (snapshot: {words: Array<{text: string}>}) => snapshot.words.map(word => word.text).join(' ').toLowerCase();
 async function ui(label: string, predicate: (value: string) => boolean, scenePid: number, cap = 12_000) {
@@ -287,8 +288,8 @@ async function main() {
       },
       retain: async saved => {
         const startedAt = Date.now(), started = performance.now();
-        try {
-          const bundle = await realpath(saved.bundle_path); assert.equal(path.dirname(bundle), appEnv.APPARENT_CAPTURES_DIR);
+        const bundle = await realpath(saved.bundle_path); assert.equal(path.dirname(bundle), appEnv.APPARENT_CAPTURES_DIR);
+        await withRetainedEvidence(async () => {
           for (const name of ['apparent.json', 'summary.md', 'contact-sheet.png']) assert.ok((await stat(path.join(bundle, name))).size > 0);
           const metadata = JSON.parse(await readFile(path.join(bundle, 'apparent.json'), 'utf8'));
           assert.equal(metadata.context?.microphoneCapture, 'off');
@@ -297,13 +298,12 @@ async function main() {
           assert.ok(movie.startsWith(bundle + path.sep) && (await stat(movie)).size > 0);
           if (metadata.audio) assert.ok((await stat(path.join(bundle, metadata.audio))).size <= 44, 'Microphone-off capture contains audio bytes');
           assert.equal(JSON.parse(await readFile(configFile, 'utf8')).microphoneEnabled, false);
-        } finally {
+        }, async () => {
           // Retain private bundle evidence even if a media assertion failed.
-          const bundle = await realpath(saved.bundle_path);
-          assert.equal(path.dirname(bundle), appEnv.APPARENT_CAPTURES_DIR);
-          try { await cp(bundle, path.join(output, 'synthetic.apparent'), {recursive: true, errorOnExist: true, force: false}); }
-          finally { await evidence('bundle-proof-timing', {startedAt, elapsedMs: performance.now() - started}); }
-        }
+          await withRetainedEvidence(() => cp(bundle, path.join(output, 'synthetic.apparent'), {recursive: true, errorOnExist: true, force: false}),
+            () => evidence('bundle-proof-timing', {startedAt, elapsedMs: performance.now() - started}),
+            error => { cleanupErrors.push('bundle timing: ' + redact(error)); });
+        }, error => { cleanupErrors.push('bundle retention: ' + redact(error)); });
       },
       reportRetentionFailure: error => { cleanupErrors.push('saved bundle proof: ' + redact(error)); },
     });
