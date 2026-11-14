@@ -299,6 +299,28 @@ test('renderer onboarding test tooling additions stay Desktop plus onboarding', 
   assert.deepEqual(hosted.plan,local.plan); assert.deepEqual(hosted.reasons,local.reasons);
   assert.deepEqual(routingProblems(hosted),[]);
 }));
+test('audited onboarding pipe addition retains native consumers and local/CI parity', () => repository((git,dir) => {
+  const path='capture/desktop/settings/onboarding/pipe.rs';
+  mkdirSync('capture/desktop/settings/onboarding',{recursive:true});
+  writeFileSync('capture/desktop/settings/onboarding.rs','mod pipe;');
+  git('add','.');git('commit','-qm','native owner');const base=git('rev-parse','HEAD');
+  writeFileSync(path,'pub fn send() {}');git('add','.');git('commit','-qm','audited adapter');
+  const head=git('rev-parse','HEAD'), hosted=cli(base,head,dir), local=localSelection(base,head,dir);
+  assert.equal(hosted.inputProofKnown,true);assert.deepEqual(hosted.plan,local.plan);assert.deepEqual(hosted.reasons,local.reasons);
+  for(const suite of ['root','engine','desktop','tools','onboarding'])assert.equal(hosted.plan[suite],true,suite);
+  for(const suite of ['service','browser','public','hermes','engineMedia'])assert.equal(hosted.plan[suite],false,suite);
+  assert.equal(hosted.macos,true);assert.equal(hosted.mac_rust,true);assert.deepEqual(routingProblems(hosted),[]);
+  for(const operation of ['executable','symlink','unknown-neighbor','mixed-native']){
+    git('checkout','--detach',base);mkdirSync('capture/desktop/settings/onboarding',{recursive:true});writeFileSync(path,'pub fn send() {}');
+    if(operation==='executable')chmodSync(path,0o755);
+    if(operation==='symlink'){unlinkSync(path);symlinkSync('../onboarding.rs',path);}
+    if(operation==='unknown-neighbor')writeFileSync('capture/desktop/settings/onboarding/unknown.rs','pub fn unknown() {}');
+    if(operation==='mixed-native')writeFileSync('capture/desktop/settings/settings.rs','pub fn native() {}');
+    git('add','.');git('commit','-qm',operation);const selected=cli(base,git('rev-parse','HEAD'),dir);
+    assert.equal(selected.plan.root,true);assert.equal(selected.macos,true);assert.equal(selected.mac_rust,true);
+    assert.equal(selected.inputProofKnown,operation==='mixed-native',operation);
+  }
+}));
 for (const path of presentationInputs) test('renderer-only proof retains Mac Electron while mixed/native and unsafe statuses retain Rust: '+path, () => repository((git,dir) => {
   mkdirSync(path.slice(0,path.lastIndexOf('/')),{recursive:true});writeFileSync(path,'before');git('add','.');git('commit','-qm','base');const base=git('rev-parse','HEAD');
   writeFileSync(path,'after');git('commit','-qam','edit');const head=git('rev-parse','HEAD');
