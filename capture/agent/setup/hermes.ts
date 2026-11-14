@@ -8,11 +8,11 @@ import { fileURLToPath } from 'node:url';
 
 export type Check = { id: string; status: 'ok' | 'absent' | 'unknown' | 'incompatible'; detail: string; action?: string; evidence?: Record<string, string | null> };
 export type Result = { ok: boolean; output: string; notSet?: boolean };
-export type Provider = { platform: string; home: string; env: NodeJS.ProcessEnv; run: (exe: string, args: string[], options?: { hermesHome: string }) => Result };
+export type Provider = { platform: string; home: string; env: NodeJS.ProcessEnv; run: (exe: string, args: string[], options?: { hermesHome: string; timeoutMs?: number }) => Result };
 export const system: Provider = {
   platform: process.platform, home: homedir(), env: process.env,
   run(exe, args, options) {
-    const r = spawnSync(exe, args, { encoding: 'utf8', timeout: 10000, maxBuffer: 256 * 1024, stdio: ['ignore', 'pipe', 'pipe'], env: options ? { ...process.env, HERMES_HOME: options.hermesHome } : process.env });
+    const r = spawnSync(exe, args, { encoding: 'utf8', timeout: options?.timeoutMs || 10000, maxBuffer: 256 * 1024, stdio: ['ignore', 'pipe', 'pipe'], env: options ? { ...process.env, HERMES_HOME: options.hermesHome } : process.env });
     // Never expose provider stderr: it may include unrelated configuration or credentials.
     const key = args[0] === 'config' && args[1] === 'get' && ['plugins.enabled', 'plugins.disabled'].includes(args[2]) ? args[2] : undefined;
     // Distinguish a documented absent config key from timeout/failure without exposing stderr.
@@ -24,11 +24,17 @@ function file(path: string): Check['status'] {
   try { const s = lstatSync(path); return s.isFile() || s.isSymbolicLink() ? 'ok' : 'incompatible'; }
   catch (e) { return (e as NodeJS.ErrnoException).code === 'ENOENT' ? 'absent' : 'unknown'; }
 }
-function receiverChecks(p: Provider, apparent: string, hermes: string, profile: string, verifyRuntime: boolean): Check[] {
-  const runHermes = (args: string[]) => p.run(hermes, args, { hermesHome: profile });
+function receiverChecks(p: Provider, apparent: string, hermes: string, profile: string, verifyRuntime: boolean, readActivation = true): Check[] {
+  const runHermes = (args: string[]) => p.run(hermes, args, { hermesHome: profile, timeoutMs: 180000 });
   const help = (cmd: string) => { const r = p.run(apparent, [cmd, '--help']); return r.ok && new RegExp(`\\b${cmd}\\b`, 'i').test(r.output); };
   const inspect = help('inspect'), fetch = help('fetch');
-  const checks: Check[] = [{ id: 'receiver-cli', status: inspect && fetch ? 'ok' : 'incompatible',
+  let runtime: Check['status'] = 'unknown';
+  if (readActivation) {
+    const version = p.run(hermes, ['--version'], { hermesHome: profile, timeoutMs: 180000 });
+    const parts = /Hermes Agent v(\d+)\.(\d+)\.(\d+)/.exec(version.output);
+    runtime = !version.ok || !parts ? 'unknown' : (Number(parts[1]) > 0 || Number(parts[2]) >= 23) ? 'ok' : 'incompatible';
+  }
+  const checks: Check[] = [{ id: 'hermes-runtime', status: runtime, detail: readActivation ? 'Normal Hermes runtime/version check (may prepare its managed environment); failure is not plugin activation.' : 'Passive checks do not invoke Hermes or provision its managed runtime.', action: runtime === 'ok' ? undefined : 'Complete the normal Hermes installation/runtime setup in the selected profile, then retry. Setup does not repair shared dependency stores.' }, { id: 'receiver-cli', status: inspect && fetch ? 'ok' : 'incompatible',
     detail: inspect && fetch ? 'Apparent exposes inspect and fetch commands.' : 'The selected Apparent CLI lacks inspect or fetch.',
     action: 'Install a compatible Apparent CLI on this receiving host; no recorder or desktop permissions are needed.' }];
   const root = join(profile, 'plugins/apparent');
@@ -42,7 +48,7 @@ function receiverChecks(p: Provider, apparent: string, hermes: string, profile: 
   } catch { contract = 'unknown'; }
   checks.push({ id: 'plugin-contract', status: contract, detail: 'Published compatibility declaration; not proof of runtime loading.' });
   let state: Check['status'] = agent === 'absent' ? 'absent' : 'unknown';
-  if (agent === 'ok') {
+  if (agent === 'ok' && runtime === 'ok' && readActivation) {
     const list = (key: string): string[] | undefined => {
       const result = runHermes(['config', 'get', key, '--json']);
       if (result.notSet) return [];
@@ -56,7 +62,7 @@ function receiverChecks(p: Provider, apparent: string, hermes: string, profile: 
   checks.push({ id: 'plugin-enabled', status: state, detail: state === 'ok' ? 'Hermes reports Apparent enabled in this profile.' : state === 'absent' ? 'Apparent is missing or disabled in this profile.' : 'Hermes activation readback is unavailable or malformed.',
     action: 'Enable through Hermes in this profile, then start a fresh conversation; existing conversations are not changed.' });
   let registration: Check['status'] = 'unknown';
-  if (verifyRuntime && agent === 'ok' && contract === 'ok' && state === 'ok') registration = runHermes(['plugins', 'doctor', 'apparent', '--ci']).ok ? 'ok' : 'incompatible';
+  if (verifyRuntime && runtime === 'ok' && agent === 'ok' && contract === 'ok' && state === 'ok') registration = runHermes(['plugins', 'doctor', 'apparent', '--ci']).ok ? 'ok' : 'incompatible';
   checks.push({ id: 'plugin-registration', status: registration, detail: registration === 'ok' ? 'Hermes doctor validated fresh-process registration; not a live-session proof.' : verifyRuntime ? 'Hermes registration was not validated. Check dependencies through Hermes.' : 'Registration was not requested; passive checks never import plugin code.' });
   checks.push({ id: 'plugin-session', status: 'unknown', detail: 'Start a fresh Hermes conversation and verify apparent_inspect there; setup does not call a model or grant tools to existing sessions.' });
   return checks;
@@ -197,21 +203,21 @@ export function setup(p: Provider, exe: string, profile: string | undefined, che
     if (!profile || !isAbsolute(profile)) throw new Error('Receiver setup requires --profile ABSOLUTE_PATH');
     if (!['linux', 'darwin'].includes(p.platform)) throw new Error('Hermes receiver setup supports macOS and Linux only');
     const hermes = options.hermesExecutable || (p.env.PATH || '').split(delimiter).filter(isAbsolute).map(d => join(d, 'hermes')).find(d => executable(d)) || 'hermes';
-    let checks = receiverChecks(p, exe, hermes, profile, false);
+    let checks = receiverChecks(p, exe, hermes, profile, false, !check);
     const repairs: { id: string; status: string; detail: string }[] = [];
     if (!check && archive) {
       try { const ok = installPackage(p, archive, digest || '', profile); repairs.push({ id: 'plugin-install', status: ok ? 'applied' : 'failed', detail: ok ? 'Verified package writer completed.' : 'Package writer refused or failed; existing files were preserved.' }); }
       catch { repairs.push({ id: 'plugin-install', status: 'failed', detail: 'Archive verification or package writer failed; activation was not attempted.' }); }
-      checks = receiverChecks(p, exe, hermes, profile, false);
+      checks = receiverChecks(p, exe, hermes, profile, false, !check);
     }
-    const prerequisites = ['receiver-cli', 'plugin-agent', 'plugin-contract'];
+    const prerequisites = ['receiver-cli', 'hermes-runtime', 'plugin-agent', 'plugin-contract'];
     const prerequisitesReady = () => prerequisites.every(id => checks.find(c => c.id === id)?.status === 'ok');
     if (!check && options.enable && checks.find(c => c.id === 'plugin-enabled')?.status !== 'ok') {
       const installFailed = repairs.some(r => r.status === 'failed');
       if (installFailed || !prerequisitesReady() || checks.find(c => c.id === 'plugin-enabled')?.status !== 'absent') repairs.push({ id: 'plugin-enable', status: 'failed', detail: 'Resolve package, CLI and Hermes activation readback before enabling.' });
       else {
-        const r = p.run(hermes, ['plugins', 'enable', 'apparent', '--no-allow-tool-override'], { hermesHome: profile });
-        checks = receiverChecks(p, exe, hermes, profile, false);
+        const r = p.run(hermes, ['plugins', 'enable', 'apparent', '--no-allow-tool-override'], { hermesHome: profile, timeoutMs: 180000 });
+        checks = receiverChecks(p, exe, hermes, profile, false, !check);
         const enabled = r.ok && checks.find(c => c.id === 'plugin-enabled')?.status === 'ok';
         repairs.push({ id: 'plugin-enable', status: enabled ? 'applied' : 'failed', detail: enabled ? 'Hermes confirms enablement. Python tools apply to a fresh conversation.' : 'Hermes enablement was not confirmed. Review dependency consent in Hermes; no restart was attempted.' });
       }

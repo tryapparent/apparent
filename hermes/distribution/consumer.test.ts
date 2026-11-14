@@ -62,7 +62,7 @@ test('receiver installs the real release before enabling and does not require it
   const profile=path.join(job,'profile');
   const {setup}=await import('../../capture/agent/setup/hermes.ts');
   let enabled=false, enableCalls=0;
-  const provider={...system, run(exe:string,args:string[],options?:{hermesHome:string}) {
+  const provider={...system, run(exe:string,args:string[],options?:{hermesHome:string;timeoutMs?:number}) {
    if(exe==='/fixture/apparent') {
     assert.deepEqual(args.slice(1),['--help']);
     assert(['inspect','fetch'].includes(args[0]));
@@ -70,6 +70,7 @@ test('receiver installs the real release before enabling and does not require it
    }
    if(exe==='/fixture/hermes') {
     assert.equal(options?.hermesHome,profile);
+    if(args[0]==='--version')return {ok:true,output:'Hermes Agent v0.23.1'};
     if(args[0]==='config')return {ok:true,output:JSON.stringify(args[2]==='plugins.enabled' && enabled?['apparent']:[])};
     assert.deepEqual(args,['plugins','enable','apparent','--no-allow-tool-override']);
     assert.ok(readFileSync(path.join(profile,'plugins/apparent/__init__.py')).length>0);

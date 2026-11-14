@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { setup, main, system, type Provider } from './hermes.ts';
 
@@ -18,6 +18,7 @@ function fixture(platform = 'linux') {
     }
     assert.equal(exe, '/test/hermes');
     assert.equal(options?.hermesHome, profile);
+    if (args[0] === '--version') return { ok: true, output: 'Hermes Agent v0.23.1 (2026.9.24)' };
     if (args[0] === 'config') {
       assert.deepEqual(args.slice(0, 2), ['config', 'get']);
       assert(['plugins.enabled', 'plugins.disabled'].includes(args[2]));
@@ -45,12 +46,12 @@ test('headless receiver checks separate Apparent from Hermes and never require d
     const f = fixture(platform);
     try {
       f.install(); const report = f.run();
-      assert.equal(report.prerequisitesReady, true);
+      assert.equal(report.prerequisitesReady, false);
       assert.equal(report.setupReady, false, 'disabled is not set up');
       assert.equal(report.ready, false);
-      assert.equal(report.checks.find(c => c.id === 'plugin-enabled')?.status, 'absent');
+      assert.equal(report.checks.find(c => c.id === 'plugin-enabled')?.status, 'unknown');
       assert.equal(report.checks.find(c => c.id === 'plugin-session')?.status, 'unknown');
-      assert(f.calls.every(c => c.exe === '/test/apparent' || c.args[0] === 'config'));
+      assert(f.calls.every(c => c.exe === '/test/apparent'));
       assert(!report.checks.some(c => ['capture', 'url-handler', 'running', 'plugin-desktop'].includes(c.id)));
     } finally { f.close(); }
   }
@@ -93,6 +94,25 @@ test('missing package and old CLI without fetch do not activate', () => {
   } finally { f.close(); }
 });
 
+test('runtime preparation is bounded and failed or old Hermes never activates', () => {
+  for (const version of [{ ok: false, output: '' }, { ok: true, output: 'Hermes Agent v0.22.0' }]) {
+    const f = fixture();
+    try {
+      f.install(); const base = f.p.run;
+      f.p.run = (exe, args, options) => {
+        if (args[0] === '--version') {
+          assert.equal(options?.timeoutMs, 180000);
+          return version;
+        }
+        return base(exe, args, options);
+      };
+      const result = f.run(false, { enable: true, verifyRuntime: true });
+      assert.equal(result.setupReady, false);
+      assert(!f.calls.some(c => ['enable', 'doctor'].includes(c.args[1])));
+    } finally { f.close(); }
+  }
+});
+
 test('registration requires explicit repair mode and enabled prerequisites; never proves current session', () => {
   const f = fixture();
   try {
@@ -133,7 +153,7 @@ test('native-style argv keeps Apparent and Hermes executables distinct', () => {
   const f = fixture(); const previous = console.log; let output = '';
   try {
     f.install(); console.log = value => { output = String(value); };
-    assert.equal(main(['--executable', '/test/apparent', '--receiver', '--check', '--json', '--profile', f.profile, '--hermes-executable', '/test/hermes'], f.p), 1);
+    assert.equal(main(['--executable', '/test/apparent', '--receiver', '--json', '--profile', f.profile, '--hermes-executable', '/test/hermes'], f.p), 1);
     assert.equal(JSON.parse(output).role, 'receiver');
     assert(f.calls.some(c => c.exe === '/test/apparent'));
     assert(f.calls.some(c => c.exe === '/test/hermes'));
@@ -146,10 +166,31 @@ test('unset lists are distinct from failed config reads, and explicit disabled s
     f.install();
     const base = f.p.run;
     f.p.run = (exe, args, options) => args[0] === 'config' ? { ok: false, output: '', notSet: true } : base(exe, args, options);
-    assert.equal(f.run().checks.find(c => c.id === 'plugin-enabled')?.status, 'absent');
+    assert.equal(f.run(false).checks.find(c => c.id === 'plugin-enabled')?.status, 'absent');
     f.p.run = (exe, args, options) => args[0] === 'config' ? { ok: false, output: '' } : base(exe, args, options);
-    assert.equal(f.run().checks.find(c => c.id === 'plugin-enabled')?.status, 'unknown');
+    assert.equal(f.run(false).checks.find(c => c.id === 'plugin-enabled')?.status, 'unknown');
     f.p.run = (exe, args, options) => args[0] === 'config' ? { ok: true, output: '["apparent"]' } : base(exe, args, options);
-    assert.equal(f.run().checks.find(c => c.id === 'plugin-enabled')?.status, 'absent');
+    assert.equal(f.run(false).checks.find(c => c.id === 'plugin-enabled')?.status, 'absent');
   } finally { f.close(); }
+});
+
+
+test('real subprocess adapter distinguishes exact missing config keys from failures', () => {
+  const root = mkdtempSync('/tmp/apparent-dev-hermes-provider-');
+  try {
+    const exe = join(root, 'provider.ts');
+    writeFileSync(exe, `#!${process.execPath}
+const key = process.argv[4];
+process.stderr.write(key === 'plugins.enabled' ? 'Config key not set: plugins.enabled' : 'transport failed');
+process.exitCode = 1;
+`);
+    chmodSync(exe, 0o700);
+    const missing = system.run(exe, ['config', 'get', 'plugins.enabled', '--json']);
+    assert.deepEqual(missing, { ok: false, output: '', notSet: true });
+    assert.deepEqual(system.run(exe, ['config', 'get', 'plugins.disabled', '--json']), { ok: false, output: '' });
+    writeFileSync(exe, `#!${process.execPath}
+setTimeout(() => {}, 10000);
+`);
+    assert.deepEqual(system.run(exe, ['config', 'get', 'plugins.enabled', '--json'], { hermesHome: root, timeoutMs: 20 }), { ok: false, output: '' });
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

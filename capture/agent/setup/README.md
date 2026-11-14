@@ -107,8 +107,14 @@ Receiver mode checks the selected **Apparent** CLI's `inspect` and `fetch`
 commands. `--hermes-executable` selects the separate **Hermes** CLI. Native
 capture state, a URL handler and a Desktop plugin are not receiver prerequisites.
 The profile is explicit; only that subprocess's `HERMES_HOME` is overridden.
-`--check` reads package files and Hermes's public activation config values. It
-never installs/enables a plugin or imports plugin code. Errors stay unknown;
+`--check` reads package files and Apparent CLI capabilities without invoking
+Hermes: even a Hermes config read can provision its managed Python environment
+on first use. Runtime and activation therefore remain unknown in passive mode.
+Repair mode allows up to three minutes per normal Hermes invocation (which may
+prepare its managed Python environment), then reads only public plugin activation
+config values. If Hermes reports an unprepared dependency environment, complete
+its normal installation/runtime setup first; this command does not repair shared
+dependency stores. Errors stay unknown;
 missing settings are distinguished from failed reads without echoing stderr.
 
 `--enable` delegates activation to Hermes and rereads its saved state. It does
@@ -119,7 +125,7 @@ Hermes needs dependency consent, complete its normal setup flow interactively.
 imports the installed plugin in a fresh process. These flags are incompatible
 with passive `--check`. A failed archive repair prevents activation.
 
-`prerequisitesReady` covers receiver CLI/package checks; `setupReady` additionally
+`prerequisitesReady` covers receiver CLI, Hermes runtime and package checks; `setupReady` additionally
 requires enabled-state readback and no failed repairs. `ready` remains false
 while live-session availability is unknown. A doctor pass proves registration
 in its check process, not availability in an already-running conversation.
