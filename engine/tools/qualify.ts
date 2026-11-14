@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {readFileSync, writeFileSync} from 'node:fs';
-import {join, resolve} from 'node:path';
+import {dirname, join, resolve} from 'node:path';
 import {probeMovie} from '@apparent/engine-sdk';
+import {qualifyFrames} from './qualify-frames.ts';
 
 const [executable, directory] = process.argv.slice(2).map(p => resolve(p));
 if (!executable || !directory) throw Error('Use qualify.ts <native executable> <private directory>');
@@ -35,3 +36,4 @@ await assert.rejects(probeMovie({executable, movie: broken}), {code: 'probe_fail
 await assert.rejects(probeMovie({executable, movie: join(directory, 'missing.mp4')}), {code: 'probe_failed'});
 console.log(JSON.stringify({platform: process.platform, arch: process.arch, syntheticMovie: info, inputSha256: before,
   checks: ['public-packed-sdk', 'real-native-reader', 'audio', 'rotation', 'silent', 'invalid', 'missing', 'read-only']}));
+await qualifyFrames(join(dirname(executable), 'apparent-engine-frames'), directory, movie, rotated);

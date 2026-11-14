@@ -9,7 +9,7 @@ preferences, retention decisions and ordinary assembly/export policy; Desktop
 owns human controls and shell presentation. Engine must not import those owners'
 implementations. Linux and macOS are supported; there is no Windows provider.
 
-## First capability: local movie metadata
+## Local movie metadata
 
 `native/` builds `apparent-engine-media probe-v1 /absolute/movie`. This finite,
 read-only operation reports native track metadata as JSON, with no recording,
@@ -27,7 +27,9 @@ caller; it is not a sandbox for hostile files or a cross-user service.
 
 ## Build and qualify
 
-With Node 22.18+, Rust 1.89+, and FFmpeg installed (plus Xcode on Mac):
+With Node 22.18+, Rust 1.96+, and FFmpeg installed (plus Xcode on Mac).
+Linux frame decoding also requires GStreamer 1.24+ core/app/video development
+libraries and the base, good and libav runtime plugins:
 
 ```sh
 node --experimental-strip-types engine/tools/check.ts /tmp/apparent-dev-engine-JOB
@@ -42,9 +44,25 @@ silent movies through the copied runtime, checks failure cases and unchanged
 source bytes. Native compilation runs from a copied owner source tree outside
 the checkout, using Engine's distribution config rather than ancestor/root Cargo
 configuration. It does not run the installed app or prove live capture, GUI,
-permissions, full decoding or app/Engine integration. Rust compiles no root app,
+permissions, live capture or app/Engine integration. Rust compiles no root app,
 GUI framework, transcription model, Metal or Desktop helper. The SDK itself has
 no runtime dependencies and requires no Rust toolchain or cached native outputs.
+
+## Explicit-time movie frames
+
+`apparent-engine-frames frames-v1 MOVIE OUTPUT MAX_EDGE TIMES_CSV` decodes finite
+MP4/QuickTime snapshots through GStreamer on Linux and a separate AVFoundation
+helper on Mac. `OUTPUT` must be a fresh, caller-owned `0700` directory. The public
+SDK validates request identity, file ownership, dimensions and exact byte counts.
+See [the SDK contract](sdk/README.md#movie-frames) for clocks, limits and cleanup.
+The metadata reader stays separate and does not link GStreamer.
+
+The extracted native package and installed SDK qualify real decoded pixels,
+display rotation, forward/backward requests, duplicate identities and edit-list
+offsets on each supported architecture. This producer prerequisite enables Agent
+zoom adoption; it does not route an application caller or retire a root decoder.
+Sampling, cropping and bundle policy remain with consumers. Producer publication
+must precede checksum-pinned consumer adoption and its application package proof.
 
 ## Delivery and adoption
 

@@ -1,11 +1,29 @@
 [package]
 name = "apparent-engine-media"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.96"
 license = "MIT"
-description = "Read-only local movie metadata capability"
+description = "Finite local movie metadata and frame capabilities"
 
 [[bin]]
 name = "apparent-engine-media"
 path = "src/main.rs"
+
+[[bin]]
+name = "apparent-engine-frames"
+path = "src/frames_main.rs"
+required-features = ["frames"]
+
+[features]
+frames = ["dep:libc", "dep:serde", "dep:serde_json", "dep:gstreamer", "dep:gstreamer-app", "dep:gstreamer-video"]
+
+[dependencies]
+libc = { version = "=0.2.189", optional = true }
+serde = { version = "=1.0.229", features = ["derive"], optional = true }
+serde_json = { version = "=1.0.151", optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gstreamer = { version = "0.25", optional = true }
+gstreamer-app = { version = "0.25", optional = true }
+gstreamer-video = { version = "0.25", optional = true }

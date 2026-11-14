@@ -1,6 +1,9 @@
 import {execFile} from 'node:child_process';
 import {isAbsolute} from 'node:path';
 
+export {decodeMovieFrames, EngineFrameError} from './frames.js';
+export type {MovieFrame} from './frames.js';
+
 export interface TrackTiming {startMs: number | null; durationMs: number | null}
 export interface MovieInfo {
   durationMs: number | null;
