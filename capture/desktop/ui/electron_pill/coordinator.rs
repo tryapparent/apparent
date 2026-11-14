@@ -12,6 +12,10 @@ impl ApparentCoordinator {
         )
         .with_handoff(self.completed_dir.is_some(), self.review_bundle.is_some())
         .with_notes(self.note_ui.as_ref().map_or(0, |notes| notes.saved_count()))
+        .with_foreground_upload(
+            self.share_pending.is_some() && crate::connect::hosted::foreground_progress().is_some(),
+            self.completed_note.as_deref().is_some_and(|note| note.starts_with("Upload failed") || note.starts_with("Upload cancelled")),
+        )
     }
     fn electron_pill_selection(&self) -> super::session::Selection {
         (
@@ -81,10 +85,14 @@ impl ApparentCoordinator {
             .as_ref()
             .is_some_and(|session| !session.healthy())
         {
+            // Preserve the real transport/readiness/process state before Drop
+            // closes the pipe and starts owned-child cleanup.
+            let failure = self.electron_pill.as_mut().map(Session::failure_context);
+            apparent_log(format!("Electron recording controls unhealthy; restoring native controls: {}",
+                serde_json::json!({"failure":failure})));
             self.electron_pill.take();
             self.electron_pill_failed = true;
             self.electron_pill_routed = false;
-            apparent_log("Electron recording controls exited; restoring native controls");
             let coordinator = cx.entity().clone();
             if !matches!(self.island_phase, IslandPhase::Hidden | IslandPhase::Dismissing) {
                 cx.defer(move |cx| super::super::super::ensure_hud_pill_open(&coordinator, cx));

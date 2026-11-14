@@ -13,10 +13,11 @@ const require = createRequire(filename);
 
 // Run the whole host and its real protocol/geometry owners. Only Electron and
 // process I/O are inert; no compiler, generated bundle or source-shape search.
-function host(platform = 'linux') {
+function host(platform = 'linux', nativeWindowAccepted = true) {
   const input = Object.assign(new EventEmitter(), {setEncoding() {}});
   const messages: Record<string, unknown>[] = [];
   const exits: number[] = [];
+  const nativeAdmissions: number[] = [];
   const handlers = new Map<string, (...args: any[]) => any>();
   const area = {x: 0, y: 0, width: 1920, height: 1080};
   let revision = 0;
@@ -66,16 +67,22 @@ function host(platform = 'linux') {
   vm.runInNewContext(source, {
     require: (name: string) => name === 'electron' ? electron
       : name === './protocol.cjs' ? require('./protocol.cts')
-      : name === './geometry.cjs' ? require('./geometry.cts') : require(name),
+      : name === './geometry.cjs' ? require('./geometry.cts')
+      : name === './native/window.node' ? {preventActivation: (id: number) => {
+        nativeAdmissions.push(id);
+        if (!nativeWindowAccepted) throw Error('Synthetic native window refusal');
+        return true;
+      }}
+      : name === './diagnostics.cjs' ? require('./diagnostics.cts') : require(name),
     __dirname: path.dirname(filename), Buffer,
     // Timers are registered but never tick: these tests drive native events.
     setInterval() { return 1; }, clearInterval() {},
-    process: {platform, env: {}, stdin: input,
+    process: Object.assign(new EventEmitter(), {platform, pid: 321, env: {}, stdin: input,
       stdout: {write: (line: string) => messages.push(JSON.parse(line))},
-      exit: (code: number) => exits.push(code)},
+      exit: (code: number) => exits.push(code)}),
   }, {filename});
   return {
-    window, messages, exits,
+    window, messages, exits, nativeAdmissions,
     parent: (message: unknown) => input.emit('data', JSON.stringify(message) + '\n'),
     loaded: () => window.webContents.emit('did-finish-load'),
     layout: (value: number) => handlers.get('pill:layout')!({sender: window.webContents,
@@ -115,4 +122,26 @@ test('native pin diagnostics contain only bounded presentation facts', async () 
 
 test('macOS never requests the Linux native pin adapter', async () => {
   assert.deepEqual(await nativeEvents(true, true, true, 'recording', 'darwin'), []);
+});
+
+test('Mac window admission precedes readiness and visibility, and fails closed', async () => {
+  for (const accepted of [true, false]) {
+    const h = host('darwin', accepted);
+    h.parent({type: 'state', view: {revision: 1, phase: 'completed', clock: '00:01',
+      label: 'Saved', warning: null, reducedMotion: false, draggable: false, actions: []}});
+    h.loaded(); h.parent({type: 'activate'});
+    assert.equal(h.window.visible, false);
+    assert.deepEqual(h.nativeAdmissions, []);
+    await h.layout(1);
+    assert.deepEqual(h.nativeAdmissions, [123], 'Only the real host window ID is admitted');
+    assert.equal(h.window.visible, accepted);
+    assert.equal(h.messages.some(message => message.ready === true), accepted);
+    assert.deepEqual(h.exits, accepted ? [] : [1]);
+    if (accepted) {
+      await h.layout(1);
+      assert.deepEqual(h.nativeAdmissions, [123], 'Admission is once per window, not every layout');
+    }
+  }
+  const linux = host('linux');
+  assert.deepEqual(linux.nativeAdmissions, [], 'Linux never loads the Mac adapter');
 });

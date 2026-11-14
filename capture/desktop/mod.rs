@@ -2915,6 +2915,17 @@ impl ApparentCoordinator {
     }
 
     fn tick_hosted_sharing(&mut self, cx: &mut Context<Self>) {
+        if self.share_pending.is_some() {
+            if let Some(percent) = crate::connect::hosted::foreground_progress() {
+                let note = format!("Uploading… {percent}%");
+                if self.completed_note.as_ref() != Some(&note) {
+                    self.completed_note = Some(note);
+                    self.sync_native_pill();
+                    cx.notify();
+                }
+                return;
+            }
+        }
         if !crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING)
             || !matches!(self.island_phase, IslandPhase::Completed { .. })
             || self.share_probe_at.is_some_and(|at| at.elapsed() < Duration::from_secs(5)) {
@@ -2947,7 +2958,44 @@ impl ApparentCoordinator {
         }).detach();
     }
 
+    // A terminal share result starts a new completed presentation. The original
+    // save timestamp must not immediately retire freshly published recovery controls.
+    fn renew_completed_share_presentation(&mut self) {
+        if let IslandPhase::Completed { finished_at, .. } = &mut self.island_phase {
+            *finished_at = Instant::now();
+        }
+    }
+
+    fn cancel_completed_foreground_share(&mut self) -> bool {
+        let Some((_, _, active)) = self.share_pending.take() else { return false };
+        active.store(false, std::sync::atomic::Ordering::SeqCst);
+        self.completed_note = Some("Upload cancelled · recording saved locally".into());
+        self.renew_completed_share_presentation();
+        true
+    }
+
+    fn admit_completed_share_result(
+        &mut self, bundle: &std::path::Path, generation: u64,
+        active: &std::sync::Arc<std::sync::atomic::AtomicBool>, foreground: bool,
+    ) -> bool {
+        if !active.load(std::sync::atomic::Ordering::SeqCst)
+            || !self.share_pending.as_ref().is_some_and(|(_, _, current)| std::sync::Arc::ptr_eq(current, active))
+            || self.capture_generation != generation
+            || self.completed_dir.as_deref() != Some(bundle)
+            || !matches!(self.island_phase, IslandPhase::Completed { .. }) { return false; }
+        self.share_pending = None;
+        if foreground { self.renew_completed_share_presentation(); }
+        true
+    }
+
     pub fn copy_completed_link(&mut self, cx: &mut Context<Self>) {
+        if crate::connect::hosted::foreground_progress().is_some() {
+            if self.cancel_completed_foreground_share() {
+                self.sync_native_pill();
+                cx.notify();
+            }
+            return;
+        }
         if !crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING)
             || !matches!(self.island_phase, IslandPhase::Completed { .. })
             || !self.share_online || self.share_pending.is_some() { return; }
@@ -2967,6 +3015,7 @@ impl ApparentCoordinator {
     fn reserve_completed_link(&mut self, connect: bool, cx: &mut Context<Self>) {
         let Some((bundle, generation, active)) = self.share_pending.clone() else { return };
         self.share_waiting_account = false;
+        let foreground = crate::connect::hosted::foreground_enabled();
         self.completed_note = Some(if connect { "Approve hosted upload in your browser…" } else { "Reserving link…" }.into());
         cx.spawn(async move |entity, cx| {
             let worker_bundle = bundle.clone();
@@ -2974,21 +3023,20 @@ impl ApparentCoordinator {
             let result = cx.background_executor().spawn(async move {
                 let allowed = || worker_active.load(std::sync::atomic::Ordering::SeqCst);
                 if connect { crate::connect::hosted::connect_sharing(&allowed)?; }
-                crate::connect::hosted::copy_link_handoff(&worker_bundle, &allowed)
+                crate::connect::hosted::copy_link_handoff(&worker_bundle, &allowed, foreground)
             }).await;
             let _ = entity.update(cx, |coord, cx| {
-                if !active.load(std::sync::atomic::Ordering::SeqCst)
-                    || !coord.share_pending.as_ref().is_some_and(|(_, _, current)| std::sync::Arc::ptr_eq(current, &active))
-                    || coord.capture_generation != generation
-                    || coord.completed_dir.as_ref() != Some(&bundle)
-                    || !matches!(coord.island_phase, IslandPhase::Completed { .. }) { return; }
-                coord.share_pending = None;
+                if !coord.admit_completed_share_result(&bundle, generation, &active, foreground) { return; }
                 coord.completed_note = Some(match result {
                     Ok(link) if link.authorized() => match crate::shared::handoff::copy_string_to_clipboard(&link.text) {
-                        Ok(()) => { coord.share_copied = Some(bundle.clone()); crate::connect::hosted::sharing_progress(&bundle) }
+                        Ok(()) => {
+                            if foreground { "Link copied".into() }
+                            else { coord.share_copied = Some(bundle.clone()); crate::connect::hosted::sharing_progress(&bundle) }
+                        }
                         Err(_) => "Copy failed · click Copy link to retry".into(),
                     },
-                    Ok(_) | Err(_) => "Sharing stopped · click Copy link to retry".into(),
+                    Ok(_) | Err(_) => if foreground { "Upload failed · recording saved locally".into() }
+                        else { "Sharing stopped · click Copy link to retry".into() },
                 });
                 coord.sync_native_pill();
                 cx.notify();
@@ -3633,6 +3681,7 @@ impl ApparentCoordinator {
             _metal_overlay: metal_overlay,
             microphone_enabled,
         });
+        let stage = Instant::now();
         match workflow::notes::Session::start(&self.active_recording.as_ref().unwrap().bundle_dir, Arc::clone(&self.telemetry), self.active_recording.as_ref().unwrap().target.frame) {
             Ok(session) => self.note_ui = Some(session),
             Err(error) => {
@@ -3640,6 +3689,7 @@ impl ApparentCoordinator {
                 if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some("Typed notes unavailable · recording continues".into()); }
             },
         }
+        start_metric("notes_start_ms", stage);
         self.present_recording_island(cx);
         start_metric("recording_start_ms", started);
     }
@@ -6841,7 +6891,9 @@ fn open_review_window(coord_entity: &Entity<ApparentCoordinator>, cx: &mut App) 
 }
 
 pub(crate) fn start_metric(name: &str, started: Instant) {
-    if std::env::var_os("APPARENT_BENCH_START").is_some() {
+    if std::env::var_os("APPARENT_BENCH_START").is_some()
+        || std::env::var_os("APPARENT_START_TIMINGS").is_some()
+    {
         eprintln!(
             "START_METRIC {name}={:.6}",
             started.elapsed().as_secs_f64() * 1_000.0
@@ -7259,6 +7311,62 @@ pub fn run_app(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn foreground_cancel_gives_retry_a_fresh_completed_presentation() {
+        use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+        let (sender, _receiver) = flume::unbounded();
+        let mut coord = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
+        let original = Instant::now() - Duration::from_secs(30);
+        coord.island_phase = IslandPhase::Completed { finished_at: original, frame_count: 3, duration_ms: 1200, inbox_count: 0 };
+        let active = Arc::new(AtomicBool::new(true));
+        coord.share_pending = Some((PathBuf::from("/synthetic/current.apparent"), coord.capture_generation, active.clone()));
+        let cancelled = Instant::now();
+        assert!(coord.cancel_completed_foreground_share());
+        assert!(!active.load(Ordering::SeqCst));
+        assert!(coord.share_pending.is_none());
+        assert_eq!(coord.completed_note.as_deref(), Some("Upload cancelled · recording saved locally"));
+        let IslandPhase::Completed { finished_at, frame_count, duration_ms, inbox_count } = coord.island_phase else { panic!("Retry presentation was dismissed") };
+        assert!(finished_at >= cancelled, "Retry inherited the expired save deadline");
+        assert_eq!((frame_count, duration_ms, inbox_count), (3, 1200, 0));
+        assert!(!coord.cancel_completed_foreground_share(), "Cancellation must not replay");
+        assert!(matches!(coord.island_phase, IslandPhase::Completed { finished_at: unchanged, .. } if unchanged == finished_at));
+    }
+
+    #[test]
+    fn foreground_terminal_result_refreshes_only_its_current_completed_owner() {
+        use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+        for fault in ["none", "legacy", "revoked", "token", "generation", "bundle", "new-capture"] {
+            let (sender, _receiver) = flume::unbounded();
+            let mut coord = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
+            let original = Instant::now() - Duration::from_secs(30);
+            let bundle = PathBuf::from("/synthetic/current.apparent");
+            let active = Arc::new(AtomicBool::new(true));
+            coord.completed_dir = Some(bundle.clone());
+            coord.island_phase = IslandPhase::Completed { finished_at: original, frame_count: 1, duration_ms: 1000, inbox_count: 0 };
+            let generation = coord.capture_generation;
+            coord.share_pending = Some((bundle.clone(), generation, active.clone()));
+            match fault {
+                "revoked" => active.store(false, Ordering::SeqCst),
+                "token" => coord.share_pending.as_mut().unwrap().2 = Arc::new(AtomicBool::new(true)),
+                "generation" => coord.capture_generation = generation.wrapping_add(1),
+                "bundle" => coord.completed_dir = Some(PathBuf::from("/synthetic/newer.apparent")),
+                "new-capture" => coord.set_island_phase(IslandPhase::Recording),
+                _ => (),
+            }
+            let before = coord.island_phase;
+            let delivered = Instant::now();
+            let accepted = coord.admit_completed_share_result(&bundle, generation, &active, fault != "legacy");
+            assert_eq!(accepted, matches!(fault, "none" | "legacy"), "{fault}");
+            if fault == "none" {
+                assert!(coord.share_pending.is_none());
+                assert!(matches!(coord.island_phase, IslandPhase::Completed { finished_at, .. } if finished_at >= delivered));
+                assert!(!coord.admit_completed_share_result(&bundle, generation, &active, true), "Duplicate result refreshed the clock");
+            } else {
+                assert_eq!(coord.island_phase, before, "Stale/legacy result changed the presentation: {fault}");
+            }
+        }
+    }
 
     #[cfg(target_os = "linux")]
     #[test]

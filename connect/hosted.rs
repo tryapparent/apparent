@@ -132,12 +132,14 @@ fn client() -> Client {
     client_at(crate::shared::handoff::default_config_path())
 }
 
-pub fn copy_link_handoff(bundle: &Path, allowed: &dyn Fn() -> bool) -> Result<PreparedLink> {
+pub fn copy_link_handoff(bundle: &Path, allowed: &dyn Fn() -> bool, foreground: bool) -> Result<PreparedLink> {
+    if foreground { return client().prepare_foreground_link(bundle, false, allowed); }
     let link = client().prepare_link(bundle, allowed)?;
     start_worker();
     Ok(link)
 }
-pub fn prepare_public_link_handoff(bundle: &Path, allowed: &dyn Fn() -> bool) -> Result<PreparedLink> {
+pub fn prepare_public_link_handoff(bundle: &Path, allowed: &dyn Fn() -> bool, foreground: bool) -> Result<PreparedLink> {
+    if foreground { return client().prepare_foreground_link(bundle, true, allowed); }
     let link = client().prepare_public_link(bundle, allowed)?;
     start_worker();
     Ok(link)
@@ -165,6 +167,9 @@ pub fn connect_sharing(allowed: &dyn Fn() -> bool) -> Result<()> {
 pub fn sharing_progress(bundle: &Path) -> String {
     client().sharing_progress(bundle)
 }
+
+pub fn foreground_enabled() -> bool { client().foreground_enabled() }
+pub fn foreground_progress() -> Option<u64> { apparent_connect_client::foreground_progress() }
 
 fn recovery(error: anyhow::Error) -> anyhow::Error {
     // Keep the actual refusal visible to humans and CLI consumers on line one.
@@ -226,6 +231,11 @@ pub fn command(command: ConnectCommand) -> Result<()> {
             let bundle = crate::shared::handoff::resolve_bundle_dir(&bundle).map_err(|_| {
                 anyhow::anyhow!("invalid_bundle: choose an existing .apparent directory")
             })?;
+            if client.foreground_enabled() {
+                let id = client.upload_foreground(&bundle, &|| true)?;
+                println!("Uploaded capture. Inspect with: apparent inspect {id}");
+                return Ok(());
+            }
             client.enqueue_explicit(&bundle).map_err(|_| {
                 anyhow::anyhow!(
                     "queue_unavailable: check upload consent, sign-in and private hosted state; local capture is unchanged"
@@ -296,6 +306,7 @@ pub fn completed(bundle: &Path) {
         return;
     }
     let client = client();
+    if client.foreground_enabled() { return; }
     if client.enabled() {
         // Disk-only identity/queue publication happens before clipboard construction.
         // Hashing, staging and networking are exclusively background work.

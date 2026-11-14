@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {fingerprint, inventory, requireAdHoc, requireArm64, sourceSnapshot} from './native-candidate.ts';
+import {fingerprint, inspectRetainedArchive, inventory, requireAdHoc, requireArm64, requireFreshDestination, sourceSnapshot, stageRetainedArchive, validateRetainedManifest} from './native-candidate.ts';
 
 async function fixture(action: (root: string) => Promise<void> | void) {
   const root = mkdtempSync('/tmp/apparent-dev-native-candidate-');
@@ -77,3 +77,50 @@ test('ad-hoc qualification uses actual codesign identity', () => {
   assert.throws(() => requireAdHoc('Authority=Developer ID Application\n'), /ad-hoc test candidate/);
   assert.throws(() => requireAdHoc('Signature=adhoc\nAuthority=unexpected\n'), /release signing/);
 });
+
+test('retained Intel candidate binds exact source, archive digest, and pending-only status', () => {
+  const manifest = {schema: 1, source: {commit: 'a'.repeat(40), tree: 'b'.repeat(40)}, run: {id: '123', attempt: '1'},
+    app: 'Apparent.app', architecture: 'x64',
+    host: {platform: 'darwin', node: 'x64', machine: 'x86_64', hardware: '0'}, signing: 'ad-hoc',
+    nativeAcceptance: 'pending', releaseAdmission: false, artifact: {name: 'candidate.zip', sha256: 'c'.repeat(64)},
+    contents: {'Contents/MacOS/apparent': {kind: 'file', sha256: 'd'.repeat(64), bytes: 1, mode: 0o755}}};
+  validateRetainedManifest(manifest, '/tmp/candidate.zip', 'a'.repeat(40), 'c'.repeat(64));
+  for (const patch of [{architecture: 'arm64'}, {nativeAcceptance: 'passed'}, {releaseAdmission: true},
+    {signing: 'Developer ID'}, {source: {commit: 'e'.repeat(40)}}, {artifact: {name: 'candidate.zip', sha256: 'f'.repeat(64)}}]) {
+    assert.throws(() => validateRetainedManifest({...manifest, ...patch}, '/tmp/candidate.zip', 'a'.repeat(40), 'c'.repeat(64)));
+  }
+  assert.throws(() => validateRetainedManifest(manifest, '/tmp/other.zip', 'a'.repeat(40), 'c'.repeat(64)));
+  assert.throws(() => validateRetainedManifest(manifest, '/tmp/candidate.zip', 'bad', 'c'.repeat(64)));
+});
+
+test('retained install refuses to overwrite an existing destination', () => fixture(root => {
+  const destination = join(root, 'App.app'); mkdirSync(destination);
+  assert.throws(() => requireFreshDestination(destination), /already exists/);
+  rmSync(destination, {recursive: true});
+  requireFreshDestination(destination);
+  assert.throws(() => requireFreshDestination('relative.app'), /absolute .app/);
+  assert.throws(() => requireFreshDestination(join(root, 'not-an-app')), /absolute .app/);
+}));
+
+test('retained archive inspection binds actual payload bytes before extraction', () => fixture(async root => {
+  const archive = join(root, 'candidate.zip'), manifestPath = join(root, 'candidate.json');
+  const bytes = Buffer.from('synthetic archive payload'); writeFileSync(archive, bytes);
+  const digest = createHash('sha256').update(bytes).digest('hex');
+  const manifest = {schema: 1, source: {commit: 'a'.repeat(40), tree: 'b'.repeat(40)},
+    run: {id: '123', attempt: '1'}, app: 'Apparent.app', architecture: 'x64',
+    host: {platform: 'darwin', node: 'x64', machine: 'x86_64', hardware: '0'}, signing: 'ad-hoc',
+    nativeAcceptance: 'pending', releaseAdmission: false,
+    artifact: {name: 'candidate.zip', sha256: digest, bytes: bytes.length}, contents: {}};
+  writeFileSync(manifestPath, JSON.stringify(manifest));
+  const options = {archive, manifestPath, expectedSource: 'a'.repeat(40), expectedArchiveSha256: digest};
+  assert.deepEqual(await inspectRetainedArchive(options), manifest);
+  const staging = join(root, 'private-staging'); mkdirSync(staging, {mode: 0o700});
+  const stable = await stageRetainedArchive(options, staging);
+  writeFileSync(archive, 'tampered payload');
+  await assert.rejects(inspectRetainedArchive(options), /Archive bytes differ/);
+  assert.deepEqual(await fingerprint(stable.archive), {sha256: digest, bytes: bytes.length},
+    'Original archive replacement must not change the privately verified extraction input');
+  writeFileSync(archive, bytes);
+  rmSync(manifestPath); symlinkSync('candidate.zip', manifestPath);
+  await assert.rejects(inspectRetainedArchive(options), /Manifest must be a regular file/);
+}));

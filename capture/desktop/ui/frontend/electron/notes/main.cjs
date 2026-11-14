@@ -12,6 +12,7 @@ const { pathToFileURL } = require('node:url');
 const readline = require('node:readline');
 const { validCommand, validSnapshot, popupBounds, badgeBounds } = require('./protocol.cjs');
 const { initialPresentation, projectSnapshot } = require('./presentation.cjs');
+const { createNotesLifecycle } = require('./lifecycle.cjs');
 app.setName('Apparent Notes');
 nativeTheme.themeSource = 'system';
 app.setPath('userData', profile);
@@ -27,7 +28,7 @@ const frame = process.argv.find(v => v.startsWith('--capture-frame='))?.slice('-
 if (!frame || frame.length !== 4 || !frame.every(Number.isFinite)) app.exit(1);
 let latest, popup, badge;
 let presentation = initialPresentation([frame[0] + frame[2] / 2, frame[1] + 80]);
-let finishing = false, finished = false;
+const lifecycle = createNotesLifecycle();
 const send = (value) => process.stdout.write(JSON.stringify(value) + '\n');
 app.whenReady().then(() => {
   if (process.platform === 'darwin') app.setActivationPolicy('accessory');
@@ -49,7 +50,7 @@ app.whenReady().then(() => {
     win.webContents.on('render-process-gone', () => app.quit());
     // XWayland activation can arrive after the first state paint.
     if (process.platform === 'linux' && surface === 'popup') {
-      win.on('focus', () => { if (!finishing && latest?.mode !== 'badge' && win.isVisible()) win.webContents.focus(); });
+      win.on('focus', () => { if (!lifecycle.finishing && latest?.mode !== 'badge' && win.isVisible()) win.webContents.focus(); });
     }
     win.loadURL(page + '#notes-' + surface);
     return win;
@@ -101,11 +102,16 @@ app.whenReady().then(() => {
     if (!latest) return;
     for (const win of [popup, badge]) win.webContents.send('notes:snapshot', latest);
   }
+  function finishWhenReady() {
+    if (!lifecycle.ready || !lifecycle.finishing || lifecycle.finished) return;
+    const notify = () => { if (lifecycle.takeFinishNotification()) popup.webContents.send('notes:finish'); };
+    if (popup.webContents.isLoadingMainFrame()) popup.webContents.once('did-finish-load', notify); else notify();
+  }
   ipcMain.handle('notes:ready', (event) => { validate(event); publish(); });
-  ipcMain.handle('notes:finish-ready', event => { validate(event); if (event.sender !== popup.webContents || !finishing || finished) return; finished = true; send({ action: 'finished' }); });
+  ipcMain.handle('notes:finish-ready', event => { validate(event); if (event.sender === popup.webContents && lifecycle.acknowledgeFinish()) send({ action: 'finished' }); });
   ipcMain.handle('notes:command', (event, value) => {
     validate(event);
-    if (finished || !validCommand(value)) throw new Error('Invalid notes command');
+    if (lifecycle.finished || !validCommand(value)) throw new Error('Invalid notes command');
     send(value);
   });
   const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
@@ -114,12 +120,11 @@ app.whenReady().then(() => {
     try {
       const state = JSON.parse(line);
       if (state.finishing === true && Object.keys(state).length === 1) {
-        finishing = true; popup.hide(); badge.hide();
-        const notify = () => popup.webContents.send('notes:finish');
-        if (popup.webContents.isLoadingMainFrame()) popup.webContents.once('did-finish-load', notify); else notify();
+        lifecycle.requestFinish(); popup.hide(); badge.hide();
+        finishWhenReady();
         return;
       }
-      if (finishing) return;
+      if (lifecycle.finishing) return;
       if (!Number.isSafeInteger(state.revision) || state.revision <= 0) return app.quit();
       const previous = latest;
       const projected = projectSnapshot(presentation, state);
@@ -162,6 +167,7 @@ app.whenReady().then(() => {
   Promise.all([popup.webContents.executeJavaScript('document.readyState'), badge.webContents.executeJavaScript('document.readyState')]).then(() => {
     const ids = [popup, badge].map(w => Number(w.getMediaSourceId().split(':')[1])).filter(n => Number.isInteger(n) && n > 0);
     send({ action: 'windows', ids }); send({ action: 'ready' });
+    lifecycle.markReady(); finishWhenReady();
   }).catch(() => app.quit());
 });
 app.on('window-all-closed', () => app.quit());

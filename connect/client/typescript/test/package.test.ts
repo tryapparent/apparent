@@ -7,7 +7,7 @@ import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
 const owner=fileURLToPath(new URL('..',import.meta.url));
-const builtModules=['handoff','index','shares','mcp-wire','mcp-files','mcp-bundle','mcp-endpoint','mcp-cli'];
+const builtModules=['foreground','handoff','index','shares','mcp-wire','mcp-files','mcp-bundle','mcp-endpoint','mcp-cli'];
 const builtFiles=builtModules.flatMap(name=>[name+'.d.ts',name+'.js']).sort();
 function run(command:string,args:string[],cwd:string,env=process.env):string {
   return execFileSync(command,args,{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe']});

@@ -28,6 +28,13 @@ files are ignored and included by the existing Settings packaging route.
 `npm run test:pill` exercises the real Electron main/preload/renderer with a
 synthetic parent; it is not native capture acceptance.
 
+Foreground upload holds the existing completion dismissal while an operation is
+pending. Cancel and an admitted current upload result start a fresh 15-second
+completion interval, so recovery or recopy controls do not inherit an expired
+save timestamp. Revoked tokens, changed captures and stale results cannot refresh
+the current presentation. Ordinary completion and manual-handoff recovery keep
+their existing dismissal behavior.
+
 The existing Desktop coordinator owns child startup and readiness. A failed
 launch, expired readiness or child exit restores the native pill without
 stopping capture. Linux warms the hidden child at startup and retains native
@@ -35,6 +42,12 @@ held-button/identity checks, drag clamping and exact-window pinning. The child
 alone moves/remaps its Electron surface; Rust never remaps it concurrently.
 The child also reconciles its X11 input stacking without taking focus.
 The pill shows and hides immediately, without CSS animation or a spring/morph.
+Recovery samples the owned process before closing it and records pipe-stop
+codes, readiness/activation observations and the last flushed phase/revision.
+An unhealthy transport is distinct from an observed OS exit. Electron stderr
+records bounded termination reasons and relative timing, without parent frames,
+capture labels, paths or error text. These observations do not change deadlines,
+action admission or fallback.
 Each new semantic snapshot is laid out before a hidden window becomes visible.
 Clock and microphone snapshots do not request layout; a ResizeObserver handles
 actual content/font size changes. The host has no periodic layout measurement.
@@ -56,6 +69,15 @@ It is enabled by default. Explicitly set `experiments.movableRecordingControls`
 to `false` to exercise the excluded Mac route; omitting it tests the included route.
 Glass retains native routing.
 There is one visible pill. Missing packaged assets retain the native route.
+The Mac host admits its exact AppKit window before publishing readiness or
+showing it. A small Node-API adapter applies the existing native pill's guarded
+`_setPreventsActivation:` mechanism without disabling keyboard eligibility.
+It accepts only an owned window ID with the pinned pill title and panel mask;
+unsupported native setup exits the child and retains ordinary native recovery.
+The adapter is built with AppKit only on Mac, staged and signed with the app,
+and included in the native candidate's architecture and file checks. Linux and
+the standalone Connect TypeScript package do not build or load it. This is a
+private AppKit mechanism: native focus and keyboard acceptance remain required.
 On Mac with movable controls explicitly disabled, capture reset restores the child
 window's explicit exclusion. If the
 child becomes ready during capture, the native controls remain visible until

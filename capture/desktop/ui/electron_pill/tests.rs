@@ -338,6 +338,20 @@ fn captured_level_projects_to_shared_pill_without_a_platform_gate() {
 }
 
 #[test]
+fn foreground_upload_reuses_completed_action_and_keeps_cancel_available() {
+    let source = snapshot(Pres::Completed { label: "Uploading… 42%".into(), routes: vec![], warning: false, share: Some(false) });
+    let active = View::new(&source, 5, false).with_handoff(true, true).with_foreground_upload(true, false);
+    let cancel = active.actions.iter().find(|a| a.id == "copy-link").unwrap();
+    assert_eq!(cancel.label, "Cancel upload");
+    assert!(cancel.enabled);
+    assert!(matches!(active.admit(command(5, "copy-link")), Some(PillAction::CopyLink)));
+    let retry = View::new(&snapshot(Pres::Completed { label: "Upload failed".into(), routes: vec![], warning: false, share: Some(true) }), 6, false)
+        .with_handoff(true, true).with_foreground_upload(false, true);
+    assert_eq!(retry.actions.iter().find(|a| a.id == "copy-link").unwrap().label, "Retry upload");
+    assert!(retry.admit(command(5, "copy-link")).is_none());
+}
+
+#[test]
 fn saved_notes_are_recording_only_and_admitted_by_revision() {
     let mut snapshot = snapshot(Pres::Recording { chips: false, has_iphone: false });
     let view = View::new(&snapshot, 7, true).with_notes(0);

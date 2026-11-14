@@ -5,8 +5,8 @@ import path from 'node:path';
 import os from 'node:os';
 import {createHash} from 'node:crypto';
 import {getPublicKeyAsync} from '@noble/ed25519';
-import {generateAgeIdentity,encryptAge,encodeArchive,signEnvelope} from '../dist/index.js';
-import {decryptBundle,publishBundle,transportAssets} from '../dist/mcp-bundle.js';
+import {generateAgeIdentity,encryptAge,encodeArchive,signEnvelope} from '../../dist/index.js';
+import {decryptBundle,publishBundle,transportAssets} from '../../dist/mcp-bundle.js';
 
 const hash=(b:Uint8Array)=>createHash('sha256').update(b).digest('hex');
 type Variant='valid'|'empty_media'|'reordered_json'|'wrong_group'|'different_sender'|'missing_media'|'truncated_media'|'wrong_recipient';

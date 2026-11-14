@@ -137,6 +137,18 @@ impl View {
         self
     }
 
+    pub fn with_foreground_upload(mut self, active: bool, retry: bool) -> Self {
+        if self.phase == "completed" {
+            for action in &mut self.actions {
+                if action.id == "copy-link" {
+                    if active { action.label = "Cancel upload".into(); action.enabled = true; }
+                    else if retry { action.label = "Retry upload".into(); }
+                }
+            }
+        }
+        self
+    }
+
     pub fn with_notes(mut self, count: usize) -> Self {
         if self.phase == "recording" && count > 0 {
             self.note_count = count.min(100);

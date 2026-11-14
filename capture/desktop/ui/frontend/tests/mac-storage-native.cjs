@@ -42,7 +42,7 @@ done
 // Resolve only window 1 of the exact owned PID, then descend its sheets. Do not
 // search other processes, use coordinates, or guess which Return commits a picker.
 // Unknown AX shapes fail with bounded diagnostics from this process alone.
-const { panelScript, persistentPanelScript, PickerProcess, prepareStorageChange, cancelStorageChange, pickerCommandMs } = require('../../../../../enablement/prerequisites/mac-picker.ts');
+const { panelScript, persistentPanelScript, PickerProcess, prepareStorageChange, cancelStorageChange, pickerCommandMs, pickerStartupMs } = require('../../../../../enablement/prerequisites/mac-picker.ts');
 const { isolatePickerRuntime } = require('../../../../../enablement/prerequisites/mac-runtime.ts');
 const { assertReportingRead } = require('../../../../../enablement/prerequisites/reporting-read.ts');
 
@@ -274,6 +274,9 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
             detail: String(subprocess?.stderr ?? error.message).slice(-2048),
             code: subprocess?.code ?? null, signal: subprocess?.signal ?? null });
         }
+        // A timed-out interpreter cannot answer another observation. Preserve
+        // its first failure instead of replacing it with a later retired error.
+        if (error.pickerRetired) throw new Error(`${label}: ${error.message}`, {cause: error});
       }
       await sleep();
     } while (Date.now() < until);
@@ -303,6 +306,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     assert.equal(electronChild.exitCode, null, 'Owned Electron exited before native picker observation');
     assert.equal(electronChild.signalCode, null, 'Owned Electron was signalled before native picker observation');
     panel.driver ??= new PickerProcess(() => spawn('/usr/bin/osascript', ['-e', persistentPanelScript], {env, stdio: 'pipe'}));
+    await panel.driver.start(budget(pickerStartupMs));
     return panel.driver[intent]([String(electronChild.pid), target, operation, electronExecutable, fixtureRuntime.bundleId], budget(pickerCommandMs));
   };
   const panel = (operation, target) => dispatchPanel('act', operation, target);

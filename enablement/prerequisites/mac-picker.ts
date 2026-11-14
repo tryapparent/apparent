@@ -2,10 +2,11 @@ import {spawn, type ChildProcessWithoutNullStreams} from 'node:child_process';
 
 // Disposable hosted-Mac CI driver, not application behavior or native proof.
 // Readiness callbacks may poll read-only state; mutation callbacks run once.
-// Hosted-Mac receipts show AppKit ownership checks taking ~3s before the first
-// AX query. Give the complete picker command a finite allowance for that startup;
-// the caller still clips every call to the original 95s overall test deadline.
+// Cold interpreter/AppKit preparation has its own acknowledged stage. A native
+// command retains its five-second cap; callers clip both stages to the original
+// 95-second overall test deadline.
 export const pickerCommandMs = 5000;
+export const pickerStartupMs = 15000;
 export const pickerObservations = ['inspect-window', 'inspect', 'inspect-go', 'inspect-go-path', 'diagnose'] as const;
 export const pickerActions = ['focus-change', 'open-go', 'enter-go-path', 'navigate-go', 'choose', 'cancel'] as const;
 export type PickerObservation = typeof pickerObservations[number];
@@ -264,8 +265,12 @@ on hasNativeFocus(nativeApp, targetPID, expectedExecutable)
   current application's NSRunLoop's currentRunLoop()'s runUntilDate:(current application's NSDate's dateWithTimeIntervalSinceNow:0.001)
   my assertOwnedApplication(nativeApp, targetPID, expectedExecutable)
   set frontApp to current application's NSWorkspace's sharedWorkspace()'s frontmostApplication()
-  if frontApp is missing value then return false
-  return ((nativeApp's isActive()) as boolean) and ((frontApp's processIdentifier()) as integer) is targetPID
+  set observedActive to (nativeApp's isActive()) as boolean
+  set observedFrontPID to -1
+  if frontApp is not missing value then set observedFrontPID to (frontApp's processIdentifier()) as integer
+  set observedAt to (current application's NSProcessInfo's processInfo()'s systemUptime()) as real
+  log ("Owned native focus sample targetPID=" & targetPID & " active=" & observedActive & " frontPID=" & observedFrontPID & " uptime=" & observedAt)
+  return observedActive and observedFrontPID is targetPID
 end hasNativeFocus
 
 on requireNativeFocus(nativeApp, targetPID, expectedExecutable)
@@ -274,7 +279,9 @@ end requireNativeFocus
 
 on activateOwned(nativeApp, targetPID, expectedExecutable)
   my assertOwnedApplication(nativeApp, targetPID, expectedExecutable)
-  if not ((nativeApp's activateWithOptions:(current application's NSApplicationActivateIgnoringOtherApps)) as boolean) then error "Owned Electron activation refused"
+  set activationAccepted to (nativeApp's activateWithOptions:(current application's NSApplicationActivateIgnoringOtherApps)) as boolean
+  log ("Owned native focus activation targetPID=" & targetPID & " accepted=" & activationAccepted)
+  if not activationAccepted then error "Owned Electron activation refused"
   set focusDeadline to ((current application's NSProcessInfo's processInfo()'s systemUptime()) as real) + 1
   repeat
     if my hasNativeFocus(nativeApp, targetPID, expectedExecutable) then return
@@ -327,6 +334,15 @@ on run argv
   set newlineData to (current application's NSString's stringWithString:linefeed)'s dataUsingEncoding:(current application's NSUTF8StringEncoding)
   -- data is AppleScript terminology; use the explicit Objective-C initializer.
   set buffer to current application's NSMutableData's alloc()'s initWithCapacity:8192
+  -- Cold AppKit initialization is preparation, before any target/AX command.
+  -- This impossible PID never identifies an application or supplies input.
+  set bootstrapApplication to current application's NSRunningApplication's runningApplicationWithProcessIdentifier:2147483647
+  set bootstrapReply to current application's NSMutableDictionary's dictionary()
+  bootstrapReply's setObject:"ready" forKey:"type"
+  set bootstrapData to current application's NSJSONSerialization's dataWithJSONObject:bootstrapReply options:0 |error|:(missing value)
+  if bootstrapData is missing value then error "Cannot encode picker startup"
+  outputHandle's writeData:bootstrapData
+  outputHandle's writeData:newlineData
   log ("Picker transport stage=read-ready elapsedSeconds=" & (my axProbeElapsed(pickerTransportStartedAt)))
   repeat
     set nextByte to inputHandle's readDataOfLength:1
@@ -366,6 +382,8 @@ export class PickerProcess {
   private serial = 0;
   private buffer = '';
   private stderr = '';
+  private ready = false;
+  private starting?: {finish: (error: Error | null) => void};
   private pending?: {id: number; finish: (error: Error | null, value?: string) => void};
   private readonly launch: () => ChildProcessWithoutNullStreams;
   readonly stats = {starts: 0, requests: 0};
@@ -387,10 +405,14 @@ export class PickerProcess {
 
   private abort(message: string) {
     this.retired = true;
-    const error = Object.assign(new Error(message), {stderr: this.stderr, signal: this.child?.signalCode});
+    const error = Object.assign(new Error(message), {stderr: this.stderr, signal: this.child?.signalCode, pickerRetired: true});
     const pending = this.pending;
+    const starting = this.starting;
     this.pending = undefined;
+    this.starting = undefined;
+    this.ready = false;
     pending?.finish(error);
+    starting?.finish(error);
     this.child?.kill('SIGKILL');
   }
   private receive(chunk: string) {
@@ -401,6 +423,16 @@ export class PickerProcess {
       this.buffer = this.buffer.slice(end + 1);
       let reply;
       try { reply = JSON.parse(line); } catch { this.abort('Malformed picker response'); return; }
+      if (this.starting) {
+        if (!reply || reply.type !== 'ready' || Object.keys(reply).length !== 1 || this.buffer.length) {
+          this.abort('Invalid or unsolicited picker startup response'); return;
+        }
+        const starting = this.starting;
+        this.starting = undefined;
+        this.ready = true;
+        starting.finish(null);
+        continue;
+      }
       const pending = this.pending;
       if (!pending || reply?.id !== pending.id || typeof reply.ok !== 'boolean' ||
           (reply.ok ? typeof reply.value !== 'string' : typeof reply.error !== 'string')) {
@@ -409,10 +441,35 @@ export class PickerProcess {
       this.pending = undefined;
       pending.finish(reply.ok ? null : Object.assign(new Error(reply.error), {stderr: this.stderr}), reply.value);
     }
-    if (!this.pending && this.buffer.length) this.abort('Unsolicited picker response bytes');
+    if (!this.pending && !this.starting && this.buffer.length) this.abort('Unsolicited picker response bytes');
+  }
+  start(timeout: number): Promise<void> {
+    if (this.retired) return Promise.reject(new Error('Picker driver is retired; no replay'));
+    if (this.starting) return Promise.reject(new Error('Concurrent picker startup refused'));
+    if (!Number.isFinite(timeout) || timeout <= 0 || timeout > pickerStartupMs) {
+      return Promise.reject(new Error('Invalid picker startup deadline'));
+    }
+    if (this.ready) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => this.abort('Picker interpreter startup timed out; no command dispatched'), timeout);
+      this.starting = {finish: error => {clearTimeout(timer); if (error) reject(error); else resolve();}};
+      try {
+        this.child = this.launch(); this.stats.starts++;
+        this.child.stdout.setEncoding('utf8');
+        this.child.stderr.setEncoding('utf8');
+        this.child.stdout.on('data', chunk => this.receive(chunk));
+        this.child.stderr.on('data', chunk => { this.stderr = (this.stderr + chunk).slice(-8192); });
+        this.child.on('error', error => this.abort(`Picker process failed: ${error.message}`));
+        this.child.stdin.on('error', error => this.abort(`Picker input failed: ${error.message}`));
+        // close follows the final pipe reads; retain a bootstrap failure's stderr.
+        this.child.once('close', (code, signal) => this.abort(
+          `Picker process exited (code ${code}, signal ${signal})${this.stderr.trim() ? ': ' + this.stderr.trim() : ''}`));
+      } catch (error) { this.abort(`Cannot start picker interpreter: ${error}`); }
+    });
   }
   request(args: string[], timeout: number): Promise<string> {
     if (this.retired) return Promise.reject(new Error('Picker driver is retired; no replay'));
+    if (!this.ready) return Promise.reject(new Error('Picker interpreter is not ready; start it before commands'));
     if (this.pending) return Promise.reject(new Error('Concurrent picker command refused'));
     if (!Number.isFinite(timeout) || timeout <= 0 || timeout > pickerCommandMs ||
         args.length !== 5 || !args.every(arg => typeof arg === 'string')) {
@@ -428,20 +485,8 @@ export class PickerProcess {
         if (error) reject(error); else resolve(value!);
       }};
       try {
-        if (!this.child) {
-          this.child = this.launch(); this.stats.starts++;
-          this.child.stdout.setEncoding('utf8');
-          this.child.stderr.setEncoding('utf8');
-          this.child.stdout.on('data', chunk => this.receive(chunk));
-          this.child.stderr.on('data', chunk => { this.stderr = (this.stderr + chunk).slice(-8192); });
-          this.child.on('error', error => this.abort(`Picker process failed: ${error.message}`));
-          this.child.stdin.on('error', error => this.abort(`Picker input failed: ${error.message}`));
-          // exit may precede the final pipe reads; close follows both streams.
-          this.child.once('close', (code, signal) => this.abort(
-            `Picker process exited (code ${code}, signal ${signal})${this.stderr.trim() ? ': ' + this.stderr.trim() : ''}`));
-        }
         this.stats.requests++;
-        this.child.stdin.write(frame);
+        this.child!.stdin.write(frame);
       } catch (error) { this.abort(`Cannot dispatch picker command: ${error}`); }
     });
   }
@@ -449,7 +494,7 @@ export class PickerProcess {
     this.retired = true;
     const child = this.child;
     if (child && child.exitCode === null && child.signalCode === null) {
-      if (this.pending) this.abort('Picker closed with an unresolved command');
+      if (this.pending || this.starting) this.abort('Picker closed with unresolved startup or command');
       await new Promise<void>((resolve, reject) => {
         const kill = setTimeout(() => child.kill('SIGKILL'), 500);
         const hard = setTimeout(() => reject(new Error('Owned picker driver did not exit')), 1500);

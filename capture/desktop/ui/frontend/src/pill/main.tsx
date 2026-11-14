@@ -5,7 +5,7 @@ import {StickyNote} from '@apparent/ui/icons';
 import type {PillView} from './bridge';
 import './style.css';
 import {InputMeter} from './input-meter';
-import {Check,Circle,ClipboardPaste,Link,LoaderCircle,Monitor,PenLine,Scan,ScanEye,Smartphone,Square,X,type LucideIcon} from 'lucide-react';
+import {Check,Circle,CircleAlert,ClipboardPaste,Link,LoaderCircle,Monitor,PenLine,Scan,ScanEye,Smartphone,Square,X,type LucideIcon} from 'lucide-react';
 
 const actionIcons:Record<string,LucideIcon>={
  'select-area':Scan,'switch-area':Scan,'select-screen':Monitor,'switch-screen':Monitor,
@@ -76,15 +76,17 @@ function Pill() {
   },[view]);
   if(!view)return <div role="status" className="pill connection">{error?'Recording controls unavailable':'Connecting…'}</div>;
   if(view.phase==='hidden')return null;
+  const uploading=view.phase==='completed' && view.actions.some(action=>action.label==='Cancel upload');
+  const uploadStopped=view.phase==='completed' && (view.label.startsWith('Upload failed') || view.label.startsWith('Upload cancelled'));
   return <main data-revision={view.revision} className="pill settings-shell" aria-label={view.phase==='selecting'?view.label:undefined} data-phase={view.phase} data-reduced={view.reducedMotion} data-warning={view.warning!==null}>
     <div className="pill-surface">
     <div className="pill-row">
     {(view.phase!=='selecting') && <div className={`lead ${view.draggable?'movable':''} ${window.apparentPill?.manualDrag?'manual-drag':''}`} title={view.draggable?'Drag recording controls':undefined}
       onPointerDown={event=>{if(view.draggable && !(event.target as HTMLElement).closest('button') && window.apparentPill?.manualDrag && event.button===0 && event.isPrimary)void window.apparentPill.beginDrag(view.revision).catch(()=>{});}}>
       <span className={`indicator-slot ${view.phase}`}>
-        {(view.phase==='completed'?<Check aria-hidden="true" className="indicator completed"/>:view.phase==='processing'?<LoaderCircle aria-hidden="true" className="indicator processing"/>:<span aria-hidden="true" className={`indicator ${view.phase}`}/>)}
+        {(uploading?<LoaderCircle aria-hidden="true" className="indicator processing"/>:uploadStopped?<CircleAlert aria-hidden="true" className="indicator stopped"/>:view.phase==='completed'?<Check aria-hidden="true" className="indicator completed"/>:view.phase==='processing'?<LoaderCircle aria-hidden="true" className="indicator processing"/>:<span aria-hidden="true" className={`indicator ${view.phase}`}/>)}
       </span>
-      <span className="clock" aria-label={view.phase==='recording'?`Recording ${view.clock}`:undefined}>
+      <span className="clock" role={view.phase==='completed'?'status':undefined} aria-label={view.phase==='recording'?`Recording ${view.clock}`:undefined}>
         {view.phase==='recording'?view.clock:view.phase==='processing'?'Processing…':view.label}
       </span>
     </div>}
@@ -93,7 +95,7 @@ function Pill() {
     {view.notice && <span className="notice" role="status">{view.notice}</span>}
     {error && <span role="alert">Action not confirmed. Use the recording shortcut or tray menu.</span>}
     {view.actions.length>0 && <div className="controls" role="group" aria-label="Recording controls" aria-busy={pending}>
-      {view.actions.filter(action=>action.id!=='notes').map(action=>{const Icon=actionIcons[action.id];const iconOnly=action.id==='cancel'||action.id==='dismiss';return <Button key={action.id} variant={action.primary?'default':action.selected?'secondary':'ghost'}
+      {view.actions.filter(action=>action.id!=='notes').map(action=>{const Icon=action.label==='Cancel upload'?X:actionIcons[action.id];const iconOnly=action.id==='cancel'||action.id==='dismiss';return <Button key={action.id} variant={action.primary?'default':action.selected?'secondary':'ghost'}
         size={iconOnly?'icon':'default'} data-icon-only={iconOnly} aria-label={action.label} title={iconOnly?action.label:undefined}
         data-primary={action.primary}
         aria-pressed={action.id.startsWith('select-')?action.selected:undefined}
