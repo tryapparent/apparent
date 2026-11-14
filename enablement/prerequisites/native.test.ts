@@ -6,6 +6,10 @@ import { checkNativeInputs, prepareNativeInputs } from './native.ts';
 import { spawnSync } from 'node:child_process';
 import '../native-build/build.test.ts';
 
+test('temporary PR1270 hosted completion receipt probe; never merge', {skip: process.env.GITHUB_ACTIONS !== 'true'}, () => {
+  assert.fail('Intentional hosted-only failure for the PR1270 completion notification acceptance probe');
+});
+
 function fixture(t: any) {
   const root = realpathSync(mkdtempSync('/tmp/apparent-dev-native-inputs-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));

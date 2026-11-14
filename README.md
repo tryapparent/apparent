@@ -101,5 +101,7 @@ and agent read approval are separate; website sign-in grants neither.
 
 ## License
 
+<!-- Temporary PR1270 notification acceptance probe; never merge. -->
+
 [MIT](LICENSE). With thanks to the projects credited in our
 [third-party notices](capture/desktop/docs/guides/credits.md).
