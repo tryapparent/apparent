@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
-import {join} from 'node:path';
+import {chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
+import {basename, join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {decodeMovieFrames, EngineFrameError} from '../dist/index.js';
 
@@ -22,10 +22,13 @@ const valid = (value: unknown = reply) =>
 
 test('literal arguments, verified private bytes and original request identity', async t => {
   const f = fixture(t), directory = f.output();
+  const canonicalDirectory = realpathSync(directory);
+  const parentAlias = join(f.root, 'parent-alias'); symlinkSync(f.root, parentAlias);
   f.provider('printf "%s\\n" "$@" > "$0.args"\n' + valid());
-  const frames = await decodeMovieFrames({executable: f.executable, movie: f.movie, outputDirectory: directory, timesMs: [25]});
-  assert.deepEqual(frames, [{...reply.frames[0], file: join(directory, 'frame-000.rgba')}]);
-  assert.equal(readFileSync(f.executable + '.args', 'utf8'), 'frames-v1\n' + f.movie + '\n' + directory + '\n0\n25\n');
+  const frames = await decodeMovieFrames({executable: f.executable, movie: f.movie,
+    outputDirectory: join(parentAlias, basename(directory)), timesMs: [25]});
+  assert.deepEqual(frames, [{...reply.frames[0], file: join(canonicalDirectory, 'frame-000.rgba')}]);
+  assert.equal(readFileSync(f.executable + '.args', 'utf8'), 'frames-v1\n' + f.movie + '\n' + canonicalDirectory + '\n0\n25\n');
   assert.deepEqual([...readFileSync(frames[0].file)], [255, 0, 0, 255]);
 });
 
