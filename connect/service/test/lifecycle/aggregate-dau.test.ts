@@ -53,7 +53,7 @@ test('local workerd D1: an aggregate objection survives later individual re-cons
   assert.equal((await f.db.prepare('SELECT count(*) n FROM analytics_consent WHERE account_id=?').bind(a.id).first()).n,1,'individual affirmative consent is still permitted, separately');
   await upload(f,a,908);await(await f.mf.getWorker()).scheduled();assert.equal((await f.db.prepare('SELECT count(*) n FROM aggregate_dau_dedup').first()).n,0);
   const b=await f.identity('maintenance-rollback');await upload(f,b,909);await observed(f,1);
-  await f.db.exec("UPDATE aggregate_dau_dedup SET expires_at_ms=0; CREATE TRIGGER maintenance_failure BEFORE UPDATE ON aggregate_dau_state BEGIN SELECT RAISE(ABORT,'synthetic failure'); END");
+  await f.db.exec("UPDATE aggregate_dau_dedup SET expires_at_ms=0; UPDATE aggregate_dau_state SET as_of_ms=as_of_ms-900000; CREATE TRIGGER maintenance_failure BEFORE UPDATE ON aggregate_dau_state BEGIN SELECT RAISE(ABORT,'synthetic failure'); END");
   const before=await f.db.prepare('SELECT as_of_ms FROM aggregate_dau_state').first();await(await f.mf.getWorker()).scheduled();
   assert.deepEqual(await f.db.prepare('SELECT as_of_ms FROM aggregate_dau_state').first(),before);assert.equal((await f.db.prepare('SELECT count(*) n FROM aggregate_dau_dedup').first()).n,1,'real D1 batch rolled back preceding cleanup when watermark write failed');
  }finally{await f.close();}

@@ -84,8 +84,9 @@ export async function flushAnalytics(env: Env) {
    stmt(env,`UPDATE analytics_control SET
     dropped=dropped+CASE WHEN snapshot_day<? THEN (SELECT count(*) FROM accounts a JOIN analytics_consent consent ON consent.account_id=a.id
      WHERE consent.consented_at<=? AND NOT EXISTS(SELECT 1 FROM analytics_outbox o WHERE o.id='storage:'||a.id||':'||?)) ELSE 0 END,
-    snapshot_day=? WHERE id=1`,day,now,day,day),
-   stmt(env,`UPDATE analytics_control SET dropped=dropped+(SELECT count(*) FROM analytics_outbox WHERE occurred_at<?) WHERE id=1`,now-90*DAY),
+    snapshot_day=? WHERE id=1 AND snapshot_day<?`,day,now,day,day,day),
+   stmt(env,`UPDATE analytics_control SET dropped=dropped+(SELECT count(*) FROM analytics_outbox WHERE occurred_at<?) WHERE id=1
+    AND EXISTS(SELECT 1 FROM analytics_outbox WHERE occurred_at<?)`,now-90*DAY,now-90*DAY),
    stmt(env,'DELETE FROM analytics_outbox WHERE occurred_at<?',now-90*DAY)
   ]);
   const {results}=await stmt(env,`SELECT o.* FROM analytics_outbox o JOIN analytics_consent c ON c.account_id=o.account_id

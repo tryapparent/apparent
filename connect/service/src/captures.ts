@@ -143,9 +143,10 @@ function mime(path: string){if(path.endsWith('.age'))return 'application/octet-s
 export async function cleanup(env: Env) {
  const now=Date.now();
  await stmt(env,"UPDATE captures SET status='deleted' WHERE status!='deleted' AND (expires_at<=? OR (status='pending' AND pending_until<=?))",now,now).run();
- // Keep attempt records: a PUT already in flight can finish after this sweep.
- // Repeated deletion of tombstoned keys makes that orphan harmless and reclaimable.
- const {results}=await stmt(env,"SELECT a.key,a.terminal FROM attempts a JOIN captures c ON c.id=a.capture_id LEFT JOIN files f ON f.object_key=a.key WHERE c.status='deleted' OR (f.object_key IS NULL AND a.created_at<?) ORDER BY a.cleaned_at,a.key LIMIT 1000",now-DAY).all<AttemptSnapshot>();
+ // Retain tombstones, but a released terminal PUT cannot recreate its unique key.
+ // Uncertain PUTs stay charged and retry hourly; a later terminal marker makes
+ // them eligible immediately. Failed deletes/stamps never advance the checkpoint.
+ const {results}=await stmt(env,"SELECT a.key,a.terminal FROM attempts a JOIN captures c ON c.id=a.capture_id LEFT JOIN files f ON f.object_key=a.key WHERE (c.status='deleted' OR (f.object_key IS NULL AND a.created_at<?)) AND NOT (a.terminal=1 AND a.released=1) AND (a.terminal=1 OR a.cleaned_at=0 OR a.cleaned_at<=?) ORDER BY a.cleaned_at,a.key LIMIT 1000",now-DAY,now-3600000).all<AttemptSnapshot>();
  for(let i=0;i<results.length;i+=100){
   const page=results.slice(i,i+100);
   await deleteAttempts(env,page,now);

@@ -88,6 +88,8 @@ test('full manifests and oldest-prefix eviction keep a constant statement budget
  assert.equal(await f.bucket.head('multi-2001'),null);
  assert.equal((await f.db.prepare("SELECT count(*) AS n FROM captures WHERE status!='deleted'").first()).n,0);
  assert.equal((await f.db.prepare('SELECT count(*) AS n FROM attempts WHERE cleaned_at=0').first()).n,0);
+ // Simulate the hourly retry becoming due; uncertain keys retain their charge.
+ await f.db.prepare('UPDATE attempts SET cleaned_at=cleaned_at-3600000 WHERE terminal=0').run();
  await f.bucket.put('multi-0001','late');
  for(let i=0;i<3;i++)assert.equal((await worker.scheduled()).outcome,'ok');
  assert.equal(await f.bucket.head('multi-0001'),null);
@@ -108,6 +110,8 @@ for(const failure of ['FAIL_DELETE','FAIL_STAMP'])test(failure+' preserves clean
  for(let i=0;i<2;i++)assert.equal((await worker.scheduled()).outcome,'ok');
  assert.equal((await f.bucket.list()).objects.length,0);
  assert.equal((await f.db.prepare('SELECT count(*) AS n FROM attempts WHERE cleaned_at=0').first()).n,0);
+ // Simulate the hourly retry becoming due; uncertain keys retain their charge.
+ await f.db.prepare('UPDATE attempts SET cleaned_at=cleaned_at-3600000 WHERE terminal=0').run();
  await f.bucket.put('failure-0001','late');
  for(let i=0;i<2;i++)assert.equal((await worker.scheduled()).outcome,'ok');
  assert.equal(await f.bucket.head('failure-0001'),null);
