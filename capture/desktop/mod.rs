@@ -1646,14 +1646,11 @@ impl ApparentCoordinator {
         let board_frame=whiteboard::frame(&self.whiteboard,cx);
         let board_view={let board=self.whiteboard.borrow();board.presentation.as_ref().map(|(id,_)|serde_json::json!({"id":id,"strokes":board.strokes,"color":board.color}))};
         if let Some(session)=self.onboarding.as_mut(){session.board_view(board_view);}
-        if let Some(session)=self.onboarding.as_mut(){session.practice_board(board_frame);}
         let board=self.whiteboard.borrow().strokes.iter().any(|s|s.len()>3);
         let screen=self.telemetry.strokes.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().filter(|s|!s.laser && s.pts.len()>9).count();
         let processing=self.is_processing();
         let note_saved=self.note_ui.as_ref().is_some_and(|notes|notes.has_saved_note());
-        let was_desktop=self.onboarding.as_ref().unwrap().practice_desktop_stage();
-        if let Some(session)=self.onboarding.as_mut() {session.practice_note_saved(note_saved);session.observe_practice(board,screen,processing,None);}
-        if !was_desktop && self.onboarding.as_ref().is_some_and(|s|s.practice_desktop_stage()) {self.whiteboard.borrow_mut().presentation=None;cx.defer(whiteboard::close);}
+        if let Some(session)=self.onboarding.as_mut() {session.practice_note_saved(note_saved);session.observe_practice_batch(board_frame,board,screen,processing);}
     }
 
     pub fn tick_gate(&mut self) {
@@ -1713,6 +1710,21 @@ impl ApparentCoordinator {
                 self.onboarding
                     .as_mut()
                     .map_or(Effect::None, |session| session.grants(grants))
+            }
+            Event::Practice(value) => {
+                let effect=self.onboarding.as_mut().map_or(Effect::None,|session|session.practice_disposition(value));
+                let close=self.onboarding.as_mut().and_then(|session|session.take_practice_board_close());
+                if let Some((source,transport,attempt,id))=close {
+                    // Recheck the exact owned board and live capture in the deferred callback.
+                    let owner=cx.entity().downgrade();
+                    cx.defer(move |cx| { let _=owner.update(cx,|coord,cx| {
+                        if coord.is_recording() && coord.onboarding.as_ref().is_some_and(|s|s.current_practice_scope(source,transport,attempt)) && coord.whiteboard.borrow().presentation.as_ref().is_some_and(|(current,_)|current==&id) {
+                            coord.whiteboard.borrow_mut().presentation=None;
+                            whiteboard::close(cx);
+                        }
+                    }); });
+                }
+                effect
             }
             Event::Board(value) => {
                 if self.is_recording() && self.onboarding.as_ref().is_some_and(|s|s.electron_practice()) {

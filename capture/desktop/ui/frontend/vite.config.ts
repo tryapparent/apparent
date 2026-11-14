@@ -17,11 +17,11 @@ let reportingOutput: string;
 export default defineConfig({
   base: './',
   plugins: [react(), tailwindcss(), {name: 'onboarding-host-policy', closeBundle() {
-    for (const name of ['presentation', 'hyprland', 'selection']) {
+    for (const name of ['presentation', 'hyprland', 'selection', 'practice', 'practice-host']) {
       const file = `electron/onboarding/${name}.ts`;
       const result = ts.transpileModule(readFileSync(file, 'utf8'), {fileName: file,
         compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022}});
-      writeFileSync(`dist/onboarding-${name}.cjs`, result.outputText);
+      writeFileSync(`dist/onboarding-${name}.cjs`, result.outputText.replace('require("./practice.ts")', 'require("./onboarding-practice.cjs")'));
     }
   }}, {
     name: 'desktop-reporting-policy',

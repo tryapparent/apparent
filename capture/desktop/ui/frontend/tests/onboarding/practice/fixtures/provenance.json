@@ -1,0 +1,139 @@
+{
+  "base": "327aefdeea3fe7f9c7771c649094b20f81c5f4fb",
+  "head": "d368824c591e3f7c0c5887e9ba19eb0bca4d4486",
+  "clean": true,
+  "sources": [
+    {
+      "path": "capture/desktop/settings/practice.rs",
+      "blob": "1cb1b835730329712f263b1deb4782a2c57fc0c9",
+      "sha256": "31458493fefacd9c365acc1183b86927799690185653cfa2e37b46e9368f6bfc",
+      "snapshot": "source/capture__desktop__settings__practice.rs",
+      "headBlob": "1cb1b835730329712f263b1deb4782a2c57fc0c9"
+    },
+    {
+      "path": "capture/desktop/settings/onboarding.rs",
+      "blob": "6c56bb9806de111806c7b4e518ab8fd65e12698d",
+      "sha256": "7412593464d175b17aec0e645a242c9a19c90d53fa5f334fa7927a0cb2f42e2a",
+      "snapshot": "source/capture__desktop__settings__onboarding.rs",
+      "headBlob": "8ba90097bcafe5f5691bb8e854d2396834dafa05"
+    },
+    {
+      "path": "capture/desktop/settings/onboarding/pipe.rs",
+      "blob": "cfe4dbdee7e501883279b37bab87a4ba269f795d",
+      "sha256": "602355eba54fbf26c9144632e1cccc80f4d1f788d3e426652b36f5511a0ce535",
+      "snapshot": "source/capture__desktop__settings__onboarding__pipe.rs",
+      "headBlob": "cfe4dbdee7e501883279b37bab87a4ba269f795d"
+    },
+    {
+      "path": "capture/desktop/mod.rs",
+      "blob": "42e77e444f2b6d926bb8f7e56060aa62f3758172",
+      "sha256": "f5b5ed429ff89d0eb93712e8662a53e5fb9041d0dc8d6a40672b18480f32564f",
+      "snapshot": "source/capture__desktop__mod.rs",
+      "headBlob": "42e77e444f2b6d926bb8f7e56060aa62f3758172"
+    },
+    {
+      "path": "capture/desktop/ui/desktop_completion.rs",
+      "blob": "51a3ec23f81172316e1d6a62a2049ed8cc32b127",
+      "sha256": "188dbbed6a2ec9ba277e85ce55c7a890b8bdea322ff65557b4f7ed004e45ac14",
+      "snapshot": "source/capture__desktop__ui__desktop_completion.rs",
+      "headBlob": "51a3ec23f81172316e1d6a62a2049ed8cc32b127"
+    },
+    {
+      "path": "shared/handoff/config_store.rs",
+      "blob": "aa15259783b156023e54af47c0c3a304e0a360e9",
+      "sha256": "4d428aac29aa2b24bed6daa90475e243a2b133ad78061d15c6daf5cbec2f47ac",
+      "snapshot": "source/shared__handoff__config_store.rs",
+      "headBlob": "aa15259783b156023e54af47c0c3a304e0a360e9"
+    },
+    {
+      "path": "Cargo.toml",
+      "blob": "e7b5e27980f6214b70d34477de485dfc9ddc5655",
+      "sha256": "bcec1ec27960c8cf79c761fbcecddadb31ee6af2882f01fb95f9841dd3f38dff",
+      "snapshot": "source/Cargo.toml",
+      "headBlob": "e7b5e27980f6214b70d34477de485dfc9ddc5655"
+    },
+    {
+      "path": "Cargo.lock",
+      "blob": "ea696697f8a5cf2990093ec180fe93d02a45d596",
+      "sha256": "20ef663030626f256235f3143c2f38670cd7bf63e687c8b4cf9e105b4a8fda32",
+      "snapshot": "source/Cargo.lock",
+      "headBlob": "ea696697f8a5cf2990093ec180fe93d02a45d596"
+    }
+  ],
+  "generator": {
+    "path": "capture/desktop/settings/onboarding/practice_corpus.rs",
+    "blob": "1f38e211e692a52ea24e360d91cbb9a00ef3d6ad",
+    "sha256": "b8829c132b2a9e1cc14af57a9ad631edf9f034ad8a50626ecbcf455428901170"
+  },
+  "binary": {
+    "path": "/tmp/apparent-dev-practice-producer-xndSTH/target/debug/deps/apparent-54d01b072d77b97f",
+    "sha256": "bc1e3a8ebef9495d1a6ba8b153ac2c7660808cfc6e556f1ac2784b7304c58453"
+  },
+  "results": {
+    "binary": "/tmp/apparent-dev-practice-producer-xndSTH/target/debug/deps/apparent-54d01b072d77b97f",
+    "cases": 18,
+    "steps": 212,
+    "scopedEvents": 4,
+    "byteReproducible": true,
+    "sha256": "376946247ee36fd352570a128c28ed48d7f734e83ff6e076e08e59bb788cab44"
+  },
+  "artifacts": [
+    {
+      "path": "HANDOFF.md",
+      "sha256": "2741078221d88a477f0601179274bad6f8c6e13e32972cf93d656c1f4ff65133"
+    },
+    {
+      "path": "corpus.json",
+      "sha256": "376946247ee36fd352570a128c28ed48d7f734e83ff6e076e08e59bb788cab44"
+    },
+    {
+      "path": "corpus-repeat.json",
+      "sha256": "376946247ee36fd352570a128c28ed48d7f734e83ff6e076e08e59bb788cab44"
+    },
+    {
+      "path": "generator.patch",
+      "sha256": "9fdf66a91b433a40f9075c32981f1ece50dd516c6d1189acbab803deb1e2b31b"
+    },
+    {
+      "path": "runner.ts",
+      "sha256": "169829403b99dc8dc220f73400b85840be5a2966936dc080754e035c512c7df2"
+    },
+    {
+      "path": "provenance.ts",
+      "sha256": "f17c78d7bd9320bb648917c7885e1dfb03574cf104649861042f8324399f740e"
+    },
+    {
+      "path": "results.json",
+      "sha256": "352c27ee35528d09f8b95b35418933054e66d21e5a1270086a8939b5471d23ca"
+    },
+    {
+      "path": "build.jsonl",
+      "sha256": "81bf1d382c16aadfefaeb05900f50dd83f668003c36314bac3c64b85e1a66d98"
+    },
+    {
+      "path": "preflight.log",
+      "sha256": "0eb852e56093a60f5401cbe9880df37c6da4771c5f3ef7e695ac62d5200c9afc"
+    },
+    {
+      "path": "practice-tests.log",
+      "sha256": "72f256e16c76e1cde34de9f099bd0dcecb107b4534d7a0da6823c70f669ca4bd"
+    },
+    {
+      "path": "adapter-tests.log",
+      "sha256": "5c04525bc6c65469a0bd1b935681584c1c3c38924654fbe493a95bed381079e4"
+    },
+    {
+      "path": "corpus.json.log",
+      "sha256": "a341bb50b38bcc09d37f546d2b96e495c3f1fd20b1ec6fe3dcd3b80dc85cc74d"
+    },
+    {
+      "path": "corpus-repeat.json.log",
+      "sha256": "b62510b22f02a07148aee76f5ac7af98fe5efc21fdec504b28e629e3a004e2ad"
+    }
+  ],
+  "tools": {
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+    "node": "v22.23.4"
+  }
+}
