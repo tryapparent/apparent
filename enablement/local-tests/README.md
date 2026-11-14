@@ -36,6 +36,16 @@ worker isolation. Python tests retain separate interpreters, and the CLI test
 requiring `APPARENT_BIN` still follows the rebuilt native executable. The tracked
 file inventory and failure propagation remain required on both platforms.
 
+Synthetic hook repositories share `fixtures/runner.ts`: it copies non-test
+TypeScript sources under `local-tests/` and `ci/`, excluding fixture, dependency
+and build directories. New nested runner imports within these owners require no
+per-constructor copy list. Imports outside these roots require explicit adoption;
+missing modules still fail. Finite Node test placeholders come from the runner's
+contract, tooling, onboarding and Hermes command plans, so added direct test
+inputs follow their owning inventory. Package/native mocks remain local to each
+fixture. These placeholders verify hook dispatch and failure propagation, not
+product behavior; the real downstream suites still run in their normal gates.
+
 Local selections that need Rust check the existing private temporary-root contract
 before other commands. When Desktop is selected, its locked install, unit tests
 and complete Electron suite run before Rust verification. This catches missing
