@@ -19,7 +19,7 @@
     "test:settings": "node --experimental-strip-types scripts/settings-native/cli.ts test",
     "test:settings-provider": "node --experimental-strip-types scripts/settings-native/cli.ts provider",
     "typecheck:settings-native": "tsc -p scripts/settings-native/tsconfig.json",
-    "test:onboarding-policy": "node --experimental-strip-types --test tests/onboarding/*.test.ts",
+    "test:onboarding-policy": "node --experimental-strip-types --test tests/onboarding/*.test.ts tests/connect/flow.test.ts tests/connect/session.test.ts",
     "typecheck:onboarding-policy": "tsc -p tests/onboarding/tsconfig.json",
     "typecheck:onboarding-renderer": "tsc -p tests/onboarding/renderer/tsconfig.json"
   },
