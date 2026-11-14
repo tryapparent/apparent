@@ -38,7 +38,7 @@ fn assets() -> Result<(PathBuf, PathBuf, PathBuf)> {
         .context("Missing app prefix")?
         .join("share/apparent/settings");
     let mut roots = vec![(settings.join("app"), settings.join("runtime"))];
-    if cfg!(debug_assertions) {
+    if cfg!(any(test, debug_assertions)) {
         let frontend =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("capture/desktop/ui/frontend");
         roots.push((
