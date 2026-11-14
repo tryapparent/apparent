@@ -21,6 +21,7 @@ class SigningTests(unittest.TestCase):
             for relative in ("electron/main.cjs", "electron/preload.cjs", "electron/settings.cjs",
                              "dist/settings.html", "dist/onboarding.html", "dist/src/controls/index.html",
                              "dist/onboarding-presentation.cjs", "dist/onboarding-hyprland.cjs", "dist/onboarding-selection.cjs",
+                             "dist/onboarding-practice.cjs", "dist/onboarding-practice-host.cjs",
                              "dist/src/installer/index.html", "dist/pill/index.html",
                              "dist/assets/controls.js", "node_modules/electron/dist/electron",
                              "electron/pill/native/window.node",
@@ -72,7 +73,7 @@ class SigningTests(unittest.TestCase):
             self.assertEqual((destination / "app/electron/installer/ui/src/installer/index.html").read_text(), "dist/src/installer/index.html")
             self.assertEqual((destination / "app/dist/pill/index.html").read_text(), "dist/pill/index.html")
             self.assertEqual((destination / "app/electron/pill/t3.cjs").read_text(), "electron/pill/t3.cjs")
-            for name in ("presentation", "hyprland", "selection"):
+            for name in ("presentation", "hyprland", "selection", "practice", "practice-host"):
                 relative = f"dist/onboarding-{name}.cjs"
                 self.assertEqual((destination / "app" / relative).read_text(), relative)
             self.assertTrue((destination / "runtime/electron").is_file())
