@@ -9,6 +9,34 @@ import {join, resolve} from 'node:path';
 // Required provider proof, separate from the Rust/Electron-free policy loop.
 const app = resolve(import.meta.dirname, '../../../capture/desktop/ui/frontend/electron/record-media');
 const worker = join(app, 'worker.js'), engine = join(app, 'native/apparent-engine-media');
+test('phone candidates span native batches, deduplicate actual times and retain private pixels', t => {
+  const root=mkdtempSync(join(tmpdir(),'apparent-dev-record-phone-'));
+  t.after(()=>rmSync(root,{recursive:true,force:true}));
+  const movie=join(root,'sparse.mp4'),directory=join(root,'frames'); mkdirSync(directory,{mode:0o700});
+  // 61 frames over 122 seconds: 481 candidate requests, with a duplicate
+  // presentation sample straddling the SDK's 480-request batch boundary.
+  execFileSync('ffmpeg',['-v','error','-nostdin','-y','-f','lavfi','-i',
+    'color=c=red:s=64x48:r=1/2:d=120.2,drawbox=x=32:y=0:w=32:h=48:color=blue:t=fill',
+    '-c:v','libx264','-threads','1','-pix_fmt','yuv420p',movie],{stdio:'pipe'});
+  const before=readFileSync(movie);
+  const reply=JSON.parse(execFileSync(process.execPath,[join(app,'phone-worker.js'),
+    join(app,'native/apparent-engine-frames'),movie,directory,'122000'],{encoding:'utf8',timeout:60_000}));
+  assert.equal(reply.version,1); assert.equal(reply.frames.length,61);
+  assert.deepEqual(readdirSync(directory).sort(),reply.frames.map((f:{file:string})=>f.file).sort());
+  for(const [index,frame] of reply.frames.entries()) {
+    assert.equal(frame.requestIndex,index);assert.equal(frame.requestedMs,index*2000);
+    assert.equal(frame.actualMovieMs,frame.requestedMs);assert.deepEqual([frame.width,frame.height],[64,48]);
+    const file=join(directory,frame.file),pixels=readFileSync(file);
+    assert.equal(statSync(file).mode&0o777,0o600);assert.equal(statSync(file).nlink,1);
+    assert.equal(pixels.length,64*48*4);
+    for(const [x,channel] of [[16,0],[48,2]]){const at=(24*64+x)*4;assert(pixels[at+channel]>pixels[at+2-channel]+40);}
+  }
+  assert.deepEqual(readFileSync(movie),before);
+  const bad=join(root,'bad.mp4'),failed=join(root,'failed');writeFileSync(bad,'SYNTHETIC PRIVATE PATH');mkdirSync(failed,{mode:0o700});
+  const failure=spawnSync(process.execPath,[join(app,'phone-worker.js'),join(app,'native/apparent-engine-frames'),bad,failed,'1000'],{encoding:'utf8',timeout:10_000});
+  assert.equal(failure.status,1);assert.equal(failure.stdout,'');assert.equal(failure.stderr,'Record could not decode phone movie candidates\n');
+  assert.deepEqual(readdirSync(failed),[]);
+});
 test('Record frames use the actual published provider and retain clamped bundle identities', t => {
   const root = mkdtempSync(join(tmpdir(), 'apparent-dev-record-frames-'));
   t.after(() => rmSync(root, {recursive:true,force:true}));
