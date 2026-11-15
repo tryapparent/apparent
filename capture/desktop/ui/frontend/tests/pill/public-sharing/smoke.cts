@@ -8,12 +8,17 @@ const os=require('node:os');
 test('public copy waits for disclosure and rejects cancel and stale recording',async t=>{
  const home=await fs.mkdtemp(path.join(os.tmpdir(),'public-pill-'));
  const app=await electron.launch({args:[path.resolve(__dirname,'../host.cts'),'--no-sandbox'],env:{...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config')}});
- t.after(async()=>{await app.close();await fs.rm(home,{recursive:true,force:true,maxRetries:3});});
+ let heartbeat,current;
+ t.after(async()=>{clearInterval(heartbeat);await app.close();await fs.rm(home,{recursive:true,force:true,maxRetries:3});});
  const page=await app.firstWindow(),sent=[];let stream='';
  app.process().stdout.on('data',data=>{stream+=data;let end;while((end=stream.indexOf('\n'))>=0){const line=stream.slice(0,end);stream=stream.slice(end+1);try{sent.push(JSON.parse(line));}catch{}}});
  const state={revision:1,phase:'completed',clock:'00:04',label:'Saved',warning:null,notice:null,reducedMotion:true,draggable:false,actions:[{id:'copy-link',label:'Copy link',enabled:true,selected:false,primary:false}]};
- const publish=async view=>await app.evaluate((_e,view)=>process.stdin.emit('data',JSON.stringify({type:'state',view})+'\n'),view);
+ const publish=async view=>{current=view;await app.evaluate((_e,view)=>process.stdin.emit('data',JSON.stringify({type:'state',view})+'\n'),view);};
  await publish(state);
+ // The real parent keeps its current revision alive during human interaction.
+ // Exercise a pause beyond the host's five-second stale-parent deadline.
+ heartbeat=setInterval(()=>{void publish(current).catch(()=>{});},200);
+ await new Promise(resolve=>setTimeout(resolve,5500));
  await assert.rejects(page.evaluate(()=>window.apparentPill.act(1,'confirm-public-link')));
  await page.getByRole('button',{name:'Copy link',exact:true}).click();
  const confirm=page.getByRole('button',{name:'Create public link',exact:true});
