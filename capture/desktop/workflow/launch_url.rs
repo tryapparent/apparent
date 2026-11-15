@@ -6,18 +6,29 @@ pub fn valid(url: &str) -> bool {
 /// A new, fixed destination contract. No caller-supplied executable, path or callback.
 pub fn hermes_request(url: &str) -> Option<&str> {
     let request = url.strip_prefix("apparent://hermes/")?;
-    if request.len() > 38 { return None; }
+    valid_hermes_destination(request).then_some(request)
+}
+
+pub fn valid_hermes_destination(request: &str) -> bool {
+    if request.len() > 38 { return false; }
     let parts: Vec<_> = request.split('/').collect();
-    (parts.len() == 2 && parts[0].len() == 32
+    parts.len() == 2 && parts[0].len() == 32
         && parts[0].bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
         && parts[1].bytes().all(|c| c.is_ascii_digit())
-        && parts[1].parse::<u16>().is_ok_and(|port| (32768..=60999).contains(&port)))
-        .then_some(request)
+        && parts[1].parse::<u16>().is_ok_and(|port| (32768..=60999).contains(&port))
 }
 
 pub fn open_hermes(token: &str) -> anyhow::Result<()> {
+    open_hermes_mode(token, false)
+}
+
+pub fn open_hermes_trusted(destination: &str) -> anyhow::Result<()> {
+    open_hermes_mode(destination, true)
+}
+
+fn open_hermes_mode(destination: &str, auto_start: bool) -> anyhow::Result<()> {
     use std::process::{Command, Stdio};
-    anyhow::ensure!(hermes_request(&format!("apparent://hermes/{token}")).is_some(), "Invalid Hermes request");
+    anyhow::ensure!(valid_hermes_destination(destination), "Invalid Hermes request");
     let resources = super::electron::resolve()?;
     anyhow::ensure!(resources.root.join("dist/hermes-main.cjs").is_file()
         && resources.root.join("dist/hermes-preload.cjs").is_file(), "Hermes recording UI is missing; update Apparent");
@@ -26,7 +37,9 @@ pub fn open_hermes(token: &str) -> anyhow::Result<()> {
         command.arg("--ozone-platform=x11");
     }
     command.arg(resources.root.join("dist/hermes-main.cjs"))
-        .arg("--hermes-request").arg(token)
+        .arg("--hermes-request").arg(destination);
+    if auto_start { command.arg("--hermes-autostart"); }
+    command
         .arg("--apparent-executable").arg(std::env::current_exe()?)
         .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn()?;
     Ok(())

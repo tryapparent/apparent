@@ -16,7 +16,10 @@ test('complete archive installs in empty profile; partial install is preserved',
   const profile=path.join(job,'profile');
   execFileSync(process.execPath,[path.join(unpack,'install.cjs'),'--profile',profile]);
   const plugin=path.join(profile,'plugins/apparent');
-  assert.match(await readFile(path.join(plugin,'desktop/plugin.js'),'utf8'),/COMPOSER_AREAS/);
+  const pluginSource = await readFile(path.join(plugin,'desktop/plugin.js'),'utf8');
+  assert.match(pluginSource,/COMPOSER_AREAS/);
+  assert.match(pluginSource,/data:image\/svg\+xml;base64,/);
+  assert.doesNotMatch(pluginSource,/__APPARENT_ICON__/);
   assert.equal(JSON.parse(await readFile(path.join(plugin,'compatibility.json'),'utf8')).version,name);
   assert.ok(await readFile(path.join(plugin,'__init__.py')));
   const partial=path.join(job,'partial');await mkdir(path.join(partial,'plugins/apparent'),{recursive:true,mode:0o700});
