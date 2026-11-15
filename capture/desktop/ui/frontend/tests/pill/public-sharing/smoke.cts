@@ -23,6 +23,7 @@ test('public copy waits for disclosure and rejects cancel and stale recording',a
  const confirm=page.getByRole('button',{name:'Create public link',exact:true});
  await expect(confirm).toBeVisible();
  await expect.poll(held).toEqual({revision:1,sharingConfirmation:true});
+ await expect(page.getByRole('button',{name:'Copy link',exact:true})).toBeDisabled();
  await expect(page.getByText('Anyone with this link can view this capture. Shared captures are not end-to-end encrypted.')).toBeVisible();
  assert.equal(sent.filter(x=>x.action==='copy-public-link').length,0);
  for(const colorScheme of ['dark','light']){
