@@ -149,6 +149,7 @@ function directConsumers(path: string): readonly Owner[] {
   if (path.startsWith('capture/') || path.startsWith('composition/')) return ['capture', 'engine'];
   if (path.startsWith('shared/analytics/')) return ['public', 'web', 'service', 'desktop', 'capture'];
   if (path.startsWith('shared/ui/')) return ['public', 'web', 'desktop', 'service', 'capture'];
+  if (path === 'shared/assets/brand/apparent-app-icon.svg') return ['public', 'web', 'desktop', 'service', 'capture', 'hermes'];
   if (path.startsWith('shared/assets/')) return ['public', 'web', 'desktop', 'service', 'capture'];
   // Native build inputs cannot affect the Rust-independent Public/Hermes packages.
   if (['Cargo.toml', 'Cargo.lock', 'build.rs', 'main.rs'].includes(path) || path.startsWith('.cargo/') ||

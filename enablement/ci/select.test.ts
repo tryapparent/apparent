@@ -494,3 +494,12 @@ test('Mac release admits a selected source before checkout, version resolution o
     assert.equal(readFileSync(output, 'utf8'), `tag=preview-mac-22-3\nsha=${sha}\n`);
   } finally { rmSync(dir, {recursive: true, force: true}); }
 });
+
+test('Hermes consumes the shared composer mark in both routing and isolated packaging', () => {
+  const asset = 'shared/assets/brand/apparent-app-icon.svg';
+  assert.deepEqual(new Set(selectedOwners([asset])), new Set(['public', 'web', 'desktop', 'service', 'capture', 'hermes']));
+  const clean = workflow('hermes.yml').jobs.clean;
+  const checkout = clean.steps.find((step: any) => step.uses?.startsWith('actions/checkout@'));
+  assert.equal(checkout.with['sparse-checkout-cone-mode'], false);
+  assert.deepEqual(checkout.with['sparse-checkout'].trim().split('\n'), ['/hermes/', '/' + asset]);
+});

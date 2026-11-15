@@ -59,8 +59,10 @@ Apparent app must contain the trusted `apparent hermes record` CLI and signed
 mailbox bridge. The plugin does not register an OS handler or enable
 `nativeLaunch`.
 
-Build the plugin package independently with Node and the locked Hermes build
-dependency:
+Build the plugin package independently with Node, the locked Hermes build
+dependency and the shared static composer mark at
+`shared/assets/brand/apparent-app-icon.svg`. No other owner sources or builds are
+needed; isolated CI checks out only Hermes and that single asset:
 
 ```sh
 npm ci --ignore-scripts --prefix hermes/desktop
