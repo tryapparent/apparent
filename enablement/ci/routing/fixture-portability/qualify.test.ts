@@ -49,6 +49,8 @@ test('publication-side parsing works with Node alone and never executes candidat
 test('audited real fixture sources qualify; new reachable helpers/tests execute, unknown files do not', () => {
   const files = blobs();
   for (const path of ['enablement/local-tests/run.ts', 'enablement/ci/select.test.ts']) files.set(path, readFileSync(join(source, path), 'utf8'));
+  const publisherTest = 'public/site/scripts/cd/publish-pages.test.ts';
+  files.set(publisherTest, readFileSync(join(source,publisherTest),'utf8'));
   assert.deepEqual(qualifyFixtures(files, [...fixtureInputs]), [...fixtureInputs]);
   assert.equal(fixturePlatformBoundary('', "execFileSync('cargo', ['test']);"), true);
   const helper = 'enablement/local-tests/fixtures/helper.ts';
