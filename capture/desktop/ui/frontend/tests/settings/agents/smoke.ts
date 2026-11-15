@@ -250,12 +250,14 @@ test('guided pairing previews the clipboard destination, exchanges once and wait
   }finally{await application.close().catch(()=>{});await fs.rm(home,{recursive:true,force:true});}
 });
 
-test('T3 connection handlers refuse other panes, foreign frames, extra arguments and non-string origins', {timeout:20000}, async()=>{
+test('T3 connection handlers refuse other panes, foreign frames, extra arguments and non-string pairing handles', {timeout:20000}, async()=>{
   const home=await fs.mkdtemp(path.join(os.tmpdir(),'agents-oauth-guards-'));
   const frontend=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../..');
   const application=await electron.launch({args:[frontend,'--settings-storage','--settings-about'],
     env:{...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config'),XDG_CACHE_HOME:path.join(home,'cache')}});
   try{
+    const page=await application.firstWindow();
+    await expect(page.getByRole('heading',{name:'About',exact:true})).toBeVisible();
     assert.equal(await application.evaluate(async({ipcMain,BrowserWindow,shell})=>{
       let opened=0;shell.openExternal=async()=>{opened++;};
       const sender=BrowserWindow.getAllWindows()[0].webContents,event={sender,senderFrame:sender.mainFrame};
