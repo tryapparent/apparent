@@ -85,7 +85,8 @@ for (const needsLaunch of [false, true]) test(`real Electron confirmation/preloa
     assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), true,
       'completion must be visible after the recording app was hidden');
     if (process.platform === 'darwin') assert.equal(await application.evaluate(({ app }) => app.isHidden()), false);
-    assert.deepEqual(await authenticatedState(key, await (await fetch(stateURL, { headers: { Origin: 'null' } })).json()), { phase: 'saved', bundlePath: '/synthetic/owned.apparent', remoteSource: 'cccccccccccccccccccccccccccccccc' });
+    assert.deepEqual(await authenticatedState(key, await (await fetch(stateURL, { headers: { Origin: 'null' } })).json()),
+      { phase: 'saved', bundlePath: '/synthetic/owned.apparent', remoteSource: null, source: '/synthetic/owned.apparent' });
     const calls = (await readFile(path.join(job, 'trace.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
     assert.equal(calls.filter(c => c[0] === 'launch').length, needsLaunch ? 1 : 0, 'only an unavailable recorder should be launched');
     assert.equal(await page.title(), 'Record for Hermes');
