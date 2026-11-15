@@ -1,6 +1,7 @@
 import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Button} from '@apparent/ui/button';
+import {StatusCard} from '@apparent/ui/status-card';
 import {StickyNote} from '@apparent/ui/icons';
 import type {PillView} from './bridge';
 import './style.css';
@@ -31,6 +32,7 @@ function Pill() {
     const update=()=>setSystemReduced(media.matches);update();
     media.addEventListener('change',update);return()=>media.removeEventListener('change',update);
   },[]);
+  const [sharing,setSharing]=useState<number|null>(null);
   const [pending,setPending]=useState(false);
   const [error,setError]=useState(false);
   const current=useRef<PillView|null>(null);
@@ -42,7 +44,7 @@ function Pill() {
     let active=true;
     const apply=(next:PillView|null)=>{
       if(!active || !next || current.current && next.revision<current.current.revision)return;
-      if(next.revision!==current.current?.revision){busy.current=false;setPending(false);setError(false);}
+      if(next.revision!==current.current?.revision){busy.current=false;setPending(false);setError(false);setSharing(null);}
       current.current=next;setReceivedAt(performance.now());setView(next);
     };
     const unsubscribe=bridge.subscribe(apply);
@@ -71,18 +73,19 @@ function Pill() {
     const before=current.current;
     if(!before || busy.current)return;
     busy.current=true;setPending(true);setError(false);
-    try{const result=await window.apparentPill!.act(before.revision,action,drop);if(result?.cancelled&&current.current?.revision===before.revision){busy.current=false;setPending(false);}}
+    try{const result=await window.apparentPill!.act(before.revision,action,drop);if((result?.cancelled||result?.confirmationRequired)&&current.current?.revision===before.revision){busy.current=false;setPending(false);setSharing(result.confirmationRequired?before.revision:null);}}
     catch{if(current.current?.revision===before.revision){busy.current=false;setPending(false);setError(true);}}
     // Successful dispatch unlocks on authoritative readback. Refusals allow a manual retry; never retry a mutation automatically.
   }
   useEffect(()=>{
     const key=(event:KeyboardEvent)=>{
+      if(event.key==='Escape'&&sharing!==null){event.preventDefault();void act('cancel-public-link');return;}
       if(event.key==='Escape' && view?.actions.some(a=>a.id==='cancel' && a.enabled)){
         event.preventDefault();void act('cancel');
       }
     };
     window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);
-  },[view]);
+  },[view,sharing]);
   if(!view)return <div role="status" className="pill connection">{error?'Recording controls unavailable':'Connecting…'}</div>;
   if(view.phase==='hidden')return null;
   if(destination && ['processing','completed'].includes(view.phase))return <main data-revision={view.revision} className="pill settings-shell" data-phase={view.phase} data-reduced={view.reducedMotion}>
@@ -121,7 +124,7 @@ function Pill() {
         size={iconOnly?'icon':'default'} data-icon-only={iconOnly} aria-label={action.label} title={iconOnly?action.label:undefined}
         data-primary={action.primary}
         aria-pressed={action.id.startsWith('select-')?action.selected:undefined}
-        disabled={!action.enabled || pending}
+        disabled={!action.enabled || pending || sharing!==null}
         onPointerDown={event=>{if(action.id==='paste' && event.button===0 && event.isPrimary){pasteStart.current=[event.screenX,event.screenY];event.currentTarget.setPointerCapture(event.pointerId);void window.apparentPill?.beginPaste(view.revision).catch(()=>{pasteStart.current=null;});}}}
         onPointerUp={event=>{if(action.id==='paste' && event.button===0 && event.isPrimary && pasteStart.current){const [x,y]=pasteStart.current;pasteStart.current=null;void act('paste',Math.hypot(event.screenX-x,event.screenY-y)>=24);}}}
         onPointerCancel={()=>{pasteStart.current=null;void window.apparentPill?.cancelPaste();}}
@@ -132,6 +135,10 @@ function Pill() {
       aria-label={`${view.noteCount} saved ${view.noteCount===1?'note':'notes'}. Open notes`} disabled={pending || !view.actions.some(a=>a.id==='notes' && a.enabled)}
       onClick={()=>void act('notes')}><StickyNote aria-hidden="true"/><span>{view.noteCount>99?'99+':view.noteCount}</span></Button></div>}
     </div>
+    {sharing===view.revision&&<section className="public-share-confirmation" aria-label="Confirm public sharing"><StatusCard tone="neutral" headline="Create a public link?" compact>
+      <p>Anyone with this link can view this capture. Shared captures are not end-to-end encrypted.</p>
+      <div className="public-share-actions"><Button variant="outline" disabled={pending} onClick={()=>void act('cancel-public-link')}>Cancel sharing</Button><Button disabled={pending} onClick={()=>void act('confirm-public-link')}>Create public link</Button></div>
+    </StatusCard></section>}
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<Pill/>);

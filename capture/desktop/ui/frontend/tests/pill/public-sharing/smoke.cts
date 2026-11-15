@@ -12,14 +12,30 @@ test('public copy waits for disclosure and rejects cancel and stale recording',a
  const page=await app.firstWindow(),sent=[];let stream='';
  app.process().stdout.on('data',data=>{stream+=data;let end;while((end=stream.indexOf('\n'))>=0){const line=stream.slice(0,end);stream=stream.slice(end+1);try{sent.push(JSON.parse(line));}catch{}}});
  const state={revision:1,phase:'completed',clock:'00:04',label:'Saved',warning:null,notice:null,reducedMotion:true,draggable:false,actions:[{id:'copy-link',label:'Copy link',enabled:true,selected:false,primary:false}]};
- await app.evaluate(({dialog})=>{dialog.showMessageBox=async(_window,options)=>{globalThis.disclosure=options;return await new Promise(resolve=>{globalThis.answer=resolve;});};});
  const publish=async view=>await app.evaluate((_e,view)=>process.stdin.emit('data',JSON.stringify({type:'state',view})+'\n'),view);
- await publish(state);await page.getByRole('button',{name:'Copy link',exact:true}).click();
- await expect.poll(()=>app.evaluate(()=>!!globalThis.answer)).toBe(true);
- const disclosure=await app.evaluate(()=>globalThis.disclosure);assert.match(disclosure.message,/Anyone with this link/);assert.match(disclosure.detail,/not end-to-end encrypted/);
+ await publish(state);
+ await assert.rejects(page.evaluate(()=>window.apparentPill.act(1,'confirm-public-link')));
+ await page.getByRole('button',{name:'Copy link',exact:true}).click();
+ const confirm=page.getByRole('button',{name:'Create public link',exact:true});
+ await expect(confirm).toBeVisible();
+ await expect(page.getByText('Anyone with this link can view this capture. Shared captures are not end-to-end encrypted.')).toBeVisible();
  assert.equal(sent.filter(x=>x.action==='copy-public-link').length,0);
- await app.evaluate(()=>globalThis.answer({response:0}));await expect(page.getByRole('button',{name:'Copy link',exact:true})).toBeEnabled();await expect(page.getByRole('alert')).toHaveCount(0);assert.equal(sent.filter(x=>x.action==='copy-public-link').length,0);
- await page.getByRole('button',{name:'Copy link',exact:true}).click();await publish({...state,revision:2});await app.evaluate(()=>globalThis.answer({response:1}));await expect(page.getByRole('button',{name:'Copy link',exact:true})).toBeEnabled();assert.equal(sent.filter(x=>x.action==='copy-public-link').length,0);
- await page.getByRole('button',{name:'Copy link',exact:true}).click();await app.evaluate(()=>globalThis.answer({response:1}));await expect.poll(()=>sent.filter(x=>x.action==='copy-public-link').length).toBe(1);
+ for(const colorScheme of ['dark','light']){
+  await page.emulateMedia({colorScheme});
+  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth&&document.documentElement.scrollHeight<=innerHeight)).toBe(true);
+  if(process.env.APPARENT_PUBLIC_SHARE_PROOF){await fs.mkdir(process.env.APPARENT_PUBLIC_SHARE_PROOF,{recursive:true});await page.screenshot({path:path.join(process.env.APPARENT_PUBLIC_SHARE_PROOF,'confirmation-'+colorScheme+'.png')});}
+ }
+ await page.getByRole('button',{name:'Cancel sharing',exact:true}).focus();await page.keyboard.press('Enter');
+ await expect(confirm).toHaveCount(0);await expect(page.getByRole('alert')).toHaveCount(0);
+ assert.equal(sent.filter(x=>x.action==='copy-public-link').length,0);
+ await page.getByRole('button',{name:'Copy link',exact:true}).click();await expect(confirm).toBeVisible();
+ await publish({...state,revision:2});await expect(confirm).toHaveCount(0);
+ await assert.rejects(page.evaluate(()=>window.apparentPill.act(1,'confirm-public-link')));
+ assert.equal(sent.filter(x=>x.action==='copy-public-link').length,0);
+ await page.getByRole('button',{name:'Copy link',exact:true}).click();await expect(confirm).toBeVisible();
+ await page.reload();await expect(confirm).toHaveCount(0);
+ await assert.rejects(page.evaluate(()=>window.apparentPill.act(2,'confirm-public-link')));
+ await page.getByRole('button',{name:'Copy link',exact:true}).click();await confirm.focus();await page.keyboard.press('Enter');
+ await expect.poll(()=>sent.filter(x=>x.action==='copy-public-link').length).toBe(1);
  assert.equal(sent.find(x=>x.action==='copy-public-link').revision,2);
 });

@@ -103,11 +103,13 @@ test('foreground upload states stay private, bounded, and use one authorized pil
  await assertNoOverflow('640px workarea');
  await assertPrivate();
  if(evidence)await page.screenshot({path:path.join(evidence,'foreground-failed.png'),fullPage:true});
- await application.evaluate(({dialog})=>{dialog.showMessageBox=async()=>({response:1});});
  await retry.focus();
  await expect(retry).toBeFocused();
  if(evidence)await page.screenshot({path:path.join(evidence,'foreground-keyboard-focus.png'),fullPage:true});
  await page.keyboard.press('Enter');
+ await expect(page.getByRole('button',{name:'Create public link',exact:true})).toBeVisible();
+ await assertNoOverflow('640px public sharing confirmation');
+ await page.getByRole('button',{name:'Create public link',exact:true}).click();
  await expect.poll(()=>sent.filter(message=>message.action==='copy-public-link').length).toBe(1);
  assert.deepEqual(sent.filter(message=>message.action==='copy-public-link').at(-1),{revision:3,action:'copy-public-link'});
 
