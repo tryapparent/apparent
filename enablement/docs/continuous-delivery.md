@@ -329,6 +329,9 @@ For broad root checkpoints, use `cargo build -j 3 --offline` and
 `target/debug/apparent`: `cargo test` does not rebuild the application executable.
 On Clanker run each heavy command or hook-backed push once through
 `/home/simon/.local/bin/t3-build`, never nested, honoring `T3_BUILD_JOBS`.
+For hook-backed pushes, use the [budget-preserving Clanker entrypoint](../local-tests/README.md#clanker-push-budget-and-workspace); it inherits the live runner deadline unless an explicit total cap applies.
+That guidance also covers T3 workspace binding for independent work and pinned
+unpublished dependencies; existing frozen-checkout holds remain authoritative.
 
 Run the commands in the checks section from the repository root (the Node commands
 from their package directories). For a no-network deployment wiring check, generate

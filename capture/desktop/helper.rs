@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 
-use crate::shared::model::{RgbaFrame, TranscriptData, TranscriptSegment, WordTiming};
+use crate::shared::model::{TranscriptData, TranscriptSegment, WordTiming};
 
 pub fn path() -> Result<PathBuf> {
     if let Some(path) = std::env::var_os("APPARENT_HELPER") {
@@ -289,104 +289,6 @@ pub fn export_audio(movie: &Path, wav: &Path) -> Result<()> {
         Duration::from_secs(120),
     )?;
     Ok(())
-}
-
-#[derive(Deserialize)]
-struct FrameFile {
-    t: u64,
-    actual: u64,
-    width: u32,
-    height: u32,
-    file: PathBuf,
-}
-
-pub enum FrameTimes<'a> {
-    /// Nearest decodable frame every N ms, stamped with its actual time.
-    Every(u64),
-    /// Exactly these times.
-    At(&'a [u64]),
-}
-
-/// Decodes movie frames into memory; `max_edge` 0 keeps native size.
-pub fn frames(movie: &Path, times: FrameTimes, max_edge: u32) -> Result<Vec<RgbaFrame>> {
-    let dir = std::env::temp_dir().join(format!("apparent-frames-{}", crate::shared::ids::make_bundle_id()));
-    let (flag, value, sampled) = match times {
-        FrameTimes::Every(ms) => ("--every", ms.max(1).to_string(), true),
-        FrameTimes::At(times) => {
-            if times.is_empty() {
-                return Ok(Vec::new());
-            }
-            let list = times.iter().map(u64::to_string).collect::<Vec<_>>();
-            ("--at", list.join(","), false)
-        }
-    };
-    let edge = max_edge.to_string();
-    let result: Result<Vec<FrameFile>> = run(
-        &[
-            os("frames"),
-            movie.as_os_str(),
-            os("--out-dir"),
-            dir.as_os_str(),
-            os(flag),
-            os(&value),
-            os("--max-edge"),
-            os(&edge),
-        ],
-        Duration::from_secs(300),
-    );
-    let frames = result.and_then(|files| {
-        if files.len() <= 1 {
-            files
-                .into_iter()
-                .map(|file| {
-                    let rgba = std::fs::read(&file.file)?;
-                    ensure!(
-                        rgba.len() == file.width as usize * file.height as usize * 4,
-                        "Truncated helper frame"
-                    );
-                    let t = if sampled { file.actual } else { file.t };
-                    Ok(RgbaFrame::new(t, file.width, file.height, rgba))
-                })
-                .collect()
-        } else {
-            let chunk_size = files.len().div_ceil(6).max(1);
-            std::thread::scope(|scope| -> Result<Vec<RgbaFrame>> {
-                let workers: Vec<_> = files
-                    .chunks(chunk_size)
-                    .map(|chunk| {
-                        scope.spawn(move || -> Result<Vec<RgbaFrame>> {
-                            chunk
-                                .iter()
-                                .map(|file| {
-                                    let rgba = std::fs::read(&file.file)?;
-                                    ensure!(
-                                        rgba.len()
-                                            == file.width as usize * file.height as usize * 4,
-                                        "Truncated helper frame"
-                                    );
-                                    let t = if sampled { file.actual } else { file.t };
-                                    Ok(RgbaFrame::new(t, file.width, file.height, rgba))
-                                })
-                                .collect()
-                        })
-                    })
-                    .collect();
-                let mut out = Vec::with_capacity(files.len());
-                for worker in workers {
-                    out.extend(
-                        worker
-                            .join()
-                            .map_err(|_| anyhow::anyhow!("Frame read worker panicked"))??,
-                    );
-                }
-                Ok(out)
-            })
-        }
-    });
-    std::thread::spawn(move || {
-        let _ = std::fs::remove_dir_all(dir);
-    });
-    frames
 }
 
 #[derive(Deserialize)]

@@ -254,13 +254,9 @@ fn publication_finalizes_durable_typed_notes_with_matching_recovery_journal() {
 
 #[test]
 fn publication_recovery_reconciles_only_durable_typed_notes_before_journal_validation() {
-    fn frames(_: &Path, at: helper::FrameTimes, _: u32) -> Result<Vec<RgbaFrame>> {
-        let times = match at {
-            helper::FrameTimes::Every(_) => vec![0],
-            helper::FrameTimes::At(times) => times.to_vec(),
-        };
+    fn frames(_: &Path, times: &[u64], _: u32) -> Result<Vec<RgbaFrame>> {
         Ok(times
-            .into_iter()
+            .iter().copied()
             .map(|t| RgbaFrame::new(t, 32, 32, vec![128; 32 * 32 * 4]))
             .collect())
     }
@@ -304,10 +300,10 @@ fn publication_recovery_reconciles_only_durable_typed_notes_before_journal_valid
         old,
         Some(None),
         &recover::Media {
-            explicit_frames: |movie, times, _, edge| frames(movie, helper::FrameTimes::At(times), edge),
+            explicit_frames: |movie, times, _, edge| frames(movie, times, edge),
             probe: crate::composition::media_probe::bundle_probe,
             screen_candidates: |movie, _, offset, _| {
-                let mut decoded = frames(movie, helper::FrameTimes::Every(220), 640)?;
+                let mut decoded = frames(movie, &[0], 640)?;
                 for frame in &mut decoded { frame.t_ms += offset; }
                 Ok(decoded)
             },

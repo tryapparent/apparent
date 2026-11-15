@@ -6,7 +6,7 @@
 
 `apparent-helper` is a small Swift executable built by `build.rs` from explicit owner-native source groups and shipped inside
 `Apparent.app` next to `apparent`. It owns the Swift-only or unbound Apple frameworks: SpeechAnalyzer,
-CoreMediaIO/AVFoundation iPhone capture with the mirror window, AVFoundation movie decoding, and the
+CoreMediaIO/AVFoundation iPhone capture with the mirror window, audio extraction/re-encoding, and the
 SwiftUI welcome window (`onboarding`).
 Apparent runs it as a subprocess (JSON on stdout; `stop`/`cancel` on stdin for the mirror). Run it
 directly to test a piece in isolation:
@@ -15,7 +15,6 @@ directly to test a piece in isolation:
 target/debug/apparent-helper devices
 target/debug/apparent-helper permissions
 target/debug/apparent-helper transcribe audio.wav
-target/debug/apparent-helper frames recording.mov --out-dir /tmp/f --at 1000,2000 --max-edge 1600
 target/debug/apparent-helper shrink recording.mov --out /tmp/small.mov --max-edge 1600
 target/debug/apparent-helper export plan.json   # the plan `apparent export` writes (capture/engine/export)
 target/debug/apparent-helper permission-panel --permission screen-recording --preview   # the drag card, no grant polling
@@ -28,6 +27,9 @@ then `granted` or `cancelled` with a `reason` (`back`, `settings-closed`, `no-se
 `permission-panel --check P` prints `{"granted":…}` from a fresh process. `permission-panel --plan --settings
 X,Y,W,H --visible X,Y,W,H` prints where the card would dock (`below`, `inside`, `right`, `left` or
 `clamped`); `capture/desktop/scripts/support/check-permission-panel-dock.sh` checks the cases.
+
+Movie frames use the [published Engine capability](../../engine/README.md#explicit-time-movie-frames).
+The app helper's old `frames` command is retired after caller adoption.
 
 ## Testing
 
