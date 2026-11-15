@@ -23,12 +23,7 @@ impl std::fmt::Display for WorkerExitError {
 }
 impl std::error::Error for WorkerExitError {}
 
-pub(crate) fn assets(
-    label: &str,
-    package: &str,
-    capability: &str,
-    worker_file: &str,
-) -> Result<(PathBuf, PathBuf, PathBuf)> {
+fn candidates(package: &str) -> Result<Vec<(PathBuf, PathBuf)>> {
     let executable = std::env::current_exe()?;
     let parent = executable
         .parent()
@@ -52,12 +47,33 @@ pub(crate) fn assets(
             frontend.join("node_modules/electron/dist"),
         ));
     }
-    for (app, runtime) in roots {
+    Ok(roots.into_iter().map(|(app, runtime)| {
         #[cfg(target_os = "macos")]
         let node = runtime.join("Electron.app/Contents/MacOS/Electron");
         #[cfg(target_os = "linux")]
         let node = runtime.join("electron");
         let root = app.join("electron").join(package);
+        (node, root)
+    }).collect())
+}
+
+pub(crate) fn policy_assets(label: &str, package: &str, worker_file: &str) -> Result<(PathBuf, PathBuf)> {
+    for (node, root) in candidates(package)? {
+        let worker = root.join(worker_file);
+        if node.is_file() && worker.is_file() {
+            return Ok((node, worker));
+        }
+    }
+    anyhow::bail!("Packaged {label} unavailable; prepare application assets or reinstall the complete app")
+}
+
+pub(crate) fn assets(
+    label: &str,
+    package: &str,
+    capability: &str,
+    worker_file: &str,
+) -> Result<(PathBuf, PathBuf, PathBuf)> {
+    for (node, root) in candidates(package)? {
         let worker = root.join(worker_file);
         let engine = root.join("native").join(capability);
         if node.is_file() && worker.is_file() && engine.is_file() {

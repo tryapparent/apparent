@@ -26,7 +26,7 @@ function fixture(t: any) {
   for (const name of ['worker.js', 'policy.js', 'package.json']) {
     put('capture/desktop/ui/frontend/electron/record-completion/' + name);
   }
-  for (const name of ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/apparent-engine-frames', 'native/manifest.json']) {
+  for (const name of ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'assembly-worker.js', 'assembly-policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/apparent-engine-frames', 'native/manifest.json']) {
     put('capture/desktop/ui/frontend/electron/record-media/' + name);
   }
   for (const name of ['worker.js', 'policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json']) {
@@ -45,7 +45,7 @@ function generators(f: ReturnType<typeof fixture>, fail = '') {
     'connect-transport': ['electron/connect.cjs', 'electron/settings/agents.cjs'],
     'updates': ['electron/settings/update-worker.cjs'],
     'pill': ['worker.js', 'policy.js', 'package.json'].map(name => 'electron/record-completion/' + name),
-    'record-media': ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/apparent-engine-frames', 'native/manifest.json'].map(name => 'electron/record-media/' + name),
+    'record-media': ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'assembly-worker.js', 'assembly-policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/apparent-engine-frames', 'native/manifest.json'].map(name => 'electron/record-media/' + name),
     'agent-media': ['worker.js', 'policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json'].map(name => 'electron/agent-media/' + name),
   };
   for (const [name, files] of Object.entries(outputs)) {

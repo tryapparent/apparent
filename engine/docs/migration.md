@@ -2,17 +2,19 @@
 
 Active goal: complete the owner boundaries below, delivering successive usable
 PRs against current main. A verified merge advances this inventory; it does not
-finish the migration. Current source baseline:
-`0b88a165394006dd158aa998d83ad0dbceaaba22`.
+finish the migration. Latest accepted frame-retirement checkpoint:
+`f92bc95cf866d1a0621306b7242c3e45fe25399e` (#1328), including exact-main
+CI, Mac packaged CLI, both Linux AppImages and Linux preview publication.
 
 | Boundary | Implemented evidence | Remaining adoption/removal gate |
 | --- | --- | --- |
 | Engine media metadata | Independently published native reader and compiled SDK; Record export, ingestion, recovery and retention observations consume checksum-pinned artifacts. #1284/#1286/#1288 passed Mac/Linux CI and Linux package delivery; #1288 exact main is `5f4be8bc93bca2df9d0d6c9223fddf88d4d8b86e`. Replaced Desktop probes are removed. | Keep the pinned provider and package compatibility gates when adding capabilities. |
 | Engine capture and lifecycle | Root runtime owns actual capture, permissions, resource cleanup and durability. The separate `capture/engine` admission/lease crate has package proof, no production consumers. | Adopt one authoritative native capture/admission contract through live callers; align locks, receipts, cancellation, recovery and maintenance before retiring donors. |
-| Engine media operations | #1299 landed explicit-time frames at `6c65748d4f2d32fd2dc8b966685e7e0ba33f9794`; successor `5bbe8e35e67b61703737991575860d4b1fd1ad57` requalified SDK/all four native architectures and published immutable SDK 0.2/frame artifacts. Root transcription, audio, encoders and remaining image mechanisms are authoritative. | Adopt frame capability through real consumers, then continue remaining capabilities with native/plugin/model inputs and package proof. |
-| Record workflow | Headless completion, storage controllers and export metadata policy have real consumers. | Capture-to-handoff assembly, recovery decisions, preferences/defaults, retention planning, keyframe/transcript assembly and remaining export policy still cross Rust owners. |
+| Engine media frames | Published SDK/native 0.3 executes bounded explicit requests; Record owns periodic sampling. Record explicit/phone/screen consumers, Agent zoom/range fallback and Linux decoder diagnostics are adopted. #1328 removed replaced Linux/Mac file readers and donor-only tests. | Preserve producer/consumer platform and package contracts. Live capture, audio, transcription, encoders and remaining image mechanisms still retain native app inputs. |
+| Engine media audio | SDK/native 0.4 is an unpublished candidate for explicit selected-track, bounded private PCM execution. Record remains pinned to published 0.3. | Fix and qualify Mac movie-clock gaps, publish immutable SDK/runtime artifacts, then adopt through Record's real caller and staged package. Private-copy compatibility proof does not satisfy this gate. |
+| Record workflow | Headless completion, storage controllers, export metadata, file-frame sampling and default frame allocation have real consumers. | Capture-to-handoff assembly, recovery decisions, remaining preferences/defaults, retention planning, keyframe/transcript selection and remaining export policy still cross Rust owners. |
 | Desktop | Accepted React Settings, onboarding and recording controls coexist with native shell/legacy fallback paths. | Complete actual Electron workflows and shell/platform integration, then remove replaced Rust policy/UI and its build closure. Preserve one durable config writer until its accepted replacement. |
-| Agent | #1305 landed zoom's published Engine frame adoption at `ceaf6fdd2dc67e90215154dc96a1282f42254753`; #1308 corrected the AppImage cache cleanup proof at `91fa763dc5039920806d949192fc2cdafc23f029`. Both full/cropped real callers use the SDK; #1308 exact-main AppImages and publication passed. | Qualify the range-fallback adoption below, then migrate remaining CLI composition. Whole-Agent independence is not established. |
+| Agent | Zoom and the native range fallback consume published Engine frames; their accepted package checks cover real CLI output. | Range/FPS policy, preferred FFmpeg execution, PNG writing, existing-keyframe fallback and CLI composition remain. Whole-Agent independence is not established. |
 | Connect / Public | Public and hosted web/service loops are TypeScript. Connect has compiled TypeScript crypto, listing/foreground/MCP consumers alongside authoritative Rust transfer/identity/queue code. | Finish native Connect caller/persistence adoption and remove repo-owned Rust from Connect build/release inputs. Preserve encryption, consent, cancellation, retry and publication semantics. |
 | Composition / Shared / Enablement | One canonical hook/CI selector; independent Engine producer routing; existing app staging embeds explicit capability artifacts. | Remove obsolete source/build/package edges as consumers qualify. Shared must not absorb displaced policy. Prove each independence claim without Rust tools/cached native output. |
 
@@ -148,9 +150,8 @@ pin, config writer or schema changes.
 
 ## Adopted: published decoder diagnostics
 
-#1317 merged at `0b88a165394006dd158aa998d83ad0dbceaaba22` after passing
-platform CI. Exact-main package delivery remains required before merging the
-reader retirement below.
+#1317 merged at `0b88a165394006dd158aa998d83ad0dbceaaba22`; exact-main
+platform/package acceptance passed before the #1328 reader retirement below.
 
 Linux `decoder-check` and the decode half of `encoder-check` use Record's existing
 explicit-frame worker with movie time zero and native dimensions. Capture's
@@ -161,21 +162,21 @@ real assembly, rather than a second reader. The package proof also runs both
 commands and independently validates the H.264 output.
 
 Keep native decoder warnings, live capture, audio, provider pins, generated
-inventory and persistence unchanged. The retirement below removes the old reader
-and its comparison tests, with merge held for diagnostic package acceptance.
+inventory and persistence unchanged. The accepted retirement below removes the
+old reader and its comparison tests.
 Restore those internal readers before rolling diagnostic routes back to them;
 restore the native encoder/decode composition together. This closes a consumer gap; it does not
 remove the application's GStreamer or Rust build dependency.
 
 ## Published frame contract
 
-Current retirement candidate removes the replaced Linux reader, Mac helper's
+#1328 removes the replaced Linux reader, Mac helper's
 `frames` implementation/dispatcher and test-only `FrameTimes` coupling. Recovery
 fixtures now supply explicit timestamps; real SDK pixel/offset tests remain.
 The native capture sampler, audio extraction, encoder and decoder availability
 guards remain. No native framework or root Rust build dependency is removed.
-Merge waits for diagnostic exact-main acceptance; retirement then needs its own
-Mac/Linux package checks. Reverting this retirement restores the internal reader
+Its exact-main CI, Mac packaged CLI, both Linux AppImages and Linux preview
+publication passed. Reverting this retirement restores the internal reader
 surfaces and fixture types together, without changing the published SDK routes.
 
 The contract preserves request identity, duplicates, display orientation and
@@ -195,10 +196,25 @@ phone proof is inferred from decoded synthetic movies.
 Verify real callers and output images on Linux/Mac, stage/sign all native inputs,
 compare affected latency, and remove only the replaced call path. Rollback reverts the consumer routing and pin
 together; the producer alone changes no config writer or installed app behavior.
-Record periodic assembly, audio, transcription, encoders, lifecycle and UI remain
-separate inventory items. No precise build savings are claimed.
+Record's periodic file sampling is adopted; default keyframe selection and
+assembly, audio, transcription, encoders, lifecycle and UI remain separate
+inventory items. No precise build savings are claimed.
 
 ## Following slices and completion
+
+Record's provider-free assembly plan now owns both duration-based total slots and
+ordinary-event slots. Screen predecode and phone preparation reuse one plan at
+final selection; recovery requests it for the retained bundle clock. Native
+composition validates the exact duration and the existing rendering resource
+envelope. Shared no longer defines default allocation. Grouping, scoring,
+coverage, rendering and publication remain native migration work.
+
+The compiled plan executes in clean Node without Rust, a provider or repository
+inputs. Real CLI phone/screen/recovery comparisons preserve frame metadata and
+image bytes; staged application proof also covers the maximum allocation.
+Mac and Linux AppImage acceptance remain required for this composition. Missing
+plans fail with existing recovery data; rollback restores routing, staging and
+the donor together. No SDK pin, persistence schema or config writer changes.
 
 After each merge, trace current callers again and select the next smallest usable
 boundary above. Publish producer prerequisites only when they enable a named real

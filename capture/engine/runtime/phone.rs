@@ -482,7 +482,9 @@ pub fn build_movie_bundle(
                 target.frame.height = f64::from(probe.height);
             }
             let t0 = Instant::now();
-            let budget = crate::shared::model::keyframe_budget(probe.duration_ms);
+            let assembly_plan = crate::composition::assembly::plan(probe.duration_ms)?;
+            let limits = assembly_plan.limits(probe.duration_ms)?;
+            let budget = limits.maximum;
             // With a mark for every slot, only the frames under the marks are needed, unless
             // marks on one screen share a keyframe and leave slots for other moments.
             if mark_times.len() >= budget {
@@ -509,13 +511,14 @@ pub fn build_movie_bundle(
                             frame: None,
                         });
                     }
-                    let preview = crate::capture::engine::keyframes::select_keyframes(
+                    let preview = crate::capture::engine::keyframes::select_keyframes_with_limits(
                         &raw_frames,
                         strokes_ref,
                         &mut preview_marks,
                         events_ref,
                         &crate::shared::model::TranscriptData::default(),
-                        budget,
+                        limits,
+                        None,
                     );
                     if preview.len() == budget
                         && preview
@@ -535,12 +538,12 @@ pub fn build_movie_bundle(
                                 &crate::shared::windows::ActivityLog::default(),
                                 None,
                             );
-                        return Ok((probe, raw_frames, decode_ms, true, prep));
+                        return Ok((probe, raw_frames, decode_ms, true, prep, assembly_plan));
                     }
                 }
             }
             let res = crate::composition::movie_frames::record_phone_candidates(movie_ref, probe.duration_ms)?;
-            Ok((probe, res, t0.elapsed().as_millis() as u64, false, None))
+            Ok((probe, res, t0.elapsed().as_millis() as u64, false, None, assembly_plan))
         });
         let audio_started = Instant::now();
         let exported = (|| {
@@ -578,7 +581,7 @@ pub fn build_movie_bundle(
             frames.join(),
         )
     });
-    let (probe, frames, candidates_ms, already_full, prepared) =
+    let (probe, frames, candidates_ms, already_full, prepared, assembly_plan) =
         joined.map_err(|_| anyhow::anyhow!("Frame decoding panicked"))??;
     if probe.audio_tracks > 0
         && let Some(error) = audio_err
@@ -608,6 +611,7 @@ pub fn build_movie_bundle(
             },
         ),
         prepared,
+        assembly_plan: Some(assembly_plan),
         timings: crate::capture::engine::bundle::bundle_processing::StageTimings {
             started_at: Some(started_at),
             audio_ms: Some(audio_ms),

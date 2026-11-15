@@ -7,6 +7,16 @@ const THUMB_PIXELS: usize = THUMB_WIDTH * THUMB_HEIGHT;
 const FRAME_GAP_MS: u64 = 750;
 const ACTION_SETTLE_MS: u64 = 250;
 
+/// Caller-owned allocation; native selection supplies image/event mechanics.
+#[derive(Clone, Copy, Debug)]
+pub struct SelectionLimits {
+    pub maximum: usize,
+    pub ordinary: usize,
+}
+
+#[cfg(test)]
+const MAX_KEYFRAMES: usize = 12;
+
 /// Sample the centers of a fixed grid; cost is independent of capture resolution.
 fn luma_thumbnail(frame: &RgbaFrame) -> [f32; THUMB_PIXELS] {
     let mut thumbnail = [0.0; THUMB_PIXELS];
@@ -448,8 +458,8 @@ pub fn said_per_keyframe(
         .collect()
 }
 
-/// Select representative captured frames. Callers use `keyframe_budget` for the
-/// default limit; an explicit zero requests no keyframes.
+// Selection-mechanism fixtures use an explicit historical allocation.
+#[cfg(test)]
 pub fn select_keyframes(
     frames: &[RgbaFrame],
     strokes: &[Stroke],
@@ -461,7 +471,8 @@ pub fn select_keyframes(
     select_keyframes_with_video_ink(frames, strokes, marks, events, transcript, max_keyframes, None)
 }
 
-pub fn select_keyframes_with_video_ink(
+#[cfg(test)]
+fn select_keyframes_with_video_ink(
     frames: &[RgbaFrame],
     strokes: &[Stroke],
     marks: &mut [Mark],
@@ -470,6 +481,20 @@ pub fn select_keyframes_with_video_ink(
     max_keyframes: usize,
     video_ink: Option<VideoInk>,
 ) -> Vec<(Keyframe, RgbaFrame)> {
+    select_keyframes_with_limits(frames, strokes, marks, events, transcript,
+        SelectionLimits {maximum:max_keyframes,ordinary:6}, video_ink)
+}
+
+pub fn select_keyframes_with_limits(
+    frames: &[RgbaFrame],
+    strokes: &[Stroke],
+    marks: &mut [Mark],
+    events: &[InteractionEvent],
+    transcript: &TranscriptData,
+    limits: SelectionLimits,
+    video_ink: Option<VideoInk>,
+) -> Vec<(Keyframe, RgbaFrame)> {
+    let max_keyframes = limits.maximum;
     for mark in marks.iter_mut() {
         mark.frame = None;
     }
@@ -741,7 +766,7 @@ pub fn select_keyframes_with_video_ink(
     );
     // Past the base, keyframes are only for marks and coverage.
     for slot in pending.iter_mut() {
-        if selected.len() >= max_keyframes.min(BASE_KEYFRAMES) {
+        if selected.len() >= max_keyframes.min(limits.ordinary) {
             break;
         }
         if let Some(candidate) = slot.take_if(|c| admissible(c, &selected)) {
@@ -966,6 +991,17 @@ mod tests {
 
     fn frame(t: u64, gray: u8) -> RgbaFrame {
         RgbaFrame::new(t, 2, 2, [gray, gray, gray, 255].repeat(4))
+    }
+
+    #[test]
+    fn ordinary_selection_uses_the_callers_allocation() {
+        let frames = vec![frame(1000, 0), frame(5000, 0)];
+        let events = vec![click(1000), click(5000)];
+        for ordinary in [1, 2] {
+            let selected = select_keyframes_with_limits(&frames, &[], &mut [], &events,
+                &TranscriptData::default(), SelectionLimits {maximum:9, ordinary}, None);
+            assert_eq!(selected.len(), ordinary);
+        }
     }
 
     fn mark(id: &str, t: u64) -> Mark {
@@ -1605,14 +1641,6 @@ mod tests {
         );
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].0.reason, KeyframeReason::Mark);
-    }
-
-    #[test]
-    fn the_budget_grows_with_duration() {
-        let budget: Vec<_> = [8_000, 39_999, 40_000, 67_600, 140_000, 268_000]
-            .map(keyframe_budget)
-            .into();
-        assert_eq!(budget, [6, 6, 7, 8, 12, 12]);
     }
 
     #[test]
