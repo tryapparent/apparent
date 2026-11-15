@@ -21,8 +21,6 @@ test('cleanup rotates past first page and removes objects arriving after a delet
  const worker=await f.mf.getWorker();await worker.scheduled();await worker.scheduled();
  assert.equal(await f.bucket.get('orphan-1001'),null);
  await f.bucket.put('orphan-0001','arrived after delete');
- await worker.scheduled();assert.ok(await f.bucket.head('orphan-0001'),'uncertain attempts wait for their hourly retry');
- await f.db.prepare('UPDATE attempts SET cleaned_at=cleaned_at-3600000 WHERE terminal=0').run();
  await worker.scheduled();await worker.scheduled();assert.equal(await f.bucket.get('orphan-0001'),null);
  }finally{await f.close();}
 });

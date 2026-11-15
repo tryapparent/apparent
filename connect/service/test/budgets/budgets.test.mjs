@@ -12,7 +12,7 @@ const instrumented=await build({stdin:{resolveDir:process.cwd(),contents:`
   const DB={prepare(sql){const wrap=s=>({bind(...args){if(args.length>100)throw new Error('D1 parameter budget exceeded');return wrap(s.bind(...args));},
    first(...args){counts.sql++;return s.first(...args);},all(...args){counts.sql++;return s.all(...args);},run(...args){counts.sql++;return s.run(...args);},sql,raw:s});return wrap(env.DB.prepare(sql));},
    batch(items){counts.sql+=items.length;if(items.some(s=>s.sql.startsWith('UPDATE attempts SET cleaned_at'))){stampPages++;if(env.FAIL_STAMP&&!failedStamp&&stampPages===Number(env.FAIL_AT||1)){failedStamp=true;throw new Error('injected stamp failure');}}return env.DB.batch(items.map(s=>s.raw));}};
-  const BUCKET=new Proxy(env.BUCKET,{get(target,key){const value=target[key];return typeof value==='function'? async(...args)=>{counts.r2++;if(key==='delete'){deletePages++;if(env.FAIL_DELETE&&!failedDelete&&deletePages===Number(env.FAIL_AT||1)){failedDelete=true;throw new Error('injected delete failure');}}const result=await value.apply(target,args);if(key==='put'&&env.TOMBSTONE_AFTER_PUT)await env.DB.prepare("UPDATE captures SET status='deleted'").run();return result;}:value;}});
+  const BUCKET=new Proxy(env.BUCKET,{get(target,key){const value=target[key];return typeof value==='function'? async(...args)=>{counts.r2++;if(key==='delete'){if(env.PERSISTENT_DELETE_FAILURE&&args[0].includes('persistent-0150'))throw Error('persistent deletion failure');deletePages++;if(env.FAIL_DELETE&&!failedDelete&&deletePages===Number(env.FAIL_AT||1)){failedDelete=true;throw new Error('injected delete failure');}}const result=await value.apply(target,args);if(key==='put'&&env.TOMBSTONE_AFTER_PUT)await env.DB.prepare("UPDATE captures SET status='deleted'").run();return result;}:value;}});
   return {...env,DB,BUCKET};
  }
  export default {
@@ -87,9 +87,7 @@ test('full manifests and oldest-prefix eviction keep a constant statement budget
  for(let i=0;i<3;i++)assert.equal((await worker.scheduled()).outcome,'ok');
  assert.equal(await f.bucket.head('multi-2001'),null);
  assert.equal((await f.db.prepare("SELECT count(*) AS n FROM captures WHERE status!='deleted'").first()).n,0);
- assert.equal((await f.db.prepare('SELECT count(*) AS n FROM attempts WHERE cleaned_at=0').first()).n,0);
- // Simulate the hourly retry becoming due; uncertain keys retain their charge.
- await f.db.prepare('UPDATE attempts SET cleaned_at=cleaned_at-3600000 WHERE terminal=0').run();
+ assert.ok((await f.db.prepare('SELECT count(*) AS n FROM attempts WHERE cleaned_at>0').first()).n<=3,'only page cursor markers are written');
  await f.bucket.put('multi-0001','late');
  for(let i=0;i<3;i++)assert.equal((await worker.scheduled()).outcome,'ok');
  assert.equal(await f.bucket.head('multi-0001'),null);
@@ -101,7 +99,7 @@ for(const failure of ['FAIL_DELETE','FAIL_STAMP'])test(failure+' preserves clean
  const a=await f.identity('failure'),capture=id(402);
  await f.call('/v1/captures/'+capture,{token:a.token,method:'POST',body:{files:[file()]}});
  await f.call('/v1/captures/'+capture,{token:a.token,method:'DELETE'});
- await f.db.prepare("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<1001) INSERT INTO attempts(key,capture_id,created_at) SELECT printf('failure-%04d',i),?,0 FROM n").bind(capture).run();
+ await f.db.prepare("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<1001) INSERT INTO attempts(key,capture_id,created_at,terminal) SELECT printf('failure-%04d',i),?,0,1 FROM n").bind(capture).run();
  await f.bucket.put('failure-0001','orphan');await f.bucket.put('failure-1001','later page');
  const worker=await f.mf.getWorker();assert.equal((await worker.scheduled()).outcome,'exception');
  assert.equal((await f.db.prepare('SELECT max(cleaned_at) AS latest FROM attempts').first()).latest,0);
@@ -110,11 +108,11 @@ for(const failure of ['FAIL_DELETE','FAIL_STAMP'])test(failure+' preserves clean
  for(let i=0;i<2;i++)assert.equal((await worker.scheduled()).outcome,'ok');
  assert.equal((await f.bucket.list()).objects.length,0);
  assert.equal((await f.db.prepare('SELECT count(*) AS n FROM attempts WHERE cleaned_at=0').first()).n,0);
- // Simulate the hourly retry becoming due; uncertain keys retain their charge.
- await f.db.prepare('UPDATE attempts SET cleaned_at=cleaned_at-3600000 WHERE terminal=0').run();
- await f.bucket.put('failure-0001','late');
- for(let i=0;i<2;i++)assert.equal((await worker.scheduled()).outcome,'ok');
- assert.equal(await f.bucket.head('failure-0001'),null);
+ // A genuinely uncertain attempt can recreate its own key; retired keys cannot.
+ await f.db.prepare("INSERT INTO attempts(key,capture_id,created_at) VALUES('failure-late',?,0)").bind(capture).run();
+ await f.bucket.put('failure-late','late');
+ assert.equal((await worker.scheduled()).outcome,'ok');
+ assert.equal(await f.bucket.head('failure-late'),null);
  }finally{await f.close();}
 });
 
@@ -140,10 +138,45 @@ for(const failure of ['FAIL_DELETE','FAIL_STAMP'])test(failure+' on cleanup page
  const a=await f.identity('late-failure'),capture=id(313);
  await f.call('/v1/captures/'+capture,{token:a.token,method:'POST',body:{files:[file()]}});
  await f.call('/v1/captures/'+capture,{token:a.token,method:'DELETE'});
- await f.db.prepare("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<1000) INSERT INTO attempts(key,capture_id,created_at) SELECT printf('last-%04d',i),?,0 FROM n").bind(capture).run();
+ await f.db.prepare("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<1000) INSERT INTO attempts(key,capture_id,created_at,terminal) SELECT printf('last-%04d',i),?,0,1 FROM n").bind(capture).run();
  const worker=await f.mf.getWorker();assert.equal((await worker.scheduled()).outcome,'exception');
  assert.equal((await f.db.prepare('SELECT count(*) AS n FROM attempts WHERE cleaned_at>0').first()).n,900);
  assert.equal((await worker.scheduled()).outcome,'ok');
  assert.equal((await f.db.prepare('SELECT count(*) AS n FROM attempts WHERE cleaned_at=0').first()).n,0);
+ }finally{await f.close();}
+});
+
+test('uncertain page-ten delete failure rotates without releasing reservations',async()=>{
+ const f=await fixture({FAIL_DELETE:true,FAIL_AT:10}, {scriptPath:undefined,script:instrumented.outputFiles[0].text});try{
+  const a=await f.identity('uncertain-failure'),capture=id(314);
+  await f.call('/v1/captures/'+capture,{token:a.token,method:'POST',body:{files:[file()]}});
+  await f.call('/v1/captures/'+capture,{token:a.token,method:'DELETE'});
+  await f.db.prepare("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<1000) INSERT INTO attempts(key,capture_id,created_at,bytes) SELECT printf('uncertain-%04d',i),?,0,1 FROM n").bind(capture).run();
+  await f.db.prepare('UPDATE r2_budget SET physical_used=1000').run();
+  await f.bucket.put('uncertain-1000','failed deletion');
+  const worker=await f.mf.getWorker();assert.equal((await worker.scheduled()).outcome,'exception');
+  assert.ok(await f.bucket.head('uncertain-1000'));
+  assert.equal((await f.db.prepare('SELECT count(*) AS n FROM attempts WHERE cleaned_at>0').first()).n,1,'a rotation marker is not a release receipt');
+  assert.equal((await worker.scheduled()).outcome,'ok');
+  assert.equal(await f.bucket.head('uncertain-1000'),null);
+  assert.equal((await f.db.prepare('SELECT count(*) AS n FROM attempts WHERE cleaned_at>0').first()).n,1);
+  assert.equal((await f.db.prepare('SELECT physical_used FROM r2_budget').first()).physical_used,1000);
+  assert.equal((await f.db.prepare('SELECT sum(released) AS n FROM attempts').first()).n,0);
+ }finally{await f.close();}
+});
+
+test('persistent failure on a later uncertain page cannot starve later keys',async()=>{
+ const f=await fixture({PERSISTENT_DELETE_FAILURE:true}, {scriptPath:undefined,script:instrumented.outputFiles[0].text});try{
+  const a=await f.identity('persistent-cursor'),capture=id(315);
+  await f.call('/v1/captures/'+capture,{token:a.token,method:'POST',body:{files:[file()]}});
+  await f.call('/v1/captures/'+capture,{token:a.token,method:'DELETE'});
+  await f.db.prepare("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<1500) INSERT INTO attempts(key,capture_id,created_at,bytes) SELECT printf('persistent-%04d',i),?,0,1 FROM n").bind(capture).run();
+  await f.db.prepare('UPDATE r2_budget SET physical_used=1500').run();
+  await f.bucket.put('persistent-1400','later page');await f.bucket.put('persistent-0150','failed page');
+  const worker=await f.mf.getWorker();for(let i=0;i<3;i++)await worker.scheduled();
+  assert.equal(await f.bucket.head('persistent-1400'),null,'later keys get a deletion opportunity despite repeated earlier failure');
+  assert.ok(await f.bucket.head('persistent-0150'));
+  assert.equal((await f.db.prepare('SELECT physical_used FROM r2_budget').first()).physical_used,1500);
+  assert.equal((await f.db.prepare('SELECT sum(released) AS n FROM attempts').first()).n,0);
  }finally{await f.close();}
 });

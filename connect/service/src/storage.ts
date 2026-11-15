@@ -1,17 +1,38 @@
 import type {Env, FileRow, ManifestFile, AttemptSnapshot} from './types.ts';
 import {fail,stmt,random} from './common.ts';
+import {consumePermits,permitPool,type PermitPool} from './accounting/permits.ts';
+const readPools=new WeakMap<D1Database,PermitPool>();
 
 // Lifetime beta allowances. No request, calendar or deployment reset path.
 const valid=`id=1 AND typeof(a_used)='integer' AND typeof(a_cap)='integer' AND a_used>=0 AND a_cap BETWEEN 0 AND 500000 AND a_used<=a_cap
  AND typeof(b_used)='integer' AND typeof(b_cap)='integer' AND b_used>=0 AND b_cap BETWEEN 0 AND 5000000 AND b_used<=b_cap
  AND typeof(physical_used)='integer' AND typeof(physical_cap)='integer' AND physical_used>=0 AND physical_cap BETWEEN 0 AND 9500000000 AND physical_used<=physical_cap`;
-async function exhausted(env: Env) {
+async function exhausted(env: Env):Promise<never> {
  let row;try{row=await stmt(env,`SELECT id FROM r2_budget WHERE ${valid}`).first();}catch{fail('budget_unavailable',503);}
- fail(row?'budget_exhausted':'budget_unavailable',503);
+ return fail(row?'budget_exhausted':'budget_unavailable',503);
 }
 async function reserveReads(env: Env,count: number) {
- let result;try{result=await stmt(env,`UPDATE r2_budget SET b_used=b_used+? WHERE ${valid} AND b_used<=b_cap-?`,count,count).run();}catch{fail('budget_unavailable',503);}
- if(!result.meta.changes)await exhausted(env);
+ let pool=readPools.get(env.DB);if(!pool){pool=permitPool();readPools.set(env.DB,pool);}
+ // Cached grants do not hide a missing/corrupted ledger. This indexed read
+ // preserves fail-closed validation without rewriting its counter per object.
+ if(pool.remaining){
+  let row;try{row=await stmt(env,`SELECT id FROM r2_budget WHERE ${valid}`).first();}catch{fail('budget_unavailable',503);}
+  if(!row)fail('budget_unavailable',503);
+ }
+ await consumePermits(pool,count,async(minimum,wanted)=>{
+  const reserve=async(n:number)=>{
+   try{return (await stmt(env,`UPDATE r2_budget SET b_used=b_used+? WHERE ${valid} AND b_used<=b_cap-?`,n,n).run()).meta.changes===1;}
+   catch{fail('budget_unavailable',503);}
+  };
+  if(await reserve(wanted))return wanted;
+  // The final partial grant must remain usable near the hard cap. A competing
+  // isolate can win it; failed/ambiguous reservations never produce permits.
+  let row;try{row=await stmt(env,`SELECT b_cap-b_used AS remaining FROM r2_budget WHERE ${valid}`).first<{remaining:number}>();}catch{fail('budget_unavailable',503);}
+  if(!row)fail('budget_unavailable',503);
+  const partial=Math.min(wanted,row.remaining);
+  if(partial>=minimum&&partial!==wanted&&await reserve(partial))return partial;
+  return exhausted(env);
+ });
 }
 export async function checkedHeads(env: Env,files: FileRow[],verified: (object: R2Object | null,file: ManifestFile) => unknown) {
  // One bulk grant, including an early miss. Never refund operation grants.
@@ -46,6 +67,7 @@ export async function deleteAttempts(env: Env,attempts: AttemptSnapshot[],now=Da
  // release bytes for a PUT that finished after the delete and recreated its key.
  const terminal=JSON.stringify(attempts.filter(a=>a.terminal===1).map(a=>a.key));
  await env.BUCKET.delete(keys);
+ if(terminal==='[]')return; // Uncertain deletes cannot release or stamp attempts.
  const reclaim=`SELECT COALESCE(sum(bytes),0) FROM attempts WHERE released=0 AND terminal=1 AND key IN (SELECT value FROM json_each(?))`;
  await env.DB.batch([
   stmt(env,`UPDATE r2_budget SET physical_used=physical_used-(${reclaim}) WHERE ${valid} AND physical_used>=(${reclaim}) AND (${reclaim})>0`,terminal,terminal,terminal),
@@ -54,6 +76,6 @@ export async function deleteAttempts(env: Env,attempts: AttemptSnapshot[],now=Da
   // valid budget state before release. Stamp failure rolls back any decrement.
   stmt(env,`UPDATE attempts SET cleaned_at=?,released=CASE WHEN terminal=1 AND key IN (SELECT value FROM json_each(?))
    AND (changes()=1 OR EXISTS(SELECT 1 FROM r2_budget WHERE ${valid} AND (${reclaim})=0)) THEN 1 ELSE released END
-   WHERE key IN (SELECT value FROM json_each(?))`,now,terminal,terminal,JSON.stringify(keys))
+   WHERE terminal=1 AND key IN (SELECT value FROM json_each(?))`,now,terminal,terminal,terminal)
  ]);
 }

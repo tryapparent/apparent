@@ -146,13 +146,36 @@ function mime(path: string){if(path.endsWith('.age'))return 'application/octet-s
 export async function cleanup(env: Env) {
  const now=Date.now();
  await stmt(env,"UPDATE captures SET status='deleted' WHERE status!='deleted' AND (expires_at<=? OR (status='pending' AND pending_until<=?))",now,now).run();
- // Retain tombstones, but a released terminal PUT cannot recreate its unique key.
- // Uncertain PUTs stay charged and retry hourly; a later terminal marker makes
- // them eligible immediately. Failed deletes/stamps never advance the checkpoint.
- const {results}=await stmt(env,"SELECT a.key,a.terminal FROM attempts a JOIN captures c ON c.id=a.capture_id LEFT JOIN files f ON f.object_key=a.key WHERE (c.status='deleted' OR (f.object_key IS NULL AND a.created_at<?)) AND NOT (a.terminal=1 AND a.released=1) AND (a.terminal=1 OR a.cleaned_at=0 OR a.cleaned_at<=?) ORDER BY a.cleaned_at,a.key LIMIT 1000",now-DAY,now-3600000).all<AttemptSnapshot>();
- for(let i=0;i<results.length;i+=100){
-  const page=results.slice(i,i+100);
-  await deleteAttempts(env,page,now);
+ // Settled attempts retire once. Uncertain attempts stay charged and receive
+ // free R2 deletes on bounded circular pages, without stamping every old key.
+ const eligible="(c.status='deleted' OR (f.object_key IS NULL AND a.created_at<?))";
+ const select="SELECT a.key,a.terminal FROM attempts a JOIN captures c ON c.id=a.capture_id LEFT JOIN files f ON f.object_key=a.key WHERE "+eligible;
+ const {results:terminal}=await stmt(env,select+" AND a.terminal=1 AND a.released!=1 ORDER BY a.cleaned_at,a.key LIMIT 1000",now-DAY).all<AttemptSnapshot>();
+ for(let i=0;i<terminal.length;i+=100)await deleteAttempts(env,terminal.slice(i,i+100),now);
+ const capacity=1000-terminal.length;
+ if(capacity){
+  // The most recent uncertain marker is the durable cursor. It holds no
+  // authority to release bytes; a terminal transition is handled above.
+  const cursor=await stmt(env,"SELECT key,cleaned_at FROM attempts WHERE terminal=0 AND cleaned_at>0 ORDER BY cleaned_at DESC,key DESC LIMIT 1").first<{key:string;cleaned_at:number}>();
+  const after=cursor?.key??'';
+  const {results:uncertain}=await stmt(env,select+" AND a.terminal=0 AND a.key>? ORDER BY a.key LIMIT ?",now-DAY,after,capacity).all<AttemptSnapshot>();
+  if(cursor&&uncertain.length<capacity){
+   const {results:wrapped}=await stmt(env,select+" AND a.terminal=0 AND a.key<=? ORDER BY a.key LIMIT ?",now-DAY,after,capacity-uncertain.length).all<AttemptSnapshot>();
+   uncertain.push(...wrapped);
+  }
+  let visited:string|undefined;
+  try{
+   for(let i=0;i<uncertain.length;i+=100){
+    const page=uncertain.slice(i,i+100);visited=page.at(-1)?.key;
+    await deleteAttempts(env,page,now);
+   }
+  }finally{
+   // This is a rotation marker, never proof of deletion or permission to
+   // release bytes. Rotate past a failed page too, so persistent failures
+   // cannot starve later keys. Failed keys remain charged and retry on wrap.
+   // Small backlogs returning to the same endpoint need no recurring stamp.
+   if(visited&&visited!==after)await stmt(env,"UPDATE attempts SET cleaned_at=? WHERE key=? AND terminal=0",Math.max(now,(cursor?.cleaned_at??0)+1),visited).run();
+  }
  }
  const iso=new Date(now).toISOString();
  await env.DB.batch([
