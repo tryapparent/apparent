@@ -6,7 +6,7 @@ import './pill-guide.css';
 /** Inert examples use the production pill's markup, icons, spacing and theme. */
 export function PillGuide({screenOnly=false,finish=false}:{screenOnly?:boolean;finish?:boolean}) {
   const host=useRef<HTMLDivElement>(null),surface=useRef<HTMLDivElement>(null);
-  const [layout,setLayout]=useState({scale:1,height:88,x:100,y:20});
+  const [layout,setLayout]=useState({width:500,scale:1,height:88,x:100,y:20});
   const target=screenOnly?'select-screen':finish?'finish':'whiteboard';
   const view:PillView={revision:1,phase:screenOnly?'selecting':'recording',clock:'0:03',label:'Choose what to record',warning:null,notice:null,reducedMotion:false,draggable:false,noteCount:0,inputWaveform:screenOnly?null:Array(24).fill(.08),actions:screenOnly?
     [{id:'select-area',label:'Area',enabled:true,selected:false,primary:false},{id:'select-screen',label:'Screen',enabled:true,selected:false,primary:false}]:
@@ -18,12 +18,12 @@ export function PillGuide({screenOnly=false,finish=false}:{screenOnly?:boolean;f
       const width=pill.offsetWidth,scale=Math.min(1,host.current.clientWidth/width);
       const rect=button.getBoundingClientRect(),origin=surface.current.getBoundingClientRect();
       const current=surface.current.offsetWidth?parseFloat(surface.current.style.getPropertyValue('--preview-scale'))||1:1;
-      setLayout({scale,height:Math.ceil(pill.offsetHeight*scale)+24,x:(rect.left-origin.left+rect.width/2)/current*scale,y:(rect.top-origin.top+rect.height/2)/current*scale});
+      setLayout({width,scale,height:Math.ceil(pill.offsetHeight*scale)+24,x:(rect.left-origin.left+rect.width/2)/current*scale,y:(rect.top-origin.top+rect.height/2)/current*scale});
     };
     update();const observer=new ResizeObserver(update);if(host.current)observer.observe(host.current);if(surface.current)observer.observe(surface.current);
     void document.fonts.ready.then(update);return()=>observer.disconnect();
   },[target]);
-  return <figure className="native-control native-pill-guide" data-kind={finish?"finish":"whiteboard"} aria-label={`Example: click ${screenOnly?'Screen':finish?'Finish':'Whiteboard'} in the recording controls`}>
+  return <figure className="native-control native-pill-guide" style={{'--pill-preview-width':`${layout.width}px`} as React.CSSProperties} data-kind={finish?"finish":"whiteboard"} aria-label={`Example: click ${screenOnly?'Screen':finish?'Finish':'Whiteboard'} in the recording controls`}>
     <div ref={host} className="native-pill-example" style={{height:layout.height}}>
       <div ref={surface} inert aria-hidden="true" className="native-pill-example-surface" style={{'--preview-scale':layout.scale} as React.CSSProperties}>
         <PillSurface view={view} receivedAt={performance.now()} onAction={()=>{}}/>

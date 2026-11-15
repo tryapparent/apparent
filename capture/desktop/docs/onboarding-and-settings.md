@@ -716,8 +716,8 @@ The shared TypeScript host policy (`electron/onboarding/selection.ts`) consumes
 only native selection and release facts. Its label-bound receipt is unavailable
 to renderer commands; Rust rejects stale, held or fallback receipts and retains
 the sole progress/config writer. No UI click starts a recording. The heading and
-keycap share a centre with a 16px gap; the heading pops and the keycap depresses
-on selection, with motion disabled under reduced-motion preferences.
+keycap share a centre with a 16px gap; the heading pops and the keycap loops its
+press demonstration, with motion disabled under reduced-motion preferences.
 
 The existing native fallback retains its legacy trial policy until that separate
 surface is retired. Routing is unchanged; rolling back this slice removes the
@@ -745,7 +745,7 @@ Coaches use a corner close control. Illustrations loop without replay controls,
 stop under reduced motion, and never send input. During processing the owning
 Electron window hides, then returns inactive for copied/error recovery; the pill
 provides the processing status and a reduced-motion-aware spinner. The paste
-coach shows the platform gesture and Done. Done leads to “One last thing.” with one
+coach shows the platform gesture and Done. Done leads to “Feel like customizing more?” with one
 instruction to open Settings from the actual tray/menu-bar icon. It has no duplicate
 menu illustration or Open Settings button. Only a known native menu-bar
 anchor receives an external coach arrow; Linux keeps the instruction unanchored when

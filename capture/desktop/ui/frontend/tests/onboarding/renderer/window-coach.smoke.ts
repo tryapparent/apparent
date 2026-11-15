@@ -245,6 +245,10 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.locator('.native-pill-example .pill [data-action=whiteboard]')).toBeVisible();
   await expect(page.locator('.native-pill-example .pill [data-action=finish]')).toBeVisible();
   await expect(page.locator('.native-pill-example .pill .meter')).toBeVisible();
+  await expect.poll(()=>page.locator('.native-coach').evaluate(card=>{
+    const pill=card.querySelector('.pill');if(!pill)return Infinity;
+    return card.getBoundingClientRect().right-pill.getBoundingClientRect().right;
+  })).toBeLessThan(27);
   assert.equal(await page.locator('.native-pill-example .pill').evaluate(el=>Boolean(el.closest('[inert]'))),true);
   const beforePreview=output;
   await page.locator('.native-pill-example [data-action=whiteboard]').evaluate((el:HTMLElement)=>el.click());
@@ -343,6 +347,14 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,600]);
   await expect(page.locator('.native-shortcut kbd')).toHaveText('⌃⌥⇧9');
   await expect(page.locator('.native-shortcut kbd')).toHaveCSS('font-size','40px');
+  const pressFrame=async(time:number)=>page.locator('.native-shortcut kbd').evaluate((key,time)=>{
+    for(const animation of key.getAnimations()){animation.pause();animation.currentTime=time}
+    const style=getComputedStyle(key);return {transform:style.transform,background:style.backgroundColor};
+  },time);
+  const released=await pressFrame(0),pressed=await pressFrame(2000);
+  assert.equal(pressed.transform,'matrix(1, 0, 0, 1, 0, 3)');
+  assert.notEqual(pressed.background,released.background);
+  await pressFrame(0);
   await page.evaluate(()=>document.getAnimations().filter(a=>a.effect?.getTiming().iterations!==Infinity).forEach(a=>a.finish()));
   const heading=await page.getByRole('heading',{name:'One more time.',exact:true}).boundingBox();assert.ok(heading);
   const keys=await page.locator('.native-shortcut kbd').boundingBox();assert.ok(keys);

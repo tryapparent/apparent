@@ -41,7 +41,7 @@ test('production host alone reduces admitted practice; renderer intents wait for
  const before=output;await page.getByRole('button',{name:'Done',exact:true}).press('Enter');
  await expect.poll(()=>output.slice(before.length)).toContain('practice-review');await stage('copied');
  await batch([{type:'action',action:'practice-review'}]);await inspect('complete');
- await expect(page.getByRole('heading',{name:'One last thing.'})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Feel like customizing more?'})).toBeVisible();
  await expect(page.getByRole('button',{name:'Open Settings',exact:true})).toHaveCount(0);
  await expect(page.locator('.native-control')).toHaveCount(0);
  assert.equal(await page.evaluate(async()=>{try{await window.nativeOnboarding.action('practice-settings');return false;}catch{return true;}}),true,'only a native menu request can finish Settings practice');

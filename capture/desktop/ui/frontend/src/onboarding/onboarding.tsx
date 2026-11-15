@@ -128,7 +128,7 @@ export function NativeOnboarding(){
       copied:{title:'Paste into your agent.',text:'',button:'Done',action:'practice-review'},
       paste:{title:'Paste into your agent.',text:'',button:'Done',action:'practice-review'},
       locate:{title:'apparent lives here.',text:state.platform==='linux'?'Right-click the tray icon. Open Latest Capture.':'Click the a in your menu bar, then Open Latest Capture.'},
-      complete:{title:'One last thing.',text:state.platform==='linux'?'Open Settings from apparent’s tray icon.':'Open Settings from apparent’s menu bar icon.'},
+      complete:{title:'Feel like customizing more?',text:state.platform==='linux'?'Open Settings from apparent’s tray icon.':'Open Settings from apparent’s menu bar icon.'},
       retry:{title:'Try another capture.',text:`Press ${state.shortcut} to start again, then follow the drawing prompts. Your previous capture is saved.`},
       'copy-failed':{title:'Saved, but not copied.',text:'Your capture is saved. Find it in apparent’s menu.',button:'Find saved capture',action:'practice-locate'},
     };
@@ -154,11 +154,11 @@ export function NativeOnboarding(){
       setError('');
       void action({action:'shortcut',kind:'record',...pressed,reserved:false});
       }}><div className="native-held-keys" aria-live="polite">{heldKeys.length?heldKeys.map(key=><Keycap key={key} pressed>{key}</Keycap>):<Button variant="keycap" aria-label="Choose suggested Fn shortcut" onClick={chooseFn}>Fn</Button>}</div><div className="native-shortcut-choices"><Button variant="outline" onClick={()=>void action('cancel-shortcut')}>Cancel</Button></div></div>:<>
-        {state.shortcutChosen?<Keycap>{state.shortcut}</Keycap>:state.shortcutEditor?.externallyManaged?null:<p>No shortcut selected.</p>}
+        {state.shortcutChosen?<Keycap className="native-shortcut-example">{state.shortcut}</Keycap>:state.shortcutEditor?.externallyManaged?null:<p>No shortcut selected.</p>}
         <div className="native-shortcut-choices">{state.platform==='macos'&&!state.shortcutChosen&&<Button variant="keycap" aria-label="Choose suggested Fn shortcut" onClick={chooseFn}>Fn</Button>}{state.shortcutEditor?.externallyManaged&&<Button aria-label={`Choose ${state.shortcut}`} onClick={()=>void action('use-desktop-shortcut')}>{state.shortcut}</Button>}
         <Button variant="outline" onClick={()=>void action('change-shortcut')}>{state.shortcutEditor?.externallyManaged?'Choose another shortcut':state.shortcutChosen?'Change shortcut':'Choose shortcut'}</Button></div>
       </>}{state.shortcutEditor?.error&&<p role="alert">{state.shortcutEditor.error}</p>}</div></>}
-    {goAgain&&<><h1 className="native-shortcut-prompt">One more time.</h1><div className="native-shortcut"><Keycap>{state.shortcut}</Keycap></div></>}
+    {goAgain&&<><h1 className="native-shortcut-prompt">One more time.</h1><div className="native-shortcut"><Keycap className="native-shortcut-example">{state.shortcut}</Keycap></div></>}
     {state.step==='done'&&<><h1>Ready for your next idea.</h1><div className="native-explain"><img src={frog} alt=""/></div><p>apparent stays in the menu bar, ready when you are.</p></>}
     {error&&!penPage&&<p role="alert">{error}</p>}
     </section><footer><Button variant="ghost" onClick={()=>void action('back')} disabled={(state.index===0&&!penPage)||penBusy}>Back</Button>{!penPage&&<progress className="native-setup-progress" aria-label="Setup progress" value={state.index+1} max={state.count}/>}{!goAgain&&!penPage&&state.step!=='shortcut'&&<Button onClick={()=>void action('continue')} disabled={(state.step==='permissions'&&!state.ready)||(state.step==='shortcut'&&state.firstCaptureRequired&&(!state.shortcutChosen||!state.shortcutTested||state.shortcutEditor?.recording))}>{state.step==='welcome'?'Choose a pen':state.step==='done'?'Finish setup':state.step==='permissions'?(state.fix?'Finish permission setup':'Choose recording shortcut'):state.step==='shortcut'?'Continue':'Try a capture'}</Button>}</footer></main>;
