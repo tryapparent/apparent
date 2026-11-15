@@ -1,5 +1,5 @@
 //! Native credential/transport adapter for the TypeScript activity decision.
-use super::super::*;
+use super::*;
 use std::sync::atomic::{AtomicBool,Ordering};
 static IN_FLIGHT:AtomicBool=AtomicBool::new(false);
 struct Admission;

@@ -115,7 +115,9 @@ Per-file encryption adds migration `0011.sql`. `npm run build` first stages the
 active migration sources (including `migrations/baseline/`) byte-for-byte into
 `.generated/migrations/`; Wrangler's `migrations_dir` points there. Always build
 before listing/applying migrations. D1 ledger filenames remain `0001.sql` through
-`0011.sql`, without directory prefixes, so existing migrations are not replayed.
+`0012.sql`, without directory prefixes, so existing migrations are not replayed.
+Migration `0012.sql` adds prospective, pseudonymous seven-day product activity;
+see [activity coverage and rollout](../docs/usage-dashboard.md).
 This source grouping changes no historical SQL or migration authority. Tests use
 the same staged artifacts. Applying migrations remains a separate authorized
 operation; building does not contact D1 or provision resources.
