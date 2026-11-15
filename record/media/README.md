@@ -93,9 +93,8 @@ requests are read in batches of four: four maximum-sized 64MP frames fit the
 Engine 256MP job limit. This is a native resource limit, not a workflow budget.
 
 Default keyframe selection, caching, crop/render decisions and periodic sampling
-remain migration debt. The old root `movie_frames_at` entry point remains solely
-for Agent's range-extraction fallback in `shared/handoff`; its replacement must
-be verified before removing it. Phone ingestion still uses its periodic/native
+remain migration debt. Agent's final range-fallback adoption removes the old root
+`movie_frames_at` entry point. Phone ingestion still uses its periodic/native
 frame pipeline. No competing configuration writer is introduced.
 
 Native checks exercise the actual published frame provider and private RGBA

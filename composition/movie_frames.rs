@@ -52,14 +52,88 @@ pub(crate) fn record(
     offset: u64,
     edge: u32,
 ) -> Result<Vec<RgbaFrame>> {
+    batches(
+        "Record media",
+        "record-media",
+        "frames-worker.js",
+        movie,
+        times,
+        offset,
+        edge,
+    )
+}
+
+pub(crate) fn agent_range(movie: &Path, times: &[u64], offset: u64) -> Result<Vec<RgbaFrame>> {
+    adaptive_batches(times, |batch| {
+        frames(
+            "Agent media",
+            "agent-media",
+            "worker.js",
+            movie,
+            batch,
+            offset,
+            0,
+        )
+    })
+}
+
+fn adaptive_batches(
+    times: &[u64],
+    mut decode: impl FnMut(&[u64]) -> Result<Vec<RgbaFrame>>,
+) -> Result<Vec<RgbaFrame>> {
+    let mut out = Vec::new();
+    let (mut cursor, mut limit) = (0, 4);
+    while cursor < times.len() {
+        let count = limit.min(times.len() - cursor);
+        match decode(&times[cursor..cursor + count]) {
+            Ok(decoded) => {
+                let pixels = decoded
+                    .iter()
+                    .map(|f| u64::from(f.width) * u64::from(f.height))
+                    .max()
+                    .unwrap_or(0);
+                ensure!(
+                    pixels > 0 && decoded.len() == count,
+                    "Incomplete range frame batch"
+                );
+                limit = ((256 * 1024 * 1024 / pixels) as usize).clamp(1, 48);
+                out.extend(decoded);
+                cursor += count;
+            }
+            Err(error)
+                if count > 1
+                    && error
+                        .downcast_ref::<super::worker::WorkerExitError>()
+                        .is_some_and(|e| e.code == Some(72)) =>
+            {
+                // Changed stream dimensions can outgrow the observed budget.
+                // Retry only a typed resource limit, after the failed job's
+                // process group and private pixels have been cleaned.
+                limit = count / 2;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(out)
+}
+
+fn batches(
+    label: &str,
+    package: &str,
+    worker_file: &str,
+    movie: &Path,
+    times: &[u64],
+    offset: u64,
+    edge: u32,
+) -> Result<Vec<RgbaFrame>> {
     let mut out = Vec::new();
     // Four maximum-sized frames fit Engine's 256MP job resource limit.
     // This does not select keyframes or change Record's workflow budget.
     for chunk in times.chunks(4) {
         out.extend(frames(
-            "Record media",
-            "record-media",
-            "frames-worker.js",
+            label,
+            package,
+            worker_file,
             movie,
             chunk,
             offset,
@@ -215,6 +289,45 @@ fn read_frames(
 mod tests {
     use super::*;
     use std::os::unix::fs::symlink;
+
+    #[test]
+    fn resource_backoff_preserves_order_and_does_not_repeat_other_failures() {
+        let times = [0, 250, 500, 500, 1000, 1500, 2000, 2500];
+        let mut rejected = 0;
+        let decoded = adaptive_batches(&times, |batch| {
+            if batch.len() > 3 {
+                rejected += 1;
+                return Err(super::super::worker::WorkerExitError { code: Some(72) }.into());
+            }
+            Ok(batch
+                .iter()
+                .map(|t| RgbaFrame::new(*t, 1, 1, vec![0, 0, 0, 255]))
+                .collect())
+        })
+        .unwrap();
+        assert!(rejected > 0);
+        assert_eq!(decoded.iter().map(|f| f.t_ms).collect::<Vec<_>>(), times);
+        for code in [Some(1), Some(7), None] {
+            let mut calls = 0;
+            assert!(
+                adaptive_batches(&times, |_| {
+                    calls += 1;
+                    Err(super::super::worker::WorkerExitError { code }.into())
+                })
+                .is_err()
+            );
+            assert_eq!(calls, 1, "only resource limits may repeat");
+        }
+        let mut calls = 0;
+        assert!(
+            adaptive_batches(&[0], |_| {
+                calls += 1;
+                Err(super::super::worker::WorkerExitError { code: Some(72) }.into())
+            })
+            .is_err()
+        );
+        assert_eq!(calls, 1, "a single-frame resource failure is terminal");
+    }
 
     #[test]
     fn real_published_bridge_matches_retained_decoder_with_observed_latency() {
