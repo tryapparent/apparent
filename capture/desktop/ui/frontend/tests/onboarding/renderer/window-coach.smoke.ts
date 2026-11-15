@@ -73,6 +73,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.getByRole('heading',{name:'Where’s ur agent at?',exact:true})).toBeVisible();
   await expect(page.getByRole('button',{name:'Right here',exact:true})).toHaveCount(1);
   await expect(page.getByRole('button',{name:'Up in the cloud',exact:true})).toHaveCount(1);
+  for(const choice of await page.locator('.native-agent-choices button').all())await expect(choice).toHaveCSS('box-shadow','none');
   await page.getByRole('button',{name:'idk?? →',exact:true}).click();
   await expect(page.getByText('Can ur agent open files on this computer?',{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Right here →',exact:true}).click();

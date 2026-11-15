@@ -38,12 +38,6 @@ export function coachPosition(area: Area, anchor: Rect | undefined | null, board
     pointsUp: !board && !!anchor && ['screen', 'whiteboard', 'stop', 'copied', 'locate'].includes(phase)};
 }
 
-export function practiceExit(phase: string) {
-  const recording = ['whiteboard', 'board-ink', 'screen-ink', 'note', 'stop'].includes(phase);
-  return {label: 'Close guide', detail: recording ? 'Recording continues.' : phase === 'screen' ? 'Capture controls stay available.' :
-    'Capture and setup progress kept.'};
-}
-
 export function setupDimensions(area: {width:number;height:number}, _shortcut?:boolean) {
   return {width:Math.min(area.width,760),height:Math.min(area.height,600)};
 }
