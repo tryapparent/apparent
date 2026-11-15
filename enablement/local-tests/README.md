@@ -236,3 +236,43 @@ a guaranteed latency saving; the skipped-fixture 114-second case retains full
 execution. Measure fixture upload, native lookup/execution, allocated job durations
 and dependency/queue time separately on hosted runs. Roll back by removing the
 `alreadyPassed` branch and fixture receipt upload; admission remains unchanged.
+
+## Clanker push budget and workspace
+
+From the repository root, prefer the admitted push entrypoint:
+
+```sh
+node --experimental-strip-types enablement/local-tests/execution/push.ts --jobs 2 -- origin HEAD
+```
+
+It replaces itself with the installed `t3-build -- git push`, preserving the normal
+hook, stdin, exit codes, signals and runner cleanup. It adds no timer. The live
+runner currently defaults to 7200 seconds **including admission plus execution**;
+read its help when planning work rather than deriving a universal duration from
+one run. A 900-second total cap has cut an unchanged broad gate off after native
+and service suites, forcing repetition. Do not substitute an agent-chosen short
+cap for the normal budget. Choose workers from the actual hook plan and capacity;
+this example does not reserve a minimum or change memory admission.
+
+A genuine human time/spend limit wins: supply `--total-budget SECONDS` when it
+bounds this whole invocation, accounting for queue time as well as the complete
+selected gate. A deliberately short diagnostic may use the same explicit cap;
+it proves only that diagnostic, never acceptance. Exit 124 means runner timeout;
+command failures and cancellation retain the runner's statuses. Already inside
+an admitted driver, run `git push` directly instead of nesting this entrypoint.
+Do not wrap it in another shorter command deadline. Keep the foreground handle
+and follow the tool's completion contract. Report runner admission wait, command
+runtime and terminal-observation delay separately; a transport wait ending does
+not prove the command ended. Inspect the original handle before retrying.
+
+For genuinely independent future design and implementation threads, request T3
+workspace binding **before launch**: `workspaceStrategy: {type: "worktree",
+baseRef: "origin/main", startFromOrigin: true}`. Omitting the strategy uses the
+project root, not the caller's isolated checkout. When unpublished producer
+commits are required, pin the full local commit as `baseRef` with
+`startFromOrigin: false`; uncommitted work is not copied. Delegated work uses
+`isolation: "worktree"` from the parent's committed checkpoint. Only launch new
+threads/delegates when authorized. Never create shell worktrees, rebind active
+owners or branch-switch a frozen shared checkout to avoid a real dependency.
+Existing shared owners still wait for the producer's exact-head/release callback;
+isolation guidance does not release that hold or duplicate a live push.
