@@ -84,8 +84,10 @@ bundle/movie clock mapping and preserves request indices when several early
 keyframes clamp to movie zero. Source times are safe integers; missing, reordered
 or relabelled replies fail instead of changing a keyframe's identity.
 
-Capture predecode, full-keyframe assembly and screen recovery/reprocessing use
-this provider. Recovery's injected `Media.explicit_frames` contract is distinct
+Capture predecode, full-keyframe assembly, screen recovery/reprocessing and
+phone/file assembly's explicit mark/full-frame callers use this provider.
+Phone requests already use movie time, so their offset is zero and their
+1600px long-edge limit is unchanged. Recovery's injected `Media.explicit_frames` contract is distinct
 from its periodic-sampling provider, so its real caller cannot silently retain
 the old explicit decoder. `composition/movie_frames.rs` supplies native process,
 private-directory and pixel safety mechanisms for both Record and Agent. Record
@@ -95,11 +97,17 @@ Engine 256MP job limit. This is a native resource limit, not a workflow budget.
 Default keyframe selection, caching, crop/render decisions and periodic sampling
 remain migration debt. Agent's final range-fallback adoption removes the old root
 `movie_frames_at` entry point. Phone ingestion still uses its periodic/native
-frame pipeline. No competing configuration writer is introduced.
+candidate decoder, audio extraction and transcription; those donors remain.
+No competing configuration writer is introduced.
 
 Native checks exercise the actual published frame provider and private RGBA
 pixels. The package proof also reprocesses a synthetic screen bundle with a
 500ms movie offset, checking bundle-clock keyframes, display dimensions and
 source preservation. Optional `--proof-dir <private-job-directory>` retains its
-synthetic PNGs and bundle text for inspection. Signed Mac and Linux AppImage
+synthetic PNGs and bundle text for inspection. A second phone/file scenario
+fills the six-frame budget with distinct flags, checking original timestamps,
+mark associations, decoded pixels and unchanged source bytes. Together with
+ordinary ingestion it exercises both explicit callers. Rollback restores those
+two caller routes together; no pin, schema or package-layout changes are needed.
+Signed Mac and Linux AppImage
 proof remain required; file reprocessing does not establish live capture.

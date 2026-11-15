@@ -491,7 +491,7 @@ pub fn build_movie_bundle(
             // marks on one screen share a keyframe and leave slots for other moments.
             if mark_times.len() >= budget {
                 let direct =
-                    helper::frames(movie_ref, FrameTimes::At(&mark_times), PHONE_FRAME_EDGE);
+                    crate::composition::movie_frames::record(movie_ref, &mark_times, 0, PHONE_FRAME_EDGE);
                 let decode_ms = t0.elapsed().as_millis() as u64;
                 if let Ok(raw_frames) = direct
                     && !raw_frames.is_empty()
@@ -594,7 +594,7 @@ pub fn build_movie_bundle(
         full_frames: (!already_full).then(
             || -> crate::capture::engine::bundle::bundle_processing::FullFrames {
                 Box::new(move |times: &[u64]| -> Result<Vec<RgbaFrame>> {
-                    helper::frames(&movie, FrameTimes::At(times), PHONE_FRAME_EDGE)
+                    crate::composition::movie_frames::record(&movie, times, 0, PHONE_FRAME_EDGE)
                 })
             },
         ),

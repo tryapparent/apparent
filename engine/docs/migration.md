@@ -3,7 +3,7 @@
 Active goal: complete the owner boundaries below, delivering successive usable
 PRs against current main. A verified merge advances this inventory; it does not
 finish the migration. Current source baseline:
-`5893f3607d01080fea8a5006c9396799209f30cd`.
+`8f398bee6bea8e1c50d6de09e9ada5da145c7132`.
 
 | Boundary | Implemented evidence | Remaining adoption/removal gate |
 | --- | --- | --- |
@@ -28,15 +28,16 @@ shares finite-process/private-pixel mechanisms without importing product owners.
 Four-frame resource batches respect the provider's maximum pixel budget.
 
 Recovery's explicit-frame injection and real callers move together; periodic
-sampling remains separate. Phone periodic/explicit frame paths, selection,
+sampling remains separate. Phone periodic frame paths, selection,
 caching and rendering remain native debt. Do not remove these
 donors until their remaining consumers are adopted. Record's metadata policy is
 unchanged while its provider/SDK pin moves from 0.1 to the published 0.2 generation.
 No persistence schema or configuration writer changes.
 
-## Current slice: Agent native range fallback
+## Adopted: Agent native range fallback
 
-When FFmpeg is unavailable, the real `apparent frames` caller now uses Agent's
+Merged #1311 at `8f398bee6bea8e1c50d6de09e9ada5da145c7132`.
+When FFmpeg is unavailable, the real `apparent frames` caller uses Agent's
 published-SDK worker. The final root `movie_frames_at` bundle-clock wrapper is
 removed; periodic/phone native decoders remain. Range/FPS policy, preferred
 FFmpeg execution, PNG writing and existing-keyframe fallback stay authoritative
@@ -49,6 +50,21 @@ extraction, unrelated-file preservation and unchanged source bytes. Mac and
 actual Linux AppImage proof remain delivery gates for this slice. Rollback
 reverts the routing, wrapper removal and worker-status contract together; no
 provider pin, package layout, config writer or persistence format changes.
+
+## Current slice: phone/file explicit frames
+
+Phone/file assembly's dense-mark fast path and selected full-frame callback now
+consume Record's existing frame worker with movie-clock requests (zero offset)
+and the unchanged 1600px edge. Periodic sampling, audio/transcription, mark
+selection, assembly policy and device capture remain on their existing paths.
+No provider publication or packaging-layout change is needed. Remove neither
+the old periodic decoder nor its native build inputs while they have callers.
+
+Real file-reprocessing proof must cover ordinary selection and a full flag
+budget, timestamps, mark associations, decoded pixels and source preservation.
+Signed Mac and both Linux AppImage checks remain gates, separate from live
+physical-device proof. Rollback restores the two explicit native caller routes;
+there is no persistence migration or second configuration writer.
 
 The contract preserves request identity, duplicates, display orientation and
 actual presentation time in the edited movie timeline. Private caller-owned
