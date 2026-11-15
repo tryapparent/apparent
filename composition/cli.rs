@@ -1159,16 +1159,12 @@ fn run_cli(cli: Cli) -> Result<()> {
                     }
                 } else {
                     let offset = old.video_offset_ms;
-                    let raw_candidates = helper::frames(
-                        &video,
-                        helper::FrameTimes::Every(220),
-                        crate::capture::engine::runtime::CANDIDATE_EDGE as u32,
-                    )?;
+                    let probe = crate::composition::media_probe::bundle_probe(&video)?;
+                    let raw_candidates = crate::composition::screen_frames::candidates(&video, probe.duration_ms, offset, "benchmark")?;
                     let mut candidate_buf = crate::capture::engine::runtime::CandidateBuffer::new(
                         crate::capture::engine::runtime::CANDIDATE_BUDGET_BYTES,
                     );
-                    for mut frame in raw_candidates {
-                        frame.t_ms += offset;
+                    for frame in raw_candidates {
                         let urgent = old.strokes.iter().any(|s| s.t1.abs_diff(frame.t_ms) <= 150)
                             || old.events.iter().any(|e| match e {
                                 InteractionEvent::Click { t, .. }

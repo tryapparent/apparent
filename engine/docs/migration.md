@@ -3,7 +3,7 @@
 Active goal: complete the owner boundaries below, delivering successive usable
 PRs against current main. A verified merge advances this inventory; it does not
 finish the migration. Current source baseline:
-`2d4686185850037424e86bb7ec34496a549d328d`.
+`d81e8eed8a5dfa818cefbbbc32896b5c10d96478`.
 
 | Boundary | Implemented evidence | Remaining adoption/removal gate |
 | --- | --- | --- |
@@ -89,7 +89,13 @@ Mac architectures remain publication gates. A usable adopted periodic workflow,
 latency comparison and package proof must follow publication before donor removal;
 package qualification alone is not completed owner independence.
 
-## Current slice: Record phone periodic adoption
+## Adopted: Record phone periodic adoption
+
+Merged #1314 at `71b0d7423087a7daebabae877a3785fbc4cf53ad`;
+its product platform suites passed, but main admission incorrectly required an
+unselected portable suite. #1315 repaired the shared-native plan at
+`d81e8eed8a5dfa818cefbbbc32896b5c10d96478`; successor-main CI and package
+publication remain the acceptance checkpoint. The old failed run is historical.
 
 Record pins the published 0.3 generation and owns phone candidate cadence,
 320px scale and actual-time deduplication in TypeScript. Its real phone/file
@@ -106,6 +112,24 @@ audio/transcription, selection, rendering, lifecycle, UI and root build closure
 remain debt. No shared decoder/build input is removed while those callers remain.
 Rollback restores the phone route, generated-worker inventory and consumer pin
 together; no config writer or persistence schema changes.
+
+## Current slice: Record screen file sampling
+
+Recovery/reprocessing and its capture benchmark now consume Record's paged
+TypeScript sampling workflow. Record owns 220ms cadence, the existing 640/480px
+scales, offsets and actual-time deduplication. Native composition supplies one
+overall deadline, bounded page output, cursor/clock admission and private pixel
+validation. Each page is cleaned before the next; the legacy total in-memory
+candidate vector remains a separate limit/debt. No whole-owner independence or
+live-capture sampler migration is claimed.
+
+Injected recovery providers and real callers move together. Native proof covers
+a held-frame movie across four pages, including empty continuations. Package
+proof covers actual recovery/benchmark callers and offsets; Mac/AppImage gates
+remain required. The legacy native reader is retained for its media diagnostic
+and comparison tests, pending a separate caller adoption/removal slice. Rollback
+restores caller routing, injected contract and generated worker inventory; no
+pin, config writer or schema changes.
 
 The contract preserves request identity, duplicates, display orientation and
 actual presentation time in the edited movie timeline. Private caller-owned

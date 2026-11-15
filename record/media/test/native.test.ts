@@ -9,6 +9,41 @@ import {join, resolve} from 'node:path';
 // Required provider proof, separate from the Rust/Electron-free policy loop.
 const app = resolve(import.meta.dirname, '../../../capture/desktop/ui/frontend/electron/record-media');
 const worker = join(app, 'worker.js'), engine = join(app, 'native/apparent-engine-media');
+test('screen paging keeps offsets and makes progress through pages with no new presentation samples', t => {
+  const root=mkdtempSync(join(tmpdir(),'apparent-dev-record-screen-'));
+  t.after(()=>rmSync(root,{recursive:true,force:true}));
+  const movie=join(root,'long-hold.mp4');
+  execFileSync('ffmpeg',['-v','error','-nostdin','-y','-f','lavfi','-i',
+    'color=c=red:s=64x48:r=1/400:d=0.1,drawbox=x=32:y=0:w=32:h=48:color=blue:t=fill',
+    '-c:v','libx264','-threads','1','-pix_fmt','yuv420p',movie],{stdio:'pipe'});
+  const before=readFileSync(movie),facts=JSON.parse(execFileSync(process.execPath,[worker,engine,movie,'bundle-v1'],{encoding:'utf8',timeout:30_000}));
+  assert(facts.durationMs>=400_000);
+  let cursor='null',pages=0,empty=0;const times:number[]=[];
+  do {
+    const directory=join(root,'page-'+pages);mkdirSync(directory,{mode:0o700});
+    const page=JSON.parse(execFileSync(process.execPath,[join(app,'screen-worker.js'),join(app,'native/apparent-engine-frames'),
+      movie,directory,String(facts.durationMs),'500','recovery',cursor,'300000'],{encoding:'utf8',timeout:60_000}));
+    assert.equal(page.reply.version,1);assert(page.reply.frames.length<=480);
+    if(!page.reply.frames.length)empty++;
+    assert.deepEqual(readdirSync(directory).sort(),page.reply.frames.map((f:{file:string})=>f.file).sort());
+    for(const [index,frame] of page.reply.frames.entries()) {
+      assert.equal(frame.requestIndex,index);assert.equal(frame.requestedMs,frame.actualMovieMs+500);
+      const file=join(directory,frame.file),pixels=readFileSync(file);
+      assert.equal(statSync(file).nlink,1);assert.equal(statSync(file).mode&0o777,0o600);
+      assert.deepEqual([frame.width,frame.height],[64,48]);assert.equal(pixels.length,64*48*4);
+      for(const [x,channel] of [[16,0],[48,2]]){const at=(24*64+x)*4;assert(pixels[at+channel]>pixels[at+2-channel]+40);}
+      times.push(frame.requestedMs);
+    }
+    cursor=page.nextCursor;pages++;assert(pages<=5,'continuation must finish the finite recording');
+  } while(cursor!==null);
+  assert.equal(pages,4);assert.equal(empty,3);assert.deepEqual(times,[500]);
+  assert.deepEqual(readFileSync(movie),before);
+  const invalid=join(root,'invalid');mkdirSync(invalid,{mode:0o700});
+  const refused=spawnSync(process.execPath,[join(app,'screen-worker.js'),join(app,'native/apparent-engine-frames'),
+    movie,invalid,'1000','0','recovery','{}','1000'],{encoding:'utf8',timeout:5000});
+  assert.equal(refused.status,1);assert.equal(refused.stdout,'');assert.equal(refused.stderr,'Record could not decode screen movie candidates\n');
+  assert.deepEqual(readdirSync(invalid),[]);
+});
 test('phone candidates span native batches, deduplicate actual times and retain private pixels', t => {
   const root=mkdtempSync(join(tmpdir(),'apparent-dev-record-phone-'));
   t.after(()=>rmSync(root,{recursive:true,force:true}));

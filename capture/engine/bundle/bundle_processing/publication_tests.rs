@@ -306,7 +306,11 @@ fn publication_recovery_reconciles_only_durable_typed_notes_before_journal_valid
         &recover::Media {
             explicit_frames: |movie, times, _, edge| frames(movie, helper::FrameTimes::At(times), edge),
             probe: crate::composition::media_probe::bundle_probe,
-            frames,
+            screen_candidates: |movie, _, offset, _| {
+                let mut decoded = frames(movie, helper::FrameTimes::Every(220), 640)?;
+                for frame in &mut decoded { frame.t_ms += offset; }
+                Ok(decoded)
+            },
             transcribe: |_, _| TranscriptData::default(),
         },
     )

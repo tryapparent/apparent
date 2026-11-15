@@ -125,6 +125,14 @@ try {
     ffmpeg(['-xerror','-i',file,'-f','null','-']);
   }
   assert.equal(hash(join(screen,'recording.mp4')),screenHash); assert.equal(hash(join(screen,'apparent.json')),screenMetadata);
+  const benchmark=join(root,'screen-benchmark.apparent');
+  run(binary,['reprocess',screen,'--out',benchmark,'--bench','1'],{...process.env,HOME:home,CFFIXED_USER_HOME:home,
+    XDG_CONFIG_HOME:join(home,'config'),XDG_DATA_HOME:join(home,'data'),XDG_RUNTIME_DIR:runtimeDirectory,
+    DISPLAY:'',WAYLAND_DISPLAY:'',DBUS_SESSION_BUS_ADDRESS:'',APPIMAGE_EXTRACT_AND_RUN:'1'});
+  const benchmarkBundle=JSON.parse(readFileSync(join(benchmark,'apparent.json'),'utf8'));
+  assert.equal(benchmarkBundle.videoOffsetMs,500);assert(benchmarkBundle.keyframes.length>0);
+  assert(benchmarkBundle.keyframes.every((frame:{t:number})=>frame.t>=500&&frame.t<=1500));
+  assert.equal(hash(join(screen,'recording.mp4')),screenHash); assert.equal(hash(join(screen,'apparent.json')),screenMetadata);
   if (args.length === 6) {
     mkdirSync(resolve(args[5]),{recursive:true,mode:0o700});
     copyFileSync(join(markedOut,markedResult.keyframes[0].file),join(resolve(args[5]),'record-phone-flag.png'));
