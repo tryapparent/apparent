@@ -32,7 +32,31 @@ const instrumented=await build({stdin:{resolveDir:process.cwd(),contents:`
 const setup=(bindings={})=>fixture(bindings, {scriptPath:undefined,script:instrumented.outputFiles[0].text});
 const sweep=async f=>{const r=await f.call('/sweep');assert.equal(r.status,200);return r.json();};
 
-test('retired attempts stop writing; uncertain late objects retry hourly without releasing reservations',async()=>{
+test('uncertain cleanup uses one cursor write and visits every key across bounded pages',async()=>{
+ const f=await setup();try{
+  const a=await f.identity('uncertain-cursor'),capture=id(950);
+  await f.db.prepare("INSERT INTO captures(id,account_id,manifest,bytes,expires_at,pending_until,status) VALUES(?,?,?,0,0,0,'deleted')").bind(capture,a.id,'[]').run();
+  await f.db.prepare("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<1500) INSERT INTO attempts(key,capture_id,created_at,bytes) SELECT printf('uncertain-%04d',i),?,0,1 FROM n").bind(capture).run();
+  await f.db.prepare('UPDATE r2_budget SET physical_used=1500').run();
+  const first=await sweep(f);assert.equal(first.rows,1,'only the page cursor is stamped');assert.equal(first.deletes.length,1000);
+  const second=await sweep(f);assert.equal(second.rows,1);assert.equal(second.deletes.length,1000);
+  assert.equal(new Set([...first.deletes,...second.deletes]).size,1500,'wrapped selection cannot starve later uncertain keys');
+  assert.equal((await f.db.prepare('SELECT physical_used FROM r2_budget').first()).physical_used,1500,'uncertain attempts remain charged');
+ }finally{await f.close();}
+});
+
+test('a small uncertain backlog keeps deleting late objects without recurring SQL stamps',async()=>{
+ const f=await setup();try{
+  const a=await f.identity('uncertain-idle'),capture=id(951);
+  await f.db.prepare("INSERT INTO captures(id,account_id,manifest,bytes,expires_at,pending_until,status) VALUES(?,?,?,0,0,0,'deleted')").bind(capture,a.id,'[]').run();
+  await f.db.prepare("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<49) INSERT INTO attempts(key,capture_id,created_at) SELECT printf('uncertain-%04d',i),?,0 FROM n").bind(capture).run();
+  assert.equal((await sweep(f)).rows,1);
+  await f.bucket.put('uncertain-0001','late');
+  const next=await sweep(f);assert.equal(next.rows,0);assert.equal(next.deletes.length,49);assert.equal(await f.bucket.head('uncertain-0001'),null);
+ }finally{await f.close();}
+});
+
+test('retired attempts stop writing; uncertain late objects remain retryable without releasing reservations',async()=>{
  const f=await setup();try{
   const a=await f.identity('row-budget'),capture=id(901);
   // A real producer-created capture; fixture rows represent retained attempts.
@@ -45,12 +69,10 @@ test('retired attempts stop writing; uncertain late objects retry hourly without
   assert.equal((await f.db.prepare('SELECT count(*) n FROM attempts WHERE released=1').first()).n,1001,'zero-byte terminal attempts retire too');
   const idle=await sweep(f);
   assert.equal(idle.rows,0,'idle cleanup must not rewrite finished attempts or a zero-reclaim ledger');
-  assert.deepEqual(idle.deletes,[],'uncertain keys wait for their retry interval');
+  assert.deepEqual(idle.deletes,['uncertain'],'free uncertain deletes continue without SQL stamps');
   await f.bucket.put('uncertain','late');
-  await sweep(f);assert.ok(await f.bucket.head('uncertain'),'late object waits for bounded retry');
-  await f.db.prepare("UPDATE attempts SET cleaned_at=cleaned_at-3600000 WHERE key='uncertain'").run();
   const retry=await sweep(f);assert.deepEqual(retry.deletes,['uncertain']);
-  assert.equal(retry.rows,1,'only uncertain cleanup checkpoint is written');
+  assert.equal(retry.rows,0,'the same cursor needs no recurring checkpoint');
   assert.equal(await f.bucket.head('uncertain'),null);
   assert.equal((await f.db.prepare('SELECT physical_used FROM r2_budget').first()).physical_used,5);
   await f.db.prepare("UPDATE attempts SET terminal=1 WHERE key='uncertain'").run();

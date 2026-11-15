@@ -58,6 +58,9 @@ test('global B race across instances grants one GET',async()=>{
  const f=await setup(true);try{
  const a=await f.identity('read-one'),b=await f.identity('read-two');
  for(const [owner,n] of [[a,702],[b,703]]){await reserve(f,owner,n);await put(f,owner,n);assert.equal((await f.call(path(n)+'/complete',{token:owner.token,method:'POST'})).status,200);}
+ // Restart discards unused prepaid permits without refunding them. This race
+ // starts with no outstanding local grants and exactly one new global permit.
+ await f.reload();
  const before=(await ledger(f)).b_used;await f.db.prepare('UPDATE r2_budget SET b_cap=b_used+1').run();
  const first=f.call(path(702)+'/files/summary.md',{token:a.read,headers:{'X-Hold-R2':'1'}});
  await until(()=>ledger(f),b=>b.b_used===before+1);
@@ -72,7 +75,7 @@ test('early missing completion consumes the whole bulk grant, ready retry consum
  const f=await setup();try{
  const a=await f.identity('heads'),files=[file('frames/frame-0.png',''),file('frames/frame-1.png','')];await reserve(f,a,704,files);
  await f.db.prepare("UPDATE files SET object_key='absent'").run();
- for(let n=1;n<=2;n++){const r=await f.call(path(704)+'/complete',{token:a.token,method:'POST'});assert.equal(r.status,409);assert.equal(r.headers.get('X-Metered'),'1');assert.equal((await ledger(f)).b_used,n*2);}
+ for(let n=1;n<=2;n++){const r=await f.call(path(704)+'/complete',{token:a.token,method:'POST'});assert.equal(r.status,409);assert.equal(r.headers.get('X-Metered'),'1');const reserved=(await ledger(f)).b_used;assert.ok(reserved>=n*2&&reserved<=n*2+255,'the entire HEAD loop was prepaid, with bounded unused batch allowance');}
  await f.bucket.put('absent','',{sha256:files[0].sha256});
  assert.equal((await f.call(path(704)+'/complete',{token:a.token,method:'POST'})).status,200);
  await f.db.prepare('UPDATE r2_budget SET b_cap=b_used').run();const before=await ledger(f);

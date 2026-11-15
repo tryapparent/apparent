@@ -1,5 +1,7 @@
 import type {Env, SessionRow, TokenRow} from './types.ts';
 import {identity} from './identity.ts';
+import {consumePermits,permitPool,type PermitPool} from './accounting/permits.ts';
+const ratePools=new WeakMap<D1Database,{window:number;keys:Map<string,{max:number;pool:PermitPool}>}>();
 export const DAY = 86400000;
 export const random = (n=32) => [...crypto.getRandomValues(new Uint8Array(n))].map(x=>x.toString(16).padStart(2,'0')).join('');
 export const hex = (bytes: Uint8Array) => [...bytes].map(x=>x.toString(16).padStart(2,'0')).join('');
@@ -57,8 +59,29 @@ export async function usage(env: Env,account: string) {return (await stmt(env,"S
 export async function slots(env: Env) {const {used}=(await stmt(env,"SELECT count(*) AS used FROM accounts WHERE beta='active'").first<{used: number}>())!;return {used,limit:20,remaining:Math.max(0,20-used)};}
 export async function rate(env: Env,key: string,max=30) {
  const window=Math.floor(Date.now()/3600000);
- const row=await stmt(env,'INSERT INTO rate_limits(key,window,count) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET count=CASE WHEN window=excluded.window THEN count+1 ELSE 1 END,window=excluded.window RETURNING count',key,window).first<{count: number}>();
- if(row!.count>max)fail('slow_down',429);
+ if(max>120){
+  let cache=ratePools.get(env.DB);
+  if(!cache||cache.window!==window){cache={window,keys:new Map()};ratePools.set(env.DB,cache);}
+  const pools=cache.keys;
+  let entry=pools.get(key);
+  if(!entry||entry.max!==max){
+   if(pools.size>=1024)pools.delete(pools.keys().next().value!);
+   entry={max,pool:permitPool()};pools.set(key,entry);
+  }
+  await consumePermits(entry.pool,1,async(_minimum,wanted)=>{
+   const reserve=async(n:number)=>!!await stmt(env,`INSERT INTO rate_limits(key,window,count) VALUES(?,?,?)
+    ON CONFLICT(key) DO UPDATE SET count=CASE WHEN window=excluded.window THEN count+excluded.count ELSE excluded.count END,
+    window=excluded.window WHERE window<excluded.window OR (window=excluded.window AND count<=?-excluded.count)
+    RETURNING count`,key,window,n,max).first();
+   const batch=Math.min(wanted,max);
+   if(await reserve(batch))return batch;
+   if(batch!==1&&await reserve(1))return 1;
+   fail('slow_down',429);
+  });
+  return;
+ }
+ const row=await stmt(env,'INSERT INTO rate_limits(key,window,count) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET count=CASE WHEN window=excluded.window THEN count+1 ELSE 1 END,window=excluded.window WHERE window<=excluded.window RETURNING count',key,window).first<{count: number}>();
+ if(!row||row.count>max)fail('slow_down',429);
 }
 export async function envelope(env: Env,value: string,decrypt=false) {
  const bytes=Uint8Array.from(atob(env.TOKEN_ENCRYPTION_KEY||''),c=>c.charCodeAt(0));if(bytes.length!==32)throw new Error('key configuration');

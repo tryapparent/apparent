@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {build} from 'esbuild';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -285,7 +286,14 @@ test('v2 MCP selectively retrieves transcript and image; listing and extraction 
   const {signedFileBytes}=await import('../../../client/typescript/dist/transfer/contract.js');
   const {signAsync}=await import('../../../client/typescript/node_modules/@noble/ed25519/index.js');
   const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'apparent-dev-mcp-files-'));await fs.chmod(root,0o700);
-  const f=await fixture();try{
+  const observed=await build({stdin:{resolveDir:process.cwd(),contents:`
+   import worker from './src/worker.ts';const gets=[];
+   export default {fetch(request,env,context){
+    if(new URL(request.url).pathname==='/_observed_reads')return Response.json(gets);
+    const BUCKET=new Proxy(env.BUCKET,{get(target,key){const value=target[key];return typeof value==='function'?function(...args){if(key==='get')gets.push(args[0]);return value.apply(target,args);}:value;}});
+    return worker.fetch(request,{...env,BUCKET},context);
+   }};`},bundle:true,format:'esm',platform:'browser',conditions:['workerd'],external:['node:*'],write:false});
+  const f=await fixture({}, {scriptPath:undefined,script:observed.outputFiles[0].text});try{
     const account=await f.identity('mcp-files'),directory=path.join(root,'reader');
     const reader=await endpoint(f,account,directory),uploader=await sender(f,account),id='2'.repeat(32);
     const original=new Map<string,Buffer>([['apparent.json',Buffer.from(JSON.stringify({contactSheet:'contact-sheet.png',video:'recording.mp4',transcript:{text:'Synthetic spoken feedback'}}))],['summary.md',Buffer.from('Synthetic summary')],['contact-sheet.png',png],['recording.mp4',randomBytes(2*1024*1024+37)]]);
@@ -301,19 +309,25 @@ test('v2 MCP selectively retrieves transcript and image; listing and extraction 
     for(const [name,bytes] of data)assert.equal((await f.call(`/v1/captures/${id}/files/${name}`,{token:uploader.accessToken,method:'PUT',raw:bytes})).status,200);
     assert.equal((await f.call(`/v1/captures/${id}/complete`,{token:uploader.accessToken,method:'POST'})).status,200);
     const drive=async(call:any)=>{for(let n=0;call.tool;n++){assert.ok(n<30);call=await acceptEndpoint(directory,await relayCall(f,call));}return call;};
-    const before=(await f.db.prepare('SELECT b_used FROM r2_budget').first()).b_used;
+    const stored=(await f.db.prepare('SELECT path,object_key FROM files WHERE capture_id=?').bind(id).all()).results;
+    const names=new Map(stored.map((row:any)=>[row.object_key,row.path]));
+    const reads=async()=>(await(await f.call('/_observed_reads')).json()).map((key:string)=>{assert.ok(names.has(key));return names.get(key);});
+    const descriptors=['envelope.json','sealed/index.age'];
+    const objects=(paths:string[])=>paths.map(name=>entries.find(e=>e.path===name).object);
+    const before=(await reads()).length;
     const listing=await drive(await fetchEndpoint(directory,id,path.join(root,'unused'),{listOnly:true}));
     assert.equal(listing.state,'listed');assert.equal(listing.files.length,4);
-    assert.equal((await f.db.prepare('SELECT b_used FROM r2_budget').first()).b_used-before,2,'listing reads only envelope and encrypted index');
+    assert.deepEqual((await reads()).slice(before).sort(),[...descriptors].sort(),'listing reads only envelope and encrypted index');
     const out=path.join(root,'evidence'),extracted=(await pipeTransfer(t,f,directory,id,out,false,['apparent.json','contact-sheet.png'])).terminal;
     assert.equal(extracted.state,'ready');assert.equal(extracted.completeBundle,false);assert.equal(extracted.bundle,undefined);
-    assert.equal((await f.db.prepare('SELECT b_used FROM r2_budget').first()).b_used-before,6,'exactly two index reads plus two requested files for extraction');
+    assert.deepEqual((await reads()).slice(before+2).sort(),[...descriptors,...objects(['apparent.json','contact-sheet.png'])].sort(),'extraction reads exactly the descriptors and requested files');
     for(const name of ['apparent.json','contact-sheet.png'])assert.deepEqual(await fs.readFile(path.join(out,name)),original.get(name));
     assert.deepEqual((await fs.readdir(out)).sort(),['.connect-extraction.json','apparent.json','contact-sheet.png']);
-    const inspectionBefore=(await f.db.prepare('SELECT b_used FROM r2_budget').first()).b_used;
+    const inspectionBefore=(await reads()).length;
     const inspectedOut=path.join(root,'inspection'),inspected=await pipeTransfer(t,f,directory,id,inspectedOut,true);
     assert.equal(inspected.terminal.state,'inspection_ready');assert.equal(inspected.terminal.mediaDownloaded,false);
-    assert.equal((await f.db.prepare('SELECT b_used FROM r2_budget').first()).b_used-inspectionBefore,5,'v2 inspect reads descriptors plus three evidence files, never video');
+    assert.deepEqual((await reads()).slice(inspectionBefore).sort(),[...descriptors,...objects(['apparent.json','summary.md','contact-sheet.png'])].sort(),'inspection reads only descriptors and evidence, never video');
+    assert.ok((await f.db.prepare('SELECT b_used FROM r2_budget').first()).b_used>=(await reads()).length,'provider calls were prepaid');
     assert.equal(JSON.parse(await fs.readFile(path.join(inspectedOut,'inspection.json'),'utf8')).completeRecording,false);
     await assert.rejects(fs.stat(path.join(inspectedOut,'recording.mp4')),{code:'ENOENT'});
     const full=path.join(root,'full.apparent'),completed=await pipeTransfer(t,f,directory,id,full,false);
