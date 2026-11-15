@@ -12,6 +12,9 @@ concurrency:
 
 jobs:
   verify:
+    permissions:
+      contents: read
+      actions: read
     uses: ./.github/workflows/verification-platform.yml
     with:
       runner: ubuntu-24.04

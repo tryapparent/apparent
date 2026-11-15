@@ -14,7 +14,7 @@ test('qualified fixtures get a named real Mac lane behind cheap guards; Linux ad
   assert.equal(flow.jobs.select.outputs.fixtureMac, '${{ steps.paths.outputs.fixtureMac }}');
   assert.equal(job['runs-on'], 'macos-15-intel');
   assert.deepEqual(job.needs, ['select', 'contracts']);
-  assert.equal(job.steps.at(-1).run, 'node --experimental-strip-types enablement/local-tests/run.ts --fixture-mac');
+  assert.equal(job.steps.find((step: any) => step.name === 'Real hook and dependency-install fixtures without native application builds').run, 'node --experimental-strip-types enablement/local-tests/run.ts --fixture-mac');
   const admitted = (select: string, contracts: string, fixtureMac: string, event = 'pull_request', draft = false, cancelled = false) =>
     Function('needs', 'github', 'cancelled', `return (${job.if})`)(
       {select:{result:select,outputs:{fixtureMac}},contracts:{result:contracts}},

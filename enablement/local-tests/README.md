@@ -216,3 +216,23 @@ omit unrelated Connect, Public and Hermes suites; mixed edits retain the union.
 Embedded instructions, unexpected files/native sources, unknown Record packages and
 unknown history keep the broad fallback. Rollback is reverting these consumer
 rules and their regression expectations; no elapsed-time savings are claimed.
+
+Hosted Mac native installation contracts opportunistically consume the named
+`Mac hook fixtures` job's successful same-run, same-attempt artifact. This is
+not a selector exemption or result cache: the receipt binds the complete candidate
+SHA/tree, canonical installation command/cwd, workflow, Node/npm and Mac
+architecture and hosted OS image/kernel. A completed successful job and its actual fixture step are checked
+through the authenticated Actions API before reading the receipt. Missing,
+in-flight, skipped, failed, stale, incompatible or unreadable proof runs the
+original suite. Local, manual and Linux execution remain unchanged. Both platform
+plans and all fixture/native/publication admission dependencies remain authoritative.
+The fixture lane always runs the canonical suite before publishing proof.
+
+No job waits for fixture completion: lookup occurs immediately before the native
+contract step, with bounded API requests and no retries. The artifact upload and
+lookup add small overhead; runner occupancy improves only when proof is already
+available. The observed 76-second duplicate step is a baseline observation, not
+a guaranteed latency saving; the skipped-fixture 114-second case retains full
+execution. Measure fixture upload, native lookup/execution, allocated job durations
+and dependency/queue time separately on hosted runs. Roll back by removing the
+`alreadyPassed` branch and fixture receipt upload; admission remains unchanged.
