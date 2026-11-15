@@ -1428,7 +1428,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 "{}",
                 linux::media::decoder_warning().unwrap_or_default()
             );
-            let frames = linux::media::frames(&movie, helper::FrameTimes::At(&[0]), 0)?;
+            let frames = crate::composition::movie_frames::record(&movie, &[0], 0, 0)?;
             let frame = &frames[0];
             anyhow::ensure!(
                 frame.width > 0 && frame.height > 0,
@@ -1444,7 +1444,14 @@ fn run_cli(cli: Cli) -> Result<()> {
         }
         #[cfg(target_os = "linux")]
         Command::EncoderCheck { movie } => {
-            linux::media::encoder_check(&movie)?;
+            linux::media::encode_check_movie(&movie)?;
+            let frames = crate::composition::movie_frames::record(&movie, &[0], 0, 0)?;
+            anyhow::ensure!(
+                frames
+                    .first()
+                    .is_some_and(|frame| frame.width == 160 && frame.height == 90),
+                "H.264 movie cannot be decoded at 160x90"
+            );
             println!("Encoded and decoded H.264 MP4: {}", movie.display());
             Ok(())
         }

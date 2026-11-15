@@ -27,6 +27,20 @@ try {
   for (const file of [source, movie]) chmodSync(file, 0o600);
   const hash = (file: string) => createHash('sha256').update(readFileSync(file)).digest('hex');
   const original = hash(movie);
+  if (process.platform === 'linux') {
+    // These release diagnostics must qualify the same published reader used by
+    // assembly, including the movie made by the app's own capture encoder.
+    const home = join(root, 'diagnostic-home'); mkdirSync(home, {mode:0o700});
+    const env = {...process.env, HOME:home, XDG_CONFIG_HOME:join(home,'config'),
+      XDG_DATA_HOME:join(home,'data'), XDG_CACHE_HOME:join(home,'cache'),
+      DISPLAY:'', WAYLAND_DISPLAY:'', DBUS_SESSION_BUS_ADDRESS:'', APPIMAGE_EXTRACT_AND_RUN:'1'};
+    assert.match(run(binary, ['decoder-check', source], env), /\(64x48\)/);
+    const encoded = join(root, 'encoder-check.mp4');
+    assert.match(run(binary, ['encoder-check', encoded], env), /Encoded and decoded H\.264 MP4:/);
+    const stream = JSON.parse(run('ffprobe', ['-v', 'error', '-show_streams', '-of', 'json', encoded])).streams[0];
+    assert.equal(stream.codec_name, 'h264'); assert.equal(stream.width, 160); assert.equal(stream.height, 90);
+    ffmpeg(['-xerror', '-i', encoded, '-f', 'null', '-']);
+  }
   const facts = JSON.parse(run(runtime, [join(app, 'worker.js'), join(app, 'native/apparent-engine-media'), movie],
     {...process.env, ELECTRON_RUN_AS_NODE: '1'}));
   assert.equal(facts.durationMs, 1000); assert.equal(facts.width, 48); assert.equal(facts.height, 64);
