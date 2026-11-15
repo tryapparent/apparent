@@ -150,7 +150,9 @@ jobs:
 
   verify:
     needs: admit
-    if: needs.admit.outputs.sha != ''
+    # Shared native receipts intentionally skip the standalone platform jobs.
+    if: >-
+      !cancelled() && needs.admit.result == 'success' && needs.admit.outputs.sha != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -257,7 +259,10 @@ jobs:
       group: connect-hosted-production
       cancel-in-progress: false
     needs: [admit, verify]
-    if: github.repository == 'tryapparent/apparent' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.HOSTED_CD_ENABLED == 'true'
+    if: >-
+      !cancelled() && needs.admit.result == 'success' && needs.verify.result == 'success' &&
+      needs.admit.outputs.sha != '' && github.repository == 'tryapparent/apparent' &&
+      github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.HOSTED_CD_ENABLED == 'true'
     environment:
       name: hosted-production
       url: https://app.tryapparent.com/connect

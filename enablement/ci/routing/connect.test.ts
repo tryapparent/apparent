@@ -66,3 +66,25 @@ test('Connect publication requires successful stream-owned gates on canonical ma
   assert.equal(workflow('stream-connect.yml').jobs.hosted.environment.name, 'hosted-production');
   assert.match(workflow('stream-connect.yml').jobs.hosted.if, /vars.HOSTED_CD_ENABLED == 'true'/);
 });
+
+test('publication survives skipped native ancestors but refuses failed admission, verification and cancellation', () => {
+  const {verify,hosted}=workflow('stream-connect.yml').jobs;
+  // GitHub otherwise adds success(), which propagates skipped ancestors even
+  // when admit succeeded using the caller's checked native receipt.
+  for(const job of [verify,hosted])assert.match(job.if,/!cancelled\(\)/);
+  const needs={admit:{result:'success',outputs:{sha:'a'.repeat(40)}},verify:{result:'success'},
+    linux:{result:'skipped'},macos:{result:'skipped'}};
+  const github={repository:'tryapparent/apparent',event_name:'push',ref:'refs/heads/main'};
+  const evaluate=(job:any,state:any=needs,cancelled=false,context:any=github,enabled='true')=>
+    Function('needs','cancelled','github','vars',`return (${job.if})`)(state,()=>cancelled,context,{HOSTED_CD_ENABLED:enabled});
+  for(const job of [verify,hosted]){
+    assert.equal(evaluate(job),true);
+    assert.equal(evaluate(job,needs,true),false);
+    assert.equal(evaluate(job,{...needs,admit:{result:'success',outputs:{sha:''}}}),false);
+    for(const result of ['failure','cancelled','skipped'])assert.equal(evaluate(job,{...needs,admit:{...needs.admit,result}}),false);
+  }
+  for(const result of ['failure','cancelled','skipped'])assert.equal(evaluate(hosted,{...needs,verify:{result}}),false);
+  for(const context of [{...github,repository:'fork/apparent'},{...github,ref:'refs/heads/feature'},
+    {...github,event_name:'pull_request'}])assert.equal(evaluate(hosted,needs,false,context),false);
+  assert.equal(evaluate(hosted,needs,false,github,'false'),false);
+});
