@@ -39,6 +39,14 @@ export const onboardingPureInputs = new Set([
   'electron/onboarding/account.ts', 'electron/onboarding/presentation.ts', 'electron/onboarding/selection.ts',
   'src/onboarding/state.ts', 'src/onboarding/shortcut/keys.ts',
 ].map(path => 'capture/desktop/ui/frontend/' + path));
+// Reviewed Wispr adapter, renderer helpers/art and owning Electron proof.
+// These additions retain native/Desktop consumers and macOS verification;
+// they do not qualify for the import-free policy exemption above.
+export const onboardingWisprInputs = new Set([
+  'electron/onboarding/wispr.ts', 'src/onboarding/wispr/motion.ts',
+  'src/onboarding/wispr/use-wispr.ts', 'src/onboarding/wispr/frog-sprites.png',
+  'tests/onboarding/wispr/smoke.ts',
+].map(path => 'capture/desktop/ui/frontend/' + path));
 // Explicit retirements from the reviewed Electron onboarding port. A deletion
 // keeps its consumer and platform proof, while unrelated deletions remain
 // unproven boundary changes.
@@ -53,6 +61,7 @@ export const onboardingRoots = ['capture/desktop/ui/frontend/src/onboarding/',
 const onboardingRendererTestInputs = new Set([
   'capture/desktop/ui/frontend/tests/onboarding/renderer/window-coach.smoke.ts',
   'capture/desktop/ui/frontend/tests/onboarding/renderer/tsconfig.json',
+  'capture/desktop/ui/frontend/tests/onboarding/wispr/smoke.ts',
 ]);
 // Shared Connect consent/session policy is consumed by onboarding and Settings.
 // Add the fast policy suite without exempting its bridge or native consumers.
