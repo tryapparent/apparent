@@ -3,7 +3,7 @@
 Active goal: complete the owner boundaries below, delivering successive usable
 PRs against current main. A verified merge advances this inventory; it does not
 finish the migration. Current source baseline:
-`d81e8eed8a5dfa818cefbbbc32896b5c10d96478`.
+`a7bd8461a3c32d3e1e0f81c842070404a37d6b7e`.
 
 | Boundary | Implemented evidence | Remaining adoption/removal gate |
 | --- | --- | --- |
@@ -95,7 +95,9 @@ Merged #1314 at `71b0d7423087a7daebabae877a3785fbc4cf53ad`;
 its product platform suites passed, but main admission incorrectly required an
 unselected portable suite. #1315 repaired the shared-native plan at
 `d81e8eed8a5dfa818cefbbbc32896b5c10d96478`; successor-main CI and package
-publication remain the acceptance checkpoint. The old failed run is historical.
+publication are the acceptance checkpoint. Its Capture platform checks, both
+AppImages and preview publication passed; separate Connect hosted publication
+failed before activation. The old failed admission run remains historical.
 
 Record pins the published 0.3 generation and owns phone candidate cadence,
 320px scale and actual-time deduplication in TypeScript. Its real phone/file
@@ -113,7 +115,13 @@ remain debt. No shared decoder/build input is removed while those callers remain
 Rollback restores the phone route, generated-worker inventory and consumer pin
 together; no config writer or persistence schema changes.
 
-## Current slice: Record screen file sampling
+## Adopted: Record screen file sampling
+
+Merged #1316 at `a7bd8461a3c32d3e1e0f81c842070404a37d6b7e`; macOS PR checks
+passed, with exact-main AppImage delivery still required. #1315's successor-main
+Capture platform checks, both AppImages and preview publication passed. Its
+separate Connect hosted publication stopped before traffic activation; that
+failure is not Record package proof or a green full-workflow result.
 
 Recovery/reprocessing and its capture benchmark now consume Record's paged
 TypeScript sampling workflow. Record owns 220ms cadence, the existing 640/480px
@@ -130,6 +138,25 @@ remain required. The legacy native reader is retained for its media diagnostic
 and comparison tests, pending a separate caller adoption/removal slice. Rollback
 restores caller routing, injected contract and generated worker inventory; no
 pin, config writer or schema changes.
+
+## Current slice: published decoder diagnostics
+
+Linux `decoder-check` and the decode half of `encoder-check` use Record's existing
+explicit-frame worker with movie time zero and native dimensions. Capture's
+encoder still produces the synthetic movie in its native adapter; application
+composition checks the published decoder's 160x90 result. AppImage packaging's
+existing encoder/decoder gates therefore exercise the same provider used by
+real assembly, rather than a second reader. The package proof also runs both
+commands and independently validates the H.264 output.
+
+Keep native decoder warnings, live capture, audio, provider pins, generated
+inventory and persistence unchanged. The old reader and comparison tests remain
+until screen and diagnostic package acceptance, then can be removed in a bounded
+retirement. Rollback restores both diagnostic caller routes and the native
+encoder/decode composition together. This closes a consumer gap; it does not
+remove the application's GStreamer or Rust build dependency.
+
+## Published frame contract
 
 The contract preserves request identity, duplicates, display orientation and
 actual presentation time in the edited movie timeline. Private caller-owned

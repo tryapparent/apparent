@@ -98,8 +98,12 @@ Engine 256MP job limit. This is a native resource limit, not a workflow budget.
 Default keyframe selection, caching and crop/render decisions
 remain migration debt. Agent's final range-fallback adoption removes the old root
 `movie_frames_at` entry point. Phone ingestion still uses native audio extraction
-and transcription. The legacy reader remains for a native media diagnostic and
-comparison tests until those consumers are replaced and their proof accepted.
+and transcription. Linux's `decoder-check` and the decode half of `encoder-check`
+also use this published reader. The native adapter produces the synthetic encoder
+movie; composition supplies decoding without importing Record policy into it.
+Existing decoder-availability warnings remain unchanged. The legacy reader now
+remains only for comparison tests, until adopted screen and diagnostic callers
+have final package acceptance and it can be retired.
 No competing configuration writer is introduced.
 
 Native checks exercise the actual published frame provider and private RGBA
