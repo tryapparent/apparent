@@ -1,5 +1,8 @@
 # apparent Svelte component system
 
+> Current capture-product direction: [brand foundations](https://tryapparent.com/brand/brand-guidelines.md), [frog collection](https://tryapparent.com/brand/#frog-collection), and [live React component library](https://tryapparent.com/brand/#frontend-design-system). These supersede document-processing positioning and historical Svelte/portal prescriptions below. Reuse the owning product’s shared React controls and existing theme. Optional playfulness is welcome; essential workflows stay effortless.
+
+
 Status: adopted implementation architecture for Svelte and SvelteKit products.
 
 This document defines how apparent product interfaces use Bits UI and

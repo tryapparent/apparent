@@ -80,7 +80,11 @@ pub(crate) fn private_movie_alias(movie: &Path) -> Result<tempfile::TempDir> {
 
 /// Keep the leader unreaped until its whole group is cleaned. A reader that
 /// inherits stdout cannot extend the deadline, and a reused PID is never signalled.
-pub(crate) fn run(command: &mut Command, timeout: Duration) -> Result<Vec<u8>> {
+pub(crate) fn run(command: &mut Command, timeout: Duration, max_output: usize) -> Result<Vec<u8>> {
+    ensure!(
+        (1..=128 * 1024).contains(&max_output),
+        "Invalid worker output budget"
+    );
     struct Running {
         child: Child,
         armed: bool,
@@ -130,7 +134,7 @@ pub(crate) fn run(command: &mut Command, timeout: Duration) -> Result<Vec<u8>> {
                 Ok(0) => eof = true,
                 Ok(n) => {
                     ensure!(
-                        output.len() + n <= 32768,
+                        output.len() + n <= max_output,
                         "Headless worker output exceeded its limit"
                     );
                     output.extend_from_slice(&chunk[..n]);
@@ -216,12 +220,12 @@ mod tests {
         let mut command = Command::new("/bin/sh");
         command.args(["-c", "printf '{\"version\":1}'"]);
         assert_eq!(
-            run(&mut command, Duration::from_secs(2)).unwrap(),
+            run(&mut command, Duration::from_secs(2), 32 * 1024).unwrap(),
             b"{\"version\":1}"
         );
         let mut failed = Command::new("/bin/sh");
         failed.args(["-c", "printf partial; exit 7"]);
-        let error = run(&mut failed, Duration::from_secs(2)).unwrap_err();
+        let error = run(&mut failed, Duration::from_secs(2), 32 * 1024).unwrap_err();
         assert_eq!(
             error.downcast_ref::<WorkerExitError>().unwrap().code,
             Some(7)
@@ -236,7 +240,7 @@ mod tests {
             .args(["-c", "(sleep 0.3; touch \"$1\") & wait", "record-test"])
             .arg(&effect);
         let started = Instant::now();
-        assert!(run(&mut command, Duration::from_millis(50)).is_err());
+        assert!(run(&mut command, Duration::from_millis(50), 32 * 1024).is_err());
         assert!(started.elapsed() < Duration::from_secs(2));
         std::thread::sleep(Duration::from_millis(400));
         assert!(
@@ -246,16 +250,40 @@ mod tests {
     }
     #[test]
     fn continuous_output_is_bounded_independently_of_time() {
-        let mut command = Command::new("/bin/sh");
-        command.args([
-            "-c",
-            "while :; do printf '1234567890123456789012345678901234567890'; done",
-        ]);
-        assert!(
-            run(&mut command, Duration::from_secs(2))
-                .unwrap_err()
-                .to_string()
-                .contains("output exceeded")
-        );
+        for limit in [32 * 1024, 128 * 1024] {
+            let mut command = Command::new("/bin/sh");
+            command.args([
+                "-c",
+                "while :; do printf '1234567890123456789012345678901234567890'; done",
+            ]);
+            assert!(
+                run(&mut command, Duration::from_secs(2), limit)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("output exceeded")
+            );
+        }
+    }
+    #[test]
+    fn finite_frame_envelope_fits_without_widening_metadata_or_unbounded_output() {
+        for (limit, admitted) in [(32 * 1024, false), (128 * 1024, true)] {
+            let mut command = Command::new("/bin/sh");
+            command.args(["-c", "printf '%65536s' ''"]);
+            let result = run(&mut command, Duration::from_secs(2), limit);
+            if admitted {
+                assert_eq!(result.unwrap().len(), 65536);
+            } else {
+                assert!(result.unwrap_err().to_string().contains("output exceeded"));
+            }
+        }
+        for invalid in [0, 128 * 1024 + 1] {
+            let mut unavailable = Command::new("/does-not-exist");
+            assert!(
+                run(&mut unavailable, Duration::from_secs(2), invalid)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("Invalid worker output budget")
+            );
+        }
     }
 }

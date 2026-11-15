@@ -73,6 +73,9 @@ test('hosted producer and both platform plans keep parallel native execution and
   assert.equal(steps.at(-1).with.name, 'mac-install-contracts-${{ github.run_attempt }}');
   assert.equal(steps.at(-1).if, undefined, 'upload only after fixture success');
   assert.equal(platform.permissions.actions, 'read');
+  const manual = YAML.parse(readFileSync('.github/workflows/verification.yml', 'utf8'));
+  assert.equal(manual.jobs.verify.permissions.actions, 'read');
+  assert.equal(manual.jobs.verify.permissions.contents, 'read');
   const nativeSteps = platform.jobs.rust.steps;
   const installIndex = nativeSteps.findIndex((s: any) => s.name === 'Local Desktop install reuse contracts');
   assert.equal(nativeSteps[installIndex].if, "runner.os == 'macOS'");

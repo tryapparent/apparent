@@ -115,6 +115,16 @@ together; no config writer or persistence schema changes.
 
 ## Current slice: Record screen file sampling
 
+#1316 merged at `a7bd8461a3c32d3e1e0f81c842070404a37d6b7e`; its Mac/Linux
+platform checks, both AppImages and preview publication passed. Qualification
+then found a real transport gap: a two-minute moving movie's 480-frame reply was
+52,728 bytes, exceeding the shared metadata helper's 32 KiB output cap.
+The bounded repair gives frame replies 128 KiB while retaining metadata's 32 KiB,
+the overall deadline and private-pixel admission. Full phone/screen pages and a
+real packaged CLI benchmark now cover this boundary. Keep donor retirement and
+further diagnostic adoption behind the repair's platform/package acceptance;
+restoring the smaller cap alone would reintroduce the failure with these callers.
+
 Recovery/reprocessing and its capture benchmark now consume Record's paged
 TypeScript sampling workflow. Record owns 220ms cadence, the existing 640/480px
 scales, offsets and actual-time deduplication. Native composition supplies one

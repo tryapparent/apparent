@@ -1,6 +1,6 @@
 # Desktop Settings
 
-Status: owner-selected strong-contrast direction, 15.11.2026.
+Status: adopted Desktop Settings interaction rules, 15.11.2026.
 
 Use this specification for apparent Desktop Settings on macOS and Linux.
 It extends [the product interface system](product-interface.md), not the
@@ -19,7 +19,9 @@ generic shell for every web product. Reuse the canonical
   This is the Desktop default within the generic 216-240px range, not a new
   minimum for every product.
 - Use the existing 32px content inset and 8px spacing system. Main content is
-  Paper; grouped command surfaces are Stock. Panels and command blocks are
+  Paper; neutral grouped surfaces are Stock. The optional skill-command copy
+  surface uses Lilac, matching the optional preference-switch track.
+  Panels and command blocks are
   square, flat and free of gradients or diffuse shadows.
 - Verify the complete pane at ordinary and smallest supported window sizes,
   with actual labels, enlarged text and localization. Adapt the layout rather
@@ -38,7 +40,10 @@ generic shell for every web product. Reuse the canonical
   Optical glyph size and clickable area are separate dimensions.
 - Use Carbon for active utility icons. Do not import a consumer-only gray such
   as #625B66 into the brand palette. Make secondary actions quiet through size,
-  stroke and placement, not disabled opacity. Reuse Signal for visible focus.
+  stroke and placement, not disabled opacity. Lilac identifies optional
+  interaction surfaces; Carbon remains their readable icon/text foreground.
+  Signal identifies the current decision flow and visible focus, not every
+  enabled control or every checked preference.
 - Show copy success only after clipboard acknowledgement; provide a usable
   recovery path on failure. The precise feedback treatment remains to be settled.
 
@@ -47,8 +52,12 @@ generic shell for every web product. Reuse the canonical
 - Use a rounded 48 by 24px track with an 18px circular thumb, inside an
   interaction region at least 48 by 44px. The rounded track and thumb are a
   functional control exception to square panels, not permission for pill cards.
-- The selected on-state treatment is a Carbon track with a Paper thumb on the
-  right. It remains inside the five-color palette and supplies high contrast.
+- Optional preference switches use a Lilac track and Carbon thumb without a
+  visible outline in both light and dark mode. Keep the geometry stable when
+  removing an outline. The thumb is left when off and right when on; expose
+  the checked state accessibly. Lilac signals optional interactability in both
+  states, not whether the value is enabled. Color never supplies the only
+  distinction. The optional command-copy surface uses the same Lilac token.
 - Retain a visible setting label and short consequence. A switch represents an
   immediately applied, reversible binary preference, not an arbitrary action.
   Do not introduce a pane-wide Save button for independent immediate settings.
@@ -56,6 +65,9 @@ generic shell for every web product. Reuse the canonical
   focus. Distinguish pending persistence, saved state and failure truthfully.
   Never turn a saved preference into proof that an OS effect or installation
   happened.
+- Keep successful preference saves quiet. Show saving and errors beside the
+  affected setting with a usable recovery action. Do not show routine success
+  toasts or add a persistent "Saved" label after every toggle.
 - Essential component/state cues need at least 3:1 contrast with adjacent
   colors. Paper against Lilac alone is approximately 1.97:1; it must not be the
   only cue identifying a custom switch or its thumb. Carbon against Paper is
@@ -76,10 +88,11 @@ contrast. The precise dark-theme component treatments still need visual review.
 
 ## Remaining decisions and verification
 
-The owner selected the normal on-state composition and the palette-preserving
-dark-theme principle. Off-state styling, detailed dark-theme component treatment
-and routine save-feedback presentation remain
-open; do not present an unreviewed variant as owner-approved. The implementing
+The owner selected the compact geometry, matching Lilac optional-interaction
+surfaces, no switch outline in either theme, quiet save success and the
+palette-preserving dark-theme principle. Detailed copy-feedback presentation
+and other unshown component states remain open; do not present an unreviewed
+variant as owner-approved. The implementing
 product must still verify actual fonts, focus, keyboard/assistive behavior,
 clipboard and persistence, error recovery, both themes and supported sizes.
 A design study does not establish native implementation or product acceptance.

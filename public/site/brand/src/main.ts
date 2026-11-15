@@ -3,6 +3,7 @@ import { slides } from './brand-slides.ts';
 import { renderBrandDocument } from './brand-document.ts';
 import '../../public/assets/brand-book/design-system/tokens/apparent.css';
 import './brand-book.css';
+import './brand-kit.css';
 
 document.body.classList.add('brand-route');
 document.title = 'apparent | Brand presentation';
@@ -27,4 +28,8 @@ if (presentationMode) {
   }
 } else {
   renderBrandDocument(root);
+}
+
+if (!presentationMode) {
+  void import('./component-library.tsx').then(({ mountComponentLibrary }) => mountComponentLibrary());
 }
