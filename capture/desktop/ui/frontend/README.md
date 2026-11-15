@@ -20,6 +20,32 @@ assets and CSP rather than a less-restricted Electron development server.
 
 ## Narrow contract
 
+### Prepared targeted renderer checks
+
+After the locked frontend `npm ci`, run selected renderer files from this directory:
+
+```sh
+npm run test:electron:targeted -- tests/settings/about.ts tests/settings/agents/smoke.ts
+```
+
+On Linux, use the existing `xvfb-run -a` prefix in an isolated supported test
+environment. The entrypoint checks explicit, nonempty source files, resolves and
+checks the local Electron executable before any build or worker, runs the normal
+`npm run build`, then executes the named files with `--test-concurrency=1`.
+This completes Electron's lazy setup before test workers can race it. Setup,
+build and assertion failures remain failures. Missing dependencies require the
+normal locked install; missing source fixtures are not synthesized. Direct
+`node --test` bypasses this preparation contract. Use this entrypoint for targeted
+renderer work rather than adding preparation to each test.
+
+This serializes files within one invocation; it does not protect simultaneous
+invocations or builds in the same worktree. Keep one execution owner per checkout.
+The full `test:electron` suite, ordinary hook and native acceptance remain required.
+Runtime/file validation is launch-free prerequisite evidence, not native input,
+permission, GUI or packaging acceptance. The existing native preparation and Mac
+picker parser remain under `enablement/prerequisites/native.ts`; private native
+proof drivers and their refusal/deadline rules are unchanged.
+
 ### Focused onboarding policy checks
 
 From this directory, `npm run test:onboarding-policy` runs the source-level
