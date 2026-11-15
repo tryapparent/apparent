@@ -35,8 +35,8 @@ export async function decodeMovieFrames(options: {
   const {executable, movie, signal} = options;
   const edge = options.maxEdge ?? 0, timeout = options.timeoutMs ?? 300_000;
   if (![executable, movie, options.outputDirectory].every(p => typeof p === 'string' && isAbsolute(p) && !p.includes('\0')) ||
-      !Array.isArray(options.timesMs) || options.timesMs.length < 1 || options.timesMs.length > 48 ||
-      !options.timesMs.every(t => integer(t, Number.MAX_SAFE_INTEGER)) ||
+      !Array.isArray(options.timesMs) || options.timesMs.length < 1 || options.timesMs.length > 480 ||
+      !Array.from(options.timesMs).every(t => integer(t, Number.MAX_SAFE_INTEGER)) ||
       !integer(edge, 16384) || !integer(timeout, 300_000) || timeout < 1 ||
       signal !== undefined && !(signal instanceof AbortSignal)) throw new EngineFrameError('invalid_request');
   if (signal?.aborted) throw new EngineFrameError('cancelled');

@@ -47,7 +47,7 @@ test('output must be fresh, owned and private before execution', async t => {
 test('invalid requests and pre-aborted signals cannot start a provider', async t => {
   const f = fixture(t); f.provider('echo invoked > "$0.invoked"');
   const base = {executable: f.executable, movie: f.movie, outputDirectory: f.output(), timesMs: [25]};
-  for (const change of [{timesMs: []}, {timesMs: Array(49).fill(0)}, {timesMs: [-1]}, {timesMs: [NaN]},
+  for (const change of [{timesMs: []}, {timesMs: Array(481).fill(0)}, {timesMs: Array(4)}, {timesMs: [-1]}, {timesMs: [NaN]},
     {timesMs: [Number.MAX_SAFE_INTEGER + 1]}, {movie: 'relative'}, {movie: '/bad\0file'},
     {maxEdge: 16385}, {maxEdge: 0.5}, {timeoutMs: 0}, {timeoutMs: 300001}, {signal: {} as AbortSignal}])
     await assert.rejects(decodeMovieFrames({...base, ...change}), {code: 'invalid_request'});

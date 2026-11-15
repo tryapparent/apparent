@@ -59,6 +59,10 @@ nearby frame. It can take longer and retains the same SDK deadline and limits.
 `OUTPUT` must be a fresh, caller-owned `0700` directory. The public
 SDK validates request identity, file ownership, dimensions and exact byte counts.
 See [the SDK contract](sdk/README.md#movie-frames) for clocks, limits and cleanup.
+Generation 0.3 accepts up to 480 explicit requests within the unchanged 256 Mi
+pixel job budget. This enables Record's bounded candidate pass without changing
+sampling policy or installed callers. Existing app pins remain on 0.2 until a
+separate compatible consumer adoption is accepted; rollback preserves those pins.
 The metadata reader stays separate and does not link GStreamer.
 
 The extracted native package and installed SDK qualify real decoded pixels,

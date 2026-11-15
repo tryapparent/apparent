@@ -3,7 +3,7 @@
 Active goal: complete the owner boundaries below, delivering successive usable
 PRs against current main. A verified merge advances this inventory; it does not
 finish the migration. Current source baseline:
-`8f398bee6bea8e1c50d6de09e9ada5da145c7132`.
+`6d89b149fbd6257ef2a78a5b6ecb83ab4479c7cb`.
 
 | Boundary | Implemented evidence | Remaining adoption/removal gate |
 | --- | --- | --- |
@@ -51,7 +51,10 @@ actual Linux AppImage proof remain delivery gates for this slice. Rollback
 reverts the routing, wrapper removal and worker-status contract together; no
 provider pin, package layout, config writer or persistence format changes.
 
-## Current slice: phone/file explicit frames
+## Adopted: phone/file explicit frames
+
+Merged #1312 at `6d89b149fbd6257ef2a78a5b6ecb83ab4479c7cb`;
+exact-main delivery remains its acceptance gate.
 
 Phone/file assembly's dense-mark fast path and selected full-frame callback now
 consume Record's existing frame worker with movie-clock requests (zero offset)
@@ -65,6 +68,22 @@ budget, timestamps, mark associations, decoded pixels and source preservation.
 Signed Mac and both Linux AppImage checks remain gates, separate from live
 physical-device proof. Rollback restores the two explicit native caller routes;
 there is no persistence migration or second configuration writer.
+
+## Current prerequisite: bounded Engine candidate batches
+
+SDK/native 0.3 raises the explicit request count from 48 to 480, retaining the
+same per-frame/total pixel limits, private files, deadline and cancellation.
+Record's named next consumer is periodic phone/screen candidate assembly:
+TypeScript must own cadence, actual-time interpretation and adjacent duplicate
+selection. This producer slice does not implement that policy or adopt a caller.
+Existing app pins remain 0.2; no root runtime or package inputs are removed.
+
+Qualification exercises all 480 indexed replies through the packed SDK and
+extracted native artifact, including actual timestamps, duplicates, tail clamps,
+pixels and source preservation, plus direct 481-request refusal. Both Linux and
+Mac architectures remain publication gates. A usable adopted periodic workflow,
+latency comparison and package proof must follow publication before donor removal;
+package qualification alone is not completed owner independence.
 
 The contract preserves request identity, duplicates, display orientation and
 actual presentation time in the edited movie timeline. Private caller-owned
