@@ -72,6 +72,8 @@ def main():
     shutil.copy2(connect / "dist/shares.js", connect_dist / "shares.js")
     shutil.copy2(connect / "dist/handoff.js", connect_dist / "handoff.js")
     shutil.copy2(connect / "dist/foreground.js", connect_dist / "foreground.js")
+    (connect_dist / "activity").mkdir()
+    shutil.copy2(connect / "dist/activity/index.js", connect_dist / "activity/index.js")
     shutil.copy2(connect / "dist/transfer.js", connect_dist / "transfer.js")
     (connect_dist / "transfer").mkdir()
     shutil.copy2(connect / "dist/transfer/contract.js", connect_dist / "transfer/contract.js")

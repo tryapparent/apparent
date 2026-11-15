@@ -6,6 +6,8 @@ import {captureRoutes,cleanup} from './captures.ts';
 import {shareRoutes} from './shares.ts';
 import {renderShare,shareViewScript,shareViewStyles,shareWordmark,shareFont} from './share-view.ts';
 import {flushAnalytics} from './analytics.ts';
+import {cleanupProductActivity,queueProductActivity} from './reporting/product-activity.ts';
+import {bearer,body} from './common.ts';
 import {cleanupDailyActivity} from './reporting/aggregate-dau.ts';
 
 export default {
@@ -25,6 +27,11 @@ export default {
    }else if(request.method==='OPTIONS') {
     if(!trustedSiteOrigin(request.headers.get('Origin'),env))fail('forbidden',403);
     response=new Response(null,{status:204,headers:{'Access-Control-Allow-Methods':'GET, POST, PUT, DELETE, OPTIONS','Access-Control-Allow-Headers':'Authorization, Content-Type, X-CSRF-Token','Access-Control-Max-Age':'600'}});
+   }else if(url.pathname==='/v1/activity/recording-started'&&request.method==='POST') {
+    const account=await bearer(request,env);const data=await body(request,128);
+    if(Object.keys(data).length)fail('invalid_request');
+    queueProductActivity(env,context,request,account.account_id,'desktop');
+    response=Response.json({ok:true});
    }else response=await mcpRoutes(request,env,url)||await authRoutes(request,env,url)||await shareRoutes(request,env,url,renderShare,context)||await captureRoutes(request,env,url,context);
    if(!response)fail('not_found',404);
   }catch(e){response=Response.json({error:{code:e instanceof ApiError?e.code:'internal_error',message:e instanceof ApiError?e.message:'Request failed'}},{status:e instanceof ApiError?e.status:500});}
@@ -36,6 +43,6 @@ export default {
   return new Response(response.body,{status:response.status,headers});
  },
  async scheduled(_controller: ScheduledController,env: Env) {
-  await Promise.all([(async()=>{await cleanup(env);await flushAnalytics(env);})(),cleanupDailyActivity(env)]);
+  await Promise.all([(async()=>{await cleanup(env);await flushAnalytics(env);})(),cleanupDailyActivity(env),cleanupProductActivity(env)]);
  }
 };

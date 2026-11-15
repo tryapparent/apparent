@@ -62,7 +62,7 @@ await context.addCookies([{name:'fixture',value:'1',url:apiOrigin,...apiOrigin.s
 try{
  await page.goto(origin+'/connect')
  await page.getByRole('button',{name:'Stop account analytics',exact:true}).waitFor({state:'visible'})
- assert.equal(await page.getByText('Daily service-activity totals.',{exact:true}).isVisible(),true,'aggregate disclosure is visible without opening individual consent')
+ assert.equal(await page.getByText('Daily and weekly activity totals.',{exact:true}).isVisible(),true,'aggregate disclosure is visible without opening individual consent')
  await page.getByText('Optional account analytics',{exact:true}).click({timeout:3000})
  const checkbox=page.getByRole('checkbox',{name:'Allow account analytics',exact:true})
  await checkbox.waitFor();assert.equal(await checkbox.isChecked(),false);assert.equal(mutations.length,0)

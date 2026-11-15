@@ -877,6 +877,7 @@ pub struct ApparentCoordinator {
     /// Prevent repeated publication callbacks from scheduling a second clipboard write.
     completion_pending: Option<u64>,
     capture_local_practice: bool,
+    recording_activity_attempted: bool,
     /// Media workers outlive their capsule and still own unfinished bundles.
     pending_finalizers: usize,
     #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -1017,6 +1018,7 @@ impl ApparentCoordinator {
             capture_generation: 0,
             completion_pending: None,
             capture_local_practice: false,
+            recording_activity_attempted: false,
             pending_finalizers: 0,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             agent_capture_id: None,
@@ -2511,6 +2513,7 @@ impl ApparentCoordinator {
             self.capture_generation = self.capture_generation.wrapping_add(1);
         }
         if matches!(phase, IslandPhase::Recording) && !matches!(self.island_phase, IslandPhase::Recording) {
+            self.recording_activity_attempted = false;
             self.capture_local_practice = self.onboarding.as_ref().is_some_and(|session| session.local_practice());
         }
         let capture = match (self.island_phase, phase) {
@@ -3080,9 +3083,22 @@ impl ApparentCoordinator {
         });
     }
 
-    /// The UI loop's tick: advances the springs unless a new capsule window awaits its second
-    /// frame (`island_await_frame`).
+    /// Observe the native producer once; policy consumes the practice fact in TypeScript.
+    fn take_recording_start(&mut self) -> Option<bool> {
+        if self.recording_activity_attempted || self.agent_state().phase != crate::capture::desktop::workflow::agent_capture::Phase::Recording { return None; }
+        self.recording_activity_attempted = true;
+        Some(self.capture_local_practice)
+    }
+
+    fn observe_recording_activity(&mut self) {
+        if let Some(practice) = self.take_recording_start() {
+            crate::connect::hosted::observe_recording_start(practice);
+        }
+    }
+
+    /// Advance the UI without waiting on activity transport.
     pub fn island_tick(&mut self, cx: &mut Context<Self>) {
+        self.observe_recording_activity();
         #[cfg(target_os = "linux")]
         if self.discard_failed_screen_start() {
             cx.defer(whiteboard::close);
@@ -3929,6 +3945,7 @@ impl ApparentCoordinator {
     }
 
     pub fn finish_recording(&mut self, cx: &mut Context<Self>) {
+        self.observe_recording_activity();
         #[cfg(target_os = "linux")]
         if self.cancel_pending_screen_finish() {
             self.present_capture_cancellation(cx);
@@ -7732,6 +7749,31 @@ mod tests {
 
         assert!(coordinator.discard_recording().is_none());
         assert_eq!(coordinator.agent_state().capture_id, None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn recording_activity_observes_real_start_once_and_preserves_practice_fact() {
+        use std::sync::atomic::Ordering;
+        let (sender, _receiver) = flume::unbounded();
+        let mut coordinator = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
+        let (session, _failed, seen) = ScreenCaptureSession::test_pending_start();
+        coordinator.active_recording = Some(ActiveRecording {
+            started: Instant::now(), target: region_target(0.0,0.0,64.0,64.0,&[]),
+            bundle_dir: PathBuf::from("synthetic-unused.apparent"),
+            source: CaptureSource::Screen {session,audio:None,windows:None},
+            _metal_overlay:None,microphone_enabled:false,
+        });
+        coordinator.set_island_phase(IslandPhase::Recording);
+        assert_eq!(coordinator.take_recording_start(),None,"pending permission/frame is not activity");
+        seen.store(true,Ordering::Release);
+        assert_eq!(coordinator.take_recording_start(),Some(false));
+        assert_eq!(coordinator.take_recording_start(),None,"ticks and Finish cannot report twice");
+        coordinator.recording_activity_attempted=false;
+        coordinator.capture_local_practice=true;
+        assert_eq!(coordinator.take_recording_start(),Some(true),"TypeScript receives the practice exclusion fact");
+        coordinator.active_recording=None;
+        assert_eq!(coordinator.take_recording_start(),None);
     }
 
     #[cfg(target_os = "linux")]
