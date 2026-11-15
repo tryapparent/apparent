@@ -13,7 +13,8 @@ export function Whiteboard({board,action}:{board:BoardView;action:(value:Action)
   const points=useRef<number[][]>([]),pointer=useRef<number|null>(null);
   useEffect(()=>{setDone(false);const timer=setTimeout(()=>setDone(true),window.matchMedia('(prefers-reduced-motion: reduce)').matches?1200:4200);return()=>clearTimeout(timer)},[run]);
   const send=(operation:string,ink?:number[])=>action({action:'board',id:board.id,operation,...(ink?{point:ink}:{})});
-  const penStyle=({'217,76,68':'var(--apparent-pen-coral)','122,88,199':'var(--apparent-pen-purple)','59,121,189':'var(--apparent-pen-blue)','57,123,97':'var(--apparent-pen-green)'} as Record<string,string>)[board.color.join(',')]??'var(--apparent-carbon)';
+  // The host validates this native RGB triplet; ink is captured content, not a UI theme role.
+  const penStyle=`#${board.color.map(channel=>channel.toString(16).padStart(2,'0')).join('')}`;
   const cancelDraft=()=>{if(pointer.current!==null)void send('cancel');points.current=[];pointer.current=null;setDraft([]);setPending([]);};
   const finish=()=>{if(points.current.length){void send('end');const ink=points.current;setPending(list=>[...list,{index:board.strokes.length+list.filter(s=>s.index>=board.strokes.length).length,points:ink}]);points.current=[];setDraft([]);}pointer.current=null;};
   useEffect(()=>()=>{if(pointer.current!==null)void send('cancel');},[]);

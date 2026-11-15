@@ -21,7 +21,7 @@ declare global {
 
 const schemes: Array<'light' | 'dark'> = ['light', 'dark'];
 const penSchemes: Array<'light' | 'dark'> = ['light', 'dark', 'light'];
-for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coach and restores setup ${mode}`, { timeout: 45000 }, async (t) => {
+for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coach and restores setup ${mode}`, { timeout: 90000 }, async (t) => {
   const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'onboarding-window-'));
   const electronExecutable: string = require('electron');
   const child = spawn(electronExecutable, [path.join(__dirname, '..'), mode, '--remote-debugging-port=0', ...(process.platform === 'linux' ? ['--no-sandbox'] : [])], {
@@ -175,7 +175,6 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:{id:'apparent-test-1',strokes:[],color:[59,121,189]}});
   await expect(page.locator('.native-board-paper > svg polyline')).toHaveCount(0);
   const boardMetrics=await context.newCDPSession(page);
-  const blue=[59,121,189,255];
   const pointPixel=async()=>{
     const screenshot=await page.getByLabel('Whiteboard drawing canvas').screenshot({scale:'css'});
     return page.evaluate(async base64=>{
@@ -188,7 +187,10 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   try{
     // Real Electron content at its normal size and a narrow viewport. This does
     // not qualify native display placement or Mac input delivery.
-    for(const width of [720,320])for(const scheme of schemes){
+    for(const width of [720,320])for(const scheme of schemes)for(const color of [[255,59,48],[59,121,189],[10,20,30]]){
+      const expected=[...color,255];
+      send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:{...board,color,strokes:[]}});
+      await expect(page.locator('.native-board-paper > svg circle')).toHaveCount(0);
       await boardMetrics.send('Emulation.setDeviceMetricsOverride',{width,height:540,deviceScaleFactor:1,mobile:false});
       await page.emulateMedia({colorScheme:scheme});
       await page.evaluate(async()=>{
@@ -199,13 +201,13 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
       const completedBefore=(output.match(/"operation":"end"/g)||[]).length;
       await page.mouse.click(paper.x+60,paper.y+100);
       await expect.poll(()=>(output.match(/"operation":"end"/g)||[]).length).toBe(completedBefore+1);
-      if(process.env.APPARENT_ONBOARDING_EVIDENCE)await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,`whiteboard-click-${scheme}-viewport-${width}.png`)});
-      assert.deepEqual(await pointPixel(),blue,'a click must paint immediately before native acknowledgement');
-      send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:{...board,strokes:[[[60,100]]]}});
-      assert.deepEqual(await pointPixel(),blue,'the acknowledged click must remain visible');
+      if(process.env.APPARENT_ONBOARDING_EVIDENCE)await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,`whiteboard-click-${color.join('-')}-${scheme}-viewport-${width}.png`)});
+      assert.deepEqual(await pointPixel(),expected,'pending ink must preserve the native RGB before acknowledgement');
+      send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:{...board,color,strokes:[[[60,100]]]}});
+      await expect.poll(pointPixel).toEqual(expected);
       await page.getByRole('button',{name:'Clear',exact:true}).click();
-      send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:{...board,strokes:[]}});
-      await expect.poll(pointPixel).not.toEqual(blue);
+      send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:{...board,color,strokes:[]}});
+      await expect.poll(pointPixel).not.toEqual(expected);
     }
   }finally{
     await boardMetrics.send('Emulation.clearDeviceMetricsOverride');await boardMetrics.detach();
