@@ -166,6 +166,12 @@ three empty continuations. Clean Node tests need no Rust/Electron; real-provider
 Mac and final AppImage gates remain distinct. Small staged-fixture timing shows
 Node/probe startup overhead, not a controlled performance improvement.
 
+Frame replies have a separate bounded 128 KiB transport envelope: 480 distinct
+samples produce more than metadata's unchanged 32 KiB limit. A two-minute moving
+movie checks full phone and screen pages through the real native bridge; the
+packaged CLI benchmark also crosses that boundary. Frame counts, clocks, private
+pixels, process cleanup and overall deadlines retain their existing checks.
+
 During qualification GStreamer 1.24 classified a 2-second video inside a
 400-second audio container as a preview and skipped it. That existing decoder
 limitation is not paging evidence; the accepted test uses a real 400-second

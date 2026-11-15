@@ -99,6 +99,56 @@ fn next_cursor(value: serde_json::Value, seen: &mut HashSet<String>) -> Result<O
 mod tests {
     use super::*;
     #[test]
+    fn full_periodic_pages_survive_the_real_worker_transport() {
+        let directory = tempfile::tempdir().unwrap();
+        let movie = directory.path().join("moving.mp4");
+        let encoded = std::process::Command::new("ffmpeg")
+            .args([
+                "-v",
+                "error",
+                "-nostdin",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=s=32x32:r=10:d=120",
+                "-c:v",
+                "libx264",
+                "-threads",
+                "1",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&movie)
+            .output()
+            .unwrap();
+        assert!(encoded.status.success());
+        let source = std::fs::read(&movie).unwrap();
+        let phone = super::super::movie_frames::record_phone_candidates(&movie, 120_000).unwrap();
+        assert_eq!(phone.len(), 480);
+        assert_eq!(
+            phone.iter().map(|frame| frame.t_ms).collect::<Vec<_>>(),
+            (0..480)
+                .map(|index| index * 250 / 100 * 100)
+                .collect::<Vec<_>>()
+        );
+        let screen = candidates(&movie, 120_000, 500, "recovery").unwrap();
+        assert_eq!(
+            screen.iter().map(|frame| frame.t_ms).collect::<Vec<_>>(),
+            (0..120_000)
+                .step_by(220)
+                .map(|time| time / 100 * 100 + 500)
+                .collect::<Vec<_>>()
+        );
+        assert!(phone.iter().chain(&screen).all(|frame| (
+            frame.width,
+            frame.height,
+            frame.rgba.len()
+        ) == (32, 32, 32 * 32 * 4)));
+        assert_eq!(std::fs::read(movie).unwrap(), source);
+    }
+
+    #[test]
     fn pages_require_explicit_continuation_and_refuse_cycles_or_invalid_cursors() {
         assert!(serde_json::from_str::<Page>(r#"{"reply":{"version":1,"frames":[]}}"#).is_err());
         assert!(

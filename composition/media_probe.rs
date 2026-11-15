@@ -54,6 +54,7 @@ fn request(movie: &Path, operation: &str) -> Result<Vec<u8>> {
             .arg(input)
             .arg(operation),
         Duration::from_secs(35),
+        32 * 1024,
     )
 }
 
