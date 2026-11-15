@@ -1,6 +1,6 @@
 // @ts-nocheck -- preserved bounded Electron host; renderer and public view are typed.
 'use strict';
-const {app,BrowserWindow,ipcMain,session,screen,nativeTheme,Menu,clipboard} = require('electron');
+const {app,BrowserWindow,ipcMain,session,screen,nativeTheme,Menu,clipboard,dialog} = require('electron');
 const path=require('node:path');
 const {pathToFileURL}=require('node:url');
 const protocol=require('./protocol.cjs');
@@ -168,7 +168,7 @@ app.whenReady().then(()=>{
     valid(event,args);if(typeof focused!=='boolean'||!destinations.view())throw Error('Picker unavailable');
     focusPicker(focused);
   });
-  ipcMain.handle('pill:act',(event,revision,action,drop=false,...args)=>{
+  ipcMain.handle('pill:act',async(event,revision,action,drop=false,...args)=>{
     valid(event,args);
     if(pending)throw Error('Pill action pending');
     if(typeof drop!=='boolean' || drop && action!=='paste')throw Error('Invalid paste gesture');
@@ -180,7 +180,16 @@ app.whenReady().then(()=>{
       message.target=[point.x,point.y];
     }
     pasteGesture=null;
-    pending=true;emit(message);
+    pending=true;
+    try {
+      if(action==='copy-link' && !current.actions.some(a=>a.id==='copy-link'&&a.label==='Cancel upload')) {
+        const result=await dialog.showMessageBox(window,{type:'warning',title:'Create public sharing link?',message:'Anyone with this link can view this capture.',detail:'Shared captures are not end-to-end encrypted.',buttons:['Cancel','Create and copy public link'],defaultId:0,cancelId:0});
+        if(result.response!==1){pending=false;throw Error('Public sharing cancelled');}
+        protocol.command(current,revision,action);
+        message.action='copy-public-link';
+      }
+      emit(message);
+    } catch(error){pending=false;throw error;}
   });
   // Renderer never chooses native dimensions or screen coordinates.
   // Parent's bounded state defines content; main measures its own trusted document.

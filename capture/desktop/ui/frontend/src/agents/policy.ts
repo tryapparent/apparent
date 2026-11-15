@@ -3,7 +3,7 @@
 import type {T3Connection} from '../../electron/settings/t3';
 export const skillCommand = 'bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent';
 export type T3ConnectionResult = {facts:PreferenceFacts;reason?:never}|{reason:'cancelled'|'unavailable'|'unconfirmed';facts?:never};
-export type PreferenceFacts = { saved: boolean | null; t3Saved?:boolean|null;t3Configured?:boolean;t3Origin?:string;t3ExpiresAt?:number;autoPasteSaved?:boolean|null;autoPasteSupported?:boolean;error?: never } | { error: 'config_read_failed' | 'config_write_failed'; saved?: never;t3Saved?:never;t3Configured?:never;t3Origin?:never;t3ExpiresAt?:never;autoPasteSaved?:never;autoPasteSupported?:never };
+export type PreferenceFacts = { saved: boolean | null; sharingSaved?:boolean|null;t3Saved?:boolean|null;t3Configured?:boolean;t3Origin?:string;t3ExpiresAt?:number;autoPasteSaved?:boolean|null;autoPasteSupported?:boolean;error?: never } | { error: 'config_read_failed' | 'config_write_failed'; saved?: never;sharingSaved?:never;t3Saved?:never;t3Configured?:never;t3Origin?:never;t3ExpiresAt?:never;autoPasteSaved?:never;autoPasteSupported?:never };
 export function autoPasteEnabled(facts:PreferenceFacts):boolean|undefined{return facts.error?undefined:facts.autoPasteSaved??false;}
 export function t3PickerEnabled(facts:PreferenceFacts):boolean|undefined{return facts.error?undefined:facts.t3Saved??false;}
 export function preferenceEnabled(facts: PreferenceFacts): boolean | undefined {
@@ -22,7 +22,8 @@ export function preferenceFacts(value: unknown): PreferenceFacts {
       if(url.origin===facts.t3Origin&&!url.username&&!url.password&&['http:','https:'].includes(url.protocol))origin=url.origin;
     }catch{/* Do not expose malformed private config as page text. */}
     const expiry=typeof facts.t3ExpiresAt==='number'&&Number.isFinite(facts.t3ExpiresAt)?facts.t3ExpiresAt:undefined;
-    return {...facts.autoPasteSaved===undefined?{}:{autoPasteSaved:facts.autoPasteSaved as boolean|null},...facts.autoPasteSupported===undefined?{}:{autoPasteSupported:facts.autoPasteSupported as boolean},saved:facts.saved,...facts.t3Saved===undefined?{}:{t3Saved:facts.t3Saved as boolean|null},...facts.t3Configured===undefined?{}:{t3Configured:facts.t3Configured as boolean},...origin?{t3Origin:origin}:{},...expiry===undefined?{}:{t3ExpiresAt:expiry}};
+    if(facts.sharingSaved!==undefined&&facts.sharingSaved!==null&&typeof facts.sharingSaved!=='boolean')throw Error('Invalid sharing preference');
+    return {...facts.sharingSaved===undefined?{}:{sharingSaved:facts.sharingSaved as boolean|null},...facts.autoPasteSaved===undefined?{}:{autoPasteSaved:facts.autoPasteSaved as boolean|null},...facts.autoPasteSupported===undefined?{}:{autoPasteSupported:facts.autoPasteSupported as boolean},saved:facts.saved,...facts.t3Saved===undefined?{}:{t3Saved:facts.t3Saved as boolean|null},...facts.t3Configured===undefined?{}:{t3Configured:facts.t3Configured as boolean},...origin?{t3Origin:origin}:{},...expiry===undefined?{}:{t3ExpiresAt:expiry}};
   }
   throw Error('Invalid Agents preference');
 }
@@ -34,7 +35,7 @@ export class AgentsPreferences {
   private pending = new Map<number, {resolve: (facts: PreferenceFacts) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>}>();
   private send: (message: object) => void;
   constructor(send: (message: object) => void) { this.send = send; }
-  request(enabled?: unknown,setting:'video'|'t3'|'autoPaste'='video'): Promise<PreferenceFacts> {
+  request(enabled?: unknown,setting:'video'|'t3'|'autoPaste'|'sharing'='video'): Promise<PreferenceFacts> {
     if (enabled !== undefined && typeof enabled !== 'boolean') return Promise.reject(Error('Invalid preference'));
     return this.issue({action:'agents-preference',...(enabled===undefined?{}:{enabled}),...(setting==='video'?{}:{setting})});
   }
