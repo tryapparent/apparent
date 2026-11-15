@@ -5,7 +5,7 @@ const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const { ConnectSettings, browserUri } = require('../../electron/connect.cjs');
-const view = { title: 'Apparent Connect', status: 'Not connected', detail: 'Local only', note: 'No public links',
+const view = { encryption:null, reusableUploadGrant:false, title: 'Apparent Connect', status: 'Not connected', detail: 'Local only', note: 'No public links',
   server: null, verificationUri: null, userCode: null, buttons: [{ command: 'connect', title: 'Sign in', enabled: true }] };
 async function fixture(t, respond = () => ({ connect: view })) {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'co-'));
@@ -146,3 +146,13 @@ for (const invalid of [{tone:'purple'}, {menuActions:['disconnect']}, {sharedLin
     assert.equal((await f.client.request()).status,'error');
   });
 }
+
+for (const encryption of [true,false,null]) test(`native encryption receipt projects ${encryption}`,async t=>{
+  const f=await fixture(t,()=>({connect:{...view,encryption,reusableUploadGrant:true}}));
+  assert.equal((await f.client.request()).view.encryption,encryption);
+  assert.equal((await f.client.request()).view.reusableUploadGrant,true);
+});
+for (const invalid of [{encryption:'true'},{reusableUploadGrant:'true'}]) test('invalid authority receipt fails closed '+JSON.stringify(invalid),async t=>{
+  const f=await fixture(t,()=>({connect:{...view,...invalid}}));
+  assert.deepEqual(await f.client.request(),{status:'error'});
+});

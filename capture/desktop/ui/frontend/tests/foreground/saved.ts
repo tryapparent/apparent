@@ -9,6 +9,24 @@ export async function withRetainedEvidence<R>(work: () => Promise<R>, retain: ()
   }
 }
 
+/** Each native click already observes fresh pixels and the exact AX receiver.
+ * Keep clipboard restoration inside the transient window; inspect receipts and
+ * service/bundle proof afterward. Never replay an uncertain input.
+ */
+export async function recopyForeground<R>(input: {
+  readClipboard: () => Promise<string>;
+  seedClipboard: () => Promise<void>;
+  click: (label: 'Copy link' | 'Create public link') => Promise<R>;
+  verifyRestored: (copied: string) => Promise<void>;
+}) {
+  const copied = await input.readClipboard();
+  await input.seedClipboard();
+  const copy = await input.click('Copy link');
+  const confirmation = await input.click('Create public link');
+  await input.verifyRestored(copied);
+  return {copied, copy, confirmation};
+}
+
 /** Keep slow setup/proof outside the product's transient saved-control window. */
 export async function savedForeground<P, S, R>(input: {
   waitForRecordingControls: () => Promise<void>;

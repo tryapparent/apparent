@@ -117,6 +117,11 @@ fn settings_assets() -> Result<(PathBuf, PathBuf), OnboardingAssetFailure> {
 pub(super) fn admits(pane: Pane, action: &Action) -> bool {
     matches!(action, Action::Navigate { .. } | Action::Close)
         || pane == Pane::Storage && matches!(action, Action::ShowCaptures)
+        || pane == Pane::General && (
+            matches!(action, Action::RecordShortcut { .. } | Action::Shortcut { .. } | Action::CancelShortcut | Action::ResetShortcut { .. } | Action::ClearShortcut { .. })
+            || matches!(action, Action::Set { key, value }
+                if matches!(key.as_str(), "launchAtLogin" | "errorReporting" | "lowerPlayback") && value.is_boolean()
+                    || key == "playbackLevel" && value.as_u64().is_some_and(|n| n <= 100)))
         || pane == Pane::Agents && (matches!(action, Action::AgentsConnection { .. })
             || matches!(action, Action::AgentsPreference { setting, .. } if matches!(setting.as_deref(), None | Some("video" | "t3"))))
         || pane == Pane::Labs && matches!(action, Action::AgentsPreference { setting, .. } if matches!(setting.as_deref(), Some("autoPaste" | "sharing")))
@@ -156,6 +161,7 @@ pub(super) fn open(pane: Pane, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyh
     let mut launch = command(runtime, app);
     if pane == Pane::About { launch.arg("--settings-about"); }
     if pane == Pane::Agents { launch.arg("--settings-agents"); }
+    if pane == Pane::General { launch.arg("--settings-general"); }
     if pane == Pane::Labs { launch.arg("--settings-labs"); }
     let mut child = launch
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
@@ -318,6 +324,29 @@ pub(super) fn retire(transport: Transport) {
                 let _ = child.kill();
                 let _ = child.wait();
             });
+        }
+    }
+}
+
+
+
+#[cfg(test)]
+mod capability_tests {
+    use super::*;
+    #[test]
+    fn pane_actions_keep_their_owner_after_general_labs_integration() {
+        let panes = [Pane::General, Pane::Recording, Pane::Storage, Pane::Permissions, Pane::Agents, Pane::Labs, Pane::About];
+        for (wire, owners) in [
+            (r#"{"action":"show-captures"}"#, vec![Pane::Storage]),
+            (r#"{"action":"set","key":"launchAtLogin","value":true}"#, vec![Pane::General]),
+            (r#"{"action":"set","key":"playbackLevel","value":101}"#, vec![]),
+            (r#"{"action":"agents-preference","request":1,"setting":"autoPaste","enabled":true}"#, vec![Pane::Labs]),
+            (r#"{"action":"agents-preference","request":2,"setting":"sharing","enabled":true}"#, vec![Pane::Labs]),
+            (r#"{"action":"agents-connection","request":4,"connection":null}"#, vec![Pane::Agents]),
+            (r#"{"action":"agents-preference","request":3,"setting":"t3","enabled":true}"#, vec![Pane::Agents]),
+        ] {
+            let action: Action = serde_json::from_str(wire).expect(wire);
+            for pane in panes { assert_eq!(admits(pane, &action), owners.contains(&pane), "{wire}: {pane:?}"); }
         }
     }
 }

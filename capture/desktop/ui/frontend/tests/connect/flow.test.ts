@@ -63,3 +63,12 @@ test('presentation buttons alone cannot grant upload admission',async()=>{
   assert.equal(await startConnect({read:async()=>result,command:async action=>{actions.push(action);return result}}),result);
   assert.deepEqual(actions,['connect']);
 });
+
+test('only an upload-specific receipt chooses native resume after explicit consent',async()=>{
+  for(const reusableUploadGrant of [false,undefined,true]) {
+    const actions:string[]=[];
+    const result:ConnectSettings={...consent,view:{...consent.view,reusableUploadGrant}};
+    await startConnect({read:async()=>result,command:async a=>{actions.push(a);return result}});
+    assert.deepEqual(actions,['connect',reusableUploadGrant===true?'resume':'allow']);
+  }
+});

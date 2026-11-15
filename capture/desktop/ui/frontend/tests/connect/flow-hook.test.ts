@@ -96,7 +96,7 @@ test('passive approval never opens browser; owned approval opens once with expli
   }});
   await h.flush();h.tick();await h.flush();assert.deepEqual(calls,[]);
   const connecting=h.flow.request('connect');await h.flush();await connecting;await h.flush();
-  assert.deepEqual(calls,['connect','allow','open-browser']);assert.equal(h.flow.browserFailed,true);assert.equal(h.flow.busy,false);
+  assert.deepEqual(calls,['connect','allow','open-browser']);assert.equal(h.flow.browserFailed,true);assert.equal(h.flow.busy,false);assert.deepEqual(h.flow.result,approval);
   h.tick();await h.flush();assert.deepEqual(calls,['connect','allow','open-browser']);
   await h.flow.request('open-browser');await h.flush();assert.equal(h.flow.browserFailed,false);
   h.tick();await h.flush();assert.deepEqual(calls,['connect','allow','open-browser','open-browser']);h.unmount();

@@ -106,6 +106,7 @@ impl Controller {
                     p.headline = "Getting sign-in ready…".into();
                     p.detail = "Local recording still works.".into();
                 }
+                Operation::Resume => { p.headline = "Enabling uploads…".into(); p.detail.clear(); }
                 Operation::Probe => {
                     p.headline = "Checking connection…".into();
                     p.detail = "Local recording still works.".into();

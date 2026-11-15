@@ -988,3 +988,60 @@ fn per_file_notes_follow_the_shared_asset_contract() {
     let full=f.root.join("notes.apparent");f.client.fetch(&id,&full,0).unwrap();
     assert_eq!(fs::read(full.join("notes.json")).unwrap(),notes);
 }
+
+#[test]
+fn settings_resume_validates_live_upload_grant_without_reviving_cancelled_jobs() {
+    let f = Fixture::new();
+    let server = encryption_server("");
+    pair(&f, &server);
+    let id = f.client.enqueue(&f.bundle()).unwrap();
+    f.client.settings_disable(false).unwrap();
+    assert!(f.client.settings_snapshot().unwrap().reusable_upload_grant);
+    let credential = fs::read(f.client.state.join("upload.credential")).unwrap();
+    let cancelled = fs::read(f.client.state.join(format!("{id}.job"))).unwrap();
+    f.client.settings_resume(&server.url, &|| true).unwrap();
+    assert!(f.client.settings_snapshot().unwrap().uploads_enabled);
+    assert_eq!(fs::read(f.client.state.join("upload.credential")).unwrap(), credential);
+    assert_eq!(fs::read(f.client.state.join(format!("{id}.job"))).unwrap(), cancelled);
+    f.client.settings_disable(false).unwrap();
+    server.state.lock().unwrap().encryption.as_mut().unwrap().devices.clear();
+    assert!(f.client.settings_resume(&server.url, &|| true).is_err());
+    assert!(!f.client.settings_snapshot().unwrap().uploads_enabled);
+}
+
+#[test]
+fn settings_resume_cannot_erase_a_later_disable_or_disconnect() {
+    for logout in [false,true] {
+        let f=Fixture::new();
+        let server=encryption_server("");
+        pair(&f,&server);
+        f.client.settings_disable(false).unwrap();
+        let client=f.client.clone();
+        set_hook(move |point,_| { if point=="resume_before_commit" { client.settings_disable(logout).unwrap(); } });
+        assert!(f.client.settings_resume(&server.url,&|| true).is_err());
+        clear_hook();
+        assert!(!f.client.settings_snapshot().unwrap().uploads_enabled);
+    }
+}
+
+#[test]
+fn settings_resume_rejects_expired_wrong_server_read_only_and_unknown_grants() {
+    for case in ["expired","server","read","unknown","missing-key"] {
+        let f=Fixture::new(); let server=encryption_server(""); pair(&f,&server);
+        f.client.settings_disable(false).unwrap();
+        let mut grant=f.client.stored_credential("upload").unwrap();
+        match case {
+            "expired" => grant.expires_at=Some(now()-1),
+            "server" => grant.server="https://wrong.example".into(),
+            "read" => grant.scope="read".into(),
+            "unknown" => { grant.grant_id=None; grant.refresh_token=None; grant.refresh_expires_at=None; },
+            "missing-key" => { fs::remove_file(f.client.state.join(format!("{}.identity",grant.encryption_identity.as_ref().unwrap()))).unwrap(); },
+            _=>unreachable!(),
+        }
+        atomic_json(&f.client.state.join("upload.credential"),&grant).unwrap();
+        let before=fs::read(&f.client.config).unwrap();
+        assert!(f.client.settings_resume(&server.url,&|| true).is_err(),"{case}");
+        assert_eq!(fs::read(&f.client.config).unwrap(),before,"{case}");
+        assert_eq!(server.state.lock().unwrap().requests,0,"{case}");
+    }
+}

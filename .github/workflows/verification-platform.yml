@@ -377,13 +377,13 @@ jobs:
           node --experimental-strip-types record/media/test/package.ts --binary "$APPARENT_APP_DIR/Contents/MacOS/apparent" --settings "$APPARENT_APP_DIR/Contents/Resources/settings"
           node --experimental-strip-types capture/agent/media/test/package.ts --binary "$APPARENT_APP_DIR/Contents/MacOS/apparent" --settings "$APPARENT_APP_DIR/Contents/Resources/settings"
       - name: Retain the installed Mac CI candidate for a separate native test run
-        if: runner.os == 'macOS' && needs.select.outputs.root == 'true' && needs.select.outputs.foreground == 'true'
+        if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
         shell: bash
         run: |
           node --experimental-strip-types --test capture/desktop/scripts/packaging/native-candidate.test.ts
           node --experimental-strip-types capture/desktop/scripts/packaging/native-candidate.ts --retain-installed
       - name: Upload the pending native test candidate
-        if: runner.os == 'macOS' && needs.select.outputs.root == 'true' && needs.select.outputs.foreground == 'true'
+        if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: apparent-native-candidate-${{ github.run_id }}-${{ github.run_attempt }}

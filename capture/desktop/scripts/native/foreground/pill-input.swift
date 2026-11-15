@@ -415,6 +415,10 @@ func main() throws {
         clickTraceName = traceURL.lastPathComponent
     }
     let (before, words, pillDescendants) = try (op == "click" ? observeBeforeInput(req, out) : observe(req, out))
+    if let expected = req["expectedFrontPid"] {
+        try need(expected is Int && (expected as! Int) > 1 && before["frontPid"] as? Int == (expected as! Int),
+            "Synthetic scene lost foreground before native operation")
+    }
     if op == "snapshot" { print(String(data: try JSONSerialization.data(withJSONObject: before), encoding: .utf8)!); return }
     try need(op == "click" || op == "prepare", "Unknown operation")
     let label = req["label"] as! String; try need((op == "prepare" ? ["Finish", "Copy link"] : ["Copy link", "Create public link", "Cancel upload", "Retry upload"]).contains(label), "Unsupported operation label")

@@ -9,7 +9,7 @@ type Reply = SettingsResult & { openUri?: string };
 // this shape describes expected wire members, not an assertion of validation.
 type WireReply = { error?: unknown; connect?: ConnectView; openUri?: string };
 
-const actions = new Set<string>(['connect', 'allow', 'cancel', 'check', 'disable', 'disconnect', 'open-browser', 'request-disable', 'request-disconnect', 'open-shared-links']);
+const actions = new Set<string>(['connect', 'resume', 'allow', 'cancel', 'check', 'disable', 'disconnect', 'open-browser', 'request-disable', 'request-disconnect', 'open-shared-links']);
 const failed = (): Reply => ({ status: 'error' });
 const text = (value: unknown): value is string => typeof value === 'string' && Buffer.byteLength(value) <= 4096 && !/[\x00-\x1f\x7f]/.test(value);
 function browserUri(value: unknown, code: string | null) {
@@ -29,7 +29,9 @@ function linksUri(value: unknown) {
 function decode(value: WireReply | null, action?: ConnectAction): Reply {
   if (value?.error === 'feature_disabled') return { status: 'disabled' };
   const v = value?.connect;
-  if (v?.phase !== undefined && !['disconnected','consent','starting','approval','connected','cancelling','waitlisted','failed'].includes(v.phase)) return failed();
+  if (v?.phase !== undefined && !['disconnected','consent','starting','enabling','checking','approval','connected','cancelling','waitlisted','failed'].includes(v.phase)) return failed();
+  if (v?.reusableUploadGrant !== undefined && typeof v.reusableUploadGrant !== 'boolean') return failed();
+  if (v?.encryption != null && typeof v.encryption !== 'boolean') return failed();
   if (v?.localReady !== undefined && typeof v.localReady !== 'boolean') return failed();
   if (!v || !['title', 'status', 'detail', 'note'].every(key => text(v[key as keyof ConnectView])) ||
       !(v.server === null || text(v.server)) ||
@@ -61,7 +63,7 @@ function decode(value: WireReply | null, action?: ConnectAction): Reply {
   return { status: 'connected', view: { title: v.title, status: v.status, detail: v.detail, note: v.note,
     ...(v.phase === undefined ? {} : {phase:v.phase}), ...(v.localReady === undefined ? {} : {localReady:v.localReady}),
     ...(presentation === undefined ? {} : { presentation }),
-    server: v.server, verificationUri: v.verificationUri, userCode: v.userCode,
+    reusableUploadGrant: v.reusableUploadGrant === true, encryption: v.encryption ?? null, server: v.server, verificationUri: v.verificationUri, userCode: v.userCode,
     buttons: v.buttons.map(({ command, title, enabled }) => ({ command, title, enabled })) },
     ...(value?.openUri === undefined ? {} : { openUri: value.openUri }) };
 }

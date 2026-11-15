@@ -6,7 +6,7 @@ import path from 'node:path';
 import {spawn, execFileSync, type ChildProcess} from 'node:child_process';
 import {constants} from 'node:fs';
 import {prepareForegroundScene, type LaunchObservation, type LaunchWindow} from './startup.ts';
-import {savedForeground, withRetainedEvidence} from './saved.ts';
+import {recopyForeground, savedForeground, withRetainedEvidence} from './saved.ts';
 import {auditedControl, type ControlOperation, type ControlReceipt} from './control.ts';
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
@@ -79,6 +79,7 @@ async function native(operation: 'snapshot' | 'prepare' | 'click' | 'startup' | 
   const stem = `${++sequence}-${operation}`;
   const request = path.join(output, stem + '.request.json');
   await writeFile(request, JSON.stringify({operation, app, rootPid: rustPid, output: path.join(output, stem + '.png'), ...(label ? {label} : {}),
+    ...(scene?.pid ? {expectedFrontPid: scene.pid} : {}),
     ...(preparedPid ? {preparedPid} : {}),
     ...(settings ? {settingsPid: settings.pid, settingsWindowId: settings.windowId} : {})}), {mode: 0o600, flag: 'wx'});
   const startedAt = Date.now(), started = performance.now();
@@ -280,30 +281,36 @@ async function main() {
         assert.equal(confirmedRetry.frontPid, generated.pid, 'Synthetic scene lost foreground');
         await ui('link copied', value => value.includes('link copied') && value.includes('copy link'), generated.pid, 30_000);
         const completed = await status();
+        const {copied, copy, confirmation} = await recopyForeground({
+          readClipboard: () => command('/usr/bin/pbpaste', [], {env: hostEnv}),
+          seedClipboard: async () => {
+            const sentinel = 'synthetic-recopy-' + randomBytes(8).toString('hex');
+            await command('/usr/bin/pbcopy', [], {env: hostEnv, input: sentinel});
+            assert.equal(await command('/usr/bin/pbpaste', [], {env: hostEnv}), sentinel, 'Clipboard sentinel did not settle');
+          },
+          click: async label => {
+            if (label === 'Create public link') {
+              // Consent must outlive the ordinary 15-second saved-pill timer.
+              await sleep(16_000);
+              await ui('recopy disclosure retained after completion deadline', value => value.includes('create public link'), generated.pid);
+              assert.deepEqual(footprint(await status()), footprint(completed), 'Waiting for consent changed the hosted recording');
+            }
+            return native('click', label);
+          },
+          verifyRestored: async copied => { await poll(() => command('/usr/bin/pbpaste', [], {env: hostEnv}), value => value === copied, 'native clipboard restoration', 3000); },
+        });
+        assert.equal(copy.frontPid, generated.pid); assert.equal(confirmation.frontPid, generated.pid);
+        assert.ok(text(copy).includes('link copied') && text(copy).includes('copy link'), 'Fresh recopy target differs');
+        assert.ok(text(confirmation).includes('create public link'), 'Fresh native disclosure differs');
         assert.equal(completed.syntheticOnly, true); assert.equal(completed.shareCalls, 1);
         assert.ok(completed.putAttempts > cancelled.putAttempts, 'Retry did not start a fresh transfer');
         assert.ok(completed.captures.some((capture: any) => capture.ready && capture.format === 'plaintext-v1' && capture.received && capture.files >= 3));
-        const copied = await command('/usr/bin/pbpaste', [], {env: hostEnv});
         assert.ok(copied.includes('Anyone with this link'), 'Existing public-access disclosure must be preserved');
         const matches = copied.match(new RegExp(String.raw`http://127\.0\.0\.1:\d+/s/[a-f0-9]{64}`, 'g')) ?? [];
         assert.equal(matches.length, 1, 'Expected one synthetic destination');
         const destination = new URL(matches[0]!); assert.equal(destination.origin, origin);
         const expected = 'I recorded some feedback in Apparent. Open this link for the recording, transcript and original image evidence: ' + matches[0] + '. Anyone with this link can view this capture; shared captures are not end-to-end encrypted.';
         assert.ok(copied === expected, 'Complete public handoff/disclosure differs');
-        const sentinel = 'synthetic-recopy-' + randomBytes(8).toString('hex');
-        await command('/usr/bin/pbcopy', [], {env: hostEnv, input: sentinel});
-        assert.ok((await command('/usr/bin/pbpaste', [], {env: hostEnv})) === sentinel, 'Clipboard sentinel did not settle');
-        const recopy = await native('click', 'Copy link');
-        assert.equal(recopy.frontPid, generated.pid, 'Synthetic scene lost foreground');
-        assert.ok(text(recopy).includes('link copied') && text(recopy).includes('copy link'), 'Recopy must use the completed link');
-        await ui('recopy public sharing disclosure', value => value.includes('create public link'), generated.pid);
-        // Reading consent must outlive the ordinary 15-second saved-pill timer.
-        await sleep(16_000);
-        await ui('recopy disclosure retained after completion deadline', value => value.includes('create public link'), generated.pid);
-        assert.deepEqual(footprint(await status()), footprint(completed), 'Waiting for consent changed the hosted recording');
-        const confirmedRecopy = await native('click', 'Create public link');
-        assert.equal(confirmedRecopy.frontPid, generated.pid, 'Synthetic scene lost foreground');
-        await poll(() => command('/usr/bin/pbpaste', [], {env: hostEnv}), value => value === copied, 'native clipboard restoration', 3000);
         const recopied = await status(); assert.deepEqual(footprint(recopied), footprint(completed)); assert.deepEqual(await jobs(), []);
         await evidence('foreground-result', {passed: true, scope: 'Native installed Mac pill; explicit synthetic plaintext share; encrypted CLI proof separate',
           automaticBefore: footprint(before), duringPut: footprint(during), cancelled: footprint(cancelled), completed: footprint(completed), recopied: footprint(recopied), clipboardSha256: digest(copied)});

@@ -32,6 +32,7 @@ if (process.argv.includes('--controls')) {
   setErrorReporting: (enabled) => ipcRenderer.invoke('apparent:set-error-reporting', enabled),
   readConnectSettings: () => ipcRenderer.invoke('apparent:read-connect-settings'),
   connectSettings: () => ipcRenderer.invoke('apparent:connect-connect'),
+  resumeConnectUploads: () => ipcRenderer.invoke('apparent:connect-resume'),
   allowConnectUploads: () => ipcRenderer.invoke('apparent:connect-allow'),
   cancelConnectSettings: () => ipcRenderer.invoke('apparent:connect-cancel'),
   checkConnectConnection: () => ipcRenderer.invoke('apparent:connect-check'),

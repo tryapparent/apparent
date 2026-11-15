@@ -146,11 +146,9 @@ Read this before changing `capture/desktop/settings/onboarding.rs`, `capture/des
 ## Technical error reporting
 
 General has one small **Send technical error reports** switch, on by default.
-The opt-in Electron Settings surface mirrors its readback and toggle through the
-same-user control socket; Rust remains authoritative. The existing native Settings
-presentations and installed routing remain in place until the Electron slice is
-accepted. Rollback is simply to stop opening the development Electron window;
-remove the old native presentation only with the accepted Settings routing switch.
+The default Electron General surface mirrors its readback and toggle through the
+native parent bridge; Rust remains authoritative. Native Settings remains the
+missing-assets/startup/crash fallback.
 `errorReporting: false` in `~/.config/apparent/config.json` disables it without a
 restart. Corrupt/unreadable config fails closed for reporting. The shared config
 writer preserves unrelated keys and rotates private `errorReportingGeneration`
@@ -821,6 +819,55 @@ host receipt and restores the existing native trial. This is a bounded move of
 shortcut-practice policy into TypeScript, not independent onboarding release or
 migration of the remaining Rust journey/progress writer. Installed Mac/Linux
 shortcut release, capture-start and remembered-progress acceptance remain required.
+
+### Default Electron General
+
+General opens in packaged Electron by default, independently of Connect card
+visibility. A fresh ordinary Settings session selects General; an existing session retains its pane. App-picker launches still
+explicitly select About. Explicit pane navigation retains its existing route.
+`connectSettings: false` hides Connect and prevents its controller from starting;
+it does not select a different General renderer or grant upload consent.
+First-launch onboarding is unchanged.
+
+The installed host opens `settings.html#general` with the restricted Settings
+preload. General's login, shortcuts, reporting and playback controls consume a
+narrow parent state projection and send bounded actions to the existing writer.
+Connect uses the existing same-user socket controller, shared TypeScript consent
+admission/session hook and native credential transport. TypeScript owns its stage
+copy, progress and browser-open ownership/recovery. Browser errors retain the
+approval card and offer an explicit retry; polling never launches another browser.
+Missing assets and startup/renderer failure preserve the native fallback.
+Rollback reverts default General routing together with its initial-pane normalization;
+the native donor stays packaged and usable. Native capture does not depend on the renderer's polling.
+
+Enable uploads is explicit local consent. TypeScript chooses resume only from the
+native upload-specific reusable-grant receipt; generic sign-in and account initials
+are insufficient. The native adapter checks the live grant ID and upload scope,
+then rechecks credential generation, mode, server and cancellation epoch under
+queue.lock before using the existing config writer. Expired, read-only, unknown
+and rejected grants retain browser approval. A failed resume withdraws the receipt
+for that controller so a subsequent attempt can request fresh approval. Cancelled
+jobs stay cancelled. Reading, reloading and signing in for read never grant consent.
+
+Encryption copy consumes the native config provider's typed mode projection through
+the Settings socket and restricted IPC. False or unavailable mode never claims
+E2EE. This describes new private captures only; ordinary local originals and older
+uploads are unchanged. Optional upload details retain the separate reader approval.
+
+Donor removal requires installed macOS and
+isolated Linux acceptance, packaged fallback/navigation proof, and shortcut/OS
+registration checks (including macOS reserved chords and Linux desktop-owned
+Copilot). The renderer candidate's shared letter/number recorder is not proof of
+those platform effects. Keep the native donor until these gates are satisfied.
+
+General follows [shared content-card actions](../../../shared/ui/actions.md):
+recommended actions lead adjacent alternatives, with Privacy/Details after them
+and expanded help below. Normal waiting alone keeps a trailing secondary Cancel;
+browser failure instead groups Open browser then Cancel below its explanation.
+Safe confirmation choices lead with Signal emphasis. This changes presentation
+only; native confirmations, effects, receipt scope and fallback remain authoritative.
+
+### Public sharing links
 
 Settings → Labs also exposes **Public sharing links**, off by default via
 `experiments.hostedSharing`. Enabling it grants no upload consent and uploads
