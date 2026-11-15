@@ -23,6 +23,45 @@ function fixture() {
   return { root, pub, con, canonical, out, put, run: options => composeArtifacts(pub, con, canonical, out, options) }
 }
 const snapshot = root => [...inventory(root)].sort(([a], [b]) => a.localeCompare(b))
+function addBrand(f) {
+  f.put(f.pub, 'brand/index.html', '<script type="module" src="/brand/assets/brand-b.js"></script><link rel="stylesheet" href="/brand/assets/brand-b.css">')
+  f.put(f.pub, 'brand/assets/brand-b.js', 'const preload=["assets/child-b.js"];')
+  f.put(f.pub, 'brand/assets/child-b.js', 'export const brand = true;')
+  f.put(f.pub, 'brand/assets/brand-b.css', '@font-face{src:url(./HostGrotesk-Variable-b.ttf)}')
+  f.put(f.pub, 'brand/assets/HostGrotesk-Variable-b.ttf', 'built font bytes')
+  f.put(f.canonical, 'assets/brand-book/brand-guidelines.md', '# Brand guidelines')
+  f.put(f.pub, 'brand/brand-guidelines.md', '# Brand guidelines')
+  const reference = '<link rel="stylesheet" href="{{ url_for(\'static\', filename=\'app.css\') }}">'
+  f.put(f.canonical, 'assets/brand-book/design-system/reference/example.html', reference)
+  f.put(f.pub, 'brand/design-system/reference/example.html', reference)
+}
+test('composes Public brand entrypoint, generated graph and canonical downloads without changing bytes', () => {
+  const f = fixture()
+  try {
+    addBrand(f)
+    f.run()
+    validatePreservedFiles(inventory(f.out), inventory(f.pub))
+    validatePreservedFiles(inventory(f.out), inventory(f.con))
+    assert(resourceGraph(inventory(f.out), ['brand/index.html']).has('brand/assets/child-b.js'))
+  } finally { rmSync(f.root, { recursive: true, force: true }) }
+})
+for (const [name, mutate, error] of [
+  ['unknown brand file', f => f.put(f.pub, 'brand/secret.txt', 'unreviewed'), /Unexpected Public output/],
+  ['changed canonical download', f => f.put(f.pub, 'brand/brand-guidelines.md', 'changed'), /Unexpected Public output/],
+  ['changed reference template', f => f.put(f.pub, 'brand/design-system/reference/example.html', 'changed'), /Unexpected Public output/],
+  ['missing brand preload', f => rmSync(join(f.pub, 'brand/assets/child-b.js')), /Missing resource/],
+  ['private brand content', f => f.put(f.pub, 'brand/assets/child-b.js', 'const secret="synthetic-csrf"'), /Private/],
+  ['Public worker in raw input', f => f.put(f.pub, '_worker.js', 'export default {}'), /Unexpected Public output/],
+]) test(`refuse ${name} before changing the composed destination`, () => {
+  const f = fixture()
+  try {
+    addBrand(f)
+    const before = snapshot(f.out)
+    mutate(f)
+    assert.throws(() => f.run(), error)
+    assert.deepEqual(snapshot(f.out), before)
+  } finally { rmSync(f.root, { recursive: true, force: true }) }
+})
 // Replace the complete emitted configuration value, not a helper-only input.
 const productionOrigin = 'https://hosted.tryapparent.com'
 const canonicalAssets = new Map([
