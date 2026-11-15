@@ -26,7 +26,6 @@
     "../connect/flow.test.ts",
     "../connect/session.test.ts",
     "../connect/flow-hook.test.ts",
-    "wispr/*.test.ts",
-    "wispr/smoke.ts"
+    "wispr/*.test.ts"
   ]
 }
