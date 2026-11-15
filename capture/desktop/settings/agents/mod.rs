@@ -71,6 +71,9 @@ pub(super) fn labs_facts(path: &Path) -> serde_json::Value {
 }
 
 pub(super) fn labs_request(path: &Path, request: u32, enabled: Option<bool>) -> serde_json::Value {
+    if enabled.is_none() {
+        return serde_json::json!({"type":"agents-result","request":request,"facts":labs_facts(path)});
+    }
     let mut result = request_for(path, request, enabled, Some("autoPaste"));
     if result["facts"].get("error").is_none() { result["facts"] = labs_facts(path); }
     result
@@ -101,6 +104,9 @@ mod tests {
         assert_eq!(facts.as_object().unwrap().len(), 3);
         assert!(facts["autoPasteSaved"].is_null());
         assert!(!facts.to_string().contains("private"));
+        assert_eq!(labs_request(&path, 1, None)["facts"], facts);
+        #[cfg(target_os = "macos")]
+        assert_eq!(labs_request(&path, 2, Some(true))["facts"]["error"], "config_write_failed");
         #[cfg(target_os = "linux")]
         {
             assert_eq!(labs_request(&path, 1, Some(true))["facts"]["autoPasteSaved"], true);
