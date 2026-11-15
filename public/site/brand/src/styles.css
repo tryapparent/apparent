@@ -1,0 +1,69 @@
+@font-face {
+  font-family: "Host Grotesk";
+  src: url("../../public/assets/brand-book/assets/fonts/studies/HostGrotesk-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: block;
+}
+
+:root {
+  color-scheme: dark;
+  --preview-black: #000;
+  --paper: #E7E0EE;
+  --muted: rgba(231, 224, 238, .7);
+  --structural-green: #7A58C7;
+  --pitch-paper: #F5F0E8;
+  --pitch-stock: #E7E0EE;
+  --pitch-carbon: #020102;
+  --pitch-lilac: #B7A5D8;
+  --pitch-signal: #7A58C7;
+}
+
+* { box-sizing: border-box; }
+html,
+body,
+#deck { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--preview-black); font-family: "Host Grotesk", system-ui, sans-serif; }
+button { font: inherit; }
+
+.deck-shell { min-height: 100%; display: grid; grid-template-rows: auto 1fr auto; gap: clamp(.65rem,1.6vw,1.25rem); padding: clamp(.8rem,2vw,1.75rem); }
+.topbar,
+.controls { display: flex; align-items: center; justify-content: space-between; gap: 1rem; width: 100%; max-width: 1600px; margin: 0 auto; }
+.topbar { display: grid; grid-template-columns: auto auto; }
+.identity { display: flex; align-items: center; gap: .7rem; color: var(--paper); font-size: .9rem; font-weight: 700; letter-spacing: .11em; text-transform: uppercase; }
+.mark { width: .65rem; height: .65rem; background: var(--structural-green); box-shadow: 0 0 0 4px rgba(122,88,199,.24); }
+.slide-count { color: var(--muted); font-size: .95rem; font-variant-numeric: tabular-nums; text-align: right; }
+.stage { position: relative; display: grid; min-height: 0; place-items: center; outline: none; }
+.slide-wrap { position: relative; width: min(100%,calc((100vh - 9.25rem) * 1.7777778)); overflow: hidden; aspect-ratio: 16 / 9; background: var(--preview-black); box-shadow: 0 1.6rem 4.5rem rgba(0,0,0,.34); }
+.slide-mount,
+.slide { display: block; width: 100%; height: 100%; }
+.slide-mount { container-type: inline-size; }
+.native-slide { position: relative; overflow: hidden; color: var(--pitch-carbon); background: var(--paper); font-family: "Host Grotesk", system-ui, sans-serif; }
+.tap-zone { position: absolute; top: 0; bottom: 0; width: 19%; border: 0; background: transparent; cursor: pointer; opacity: 0; }
+.tap-zone:focus-visible { opacity: 1; outline: 3px solid var(--structural-green); outline-offset: -3px; background: rgba(122,88,199,.08); }
+.tap-zone.prev { left: 0; }
+.tap-zone.next { right: 0; }
+.controls { justify-content: center; }
+.control { min-width: 2.6rem; height: 2.35rem; padding: 0 .78rem; color: var(--paper); border: 1px solid rgba(231,224,238,.25); border-radius: 0; background: rgba(231,224,238,.05); cursor: pointer; }
+.control:hover:not(:disabled) { border-color: rgba(231,224,238,.54); background: rgba(231,224,238,.13); }
+.control:focus-visible { outline: 3px solid var(--structural-green); outline-offset: 3px; }
+.control:disabled { opacity: .32; cursor: not-allowed; }
+.process-toggle[aria-pressed="true"] { color: var(--preview-black); border-color: var(--paper); background: var(--paper); }
+.hint { margin-left: .35rem; color: var(--muted); font-size: .9rem; }
+.progress { position: fixed; inset: auto 0 0; height: 3px; background: rgba(231,224,238,.12); }
+.progress > span { display: block; height: 100%; background: var(--structural-green); transition: width 180ms ease-out; }
+
+.capture-mode .topbar,
+.capture-mode .controls,
+.capture-mode .tap-zone,
+.capture-mode .progress { display: none; }
+.capture-mode .deck-shell { display: block; padding: 0; }
+.capture-mode .stage,
+.capture-mode .slide-wrap { width: 100vw; height: 100vh; }
+.capture-mode .slide-wrap { aspect-ratio: auto; box-shadow: none; }
+
+@media (max-width: 620px) {
+  .deck-shell { padding: .7rem; }
+  .slide-wrap { width: 100%; }
+  .hint { display: none; }
+  .topbar { padding: 0 .15rem; }
+}

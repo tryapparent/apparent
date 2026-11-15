@@ -1,0 +1,35 @@
+{% extends 'shared/base.html' %}
+{% block title %}Document details{% endblock %}
+{% block heading %}{{ details.document.source_name }}{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('documents') }}">← Back to documents</a></p>
+<p class="d-flex gap-2 flex-wrap"><a class="btn btn-primary" target="_blank" rel="noopener" href="{{ url_for('document_original', document_id=details.document.document_id) }}">Open original PDF</a><a class="btn btn-outline-primary" href="{{ url_for('review', document_id=details.document.document_id) }}">Review or correct classification</a></p>
+<dl class="row border-top py-3">
+  <dt class="col-sm-3">Document ID</dt><dd class="col-sm-9"><code>{{ details.document.document_id }}</code></dd>
+  <dt class="col-sm-3">Processing</dt><dd class="col-sm-9">{{ details.document.operational_state|replace('_',' ') }}</dd>
+  <dt class="col-sm-3">Classification</dt><dd class="col-sm-9">{{ details.document.document_family or details.document.outcome or 'Not available' }}</dd>
+  <dt class="col-sm-3">Review</dt><dd class="col-sm-9">{{ details.document.review_state|replace('_',' ') }}</dd>
+  <dt class="col-sm-3">Delivery</dt><dd class="col-sm-9">{{ 'Delivered' if details.document.delivered else 'Not delivered' }}</dd>
+  {% if details.document.processing_run_id %}<dt class="col-sm-3">Processing run</dt><dd class="col-sm-9"><code>{{ details.document.processing_run_id }}</code>, priority {{ details.document.priority_level }}</dd>{% endif %}
+  {% if details.operational_failure %}<dt class="col-sm-3">Latest failure</dt><dd class="col-sm-9 text-break">{{ details.operational_failure }}</dd>{% endif %}
+</dl>
+<section class="data-section"><h2>Text evidence</h2>{% if details.text_evidence %}{% for text in details.text_evidence %}<article class="bg-white border p-3 mb-3"><h3 class="h6">Page {{ loop.index }}</h3><p class="text-break mb-0">{{ text }}</p></article>{% endfor %}{% else %}<p>No text evidence is available.</p>{% endif %}</section>
+<section class="data-section">
+  <h2>Automated classification records</h2>
+  {% if details.classifications %}
+  {% for classification in details.classifications %}
+  <article class="bg-white border p-3 mb-3">
+    <h3 class="h6">{{ classification.document_family or classification.outcome|replace('_', ' ') }}</h3>
+    <dl class="row mb-0">
+      <dt class="col-sm-3">Evidence</dt><dd class="col-sm-9">{% if classification.evidence %}<ul class="mb-0">{% for evidence in classification.evidence %}<li class="text-break">{{ evidence }}</li>{% endfor %}</ul>{% else %}No automated evidence recorded{% endif %}</dd>
+    </dl>
+  </article>
+  {% endfor %}
+  {% else %}<p>No automated classification has been recorded.</p>{% endif %}
+</section>
+<section class="data-section">
+  <h2>Delivery history</h2>
+  {% if details.deliveries %}<ul>{% for delivery in details.deliveries %}<li><code class="text-break">{{ delivery.destination_path }}</code></li>{% endfor %}</ul>{% elif details.document.processing_run_id and details.document.priority_level in [2, 3, 4] %}<p>No Google Drive delivery is performed for priority uploads.</p>{% else %}<p>No delivery has been recorded.</p>{% endif %}
+</section>
+<section class="data-section"><h2>Human decision history</h2>{% if details.decisions %}<ol>{% for decision in details.decisions %}<li><strong>{{ decision.document_family or decision.outcome }}</strong> by {{ decision.actor }} at {{ decision.created_at.strftime('%Y-%m-%d %H:%M UTC') }}{% if decision.reason %}<br>{{ decision.reason }}{% endif %}</li>{% endfor %}</ol>{% else %}<p>No human decisions have been recorded.</p>{% endif %}</section>
+{% endblock %}

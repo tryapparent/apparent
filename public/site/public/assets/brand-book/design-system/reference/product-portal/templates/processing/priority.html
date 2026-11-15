@@ -1,0 +1,47 @@
+{% extends 'shared/base.html' %}
+{% block title %}Priority processing{% endblock %}
+{% block heading %}Process one PDF{% endblock %}
+{% block content %}
+<section class="form-region">
+  <h2>Priority upload</h2>
+  <p>PDF only, maximum 100 MiB. The file remains inside this product and is retained for 90 days by default.</p>
+  <form method="post" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="idempotency_key" value="{{ request_id|default('') }}">
+    <div class="mb-3">
+      <label class="form-label" for="document">PDF document</label>
+      <input class="form-control" id="document" name="document" type="file" accept="application/pdf,.pdf" required>
+    </div>
+    <fieldset>
+      <legend class="form-label">Processing priority</legend>
+      <div class="form-check"><input class="form-check-input" type="radio" name="priority_level" value="2" id="p2"><label class="form-check-label" for="p2">Expedited</label></div>
+      <div class="form-check"><input class="form-check-input" type="radio" name="priority_level" value="3" id="p3" checked><label class="form-check-label" for="p3">Normal</label></div>
+      <div class="form-check"><input class="form-check-input" type="radio" name="priority_level" value="4" id="p4"><label class="form-check-label" for="p4">Deferred</label></div>
+    </fieldset>
+    <button class="btn btn-primary mt-4" type="submit">Start processing</button>
+  </form>
+</section>
+{% if uploads %}
+<section class="data-section">
+  <h2>Recent uploads</h2>
+  <div class="table-responsive">
+    <table class="table responsive-records">
+      <thead><tr><th>Document ID</th><th>State</th><th>Priority</th><th>Result</th><th>Retention</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+      <tbody>
+      {% set state_labels = {'pending': 'Pending', 'running': 'Running', 'completed': 'Completed', 'review_required': 'Review required', 'failed': 'Failed'} %}
+      {% for upload in uploads %}
+        <tr data-upload-state="{{ upload.state.value }}">
+          <th data-label="Document ID"><code class="identifier" title="{{ upload.document_id }}" aria-label="Document {{ upload.document_id }}">{{ upload.document_id[:8] }}</code></th>
+          <td data-label="State">{{ state_labels[upload.state.value] }}</td>
+          <td data-label="Priority">{{ upload.priority_level }}</td>
+          <td data-label="Result">{{ upload.final_document_family or upload.final_outcome or '—' }}</td>
+          <td data-label="Retention">Until {{ upload.expires_at.strftime('%Y-%m-%d') }}</td>
+          <td data-label="Action"><a href="{{ url_for('priority_detail', upload_id=upload.upload_id) }}">View status</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

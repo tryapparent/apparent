@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="4200" height="700" viewBox="0 0 4200 700" role="img" aria-labelledby="title desc">
+  <title id="title">apparent LinkedIn company cover</title>
+  <desc id="desc">Operational data you can build on. From documents to data ready for AI.</desc>
+  <style>
+    @font-face{font-family:Host;src:url('../../assets/fonts/studies/HostGrotesk-Variable.ttf')}text{font-family:Host,Arial,sans-serif;fill:#020102}.label{font-size:36px;font-weight:700;letter-spacing:2px}.hero{font-size:152px;font-weight:700;letter-spacing:-7px}.sub{font-size:46px;font-weight:500}.mono{font-size:30px;font-weight:700;letter-spacing:1px}
+  </style>
+  <rect width="4200" height="700" fill="#F5F0E8"/>
+  <g opacity="0.95">
+    <rect x="180" y="110" width="470" height="26" fill="#E7E0EE"/>
+    <rect x="180" y="162" width="690" height="26" fill="#E7E0EE"/>
+    <rect x="180" y="214" width="570" height="26" fill="#E7E0EE"/>
+    <rect x="180" y="266" width="760" height="26" fill="#E7E0EE"/>
+    <rect x="180" y="318" width="520" height="26" fill="#B7A5D8"/>
+    <rect x="180" y="370" width="630" height="26" fill="#E7E0EE"/>
+  </g>
+  <path d="M940 331H1260" stroke="#7A58C7" stroke-width="12"/>
+  <circle cx="1260" cy="331" r="18" fill="#7A58C7"/>
+  <text x="1390" y="126" class="label">FROM DOCUMENTS TO STRUCTURED DATA</text>
+  <text x="1390" y="306" class="hero">operational data</text>
+  <rect x="1390" y="345" width="1300" height="154" fill="#B7A5D8"/>
+  <text x="1428" y="468" class="hero">you can build on.</text>
+  <text x="1390" y="578" class="sub">From documents to data ready for AI.</text>
+  <text x="1390" y="645" class="mono">tryapparent.com</text>
+</svg>

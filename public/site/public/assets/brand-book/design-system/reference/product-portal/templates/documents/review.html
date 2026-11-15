@@ -1,0 +1,141 @@
+{% extends 'shared/base.html' %}
+{% block title %}Labeling{% endblock %}
+{% block heading %}Labeling inbox{% endblock %}
+{% block content %}
+<p class="mb-4">One shared inbox for everyone with the installation password. Every decision starts blank and becomes installation gold immediately.</p>
+
+{% if selected %}
+<div class="row g-4">
+  <nav class="col-lg-3" aria-label="Documents awaiting labeling">
+    <h2 class="h5">{{ 'Deliberate review' if deliberate else 'Awaiting a decision' }} <span class="badge text-bg-primary">{{ navigation_items|length }}</span></h2>
+    <div class="list-group">
+      {% for item in navigation_items %}
+      <a class="list-group-item list-group-item-action{% if selected and item.document_id == selected.document_id %} active{% endif %}"
+         href="{{ url_for('review', document_id=item.document_id) }}">
+        <strong>{{ item.source_name }}</strong><br>
+        <small>{{ item.reason }}</small>
+      </a>
+      {% endfor %}
+    </div>
+  </nav>
+
+  <div class="col-lg-9">
+    <div class="review-layout">
+      <section class="evidence">
+        <p class="eyebrow">Immutable evidence</p>
+        <h2>{{ selected.source_name }}</h2>
+        <p>{{ selected.reason }}</p>
+        <p><a class="btn btn-outline-primary" target="_blank" rel="noopener" href="{{ url_for('document_original', document_id=selected.document_id) }}">Open original PDF</a></p>
+        {% if selected.text_evidence %}
+          {% for text in selected.text_evidence %}
+          <article class="bg-white border p-3 mb-3">
+            <h3 class="h6">Page {{ loop.index }} text</h3>
+            <p class="mb-0 text-break">{{ text }}</p>
+          </article>
+          {% endfor %}
+        {% else %}
+          <p class="alert alert-warning">No text evidence is available. Inspect the immutable source before deciding.</p>
+        {% endif %}
+
+        {% if review_details %}
+        <section class="bg-white border p-3 mb-3" aria-labelledby="processing-context-heading">
+          <h3 class="h5" id="processing-context-heading">Processing context</h3>
+          <dl class="row mb-0">
+            <dt class="col-sm-4">Admitted</dt><dd class="col-sm-8">{{ review_details.document.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</dd>
+            <dt class="col-sm-4">Processing state</dt><dd class="col-sm-8">{{ review_details.document.operational_state|replace('_', ' ') }}</dd>
+            <dt class="col-sm-4">Delivery</dt><dd class="col-sm-8">{{ 'Delivered' if review_details.document.delivered else 'Not delivered' }}</dd>
+            {% if review_details.document.processing_run_id %}<dt class="col-sm-4">Processing run</dt><dd class="col-sm-8"><code class="text-break">{{ review_details.document.processing_run_id }}</code></dd>{% endif %}
+            {% if review_details.operational_failure %}<dt class="col-sm-4">Operational failure</dt><dd class="col-sm-8 text-break">{{ review_details.operational_failure }}</dd>{% endif %}
+          </dl>
+        </section>
+        <section class="bg-white border p-3 mb-3" aria-labelledby="prior-labels-heading">
+          <h3 class="h5" id="prior-labels-heading">Prior human labels</h3>
+          {% if review_details.decisions %}
+          <ol class="mb-0">
+            {% for decision in review_details.decisions %}
+            <li class="mb-3">
+              <strong>{{ decision.document_family or decision.outcome }}</strong>
+              by {{ decision.actor }} at {{ decision.created_at.strftime('%Y-%m-%d %H:%M UTC') }}
+              {% if decision.reason %}<br>{{ decision.reason }}{% endif %}
+              {% if decision.evidence %}<br><span class="text-body-secondary">Evidence: {{ decision.evidence|join(', ') }}</span>{% endif %}
+            </li>
+            {% endfor %}
+          </ol>
+          {% else %}
+          <p class="mb-0">No prior human labels.</p>
+          {% endif %}
+        </section>
+        {% endif %}
+      </section>
+      <aside class="decision">
+        <h2>Human decision</h2>
+        <p>No model suggestion or confidence is shown. Choose only after reviewing the evidence.</p>
+        <form method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="action" value="submit_label">
+          <input type="hidden" name="document_id" value="{{ selected.document_id }}">
+          <input type="hidden" name="idempotency_key" value="{{ request_id }}">
+          {% if deliberate %}<input type="hidden" name="return_document_id" value="{{ selected.document_id }}">{% endif %}
+          <fieldset class="mb-3">
+            <legend class="form-label">Classification</legend>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="outcome" value="matched" id="outcome-matched">
+              <label class="form-check-label" for="outcome-matched">Existing document family</label>
+            </div>
+            <label class="visually-hidden" for="document_family">Document family</label>
+            <select class="form-select mb-3" id="document_family" name="document_family">
+              <option value="">Choose a family</option>
+              {% for family in families %}<option value="{{ family.slug }}">{{ family.display_name }}</option>{% endfor %}
+            </select>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="outcome" value="other" id="outcome-other">
+              <label class="form-check-label" for="outcome-other">Other</label>
+            </div>
+          </fieldset>
+          <label class="form-label" for="reason">Reason</label>
+          <textarea class="form-control mb-3" id="reason" name="reason" required></textarea>
+          <label class="form-label" for="evidence_refs">Evidence references, one per line</label>
+          <textarea class="form-control mb-3" id="evidence_refs" name="evidence" placeholder="page:1"></textarea>
+          <button class="btn btn-primary" type="submit">Record gold label</button>
+        </form>
+
+        <hr>
+        <h3 class="h5">Propose and select a new family</h3>
+        <form method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="action" value="submit_new_family">
+          <input type="hidden" name="document_id" value="{{ selected.document_id }}">
+          <input type="hidden" name="idempotency_key" value="{{ request_id }}-new">
+          {% if deliberate %}<input type="hidden" name="return_document_id" value="{{ selected.document_id }}">{% endif %}
+          <label class="form-label" for="new_family_name">Display name</label>
+          <input class="form-control mb-3" id="new_family_name" name="new_family_name" required>
+          <label class="form-label" for="new_family_slug">Stable key</label>
+          <input class="form-control mb-3" id="new_family_slug" name="new_family_slug" pattern="[a-z0-9]+(?:_[a-z0-9]+)*" required>
+          <label class="form-label" for="new_reason">Reason</label>
+          <textarea class="form-control mb-3" id="new_reason" name="reason" required></textarea>
+          <button class="btn btn-outline-primary" type="submit">Create family and record label</button>
+        </form>
+      </aside>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="empty-state"><h2>Inbox is clear</h2><p>There are no unresolved classification decisions.</p></div>
+<section class="form-region mt-5">
+  <h2>Add a document family</h2>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="create_family">
+    <label class="form-label" for="family_name">Display name</label>
+    <input class="form-control mb-3" id="family_name" name="display_name" required>
+    <label class="form-label" for="family_slug">Stable key</label>
+    <input class="form-control mb-3" id="family_slug" name="slug" pattern="[a-z0-9]+(?:_[a-z0-9]+)*" required>
+    <button class="btn btn-primary" type="submit">Add family</button>
+  </form>
+  {% if families %}
+  <h3 class="h5 mt-4">Available families</h3>
+  <ul>{% for family in families %}<li>{{ family.display_name }} <code>{{ family.slug }}</code></li>{% endfor %}</ul>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,36 @@
+{% extends 'shared/base.html' %}
+{% block title %}Priority upload status{% endblock %}
+{% block heading %}Upload lifecycle{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('priority') }}">← Back to priority processing</a></p>
+<h2 class="h4">{{ details.upload.filename }}</h2>
+{% if details.upload.duplicate_of_document_id %}
+<div class="alert alert-warning" role="status">
+  <strong>Duplicate content detected.</strong> This upload has its own explicit new processing run.
+  {% if details.duplicate_upload %}<a class="alert-link" href="{{ url_for('priority_detail', upload_id=details.duplicate_upload.upload_id) }}">Open the existing upload</a>.{% endif %}
+</div>
+{% endif %}
+<dl class="row border-top py-3">
+  <dt class="col-sm-3">State</dt><dd class="col-sm-9">{{ details.upload.state.value|replace('_', ' ')|title }}</dd>
+  <dt class="col-sm-3">Priority</dt><dd class="col-sm-9">{{ details.upload.priority_level }}</dd>
+  <dt class="col-sm-3">Result</dt><dd class="col-sm-9">{{ details.upload.final_document_family or details.upload.final_outcome or 'Not available' }}</dd>
+  <dt class="col-sm-3">Upload ID</dt><dd class="col-sm-9"><code>{{ details.upload.upload_id }}</code></dd>
+  <dt class="col-sm-3">Document ID</dt><dd class="col-sm-9"><code>{{ details.upload.document_id }}</code>{% if details.document %} · <a href="{{ url_for('document_detail', document_id=details.document.document_id) }}">View processed document</a>{% endif %}</dd>
+  <dt class="col-sm-3">Processing run</dt><dd class="col-sm-9"><code>{{ details.upload.processing_run_id }}</code></dd>
+  <dt class="col-sm-3">Admitted</dt><dd class="col-sm-9">{{ details.upload.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</dd>
+  <dt class="col-sm-3">Started</dt><dd class="col-sm-9">{{ details.upload.started_at.strftime('%Y-%m-%d %H:%M UTC') if details.upload.started_at else 'Not started' }}</dd>
+  <dt class="col-sm-3">Closed</dt><dd class="col-sm-9">{{ details.upload.closed_at.strftime('%Y-%m-%d %H:%M UTC') if details.upload.closed_at else 'Not closed' }}</dd>
+  <dt class="col-sm-3">Retention</dt><dd class="col-sm-9">Until {{ details.upload.expires_at.strftime('%Y-%m-%d') }}</dd>
+  <dt class="col-sm-3">Dispatch attempts</dt><dd class="col-sm-9">{{ details.upload.dispatch_attempts }}</dd>
+  {% if details.upload.duplicate_of_document_id %}<dt class="col-sm-3">Duplicate of</dt><dd class="col-sm-9"><code>{{ details.upload.duplicate_of_document_id }}</code>{% if details.duplicate_upload %} · <a href="{{ url_for('priority_detail', upload_id=details.duplicate_upload.upload_id) }}">View existing upload status</a>{% endif %}</dd>{% endif %}
+  {% if details.upload.failure_type %}<dt class="col-sm-3">Failure type</dt><dd class="col-sm-9">{{ details.upload.failure_type }}</dd>{% endif %}
+  {% if details.upload.last_dispatch_error %}<dt class="col-sm-3">Dispatch error</dt><dd class="col-sm-9">{{ details.upload.last_dispatch_error }}</dd>{% endif %}
+</dl>
+{% if details.upload.state.value == 'review_required' %}
+<div class="d-flex align-items-center gap-3 mb-3">
+  <a class="btn btn-primary" href="{{ url_for('review', document_id=details.upload.document_id) }}">Review classification</a>
+  <span class="text-body-secondary">Processing will continue after a gold label is recorded.</span>
+</div>
+{% endif %}
+<div class="alert alert-info" role="note">No Google Drive delivery is performed for priority uploads.</div>
+{% endblock %}
