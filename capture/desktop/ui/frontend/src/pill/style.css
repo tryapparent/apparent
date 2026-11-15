@@ -55,3 +55,7 @@ body { font-family:'Host Grotesk',system-ui,sans-serif; }
 .pill-notes > svg { width:18px;height:18px; }
 .pill-notes > span { text-align:left; }
 .pill-notes:focus-visible { outline:2px solid var(--apparent-brand-foreground);outline-offset:-4px; }
+
+.public-share-confirmation { width:440px; max-width:var(--pill-limit,1200px); margin-top:4px; font-size:16px; line-height:24px; }
+.public-share-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.public-share-actions button { min-height:44px; }

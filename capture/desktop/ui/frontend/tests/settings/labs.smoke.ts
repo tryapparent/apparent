@@ -15,10 +15,11 @@ test('Labs is a separate flask pane with acknowledged experiment saves and bound
     {env:{...process.env,ELECTRON_RUN_AS_NODE:'',HOME:home,XDG_CONFIG_HOME:path.join(home,'config')},stdio:'pipe'});
   const exited=new Promise<void>(resolve=>child.once('exit',()=>resolve()));
   const actions:Record<string,unknown>[]=[];
+  let sharingSaved:boolean|null=null;
   let saved:boolean|null=null,hold=true,fail=false,held:Record<string,unknown>|undefined;
   const reply=(action:Record<string,unknown>)=>{
-    if('enabled'in action&&!fail)saved=action.enabled as boolean;
-    child.stdin.write(JSON.stringify({type:'agents-result',request:action.request,facts:fail?{error:'config_write_failed'}:{saved:null,autoPasteSaved:saved,autoPasteSupported:process.platform==='linux'}})+'\n');
+    if('enabled'in action&&!fail){if(action.setting==='sharing')sharingSaved=action.enabled as boolean;else saved=action.enabled as boolean;}
+    child.stdin.write(JSON.stringify({type:'agents-result',request:action.request,facts:fail?{error:'config_write_failed'}:{saved:null,autoPasteSaved:saved,sharingSaved,autoPasteSupported:process.platform==='linux'}})+'\n');
   };
   createInterface({input:child.stdout}).on('line',line=>{try{const action=JSON.parse(line);actions.push(action);if(action.action==='agents-preference'){if(hold)held=action;else reply(action);}}catch{}});
   let browser:Awaited<ReturnType<typeof chromium.connectOverCDP>>|undefined;
@@ -46,8 +47,15 @@ test('Labs is a separate flask pane with acknowledged experiment saves and bound
       await toggle.click();await expect(toggle).toHaveAttribute('aria-checked','false');
       await page.reload();await expect(toggle).toHaveAttribute('aria-checked','false');
     }else await expect(toggle).toBeDisabled();
+    const sharing=page.getByRole('switch',{name:'Public sharing links',exact:true});
+    await expect(sharing).toHaveAttribute('aria-checked','false');
+    await sharing.focus();await page.keyboard.press('Space');
+    await expect(sharing).toHaveAttribute('aria-checked','true');await expect(sharing).toBeFocused();
+    assert.equal(actions.at(-1)?.setting,'sharing');assert.equal(saved,process.platform==='linux'?false:null);
+    await sharing.click();await expect(sharing).toHaveAttribute('aria-checked','false');
+    await page.reload();await expect(sharing).toHaveAttribute('aria-checked','false');
     assert.equal(await page.evaluate(async()=>{
-      for(const call of [()=>window.apparentAgents.save(true),()=>window.apparentAgents.saveT3(true),()=>window.apparentAgents.copySkill(),()=>window.apparent.resetCaptureLocation(),()=>window.apparentLabs.save('true' as unknown as boolean)]){
+      for(const call of [()=>window.apparentAgents.save(true),()=>window.apparentAgents.saveT3(true),()=>window.apparentAgents.copySkill(),()=>window.apparent.resetCaptureLocation(),()=>window.apparentLabs.save('true' as unknown as boolean),()=>window.apparentLabs.save(true,'t3' as 'sharing')]){
         try{await call();return false;}catch{}
       }return true;
     }),true,'Labs cannot mutate other panes or send non-boolean preferences');
@@ -57,6 +65,8 @@ test('Labs is a separate flask pane with acknowledged experiment saves and bound
         await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
         assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
         await toggle.scrollIntoViewIfNeeded();await expect(toggle).toBeInViewport();
+        if(process.env.APPARENT_LABS_PROOF){await fs.mkdir(process.env.APPARENT_LABS_PROOF,{recursive:true});await page.screenshot({path:path.join(process.env.APPARENT_LABS_PROOF,`labs-${width}-${colorScheme}-auto.png`)});}
+        await sharing.scrollIntoViewIfNeeded();await expect(sharing).toBeInViewport();
         if(process.env.APPARENT_LABS_PROOF){await fs.mkdir(process.env.APPARENT_LABS_PROOF,{recursive:true});await page.screenshot({path:path.join(process.env.APPARENT_LABS_PROOF,`labs-${width}-${colorScheme}.png`)});}
       }await session.detach();
     }

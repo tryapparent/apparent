@@ -44,7 +44,13 @@ try {
       await toggle.click();await expect(toggle).toHaveAttribute('aria-checked',String(on));
       const saved=JSON.parse(await fs.readFile(process.argv[2],'utf8'));assert.equal(saved.experiments.autoPasteDraft,on);assert.equal(saved.secret,'private');
     }else await expect(toggle).toBeDisabled();
-    await page.reload();await expect(toggle).toHaveAttribute('aria-checked','false');
+    const sharing=page.getByRole('switch',{name:'Public sharing links',exact:true});
+    await expect(sharing).toHaveAttribute('aria-checked','false');
+    for(const on of [true,false]){
+      await sharing.click();await expect(sharing).toHaveAttribute('aria-checked',String(on));
+      const saved=JSON.parse(await fs.readFile(process.argv[2],'utf8'));assert.equal(saved.experiments.hostedSharing,on);assert.equal(saved.experiments.autoPasteDraft,process.platform==='linux'?false:undefined);assert.equal(saved.secret,'private');
+    }
+    await page.reload();await expect(toggle).toHaveAttribute('aria-checked','false');await expect(sharing).toHaveAttribute('aria-checked','false');
   }else{
   await expect(page.locator('.settings-agent-command')).toHaveText(process.argv[3]);
   const toggle = page.getByRole('switch', {name: 'Ask for an Apparent video on complex changes'});

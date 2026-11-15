@@ -62,3 +62,12 @@ test('connection facts expose only a canonical origin, expiry and preference sta
   for(const origin of ['https://user:private@t3.example','https://t3.example/?token=private','not a URL'])
     assert.deepEqual(preferenceFacts({...fields,t3Origin:origin,t3ExpiresAt:Infinity}),{saved:null,t3Configured:true});
 });
+
+test('Sharing requests validate and return independent acknowledged preferences',async()=>{
+ assert.throws(()=>preferenceFacts({saved:null,sharingSaved:'true'}));
+ const messages:object[]=[],bridge=new AgentsPreferences(value=>messages.push(value));
+ const saving=bridge.request(true,'sharing');
+ assert.deepEqual(messages,[{action:'agents-preference',request:1,enabled:true,setting:'sharing'}]);
+ bridge.receive({request:1,facts:{saved:false,sharingSaved:true,autoPasteSaved:false,t3Saved:false}});
+ assert.deepEqual(await saving,{saved:false,sharingSaved:true,autoPasteSaved:false,t3Saved:false});
+});

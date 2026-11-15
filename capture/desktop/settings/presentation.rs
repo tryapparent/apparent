@@ -133,7 +133,7 @@ pub(super) fn open(pane: Pane, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyh
                     && (matches!(action, Action::Navigate { .. } | Action::Close)
                         || pane == Pane::Storage && matches!(action, Action::ShowCaptures)
                         || pane == Pane::Agents && matches!(action, Action::AgentsPreference { .. } | Action::AgentsConnection { .. })
-                        || pane == Pane::Labs && matches!(&action, Action::AgentsPreference { setting, .. } if setting.as_deref() == Some("autoPaste"))
+                        || pane == Pane::Labs && matches!(&action, Action::AgentsPreference { setting, .. } if matches!(setting.as_deref(), Some("autoPaste" | "sharing")))
                         || pane == Pane::About && (matches!(action, Action::CheckForUpdates | Action::DismissUpdateCheck | Action::UpdateNow | Action::UpdateLater | Action::Tour)
                             || matches!(&action, Action::Set { key, value } if key == "updateChannel" && matches!(value.as_str(), Some("stable" | "main")))))
                 {

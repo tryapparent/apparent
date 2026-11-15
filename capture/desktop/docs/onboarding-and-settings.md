@@ -19,7 +19,7 @@ to restore Labs; it does not add a second experiment editor.
 
 Opening Apparent from the macOS or Linux app picker opens Settings on About,
 including when the app is already running. The shared Electron Settings shell
-provides the sidebar to General, Recording, Storage, Permissions and Agents;
+provides the sidebar to General, Recording, Storage, Permissions, Agents and Labs;
 panes without an accepted Electron replacement retain their native presentation.
 This launch slice reuses that presentation contract and its existing config writer;
 it does not add a second preferences writer. Missing Electron assets or a failed
@@ -739,3 +739,16 @@ host receipt and restores the existing native trial. This is a bounded move of
 shortcut-practice policy into TypeScript, not independent onboarding release or
 migration of the remaining Rust journey/progress writer. Installed Mac/Linux
 shortcut release, capture-start and remembered-progress acceptance remain required.
+
+Settings → Labs also exposes **Public sharing links**, off by default via
+`experiments.hostedSharing`. Enabling it grants no upload consent and uploads
+nothing by itself. The Electron recording controls confirm that anyone with the
+link can view the capture and that the shared copy is not end-to-end encrypted,
+then create a separate public copy while preserving the private job. Cancellation
+and stale recording actions do not admit a public copy. Disabling applies to the
+next recording without restart and does not revoke existing links. Direct config
+edits have the same timing. A copied link may still be preparing its upload.
+Legacy native controls retain their private-link path and encrypted-sharing refusal;
+rolling back the Electron command restores that refusal, with no config migration
+or second writer. Installed platform capture and live upload acceptance remain
+separate from synthetic renderer and protocol checks.
