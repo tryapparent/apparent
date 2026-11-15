@@ -1,6 +1,6 @@
 # Onboarding, permissions and Settings
 
-Settings → Agents → Labs offers **Auto paste**, off by default. It saves
+Settings → Labs offers **Auto paste**, off by default. It saves
 `experiments.autoPasteDraft` through the existing config transaction; changes
 apply at the next Finish without restart (including external file edits).
 Linux Hyprland with Lua dispatchers is the initial native adapter; other Linux
@@ -9,7 +9,11 @@ same window to remain focused from Finish through processing and both pastes.
 It never presses Enter. Check the receiving composer; dispatch does not prove
 attachment acceptance. Saved captures and the explicit Paste action remain
 available. Setup practice and agent/phone captures do not auto paste.
-Turning the experiment off restores ordinary copy; no donor surface is removed.
+Turning the experiment off restores ordinary copy. Labs is a separate Electron
+pane between Agents and About, with a flask icon in both sidebars. It shares the
+existing config transaction, with experiment-only read/write capabilities. If
+packaged Settings assets are unavailable, the retained native shell explains how
+to restore Labs; it does not add a second experiment editor.
 
 ## Opening the app
 

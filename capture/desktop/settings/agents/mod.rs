@@ -63,6 +63,19 @@ pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>) -> serde
     request_for(path, request, enabled, None)
 }
 
+/// Labs receives only its experiment facts, never agent connection metadata.
+pub(super) fn labs_facts(path: &Path) -> serde_json::Value {
+    let facts = facts(path);
+    if facts.get("error").is_some() { return facts; }
+    serde_json::json!({"saved":null,"autoPasteSaved":facts["autoPasteSaved"],"autoPasteSupported":facts["autoPasteSupported"]})
+}
+
+pub(super) fn labs_request(path: &Path, request: u32, enabled: Option<bool>) -> serde_json::Value {
+    let mut result = request_for(path, request, enabled, Some("autoPaste"));
+    if result["facts"].get("error").is_none() { result["facts"] = labs_facts(path); }
+    result
+}
+
 pub(super) fn request_for(path: &Path, request: u32, enabled: Option<bool>, setting: Option<&str>) -> serde_json::Value {
     let key = match setting { None | Some("video") => "agentDemoVideo", Some("t3") => "t3DestinationPicker",
         #[cfg(target_os = "linux")]
@@ -80,6 +93,23 @@ pub(super) fn request_for(path: &Path, request: u32, enabled: Option<bool>, sett
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn labs_projection_and_mutation_preserve_agent_preferences_and_private_connection() {
+        let dir = tempfile::tempdir().unwrap(); let path = dir.path().join("config.json");
+        std::fs::write(&path, r#"{"secret":"private","t3":{"origin":"https://example.test","token":"private-token"},"experiments":{"agentDemoVideo":true,"t3DestinationPicker":true}}"#).unwrap();
+        let facts = labs_facts(&path);
+        assert_eq!(facts.as_object().unwrap().len(), 3);
+        assert!(facts["autoPasteSaved"].is_null());
+        assert!(!facts.to_string().contains("private"));
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(labs_request(&path, 1, Some(true))["facts"]["autoPasteSaved"], true);
+            let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            assert_eq!(saved["secret"], "private"); assert_eq!(saved["t3"]["token"], "private-token");
+            assert_eq!(saved["experiments"]["agentDemoVideo"], true);
+            assert_eq!(saved["experiments"]["t3DestinationPicker"], true);
+        }
+    }
     #[test]
     fn settings_connection_uses_the_config_transaction_without_enabling_the_picker_or_logging_credentials() {
         let dir = tempfile::tempdir().unwrap(); let path = dir.path().join("config.json");
@@ -146,22 +176,25 @@ mod tests {
         // The CI roundtrip group also contains headless Node-only providers.
         // Own this renderer's display rather than relying on a caller's DISPLAY
         // or exposing a test window on the host desktop.
+        for route in ["agents", "labs"] {
         let mut command = if cfg!(target_os = "linux") {
             let mut command = Command::new("xvfb-run");
             command.args(["-a", "node"]);
             command
         } else { Command::new("node") };
-        let mut child = command.arg("--experimental-strip-types").arg(script).arg(&config)
-            .arg(super::super::settings::SKILL_COMMAND)
+        let mut child = command.arg("--experimental-strip-types").arg(&script).arg(&config)
+            .arg(super::super::settings::SKILL_COMMAND).arg(route)
             .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn().unwrap();
         let mut input = child.stdin.take().unwrap();
         for line in std::io::BufReader::new(child.stdout.take().unwrap()).lines() {
             let line = line.unwrap();
             if let Ok(super::super::settings::Action::AgentsPreference { request: id, enabled, setting }) = serde_json::from_str(&line) {
-                writeln!(input, "{}", request_for(&config, id, enabled, setting.as_deref())).unwrap();
+                let result = if route == "labs" { assert_eq!(setting.as_deref(), Some("autoPaste")); labs_request(&config, id, enabled) } else { request_for(&config, id, enabled, setting.as_deref()) };
+                writeln!(input, "{}", result).unwrap();
             } else { panic!("Unexpected Agents command: {line}"); }
         }
         assert!(child.wait().unwrap().success());
+        }
         let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&config).unwrap()).unwrap();
         assert_eq!(saved["experiments"]["agentDemoVideo"], true);
         assert_eq!(saved["experiments"]["t3DestinationPicker"], false);

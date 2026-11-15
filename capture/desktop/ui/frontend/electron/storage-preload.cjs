@@ -38,7 +38,6 @@ contextBridge.exposeInMainWorld('apparentAbout', Object.freeze({
 contextBridge.exposeInMainWorld('apparentAgents', Object.freeze({
   read: () => ipcRenderer.invoke('apparent:agents-preference'),
   save: enabled => ipcRenderer.invoke('apparent:agents-preference', enabled),
-  saveAutoPaste: enabled => ipcRenderer.invoke('apparent:agents-auto-paste-preference', enabled),
   saveT3: enabled => ipcRenderer.invoke('apparent:agents-t3-preference', enabled),
   previewT3: () => ipcRenderer.invoke('apparent:agents-t3-preview'),
   connectT3: origin => ipcRenderer.invoke('apparent:agents-t3-connect', origin),
@@ -50,4 +49,10 @@ contextBridge.exposeInMainWorld('apparentAgents', Object.freeze({
     ipcRenderer.on('apparent:agents-state', listener);
     return () => ipcRenderer.removeListener('apparent:agents-state', listener);
   },
+}));
+
+contextBridge.exposeInMainWorld('apparentLabs',Object.freeze({
+  read:()=>ipcRenderer.invoke('apparent:labs-preference'),
+  save:enabled=>ipcRenderer.invoke('apparent:labs-preference',enabled),
+  subscribe:callback=>{const listener=(_event,facts)=>callback(facts);ipcRenderer.on('apparent:labs-state',listener);return()=>ipcRenderer.removeListener('apparent:labs-state',listener);},
 }));

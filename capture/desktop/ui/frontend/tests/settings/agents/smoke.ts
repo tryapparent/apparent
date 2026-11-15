@@ -67,20 +67,7 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     }
     reply(held!); held = undefined; holdRead = false;
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
-    const autoToggle=page.getByRole('switch',{name:'Auto paste',exact:true});
-    await expect(autoToggle).toHaveAttribute('aria-checked','false');
-    if(process.platform==='linux') {
-      failWrite=true; await autoToggle.click();
-      await expect(page.getByRole('alert')).toContainText('Unable to save');
-      await expect(autoToggle).toBeDisabled(); failWrite=false;
-      await page.getByRole('button',{name:'Refresh preference'}).click();
-      await expect(autoToggle).toBeEnabled();
-      await autoToggle.focus(); await page.keyboard.press('Space');
-      await expect(autoToggle).toHaveAttribute('aria-checked','true');
-      assert.equal(actions.at(-1)?.setting,'autoPaste'); assert.equal(saved,null);
-      if(process.env.APPARENT_AGENTS_PROOF) await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,'auto-paste-on.png')});
-      await autoToggle.click(); await expect(autoToggle).toHaveAttribute('aria-checked','false');
-    } else await expect(autoToggle).toBeDisabled();
+    await expect(page.getByRole('switch',{name:'Auto paste',exact:true})).toHaveCount(0);
     const t3Toggle=page.getByRole('switch',{name:'Send recordings to T3'});
     await expect(t3Toggle).toHaveAttribute('aria-checked','false');
     await t3Toggle.click();await expect(t3Toggle).toHaveAttribute('aria-checked','true');
@@ -105,11 +92,7 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     }));
     if(process.env.APPARENT_AGENTS_PROOF)await fs.writeFile(path.join(process.env.APPARENT_AGENTS_PROOF,'geometry.json'),JSON.stringify(initialGeometry,null,2));
     assert(initialGeometry.documentHeight<=initialGeometry.height,JSON.stringify(initialGeometry));
-    // Labs adds content beyond the fixed Settings viewport. Keep scrolling
-    // inside the content pane and verify its last action remains reachable.
-    assert.equal(await page.locator('.settings-content').evaluate(el=>getComputedStyle(el).overflowY),'auto');
-    await page.getByRole('button',{name:'Copy command',exact:true}).scrollIntoViewIfNeeded();
-    await expect(page.getByRole('button',{name:'Copy command',exact:true})).toBeInViewport();
+    assert(initialGeometry.content[1]<=initialGeometry.content[0],JSON.stringify(initialGeometry));
     if (process.env.APPARENT_AGENTS_PROOF) await page.screenshot({path: path.join(process.env.APPARENT_AGENTS_PROOF, 'agents-off.png')});
     failWrite = true;
     await toggle.click();
@@ -170,7 +153,7 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
           });
         });
         assert.ok(contrasts.every(value => value >= 4.5), `Text contrast: ${contrasts.join(', ')}`);
-        await page.getByRole('heading', {name: 'Labs', exact: true}).scrollIntoViewIfNeeded();
+        await page.getByRole('button', {name: 'Copy command', exact: true}).scrollIntoViewIfNeeded();
         if (process.env.APPARENT_AGENTS_PROOF) {
           await fs.mkdir(process.env.APPARENT_AGENTS_PROOF, {recursive: true});
           await page.screenshot({path: path.join(process.env.APPARENT_AGENTS_PROOF, `agents-${width}-${colorScheme}.png`)});
