@@ -1172,7 +1172,7 @@ pub(crate) fn external_record_owned(kind: ShortcutKind) -> bool {
 #[serde(tag = "action", rename_all = "kebab-case")]
 pub enum Action {
     Navigate { pane: Pane },
-    AgentsPreference { request: u32, enabled: Option<bool> },
+    AgentsPreference { request: u32, enabled: Option<bool>, #[serde(default)] setting: Option<String> },
     #[cfg(target_os = "linux")]
     Storage { command: super::storage::Command },
     Connect { command: super::connect::Command },
@@ -2085,9 +2085,9 @@ impl Session {
                 self.show(Some(pane));
                 Effect::None
             }
-            Event::Action(Action::AgentsPreference { request, enabled }) => {
+            Event::Action(Action::AgentsPreference { request, enabled, setting }) => {
                 if self.electron && self.pane == Some(Pane::Agents) {
-                    self.send(&super::agents::request(&host.config_path(), request, enabled));
+                    self.send(&super::agents::request_for(&host.config_path(), request, enabled, setting.as_deref()));
                 }
                 Effect::None
             }

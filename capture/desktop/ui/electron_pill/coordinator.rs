@@ -75,6 +75,13 @@ impl ApparentCoordinator {
         let view = self.electron_pill_view(0);
         let selection = self.electron_pill_selection();
         if let Some(session) = &mut self.electron_pill {
+            session.set_t3_eligible(!self.capture_local_practice);
+            if !self.capture_local_practice && !session.has_completion(self.capture_generation)
+                && let Some((dir, bundle)) = &self.review_bundle
+                && self.completed_dir.as_ref() == Some(dir)
+            {
+                session.complete(self.capture_generation, Some(crate::shared::handoff::clipboard_summary(bundle, dir)));
+            }
             session.update(view, self.capture_generation, selection);
         }
     }
@@ -101,6 +108,11 @@ impl ApparentCoordinator {
         }
         if !self.electron_pill.as_ref().is_some_and(Session::ready) {
             return;
+        }
+        if self.electron_pill.as_ref().is_some_and(Session::take_window_changed) {
+            // Picker/recording windows have different native keyboard roles on
+            // Linux. Re-admit the replacement ID before activating its surface.
+            self.electron_pill_routed = false;
         }
         if !self.electron_pill_routed {
             {

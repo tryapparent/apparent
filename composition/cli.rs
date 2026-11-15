@@ -194,6 +194,12 @@ enum TuneCommand {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Connect the recording destination picker to an unmodified T3 Code server.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    T3 {
+        #[command(subcommand)]
+        command: T3Command,
+    },
     /// Diagnose or repair supported Hermes setup (requires Node 22.23+).
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     Setup {
@@ -585,6 +591,57 @@ enum Command {
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 #[derive(Subcommand)]
+enum T3Command {
+    /// Read a one-time T3 pairing link from stdin. Requires Node 22.23+.
+    Pair,
+    /// Show the configured server without exposing its credential.
+    Status,
+    /// Forget this app's T3 connection; existing server sessions expire normally.
+    Forget,
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn t3_command(command: T3Command) -> Result<()> {
+    use std::io::Write;
+    let config = handoff::default_config_path();
+    match command {
+        T3Command::Pair => {
+            if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+                eprintln!("Paste a one-time T3 pairing link, then press Enter:");
+            }
+            let mut link = String::new();
+            std::io::stdin().read_line(&mut link)?;
+            ensure!(link.len() <= 16384, "Pairing link is too long");
+            let source = concat!(include_str!("../capture/desktop/workflow/t3/pair.ts"),
+                "\nimport {readFileSync} from 'node:fs';\ntry { process.stdout.write(JSON.stringify(await pair(readFileSync(0,'utf8').trim()))); } catch { process.stderr.write('T3 pairing failed. Create a fresh pairing link and try again.\\n'); process.exitCode=1; }\n");
+            let mut child = std::process::Command::new("node")
+                .args(["--input-type=module-typescript", "--eval", source])
+                .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::inherit()).spawn().context("T3 pairing requires Node 22.23+")?;
+            child.stdin.take().context("Pairing input unavailable")?.write_all(link.trim().as_bytes())?;
+            let output = child.wait_with_output()?;
+            ensure!(output.status.success(), "T3 did not confirm pairing");
+            let value: serde_json::Value = serde_json::from_slice(&output.stdout).context("Invalid pairing acknowledgement")?;
+            handoff::set_config_value_in(&config, "t3", value)?;
+            println!("T3 connection saved. Enable Send recordings to T3 in Settings > Agents.");
+        }
+        T3Command::Status => {
+            let value: serde_json::Value = std::fs::read(&config).ok()
+                .and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or(serde_json::json!({}));
+            if let Some(origin) = value.pointer("/t3/origin").and_then(|v| v.as_str()) {
+                println!("T3 server: {origin}");
+            } else { println!("T3 is not connected. Run apparent t3 pair."); }
+        }
+        T3Command::Forget => {
+            handoff::set_config_value_in(&config, "t3", serde_json::Value::Null)?;
+            println!("T3 connection forgotten. Existing confirmed handoffs remain recorded locally.");
+        }
+    }
+    Ok(())
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[derive(Subcommand)]
 enum CaptureCommand {
     /// Read the running GUI's phase and opaque capture identity as JSON.
     State,
@@ -755,6 +812,8 @@ fn run_cli(cli: Cli) -> Result<()> {
         },
     };
     match command {
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        Command::T3 { command } => t3_command(command),
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         Command::Setup { command: SetupCommand::Hermes { check, json, profile, package, sha256, receiver, enable, verify_runtime, hermes_executable } } =>
             setup_hermes(check, json, profile, package, sha256, receiver, enable, verify_runtime, hermes_executable),

@@ -4022,6 +4022,7 @@ impl ApparentCoordinator {
                     coord.publish_capture_busy();
                     coord.receive_capture_result(
                         generation,
+                        !local_practice,
                         #[cfg(any(target_os = "macos", target_os = "linux"))]
                         finishing_id.as_deref(),
                         finalized,
@@ -7404,7 +7405,7 @@ mod tests {
         // one worker, then dispatch its result even though it no longer owns UI.
         for remaining in [1, 0] {
             coord.capture_finalizer_finished();
-            coord.receive_capture_result(generation,
+            coord.receive_capture_result(generation, false,
                 #[cfg(any(target_os = "macos", target_os = "linux"))]
                 None, Err(anyhow::anyhow!("deferred finalizer failed")),
                 |_| panic!("failed finalizer must not publish"),
@@ -7542,7 +7543,7 @@ mod tests {
         let review_b = coordinator.review_bundle.clone();
 
         let mut completed = Vec::new();
-        coordinator.receive_capture_result(generation_a, Some(&finishing_id), deferred, |dir| {
+        coordinator.receive_capture_result(generation_a, false, Some(&finishing_id), deferred, |dir| {
             completed.push(dir.to_path_buf());
         }, |_, _| {
             panic!("stale A must not enter UI/clipboard/onboarding effects");
@@ -7588,7 +7589,7 @@ mod tests {
             })).unwrap();
             let path = PathBuf::from("/synthetic/current-exact.apparent");
             let effects = std::cell::RefCell::new(Vec::new());
-            coordinator.receive_capture_result(generation, owned.then_some("a"),
+            coordinator.receive_capture_result(generation, false, owned.then_some("a"),
                 Ok((path.clone(), bundle, String::new())),
                 |dir| { assert_eq!(dir, path); effects.borrow_mut().push("completed"); },
                 |coord, result| {

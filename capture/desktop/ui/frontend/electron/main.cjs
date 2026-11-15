@@ -231,10 +231,15 @@ app.whenReady().then(() => {
     if (!agents || args.length > 1 || args.length === 1 && typeof args[0] !== 'boolean') throw new Error('Forbidden Agents preference');
     return agentsPreferences.request(...args);
   });
+  ipcMain.handle('apparent:agents-t3-preference', (event, ...args) => {
+    validate(event, []);
+    if (!agents || args.length !== 1 || typeof args[0] !== 'boolean') throw new Error('Forbidden Agents preference');
+    return agentsPreferences.request(args[0], 't3');
+  });
   ipcMain.handle('apparent:agents-copy-skill', (event, ...args) => {
     validate(event, args);
     if (!agents) throw new Error('Unavailable outside Agents');
-    clipboard.writeText(skillCommand);
+    return clipboard.writeText(skillCommand);
   });
   ipcMain.handle('apparent:navigate-settings', (event, ...args) => {
     validate(event, []);

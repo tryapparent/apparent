@@ -3,6 +3,13 @@
 const {contextBridge,ipcRenderer} = require('electron');
 contextBridge.exposeInMainWorld('apparentPill', Object.freeze({
   read: () => ipcRenderer.invoke('pill:read'),
+  destinations: () => ipcRenderer.invoke('pill:destinations'),
+  destinationAction: (capture,action,id) => ipcRenderer.invoke('pill:destination-action',capture,action,id),
+  destinationFocus: focused => ipcRenderer.invoke('pill:destination-focus',focused),
+  subscribeDestinations: callback => {
+    const listener=(_event,state)=>callback(state);ipcRenderer.on('pill:destinations',listener);
+    return ()=>ipcRenderer.removeListener('pill:destinations',listener);
+  },
   layout: revision => ipcRenderer.invoke('pill:layout',revision),
   manualDrag: process.platform==='linux',
   beginDrag: revision => ipcRenderer.invoke('pill:begin-drag',revision),

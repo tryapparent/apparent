@@ -1,13 +1,16 @@
 import {readFile,writeFile} from 'node:fs/promises';
 import ts from 'typescript';
+import {build} from 'esbuild';
 import {mkdir} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import './build-pill-native.ts';
+await build({entryPoints:[fileURLToPath(new URL('../electron/pill/t3/controller.ts',import.meta.url))],
+ outfile:fileURLToPath(new URL('../electron/pill/t3.cjs',import.meta.url)),bundle:true,platform:'node',format:'cjs',target:'node22'});
 // Record owns the source; the installed app uses its already packaged Node runtime.
 // No native compiler, Electron API or renderer is a dependency of this worker.
 const completion = new URL('../electron/record-completion/', import.meta.url);
 const recordSources = ['policy', 'worker'].map(name=>fileURLToPath(new URL(`../../../../../record/completion/src/${name}.ts`,import.meta.url)));
-const program = ts.createProgram([...recordSources,fileURLToPath(new URL('../electron/pill/diagnostics.cts',import.meta.url))],{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.NodeNext,moduleResolution:ts.ModuleResolutionKind.NodeNext,
+const program = ts.createProgram([...recordSources,fileURLToPath(new URL('../electron/pill/diagnostics.cts',import.meta.url)),fileURLToPath(new URL('../electron/pill/t3/controller.ts',import.meta.url))],{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.NodeNext,moduleResolution:ts.ModuleResolutionKind.NodeNext,
  strict:true,skipLibCheck:true,noEmit:true,allowImportingTsExtensions:true,types:['node'],typeRoots:[fileURLToPath(new URL('../node_modules/@types',import.meta.url))]});
 const diagnostics=ts.getPreEmitDiagnostics(program);
 if(diagnostics.length)throw Error(ts.formatDiagnosticsWithColorAndContext(diagnostics,{getCanonicalFileName:f=>f,getCurrentDirectory:()=>process.cwd(),getNewLine:()=> '\n'}));
