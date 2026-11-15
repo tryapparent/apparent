@@ -100,7 +100,7 @@ Application composition shares finite-process/private-pixel safety mechanisms;
 the owners retain their respective bundle-clock interpretation and artifact pins.
 
 This is bounded adoption, not completed application separation. Capture, native
-rendering, phone capture, frame/audio decoding and retention mutation still use
+rendering, phone capture, audio decoding and retention mutation still use
 the authoritative legacy runtime. Producer changes do not
 automatically update an installed consumer: pin/contract adoption needs its own
 tests and package verification. Revert the consumer slice and pin together for

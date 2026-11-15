@@ -10,8 +10,6 @@ use crate::capture::engine::runtime::recording::diagnostics::{Diagnose, Stage};
 
 use crate::capture::engine::runtime::audio::audio::RecordedAudio;
 pub mod publication;
-#[cfg(test)]
-use crate::capture::desktop::helper;
 use crate::capture::engine::autocrop::autocrop;
 use crate::capture::engine::bundle::recover;
 use crate::capture::engine::keyframes::{captured_ink_frame_warning, select_keyframes_with_video_ink};

@@ -3,7 +3,7 @@
 Active goal: complete the owner boundaries below, delivering successive usable
 PRs against current main. A verified merge advances this inventory; it does not
 finish the migration. Current source baseline:
-`511fa5cabe0f61e9d951c202e648bfe40dbbe39f`.
+`0b88a165394006dd158aa998d83ad0dbceaaba22`.
 
 | Boundary | Implemented evidence | Remaining adoption/removal gate |
 | --- | --- | --- |
@@ -127,7 +127,7 @@ real packaged CLI benchmark now cover this boundary. Keep donor retirement and
 further diagnostic adoption behind the repair's platform/package acceptance;
 restoring the smaller cap alone would reintroduce the failure with these callers.
 #1320 merged the repair at `511fa5cabe0f61e9d951c202e648bfe40dbbe39f`;
-its exact-main package delivery remains required before diagnostic adoption.
+its exact-main Mac/Linux checks, both full-page AppImages and publication passed.
 
 Recovery/reprocessing and its capture benchmark now consume Record's paged
 TypeScript sampling workflow. Record owns 220ms cadence, the existing 640/480px
@@ -140,12 +140,17 @@ live-capture sampler migration is claimed.
 Injected recovery providers and real callers move together. Native proof covers
 a held-frame movie across four pages, including empty continuations. Package
 proof covers actual recovery/benchmark callers and offsets; Mac/AppImage gates
-remain required. The legacy native reader is retained for its media diagnostic
-and comparison tests, pending a separate caller adoption/removal slice. Rollback
+remain required. At that checkpoint the legacy reader still served diagnostics
+and comparison tests; the adopted diagnostic route and retirement below close
+those consumers. Rollback
 restores caller routing, injected contract and generated worker inventory; no
 pin, config writer or schema changes.
 
-## Current slice: published decoder diagnostics
+## Adopted: published decoder diagnostics
+
+#1317 merged at `0b88a165394006dd158aa998d83ad0dbceaaba22` after passing
+platform CI. Exact-main package delivery remains required before merging the
+reader retirement below.
 
 Linux `decoder-check` and the decode half of `encoder-check` use Record's existing
 explicit-frame worker with movie time zero and native dimensions. Capture's
@@ -156,13 +161,22 @@ real assembly, rather than a second reader. The package proof also runs both
 commands and independently validates the H.264 output.
 
 Keep native decoder warnings, live capture, audio, provider pins, generated
-inventory and persistence unchanged. The old reader and comparison tests remain
-until screen and diagnostic package acceptance, then can be removed in a bounded
-retirement. Rollback restores both diagnostic caller routes and the native
-encoder/decode composition together. This closes a consumer gap; it does not
+inventory and persistence unchanged. The retirement below removes the old reader
+and its comparison tests, with merge held for diagnostic package acceptance.
+Restore those internal readers before rolling diagnostic routes back to them;
+restore the native encoder/decode composition together. This closes a consumer gap; it does not
 remove the application's GStreamer or Rust build dependency.
 
 ## Published frame contract
+
+Current retirement candidate removes the replaced Linux reader, Mac helper's
+`frames` implementation/dispatcher and test-only `FrameTimes` coupling. Recovery
+fixtures now supply explicit timestamps; real SDK pixel/offset tests remain.
+The native capture sampler, audio extraction, encoder and decoder availability
+guards remain. No native framework or root Rust build dependency is removed.
+Merge waits for diagnostic exact-main acceptance; retirement then needs its own
+Mac/Linux package checks. Reverting this retirement restores the internal reader
+surfaces and fixture types together, without changing the published SDK routes.
 
 The contract preserves request identity, duplicates, display orientation and
 actual presentation time in the edited movie timeline. Private caller-owned
