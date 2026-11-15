@@ -959,8 +959,11 @@ pub struct ApparentCoordinator {
     iphone: Option<PhoneDevice>,
     /// The bundle the Completed island is showing.
     completed_dir: Option<PathBuf>,
+    #[cfg(target_os = "linux")]
+    auto_paste_target: Option<(u64, linux::hyprland::FocusedWindow)>,
     /// The Completed island's lead text.
     completed_note: Option<String>,
+    share_public: bool,
     share_online: bool,
     share_probe_at: Option<Instant>,
     share_pending: Option<(PathBuf, u64, std::sync::Arc<std::sync::atomic::AtomicBool>)>,
@@ -1079,7 +1082,10 @@ impl ApparentCoordinator {
             selected_keyframe: 0,
             iphone: None,
             completed_dir: None,
+            #[cfg(target_os = "linux")]
+            auto_paste_target: None,
             completed_note: None,
+            share_public: false,
             share_online: false,
             share_probe_at: None,
             share_pending: None,
@@ -2851,6 +2857,7 @@ impl ApparentCoordinator {
             },
             PillAction::Paste(target) => self.paste_completed_bundle(target, cx),
             PillAction::CopyLink => self.copy_completed_link(cx),
+            PillAction::CopyPublicLink => self.copy_completed_link_with_consent(true, cx),
             PillAction::Inspect => self.inspect_completed_bundle(cx),
             PillAction::SettingsAgents => self.open_settings(Some(settings::Pane::Agents)),
             PillAction::DismissCompleted => self.dismiss_completed_bundle(cx),
@@ -2978,6 +2985,10 @@ impl ApparentCoordinator {
     }
 
     pub fn copy_completed_link(&mut self, cx: &mut Context<Self>) {
+        self.copy_completed_link_with_consent(false, cx);
+    }
+
+    fn copy_completed_link_with_consent(&mut self, public: bool, cx: &mut Context<Self>) {
         if crate::connect::hosted::foreground_progress().is_some() {
             if self.cancel_completed_foreground_share() {
                 self.sync_native_pill();
@@ -2989,6 +3000,7 @@ impl ApparentCoordinator {
             || !matches!(self.island_phase, IslandPhase::Completed { .. })
             || !self.share_online || self.share_pending.is_some() { return; }
         let Some(bundle) = self.completed_dir.clone() else { return };
+        self.share_public = public;
         self.share_pending = Some((bundle, self.capture_generation, std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true))));
         if !crate::connect::hosted::sharing_connected() {
             self.share_waiting_account = true;
@@ -3005,14 +3017,17 @@ impl ApparentCoordinator {
         let Some((bundle, generation, active)) = self.share_pending.clone() else { return };
         self.share_waiting_account = false;
         let foreground = crate::connect::hosted::foreground_enabled();
+        let public = self.share_public;
         self.completed_note = Some(if connect { "Approve hosted upload in your browser…" } else { "Reserving link…" }.into());
         cx.spawn(async move |entity, cx| {
             let worker_bundle = bundle.clone();
             let worker_active = active.clone();
             let result = cx.background_executor().spawn(async move {
-                let allowed = || worker_active.load(std::sync::atomic::Ordering::SeqCst);
+                let allowed = || worker_active.load(std::sync::atomic::Ordering::SeqCst)
+                    && crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING);
                 if connect { crate::connect::hosted::connect_sharing(&allowed)?; }
-                crate::connect::hosted::copy_link_handoff(&worker_bundle, &allowed, foreground)
+                if public { crate::connect::hosted::prepare_public_link_handoff(&worker_bundle, &allowed, foreground) }
+                else { crate::connect::hosted::copy_link_handoff(&worker_bundle, &allowed, foreground) }
             }).await;
             let _ = entity.update(cx, |coord, cx| {
                 if !coord.admit_completed_share_result(&bundle, generation, &active, foreground) { return; }
@@ -3957,7 +3972,7 @@ impl ApparentCoordinator {
             platform: if cfg!(target_os = "linux") { "linux" } else { "macos" }.into(),
             source: completion_source.into(),
             agent_requested,
-            automatic_trial_enabled: crate::shared::handoff::experiment("autoPasteDraft"),
+            automatic_trial_enabled: !self.capture_local_practice && crate::shared::handoff::experiment("autoPasteDraft"),
             image_quality_warning: None, // Filled from the finalizer's immutable result.
             lab: self.lab,
             #[cfg(target_os = "linux")]
@@ -3969,6 +3984,12 @@ impl ApparentCoordinator {
             #[cfg(not(target_os = "linux"))]
             wayland: false,
         };
+        #[cfg(target_os = "linux")]
+        {
+            self.auto_paste_target = if completion_facts.automatic_trial_enabled && completion_facts.hyprland && completion_facts.wayland {
+                linux::hyprland::focused_window().ok().map(|target| (generation, target))
+            } else { None };
+        }
         // Freeze practice policy with the worker, independent of window/UI lifetime.
         let local_practice = self.capture_local_practice;
         self.completed_note = None;

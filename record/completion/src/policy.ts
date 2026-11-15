@@ -28,7 +28,7 @@ export type Event =
   | {type: 'finalized'; capture: Capture; outcome: Outcome}
   | {type: 'clipboard'; capture: Capture; result: 'copied' | 'failed'}
   | {type: 'dismiss' | 'cancel' | 'revoke' | 'disconnect' | 'reconnect'};
-export type Effect = Readonly<{type: 'copy'; capture: Capture; mode: 'text' | 'bundle'}>;
+export type Effect = Readonly<{type: 'copy'; capture: Capture; mode: 'text' | 'bundle' | 'autoPaste'}>;
 export type Decision = Readonly<{state: State; effects: readonly Effect[]}>;
 
 export function begin(context: Context, current: boolean): State {
@@ -37,7 +37,7 @@ export function begin(context: Context, current: boolean): State {
 export function sameCapture(a: Capture, b: Capture): boolean {
   return a.generation === b.generation && a.captureId === b.captureId && a.requestId === b.requestId;
 }
-function manualTrial(context: Context): boolean {
+function autoPasteTrial(context: Context): boolean {
   return context.platform === 'linux' && context.source === 'screen' && !context.agentRequested
     && context.automaticTrialEnabled && !context.lab && context.hyprland && context.wayland;
 }
@@ -64,14 +64,14 @@ export function reduce(previous: State, event: Event): Decision {
         status: event.outcome.kind === 'saved' ? 'Saved' : event.outcome.message.startsWith('No screen frames were captured')
           ? 'Capture failed — no screen frames' : 'Capture failed'};
       if (state.copyPending) effects.push({type: 'copy', capture: state.context.capture,
-        mode: manualTrial(state.context) ? 'text' : 'bundle'});
+        mode: autoPasteTrial(state.context) ? 'autoPaste' : 'bundle'});
     } else if (event.type === 'clipboard' && state.copyPending && state.observation?.outcome.kind === 'saved') {
       state = {...state, copyPending: false, observation: {...state.observation, clipboard: event.result},
         status: event.result === 'failed' ? 'Saved · open bundle (copy failed)'
-          : manualTrial(state.context) ? 'Saved · paste manually' : 'Saved · copied',
-        notifications: manualTrial(state.context) ? [...state.notifications, {title: 'Draft paste skipped', body: event.result === 'failed'
+          : autoPasteTrial(state.context) ? 'Saved · check paste' : 'Saved · copied',
+        notifications: autoPasteTrial(state.context) ? [...state.notifications, {title: 'Check auto paste', body: event.result === 'failed'
           ? 'Could not copy the handoff. Use the saved bundle from the paper tile.'
-          : `No verified attachment observer or stable draft identity; use the manual handoff. Press Ctrl+V for the text; attach contact-sheet.png from ${state.observation.outcome.bundlePath} if needed`}] : state.notifications};
+          : `Check the image and text in your composer before sending. If anything is missing, use Paste on the saved capture at ${state.observation.outcome.bundlePath}`}] : state.notifications};
     }
   }
   return {state, effects};

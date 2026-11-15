@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import { accountId, workerName, deploymentConfig, validateProfile, sameBindings, singleVersion, verifyActivationHistory, strictUpload } from './profile.ts'
 import type { Settings } from './profile.ts'
 import { digest, verifySeal } from './seal.ts'
+import { assertStagingOwner, readBaselineVersion, readVerifiedVersion } from './publication.ts'
 
 const root = resolve(import.meta.dirname, '..'), repo = resolve(root, '../../..')
 const artifact = resolve(root, '.output'), sha = process.argv[2]
@@ -46,8 +47,15 @@ function admission() {
 admission()
 const before = await snapshot(), previous = singleVersion(before.deployment)
 validateProfile(before.settings)
-assert.equal(before.versions[0].id, previous, 'A separate version is already staged')
-const baselineVersion = await api(worker + '/versions/' + previous)
+const baselineVersion = await readBaselineVersion(previous, id => api(worker + '/versions/' + id))
+const pending = before.versions[0]
+assertStagingOwner(previous, pending.id, pending.annotations?.['workers/tag'])
+if (pending.id !== previous) {
+  // Recovery never activates the old stage: verify its immutable configuration
+  // before allowing the current tested main artifact to supersede it.
+  await readVerifiedVersion(pending.id, pending.annotations['workers/tag'], baselineVersion,
+    id => api(worker + '/versions/' + id))
+}
 const service = await api('/accounts/' + accountId + '/workers/services/' + workerName)
 const strict = strictUpload(previous, service.default_environment.script.last_deployed_from)
 const outputRoot = process.env.RUNNER_TEMP || process.env.TMPDIR
@@ -56,8 +64,12 @@ const configPath = resolve(outputRoot, 'connect-production.json')
 const receiptPath = resolve(repo, 'connect-service-receipt.json')
 const record = (phase: string, extra: Record<string, unknown> = {}) => writeFile(receiptPath,
   JSON.stringify({ sha, worker: workerName, previousVersion: previous, phase, ...extra }) + '\n')
-await record('preflight', { strictUpload: strict })
+await record('preflight', { strictUpload: strict, supersededVersion: pending.id !== previous ? pending.id : undefined })
 await writeFile(configPath, JSON.stringify(deploymentConfig(before.settings, artifact)), { mode: 0o600 })
+const preUpload = await snapshot()
+preserve(before, preUpload)
+assert.equal(preUpload.deployment.id, before.deployment.id, 'Another publisher changed deployment ownership')
+assert.equal(preUpload.versions[0].id, pending.id, 'Another owner staged a version')
 // Upload a version first. This command cannot apply migrations, initialize the
 // ledger, activate traffic, change routes/cron or upgrade a subscription.
 const upload = spawnSync(resolve(root, 'node_modules/.bin/wrangler'), [
@@ -71,11 +83,8 @@ assert.equal(upload.status, 0, 'Worker version upload failed; traffic was not ch
 const staged = await snapshot(), candidate = staged.versions[0].id
 assert.equal(singleVersion(staged.deployment), previous, 'Active deployment changed while staging')
 preserve(before, staged)
-const version = await api(worker + '/versions/' + candidate)
 assert.notEqual(candidate, previous)
-assert.equal(version.annotations?.['workers/tag'], sha, 'Wrong staged candidate')
-sameBindings(baselineVersion.resources.bindings, version.resources.bindings)
-assert.deepEqual(version.resources.script_runtime, baselineVersion.resources.script_runtime, 'Version runtime configuration changed')
+await readVerifiedVersion(candidate, sha, baselineVersion, id => api(worker + '/versions/' + id))
 await record('staged', { version: candidate })
 await verifySeal(artifact, sha)
 admission()

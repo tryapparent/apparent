@@ -1,5 +1,16 @@
 # Onboarding, permissions and Settings
 
+Settings → Agents → Labs offers **Auto paste**, off by default. It saves
+`experiments.autoPasteDraft` through the existing config transaction; changes
+apply at the next Finish without restart (including external file edits).
+Linux Hyprland with Lua dispatchers is the initial native adapter; other Linux
+desktops and macOS keep ordinary copy. The image-then-text trial requires the
+same window to remain focused from Finish through processing and both pastes.
+It never presses Enter. Check the receiving composer; dispatch does not prove
+attachment acceptance. Saved captures and the explicit Paste action remain
+available. Setup practice and agent/phone captures do not auto paste.
+Turning the experiment off restores ordinary copy; no donor surface is removed.
+
 ## Opening the app
 
 Opening Apparent from the macOS or Linux app picker opens Settings on About,
@@ -724,3 +735,16 @@ host receipt and restores the existing native trial. This is a bounded move of
 shortcut-practice policy into TypeScript, not independent onboarding release or
 migration of the remaining Rust journey/progress writer. Installed Mac/Linux
 shortcut release, capture-start and remembered-progress acceptance remain required.
+
+The same Labs section exposes **Public sharing links**, off by default via
+`experiments.hostedSharing`. Enabling it grants no upload consent and uploads
+nothing by itself. The Electron recording controls confirm that anyone with the
+link can view the capture and that the shared copy is not end-to-end encrypted,
+then create a separate public copy while preserving the private job. Cancellation
+and stale recording actions do not admit a public copy. Disabling applies to the
+next recording without restart and does not revoke existing links. Direct config
+edits have the same timing. A copied link may still be preparing its upload.
+Legacy native controls retain their private-link path and encrypted-sharing refusal;
+rolling back the Electron command restores that refusal, with no config migration
+or second writer. Installed platform capture and live upload acceptance remain
+separate from synthetic renderer and protocol checks.

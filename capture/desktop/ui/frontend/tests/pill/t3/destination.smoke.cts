@@ -12,8 +12,23 @@ test('real pill keeps Paste by default, then selects during processing and dispa
 
  let frame={type:'state',capture:'off',t3Eligible:true,view:{revision:1,phase:'completed',clock:'00:04',label:'Saved',warning:null,notice:null,reducedMotion:true,draggable:false,inputWaveform:null,noteCount:0,actions:[{id:'paste',label:'Paste',enabled:true,selected:false,primary:true},{id:'dismiss',label:'Dismiss',enabled:true,selected:false,primary:false}]}};
  const publish=async()=>app.evaluate((_electron,frame)=>process.stdin.emit('data',JSON.stringify(frame)+'\n'),frame);
+ // A visible React control can precede the native paint/admission receipt.
+ // Delay only the initial measurement to exercise that scheduling boundary in CI.
+ if(process.platform==='linux')await app.evaluate(({BrowserWindow})=>{
+  const contents=BrowserWindow.getAllWindows()[0].webContents,execute=contents.executeJavaScript.bind(contents),until=Date.now()+300;
+  contents.executeJavaScript=(source,...args)=>{
+   if(source.includes('--pill-limit'))return new Promise(resolve=>setTimeout(resolve,Math.max(0,until-Date.now()))).then(()=>execute(source,...args));
+   return execute(source,...args);
+  };
+ });
  await publish();const heartbeat=setInterval(()=>void publish().catch(()=>{}),500);t.after(()=>clearInterval(heartbeat));
  await expect(page.getByRole('button',{name:'Paste',exact:true})).toBeVisible();assert.equal(f.reads,0);
+ if(process.platform==='linux'){
+  // Establish the original native window before testing its replacement. DOM
+  // visibility alone does not acknowledge the asynchronous layout/admission.
+  await expect.poll(()=>readyIds.length).toBe(1);
+  await expect.poll(()=>app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible())).toBe(true);
+ }
  holdActivation=process.platform==='linux';const oldPage=page;
  const pickerWindow=process.platform==='linux'?app.waitForEvent('window'):null;
  await f.save(true);frame={...frame,capture:'on',view:{...frame.view,revision:2,phase:'processing',label:'Processing recording…',actions:[]}};await publish();

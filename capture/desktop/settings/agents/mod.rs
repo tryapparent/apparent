@@ -43,7 +43,10 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
     // Match the existing config reader: absent/non-boolean values have no
     // explicit preference. Never forward unrelated config or private keys.
     let mut result = serde_json::json!({"saved": config.get("experiments").and_then(|flags| flags.get("agentDemoVideo")).and_then(|flag| flag.as_bool()),
+        "sharingSaved":config.get("experiments").and_then(|flags|flags.get("hostedSharing")).and_then(|flag|flag.as_bool()),
         "t3Saved":config.get("experiments").and_then(|flags|flags.get("t3DestinationPicker")).and_then(|flag|flag.as_bool()),
+        "autoPasteSaved":config.get("experiments").and_then(|flags|flags.get("autoPasteDraft")).and_then(|flag|flag.as_bool()),
+        "autoPasteSupported":cfg!(target_os = "linux"),
         "t3Configured":config.pointer("/t3/origin").and_then(|v|v.as_str()).is_some()
             &&config.pointer("/t3/token").and_then(|v|v.as_str()).is_some()});
     // This private pipe terminates in Electron main. Its public facts parser
@@ -62,7 +65,10 @@ pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>) -> serde
 }
 
 pub(super) fn request_for(path: &Path, request: u32, enabled: Option<bool>, setting: Option<&str>) -> serde_json::Value {
-    let key = match setting { None | Some("video") => "agentDemoVideo", Some("t3") => "t3DestinationPicker", _ => return serde_json::json!({"type":"agents-result","request":request,"facts":{"error":"config_write_failed"}}) };
+    let key = match setting { None | Some("video") => "agentDemoVideo", Some("t3") => "t3DestinationPicker", Some("sharing") => "hostedSharing",
+        #[cfg(target_os = "linux")]
+        Some("autoPaste") => "autoPasteDraft",
+        _ => return serde_json::json!({"type":"agents-result","request":request,"facts":{"error":"config_write_failed"}}) };
     let facts = if let Some(enabled) = enabled {
         match crate::shared::handoff::set_experiment_in(path, key, enabled) {
             Ok(()) => facts(path),
@@ -92,6 +98,18 @@ mod tests {
         assert!(value.get("t3").is_none());assert_eq!(value["other"],"keep");
     }
     #[test]
+    fn public_sharing_preserves_private_upload_preferences() {
+        let dir = tempfile::tempdir().unwrap(); let path = dir.path().join("config.json");
+        assert!(facts(&path)["sharingSaved"].is_null());
+        std::fs::write(&path, r#"{"secret":"keep","experiments":{"hostedEncryption":true,"autoPaste":false}}"#).unwrap();
+        for on in [true, false] {
+            assert_eq!(request_for(&path, 1, Some(on), Some("sharing"))["facts"]["sharingSaved"], on);
+            let value: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            assert_eq!(value["secret"], "keep"); assert_eq!(value["experiments"]["hostedEncryption"], true);
+            assert_eq!(value["experiments"]["autoPaste"], false);
+        }
+    }
+    #[test]
     fn t3_preference_is_independent_and_keeps_pairing_private() {
         let dir = tempfile::tempdir().unwrap(); let path = dir.path().join("config.json");
         std::fs::write(&path, r#"{"secret":"private","t3":{"origin":"https://example.test","token":"private-token"},"experiments":{"agentDemoVideo":false}}"#).unwrap();
@@ -108,10 +126,10 @@ mod tests {
     fn agents_preference_preserves_config_and_reports_failed_writes() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.json");
-        assert_eq!(facts(&path), serde_json::json!({"saved": null,"t3Saved":null,"t3Configured":false}));
+        assert_eq!(facts(&path), serde_json::json!({"saved": null,"t3Saved":null,"sharingSaved":null,"t3Configured":false,"autoPasteSaved":null,"autoPasteSupported":cfg!(target_os = "linux")}));
         std::fs::write(&path, r#"{"secret":"private","experiments":{"other":true}}"#).unwrap();
         for on in [false, true] {
-            assert_eq!(request(&path, 7, Some(on)), serde_json::json!({"type":"agents-result","request":7,"facts":{"saved":on,"t3Saved":null,"t3Configured":false}}));
+            assert_eq!(request(&path, 7, Some(on)), serde_json::json!({"type":"agents-result","request":7,"facts":{"saved":on,"t3Saved":null,"sharingSaved":null,"t3Configured":false,"autoPasteSaved":null,"autoPasteSupported":cfg!(target_os = "linux")}}));
             let config: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
             assert_eq!(config["secret"], "private");
             assert_eq!(config["experiments"]["other"], true);

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, bail};
 use serde::Deserialize;
 
-use crate::shared::model::{RgbaFrame, TranscriptData};
+use crate::shared::model::TranscriptData;
 
 /// There is no helper executable on Linux; its work happens in process.
 pub fn path() -> Result<PathBuf> {
@@ -73,18 +73,6 @@ pub fn shrink(movie: &Path, out: &Path, max_edge: u32) -> Result<crate::capture:
 /// Mixes a movie's audio to 16 kHz mono WAV, aligned to the movie's start.
 pub fn export_audio(movie: &Path, wav: &Path) -> Result<()> {
     crate::capture::desktop::linux::media::export_audio(movie, wav)
-}
-
-pub enum FrameTimes<'a> {
-    /// Nearest decodable frame every N ms, stamped with its actual time.
-    Every(u64),
-    /// Exactly these times.
-    At(&'a [u64]),
-}
-
-/// Decodes movie frames into memory; `max_edge` 0 keeps native size.
-pub fn frames(movie: &Path, times: FrameTimes, max_edge: u32) -> Result<Vec<RgbaFrame>> {
-    crate::capture::desktop::linux::media::frames(movie, times, max_edge)
 }
 
 /// Renders `text` as a compact Unicode half-block QR code for the terminal.

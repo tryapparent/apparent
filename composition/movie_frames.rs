@@ -447,7 +447,7 @@ mod tests {
     }
 
     #[test]
-    fn real_published_bridge_matches_retained_decoder_with_observed_latency() {
+    fn real_published_bridge_preserves_pixels_and_bundle_identity() {
         let fixture = tempfile::tempdir().unwrap();
         let movie = fixture.path().join("synthetic.mp4");
         let encoded = Command::new("ffmpeg")
@@ -476,7 +476,7 @@ mod tests {
             .unwrap();
         assert!(encoded.status.success());
         let source = std::fs::read(&movie).unwrap();
-        // Avoid the known old offset-clamping ambiguity for this comparison.
+        // Exercise ordinary offset mapping alongside the clamped requests below.
         // package.ts separately checks distinct clamped bundle identities.
         let times = [500, 700, 900, 1100, 1300, 1500];
         // More than one four-frame native job; clamping and duplicate labels
@@ -488,51 +488,19 @@ mod tests {
             requested
         );
         assert!(assembled.iter().all(|f| (f.width, f.height) == (320, 240)));
-        let mut observations = Vec::new();
-        for trial in 0..3 {
-            // Alternate order; this remains a tiny warm-fixture observation,
-            // not a controlled benchmark or an independent-build speedup claim.
-            for published in if trial % 2 == 0 {
-                [false, true]
-            } else {
-                [true, false]
-            } {
-                let started = std::time::Instant::now();
-                let decoded = if published {
-                    agent(&movie, &times, 500, 900)
-                } else {
-                    let movie_times: Vec<_> = times.iter().map(|t| t - 500).collect();
-                    crate::capture::desktop::helper::frames(
-                        &movie,
-                        crate::capture::desktop::helper::FrameTimes::At(&movie_times),
-                        900,
-                    )
-                    .map(|mut decoded| {
-                        for frame in &mut decoded {
-                            frame.t_ms += 500;
-                        }
-                        decoded
-                    })
-                }
-                .unwrap();
-                observations.push((published, started.elapsed().as_micros()));
-                assert_eq!(decoded.len(), times.len());
-                for (frame, time) in decoded.iter().zip(times) {
-                    assert_eq!(frame.t_ms, time);
-                    assert_eq!((frame.width, frame.height), (320, 240));
-                    for (x, channel) in [(80, 0), (240, 2)] {
-                        let at = (120 * 320 + x) * 4;
-                        assert!(
-                            u16::from(frame.rgba[at + channel])
-                                > u16::from(frame.rgba[at + (2 - channel)]) + 40
-                        );
-                    }
-                }
+        let decoded = agent(&movie, &times, 500, 900).unwrap();
+        assert_eq!(decoded.len(), times.len());
+        for (frame, time) in decoded.iter().zip(times) {
+            assert_eq!(frame.t_ms, time);
+            assert_eq!((frame.width, frame.height), (320, 240));
+            for (x, channel) in [(80, 0), (240, 2)] {
+                let at = (120 * 320 + x) * 4;
+                assert!(
+                    u16::from(frame.rgba[at + channel])
+                        > u16::from(frame.rgba[at + (2 - channel)]) + 40
+                );
             }
         }
-        eprintln!(
-            "Agent six-frame latency observations (published, microseconds): {observations:?}"
-        );
         assert_eq!(std::fs::read(movie).unwrap(), source);
     }
 

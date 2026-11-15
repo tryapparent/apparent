@@ -11,6 +11,7 @@ app.setName('Apparent recording controls');
 app.setPath('userData',path.join(app.getPath('appData'),'apparent-pill'));
 nativeTheme.themeSource='system';
 const page=pathToFileURL(path.join(__dirname,'../../dist/pill/index.html')).href;
+let sharingConfirmation=null;
 let window,current=null,buffer='',pending=false,loaded=false,placed=false,activated=false,pendingPlace=null;
 let lastInput=Date.now(),hovered=false,expected=null,rendererReady=false,readySent=false,renderDeadline=Date.now()+5000,pasteGesture=null,lastFrame='',lastRaise=0;
 let visibleWidth=0,layoutPhase=null;
@@ -76,7 +77,7 @@ function publish(value){
   const next=protocol.view(value);
   if(current && next.revision<current.revision)throw Error('Old pill state');
   if(!current || next.revision!==current.revision)pending=false;
-  if(current && next.revision!==current.revision)pasteGesture=null;
+  if(current && next.revision!==current.revision){pasteGesture=null;sharingConfirmation=null;}
   if(!current || next.revision!==current.revision || next.phase!==current.phase){rendererReady=false;renderDeadline=Date.now()+5000;}
   if(next.phase==='hidden')layoutPhase=null;
   current=next;lastInput=Date.now();
@@ -168,11 +169,18 @@ app.whenReady().then(()=>{
     valid(event,args);if(typeof focused!=='boolean'||!destinations.view())throw Error('Picker unavailable');
     focusPicker(focused);
   });
-  ipcMain.handle('pill:act',(event,revision,action,drop=false,...args)=>{
+  ipcMain.handle('pill:act',async(event,revision,action,drop=false,...args)=>{
     valid(event,args);
     if(pending)throw Error('Pill action pending');
     if(typeof drop!=='boolean' || drop && action!=='paste')throw Error('Invalid paste gesture');
-    const message=protocol.command(current,revision,action);
+    const confirming=action==='confirm-public-link'||action==='cancel-public-link';
+    const message=protocol.command(current,revision,confirming?'copy-link':action);
+    if(confirming&&sharingConfirmation!==revision)throw Error('Sharing confirmation expired');
+    if(action==='cancel-public-link'){sharingConfirmation=null;return {cancelled:true};}
+    if(action==='confirm-public-link'){sharingConfirmation=null;message.action='copy-public-link';}
+    else if(action==='copy-link'&&!current.actions.some(a=>a.id==='copy-link'&&a.label==='Cancel upload')){
+      sharingConfirmation=revision;return {confirmationRequired:true};
+    } else sharingConfirmation=null;
     if(drop){
       if(!pasteGesture || pasteGesture.revision!==revision || Date.now()>pasteGesture.until)throw Error('Paste gesture expired');
       const dip=screen.getCursorScreenPoint();
@@ -180,7 +188,8 @@ app.whenReady().then(()=>{
       message.target=[point.x,point.y];
     }
     pasteGesture=null;
-    pending=true;emit(message);
+    pending=true;
+    emit(message);
   });
   // Renderer never chooses native dimensions or screen coordinates.
   // Parent's bounded state defines content; main measures its own trusted document.
@@ -314,7 +323,7 @@ app.whenReady().then(()=>{
   window.webContents.on('page-title-updated',event=>event.preventDefault());
   window.webContents.on('render-process-gone',(_event,details)=>{if(window!==owned)return;fail('renderer_gone',{
     rendererReason:details?.reason,exitCode:details?.exitCode});});
-  window.webContents.on('did-start-loading',()=>{if(window!==owned)return;++documentGeneration;++layoutGeneration;layoutKey='';shapePaint=null;appliedShape=null;loaded=false;pending=false;rendererReady=false;pasteGesture=null;renderDeadline=Date.now()+5000;});
+  window.webContents.on('did-start-loading',()=>{if(window!==owned)return;++documentGeneration;++layoutGeneration;layoutKey='';shapePaint=null;appliedShape=null;loaded=false;pending=false;rendererReady=false;pasteGesture=null;sharingConfirmation=null;renderDeadline=Date.now()+5000;});
   window.webContents.on('did-finish-load',()=>{
     if(window!==owned)return;loaded=true;
     if(reconcileKeyboardWindow(destinations.view()))return;

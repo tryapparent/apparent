@@ -56,9 +56,34 @@ test('T3 picker is off by default and has an independent acknowledged preference
  assert.throws(()=>preferenceFacts({saved:true,t3Saved:'true'}));
 });
 
+ test('Auto paste defaults off and saves independently through the acknowledged bridge',async()=>{
+  const {autoPasteEnabled}=await import('../../../src/agents/policy.ts');
+  assert.equal(autoPasteEnabled({saved:null}),false);
+  assert.equal(autoPasteEnabled({saved:null,autoPasteSaved:true}),true);
+  assert.equal(autoPasteEnabled({error:'config_read_failed'}),undefined);
+  assert.throws(()=>preferenceFacts({saved:null,autoPasteSaved:'true'}));
+  const messages:object[]=[];const bridge=new AgentsPreferences(m=>messages.push(m));
+  const saving=bridge.request(true,'autoPaste');
+  assert.deepEqual(messages,[{action:'agents-preference',request:1,enabled:true,setting:'autoPaste'}]);
+  bridge.receive({request:1,facts:{saved:false,autoPasteSaved:true,autoPasteSupported:true}});
+  assert.equal(autoPasteEnabled(await saving),true);
+});
 test('connection facts expose only a canonical origin, expiry and preference state',()=>{
   const fields={saved:null,t3Configured:true,t3Origin:'https://t3.example',t3ExpiresAt:12345,token:'private',refreshToken:'private'};
   assert.deepEqual(preferenceFacts(fields),{saved:null,t3Configured:true,t3Origin:'https://t3.example',t3ExpiresAt:12345});
   for(const origin of ['https://user:private@t3.example','https://t3.example/?token=private','not a URL'])
     assert.deepEqual(preferenceFacts({...fields,t3Origin:origin,t3ExpiresAt:Infinity}),{saved:null,t3Configured:true});
+});
+
+test('Public sharing defaults off and preserves unrelated private preferences',async()=>{
+ const {sharingEnabled}=await import('../../../src/agents/policy.ts');
+ assert.equal(sharingEnabled({saved:null}),false);
+ assert.equal(sharingEnabled({saved:true,sharingSaved:true}),true);
+ assert.equal(sharingEnabled({error:'config_read_failed'}),undefined);
+ assert.throws(()=>preferenceFacts({saved:null,sharingSaved:'true'}));
+ const messages:object[]=[],bridge=new AgentsPreferences(value=>messages.push(value));
+ const saving=bridge.request(true,'sharing');
+ assert.deepEqual(messages,[{action:'agents-preference',request:1,enabled:true,setting:'sharing'}]);
+ bridge.receive({request:1,facts:{saved:false,sharingSaved:true,autoPasteSaved:false,t3Saved:false}});
+ assert.equal(sharingEnabled(await saving),true);
 });

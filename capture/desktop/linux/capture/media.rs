@@ -1,8 +1,7 @@
 //! Movies on Linux, through GStreamer (on every GNOME and KDE desktop): recording the screen
 //! (`ximagesrc` on X11; on Wayland `pipewiresrc` fed by the ScreenCast portal or GNOME's own
 //! screencast API, `super::portal`) into an H.264 MP4 while handing small candidate frames to
-//! keyframe selection, and reading movies back (keyframes at native size, the audio for
-//! transcription).
+//! keyframe selection, and extracting movie audio for transcription.
 //!
 //! The encoder is the first one installed of `x264enc` (gst-plugins-ugly), `openh264enc`
 //! (gst-plugins-bad) and VA-API's. A missing encoder refuses to start a screen capture;
@@ -20,7 +19,6 @@ use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 
 use crate::capture::engine::runtime::{CANDIDATE_EDGE, CANDIDATE_EDGE_NO_VIDEO, Sampler, apparent_log};
-use crate::capture::desktop::linux::helper::FrameTimes;
 use crate::shared::model::{CaptureMode, RgbaFrame};
 
 const FPS: u32 = 30;
@@ -701,196 +699,6 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
     }
 }
 
-// MARK: Reading movies
-
-/// A bounded decoding pipeline that hands out frames at the times it's sought to.
-struct VideoReader {
-    pipeline: gst::Pipeline,
-    sink: gst_app::AppSink,
-    duration_ms: u64,
-    first: RgbaFrame,
-    previous: Option<RgbaFrame>,
-    next: Option<RgbaFrame>,
-}
-
-impl VideoReader {
-    fn open(movie: &Path, max_edge: u32) -> Result<Self> {
-        init()?;
-        let caps = if max_edge > 0 {
-            // Keep the aspect: scale to fit a max_edge square, never up.
-            "video/x-raw,format=RGBA,pixel-aspect-ratio=1/1".to_owned()
-        } else {
-            "video/x-raw,format=RGBA".to_owned()
-        };
-        let launch = format!(
-            "filesrc location=\"{}\" ! decodebin ! videoconvert ! videoflip video-direction=auto ! {caps} ! appsink name=sink sync=false max-buffers=1",
-            movie.display().to_string().replace('"', "\\\"")
-        );
-        let pipeline = gst::parse::launch(&launch)?
-            .downcast::<gst::Pipeline>()
-            .map_err(|_| anyhow!("Not a pipeline"))?;
-        let sink = pipeline
-            .by_name("sink")
-            .context("No sink")?
-            .downcast::<gst_app::AppSink>()
-            .map_err(|_| anyhow!("Not an appsink"))?;
-        let opened = (|| -> Result<_> {
-            pipeline.set_state(gst::State::Paused)?;
-            let (result, _, _) = pipeline.state(gst::ClockTime::from_seconds(10));
-            result.with_context(|| format!("Could not open {}", movie.display()))?;
-            let duration_ms = pipeline
-                .query_duration::<gst::ClockTime>()
-                .map_or(0, gst::ClockTime::mseconds);
-            let sample = sink.try_pull_preroll(gst::ClockTime::from_seconds(10))
-                .context("No initial movie frame decoded")?;
-            let first = Self::frame(&sample)?;
-            Ok((duration_ms, first))
-        })();
-        let (duration_ms, first) = match opened {
-            Ok(opened) => opened,
-            Err(error) => {
-                let _ = pipeline.set_state(gst::State::Null);
-                return Err(error);
-            }
-        };
-        Ok(Self {
-            pipeline,
-            sink,
-            duration_ms,
-            first,
-            previous: None,
-            next: None,
-        })
-    }
-
-    fn frame(sample: &gst::Sample) -> Result<RgbaFrame> {
-        let info = gstreamer_video::VideoInfo::from_caps(sample.caps().context("No caps")?)?;
-        let t = sample.buffer().and_then(gst::BufferRef::pts)
-            .context("Decoded frame has no timestamp")?.mseconds();
-        Ok(RgbaFrame::new(t, info.width(), info.height(),
-            rgba_of(sample, info.width(), info.height()).context("Short frame")?))
-    }
-
-    /// Last decoded frame at or before `ms`, clamped to available movie edges.
-    fn at(&mut self, ms: u64) -> Result<(u64, u32, u32, Vec<u8>)> {
-        let target = ms.min(self.duration_ms.saturating_sub(1));
-        if target <= self.first.t_ms {
-            return Ok((self.first.t_ms, self.first.width, self.first.height, self.first.rgba.clone()));
-        }
-        let deadline = Instant::now() + Duration::from_secs(20);
-        let remaining = || -> Result<gst::ClockTime> {
-            let left = deadline.saturating_duration_since(Instant::now());
-            ensure!(!left.is_zero(), "Timed out decoding movie frame");
-            Ok(gst::ClockTime::from_nseconds(left.as_nanos() as u64))
-        };
-        if self.previous.as_ref().is_some_and(|frame| frame.t_ms > target) {
-            // Open GOPs can need references before the nearest marked keyframe.
-            // Restart at the beginning for backwards requests; forward requests
-            // reuse the same decoded stream, including its next visible frame.
-            self.previous = None;
-            self.next = None;
-            self.pipeline.seek_simple(
-                gst::SeekFlags::FLUSH,
-                gst::ClockTime::ZERO,
-            )?;
-        }
-        self.pipeline.set_state(gst::State::Playing)?;
-        loop {
-            let frame = if let Some(frame) = self.next.take() {
-                frame
-            } else {
-                let Some(sample) = self.sink.try_pull_sample(remaining()?) else {
-                    ensure!(self.sink.is_eos(), "Timed out decoding movie frame");
-                    break;
-                };
-                Self::frame(&sample)?
-            };
-            if frame.t_ms > target {
-                self.next = Some(frame);
-                break;
-            }
-            ensure!(self.previous.as_ref().is_none_or(|previous| frame.t_ms >= previous.t_ms),
-                "Movie decoder returned frames out of order");
-            self.previous = Some(frame);
-        }
-        let frame = self.previous.as_ref().unwrap_or(&self.first);
-        Ok((frame.t_ms, frame.width, frame.height, frame.rgba.clone()))
-    }
-}
-
-impl Drop for VideoReader {
-    fn drop(&mut self) {
-        let _ = self.pipeline.set_state(gst::State::Null);
-    }
-}
-
-/// Box-filters RGBA down so its long edge is at most `max_edge` (0 keeps it).
-fn shrink_to_edge(width: u32, height: u32, rgba: Vec<u8>, max_edge: u32) -> (u32, u32, Vec<u8>) {
-    let long = width.max(height);
-    if max_edge == 0 || long <= max_edge {
-        return (width, height, rgba);
-    }
-    let scale = f64::from(max_edge) / f64::from(long);
-    let w = ((f64::from(width) * scale).round() as u32).max(1);
-    let h = ((f64::from(height) * scale).round() as u32).max(1);
-    let (sw, sh) = (width as usize, height as usize);
-    let mut out = vec![0_u8; w as usize * h as usize * 4];
-    for y in 0..h as usize {
-        let y0 = y * sh / h as usize;
-        let y1 = ((y + 1) * sh / h as usize).max(y0 + 1);
-        for x in 0..w as usize {
-            let x0 = x * sw / w as usize;
-            let x1 = ((x + 1) * sw / w as usize).max(x0 + 1);
-            let mut acc = [0_u32; 3];
-            let n = ((y1 - y0) * (x1 - x0)) as u32;
-            for sy in y0..y1 {
-                for px in rgba[(sy * sw + x0) * 4..(sy * sw + x1) * 4].chunks_exact(4) {
-                    acc[0] += u32::from(px[0]);
-                    acc[1] += u32::from(px[1]);
-                    acc[2] += u32::from(px[2]);
-                }
-            }
-            out[(y * w as usize + x) * 4..][..4].copy_from_slice(&[
-                (acc[0] / n) as u8,
-                (acc[1] / n) as u8,
-                (acc[2] / n) as u8,
-                255,
-            ]);
-        }
-    }
-    (w, h, out)
-}
-
-pub fn frames(movie: &Path, times: FrameTimes, max_edge: u32) -> Result<Vec<RgbaFrame>> {
-    let mut video = VideoReader::open(movie, max_edge)?;
-    let (requested, sampled): (Vec<u64>, bool) = match times {
-        FrameTimes::At(times) => {
-            if times.is_empty() {
-                return Ok(Vec::new());
-            }
-            (times.to_vec(), false)
-        }
-        FrameTimes::Every(ms) => (
-            (0..video.duration_ms.max(1))
-                .step_by(ms.max(1) as usize)
-                .collect(),
-            true,
-        ),
-    };
-    let mut out: Vec<RgbaFrame> = Vec::with_capacity(requested.len());
-    for want in requested {
-        let (t, w, h, rgba) = video.at(want)?;
-        let (w, h, rgba) = shrink_to_edge(w, h, rgba, max_edge);
-        let t = if sampled { t } else { want };
-        if sampled && out.last().is_some_and(|f| f.t_ms == t) {
-            continue;
-        }
-        out.push(RgbaFrame::new(t, w, h, rgba));
-    }
-    ensure!(!out.is_empty(), "No frames decoded from {}", movie.display());
-    Ok(out)
-}
-
 /// The movie's first audio track, 16 kHz mono, with silence before its first sample so audio
 /// time is movie time.
 fn audio_samples(movie: &Path) -> Result<(u64, Vec<f32>)> {
@@ -957,28 +765,6 @@ pub fn shrink(_movie: &Path, _out: &Path, _max_edge: u32) -> Result<crate::captu
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn movie_seek_returns_the_visible_frame_not_a_future_keyframe() {
-        let movie = std::env::temp_dir().join(format!("seek-{}.mp4", crate::shared::ids::make_bundle_id()));
-        let status = std::process::Command::new("ffmpeg")
-            .args(["-nostdin", "-v", "error", "-filter_complex_threads", "1", "-f", "lavfi", "-i", "color=c=red:s=32x32:r=30:d=2",
-                "-f", "lavfi", "-i", "color=c=blue:s=32x32:r=30:d=2", "-filter_complex",
-                "[0:v][1:v]concat=n=2:v=1:a=0", "-c:v", "libx264", "-g", "90",
-                "-keyint_min", "90", "-sc_threshold", "0", "-x264-params", "open-gop=1", "-threads", "1", "-pix_fmt", "yuv420p"])
-            .arg(&movie).status().unwrap();
-        assert!(status.success(), "cannot generate the seek fixture");
-        let mut video = super::VideoReader::open(&movie, 0).unwrap();
-        for (want, red) in [(0, true), (1500, true), (3200, false), (1800, true), (2100, false), (3999, false), (0, true)] {
-            let (actual, _, _, pixels) = video.at(want).unwrap_or_else(|error| panic!("seek {want}: {error:#}"));
-            let target = want.max(video.first.t_ms);
-            assert!(actual <= target, "requested {want}, received future frame {actual}");
-            assert!(target - actual <= 34, "requested {want}, received stale frame {actual}");
-            assert_eq!(pixels[0] > pixels[2], red, "wrong visible pixels at {want}");
-        }
-        drop(video);
-        std::fs::remove_file(movie).unwrap();
-    }
-
     use super::*;
 
     #[test]
@@ -1066,15 +852,6 @@ mod tests {
         }
         assert!(safe.contains("<private-temp>"));
         assert!(safe.chars().count() <= 160);
-    }
-
-    #[test]
-    fn frames_shrink_to_their_long_edge() {
-        let (w, h, rgba) = shrink_to_edge(4, 2, vec![255; 4 * 2 * 4], 2);
-        assert_eq!((w, h), (2, 1));
-        assert_eq!(rgba, vec![255; 2 * 4]);
-        let (w, h, _) = shrink_to_edge(4, 2, vec![0; 32], 0);
-        assert_eq!((w, h), (4, 2));
     }
 
     #[test]
