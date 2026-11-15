@@ -315,7 +315,7 @@ class FixtureTests(unittest.TestCase):
         self.assertFalse(release['draft'])
         self.assertTrue(release['published_at'])
         self.assertEqual(json.loads(self.fixture.response(control, base + '3', b'x')[1]), [])
-        for mode in ['available', 'bad-checksum', 'diverged']:
+        for mode in ['available', 'bad-checksum']:
             control['mode'] = mode
             release = json.loads(self.fixture.response(control, base + '2', b'x')[1])[0]
             self.assertEqual(release['tag_name'], 'linux-main-v2-' + 'b' * 40)
@@ -327,22 +327,6 @@ class FixtureTests(unittest.TestCase):
             self.assertEqual(status, 200)
             self.assertEqual(body.split()[0], b'0' * 64 if mode == 'bad-checksum' else hashlib.sha256(b'x').hexdigest().encode())
 
-    def test_main_compare_direction_divergence_and_fail_closed_routes(self):
-        control = {'channel': 'main', 'source_head': 'a' * 40, 'version': '1.2.3', 'mode': 'available'}
-        base = '/repos/tryapparent/apparent/compare/'
-        query = '?per_page=1&page=2'
-        forward = base + 'a' * 40 + '...' + 'b' * 40 + query
-        reverse = base + 'b' * 40 + '...' + 'a' * 40 + query
-        self.assertEqual(json.loads(self.fixture.response(control, forward, b'')[1])['status'], 'ahead')
-        self.assertEqual(json.loads(self.fixture.response(control, forward, b'')[1])['base_commit']['sha'], 'a' * 40)
-        self.assertEqual(json.loads(self.fixture.response(control, reverse, b'')[1])['status'], 'behind')
-        self.assertEqual(json.loads(self.fixture.response(control, reverse, b'')[1])['base_commit']['sha'], 'b' * 40)
-        control['mode'] = 'diverged'
-        self.assertEqual(json.loads(self.fixture.response(control, forward, b'')[1])['status'], 'diverged')
-        self.assertEqual(self.fixture.response(control, base + 'c' * 40 + '...' + 'b' * 40, b'')[0], 404)
-        control['mode'] = 'error'
-        self.assertEqual(self.fixture.response(control, '/repos/tryapparent/apparent/releases?per_page=100&page=1', b'')[0], 503)
-        self.assertEqual(self.fixture.response(control, '/repos/tryapparent/apparent/releases?per_page=100&page=0', b'')[0], 404)
 
     def test_release_contract_and_digest_are_exact(self):
         import hashlib
@@ -352,11 +336,11 @@ class FixtureTests(unittest.TestCase):
         import json
         release = json.loads(body)[-1]
         self.assertEqual(status, 200)
-        self.assertEqual(release['tag_name'], 'v999.0.0')
+        self.assertEqual(release['tag_name'], 'v0.0.1')
         url = release['assets'][1]['browser_download_url']
         status, checksum = self.fixture.response(control, url.split('github.com')[1], payload)
         self.assertEqual(status, 200)
-        self.assertEqual(checksum.decode(), hashlib.sha256(payload).hexdigest() + '  Apparent-999.0.0-linux-x86_64.AppImage\n')
+        self.assertEqual(checksum.decode(), hashlib.sha256(payload).hexdigest() + '  Apparent-0.0.1-linux-x86_64.AppImage\n')
 
     def test_only_expected_routes_and_modes(self):
         self.assertEqual(self.fixture.response({'version': '1.2.3', 'mode': 'error'},
@@ -364,7 +348,7 @@ class FixtureTests(unittest.TestCase):
         self.assertEqual(self.fixture.response({'version': '1.2.3', 'mode': 'current'},
                          '/unexpected', b'')[0], 404)
         self.assertEqual(self.fixture.response({'version': '1.2.3', 'mode': 'bad-checksum'},
-                         '/tryapparent/apparent/releases/download/v999.0.0/Apparent-999.0.0-linux-x86_64.AppImage.sha256', b'x')[1].split()[0], b'0' * 64)
+                         '/tryapparent/apparent/releases/download/v0.0.1/Apparent-0.0.1-linux-x86_64.AppImage.sha256', b'x')[1].split()[0], b'0' * 64)
 
     def test_real_curl_connect_requires_trusted_tls_and_refuses_foreign_hosts(self):
         with tempfile.TemporaryDirectory() as temporary:

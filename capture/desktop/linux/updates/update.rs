@@ -15,9 +15,6 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 const REPO: &str = "tryapparent/apparent";
-// The pre-signing tip and its last published compatibility bridge. These
-// histories stay out of Main; only exact-tree release bridges may cross them.
-const LEGACY_MAIN: [&str; 2] = ["a5cf47d7dc7d0f89b1552cfb2d5e4b0ab489526a", "1a55d5ebe05c948211ff74356c00b8dbfe58ecc6"];
 static CHECK: Mutex<()> = Mutex::new(());
 
 pub fn set_channel_in(path: &Path, channel: &str) -> Result<()> {
@@ -435,71 +432,46 @@ fn previously_failed(marker: &Path, candidate: &Candidate) -> bool {
     update_id(marker) == Some((candidate.channel.to_owned(), candidate.id.clone()))
 }
 
-fn newer(candidate: &Candidate, installed: Option<(String, String)>) -> bool {
-    let version = |s: &str| {
-        s.trim_start_matches('v').split('.').map(str::parse::<u32>).collect::<Result<Vec<_>, _>>()
-    };
-    if let Some((channel, id)) = installed {
-        if channel == candidate.channel {
-            if channel == "stable" {
-                return matches!((version(&candidate.id), version(&id)), (Ok(r), Ok(c)) if r > c);
-            }
-            return id != candidate.id;
+/// TypeScript owns channel convergence; native code owns discovery validation,
+/// locks, downloads, atomic replacement and recovery. Also used by CLI/hourly checks.
+fn needs_channel_release(candidate: &Candidate, installed: Option<(String, String)>) -> Result<bool> {
+    let (runtime, script) = update_policy_assets().context("packaged update policy is unavailable")?;
+    let facts = serde_json::json!({
+        "candidate": {"channel": candidate.channel, "id": candidate.id},
+        "installed": installed.map(|(channel, id)| serde_json::json!({"channel":channel,"id":id})),
+        "revision": env!("APPARENT_COMMIT_SHA"),
+        "modified": env!("APPARENT_BUILD_MODIFIED") == "true",
+    });
+    let mut child = Command::new(runtime).env("ELECTRON_RUN_AS_NODE", "1")
+        .arg(script).arg(serde_json::to_string(&facts)?)
+        .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null()).spawn()?;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(status) = child.try_wait()? {
+            ensure!(status.success(), "update policy failed");
+            let mut output = String::new();
+            child.stdout.take().context("missing update policy output")?.take(16).read_to_string(&mut output)?;
+            return serde_json::from_str(&output).context("invalid update policy decision");
         }
-        // Switching channels installs the requested channel even when version strings match.
-        return true;
-    }
-    if candidate.channel == "stable" {
-        return matches!((version(&candidate.id), version(env!("CARGO_PKG_VERSION"))), (Ok(r), Ok(c)) if r > c);
-    }
-    // Old AppImages have no revision embedded; opt-in Main replaces them once.
-    true
-}
-
-fn main_advances(current: Option<&str>, candidate: &Candidate, fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<bool> {
-    if candidate.channel != "main" { return Ok(true) }
-    let Some(current) = current else { return Ok(true) };
-    ensure!([current, &candidate.id].iter().all(|sha| sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit())),
-        "invalid Main update revision");
-    if current == candidate.id { return Ok(false) }
-    // Page two retains comparison metadata but omits GitHub's potentially huge
-    // first-page file patches. Commit dates and publication times are not ancestry.
-    let body = fetch(&format!("https://api.github.com/repos/{REPO}/compare/{current}...{}?per_page=1&page=2", candidate.id))?;
-    let comparison: serde_json::Value = serde_json::from_slice(&body).context("invalid Main comparison")?;
-    ensure!(comparison["base_commit"]["sha"].as_str() == Some(current), "unexpected Main comparison base");
-    match comparison["status"].as_str() {
-        Some("ahead") => Ok(true),
-        Some("behind" | "identical") => Ok(false),
-        _ => anyhow::bail!("Main update is not a verified descendant of the installed revision"),
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            anyhow::bail!("update policy timed out");
+        }
+        std::thread::sleep(Duration::from_millis(10));
     }
 }
 
-/// Legacy updaters record a bridge ID while executing the unchanged canonical
-/// build. Authenticate that exact mapping before checking normal forward ancestry.
-fn main_advances_from_bridge(current: Option<&str>, candidate: &Candidate, compiled: Option<&str>,
-    fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<bool>
-{
-    let ordinary = main_advances(current, candidate, fetch);
-    if ordinary.is_ok() || candidate.channel != "main" { return ordinary }
-    let (Some(current), Some(compiled)) = (current, compiled) else { return ordinary };
-    if current == compiled { return ordinary }
-    ensure!([current, compiled].iter().all(|sha| sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit())),
-        "invalid bridge revision");
-    let commit = |sha: &str| -> Result<serde_json::Value> {
-        let body = fetch(&format!("https://api.github.com/repos/{REPO}/git/commits/{sha}"))?;
-        let value: serde_json::Value = serde_json::from_slice(&body)?;
-        ensure!(value["sha"].as_str() == Some(sha), "unexpected bridge commit identity");
-        Ok(value)
-    };
-    let bridge = commit(current)?;
-    ensure!(bridge["parents"].as_array().is_some_and(|parents| parents.len() == 2)
-        && bridge["parents"][0]["sha"].as_str().is_some_and(|parent| LEGACY_MAIN.contains(&parent))
-        && bridge["parents"][1]["sha"].as_str() == Some(compiled), "not a known Main compatibility bridge");
-    let source = commit(compiled)?;
-    let tree = source["tree"]["sha"].as_str().context("missing bridge source tree")?;
-    ensure!(tree.len() == 40 && tree.bytes().all(|b| b.is_ascii_hexdigit())
-        && bridge["tree"]["sha"].as_str() == Some(tree), "bridge differs from the verified build");
-    main_advances(Some(compiled), candidate, fetch)
+fn update_policy_assets() -> Option<(PathBuf, PathBuf)> {
+    let executable = std::env::current_exe().ok()?;
+    let root = executable.parent()?.parent()?.join("share/apparent/settings");
+    let mut candidates = vec![(root.join("runtime/electron"), root.join("app/electron/settings/update-worker.cjs"))];
+    if cfg!(debug_assertions) {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("capture/desktop/ui/frontend");
+        candidates.push((source.join("node_modules/electron/dist/electron"), source.join("electron/settings/update-worker.cjs")));
+    }
+    candidates.into_iter().find(|(runtime, script)| runtime.is_file() && script.is_file())
 }
 
 fn target() -> Result<Option<PathBuf>> {
@@ -625,15 +597,7 @@ fn check() -> Result<bool> {
     let name = image.file_name().context("AppImage has no name")?.to_string_lossy();
     let failed = image.with_file_name(format!(".{name}.failed-update.json"));
     ensure!(!previously_failed(&failed, &candidate), "this update failed to start previously; waiting for a newer release");
-    let installed = installed_id(&image);
-    if !newer(&candidate, installed.clone()) { return Ok(false) }
-    let current = match &installed {
-        Some((channel, id)) if channel == "main" => Some(id.as_str()),
-        // No marker yet: a freshly packaged Main build already knows its SHA.
-        None => option_env!("GITHUB_SHA").filter(|sha| sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit())),
-        _ => None, // An explicit channel switch keeps its existing semantics.
-    };
-    if !main_advances_from_bridge(current, &candidate, option_env!("GITHUB_SHA"), &|url| get(url, None))? { return Ok(false) }
+    if !needs_channel_release(&candidate, installed_id(&image))? { return Ok(false) }
     install(&candidate, &image)?;
     super::super::integration::shell::notify("Apparent updated", "The new version will start the next time you open Apparent. Your previous AppImage is kept beside it.");
     Ok(true)
@@ -672,13 +636,11 @@ mod tests {
             return;
         }
         let _lock = lock.unwrap();
-        let candidate = Candidate { id: "b".repeat(40), channel: "main", url: String::new(), sha256: String::new() };
         let (channel, current) = installed_id(&image).unwrap();
         assert_eq!(channel, "main");
         assert_eq!(current, "c".repeat(40));
-        assert!(!main_advances(Some(&current), &candidate, &|_| Ok(serde_json::to_vec(
-            &serde_json::json!({"base_commit":{"sha":current},"status":"behind"}))?)).unwrap());
-        assert_eq!(fs::read(&image).unwrap(), b"newer C image", "stale B must not swap over C");
+        // Identity is read only after acquiring the lock; discovery follows it.
+        assert_eq!(fs::read(&image).unwrap(), b"newer C image");
     }
 
     #[test]
@@ -729,69 +691,6 @@ mod tests {
         assert!(transaction_lock(&image).is_err());
         assert_eq!(fs::read(&other).unwrap(), b"untouched");
         fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn signing_bridge_recovers_only_the_exact_verified_source() {
-        let bridge = "b".repeat(40);
-        let source = "c".repeat(40);
-        let tree = "d".repeat(40);
-        let next = "e".repeat(40);
-        let candidate = Candidate { id: next.clone(), channel: "main", url: String::new(), sha256: String::new() };
-        for legacy in LEGACY_MAIN {
-            for fault in ["", "parent", "tree", "identity", "offline", "extra-parent", "rollback"] {
-                let fetch = |url: &str| -> Result<Vec<u8>> {
-                    let value = if url.contains("/compare/") {
-                        let base = if url.contains(&format!("/{bridge}...")) { &bridge } else { &source };
-                        serde_json::json!({"base_commit":{"sha":base}, "status":
-                            if base == &bridge { "diverged" } else if fault == "rollback" { "behind" } else { "ahead" }})
-                    } else if url.ends_with(&format!("/git/commits/{bridge}")) {
-                        if fault == "offline" { anyhow::bail!("offline") }
-                        let mut parents = vec![serde_json::json!({"sha":if fault == "parent" { &source } else { legacy }}), serde_json::json!({"sha":source})];
-                        if fault == "extra-parent" { parents.push(serde_json::json!({"sha":next})); }
-                        serde_json::json!({"sha":if fault == "identity" { &source } else { &bridge }, "parents":parents,
-                            "tree":{"sha":if fault == "tree" { &source } else { &tree }}})
-                    } else {
-                        assert!(url.ends_with(&format!("/git/commits/{source}")));
-                        serde_json::json!({"sha":source,"tree":{"sha":tree}})
-                    };
-                    Ok(serde_json::to_vec(&value)?)
-                };
-                let result = main_advances_from_bridge(Some(&bridge), &candidate, Some(&source), &fetch);
-                match fault {
-                    "" => assert!(result.unwrap()),
-                    "rollback" => assert!(!result.unwrap()),
-                    _ => assert!(result.is_err(), "{fault}"),
-                }
-            }
-        }
-        // Once D is staged while bridge C is running, a repeat check must use D.
-        assert!(!main_advances_from_bridge(Some(&next), &candidate, Some(&source), &|_| panic!("staged identity needs no bridge lookup")).unwrap());
-        assert!(main_advances_from_bridge(Some(&bridge), &candidate, None, &|_| anyhow::bail!("no embedded source")).is_err());
-    }
-
-    #[test]
-    fn main_updates_require_forward_ancestry_not_different_shas() {
-        let current = "a".repeat(40);
-        let candidate = Candidate { id: "b".repeat(40), channel: "main", url: String::new(), sha256: String::new() };
-        for (status, expected) in [("ahead", Some(true)), ("behind", Some(false)), ("identical", Some(false)), ("diverged", None), ("unknown", None)] {
-            let result = main_advances(Some(&current), &candidate, &|url| {
-                assert_eq!(url, format!("https://api.github.com/repos/{REPO}/compare/{current}...{}?per_page=1&page=2", candidate.id));
-                Ok(serde_json::to_vec(&serde_json::json!({"status":status,"base_commit":{"sha":current}}))?)
-            });
-            match expected {
-                Some(expected) => assert_eq!(result.unwrap(), expected),
-                None => assert!(result.is_err()),
-            }
-        }
-        assert!(main_advances(Some(&current), &candidate, &|_| anyhow::bail!("offline")).is_err());
-        assert!(main_advances(Some(&current), &candidate, &|_| Ok(b"{}".to_vec())).is_err());
-        assert!(main_advances(Some(&current), &candidate, &|_| Ok(serde_json::to_vec(&serde_json::json!({"status":"ahead","base_commit":{"sha":candidate.id}}))?)).is_err());
-        assert!(main_advances(Some("bad-revision"), &candidate, &|_| panic!("must validate before fetch")).is_err());
-        assert!(!main_advances(Some(&candidate.id), &candidate, &|_| panic!("same revision needs no request")).unwrap());
-        assert!(main_advances(None, &candidate, &|_| panic!("legacy migration has no baseline")).unwrap());
-        let stable = Candidate { channel: "stable", ..candidate };
-        assert!(main_advances(Some(&current), &stable, &|_| panic!("Stable must not use Main comparison")).unwrap());
     }
 
     #[test]
@@ -1004,8 +903,8 @@ mod tests {
         let mut foreign = release(&expected);
         foreign.assets[1].browser_download_url = "https://example.org/checksum".into();
         assert!(main_candidate(&foreign, "x86_64", &checksum).is_err());
-        assert!(!newer(&candidate, Some(("main".into(), "a".repeat(40)))));
-        assert!(newer(&candidate, Some(("stable".into(), "v0.3.13".into()))));
+        assert!(!needs_channel_release(&candidate, Some(("main".into(), "a".repeat(40)))).unwrap());
+        assert!(needs_channel_release(&candidate, Some(("stable".into(), "v0.3.13".into()))).unwrap());
     }
 
     #[test]
@@ -1268,12 +1167,13 @@ mod tests {
     }
 
     #[test]
-    fn stable_never_downgrades_without_a_channel_change() {
+    fn stable_converges_even_from_a_newer_or_unmarked_build() {
         let candidate = Candidate { id: "v0.3.13".into(), channel: "stable", url: String::new(), sha256: String::new() };
-        assert!(!newer(&candidate, Some(("stable".into(), "v0.3.14".into()))));
-        assert!(!newer(&candidate, Some(("stable".into(), "v0.3.13".into()))));
-        assert!(newer(&candidate, Some(("stable".into(), "v0.3.12".into()))));
-        assert!(newer(&candidate, Some(("main".into(), "a".repeat(40)))));
+        assert!(needs_channel_release(&candidate, Some(("stable".into(), "v0.3.14".into()))).unwrap());
+        assert!(needs_channel_release(&candidate, None).unwrap());
+        assert!(!needs_channel_release(&candidate, Some(("stable".into(), "v0.3.13".into()))).unwrap());
+        assert!(needs_channel_release(&candidate, Some(("stable".into(), "v0.3.12".into()))).unwrap());
+        assert!(needs_channel_release(&candidate, Some(("main".into(), "a".repeat(40)))).unwrap());
     }
 
     #[test]

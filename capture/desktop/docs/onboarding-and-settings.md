@@ -69,6 +69,19 @@ links, including Join our Discord, open the browser; Show welcome tour invokes t
 Focused controls own Enter/Space, so a version-copy or tour activation cannot
 also accept an update. Existing native routing and fallbacks are unchanged.
 
+Linux update checks converge on the latest published release of the selected
+channel, including from forks, modified builds and newer versions. Stable can
+therefore replace a newer Main build. A matching installed channel/release marker
+prevents repeated downloads while the old process awaits restart. Without a
+marker, a clean Main build uses its compiled revision; other builds install the
+selected release once. TypeScript About policy owns this decision, executed by
+the packaged Electron runtime for Settings, CLI and hourly checks. Rust retains
+the sole config writer, release/URL and checksum validation, transaction lock,
+atomic swap and failed-launch recovery. No Git ancestry lookup is needed.
+The channel preference applies on the next check without restarting. macOS keeps
+its existing Sparkle feed and has no channel picker. Routing is unchanged; rollback
+must restore the previous native decision and remove its worker/copy together.
+
 ## Mac menu bar icon
 
 The Mac status item keeps the approved lowercase “a” at 18 points. It uses Lilac

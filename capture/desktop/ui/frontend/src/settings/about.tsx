@@ -6,6 +6,7 @@ import failedFrog from '../../../../assets/settings/frog-puzzled.png';
 import { Button } from '@apparent/ui/button';
 import { NativeSelect, NativeSelectOption } from '@apparent/ui/native-select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@apparent/ui/tooltip';
+import { channelUpdateHint } from './update-policy';
 
 export interface AboutState {
   version: string;
@@ -107,11 +108,11 @@ export function About() {
         </div>
         {result && !checking && <img className="settings-frog" src={result === 'available' ? availableFrog : result === 'current' ? currentFrog : failedFrog} alt="" />}
       </section>
-      {state.linux && state.mainUpdates && <div className="settings-channel"><label htmlFor="update-channel">Update channel</label>
-        <NativeSelect id="update-channel" value={state.updateChannel} disabled={checking} onChange={event => void act({ action: 'set', key: 'updateChannel', value: event.target.value })}>
+      {state.linux && state.mainUpdates && <><div className="settings-channel"><label htmlFor="update-channel">Update channel</label>
+        <NativeSelect id="update-channel" aria-describedby="update-channel-hint" value={state.updateChannel} disabled={checking} onChange={event => void act({ action: 'set', key: 'updateChannel', value: event.target.value })}>
           <NativeSelectOption value="stable">Stable releases</NativeSelectOption><NativeSelectOption value="main">Latest main</NativeSelectOption>
         </NativeSelect>
-      </div>}
+      </div><p id="update-channel-hint" className="settings-metadata settings-channel-hint">{channelUpdateHint}</p></>}
     </>}
     <section className="settings-support" aria-label="Support apparent">
       <Button variant="link" asChild><a href="https://github.com/tryapparent/apparent" onClick={event => { event.preventDefault(); void open('source'); }}><Star aria-hidden="true" />Star on GitHub <ExternalLink aria-hidden="true" /></a></Button>

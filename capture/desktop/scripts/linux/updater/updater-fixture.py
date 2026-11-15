@@ -24,8 +24,8 @@ def metadata_path(control):
 
 def response(control, path, payload):
     mode = control['mode']
-    version = control['version'] if mode == 'current' else '999.0.0'
     main = control.get('channel', 'stable') == 'main'
+    version = control['version'] if mode == 'current' else ('999.0.0' if main else '0.0.1')
     revision = control['source_head'] if main and mode == 'current' else CANDIDATE_SHA
     name = f'Apparent-{version}-linux-x86_64.AppImage'
     tag = 'linux-main-v2-' + revision if main else 'v' + version
@@ -50,15 +50,6 @@ def response(control, path, payload):
         return 200, json.dumps([release]).encode()
     if main and path == MAIN_API + '3':
         return 200, b'[]'
-    if main:
-        compare = '/repos/tryapparent/apparent/compare/'
-        source = control['source_head']
-        query = '?per_page=1&page=2'
-        if path == compare + source + '...' + CANDIDATE_SHA + query:
-            return 200, json.dumps({'status': 'diverged' if mode == 'diverged' else 'ahead',
-                                    'base_commit': {'sha': source}}).encode()
-        if path == compare + CANDIDATE_SHA + '...' + source + query:
-            return 200, json.dumps({'status': 'behind', 'base_commit': {'sha': CANDIDATE_SHA}}).encode()
     if path == prefix + name + '.sha256':
         digest = '0' * 64 if mode == 'bad-checksum' else hashlib.sha256(payload).hexdigest()
         return 200, f'{digest}  {name}\n'.encode()
