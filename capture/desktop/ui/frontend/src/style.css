@@ -96,9 +96,6 @@ html:has(.settings-shell),body:has(.settings-shell),#root:has(>.settings-shell){
 .settings-content select{background:var(--apparent-stock);color:var(--apparent-carbon)}
 .settings-content .settings-agent-skill{margin-top:0}
 .agent-heading{display:flex;align-items:center;gap:4px;margin-bottom:8px;min-height:44px}
-.agent-help{position:relative}
-.agent-help>div{position:absolute;z-index:2;top:44px;left:-96px;width:304px;padding:16px;border:1px solid currentColor;background:var(--apparent-paper);color:var(--apparent-carbon)}
-.settings-content .agent-help button{width:44px;height:44px;padding:0;background:transparent;color:inherit}.agent-help button svg{width:16px;height:16px}
 .agent-command{position:relative;padding:16px 60px 16px 16px;background:var(--apparent-lilac);color:var(--apparent-carbon)}
 .agent-command code{font:400 18px/27px 'Host Grotesk',system-ui,sans-serif;overflow-wrap:anywhere;user-select:text}
 .settings-content .agent-copy{position:absolute;top:4px;right:4px;width:44px;height:44px;padding:0;background:transparent;color:var(--apparent-carbon)}
@@ -110,7 +107,7 @@ html:has(.settings-shell),body:has(.settings-shell),#root:has(>.settings-shell){
 @media(prefers-color-scheme:dark){.settings-shell{background:var(--apparent-carbon);color:var(--apparent-paper)}.settings-sidebar{border-right:1px solid var(--apparent-paper)}}
 @media(max-width:480px){.settings-shell{flex-direction:column}.settings-sidebar{width:100%;padding-top:16px}.settings-brand{padding:0 16px 16px}.settings-brand img{width:120px}.settings-sidebar nav{display:flex;overflow-x:auto}.settings-sidebar button{flex:none;width:auto}.settings-content{min-height:0;padding:16px}}
 
-.settings-t3-dialog { width:min(608px,calc(100vw - 48px)); max-height:calc(100vh - 48px); overflow:auto; margin:auto; padding:24px; border:1px solid var(--color-foreground); border-radius:0; background:var(--color-background); color:var(--color-foreground); font:inherit; }
+.settings-t3-dialog { width:min(608px,calc(100vw - 48px)); max-height:calc(100vh - 48px); overflow:auto; margin:auto; padding:24px; border:1px solid var(--color-foreground); border-radius:0; background:var(--apparent-paper); color:var(--apparent-carbon); font:inherit; }
 .settings-t3-dialog::backdrop { background:color-mix(in srgb,var(--apparent-carbon) 60%,transparent); }
 .settings-t3-dialog h2 { margin-bottom:16px; }
 .settings-t3-dialog ol { list-style:decimal; padding-left:24px; margin:16px 0; }
@@ -125,3 +122,4 @@ html:has(.settings-shell),body:has(.settings-shell),#root:has(>.settings-shell){
 .settings-agents{position:relative}.settings-content .settings-help{width:44px;min-height:44px;height:44px;padding:14px}.settings-help svg{width:16px;height:16px}.settings-agents-help{background:var(--apparent-paper);color:var(--apparent-carbon);border:1px solid var(--apparent-carbon);border-radius:0;font:400 18px/27px 'Host Grotesk',system-ui,sans-serif}
 
 .agent-labs>h2{margin-bottom:16px}.agent-labs #auto-paste-limits{margin-top:8px}
+@media(prefers-color-scheme:dark){.settings-t3-dialog{background:var(--apparent-carbon);color:var(--apparent-paper)}}

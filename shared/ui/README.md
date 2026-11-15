@@ -8,6 +8,13 @@ uses the canonical failure red, icon, Paper field and Signal recovery controls i
 both themes. Inline field validation remains local. Import from
 `@apparent/ui/error-dialog`; its stylesheet is included automatically.
 
+`@apparent/ui/switch` supplies optional binary preferences: a 48 × 24px
+Stock-off/Lilac-on track, 18px Carbon thumb and 44px interaction target, without
+a track outline in either theme. Supply a visible accessible label, controlled
+checked value and acknowledgement-based save handler. During persistence set
+`disabled` and `aria-busy`; the switch retains its pointer hotspot for the wait
+cursor. Its stylesheet is included automatically.
+
 Canonical React/shadcn controls and system appearance for every value stream.
 Desktop, Connect account and recording recipient pages, and Public consume the
 same framework-independent tokens. Engine and Agent frontends must use them too. Application policy,

@@ -139,7 +139,7 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
     await page.getByRole('button', {name: 'Copy install command', exact: true}).focus();
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('button',{name:'Command copied',exact:true})).toBeVisible();
+    await expect(page.getByText('Copied',{exact:true})).toBeVisible();
     await page.evaluate(() => {
       const field = document.createElement('textarea'); field.setAttribute('aria-label', 'Clipboard verification');
       Object.assign(field.style,{position:'fixed',top:'0',left:'0',width:'1px',height:'1px'});
@@ -287,7 +287,7 @@ test('guided pairing previews the clipboard destination, exchanges once and wait
       await fs.writeFile(path.join(process.env.APPARENT_AGENTS_PROOF,'minimum-geometry.json'),JSON.stringify(await page.evaluate(()=>({width:innerWidth,height:innerHeight,all:[document.documentElement,document.body,document.getElementById('root'),...document.querySelectorAll('.settings-shell,.settings-content,.settings-sidebar')].map(el=>({name:el!.tagName+'.'+el!.className,scroll:el!.scrollHeight,client:el!.clientHeight,rect:el!.getBoundingClientRect().toJSON(),overflow:getComputedStyle(el!).overflow,height:getComputedStyle(el!).height}))})),null,2));
       await page.locator('.settings-content').evaluate(element=>element.scrollTop=0);
       await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,'agents-native-min-'+colorScheme+'.png')});
-      await page.getByRole('button',{name:'Copy command',exact:true}).scrollIntoViewIfNeeded();
+      await page.getByRole('button',{name:'Copy install command',exact:true}).scrollIntoViewIfNeeded();
       await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,'agents-native-min-bottom-'+colorScheme+'.png')});
     }
     await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(920,600));
@@ -312,6 +312,18 @@ test('guided pairing previews the clipboard destination, exchanges once and wait
     await page.reload();await expect(page.getByText(`Connected to ${new URL(p.origin).host}`,{exact:true})).toBeVisible();
     await page.getByRole('button',{name:'Disconnect',exact:true}).click();await expect(page.getByRole('button',{name:'Connect T3',exact:true})).toBeEnabled();assert.equal(connection,null);
     await page.getByRole('button',{name:'Connect T3',exact:true}).click();await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);assert.equal(p.exchanged,1);
+    // A trusted route change invalidates pending consent without recreating the window.
+    await page.getByRole('button',{name:'Connect T3',exact:true}).click();
+    await application.evaluate(({clipboard},value)=>clipboard.writeText(value),p.link);
+    await page.getByRole('button',{name:'Paste pairing link',exact:true}).click();
+    await expect(dialog).toContainText(p.origin);
+    await page.evaluate(()=>Reflect.set(window,'pairingRouteMarker',true));
+    const show=(pane:string)=>application.evaluate((_electron,pane)=>process.stdin.emit('data',JSON.stringify({type:'show',pane})+'\n'),pane);
+    await show('about');await expect(page).toHaveTitle('Apparent Settings — About');
+    await show('agents');await expect(page).toHaveTitle('Apparent Settings — Agents');
+    await expect(toggle).toBeEnabled();await expect(dialog).toHaveCount(0);
+    assert.equal(await page.evaluate(()=>Reflect.get(window,'pairingRouteMarker')),true);
+    assert.equal(p.exchanged,1,'Leaving Agents never exchanges the unconfirmed preview');
   }finally{await application.close().catch(()=>{});await fs.rm(home,{recursive:true,force:true});}
 });
 

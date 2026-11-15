@@ -41,7 +41,7 @@ function Settings() {
     } catch { setError('Unable to open that Settings page. Please try again.'); }
     finally { setNavigating(false); }
   }
-  return <div className={`settings-shell${current==='Agents'?' settings-agents-shell':''}`}>
+  return <div className="settings-shell">
     <aside className="settings-sidebar" aria-label="Settings pages">
       <div className="settings-brand"><img src={wordmark} alt="Apparent" /></div>
       <nav>{panes.map((pane, index) => <Button variant="ghost" key={pane} type="button" disabled={navigating}

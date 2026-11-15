@@ -127,6 +127,10 @@ fn settings_page_capabilities_follow_live_route() {
     let preference: Action = serde_json::from_str(r#"{"action":"agents-preference","request":1}"#).unwrap();
     assert!(admits(Pane::Agents, &preference));
     assert!(!admits(Pane::About, &preference));
+    let connection = Action::AgentsConnection { request: 1, connection: None };
+    assert!(admits(Pane::Agents, &connection));
+    assert!(!admits(Pane::About, &connection));
+    assert!(!admits(Pane::Storage, &connection));
     assert!(admits(Pane::About, &Action::CheckForUpdates));
     assert!(!admits(Pane::Agents, &Action::CheckForUpdates));
     assert!(!admits(Pane::Agents, &Action::ShowCaptures));
