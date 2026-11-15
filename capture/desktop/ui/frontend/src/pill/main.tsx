@@ -28,6 +28,7 @@ function Pill() {
   const [sharing,setSharing]=useState<number|null>(null);
   const [pending,setPending]=useState(false);
   const [error,setError]=useState(false);
+  const showingDestination=!!destination && !!view && ['processing','completed'].includes(view.phase);
   const current=useRef<PillView|null>(null);
   const busy=useRef(false);
   useEffect(()=>{
@@ -60,7 +61,9 @@ function Pill() {
     if(element)observer.observe(element);
     void document.fonts.ready.then(report);
     return()=>{active=false;observer.disconnect();};
-  },[view?.revision,view?.phase]);
+  // The destination snapshot can replace PillSurface after the same capture
+  // revision. Observe the newly mounted main so tray expansion resizes its host.
+  },[view?.revision,view?.phase,showingDestination]);
   async function act(action:string,drop=false){
     const before=current.current;
     if(!before || busy.current)return;
@@ -80,7 +83,7 @@ function Pill() {
   },[view,sharing]);
   if(!view)return <div role="status" className="pill connection">{error?'Recording controls unavailable':'Connecting…'}</div>;
   if(view.phase==='hidden')return null;
-  if(destination && ['processing','completed'].includes(view.phase))return <main data-revision={view.revision} className="pill apparent-theme" data-phase={view.phase} data-reduced={view.reducedMotion}>
+  if(showingDestination && destination)return <main data-revision={view.revision} className="pill apparent-theme" data-phase={view.phase} data-reduced={view.reducedMotion}>
     <DestinationPicker key={destination.capture} view={destination}/>
   </main>;
   return <PillSurface view={view} pending={pending} controlsDisabled={sharing!==null} error={error} receivedAt={receivedAt} reduced={systemReduced} manualDrag={window.apparentPill?.manualDrag} onAction={(id,drop)=>void act(id,drop)} onBeginDrag={()=>window.apparentPill!.beginDrag(view.revision)} onBeginPaste={()=>window.apparentPill!.beginPaste(view.revision)} onCancelPaste={()=>void window.apparentPill?.cancelPaste()}>

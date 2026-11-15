@@ -39,6 +39,13 @@ test('real pill keeps Paste by default, then selects during processing and dispa
   await activate(readyIds[1]);holdActivation=false;await expect.poll(()=>oldPage.isClosed()).toBe(true);
  }
  const trigger=page.getByRole('combobox');await expect(trigger).toBeEnabled();await expect(trigger).toBeFocused();
+ // Destination data may arrive after the capture revision. Replacing the
+ // ordinary pill must retain native sizing for subsequent tray expansion.
+ const destination=await page.evaluate(()=>window.apparentPill.destinations());
+ await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].webContents.send('pill:destinations',null));
+ await expect(page.locator('.pill-row')).toBeVisible();await proof('destination-pending');
+ await app.evaluate(({BrowserWindow},value)=>BrowserWindow.getAllWindows()[0].webContents.send('pill:destinations',value),destination);
+ await expect(trigger).toBeEnabled();await trigger.focus();
  await page.keyboard.press('ArrowDown');await expect(trigger).toHaveAttribute('aria-expanded','true');await expect(page.getByRole('option')).toHaveCount(3);await expect(page.getByRole('option').first()).toHaveAttribute('aria-selected','true');await expect(page.getByRole('option').last()).toHaveAttribute('data-continuation','true');
  for(const colorScheme of ['dark','light']){await page.emulateMedia({colorScheme,reducedMotion:'reduce'});await proof('processing-expanded-'+colorScheme);}
  assert.ok((await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].getBounds())).height>160,'native window must fit the expanded tray');
