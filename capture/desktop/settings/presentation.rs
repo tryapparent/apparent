@@ -117,7 +117,9 @@ fn settings_assets() -> Result<(PathBuf, PathBuf), OnboardingAssetFailure> {
 pub(super) fn admits(pane: Pane, action: &Action) -> bool {
     matches!(action, Action::Navigate { .. } | Action::Close)
         || pane == Pane::Storage && matches!(action, Action::ShowCaptures)
-        || pane == Pane::Agents && matches!(action, Action::AgentsPreference { .. } | Action::AgentsConnection { .. })
+        || pane == Pane::Agents && (matches!(action, Action::AgentsConnection { .. })
+            || matches!(action, Action::AgentsPreference { setting, .. } if matches!(setting.as_deref(), None | Some("video" | "t3"))))
+        || pane == Pane::Labs && matches!(action, Action::AgentsPreference { setting, .. } if matches!(setting.as_deref(), Some("autoPaste" | "sharing")))
         || pane == Pane::About && (matches!(action, Action::CheckForUpdates | Action::DismissUpdateCheck | Action::UpdateNow | Action::UpdateLater | Action::Tour)
             || matches!(action, Action::Set { key, value } if key == "updateChannel" && matches!(value.as_str(), Some("stable" | "main"))))
 }
@@ -131,6 +133,16 @@ fn settings_page_capabilities_follow_live_route() {
     assert!(admits(Pane::Agents, &connection));
     assert!(!admits(Pane::About, &connection));
     assert!(!admits(Pane::Storage, &connection));
+    assert!(!admits(Pane::Labs, &connection));
+    assert!(!admits(Pane::Labs, &preference));
+    for setting in ["autoPaste", "sharing"] {
+        let experiment = Action::AgentsPreference { request: 2, enabled: Some(true), setting: Some(setting.into()) };
+        assert!(admits(Pane::Labs, &experiment));
+        assert!(!admits(Pane::Agents, &experiment));
+        assert!(!admits(Pane::About, &experiment));
+    }
+    assert!(!admits(Pane::Labs, &Action::ShowCaptures));
+    assert!(!admits(Pane::Labs, &Action::CheckForUpdates));
     assert!(admits(Pane::About, &Action::CheckForUpdates));
     assert!(!admits(Pane::Agents, &Action::CheckForUpdates));
     assert!(!admits(Pane::Agents, &Action::ShowCaptures));
@@ -144,6 +156,7 @@ pub(super) fn open(pane: Pane, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyh
     let mut launch = command(runtime, app);
     if pane == Pane::About { launch.arg("--settings-about"); }
     if pane == Pane::Agents { launch.arg("--settings-agents"); }
+    if pane == Pane::Labs { launch.arg("--settings-labs"); }
     let mut child = launch
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
     let stdin = child.stdin.take();
