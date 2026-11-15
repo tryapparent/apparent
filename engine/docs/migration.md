@@ -3,7 +3,7 @@
 Active goal: complete the owner boundaries below, delivering successive usable
 PRs against current main. A verified merge advances this inventory; it does not
 finish the migration. Current source baseline:
-`a7bd8461a3c32d3e1e0f81c842070404a37d6b7e`.
+`511fa5cabe0f61e9d951c202e648bfe40dbbe39f`.
 
 | Boundary | Implemented evidence | Remaining adoption/removal gate |
 | --- | --- | --- |
@@ -117,11 +117,17 @@ together; no config writer or persistence schema changes.
 
 ## Adopted: Record screen file sampling
 
-Merged #1316 at `a7bd8461a3c32d3e1e0f81c842070404a37d6b7e`; macOS PR checks
-passed, with exact-main AppImage delivery still required. #1315's successor-main
-Capture platform checks, both AppImages and preview publication passed. Its
-separate Connect hosted publication stopped before traffic activation; that
-failure is not Record package proof or a green full-workflow result.
+#1316 merged at `a7bd8461a3c32d3e1e0f81c842070404a37d6b7e`; its Mac/Linux
+platform checks, both AppImages and preview publication passed. Qualification
+then found a real transport gap: a two-minute moving movie's 480-frame reply was
+52,728 bytes, exceeding the shared metadata helper's 32 KiB output cap.
+The bounded repair gives frame replies 128 KiB while retaining metadata's 32 KiB,
+the overall deadline and private-pixel admission. Full phone/screen pages and a
+real packaged CLI benchmark now cover this boundary. Keep donor retirement and
+further diagnostic adoption behind the repair's platform/package acceptance;
+restoring the smaller cap alone would reintroduce the failure with these callers.
+#1320 merged the repair at `511fa5cabe0f61e9d951c202e648bfe40dbbe39f`;
+its exact-main package delivery remains required before diagnostic adoption.
 
 Recovery/reprocessing and its capture benchmark now consume Record's paged
 TypeScript sampling workflow. Record owns 220ms cadence, the existing 640/480px

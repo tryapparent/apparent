@@ -10,6 +10,7 @@ work in the apparent brand.
    `tokens/apparent.tokens.json` or `tokens/apparent.css`. The live book source
    is `../src/brand-document.js`, ordered by `../src/brand-slides.js`.
 2. Read `product-interface.md` before designing an application or workflow.
+   For Desktop Settings, also read `desktop-settings.md`.
 3. Read `svelte-component-system.md` before implementing a Svelte or SvelteKit
    product interface.
 4. Use the token files above; do not retype
@@ -37,13 +38,14 @@ accessible, understandable product interaction.
 
 - `product-interface.md`: foundations, product translation, components,
   accessibility, credibility, and forbidden treatments.
+- `desktop-settings.md`: adopted Desktop Settings composition, help, utility
+  icons, switches, palette-preserving dark mode and remaining state decisions.
 - `marketing-actions.md`: public-site CTA hierarchy and the secondary-action
   highlighter.
-- `svelte-component-system.md`: adopted single-library Bits UI architecture,
-  optional shadcn-svelte source recipes, and LayerChart rules for Svelte
-  products.
+- [Live component library](https://tryapparent.com/brand/#frontend-design-system): actual shared React controls, states, usage and source.
+- `svelte-component-system.md`: historical Svelte recipes, not current product prescriptions.
 - `identifiers.md`: canonical durable product identifiers.
-- `product-interface-specimen.svg`: 1440 x 900 reference composition.
+- `product-interface-specimen.svg`: historical document-product composition.
 - `tokens/`: portable JSON and CSS values.
 - `instructions/`: working and implementation rules.
 - `reference/product-portal/`: preserved Bootstrap 5.3.8 theme and Jinja

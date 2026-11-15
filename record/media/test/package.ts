@@ -147,6 +147,23 @@ try {
   assert.equal(benchmarkBundle.videoOffsetMs,500);assert(benchmarkBundle.keyframes.length>0);
   assert(benchmarkBundle.keyframes.every((frame:{t:number})=>frame.t>=500&&frame.t<=1500));
   assert.equal(hash(join(screen,'recording.mp4')),screenHash); assert.equal(hash(join(screen,'apparent.json')),screenMetadata);
+  // A real full candidate page is larger than metadata's 32 KiB envelope.
+  // Sparse/short fixtures cannot qualify this installed transport boundary.
+  const longScreen=join(root,'full-page.apparent'),longOutput=join(root,'full-page-rebuilt.apparent');
+  mkdirSync(longScreen,{mode:0o700});
+  const longMovie=join(longScreen,'recording.mp4');
+  ffmpeg(['-f','lavfi','-i','testsrc2=s=96x64:r=10:d=120','-c:v','libx264','-threads','1','-pix_fmt','yuv420p',longMovie]);
+  chmodSync(longMovie,0o600);
+  writeFileSync(join(longScreen,'apparent.json'),JSON.stringify({...screenInfo,durationMs:120500,
+    target:{...screenInfo.target,frame:{...screenInfo.target.frame,width:96,height:64}}}),{mode:0o600});
+  const longHash=hash(longMovie),longMetadata=hash(join(longScreen,'apparent.json'));
+  run(binary,['reprocess',longScreen,'--out',longOutput,'--bench','1'],{...process.env,HOME:home,CFFIXED_USER_HOME:home,
+    XDG_CONFIG_HOME:join(home,'config'),XDG_DATA_HOME:join(home,'data'),XDG_RUNTIME_DIR:runtimeDirectory,
+    DISPLAY:'',WAYLAND_DISPLAY:'',DBUS_SESSION_BUS_ADDRESS:'',APPIMAGE_EXTRACT_AND_RUN:'1'});
+  const longBundle=JSON.parse(readFileSync(join(longOutput,'apparent.json'),'utf8'));
+  assert.equal(longBundle.videoOffsetMs,500);assert(longBundle.keyframes.length>0);
+  assert(longBundle.keyframes.every((frame:{t:number})=>frame.t>=500&&frame.t<=120500));
+  assert.equal(hash(longMovie),longHash);assert.equal(hash(join(longScreen,'apparent.json')),longMetadata);
   if (args.length === 6) {
     mkdirSync(resolve(args[5]),{recursive:true,mode:0o700});
     copyFileSync(join(markedOut,markedResult.keyframes[0].file),join(resolve(args[5]),'record-phone-flag.png'));
@@ -155,6 +172,7 @@ try {
     copyFileSync(join(recovered,resultBundle.keyframes[0].file),join(resolve(args[5]),'record-screen-frame.png'));
     copyFileSync(join(recovered,'apparent.json'),join(resolve(args[5]),'record-screen.json'));
     copyFileSync(join(recovered,'summary.md'),join(resolve(args[5]),'record-screen-summary.md'));
+    copyFileSync(join(longOutput,longBundle.contactSheet),join(resolve(args[5]),'record-full-page-sheet.png'));
   }
   console.log('Packaged Record/Engine worker and CLI exported and ingested rotated media; decoded keyframes and source preservation verified.');
 } finally { rmSync(root, {recursive: true, force: true}); }

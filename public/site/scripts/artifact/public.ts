@@ -2,6 +2,9 @@
 import { lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { join, posix } from 'node:path'
 import { parse } from 'parse5'
+import { init, parse as moduleImports } from 'es-module-lexer'
+
+await init()
 
 const privatePath = /(?:^|\/)(?:\.env[^/]*|.*\.map|pitch[^/]*|captures?|contact-sheet\.png|recording\.(?:mp4|mov)|deployment\.json|node_modules|functions|backend)(?:\/|$)/i
 const sensitive = /sourceMappingURL|verified@example|synthetic-csrf|must-not-render|BEGIN (?:RSA |OPENSSH )?PRIVATE KEY|client_secret/
@@ -92,7 +95,13 @@ export function resourceGraph(files: FileInventory, starts: string[]): Set<strin
       }
       visit(parse(text))
     } else if (file.endsWith('.css')) css(file, text)
-    else for (const m of text.matchAll(/(?:\bfrom\s*|\bimport\s*(?:\(\s*)?)["']([^"']+)["']|["']((?:\.?\.?\/|\/)?assets\/[^"'\s]+\.(?:js|css)|\.\/[^"'\s]+\.(?:js|css))["']/g)) reference(file, m[1] || m[2])
+    else {
+      // Read actual module syntax: component documentation and dependency
+      // strings may contain the words import/from without fetching anything.
+      for (const imported of moduleImports(text)[0]) if (imported.n !== undefined) reference(file, imported.n)
+      // Vite's dependency preload tables also name emitted JS/CSS chunks.
+      for (const m of text.matchAll(/["']((?:\.?\.?\/|\/)?assets\/[^"'\s]+\.(?:js|css)|\.\/[^"'\s]+\.(?:js|css))["']/g)) reference(file, m[1])
+    }
   }
   return seen
 }

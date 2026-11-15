@@ -47,5 +47,10 @@ test('packaged Record result reaches the pill and survives renderer reload',asyn
  await expect(page.getByText('Saved · copied',{exact:true})).toBeVisible();
  assert.equal(await application.evaluate(({clipboard})=>clipboard.readText()),text);
  await expect(page.getByRole('button',{name:'Inspect',exact:true})).toBeEnabled();
+ assert.deepEqual(await page.locator('.controls button').evaluateAll(buttons=>buttons.map(button=>button.getAttribute('aria-label'))),['Inspect','Paste','Dismiss']);
+ await expect(page.getByRole('button',{name:'Paste',exact:true})).toHaveAttribute('data-primary','true');
+ await page.getByRole('button',{name:'Inspect',exact:true}).focus();
+ await page.keyboard.press('Tab');
+ await expect(page.getByRole('button',{name:'Paste',exact:true})).toBeFocused();
  assert.equal(await page.evaluate(()=>document.body.textContent.includes('/synthetic/')),false);
 });
