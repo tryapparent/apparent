@@ -22,8 +22,9 @@ FFmpeg. The default verification workflow also runs them in a clean Node contain
 ## Installed consumer
 
 Record and Agent use the same application-owned finite-worker resource helper in
-`composition/worker.rs`. Record now independently pins SDK/provider 0.2 from
-`5bbe8e35e67b61703737991575860d4b1fd1ad57`, matching Agent's published generation.
+`composition/worker.rs`. Record now independently pins SDK/provider 0.3 from
+`2d4686185850037424e86bb7ec34496a549d328d`. Agent retains its independently
+pinned 0.2 generation.
 Its existing metadata policy and wire contracts remain unchanged.
 
 Desktop composition builds this package and explicitly stages the runtime pinned
@@ -94,10 +95,11 @@ private-directory and pixel safety mechanisms for both Record and Agent. Record
 requests are read in batches of four: four maximum-sized 64MP frames fit the
 Engine 256MP job limit. This is a native resource limit, not a workflow budget.
 
-Default keyframe selection, caching, crop/render decisions and periodic sampling
+Default keyframe selection, caching, crop/render decisions and screen periodic sampling
 remain migration debt. Agent's final range-fallback adoption removes the old root
-`movie_frames_at` entry point. Phone ingestion still uses its periodic/native
-candidate decoder, audio extraction and transcription; those donors remain.
+`movie_frames_at` entry point. Phone ingestion still uses native audio extraction
+and transcription. The shared periodic decoder remains for screen recovery and
+other real callers.
 No competing configuration writer is introduced.
 
 Native checks exercise the actual published frame provider and private RGBA
@@ -111,3 +113,32 @@ ordinary ingestion it exercises both explicit callers. Rollback restores those
 two caller routes together; no pin, schema or package-layout changes are needed.
 Signed Mac and Linux AppImage
 proof remain required; file reprocessing does not establish live capture.
+
+## Phone periodic candidates
+
+`phone-policy.ts` owns cadence (`max(250, floor(duration / 480))` milliseconds),
+the 320px candidate edge and adjacent actual-time deduplication. The approximate
+budget can produce 481/482 requests; those timestamps are retained. The published
+Engine executes batches of up to 480 under one overall five-minute worker
+deadline. Candidates use actual movie presentation times rather than explicit
+keyframes' requested bundle times. A private batch directory is consumed and
+removed before the next job; final raw files are linked exclusively into the
+owned job output. Native composition verifies bounded count, strictly increasing
+actual-time labels, file identity, single links, dimensions and pixel totals.
+
+Phone/file assembly's ordinary candidate path consumes this worker. Cadence and
+timestamp decisions are removed from the Rust phone caller. Selection, caching,
+rendering, audio/transcription and screen periodic sampling remain authoritative
+in the root runtime. Existing native readers/build inputs remain for those users.
+
+Both platforms now use Engine's last-sample-at-or-before contract and integer
+floor timestamps. Legacy Mac sampling allowed nearby samples and rounded times;
+that platform difference is deliberately replaced by Record's shared contract.
+The native test decodes a real 122-second sparse movie: 481 requests span two
+jobs and deduplicate to 61 private frames, including a cross-job duplicate.
+Package proof covers ordinary and six-flag assembly; source bytes stay unchanged.
+Small staged-fixture timings are observations, not a controlled speedup claim.
+No live phone, microphone or permission behavior is proved by these file tests.
+
+Rollback reverts the phone routing, worker/generated inventory and Record's pin
+together. No config writer, persistence schema or installed UI routing changes.

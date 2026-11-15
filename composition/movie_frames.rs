@@ -77,6 +77,44 @@ pub(crate) fn agent_range(movie: &Path, times: &[u64], offset: u64) -> Result<Ve
     })
 }
 
+pub(crate) fn record_phone_candidates(movie: &Path, duration: u64) -> Result<Vec<RgbaFrame>> {
+    ensure!(
+        duration > 0 && duration <= SAFE_TIME,
+        "Invalid phone movie duration"
+    );
+    let (output, directory, bytes) = frame_response(
+        "Record media",
+        "record-media",
+        "phone-worker.js",
+        movie,
+        &[duration.to_string()],
+    )?;
+    let reply: Reply =
+        serde_json::from_slice(&bytes).context("Invalid candidate frame response")?;
+    let times = candidate_times(&reply)?;
+    read_frames(output.path(), &directory, &bytes, &times, 0)
+}
+
+fn candidate_times(reply: &Reply) -> Result<Vec<u64>> {
+    // Finite bridge admission; cadence and duplicate selection belong to Record.
+    ensure!(
+        !reply.frames.is_empty() && reply.frames.len() <= 512,
+        "Invalid candidate count"
+    );
+    let mut times = Vec::with_capacity(reply.frames.len());
+    for frame in &reply.frames {
+        ensure!(
+            frame.actual_movie_ms >= 0
+                && frame.requested_ms <= SAFE_TIME
+                && frame.requested_ms == frame.actual_movie_ms as u64
+                && times.last().is_none_or(|last| *last < frame.requested_ms),
+            "Invalid candidate clock"
+        );
+        times.push(frame.requested_ms);
+    }
+    Ok(times)
+}
+
 fn adaptive_batches(
     times: &[u64],
     mut decode: impl FnMut(&[u64]) -> Result<Vec<RgbaFrame>>,
@@ -160,6 +198,27 @@ fn frames(
             && max_edge <= 16384,
         "Invalid movie frame request"
     );
+    let arguments = [
+        video_offset_ms.to_string(),
+        max_edge.to_string(),
+        times
+            .iter()
+            .map(u64::to_string)
+            .collect::<Vec<_>>()
+            .join(","),
+    ];
+    let (output, directory, bytes) =
+        frame_response(label, package, worker_file, movie, &arguments)?;
+    read_frames(output.path(), &directory, &bytes, times, max_edge)
+}
+
+fn frame_response(
+    label: &str,
+    package: &str,
+    worker_file: &str,
+    movie: &Path,
+    arguments: &[String],
+) -> Result<(tempfile::TempDir, File, Vec<u8>)> {
     let (node, worker, engine) =
         super::worker::assets(label, package, "apparent-engine-frames", worker_file)?;
     let movie = std::fs::canonicalize(movie).context("Could not locate movie")?;
@@ -187,18 +246,10 @@ fn frames(
             .arg(engine)
             .arg(input)
             .arg(output.path())
-            .arg(video_offset_ms.to_string())
-            .arg(max_edge.to_string())
-            .arg(
-                times
-                    .iter()
-                    .map(u64::to_string)
-                    .collect::<Vec<_>>()
-                    .join(","),
-            ),
+            .args(arguments),
         Duration::from_secs(305),
     )?;
-    read_frames(output.path(), &directory, &bytes, times, max_edge)
+    Ok((output, directory, bytes))
 }
 
 fn read_frames(
@@ -289,6 +340,39 @@ fn read_frames(
 mod tests {
     use super::*;
     use std::os::unix::fs::symlink;
+
+    #[test]
+    fn candidate_clock_is_actual_unique_and_bounded_before_reading_pixels() {
+        let reply = |times: &[(u64, i64)]| Reply {
+            version: 1,
+            frames: times
+                .iter()
+                .enumerate()
+                .map(|(index, (requested, actual))| Frame {
+                    request_index: index,
+                    requested_ms: *requested,
+                    actual_movie_ms: *actual,
+                    width: 1,
+                    height: 1,
+                    file: format!("frame-{index:03}.rgba"),
+                })
+                .collect(),
+        };
+        assert_eq!(
+            candidate_times(&reply(&[(0, 0), (200, 200)])).unwrap(),
+            [0, 200]
+        );
+        for invalid in [
+            vec![],
+            vec![(0, -1)],
+            vec![(1, 0)],
+            vec![(0, 0), (0, 0)],
+            vec![(200, 200), (0, 0)],
+            vec![(0, 0); 513],
+        ] {
+            assert!(candidate_times(&reply(&invalid)).is_err());
+        }
+    }
 
     #[test]
     fn resource_backoff_preserves_order_and_does_not_repeat_other_failures() {

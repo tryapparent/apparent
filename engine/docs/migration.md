@@ -3,7 +3,7 @@
 Active goal: complete the owner boundaries below, delivering successive usable
 PRs against current main. A verified merge advances this inventory; it does not
 finish the migration. Current source baseline:
-`6d89b149fbd6257ef2a78a5b6ecb83ab4479c7cb`.
+`2d4686185850037424e86bb7ec34496a549d328d`.
 
 | Boundary | Implemented evidence | Remaining adoption/removal gate |
 | --- | --- | --- |
@@ -69,14 +69,18 @@ Signed Mac and both Linux AppImage checks remain gates, separate from live
 physical-device proof. Rollback restores the two explicit native caller routes;
 there is no persistence migration or second configuration writer.
 
-## Current prerequisite: bounded Engine candidate batches
+## Published prerequisite: bounded Engine candidate batches
+
+Merged #1313 at `2d4686185850037424e86bb7ec34496a549d328d`; exact-main
+SDK/four-platform qualification and immutable 0.3 publication passed. #1312's
+exact-main Mac/Linux checks, both AppImages and preview publication also passed.
 
 SDK/native 0.3 raises the explicit request count from 48 to 480, retaining the
 same per-frame/total pixel limits, private files, deadline and cancellation.
-Record's named next consumer is periodic phone/screen candidate assembly:
-TypeScript must own cadence, actual-time interpretation and adjacent duplicate
-selection. This producer slice does not implement that policy or adopt a caller.
-Existing app pins remain 0.2; no root runtime or package inputs are removed.
+The named consumer is periodic phone/screen candidate assembly. Producer
+publication alone leaves installed pins unchanged and adopts no caller; the
+Record phone slice below owns cadence, actual-time interpretation and adjacent
+duplicate selection. No root runtime or package inputs are removed.
 
 Qualification exercises all 480 indexed replies through the packed SDK and
 extracted native artifact, including actual timestamps, duplicates, tail clamps,
@@ -84,6 +88,24 @@ pixels and source preservation, plus direct 481-request refusal. Both Linux and
 Mac architectures remain publication gates. A usable adopted periodic workflow,
 latency comparison and package proof must follow publication before donor removal;
 package qualification alone is not completed owner independence.
+
+## Current slice: Record phone periodic adoption
+
+Record pins the published 0.3 generation and owns phone candidate cadence,
+320px scale and actual-time deduplication in TypeScript. Its real phone/file
+assembly caller no longer computes cadence or calls the native periodic reader.
+The approximate legacy budget can exceed 480; multiple jobs preserve all times,
+one overall deadline and cross-job deduplication. A held native directory
+descriptor and existing finite-worker mechanisms verify final private pixels.
+
+Linux/Mac now use the same published sample-selection/floor-time contract;
+legacy Mac nearby-frame tolerance is deliberately removed. Real sparse-file
+native proof and ordinary/flag-filled package scenarios qualify the new route;
+live device/permission behavior remains separate. Screen periodic assembly,
+audio/transcription, selection, rendering, lifecycle, UI and root build closure
+remain debt. No shared decoder/build input is removed while those callers remain.
+Rollback restores the phone route, generated-worker inventory and consumer pin
+together; no config writer or persistence schema changes.
 
 The contract preserves request identity, duplicates, display orientation and
 actual presentation time in the edited movie timeline. Private caller-owned

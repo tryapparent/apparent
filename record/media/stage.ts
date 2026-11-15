@@ -26,7 +26,7 @@ for (const [file, expected] of Object.entries(pin.sdkFiles)) {
   assert(lstatSync(join(sdk, file)).isFile());
   assert.equal(checksum(join(sdk, file)), expected, `Pinned SDK differs: ${file}`);
 }
-for (const file of ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js']) assert(lstatSync(join(root, 'dist', file)).isFile());
+for (const file of ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js']) assert(lstatSync(join(root, 'dist', file)).isFile());
 const temporary = mkdtempSync(join(tmpdir(), 'apparent-dev-record-media-'));
 try {
   const base = `engine-media-${key}`;
@@ -73,7 +73,7 @@ try {
   }
   const prepared = join(temporary, 'prepared'); mkdirSync(prepared, {mode: 0o700});
   cpSync(native, join(prepared, 'native'), {recursive: true});
-  for (const file of ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js']) cpSync(join(root, 'dist', file), join(prepared, file));
+  for (const file of ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js']) cpSync(join(root, 'dist', file), join(prepared, file));
   mkdirSync(join(prepared, 'node_modules/@apparent'), {recursive: true});
   cpSync(sdk, join(prepared, 'node_modules/@apparent/engine-sdk'), {recursive: true});
   writeFileSync(join(prepared, 'package.json'), '{"type":"module"}\n');

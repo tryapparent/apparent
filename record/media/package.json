@@ -7,11 +7,11 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.tools.json",
-    "test": "node --experimental-strip-types --test test/policy.test.ts test/frames.test.ts",
+    "test": "node --experimental-strip-types --test test/policy.test.ts test/frames.test.ts test/phone.test.ts",
     "test:native": "node --experimental-strip-types --test test/native.test.ts"
   },
   "dependencies": {
-    "@apparent/engine-sdk": "https://github.com/tryapparent/apparent/releases/download/engine-media-5bbe8e35e67b61703737991575860d4b1fd1ad57/apparent-engine-sdk-0.2.0.tgz"
+    "@apparent/engine-sdk": "https://github.com/tryapparent/apparent/releases/download/engine-media-2d4686185850037424e86bb7ec34496a549d328d/apparent-engine-sdk-0.3.0.tgz"
   },
   "devDependencies": {"@types/node": "22.19.0", "typescript": "5.9.3"}
 }
