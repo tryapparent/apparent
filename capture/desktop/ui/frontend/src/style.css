@@ -102,7 +102,7 @@ html:has(.settings-shell),body:has(.settings-shell),#root:has(>.settings-shell){
 .agent-copy svg{width:16px;height:16px}
 .agent-preference{margin-top:24px}.agent-preference-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:44px}
 .agent-preference p{margin:0;font:400 18px/27px 'Host Grotesk',system-ui,sans-serif}
-.settings-content .agent-switch{width:48px;min-width:48px;height:44px;padding:0;border:0;background:transparent;color:var(--apparent-carbon);opacity:1}
+.settings-content .agent-switch{width:48px;min-width:48px;height:44px;padding:0;border:0;background:transparent;color:var(--apparent-carbon)}
 .settings-content .agent-switch[aria-busy=true]{cursor:wait;pointer-events:auto}
 @media(prefers-color-scheme:dark){.settings-shell{background:var(--apparent-carbon);color:var(--apparent-paper)}.settings-sidebar{border-right:1px solid var(--apparent-paper)}}
 /* Keep complete preference values readable at the supported 640px minimum. */

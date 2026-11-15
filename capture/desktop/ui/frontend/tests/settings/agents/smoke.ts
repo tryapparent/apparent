@@ -84,7 +84,10 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
       assert.equal(actions.at(-1)?.setting,'autoPaste'); assert.equal(saved,null);
       if(process.env.APPARENT_AGENTS_PROOF) await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,'auto-paste-on.png')});
       await autoToggle.click(); await expect(autoToggle).toHaveAttribute('aria-checked','false');
-    } else await expect(autoToggle).toBeDisabled();
+    } else {
+      await expect(autoToggle).toBeDisabled();
+      await expect(autoToggle).toHaveCSS('opacity','0.45');
+    }
     const t3Toggle=page.getByRole('switch',{name:'Send recordings to T3'});
     await expect(t3Toggle).toHaveAttribute('aria-checked','false');
     await t3Toggle.click();await expect(t3Toggle).toHaveAttribute('aria-checked','true');
@@ -187,6 +190,10 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
         });
         assert.ok(contrasts.every(value => value >= 4.5), `Text contrast: ${contrasts.join(', ')}`);
         await page.getByRole('heading', {name:'Labs', exact:true}).scrollIntoViewIfNeeded();
+        const limits=page.locator('#auto-paste-limits');
+        await limits.scrollIntoViewIfNeeded();
+        const limitsBounds=await limits.boundingBox();
+        assert.ok(limitsBounds&&limitsBounds.y>=0&&limitsBounds.y+limitsBounds.height<=await page.evaluate(()=>innerHeight)+1,'Complete Labs guidance stays reachable');
         if (process.env.APPARENT_AGENTS_PROOF) {
           await fs.mkdir(process.env.APPARENT_AGENTS_PROOF, {recursive: true});
           await page.screenshot({path: path.join(process.env.APPARENT_AGENTS_PROOF, `agents-${width}-${colorScheme}.png`)});
