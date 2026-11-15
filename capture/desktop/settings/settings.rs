@@ -1339,16 +1339,14 @@ impl Panel {
             Ok("up to date") => UpdateResult::Current,
             Ok(other) => {
                 crate::capture::engine::runtime::apparent_log(format!("Unexpected update check result: {other}"));
-                crate::capture::desktop::workflow::error_reporting::report(
-                    crate::capture::desktop::workflow::error_reporting::Failure::UpdateCheck,
-                );
+                use crate::capture::desktop::workflow::error_reporting::{self, updates::{Stage, Trigger}};
+                let error = error_reporting::updates::failure(Stage::UnexpectedResult, anyhow::anyhow!("unexpected updater response"));
+                error_reporting::report_update(&error, Trigger::User);
                 UpdateResult::Failed
             }
             Err(error) => {
                 crate::capture::engine::runtime::apparent_log(format!("Could not check for updates: {error}"));
-                crate::capture::desktop::workflow::error_reporting::report(
-                    crate::capture::desktop::workflow::error_reporting::Failure::UpdateCheck,
-                );
+                // check_cli reports the typed error before this UI string boundary.
                 UpdateResult::Failed
             }
         });
@@ -2206,6 +2204,8 @@ impl Session {
                         Ok(()) => return Effect::QuitForUpdate,
                         Err(error) => {
                             crate::capture::engine::runtime::apparent_log(format!("Could not relaunch updated AppImage: {error:#}"));
+                            use crate::capture::desktop::workflow::error_reporting::{self, updates::{Stage, Trigger}};
+                            error_reporting::report_update(&error_reporting::updates::failure(Stage::Restart, error), Trigger::User);
                             self.panel.update_check.result = Some(UpdateResult::Failed);
                         }
                     }

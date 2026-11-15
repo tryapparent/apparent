@@ -52,6 +52,9 @@ test('installed About projects parent state and bounds actions', async () => {
     await page.keyboard.press('Home');
     await page.keyboard.press('Enter');
     await expect.poll(() => output.includes('"key":"updateChannel","value":"stable"')).toBe(true);
+    assert.ok(output.indexOf('"action":"dismiss-update-check"') >= 0);
+    assert.ok(output.indexOf('"action":"dismiss-update-check"') < output.indexOf('"key":"updateChannel","value":"stable"'),
+      'the old channel offer is dismissed before changing the persisted preference');
     await page.keyboard.press('Escape');
     await application.evaluate(({ BrowserWindow }, value) => BrowserWindow.getAllWindows()[0].webContents.send('apparent:about-state', value),
       {...state, updateChannel: 'stable', updateCheck: {checking: false, result: null}});

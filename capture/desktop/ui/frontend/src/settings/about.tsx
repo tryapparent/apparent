@@ -55,6 +55,15 @@ export function About() {
     try { await window.apparentAbout.act(action); }
     catch { setError('Unable to complete that action. Please try again.'); }
   }
+  async function changeChannel(channel: string) {
+    setError('');
+    try {
+      // Clear the previous channel's offer before saving the new preference.
+      // Both messages use the existing ordered parent pipe and config writer.
+      await window.apparentAbout.act({ action: 'dismiss-update-check' });
+      await window.apparentAbout.act({ action: 'set', key: 'updateChannel', value: channel });
+    } catch { setError('Unable to change the update channel. Please try again.'); }
+  }
   async function open(link: 'website' | 'source' | 'discord') {
     try { await window.apparentAbout.link(link); }
     catch { setError('Unable to open that link. Please try again.'); }
@@ -109,7 +118,7 @@ export function About() {
         {result && !checking && <img className="settings-frog" src={result === 'available' ? availableFrog : result === 'current' ? currentFrog : failedFrog} alt="" />}
       </section>
       {state.linux && state.mainUpdates && <><div className="settings-channel"><label htmlFor="update-channel">Update channel</label>
-        <NativeSelect id="update-channel" aria-describedby="update-channel-hint" value={state.updateChannel} disabled={checking} onChange={event => void act({ action: 'set', key: 'updateChannel', value: event.target.value })}>
+        <NativeSelect id="update-channel" aria-describedby="update-channel-hint" value={state.updateChannel} disabled={checking} onChange={event => void changeChannel(event.target.value)}>
           <NativeSelectOption value="stable">Stable releases</NativeSelectOption><NativeSelectOption value="main">Latest main</NativeSelectOption>
         </NativeSelect>
       </div><p id="update-channel-hint" className="settings-metadata settings-channel-hint">{channelUpdateHint}</p></>}
