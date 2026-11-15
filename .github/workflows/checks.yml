@@ -396,6 +396,14 @@ jobs:
       - name: Real hook and dependency-install fixtures without native application builds
         run: node --experimental-strip-types enablement/local-tests/run.ts --fixture-mac
 
+      - name: Supply same-attempt installation-contract evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-install-contracts-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/mac-install-contracts.json
+          if-no-files-found: error
+          retention-days: 2
+
   tree-evidence:
     needs: [select, contracts, linux, macos, portable, onboarding-policy, record-media, fixture-mac]
     if: always() && !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.draft == false && needs.select.result == 'success'

@@ -25,6 +25,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   select:
@@ -249,7 +250,7 @@ jobs:
       - uses: actions/setup-node@v4
         if: needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true' || needs.select.outputs.browser == 'true'
         with:
-          node-version: '22'
+          node-version: ${{ runner.os == 'macOS' && '22.23.0' || '22' }}
       - name: Timing helper contracts
         id: timing
         run: |
@@ -265,6 +266,7 @@ jobs:
       - name: Local Desktop install reuse contracts
         if: runner.os == 'macOS'
         env:
+          GH_TOKEN: ${{ github.token }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: node --experimental-strip-types enablement/local-tests/run.ts --base "$BASE_SHA" --head HEAD --desktop-install-contracts --conservative-workflows --run
       - name: Prepare private temporary root before first Cargo

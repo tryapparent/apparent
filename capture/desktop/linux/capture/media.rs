@@ -157,20 +157,12 @@ fn encoder_diagnostic(reason: &str, packaged: bool, distro: &str) -> String {
     }
 }
 
-/// Exercise the same encoder selection as real capture, then verify the resulting movie decodes.
-/// Runs in the packaged process so an installed host plugin cannot mask a missing bundled plugin.
-pub fn encoder_check(movie: &Path) -> Result<()> {
+/// Exercise capture's encoder in the packaged process. Composition must verify
+/// the resulting movie through the published decoder used by real consumers.
+pub fn encode_check_movie(movie: &Path) -> Result<()> {
     init()?;
     let selected = encoder().ok_or_else(|| anyhow!("No H.264 encoder plugin is installed"))?;
-    encode_synthetic(movie, selected, false)?;
-    let frames = frames(movie, FrameTimes::At(&[0]), 0)?;
-    ensure!(
-        frames
-            .first()
-            .is_some_and(|frame| frame.width == 160 && frame.height == 90),
-        "H.264 movie cannot be decoded at 160x90"
-    );
-    Ok(())
+    encode_synthetic(movie, selected, false)
 }
 
 fn encode_synthetic(movie: &Path, selected: &str, diagnose: bool) -> Result<()> {
