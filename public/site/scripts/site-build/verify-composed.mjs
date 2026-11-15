@@ -20,7 +20,8 @@ for (const path of browser) if (landing.has(path) && /\.(?:js|css)$/.test(path))
   assert.match(files.get(path).toString(), /react/i)
   assert.doesNotMatch(files.get(path).toString(), /hosted-|pond-|X-CSRF-Token/)
 }
-for (const path of files.keys()) if (path.endsWith('.html') && !routes.some(route => path === `${route}/index.html`)) resourceGraph(files, [path])
+// validatePublic owns document traversal, including canonical reference templates
+// that are downloadable source rather than executable site entrypoints.
 assert.doesNotMatch(files.get('index.html').toString(), /href="\/(?:connect|hosted)/)
 assert.doesNotMatch(files.get('sitemap.xml').toString(), /\/(?:connect|hosted)/)
 const headers = files.get('_headers').toString(), redirects = files.get('_redirects').toString()

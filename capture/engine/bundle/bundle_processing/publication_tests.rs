@@ -304,6 +304,7 @@ fn publication_recovery_reconciles_only_durable_typed_notes_before_journal_valid
         old,
         Some(None),
         &recover::Media {
+            explicit_frames: |movie, times, _, edge| frames(movie, helper::FrameTimes::At(times), edge),
             probe: crate::composition::media_probe::bundle_probe,
             frames,
             transcribe: |_, _| TranscriptData::default(),

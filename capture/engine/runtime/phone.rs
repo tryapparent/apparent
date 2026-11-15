@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 
-use crate::capture::desktop::helper::{self, FrameTimes, PhoneDevice};
+use crate::capture::desktop::helper::{self, PhoneDevice};
 use crate::capture::engine::runtime::{LiveOverlayEvent, SharedCaptureTelemetry, apparent_log};
 use crate::shared::model::{
     ApparentBundle, CaptureMode, ContextChange, DeviceInfo, InteractionEvent, RgbaFrame,
@@ -22,9 +22,6 @@ use crate::shared::model::{
 /// Keyframes are decoded from the native video and fit to this long edge (736×1600 for a
 /// 1320×2868 phone): every UI point stays resolvable, and agents downsample anything larger.
 pub const PHONE_FRAME_EDGE: u32 = 1600;
-/// Candidate frames for keyframe selection only need enough detail for scene detection.
-const CANDIDATE_EDGE: u32 = 320;
-const MAX_CANDIDATES: u64 = 480;
 
 #[derive(Default)]
 struct MirrorState {
@@ -484,14 +481,13 @@ pub fn build_movie_bundle(
                 target.frame.width = f64::from(probe.width);
                 target.frame.height = f64::from(probe.height);
             }
-            let every = (probe.duration_ms / MAX_CANDIDATES).max(250);
             let t0 = Instant::now();
             let budget = crate::shared::model::keyframe_budget(probe.duration_ms);
             // With a mark for every slot, only the frames under the marks are needed, unless
             // marks on one screen share a keyframe and leave slots for other moments.
             if mark_times.len() >= budget {
                 let direct =
-                    helper::frames(movie_ref, FrameTimes::At(&mark_times), PHONE_FRAME_EDGE);
+                    crate::composition::movie_frames::record(movie_ref, &mark_times, 0, PHONE_FRAME_EDGE);
                 let decode_ms = t0.elapsed().as_millis() as u64;
                 if let Ok(raw_frames) = direct
                     && !raw_frames.is_empty()
@@ -543,7 +539,7 @@ pub fn build_movie_bundle(
                     }
                 }
             }
-            let res = helper::frames(movie_ref, FrameTimes::Every(every), CANDIDATE_EDGE)?;
+            let res = crate::composition::movie_frames::record_phone_candidates(movie_ref, probe.duration_ms)?;
             Ok((probe, res, t0.elapsed().as_millis() as u64, false, None))
         });
         let audio_started = Instant::now();
@@ -594,7 +590,7 @@ pub fn build_movie_bundle(
         full_frames: (!already_full).then(
             || -> crate::capture::engine::bundle::bundle_processing::FullFrames {
                 Box::new(move |times: &[u64]| -> Result<Vec<RgbaFrame>> {
-                    helper::frames(&movie, FrameTimes::At(times), PHONE_FRAME_EDGE)
+                    crate::composition::movie_frames::record(&movie, times, 0, PHONE_FRAME_EDGE)
                 })
             },
         ),

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
-import {cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
+import {chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {basename, dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -26,14 +26,14 @@ for (const [file, expected] of Object.entries(pin.sdkFiles)) {
   assert(lstatSync(join(sdk, file)).isFile());
   assert.equal(checksum(join(sdk, file)), expected, `Pinned SDK differs: ${file}`);
 }
-for (const file of ['worker.js', 'policy.js']) assert(lstatSync(join(root, 'dist', file)).isFile());
+for (const file of ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js']) assert(lstatSync(join(root, 'dist', file)).isFile());
 const temporary = mkdtempSync(join(tmpdir(), 'apparent-dev-record-media-'));
 try {
   const base = `engine-media-${key}`;
   const archive = join(temporary, base + '.tar.gz');
   const cached = join(out, 'native');
-  const names = ['LICENSE', 'apparent-engine-media', 'manifest.json'];
-  if (process.platform === 'darwin') names.push('apparent-engine-probe');
+  const names = ['LICENSE', 'apparent-engine-media', 'apparent-engine-frames', 'manifest.json'];
+  if (process.platform === 'darwin') names.push('apparent-engine-probe', 'apparent-engine-frames-native');
   const verify = (directory: string) => {
     assert.deepEqual(readdirSync(directory).sort(), names.slice().sort());
     for (const name of names) {
@@ -43,7 +43,8 @@ try {
     const manifest = JSON.parse(readFileSync(join(directory, 'manifest.json'), 'utf8'));
     assert.equal(manifest.sourceCommit, pin.commit); assert.equal(manifest.sourceDirty, false);
     assert.equal(manifest.platform, process.platform); assert.equal(manifest.arch, process.arch);
-    assert.equal(manifest.capability, 'movie-probe/1'); assert.equal(manifest.sdkVersion, '0.1.0');
+    assert.equal(manifest.capability, 'movie-probe/1'); assert.equal(manifest.sdkVersion, pin.sdkVersion);
+    for (const capability of pin.capabilities) assert(manifest.capabilities.includes(capability));
     assert.deepEqual(manifest.files.map((entry: {path: string}) => entry.path).sort(), names.filter(n => n !== 'manifest.json').sort());
     for (const entry of manifest.files) {
       assert.equal(basename(entry.path), entry.path);
@@ -72,7 +73,7 @@ try {
   }
   const prepared = join(temporary, 'prepared'); mkdirSync(prepared, {mode: 0o700});
   cpSync(native, join(prepared, 'native'), {recursive: true});
-  for (const file of ['worker.js', 'policy.js']) cpSync(join(root, 'dist', file), join(prepared, file));
+  for (const file of ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js']) cpSync(join(root, 'dist', file), join(prepared, file));
   mkdirSync(join(prepared, 'node_modules/@apparent'), {recursive: true});
   cpSync(sdk, join(prepared, 'node_modules/@apparent/engine-sdk'), {recursive: true});
   writeFileSync(join(prepared, 'package.json'), '{"type":"module"}\n');
@@ -86,5 +87,6 @@ try {
   mkdirSync(dirname(out), {recursive: true});
   // Build output only; the installed app is staged/signed separately, never hot-updated.
   cpSync(prepared, out, {recursive: true});
+  chmodSync(join(out, 'native'), 0o755);
   console.log(`Staged Record media with pinned Engine ${pin.commit} (${key})`);
 } finally { rmSync(temporary, {recursive: true, force: true}); }

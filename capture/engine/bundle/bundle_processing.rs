@@ -260,39 +260,10 @@ fn movie_keyframes_with_cache(
         }
         drop(pool);
         if !missing.is_empty() {
-            out.extend(movie_frames_at(&movie, &missing, offset_ms, 0)?);
+            out.extend(crate::composition::movie_frames::record(&movie, &missing, offset_ms, 0)?);
         }
         Ok(out)
     })
-}
-
-/// Frames of a movie whose clock starts `offset_ms` into the bundle's, at bundle times.
-pub fn movie_frames_at(
-    movie: &Path,
-    times: &[u64],
-    offset_ms: u64,
-    max_edge: u32,
-) -> Result<Vec<RgbaFrame>> {
-    movie_frames_at_with(helper::frames, movie, times, offset_ms, max_edge)
-}
-
-fn movie_frames_at_with(
-    decode: fn(&Path, helper::FrameTimes, u32) -> Result<Vec<RgbaFrame>>,
-    movie: &Path,
-    times: &[u64],
-    offset_ms: u64,
-    max_edge: u32,
-) -> Result<Vec<RgbaFrame>> {
-    let at: Vec<u64> = times.iter().map(|t| t.saturating_sub(offset_ms)).collect();
-    let mut frames = decode(movie, helper::FrameTimes::At(&at), max_edge)?;
-    // The helper stamps each frame with the time it was asked for, clamped to the movie (the
-    // last keyframe can fall just past its end); map it back to the bundle time.
-    for frame in &mut frames {
-        if let Some(i) = (0..at.len()).min_by_key(|&i| at[i].abs_diff(frame.t_ms)) {
-            frame.t_ms = times[i];
-        }
-    }
-    Ok(frames)
 }
 
 /// The durable notes file is authoritative; legacy events survive when it is absent.
@@ -419,7 +390,7 @@ pub fn finalize_capture_bundle(
                         .all(|(k, _)| k.reason == model::KeyframeReason::Mark);
                 let times: Vec<u64> = preview.iter().map(|(k, _)| k.t).collect();
                 let decoded =
-                    movie_frames_at(movie, &times, video_offset_ms, 0).unwrap_or_default();
+                    crate::composition::movie_frames::record(movie, &times, video_offset_ms, 0).unwrap_or_default();
                 if duration_ms >= 20_000 {
                     let cache = if marks_fill {
                         Vec::new()
@@ -535,9 +506,9 @@ pub fn rebuild_screen_bundle_with(
     for frame in &mut frames {
         frame.t_ms += offset;
     }
-    let (decode, movie) = (media.frames, video.clone());
+    let (decode, movie) = (media.explicit_frames, video.clone());
     let full_frames: Option<FullFrames> = Some(Box::new(move |times: &[u64]| {
-        movie_frames_at_with(decode, &movie, times, offset, 0)
+        decode(&movie, times, offset, 0)
     }));
     Ok(build_bundle_from_parts(
         out,

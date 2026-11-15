@@ -3,7 +3,7 @@
 Active goal: complete the owner boundaries below, delivering successive usable
 PRs against current main. A verified merge advances this inventory; it does not
 finish the migration. Current source baseline:
-`5bbe8e35e67b61703737991575860d4b1fd1ad57`.
+`2d4686185850037424e86bb7ec34496a549d328d`.
 
 | Boundary | Implemented evidence | Remaining adoption/removal gate |
 | --- | --- | --- |
@@ -12,19 +12,100 @@ finish the migration. Current source baseline:
 | Engine media operations | #1299 landed explicit-time frames at `6c65748d4f2d32fd2dc8b966685e7e0ba33f9794`; successor `5bbe8e35e67b61703737991575860d4b1fd1ad57` requalified SDK/all four native architectures and published immutable SDK 0.2/frame artifacts. Root transcription, audio, encoders and remaining image mechanisms are authoritative. | Adopt frame capability through real consumers, then continue remaining capabilities with native/plugin/model inputs and package proof. |
 | Record workflow | Headless completion, storage controllers and export metadata policy have real consumers. | Capture-to-handoff assembly, recovery decisions, preferences/defaults, retention planning, keyframe/transcript assembly and remaining export policy still cross Rust owners. |
 | Desktop | Accepted React Settings, onboarding and recording controls coexist with native shell/legacy fallback paths. | Complete actual Electron workflows and shell/platform integration, then remove replaced Rust policy/UI and its build closure. Preserve one durable config writer until its accepted replacement. |
-| Agent | CLI inspection/proof and bundle consumers still compose the root native app. | Consume published Record/Engine contracts with compatible bundle/text/image output and independent packaging. |
+| Agent | #1305 landed zoom's published Engine frame adoption at `ceaf6fdd2dc67e90215154dc96a1282f42254753`; #1308 corrected the AppImage cache cleanup proof at `91fa763dc5039920806d949192fc2cdafc23f029`. Both full/cropped real callers use the SDK; #1308 exact-main AppImages and publication passed. | Qualify the range-fallback adoption below, then migrate remaining CLI composition. Whole-Agent independence is not established. |
 | Connect / Public | Public and hosted web/service loops are TypeScript. Connect has compiled TypeScript crypto, listing/foreground/MCP consumers alongside authoritative Rust transfer/identity/queue code. | Finish native Connect caller/persistence adoption and remove repo-owned Rust from Connect build/release inputs. Preserve encryption, consent, cancellation, retry and publication semantics. |
 | Composition / Shared / Enablement | One canonical hook/CI selector; independent Engine producer routing; existing app staging embeds explicit capability artifacts. | Remove obsolete source/build/package edges as consumers qualify. Shared must not absorb displaced policy. Prove each independence claim without Rust tools/cached native output. |
 
-## Current slice: Agent zoom adoption
+## Adopted: Record explicit keyframes
 
 The bounded native `movie-frames/1` capability and SDK are published. Agent zoom
-now routes its cropped and full-frame callers through `capture/agent/media/` and
-the checksum-pinned artifact. Its TypeScript clock mapping preserves request
-identity when several bundle times clamp to movie zero. Application composition
-owns process/resources; sampling, crop decisions and rendering retain their
-existing owners. Consumer platform/package acceptance remains required before
-this slice merges. The root decoder remains for Record's other real callers.
+uses them through its own worker. #1309 merged Record adoption at
+`5893f3607d01080fea8a5006c9396799209f30cd`. It routes capture predecode,
+full-keyframe assembly and screen recovery/reprocessing through its separate
+`record/media/frames-worker`. Record's TypeScript mapping preserves bundle-clock
+identity when several requests clamp to movie zero. Application composition
+shares finite-process/private-pixel mechanisms without importing product owners.
+Four-frame resource batches respect the provider's maximum pixel budget.
+
+Recovery's explicit-frame injection and real callers move together; periodic
+sampling remains separate. Phone periodic frame paths, selection,
+caching and rendering remain native debt. Do not remove these
+donors until their remaining consumers are adopted. Record's metadata policy is
+unchanged while its provider/SDK pin moves from 0.1 to the published 0.2 generation.
+No persistence schema or configuration writer changes.
+
+## Adopted: Agent native range fallback
+
+Merged #1311 at `8f398bee6bea8e1c50d6de09e9ada5da145c7132`.
+When FFmpeg is unavailable, the real `apparent frames` caller uses Agent's
+published-SDK worker. The final root `movie_frames_at` bundle-clock wrapper is
+removed; periodic/phone native decoders remain. Range/FPS policy, preferred
+FFmpeg execution, PNG writing and existing-keyframe fallback stay authoritative
+in the root CLI. This does not establish whole-Agent build independence.
+
+Native composition sizes jobs from observed pixels within published limits and
+backs off only on typed resource failures, preserving cleanup before retry.
+Linux staged-CLI proof exercises 51 frames, decoded pixels, repeated lower-FPS
+extraction, unrelated-file preservation and unchanged source bytes. Mac and
+actual Linux AppImage proof remain delivery gates for this slice. Rollback
+reverts the routing, wrapper removal and worker-status contract together; no
+provider pin, package layout, config writer or persistence format changes.
+
+## Adopted: phone/file explicit frames
+
+Merged #1312 at `6d89b149fbd6257ef2a78a5b6ecb83ab4479c7cb`;
+exact-main delivery remains its acceptance gate.
+
+Phone/file assembly's dense-mark fast path and selected full-frame callback now
+consume Record's existing frame worker with movie-clock requests (zero offset)
+and the unchanged 1600px edge. Periodic sampling, audio/transcription, mark
+selection, assembly policy and device capture remain on their existing paths.
+No provider publication or packaging-layout change is needed. Remove neither
+the old periodic decoder nor its native build inputs while they have callers.
+
+Real file-reprocessing proof must cover ordinary selection and a full flag
+budget, timestamps, mark associations, decoded pixels and source preservation.
+Signed Mac and both Linux AppImage checks remain gates, separate from live
+physical-device proof. Rollback restores the two explicit native caller routes;
+there is no persistence migration or second configuration writer.
+
+## Published prerequisite: bounded Engine candidate batches
+
+Merged #1313 at `2d4686185850037424e86bb7ec34496a549d328d`; exact-main
+SDK/four-platform qualification and immutable 0.3 publication passed. #1312's
+exact-main Mac/Linux checks, both AppImages and preview publication also passed.
+
+SDK/native 0.3 raises the explicit request count from 48 to 480, retaining the
+same per-frame/total pixel limits, private files, deadline and cancellation.
+The named consumer is periodic phone/screen candidate assembly. Producer
+publication alone leaves installed pins unchanged and adopts no caller; the
+Record phone slice below owns cadence, actual-time interpretation and adjacent
+duplicate selection. No root runtime or package inputs are removed.
+
+Qualification exercises all 480 indexed replies through the packed SDK and
+extracted native artifact, including actual timestamps, duplicates, tail clamps,
+pixels and source preservation, plus direct 481-request refusal. Both Linux and
+Mac architectures remain publication gates. A usable adopted periodic workflow,
+latency comparison and package proof must follow publication before donor removal;
+package qualification alone is not completed owner independence.
+
+## Current slice: Record phone periodic adoption
+
+Record pins the published 0.3 generation and owns phone candidate cadence,
+320px scale and actual-time deduplication in TypeScript. Its real phone/file
+assembly caller no longer computes cadence or calls the native periodic reader.
+The approximate legacy budget can exceed 480; multiple jobs preserve all times,
+one overall deadline and cross-job deduplication. A held native directory
+descriptor and existing finite-worker mechanisms verify final private pixels.
+
+Linux/Mac now use the same published sample-selection/floor-time contract;
+legacy Mac nearby-frame tolerance is deliberately removed. Real sparse-file
+native proof and ordinary/flag-filled package scenarios qualify the new route;
+live device/permission behavior remains separate. Screen periodic assembly,
+audio/transcription, selection, rendering, lifecycle, UI and root build closure
+remain debt. No shared decoder/build input is removed while those callers remain.
+Rollback restores the phone route, generated-worker inventory and consumer pin
+together; no config writer or persistence schema changes.
 
 The contract preserves request identity, duplicates, display orientation and
 actual presentation time in the edited movie timeline. Private caller-owned

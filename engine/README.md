@@ -59,6 +59,10 @@ nearby frame. It can take longer and retains the same SDK deadline and limits.
 `OUTPUT` must be a fresh, caller-owned `0700` directory. The public
 SDK validates request identity, file ownership, dimensions and exact byte counts.
 See [the SDK contract](sdk/README.md#movie-frames) for clocks, limits and cleanup.
+Generation 0.3 accepts up to 480 explicit requests within the unchanged 256 Mi
+pixel job budget. This enables Record's bounded candidate pass without changing
+sampling policy or installed callers. Existing app pins remain on 0.2 until a
+separate compatible consumer adoption is accepted; rollback preserves those pins.
 The metadata reader stays separate and does not link GStreamer.
 
 The extracted native package and installed SDK qualify real decoded pixels,
@@ -89,6 +93,11 @@ download occurs when exporting. See `record/media/README.md` for policy, package
 proof and rollback. Bundle ingestion/recovery and retention's size observation
 also consume Record's container-clock metadata contract. Both platforms' replaced
 Desktop probes and the Swift helper probe command are removed.
+
+Agent zoom, its native range fallback and Record's explicit assembly/recovery frames consume the
+published frame capability through their own headless TypeScript workers.
+Application composition shares finite-process/private-pixel safety mechanisms;
+the owners retain their respective bundle-clock interpretation and artifact pins.
 
 This is bounded adoption, not completed application separation. Capture, native
 rendering, phone capture, frame/audio decoding and retention mutation still use

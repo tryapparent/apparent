@@ -1,4 +1,4 @@
-# Record movie metadata
+# Record movie metadata and keyframes
 
 This headless package interprets movie metadata for Mac/Linux bundle ingestion,
 recovery, retention observations and export. It consumes the published
@@ -22,8 +22,10 @@ FFmpeg. The default verification workflow also runs them in a clean Node contain
 ## Installed consumer
 
 Record and Agent use the same application-owned finite-worker resource helper in
-`composition/worker.rs`. Record's metadata policy, wire contracts and SDK/provider
-pin remain independent of Agent's frame capability and are unchanged by its adoption.
+`composition/worker.rs`. Record now independently pins SDK/provider 0.3 from
+`2d4686185850037424e86bb7ec34496a549d328d`. Agent retains its independently
+pinned 0.2 generation.
+Its existing metadata policy and wire contracts remain unchanged.
 
 Desktop composition builds this package and explicitly stages the runtime pinned
 in `engine.json` using `stage.ts --out <generated-app-directory>`. Provisioning
@@ -66,11 +68,77 @@ file-ingestion proof, not evidence of a live phone/camera capture session.
 Existing crop/camera/ink/encoding, explicit recorded/silent/narration policy,
 settings and persistence remain authoritative. Phone/file ingestion, recovery and
 retention consume this published provider through the bundle metadata contract.
-Their frame decoding, audio extraction and retention mutation/exclusion remain
-native. The replaced Desktop probes, Linux metadata/audio-decode probe and Swift
+Frame decoding executes through native Engine capabilities; audio extraction,
+periodic candidate sampling and retention mutation/exclusion remain native in
+the root runtime. The replaced Desktop probes, Linux metadata/audio-decode probe and Swift
 helper `probe` command are removed. Native audio edit checks used by the encoder
 remain safety/execution mechanics. Linux export's superseded FFprobe parser is
 also removed.
 Revert this consumer slice and its artifact pin together for rollback. No user
 config/data migration or installed experimental routing is involved. This does
 not claim complete application build independence or measured CI savings.
+
+## Explicit assembly and recovery frames
+
+`frames-worker.js` consumes the public `decodeMovieFrames` API. Record owns the
+bundle/movie clock mapping and preserves request indices when several early
+keyframes clamp to movie zero. Source times are safe integers; missing, reordered
+or relabelled replies fail instead of changing a keyframe's identity.
+
+Capture predecode, full-keyframe assembly, screen recovery/reprocessing and
+phone/file assembly's explicit mark/full-frame callers use this provider.
+Phone requests already use movie time, so their offset is zero and their
+1600px long-edge limit is unchanged. Recovery's injected `Media.explicit_frames` contract is distinct
+from its periodic-sampling provider, so its real caller cannot silently retain
+the old explicit decoder. `composition/movie_frames.rs` supplies native process,
+private-directory and pixel safety mechanisms for both Record and Agent. Record
+requests are read in batches of four: four maximum-sized 64MP frames fit the
+Engine 256MP job limit. This is a native resource limit, not a workflow budget.
+
+Default keyframe selection, caching, crop/render decisions and screen periodic sampling
+remain migration debt. Agent's final range-fallback adoption removes the old root
+`movie_frames_at` entry point. Phone ingestion still uses native audio extraction
+and transcription. The shared periodic decoder remains for screen recovery and
+other real callers.
+No competing configuration writer is introduced.
+
+Native checks exercise the actual published frame provider and private RGBA
+pixels. The package proof also reprocesses a synthetic screen bundle with a
+500ms movie offset, checking bundle-clock keyframes, display dimensions and
+source preservation. Optional `--proof-dir <private-job-directory>` retains its
+synthetic PNGs and bundle text for inspection. A second phone/file scenario
+fills the six-frame budget with distinct flags, checking original timestamps,
+mark associations, decoded pixels and unchanged source bytes. Together with
+ordinary ingestion it exercises both explicit callers. Rollback restores those
+two caller routes together; no pin, schema or package-layout changes are needed.
+Signed Mac and Linux AppImage
+proof remain required; file reprocessing does not establish live capture.
+
+## Phone periodic candidates
+
+`phone-policy.ts` owns cadence (`max(250, floor(duration / 480))` milliseconds),
+the 320px candidate edge and adjacent actual-time deduplication. The approximate
+budget can produce 481/482 requests; those timestamps are retained. The published
+Engine executes batches of up to 480 under one overall five-minute worker
+deadline. Candidates use actual movie presentation times rather than explicit
+keyframes' requested bundle times. A private batch directory is consumed and
+removed before the next job; final raw files are linked exclusively into the
+owned job output. Native composition verifies bounded count, strictly increasing
+actual-time labels, file identity, single links, dimensions and pixel totals.
+
+Phone/file assembly's ordinary candidate path consumes this worker. Cadence and
+timestamp decisions are removed from the Rust phone caller. Selection, caching,
+rendering, audio/transcription and screen periodic sampling remain authoritative
+in the root runtime. Existing native readers/build inputs remain for those users.
+
+Both platforms now use Engine's last-sample-at-or-before contract and integer
+floor timestamps. Legacy Mac sampling allowed nearby samples and rounded times;
+that platform difference is deliberately replaced by Record's shared contract.
+The native test decodes a real 122-second sparse movie: 481 requests span two
+jobs and deduplicate to 61 private frames, including a cross-job duplicate.
+Package proof covers ordinary and six-flag assembly; source bytes stay unchanged.
+Small staged-fixture timings are observations, not a controlled speedup claim.
+No live phone, microphone or permission behavior is proved by these file tests.
+
+Rollback reverts the phone routing, worker/generated inventory and Record's pin
+together. No config writer, persistence schema or installed UI routing changes.

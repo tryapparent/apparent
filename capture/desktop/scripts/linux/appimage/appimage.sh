@@ -60,6 +60,7 @@ LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy \
   --executable "$binary" \
   --deploy-deps-only "$appdir/usr/share/apparent/settings/runtime" \
   --deploy-deps-only "$appdir/usr/share/apparent/settings/app/electron/agent-media/native" \
+  --deploy-deps-only "$appdir/usr/share/apparent/settings/app/electron/record-media/native" \
   "${libraries[@]}" \
   --executable "$(command -v wl-copy)" \
   --executable "$(command -v wl-paste)" \

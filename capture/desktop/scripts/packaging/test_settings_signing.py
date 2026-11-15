@@ -30,6 +30,8 @@ class SigningTests(unittest.TestCase):
                              "electron/record-media/node_modules/@apparent/engine-sdk/dist/index.js",
                              "electron/record-media/native/apparent-engine-media",
                              "electron/record-media/native/apparent-engine-probe",
+                             "electron/record-media/native/apparent-engine-frames",
+                             "electron/record-media/native/apparent-engine-frames-native",
                              "electron/agent-media/worker.js", "electron/agent-media/policy.js",
                              "electron/agent-media/node_modules/@apparent/engine-sdk/dist/index.js",
                              "electron/agent-media/native/apparent-engine-frames",
@@ -89,7 +91,7 @@ class SigningTests(unittest.TestCase):
                 def runtime_signer(runtime, sign, entitlements):
                     self.assertIn(sign + [str(addon)], signed)
                     self.assertIn(["codesign", "--verify", "--strict", str(addon)], signed)
-                    for name in ("apparent-engine-media", "apparent-engine-probe"):
+                    for name in ("apparent-engine-media", "apparent-engine-probe", "apparent-engine-frames", "apparent-engine-frames-native"):
                         binary = mac / "app/electron/record-media/native" / name
                         self.assertIn(sign + [str(binary)], signed)
                         self.assertIn(["codesign", "--verify", "--strict", str(binary)], signed)

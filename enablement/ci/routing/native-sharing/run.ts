@@ -14,6 +14,9 @@ export const nativeRequired = (plan: Plan) => plan.root || plan.engine || plan.d
 export function unionPlan(left: Plan, right: Plan): Plan {
   return Object.fromEntries(Object.keys(left).map(key => [key, left[key as keyof Plan] || right[key as keyof Plan]])) as Plan;
 }
+export function nativePlan(plan: Plan): Plan {
+  return {...planFromOwners([]), root: plan.root, engine: plan.engine, desktop: plan.desktop, client: plan.client};
+}
 export type Identity = {sha: string; tree: string; run: string; attempt: string; workflow: string};
 export type NativeReceipt = Identity & {schema: 1; plan: Plan; macPlan: Plan; linux: boolean; macos: boolean};
 export function sharedNative(raw: string | undefined, identity: Identity, required: Plan): boolean {
@@ -22,7 +25,7 @@ export function sharedNative(raw: string | undefined, identity: Identity, requir
     const trusted = identity.workflow === 'tryapparent/apparent/.github/workflows/checks.yml@refs/heads/main' ||
       /^tryapparent\/apparent\/\.github\/workflows\/checks.yml@refs\/pull\/\d+\/merge$/.test(identity.workflow);
     return trusted && receipt.schema === 1 && Object.entries(identity).every(([key, value]) => value && receipt[key as keyof Identity] === value) &&
-        receipt.linux === true && receipt.macos === true && covers(receipt.plan, required) && covers(receipt.macPlan, required);
+        receipt.linux === true && receipt.macos === true && covers(receipt.plan, nativePlan(required)) && covers(receipt.macPlan, nativePlan(required));
   } catch { return false; }
 }
 const git = (ref: string) => execFileSync('git', ['rev-parse', ref], {encoding: 'utf8'}).trim();
@@ -38,7 +41,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
     // Verification-only inputs must not widen a tooling plan into all of Connect.
     const connect = range.requiredStreams.connect;
     const manualOrMain = process.env.GITHUB_EVENT_NAME !== 'pull_request';
-    const additional = connect ? connectPlan(manualOrMain ? suitePlan(null) : range.plan) : planFromOwners([]);
+    // Only the native producer is shared. Connect's own portable job remains
+    // responsible for its foreground/browser/service verification on main.
+    const additional = nativePlan(connect ? connectPlan(manualOrMain ? suitePlan(null) : range.plan) : planFromOwners([]));
     const plan = unionPlan(parsePlan(process.env.VERIFICATION_PLAN), additional);
     const macPlan = unionPlan(parsePlan(process.env.MAC_VERIFICATION_PLAN), additional);
     output({plan, mac_plan: macPlan, connect, platform: nativeRequired(plan), macos: nativeRequired(macPlan),

@@ -48,11 +48,15 @@ Engine-only inputs have no installed-app consumer. SDK/capability details and
 remaining adoption gates live in `engine/README.md`.
 
 `checks.yml` orchestrates Capture and Connect on PRs targeting main and main pushes.
-It verifies the union of their required Linux/Mac plans once, then calls
+It verifies the union of their required Linux/Mac platform suites once, then calls
 `stream-connect.yml` with a receipt bound to the same SHA, tree, workflow, run and
 attempt. Connect retains its own contracts, portable checks and publication gates;
 manual dispatch retains independent platform execution when no valid shared
 receipt exists. Public keeps its direct `stream-public.yml` automatic entrypoint.
+The shared adapter adds only root/Engine, Desktop and client platform requirements
+from Connect. Capture keeps its original portable selection; Connect's own
+portable job remains required independently of the shared native receipt. A
+receipt's native substitution check therefore projects only those platform fields.
 Broad event filters do not add product consumers to a tooling-only plan.
 Automatic PR and main triggers follow directory ownership. The sole authority is
 `enablement/ci/routing/consumers.ts`: directory/consumer rules, named suites,

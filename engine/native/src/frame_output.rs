@@ -6,7 +6,7 @@ use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 
 pub type Result<T> = std::result::Result<T, &'static str>;
-pub const MAX_FRAMES: usize = 48;
+pub const MAX_FRAMES: usize = 480;
 pub const MAX_EDGE: u32 = 16_384;
 pub const MAX_FRAME_PIXELS: u64 = 64 * 1024 * 1024;
 pub const MAX_JOB_PIXELS: u64 = 256 * 1024 * 1024;

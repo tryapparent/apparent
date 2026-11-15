@@ -2,12 +2,13 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync} from 'node:fs';
+import {chmodSync, copyFileSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 
 const args = process.argv.slice(2);
-assert.equal(args.length, 4); assert.equal(args[0], '--binary'); assert.equal(args[2], '--settings');
+assert([4, 6].includes(args.length)); assert.equal(args[0], '--binary'); assert.equal(args[2], '--settings');
+if (args.length === 6) assert.equal(args[4], '--proof-dir');
 const binary = resolve(args[1]), settings = resolve(args[3]);
 const runtime = join(settings, 'runtime', process.platform === 'darwin' ? 'Electron.app/Contents/MacOS/Electron' : 'electron');
 const app = join(settings, 'app/electron/record-media');
@@ -79,5 +80,59 @@ try {
     ffmpeg(['-xerror', '-i', file, '-f', 'null', '-']);
   }
   assert.equal(hash(silent), beforeIngestion); assert.equal(hash(join(input, 'apparent.json')), beforeManifest);
+  // Six distinct flags fill the ordinary budget and exercise phone assembly's
+  // direct-mark path, independently of its periodic-candidate/full-frame path.
+  const marked = join(root, 'marked.apparent'), markedOut = join(root, 'marked-rebuilt.apparent');
+  mkdirSync(marked, {mode:0o700}); copyFileSync(silent, join(marked,'recording.mp4'));
+  chmodSync(join(marked,'recording.mp4'),0o600);
+  const marks = [0,100,200,300,400,500].map((t,index) => ({id:`f${index+1}`,shape:'flag',
+    strokes:[],t0:t,t1:t,boxNorm:[0,0,1,1],description:'flagged this moment'}));
+  writeFileSync(join(marked,'apparent.json'),JSON.stringify({...incoming,marks}),{mode:0o600});
+  const markedMovie = hash(join(marked,'recording.mp4')), markedMetadata = hash(join(marked,'apparent.json'));
+  run(binary,['reprocess',marked,'--out',markedOut],{...process.env,HOME:home,CFFIXED_USER_HOME:home,
+    XDG_CONFIG_HOME:join(home,'config'),XDG_DATA_HOME:join(home,'data'),XDG_RUNTIME_DIR:runtimeDirectory,
+    DISPLAY:'',WAYLAND_DISPLAY:'',DBUS_SESSION_BUS_ADDRESS:'',APPIMAGE_EXTRACT_AND_RUN:'1'});
+  const markedResult = JSON.parse(readFileSync(join(markedOut,'apparent.json'),'utf8'));
+  assert.equal(markedResult.keyframes.length,6);
+  assert.deepEqual(markedResult.keyframes.map((frame:{t:number})=>frame.t),[0,100,200,300,400,500]);
+  assert(markedResult.keyframes.every((frame:{reason:string})=>frame.reason==='mark'));
+  assert(markedResult.marks.every((mark:{frame?:string})=>mark.frame));
+  assert.equal(hash(join(marked,'recording.mp4')),markedMovie); assert.equal(hash(join(marked,'apparent.json')),markedMetadata);
+  for (const frame of markedResult.keyframes) {
+    const pixels = execFileSync('ffmpeg',['-v','error','-nostdin','-i',join(markedOut,frame.file),'-f','rawvideo','-pix_fmt','rgba','-'],{maxBuffer:1024*1024});
+    assert.equal(pixels.length,48*64*4); const center=(32*48+24)*4;
+    assert(pixels[center+2]>pixels[center]+40,'decoded phone frame stays blue beneath annotations');
+  }
+  // Screen recovery/reprocessing has a distinct explicit-frame provider from
+  // phone ingestion. Exercise its real packaged caller and nonzero movie offset.
+  const screen = join(root, 'screen.apparent'), recovered = join(root, 'screen-rebuilt.apparent');
+  mkdirSync(screen, {mode:0o700}); copyFileSync(silent, join(screen,'recording.mp4'));
+  chmodSync(join(screen,'recording.mp4'),0o600);
+  const screenInfo = {...incoming, source:'screen', device:undefined, durationMs:1500, videoOffsetMs:500,
+    target:{...incoming.target,frame:{...incoming.target.frame,width:48,height:64}}};
+  writeFileSync(join(screen,'apparent.json'),JSON.stringify(screenInfo),{mode:0o600});
+  const screenHash = hash(join(screen,'recording.mp4')), screenMetadata = hash(join(screen,'apparent.json'));
+  run(binary,['reprocess',screen,'--out',recovered],{...process.env,HOME:home,CFFIXED_USER_HOME:home,
+    XDG_CONFIG_HOME:join(home,'config'),XDG_DATA_HOME:join(home,'data'),XDG_RUNTIME_DIR:runtimeDirectory,
+    DISPLAY:'',WAYLAND_DISPLAY:'',DBUS_SESSION_BUS_ADDRESS:'',APPIMAGE_EXTRACT_AND_RUN:'1'});
+  const resultBundle = JSON.parse(readFileSync(join(recovered,'apparent.json'),'utf8'));
+  assert(resultBundle.keyframes.length > 0); assert.equal(resultBundle.videoOffsetMs,500);
+  for (const frame of resultBundle.keyframes) {
+    assert(frame.t >= 500 && frame.t <= 1500,'bundle clock must survive explicit-frame decoding');
+    const file = join(recovered,frame.file);
+    const decoded = JSON.parse(run('ffprobe',['-v','error','-show_streams','-of','json',file])).streams[0];
+    assert.equal(decoded.width,48); assert.equal(decoded.height,64);
+    ffmpeg(['-xerror','-i',file,'-f','null','-']);
+  }
+  assert.equal(hash(join(screen,'recording.mp4')),screenHash); assert.equal(hash(join(screen,'apparent.json')),screenMetadata);
+  if (args.length === 6) {
+    mkdirSync(resolve(args[5]),{recursive:true,mode:0o700});
+    copyFileSync(join(markedOut,markedResult.keyframes[0].file),join(resolve(args[5]),'record-phone-flag.png'));
+    copyFileSync(join(markedOut,'summary.md'),join(resolve(args[5]),'record-phone-summary.md'));
+    copyFileSync(join(recovered,resultBundle.contactSheet),join(resolve(args[5]),'record-screen-sheet.png'));
+    copyFileSync(join(recovered,resultBundle.keyframes[0].file),join(resolve(args[5]),'record-screen-frame.png'));
+    copyFileSync(join(recovered,'apparent.json'),join(resolve(args[5]),'record-screen.json'));
+    copyFileSync(join(recovered,'summary.md'),join(resolve(args[5]),'record-screen-summary.md'));
+  }
   console.log('Packaged Record/Engine worker and CLI exported and ingested rotated media; decoded keyframes and source preservation verified.');
 } finally { rmSync(root, {recursive: true, force: true}); }

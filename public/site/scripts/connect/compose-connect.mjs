@@ -3,6 +3,7 @@ import { lstatSync, readdirSync, readFileSync, mkdirSync, writeFileSync, rmSync 
 import { join, dirname, posix, resolve } from 'node:path'
 import { parse } from 'parse5'
 import { fileURLToPath } from 'node:url'
+import { resourceGraph as publicResourceGraph, validatePublic as validatePublicArtifact } from '../artifact/public.ts'
 
 export const routes = ['connect', 'connect/device', 'connect/shares', 'hosted', 'hosted/device', 'hosted/shares']
 export const approved = ['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.png', 'hosted/agent-reading-v4.png', 'HostGrotesk-Variable.ttf', 'apparent-wordmark.svg']
@@ -49,6 +50,7 @@ export function validatePreservedFiles(files, expected) {
 // Include HTML modulepreloads, emitted static/dynamic imports and Vite preload
 // tables (quoted asset filenames), CSS imports and URLs. Navigation is not a fetch.
 export function resourceGraph(files, starts, connect = false) {
+  if (!connect) return publicResourceGraph(files, starts)
   const seen = new Set(), pending = [...starts]
   function reference(file, ref) {
     if (/^(?:data:|#)/.test(ref)) return
@@ -200,13 +202,9 @@ export function writeArtifact(out, files, inputs = []) {
 }
 
 export function validatePublic(files, canonical) {
-  for (const [path, bytes] of files) {
-    if (!/^(?:index\.html|robots\.txt|sitemap\.xml|apparent-wordmark\.svg|icon\.svg|HostGrotesk-Variable\.ttf|social-preview-v1\.png|Apparent-ghost-demo-v4-lilac(?:-poster\.jpg|\.mp4))$/.test(path)
-      && !/^assets\/[^/]+-[\w-]+\.(?:js|css)$/.test(path)
-      && !(/^(?:pond|team|feature-demos)\/.+/.test(path) && canonicalAsset(canonical, path)?.equals(bytes))) throw Error(`Unexpected Public output: ${path}`)
-    if (/\.(?:html|js|css|svg)$/.test(path) && sensitive.test(bytes.toString())) throw Error(`Private Public content: ${path}`)
-  }
-  resourceGraph(files, ['index.html'])
+  // Composition consumes the raw Public package, before either publisher adds a worker.
+  if (files.has('_worker.js')) throw Error('Unexpected Public output: _worker.js')
+  validatePublicArtifact(files, canonical)
 }
 export function composeArtifacts(publicRoot, connectRoot, canonicalRoot, out, options = {}) {
   const publicFiles = inventory(publicRoot), connectFiles = inventory(connectRoot), canonical = inventory(canonicalRoot)
