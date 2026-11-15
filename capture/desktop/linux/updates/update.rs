@@ -504,7 +504,7 @@ fn update_policy_assets() -> Option<(PathBuf, PathBuf)> {
     let executable = std::env::current_exe().ok()?;
     let root = executable.parent()?.parent()?.join("share/apparent/settings");
     let mut candidates = vec![(root.join("runtime/electron"), root.join("app/electron/settings/update-worker.cjs"))];
-    if cfg!(debug_assertions) {
+    if cfg!(any(test, debug_assertions)) {
         let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("capture/desktop/ui/frontend");
         candidates.push((source.join("node_modules/electron/dist/electron"), source.join("electron/settings/update-worker.cjs")));
     }

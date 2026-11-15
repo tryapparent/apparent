@@ -19,7 +19,7 @@ function fixture(t: any) {
   const electron = put('capture/desktop/ui/frontend/node_modules/electron/bin', 'synthetic executable');
   chmodSync(electron, 0o700);
   put('capture/desktop/ui/frontend/node_modules/electron/index.js', 'module.exports = __dirname + "/bin"');
-  for (const file of ['tests/reference-native.cjs', 'electron/main.cjs', 'electron/preload.cjs', 'electron/runtime.cjs', 'electron/connect.cjs', 'electron/settings/agents.cjs', 'electron/storage-policy.cjs']) {
+  for (const file of ['tests/reference-native.cjs', 'electron/main.cjs', 'electron/preload.cjs', 'electron/runtime.cjs', 'electron/connect.cjs', 'electron/settings/agents.cjs', 'electron/settings/update-worker.cjs', 'electron/storage-policy.cjs']) {
     put('capture/desktop/ui/frontend/' + file);
   }
   for (const name of ['worker.js', 'policy.js', 'package.json']) {
@@ -41,6 +41,7 @@ function generators(f: ReturnType<typeof fixture>, fail = '') {
   const outputs = {
     'storage-policy': ['electron/storage-policy.cjs', ...['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json'].map(name => 'electron/storage-owner/' + name)],
     'connect-transport': ['electron/connect.cjs', 'electron/settings/agents.cjs'],
+    'updates': ['electron/settings/update-worker.cjs'],
     'pill': ['worker.js', 'policy.js', 'package.json'].map(name => 'electron/record-completion/' + name),
     'record-media': ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/apparent-engine-frames', 'native/manifest.json'].map(name => 'electron/record-media/' + name),
     'agent-media': ['worker.js', 'policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json'].map(name => 'electron/agent-media/' + name),
@@ -73,14 +74,16 @@ test('Linux release tests prepare their real published provider before Cargo', (
   assert.match(workflow, /Clean private release test inputs\n        if: always\(\)/);
   const adapter = readFileSync('composition/worker.rs', 'utf8');
   assert.match(adapter, /cfg!\(any\(test, debug_assertions\)\)/, 'release tests have prepared source assets; shipped releases do not');
+  const updater = readFileSync('capture/desktop/linux/updates/update.rs', 'utf8');
+  assert.match(updater, /cfg!\(any\(test, debug_assertions\)\)/, 'release updater tests also use prepared source assets');
 });
 
 test('one preparation entrypoint rebuilds absent native artifacts and can run again', t => {
   const f = fixture(t), trace = generators(f);
   assert.equal(prepareNativeInputs(f.root, 'linux'), f.electron);
-  assert.equal(trace(), 'storage-policy\nconnect-transport\npill\nrecord-media\nagent-media\n');
+  assert.equal(trace(), 'storage-policy\nconnect-transport\nupdates\npill\nrecord-media\nagent-media\n');
   assert.equal(prepareNativeInputs(f.root, 'linux'), f.electron);
-  assert.equal(trace(), 'storage-policy\nconnect-transport\npill\nrecord-media\nagent-media\nstorage-policy\nconnect-transport\npill\nrecord-media\nagent-media\n');
+  assert.equal(trace(), 'storage-policy\nconnect-transport\nupdates\npill\nrecord-media\nagent-media\nstorage-policy\nconnect-transport\nupdates\npill\nrecord-media\nagent-media\n');
 });
 test('missing runtime stops before generating artifacts', t => {
   const f = fixture(t);
@@ -108,6 +111,11 @@ test('missing Electron download fails before tests can run', t => {
 test('missing generated Storage policy fails before Cargo', t => {
   const f = fixture(t);
   rmSync(resolve(f.root, 'capture/desktop/ui/frontend/electron/storage-policy.cjs'));
+  assert.throws(() => checkNativeInputs(f.root, 'linux'), /ENOENT/);
+});
+test('missing generated updater worker fails before Cargo', t => {
+  const f = fixture(t);
+  rmSync(resolve(f.root, 'capture/desktop/ui/frontend/electron/settings/update-worker.cjs'));
   assert.throws(() => checkNativeInputs(f.root, 'linux'), /ENOENT/);
 });
 for (const name of ['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json']) {
