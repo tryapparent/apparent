@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync} from 'node:fs';
+import {chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 
@@ -21,6 +21,9 @@ try {
   ffmpeg(['-f', 'lavfi', '-i', 'color=c=blue:s=64x48:r=25:d=1', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1',
     '-c:v', 'libx264', '-threads', '1', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', source]);
   ffmpeg(['-display_rotation:v:0', '90', '-i', source, '-map', '0', '-c', 'copy', movie]);
+  // Model the private recording files produced by capture, independently of the
+  // verifier's umask. Keep the separate umask002 reprocessing privacy assertion.
+  for (const file of [source, movie]) chmodSync(file, 0o600);
   const hash = (file: string) => createHash('sha256').update(readFileSync(file)).digest('hex');
   const original = hash(movie);
   const facts = JSON.parse(run(runtime, [join(app, 'worker.js'), join(app, 'native/apparent-engine-media'), movie],
@@ -55,6 +58,7 @@ try {
   mkdirSync(input, {mode: 0o700});
   const silent = join(input, 'recording.mp4');
   ffmpeg(['-i', movie, '-c:v', 'copy', '-an', silent]);
+  chmodSync(silent, 0o600);
   const incoming = {...JSON.parse(readFileSync(join(bundle, 'apparent.json'), 'utf8')),
     device: {name: 'Synthetic file', capture: 'mirror', width: 1, height: 1}};
   incoming.target.frame.width = 1; incoming.target.frame.height = 1;
