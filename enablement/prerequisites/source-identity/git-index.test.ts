@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, mkdirSync} from 'node:fs';
 import {resolve} from 'node:path';
+import {stripVTControlCharacters} from 'node:util';
 
 function fixture(t: any) {
   const root = mkdtempSync('/tmp/apparent-dev-cargo-index-');
@@ -72,7 +73,9 @@ cargoTest('real Cargo retains fresh test/dev outputs and invalidates genuine sou
   f.put('main.rs', 'fn main(){println!("{}",env!("APPARENT_VERSION_LABEL"));} #[test] fn runs(){assert!(!env!("APPARENT_VERSION_LABEL").is_empty());}\n');
   f.put('.gitignore', '/target/\n');
   f.run('cargo', ['generate-lockfile', '--offline']); f.commit();
-  const cargo = (kind: string) => f.run('cargo', [kind, '--offline', '-vv']);
+  // Hosted jobs force Cargo colors; exercise that format while matching its text.
+  const cargo = (kind: string) => stripVTControlCharacters(
+    f.run('cargo', [kind, '--offline', '-vv'], {CARGO_TERM_COLOR: 'always'}));
   cargo('test'); cargo('build');
   const indexTime = statSync(f.index).mtimeMs;
   chmodSync(f.tool, 0o755);
