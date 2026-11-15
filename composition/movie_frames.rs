@@ -268,6 +268,9 @@ pub(super) fn timed_frame_response(
             .arg(output.path())
             .args(arguments),
         timeout,
+        // A full 480-frame periodic reply exceeds the metadata envelope. Keep
+        // a finite transport cap; record counts and pixels are validated below.
+        128 * 1024,
     )?;
     Ok((output, directory, bytes))
 }
