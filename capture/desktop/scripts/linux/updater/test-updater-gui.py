@@ -3,6 +3,7 @@
 import importlib.util
 from pathlib import Path
 import hashlib
+import os
 import unittest
 import json
 import re
@@ -25,6 +26,21 @@ def load(name):
 class LocatorTests(unittest.TestCase):
     def setUp(self):
         self.gui = load('updater-gui')
+
+    def test_loading_button_refuses_to_guess_without_a_visible_heading(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            evidence = self.gui.Evidence(Path(temporary))
+            with patch.object(evidence, 'words', return_value=[]), patch.object(self.gui.subprocess, 'run') as ocr:
+                with self.assertRaises(self.gui.PhraseMatchError):
+                    evidence.loading_button(Path(temporary) / 'absent.png')
+                ocr.assert_not_called()
+
+    @unittest.skipUnless(os.environ.get('APPARENT_UPDATER_OCR_FRAME'), 'needs a real failed compositor frame')
+    def test_loading_button_reads_the_failed_compositor_frame(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            evidence = self.gui.Evidence(Path(temporary))
+            x, y = evidence.loading_button(Path(os.environ['APPARENT_UPDATER_OCR_FRAME']))
+            self.assertTrue(492 <= x <= 596 and 374 <= y <= 410, (x, y))
 
     def test_portal_tabs_require_unique_ordered_labels_across_ocr_run_splits(self):
         for gap in [17, 27]:

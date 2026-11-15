@@ -85,7 +85,10 @@ retain the build/package logs alongside the evidence.
 2. Click **Check for Updates…**. Hold the fixture's metadata response at an
    explicit gate and assert the rendered **Checking…** button before releasing
    it. Click that disabled button again; the fixture request counts must show
-   exactly one manual request. Then assert **No update available**, and click OK.
+    exactly one manual request. Then assert **No update available** and press Escape.
+    If full-frame OCR misses disabled text, the controller crops below the
+    uniquely located loading heading, inverts/enlarges the image and requires
+    the exact button label before clicking. Raw compositor frames stay intact.
 3. Repeat with a controlled HTTP 503; assert **Update check failed**, dismiss,
    and retry successfully in the same GUI process.
 4. Offer a synthetic newer release with a wrong checksum; assert the failure,
