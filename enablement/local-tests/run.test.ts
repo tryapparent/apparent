@@ -305,6 +305,8 @@ test('new native prerequisite tests join the mandatory contract inventory automa
   assert.throws(() => contractTests(dir), /inventory is empty/);
   writeFileSync(join(folder, 'new-picker.test.ts'), '');
   writeFileSync(join(folder, 'helper.ts'), '');
+  mkdirSync(join(dir, 'enablement/timing'), {recursive:true});
+  writeFileSync(join(dir, 'enablement/timing/synthetic.test.ts'), '');
   const args = contractTests(dir)[0].argv;
   assert.ok(args.includes('enablement/prerequisites/new-picker.test.ts'));
   assert.ok(!args.includes('enablement/prerequisites/helper.ts'));

@@ -15,7 +15,7 @@ const macBridge = 'Early Mac Electron to Rust Settings integration (not native G
 const full = 'Execute the same changed-tree checks (not GUI acceptance)';
 const cache = 'Retain completed Mac dependency seeds after full verification';
 const linuxBridge = 'Actual Electron to Rust Settings integration (not native GUI proof)';
-const relevant = [preflight, packaging, storage, copy, reference, macBridge, full, cache, linuxBridge];
+const relevant = [preflight, packaging, storage, copy, reference, macBridge, full, linuxBridge, cache];
 const earlyFilters = [
   'capture::desktop::settings::settings::tests::the_command_line_row_',
   'capture::desktop::workflow::agent_capture::tests::competing_launches_cannot_remove_the_winning_control_socket',
@@ -57,8 +57,9 @@ fi
   }
   const executed: string[] = [];
   for (const step of steps) {
-    const enabled = !step.condition || Function('runner', 'needs', `return (${step.condition})`)(
-      {os}, {select: {outputs: {root, engine: 'true'}}});
+    const enabled = !step.condition || Function('runner', 'needs', 'inputs', `return (${step.condition})`)(
+      {os}, {select: {outputs: {root, engine: 'true'}}},
+      {runner:os==='macOS'?'macos-15-intel':'ubuntu-24.04',mac_rust:true,release_receipt:false});
     if (!enabled) continue;
     assert.ok(step.run, step.name);
     executed.push(step.name);

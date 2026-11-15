@@ -30,17 +30,19 @@ case "$*" in *"$FAIL_FRAGMENT"*) if [ -n "$FAIL_FRAGMENT" ]; then exit 23; fi ;;
   return {...result, commands: readFileSync(trace, 'utf8').trim().split('\n'),
     tempRemains: existsSync(readFileSync(tempPath, 'utf8'))};
 }
-test('client runs independently on both platforms with isolated cache and unchanged automatic/manual admission', () => {
+test('client retains independent Linux/manual execution and joins the automatic Mac allocation', () => {
   assert.match(client, /^    needs: select$/m);
   // Client remains unconditional for ready PRs even when renderer-only root Rust is omitted.
   assert.equal(client.match(/^    if: (.+)$/m)?.[1],
-    "needs.select.outputs.client == 'true'");
+    "(inputs.runner != 'macos-15-intel' || inputs.release_receipt) && needs.select.outputs.client == 'true'");
   assert.match(client, /toolchain: '1\.99\.1'/);
   assert.ok(client.indexOf('uses: ./.github/actions/mac-rust-cache') < client.indexOf('uses: Swatinem/rust-cache'));
   assert.match(client, /key: connect-client\n          workspaces: connect\/client -> target/);
   assert.doesNotMatch(client, /cache-on-failure:|continue-on-error:|setup-chrome|MetalToolchain/);
   assert.match(job('rust'), /\. -> target\n            capture\/engine -> target\n            connect\/client -> target/);
-  assert.doesNotMatch(job('rust'), /--manifest-path connect\/client\/Cargo.toml/);
+  const packed = job('rust');
+  assert.match(packed, /inputs.runner == 'macos-15-intel' && !inputs.release_receipt && needs.select.outputs.client == 'true'/);
+  assert.match(packed, /--manifest-path connect\/client\/Cargo.toml/);
   assert.match(job('select'), /routing\/run\.ts --portable/);
   assert.match(job('release-ready'), /needs: \[select, desktop-ui, connect-client, rust\]/);
 });
