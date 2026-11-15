@@ -27,22 +27,26 @@ pub fn open_hermes_trusted(destination: &str) -> anyhow::Result<()> {
 }
 
 fn open_hermes_mode(destination: &str, auto_start: bool) -> anyhow::Result<()> {
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
     anyhow::ensure!(valid_hermes_destination(destination), "Invalid Hermes request");
-    let resources = super::electron::resolve()?;
+    hermes_command(super::electron::resolve()?, destination, auto_start)?
+        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn()?;
+    Ok(())
+}
+
+fn hermes_command(resources: super::electron::Resources, destination: &str, auto_start: bool) -> anyhow::Result<std::process::Command> {
     anyhow::ensure!(resources.root.join("dist/hermes-main.cjs").is_file()
         && resources.root.join("dist/hermes-preload.cjs").is_file(), "Hermes recording UI is missing; update Apparent");
-    let mut command = Command::new(resources.executable);
+    let mut command = std::process::Command::new(&resources.executable);
+    super::electron::configure_sandbox(&mut command, &resources.executable)?;
     if cfg!(target_os = "linux") && std::env::var_os("WAYLAND_DISPLAY").is_none() {
         command.arg("--ozone-platform=x11");
     }
     command.arg(resources.root.join("dist/hermes-main.cjs"))
         .arg("--hermes-request").arg(destination);
     if auto_start { command.arg("--hermes-autostart"); }
-    command
-        .arg("--apparent-executable").arg(std::env::current_exe()?)
-        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn()?;
-    Ok(())
+    command.arg("--apparent-executable").arg(resources.native_executable);
+    Ok(command)
 }
 
 pub fn can_present(recording: bool, processing: bool, selecting: bool) -> bool {
@@ -52,6 +56,33 @@ pub fn can_present(recording: bool, processing: bool, selecting: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hermes_launch_uses_the_resolved_native_identity_and_shared_sandbox() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("assets");
+        let runtime = dir.path().join("runtime/electron");
+        let native = dir.path().join("App.app/Contents/MacOS/apparent");
+        for file in [root.join("dist/hermes-main.cjs"), root.join("dist/hermes-preload.cjs"),
+            runtime.clone(), runtime.with_file_name("chrome-sandbox"), native.clone()] {
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, b"synthetic").unwrap();
+        }
+        let native = native.canonicalize().unwrap();
+        for trusted in [false, true] {
+            let command = hermes_command(super::super::electron::Resources {
+                executable: runtime.clone(), root: root.clone(), native_executable: native.clone(),
+            }, "0123456789abcdef0123456789abcdef/45000", trusted).unwrap();
+            let args: Vec<_> = command.get_args().collect();
+            assert_eq!(command.get_program(), runtime.as_os_str());
+            let native_flag = args.iter().position(|arg| *arg == "--apparent-executable").unwrap();
+            assert_eq!(args[native_flag + 1], native.as_os_str());
+            assert_eq!(args.iter().any(|arg| *arg == "--hermes-autostart"), trusted);
+            assert!(!args.iter().any(|arg| *arg == "--no-sandbox"));
+            #[cfg(target_os = "linux")]
+            assert!(args.iter().any(|arg| *arg == "--disable-setuid-sandbox"));
+        }
+    }
 
     #[test]
     fn canonical_url_opens_the_app() {
