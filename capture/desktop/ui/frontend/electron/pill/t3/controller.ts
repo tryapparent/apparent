@@ -6,7 +6,7 @@ import {connection,Transport,type Connection} from './transport.ts';
 import {choiceTarget,Delivery,type Job} from './delivery.ts';
 import {Store} from './store.ts';
 export class Controller{
- private config:Connection|null=null;private capture='';private processing=false;private choices:DestinationView['choices']=[];
+ private config:Connection|null=null;private enabled=false;private capture='';private processing=false;private choices:DestinationView['choices']=[];
  private threads:(Thread&Record<string,unknown>)[]=[];private projects:(Project&Record<string,unknown>)[]=[];private projectId='';
  private settings:Record<string,unknown>={};
  private connections=new Map<string,Connection>();
@@ -26,15 +26,15 @@ export class Controller{
  ready(capture:string,text:string|null){return this.exclusive(capture,()=>this.doReady(capture,text));}
  cancel(capture:string){return this.exclusive(capture,()=>this.doCancel(capture));}
  retry(capture:string){return this.exclusive(capture,()=>this.doRetry(capture));}
- view():DestinationView|null{if(!this.config||!this.capture)return null;const job=this.jobs.get(this.capture);return {capture:this.capture,choices:this.choices,selected:job&&job.phase!=='cancelled'?job.target.launch?'new':job.target.threadId:'new',...job&&job.phase!=='cancelled'?{confirmed:{id:job.target.launch?'new':job.target.threadId,title:job.target.title,project:this.projects.find(p=>p.id===job.target.projectId)?.title??'',kind:'active' as const}}:{},phase:job&&job.phase!=='cancelled'?job.phase==='error'?'error':job.phase==='uncertain'?'uncertain':job.phase==='sending'?'sending':job.phase==='sent'?'sent':'armed':this.error?'error':'choosing',processing:this.processing,error:this.error||undefined};}
+ view():DestinationView|null{if(!this.enabled||!this.capture)return null;if(!this.config)return {capture:this.capture,choices:[],selected:'',phase:'setup',processing:this.processing};const job=this.jobs.get(this.capture);return {capture:this.capture,choices:this.choices,selected:job&&job.phase!=='cancelled'?job.target.launch?'new':job.target.threadId:'new',...job&&job.phase!=='cancelled'?{confirmed:{id:job.target.launch?'new':job.target.threadId,title:job.target.title,project:this.projects.find(p=>p.id===job.target.projectId)?.title??'',kind:'active' as const}}:{},phase:job&&job.phase!=='cancelled'?job.phase==='error'?'error':job.phase==='uncertain'?'uncertain':job.phase==='sending'?'sending':job.phase==='sent'?'sent':'armed':this.error?'error':'choosing',processing:this.processing,error:this.error||undefined};}
  text(capture:string){const text=this.results.get(capture)??this.jobs.get(capture)?.text;if(capture!==this.capture||typeof text!=='string')throw Error('Recording is not ready');return text;}
  async update(capture:string,phase:string,eligible=true){
   if(!['processing','completed'].includes(phase)||!eligible){if(this.capture){this.capture='';++this.version;this.changed();}return;}
   if(this.capture===capture){const processing=phase==='processing';if(this.processing!==processing){this.processing=processing;this.changed();}return;}
   this.capture=capture;this.processing=phase==='processing';const version=++this.version;
-  await this.initializing;let config:Connection|null=null;
-  try{const saved=JSON.parse(await readFile(this.configFile,'utf8'));config=saved.experiments?.t3DestinationPicker===true?connection(saved.t3):null;}catch{}
-  if(version!==this.version)return;this.config=config;if(!config){this.changed();return;}
+  await this.initializing;let config:Connection|null=null,enabled=false;
+  try{const saved=JSON.parse(await readFile(this.configFile,'utf8'));enabled=saved.experiments?.t3DestinationPicker===true;config=enabled?connection(saved.t3):null;}catch{}
+  if(version!==this.version)return;this.enabled=enabled;this.config=config;if(!config){this.changed();return;}
   this.choices=[];if(this.storageAvailable)this.error='';this.changed();
   try{const transport=new Transport(config);
    const [raw,configuration]=await Promise.all([transport.get('/api/orchestration/shell?omitIdleSubagents=true&omitOlderSettled=true') as Promise<{threads:Thread[];projects:Project[]}>,transport.rpc('server.getConfig',{}) as Promise<{settings:Record<string,unknown>}>]);

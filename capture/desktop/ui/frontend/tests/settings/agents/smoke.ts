@@ -9,6 +9,7 @@ import os from 'node:os';
 import fs from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {skillCommand} from '../../../src/agents/policy.ts';
+import {provider} from './testing/provider.ts';
 
 test('installed Agents uses acknowledged preferences, fixed clipboard text and bounded navigation', {timeout: 60000}, async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'agents-'));
@@ -69,7 +70,8 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     await expect(t3Toggle).toHaveAttribute('aria-checked','false');
     await t3Toggle.click();await expect(t3Toggle).toHaveAttribute('aria-checked','true');
     assert.equal(saved,null);assert.equal(actions.at(-1)?.setting,'t3');
-    await expect(page.getByText(/Create a pairing link in T3/)).toBeVisible();
+    await expect(page.getByRole('button',{name:'Connect T3',exact:true})).toBeVisible();
+    await expect(page.getByText('apparent t3 pair',{exact:false})).toHaveCount(0);
     await t3Toggle.click();await expect(t3Toggle).toHaveAttribute('aria-checked','false');
     await expect(page.getByRole('button', {name: 'Agents', exact: true})).toHaveAttribute('aria-current', 'page');
     holdWrite = true;
@@ -80,6 +82,15 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     reply(held!); holdWrite = false;
     await expect(toggle).toHaveAttribute('aria-checked', 'false');
     await expect(toggle).toBeEnabled();
+    const initialGeometry=await page.evaluate(()=>({
+      width:innerWidth,height:innerHeight,documentHeight:document.documentElement.scrollHeight,
+      shell:document.querySelector('.settings-shell')!.getBoundingClientRect().toJSON(),
+      content:[document.querySelector('.settings-content')!.clientHeight,document.querySelector('.settings-content')!.scrollHeight],
+      body:{margin:getComputedStyle(document.body).margin,padding:getComputedStyle(document.body).padding},
+    }));
+    if(process.env.APPARENT_AGENTS_PROOF)await fs.writeFile(path.join(process.env.APPARENT_AGENTS_PROOF,'geometry.json'),JSON.stringify(initialGeometry,null,2));
+    assert(initialGeometry.documentHeight<=initialGeometry.height,JSON.stringify(initialGeometry));
+    assert(initialGeometry.content[1]<=initialGeometry.content[0],JSON.stringify(initialGeometry));
     if (process.env.APPARENT_AGENTS_PROOF) await page.screenshot({path: path.join(process.env.APPARENT_AGENTS_PROOF, 'agents-off.png')});
     failWrite = true;
     await toggle.click();
@@ -95,7 +106,7 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
     await page.getByRole('button', {name: 'Copy command', exact: true}).focus();
     await page.keyboard.press('Enter');
-    await expect(page.getByText('Copied', {exact: true})).toBeVisible();
+    await expect(page.getByRole('button',{name:'Command copied',exact:true})).toBeVisible();
     await page.evaluate(() => {
       const field = document.createElement('textarea'); field.setAttribute('aria-label', 'Clipboard verification');
       document.body.append(field); field.focus();
@@ -112,7 +123,7 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     }), true, 'Agents cannot send non-boolean preferences or invoke other panes');
     for (const width of [720, 640, 320]) {
       const session = await page.context().newCDPSession(page);
-      await session.send('Emulation.setDeviceMetricsOverride', {width, height: 530, deviceScaleFactor: 1, mobile: false});
+      await session.send('Emulation.setDeviceMetricsOverride',{width,height:530,deviceScaleFactor:1,mobile:false});
       for (const colorScheme of ['light', 'dark', 'light'] as const) {
         await page.emulateMedia({colorScheme, reducedMotion: 'reduce'});
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
@@ -144,7 +155,7 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
         if (process.env.APPARENT_AGENTS_PROOF) {
           await fs.mkdir(process.env.APPARENT_AGENTS_PROOF, {recursive: true});
           await page.screenshot({path: path.join(process.env.APPARENT_AGENTS_PROOF, `agents-${width}-${colorScheme}.png`)});
-          await page.getByRole('heading', {name: 'Agents', exact: true}).scrollIntoViewIfNeeded();
+          await page.locator('.settings-content').evaluate(element=>element.scrollTop=0);
           await page.screenshot({path: path.join(process.env.APPARENT_AGENTS_PROOF, `agents-${width}-${colorScheme}-top.png`)});
         }
       }
@@ -191,4 +202,69 @@ test('Agents clipboard failures recover and bridge refuses foreign frames or arb
     await expect(page.getByText('Copied', {exact: true})).toBeVisible();
     await expect(page.getByRole('alert').filter({hasText: 'Unable to copy'})).toHaveCount(0);
   } finally { await application.close(); await fs.rm(home, {recursive: true, force: true}); }
+});
+
+test('guided pairing previews the clipboard destination, exchanges once and waits for native acknowledgement without enabling sending', {timeout:60000}, async context=>{
+  const home=await fs.mkdtemp(path.join(os.tmpdir(),'agents-pair-'));
+  const p=await provider(context),frontend=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../..');
+  const application=await electron.launch({args:[path.join(frontend,'tests/settings/agents/parent.cjs'),'--settings-storage','--settings-agents','--settings-parent'],env:{...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config'),XDG_CACHE_HOME:path.join(home,'cache')}});
+  let connection:{origin:string;token:string;expiresAt:number}|null=null,buffer='';
+  const facts=()=>({saved:null,t3Saved:null,t3Configured:!!connection,...connection?{t3Origin:connection.origin,t3ExpiresAt:connection.expiresAt}:{}});
+  const reply=(request:number)=>application.evaluate((_electron,value)=>process.stdin.emit('data',JSON.stringify(value)+'\n'),{type:'agents-result',request,facts:facts()});
+  application.process().stdout!.on('data',chunk=>{buffer+=String(chunk);let end:number;while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end);buffer=buffer.slice(end+1);try{const action=JSON.parse(line);if(action.action==='agents-connection')connection=action.connection;if(action.action==='agents-preference'||action.action==='agents-connection')void reply(action.request);}catch{}}});
+  try{
+    const page=await application.firstWindow();await reply(1);
+    const toggle=page.getByRole('switch',{name:'Send recordings to T3'});await expect(toggle).toBeEnabled();
+    if(process.env.APPARENT_AGENTS_PROOF)for(const colorScheme of ['light','dark'] as const){
+      await page.emulateMedia({colorScheme});await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(640,530));
+      await expect.poll(()=>page.evaluate(()=>innerWidth)).toBe(640);
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight),530,'the content pane owns scrolling');
+      await fs.writeFile(path.join(process.env.APPARENT_AGENTS_PROOF,'minimum-geometry.json'),JSON.stringify(await page.evaluate(()=>({width:innerWidth,height:innerHeight,all:[document.documentElement,document.body,document.getElementById('root'),...document.querySelectorAll('.settings-shell,.settings-content,.settings-sidebar')].map(el=>({name:el!.tagName+'.'+el!.className,scroll:el!.scrollHeight,client:el!.clientHeight,rect:el!.getBoundingClientRect().toJSON(),overflow:getComputedStyle(el!).overflow,height:getComputedStyle(el!).height}))})),null,2));
+      await page.locator('.settings-content').evaluate(element=>element.scrollTop=0);
+      await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,'agents-native-min-'+colorScheme+'.png')});
+      await page.getByRole('button',{name:'Copy command',exact:true}).scrollIntoViewIfNeeded();
+      await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,'agents-native-min-bottom-'+colorScheme+'.png')});
+    }
+    await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(920,600));
+    await page.getByRole('button',{name:'Connect T3',exact:true}).click();
+    const dialog=page.getByRole('dialog');await expect(dialog).toContainText('Sharing & access');
+    if(process.env.APPARENT_AGENTS_PROOF)for(const width of [920,640])for(const colorScheme of ['light','dark'] as const){
+      await application.evaluate(({BrowserWindow},width)=>BrowserWindow.getAllWindows()[0].setSize(width,width===640?530:600),width);
+      await page.emulateMedia({colorScheme});await dialog.evaluate(element=>element.scrollTop=0);
+      await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,`pairing-guide-${width}-${colorScheme}.png`)});
+    }
+    await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(920,600));
+    await page.getByRole('button',{name:'Paste pairing link',exact:true}).click();await expect(dialog.getByRole('alert')).toContainText('Copy a full pairing link');
+    await application.evaluate(({clipboard},value)=>clipboard.writeText(value),p.link);
+    assert.equal(await application.evaluate(({clipboard})=>clipboard.readText()),p.link);
+    await page.getByRole('button',{name:'Paste pairing link',exact:true}).click();await expect(dialog).toContainText(p.origin);assert.equal(p.exchanged,0);
+    // A changed clipboard cannot change the previewed destination at confirmation.
+    await application.evaluate(({clipboard})=>clipboard.writeText('https://unexpected.example/pair?token=secret'));
+    assert.equal(await page.evaluate(()=>document.body.innerText.includes('one-time')),false);
+    await dialog.getByRole('button',{name:'Connect',exact:true}).click();
+    await expect(page.getByText(`Connected to ${new URL(p.origin).host}`,{exact:true})).toBeVisible();assert.equal(p.exchanged,1);assert.equal(connection!.token,'private-fixture-token');await expect(toggle).toHaveAttribute('aria-checked','false');
+    assert.equal(await page.evaluate(()=>document.body.innerText.includes('private-fixture-token')),false);
+    await page.reload();await expect(page.getByText(`Connected to ${new URL(p.origin).host}`,{exact:true})).toBeVisible();
+    await page.getByRole('button',{name:'Disconnect',exact:true}).click();await expect(page.getByRole('button',{name:'Connect T3',exact:true})).toBeEnabled();assert.equal(connection,null);
+    await page.getByRole('button',{name:'Connect T3',exact:true}).click();await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);assert.equal(p.exchanged,1);
+  }finally{await application.close().catch(()=>{});await fs.rm(home,{recursive:true,force:true});}
+});
+
+test('T3 connection handlers refuse other panes, foreign frames, extra arguments and non-string origins', {timeout:20000}, async()=>{
+  const home=await fs.mkdtemp(path.join(os.tmpdir(),'agents-oauth-guards-'));
+  const frontend=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../..');
+  const application=await electron.launch({args:[frontend,'--settings-storage','--settings-about'],
+    env:{...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config'),XDG_CACHE_HOME:path.join(home,'cache')}});
+  try{
+    assert.equal(await application.evaluate(async({ipcMain,BrowserWindow,shell})=>{
+      let opened=0;shell.openExternal=async()=>{opened++;};
+      const sender=BrowserWindow.getAllWindows()[0].webContents,event={sender,senderFrame:sender.mainFrame};
+      for(const [name,args] of [
+        ['apparent:agents-t3-preview',[]],['apparent:agents-t3-connect',['invalid-handle']],['apparent:agents-t3-connect',[true]],
+        ['apparent:agents-t3-connect',['http://127.0.0.1:3773','extra']],['apparent:agents-t3-disconnect',[]],['apparent:agents-t3-cancel',[]],
+      ] as const){try{await ipcMain._invokeHandlers.get(name)(event,...args);return false;}catch{}}
+      try{await ipcMain._invokeHandlers.get('apparent:agents-t3-connect')({sender,senderFrame:{url:sender.getURL()}},'http://127.0.0.1:3773');return false;}catch{}
+      return opened===0;
+    }),true);
+  }finally{await application.close().catch(()=>{});await fs.rm(home,{recursive:true,force:true});}
 });

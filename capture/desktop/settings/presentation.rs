@@ -131,7 +131,7 @@ pub(super) fn open(pane: Pane, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyh
                 if let Ok(action) = serde_json::from_str::<Action>(&line)
                     && (matches!(action, Action::Navigate { .. } | Action::Close)
                         || pane != Pane::Agents && matches!(action, Action::ShowCaptures)
-                        || pane == Pane::Agents && matches!(action, Action::AgentsPreference { .. })
+                        || pane == Pane::Agents && matches!(action, Action::AgentsPreference { .. } | Action::AgentsConnection { .. })
                         || pane == Pane::About && (matches!(action, Action::CheckForUpdates | Action::DismissUpdateCheck | Action::UpdateNow | Action::UpdateLater | Action::Tour)
                             || matches!(&action, Action::Set { key, value } if key == "updateChannel" && matches!(value.as_str(), Some("stable" | "main")))))
                 {
