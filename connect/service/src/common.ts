@@ -38,7 +38,7 @@ export async function admit(env:Env,userId:string) {
  if(!user)return null;
  // Preserve the incumbent issuer/subject account ID. Never remap by email.
  const account=await hash('https://accounts.google.com/'+user.accountId);
- await stmt(env,"INSERT INTO accounts(id,email,beta,created_at) SELECT ?,?,CASE WHEN (SELECT count(*) FROM accounts WHERE beta='active')<20 THEN 'active' ELSE 'waitlist' END,? ON CONFLICT(id) DO UPDATE SET email=excluded.email",account,user.email,Date.now()).run();
+ await stmt(env,"INSERT INTO accounts(id,email,beta,created_at) SELECT ?,?,CASE WHEN (SELECT count(*) FROM accounts WHERE beta='active')<20 THEN 'active' ELSE 'waitlist' END,? ON CONFLICT(id) DO UPDATE SET email=excluded.email WHERE accounts.email IS NOT excluded.email",account,user.email,Date.now()).run();
  return account;
 }
 // CORS and cookie-authenticated mutations must agree on this exact allowlist.

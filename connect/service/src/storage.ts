@@ -48,9 +48,12 @@ export async function deleteAttempts(env: Env,attempts: AttemptSnapshot[],now=Da
  await env.BUCKET.delete(keys);
  const reclaim=`SELECT COALESCE(sum(bytes),0) FROM attempts WHERE released=0 AND terminal=1 AND key IN (SELECT value FROM json_each(?))`;
  await env.DB.batch([
-  stmt(env,`UPDATE r2_budget SET physical_used=physical_used-(${reclaim}) WHERE ${valid} AND physical_used>=(${reclaim})`,terminal,terminal),
+  stmt(env,`UPDATE r2_budget SET physical_used=physical_used-(${reclaim}) WHERE ${valid} AND physical_used>=(${reclaim}) AND (${reclaim})>0`,terminal,terminal,terminal),
   // changes() belongs to the preceding update inside this serialized batch.
-  // Stamp failure rolls back the decrement; retries cannot decrement twice.
-  stmt(env,'UPDATE attempts SET cleaned_at=?,released=CASE WHEN terminal=1 AND key IN (SELECT value FROM json_each(?)) AND changes()=1 THEN 1 ELSE released END WHERE key IN (SELECT value FROM json_each(?))',now,terminal,JSON.stringify(keys))
+  // Zero-byte/already-released pages need no ledger mutation, but still require
+  // valid budget state before release. Stamp failure rolls back any decrement.
+  stmt(env,`UPDATE attempts SET cleaned_at=?,released=CASE WHEN terminal=1 AND key IN (SELECT value FROM json_each(?))
+   AND (changes()=1 OR EXISTS(SELECT 1 FROM r2_budget WHERE ${valid} AND (${reclaim})=0)) THEN 1 ELSE released END
+   WHERE key IN (SELECT value FROM json_each(?))`,now,terminal,terminal,JSON.stringify(keys))
  ]);
 }

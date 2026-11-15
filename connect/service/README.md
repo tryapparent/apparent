@@ -61,6 +61,18 @@ Before every controlled R2 PUT/GET/HEAD, D1 atomically reserves its operation al
 
 Each PUT atomically grants one A operation, its exact manifest size and a new unique attempt/key before opening R2. Stream size/checksum enforcement is unchanged. Physical charges include published, in-flight, duplicate, orphan and tombstoned objects, not just live logical quota. Eviction/expiry does not release physical capacity. A durable `terminal` marker is written only after the unique provider PUT and body stream both settle. Successful deletion can release its bytes once in a conditional two-statement transaction with the cleanup stamp. Cleanup snapshots terminal eligibility **before deletion**, so a PUT settling after that deletion cannot be released by that sweep. Failed deletion/stamping stays retryable. An uncertain/crashed grant without a terminal marker stays charged even after repeated absent-key deletions; reconciliation needs a separate quiescent operator review. Keys/permits are never reused.
 
+The 15-minute sweep retains attempt tombstones but excludes attempts already both
+terminal and released. Uncertain attempts are revisited only after an hour since
+their last successful delete/stamp; a terminal marker bypasses that cooldown.
+The 1,000-key sweep bound and failures can delay reclamation further. Expiry and
+authorization still apply synchronously. Zero-reclaim pages do not write the
+budget row; zero-byte terminal attempts still retire against valid budget state.
+No migration or ledger reset is needed. Rolling back the Worker restores the
+older repeated cleanup traffic without changing the stored safety markers.
+`test/budgets/row-writes.test.ts` measures real local D1 `rows_written` for idle
+sweeps, zero-byte retirement, uncertain retry and unchanged account/analytics
+maintenance. These measurements do not establish remote CPU or total daily usage.
+
 The 500MB account quota remains a maximum, **not a guarantee that all 20 accounts can be physically full together**. The 9.5GB ceiling can reject an upload with logical quota remaining. These guards bound this Worker's controlled R2 work; they are **not an accountwide dollar cap**. Other credentials/resources, provider billing semantics, stored bytes during outages, D1 rows/storage and Free CPU still require operational verification. Billing alerts notify; they do not stop spending.
 
 ## Bounded Free audit (not deployment approval)

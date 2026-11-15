@@ -49,7 +49,7 @@ export async function cleanupDailyActivity(env:Env) {
    stmt(env,"DELETE FROM aggregate_dau_exclusions WHERE expires_at_ms<=CAST(unixepoch('subsec')*1000 AS INTEGER) AND NOT EXISTS(SELECT 1 FROM accounts WHERE id=aggregate_dau_exclusions.account_id)"),
    // A coarse global maintenance watermark, NEVER the time of an individual's
    // last action, and not a claim that all primary successes were observed.
-   stmt(env,"UPDATE aggregate_dau_state SET as_of_ms=MAX(as_of_ms,CAST(unixepoch('subsec')/900 AS INTEGER)*900000) WHERE id=1")
+   stmt(env,"UPDATE aggregate_dau_state SET as_of_ms=CAST(unixepoch('subsec')/900 AS INTEGER)*900000 WHERE id=1 AND as_of_ms<CAST(unixepoch('subsec')/900 AS INTEGER)*900000")
   ]);
  }catch{/* No primary/individual-collector effect; failed maintenance stays stale. */}
 }

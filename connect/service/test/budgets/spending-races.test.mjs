@@ -145,6 +145,7 @@ test('uncertain PUT finishes after cleanup delete: bytes remain charged even aft
  assert.equal((await upload).status,500);
  assert.equal((await f.bucket.list()).objects.length,1,'real R2 PUT finished after deletion');
  assert.equal((await f.db.prepare('SELECT terminal,released FROM attempts').first()).terminal,0);
+ await f.db.prepare('UPDATE attempts SET cleaned_at=cleaned_at-3600000 WHERE terminal=0').run();
  for(let i=0;i<2;i++)assert.equal((await(await f.mf.getWorker()).scheduled()).outcome,'ok');
  assert.equal((await f.bucket.list()).objects.length,0);assert.equal((await ledger(f)).physical_used,5);
  }finally{if(controller)controller.close();await f.close();}
