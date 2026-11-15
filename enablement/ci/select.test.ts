@@ -365,6 +365,7 @@ test('reviewed control-guide relocation keeps both renderer consumers and reject
   git('rm',source+'unknown.tsx');git('commit','-qm','unknown deletion');
   const unknown=cli(base,git('rev-parse','HEAD'),dir);assert.equal(unknown.inputProofKnown,false);assert.equal(unknown.plan.engine,true);
   git('checkout','--detach',base);
+  mkdirSync(source+'controls',{recursive:true});
   for(const name of ['control-guide.tsx','control-guide.css'])git('mv',source+name,source+'controls/'+name);
   unlinkSync(source+'controls/control-guide.tsx');symlinkSync('elsewhere',source+'controls/control-guide.tsx');
   git('add','.');git('commit','-qm','unsafe moved guide');
