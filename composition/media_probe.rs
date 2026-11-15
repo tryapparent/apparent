@@ -28,8 +28,12 @@ pub(crate) struct BundleProbe {
 }
 
 fn request(movie: &Path, operation: &str) -> Result<Vec<u8>> {
-    let (node, worker, engine) =
-        super::worker::assets("Record media", "record-media", "apparent-engine-media")?;
+    let (node, worker, engine) = super::worker::assets(
+        "Record media",
+        "record-media",
+        "apparent-engine-media",
+        "worker.js",
+    )?;
     let movie = std::fs::canonicalize(movie).context("Could not locate export movie")?;
     // Node's argv is UTF-8. Preserve Unix filenames losslessly through a private
     // read-only alias rather than passing a replacement-character path to the SDK.

@@ -2,13 +2,40 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
+import {mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 
 // Required provider proof, separate from the Rust/Electron-free policy loop.
 const app = resolve(import.meta.dirname, '../../../capture/desktop/ui/frontend/electron/record-media');
 const worker = join(app, 'worker.js'), engine = join(app, 'native/apparent-engine-media');
+test('Record frames use the actual published provider and retain clamped bundle identities', t => {
+  const root = mkdtempSync(join(tmpdir(), 'apparent-dev-record-frames-'));
+  t.after(() => rmSync(root, {recursive:true,force:true}));
+  const movie = join(root, 'recording.mp4'), output = join(root, 'frames');
+  mkdirSync(output, {mode:0o700});
+  execFileSync('ffmpeg', ['-v','error','-nostdin','-y','-f','lavfi','-i',
+    'color=c=red:s=64x48:r=30:d=2,drawbox=x=32:y=0:w=32:h=48:color=blue:t=fill',
+    '-c:v','libx264','-threads','1','-g','30','-bf','3','-pix_fmt','yuv420p',movie], {stdio:'pipe'});
+  const before = readFileSync(movie), times = [0,250,500,534,567,1050];
+  const reply = JSON.parse(execFileSync(process.execPath, [join(app,'frames-worker.js'),
+    join(app,'native/apparent-engine-frames'),movie,output,'500','32',times.join(',')],
+    {encoding:'utf8',timeout:60_000}));
+  assert.equal(reply.version,1);
+  assert.deepEqual(reply.frames.map((f: {requestedMs:number}) => f.requestedMs),times);
+  assert.deepEqual(reply.frames.map((f: {requestIndex:number}) => f.requestIndex),[0,1,2,3,4,5]);
+  assert.deepEqual(reply.frames.map((f: {actualMovieMs:number}) => f.actualMovieMs),[0,0,0,33,66,533]);
+  for (const frame of reply.frames) {
+    assert.deepEqual([frame.width,frame.height],[32,24]);
+    const path = join(output,frame.file), pixels = readFileSync(path);
+    assert.equal(pixels.length,32*24*4); assert.equal(statSync(path).mode & 0o777,0o600);
+    for (const [x,channel] of [[8,0],[24,2]]) {
+      const at = (12*32+x)*4;
+      assert(pixels[at+channel] > pixels[at+2-channel]+40);
+    }
+  }
+  assert.deepEqual(readFileSync(movie),before);
+});
 test('consumer provisioning refuses to replace an unowned directory', t => {
   const root = mkdtempSync(join(tmpdir(), 'apparent-dev-record-stage-'));
   t.after(() => rmSync(root, {recursive: true, force: true}));

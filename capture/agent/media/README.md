@@ -16,7 +16,7 @@ staging. Only frame executables are installed; the complete source manifest is
 retained separately as provenance. Record keeps its existing SDK/provider pin.
 Runtime operations never download, build, discover providers or mutate config.
 
-Application composition hosts the worker in its packaged Electron runtime with
+Application composition's `movie_frames.rs` hosts the worker in its packaged Electron runtime with
 Node mode enabled. Its shared finite-worker resource helper retains bounded
 output, a deadline and process-group cleanup. The frame adapter holds an output
 directory descriptor across execution, rejects links and unexpected identities,
@@ -39,7 +39,8 @@ process and private-file transfer; this adoption is not a runtime optimization.
 These small warm-fixture observations cannot establish cold build savings.
 
 Revert the consumer routing, package pin and staging together for rollback.
-The legacy root decoder remains for its other real Record/media callers; only
-Agent's calls are replaced. No config writer or persistence format changes.
+The legacy root decoder remains for periodic/phone media and Agent's
+range-extraction fallback. Record's explicit assembly frames use their own
+published-SDK worker through the same resource adapter. No config writer or persistence format changes.
 Native policy/rendering elsewhere and the root CLI build remain migration debt;
 this slice makes no full independence or build-speed claim.

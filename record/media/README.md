@@ -1,4 +1,4 @@
-# Record movie metadata
+# Record movie metadata and keyframes
 
 This headless package interprets movie metadata for Mac/Linux bundle ingestion,
 recovery, retention observations and export. It consumes the published
@@ -22,8 +22,9 @@ FFmpeg. The default verification workflow also runs them in a clean Node contain
 ## Installed consumer
 
 Record and Agent use the same application-owned finite-worker resource helper in
-`composition/worker.rs`. Record's metadata policy, wire contracts and SDK/provider
-pin remain independent of Agent's frame capability and are unchanged by its adoption.
+`composition/worker.rs`. Record now independently pins SDK/provider 0.2 from
+`5bbe8e35e67b61703737991575860d4b1fd1ad57`, matching Agent's published generation.
+Its existing metadata policy and wire contracts remain unchanged.
 
 Desktop composition builds this package and explicitly stages the runtime pinned
 in `engine.json` using `stage.ts --out <generated-app-directory>`. Provisioning
@@ -66,11 +67,40 @@ file-ingestion proof, not evidence of a live phone/camera capture session.
 Existing crop/camera/ink/encoding, explicit recorded/silent/narration policy,
 settings and persistence remain authoritative. Phone/file ingestion, recovery and
 retention consume this published provider through the bundle metadata contract.
-Their frame decoding, audio extraction and retention mutation/exclusion remain
-native. The replaced Desktop probes, Linux metadata/audio-decode probe and Swift
+Frame decoding executes through native Engine capabilities; audio extraction,
+periodic candidate sampling and retention mutation/exclusion remain native in
+the root runtime. The replaced Desktop probes, Linux metadata/audio-decode probe and Swift
 helper `probe` command are removed. Native audio edit checks used by the encoder
 remain safety/execution mechanics. Linux export's superseded FFprobe parser is
 also removed.
 Revert this consumer slice and its artifact pin together for rollback. No user
 config/data migration or installed experimental routing is involved. This does
 not claim complete application build independence or measured CI savings.
+
+## Explicit assembly and recovery frames
+
+`frames-worker.js` consumes the public `decodeMovieFrames` API. Record owns the
+bundle/movie clock mapping and preserves request indices when several early
+keyframes clamp to movie zero. Source times are safe integers; missing, reordered
+or relabelled replies fail instead of changing a keyframe's identity.
+
+Capture predecode, full-keyframe assembly and screen recovery/reprocessing use
+this provider. Recovery's injected `Media.explicit_frames` contract is distinct
+from its periodic-sampling provider, so its real caller cannot silently retain
+the old explicit decoder. `composition/movie_frames.rs` supplies native process,
+private-directory and pixel safety mechanisms for both Record and Agent. Record
+requests are read in batches of four: four maximum-sized 64MP frames fit the
+Engine 256MP job limit. This is a native resource limit, not a workflow budget.
+
+Default keyframe selection, caching, crop/render decisions and periodic sampling
+remain migration debt. The old root `movie_frames_at` entry point remains solely
+for Agent's range-extraction fallback in `shared/handoff`; its replacement must
+be verified before removing it. Phone ingestion still uses its periodic/native
+frame pipeline. No competing configuration writer is introduced.
+
+Native checks exercise the actual published frame provider and private RGBA
+pixels. The package proof also reprocesses a synthetic screen bundle with a
+500ms movie offset, checking bundle-clock keyframes, display dimensions and
+source preservation. Optional `--proof-dir <private-job-directory>` retains its
+synthetic PNGs and bundle text for inspection. Signed Mac and Linux AppImage
+proof remain required; file reprocessing does not establish live capture.

@@ -16,6 +16,7 @@ pub(crate) fn assets(
     label: &str,
     package: &str,
     capability: &str,
+    worker_file: &str,
 ) -> Result<(PathBuf, PathBuf, PathBuf)> {
     let executable = std::env::current_exe()?;
     let parent = executable
@@ -46,7 +47,7 @@ pub(crate) fn assets(
         #[cfg(target_os = "linux")]
         let node = runtime.join("electron");
         let root = app.join("electron").join(package);
-        let worker = root.join("worker.js");
+        let worker = root.join(worker_file);
         let engine = root.join("native").join(capability);
         if node.is_file() && worker.is_file() && engine.is_file() {
             return Ok((node, worker, engine));
