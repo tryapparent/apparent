@@ -1,0 +1,39 @@
+import {readFileSync, lstatSync} from 'node:fs';
+import {isAbsolute} from 'node:path';
+
+export type Config = {
+  projectId: number; t3ProjectId: string; t3Origin: string; t3TokenFile: string;
+  webhookTokenFile: string; stateDirectory: string; posthogCommand: string;
+  posthogOrigin: string; port: number; dailyLimit: number; queueLimit: number;
+  modelSelection: {instanceId: string; model: string}; runtimeMode: 'auto-accept-edits' | 'auto';
+};
+export function secret(path: string): string {
+  const stat = lstatSync(path);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4096 || (stat.mode & 0o077) !== 0 || stat.uid !== process.getuid?.())
+    throw Error('Secret must be a private, owned regular file');
+  const value = readFileSync(path, 'utf8').trim();
+  if (value.length < 32 || value.length > 4096 || /\s/.test(value)) throw Error('Invalid secret');
+  return value;
+}
+export function config(env: NodeJS.ProcessEnv): Config {
+  const required = (key: string) => {const value = env[key]?.trim(); if (!value) throw Error(`Missing ${key}`); return value;};
+  const integer = (key: string, fallback: number, max: number) => {
+    const value = Number(env[key] ?? fallback);
+    if (!Number.isSafeInteger(value) || value < 1 || value > max) throw Error(`Invalid ${key}`);
+    return value;
+  };
+  const path = (key: string) => {const value = required(key); if (!isAbsolute(value)) throw Error(`${key} must be absolute`); return value;};
+  const t3Origin = new URL(required('T3_ORIGIN'));
+  if (t3Origin.username || t3Origin.password || t3Origin.pathname !== '/' || t3Origin.search || t3Origin.hash ||
+      !(t3Origin.protocol === 'https:' || t3Origin.protocol === 'http:' && ['127.0.0.1', '[::1]'].includes(t3Origin.hostname)))
+    throw Error('T3_ORIGIN must be HTTPS or loopback HTTP, without credentials or a path');
+  const posthogOrigin = env.POSTHOG_ORIGIN ?? 'https://eu.posthog.com';
+  if (!['https://eu.posthog.com', 'https://us.posthog.com'].includes(posthogOrigin)) throw Error('Unsupported PostHog origin');
+  const runtimeMode = env.T3_RUNTIME_MODE ?? 'auto-accept-edits';
+  if (runtimeMode !== 'auto-accept-edits' && runtimeMode !== 'auto') throw Error('Unsupported runtime mode');
+  return {projectId: integer('POSTHOG_PROJECT_ID', 329943, 2147483647), t3ProjectId: required('T3_PROJECT_ID'),
+    t3Origin: t3Origin.origin, posthogOrigin, t3TokenFile: path('T3_TOKEN_FILE'), webhookTokenFile: path('WEBHOOK_TOKEN_FILE'),
+    stateDirectory: path('STATE_DIRECTORY'), posthogCommand: path('POSTHOG_COMMAND'),
+    port: integer('PORT', 8646, 65535), dailyLimit: integer('DAILY_LIMIT', 10, 100), queueLimit: integer('QUEUE_LIMIT', 100, 1000),
+    modelSelection: {instanceId: required('T3_PROVIDER_INSTANCE'), model: required('T3_MODEL')}, runtimeMode};
+}

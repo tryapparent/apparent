@@ -160,6 +160,7 @@ function directConsumers(path: string): readonly Owner[] {
   if (path.startsWith('enablement/prerequisites/')) return path.endsWith('.test.ts') ? ['tooling'] : ['capture', 'engine', 'desktop', 'client'];
   // Native build helpers and execution-sensitive CI still exercise the complete integration.
   if (toolingRegressionTests.has(path)) return ['tooling'];
+  if (path.startsWith('enablement/posthog-fixer/') && !native) return ['tooling'];
   if (path.startsWith('enablement/timing/') && !native) return ['tooling'];
   if (path.startsWith('enablement/directory-width/') && !native) return ['tooling'];
   // Existing unknown legacy inputs keep their previous conservative consumers.

@@ -76,6 +76,7 @@ export function fixtureMacCommands(): Command[] {
 export function toolingCommands(): Command[] {
   return [
     installCommand,
+    {argv: ['node', '--experimental-strip-types', '--test', 'enablement/posthog-fixer/test/service.test.ts', 'enablement/posthog-fixer/test/t3.test.ts'], cwd: '.'},
     {argv: ['python3', '-m', 'unittest', 'discover', '-s', 'enablement/directory-width/tests', '-p', 'test_*.py'], cwd: '.'},
   ];
 }
