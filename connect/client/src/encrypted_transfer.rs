@@ -13,11 +13,11 @@ pub(super) struct EncryptedJob {
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct PeerSet {
-    account_id: String,
+pub(super) struct PeerSet {
+    pub(super) account_id: String,
     grant_id: String,
     scope: String,
-    devices: Vec<Peer>,
+    pub(super) devices: Vec<Peer>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -31,30 +31,55 @@ impl Client {
     // Ephemeral native snapshot capability. Transfer order/progress belongs to TS;
     // no queue record or durable encrypted spool is published by this path.
     pub(super) fn foreground_encrypted_snapshot(
-        &self, job: &mut Job, destination: &Path, allowed: &dyn Fn() -> bool,
+        &self,
+        job: &mut Job,
+        destination: &Path,
+        allowed: &dyn Fn() -> bool,
     ) -> Result<()> {
         let credential = self.credential("upload", &job.server)?;
         let identity = self.endpoint_identity(&credential)?;
         let peers = self.encryption_peers(&credential, allowed)?;
-        let recipients: Vec<Peer> = peers.devices.iter()
-            .filter(|p| p.scope == "read" || p.grant_id == peers.grant_id).cloned().collect();
-        ensure!(recipients.iter().any(|p| p.scope == "read"), "encryption_pending_recipient");
-        let context = EncryptionContext { origin: job.server.clone(), account_id: peers.account_id,
-            capture_id: job.id.clone(), sender_grant_id: peers.grant_id };
+        let recipients: Vec<Peer> = peers
+            .devices
+            .iter()
+            .filter(|p| p.scope == "read" || p.grant_id == peers.grant_id)
+            .cloned()
+            .collect();
+        ensure!(
+            recipients.iter().any(|p| p.scope == "read"),
+            "encryption_pending_recipient"
+        );
+        let context = EncryptionContext {
+            origin: job.server.clone(),
+            account_id: peers.account_id,
+            capture_id: job.id.clone(),
+            sender_grant_id: peers.grant_id,
+        };
         let ordinary = Scratch::new(&self.state)?;
         snapshot(&job.bundle, &ordinary.0)?;
         ensure!(allowed(), "cancelled");
-        job.files = encryption::pack(&ordinary.0, destination, &context, &identity, &recipients)?;
-        job.encryption = Some(EncryptedJob { context, recipient_grants: recipients.iter().map(|p| p.grant_id.clone()).collect() });
+        job.files =
+            encryption::v2::pack(&ordinary.0, destination, &context, &identity, &recipients)?;
+        job.encryption = Some(EncryptedJob {
+            context,
+            recipient_grants: recipients.iter().map(|p| p.grant_id.clone()).collect(),
+        });
         ensure!(allowed(), "cancelled");
         Ok(())
     }
 
-    pub(super) fn foreground_recipients_current(&self, job: &Job, allowed: &dyn Fn() -> bool) -> Result<()> {
+    pub(super) fn foreground_recipients_current(
+        &self,
+        job: &Job,
+        allowed: &dyn Fn() -> bool,
+    ) -> Result<()> {
         let credential = self.credential("upload", &job.server)?;
         self.encryption_recipients_current_allowed(job, &credential, allowed)
     }
-    pub(super) fn endpoint_identity(&self, credential: &Credential) -> Result<encryption::Identity> {
+    pub(super) fn endpoint_identity(
+        &self,
+        credential: &Credential,
+    ) -> Result<encryption::Identity> {
         let id = credential.encryption_identity.as_deref()
             .filter(|id| valid_id(id))
             .context("encryption_identity_missing: approve this device with hostedEncryption enabled; never replace lost keys implicitly")?;
@@ -62,7 +87,7 @@ impl Client {
             .map_err(|_| anyhow::anyhow!("encryption_identity_unavailable: local key is missing, invalid or not private; no plaintext fallback"))
     }
 
-    fn encryption_peers(
+    pub(super) fn encryption_peers(
         &self,
         credential: &Credential,
         allowed: &dyn Fn() -> bool,
@@ -116,7 +141,12 @@ impl Client {
     fn encryption_recipients_current(&self, job: &Job, credential: &Credential) -> Result<()> {
         self.encryption_recipients_current_allowed(job, credential, &|| self.active(job))
     }
-    fn encryption_recipients_current_allowed(&self, job: &Job, credential: &Credential, allowed: &dyn Fn() -> bool) -> Result<()> {
+    fn encryption_recipients_current_allowed(
+        &self,
+        job: &Job,
+        credential: &Credential,
+        allowed: &dyn Fn() -> bool,
+    ) -> Result<()> {
         let peers = self.encryption_peers(credential, allowed)?;
         let pinned = job
             .encryption
@@ -141,6 +171,10 @@ impl Client {
 
     pub(super) fn upload_encrypted(&self, job: &mut Job) -> Result<()> {
         ensure!(!job.shared, "encrypted_sharing_unsupported");
+        ensure!(
+            matches!(job.encryption_version, 1 | 2),
+            "unsupported_encryption_format"
+        );
         let credential = self.credential("upload", &job.server)?;
         let identity = self.endpoint_identity(&credential)?;
         let spool = self.state.join(format!("{}.sealed", job.id));
@@ -170,8 +204,12 @@ impl Client {
             let ordinary = Scratch::new(&self.state)?;
             snapshot(&job.bundle, &ordinary.0).context("encryption_snapshot_failed")?;
             let sealed = Scratch::new(&self.state)?;
-            let files = encryption::pack(&ordinary.0, &sealed.0, &context, &identity, &recipients)
-                .context("encryption_pack_failed")?;
+            let files = if job.encryption_version == 2 {
+                encryption::v2::pack(&ordinary.0, &sealed.0, &context, &identity, &recipients)
+            } else {
+                encryption::pack(&ordinary.0, &sealed.0, &context, &identity, &recipients)
+            }
+            .context("encryption_pack_failed")?;
             let metadata = EncryptedJob {
                 context,
                 recipient_grants: recipients.iter().map(|p| p.grant_id.clone()).collect(),
@@ -192,7 +230,11 @@ impl Client {
         let saved: StoredSpool =
             serde_json::from_slice(&read_private(&spool.join("spool-state.json"), JSON_LIMIT)?)
                 .map_err(|_| anyhow::anyhow!("encryption_spool_invalid"))?;
-        encryption::validate_transport(&saved.files)?;
+        if job.encryption_version == 2 {
+            encryption::v2::validate_transport(&saved.files)?;
+        } else {
+            encryption::validate_transport(&saved.files)?;
+        }
         ensure!(
             job.files.is_empty() || same_manifest(&job.files, &saved.files),
             "encryption_spool_invalid"
@@ -216,6 +258,10 @@ impl Client {
             self.save_job(job)?;
         }
         let allowed = || self.active(job);
+        if job.encryption_version == 2 {
+            self.run_upload_policy(job, &spool, &credential, &allowed, false, false)?;
+            return Ok(());
+        }
         let base = format!("/v1/captures/{}", job.id);
         let reservation = self.json_request(
             &job.server,

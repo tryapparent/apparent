@@ -9,12 +9,12 @@ const workflow = (name: string) => YAML.parse(readFileSync(new URL(`../../../.gi
 const matches = (patterns: string[], path: string) => patterns.reduce((match, pattern) =>
   new Glob(pattern.replace(/^!/, '')).match(path) ? !pattern.startsWith('!') : match, false);
 
-test('native Capture entry is bounded by owner directories and explicit consumers', () => {
+test('automatic entry covers the union of Capture and standalone Connect triggers', () => {
   const checks = workflow('checks.yml');
   for (const event of ['push', 'pull_request']) {
     const patterns = checks.on[event].paths;
     for (const path of ['connect/web/src/main.tsx', 'public/site/src/App.tsx'])
-      assert.equal(matches(patterns, path), false, path);
+      assert.equal(matches(patterns, path), true, path);
     for (const path of ['capture/engine/runtime/mod.rs', 'shared/ui/button.tsx', 'composition/main.rs',
       'connect/client/src/lib.rs', 'connect/service/src/worker.ts', 'unknown/file.ts', 'connect/hosted.rs', 'record/storage/src/config.ts', 'Cargo.toml'])
       assert.equal(matches(patterns, path), true, path);
@@ -31,8 +31,8 @@ test('Connect retains real native client/service consumers and skips native for 
   }
   assert.equal(connectPlan(suitePlan(['capture/engine/runtime/mod.rs'])).root, false);
   assert.equal(connectPlan(suitePlan(null)).root, true, 'unknown inputs retain integration');
-  assert.equal(connectPlan(suitePlan(['connect/client/typescript/src/mcp-wire.ts'])).service,true,
-    'the Worker consumes the endpoint wire contract');
+  for(const source of ['connect/client/typescript/src/mcp-wire.ts','connect/client/typescript/contracts.ts','connect/client/typescript/src/transfer/contract.ts'])
+    assert.equal(connectPlan(suitePlan([source])).service,true,'the Worker consumes '+source);
 });
 
 test('the composed browser proof selects its Connect consumer and publication', () => {
@@ -45,7 +45,7 @@ test('the composed browser proof selects its Connect consumer and publication', 
 
 test('Connect publication requires successful stream-owned gates on canonical main', () => {
   const connect = workflow('stream-connect.yml');
-  assert.deepEqual(Object.keys(connect.on), ['pull_request', 'push', 'workflow_dispatch']);
+  assert.deepEqual(Object.keys(connect.on), ['workflow_dispatch', 'workflow_call']);
   const guard = connect.jobs.admit.if;
   const evaluate = (event: string, overrides: any = {}, repo = 'tryapparent/apparent', ref = 'refs/heads/main', enabled = 'true') => {
     const needs = {select: {result: 'success', outputs: {native: 'true'}}, contracts: {result: 'success'},
@@ -65,4 +65,26 @@ test('Connect publication requires successful stream-owned gates on canonical ma
   assert.equal(evaluate('push', {}, undefined, 'refs/heads/other'), false);
   assert.equal(workflow('stream-connect.yml').jobs.hosted.environment.name, 'hosted-production');
   assert.match(workflow('stream-connect.yml').jobs.hosted.if, /vars.HOSTED_CD_ENABLED == 'true'/);
+});
+
+test('publication survives skipped native ancestors but refuses failed admission, verification and cancellation', () => {
+  const {verify,hosted}=workflow('stream-connect.yml').jobs;
+  // GitHub otherwise adds success(), which propagates skipped ancestors even
+  // when admit succeeded using the caller's checked native receipt.
+  for(const job of [verify,hosted])assert.match(job.if,/!cancelled\(\)/);
+  const needs={admit:{result:'success',outputs:{sha:'a'.repeat(40)}},verify:{result:'success'},
+    linux:{result:'skipped'},macos:{result:'skipped'}};
+  const github={repository:'tryapparent/apparent',event_name:'push',ref:'refs/heads/main'};
+  const evaluate=(job:any,state:any=needs,cancelled=false,context:any=github,enabled='true')=>
+    Function('needs','cancelled','github','vars',`return (${job.if})`)(state,()=>cancelled,context,{HOSTED_CD_ENABLED:enabled});
+  for(const job of [verify,hosted]){
+    assert.equal(evaluate(job),true);
+    assert.equal(evaluate(job,needs,true),false);
+    assert.equal(evaluate(job,{...needs,admit:{result:'success',outputs:{sha:''}}}),false);
+    for(const result of ['failure','cancelled','skipped'])assert.equal(evaluate(job,{...needs,admit:{...needs.admit,result}}),false);
+  }
+  for(const result of ['failure','cancelled','skipped'])assert.equal(evaluate(hosted,{...needs,verify:{result}}),false);
+  for(const context of [{...github,repository:'fork/apparent'},{...github,ref:'refs/heads/feature'},
+    {...github,event_name:'pull_request'}])assert.equal(evaluate(hosted,needs,false,context),false);
+  assert.equal(evaluate(hosted,needs,false,github,'false'),false);
 });

@@ -19,7 +19,7 @@ const instrumented=await build({stdin:{resolveDir:process.cwd(),contents:`
 `},bundle:true,format:'esm',platform:'browser',conditions:['workerd'],external:['node:*'],write:false});
 async function setup(metadata=false){
  const f=await fixture({SHARING_ENABLED:'true'},{scriptPath:undefined,script:instrumented.outputFiles[0].text,instances:true});
- await f.db.exec((await readFile('migrations/0003.sql','utf8')).replaceAll('\n',' '));
+ await f.db.exec((await readFile('.generated/migrations/0003.sql','utf8')).replaceAll('\n',' '));
  await f.db.exec('CREATE TABLE test_barrier(released INTEGER,entered INTEGER); INSERT INTO test_barrier VALUES(0,0)');
  const a=await f.identity('race'),p='/v1/captures/'+id(171),asset=metadata?'apparent.json':'summary.md',text=metadata?JSON.stringify({transcript:{text:'hello'}}):'hello';
  assert.equal((await f.call(p,{token:a.token,method:'POST',body:{files:[file(asset,text)]}})).status,200);

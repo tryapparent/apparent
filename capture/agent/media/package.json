@@ -1,0 +1,17 @@
+{
+  "name": "@apparent/agent-media",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=22.18"},
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.tools.json",
+    "test": "node --experimental-strip-types --test test/policy.test.ts",
+    "test:native": "node --experimental-strip-types --test test/native.test.ts"
+  },
+  "dependencies": {
+    "@apparent/engine-sdk": "https://github.com/tryapparent/apparent/releases/download/engine-media-5bbe8e35e67b61703737991575860d4b1fd1ad57/apparent-engine-sdk-0.2.0.tgz"
+  },
+  "devDependencies": {"@types/node": "22.19.0", "typescript": "5.9.3"}
+}

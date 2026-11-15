@@ -337,3 +337,21 @@ no state conversion is required. Remove the legacy uploader/worker and this flag
 only after the foreground consumer is accepted on both platforms and legacy jobs
 have finished or been explicitly cancelled. No activation, deployment or release
 is included in this trial implementation.
+
+## Selective encrypted retrieval (v2)
+
+`apparent connect files <id>` downloads and authenticates only the envelope and
+encrypted index, then prints the original asset listing. It requires an approved
+read endpoint and does not download images, audio or video.
+
+```
+apparent fetch <id> --out ./selected-evidence --file apparent.json --file contact-sheet.png
+```
+
+Repeat `--file` for exact original paths from the listing. Transcript data is in
+`apparent.json`. Requested files are verified and published together into a new
+extraction directory; `.connect-extraction.json` identifies the selection and
+`completeBundle:false`. An extraction destination must not end in `.apparent`.
+Omitted media is not downloaded. Missing/duplicate/unsafe selections fail without
+publishing output. Without `--file`, fetch retains full-bundle behavior. Existing
+v1 encrypted captures require full fetch or a fresh sender upload for selection.

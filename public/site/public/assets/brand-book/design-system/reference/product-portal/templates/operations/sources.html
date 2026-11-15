@@ -1,0 +1,210 @@
+{% extends 'shared/base.html' %}
+{% block title %}Sources{% endblock %}
+{% block heading %}Google Drive sources{% endblock %}
+{% block header_action %}<a class="btn btn-primary" href="#source-setup">Add source</a>{% endblock %}
+{% block content %}
+<section id="source-setup" class="form-region" aria-labelledby="source-setup-heading">
+  <div class="connection-status mb-4">
+    <div>
+      <p class="eyebrow mb-1">Google Drive connection</p>
+      <h2 id="source-setup-heading" class="h4 mb-1">{{ connection.display_name }}</h2>
+      <p class="mb-0">{{ connection.detail }}</p>
+    </div>
+    <span class="status-chip">{{ connection.state|replace('_', ' ')|title }}</span>
+  </div>
+
+  {% if connection.configured and connection.state == 'connected' %}
+  <div class="setup-grid">
+    <section aria-labelledby="paste-heading">
+      <h3 id="paste-heading" class="h5">Paste a folder link</h3>
+      <p>Fastest when you already have the source folder open in Google Drive.</p>
+      <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="resolve_url">
+        <label class="form-label" for="folder_url">Google Drive folder URL</label>
+        <div class="input-group">
+          <input class="form-control" id="folder_url" name="folder_url" type="url"
+                 placeholder="https://drive.google.com/drive/folders/…" required>
+          <button class="btn btn-outline-primary" type="submit">Resolve folder</button>
+        </div>
+      </form>
+    </section>
+
+    <section aria-labelledby="browse-heading">
+      <h3 id="browse-heading" class="h5">Browse accessible folders</h3>
+      <p>Folders load one location and page at a time.</p>
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-md-5">
+          <label class="form-label" for="root_selection">Location</label>
+          <select class="form-select" id="root_selection" name="root_selection">
+            {% for root, token in root_options %}
+            <option value="{{ token }}" {% if selected_root and root.root_id == selected_root.root_id %}selected{% endif %}>{{ root.display_name }}</option>
+            {% endfor %}
+          </select>
+          {% if root_first_url or root_next_url %}
+          <nav class="d-flex gap-2 mt-2" aria-label="Drive location pages">
+            {% if root_first_url %}<a href="{{ root_first_url }}">First locations</a>{% endif %}
+            {% if root_next_url %}<a href="{{ root_next_url }}">Next locations</a>{% endif %}
+          </nav>
+          {% endif %}
+        </div>
+        <div class="col-md-5">
+          <label class="form-label" for="folder_search">Folder name</label>
+          <input class="form-control" id="folder_search" name="folder_search"
+                 value="{{ folder_search }}" placeholder="Search this location">
+        </div>
+        <div class="col-md-2"><button class="btn btn-outline-primary w-100" type="submit">Load</button></div>
+      </form>
+      {% if folder_options %}
+      <ul class="folder-list mt-3">
+        {% for folder, token in folder_options %}
+        <li>
+          <div>
+            <strong>{{ folder.name }}</strong>
+            <small>{{ 'Readable' if folder.can_read else 'Not readable' }} · {{ 'Writable' if folder.can_create_children else 'Read only' }}</small>
+          </div>
+          <div class="btn-group btn-group-sm">
+            {% if folder.can_read %}
+            <a class="btn btn-outline-secondary" href="{{ url_for('edit_source', source_id=editing_source.source_id, root_selection=selected_root_token, parent_selection=token) if editing_source else url_for('sources', root_selection=selected_root_token, parent_selection=token) }}">Open</a>
+            <a class="btn btn-outline-primary" href="{{ url_for('edit_source', source_id=editing_source.source_id, root_selection=selected_root_token, source_selection=token) if editing_source else url_for('sources', root_selection=selected_root_token, source_selection=token) }}">Use</a>
+            {% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty-inline mt-3">No accessible folders match this view.</p>
+      {% endif %}
+      {% if folder_first_url or folder_next_url %}
+      <nav class="d-flex gap-2 mt-2" aria-label="Folder pages">
+        {% if folder_first_url %}<a href="{{ folder_first_url }}">First folders</a>{% endif %}
+        {% if folder_next_url %}<a href="{{ folder_next_url }}">Next folders</a>{% endif %}
+      </nav>
+      {% endif %}
+    </section>
+  </div>
+
+  {% if resolved_source %}
+  <section class="selection-confirmation mt-4" aria-labelledby="confirm-heading">
+    <p class="eyebrow mb-1">Selected source</p>
+    <h3 id="confirm-heading" class="h5">{{ resolved_source.breadcrumb }}</h3>
+    <p>Readable access confirmed. Review the destination and mode before saving.</p>
+    <form method="post" action="{{ url_for('edit_source', source_id=editing_source.source_id) if editing_source else url_for('sources') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% if not editing_source %}<input type="hidden" name="action" value="save_source">{% endif %}
+      <input type="hidden" name="source_selection" value="{{ resolved_selection }}">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label" for="display_name">Source name</label>
+          <input class="form-control" id="display_name" name="display_name"
+                 value="{{ editing_source.display_name if editing_source else resolved_source.name }}" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="destination_selection">Sorted destination</label>
+          <select class="form-select" id="destination_selection" name="destination_selection">
+            <option value="" {% if not editing_source or not editing_source.destination_folder_id %}selected{% endif %}>Create /sorted inside the source folder</option>
+            {% for folder, token in folder_options if folder.can_create_children %}
+            <option value="{{ token }}" {% if editing_source and folder.folder_id == editing_source.destination_folder_id %}selected{% endif %}>Use {{ folder.breadcrumb }}</option>
+            {% endfor %}
+            {% if editing_source and editing_source.destination_folder_id and editing_destination_selection %}
+            <option value="{{ editing_destination_selection }}" selected>Keep {{ editing_source.destination_display_name }}</option>
+            {% endif %}
+          </select>
+          {% if not resolved_source.can_create_children %}
+          <div class="form-text text-danger">This source is read only. Choose a writable destination.</div>
+          {% endif %}
+        </div>
+      </div>
+      <fieldset class="mt-3">
+        <legend class="h6">Import mode</legend>
+        <div class="form-check">
+          <input class="form-check-input" id="manual" name="continuous" type="radio" value="off" {% if not editing_source or editing_source.state.value != 'continuous' %}checked{% endif %}>
+          <label class="form-check-label" for="manual">Manual imports</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" id="continuous" name="continuous" type="radio" value="on" {% if editing_source and editing_source.state.value == 'continuous' %}checked{% endif %}>
+          <label class="form-check-label" for="continuous">Continuously process new PDFs</label>
+        </div>
+      </fieldset>
+      <details class="mt-3">
+        <summary class="fw-semibold">Advanced source scope</summary>
+        <div class="form-check mt-3">
+          <input type="hidden" name="recursive" value="no">
+          <input class="form-check-input" id="recursive" name="recursive" type="checkbox" value="yes" {% if not editing_source or editing_source.recursive %}checked{% endif %}>
+          <label class="form-check-label" for="recursive">Include subfolders</label>
+        </div>
+        <div class="mt-3">
+          <label class="form-label" for="excluded_paths">Additional excluded paths</label>
+          <textarea class="form-control" id="excluded_paths" name="excluded_paths" rows="3" placeholder="Private&#10;Drafts/2025">{{ additional_excluded_paths }}</textarea>
+          <div class="form-text">One relative folder path per line. The sorted output folder is always excluded.</div>
+        </div>
+      </details>
+      {% if editing_source %}
+      <div class="form-check mt-3">
+        <input class="form-check-input" id="confirm_scope_change" name="confirm_scope_change" type="checkbox" value="yes">
+        <label class="form-check-label" for="confirm_scope_change">I confirm any changed source scope or destination.</label>
+      </div>
+      {% endif %}
+      <button class="btn btn-primary mt-3" type="submit">{{ 'Update source' if editing_source else 'Save source' }}</button>
+    </form>
+  </section>
+  {% endif %}
+  {% endif %}
+</section>
+
+<section class="data-section" aria-labelledby="configured-heading">
+  <div class="section-heading"><h2 id="configured-heading">Configured sources</h2></div>
+  {% if sources %}
+  <div class="table-responsive">
+    <table class="table responsive-records">
+      <thead><tr><th>Source</th><th>Drive</th><th>Scope</th><th>Destination</th><th>Mode</th><th>Action</th></tr></thead>
+      <tbody>
+        {% for source in sources %}
+        <tr>
+          <th data-label="Source">{{ source.display_name }}</th>
+          <td data-label="Drive">{{ source.drive_name }}</td>
+          <td data-label="Scope">
+            <span>{{ 'Include subfolders' if source.recursive else 'Top folder only' }}</span>
+            {% set additional_count = source.excluded_paths|length - 1 %}
+            <small class="d-block">{{ additional_count }} additional exclusion{{ '' if additional_count == 1 else 's' }}</small>
+          </td>
+          <td data-label="Destination">{{ source.destination_display_name }}</td>
+          <td data-label="Mode">{{ source.state.value|replace('_',' ') }}</td>
+          <td data-label="Action">
+            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('edit_source', source_id=source.source_id) }}">Edit</a>
+            {% if not source.deactivated_at %}
+            <form method="post" action="{{ url_for('pause_source' if source.state.value == 'continuous' else 'resume_source', source_id=source.source_id) }}" class="mt-2">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn btn-sm btn-outline-secondary" type="submit">{{ 'Pause continuous' if source.state.value == 'continuous' else 'Resume continuous' }}</button>
+            </form>
+            <form method="post" action="{{ url_for('trigger_import', source_id=source.source_id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="idempotency_key" value="{{ request_id }}">
+              <label class="form-label mt-2" for="archive-priority-{{ source.source_id }}">Archive priority</label>
+              <select class="form-select form-select-sm mb-2" id="archive-priority-{{ source.source_id }}" name="priority_level">
+                <option value="6">Expedited · level 6</option>
+                <option value="7" selected>Normal · level 7</option>
+                <option value="8">Deferred · level 8</option>
+              </select>
+              <button class="btn btn-sm btn-outline-primary" type="submit">Import now</button>
+            </form>
+            <form method="post" action="{{ url_for('deactivate_source', source_id=source.source_id) }}" class="mt-2">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <div class="form-check">
+                <input class="form-check-input" id="deactivate-{{ source.source_id }}" name="confirm_deactivate" type="checkbox" value="yes">
+                <label class="form-check-label" for="deactivate-{{ source.source_id }}">Keep Drive content; deactivate only</label>
+              </div>
+              <button class="btn btn-sm btn-outline-danger mt-1" type="submit">Deactivate</button>
+            </form>
+            {% else %}<span class="status-chip">Deactivated</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><h3>No sources configured</h3><p>Saving a source does not start an import.</p></div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -74,7 +74,7 @@ test('approved poll retries preserve credentials but report remaining rather tha
 test('migration retires only old credentials and preserves incumbent metadata and spent ledger',async()=>{
  const mf=new Miniflare({modules:[{type:'ESModule',path:'migration-worker.mjs',contents:'export default {}'}],d1Databases:['DB']});try{
  const db=await mf.getD1Database('DB');
- const migrate=async n=>db.exec((await readFile('migrations/'+n+'.sql','utf8')).replace(/^--.*$/gm,'').replaceAll('\n',' '));
+ const migrate=async n=>db.exec((await readFile('.generated/migrations/'+n+'.sql','utf8')).replace(/^--.*$/gm,'').replaceAll('\n',' '));
  for(const n of ['0001','0002','0003'])await migrate(n);
  const account=digest('https://accounts.google.com/legacy'),capture='a'.repeat(32);
  await db.prepare("INSERT INTO accounts VALUES(?,?,'active',1,123)").bind(account,'legacy@example.com').run();

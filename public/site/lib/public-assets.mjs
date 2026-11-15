@@ -3,6 +3,7 @@ import { extname, join, relative, sep } from "node:path"
 
 const GROUPS = Object.freeze({
   brand: "",
+  "brand-book": "brand",
   "feature-demos": "feature-demos",
   fonts: "",
   hosted: "hosted",

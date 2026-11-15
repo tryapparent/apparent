@@ -30,3 +30,10 @@ not certify the separated evidence/media layout from preview/migration branches,
 MCP transport, account authorization or native recording. A consumer adopting
 another producer/layout must add that producer's vector and acceptance before
 claiming compatibility; do not infer it from this vector or a mocked encoder.
+
+`rust-v2.json` was emitted by the native `per_file_native_producer_roundtrip_and_vector`
+test via `APPARENT_CONNECT_V2_VECTOR` into private temporary output. Its identities,
+media and text are synthetic. It exercises the actual per-file native producer;
+TypeScript tests stage only its index plus selected objects to prove interop
+without obtaining video ciphertext. Regenerate with that native test rather than
+using the TypeScript encoder as its own compatibility oracle.

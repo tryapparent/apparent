@@ -41,3 +41,17 @@ test('An unacknowledged write times out and allows a fresh read', async context 
   bridge.receive({request: 2, facts: {saved: false}});
   assert.deepEqual(await reading, {saved: false});
 });
+
+test('T3 picker is off by default and has an independent acknowledged preference', async()=>{
+ const {t3PickerEnabled}=await import('../../../src/agents/policy.ts');
+ assert.equal(t3PickerEnabled({saved:null}),false);
+ assert.equal(t3PickerEnabled({saved:true,t3Saved:null}),false);
+ assert.equal(t3PickerEnabled({saved:true,t3Saved:true}),true);
+ assert.equal(t3PickerEnabled({saved:false,t3Saved:false}),false);
+ assert.equal(t3PickerEnabled({error:'config_read_failed'}),undefined);
+ const messages:object[]=[],bridge=new AgentsPreferences(value=>messages.push(value));
+ const saving=bridge.request(true,'t3');assert.deepEqual(messages,[{action:'agents-preference',request:1,enabled:true,setting:'t3'}]);
+ bridge.receive({request:1,facts:{saved:false,t3Saved:true,t3Configured:false}});
+ assert.deepEqual(await saving,{saved:false,t3Saved:true,t3Configured:false});
+ assert.throws(()=>preferenceFacts({saved:true,t3Saved:'true'}));
+});

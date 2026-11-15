@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1584" height="396" viewBox="0 0 1584 396" role="img" aria-labelledby="title desc">
+  <title id="title">apparent founder LinkedIn profile cover</title>
+  <desc id="desc">Operational data you can build on. From documents to data ready for AI.</desc>
+  <style>
+    @font-face{font-family:Host;src:url('../../assets/fonts/studies/HostGrotesk-Variable.ttf')}text{font-family:Host,Arial,sans-serif;fill:#020102}.hero{font-size:72px;font-weight:700;letter-spacing:-3px}.sub{font-size:27px;font-weight:500}.url{font-size:19px;font-weight:700;letter-spacing:.5px}
+  </style>
+  <rect width="1584" height="396" fill="#F5F0E8"/>
+  <g opacity="0.95">
+    <rect x="70" y="74" width="226" height="14" fill="#E7E0EE"/>
+    <rect x="70" y="106" width="286" height="14" fill="#E7E0EE"/>
+    <rect x="70" y="138" width="244" height="14" fill="#B7A5D8"/>
+    <rect x="70" y="170" width="306" height="14" fill="#E7E0EE"/>
+    <rect x="70" y="202" width="260" height="14" fill="#E7E0EE"/>
+  </g>
+  <path d="M376 145H470" stroke="#7A58C7" stroke-width="7"/>
+  <circle cx="470" cy="145" r="10" fill="#7A58C7"/>
+  <text x="540" y="112" class="hero">operational data</text>
+  <rect x="540" y="140" width="625" height="86" fill="#B7A5D8"/>
+  <text x="560" y="204" class="hero">you can build on.</text>
+  <text x="540" y="270" class="sub">From documents to data ready for AI.</text>
+  <image href="../../assets/brand/apparent-wordmark.svg" x="1190" y="292" width="300" height="70"/>
+  <text x="540" y="340" class="url">tryapparent.com</text>
+</svg>

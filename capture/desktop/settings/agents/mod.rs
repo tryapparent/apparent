@@ -12,12 +12,20 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
     };
     // Match the existing config reader: absent/non-boolean values have no
     // explicit preference. Never forward unrelated config or private keys.
-    serde_json::json!({"saved": config.get("experiments").and_then(|flags| flags.get("agentDemoVideo")).and_then(|flag| flag.as_bool())})
+    serde_json::json!({"saved": config.get("experiments").and_then(|flags| flags.get("agentDemoVideo")).and_then(|flag| flag.as_bool()),
+        "t3Saved":config.get("experiments").and_then(|flags|flags.get("t3DestinationPicker")).and_then(|flag|flag.as_bool()),
+        "t3Configured":config.pointer("/t3/origin").and_then(|v|v.as_str()).is_some()
+            &&config.pointer("/t3/token").and_then(|v|v.as_str()).is_some()})
 }
 
 pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>) -> serde_json::Value {
+    request_for(path, request, enabled, None)
+}
+
+pub(super) fn request_for(path: &Path, request: u32, enabled: Option<bool>, setting: Option<&str>) -> serde_json::Value {
+    let key = match setting { None | Some("video") => "agentDemoVideo", Some("t3") => "t3DestinationPicker", _ => return serde_json::json!({"type":"agents-result","request":request,"facts":{"error":"config_write_failed"}}) };
     let facts = if let Some(enabled) = enabled {
-        match crate::shared::handoff::set_experiment_in(path, "agentDemoVideo", enabled) {
+        match crate::shared::handoff::set_experiment_in(path, key, enabled) {
             Ok(()) => facts(path),
             Err(_) => serde_json::json!({"error": "config_write_failed"}),
         }
@@ -29,13 +37,26 @@ pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>) -> serde
 mod tests {
     use super::*;
     #[test]
+    fn t3_preference_is_independent_and_keeps_pairing_private() {
+        let dir = tempfile::tempdir().unwrap(); let path = dir.path().join("config.json");
+        std::fs::write(&path, r#"{"secret":"private","t3":{"origin":"https://example.test","token":"private-token"},"experiments":{"agentDemoVideo":false}}"#).unwrap();
+        assert!(facts(&path)["t3Saved"].is_null());
+        let value = request_for(&path, 9, Some(true), Some("t3"));
+        assert_eq!(value["facts"]["t3Saved"], true);
+        assert_eq!(value["facts"]["saved"], false);
+        assert!(!value.to_string().contains("private-token"));
+        let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(saved["t3"]["token"], "private-token"); assert_eq!(saved["secret"], "private");
+        assert_eq!(request_for(&path, 10, Some(true), Some("unknown"))["facts"]["error"], "config_write_failed");
+    }
+    #[test]
     fn agents_preference_preserves_config_and_reports_failed_writes() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.json");
-        assert_eq!(facts(&path), serde_json::json!({"saved": null}));
+        assert_eq!(facts(&path), serde_json::json!({"saved": null,"t3Saved":null,"t3Configured":false}));
         std::fs::write(&path, r#"{"secret":"private","experiments":{"other":true}}"#).unwrap();
         for on in [false, true] {
-            assert_eq!(request(&path, 7, Some(on)), serde_json::json!({"type":"agents-result","request":7,"facts":{"saved":on}}));
+            assert_eq!(request(&path, 7, Some(on)), serde_json::json!({"type":"agents-result","request":7,"facts":{"saved":on,"t3Saved":null,"t3Configured":false}}));
             let config: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
             assert_eq!(config["secret"], "private");
             assert_eq!(config["experiments"]["other"], true);
@@ -76,13 +97,14 @@ mod tests {
         let mut input = child.stdin.take().unwrap();
         for line in std::io::BufReader::new(child.stdout.take().unwrap()).lines() {
             let line = line.unwrap();
-            if let Ok(super::super::settings::Action::AgentsPreference { request: id, enabled }) = serde_json::from_str(&line) {
-                writeln!(input, "{}", request(&config, id, enabled)).unwrap();
+            if let Ok(super::super::settings::Action::AgentsPreference { request: id, enabled, setting }) = serde_json::from_str(&line) {
+                writeln!(input, "{}", request_for(&config, id, enabled, setting.as_deref())).unwrap();
             } else { panic!("Unexpected Agents command: {line}"); }
         }
         assert!(child.wait().unwrap().success());
         let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&config).unwrap()).unwrap();
         assert_eq!(saved["experiments"]["agentDemoVideo"], true);
+        assert_eq!(saved["experiments"]["t3DestinationPicker"], false);
         assert_eq!(saved["experiments"]["other"], true);
         assert_eq!(saved["secret"], "private");
     }

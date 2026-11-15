@@ -1,3 +1,4 @@
+import {FILE_FORMAT,fileTransport} from '../../client/typescript/contracts.ts';
 import type {Env, CaptureRow, FileRow, ManifestFile, AttemptSnapshot} from './types.ts';
 import {DAY,hex,json,fail,stmt,body,bearer,usage,isRecord} from './common.ts';
 import {checkedHeads,getObject,uploadAttempt,settledAttempt,deleteAttempts} from './storage.ts';
@@ -8,6 +9,7 @@ export function validPath(path: unknown): path is string {
 }
 function transportPath(path:unknown,format:CaptureRow['format'],grouped=false): path is string {
  if(format==='plaintext-v1')return validPath(path);
+ if(format===FILE_FORMAT)return typeof path==='string'&&(path==='envelope.json'||/^sealed\/(index|file-[0-9]{6})\.age$/.test(path));
  if(typeof path!=='string')return false;
  return grouped?/^(evidence|media)\/(envelope\.json|sealed\/part-[0-9]{6}\.age)$/.test(path):/^(envelope\.json|sealed\/part-[0-9]{6}\.age)$/.test(path);
 }
@@ -18,7 +20,7 @@ export async function evidenceReady(env:Env,c:CaptureRow) {
  return !!row&&row.total>=2&&row.missing===0;
 }
 function manifest(input: unknown,format:CaptureRow['format'],grouped=false) {
- if(!Array.isArray(input)||input.length<1||input.length>512)fail('invalid_manifest');
+ if(!Array.isArray(input)||input.length<1||input.length>(format===FILE_FORMAT?514:512))fail('invalid_manifest');
  const seen=new Set();let bytes=0;
  const files=input.map((f: unknown)=>{
   if(!isRecord(f)||!transportPath(f.path,format,grouped))fail('invalid_path');
@@ -26,6 +28,7 @@ function manifest(input: unknown,format:CaptureRow['format'],grouped=false) {
   if(f.size>90000000)fail('file_too_large');
   seen.add(f.path);bytes+=f.size;return {path:f.path,size:f.size,sha256:f.sha256};
  }).sort((a,b)=>a.path.localeCompare(b.path));
+ if(format===FILE_FORMAT){try{fileTransport(files);}catch{fail('invalid_manifest');}}
  if(bytes>500000000)fail('quota_exceeded',409);
  if(format==='apparent-encrypted-v1') {
   if(grouped) {
@@ -51,7 +54,7 @@ export async function captureRoutes(request: Request,env: Env,url: URL,context?:
  if(!action&&method==='POST') {
   // Validate the complete manifest before any database write/eviction.
   const input=await body(request),format=input.format===undefined?'plaintext-v1':input.format;
-  if(format!=='plaintext-v1'&&format!=='apparent-encrypted-v1')fail('unsupported_format');
+  if(format!=='plaintext-v1'&&format!=='apparent-encrypted-v1'&&format!==FILE_FORMAT)fail('unsupported_format');
   const grouped=input.delivery==='evidence-first-v1';
   if(input.delivery!==undefined&&(!grouped||format!=='apparent-encrypted-v1'))fail('unsupported_delivery');
   const m=manifest(input.files,format,grouped);
@@ -143,9 +146,10 @@ function mime(path: string){if(path.endsWith('.age'))return 'application/octet-s
 export async function cleanup(env: Env) {
  const now=Date.now();
  await stmt(env,"UPDATE captures SET status='deleted' WHERE status!='deleted' AND (expires_at<=? OR (status='pending' AND pending_until<=?))",now,now).run();
- // Keep attempt records: a PUT already in flight can finish after this sweep.
- // Repeated deletion of tombstoned keys makes that orphan harmless and reclaimable.
- const {results}=await stmt(env,"SELECT a.key,a.terminal FROM attempts a JOIN captures c ON c.id=a.capture_id LEFT JOIN files f ON f.object_key=a.key WHERE c.status='deleted' OR (f.object_key IS NULL AND a.created_at<?) ORDER BY a.cleaned_at,a.key LIMIT 1000",now-DAY).all<AttemptSnapshot>();
+ // Retain tombstones, but a released terminal PUT cannot recreate its unique key.
+ // Uncertain PUTs stay charged and retry hourly; a later terminal marker makes
+ // them eligible immediately. Failed deletes/stamps never advance the checkpoint.
+ const {results}=await stmt(env,"SELECT a.key,a.terminal FROM attempts a JOIN captures c ON c.id=a.capture_id LEFT JOIN files f ON f.object_key=a.key WHERE (c.status='deleted' OR (f.object_key IS NULL AND a.created_at<?)) AND NOT (a.terminal=1 AND a.released=1) AND (a.terminal=1 OR a.cleaned_at=0 OR a.cleaned_at<=?) ORDER BY a.cleaned_at,a.key LIMIT 1000",now-DAY,now-3600000).all<AttemptSnapshot>();
  for(let i=0;i<results.length;i+=100){
   const page=results.slice(i,i+100);
   await deleteAttempts(env,page,now);

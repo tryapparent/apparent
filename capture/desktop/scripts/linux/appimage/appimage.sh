@@ -59,6 +59,7 @@ LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy \
   --appdir "$appdir" \
   --executable "$binary" \
   --deploy-deps-only "$appdir/usr/share/apparent/settings/runtime" \
+  --deploy-deps-only "$appdir/usr/share/apparent/settings/app/electron/agent-media/native" \
   "${libraries[@]}" \
   --executable "$(command -v wl-copy)" \
   --executable "$(command -v wl-paste)" \
@@ -69,5 +70,7 @@ node --experimental-strip-types "$root/capture/desktop/scripts/linux/appimage/ns
 LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy --appdir "$appdir" --output appimage
 bash "$root/capture/desktop/scripts/linux/appimage/check-appimage-encoder.sh" "$out/Apparent-$arch.AppImage"
 node --experimental-strip-types "$root/record/media/test/package.ts" \
+  --binary "$out/Apparent-$arch.AppImage" --settings "$appdir/usr/share/apparent/settings"
+node --experimental-strip-types "$root/capture/agent/media/test/package.ts" \
   --binary "$out/Apparent-$arch.AppImage" --settings "$appdir/usr/share/apparent/settings"
 echo "$out/Apparent-$arch.AppImage"

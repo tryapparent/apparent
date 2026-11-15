@@ -24,7 +24,7 @@ function packageFixture(html) {
       for (const name of names) cpSync(join(site, "scripts", group, name), join(root, "scripts", group, name))
     }
     for (const name of [
-      "connect", "hosted", "assets", "pond", "team", "feature-demos", "apparent-wordmark.svg", "icon.svg", "HostGrotesk-Variable.ttf",
+      "brand", "connect", "hosted", "assets", "pond", "team", "feature-demos", "apparent-wordmark.svg", "icon.svg", "HostGrotesk-Variable.ttf",
       "social-preview-v1.png", "Apparent-ghost-demo-v4-lilac.mp4", "Apparent-ghost-demo-v4-lilac-poster.jpg",
       "appcast.xml", "llms.txt", "skill.md", "og.mp4", "narration.mp3", "narration-iphone.mp3", "releases", "map-tyyxsf5b", "private-pitch.html",
     ]) writeFileSync(join(root, "dist", name), "synthetic fixture")

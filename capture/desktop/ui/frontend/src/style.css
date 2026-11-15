@@ -82,6 +82,9 @@
 .settings-agents button { transition:none; }
 .settings-agent-preference p { margin-top:8px; }
 .settings-agent-skill { margin-top:28px; }
+.settings-agent-t3 { margin-top:28px; }
+.settings-agent-t3 > p { margin-top:12px; }
+.settings-agent-t3 button { min-height:44px; }
 .settings-agent-skill > p { margin-top:8px; }
 .settings-agent-command { display:block; margin-top:14px; padding:12px; background:var(--color-secondary); color:var(--color-secondary-foreground); font-size:14px; line-height:1.6; overflow-wrap:anywhere; user-select:text; }
 @media (max-width:480px) {

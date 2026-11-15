@@ -75,6 +75,7 @@ fn dispatch(result: CaptureResult, success: bool) {
     let mut current = false;
     coordinator.receive_capture_result(
         coordinator.capture_generation,
+        false,
         Some("publication-test"),
         result,
         |dir| admitted.push(dir.to_path_buf()),

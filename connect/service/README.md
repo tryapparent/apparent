@@ -61,6 +61,18 @@ Before every controlled R2 PUT/GET/HEAD, D1 atomically reserves its operation al
 
 Each PUT atomically grants one A operation, its exact manifest size and a new unique attempt/key before opening R2. Stream size/checksum enforcement is unchanged. Physical charges include published, in-flight, duplicate, orphan and tombstoned objects, not just live logical quota. Eviction/expiry does not release physical capacity. A durable `terminal` marker is written only after the unique provider PUT and body stream both settle. Successful deletion can release its bytes once in a conditional two-statement transaction with the cleanup stamp. Cleanup snapshots terminal eligibility **before deletion**, so a PUT settling after that deletion cannot be released by that sweep. Failed deletion/stamping stays retryable. An uncertain/crashed grant without a terminal marker stays charged even after repeated absent-key deletions; reconciliation needs a separate quiescent operator review. Keys/permits are never reused.
 
+The 15-minute sweep retains attempt tombstones but excludes attempts already both
+terminal and released. Uncertain attempts are revisited only after an hour since
+their last successful delete/stamp; a terminal marker bypasses that cooldown.
+The 1,000-key sweep bound and failures can delay reclamation further. Expiry and
+authorization still apply synchronously. Zero-reclaim pages do not write the
+budget row; zero-byte terminal attempts still retire against valid budget state.
+No migration or ledger reset is needed. Rolling back the Worker restores the
+older repeated cleanup traffic without changing the stored safety markers.
+`test/budgets/row-writes.test.ts` measures real local D1 `rows_written` for idle
+sweeps, zero-byte retirement, uncertain retry and unchanged account/analytics
+maintenance. These measurements do not establish remote CPU or total daily usage.
+
 The 500MB account quota remains a maximum, **not a guarantee that all 20 accounts can be physically full together**. The 9.5GB ceiling can reject an upload with logical quota remaining. These guards bound this Worker's controlled R2 work; they are **not an accountwide dollar cap**. Other credentials/resources, provider billing semantics, stored bytes during outages, D1 rows/storage and Free CPU still require operational verification. Billing alerts notify; they do not stop spending.
 
 ## Bounded Free audit (not deployment approval)
@@ -79,3 +91,12 @@ Budget tests first failed against the prior implementation at 516 admission stat
 Only manifest insertion and cleanup stamping had per-row SQL loops. Account usage, slot admission, quota eviction, capture expiration and auth cleanup remain set queries; file transfer and device routes use a fixed number of statements. Completion still performs one R2 head per file (at most 512), not SQL per file. The byte quota does **not** bound capture/file/attempt counts: zero-byte files and repeated uploads are legal, and tombstone metadata is retained. Statement counts are bounded independently of those cardinalities, but SQL scan time, daily D1 rows read/written, database growth and remote CPU remain unproven. No claim of a finite worst-case data volume or remote Free viability follows from this local audit.
 
 No contract limits were reduced and no multipart/queue protocol was added. Spending tests use real local D1/R2, small caps written to test D1 rows, two Worker instances sharing bindings, held-provider/stream barriers and real transaction faults. They cover cap races, retry accounting, missing/invalid state, crashes before PUT/terminal marker, late PUT after delete, terminal snapshot races, one-time release, eviction overlap and restart/migration rerun. These are local proofs, not live billing or Free CPU proof. Parent owns separate security review, exact changed-backend native integration, account configuration and any staging authorization. No provisioning, plan change or remote CPU measurement was performed here.
+
+Per-file encryption adds migration `0011.sql`. `npm run build` first stages the
+active migration sources (including `migrations/baseline/`) byte-for-byte into
+`.generated/migrations/`; Wrangler's `migrations_dir` points there. Always build
+before listing/applying migrations. D1 ledger filenames remain `0001.sql` through
+`0011.sql`, without directory prefixes, so existing migrations are not replayed.
+This source grouping changes no historical SQL or migration authority. Tests use
+the same staged artifacts. Applying migrations remains a separate authorized
+operation; building does not contact D1 or provision resources.

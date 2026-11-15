@@ -1,0 +1,57 @@
+{
+  "commit": "5bbe8e35e67b61703737991575860d4b1fd1ad57",
+  "capability": "movie-frames/1",
+  "sdkVersion": "0.2.0",
+  "sdkSha256": "457756832e8d6da4bcd3d1c03bcd9f58ae83083c44d08b35a8860e4c1ddca1f5",
+  "sdkFiles": {
+    "LICENSE": "4994c24b5bbb85529407e8cd0211efcf819236899d2c911cbdb18c00f231273a",
+    "README.md": "ad8f56dbdb0ff53330ae087801a84bd9a652883157e7257313e51f2311543af1",
+    "package.json": "f751e6786b1b3b2f092381a034e416bdbcdf0fce7c8b85b880d6c1c0e4c813cf",
+    "dist/index.js": "7ac61f83c146d967b93008f41a792f3d95ce97c8a7a6a0d757d77e17338d0558",
+    "dist/index.d.ts": "d042385713506213c402667d1aa3da7f667c3490b5d171c5d752ebf575971ec1",
+    "dist/frames.js": "c5a04d5f9e0067844dbf1023d90b0e15f91bdbf7a829044589ddd6bb0ba7613e",
+    "dist/frames.d.ts": "c480b359efe55bcc0abd5075ce3dd5038c851f258427ee8a6f0a5291f2dc0542"
+  },
+  "runtimes": {
+    "darwin-arm64": {
+      "archiveSha256": "82ecf741ce5c870d7e6508b18dc394f1fadf19458bf385a18275da2ba98b3b7e",
+      "files": {
+        "LICENSE": "4994c24b5bbb85529407e8cd0211efcf819236899d2c911cbdb18c00f231273a",
+        "manifest.json": "af0ef7a9e3553f6852ff318906008291313320deed6ce555320aa4f701a62c8f",
+        "apparent-engine-media": "1acc6aed0e41a0c57c3421bd4827046d02ea72b652ea63a42095a7b322163f59",
+        "apparent-engine-frames": "5a398c38c6b923ccbebe0dcc76eac3d8b96f9b894387b1b5d3c758dae9e0f5ac",
+        "apparent-engine-probe": "c02ee6220caf99363995fa0b702ca280c8598d047d88bc2100993689ad652099",
+        "apparent-engine-frames-native": "8c879e385f2cf47f2aac48d122a779a90620cf76e7448ff93ca7c0697615f6b8"
+      }
+    },
+    "darwin-x64": {
+      "archiveSha256": "71e9deff4909a26f51dc4b9d0e26b70a31a56d249738ab51a7a38ea8866e617e",
+      "files": {
+        "LICENSE": "4994c24b5bbb85529407e8cd0211efcf819236899d2c911cbdb18c00f231273a",
+        "manifest.json": "d736bb5d8b4081a8484965e2601bf2c17dc6dbfc2a4051b9ed7f89870deca981",
+        "apparent-engine-media": "e5c0b3ebcd8e7beb40d95c5253476f6ab83703a845e5bd8e1f77596ff4f2dfbb",
+        "apparent-engine-frames": "e171212780bfc54f8c86576977e5f706ae2291c4b5dfdbcf5db006b6c570088e",
+        "apparent-engine-probe": "9d08033752705ab174fe5eb49f4a41956e6ef9818a1287c87b2f4774d88540aa",
+        "apparent-engine-frames-native": "1bda5ee9284e3418a297b1054bc1c90abb428c18fc63fbb7c094b76a1e6d27c3"
+      }
+    },
+    "linux-arm64": {
+      "archiveSha256": "67662b03bbe4c1cd9e8dbd6cd3dc016a2e3d3575b7df69109eff25e3f3ae4b5a",
+      "files": {
+        "LICENSE": "4994c24b5bbb85529407e8cd0211efcf819236899d2c911cbdb18c00f231273a",
+        "manifest.json": "085c77310cec7441b45485104498ccd1b05897c4c803728933a2ddc201673303",
+        "apparent-engine-media": "e8e584720aff4dd2ca1cd1d37f6d9e2606342d0e674c935e8499afb0dfb5dc38",
+        "apparent-engine-frames": "375d202c3dabaae9144dc3830fbfcc05e1de5bcadce343debdd2a86f2b3af29f"
+      }
+    },
+    "linux-x64": {
+      "archiveSha256": "66df65c1edfacca862621b15ffb6e9c69d47515ebf064cda5c5f7e06f138712c",
+      "files": {
+        "LICENSE": "4994c24b5bbb85529407e8cd0211efcf819236899d2c911cbdb18c00f231273a",
+        "manifest.json": "b47d35647265218dcc254e000af36a9af3b3f701cfeadb7dd37f92cd2a585397",
+        "apparent-engine-media": "8953d7e11afbec937c2f3bb04234e7cff2463769fbb7145f8e479647bbe3e424",
+        "apparent-engine-frames": "84b0dbe1846042df2b5adfa55dee8f5ea432d3b1d6e01717a4310bd0e82fb0a6"
+      }
+    }
+  }
+}

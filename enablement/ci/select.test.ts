@@ -24,9 +24,12 @@ function admitted(expression: string, needs: any, event = 'pull_request', draft 
 function parents(outputs: any = {}, reuse: any = {}) {
   return {contracts: {result: 'success'}, hermes: {result: 'success'}, select: {result: 'success', outputs}, reuse: {result: 'success', outputs: reuse}, portable: {result: 'success'}, 'record-media': {result: 'success'}};
 }
-test('independent stream workflows, manual diagnostics, PR integration checkout and read-only verification', () => {
+test('automatic stream orchestrators, manual diagnostics, PR integration checkout and read-only verification', () => {
   assert.deepEqual(readdirSync(new URL('.github/workflows/', root)).filter(name =>
-    Object.keys(workflow(name).on).some(event => !['workflow_dispatch', 'workflow_call'].includes(event))).sort(), ['checks.yml', 'hermes.yml', 'stream-connect.yml', 'stream-engine.yml', 'stream-public.yml', 'verification.yml']);
+    Object.keys(workflow(name).on).some(event => !['workflow_dispatch', 'workflow_call'].includes(event))).sort(), ['checks.yml', 'hermes.yml', 'stream-engine.yml', 'stream-public.yml', 'verification.yml']);
+  assert.deepEqual(Object.keys(workflow('stream-connect.yml').on), ['workflow_dispatch', 'workflow_call']);
+  assert.equal(ci().jobs.connect.uses, './.github/workflows/stream-connect.yml');
+  assert.deepEqual(ci().jobs.connect.permissions, {contents:'read', actions:'read'});
   assert.deepEqual(Object.keys(ci().on), ['pull_request', 'push']);
   assert.deepEqual(ci().on.pull_request.types, ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft']);
   assert.equal(ci().permissions.contents, 'read');
@@ -432,8 +435,9 @@ test('Hermes owns independent package verification and publication; native admis
  assert.equal(h.name,'continuous delivery hermes');
  assert.equal(h.jobs.verify.strategy['fail-fast'],false);
  const validator=h.jobs.verify.steps.find((s:any)=>s.name==='Install supported Hermes validator').run;
+ const validatorSource=h.jobs.verify.steps.find((s:any)=>s.name==='Prepare pinned Hermes validator and download identity').run;
  assert.match(validator,/uv sync.*--frozen --no-dev/);
- assert.match(validator,/fetch --depth 1 origin [a-f0-9]{40}/);
+ assert.match(validatorSource,/fetch --depth 1 origin [a-f0-9]{40}/);
  assert.doesNotMatch(validator,/HERMES_NIX_BUILD/);
  assert.deepEqual(h.jobs.publish.needs,['contracts','clean','verify']);
  assert.match(h.jobs.publish.if,/github.event_name == 'push'/);

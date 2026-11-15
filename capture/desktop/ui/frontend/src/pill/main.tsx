@@ -5,6 +5,9 @@ import {StickyNote} from '@apparent/ui/icons';
 import type {PillView} from './bridge';
 import './style.css';
 import {InputMeter} from './input-meter';
+import {DestinationPicker} from './destination-picker';
+import type {DestinationView} from './destinations';
+import './destination-picker.css';
 import {Check,Circle,CircleAlert,ClipboardPaste,Link,LoaderCircle,Monitor,PenLine,Scan,ScanEye,Smartphone,Square,X,type LucideIcon} from 'lucide-react';
 
 const actionIcons:Record<string,LucideIcon>={
@@ -15,6 +18,12 @@ const actionIcons:Record<string,LucideIcon>={
 
 function Pill() {
   const [view,setView]=useState<PillView|null>(null);
+  const [destination,setDestination]=useState<DestinationView|null>(null);
+  useEffect(()=>{
+    const bridge=window.apparentPill;if(!bridge)return;
+    const unsubscribe=bridge.subscribeDestinations(setDestination);
+    void bridge.destinations().then(setDestination).catch(()=>{});return unsubscribe;
+  },[]);
   const [receivedAt,setReceivedAt]=useState(0);
   const [systemReduced,setSystemReduced]=useState(false);
   useEffect(()=>{
@@ -76,6 +85,9 @@ function Pill() {
   },[view]);
   if(!view)return <div role="status" className="pill connection">{error?'Recording controls unavailable':'Connecting…'}</div>;
   if(view.phase==='hidden')return null;
+  if(destination && ['processing','completed'].includes(view.phase))return <main data-revision={view.revision} className="pill settings-shell" data-phase={view.phase} data-reduced={view.reducedMotion}>
+    <DestinationPicker key={destination.capture} view={destination}/>
+  </main>;
   const uploading=view.phase==='completed' && view.actions.some(action=>action.label==='Cancel upload');
   const uploadStopped=view.phase==='completed' && (view.label.startsWith('Upload failed') || view.label.startsWith('Upload cancelled'));
   // Keep the named X at the trailing edge in both visual and keyboard order,

@@ -7,6 +7,10 @@ pub(super) struct Admission {
 }
 
 impl Admission {
+    pub fn replace_window(&mut self) {
+        self.epoch += 1;
+        self.failed = false;
+    }
     pub fn update(&mut self, visible: bool, generation: u64) {
         let next = visible.then_some(generation);
         if next != self.presentation {
@@ -81,6 +85,15 @@ mod tests {
         let pending = admission.begin().unwrap();
         admission.update(false, 7);
         admission.update(true, 7);
+        assert!(!admission.fail(pending));
+        assert!(admission.begin().is_some());
+    }
+    #[test]
+    fn replacement_window_invalidates_old_pin_without_changing_capture() {
+        let mut admission = Admission::default();
+        admission.update(true, 7);
+        let pending = admission.begin().unwrap();
+        admission.replace_window();
         assert!(!admission.fail(pending));
         assert!(admission.begin().is_some());
     }

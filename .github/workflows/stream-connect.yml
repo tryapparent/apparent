@@ -1,96 +1,13 @@
 name: Connect continuous delivery
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "**"
-      - "!capture/**"
-      - "!record/**"
-      - "!connect/**"
-      - "!public/**"
-      - "!hermes/**"
-      - "!enablement/**"
-      - "!shared/**"
-      - "!composition/**"
-      - "!.cargo/**"
-      - "!.github/**"
-      - "!.githooks/**"
-      - "!engine/**"
-      - "!AGENTS.md"
-      - "!README.md"
-      - "!Cargo.toml"
-      - "!Cargo.lock"
-      - "!build.rs"
-      - "!main.rs"
-      - "shared/**"
-      - "composition/**"
-      - "enablement/**"
-      - ".github/**"
-      - ".githooks/**"
-      - "!.github/workflows/stream-engine.yml"
-      - "!.github/workflows/hermes.yml"
-      - "!.github/workflows/stream-public.yml"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "build.rs"
-      - "main.rs"
-      - ".cargo/**"
-      - ".github/workflows/verification-platform.yml"
-      - "enablement/verification.py"
-      - "enablement/prerequisites/**"
-      - "enablement/local-tests/**"
-      - "enablement/native-build/**"
-      - "connect/**"
-      - "public/site/**"
-      - ".github/workflows/stream-connect.yml"
-      - "enablement/release_gate.py"
-    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
-  push:
-    branches: [main]
-    paths:
-      - "**"
-      - "!capture/**"
-      - "!record/**"
-      - "!connect/**"
-      - "!public/**"
-      - "!hermes/**"
-      - "!enablement/**"
-      - "!shared/**"
-      - "!composition/**"
-      - "!.cargo/**"
-      - "!.github/**"
-      - "!.githooks/**"
-      - "!engine/**"
-      - "!AGENTS.md"
-      - "!README.md"
-      - "!Cargo.toml"
-      - "!Cargo.lock"
-      - "!build.rs"
-      - "!main.rs"
-      - "shared/**"
-      - "composition/**"
-      - "enablement/**"
-      - ".github/**"
-      - ".githooks/**"
-      - "!.github/workflows/stream-engine.yml"
-      - "!.github/workflows/hermes.yml"
-      - "!.github/workflows/stream-public.yml"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "build.rs"
-      - "main.rs"
-      - ".cargo/**"
-      - ".github/workflows/verification-platform.yml"
-      - "enablement/verification.py"
-      - "enablement/prerequisites/**"
-      - "enablement/local-tests/**"
-      - "enablement/native-build/**"
-      - "connect/**"
-      - "public/site/**"
-      - ".github/workflows/stream-connect.yml"
-      - "enablement/release_gate.py"
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      shared_native:
+        description: Exact candidate receipt from the automatic caller's native dependencies
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -108,6 +25,7 @@ jobs:
       native: ${{ steps.paths.outputs.native }}
       portable: ${{ steps.paths.outputs.portable }}
       publish: ${{ steps.paths.outputs.publish }}
+      shared: ${{ steps.paths.outputs.shared }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -121,6 +39,7 @@ jobs:
           # Every affected main candidate verifies the complete Connect tree;
           # irrelevant main advances do not supersede its pending delivery.
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          SHARED_NATIVE: ${{ inputs.shared_native }}
         run: bun enablement/ci/routing/connect.ts --admit
 
   contracts:
@@ -168,7 +87,7 @@ jobs:
     needs: [select, contracts, portable]
     if: >-
       !cancelled() && needs.select.result == 'success' && needs.contracts.result == 'success' &&
-      (needs.portable.result == 'success' || needs.portable.result == 'skipped') && needs.select.outputs.native == 'true' &&
+      (needs.portable.result == 'success' || needs.portable.result == 'skipped') && needs.select.outputs.native == 'true' && needs.select.outputs.shared != 'true' &&
       (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     uses: ./.github/workflows/verification-platform.yml
     with:
@@ -181,7 +100,7 @@ jobs:
     needs: [select, contracts, portable]
     if: >-
       !cancelled() && needs.select.result == 'success' && needs.contracts.result == 'success' &&
-      (needs.portable.result == 'success' || needs.portable.result == 'skipped') && needs.select.outputs.native == 'true' &&
+      (needs.portable.result == 'success' || needs.portable.result == 'skipped') && needs.select.outputs.native == 'true' && needs.select.outputs.shared != 'true' &&
       (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     uses: ./.github/workflows/verification-platform.yml
     with:
@@ -198,7 +117,7 @@ jobs:
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       needs.select.result == 'success' && needs.contracts.result == 'success' && needs.portable.result == 'success' &&
       needs.select.outputs.publish != 'false' &&
-      (needs.select.outputs.native == 'false' || (needs.linux.result == 'success' && needs.macos.result == 'success'))
+      (needs.select.outputs.shared == 'true' || needs.select.outputs.native == 'false' || (needs.linux.result == 'success' && needs.macos.result == 'success'))
     permissions:
       contents: read
       actions: read
@@ -225,13 +144,15 @@ jobs:
           set -euo pipefail
           [[ "$GITHUB_REPOSITORY" == tryapparent/apparent && "$GITHUB_REF" == refs/heads/main ]]
           [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
-          [[ "$GITHUB_WORKFLOW_REF" == tryapparent/apparent/.github/workflows/stream-connect.yml@refs/heads/main ]]
+          [[ "$GITHUB_WORKFLOW_REF" == tryapparent/apparent/.github/workflows/stream-connect.yml@refs/heads/main || "$GITHUB_WORKFLOW_REF" == tryapparent/apparent/.github/workflows/checks.yml@refs/heads/main ]]
           node --experimental-strip-types enablement/ci/routing/streams.ts connect "$REQUEST_SHA" || exit 0
           echo "sha=$REQUEST_SHA" >> "$GITHUB_OUTPUT"
 
   verify:
     needs: admit
-    if: needs.admit.outputs.sha != ''
+    # Shared native receipts intentionally skip the standalone platform jobs.
+    if: >-
+      !cancelled() && needs.admit.result == 'success' && needs.admit.outputs.sha != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -338,7 +259,10 @@ jobs:
       group: connect-hosted-production
       cancel-in-progress: false
     needs: [admit, verify]
-    if: github.repository == 'tryapparent/apparent' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.HOSTED_CD_ENABLED == 'true'
+    if: >-
+      !cancelled() && needs.admit.result == 'success' && needs.verify.result == 'success' &&
+      needs.admit.outputs.sha != '' && github.repository == 'tryapparent/apparent' &&
+      github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.HOSTED_CD_ENABLED == 'true'
     environment:
       name: hosted-production
       url: https://app.tryapparent.com/connect

@@ -180,6 +180,10 @@ fn recovery(error: anyhow::Error) -> anyhow::Error {
 pub fn command(command: ConnectCommand) -> Result<()> {
     let client = client();
     let result = (|| match command {
+        ConnectCommand::Files { id } => {
+            println!("{}",serde_json::to_string_pretty(&client.files(&id)?)?);
+            Ok(())
+        }
         ConnectCommand::Alternatives => {
             println!("{}", apparent_connect_client::Client::alternatives()?);
             Ok(())
@@ -249,6 +253,10 @@ pub fn command(command: ConnectCommand) -> Result<()> {
 }
 pub fn fetch(id: &str, out: &Path, wait: u64) -> Result<()> {
     println!("{}", client().fetch(id, out, wait).map_err(recovery)?.display());
+    Ok(())
+}
+pub fn fetch_selected(id:&str,out:&Path,wait:u64,files:&[String])->Result<()> {
+    println!("{}",client().fetch_selected(id,out,wait,if files.is_empty(){None}else{Some(files)}).map_err(recovery)?.display());
     Ok(())
 }
 /// Only a bare canonical Connect ID implies a download. Explicit local paths

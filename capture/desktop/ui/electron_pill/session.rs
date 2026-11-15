@@ -18,13 +18,16 @@ struct Mailbox {
     state: Option<serde_json::Value>,
     place: Option<[f64; 2]>,
     position: Option<(u64, [f64; 2])>,
-    activate: bool,
+    activate: Option<u32>,
     closed: bool,
+    completions: std::collections::VecDeque<serde_json::Value>,
 }
 
 pub type Selection = (Option<PathBuf>, Option<PathBuf>);
 
 pub struct Session {
+    completion_generations: std::collections::HashSet<u64>,
+    t3_eligible: bool,
     mailbox: Arc<(Mutex<Mailbox>, Condvar)>,
     activated: Arc<AtomicBool>,
     activation: Option<Instant>,
@@ -32,6 +35,7 @@ pub struct Session {
     alive: Arc<AtomicBool>,
     observation: Arc<Mutex<Observation>>,
     ready: Arc<AtomicBool>,
+    window_changed: Arc<AtomicBool>,
     hovered: Arc<AtomicBool>,
     moved: Arc<AtomicBool>,
     child: Option<crate::capture::ui_process::UiChild>,
@@ -79,6 +83,34 @@ fn assets() -> Option<(PathBuf, PathBuf)> {
 }
 
 impl Session {
+    fn capture_key(generation: u64) -> String {
+        static BOOT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        format!("{}:{generation}", BOOT.get_or_init(crate::shared::ids::make_bundle_id))
+    }
+
+    pub fn set_t3_eligible(&mut self, eligible: bool) { self.t3_eligible = eligible; }
+
+    pub fn has_completion(&self, generation: u64) -> bool {
+        self.completion_generations.contains(&generation)
+    }
+
+    /// Private finalizer facts survive UI dismissal and never enter the renderer.
+    pub fn complete(&mut self, generation: u64, text: Option<String>) {
+        if self.has_completion(generation) { return; }
+        let (lock, wake) = &*self.mailbox;
+        let mut pending = lock.lock().unwrap();
+        if pending.completions.len() >= 64 { return; }
+        pending.completions.push_back(serde_json::json!({"type":"handoff-ready",
+            "capture":Self::capture_key(generation),"text":text}));
+        self.completion_generations.insert(generation);
+        if self.completion_generations.len() > 64 {
+            if let Some(oldest) = self.completion_generations.iter().copied().min() {
+                self.completion_generations.remove(&oldest);
+            }
+        }
+        wake.notify_one();
+    }
+
     pub fn open(view: View, generation: u64, selection: Selection) -> anyhow::Result<Self> {
         let (app, runtime) =
             assets().ok_or_else(|| anyhow::anyhow!("Packaged recording pill unavailable"))?;
@@ -107,6 +139,8 @@ impl Session {
         let observation = Arc::new(Mutex::new(Observation::default()));
         let ready = Arc::new(AtomicBool::new(false));
         let window_id = Arc::new(AtomicU32::new(0));
+        let window_changed = Arc::new(AtomicBool::new(false));
+        let changed_window = window_changed.clone();
         let identified = window_id.clone();
         let frame = Arc::new(Mutex::new(None));
         let frame_readback = frame.clone();
@@ -122,7 +156,8 @@ impl Session {
                     && pending.state.is_none()
                     && pending.place.is_none()
                     && pending.position.is_none()
-                    && !pending.activate
+                    && pending.activate.is_none()
+                    && pending.completions.is_empty()
                 {
                     pending = wake.wait(pending).unwrap();
                 }
@@ -130,9 +165,10 @@ impl Session {
                     break WriterStop::OwnerClosed;
                 }
                 let state = pending.state.take();
+                let completions = std::mem::take(&mut pending.completions);
                 let place = pending.place.take();
                 let position = pending.position.take();
-                let activate = std::mem::take(&mut pending.activate);
+                let activate = pending.activate.take();
                 drop(pending);
                 let messages = position
                     .map(|(revision, point)| serde_json::json!({"type":"position","revision":revision,"point":point}))
@@ -140,8 +176,9 @@ impl Session {
                     .chain(place
                     .map(|point| serde_json::json!({"type":"place","point":point}))
                     .into_iter())
+                    .chain(completions)
                     .chain(state)
-                    .chain(activate.then(|| serde_json::json!({"type":"activate"})));
+                    .chain(activate.map(|id| serde_json::json!({"type":"activate","windowId":id})));
                 for message in messages {
                     if serde_json::to_writer(&mut stdin, &message).is_err() {
                         break 'writer WriterStop::FrameWrite;
@@ -173,6 +210,10 @@ impl Session {
         let moved = Arc::new(AtomicBool::new(false));
         let moving = moved.clone();
         let pin_needed = Arc::new(AtomicBool::new(false));
+        #[cfg(target_os = "linux")]
+        let pin_admission = Arc::new(Mutex::new(super::pin::Admission::default()));
+        #[cfg(target_os = "linux")]
+        let read_admission = pin_admission.clone();
         let pin_context = Arc::new(Mutex::new(None::<String>));
         #[cfg(target_os = "linux")]
         let pin_request = pin_needed.clone();
@@ -184,21 +225,37 @@ impl Session {
         std::thread::spawn(move || {
             let mut reader = std::io::BufReader::new(stdout);
             #[cfg(target_os = "linux")]
-            let mut motion_rule = None;
+            let mut motion_rules = Vec::new();
             let stopped = loop {
                 let line = match diagnostics::read_frame(&mut reader) {
                     Ok(line) => line,
                     Err(reason) => break reason,
                 };
-                if line == b"{\"activated\":true}\n" {
-                    acknowledged.store(true, Ordering::Release);
-                    continue;
-                }
                 {
                     let value = match serde_json::from_slice::<serde_json::Value>(&line) {
                         Ok(value) => value,
                         Err(_) => break ReaderStop::InvalidJson,
                     };
+                    #[cfg(target_os = "linux")]
+                    if let Some(id) = value.get("retiredWindowId").and_then(|v| v.as_u64()).and_then(|id| u32::try_from(id).ok()) {
+                        if id != identified.load(Ordering::Acquire)
+                            && let Some(index) = motion_rules.iter().position(|old| *old == id)
+                        {
+                            match crate::capture::desktop::linux::hyprland::release_pill_motion(id, child_pid) {
+                                Ok(()) => { motion_rules.remove(index); }
+                                Err(error) => crate::capture::engine::runtime::apparent_log(format!("Retired pill motion cleanup failed: {error:#}")),
+                            }
+                        }
+                        continue;
+                    }
+                    if value.get("activated").and_then(|v| v.as_bool()) == Some(true)
+                        && let Some(id) = value.get("windowId").and_then(|v| v.as_u64())
+                    {
+                        if id == u64::from(identified.load(Ordering::Acquire)) {
+                            acknowledged.store(true, Ordering::Release);
+                        }
+                        continue;
+                    }
                     if let Some(frame_value) = value.get("frame") {
                         let Some(revision) = value.get("revision").and_then(|v| v.as_u64()) else { break ReaderStop::InvalidFrame; };
                         let Ok(rect) = serde_json::from_value::<[f64; 4]>(frame_value.clone()) else { break ReaderStop::InvalidFrame; };
@@ -228,21 +285,30 @@ impl Session {
                         else {
                             break ReaderStop::InvalidWindowId;
                         };
+                        let previous = identified.load(Ordering::Acquire);
+                        #[cfg(target_os = "linux")]
+                        if previous != 0 && previous != id {
+                            read_admission.lock().unwrap().replace_window();
+                        }
                         identified.store(id, Ordering::Release);
                         #[cfg(target_os = "linux")]
-                        if crate::capture::desktop::linux::hyprland::running() && motion_rule.is_none() {
+                        if crate::capture::desktop::linux::hyprland::running() && !motion_rules.contains(&id) {
+                            if motion_rules.len() >= 16 { break ReaderStop::PinPreparation; }
                             // This reader is off the GUI thread. Finish compositor
                             // preparation before publishing readiness/activation.
                             match crate::capture::desktop::linux::hyprland::prepare_pill_motion(id, child_pid) {
-                                Ok(true) => motion_rule = Some(id),
+                                Ok(true) => motion_rules.push(id),
                                 Ok(false) => {}, // Older Hyprlang retains compositor-owned motion.
                                 Err(error) => {
                                     crate::capture::engine::runtime::apparent_log(format!("Pill motion preparation failed: {error:#}"));
                                     // Even a partial registration must be retired.
-                                    motion_rule = Some(id);
+                                    motion_rules.push(id);
                                     break ReaderStop::PinPreparation;
                                 }
                             }
+                        }
+                        if previous != 0 && previous != id {
+                            changed_window.store(true, Ordering::Release);
                         }
                         mounted.store(true, Ordering::Release);
                         continue;
@@ -268,13 +334,15 @@ impl Session {
             read_observation.lock().unwrap().reader_stop = Some(stopped);
             reading.store(false, Ordering::Release);
             #[cfg(target_os = "linux")]
-            if let Some(id) = motion_rule {
+            for id in motion_rules {
                 if let Err(error) = crate::capture::desktop::linux::hyprland::release_pill_motion(id, child_pid) {
                     crate::capture::engine::runtime::apparent_log(format!("Pill motion cleanup failed: {error:#}"));
                 }
             }
         });
         let mut session = Self {
+            completion_generations: Default::default(),
+            t3_eligible: false,
             mailbox,
             activated,
             activation: None,
@@ -282,6 +350,7 @@ impl Session {
             alive,
             observation,
             ready,
+            window_changed,
             hovered,
             moved,
             child: Some(crate::capture::ui_process::UiChild::new(child)),
@@ -295,7 +364,7 @@ impl Session {
             #[cfg(all(test, target_os = "linux"))]
             pin: pin_request.clone(),
             #[cfg(target_os = "linux")]
-            pin_admission: Arc::new(Mutex::new(super::pin::Admission::default())),
+            pin_admission,
             #[cfg(target_os = "linux")]
             drag_position: Arc::new(Mutex::new(None)),
             frame,
@@ -321,10 +390,11 @@ impl Session {
                     let Some(epoch) = admission.lock().unwrap().begin() else { continue; };
                     let context = pin_diagnostics.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
                         .clone().unwrap_or_else(|| "presentation context unavailable".into());
+                    let xid = id.load(Ordering::Acquire);
                     let current = || alive.load(Ordering::Acquire)
+                        && id.load(Ordering::Acquire) == xid
                         && crate::capture::ui_process::owns(child_pid as i32);
                     let error = super::pin::reconcile(&admission, epoch, current, || {
-                        let xid = id.load(Ordering::Acquire);
                         anyhow::ensure!(xid != 0, "Recording pill has no native window identity");
                         crate::capture::desktop::linux::hyprland::pin_pill_for_process(xid, child_pid, || {
                             current() && admission.lock().unwrap().current(epoch)
@@ -395,6 +465,9 @@ impl Session {
     pub fn ready(&self) -> bool {
         self.ready.load(Ordering::Acquire)
     }
+    pub fn take_window_changed(&self) -> bool {
+        self.window_changed.swap(false, Ordering::AcqRel)
+    }
     pub fn moved(&self) -> bool {
         self.moved.load(Ordering::Acquire)
     }
@@ -441,15 +514,17 @@ impl Session {
         #[cfg(target_os = "linux")]
         self.pin_admission.lock().unwrap().update(self.view.phase != "hidden", self.generation);
         let (lock, wake) = &*self.mailbox;
-        lock.lock().unwrap().state = Some(serde_json::json!({"type":"state","view":self.view}));
+        lock.lock().unwrap().state = Some(serde_json::json!({"type":"state","view":self.view,
+            "capture":Self::capture_key(self.generation),"t3Eligible":self.t3_eligible}));
         self.observation.lock().unwrap().queued_state(self.view.phase);
         self.sent = Instant::now();
         wake.notify_one();
     }
     pub fn activate(&mut self) {
         self.activation = Some(Instant::now());
+        self.activated.store(false, Ordering::Release);
         let (lock, wake) = &*self.mailbox;
-        lock.lock().unwrap().activate = true;
+        lock.lock().unwrap().activate = self.window_number();
         wake.notify_one();
     }
     pub fn place(&self, point: [f64; 2]) {

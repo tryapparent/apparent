@@ -33,6 +33,7 @@ try {
   symlinkSync(join(site, 'node_modules'), join(root, 'node_modules'), 'dir')
   run(join(site, 'node_modules/.bin/vite'), ['build', '--outDir', env.PUBLIC_BUILD_DIR])
   run(join(site, 'node_modules/.bin/vite'), ['build', '--ssr', 'src/entry-server.tsx', '--outDir', env.PUBLIC_SSR_DIR])
+  run(join(site, 'node_modules/.bin/vite'), ['build', '--config', 'brand/vite.config.ts', '--outDir', env.PUBLIC_BUILD_DIR + '/brand'])
   run('node', ['scripts/site-build/prerender.ts'])
   run('node', ['scripts/site-build/package-apparent.mjs'])
 

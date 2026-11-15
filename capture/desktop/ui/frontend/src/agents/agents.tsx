@@ -1,12 +1,13 @@
 import {useEffect, useRef, useState} from 'react';
 import {Button} from '@apparent/ui/button';
-import {preferenceEnabled, skillCommand, type PreferenceFacts} from './policy';
+import {preferenceEnabled, t3PickerEnabled, skillCommand, type PreferenceFacts} from './policy';
 
 declare global {
   interface Window {
     apparentAgents: {
       read(): Promise<PreferenceFacts>;
       save(enabled: boolean): Promise<PreferenceFacts>;
+      saveT3(enabled: boolean): Promise<PreferenceFacts>;
       copySkill(): Promise<void>;
       subscribe(callback: (facts: PreferenceFacts) => void): () => void;
     };
@@ -17,20 +18,22 @@ export function Agents() {
   const [facts, setFacts] = useState<PreferenceFacts>();
   const [busy, setBusy] = useState(false);
   const [operation, setOperation] = useState<'read' | 'save'>('read');
+  const [operationSetting,setOperationSetting]=useState<'video'|'t3'>('video');
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
   const live = useRef(true);
   const pending = useRef(false);
   const revision = useRef(0);
-  async function request(enabled?: boolean) {
+  async function request(enabled?: boolean,setting:'video'|'t3'='video') {
     if (pending.current) return;
     pending.current = true;
     setOperation(enabled === undefined ? 'read' : 'save');
+    setOperationSetting(setting);
     setBusy(true); setError('');
     const version = ++revision.current;
     try {
-      const result = await (enabled === undefined ? window.apparentAgents.read() : window.apparentAgents.save(enabled));
+      const result = await (enabled === undefined ? window.apparentAgents.read() : setting==='t3'?window.apparentAgents.saveT3(enabled):window.apparentAgents.save(enabled));
       if (!live.current || version !== revision.current) return;
       setFacts(result);
       if (result.error) setError(result.error === 'config_read_failed'
@@ -69,6 +72,7 @@ export function Agents() {
     catch { if (live.current) setCopyError(true); }
   }
   const enabled = facts && preferenceEnabled(facts);
+  const t3Enabled = facts && t3PickerEnabled(facts);
   return <section className="settings-agents" aria-label="Agent preferences">
     <div className="settings-agent-preference">
       <div>
@@ -80,8 +84,19 @@ export function Agents() {
         disabled={busy || enabled === undefined} variant={enabled ? 'default' : 'secondary'}
         onClick={() => void request(!enabled)}>{enabled === undefined ? '—' : enabled ? 'On' : 'Off'}</Button>
     </div>
-    <p role="status" className="settings-metadata">{busy ? operation === 'save' ? 'Saving preference…' : 'Reading saved preference…' : !facts && !error ? 'Loading preference…' : ''}</p>
-    {error && <div><p role="alert">{error}</p><Button variant="secondary" disabled={busy} onClick={() => void request()}>Refresh preference</Button></div>}
+    <p role="status" className="settings-metadata">{operationSetting==='video'&&busy ? operation === 'save' ? 'Saving preference…' : 'Reading saved preference…' : !facts && !error ? 'Loading preference…' : ''}</p>
+    {error&&operationSetting==='video' && <div><p role="alert">{error}</p><Button variant="secondary" disabled={busy} onClick={() => void request()}>Refresh preference</Button></div>}
+    <section className="settings-agent-t3" aria-labelledby="agent-t3-label">
+      <div className="settings-agent-preference">
+        <div><h2 id="agent-t3-label">Send recordings to T3</h2>
+          <p id="agent-t3-help" className="settings-metadata">Choose a thread from the recording pill. Off by default; applies to the next recording.</p></div>
+        <Button type="button" role="switch" aria-checked={t3Enabled??false} aria-labelledby="agent-t3-label" aria-describedby="agent-t3-help"
+          disabled={busy||t3Enabled===undefined} variant={t3Enabled?'default':'secondary'} onClick={()=>void request(!t3Enabled,'t3')}>{t3Enabled===undefined?'—':t3Enabled?'On':'Off'}</Button>
+      </div>
+      {t3Enabled&&<p className="settings-metadata">{facts?.t3Configured?'T3 connection saved.':'Create a pairing link in T3, then run '} {!facts?.t3Configured&&<code>apparent t3 pair</code>}{!facts?.t3Configured&&'.'}</p>}
+      {operationSetting==='t3'&&<p role="status" className="settings-metadata">{busy?operation==='save'?'Saving preference…':'Reading saved preference…':''}</p>}
+      {error&&operationSetting==='t3'&&<div><p role="alert">{error}</p><Button variant="secondary" disabled={busy} onClick={()=>void request(undefined,'t3')}>Refresh preference</Button></div>}
+    </section>
     <section className="settings-agent-skill" aria-labelledby="agent-skill-label">
       <h2 id="agent-skill-label">Agent skill</h2>
       <p className="settings-metadata">Run this in a terminal to teach Claude Code, OpenCode, Codex and other agents to read your captures and use Apparent.</p>

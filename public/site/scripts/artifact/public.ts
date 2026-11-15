@@ -5,7 +5,8 @@ import { parse } from 'parse5'
 
 const privatePath = /(?:^|\/)(?:\.env[^/]*|.*\.map|pitch[^/]*|captures?|contact-sheet\.png|recording\.(?:mp4|mov)|deployment\.json|node_modules|functions|backend)(?:\/|$)/i
 const sensitive = /sourceMappingURL|verified@example|synthetic-csrf|must-not-render|BEGIN (?:RSA |OPENSSH )?PRIVATE KEY|client_secret/
-const canonicalFiles = new Set(['index.html','_worker.js','robots.txt','sitemap.xml','404.html','_headers','_redirects','apparent-wordmark.svg','icon.svg','HostGrotesk-Variable.ttf','social-preview-v1.png','Apparent-ghost-demo-v4-lilac.mp4','Apparent-ghost-demo-v4-lilac-poster.jpg'])
+const canonicalFiles = new Set(['index.html','brand/index.html','_worker.js','robots.txt','sitemap.xml','404.html','_headers','_redirects','apparent-wordmark.svg','icon.svg','HostGrotesk-Variable.ttf','social-preview-v1.png','Apparent-ghost-demo-v4-lilac.mp4','Apparent-ghost-demo-v4-lilac-poster.jpg'])
+const brandGenerated = /^brand\/assets\/[^/]+-[\w-]+\.(?:js|css|ttf)$/
 const groupedPublic = /^(?:pond|team|feature-demos)\/.+/
 
 export type FileInventory = Map<string, Buffer>
@@ -38,7 +39,7 @@ export function resourceGraph(files: FileInventory, starts: string[]): Set<strin
     if (/^(?:data:|#)/.test(ref) || /^(?:https?:)?\/\//.test(ref)) return
     if (/[\\\x00-\x20%]/.test(ref)) throw Error(`Malformed resource: ${ref}`)
     const clean = ref.split(/[?#]/)[0]
-    const target = clean.startsWith('/') ? clean.slice(1) : clean.startsWith('assets/') && file.endsWith('.js') ? clean : posix.normalize(posix.join(posix.dirname(file), clean))
+    const target = clean.startsWith('/') ? clean.slice(1) : clean.startsWith('assets/') && file.endsWith('.js') ? (file.startsWith('brand/') ? `brand/${clean}` : clean) : posix.normalize(posix.join(posix.dirname(file), clean))
     safePath(target)
     if (!files.has(target)) throw Error(`Missing resource: ${file} -> ${target}`)
     pending.push(target)
@@ -111,8 +112,8 @@ function publicMetadata(files: FileInventory): void {
 export function validatePublic(files: FileInventory, canonical: FileInventory = new Map(), options: { prepared?: boolean } = {}): void {
   if (options.prepared) for (const required of ['404.html', '_headers', '_redirects']) if (!files.has(required)) throw Error(`Missing Public metadata: ${required}`)
   for (const [path, bytes] of files) {
-    const ordinary = canonicalFiles.has(path) || /^assets\/[^/]+-[\w-]+\.(?:js|css)$/.test(path)
-    const grouped = groupedPublic.test(path) && canonical.get(`assets/${path}`)?.equals(bytes)
+    const ordinary = canonicalFiles.has(path) || brandGenerated.test(path) || /^assets\/[^/]+-[\w-]+\.(?:js|css)$/.test(path)
+    const grouped = (groupedPublic.test(path) && canonical.get(`assets/${path}`)?.equals(bytes)) || (path.startsWith('brand/') && canonical.get(`assets/brand-book/${path.slice(6)}`)?.equals(bytes))
     if ((!ordinary && !grouped) || (!options.prepared && ['404.html','_headers','_redirects'].includes(path))) throw Error(`Unexpected Public output: ${path}`)
     if (/\.(?:html|js|css)$/.test(path) && /X-CSRF-Token|hosted-panel|hosted-page|Checking your account/.test(bytes.toString())) throw Error(`Wrong resource owner: ${path}`)
     if (/\.(?:html|js|css|svg)$/.test(path) && sensitive.test(bytes.toString())) throw Error(`Private Public content: ${path}`)
@@ -120,6 +121,6 @@ export function validatePublic(files: FileInventory, canonical: FileInventory = 
   publicMetadata(files)
   const starts = files.has('_worker.js') ? ['index.html','_worker.js'] : ['index.html']
   const graph = resourceGraph(files, starts)
-  for (const path of files.keys()) if (path.endsWith('.html') && path !== '404.html' && !graph.has(path)) resourceGraph(files, [path])
-  for (const path of files.keys()) if (!graph.has(path) && !canonicalFiles.has(path) && !groupedPublic.test(path) && !/^assets\/[^/]+-[\w-]+\.(?:js|css)$/.test(path)) throw Error(`Unreferenced Public output: ${path}`)
+  for (const path of files.keys()) if (path.endsWith('.html') && path !== '404.html' && !path.startsWith('brand/design-system/reference/') && !graph.has(path)) resourceGraph(files, [path])
+  for (const path of files.keys()) if (!graph.has(path) && !path.startsWith('brand/') && !canonicalFiles.has(path) && !groupedPublic.test(path) && !/^assets\/[^/]+-[\w-]+\.(?:js|css)$/.test(path)) throw Error(`Unreferenced Public output: ${path}`)
 }

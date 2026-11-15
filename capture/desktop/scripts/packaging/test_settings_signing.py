@@ -25,10 +25,15 @@ class SigningTests(unittest.TestCase):
                              "dist/src/installer/index.html", "dist/pill/index.html",
                              "dist/assets/controls.js", "node_modules/electron/dist/electron",
                              "electron/pill/native/window.node",
+                             "electron/pill/t3.cjs",
                              "electron/record-media/worker.js", "electron/record-media/policy.js",
                              "electron/record-media/node_modules/@apparent/engine-sdk/dist/index.js",
                              "electron/record-media/native/apparent-engine-media",
-                             "electron/record-media/native/apparent-engine-probe"):
+                             "electron/record-media/native/apparent-engine-probe",
+                             "electron/agent-media/worker.js", "electron/agent-media/policy.js",
+                             "electron/agent-media/node_modules/@apparent/engine-sdk/dist/index.js",
+                             "electron/agent-media/native/apparent-engine-frames",
+                             "electron/agent-media/native/apparent-engine-frames-native"):
                 file = frontend / relative
                 file.parent.mkdir(parents=True, exist_ok=True)
                 file.write_text(relative)
@@ -43,6 +48,9 @@ class SigningTests(unittest.TestCase):
             (connect / "dist/shares.js").write_text(module)
             (connect / "dist/handoff.js").write_text("synthetic handoff")
             (connect / "dist/foreground.js").write_text("synthetic foreground")
+            (connect / "dist/transfer.js").write_text("synthetic transfer")
+            (connect / "dist/transfer").mkdir()
+            (connect / "dist/transfer/contract.js").write_text("synthetic transfer-contract")
             script = root / "capture/desktop/scripts/packaging/stage-settings.py"
             with patch.object(stage, "__file__", str(script)), \
                  patch.object(stage.sys, "argv", [str(script), str(destination)]), \
@@ -53,6 +61,8 @@ class SigningTests(unittest.TestCase):
             self.assertEqual((destination / "app/connect-client/dist/shares.js").read_text(), module)
             self.assertEqual((destination / "app/connect-client/dist/handoff.js").read_text(), "synthetic handoff")
             self.assertEqual((destination / "app/connect-client/dist/foreground.js").read_text(), "synthetic foreground")
+            self.assertEqual((destination / "app/connect-client/dist/transfer.js").read_text(), "synthetic transfer")
+            self.assertEqual((destination / "app/connect-client/dist/transfer/contract.js").read_text(), "synthetic transfer-contract")
             self.assertEqual(json.loads((destination / "app/connect-client/package.json").read_text()), {"type": "module"})
             self.assertEqual((destination / "app/dist/src/controls/index.html").read_text(), "dist/src/controls/index.html")
             for relative in ("electron/main.cjs", "electron/preload.cjs", "dist/assets/controls.js",
@@ -60,6 +70,7 @@ class SigningTests(unittest.TestCase):
                 self.assertTrue((destination / "app" / relative).is_file(), relative)
             self.assertEqual((destination / "app/electron/installer/ui/src/installer/index.html").read_text(), "dist/src/installer/index.html")
             self.assertEqual((destination / "app/dist/pill/index.html").read_text(), "dist/pill/index.html")
+            self.assertEqual((destination / "app/electron/pill/t3.cjs").read_text(), "electron/pill/t3.cjs")
             for name in ("presentation", "hyprland", "selection", "practice", "practice-host"):
                 relative = f"dist/onboarding-{name}.cjs"
                 self.assertEqual((destination / "app" / relative).read_text(), relative)
@@ -80,6 +91,10 @@ class SigningTests(unittest.TestCase):
                     self.assertIn(["codesign", "--verify", "--strict", str(addon)], signed)
                     for name in ("apparent-engine-media", "apparent-engine-probe"):
                         binary = mac / "app/electron/record-media/native" / name
+                        self.assertIn(sign + [str(binary)], signed)
+                        self.assertIn(["codesign", "--verify", "--strict", str(binary)], signed)
+                    for name in ("apparent-engine-frames", "apparent-engine-frames-native"):
+                        binary = mac / "app/electron/agent-media/native" / name
                         self.assertIn(sign + [str(binary)], signed)
                         self.assertIn(["codesign", "--verify", "--strict", str(binary)], signed)
                     self.assertEqual("--timestamp" in sign, identity != "-")

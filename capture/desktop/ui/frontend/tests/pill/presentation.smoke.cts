@@ -52,6 +52,123 @@ const recording={...hidden,revision:2,phase:'recording',inputWaveform:Array(24).
  {id:'finish',label:'Finish',enabled:true,selected:false,primary:true},
  {id:'cancel',label:'Cancel',enabled:true,selected:false,primary:false}]};
 
+test('Linux mapped resize waits for paint and rejects superseded rounded geometry',{skip:process.platform!=='linux'},async t=>{
+ const home=await fs.mkdtemp(path.join(os.tmpdir(),'pill-shape-paint-'));
+ const application=await electron.launch({args:[path.resolve(__dirname,'host.cjs'),'--no-sandbox'],
+  env:{...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config')}});
+ t.after(async()=>{await application.close().catch(()=>{});await fs.rm(home,{recursive:true,force:true});});
+ const page=await application.firstWindow();
+ const publish=async view=>{
+  await application.evaluate((_e,view)=>process.stdin.emit('data',JSON.stringify({type:'state',view})+'\n'+JSON.stringify({type:'activate'})+'\n'),view);
+  await expect(page.locator('main')).toHaveAttribute('data-revision',String(view.revision));
+ };
+ await publish(recording);
+ await page.evaluate(()=>window.apparentPill.layout(2));
+ await application.evaluate(({BrowserWindow})=>{
+  const w=BrowserWindow.getAllWindows()[0],shape=w.setShape.bind(w);
+  w.__shapes=[];w.__mapping=[];
+  w.setShape=rects=>{w.__shapes.push(rects);return shape(rects);};
+  for(const event of ['hide','show'])w.on(event,()=>w.__mapping.push(event));
+ });
+ // Hold actual renderer paint callbacks, including concurrent layout requests.
+ // Neither a duplicate request nor an obsolete revision may restore the clip.
+ await page.evaluate(()=>{window.__paintFrames=[];window.requestAnimationFrame=callback=>window.__paintFrames.push(callback);});
+ await publish({...hidden,revision:3,phase:'processing',draggable:false,label:'Processing recording…'});
+ await expect.poll(()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].__shapes.length)).toBeGreaterThan(0);
+ await page.evaluate(()=>{window.__oldLayout=window.apparentPill.layout(3);});
+ await publish({...hidden,revision:4,phase:'completed',draggable:false,label:'Recording saved and ready to hand off'});
+ await expect.poll(()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].__shapes.length)).toBeGreaterThan(1);
+ assert.ok(await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].__shapes.every(shape=>shape.length===1)),
+  'The rounded clip must stay removed while the resized surface has not painted');
+ await page.evaluate(async()=>{
+  for(let frame=0;frame<8;frame++){
+   const callbacks=window.__paintFrames.splice(0);for(const callback of callbacks)callback(performance.now());
+   await new Promise(resolve=>setTimeout(resolve,10));
+  }
+  await window.__oldLayout;
+  await window.apparentPill.layout(4);
+ });
+ const result=await application.evaluate(({BrowserWindow})=>{
+  const w=BrowserWindow.getAllWindows()[0];return {shapes:w.__shapes,bounds:w.getBounds(),mapping:w.__mapping};
+ });
+ const rounded=result.shapes.filter(shape=>shape.length>1);
+ assert.equal(rounded.length,1,'Only the current revision may restore rounded geometry');
+ assert.equal(Math.max(...rounded[0].map(r=>r.x+r.width)),result.bounds.width);
+ assert.deepEqual(result.mapping,[],'Resizing must keep the XWayland surface mapped');
+ await publish({...recording,revision:5});
+ await expect.poll(()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].__shapes.length)).toBeGreaterThan(result.shapes.length);
+ await page.reload();
+ await expect(page.getByRole('button',{name:'Finish',exact:true})).toBeVisible();
+ await page.evaluate(()=>window.apparentPill.layout(5));
+});
+
+test('recording, processing and completion retain the visible center',async t=>{
+ const home=await fs.mkdtemp(path.join(os.tmpdir(),'pill-center-'));
+ const application=await electron.launch({args:[path.resolve(__dirname,'host.cjs'),'--no-sandbox'],
+  env:{...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config')}});
+ t.after(async()=>{await application.close().catch(()=>{});await fs.rm(home,{recursive:true,force:true});});
+ const page=await application.firstWindow();
+ let revision=0;
+ const publish=async state=>{
+  const view={...hidden,noteCount:0,...state,revision:++revision};
+  await application.evaluate((_e,view)=>process.stdin.emit('data',JSON.stringify({type:'state',view})+'\n'+JSON.stringify({type:'activate'})+'\n'),view);
+  if(view.phase==='hidden'){
+   await expect(page.locator('main')).toHaveCount(0);
+   await page.evaluate(revision=>window.apparentPill.layout(revision),revision);return;
+  }
+  await expect(page.locator('main')).toHaveAttribute('data-revision',String(revision));
+  await page.evaluate(()=>document.fonts.ready);
+  await page.evaluate(revision=>window.apparentPill.layout(revision),revision);
+ };
+ const center=async()=>{
+  const bounds=await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].getBounds());
+  const local=await page.evaluate(()=>{
+   const main=document.querySelector('main');
+   const element=main.dataset.phase==='recording' && !document.querySelector('.pill-notes')
+    ?document.querySelector('.pill-row'):document.querySelector('.pill-surface');
+   const r=element.getBoundingClientRect();return r.x+r.width/2;
+  });
+  return bounds.x+local;
+ };
+ for(const theme of ['light','dark'])for(const width of [1200,320])for(const noteCount of [0,12]){
+  await page.emulateMedia({colorScheme:theme});
+  await application.evaluate(({screen},width)=>{
+   const display={workArea:{x:0,y:0,width,height:800},scaleFactor:1};
+   screen.getDisplayMatching=()=>display;screen.getDisplayNearestPoint=()=>display;
+  },width);
+  await publish({...recording,noteCount});
+  await application.evaluate(()=>process.stdin.emit('data',JSON.stringify({type:'place',point:[100,100]})+'\n'));
+  if(width===1200)assert.ok(Math.abs(await center()-width/2)<=1,'Display placement centers the painted pill');
+  // Move only the starting recording. Never reset the origin on a state change:
+  // that would conceal the real host's centering behavior in tests and videos.
+  if(width===1200)await application.evaluate(({BrowserWindow})=>{
+   const window=BrowserWindow.getAllWindows()[0];window.setPosition(220,window.getBounds().y);
+  });
+  const reference=await center();
+  for(const phase of ['processing','completed']){
+   await publish({phase,label:phase==='processing'?'Processing recording…':'Saved',actions:[]});
+   const actual=await center();
+   if(process.env.APPARENT_CENTER_EVIDENCE){
+    const stem=`${theme}-${width}-${noteCount}-${phase}`;
+    await page.screenshot({path:path.join(process.env.APPARENT_CENTER_EVIDENCE,`${stem}.png`)});
+    await fs.writeFile(path.join(process.env.APPARENT_CENTER_EVIDENCE,`${stem}.json`),JSON.stringify({reference,actual}));
+   }
+   assert.ok(Math.abs(actual-reference)<=1,`${theme}/${width}/${noteCount}/${phase}: visible center moved ${actual-reference}px`);
+  }
+ }
+ // A new capture can reopen the same phase with a different notes footprint.
+ // Production places the retained window before sending its new snapshot.
+ await application.evaluate(({screen})=>{
+  const display={workArea:{x:0,y:0,width:1200,height:800},scaleFactor:1};
+  screen.getDisplayMatching=()=>display;screen.getDisplayNearestPoint=()=>display;
+ });
+ await publish({...recording,noteCount:12});
+ await publish(hidden);
+ await application.evaluate(()=>process.stdin.emit('data',JSON.stringify({type:'place',point:[100,100]})+'\n'));
+ await publish({...recording,noteCount:0});
+ assert.ok(Math.abs(await center()-600)<=1,'A reopened recording centers its new visible footprint');
+});
+
 test('close stays at the trailing edge and progress rotates unless motion is reduced',async t=>{
  const home=await fs.mkdtemp(path.join(os.tmpdir(),'pill-close-motion-'));
  const application=await electron.launch({args:[path.resolve(__dirname,'host.cjs'),'--no-sandbox'],

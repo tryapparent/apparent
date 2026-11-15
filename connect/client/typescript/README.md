@@ -10,8 +10,10 @@ This package is the bounded TypeScript prerequisite for migrating Connect crypto
 The exported primitives remain a migration prerequisite; they do not replace native identity, consent, queue or config writers. The separate `apparent-connect-mcp` executable owns an explicitly selected private MCP reader endpoint: local keys/state, sealed relay requests, validated streaming decryption and bundle publication. It runs without Rust or a direct server connection. See [MCP setup and limits](../../docs/mcp.md). Native transfer migration and actual Cowork acceptance remain separate gates.
 
 For MCP inspection, prefer `inspect` (or `run --mode inspection`) over `fetch`.
-Grouped captures can publish complete authenticated evidence independently of
-media; legacy single streams still require the full ciphertext. New readers
+V2 captures select independent file objects; grouped v1 captures can publish
+authenticated evidence independently of media. Legacy single streams still
+require the full ciphertext. V2 `fetch --file` and `run --mode files --file`
+retrieve exact selections, while `list` authenticates only the small index. New readers
 negotiate up to 1 MiB per range, retaining 16 KiB for old clients/servers. The
 `run` JSON-lines interface lets a programmatic host feed raw MCP replies into
 stdin while exposing only progress and final output to the model. It does not

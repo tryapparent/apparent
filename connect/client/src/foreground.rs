@@ -134,6 +134,7 @@ impl Client {
             public_copy,
             encrypted: !public_copy && self.provider.experiment(HOSTED_ENCRYPTION),
             encryption: None,
+            encryption_version: 2,
         };
         ensure!(
             job.bundle.extension().is_some_and(|s| s == "apparent"),
@@ -170,6 +171,19 @@ impl Client {
                 && (public_copy || self.provider.experiment(HOSTED_ENCRYPTION) == job.encrypted)
         };
         ensure!(allowed(), "cancelled");
+        let url = self.run_upload_policy(&job, &stage.0, &credential, &allowed, share, true)?;
+        Ok((job, url))
+    }
+
+    pub(super) fn run_upload_policy(
+        &self,
+        job: &Job,
+        stage: &Path,
+        credential: &Credential,
+        allowed: &dyn Fn() -> bool,
+        share: bool,
+        progress: bool,
+    ) -> Result<Option<String>> {
         let (runtime, module, electron) = connect_typescript_runtime("foreground")?;
         let mut command = Command::new(runtime);
         if electron {
@@ -177,7 +191,7 @@ impl Client {
         } else if module.extension().is_some_and(|s| s == "ts") {
             command.arg("--experimental-strip-types");
         }
-        let mut child = SharesPolicyChild(
+        let mut child = PolicyChild(
             command
                 .arg(module)
                 .stdin(Stdio::piped())
@@ -188,18 +202,23 @@ impl Client {
         let mut input = child.stdin.take().context("Missing upload input")?;
         let mut output = child.stdout.take().context("Missing upload output")?;
         let format = if job.encrypted {
-            "apparent-encrypted-v1"
+            if job.encryption_version == 2 {
+                "apparent-encrypted-v2"
+            } else {
+                "apparent-encrypted-v1"
+            }
         } else {
             "plaintext-v1"
         };
-        shares_policy_write(
+        policy_write(
             &mut input,
             &json!({"id":job.id,"server":job.server,"format":format,"files":job.files,"share":share}),
         )?;
         let base = format!("/v1/captures/{}", job.id);
+        let acknowledgements = Scratch::new(&self.state)?;
         for _ in 0..1600 {
             ensure!(allowed(), "cancelled");
-            let line = shares_policy_frame_bounded(&mut output, Duration::from_secs(5), 4096)?;
+            let line = policy_frame_bounded(&mut output, Duration::from_secs(5), 4096)?;
             let request: Value = serde_json::from_str(&line)?;
             let operation = request["operation"]
                 .as_str()
@@ -216,10 +235,10 @@ impl Client {
                 };
                 drop(input);
                 ensure!(
-                    shares_policy_exit(&mut child)?.success(),
+                    policy_exit(&mut child)?.success(),
                     "Foreground upload failed"
                 );
-                return Ok((job, url));
+                return Ok(url);
             }
             ensure!(
                 operation != "error",
@@ -234,15 +253,17 @@ impl Client {
                     request["totalBytes"].as_u64() == Some(total) && uploaded <= total,
                     "Invalid progress"
                 );
-                PROGRESS.store(
-                    if total == 0 {
-                        1
-                    } else {
-                        1 + uploaded * 100 / total
-                    },
-                    Ordering::Relaxed,
-                );
-                shares_policy_write(&mut input, &json!({"ok":true,"body":null}))?;
+                if progress {
+                    PROGRESS.store(
+                        if total == 0 {
+                            1
+                        } else {
+                            1 + uploaded * 100 / total
+                        },
+                        Ordering::Relaxed,
+                    );
+                }
+                policy_write(&mut input, &json!({"ok":true,"body":null}))?;
                 continue;
             }
             if job.encrypted {
@@ -268,13 +289,13 @@ impl Client {
                         .files
                         .get(usize::try_from(index)?)
                         .context("Invalid file index")?;
-                    let ack = stage.0.join(format!("ack-{}", random_id()?));
+                    let ack = acknowledgements.0.join(random_id()?);
                     self.request(
                         &job.server,
                         Some(&credential),
                         "PUT",
                         &format!("{base}/files/{}", file.path),
-                        Some(&stage.0.join(&file.path)),
+                        Some(&stage.join(&file.path)),
                         &ack,
                         JSON_LIMIT,
                         Duration::from_secs(60),
@@ -315,7 +336,7 @@ impl Client {
             // the policy's public error channel. Native errors retain their source.
             let body = result?;
             ensure!(allowed(), "cancelled");
-            shares_policy_write(&mut input, &json!({"ok":true,"body":body}))?;
+            policy_write(&mut input, &json!({"ok":true,"body":body}))?;
         }
         bail!("Too many upload operations")
     }

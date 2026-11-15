@@ -77,9 +77,15 @@ test('eviction tombstones block an in-flight upload and cleanup revisits late ob
  assert.equal((await f.call(p+'/files/summary.md',{token:a.read})).status,404);
  assert.equal((await f.db.prepare('SELECT object_key FROM files WHERE capture_id=?').bind(id(1)).first()).object_key,null);
  await worker.scheduled();assert.equal((await f.bucket.list()).objects.length,0);
- // Model a late R2 completion even after a prior sweep; attempt tombstones persist.
- await f.bucket.put(attempt.key,'hello');await worker.scheduled();
- assert.equal(await f.bucket.get(attempt.key),null);
+ // The real PUT has settled and been deleted; it cannot reuse its retired key.
+ assert.deepEqual(await f.db.prepare('SELECT terminal,released FROM attempts WHERE key=?').bind(attempt.key).first(),{terminal:1,released:1});
+ // A separate crashed PUT without a terminal marker may still complete late.
+ await f.db.prepare("INSERT INTO attempts(key,capture_id,created_at) VALUES('uncertain-evicted',?,0)").bind(id(1)).run();
+ await worker.scheduled();
+ await f.bucket.put('uncertain-evicted','hello');await worker.scheduled();
+ assert.ok(await f.bucket.head('uncertain-evicted'));
+ await f.db.prepare("UPDATE attempts SET cleaned_at=cleaned_at-3600000 WHERE key='uncertain-evicted'").run();
+ await worker.scheduled();assert.equal(await f.bucket.get('uncertain-evicted'),null);
  assert.equal((await f.db.prepare('SELECT status FROM captures WHERE id=?').bind(id(1)).first()).status,'deleted');
  }finally{if(controller)controller.close();await f.close();}
 });

@@ -45,6 +45,9 @@ contract, tooling, onboarding and Hermes command plans, so added direct test
 inputs follow their owning inventory. Package/native mocks remain local to each
 fixture. These placeholders verify hook dispatch and failure propagation, not
 product behavior; the real downstream suites still run in their normal gates.
+The copy-only implementation is `support/sources.ts`, also used by the publisher
+CLI fixture. It imports no runner or finite test module, keeping those consumers
+separate while sharing the source inventory.
 
 Local selections that need Rust check the existing private temporary-root contract
 before other commands. When Desktop is selected, its locked install, unit tests

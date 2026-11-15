@@ -1,0 +1,32 @@
+# apparent brand guidelines
+
+> Canonical rules and assets for designing, writing, and engineering with the apparent brand. Always spell apparent in lowercase.
+
+Use these sources instead of inferring rules from screenshots. Safety and accessibility override styling. Approved tokens override copied implementation values. Use only approved status tokens and never invent evidence, assets, or unresolved decisions. Never use em dashes in apparent copy.
+
+## Core guidelines
+
+- [Brand guidelines in Markdown](https://tryapparent.com/brand/brand-guidelines.md): Compact canonical reference for identity, writing, identifiers, frontend engineering, and governance.
+- [Full context reference](https://tryapparent.com/brand/llms-full.txt): More complete single-file context for an agent.
+- [Human guidelines](https://tryapparent.com/brand/): Visual rules and approved examples.
+
+## Implementation
+
+- [Product interface system](https://tryapparent.com/brand/design-system/product-interface.md): Product behavior, foundations, and patterns.
+- [Svelte component system](https://tryapparent.com/brand/design-system/svelte-component-system.md): Bits UI, optional shadcn-svelte recipes, LayerChart, tokens, and validation.
+- [Frontend instructions](https://tryapparent.com/brand/design-system/instructions/frontend-implementation.md): Component contracts, architecture, privacy, and tests.
+- [Identifier standard](https://tryapparent.com/brand/design-system/identifiers.md): Canonical prefixed ULIDs.
+- [Design tokens JSON](https://tryapparent.com/brand/design-system/tokens/apparent.tokens.json): Exact machine-readable token values.
+- [Design tokens CSS](https://tryapparent.com/brand/design-system/tokens/apparent.css): Ready-to-use CSS custom properties.
+
+## Assets
+
+- [Primary wordmark](https://tryapparent.com/brand/assets/brand/apparent-wordmark.svg)
+- [Inverse wordmark](https://tryapparent.com/brand/assets/brand/apparent-wordmark-inverse.svg)
+- [Primary icon](https://tryapparent.com/brand/assets/brand/apparent-icon.svg)
+- [Inverse icon](https://tryapparent.com/brand/assets/brand/apparent-icon-inverse.svg)
+
+## Optional
+
+- [Brand presentation](https://tryapparent.com/brand/?slides=1#slide-1): Strategic narrative and visual applications.
+- [Legacy product portal](https://tryapparent.com/brand/design-system/reference/product-portal/README.md): Preserved Flask and Bootstrap implementation evidence, not the current product stack.

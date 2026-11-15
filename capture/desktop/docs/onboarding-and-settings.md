@@ -270,9 +270,10 @@ the guided capture lesson. Permission-repair windows retain their existing behav
 ### Agents
 
 Installed Settings routes Agents to the shared Electron shell on macOS and Linux.
-Desktop's `ui/frontend/src/agents` owns the default-on preference, save/readback
+Desktop's `ui/frontend/src/agents` owns preference defaults, save/readback
 workflow, recovery and fixed skill command. The private parent pipe exposes only
-the saved `experiments.agentDemoVideo` boolean (or absence) and bounded errors;
+the saved `experiments.agentDemoVideo` and `experiments.t3DestinationPicker`
+booleans (or absence), connection-presence facts and bounded errors;
 `settings/agents/mod.rs` uses the existing shared config transaction. No second
 config writer is introduced. Copy replaces the clipboard with the canonical
 command only after a successful main-process call; it never runs the command.
@@ -285,6 +286,17 @@ the same native Agents page. Retain that fallback until installed navigation,
 clipboard, persistence and failure recovery are accepted on both platforms.
 Rollback reverts the paired routing and bridge; the existing config key and
 bundle readers remain compatible.
+
+**Send recordings to T3** is off by default. Only an explicit
+`experiments.t3DestinationPicker: true` enables it for subsequent recordings.
+Pairing alone leaves Paste in place. Create a pairing link in T3 and run
+`apparent t3 pair`, then provide the link on stdin; Node 22.23+ is required for
+this one-time exchange. The native shared config transaction stores the private
+session alongside unrelated preferences. Tokens never enter the renderer or
+command arguments. `apparent t3 status` shows the server; `apparent t3 forget`
+removes the saved connection. These commands do not change T3 or its providers.
+Disabling the setting affects the next recording; a previously confirmed handoff
+keeps its original destination. See the [pill workflow](../ui/electron_pill/README.md#t3-destinations).
 
 After building the frontend, run its `tests/settings/agents/smoke.ts` under Electron
 (`xvfb-run` on Linux). The ignored Rust test
