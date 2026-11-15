@@ -1,60 +1,50 @@
-# Instructions for designing with apparent
+# Designing with apparent
 
-## Before designing
+Start with the [brand foundations](../../brand-guidelines.md). The current
+landing page supplies the accepted visual character: the existing logo, Paper,
+Stock, Carbon, Lilac, Signal, Host Grotesk, expressive marks and peculiar frogs.
 
-1. Name the user, context, decision, and required outcome.
-2. Identify whether the work is brand communication, product interaction,
-   evidence/data presentation, or a combination.
-3. Read the relevant brand and product-interface guidance before exploring.
-4. Start from the shared tokens and approved assets.
-5. Define the smallest set of states and formats that must work.
+## Frame the work
 
-## Core behavior
+Name the person, their task, and the smallest useful outcome. Our first audience
+is creative people who already build personal projects with coding agents for
+fun and value good design. Do not require professional design expertise or
+specialist vocabulary. Their technology stack is not an audience boundary.
 
-- Make the relationship between source evidence and structured outcome visible.
-- Prefer real documents, operational environments, and sourced proof.
-- Use flat, square-edged, strongly aligned compositions.
-- Use Paper as the default field, Stock for grouped structure, Lilac for selected
-  or review-attention regions, and Carbon for ink and inverse thresholds.
-- Spend Signal on one active thread: primary action, active route, focus,
-  in-progress state, decisive word, or one selected data series. It is not
-  generic decoration.
-- Use normal-size Signal text only on Paper. On Stock or Carbon, reserve Signal
-  for non-text UI, focus, graphics, large text, or filled controls with Paper
-  text. Signal and Lilac always need a second non-color distinction.
-- Use the approved functional tokens only for their named states. Warning is
-  preventive caution and uses Carbon text on gold. Failure and destructive
-  action share red but retain distinct labels and behaviors. Disabled uses
-  reduced-emphasis Carbon on disabled controls only, never informative text.
-  Pair every state with a written label and icon,
-  outline, pattern, or shape.
-- Use Host Grotesk only. Use sentence case except for short machine identifiers.
-- Prefer contiguous fields and aligned regions over floating card grids.
-- Keep evidence adjacent to the decision it supports.
+The machine should understand human expression. Play helps people experiment
+and make better things, while leaving room for friends and life beyond the
+screen. Keep that purpose above the capture mechanism.
 
-## Never use
+## Make the expression playful and the workflow effortless
 
-- Red as a brand accent or the superseded Digital/Graphite palette.
-- Generic rounded SaaS cards, pill-based information architecture,
-  glassmorphism, gradients, or diffuse shadows.
-- Decorative paper collage, tears, grids, or registration marks without a
-  document-boundary or input/output role.
-- Code, terminal, robot, brain, neural-network, AI-glow, tree, or nature-growth
-  motifs.
-- Color alone to communicate state.
-- Metrics without denominator, time window, units, and a path to evidence.
-- Customer-like visuals or claims that imply unsupported proof.
+- Use the existing palette, typography, spacing and supplied logo masters.
+- Frogs, drawings, unusual compositions and optional surprises are welcome.
+- Reuse originals from the [frog collection](https://tryapparent.com/brand/#frog-collection).
+  Its [asset index](../../assets/frogs/collection.json) contains dimensions,
+  sources and a reference prompt for new poses.
+- Keep chunky pixel artwork distinct from product controls. Artwork colors do
+  not introduce new interface colors.
+- Reward curiosity without delaying capture, stop or handoff. No mandatory
+  jokes, surprise sound, compulsory animation or obstructive play.
+- Use brief transitions for controls. Longer playful sequences must be optional,
+  interruptible and respect reduced motion.
+- Keep text readable, actions obvious and keyboard focus visible. Use a bounded
+  reading width and reflow at 320 CSS px and 200% zoom.
+- Use Signal for the active action and focus. Status needs a written label plus
+  an icon, shape or other cue. Warning uses Carbon text on gold.
+- Be literal about saved, copied, uploading, shared and ready to watch. Never
+  fabricate progress, permission, delivery or agent behavior.
+- Keep errors useful and recoverable. Preserve work and name the next action.
 
-## Review checklist
+## Build and inspect
 
-- Does one dominant element communicate the page or frame's job?
-- Can a user distinguish business state, operational state, uncertainty, and
-  failure without relying on color?
-- Are labels, units, time range, local time zone, source, assumptions, and
-  refresh time present where applicable? Is UTC avoided unless the surface is a
-  technical log or genuinely cross-region?
-- Are loading, empty, success, warning, error, disabled, and long-running states
-  deliberately handled?
-- Does the work remain understandable at narrow width, keyboard-only operation,
-  200% zoom, reduced motion, and with text alternatives?
-- Are all assets approved, current, licensed, and named consistently?
+Use the owning product’s actual stack and shared controls. The
+[live component library](https://tryapparent.com/brand/#frontend-design-system)
+uses shared React/shadcn sources, not a separate lookalike library. Follow the
+[implementation guidance](frontend-implementation.md) and the adopted
+[Desktop Settings specification](../desktop-settings.md) where applicable.
+
+Inspect the exact built renderer at normal and narrow widths. Exercise keyboard,
+focus, selected, disabled, waiting, empty, error and recovery states where they
+exist. Label illustrations and synthetic examples; do not imply real product
+proof from an attractive specimen. Keep private captures out of public assets.

@@ -1,3 +1,4 @@
+import frogs from '../../public/assets/brand-book/assets/frogs/collection.json';
 const asset = (path) => `/brand/assets/${path}`;
 
 const rule = (label, text, tone = '') => `
@@ -10,44 +11,31 @@ const rule = (label, text, tone = '') => `
 const sections = [
   {
     title: 'Brand foundations',
-    summary: 'The strategic definitions that every expression of apparent must preserve.',
+    summary: 'Human expression, playful making, and a life beyond the screen.',
     body: `
-      <div class="bb-definition-grid">
-        <div><small>NAME</small><strong>apparent</strong><p>Always lowercase, including at the start of a sentence, in headings, titles, metadata and navigation.</p></div>
-        <div><small>CATEGORY</small><strong>AI-ready operational data</strong></div>
-        <div><small>COMPANY</small><strong>The operational-data platform for AI-native companies.</strong></div>
-        <div><small>ENDURING PROMISE</small><strong>Operational data you can build on.</strong></div>
-        <div><small>PRODUCT PROPOSITION</small><strong>Documents <em>ready</em> for AI.</strong></div>
-      </div>
-      <div class="bb-callout"><strong>Mandatory naming rule</strong><p>Write <b>apparent</b>. Never write “Apparent” or “APPARENT.” The lowercase form is a proper-name exception and must not be autocorrected.</p></div>
-      <h2>Digital names</h2>
-      <div class="bb-spec-table">
-        <div><small>DISPLAY NAME</small><p>Use <b>apparent</b> wherever a plain display name is available.</p></div>
-        <div><small>UNIQUE HANDLE</small><p>Use <b>tryapparent</b> whenever <b>apparent</b> is unavailable or the service requires a globally unique name.</p></div>
-        <div><small>URL EXAMPLES</small><p><code>linkedin.com/company/tryapparent</code><br><code>github.com/tryapparent</code></p></div>
-        <div><small>DO NOT VARY</small><p>Do not switch between getapparent, apparent-ai, apparent-hq or local variants.</p></div>
-      </div>
-      <h2>Audience</h2>
-      <p>Acquisition-led companies such as roll-ups, serial acquirers and PE-backed platforms that need to turn fragmented operational knowledge across acquired businesses into structured, trustworthy data.</p>
-      <div class="bb-callout"><strong>Initial market focus</strong><p>Property management is the starting vertical, not the long-term boundary of the brand.</p></div>
-      <h2>Product description</h2>
-      <p>apparent ingests documents, classifies and sorts them by type, then extracts the relevant data. Every extracted value remains linked to its source. The result is structured, traceable output that can be imported into company systems or used in AI workflows.</p>
-      <div class="bb-callout"><strong>Short form</strong><p>apparent turns documents into structured, traceable data ready for company systems and AI workflows.</p></div>
-      <h2>Brand character</h2>
-      <div class="bb-rule-grid">
-        ${rule('LEAN', 'Remove what does not improve understanding. Do not leave work looking sparse or unfinished.')}
-        ${rule('FAST', 'Use decisive hierarchy and direct language. Never imply speed at the expense of control.')}
-        ${rule('TECHNICAL', 'Be exact about inputs, outputs and limitations. Do not use complexity as theatre.')}
-        ${rule('ASSURED', 'State the claim and attach proof. Avoid corporate padding and unsupported superlatives.')}
-        ${rule('PRECISE', 'Name the source, timeframe and status. Do not become bureaucratic.')}
-      </div>
-    `,
-  },
-  {
+<h3>Point. Talk. Draw.</h3>
+<p>It’s the machine’s job to understand us, not our job to talk like a machine.</p>
+<div class="bb-definition-grid">
+<div><small>OUR BELIEF</small><strong>We believe work should be enjoyable and leave us free for late nights with friends.</strong></div>
+<div><small>OUR CONVICTION</small><strong>Through fun, we make better products.</strong><p>Play gives us room to experiment, follow our taste, and try the peculiar idea.</p></div>
+<div><small>OUR PURPOSE</small><strong>Remove the friction between human expression and computer understanding.</strong></div>
+<div><small>TODAY</small><strong>Point. Talk. Draw.</strong><p>Record your screen, voice and marks. Hand the context to your coding agent. Let it show you what it made.</p></div>
+</div>
+<h3>Who we are here for</h3><p>Creative people who already have a coding agent set up, make personal projects for fun, and enjoy good design. They have their own taste. They do not need to be designers, know specialist vocabulary, or use a particular technology stack.</p>
+<h3>What we are building toward</h3><p>A more human way to collaborate with computers, across media and senses. Speech, pointing, drawing, and screen context are how apparent starts today. The broader vision is a direction, not a claim that every medium or sense is supported.</p>
+<h3>Why the time matters</h3><p>If you save two hours, spend one making your project even more delightful because you want to. Spend the other with friends, painting, or doing something else you love. Saved time is yours.</p>
+<h3>Character</h3><div class="bb-rule-grid">
+<article class="bb-rule "><small>PLAYFUL</small><p>Make room for experimentation and delight. Fun is part of making better things.</p></article>
+<article class="bb-rule "><small>WEIRD</small><p>Be unmistakably yourself. Peculiar frogs and unexpected details are welcome.</p></article>
+<article class="bb-rule "><small>HUMAN</small><p>Write as a friendly person. Never require people to speak in computer language.</p></article>
+<article class="bb-rule "><small>EFFORTLESS</small><p>Let people join the play. Never make them dismiss it to finish a task.</p></article>
+<article class="bb-rule "><small>DEPENDABLE</small><p>Be exact about capture, privacy, permissions, delivery and recovery.</p></article>
+</div><h3>Name and handles</h3><p>Write <b>apparent</b> in lowercase. Keep the existing boxed wordmark and icon. Use <b>tryapparent</b> when a unique handle is required. The logo, palette and Host Grotesk stay unchanged.</p>`,
+  },  {
     title: 'Logo',
     summary: 'The apparent logo system contains a primary wordmark and a compact brand icon. Use the supplied masters without cropping or rebuilding them.',
     body: `
-      <h2>Brand icon</h2>
+      <h3>Brand icon</h3>
       <div class="bb-mark-board">
         <figure class="paper"><img src="${asset('brand/apparent-icon.svg')}" alt="Primary apparent brand icon"><figcaption><b>PRIMARY ICON</b><span>Lilac “a” on Carbon</span></figcaption></figure>
         <figure class="carbon"><img src="${asset('brand/apparent-icon-inverse.svg')}" alt="Inverse apparent brand icon"><figcaption><b>INVERSE ICON</b><span>Carbon “a” on Lilac</span></figcaption></figure>
@@ -60,13 +48,13 @@ const sections = [
         <div><small>EXTERNAL CLEAR SPACE</small><strong>0.5x</strong><p>x equals the icon width.</p></div>
         <div><small>DIGITAL MINIMUM</small><strong>24 × 24 px</strong><p>Use the SVG master.</p></div>
       </div>
-      <h2>Wordmark</h2>
+      <h3>Wordmark</h3>
       <div class="bb-logo-board">
         <figure class="light"><img src="${asset('brand/apparent-wordmark.svg')}" alt="Primary apparent wordmark"><figcaption>Primary / Carbon on Lilac</figcaption></figure>
         <figure class="dark"><img src="${asset('brand/apparent-wordmark-inverse.svg')}" alt="Inverse apparent wordmark"><figcaption>Inverse / Lilac on Carbon</figcaption></figure>
       </div>
       <p>The color box is part of the wordmark. Never remove it, crop it to the letters or recreate its padding with CSS.</p>
-      <h2>Wordmark construction</h2>
+      <h3>Wordmark construction</h3>
       <div class="bb-clearspace-diagram">
         <span class="top">0.5x clear space</span><span class="left">0.5x</span>
         <div class="bb-protected-mark"><img src="${asset('brand/apparent-wordmark.svg')}" alt="apparent wordmark construction"><i>INK AREA</i></div>
@@ -79,7 +67,7 @@ const sections = [
         <div><small>EXTERNAL CLEAR SPACE</small><strong>0.5x</strong><p>Keep clear on every side.</p></div>
       </div>
       <div class="bb-callout"><strong>Implementation rule</strong><p>Internal inset belongs to the asset. External clear space belongs to the layout. Do not count the built-in color-box inset as external clear space.</p></div>
-      <h2>Usage</h2>
+      <h3>Usage</h3>
       <div class="bb-spec-table">
         <div><small>DEFAULT</small><p>Use the full wordmark whenever the name fits.</p></div>
         <div><small>COMPACT</small><p>Use the boxed “a” only for favicons, avatars and controls where the name cannot fit.</p></div>
@@ -88,7 +76,7 @@ const sections = [
         <div><small>BACKGROUND</small><p>Use the primary or inverse boxed master. The box remains intact on every surface.</p></div>
         <div><small>FORMAT</small><p>SVG for digital. PNG only where SVG is unsupported. Print masters are not yet approved.</p></div>
       </div>
-      <h2>Incorrect use</h2>
+      <h3>Incorrect use</h3>
       <div class="bb-rule-grid">
         ${rule('DO NOT', 'Stretch, rotate, crop or redraw the wordmark.', 'negative')}
         ${rule('DO NOT', 'Rebuild the wordmark with live type or separate its letters.', 'negative')}
@@ -109,7 +97,7 @@ const sections = [
         <div style="--swatch:#B7A5D8"><span></span><small>LILAC</small><strong>#B7A5D8</strong><p>183 / 165 / 216</p><p>Selection and depth</p></div>
         <div class="dark" style="--swatch:#7A58C7"><span></span><small>SIGNAL</small><strong>#7A58C7</strong><p>122 / 88 / 199</p><p>One action or transition</p></div>
       </div>
-      <h2>Approved text pairings</h2>
+      <h3>Approved text pairings</h3>
       <div class="bb-contrast-list">
         <div><b>18.37:1</b><span>Carbon on Paper</span><small>AA / AAA</small></div>
         <div><b>4.57:1</b><span>Signal on Paper</span><small>AA</small></div>
@@ -117,7 +105,7 @@ const sections = [
         <div><b>4.57:1</b><span>Paper on Signal</span><small>AA</small></div>
       </div>
       <div class="bb-callout warning"><strong>Restricted</strong><p>Normal-size Signal text is allowed only on Paper. On Stock or Carbon, reserve Signal for non-text UI, focus, graphics, large text, or filled controls with Paper text. Signal and Lilac need a second non-color distinction.</p></div>
-      <h2>Functional status colors</h2>
+      <h3>Active decisions and optional interactions</h3><p>Signal identifies the active decision or action flow, including alternatives such as “Activate upload / Not today”. Use fill, border and wording for emphasis inside that group. Lilac identifies optional interactions outside the flow. Active does not mean checked; optional does not mean disabled.</p><p>Optional command-copy surfaces and preference-switch tracks match in Lilac. Switches use a Carbon thumb, left Off/right On, with no visible track outline in either theme and visible keyboard focus. Keep preference saves quiet, saving/errors inline, commands visible with an embedded copy icon, and optional explanations accessible on hover, focus and click. Follow the <a href="/brand/design-system/desktop-settings.md">Desktop Settings specification</a> for exact geometry and dark mode.</p><h3>Functional status colors</h3>
       <div class="bb-spec-table bb-status-grid">
         <div class="success"><small>SUCCESS</small><strong>#146B43</strong><p>Completed, confirmed, delivered or healthy. Contrast on Paper: 5.76:1.</p></div>
         <div class="in-progress"><small>IN PROGRESS</small><strong>#7A58C7</strong><p>Processing, retrying, queued or incomplete. Uses Signal; contrast on Paper: 4.57:1.</p></div>
@@ -136,15 +124,15 @@ const sections = [
     title: 'Typeface',
     summary: 'Host Grotesk is the only approved typeface. Use weight and density to create hierarchy. Do not add type families.',
     body: `
-      <div class="bb-type-specimen"><small>HOST GROTESK / 400 · 500 · 700</small><strong>Aa Bb Cc 0123456789</strong><p>Operational data you can build on.</p></div>
-      <h2>Approved scale</h2>
+      <div class="bb-type-specimen"><small>HOST GROTESK / 400 · 500 · 700</small><strong>Aa Bb Cc 0123456789</strong><p>Point. Talk. Draw.</p></div>
+      <h3>Approved scale</h3>
       <div class="bb-type-table">
         <div><small>PRESENTATION</small><b>120 / 60 / 30</b><p>Hero, title and supporting copy.</p></div>
         <div><small>PRODUCT</small><b>36 / 18 / 16</b><p>Heading, interface body and short metadata.</p></div>
         <div><small>BODY COPY</small><b>18 / 27</b><p>55–75 characters per line.</p></div>
         <div><small>NUMERALS</small><b>Tabular</b><p>Always include unit, denominator and timeframe.</p></div>
       </div>
-      <h2>Implementation</h2>
+      <h3>Implementation</h3>
       <pre><code>font-family: "Host Grotesk", system-ui, sans-serif;
 font-size: 36px | 18px | 16px;
 font-weight: 400 | 500 | 700;</code></pre>
@@ -162,60 +150,20 @@ font-weight: 400 | 500 | 700;</code></pre>
   },
   {
     title: 'Layout',
-    summary: 'Use one structural grid and place evidence beside the decision it supports.',
-    body: `
-      <div class="bb-grid-demo" aria-label="Twelve-column layout grid">${Array.from({ length: 12 }, (_, index) => `<i>${index + 1}</i>`).join('')}</div>
-      <div class="bb-spec-table">
-        <div><small>DESKTOP</small><p>12 columns with 24 px gutters.</p></div>
-        <div><small>PRODUCT</small><p>Use a 7:5 evidence-to-decision split where review is required.</p></div>
-        <div><small>SPACING</small><p>Use the 8 px spacing system. Prefer 16, 24, 32, 48 and 64 px.</p></div>
-        <div><small>ALIGNMENT</small><p>Share baselines and edges. Do not center unrelated blocks.</p></div>
-        <div><small>DENSITY</small><p>Marketing may breathe; product must remain compact and auditable.</p></div>
-        <div><small>MOTION</small><p>120–200 ms ease-out. Motion must represent a state change.</p></div>
-      </div>
-      <div class="bb-callout"><strong>Required</strong><p>Reduced-motion alternatives must be available. Never animate fake progress or use movement only for decoration.</p></div>
-    `,
-  },
-  {
+    summary: 'Clear structure leaves room for expressive play.',
+    body: `<p>Keep the existing 8px spacing system, aligned edges, Paper surfaces, and Carbon rules. Give prose a bounded reading width. Let artwork be expressive without making controls harder to find.</p><div class="bb-rule-grid"><article class="bb-rule "><small>MARKETING</small><p>Frogs, hand-drawn marks and optional surprises can carry personality. Keep the product action easy to understand.</p></article><article class="bb-rule "><small>PRODUCT</small><p>Capture and handoff stay immediate. Conventional controls belong mainly in Settings; the sharing and viewing workspace belongs in Connect.</p></article><article class="bb-rule "><small>MOTION</small><p>Use brief transitions for controls. Longer playful sequences must be optional, interruptible and respect reduced motion.</p></article><article class="bb-rule "><small>NO FRICTION</small><p>No mandatory jokes, surprise sound, obstructive animations or delays before the action.</p></article></div>`,
+  },  {
     title: 'Highlighting',
-    summary: 'The highlighter is an approved brand device. It shows structure made visible inside a document and connects source evidence to usable data.',
-    body: `
-      <div class="bb-highlight-demo">
-        <small>SOURCE TO STRUCTURE</small>
-        <p>Turn documents into <mark>operational data</mark> and keep the evidence attached.</p>
-        <div><span>UNSTRUCTURED SOURCE</span><i></i><strong>REVIEWABLE FIELD</strong></div>
-      </div>
-      <h2>Meaning</h2>
-      <p>The color field behind the apparent wordmark should feel like a highlighter mark. Highlighting is a functional metaphor for apparent: it finds the part that matters, reveals structure and makes document knowledge easier to use.</p>
-      <h2>Rules</h2>
-      <div class="bb-rule-grid">
-        ${rule('USE LILAC', 'Mark source evidence, extracted fields, selected regions and information that has become structured.', 'positive')}
-        ${rule('USE SIGNAL', 'Mark one decisive action, handoff or transition. Signal is not a general-purpose highlighter.')}
-        ${rule('KEEP IT RECTANGULAR', 'Use a flat, square-edged field close to the text or source region. A slight imperfect offset is allowed in expressive brand work.')}
-        ${rule('KEEP THE LINK', 'A highlight must point to meaningful text, a source region or an explicit state change. It never floats as decoration.')}
-        ${rule('PROTECT LEGIBILITY', 'Use Carbon on Lilac and Paper on Signal. Never use white text on Lilac.', 'positive')}
-        ${rule('DO NOT', 'Cover whole paragraphs, stack many colors, imitate fluorescent marker textures or turn every heading into a highlight.', 'negative')}
-      </div>
-      <div class="bb-callout"><strong>Wordmark link</strong><p>The boxed wordmark is the primary expression of this device. Other highlights should support it, not compete with it.</p></div>
-    `,
-  },
-  {
+    summary: 'Marks make a human intention visible.',
+    body: `<div class="bb-highlight-demo"><p>Show your agent <mark>what you mean.</mark></p></div><p>The boxed wordmark keeps its highlighter character. In the capture product, marks point to what someone means: a region, an idea or a change.</p><p>Use Lilac for a selected region or meaningful emphasis, Signal for the primary action and focus, and the existing drawing pigments for user-authored marks. Circles, arrows and imperfect strokes can be expressive. Keep words legible and distinguish illustrative marks from real user input.</p>`,
+  },  {
     title: 'Photography',
-    summary: 'Show operational evidence, its context and the human decision. Do not use generic technology symbolism.',
-    body: `
-      <div class="bb-photo-grid">
-        <figure><img src="${asset('photos/status-archive-md-jawadur-rahman-pexels.jpg')}" alt="Archived paper documents"><figcaption><b>APPROVED / EVIDENCE</b> Close enough to see material, condition and provenance.</figcaption></figure>
-        <figure><img src="${asset('photos/sam-industrial-park-wikimedia.jpg')}" alt="Industrial operating environment"><figcaption><b>APPROVED / CONTEXT</b> Show where knowledge affects real operations.</figcaption></figure>
-        <figure class="transition"><img src="${asset('photos/som-berlin-facade-pexels.jpg')}" alt="Building facade"><figcaption><b>APPROVED / CHANGE</b> Signal may mark a real boundary or state transition.</figcaption></figure>
-      </div>
-      <div class="bb-rule-grid">
-        ${rule('USE', 'Documents, operators, decisions, operating environments and resolved action.', 'positive')}
-        ${rule('AVOID', 'Robots, AI glow, code rain, staged handshakes and anonymous corporate scale.', 'negative')}
-        ${rule('COMPOSITION', 'Prefer documentary framing, natural light, visible texture and specific context.')}
-        ${rule('SAFETY', 'Redact private data, confirm subject permission and record source plus license.')}
-      </div>
-    `,
-  },
+    summary: 'Show the pleasure of making and the life around it.',
+    body: `<p>Use human, specific scenes: making something, sketching an idea, painting, or spending time with friends. The existing landing page is the reference for the relationship between expressive artwork and real life.</p><p>Frogs and imaginative illustration are welcome. Do not default to office stock photography, document archives, property portfolios, robots or generic AI glow. Use consented, licensed images and keep private captures out of public examples.</p>`,
+  },  {title: 'Frog collection', summary: 'Original artwork to download, remix and use as a reference for new images.', body: `
+<p>Our frogs are peculiar companions in the pleasure of making things. Keep the recognizable chunky pixels, olive bodies, cream bellies, big eyes, dark outlines and warm cheek accents. Their artwork colors are not new interface status colors.</p>
+<div class="bb-frog-grid">${frogs.assets.map(item => `<figure><a class="bb-frog-preview" href="${item.url}" aria-label="Open ${item.name} original"><img src="${item.url}" alt="${item.name}" loading="lazy" width="${item.width}" height="${item.height}"></a><figcaption><h3>${item.name}</h3><p>${item.description}</p><p class="bb-asset-meta">PNG · ${item.width} × ${item.height}</p><a download href="${item.url}">Download ${item.name.toLowerCase()}</a></figcaption></figure>`).join('')}</div>
+<h3>Make another frog</h3><p>Download the closest pose and attach the original as an image reference. Describe the new action, expression, framing and background. Preserve the character rather than tracing a screenshot. Inspect the result beside the original before adopting it. Some scenes include a painted background; inspect the PNG before compositing.</p><details><summary>Reference prompt for new artwork</summary><pre><code>${frogs.referencePrompt}</code></pre></details><p>New generations are candidates, not automatically canonical assets. Avoid smooth vectors, glossy 3D, photorealism and a generic new mascot. Keep labels and logos outside generated artwork.</p><div class="bb-download-row"><a download href="/brand/assets/frogs/collection.json">Download asset index and prompt</a></div>`},
   {
     title: 'Iconography',
     summary: 'Icons clarify actions and states. They do not replace the apparent wordmark or decorate empty space.',
@@ -227,121 +175,63 @@ font-weight: 400 | 500 | 700;</code></pre>
         <div><small>COLOR</small><p>Carbon by default; Signal only for the active or primary state.</p></div>
         <div><small>LABELS</small><p>Pair unfamiliar icons with text. Never rely on color alone.</p></div>
       </div>
-      <div class="bb-callout warning"><strong>Not yet defined</strong><p>No standalone illustration system or expanded product-icon library is approved. Do not invent either without review.</p></div>
+      <div class="bb-callout warning"><strong>Illustration and icons</strong><p>Use the frog collection for expressive illustration. Product action icons still need consistent geometry and accessible labels.</p></div>
     `,
   },
   {
     title: 'Voice and tone',
-    summary: 'apparent is direct, technically exact and calm. Tone adapts to context; the voice does not.',
-    body: `
-      <div class="bb-voice-table">
-        <div><small>WEBSITE + SALES</small><strong>Decisive and outcome-led</strong><p>State the operational constraint, the action and the proof.</p></div>
-        <div><small>PRODUCT</small><strong>Compact and literal</strong><p>Use direct verbs, visible status and explicit consequences.</p></div>
-        <div><small>SUPPORT</small><strong>Calm and accountable</strong><p>Name what happened, what is known and the next step.</p></div>
-        <div><small>TECHNICAL</small><strong>Exact and qualified</strong><p>Define inputs, outputs, limits and evidence status.</p></div>
-      </div>
-      <h2>Vocabulary</h2>
-      <div class="bb-copy-pairs">
-        <div class="positive"><small>USE</small><p>Ready to automate.</p><p>Source evidence attached.</p><p>Review required.</p></div>
-        <div class="negative"><small>AVOID</small><p>Effortless transformation.</p><p>AI magic.</p><p>Revolutionary accuracy.</p></div>
-      </div>
-      <h2>Sentence rules</h2>
-      <ul><li>Lead with the subject and a direct verb.</li><li>Prefer concrete nouns over abstract promises.</li><li>Use sentence case. Avoid exclamation marks and inflated superlatives.</li><li>Qualify forecasts, estimates, illustrative examples and incomplete evidence.</li></ul>
-    `,
-  },
-  {
+    summary: 'Warm, wonderfully weird, and easy to understand.',
+    body: `<div class="bb-voice-table"><div><small>MARKETING</small><strong>Invite people to play</strong><p>Be expressive, curious and a little odd. Celebrate what people want to make.</p></div><div><small>PRODUCT</small><strong>Make the next action obvious</strong><p>Use familiar words and direct verbs. Keep capture and handoff free of compulsory entertainment.</p></div><div><small>ERRORS + PERMISSIONS</small><strong>Be calm and literal</strong><p>Name what happened, what is saved, and what to do next. No jokes at someone’s expense.</p></div><div><small>TECHNICAL</small><strong>Stay exact</strong><p>Name actual inputs, outputs and limits. A copied link does not mean a video is ready to watch.</p></div></div><h3>The test</h3><p>A frog you choose to make jump fits. A joke you must dismiss before recording does not. Care deeply about what people make without making the act of working solemn.</p>`,
+  },  {
     title: 'Writing',
-    summary: 'Write with the speed of a startup and the control of a scale-up: direct, compact, specific and provable.',
-    body: `
-      <h2>Core rules</h2>
-      <ol class="bb-writing-rules">
-        <li><b>Lead with the fact</b><p>Start with the operational truth the reader needs. Do not begin with scene-setting or a broad claim about the future.</p></li>
-        <li><b>Name the actor and action</b><p>Prefer subject + verb + object: “apparent attaches the source page.” Avoid passive constructions that hide responsibility.</p></li>
-        <li><b>Use short, concrete words</b><p>Write “use,” “start,” “show,” and “fix.” Avoid “utilize,” “initiate,” “demonstrate,” and “remediate” when the shorter word means the same thing.</p></li>
-        <li><b>Cut every word that does no work</b><p>Remove throat-clearing, repeated conclusions and adjectives that do not change the meaning.</p></li>
-        <li><b>Keep one claim per sentence</b><p>Aim for 8–18 words. Use more only when a technical condition cannot be split without losing accuracy.</p></li>
-        <li><b>Attach proof to the claim</b><p>Name the source, timeframe and evidence status in the same paragraph. Label estimates, forecasts and illustrative examples.</p></li>
-      </ol>
-      <h2>Capitalization and punctuation</h2>
-      <div class="bb-spec-table">
-        <div><small>BRAND NAME</small><p>Always write <b>apparent</b> in lowercase, including sentence starts, headings, titles, metadata and navigation.</p></div>
-        <div><small>HEADINGS</small><p>Use sentence case. Capitalize only the first word and proper nouns other than <b>apparent</b>.</p></div>
-        <div><small>IDENTIFIERS</small><p>Use the approved prefixed ULID format, such as <code>doc_01JQ7M6J8H9T2R4K5N6P7Q8S9T</code>.</p></div>
-        <div><small>PUNCTUATION</small><p>Prefer periods. Use a colon for definitions. Use parentheses only for necessary qualification.</p></div>
-        <div><small>DATES</small><p>Use European numeric dates with leading zeros: <b>DD.MM.YYYY</b>. Write 24-hour local time as <b>HH:mm</b> and name the local zone, for example <b>09:42 CEST</b>. Reserve UTC for technical logs or genuinely cross-region coordination.</p></div>
-        <div><small>EM DASH</small><p>Never use em dashes. Use a period, comma, colon or parentheses instead.</p></div>
-        <div><small>EMPHASIS</small><p>Do not use exclamation marks, repeated fragments, emoji or decorative Unicode type to manufacture energy.</p></div>
-      </div>
-      <h2>Vocabulary</h2>
-      <div class="bb-word-list">
-        <div><small>PREFER</small><p>operational data</p><p>source evidence</p><p>ready for review</p><p>structured and usable</p><p>move faster</p><p>stay in control</p></div>
-        <div><small>USE ONLY WITH PROOF</small><p>accurate</p><p>faster</p><p>reliable</p><p>automated</p><p>scalable</p><p>secure</p></div>
-        <div><small>AVOID</small><p>magic</p><p>seamless</p><p>revolutionary</p><p>game-changing</p><p>unlock the power of</p><p>in today’s fast-paced world</p></div>
-      </div>
-      <h2>Before and after</h2>
-      <div class="bb-copy-edits">
-        <div><small>BEFORE</small><p>Our revolutionary AI-powered platform seamlessly unlocks the value hidden across your complex document ecosystem.</p></div>
-        <div><small>AFTER</small><p>apparent turns documents into structured, traceable data ready for company systems and AI workflows.</p></div>
-        <div><small>BEFORE</small><p>Errors can be efficiently remediated by users through our intuitive review experience.</p></div>
-        <div><small>AFTER</small><p>Reviewers see the source, correct the field and confirm the result.</p></div>
-      </div>
-      <h2>LLM writing instruction</h2>
-      <p>Paste this block into any LLM prompt before requesting apparent copy:</p>
-      <pre class="bb-llm-prompt"><code>You write for apparent. Always spell apparent in lowercase.
-Write in a direct, compact and technically exact voice.
-Lead with the operational fact. Use active subject–verb–object sentences.
-Prefer short, concrete words. Cut setup, repetition and empty adjectives.
-Keep one claim per sentence and attach proof, source and timeframe where relevant.
-Label estimates, forecasts and illustrative examples. Never invent evidence.
-Use sentence case and periods. Do not use hype, exclamation marks or slogan stacks.
-Avoid: magic, seamless, revolutionary, game-changing, unlock the power of.
-Never use em dashes.
-If evidence or context is missing, mark the gap instead of filling it in.</code></pre>
-      <h2>LLM input requirements</h2>
-      <div class="bb-checklist"><label><input type="checkbox" disabled> Audience and channel</label><label><input type="checkbox" disabled> Single communication objective</label><label><input type="checkbox" disabled> Approved facts and source links</label><label><input type="checkbox" disabled> Evidence status and timeframe</label><label><input type="checkbox" disabled> Required action or next step</label><label><input type="checkbox" disabled> Terms that must remain exact</label></div>
-      <div class="bb-callout"><strong>Final check</strong><p>Does every sentence say who did what, with what evidence? If not, revise it before publishing.</p></div>
-    `,
-  },
-  {
+    summary: 'Sound like a person inviting another person to make something.',
+    body: `<h3>Say what you mean</h3><p>Use short, concrete words: point, talk, draw, show, make, play. Speak to people with taste and ideas, without assuming professional design or coding knowledge.</p><div class="bb-copy-pairs"><div class="positive"><small>USE</small><p>Point. Talk. Draw.</p><p>Show your agent what you mean.</p><p>What if the frog could jump?</p></div><div class="negative"><small>AVOID</small><p>AI-ready operational data.</p><p>Maximize your creative output.</p><p>Revolutionary AI magic.</p></div></div><h3>Keep personality and clarity together</h3><p>Sentence case and the lowercase apparent name remain. Contractions and an occasional exclamation are welcome when they sound natural. Do not force a joke into every label, invent performance claims, or use decorative type that impairs reading. Keep the existing no-em-dash convention.</p><h3>When something goes wrong</h3><p>Say “Upload failed. Your recording is saved on this computer. Try uploading again.” Do not say “Oops, the frog ate your recording.” Preserve the distinction between local capture, copying, uploading, and being ready to watch.</p><h3>Instruction for writing tools</h3><pre><code>Write for apparent: warm, playful, peculiar, and clear.
+Our audience makes personal projects with coding agents for fun.
+Good design does not require specialist vocabulary.
+It is the machine’s job to understand us.
+Use Point. Talk. Draw. as the product line.
+Keep instructions, permissions and errors literal and useful.
+Do not promise unsupported capabilities or invent evidence.</code></pre>`,
+  },  {
     title: 'Data visualization',
     summary: 'Charts must make the relationship and the evidence status auditable.',
     body: `
       <div class="bb-data-example">
-        <header><small>DOCUMENT THROUGHPUT / LAST 30 DAYS</small><span>Illustrative</span></header>
-        <div><label>Received</label><i style="--w:100%"></i><b>52,940</b></div>
-        <div><label>Structured</label><i style="--w:83%"></i><b>43,820</b></div>
+        <header><small>ILLUSTRATIVE EXPORT COUNTS / LAST 30 DAYS</small><span>Illustrative</span></header>
+        <div><label>Requested</label><i style="--w:100%"></i><b>52,940</b></div>
+        <div><label>Prepared</label><i style="--w:83%"></i><b>43,820</b></div>
         <div><label>Ready</label><i style="--w:82%"></i><b>43,624</b></div>
-        <footer>Illustrative operational dataset · refreshed 22.07.2026, 09:42 CEST</footer>
+        <footer>Illustrative example dataset · refreshed 15.11.2026, 09:42 CEST</footer>
       </div>
-      <h2>Required anatomy</h2>
+      <h3>Required anatomy</h3>
       <ol class="bb-numbered-rules"><li><b>Metric</b><span>Name the measure and denominator.</span></li><li><b>Time</b><span>State the window and named local zone.</span></li><li><b>Source</b><span>Name the source and refresh time.</span></li><li><b>Status</b><span>Mark actual, estimate, forecast or illustrative.</span></li><li><b>Uncertainty</b><span>Show thresholds and incomplete intervals.</span></li></ol>
-      <h2>Approved chart grammar</h2>
+      <h3>Approved chart grammar</h3>
       <div class="bb-product-principles">
         <div><small>COMPARISON</small><strong>Aligned bars or dots</strong><p>Use a shared baseline and place the exact value beside each mark.</p></div>
         <div><small>TREND</small><strong>Time series</strong><p>Label the time range, named local zone, units, refresh time and incomplete intervals.</p></div>
         <div><small>UNCERTAINTY</small><strong>Range or threshold</strong><p>Show assumptions, limits and review consequences with text plus pattern or line style.</p></div>
         <div><small>PROCESS</small><strong>Stages or funnel</strong><p>Name the denominator at every stage and preserve a path to the underlying evidence.</p></div>
       </div>
-      <h2>Implementation system</h2>
+      <h3>Implementation system</h3>
       <div class="bb-spec-table">
-        <div><small>ENGINE</small><strong>LayerChart 2</strong><p>The single Svelte chart engine. Use it only inside the shared chart directory.</p></div>
-        <div><small>RECIPE</small><strong>shadcn-svelte</strong><p>An optional source starting point. Do not adopt its default chart colors or presentation.</p></div>
+        <div><small>ENGINE</small><strong>Owning product</strong><p>Reuse its existing chart implementation behind local components.</p></div>
+        <div><small>RECIPE</small><strong>Local components</strong><p>Use the current React stack and brand tokens. Do not import a legacy chart framework for a specimen.</p></div>
         <div><small>PRODUCT API</small><strong>apparent chart components</strong><p>Feature routes consume named comparison, trend, range, process and qualified-metric components.</p></div>
         <div><small>VISUAL AUTHORITY</small><strong>apparent tokens</strong><p>Carbon sets baselines, Lilac comparison structure and Signal one selected series or threshold.</p></div>
       </div>
-      <h2>Accessible delivery</h2>
+      <h3>Accessible delivery</h3>
       <div class="bb-rule-grid">
         ${rule('DIRECT LABELS', 'Place series names and exact values beside their marks wherever space allows.', 'positive')}
         ${rule('TOOLTIP', 'Use a tooltip for added detail only. It must not contain the only value, label, source or qualification.')}
         ${rule('TEXT AND TABLE', 'Provide a concise summary and an accessible table or equivalent data view.', 'positive')}
         ${rule('RESPONSIVE', 'Recompose at narrow widths without removing evidence or requiring horizontal reading.')}
       </div>
-      <h2>Color and scale</h2>
+      <h3>Color and scale</h3>
       <p>Use direct labels, truthful proportions, aligned position or length and shared baselines. Pair every color distinction with text, dash, pattern, outline or another non-color cue.</p>
       <div class="bb-callout"><strong>Core plus pattern</strong><p>Add no categorical hues. Use Signal solid for one selected series, Lilac and Carbon for comparisons, then repeat Lilac and Carbon only with direct labels plus distinct dash, pattern or outline. Keep at most five visible series; beyond that, filter, group, use small multiples or provide a table.</p></div>
-      <h2>Do not use</h2>
+      <h3>Do not use</h3>
       <p>Do not use decorative 3D treatments, decorative or value-encoding gradients, unlabeled axes, color-matching legends or library-default palettes. CSS gradient functions may render approved hatch or dot patterns only. Avoid dual axes and radial charts when aligned position or length communicates the relationship more accurately. Prefer SVG or semantic HTML; Canvas requires an equivalent accessible summary and data view.</p>
-      <div class="bb-download-row"><a href="/brand/design-system/svelte-component-system.md#chart-system">Chart implementation system</a><a href="/brand/design-system/product-interface.md#metrics-tables-and-charts">Product chart rules</a><a href="/brand/design-system/tokens/apparent.css">CSS tokens</a></div>
+      <div class="bb-download-row"><a href="#frontend-design-system">Chart implementation system</a><a href="/brand/design-system/product-interface.md#metrics-tables-and-charts">Product chart rules</a><a href="/brand/design-system/tokens/apparent.css">CSS tokens</a></div>
     `,
   },
   {
@@ -349,7 +239,7 @@ If evidence or context is missing, mark the gap instead of filling it in.</code>
     summary: 'Use prefixed ULIDs as the single canonical identifier format for documents, runs and other durable product objects.',
     body: `
       <div class="bb-identifier-hero"><small>CANONICAL EXAMPLE</small><code>run_01JQ7M6J8H9T2R4K5N6P7Q8S9T</code><p>A short lowercase type prefix, one underscore and a 26-character uppercase ULID.</p></div>
-      <h2>Approved prefixes</h2>
+      <h3>Approved prefixes</h3>
       <div class="bb-spec-table">
         <div><small>DOCUMENT</small><p><code>doc_</code> for one source document.</p></div>
         <div><small>RUN</small><p><code>run_</code> for one processing attempt.</p></div>
@@ -357,7 +247,7 @@ If evidence or context is missing, mark the gap instead of filling it in.</code>
         <div><small>REVIEW</small><p><code>rev_</code> for one durable review decision.</p></div>
         <div><small>OUTPUT</small><p><code>out_</code> for one structured output.</p></div>
       </div>
-      <h2>System rules</h2>
+      <h3>System rules</h3>
       <ol class="bb-writing-rules">
         <li><b>Generate once</b><p>Identifiers are immutable, never recycled and stable across retries. Reprocessing creates a new <code>run_</code>.</p></li>
         <li><b>Treat as opaque</b><p>Do not derive permissions or business logic from the prefix, order or embedded timestamp.</p></li>
@@ -375,108 +265,21 @@ If evidence or context is missing, mark the gap instead of filling it in.</code>
   },
   {
     title: 'Product interfaces',
-    summary: 'Product surfaces prioritize evidence, review state and the next safe action.',
-    body: `
-      <div class="bb-product-principles">
-        <div><small>EVIDENCE</small><strong>Evidence remains attached</strong><p>Every extracted value links back to its source page or region.</p></div>
-        <div><small>CONFIDENCE</small><strong>Confidence is qualified</strong><p>Display the threshold and the review consequence, not a decorative percentage.</p></div>
-        <div><small>ACTION</small><strong>Actions are explicit</strong><p>Buttons describe the state change: “Confirm field,” not “Continue.”</p></div>
-        <div><small>RECOVERY</small><strong>Failure is recoverable</strong><p>Name the error, preserve work and provide a next step.</p></div>
-      </div>
-      <div class="bb-callout"><strong>Titles stand alone</strong><p>Do not prefix ordinary product sections with decorative numbers such as 01 or 02. Number only genuine ordered steps when sequence affects completion or meaning.</p></div>
-      <div class="bb-callout"><strong>Recent first, relative first</strong><p>Time-based results and activity default to newest first and expose their sort. Use relative time when recency matters; keep the exact local date, time and named zone available for audit and precision.</p></div>
-      <p>Canonical behavior, accessibility and component guidance live in <code>design-system/product-interface.md</code>. Product implementation takes precedence over illustrative marketing specimens.</p>
-    `,
-  },
-  {
+    summary: 'Playfulness is an invitation. The workflow stays effortless.',
+    body: `<div class="bb-product-principles"><div><strong>Expression first</strong><p>Help someone point, talk and draw without learning a new technical language.</p></div><div><strong>Instant essentials</strong><p>Keep recording, stopping and handing off direct. Optional delight never blocks them.</p></div><div><strong>Truthful status</strong><p>Distinguish saved locally, copied, uploading, shared and ready to watch.</p></div><div><strong>Recoverable failure</strong><p>Preserve work, state the problem and offer a clear next action.</p></div></div><p>Use the actual shared React/shadcn controls below. Follow the adopted <a href="/brand/design-system/desktop-settings.md">Desktop Settings specification</a> for Settings. This brand update does not change platform permissions or product behavior.</p>`,
+  },  {
     title: 'Frontend design system',
-    summary: 'Frontend work uses shared tokens, semantic components and explicit behavior contracts. A screen is not complete when only its default state looks correct.',
-    body: `
-      <h2>Source precedence</h2>
-      <div class="bb-priority-stack">
-        <div><small>01</small><strong>Safety, privacy and WCAG 2.2 AA</strong></div>
-        <div><small>02</small><strong>Semantic HTML and product behavior</strong></div>
-        <div><small>03</small><strong>apparent tokens and approved assets</strong></div>
-        <div><small>04</small><strong>Shared components and patterns</strong></div>
-        <div><small>05</small><strong>Page-level composition</strong></div>
-      </div>
-      <h2>Foundation contract</h2>
-      <div class="bb-spec-table">
-        <div><small>TYPE</small><p>Host Grotesk at 36 / 18 / 16. Use rem. Keep controls and form text at 18 or larger.</p></div>
-        <div><small>SPACE</small><p>8 px base. Prefer 16, 24, 32, 48 and 64.</p></div>
-        <div><small>LAYOUT</small><p>12 columns, 24 px gutters and 32 px desktop inset. Review screens prefer a 7:5 evidence-to-decision split.</p></div>
-        <div><small>GEOMETRY</small><p>Square corners, 1 px Carbon rules and a visible 2 px or stronger Signal focus treatment.</p></div>
-        <div><small>MOTION</small><p>120 to 200 ms for real state changes. Respect reduced motion. Never animate fake progress.</p></div>
-        <div><small>TARGETS</small><p>44 × 44 px internal minimum for primary controls. This exceeds the 24 × 24 px WCAG 2.2 AA floor.</p></div>
-      </div>
-      <h2>Approved Svelte system</h2>
-      <div class="bb-spec-table">
-        <div><small>COMPONENT LIBRARY</small><strong>Bits UI</strong><p>The single headless runtime dependency for accessible behavior, keyboard interaction and focus management.</p></div>
-        <div><small>COMPONENT RECIPES</small><strong>shadcn-svelte</strong><p>Optional source recipes only. Generated files become locally owned apparent components built on Bits UI.</p></div>
-        <div><small>DATA VISUALIZATION</small><strong>LayerChart 2</strong><p>The single chart engine, used only behind local apparent chart components.</p></div>
-        <div><small>VISUAL AUTHORITY</small><strong>apparent tokens</strong><p>Brand tokens and local CSS define color, type, space, geometry, hierarchy and motion.</p></div>
-      </div>
-      <div class="bb-callout"><strong>Keep the stack small</strong><p>Do not keep parallel Bits UI and shadcn-svelte versions of a component. Do not add another primitive library, chart engine, icon system or theme without a documented unmet requirement.</p></div>
-      <h2>Component contract</h2>
-      <p>Every shared component must document all of the following before approval.</p>
-      <div class="bb-contract-grid">
-        <div><b>Purpose</b><span>When to use it and when not to.</span></div>
-        <div><b>Anatomy</b><span>Required labels, content and slots.</span></div>
-        <div><b>Behavior</b><span>Mouse, touch, keyboard and focus order.</span></div>
-        <div><b>States</b><span>Default, hover, focus, disabled, loading, empty, error, success, partial and retrying.</span></div>
-        <div><b>Responsive</b><span>Reflow, long content, zoom and table overflow.</span></div>
-        <div><b>Accessibility</b><span>Name, role, value, contrast and announcements.</span></div>
-        <div><b>Privacy</b><span>What may enter URLs, logs, analytics and storage.</span></div>
-        <div><b>Tests</b><span>Behavior, keyboard, browser, narrow viewport and visual regression.</span></div>
-      </div>
-      <h2>Architecture</h2>
-      <ul><li>Use semantic HTML first. Add ARIA only where native semantics cannot express the interaction.</li><li>Use Bits UI as the single component-library dependency. Preserve its accessible behavior while applying apparent tokens.</li><li>Adopt a shadcn-svelte recipe only when it saves meaningful work. Review generated source for lost semantics, states, tokens and tests.</li><li>Keep LayerChart inside the shared chart directory. Feature routes consume apparent charts, not chart-engine examples.</li><li>Keep durable state on the server and use progressive enhancement for essential workflows where the product architecture allows it.</li><li>Long-running actions return a stable prefixed ULID and a status link immediately.</li></ul>
-      <h2>Product-specific patterns</h2>
-      <div class="bb-product-principles">
-        <div><small>EVIDENCE</small><strong>Keep sources adjacent</strong><p>Document previews, extracted values and decisions remain traceable.</p></div>
-        <div><small>FORMS</small><strong>Keep labels persistent</strong><p>Show inline validation and preserve submitted work after failure.</p></div>
-        <div><small>TABLES</small><strong>Keep context attached</strong><p>Units, time window, named local zone, status and drill-down remain visible.</p></div>
-        <div><small>SECURITY</small><strong>Keep private data out</strong><p>No document bodies, filenames or tenant data in URLs, telemetry or browser persistence.</p></div>
-      </div>
-      <h2>Implementation sources</h2>
-      <p>The Svelte component-system specification is the current implementation architecture. The preserved Flask and Bootstrap portal is legacy evidence only; it does not define the stack for new apparent products.</p>
-      <div class="bb-download-row"><a href="/brand/design-system/svelte-component-system.md">Svelte component system</a><a href="/brand/design-system/instructions/frontend-implementation.md">Frontend instructions</a><a href="/brand/design-system/product-interface.md">Product system</a><a href="/brand/design-system/tokens/apparent.css">CSS tokens</a><a href="/brand/design-system/reference/product-portal/README.md">Legacy portal evidence</a></div>
-      <p class="bb-source-note">Implementation basis: <a href="https://bits-ui.com/docs">Bits UI</a>, <a href="https://www.shadcn-svelte.com/docs">shadcn-svelte</a>, <a href="https://www.layerchart.com/docs">LayerChart</a>, <a href="https://www.w3.org/TR/WCAG22/">WCAG 2.2</a> and <a href="https://designsystem.digital.gov/components/overview/">USWDS component guidance</a>.</p>
-    `,
-  },
-  {
+    summary: 'A live component reference built from the same shared React sources as the products.',
+    body: `<p>Desktop and Connect use React/TypeScript with canonical controls in <code>shared/ui</code>. Public uses React; this reading page retains its existing TypeScript document shell. Use the owning product’s stack. Historical Svelte and portal material is legacy reference, not the current implementation prescription.</p><div id="brand-components"></div><h3>Component contracts</h3><p>Each component needs a persistent label, keyboard and focus behavior, responsive layout, and truthful default, selected, disabled, waiting, empty, error and recovery states where relevant. Use the existing tokens and product theme. This gallery applies the preserved brand palette without changing other product themes.</p><div class="bb-download-row"><a href="https://github.com/tryapparent/apparent/tree/main/shared/ui">Shared component source</a><a href="/brand/design-system/instructions/frontend-implementation.md">Implementation guidance</a><a href="/brand/design-system/desktop-settings.md">Desktop Settings</a></div>`,
+  },  {
     title: 'Social media',
-    summary: 'LinkedIn is the current primary social channel. Publish category insight before promotion.',
-    body: `
-      <div class="bb-spec-table">
-        <div><small>STATIC FORMAT</small><p>1200 × 627 px. Keep critical content inside a 96 px safe area.</p></div>
-        <div><small>PROFILE</small><p>Use the approved boxed “a” avatar and the full wordmark in banners.</p></div>
-        <div><small>VIDEO</small><p>Always include captions. The first frame must work without playback.</p></div>
-        <div><small>COPY</small><p>Lead with a useful category observation. Place the promotional claim second.</p></div>
-        <div><small>PROOF</small><p>Attach sources and qualify estimates in the post or first comment.</p></div>
-        <div><small>APPROVAL</small><p>Founder approval is required until a channel owner is assigned.</p></div>
-      </div>
-      <div class="bb-callout warning"><strong>Open</strong><p>Hashtag policy and the community-response playbook are not yet defined.</p></div>
-      <h2>LinkedIn launch kit</h2>
-      <div class="bb-download-row"><a download href="/brand/templates/linkedin/apparent-linkedin-company-cover.png">Download company cover</a><a download href="/brand/templates/linkedin/apparent-linkedin-company-logo.png">Download company logo</a><a download href="/brand/templates/linkedin/apparent-linkedin-founder-cover.png">Download founder cover</a><a href="/brand/templates/linkedin/linkedin-launch-kit.md">Open page copy and profile text</a></div>
-    `,
-  },
-  {
+    summary: 'Share the pleasure of making something peculiar.',
+    body: `<p>Show personal projects, playful experiments, drawings and what someone made with their agent. Use real capture when demonstrating the product; label illustrative scenes. Keep claims truthful, videos captioned and private material out of public posts.</p><p>The old document-product LinkedIn banners and copy are historical assets, not templates for this direction. Start with the current wordmark and the frog collection.</p>`,
+  },  {
     title: 'Templates',
-    summary: 'Approved templates must be directly accessible here. Pending formats remain visibly unavailable until an editable source exists.',
-    body: `
-      <div class="bb-template-table">
-        <a href="/brand/?slides=1#slide-1"><small>OPEN TEMPLATE</small><strong>Sales presentation</strong><p>16:9. One claim plus proof. Sources remain visible.</p><span>Open presentation</span></a>
-        <a href="/brand/design-system/reference/product-portal/README.md"><small>OPEN TEMPLATE</small><strong>Product shell</strong><p>Evidence-first review interface with source files.</p><span>Open implementation</span></a>
-        <a href="/brand/design-system/reference/product-portal/templates/documents/document_detail.html"><small>OPEN TEMPLATE</small><strong>Structured output</strong><p>Source evidence, processing state and stable identifiers.</p><span>Open HTML source</span></a>
-        <div class="available"><small>DOWNLOAD TEMPLATE</small><strong>LinkedIn presence</strong><p>Company banner, founder banner, logo and approved profile copy.</p><span class="bb-template-actions"><a download href="/brand/templates/linkedin/apparent-linkedin-company-cover.png">Company cover</a><a download href="/brand/templates/linkedin/apparent-linkedin-founder-cover.png">Founder cover</a><a href="/brand/templates/linkedin/linkedin-launch-kit.md">Page copy</a></span></div>
-        <div class="pending"><small>NEXT</small><strong>One-page document</strong><p>Not yet approved</p></div>
-        <div class="pending"><small>NEXT</small><strong>Email signature</strong><p>Not yet approved</p></div>
-      </div>
-      <p>New templates require a recurring use case, a named owner, an editable source file and an approval path.</p>
-    `,
-  },
-  {
+    summary: 'Start with the current identity and reusable materials.',
+    body: `<div class="bb-download-row"><a href="/brand/?slides=1#slide-1">Brand presentation</a><a href="#frog-collection">Frog collection</a><a href="#frontend-design-system">Component library</a><a href="/brand/brand-guidelines.md">Writing and identity reference</a></div><p>Build new images from the original frog references. Keep logo and text as real supplied assets or live type rather than generated lettering.</p>`,
+  },  {
     title: 'Design tokens',
     summary: 'Tokens are the machine-readable source for approved digital decisions.',
     body: `
@@ -510,7 +313,7 @@ If evidence or context is missing, mark the gap instead of filling it in.</code>
         <a href="/brand/brand-guidelines.md"><small>CITE</small><strong>brand-guidelines.md</strong><p>Human and machine-readable core rules.</p></a>
         <a href="/brand/design-system/tokens/apparent.tokens.json"><small>IMPLEMENT</small><strong>Token JSON</strong><p>Exact color, type, space and motion values.</p></a>
       </div>
-      <h2>Agent rules</h2>
+      <h3>Agent rules</h3>
       <ol class="bb-writing-rules">
         <li><b>Start with discovery</b><p>Read <code>/brand/llms.txt</code>, then open only the sources required for the task.</p></li>
         <li><b>Prefer text over pixels</b><p>Use Markdown, JSON, CSS and SVG masters. Do not infer rules from screenshots.</p></li>
@@ -526,14 +329,14 @@ If evidence or context is missing, mark the gap instead of filling it in.</code>
     summary: 'The repository is the source of truth. Exceptions require approval and an expiry.',
     body: `
       <div class="bb-governance-table">
-        <div><small>STATUS</small><strong>Brand guidelines v0.3 / review</strong></div>
+        <div><small>STATUS</small><strong>Brand guidelines v0.4 / capture</strong></div>
         <div><small>OWNER</small><strong>Founder approval until a named brand owner is assigned</strong></div>
         <div><small>DEVIATIONS</small><strong>Record reason, owner and expiry before publishing</strong></div>
         <div><small>EXTERNAL TEAMS</small><strong>Share this live reference and approved assets at kickoff</strong></div>
         <div><small>ONBOARDING</small><strong>First-week walkthrough plus repository access</strong></div>
         <div><small>REVIEW</small><strong>Audit outputs and missing scenarios quarterly</strong></div>
       </div>
-      <h2>Open decisions</h2>
+      <h3>Open decisions</h3>
       <ul><li>Print color specifications</li><li>Complete co-branding system</li><li>Final responsive type values</li></ul>
     `,
   },
@@ -548,12 +351,10 @@ If evidence or context is missing, mark the gap instead of filling it in.</code>
         <a href="${asset('brand/apparent-icon-inverse.svg')}"><span>SVG</span><strong>Compact icon</strong><small>Inverse</small></a>
         <a download href="${asset('brand/apparent-icon.png')}"><span>PNG</span><strong>Compact icon</strong><small>Primary · 2048 × 2048</small></a>
         <a download href="${asset('brand/apparent-icon-inverse.png')}"><span>PNG</span><strong>Compact icon</strong><small>Inverse · 2048 × 2048</small></a>
-        <a download href="/brand/templates/linkedin/apparent-linkedin-company-cover.png"><span>PNG</span><strong>LinkedIn company cover</strong><small>4200 × 700</small></a>
-        <a download href="/brand/templates/linkedin/apparent-linkedin-founder-cover.png"><span>PNG</span><strong>LinkedIn founder cover</strong><small>1584 × 396</small></a>
       </div>
-      <h2>Repository sources</h2>
+      <h3>Repository sources</h3>
       <div class="bb-path-list"><code>assets/brand/</code><code>design-system/tokens/</code><code>design-system/instructions/</code><code>design-system/product-interface.md</code><code>docs/design-process/</code></div>
-      <h2>Agent-readable files</h2>
+      <h3>Agent-readable files</h3>
       <div class="bb-download-row"><a href="/brand/llms.txt">llms.txt</a><a href="/brand/llms-full.txt">Full text reference</a><a href="/brand/brand-guidelines.md">Guidelines Markdown</a><a href="/brand/design-system/tokens/apparent.tokens.json">Token JSON</a></div>
     `,
   },
@@ -563,9 +364,10 @@ export function renderBrandDocument(root) {
   document.body.classList.add('brand-reading-route');
   document.title = 'apparent | Brand guidelines';
   const markup = `
+    <a class="bb-skip" href="#brand-content">Skip to content</a>
     <header class="bb-reader-header">
       <a class="bb-reader-brand" href="#guidelines-top"><img src="${asset('brand/apparent-wordmark.svg')}" alt="apparent"><span>Brand guidelines</span></a>
-      <div><span>v0.3 · Review</span><a href="#templates">Templates</a><a href="?slides=1#slide-1">Brand presentation</a></div>
+      <div><span>v0.4 · Capture</span><a href="#frog-collection">Frogs</a><a href="#frontend-design-system">Components</a><a href="?slides=1#slide-1">Brand presentation</a></div>
     </header>
     <div class="bb-reader-layout" id="guidelines-top">
       <aside class="bb-reader-sidebar">
@@ -574,20 +376,20 @@ export function renderBrandDocument(root) {
           ${sections.map((item, index) => `<a href="#${item.title.toLowerCase().replaceAll(' ', '-')}"><span>${String(index + 1).padStart(2, '0')}</span>${item.title}</a>`).join('')}
         </nav>
       </aside>
-      <main class="bb-reader-document">
+      <div class="bb-reader-document" id="brand-content" tabindex="-1">
         <header class="bb-guidelines-intro">
           <small>apparent / BRAND GUIDELINES</small>
           <h1>Brand guidelines</h1>
-          <p>Approved standards for how apparent looks, speaks and behaves. Rules are mandatory unless a section is explicitly marked illustrative, pending or open.</p>
-          <dl><div><dt>Version</dt><dd>0.3 / review</dd></div><div><dt>Updated</dt><dd>22.07.2026</dd></div><div><dt>Owner</dt><dd>Founder approval</dd></div></dl>
+          <p>Point. Talk. Draw. A practical kit for a more human, playful way to make things with computers.</p>
+          <dl><div><dt>Version</dt><dd>0.4 / capture</dd></div><div><dt>Updated</dt><dd>15.11.2026</dd></div><div><dt>Owner</dt><dd>Founder approval</dd></div></dl>
         </header>
         ${sections.map((item, index) => `
           <section id="${item.title.toLowerCase().replaceAll(' ', '-')}" class="bb-reader-section">
-            <header><small>${String(index + 1).padStart(2, '0')} / ${String(sections.length).padStart(2, '0')}</small><h1>${item.title}</h1><p>${item.summary}</p></header>
+            <header><small>${String(index + 1).padStart(2, '0')} / ${String(sections.length).padStart(2, '0')}</small><h2>${item.title}</h2><p>${item.summary}</p></header>
             <div class="bb-reader-body">${item.body}</div>
           </section>
         `).join('')}
-      </main>
+      </div>
     </div>
   `;
   const parsed = new DOMParser().parseFromString(markup, 'text/html');
