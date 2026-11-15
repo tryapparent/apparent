@@ -121,3 +121,38 @@ test('actual CLI collects array-shaped tool results, ranks totals, and excludes 
   assert.ok(!chart(hostile).includes('<script>bad()'));
   hostile.processGroups[0].count = -1; assert.throws(() => chart(hostile), /Invalid measured/);
 }));
+
+test('real GitHub unallocated timestamp placeholders are queue time, never runner execution', () => {
+  // Sanitized REST shape observed during the full review: a queued job already
+  // has started_at == created_at, runner_id:0, no steps, and no completed_at.
+  const job = {id: 8, name: 'synthetic Mac', status: 'queued', conclusion: null, runner_id: 0,
+    created_at: '2026-11-15T00:00:10Z', started_at: '2026-11-15T00:00:10Z', completed_at: null, steps: []};
+  const run = {runId: 7, attempt: 1, headSha: 'a'.repeat(40), jobs: [job]};
+  const inspect = (value: any) => inspectJobs([{...run, jobs:[value]}],Date.parse(from),Date.parse(to));
+  const queued = inspect(job).jobs[0];
+  assert.equal(queued.queueSeconds,21590);
+  assert.equal(queued.runnerSeconds,0);
+  const cancelled = inspect({...job,status:'completed',conclusion:'cancelled',completed_at:'2026-11-15T00:00:30Z'}).jobs[0];
+  assert.equal(cancelled.queueSeconds,20);
+  assert.equal(cancelled.runnerSeconds,0);
+  assert.equal(inspect({...job,runner_id:42,status:'in_progress',completed_at:'0001-01-01T00:00:00Z'}).unfinishedJobs,1);
+  const {runner_id: _absent, ...withoutAllocation} = job;
+  assert.equal(inspect({...withoutAllocation,status:'completed',conclusion:'cancelled',completed_at:'2026-11-15T00:00:30Z'}).unknownAllocationJobs,1);
+});
+
+test('explicit server-transported human answers remain review references while notices and inherited copies do not', () => {
+  // Shape from t3_thread_read, not inferred from question/answer text. The
+  // server creates the answer item after the person submits the UI request.
+  const answer = {itemId:'turn-item:message:async-answer%3Aruntime-request%3Aprovider%3Acodex%3Asynthetic',
+    position:1,updatedAt:from,createdBy:'user',creationSource:'server',type:'user_message',
+    visibility:'local',sourceThreadId:'owner',text:'private question and actual human answer'};
+  const snapshot = {thread:{threadId:'owner'},hasMore:false,items:[answer,
+    {...answer,itemId:'turn-item:message:background-completion'},
+    {...answer,itemId:answer.itemId+'-agent',createdBy:'agent'},
+    {...answer,itemId:answer.itemId+'-inherited',visibility:'inherited'}]};
+  const report = inspectThreads([snapshot,snapshot],Date.parse(from),Date.parse(to));
+  assert.equal(report.humanMessageRefs.length,1);
+  assert.equal(report.humanMessageRefs[0].itemId,answer.itemId);
+  assert.equal(report.humanMessageRefs[0].origin,'explicit-async-answer');
+  assert.ok(!JSON.stringify(report).includes('private question'));
+});
