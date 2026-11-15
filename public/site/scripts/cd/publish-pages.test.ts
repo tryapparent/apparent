@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { CanonicalPropagationPending, differenceMetadata, inventory, main, publicationNeeded, ReadbackTransferIncomplete, seal, verify, verifyArtifact, verifyReady, type PublisherDeps } from './publish-pages.ts'
 import { movie } from '../../lib/pages-video-metadata.js'
 import { preparePagesVideo } from '../pages/prepare-pages-video.mjs'
+import { copyRunnerSources } from '../../../../enablement/local-tests/support/sources.ts'
 
 const sha = 'a'.repeat(40)
 const approvedMovie = readFileSync(new URL('../../public/assets/media/Apparent-ghost-demo-v4-lilac.mp4', import.meta.url))
@@ -291,10 +292,7 @@ test('publisher CLI seals from a source path containing spaces', () => temp(root
   const metadata = join(root, 'public/site/lib/pages-video-metadata.js')
   mkdirSync(join(metadata, '..'), { recursive: true })
   writeFileSync(metadata, readFileSync(new URL('../../lib/pages-video-metadata.js', import.meta.url)))
-  const policy = join(root, 'enablement/ci/routing/streams.ts')
-  mkdirSync(join(policy, '..'), { recursive: true })
-  writeFileSync(policy, readFileSync(new URL('../../../../enablement/ci/routing/streams.ts', import.meta.url)))
-  writeFileSync(join(root, 'enablement/ci/routing/consumers.ts'), readFileSync(new URL('../../../../enablement/ci/routing/consumers.ts', import.meta.url)))
+  copyRunnerSources(root)
   const result = spawnSync(process.execPath, [script, 'seal', sha], { encoding: 'utf8' })
   assert.equal(result.status, 0, result.stderr)
   assert.equal(verifyArtifact(sha, join(root, '.build/website')).revision, sha)

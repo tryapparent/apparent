@@ -6,6 +6,7 @@ import {join, dirname} from 'node:path';
 import {fixtureInputs, qualifyFixtures, fixturePlatformBoundary} from './qualify.ts';
 import {moduleImports} from './imports.ts';
 import {selectRange} from '../../select.ts';
+import {currentStream} from '../streams.ts';
 import {selection, commands, contractTests, toolingCommands} from '../../../local-tests/run.ts';
 
 const source = process.cwd();
@@ -15,9 +16,16 @@ test('module parsing ignores synthetic source strings but sees same-line product
   assert.deepEqual(moduleImports(`const before = 1; import './native.ts';`), ['./native.ts']);
   assert.deepEqual(moduleImports(`function before() {} /* consumer */ import './native.ts';`), ['./native.ts']);
   assert.equal(moduleImports('import {'), null);
+  assert.deepEqual(moduleImports("import type {Foo} from './native.ts'; export type {Bar} from './other.ts';"), ['./native.ts','./other.ts']);
+  assert.deepEqual(moduleImports("import {type Foo} from './native.ts'; export {type Bar} from './other.ts';"), ['./native.ts','./other.ts']);
+  assert.deepEqual(moduleImports("import typeThing from './value.ts';"), ['./value.ts']);
+  assert.equal(moduleImports("import /* unreviewed form */ type {Foo} from './native.ts';"), null);
+  assert.equal(moduleImports("const other = require /* unreviewed form */ ('./native.ts');"), null);
   const files = blobs();
-  files.set('enablement/local-tests/run.ts', `const before = 1; import './fixtures/runner.ts';`);
-  assert.deepEqual(qualifyFixtures(files, [...fixtureInputs]), []);
+  for (const edge of ["const before = 1; import './fixtures/runner.ts';", "import type {Foo} from './fixtures/runner.ts';"]) {
+    files.set('enablement/local-tests/run.ts', edge);
+    assert.deepEqual(qualifyFixtures(files, [...fixtureInputs]), []);
+  }
   files.delete('enablement/local-tests/run.ts');
   files.set('capture/desktop/consumer.ts', "import '@fixtures/runner';");
   assert.deepEqual(qualifyFixtures(files, [...fixtureInputs]), []);
@@ -29,9 +37,20 @@ test('module parsing ignores synthetic source strings but sees same-line product
   files.set(py, files.get(py) + '\ndef added():\n    import unknown_provider\n');
   assert.deepEqual(qualifyFixtures(files, [...fixtureInputs]), []);
 });
+
+test('publication-side parsing works with Node alone and never executes candidate code', () => {
+  const node = execFileSync('node', ['-p', 'process.execPath'], {encoding:'utf8'}).trim();
+  const result = execFileSync(node, ['--experimental-strip-types', new URL('./imports.ts',import.meta.url).pathname], {
+    env:{...process.env,PATH:'/nonexistent'},encoding:'utf8',
+    input:`const fixture = "import './synthetic.ts';"; process.exit(7); import './real.ts'; export const value: number = 1;`,
+  });
+  assert.deepEqual(JSON.parse(result), ['./real.ts']);
+});
 test('audited real fixture sources qualify; new reachable helpers/tests execute, unknown files do not', () => {
   const files = blobs();
   for (const path of ['enablement/local-tests/run.ts', 'enablement/ci/select.test.ts']) files.set(path, readFileSync(join(source, path), 'utf8'));
+  const publisherTest = 'public/site/scripts/cd/publish-pages.test.ts';
+  files.set(publisherTest, readFileSync(join(source,publisherTest),'utf8'));
   assert.deepEqual(qualifyFixtures(files, [...fixtureInputs]), [...fixtureInputs]);
   assert.equal(fixturePlatformBoundary('', "execFileSync('cargo', ['test']);"), true);
   const helper = 'enablement/local-tests/fixtures/helper.ts';
@@ -73,6 +92,8 @@ test('complete Git deltas use one local/CI authority, safe additions execute and
     assert.equal(accepted.macos, false); assert.equal(accepted.platform, false);
     assert.deepEqual(selection(base, head, dir).plan, accepted.plan);
     assert.deepEqual(selectRange(base, head, dir, true).plan, accepted.plan);
+    assert.equal(currentStream('capture',base,head,dir),true,'qualified tooling must not supersede pending Capture delivery');
+    assert.equal(currentStream('connect',base,head,dir),true,'qualified tooling must not supersede pending Connect delivery');
     assert.ok(commands(accepted.selected, base, head).some(command => command.argv.includes('--pr')));
     assert.ok(toolingCommands().some(command => command.argv.includes('enablement/local-tests/desktop-install.test.ts')));
     assert.ok(contractTests().some(command => command.argv.includes('enablement/local-tests/run.test.ts')));
@@ -94,6 +115,7 @@ test('complete Git deltas use one local/CI authority, safe additions execute and
     for (const path of ['capture/desktop/provider.rs', 'enablement/local-tests/run.ts', 'enablement/verification.py', 'enablement/local-tests/unknown.ts']) {
       git('reset', '--hard', good); put(path, '// native or unknown boundary'); head = commit();
       assert.equal(selectRange(base, head, dir).plan.root, true, path);
+      assert.equal(currentStream('capture',base,head,dir),false,'unqualified mixed inputs retain supersession: '+path);
       if (path === 'enablement/local-tests/run.ts') assert.equal(selectRange(base, head, dir).fixtureMac, true);
     }
     git('reset', '--hard', good);
