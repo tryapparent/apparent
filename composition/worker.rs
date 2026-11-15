@@ -101,6 +101,26 @@ pub(crate) fn run(command: &mut Command, timeout: Duration, max_output: usize) -
         (1..=128 * 1024).contains(&max_output),
         "Invalid worker output budget"
     );
+    run_bounded(command.stdin(Stdio::null()), timeout, max_output)
+}
+
+/// A held finite file carries private text without argv, pipe-writer deadlocks,
+/// or a child reopening a mutable pathname. Existing small-reply callers keep
+/// their original budget; only this explicit entrypoint permits larger replies.
+pub(crate) fn run_with_input(
+    command: &mut Command,
+    input: std::fs::File,
+    timeout: Duration,
+    max_output: usize,
+) -> Result<Vec<u8>> {
+    let metadata = input.metadata()?;
+    ensure!(metadata.is_file() && metadata.len() <= 16 * 1024 * 1024,
+        "Invalid worker input budget");
+    ensure!((1..=16 * 1024 * 1024).contains(&max_output), "Invalid worker output budget");
+    run_bounded(command.stdin(Stdio::from(input)), timeout, max_output)
+}
+
+fn run_bounded(command: &mut Command, timeout: Duration, max_output: usize) -> Result<Vec<u8>> {
     struct Running {
         child: Child,
         armed: bool,
@@ -119,7 +139,6 @@ pub(crate) fn run(command: &mut Command, timeout: Duration, max_output: usize) -
     let mut running = Running {
         child: command
             .process_group(0)
-            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
@@ -211,6 +230,22 @@ pub(crate) fn run(command: &mut Command, timeout: Duration, max_output: usize) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn held_input_supports_bounded_text_replies_without_widening_small_worker_budgets() {
+        use std::io::{Seek, SeekFrom, Write};
+        let bytes = vec![b'x'; 256 * 1024];
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(&bytes).unwrap();
+        file.seek(SeekFrom::Start(0)).unwrap();
+        assert_eq!(file.metadata().unwrap().permissions().mode() & 0o777, 0o600);
+        let result = run_with_input(&mut Command::new("/bin/cat"), file, Duration::from_secs(2), bytes.len()).unwrap();
+        assert_eq!(result, bytes);
+        assert!(run(&mut Command::new("/bin/cat"), Duration::from_secs(2), 128*1024+1).is_err());
+        let oversized = tempfile::tempfile().unwrap();
+        oversized.set_len(16*1024*1024+1).unwrap();
+        assert!(run_with_input(&mut Command::new("/bin/cat"), oversized, Duration::from_secs(2), 1024).is_err());
+    }
+
     #[test]
     fn media_alias_is_private_and_preserves_filename_bytes() {
         use std::os::unix::ffi::OsStringExt;

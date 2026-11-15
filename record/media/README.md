@@ -190,6 +190,49 @@ change. No live capture or permissions proof is inferred here. GStreamer still
 executes live capture and audio extraction; retiring file readers does not remove
 the root application's native build dependencies.
 
+## Transcript allocation
+
+`src/transcript/policy.ts` partitions recognizer words (or segments/full text when
+timings are absent) across keyframes, preserving clause starts, punctuation and
+the original unsigned 64-bit clocks. Assembly supplies the selected action
+anchors; in-place re-transcription retains its existing frame-time anchors.
+Both production routes consume this same finite Record worker. Native selection,
+speech recognition and transactional bundle publication remain authoritative.
+
+Composition passes a held private file as stdin; speech never enters worker argv
+or diagnostics. Requests/replies are capped at 16 MiB, with a ten-second process
+deadline and the existing process-group cleanup. This includes serialization
+overhead above the command transcriber's existing 8 MiB response limit. Oversized
+or failed requests fail before publication; no words are silently truncated.
+Existing small-reply workers retain their original 128 KiB ceiling.
+
+Compatibility checks compare the donor allocator, producer-normalized CLI
+phone/screen/recovery output, and real re-transcription publication/rollback.
+Stage both worker modules; signed Mac and both Linux AppImages remain acceptance
+gates. Restore the native allocator and both callers together when reverting;
+there is no config writer, SDK pin or persisted schema migration.
+
+## Default assembly allocation
+
+`assembly-policy.ts` owns the duration-based total keyframe limit and the ordinary
+event allocation. A finite provider-free Node worker returns one plan per bundle;
+screen predecode and phone direct-mark preparation reuse that same plan at final
+selection. Recovery obtains a plan for its retained bundle duration. Decimal
+durations preserve the native unsigned 64-bit clock without JavaScript rounding.
+
+Native composition validates the response and exact duration, bounds subprocess
+output/time and retains cleanup. Native selection still owns grouping, scoring,
+coverage and image mechanics; those product decisions remain migration debt.
+The unchanged native 13-tile rendering bound protects combinatorial layout work,
+including a possible whiteboard tile. It is not a second default allocator.
+
+Stage both assembly outputs with the application and require them in native
+prerequisites. Missing/broken plans fail assembly with its existing durable
+recovery data; no parallel native default or config writer is retained. Rollback
+reverts worker staging, caller routing and default removal together. Headless
+policy/worker checks need only Node; actual Mac/Linux CLI and package acceptance
+remain gates. This slice does not establish whole-Record build independence.
+
 ## Native audio prerequisite
 
 Phone/file audio extraction still uses the root native runtime, ahead of a

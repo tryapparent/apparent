@@ -385,7 +385,7 @@ pub fn finalize_capture_bundle(
                     &TranscriptData::default(),
                     limits,
                     video_ink,
-                );
+                ).frames;
                 // Marks alone filled the budget, so speech can't change the selection.
                 let marks_fill = preview.len() == budget
                     && preview
@@ -618,7 +618,7 @@ pub fn build_bundle_from_parts(
         }
         let bench = std::env::var_os("APPARENT_BENCH").is_some();
         let started = std::time::Instant::now();
-        let selected = select_keyframes_with_limits(
+        let selected = crate::composition::transcript::apply(select_keyframes_with_limits(
             &frames,
             &strokes,
             &mut marks,
@@ -626,7 +626,7 @@ pub fn build_bundle_from_parts(
             &transcript,
             limits,
             extras.video_ink,
-        );
+        ), &transcript)?;
         let select_only_at = std::time::Instant::now();
         let completion_warning = captured_ink_frame_warning(&selected, &marks, extras.video_ink);
         let matches_prepared = completion_warning.is_none() && extras.prepared.as_ref().is_some_and(|prep| {

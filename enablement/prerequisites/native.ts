@@ -47,6 +47,8 @@ export function checkNativeInputs(root: string, platform = process.platform): st
     'capture/desktop/ui/frontend/electron/record-media/screen-policy.js',
     'capture/desktop/ui/frontend/electron/record-media/assembly-worker.js',
     'capture/desktop/ui/frontend/electron/record-media/assembly-policy.js',
+    'capture/desktop/ui/frontend/electron/record-media/transcript/worker.js',
+    'capture/desktop/ui/frontend/electron/record-media/transcript/policy.js',
     'capture/desktop/ui/frontend/electron/record-media/package.json',
     'capture/desktop/ui/frontend/electron/record-media/node_modules/@apparent/engine-sdk/dist/index.js',
     'capture/desktop/ui/frontend/electron/record-media/native/apparent-engine-media',
