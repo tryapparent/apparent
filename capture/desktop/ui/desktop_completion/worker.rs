@@ -60,7 +60,7 @@ pub(super) struct Notification { pub title: String, pub body: String }
 pub(super) enum Effect { Copy { capture: Capture, mode: CopyMode } }
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) enum CopyMode { Text, Bundle }
+pub(super) enum CopyMode { Text, Bundle, AutoPaste }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Decision { pub state: State, pub effects: Vec<Effect> }
@@ -165,10 +165,16 @@ impl Worker {
             ensure!(decision.effects.is_empty() && !state.copy_pending
                 && state.current == (receipt != "revoked"), "Invalid Record terminal state");
         }
-        for Effect::Copy { capture, .. } in &decision.effects {
+        for Effect::Copy { capture, mode } in &decision.effects {
             ensure!(*capture == self.facts.capture && matches!(self.outcome, Outcome::Saved { .. })
                 && state.current && state.copy_pending && observation.clipboard == Clipboard::NotRequested,
                 "Invalid Record copy capability");
+            if matches!(mode, CopyMode::AutoPaste) {
+                ensure!(self.facts.platform == "linux" && self.facts.source == "screen"
+                    && self.facts.automatic_trial_enabled && !self.facts.agent_requested
+                    && !self.facts.lab && self.facts.hyprland && self.facts.wayland,
+                    "Auto paste capability unavailable");
+            }
         }
         Ok(decision)
     }

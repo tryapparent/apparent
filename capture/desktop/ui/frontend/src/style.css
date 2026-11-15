@@ -83,6 +83,10 @@
 .settings-agent-preference p { margin-top:8px; }
 .settings-agent-skill { margin-top:28px; }
 .settings-agent-t3 { margin-top:28px; }
+.settings-agent-labs { margin-top:28px; }
+.settings-agent-labs > h2 { margin-bottom:16px; }
+.settings-agent-labs h3 { margin:0; font-size:1rem; font-weight:600; }
+.settings-agent-labs button { min-height:44px; }
 .settings-agent-t3 > p { margin-top:12px; }
 .settings-agent-t3 button { min-height:44px; }
 .settings-agent-skill > p { margin-top:8px; }

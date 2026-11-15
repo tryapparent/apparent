@@ -1,7 +1,16 @@
 // Desktop owns the Agents preference workflow. Native only reads/writes the
 // persisted experiment through the shared config transaction.
 export const skillCommand = 'bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent';
-export type PreferenceFacts = { saved: boolean | null; t3Saved?:boolean|null;t3Configured?:boolean;error?: never } | { error: 'config_read_failed' | 'config_write_failed'; saved?: never;t3Saved?:never;t3Configured?:never };
+export type PreferenceFacts = {
+  saved: boolean | null; t3Saved?: boolean | null; t3Configured?: boolean;
+  autoPasteSaved?: boolean | null; autoPasteSupported?: boolean; error?: never;
+} | {
+  error: 'config_read_failed' | 'config_write_failed'; saved?: never; t3Saved?: never;
+  t3Configured?: never; autoPasteSaved?: never; autoPasteSupported?: never;
+};
+export function autoPasteEnabled(facts: PreferenceFacts): boolean | undefined {
+  return facts.error ? undefined : facts.autoPasteSaved ?? false;
+}
 export function t3PickerEnabled(facts:PreferenceFacts):boolean|undefined{return facts.error?undefined:facts.t3Saved??false;}
 export function preferenceEnabled(facts: PreferenceFacts): boolean | undefined {
   return facts.error ? undefined : facts.saved ?? true;
@@ -12,7 +21,14 @@ export function preferenceFacts(value: unknown): PreferenceFacts {
   if (facts.error === 'config_read_failed' || facts.error === 'config_write_failed') return {error: facts.error};
   if (facts.saved === null || typeof facts.saved === 'boolean') {
     if(facts.t3Saved!==undefined&&facts.t3Saved!==null&&typeof facts.t3Saved!=='boolean'||facts.t3Configured!==undefined&&typeof facts.t3Configured!=='boolean')throw Error('Invalid T3 preference');
-    return {saved:facts.saved,...facts.t3Saved===undefined?{}:{t3Saved:facts.t3Saved as boolean|null},...facts.t3Configured===undefined?{}:{t3Configured:facts.t3Configured as boolean}};
+    if(facts.autoPasteSaved!==undefined&&facts.autoPasteSaved!==null&&typeof facts.autoPasteSaved!=='boolean'||facts.autoPasteSupported!==undefined&&typeof facts.autoPasteSupported!=='boolean')throw Error('Invalid auto paste preference');
+    return {
+      saved: facts.saved,
+      ...facts.autoPasteSaved === undefined ? {} : {autoPasteSaved: facts.autoPasteSaved as boolean | null},
+      ...facts.autoPasteSupported === undefined ? {} : {autoPasteSupported: facts.autoPasteSupported as boolean},
+      ...facts.t3Saved === undefined ? {} : {t3Saved: facts.t3Saved as boolean | null},
+      ...facts.t3Configured === undefined ? {} : {t3Configured: facts.t3Configured as boolean},
+    };
   }
   throw Error('Invalid Agents preference');
 }
@@ -24,14 +40,14 @@ export class AgentsPreferences {
   private pending = new Map<number, {resolve: (facts: PreferenceFacts) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>}>();
   private send: (message: object) => void;
   constructor(send: (message: object) => void) { this.send = send; }
-  request(enabled?: unknown,setting:'video'|'t3'='video'): Promise<PreferenceFacts> {
+  request(enabled?: unknown,setting:'video'|'t3'|'autoPaste'='video'): Promise<PreferenceFacts> {
     if (enabled !== undefined && typeof enabled !== 'boolean') return Promise.reject(Error('Invalid preference'));
     if (this.pending.size) return Promise.reject(Error('Preference request pending'));
     const request = ++this.next;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(request); reject(Error('Preference acknowledgement timed out')); }, 3500);
       this.pending.set(request, {resolve, reject, timer});
-      try { this.send({action: 'agents-preference', request, ...(enabled === undefined ? {} : {enabled}),...(setting==='t3'?{setting:'t3'}:{})}); }
+      try { this.send({action: 'agents-preference', request, ...(enabled === undefined ? {} : {enabled}),...(setting==='video'?{}:{setting})}); }
       catch { clearTimeout(timer); this.pending.delete(request); reject(Error('Preference unavailable')); }
     });
   }

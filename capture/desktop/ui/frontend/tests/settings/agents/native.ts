@@ -38,6 +38,15 @@ try {
   await expect(page.locator('.settings-agent-command')).toHaveText(process.argv[3]);
   const toggle = page.getByRole('switch', {name: 'Ask for an Apparent video on complex changes'});
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  if(process.platform==='linux') {
+    const auto=page.getByRole('switch',{name:'Auto paste',exact:true});
+    await expect(auto).toHaveAttribute('aria-checked','false');
+    for(const on of [true,false]) {
+      await auto.click(); await expect(auto).toHaveAttribute('aria-checked',String(on));
+      const saved=JSON.parse(await fs.readFile(process.argv[2],'utf8'));
+      assert.equal(saved.experiments.autoPasteDraft,on);assert.equal(saved.secret,'private');
+    }
+  }
   const t3Toggle=page.getByRole('switch',{name:'Send recordings to T3'});
   await expect(t3Toggle).toHaveAttribute('aria-checked','false');
   for(const on of [true,false]){

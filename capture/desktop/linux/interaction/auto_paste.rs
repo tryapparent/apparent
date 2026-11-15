@@ -66,14 +66,20 @@ pub fn user_paste_sequence(ops: &mut impl UserPasteOps) -> Result<()> {
 }
 
 pub fn paste_bundle(bundle_dir: &Path) -> Result<()> {
+    paste_bundle_into(bundle_dir, &super::hyprland::focused_window()?)
+}
+
+/// Completion must use the window frozen at Finish, never discover a new target.
+pub fn paste_bundle_into(bundle_dir: &Path, focused: &FocusedWindow) -> Result<()> {
+    ensure!(!crate::capture::engine::runtime::is_frontmost_terminal(), "Choose a graphical composer for auto paste");
+    crate::capture::engine::runtime::wait_for_modifiers_released(350);
     let (directory, bundle) = crate::shared::handoff::load_bundle(bundle_dir)?;
     let image = std::fs::read(directory.join(&bundle.contact_sheet))
         .context("Could not read contact sheet")?;
     let summary = crate::shared::handoff::clipboard_summary(&bundle, &directory);
-    let focused = super::hyprland::focused_window()?;
-    preflight(&focused)?;
+    preflight(focused)?;
     user_paste_sequence(&mut LivePaste {
-        original: &focused,
+        original: focused,
         image: &image,
         summary: &summary,
     })
@@ -128,6 +134,67 @@ impl UserPasteOps for LivePaste<'_> {
 mod tests {
     use super::*;
     use anyhow::{bail, Result};
+
+    #[test]
+    #[ignore = "real Hyprland adapter: isolated guest only"]
+    fn auto_paste_native_receiver() {
+        use std::io::{BufRead, Write};
+        use std::process::{Command, Stdio};
+        use x11rb::{connection::Connection, protocol::{Event, xproto::*}, wrapper::ConnectionExt as _};
+        if std::env::var_os("APPARENT_PASTE_RECEIVER").is_some() {
+            let (conn, screen) = x11rb::connect(None).unwrap();
+            let root = &conn.setup().roots[screen];
+            let window = conn.generate_id().unwrap();
+            conn.create_window(0, window, root.root, 20, 20, 640, 400, 0, WindowClass::INPUT_OUTPUT, 0,
+                &CreateWindowAux::new().background_pixel(root.white_pixel).event_mask(EventMask::KEY_PRESS)).unwrap();
+            conn.change_property8(PropMode::REPLACE, window, AtomEnum::WM_NAME, AtomEnum::STRING, b"SYNTHETIC paste receiver").unwrap();
+            conn.change_property8(PropMode::REPLACE, window, AtomEnum::WM_CLASS, AtomEnum::STRING, b"paste-fixture\0PasteFixture\0").unwrap();
+            let pid = conn.intern_atom(false, b"_NET_WM_PID").unwrap().reply().unwrap().atom;
+            conn.change_property32(PropMode::REPLACE, window, pid, AtomEnum::CARDINAL, &[std::process::id()]).unwrap();
+            conn.map_window(window).unwrap(); conn.flush().unwrap();
+            println!("ready"); std::io::stdout().flush().unwrap();
+            let started = std::time::Instant::now(); let mut received = 0;
+            while started.elapsed().as_secs() < 10 && received < 2 {
+                if let Some(Event::KeyPress(event)) = conn.poll_for_event().unwrap() {
+                    if event.state.contains(KeyButMask::CONTROL) {
+                        let mime = if received == 0 { "image/png" } else { "text/plain;charset=utf-8" };
+                        let content = Command::new("wl-paste").args(["--no-newline", "--type", mime]).output().unwrap();
+                        assert!(content.status.success(), "selection conversion failed");
+                        if received == 0 { assert!(content.stdout.starts_with(b"\x89PNG")); }
+                        else { assert!(String::from_utf8(content.stdout).unwrap().contains("Synthetic auto paste")); }
+                        received += 1;
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            assert_eq!(received, 2, "receiver must accept both image and text");
+            return;
+        }
+        assert!(super::super::hyprland::running(), "isolated Hyprland guest required");
+        let mut child = Command::new(std::env::current_exe().unwrap()).args(["auto_paste_native_receiver", "--ignored", "--nocapture"])
+            .env("APPARENT_PASTE_RECEIVER", "1").stdout(Stdio::piped()).spawn().unwrap();
+        let mut lines = std::io::BufReader::new(child.stdout.take().unwrap()).lines();
+        while lines.next().unwrap().unwrap() != "ready" {}
+        std::thread::sleep(Duration::from_millis(500));
+        assert!(Command::new("hyprctl").args(["dispatch", "focuswindow", "class:PasteFixture"]).status().unwrap().success());
+        std::thread::sleep(Duration::from_millis(100));
+        let focused = super::super::hyprland::focused_window().unwrap();
+        assert_eq!(focused.pid, child.id());
+        let fixture = tempfile::Builder::new().suffix(".apparent").tempdir().unwrap();
+        let bundle = serde_json::json!({"version":1,"id":"synthetic-auto-paste","createdAtMs":0,"durationMs":1000,
+            "target":{"mode":"display","displayId":0,"frame":{"x":0.0,"y":0.0,"width":640.0,"height":400.0,"scale":1.0}},
+            "transcript":{"source":"test","text":"Synthetic auto paste","segments":[]},
+            "strokes":[],"marks":[],"events":[],"keyframes":[],"contactSheet":"c.png"});
+        std::fs::write(fixture.path().join("apparent.json"), serde_json::to_vec(&bundle).unwrap()).unwrap();
+        let mut png = png::Encoder::new(std::fs::File::create(fixture.path().join("c.png")).unwrap(), 1, 1);
+        png.set_color(png::ColorType::Rgb); png.set_depth(png::BitDepth::Eight);
+        png.write_header().unwrap().write_image_data(&[100, 0, 200]).unwrap();
+        let result = paste_bundle_into(fixture.path(), &focused);
+        // Drain the child's test report so it cannot outlive the fixture.
+        for line in lines { println!("{}", line.unwrap()); }
+        let status = child.wait().unwrap();
+        result.unwrap(); assert!(status.success());
+    }
 
     #[test]
     fn user_directed_paste_leaves_manual_text_fallback_without_stealing_focus() {

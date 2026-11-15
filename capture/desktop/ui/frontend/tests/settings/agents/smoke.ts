@@ -21,16 +21,17 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
   const actions: Record<string, unknown>[] = [];
   let saved: boolean | null = null;
   let t3Saved:boolean|null=null;
+  let autoPasteSaved:boolean|null=null;
   let failWrite = false;
   let holdWrite = false;
   let holdRead = true;
   let held: Record<string, unknown> | undefined;
   const reply = (action: Record<string, unknown>) => {
     if ('enabled' in action && !failWrite) {
-      if(action.setting==='t3')t3Saved=action.enabled as boolean;else saved=action.enabled as boolean;
+      if(action.setting==='t3')t3Saved=action.enabled as boolean;else if(action.setting==='autoPaste')autoPasteSaved=action.enabled as boolean;else saved=action.enabled as boolean;
     }
     application.stdin.write(JSON.stringify({type: 'agents-result', request: action.request,
-      facts: failWrite && 'enabled' in action ? {error: 'config_write_failed'} : {saved,t3Saved,t3Configured:false}}) + '\n');
+      facts: failWrite && 'enabled' in action ? {error: 'config_write_failed'} : {saved,t3Saved,t3Configured:false,autoPasteSaved,autoPasteSupported:process.platform==='linux'}}) + '\n');
   };
   createInterface({input: application.stdout}).on('line', line => {
     try {
@@ -65,6 +66,20 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     }
     reply(held!); held = undefined; holdRead = false;
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
+    const autoToggle=page.getByRole('switch',{name:'Auto paste',exact:true});
+    await expect(autoToggle).toHaveAttribute('aria-checked','false');
+    if(process.platform==='linux') {
+      failWrite=true; await autoToggle.click();
+      await expect(page.getByRole('alert')).toContainText('Unable to save');
+      await expect(autoToggle).toBeDisabled(); failWrite=false;
+      await page.getByRole('button',{name:'Refresh preference'}).click();
+      await expect(autoToggle).toBeEnabled();
+      await autoToggle.focus(); await page.keyboard.press('Space');
+      await expect(autoToggle).toHaveAttribute('aria-checked','true');
+      assert.equal(actions.at(-1)?.setting,'autoPaste'); assert.equal(saved,null);
+      if(process.env.APPARENT_AGENTS_PROOF) await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,'auto-paste-on.png')});
+      await autoToggle.click(); await expect(autoToggle).toHaveAttribute('aria-checked','false');
+    } else await expect(autoToggle).toBeDisabled();
     const t3Toggle=page.getByRole('switch',{name:'Send recordings to T3'});
     await expect(t3Toggle).toHaveAttribute('aria-checked','false');
     await t3Toggle.click();await expect(t3Toggle).toHaveAttribute('aria-checked','true');
@@ -125,7 +140,7 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
             });
             return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722;
           };
-          return [...document.querySelectorAll('.settings-agents h2, .settings-agents .settings-metadata, .settings-agent-command, .settings-agents button')].map(element => {
+          return [...document.querySelectorAll('.settings-agents h2, .settings-agents h3, .settings-agents .settings-metadata, .settings-agent-command, .settings-agents button')].map(element => {
             // Chromium resolves CSS color-mix/oklab and alpha compositing;
             // parsing their numeric components as 8-bit RGB is incorrect.
             const canvas = new OffscreenCanvas(1, 1);
@@ -140,7 +155,7 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
           });
         });
         assert.ok(contrasts.every(value => value >= 4.5), `Text contrast: ${contrasts.join(', ')}`);
-        await page.getByRole('button', {name: 'Copy command', exact: true}).scrollIntoViewIfNeeded();
+        await page.getByRole('heading', {name: 'Labs', exact: true}).scrollIntoViewIfNeeded();
         if (process.env.APPARENT_AGENTS_PROOF) {
           await fs.mkdir(process.env.APPARENT_AGENTS_PROOF, {recursive: true});
           await page.screenshot({path: path.join(process.env.APPARENT_AGENTS_PROOF, `agents-${width}-${colorScheme}.png`)});
