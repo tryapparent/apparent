@@ -95,6 +95,17 @@ class LocatorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.gui.find_phrase(words, 'Updates')
 
+    def test_loading_heading_ignores_decorative_glyphs_but_not_words_or_duplicates(self):
+        words = [{'text': text, 'left': x, 'top': 10, 'width': width, 'height': 18,
+                  'block_num': 1, 'par_num': 1, 'line_num': 1}
+                 for text, x, width in [('C', 10, 20), ('Checking', 38, 75), ('for', 120, 25), ('updates', 152, 65)]]
+        for glyph in ['C', 'U', 'O', '0']:
+            self.assertEqual(self.gui.find_loading_heading([dict(words[0], text=glyph), *words[1:]]), (127, 19))
+        with self.assertRaises(self.gui.PhraseMatchError):
+            self.gui.find_loading_heading([dict(words[0], text='Almost'), *words[1:]])
+        with self.assertRaises(self.gui.PhraseMatchError):
+            self.gui.find_loading_heading(words + [dict(word, line_num=2, top=50) for word in words])
+
     def test_ocr_preprocessing_removes_outline_but_preserves_short_text_strokes(self):
         from PIL import Image, ImageDraw
         image = Image.new('L', (90, 70), 20)
