@@ -20,14 +20,17 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
   const exited = new Promise<void>(resolve => application.once('exit', () => resolve()));
   const actions: Record<string, unknown>[] = [];
   let saved: boolean | null = null;
+  let t3Saved:boolean|null=null;
   let failWrite = false;
   let holdWrite = false;
   let holdRead = true;
   let held: Record<string, unknown> | undefined;
   const reply = (action: Record<string, unknown>) => {
-    if ('enabled' in action && !failWrite) saved = action.enabled as boolean;
+    if ('enabled' in action && !failWrite) {
+      if(action.setting==='t3')t3Saved=action.enabled as boolean;else saved=action.enabled as boolean;
+    }
     application.stdin.write(JSON.stringify({type: 'agents-result', request: action.request,
-      facts: failWrite && 'enabled' in action ? {error: 'config_write_failed'} : {saved}}) + '\n');
+      facts: failWrite && 'enabled' in action ? {error: 'config_write_failed'} : {saved,t3Saved,t3Configured:false}}) + '\n');
   };
   createInterface({input: application.stdout}).on('line', line => {
     try {
@@ -62,6 +65,12 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     }
     reply(held!); held = undefined; holdRead = false;
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
+    const t3Toggle=page.getByRole('switch',{name:'Send recordings to T3'});
+    await expect(t3Toggle).toHaveAttribute('aria-checked','false');
+    await t3Toggle.click();await expect(t3Toggle).toHaveAttribute('aria-checked','true');
+    assert.equal(saved,null);assert.equal(actions.at(-1)?.setting,'t3');
+    await expect(page.getByText(/Create a pairing link in T3/)).toBeVisible();
+    await t3Toggle.click();await expect(t3Toggle).toHaveAttribute('aria-checked','false');
     await expect(page.getByRole('button', {name: 'Agents', exact: true})).toHaveAttribute('aria-current', 'page');
     holdWrite = true;
     await toggle.focus(); await page.keyboard.press('Space');
@@ -170,7 +179,7 @@ test('Agents clipboard failures recover and bridge refuses foreign frames or arb
         [{sender, senderFrame: sender.mainFrame}, ['arbitrary text']]] as const) {
         try { await handler(event, ...args); return false; } catch {}
       }
-      clipboard.writeText = () => { throw Error('Synthetic clipboard unavailable'); };
+      clipboard.writeText = async () => { throw Error('Synthetic clipboard unavailable'); };
       return true;
     }), true);
     await page.getByRole('button', {name: 'Copy command', exact: true}).click();

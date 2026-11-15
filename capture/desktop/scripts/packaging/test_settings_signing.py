@@ -24,6 +24,7 @@ class SigningTests(unittest.TestCase):
                              "dist/src/installer/index.html", "dist/pill/index.html",
                              "dist/assets/controls.js", "node_modules/electron/dist/electron",
                              "electron/pill/native/window.node",
+                             "electron/pill/t3.cjs",
                              "electron/record-media/worker.js", "electron/record-media/policy.js",
                              "electron/record-media/node_modules/@apparent/engine-sdk/dist/index.js",
                              "electron/record-media/native/apparent-engine-media",
@@ -68,6 +69,7 @@ class SigningTests(unittest.TestCase):
                 self.assertTrue((destination / "app" / relative).is_file(), relative)
             self.assertEqual((destination / "app/electron/installer/ui/src/installer/index.html").read_text(), "dist/src/installer/index.html")
             self.assertEqual((destination / "app/dist/pill/index.html").read_text(), "dist/pill/index.html")
+            self.assertEqual((destination / "app/electron/pill/t3.cjs").read_text(), "electron/pill/t3.cjs")
             for name in ("presentation", "hyprland", "selection"):
                 relative = f"dist/onboarding-{name}.cjs"
                 self.assertEqual((destination / "app" / relative).read_text(), relative)

@@ -23,6 +23,7 @@ impl ApparentCoordinator {
     pub(in crate::capture::desktop) fn receive_capture_result(
         &mut self,
         generation: u64,
+        allow_t3: bool,
         #[cfg(any(target_os = "macos", target_os = "linux"))] finishing_id: Option<&str>,
         finalized: CaptureResult,
         on_completed: impl FnOnce(&std::path::Path),
@@ -47,6 +48,12 @@ impl ApparentCoordinator {
         // admission rechecks current consent; failed takes stay local.
         if let Ok((dir, _, _)) = &finalized {
             on_completed(dir);
+        }
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        if allow_t3 && let Some(session) = &mut self.electron_pill {
+            let text = finalized.as_ref().ok().map(|(dir, bundle, _)|
+                crate::shared::handoff::clipboard_summary(bundle, dir));
+            session.complete(generation, text);
         }
         if !self.accepts_capture_result(generation) {
             return;

@@ -14,8 +14,24 @@ function contains(point,bounds){
  const edge=inset(Math.floor(y),bounds.width,bounds.height);
  return x>=edge&&x<bounds.width-edge;
 }
+// Separate notification capsules leave real click-through space between them.
+// Regions come from main's own trusted document measurement, never an IPC size.
+function regionShape(regions){
+ return regions.flatMap(rect=>Array.from({length:Math.ceil(rect.height)},(_,row)=>{
+  const edge=inset(row,rect.width,rect.height,rect.radius);
+  return {x:Math.ceil(rect.x+edge),y:Math.floor(rect.y+row),width:Math.max(1,Math.floor(rect.width-2*edge)),height:1};
+ }));
+}
+function containsRegions(point,regions){
+ return regions.some(rect=>{
+  const x=point.x-rect.x,y=point.y-rect.y;
+  if(y<0||y>=rect.height)return false;
+  const edge=inset(Math.floor(y),rect.width,rect.height,rect.radius);
+  return x>=edge&&x<rect.width-edge;
+ });
+}
 function clamp(bounds,area){
  return {x:Math.min(Math.max(bounds.x,area.x),area.x+Math.max(0,area.width-bounds.width)),
  y:Math.min(Math.max(bounds.y,area.y),area.y+Math.max(0,area.height-bounds.height))};
 }
-module.exports={shape,contains,clamp};
+module.exports={shape,contains,regionShape,containsRegions,clamp};

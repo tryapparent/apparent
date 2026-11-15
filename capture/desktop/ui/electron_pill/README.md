@@ -103,3 +103,52 @@ focus, stacking, dragging, capture visibility and actual Paste delivery.
 
 Native acceptance must use the exact packaged candidate in isolated Linux and
 macOS environments. Synthetic renderer checks do not establish that acceptance.
+
+## T3 destinations
+
+Settings → Agents → **Send recordings to T3** is explicitly off by default.
+When enabled and paired, processing/completion replaces Paste with the approved
+destination capsule. New thread is the default; the first Down opens the list
+and highlights the first existing thread. Up/Down, Home/End, wheel and touch
+navigate three visible rows. Escape closes without confirming; Enter or a row
+click confirms. Settled, archived, deleted and subagent threads are excluded.
+Server ordering preserves pins/manual positions, then active and snoozed shelves;
+client-only project ordering and visibility are unavailable through this API.
+New threads use the last confirmed project's defaults, or the first project
+before any confirmation. The selected project's name is available in the control's
+accessible label and tooltip. A configured `t3.projectId` overrides that fallback.
+
+Desktop's TypeScript main-process controller owns selection, transport and durable
+receipts. The renderer receives only public thread titles, project labels and
+handoff state. Rust provides a process-namespaced capture identity, eligibility
+(practice captures are excluded) and the exact standard handoff on finalization,
+including after dismissal or a newer capture. Confirmation while processing
+freezes the destination and dispatches when that capture is ready; browsing does
+not arm a handoff. Close hides the picker without cancelling confirmed work;
+Cancel handoff is available before submission starts.
+
+On Linux the ordinary non-focusable controls and keyboard picker require different
+constructor roles. Main replaces the window using the same renderer and retains
+the donor until the replacement commits. Rust re-admits its exact ID, capture
+exclusion and compositor rule before sending an ID-bound activation. Old activation
+acknowledgements cannot admit a newer window. Returning to recording restores the
+non-focusable role; the off route retains its original window and focus behavior.
+macOS keeps its existing keyboard-eligible nonactivating panel.
+
+The controller uses T3's authenticated shell and Effect WebSocket RPC, without a
+T3 patch. Existing messages use normal auto delivery; new threads honor project
+model/workspace and environment runtime defaults. Credentials stay in main.
+Private atomic `t3-handoffs` receipts beside the config retain stable command,
+message and new-thread IDs. A missing acknowledgement is uncertain; manual Retry
+reuses those IDs. Copy instead writes the exact prepared handoff and waits for
+clipboard readback. Successful receipts drop their copy of the handoff text.
+Renderer reloads retain main-process work; a whole-app restart restores receipts,
+but cannot resume a finalizer that no longer exists. Native failure/Glass routes
+retain ordinary Paste. Turning the setting off restores Paste for the next take
+without erasing receipts or cancelling confirmed work. Removal requires accepted
+replacement of the controller, its private completion channel and both platform
+consumers together; there is no competing native selection policy.
+
+`tests/pill/t3/controller.test.ts` exercises isolated HTTP/WebSocket providers and receipts;
+`tests/pill/t3/destination.smoke.cts` drives the actual built Electron renderer, main and
+clipboard. These do not establish a real T3 mutation or native capture acceptance.
