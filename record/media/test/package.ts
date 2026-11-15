@@ -5,6 +5,7 @@ import {createHash} from 'node:crypto';
 import {chmodSync, copyFileSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
+import {qualifyAudioIngestion} from './audio-package.ts';
 
 const args = process.argv.slice(2);
 assert([4, 6].includes(args.length)); assert.equal(args[0], '--binary'); assert.equal(args[2], '--settings');
@@ -117,6 +118,7 @@ try {
     assert.equal(pixels.length,48*64*4); const center=(32*48+24)*4;
     assert(pixels[center+2]>pixels[center]+40,'decoded phone frame stays blue beneath annotations');
   }
+  const audioProof = qualifyAudioIngestion({binary, sourceBundle: markedOut, root, home, runtimeDirectory});
   // Screen recovery/reprocessing has a distinct explicit-frame provider from
   // phone ingestion. Exercise its real packaged caller and nonzero movie offset.
   const screen = join(root, 'screen.apparent'), recovered = join(root, 'screen-rebuilt.apparent');
@@ -173,6 +175,7 @@ try {
     copyFileSync(join(recovered,'apparent.json'),join(resolve(args[5]),'record-screen.json'));
     copyFileSync(join(recovered,'summary.md'),join(resolve(args[5]),'record-screen-summary.md'));
     copyFileSync(join(longOutput,longBundle.contactSheet),join(resolve(args[5]),'record-full-page-sheet.png'));
+    writeFileSync(join(resolve(args[5]),'record-audio-proof.json'),JSON.stringify(audioProof,null,2),{mode:0o600});
   }
   console.log('Packaged Record/Engine worker and CLI exported and ingested rotated media; decoded keyframes and source preservation verified.');
 } finally { rmSync(root, {recursive: true, force: true}); }

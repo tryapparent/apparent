@@ -2,7 +2,7 @@
 //! from the phone's own video, never from a screenshot of the mirror window.
 
 use std::collections::BTreeMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -543,11 +543,24 @@ pub fn build_movie_bundle(
             Ok((probe, res, t0.elapsed().as_millis() as u64, false, None))
         });
         let audio_started = Instant::now();
-        let exported = helper::export_audio(&capture.movie, &wav).and_then(|()| {
-            crate::capture::engine::runtime::audio::audio::recorded_audio_from_wav(std::fs::read(
-                &wav,
-            )?)
-        });
+        let exported = (|| {
+            // Both native writers overwrite this held private file. Validate the
+            // WAV before publishing it; failures drop only the owned temporary.
+            // Inheriting a group-writable umask must not invalidate the bundle.
+            let mut staged = tempfile::Builder::new()
+                .prefix(".audio-export-")
+                .suffix(".wav")
+                .tempfile_in(bundle_dir)?;
+            helper::export_audio(&capture.movie, staged.path())?;
+            let mut bytes = Vec::new();
+            staged.as_file_mut().read_to_end(&mut bytes)?;
+            let audio =
+                crate::capture::engine::runtime::audio::audio::recorded_audio_from_wav(bytes)?;
+            staged
+                .persist(&wav)
+                .context("Could not publish extracted audio")?;
+            Ok::<_, anyhow::Error>(audio)
+        })();
         let audio_ms = audio_started.elapsed().as_millis() as u64;
         let (audio, audio_err) = match exported {
             Ok(a) => (Some(a), None),

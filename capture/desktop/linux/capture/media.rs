@@ -718,23 +718,37 @@ fn audio_samples(movie: &Path) -> Result<(u64, Vec<f32>)> {
     pipeline.set_state(gst::State::Playing)?;
     let mut samples: Vec<f32> = Vec::new();
     let mut first_ms = None;
-    while let Some(sample) = sink.try_pull_sample(gst::ClockTime::from_seconds(10)) {
-        let Some(buffer) = sample.buffer() else {
-            continue;
-        };
-        if first_ms.is_none() {
-            let start = buffer.pts().map_or(0, gst::ClockTime::mseconds);
-            first_ms = Some(start);
-            samples.resize((start * 16) as usize, 0.0);
+    let decoded = (|| -> Result<_> {
+        while let Some(sample) = sink.try_pull_sample(gst::ClockTime::from_seconds(10)) {
+            let Some(buffer) = sample.buffer() else {
+                continue;
+            };
+            if first_ms.is_none() {
+                // Raw PTS is media time; the segment applies the movie's edit list,
+                // including a leading empty edit before the first audio sample.
+                let start = buffer
+                    .pts()
+                    .and_then(|pts| {
+                        sample
+                            .segment()?
+                            .downcast_ref::<gst::ClockTime>()?
+                            .to_stream_time(pts)
+                    })
+                    .context("Audio has no movie presentation time")?
+                    .mseconds();
+                first_ms = Some(start);
+                samples.resize((start * 16) as usize, 0.0);
+            }
+            let map = buffer.map_readable()?;
+            samples.extend(
+                map.chunks_exact(4)
+                    .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])),
+            );
         }
-        let map = buffer.map_readable()?;
-        samples.extend(
-            map.chunks_exact(4)
-                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])),
-        );
-    }
+        Ok((first_ms.unwrap_or(0), samples))
+    })();
     let _ = pipeline.set_state(gst::State::Null);
-    Ok((first_ms.unwrap_or(0), samples))
+    decoded
 }
 
 /// Mixes a movie's audio to 16 kHz mono WAV, aligned to the movie's start.
