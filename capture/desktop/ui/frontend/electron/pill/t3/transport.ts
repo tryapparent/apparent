@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 export type Connection={origin:string;token:string;expiresAt:number;projectId?:string};
 export function connection(value:unknown):Connection|null{
  if(!value||typeof value!=='object')return null;const c=value as Connection;
- try{const u=new URL(c.origin);if(u.origin!==c.origin||u.username||u.password||!(u.protocol==='https:'||u.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(u.hostname))||typeof c.token!=='string'||!c.token||c.token.length>8192||!Number.isFinite(c.expiresAt))return null;return c;}catch{return null;}
+ try{const u=new URL(c.origin);if(u.origin!==c.origin||u.username||u.password||!(u.protocol==='https:'||u.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(u.hostname))||typeof c.token!=='string'||!c.token||c.token.length>8192||(!Number.isFinite(c.expiresAt)||c.expiresAt<=Date.now()))return null;return c;}catch{return null;}
 }
 export class Transport{
  readonly config:Connection;

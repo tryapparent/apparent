@@ -1173,6 +1173,7 @@ pub(crate) fn external_record_owned(kind: ShortcutKind) -> bool {
 pub enum Action {
     Navigate { pane: Pane },
     AgentsPreference { request: u32, enabled: Option<bool>, #[serde(default)] setting: Option<String> },
+    AgentsConnection { request: u32, connection: Option<super::agents::Connection> },
     #[cfg(target_os = "linux")]
     Storage { command: super::storage::Command },
     Connect { command: super::connect::Command },
@@ -1429,7 +1430,7 @@ impl Panel {
                     Effect::None
                 }
             }
-            Action::Navigate { .. } | Action::AgentsPreference { .. } => Effect::None, // Session owns presentation routing.
+            Action::Navigate { .. } | Action::AgentsPreference { .. } | Action::AgentsConnection { .. } => Effect::None, // Session owns presentation routing.
             Action::ShowCaptures => Effect::ShowCaptures,
             Action::CheckForUpdates => {
                 if cfg!(target_os = "linux") && self.update_check.checking {
@@ -2088,6 +2089,12 @@ impl Session {
             Event::Action(Action::AgentsPreference { request, enabled, setting }) => {
                 if self.electron && self.pane == Some(Pane::Agents) {
                     self.send(&super::agents::request_for(&host.config_path(), request, enabled, setting.as_deref()));
+                }
+                Effect::None
+            }
+            Event::Action(Action::AgentsConnection { request, connection }) => {
+                if self.electron && self.pane == Some(Pane::Agents) {
+                    self.send(&super::agents::connection_request(&host.config_path(), request, connection));
                 }
                 Effect::None
             }

@@ -364,3 +364,13 @@ fn saved_notes_are_recording_only_and_admitted_by_revision() {
     snapshot.pres = Pres::Processing;
     assert_eq!(View::new(&snapshot, 8, true).with_notes(12).note_count, 0);
 }
+
+#[test]
+fn agents_setup_navigation_is_revision_bound_and_never_admitted_during_capture() {
+    let snapshot = snapshot(Pres::Processing);
+    let view = View::new(&snapshot, 9, false);
+    assert!(matches!(view.admit(command(9, "settings-agents")), Some(PillAction::SettingsAgents)));
+    assert!(view.admit(command(8, "settings-agents")).is_none());
+    let mut recording = view.clone(); recording.phase = "recording";
+    assert!(recording.admit(command(9, "settings-agents")).is_none());
+}

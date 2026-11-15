@@ -16,3 +16,4 @@ test-results/
 
 /electron/record-media/
 /electron/agent-media/
+/tests/settings/agents/parent.cjs

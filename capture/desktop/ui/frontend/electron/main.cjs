@@ -95,6 +95,10 @@ const about = settings && process.argv.includes('--settings-about');
 const agents = settings && process.argv.includes('--settings-agents') && !about;
 const settingsHash = about ? '#about' : agents ? '#agents' : '';
 const { AgentsPreferences, skillCommand, preferenceFacts } = require('./settings/agents.cjs');
+const {PairingLinks} = require('./settings/t3.cjs');
+const pairingLinks = new PairingLinks();
+let t3Approval;
+let pairingPreviewVersion=0;
 const agentsPreferences = new AgentsPreferences(message => {
   if (!agents || !process.argv.includes('--settings-parent')) throw new Error('Agents parent unavailable');
   process.stdout.write(JSON.stringify(message) + '\n');
@@ -118,7 +122,7 @@ app.whenReady().then(() => {
     ...(settings ? { paintWhenInitiallyHidden: true } : {}),
     width: settings ? 720 : 920, height: settings ? 530 : 760,
     minWidth: 640, minHeight: settings ? 530 : 620,
-    ...(settings ? require('./settings/frame.cjs').settingsWindowOptions(process.platform) : {}),
+    ...(settings ? require('./settings/frame.cjs').settingsWindowOptions(process.platform,agents) : {}),
     title: settings ? 'Apparent Settings' : 'Apparent — UI foundation',
     backgroundColor: followWindowTheme.backgroundColor(nativeTheme),
     webPreferences: {
@@ -241,6 +245,33 @@ app.whenReady().then(() => {
     if (!agents) throw new Error('Unavailable outside Agents');
     return clipboard.writeText(skillCommand);
   });
+  ipcMain.handle('apparent:agents-t3-preview', async (event, ...args) => {
+    validate(event,args);
+    if (!agents || !process.argv.includes('--settings-parent') || t3Approval) throw Error('T3 connection unavailable');
+    const version=++pairingPreviewVersion;pairingLinks.clear();
+    try { const link=await clipboard.readText();if(settingsClosing||version!==pairingPreviewVersion)throw Error('Preview cancelled');return {preview:pairingLinks.preview(link)}; }
+    catch { return {error:'Copy a full pairing link from T3, then paste it here.'}; }
+  });
+  ipcMain.handle('apparent:agents-t3-connect', async (event, ...args) => {
+    validate(event, []);
+    if (!agents || !process.argv.includes('--settings-parent') || args.length!==1 || typeof args[0]!=='string' || t3Approval) throw new Error('T3 connection unavailable');
+    const approval=new AbortController();t3Approval=approval;
+    let persisting=false;
+    try {
+      const connection=await pairingLinks.connect(args[0], approval.signal);
+      if(settingsClosing||approval.signal.aborted)throw Error('T3 connection cancelled');
+      persisting=true;return {facts:await agentsPreferences.storeConnection(connection)};
+    } catch(error) {
+      return {reason:persisting?'unconfirmed':approval.signal.aborted?'cancelled':'unavailable'};
+    } finally {if(t3Approval===approval)t3Approval=undefined;}
+  });
+  ipcMain.handle('apparent:agents-t3-cancel', (event, ...args) => {
+    validate(event,args);if(!agents)throw Error('T3 connection unavailable');++pairingPreviewVersion;pairingLinks.clear();t3Approval?.abort();
+  });
+  ipcMain.handle('apparent:agents-t3-disconnect', (event, ...args) => {
+    validate(event,args);if(!agents||!process.argv.includes('--settings-parent')||t3Approval)throw Error('T3 connection unavailable');
+    return agentsPreferences.storeConnection(null);
+  });
   ipcMain.handle('apparent:navigate-settings', (event, ...args) => {
     validate(event, []);
     const destinations = ['general', 'recording', 'permissions', 'agents', 'storage', 'about'].filter(pane => pane !== (about ? 'about' : agents ? 'agents' : 'storage'));
@@ -253,7 +284,7 @@ app.whenReady().then(() => {
     process.stdout.write(`${JSON.stringify({ action: 'show-captures' })}\n`);
   });
   if (settings) {
-    const closeSettings = () => { settingsClosing = true; agentsPreferences.close(); clearTimeout(startupTimer); app.quit(); };
+    const closeSettings = () => { settingsClosing = true; ++pairingPreviewVersion; pairingLinks.clear(); t3Approval?.abort(); agentsPreferences.close(); clearTimeout(startupTimer); app.quit(); };
     // A parent can exit before Chromium closes its child. Retire quietly when
     // its output pipe breaks instead of opening Electron's error dialog.
     process.stdout.on('error', error => { if (error.code === 'EPIPE') closeSettings(); else failSettings(); });
