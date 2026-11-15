@@ -90,6 +90,11 @@ proof and rollback. Bundle ingestion/recovery and retention's size observation
 also consume Record's container-clock metadata contract. Both platforms' replaced
 Desktop probes and the Swift helper probe command are removed.
 
+Agent zoom and Record's explicit assembly/recovery frames also consume the
+published frame capability through their own headless TypeScript workers.
+Application composition shares finite-process/private-pixel safety mechanisms;
+the owners retain their respective bundle-clock interpretation and artifact pins.
+
 This is bounded adoption, not completed application separation. Capture, native
 rendering, phone capture, frame/audio decoding and retention mutation still use
 the authoritative legacy runtime. Producer changes do not
