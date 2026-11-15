@@ -38,7 +38,7 @@ test('saved image warnings preserve finalized facts without implying decoder or 
   assert.deepEqual(copiedState.notifications,decision.state.notifications);
   const manual = reduce(reduce(begin({...withWarning,automaticTrialEnabled:true},true),saved).state,copied);
   assert.deepEqual(manual.state.notifications[0],decision.state.notifications[0]);
-  assert.equal(manual.state.notifications[1]?.title,'Draft paste skipped');
+  assert.equal(manual.state.notifications[1]?.title,'Check auto paste');
   for (const state of [begin(withWarning,false), begin({...withWarning,platform:'macos'},true),
     reduce(begin(withWarning,true),{type:'disconnect'}).state]) {
     assert.deepEqual(reduce(state,saved).state.notifications,[]);
@@ -86,13 +86,13 @@ test('disconnect/reconnect replays facts without repeating a potentially complet
   const disconnected = reduce(begin(context,true),{type:'disconnect'}).state;
   assert.deepEqual(reduce(disconnected,saved).effects,[]);
 });
-test('blocked automatic trial is text-only and manual; other existing paths use bundle capability',()=>{
+test('auto paste is opt-in and Linux Hyprland only; other paths keep bundle copy',()=>{
   const enabled = {...context,automaticTrialEnabled:true};
   const manual = reduce(begin(enabled,true),saved);
-  assert.equal(manual.effects[0]?.mode,'text');
-  assert.equal(reduce(manual.state,copied).state.status,'Saved · paste manually');
+  assert.equal(manual.effects[0]?.mode,'autoPaste');
+  assert.equal(reduce(manual.state,copied).state.status,'Saved · check paste');
   for(const change of [{agentRequested:true},{lab:true},{hyprland:false},{wayland:false},{source:'phone' as const},{platform:'macos' as const}]) {
     assert.equal(reduce(begin({...enabled,...change},true),saved).effects[0]?.mode,'bundle');
   }
-  assert.ok(manual.effects.every(e => e.type === 'copy'),'no automatic paste/send capability');
+  assert.ok(manual.effects.every(e => e.type === 'copy'),'one admitted completion capability');
 });
