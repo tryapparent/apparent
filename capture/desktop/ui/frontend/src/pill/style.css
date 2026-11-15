@@ -39,7 +39,7 @@ body { font-family:'Host Grotesk',system-ui,sans-serif; }
 @media(prefers-reduced-motion:reduce){.pill * { animation:none!important;transition:none!important; }}
 .pill[data-reduced=true] * { animation:none!important;transition:none!important; }
 
-.warning,.notice,[role=alert] { max-width:300px;font-size:16px;line-height:22px;padding:4px 8px;overflow-wrap:anywhere; }
+.warning,.notice,.pill-row [role=alert] { max-width:300px;font-size:16px;line-height:22px;padding:4px 8px;overflow-wrap:anywhere; }
 .warning { color:var(--apparent-foreground); }
 
 /* The main row never participates in count layout. Reserve native footprint,
