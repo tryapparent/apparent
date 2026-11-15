@@ -12,6 +12,17 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[derive(Debug)]
+pub(crate) struct WorkerExitError {
+    pub(crate) code: Option<i32>,
+}
+impl std::fmt::Display for WorkerExitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Headless worker failed")
+    }
+}
+impl std::error::Error for WorkerExitError {}
+
 pub(crate) fn assets(
     label: &str,
     package: &str,
@@ -154,7 +165,12 @@ pub(crate) fn run(command: &mut Command, timeout: Duration) -> Result<Vec<u8>> {
             let status = running.child.wait();
             running.armed = false;
             let status = status?;
-            ensure!(status.success(), "Headless worker failed");
+            if !status.success() {
+                return Err(WorkerExitError {
+                    code: status.code(),
+                }
+                .into());
+            }
             return Ok(output);
         }
         if eof {
@@ -205,7 +221,11 @@ mod tests {
         );
         let mut failed = Command::new("/bin/sh");
         failed.args(["-c", "printf partial; exit 7"]);
-        assert!(run(&mut failed, Duration::from_secs(2)).is_err());
+        let error = run(&mut failed, Duration::from_secs(2)).unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<WorkerExitError>().unwrap().code,
+            Some(7)
+        );
     }
     #[test]
     fn reader_and_descendant_cannot_hold_the_parent_past_its_deadline() {

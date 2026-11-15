@@ -1,4 +1,4 @@
-import {decodeMovieFrames} from '@apparent/engine-sdk';
+import {decodeMovieFrames, EngineFrameError} from '@apparent/engine-sdk';
 import {basename} from 'node:path';
 import {movieTimes, bundleTimesForFrames} from './policy.ts';
 
@@ -19,8 +19,8 @@ try {
     requestIndex: frame.requestIndex, requestedMs: labels[index], actualMovieMs: frame.actualMs,
     width: frame.width, height: frame.height, file: basename(frame.file),
   }))}) + '\n');
-} catch {
+} catch (error) {
   // Preserve the Engine SDK's diagnostic/path redaction at the product boundary.
   process.stderr.write('Agent could not decode the requested movie frames\n');
-  process.exitCode = 1;
+  process.exitCode = error instanceof EngineFrameError && error.code === 'resource_limit' ? 72 : 1;
 }

@@ -1,8 +1,8 @@
 // The real packaged CLI must adopt the worker, not merely ship unused files.
 import assert from 'node:assert/strict';
-import {execFileSync} from 'node:child_process';
+import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
+import {copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 
@@ -12,7 +12,7 @@ if (args.length === 6) assert.equal(args[4], '--proof-dir');
 const binary = resolve(args[1]), settings = resolve(args[3]);
 const runtime = join(settings, 'runtime', process.platform === 'darwin' ? 'Electron.app/Contents/MacOS/Electron' : 'electron');
 const app = join(settings, 'app/electron/agent-media');
-const root = mkdtempSync(join(tmpdir(), 'apparent-dev-agent-package-'));
+const root = realpathSync(mkdtempSync(join(tmpdir(), 'apparent-dev-agent-package-')));
 try {
   const bundle = join(root, 'synthetic.apparent'), home = join(root, 'home'), temporary = join(root, 'temporary');
   for (const directory of [bundle, home, temporary]) mkdirSync(directory, {mode: 0o700});
@@ -21,6 +21,12 @@ try {
     XDG_DATA_HOME: join(home, 'data'), TMPDIR: temporary, DISPLAY: '', WAYLAND_DISPLAY: '', DBUS_SESSION_BUS_ADDRESS: '', APPIMAGE_EXTRACT_AND_RUN: '1'};
   const run = (command: string, argv: string[]) => execFileSync(command, argv, {env, encoding: 'utf8', timeout: 90_000, maxBuffer: 1024 * 1024});
   const ffmpeg = ['-v', 'error', '-nostdin', '-y'];
+  const assertTemporaryClean = () => {
+    for (const entry of readdirSync(temporary)) {
+      assert(/^appimage_extracted_[0-9a-f]{32}$/.test(entry) && lstatSync(join(temporary, entry)).isDirectory(),
+        'owned raw frame directories must be removed before return');
+    }
+  };
   run('ffmpeg', [...ffmpeg, '-f', 'lavfi', '-i',
     'color=c=red:s=320x240:r=30:d=2,drawbox=x=160:y=0:w=160:h=240:color=blue:t=fill',
     '-c:v', 'libx264', '-threads', '1', '-g', '30', '-bf', '3', '-pix_fmt', 'yuv420p', movie]);
@@ -63,15 +69,56 @@ try {
     }
     // extract-and-run keeps its runtime cache between CLI invocations. It is
     // distinct from the adapter's owned apparent-frames-* pixel directories.
-    for (const entry of readdirSync(temporary)) {
-      assert(/^appimage_extracted_[0-9a-f]{32}$/.test(entry) && lstatSync(join(temporary, entry)).isDirectory(),
-        'owned raw frame directories must be removed before return');
-    }
+    assertTemporaryClean();
     if (args.length === 6) {
       mkdirSync(resolve(args[5]), {recursive: true, mode: 0o700});
       copyFileSync(png, join(resolve(args[5]), full ? 'full.png' : 'cropped.png'));
     }
   }
+  // Per-child executable search excludes FFmpeg, selecting the actual native
+  // fallback. Preserve system tools needed by AppImage's extract-and-run host.
+  const search = join(root, 'without-ffmpeg'); mkdirSync(search,{mode:0o700});
+  const linked = new Set<string>();
+  for (const directory of ['/usr/bin','/bin']) {
+    if (!existsSync(directory)) continue;
+    for (const name of readdirSync(directory)) {
+      if (name !== 'ffmpeg' && !linked.has(name)) {
+        symlinkSync(join(directory,name),join(search,name)); linked.add(name);
+      }
+    }
+  }
+  const fallbackEnv = {...env,PATH:search};
+  assert.equal((spawnSync('ffmpeg',['-version'],{env:fallbackEnv}).error as NodeJS.ErrnoException)?.code,'ENOENT');
+  const observations: {fps:number; elapsedMs:number}[] = [];
+  const range = (fps: number) => {
+    const started = performance.now();
+    const paths = execFileSync(binary,['frames',bundle,'--from','0','--to','2.5','--fps',String(fps)],
+      {env:fallbackEnv,encoding:'utf8',timeout:90_000,maxBuffer:1024*1024}).trim().split('\n');
+    observations.push({fps,elapsedMs:Math.round(performance.now()-started)});
+    return paths;
+  };
+  const many = range(20); assert.equal(many.length,51,'fallback must span more than one SDK request');
+  assert.equal(many[0],join(bundle,'zoom/range-0-2500/frame-001.png'));
+  assert.equal(many[50],join(bundle,'zoom/range-0-2500/frame-051.png'));
+  if (args.length === 6) {
+    copyFileSync(many[0],join(resolve(args[5]),'range-first.png'));
+    copyFileSync(many[50],join(resolve(args[5]),'range-last.png'));
+  }
+  for (const file of [many[0],many[50]]) {
+    const decoded = JSON.parse(run('ffprobe',['-v','error','-show_streams','-of','json',file])).streams[0];
+    assert.deepEqual([decoded.width,decoded.height],[320,240]);
+    const pixels = execFileSync('ffmpeg',[...ffmpeg,'-i',file,'-f','rawvideo','-pix_fmt','rgba','-'],{env,maxBuffer:1024*1024});
+    for (const [x,channel] of [[80,0],[240,2]]) {
+      const at = (120*320+x)*4;
+      assert(pixels[at+channel] > pixels[at+2-channel]+40);
+    }
+  }
+  const retained = join(bundle,'zoom/range-0-2500/keep.txt'); writeFileSync(retained,'unrelated output');
+  const fewer = range(1); assert.equal(fewer.length,3);
+  assert.deepEqual(readdirSync(join(bundle,'zoom/range-0-2500')).sort(),['frame-001.png','frame-002.png','frame-003.png','keep.txt']);
+  assert.equal(readFileSync(retained,'utf8'),'unrelated output');
+  assertTemporaryClean();
+  console.log('Synthetic range fallback observations (not a controlled benchmark): '+JSON.stringify(observations));
   assert.equal(hash(movie), sourceHash); assert.equal(hash(manifest), manifestHash);
-  console.log('Packaged Agent/Engine worker and both real zoom callers verified: offset identities, crop association, pixels, cleanup and source preservation.');
+  console.log('Packaged Agent/Engine zoom and native range fallback verified: indexed times, pixels, batching, stale-output cleanup and source preservation.');
 } finally { rmSync(root, {recursive: true, force: true}); }

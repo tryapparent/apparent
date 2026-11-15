@@ -60,12 +60,12 @@ test('real headless worker returns display-oriented private pixels and stages on
   assert.equal(hash(turned), before);
 });
 
-test('failed native request produces no partial reply and preserves SDK diagnostic redaction', () => {
+for (const code of [1,72]) test(`native failure ${code} retains typed status without partial or private output`, () => {
   const provider = join(root, 'synthetic-provider'), sentinel = 'SYNTHETIC_PRIVATE_NATIVE_DIAGNOSTIC';
-  writeFileSync(provider, '#!/bin/sh\nprintf "' + sentinel + '\\n" >&2\nexit 1\n'); chmodSync(provider, 0o700);
+  writeFileSync(provider, '#!/bin/sh\nprintf "' + sentinel + '\\n" >&2\nexit '+code+'\n'); chmodSync(provider, 0o700);
   assert(spawnSync(provider, [], {encoding: 'utf8'}).stderr.includes(sentinel));
   const result = spawnSync(process.execPath, [worker, provider, movie, output(), '0', '0', '0'],
     {encoding: 'utf8', timeout: 10_000, env: {...process.env, ELECTRON_RUN_AS_NODE: '1'}});
-  assert.equal(result.status, 1); assert.equal(result.stdout, '');
+  assert.equal(result.status, code); assert.equal(result.stdout, '');
   assert.equal(result.stderr, 'Agent could not decode the requested movie frames\n');
 });

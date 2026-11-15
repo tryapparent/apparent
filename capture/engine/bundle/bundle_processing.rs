@@ -266,19 +266,6 @@ fn movie_keyframes_with_cache(
     })
 }
 
-/// Legacy Agent range-extraction fallback. Record's assembly/recovery callers
-/// use its published-SDK adapter; retain this until the remaining Agent caller adopts it.
-pub fn movie_frames_at(movie: &Path, times: &[u64], offset_ms: u64, max_edge: u32) -> Result<Vec<RgbaFrame>> {
-    let at: Vec<u64> = times.iter().map(|t| t.saturating_sub(offset_ms)).collect();
-    let mut frames = helper::frames(movie, helper::FrameTimes::At(&at), max_edge)?;
-    for frame in &mut frames {
-        if let Some(i) = (0..at.len()).min_by_key(|&i| at[i].abs_diff(frame.t_ms)) {
-            frame.t_ms = times[i];
-        }
-    }
-    Ok(frames)
-}
-
 /// The durable notes file is authoritative; legacy events survive when it is absent.
 fn merge_capture_notes(directory: &Path, events: &mut Vec<InteractionEvent>) -> Result<()> {
     if !directory.join("notes.json").try_exists()? {
