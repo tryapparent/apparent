@@ -959,6 +959,8 @@ pub struct ApparentCoordinator {
     iphone: Option<PhoneDevice>,
     /// The bundle the Completed island is showing.
     completed_dir: Option<PathBuf>,
+    #[cfg(target_os = "linux")]
+    auto_paste_target: Option<(u64, linux::hyprland::FocusedWindow)>,
     /// The Completed island's lead text.
     completed_note: Option<String>,
     share_online: bool,
@@ -1079,6 +1081,8 @@ impl ApparentCoordinator {
             selected_keyframe: 0,
             iphone: None,
             completed_dir: None,
+            #[cfg(target_os = "linux")]
+            auto_paste_target: None,
             completed_note: None,
             share_online: false,
             share_probe_at: None,
@@ -3957,7 +3961,7 @@ impl ApparentCoordinator {
             platform: if cfg!(target_os = "linux") { "linux" } else { "macos" }.into(),
             source: completion_source.into(),
             agent_requested,
-            automatic_trial_enabled: crate::shared::handoff::experiment("autoPasteDraft"),
+            automatic_trial_enabled: !self.capture_local_practice && crate::shared::handoff::experiment("autoPasteDraft"),
             image_quality_warning: None, // Filled from the finalizer's immutable result.
             lab: self.lab,
             #[cfg(target_os = "linux")]
@@ -3969,6 +3973,12 @@ impl ApparentCoordinator {
             #[cfg(not(target_os = "linux"))]
             wayland: false,
         };
+        #[cfg(target_os = "linux")]
+        {
+            self.auto_paste_target = if completion_facts.automatic_trial_enabled && completion_facts.hyprland && completion_facts.wayland {
+                linux::hyprland::focused_window().ok().map(|target| (generation, target))
+            } else { None };
+        }
         // Freeze practice policy with the worker, independent of window/UI lifetime.
         let local_practice = self.capture_local_practice;
         self.completed_note = None;

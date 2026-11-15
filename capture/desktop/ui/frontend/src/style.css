@@ -89,6 +89,8 @@
 .settings-agents-shell .settings-content h2 { font-size:18px; line-height:27px; font-weight:500; }
 .settings-agents-shell .settings-content button { min-height:44px; border-radius:0; font-size:18px; line-height:27px; }
 .settings-agents-shell .settings-content [role=alert] { color:var(--color-foreground); border-left:3px solid var(--apparent-failed); padding-left:12px; }
+.settings-agent-labs > h2 { margin-bottom:16px; }
+.settings-agent-labs h3 { margin:0; font-size:18px; line-height:27px; font-weight:500; }
 .settings-agent-group + .settings-agent-group { margin-top:24px; }
 .settings-agent-preference { display:flex; align-items:flex-start; gap:16px; }
 .settings-agent-preference > div { flex:1; min-width:0; }

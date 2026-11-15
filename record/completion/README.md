@@ -1,7 +1,7 @@
 # Record completion
 
 This is the headless post-publication workflow. It does not record, finalize,
-format bundles, manage settings, choose a Connect destination or send/paste.
+format bundles, manage settings, choose a Connect destination or send messages.
 `src/policy.ts` owns saved/failed/copied/manual-handoff decisions. No Electron,
 DOM, native source or other owner implementation is imported.
 
@@ -25,8 +25,12 @@ socket listener, installer or configuration writer is introduced. The worker
 chooses the clipboard capability; Desktop rechecks the current generation on
 the GUI thread immediately before executing it against the retained native path.
 It acknowledges `copied`, `failed` or `revoked`. Only an actual successful write
-can produce `copied`. The blocked automatic trial requests text only and remains
-manual; there is no paste/send capability in this protocol.
+can produce `copied`. The default-off `autoPasteDraft` trial requests the Linux
+Hyprland image-then-text paste capability for local screen captures. Desktop pins
+the focused window at Finish, rechecks it before each paste and leaves the saved
+capture available. Setup practice, agent captures, phone captures and macOS retain
+ordinary copy. A clipboard receipt does not prove attachment acceptance; the pill
+says to check the paste. The capability never sends Enter or submits a message.
 
 The native adapter also supplies the saved bundle's immutable `imageQualityWarning`.
 Record preserves that exact warning in Linux completion notifications: an unsettled

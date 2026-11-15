@@ -1,5 +1,16 @@
 # Onboarding, permissions and Settings
 
+Settings → Agents → Labs offers **Auto paste**, off by default. It saves
+`experiments.autoPasteDraft` through the existing config transaction; changes
+apply at the next Finish without restart (including external file edits).
+Linux Hyprland with Lua dispatchers is the initial native adapter; other Linux
+desktops and macOS keep ordinary copy. The image-then-text trial requires the
+same window to remain focused from Finish through processing and both pastes.
+It never presses Enter. Check the receiving composer; dispatch does not prove
+attachment acceptance. Saved captures and the explicit Paste action remain
+available. Setup practice and agent/phone captures do not auto paste.
+Turning the experiment off restores ordinary copy; no donor surface is removed.
+
 ## Opening the app
 
 Opening Apparent from the macOS or Linux app picker opens Settings on About,
