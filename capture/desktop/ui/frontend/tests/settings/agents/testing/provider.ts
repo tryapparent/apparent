@@ -19,5 +19,5 @@ export async function provider(context:{after(fn:()=>Promise<void>):void}) {
  await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
  const origin=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;
  context.after(async()=>{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));});
- return {origin,get code(){return code;},get link(){return origin+'/pair?token='+code;},get exchanged(){return exchanged;},refuse(){refused=true;},renew(){code='23456789ABCE';},hold(){let release!:()=>void;gate=new Promise<void>(resolve=>{release=resolve;});return release;}};
+ return {origin,get code(){return code;},get link(){return origin+'/pair#token='+code;},get exchanged(){return exchanged;},refuse(){refused=true;},renew(){code='23456789ABCE';},hold(){let release!:()=>void;gate=new Promise<void>(resolve=>{release=resolve;});return release;}};
 }

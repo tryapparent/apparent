@@ -306,7 +306,9 @@ link**, allow reading threads and sending messages, and copy the code or full li
 Return to Apparent and choose **Paste code or link**, check the server shown,
 then **Connect**. For a code, the editable **T3 server address** defaults to the
 saved server or local T3 (`http://127.0.0.1:3773`); a full link supplies its own
-address. No terminal or external Node installation is needed. The code or link
+address. Direct fragment links, legacy query links and hosted app links with an
+embedded backend are supported; preview always shows the actual backend.
+No terminal or external Node installation is needed. The code or link
 stays in Electron main and its short-lived confirmation handle is consumed once;
 clipboard changes cannot switch the server after preview. Editing the address,
 closing or cancelling clears the pending confirmation. The native shared config transaction stores the private

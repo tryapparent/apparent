@@ -2,21 +2,29 @@ import {URL,URLSearchParams} from 'node:url';
 // One-time bootstrap exchange shared by Settings and the optional CLI.
 // Codes need an explicit server; full links carry their own. The native caller
 // owns the sole config transaction. Never log code/link/token data.
+function secureOrigin(url:URL) {
+ if(url.protocol!=='https:'&&!(url.protocol==='http:'&&['127.0.0.1','localhost','[::1]'].includes(url.hostname)))throw Error('T3 requires HTTPS or a loopback connection.');
+ return url.origin;
+}
+function serverOrigin(server?:string) {
+ if(typeof server!=='string'||!server.trim()||server.length>2048)throw Error('Enter your T3 server address to use a pairing code.');
+ let url:URL;try{url=new URL(server.trim());}catch{throw Error('Enter a valid T3 server address.');}
+ if(url.username||url.password||url.hash||url.search||url.pathname!=='/')throw Error('Enter only the T3 server address, without a path or sign-in details.');
+ return secureOrigin(url);
+}
 export function parsePairingLink(link:string,server?:string) {
  if(typeof link!=='string'||link.length>16384)throw Error('Copy a T3 pairing code or full link.');
- const input=link.trim();let url:URL;
- if(/^[A-Za-z0-9_-]{1,8192}$/.test(input)){
-  if(typeof server!=='string'||!server.trim()||server.length>2048)throw Error('Enter your T3 server address to use a pairing code.');
-  try{url=new URL(server.trim());}catch{throw Error('Enter a valid T3 server address.');}
-  if(url.username||url.password||url.hash||url.search||url.pathname!=='/')throw Error('Enter only the T3 server address, without a path or sign-in details.');
-  url.pathname='/pair';url.searchParams.set('token',input);
- }else{
-  try{url=new URL(input);}catch{throw Error('Copy a T3 pairing code or full link.');}
- }
- if(url.username||url.password||url.hash||url.pathname!=='/pair')throw Error('Copy a T3 pairing code or full link.');
- if(url.protocol!=='https:'&&!(url.protocol==='http:'&&['127.0.0.1','localhost','[::1]'].includes(url.hostname)))throw Error('T3 requires HTTPS or a loopback connection.');
- const token=url.searchParams.get('token');if(!token||token.length>8192)throw Error('Copy a T3 pairing code or full link.');
- return {origin:url.origin,token};
+ const input=link.trim();
+ if(/^[A-Za-z0-9_-]{1,8192}$/.test(input))return {origin:serverOrigin(server),token:input};
+ let url:URL;try{url=new URL(input);}catch{throw Error('Copy a T3 pairing code or full link.');}
+ if(url.username||url.password||url.pathname!=='/pair')throw Error('Copy a T3 pairing code or full link.');
+ const directOrigin=secureOrigin(url),fragment=new URLSearchParams(url.hash.slice(1)),fragmentToken=fragment.get('token')?.trim();
+ if(url.hash&&!fragment.has('token'))throw Error('Copy a T3 pairing code or full link.');
+ // T3 puts new tokens in the fragment; retain its legacy query fallback and
+ // resolve hosted app links to their embedded backend before confirmation.
+ const token=fragmentToken||url.searchParams.get('token')?.trim();
+ if(!token||token.length>8192)throw Error('Copy a T3 pairing code or full link.');
+ return {origin:url.searchParams.has('host')?serverOrigin(url.searchParams.get('host')!):directOrigin,token};
 }
 export async function pair(link:string,signal?:AbortSignal,server?:string){
  const {origin,token}=parsePairingLink(link,server);

@@ -24,6 +24,23 @@ test('a copied code uses the selected server, remains private and exchanges only
 test('a full link supplies its own server even when the code-only address differs',()=>{
  assert.deepEqual(parsePairingLink('https://t3.example/pair?token=23456789ABCD','http://localhost:3773'),{origin:'https://t3.example',token:'23456789ABCD'});
 });
+test('T3 direct fragment links and hosted links resolve the actual backend and prefer fragment credentials',()=>{
+ assert.deepEqual(parsePairingLink('http://localhost:3773/pair#token=23456789ABCD'),{origin:'http://localhost:3773',token:'23456789ABCD'});
+ assert.deepEqual(parsePairingLink('https://app.t3.codes/pair?host=https%3A%2F%2Ft3.example%3A8443#token=23456789ABCD'),{origin:'https://t3.example:8443',token:'23456789ABCD'});
+ assert.deepEqual(parsePairingLink('https://t3.example/pair?token=old#token=23456789ABCD'),{origin:'https://t3.example',token:'23456789ABCD'});
+ assert.deepEqual(parsePairingLink('https://t3.example/pair?token=23456789ABCD#token='),{origin:'https://t3.example',token:'23456789ABCD'});
+ for(const host of ['http://remote.example','https://user:SECRET@t3.example','file:///tmp/t3','https://t3.example/?token=SECRET','']){
+  const link=new URL('https://app.t3.codes/pair#token=23456789ABCD');link.searchParams.set('host',host);
+  assert.throws(()=>parsePairingLink(link.href),error=>error instanceof Error&&!error.message.includes('SECRET'));
+ }
+});
+test('a hosted app link previews and exchanges only with its embedded backend',async context=>{
+ const p=await provider(context),links=new PairingLinks();
+ const link=new URL('https://hosted.invalid/pair');link.searchParams.set('host',p.origin);link.hash=new URLSearchParams({token:p.code}).toString();
+ const preview=links.preview(link.href,'https://ignored.invalid');assert.equal(preview.origin,p.origin);assert.equal(p.exchanged,0);
+ const connection=await links.connect(preview.id,new AbortController().signal);
+ assert.equal(connection.origin,p.origin);assert.equal(p.exchanged,1);
+});
 test('code-only pairing requires a safe explicit server and never interprets a malformed link as a code',()=>{
  const code='23456789ABCD';
  for(const origin of [undefined,'','file:///tmp/t3','http://remote.example','https://user:SECRET@t3.example','https://t3.example/path','https://t3.example/?token=SECRET']){
