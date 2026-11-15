@@ -21,6 +21,10 @@ FFmpeg. The default verification workflow also runs them in a clean Node contain
 
 ## Installed consumer
 
+Record and Agent use the same application-owned finite-worker resource helper in
+`composition/worker.rs`. Record's metadata policy, wire contracts and SDK/provider
+pin remain independent of Agent's frame capability and are unchanged by its adoption.
+
 Desktop composition builds this package and explicitly stages the runtime pinned
 in `engine.json` using `stage.ts --out <generated-app-directory>`. Provisioning
 checks the downloaded archive SHA-256, complete file inventory, file hashes/modes,

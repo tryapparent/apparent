@@ -27,7 +27,11 @@ class SigningTests(unittest.TestCase):
                              "electron/record-media/worker.js", "electron/record-media/policy.js",
                              "electron/record-media/node_modules/@apparent/engine-sdk/dist/index.js",
                              "electron/record-media/native/apparent-engine-media",
-                             "electron/record-media/native/apparent-engine-probe"):
+                             "electron/record-media/native/apparent-engine-probe",
+                             "electron/agent-media/worker.js", "electron/agent-media/policy.js",
+                             "electron/agent-media/node_modules/@apparent/engine-sdk/dist/index.js",
+                             "electron/agent-media/native/apparent-engine-frames",
+                             "electron/agent-media/native/apparent-engine-frames-native"):
                 file = frontend / relative
                 file.parent.mkdir(parents=True, exist_ok=True)
                 file.write_text(relative)
@@ -84,6 +88,10 @@ class SigningTests(unittest.TestCase):
                     self.assertIn(["codesign", "--verify", "--strict", str(addon)], signed)
                     for name in ("apparent-engine-media", "apparent-engine-probe"):
                         binary = mac / "app/electron/record-media/native" / name
+                        self.assertIn(sign + [str(binary)], signed)
+                        self.assertIn(["codesign", "--verify", "--strict", str(binary)], signed)
+                    for name in ("apparent-engine-frames", "apparent-engine-frames-native"):
+                        binary = mac / "app/electron/agent-media/native" / name
                         self.assertIn(sign + [str(binary)], signed)
                         self.assertIn(["codesign", "--verify", "--strict", str(binary)], signed)
                     self.assertEqual("--timestamp" in sign, identity != "-")
