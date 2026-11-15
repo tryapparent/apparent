@@ -13,6 +13,7 @@ nativeTheme.themeSource='system';
 const page=pathToFileURL(path.join(__dirname,'../../dist/pill/index.html')).href;
 let window,current=null,buffer='',pending=false,loaded=false,placed=false,activated=false,pendingPlace=null;
 let lastInput=Date.now(),hovered=false,expected=null,rendererReady=false,readySent=false,renderDeadline=Date.now()+5000,pasteGesture=null,lastFrame='',lastRaise=0;
+let visibleWidth=0,layoutPhase=null;
 const diagnostics=require('./diagnostics.cjs');
 function diagnosticSnapshot(){
  const now=Date.now(),stateAge=current?Math.max(0,Math.min(86400000,now-lastInput)):null;
@@ -34,7 +35,7 @@ function applyPlacement(point){
   const anchor=process.platform==='linux'?screen.screenToDipPoint(physical):physical;
   const area=screen.getDisplayNearestPoint(anchor).workArea;
   const bounds=window.getBounds();
-  position({x:Math.round(area.x+(area.width-bounds.width)/2),y:area.y+34});placed=true;
+  position({x:Math.round(area.x+(area.width-(visibleWidth||bounds.width))/2),y:area.y+34});placed=true;
 }
 function emit(message){process.stdout.write(JSON.stringify(message)+'\n');}
 function reportFrame(){
@@ -50,6 +51,7 @@ function publish(value){
   if(!current || next.revision!==current.revision)pending=false;
   if(current && next.revision!==current.revision)pasteGesture=null;
   if(!current || next.revision!==current.revision || next.phase!==current.phase){rendererReady=false;renderDeadline=Date.now()+5000;}
+  if(next.phase==='hidden')layoutPhase=null;
   current=next;lastInput=Date.now();
   if(loaded){window.webContents.send('pill:state',current);visibility();}
 }
@@ -93,6 +95,7 @@ process.stdin.on('data',chunk=>{
 process.stdin.on('end',()=>{if(buffer.length)note('invalid_parent_frame',{frameCode:'truncated'});else note('parent_stream_end');app.quit();});
 process.stdin.on('error',()=>{note('parent_stream_error');app.quit();});
 app.whenReady().then(()=>{
+  let appliedShape=null,shapePaint=null,documentGeneration=0;
   Menu.setApplicationMenu(null);
   if(process.platform==='darwin')app.setActivationPolicy('accessory');
   session.defaultSession.setPermissionRequestHandler((_contents,_permission,reply)=>reply(false));
@@ -112,7 +115,7 @@ app.whenReady().then(()=>{
   window.webContents.on('page-title-updated',event=>event.preventDefault());
   window.webContents.on('render-process-gone',(_event,details)=>fail('renderer_gone',{
     rendererReason:details?.reason,exitCode:details?.exitCode}));
-  window.webContents.on('did-start-loading',()=>{loaded=false;pending=false;rendererReady=false;pasteGesture=null;renderDeadline=Date.now()+5000;});
+  window.webContents.on('did-start-loading',()=>{documentGeneration++;shapePaint=null;appliedShape=null;loaded=false;pending=false;rendererReady=false;pasteGesture=null;renderDeadline=Date.now()+5000;});
   ipcMain.handle('pill:read',(event,...args)=>{valid(event,args);return current;});
   ipcMain.handle('pill:act',(event,revision,action,drop=false,...args)=>{
     valid(event,args);
@@ -137,34 +140,58 @@ app.whenReady().then(()=>{
   });
   // Renderer never chooses native dimensions or screen coordinates.
   // Parent's bounded state defines content; main measures its own trusted document.
-  let appliedShape=null,visibleWidth=0;
   async function measure(revision){
     if(!loaded || window.isDestroyed())return;
+    const document=documentGeneration;
     if(current?.phase!=='hidden' && Date.now()-lastInput>5000){fail('parent_state_timeout');return;}
     try{
       const area=screen.getDisplayMatching(window.getBounds()).workArea;
       const size=await window.webContents.executeJavaScript(`(() => {document.documentElement.style.setProperty('--pill-limit', '${area.width}px');const element=document.querySelector('main'),rect=element?.getBoundingClientRect();return rect && {width:Math.ceil(rect.width),height:Math.ceil(rect.height),revision:Number(element.dataset.revision)};})()`);
       // A newer parent state may arrive while the renderer answers. Never apply
       // geometry measured for an obsolete document.
-      if(revision!==current?.revision || size?.revision!==revision || !Number.isFinite(size.width)||!Number.isFinite(size.height))return false;
+      if(document!==documentGeneration || !loaded || revision!==current?.revision || size?.revision!==revision || !Number.isFinite(size.width)||!Number.isFinite(size.height))return false;
       const bounds=window.getBounds();
       const width=Math.min(area.width,Math.max(100,Math.ceil(size.width)));
       const height=Math.min(160,Math.max(58,Math.ceil(size.height)));
       const before=window.getBounds();
       const resized=before.width!==width || before.height!==height;
+      const nextVisibleWidth=current.phase==='recording' && current.noteCount===0?width-72:width;
+      const repaintResize=process.platform==='linux' && resized && window.isVisible();
+      // XWayland can retain opaque pixels outside the old rounded clip when a
+      // mapped surface shrinks. Let the new surface paint without that clip
+      // before restoring the rounded input/rendering region.
+      if(repaintResize){window.setShape([{x:0,y:0,width:nextVisibleWidth,height}]);appliedShape=null;}
+      const phaseChanged=layoutPhase!==current.phase;
+      // Phase changes pivot around the painted pill, not the invisible notes
+      // reserve. Within Recording, note-count changes must keep controls fixed.
+      const oldCenterWidth=phaseChanged && visibleWidth>0?visibleWidth:before.width;
+      const newCenterWidth=phaseChanged?nextVisibleWidth:width;
       // Keep layout resizes mapped. Hyprland can lose a transparent XWayland
       // surface during hide/setBounds/showInactive even when Electron reports
       // it visible. Update its bounds and input shape in place, then repaint.
-      if(resized)position({x:Math.round(before.x+(before.width-width)/2),y:before.y,width,height});
-      visibleWidth=current.phase==='recording' && current.noteCount===0?width-72:width;
+      if(resized || phaseChanged)position({x:Math.round(before.x+(oldCenterWidth-newCenterWidth)/2),y:before.y,width,height});
+      visibleWidth=nextVisibleWidth;layoutPhase=current.phase;
       if(process.platform==='linux'){
+        if(resized)window.webContents.invalidate();
+        if(repaintResize)shapePaint=window.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))');
+        // Duplicate layout requests must share the paint barrier. A newer
+        // snapshot may supersede it while the renderer is painting.
+        const pendingPaint=shapePaint;
+        if(pendingPaint)await pendingPaint;
+        if(window.isDestroyed() || document!==documentGeneration || !loaded || revision!==current?.revision)return false;
+        if(shapePaint===pendingPaint)shapePaint=null;
         const scale=screen.getDisplayMatching(window.getBounds()).scaleFactor;
         const key=JSON.stringify([visibleWidth,height,scale]);
         if(key!==appliedShape){window.setShape(geometry.shape(visibleWidth,height));appliedShape=key;}
         if(resized)window.webContents.invalidate();
       }
       return size.revision===current?.revision;
-    }catch{fail('layout_measurement_exception');}
+    }catch{
+      // Reload destroys the old document's paint promise. Its successor owns
+      // readiness; an obsolete measurement must not terminate the warm child.
+      if(document===documentGeneration && loaded && !window.isDestroyed())fail('layout_measurement_exception');
+      return false;
+    }
   }
   const watchdog=setInterval(()=>{
     if(!rendererReady && Date.now()>renderDeadline){fail('render_readiness_timeout');return;}
