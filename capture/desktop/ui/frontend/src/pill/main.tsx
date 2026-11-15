@@ -71,7 +71,7 @@ function Pill() {
     const before=current.current;
     if(!before || busy.current)return;
     busy.current=true;setPending(true);setError(false);
-    try{await window.apparentPill!.act(before.revision,action,drop);}
+    try{const result=await window.apparentPill!.act(before.revision,action,drop);if(result?.cancelled&&current.current?.revision===before.revision){busy.current=false;setPending(false);}}
     catch{if(current.current?.revision===before.revision){busy.current=false;setPending(false);setError(true);}}
     // Successful dispatch unlocks on authoritative readback. Refusals allow a manual retry; never retry a mutation automatically.
   }

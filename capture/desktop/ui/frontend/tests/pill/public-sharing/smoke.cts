@@ -18,7 +18,7 @@ test('public copy waits for disclosure and rejects cancel and stale recording',a
  await expect.poll(()=>app.evaluate(()=>!!globalThis.answer)).toBe(true);
  const disclosure=await app.evaluate(()=>globalThis.disclosure);assert.match(disclosure.message,/Anyone with this link/);assert.match(disclosure.detail,/not end-to-end encrypted/);
  assert.equal(sent.filter(x=>x.action==='copy-public-link').length,0);
- await app.evaluate(()=>globalThis.answer({response:0}));await expect(page.getByRole('button',{name:'Copy link',exact:true})).toBeEnabled();assert.equal(sent.filter(x=>x.action==='copy-public-link').length,0);
+ await app.evaluate(()=>globalThis.answer({response:0}));await expect(page.getByRole('button',{name:'Copy link',exact:true})).toBeEnabled();await expect(page.getByRole('alert')).toHaveCount(0);assert.equal(sent.filter(x=>x.action==='copy-public-link').length,0);
  await page.getByRole('button',{name:'Copy link',exact:true}).click();await publish({...state,revision:2});await app.evaluate(()=>globalThis.answer({response:1}));await expect(page.getByRole('button',{name:'Copy link',exact:true})).toBeEnabled();assert.equal(sent.filter(x=>x.action==='copy-public-link').length,0);
  await page.getByRole('button',{name:'Copy link',exact:true}).click();await app.evaluate(()=>globalThis.answer({response:1}));await expect.poll(()=>sent.filter(x=>x.action==='copy-public-link').length).toBe(1);
  assert.equal(sent.find(x=>x.action==='copy-public-link').revision,2);

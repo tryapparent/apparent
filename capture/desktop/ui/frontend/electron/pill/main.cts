@@ -11,6 +11,7 @@ app.setName('Apparent recording controls');
 app.setPath('userData',path.join(app.getPath('appData'),'apparent-pill'));
 nativeTheme.themeSource='system';
 const page=pathToFileURL(path.join(__dirname,'../../dist/pill/index.html')).href;
+let sharingConfirmation=false;
 let window,current=null,buffer='',pending=false,loaded=false,placed=false,activated=false,pendingPlace=null;
 let lastInput=Date.now(),hovered=false,expected=null,rendererReady=false,readySent=false,renderDeadline=Date.now()+5000,pasteGesture=null,lastFrame='',lastRaise=0;
 let visibleWidth=0,layoutPhase=null;
@@ -170,7 +171,7 @@ app.whenReady().then(()=>{
   });
   ipcMain.handle('pill:act',async(event,revision,action,drop=false,...args)=>{
     valid(event,args);
-    if(pending)throw Error('Pill action pending');
+    if(pending||sharingConfirmation)throw Error('Pill action pending');
     if(typeof drop!=='boolean' || drop && action!=='paste')throw Error('Invalid paste gesture');
     const message=protocol.command(current,revision,action);
     if(drop){
@@ -183,13 +184,15 @@ app.whenReady().then(()=>{
     pending=true;
     try {
       if(action==='copy-link' && !current.actions.some(a=>a.id==='copy-link'&&a.label==='Cancel upload')) {
+        sharingConfirmation=true;
         const result=await dialog.showMessageBox(window,{type:'warning',title:'Create public sharing link?',message:'Anyone with this link can view this capture.',detail:'Shared captures are not end-to-end encrypted.',buttons:['Cancel','Create and copy public link'],defaultId:0,cancelId:0});
-        if(result.response!==1){pending=false;throw Error('Public sharing cancelled');}
+        if(result.response!==1){pending=false;return {cancelled:true};}
         protocol.command(current,revision,action);
         message.action='copy-public-link';
       }
       emit(message);
     } catch(error){pending=false;throw error;}
+    finally {sharingConfirmation=false;}
   });
   // Renderer never chooses native dimensions or screen coordinates.
   // Parent's bounded state defines content; main measures its own trusted document.

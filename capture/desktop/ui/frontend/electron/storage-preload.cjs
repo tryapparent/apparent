@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('apparentAbout', Object.freeze({
 contextBridge.exposeInMainWorld('apparentAgents', Object.freeze({
   read: () => ipcRenderer.invoke('apparent:agents-preference'),
   save: enabled => ipcRenderer.invoke('apparent:agents-preference', enabled),
+  saveSharing: enabled => ipcRenderer.invoke('apparent:agents-sharing-preference', enabled),
   saveAutoPaste: enabled => ipcRenderer.invoke('apparent:agents-auto-paste-preference', enabled),
   saveT3: enabled => ipcRenderer.invoke('apparent:agents-t3-preference', enabled),
   previewT3: () => ipcRenderer.invoke('apparent:agents-t3-preview'),

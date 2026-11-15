@@ -98,6 +98,18 @@ mod tests {
         assert!(value.get("t3").is_none());assert_eq!(value["other"],"keep");
     }
     #[test]
+    fn public_sharing_preserves_private_upload_preferences() {
+        let dir = tempfile::tempdir().unwrap(); let path = dir.path().join("config.json");
+        assert!(facts(&path)["sharingSaved"].is_null());
+        std::fs::write(&path, r#"{"secret":"keep","experiments":{"hostedEncryption":true,"autoPaste":false}}"#).unwrap();
+        for on in [true, false] {
+            assert_eq!(request_for(&path, 1, Some(on), Some("sharing"))["facts"]["sharingSaved"], on);
+            let value: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            assert_eq!(value["secret"], "keep"); assert_eq!(value["experiments"]["hostedEncryption"], true);
+            assert_eq!(value["experiments"]["autoPaste"], false);
+        }
+    }
+    #[test]
     fn t3_preference_is_independent_and_keeps_pairing_private() {
         let dir = tempfile::tempdir().unwrap(); let path = dir.path().join("config.json");
         std::fs::write(&path, r#"{"secret":"private","t3":{"origin":"https://example.test","token":"private-token"},"experiments":{"agentDemoVideo":false}}"#).unwrap();

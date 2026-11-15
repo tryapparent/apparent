@@ -16,6 +16,6 @@ declare global { interface Window { apparentPill?: {
   beginDrag:(revision:number)=>Promise<void>;
   beginPaste:(revision:number)=>Promise<void>;
   cancelPaste:()=>Promise<void>;
-  act:(revision:number,action:string,drop?:boolean)=>Promise<void>;
+  act:(revision:number,action:string,drop?:boolean)=>Promise<void|{cancelled:true}>;
   subscribe:(callback:(state:PillView)=>void)=>()=>void;
 }; } }

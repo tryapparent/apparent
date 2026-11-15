@@ -142,3 +142,5 @@
 .settings-t3-dialog-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; margin-top:24px; }
 /* Keep visually hidden live regions inside this pane's scroll boundary. */
 .settings-agents-shell { position:relative; }
+
+.settings-agent-lab { margin-bottom:24px; }
