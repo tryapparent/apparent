@@ -349,8 +349,7 @@ pub fn orphan_recipe(
 pub struct Media {
     pub explicit_frames: fn(&Path, &[u64], u64, u32) -> Result<Vec<RgbaFrame>>,
     pub probe: fn(&Path) -> Result<crate::composition::media_probe::BundleProbe>,
-    pub frames:
-        fn(&Path, crate::capture::desktop::helper::FrameTimes, u32) -> Result<Vec<RgbaFrame>>,
+    pub screen_candidates: fn(&Path, u64, u64, &str) -> Result<Vec<RgbaFrame>>,
     pub transcribe: fn(
         Option<&Path>,
         Option<&crate::capture::engine::runtime::audio::audio::RecordedAudio>,
@@ -361,7 +360,7 @@ impl Media {
     pub const SYSTEM: Media = Media {
         explicit_frames: crate::composition::movie_frames::record,
         probe: crate::composition::media_probe::bundle_probe,
-        frames: crate::capture::desktop::helper::frames,
+        screen_candidates: crate::composition::screen_frames::candidates,
         transcribe: crate::capture::engine::runtime::audio::transcription::transcribe::transcribe,
     };
 }
@@ -715,7 +714,11 @@ mod tests {
             Ok(decoded)
         },
         probe: fake_probe,
-        frames: fake_frames,
+        screen_candidates: |movie, _, offset, _| {
+            let mut frames = fake_frames(movie, crate::capture::desktop::helper::FrameTimes::Every(220), 640)?;
+            for frame in &mut frames { frame.t_ms += offset; }
+            Ok(frames)
+        },
         transcribe: fake_transcript,
     };
 
@@ -903,8 +906,6 @@ mod tests {
             // on a developer's group-write default.
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&video, std::fs::Permissions::from_mode(0o600)).unwrap();
-            #[cfg(target_os = "macos")]
-            assert!(crate::capture::desktop::helper::path().is_ok(), "Mac frame decoding requires the built helper");
         }
         let media = Media {
             transcribe: fake_transcript,

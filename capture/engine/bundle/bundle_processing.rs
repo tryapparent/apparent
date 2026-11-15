@@ -10,6 +10,7 @@ use crate::capture::engine::runtime::recording::diagnostics::{Diagnose, Stage};
 
 use crate::capture::engine::runtime::audio::audio::RecordedAudio;
 pub mod publication;
+#[cfg(test)]
 use crate::capture::desktop::helper;
 use crate::capture::engine::autocrop::autocrop;
 use crate::capture::engine::bundle::recover;
@@ -494,7 +495,10 @@ pub fn rebuild_screen_bundle_with(
     let ((transcript, transcribe_ms), joined) = std::thread::scope(|scope| {
         let frames = scope.spawn(|| {
             let t0 = std::time::Instant::now();
-            let res = (media.frames)(&video, helper::FrameTimes::Every(220), 640);
+            let res = (|| {
+                let probe = (media.probe)(&video)?;
+                (media.screen_candidates)(&video, probe.duration_ms, offset, "recovery")
+            })();
             (res, t0.elapsed().as_millis() as u64)
         });
         let t0 = std::time::Instant::now();
@@ -502,10 +506,7 @@ pub fn rebuild_screen_bundle_with(
         ((tr, t0.elapsed().as_millis() as u64), frames.join())
     });
     let (frames, candidates_ms) = joined.map_err(|_| anyhow::anyhow!("Frame decoding panicked"))?;
-    let mut frames = frames?;
-    for frame in &mut frames {
-        frame.t_ms += offset;
-    }
+    let frames = frames?;
     let (decode, movie) = (media.explicit_frames, video.clone());
     let full_frames: Option<FullFrames> = Some(Box::new(move |times: &[u64]| {
         decode(&movie, times, offset, 0)
