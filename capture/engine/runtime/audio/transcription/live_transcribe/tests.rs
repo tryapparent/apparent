@@ -486,6 +486,8 @@ fn failed_live_prefix_invokes_complete_saved_recording_fallback() {
         wav_bytes: bytes.clone(),
         saved_lease: None,
         live: Slot::default(),
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        streaming: Default::default(),
         #[cfg(target_os = "linux")]
         pause: Default::default(),
     };

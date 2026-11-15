@@ -2,12 +2,12 @@ import './bridge';
 import {useEffect, useRef, useState} from 'react';
 import {Button} from '@apparent/ui/button';
 import {ErrorDialog} from '@apparent/ui/error-dialog';
-import frog from '../../../../assets/settings/frog-puzzled.png';
+import frog from '../../../../../assets/settings/frog-puzzled.png';
 import {Switch} from '@apparent/ui/switch';
 import {Copy,Check} from 'lucide-react';
 import {preferenceEnabled,skillCommand,type PreferenceFacts} from './policy';
 
-import {Help} from '../settings/help';
+import {Help} from '../help';
 export function Agents() {
   const [facts,setFacts]=useState<PreferenceFacts>();
   const [busy,setBusy]=useState(false),[operation,setOperation]=useState<'read'|'save'>('read');

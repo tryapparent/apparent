@@ -132,6 +132,8 @@ fn pcm_waveform(samples: &[f32]) -> [f32; 24] {
 
 #[derive(Clone, Debug)]
 pub struct RecordedAudio {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    pub streaming: crate::capture::engine::runtime::audio::transcription::parakeet_stream::Slot,
     pub sample_count: usize,
     pub duration_ms: u64,
     pub wav_bytes: Vec<u8>,
@@ -143,6 +145,8 @@ pub struct RecordedAudio {
 }
 
 pub struct AudioRecorder {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    streaming: Option<crate::capture::engine::runtime::audio::transcription::parakeet_stream::Live>,
     worker: Option<std::thread::JoinHandle<Result<()>>>,
     stop_sender: Option<std::sync::mpsc::Sender<()>>,
     samples: Arc<Mutex<Samples>>,
@@ -180,6 +184,10 @@ impl AudioRecorder {
         Some(if fresh { pcm_waveform(&samples) } else { [0.0; 24] })
     }
     pub fn start(bundle_dir: &std::path::Path) -> Result<Self> {
+        Self::start_with_local_stream(bundle_dir, None)
+    }
+    pub fn start_with_local_stream(bundle_dir: &std::path::Path,
+        admit: Option<Box<dyn FnOnce() -> Result<bool> + Send>>) -> Result<Self> {
         let started = std::time::Instant::now();
         let samples = Arc::new(Mutex::new(Samples::default()));
         let error = Arc::new(Mutex::new(None));
@@ -204,7 +212,12 @@ impl AudioRecorder {
                 Ok(())
             })
             .context("Could not spawn microphone worker")?;
-        let live = crate::capture::engine::runtime::audio::transcription::live_transcribe::wanted()
+        let trial = admit.is_some();
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        let streaming = admit.and_then(|admit| {
+            crate::capture::engine::runtime::audio::transcription::parakeet_stream::Live::start(samples.clone(), admit).ok()
+        });
+        let live = (!trial && crate::capture::engine::runtime::audio::transcription::live_transcribe::wanted())
             .then(|| crate::capture::engine::runtime::audio::transcription::live_transcribe::Live::start(Arc::clone(&samples)))
             .and_then(|live| {
                 live.inspect_err(|error| {
@@ -212,17 +225,21 @@ impl AudioRecorder {
                 })
                 .ok()
             });
-        let word_probe = crate::shared::handoff::experiment("liveWordWarning")
+        let word_probe = (!trial && crate::shared::handoff::experiment("liveWordWarning"))
             .then(|| crate::capture::engine::runtime::audio::transcription::live_word_probe::Probe::start(Arc::clone(&samples)));
         #[cfg(target_os = "linux")]
         crate::capture::engine::runtime::audio::transcription::warm_recognizer::clear_if_disabled();
         #[cfg(target_os = "linux")]
-        let pause = crate::capture::engine::runtime::audio::transcription::pause_transcribe::wanted()
+        if trial { crate::capture::engine::runtime::audio::transcription::warm_recognizer::clear(); }
+        #[cfg(target_os = "linux")]
+        let pause = (!trial && crate::capture::engine::runtime::audio::transcription::pause_transcribe::wanted())
             .then(|| crate::capture::engine::runtime::audio::transcription::pause_transcribe::Pause::start(Arc::clone(&samples)))
             .and_then(|result| {
                 result.inspect_err(|error| crate::capture::engine::runtime::apparent_log(format!("Pause transcription: {error:#}"))).ok()
             });
         Ok(Self {
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            streaming,
             worker: Some(worker),
             stop_sender: Some(stop_sender),
             samples,
@@ -238,6 +255,11 @@ impl AudioRecorder {
 
     pub fn live_word_state(&self) -> Option<crate::capture::engine::runtime::audio::transcription::live_word_warning::State> {
         self.word_probe.as_ref().map(|probe| probe.state())
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    pub fn streaming_preview(&self) -> Option<crate::capture::engine::runtime::audio::transcription::parakeet_stream::Preview> {
+        self.streaming.as_ref().map(|stream| stream.preview())
     }
 
     /// The chosen microphone (`mic`), else the system default. A chosen device that is missing or
@@ -414,6 +436,8 @@ impl AudioRecorder {
         }
         let duration_ms = sample_count as u64 * 1_000 / SAMPLE_RATE as u64;
         Ok(RecordedAudio {
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            streaming: crate::capture::engine::runtime::audio::transcription::parakeet_stream::Slot::new(self.streaming.take()),
             sample_count,
             duration_ms,
             wav_bytes,
@@ -519,6 +543,8 @@ pub fn recorded_audio_from_wav(wav_bytes: Vec<u8>) -> Result<RecordedAudio> {
         wav_bytes,
         saved_lease: None,
         live: Default::default(),
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        streaming: Default::default(),
         #[cfg(target_os = "linux")]
         pause: Default::default(),
     })
@@ -759,6 +785,8 @@ mod tests {
             writer: None, error: Arc::new(Mutex::new(None)),
             health: Arc::new(Mutex::new(InputHealth::new(now))),
             live: None, word_probe: None,
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            streaming: None,
             #[cfg(target_os = "linux")]
             pause: None,
         };
@@ -802,6 +830,8 @@ mod tests {
             health: Arc::new(Mutex::new(InputHealth::new(Instant::now()))),
             live: None,
             word_probe: None,
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            streaming: None,
             #[cfg(target_os = "linux")]
             pause: None,
         }
@@ -827,6 +857,8 @@ mod tests {
             health: Arc::new(Mutex::new(InputHealth::new(Instant::now()))),
             live: None,
             word_probe: None,
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            streaming: None,
             #[cfg(target_os = "linux")]
             pause: None,
         };
@@ -850,6 +882,8 @@ mod tests {
             health: Arc::new(Mutex::new(InputHealth::new(Instant::now()))),
             live: None,
             word_probe: None,
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            streaming: None,
             #[cfg(target_os = "linux")]
             pause: None,
         };

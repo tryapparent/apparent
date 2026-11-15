@@ -13,6 +13,7 @@ test-results/
 
 /electron/notes/presentation.cjs
 /electron/notes/lifecycle.cjs
+/electron/notes/record-transcription.cjs
 
 /electron/record-media/
 /electron/agent-media/

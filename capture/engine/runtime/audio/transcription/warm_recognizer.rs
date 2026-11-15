@@ -257,10 +257,14 @@ static OWNER: OnceLock<Owner<ModelKey>> = OnceLock::new();
 /// No thread or model allocation at app launch. Called at the next recording start.
 pub fn clear_if_disabled() {
     if (!crate::shared::handoff::warm_recognizer() || !crate::capture::engine::runtime::audio::transcription::pause_transcribe::wanted())
-        && let Some(owner) = OWNER.get()
     {
-        let _ = owner.0.send(Command::Clear);
+        clear();
     }
+}
+/// Retire the inactive session when another inference capability takes over.
+/// Existing capture leases still own their recognizer until they end.
+pub fn clear() {
+    if let Some(owner) = OWNER.get() { let _ = owner.0.send(Command::Clear); }
 }
 
 pub fn transcriber() -> Result<impl FnMut(&[f32], u64) -> Result<TranscriptData> + Send> {

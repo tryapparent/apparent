@@ -950,6 +950,8 @@ mod tests {
             wav_bytes: audio::encode_wav_16k(&samples).unwrap(),
             saved_lease: None,
             live: Default::default(),
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            streaming: Default::default(),
             #[cfg(target_os = "linux")]
             pause: Default::default(),
         };

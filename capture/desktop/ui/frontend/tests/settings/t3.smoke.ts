@@ -16,6 +16,7 @@ test('Labs pairs multiple computers without exposing credentials, changing sendi
  let computers:T3Connection[]=[],buffer='',sending=false;
  app.process().stdout!.on('data',chunk=>{buffer+=String(chunk);let end:number;while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end);buffer=buffer.slice(end+1);try{
   const action=JSON.parse(line);
+  if(action.action==='labs-preference')void app.evaluate((_e,value)=>process.stdin.emit('data',JSON.stringify(value)+'\n'),{type:'labs-result',request:action.request,facts:{saved:false,sharingSaved:false,autoPasteSaved:false,autoPasteSupported:true,wisprSaved:false,wisprSupported:process.platform==='darwin'}});
   if(action.action==='agents-connection'){
    if(action.connection){computers=computers.filter(c=>c.origin!==action.connection.origin);computers.push(action.connection);}
    else computers=computers.filter(c=>c.origin!==action.disconnect);

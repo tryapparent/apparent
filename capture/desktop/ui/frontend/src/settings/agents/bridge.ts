@@ -1,4 +1,4 @@
-import type {PairingPreview} from '../../electron/settings/t3';
+import type {PairingPreview} from '../../../electron/settings/t3';
 import type {PreferenceFacts,T3ConnectionResult} from './policy';
 declare global {
   interface Window {
