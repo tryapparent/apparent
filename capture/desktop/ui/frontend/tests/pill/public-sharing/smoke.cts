@@ -8,16 +8,21 @@ const os=require('node:os');
 test('public copy waits for disclosure and rejects cancel and stale recording',async t=>{
  const home=await fs.mkdtemp(path.join(os.tmpdir(),'public-pill-'));
  const app=await electron.launch({args:[path.resolve(__dirname,'../host.cts'),'--no-sandbox'],env:{...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config')}});
+ let diagnostics='';app.process().stderr.on('data',data=>{diagnostics+=data;});
+ t.after(()=>{for(const line of diagnostics.split('\n')){try{const record=JSON.parse(line);if(record.kind==='apparent-pill-diagnostic')t.diagnostic(JSON.stringify(record));}catch{}}});
  let heartbeat;
  t.after(async()=>{clearInterval(heartbeat);await app.close();await fs.rm(home,{recursive:true,force:true,maxRetries:3});});
  const page=await app.firstWindow(),sent=[];let stream='';
- app.process().stdout.on('data',data=>{stream+=data;let end;while((end=stream.indexOf('\n'))>=0){const line=stream.slice(0,end);stream=stream.slice(end+1);try{sent.push(JSON.parse(line));}catch{}}});
+ app.process().stdout.on('data',data=>{stream+=data;let end;while((end=stream.indexOf('\n'))>=0){const line=stream.slice(0,end);stream=stream.slice(end+1);try{const message=JSON.parse(line);sent.push(message);if(message.ready)void app.evaluate((_e,id)=>process.stdin.emit('data',JSON.stringify({type:'activate',windowId:id})+'\n'),message.windowId).catch(()=>{});}catch{}}});
  const state={revision:1,phase:'completed',clock:'00:04',label:'Saved',warning:null,notice:null,reducedMotion:true,draggable:false,actions:[{id:'copy-link',label:'Copy link',enabled:true,selected:false,primary:false}]};
  let latest=state;
  const publish=async view=>{latest=view;await app.evaluate((_e,view)=>process.stdin.emit('data',JSON.stringify({type:'state',view})+'\n'),view);};
  const held=()=>sent.filter(x=>typeof x.sharingConfirmation==='boolean').at(-1);
  await publish(state);
+ // Emulate the live native parent without extending either host deadline.
+ // Repeating the current revision must preserve an open sharing disclosure.
  heartbeat=setInterval(()=>void publish(latest).catch(()=>{}),100);
+ await expect.poll(()=>app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible())).toBe(true);
  await assert.rejects(page.evaluate(()=>window.apparentPill.act(1,'confirm-public-link')));
  await page.getByRole('button',{name:'Copy link',exact:true}).click();
  const confirm=page.getByRole('button',{name:'Create public link',exact:true});
