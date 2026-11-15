@@ -95,6 +95,11 @@ function Pill() {
   const isClose=(id:string)=>id==='cancel'||id==='dismiss';
   const controls=view.actions.filter(action=>action.id!=='notes')
     .sort((a,b)=>Number(isClose(a.id))-Number(isClose(b.id)));
+  // Mirror Whiteboard → Finish: Inspect precedes the primary Paste action.
+  const pasteIndex=controls.findIndex(action=>action.id==='paste');
+  const inspectIndex=controls.findIndex(action=>action.id==='inspect');
+  if(pasteIndex>=0 && inspectIndex>pasteIndex)
+    [controls[pasteIndex],controls[inspectIndex]]=[controls[inspectIndex],controls[pasteIndex]];
   return <main data-revision={view.revision} className="pill settings-shell" aria-label={view.phase==='selecting'?view.label:undefined} data-phase={view.phase} data-reduced={view.reducedMotion} data-warning={view.warning!==null}>
     <div className="pill-surface">
     <div className="pill-row">
