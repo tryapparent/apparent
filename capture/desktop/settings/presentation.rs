@@ -119,6 +119,7 @@ pub(super) fn open(pane: Pane, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyh
     let mut launch = command(runtime, app);
     if pane == Pane::About { launch.arg("--settings-about"); }
     if pane == Pane::Agents { launch.arg("--settings-agents"); }
+    if pane == Pane::Labs { launch.arg("--settings-labs"); }
     let mut child = launch
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
     let stdin = child.stdin.take();
@@ -130,8 +131,9 @@ pub(super) fn open(pane: Pane, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyh
                 // Each page receives only its bounded native capabilities.
                 if let Ok(action) = serde_json::from_str::<Action>(&line)
                     && (matches!(action, Action::Navigate { .. } | Action::Close)
-                        || pane != Pane::Agents && matches!(action, Action::ShowCaptures)
+                        || pane == Pane::Storage && matches!(action, Action::ShowCaptures)
                         || pane == Pane::Agents && matches!(action, Action::AgentsPreference { .. } | Action::AgentsConnection { .. })
+                        || pane == Pane::Labs && matches!(&action, Action::AgentsPreference { setting, .. } if matches!(setting.as_deref(), Some("autoPaste" | "sharing")))
                         || pane == Pane::About && (matches!(action, Action::CheckForUpdates | Action::DismissUpdateCheck | Action::UpdateNow | Action::UpdateLater | Action::Tour)
                             || matches!(&action, Action::Set { key, value } if key == "updateChannel" && matches!(value.as_str(), Some("stable" | "main")))))
                 {

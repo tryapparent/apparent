@@ -24,10 +24,11 @@ pub const INFO: &str = "icons/info.svg";
 pub const CHEVRONS: &str = "icons/chevrons.svg";
 pub const RESET: &str = "icons/reset.svg";
 pub const ARROW_UP_RIGHT: &str = "icons/arrow-up-right.svg";
+pub const FLASK: &str = "icons/flask.svg";
 pub const TERMINAL: &str = "icons/terminal.svg";
 pub const X: &str = "icons/x.svg";
 
-const ICONS: [(&str, &[u8]); 22] = [
+const ICONS: [(&str, &[u8]); 23] = [
     (SPINNER, include_bytes!("../../capture/desktop/assets/icons/controls/spinner.svg")),
     (AREA, include_bytes!("../../capture/desktop/assets/icons/capture/area.svg")),
     (WINDOW, include_bytes!("../../capture/desktop/assets/icons/capture/window.svg")),
@@ -50,6 +51,7 @@ const ICONS: [(&str, &[u8]); 22] = [
     (INFO, include_bytes!("../../capture/desktop/assets/icons/status/info.svg")),
     (CHEVRONS, include_bytes!("../../capture/desktop/assets/icons/controls/chevrons.svg")),
     (RESET, include_bytes!("../../capture/desktop/assets/icons/status/reset.svg")),
+    (FLASK, include_bytes!("../../capture/desktop/assets/icons/controls/flask.svg")),
     (TERMINAL, include_bytes!("../../capture/desktop/assets/icons/controls/terminal.svg")),
     (X, include_bytes!("../../capture/desktop/assets/icons/controls/x.svg")),
     (

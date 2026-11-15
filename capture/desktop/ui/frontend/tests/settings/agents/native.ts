@@ -14,8 +14,9 @@ const deadline = setTimeout(() => { console.error('Agents native bridge deadline
 deadline.unref();
 const home = await fs.mkdtemp(path.join(os.tmpdir(), 'agents-native-'));
 const frontend = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const labs=process.argv[4]==='labs';
 const application = spawn(createRequire(import.meta.url)('electron') as string,
-  ['--no-sandbox', frontend, '--settings-storage', '--settings-agents', '--settings-parent', '--remote-debugging-port=0'],
+  ['--no-sandbox', frontend, '--settings-storage', labs?'--settings-labs':'--settings-agents', '--settings-parent', '--remote-debugging-port=0'],
   {env: {...process.env, ELECTRON_RUN_AS_NODE: '', HOME: home, XDG_CONFIG_HOME: path.join(home, 'config'), XDG_CACHE_HOME: path.join(home, 'cache')}, stdio: 'pipe'});
 const parent = createInterface({input: process.stdin});
 parent.on('line', line => application.stdin.write(line + '\n'));
@@ -35,18 +36,25 @@ try {
   });
   browser = await chromium.connectOverCDP(debuggerUrl);
   const page = browser.contexts()[0].pages()[0];
+  if(labs){
+    await expect(page.getByRole('heading',{name:'Labs',exact:true})).toBeVisible();
+    const toggle=page.getByRole('switch',{name:'Auto paste',exact:true});
+    await expect(toggle).toHaveAttribute('aria-checked','false');
+    if(process.platform==='linux')for(const on of [true,false]){
+      await toggle.click();await expect(toggle).toHaveAttribute('aria-checked',String(on));
+      const saved=JSON.parse(await fs.readFile(process.argv[2],'utf8'));assert.equal(saved.experiments.autoPasteDraft,on);assert.equal(saved.secret,'private');
+    }else await expect(toggle).toBeDisabled();
+    const sharing=page.getByRole('switch',{name:'Public sharing links',exact:true});
+    await expect(sharing).toHaveAttribute('aria-checked','false');
+    for(const on of [true,false]){
+      await sharing.click();await expect(sharing).toHaveAttribute('aria-checked',String(on));
+      const saved=JSON.parse(await fs.readFile(process.argv[2],'utf8'));assert.equal(saved.experiments.hostedSharing,on);assert.equal(saved.experiments.autoPasteDraft,process.platform==='linux'?false:undefined);assert.equal(saved.secret,'private');
+    }
+    await page.reload();await expect(toggle).toHaveAttribute('aria-checked','false');await expect(sharing).toHaveAttribute('aria-checked','false');
+  }else{
   await expect(page.locator('.settings-agent-command')).toHaveText(process.argv[3]);
   const toggle = page.getByRole('switch', {name: 'Ask for an Apparent video on complex changes'});
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
-  if(process.platform==='linux') {
-    const auto=page.getByRole('switch',{name:'Auto paste',exact:true});
-    await expect(auto).toHaveAttribute('aria-checked','false');
-    for(const on of [true,false]) {
-      await auto.click(); await expect(auto).toHaveAttribute('aria-checked',String(on));
-      const saved=JSON.parse(await fs.readFile(process.argv[2],'utf8'));
-      assert.equal(saved.experiments.autoPasteDraft,on);assert.equal(saved.secret,'private');
-    }
-  }
   const t3Toggle=page.getByRole('switch',{name:'Send recordings to T3'});
   await expect(t3Toggle).toHaveAttribute('aria-checked','false');
   for(const on of [true,false]){
@@ -64,6 +72,7 @@ try {
   }
   await page.reload();
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  }
 } finally {
   // Closing through CDP emits an ordinary close action; only preference actions
   // are part of this test's parent relay contract.
