@@ -7,7 +7,7 @@ import {YAML} from 'bun';
 import {suitePlan} from '../consumers.ts';
 import {connectPlan} from '../connect.ts';
 import {covers} from '../evidence.ts';
-import {unionPlan, sharedNative, nativeRequired, type Identity} from './run.ts';
+import {unionPlan, sharedNative, nativeRequired, nativePlan, type Identity} from './run.ts';
 const full = suitePlan(null), web = connectPlan(suitePlan(['connect/web/src/main.tsx']));
 const who: Identity = {sha:'a'.repeat(40), tree:'b'.repeat(40), run:'42', attempt:'2',
   workflow:'tryapparent/apparent/.github/workflows/checks.yml@refs/heads/main'};
@@ -36,6 +36,9 @@ test('only same workflow, head, tree, run and attempt with full successful platf
   for (const key of ['plan','macPlan']) for (const value of [web,{},null]) assert.equal(check({...receipt,[key]:value}),false);
   assert.equal(sharedNative(JSON.stringify({...receipt,plan:web,macPlan:web}),who,web),true,'superset covers subset');
   assert.equal(sharedNative(JSON.stringify({...receipt,workflow:'other'}),{...who,workflow:'other'},web),false);
+  const nativeOnly=nativePlan(connectPlan(full));
+  assert.equal(covers(nativeOnly,connectPlan(full)),false,'native coverage must not claim portable coverage');
+  assert.equal(check({...receipt,plan:nativeOnly,macPlan:nativeOnly}),true,'the shared receipt covers native requirements only');
 });
 
 test('producer-generated receipts feed the real consumer and failed/absent producers emit no receipt', () => {
@@ -71,6 +74,10 @@ test('automatic execution has one producer per platform and an acyclic consumer 
     assert.ok(checks.jobs['native-evidence'].needs.includes(platform));
   }
   assert.match(connect.jobs.admit.if,/needs.select.outputs.shared == 'true'/);
+  assert.match(connect.jobs.portable.if,/outputs.portable/);
+  assert.doesNotMatch(connect.jobs.portable.if,/shared/,'a shared native receipt cannot skip Connect portable checks');
+  assert.ok(connect.jobs.admit.needs.includes('portable'));
+  assert.match(connect.jobs.admit.if,/needs.portable.result == 'success'/);
   for (const graph of [checks.jobs,connect.jobs]) {
     const visit = (name: string, stack: string[] = []) => {
       assert.ok(!stack.includes(name),`cycle: ${[...stack,name]}`);
@@ -101,7 +108,7 @@ test('Connect CLI falls back cold on absent or invalid receipt and accepts the a
   } finally {rmSync(dir,{recursive:true,force:true});}
 });
 
-test('real selector composition preserves Capture-only exemptions and selects full Connect on affected main', () => {
+test('real selector composition preserves Capture portable selection while adding Connect platform coverage on main', () => {
   const dir = mkdtempSync('/tmp/apparent-dev-native-plan-test-');
   const git = (...args: string[]) => execFileSync('git',args,{cwd:dir,encoding:'utf8'}).trim();
   const cli = new URL('./run.ts',import.meta.url).pathname;
@@ -135,6 +142,28 @@ test('real selector composition preserves Capture-only exemptions and selects fu
     writeFileSync(join(dir,'connect/web/src/main.tsx'),'after');git('add','connect');git('commit','-qm','web only');
     const pr = run('pull_request',web);assert.equal(pr.connect,'true');assert.equal(pr.platform,'false');
     const main = run('push',web);assert.equal(main.connect,'true');assert.equal(main.mac_rust,'true');
-    assert.ok(covers(JSON.parse(main.plan),connectPlan(full)));
+    assert.ok(covers(JSON.parse(main.plan),nativePlan(connectPlan(full))));
+    for(const key of ['foreground','browser','service','tools'] as const)assert.equal(JSON.parse(main.plan)[key],web[key]);
+    git('reset','--hard',base);
+    execFileSync('mkdir',['-p',join(dir,'enablement/prerequisites')]);
+    writeFileSync(join(dir,'enablement/prerequisites/native.ts'),'after');git('add','enablement');git('commit','-qm','native prerequisites');
+    const captureClient=suitePlan(['enablement/prerequisites/native.ts']);
+    assert.equal(captureClient.client,true);assert.equal(captureClient.browser,false);
+    const nativeMain=run('push',captureClient);
+    const capturePlan=JSON.parse(nativeMain.plan),macPlan=JSON.parse(nativeMain.mac_plan);
+    for(const key of ['foreground','browser','service','tools'] as const)
+      assert.equal(capturePlan[key],captureClient[key],`shared native producer must not add ${key}`);
+    const evidence=new URL('../evidence.ts',import.meta.url).pathname;
+    const needs={contracts:{result:'success'},select:{result:'success'},linux:{result:'success'},macos:{result:'success'},
+      portable:{result:'skipped'},'record-media':{result:'success'},'onboarding-policy':{result:'success'}};
+    for(const platform of ['linux','macos']) {
+      const env={...process.env,CI_NEEDS:JSON.stringify(needs),CI_REUSE:'{}',VERIFICATION_PLAN:JSON.stringify(capturePlan),
+        MAC_VERIFICATION_PLAN:JSON.stringify(macPlan),VERIFY_PLATFORM:platform,FIXTURE_MAC:'false'};
+      const admitted=spawnSync('node',['--experimental-strip-types',evidence,'--admit'],{encoding:'utf8',env});
+      assert.equal(admitted.status,0,`${platform} should admit actual selected native suites: ${admitted.stderr}`);
+      const failed=spawnSync('node',['--experimental-strip-types',evidence,'--admit'],{encoding:'utf8',env:{...env,
+        CI_NEEDS:JSON.stringify({...needs,[platform]:{result:'failure'}})}});
+      assert.notEqual(failed.status,0,`${platform} native failure must still block admission`);
+    }
   } finally {rmSync(dir,{recursive:true,force:true});}
 });
