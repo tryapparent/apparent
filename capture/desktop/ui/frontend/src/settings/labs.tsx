@@ -7,9 +7,13 @@ declare global {interface Window {apparentLabs:{read():Promise<LabsFacts>;save(e
 
 export function Labs(){
   const [facts,setFacts]=useState<LabsFacts>(),[busy,setBusy]=useState(true),[error,setError]=useState('');
-  const live=useRef(true),pending=useRef(false);
+  const live=useRef(true),pending=useRef(false),restoreFocus=useRef(false);
   async function request(enabled?:boolean){
     if(pending.current)return;
+    if(enabled!==undefined){
+      const active=document.activeElement;
+      restoreFocus.current=active?.id==='auto-paste-toggle'&&active.matches(':focus-visible');
+    }
     pending.current=true;setBusy(true);setError('');
     try{
       const result=await(enabled===undefined?window.apparentLabs.read():window.apparentLabs.save(enabled));
@@ -24,12 +28,20 @@ export function Labs(){
     const unsubscribe=window.apparentLabs.subscribe(value=>{if(live.current&&!pending.current){setFacts(value);setError(value.error?'Unable to read this experiment. Refresh to try again.':'');}});
     void request();return()=>{live.current=false;unsubscribe();};
   },[]);
+  useEffect(()=>{
+    if(busy||!restoreFocus.current)return;
+    restoreFocus.current=false;
+    // Temporarily disabling a saving switch removes keyboard focus. Restore it
+    // after acknowledgement, unless the person moved to another control/window.
+    if(!facts?.error&&facts?.supported&&document.hasFocus()&&document.activeElement===document.body)
+      document.getElementById('auto-paste-toggle')?.focus({preventScroll:true});
+  },[busy,facts]);
   return <section className="settings-labs" aria-label="Experiments">
     <div className="settings-agent-preference"><div>
       <h2 id="auto-paste-label">Auto paste</h2>
       <p id="auto-paste-help">Paste the image and text into your focused composer after recording. Off by default; applies to the next recording.</p>
       <p id="auto-paste-limits">Linux with Hyprland only. Keep your composer focused until processing finishes. Check the paste before sending; Apparent never presses Enter.</p>
-    </div><Switch checked={facts?.saved??false} aria-labelledby="auto-paste-label" aria-describedby="auto-paste-help auto-paste-limits"
+    </div><Switch id="auto-paste-toggle" checked={facts?.saved??false} aria-labelledby="auto-paste-label" aria-describedby="auto-paste-help auto-paste-limits"
       disabled={busy||!facts||Boolean(facts.error)||!facts.supported} onCheckedChange={value=>void request(value)} /></div>
     <p role="status" className="settings-metadata settings-preference-status">{busy?'Checking experiment…':''}</p>
     {error&&<div className="settings-preference-error"><p role="alert">{error}</p><Button variant="secondary" disabled={busy} onClick={()=>void request()}>Refresh preference</Button></div>}

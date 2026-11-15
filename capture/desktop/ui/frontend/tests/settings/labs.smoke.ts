@@ -40,7 +40,7 @@ test('Labs is a separate flask pane with acknowledged experiment saves and bound
       await expect(toggle).toBeEnabled();hold=true;await toggle.focus();await page.keyboard.press('Space');
       await expect.poll(()=>held?.enabled===true).toBe(true);await expect(toggle).toBeDisabled();
       await expect(toggle).toHaveAttribute('aria-checked','false');assert.equal(held?.setting,'autoPaste');
-      reply(held!);hold=false;await expect(toggle).toHaveAttribute('aria-checked','true');
+      reply(held!);hold=false;await expect(toggle).toHaveAttribute('aria-checked','true');await expect(toggle).toBeFocused();
       fail=true;await toggle.click();await expect(page.getByRole('alert')).toContainText('Refresh');await expect(toggle).toBeDisabled();
       fail=false;await page.getByRole('button',{name:'Refresh preference'}).click();await expect(toggle).toHaveAttribute('aria-checked','true');
       await toggle.click();await expect(toggle).toHaveAttribute('aria-checked','false');
