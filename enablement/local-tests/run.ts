@@ -4,6 +4,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {changedPaths as inputPaths} from '../ci/inputs.ts';
+import {installCommand, publish, alreadyPassed} from '../ci/install-contracts/evidence.ts';
 import {serviceTests} from './service.ts';
 import {desktopDependencies, desktopPackage} from './desktop-install.ts';
 import {owners, selectedOwners, routeDecision, routingProblems} from '../ci/routing/consumers.ts';
@@ -61,20 +62,20 @@ export function installationContracts(paths: string[] | null, workflowControls: 
     path.startsWith(desktopPackage + '/scripts/') ||
     new RegExp('^' + desktopPackage + '/(?:tsconfig[^/]*\\.json|vite\\.config\\.[^/]+)$').test(path) ||
     inputs.some(root => path.startsWith(root + '/') && manifests.has(path.slice(root.length + 1))));
-  return affected ? [{argv: ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/desktop-install.test.ts'], cwd: '.'}] : [];
+  return affected ? [installCommand] : [];
 }
 
 // Lightweight OS-specific hook/install proof: no native app or Cargo command.
 export function fixtureMacCommands(): Command[] {
   return [
-    {argv: ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/desktop-install.test.ts'], cwd: '.'},
+    installCommand,
     {argv: ['python3', '-m', 'unittest', 'discover', '-s', 'enablement/tests', '-p', 'test_pre_push_guard.py'], cwd: '.'},
   ];
 }
 
 export function toolingCommands(): Command[] {
   return [
-    {argv: ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/desktop-install.test.ts'], cwd: '.'},
+    installCommand,
     {argv: ['python3', '-m', 'unittest', 'discover', '-s', 'enablement/directory-width/tests', '-p', 'test_*.py'], cwd: '.'},
   ];
 }
@@ -243,6 +244,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   }
   if (args.length === 1 && args[0] === '--fixture-mac') {
     execute(fixtureMacCommands());
+    if (process.env.GITHUB_ACTIONS === 'true') publish(root);
     process.exit(0);
   }
   if (args.length === 1 && args[0] === '--tooling') {
@@ -268,6 +270,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   if (args.includes('--run')) {
     const problems = result.historyKnown ? routingProblems(result) : [];
     if (problems.length) throw Error(problems.join('\n'));
-    execute(plan, root, result.inputProofKnown ? {base, head} : undefined);
+    if (args.includes('--desktop-install-contracts') && plan.length === 1 &&
+        JSON.stringify(plan[0]) === JSON.stringify(installCommand) && await alreadyPassed(root)) {
+      console.log('Reusing successful Mac hook fixtures installation contracts for this exact candidate, suite and run attempt.');
+    } else execute(plan, root, result.inputProofKnown ? {base, head} : undefined);
   }
 }
