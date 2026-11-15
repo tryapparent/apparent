@@ -137,6 +137,10 @@
 .settings-t3-dialog li + li { margin-top:12px; }
 .settings-t3-dialog strong { font-weight:500; }
 .settings-t3-dialog .settings-metadata { margin-block:16px; }
+.settings-t3-server { margin-top:16px; }
+.settings-t3-server label { display:block; margin-bottom:8px; }
+.settings-t3-server input { font:inherit; }
+.settings-t3-server .settings-metadata { margin:4px 0 0; }
 .settings-t3-preview { padding:16px; background:var(--apparent-stock); color:var(--apparent-carbon); margin-top:16px; overflow-wrap:anywhere; }
 .settings-t3-preview p + strong { display:block; margin:4px 0 8px; }
 .settings-t3-dialog-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; margin-top:24px; }

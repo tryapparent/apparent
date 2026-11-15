@@ -251,11 +251,11 @@ app.whenReady().then(() => {
     return clipboard.writeText(skillCommand);
   });
   ipcMain.handle('apparent:agents-t3-preview', async (event, ...args) => {
-    validate(event,args);
-    if (!agents || !process.argv.includes('--settings-parent') || t3Approval) throw Error('T3 connection unavailable');
+    validate(event,[]);
+    if (!agents || !process.argv.includes('--settings-parent') || t3Approval || args.length>1 || args.length===1&&(typeof args[0]!=='string'||args[0].length>2048)) throw Error('T3 connection unavailable');
     const version=++pairingPreviewVersion;pairingLinks.clear();
-    try { const link=await clipboard.readText();if(settingsClosing||version!==pairingPreviewVersion)throw Error('Preview cancelled');return {preview:pairingLinks.preview(link)}; }
-    catch { return {error:'Copy a full pairing link from T3, then paste it here.'}; }
+    try { const link=await clipboard.readText();if(settingsClosing||version!==pairingPreviewVersion)throw Error('Preview cancelled');return {preview:pairingLinks.preview(link,args[0])}; }
+    catch { return {error:'Copy a T3 code or full link. For a code, check the server address and use HTTPS or localhost.'}; }
   });
   ipcMain.handle('apparent:agents-t3-connect', async (event, ...args) => {
     validate(event, []);

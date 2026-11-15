@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./input": "./src/forms/input.tsx",
     "./switch": "./src/forms/switch.tsx",
     "./icons": "./src/icons.ts",
     "./tooltip": "./src/forms/tooltip.tsx",

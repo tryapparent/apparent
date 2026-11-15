@@ -223,7 +223,7 @@ test('Agents clipboard failures recover and bridge refuses foreign frames or arb
   } finally { await application.close(); await fs.rm(home, {recursive: true, force: true}); }
 });
 
-test('guided pairing previews the clipboard destination, exchanges once and waits for native acknowledgement without enabling sending', {timeout:60000}, async context=>{
+test('guided pairing previews the clipboard destination and waits for explicit confirmation and native acknowledgement without enabling sending', {timeout:60000}, async context=>{
   const home=await fs.mkdtemp(path.join(os.tmpdir(),'agents-pair-'));
   const p=await provider(context),frontend=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../..');
   const application=await electron.launch({args:[path.join(frontend,'tests/settings/agents/parent.cjs'),'--settings-storage','--settings-agents','--settings-parent'],env:{...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config'),XDG_CACHE_HOME:path.join(home,'cache')}});
@@ -234,6 +234,14 @@ test('guided pairing previews the clipboard destination, exchanges once and wait
   try{
     const page=await application.firstWindow();await reply(1);
     const toggle=page.getByRole('switch',{name:'Send recordings to T3'});await expect(toggle).toBeEnabled();
+    assert.equal(await application.evaluate(async({ipcMain,BrowserWindow})=>{
+      const sender=BrowserWindow.getAllWindows()[0].webContents,event={sender,senderFrame:sender.mainFrame};
+      for(const args of [[true],[{}],['https://t3.example','extra'],['x'.repeat(2049)]]){
+        try{await ipcMain._invokeHandlers.get('apparent:agents-t3-preview')(event,...args);return false;}catch{}
+      }
+      try{await ipcMain._invokeHandlers.get('apparent:agents-t3-preview')({sender,senderFrame:{url:sender.getURL()}},'http://localhost:3773');return false;}catch{}
+      return true;
+    }),true);
     if(process.env.APPARENT_AGENTS_PROOF)for(const colorScheme of ['light','dark'] as const){
       await page.emulateMedia({colorScheme});await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(640,530));
       await expect.poll(()=>page.evaluate(()=>innerWidth)).toBe(640);
@@ -253,19 +261,58 @@ test('guided pairing previews the clipboard destination, exchanges once and wait
       await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,`pairing-guide-${width}-${colorScheme}.png`)});
     }
     await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(920,600));
-    await page.getByRole('button',{name:'Paste pairing link',exact:true}).click();await expect(dialog.getByRole('alert')).toContainText('Copy a full pairing link');
+    await page.getByRole('button',{name:'Paste code or link',exact:true}).click();await expect(dialog.getByRole('alert')).toContainText('Copy a T3 code or full link');
     await application.evaluate(({clipboard},value)=>clipboard.writeText(value),p.link);
     assert.equal(await application.evaluate(({clipboard})=>clipboard.readText()),p.link);
-    await page.getByRole('button',{name:'Paste pairing link',exact:true}).click();await expect(dialog).toContainText(p.origin);assert.equal(p.exchanged,0);
+    await page.getByRole('button',{name:'Paste code or link',exact:true}).click();await expect(dialog).toContainText(p.origin);assert.equal(p.exchanged,0);
     // A changed clipboard cannot change the previewed destination at confirmation.
     await application.evaluate(({clipboard})=>clipboard.writeText('https://unexpected.example/pair?token=secret'));
-    assert.equal(await page.evaluate(()=>document.body.innerText.includes('one-time')),false);
+    assert.equal(await page.evaluate(code=>document.body.innerText.includes(code),p.code),false);
     await dialog.getByRole('button',{name:'Connect',exact:true}).click();
     await expect(page.getByText(`Connected to ${new URL(p.origin).host}`,{exact:true})).toBeVisible();assert.equal(p.exchanged,1);assert.equal(connection!.token,'private-fixture-token');await expect(toggle).toHaveAttribute('aria-checked','false');
     assert.equal(await page.evaluate(()=>document.body.innerText.includes('private-fixture-token')),false);
     await page.reload();await expect(page.getByText(`Connected to ${new URL(p.origin).host}`,{exact:true})).toBeVisible();
     await page.getByRole('button',{name:'Disconnect',exact:true}).click();await expect(page.getByRole('button',{name:'Connect T3',exact:true})).toBeEnabled();assert.equal(connection,null);
-    await page.getByRole('button',{name:'Connect T3',exact:true}).click();await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);assert.equal(p.exchanged,1);
+    await page.getByRole('button',{name:'Connect T3',exact:true}).click();
+    const server=dialog.getByRole('textbox',{name:'T3 server address'});await expect(server).toHaveValue('http://127.0.0.1:3773');
+    p.renew();
+    await application.evaluate(({clipboard},code)=>clipboard.writeText(code),p.code);
+    await server.fill('http://remote.example');
+    await dialog.getByRole('button',{name:'Paste code or link',exact:true}).click();await expect(dialog.getByRole('alert')).toBeVisible();assert.equal(p.exchanged,1);
+    await server.fill(p.origin);await server.focus();
+    await page.keyboard.press('Tab');await expect(dialog.getByRole('button',{name:'Cancel',exact:true})).toBeFocused();
+    await page.keyboard.press('Tab');await page.keyboard.press('Enter');await expect(dialog.locator('.settings-t3-preview')).toContainText(p.origin);assert.equal(p.exchanged,1);
+    assert.equal(await page.evaluate(code=>document.body.innerText.includes(code),p.code),false);
+    // Editing the address invalidates its already-approved destination.
+    await server.fill('http://localhost:3773');await expect(dialog.getByRole('button',{name:'Connect',exact:true})).toHaveCount(0);
+    await server.fill(p.origin);await dialog.getByRole('button',{name:'Paste code or link',exact:true}).click();
+    if(process.env.APPARENT_AGENTS_PROOF)for(const width of [920,640])for(const colorScheme of ['light','dark'] as const){
+      await application.evaluate(({BrowserWindow},width)=>BrowserWindow.getAllWindows()[0].setSize(width,width===640?530:600),width);
+      await expect.poll(()=>page.evaluate(()=>innerWidth)).toBe(width);await page.emulateMedia({colorScheme});
+      await server.scrollIntoViewIfNeeded();await server.focus();await page.keyboard.press('Tab');await page.keyboard.press('Shift+Tab');await expect(server).toBeFocused();
+      const metrics=await server.evaluate(input=>{
+        const style=getComputedStyle(input),canvas=document.createElement('canvas'),ctx=canvas.getContext('2d')!;
+        function luminance(color:string){ctx.fillStyle=color;ctx.fillRect(0,0,1,1);const rgb=Array.from(ctx.getImageData(0,0,1,1).data).slice(0,3).map(v=>{const c=v/255;return c<=0.04045?c/12.92:((c+0.055)/1.055)**2.4;});return rgb[0]*0.2126+rgb[1]*0.7152+rgb[2]*0.0722;}
+        const background=luminance(style.backgroundColor);const contrast=(color:string)=>{const other=luminance(color);return (Math.max(background,other)+0.05)/(Math.min(background,other)+0.05);};
+        return {focus:input.matches(':focus-visible'),outline:style.outlineStyle,outlineWidth:parseFloat(style.outlineWidth),textContrast:contrast(style.color),focusContrast:contrast(style.outlineColor),height:input.getBoundingClientRect().height,fontSize:parseFloat(style.fontSize)};
+      });
+      assert.equal(metrics.focus,true);assert.notEqual(metrics.outline,'none');assert(metrics.outlineWidth>=2);assert(metrics.textContrast>=4.5);assert(metrics.focusContrast>=3);assert(metrics.height>=44);assert.equal(metrics.fontSize,18);
+      if(process.env.APPARENT_AGENTS_PROOF)await fs.writeFile(path.join(process.env.APPARENT_AGENTS_PROOF,`input-metrics-${width}-${colorScheme}.json`),JSON.stringify(metrics));
+      await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,`pairing-code-${width}-${colorScheme}.png`)});
+      await dialog.getByRole('button',{name:'Connect',exact:true}).scrollIntoViewIfNeeded();
+      await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,`pairing-confirm-${width}-${colorScheme}.png`)});
+      assert.equal(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth),true,'pairing dialog has no horizontal overflow');
+    }
+    await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(920,600));
+    await application.evaluate(({clipboard})=>clipboard.writeText('https://unexpected.example/pair?token=other'));
+    const release=p.hold();
+    await dialog.getByRole('button',{name:'Connect',exact:true}).click();
+    await expect(server).toBeDisabled();await expect(dialog.getByRole('status')).toContainText('Connecting');
+    if(process.env.APPARENT_AGENTS_PROOF)await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,'pairing-connecting.png')});
+    release();
+    await expect(page.getByText(`Connected to ${new URL(p.origin).host}`,{exact:true})).toBeVisible();assert.equal(p.exchanged,2);await expect(toggle).toHaveAttribute('aria-checked','false');
+    await page.getByRole('button',{name:'Disconnect',exact:true}).click();
+    await page.getByRole('button',{name:'Connect T3',exact:true}).click();await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);assert.equal(p.exchanged,2);
   }finally{await application.close().catch(()=>{});await fs.rm(home,{recursive:true,force:true});}
 });
 
