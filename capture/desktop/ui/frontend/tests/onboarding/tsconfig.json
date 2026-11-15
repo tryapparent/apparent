@@ -1,16 +1,32 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022", "DOM"],
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["*.test.ts", "../../electron/onboarding/*.ts", "../../src/onboarding/state.ts", "../../src/onboarding/pen/save.ts",
-    "../../src/connect/protocol.ts", "../../src/connect/consent.ts", "../../src/connect/session.ts",
-    "../connect/flow.test.ts", "../connect/session.test.ts", "../connect/flow-hook.test.ts"]
+  "include": [
+    "*.test.ts",
+    "../../electron/onboarding/*.ts",
+    "../../src/onboarding/state.ts",
+    "../../src/onboarding/pen/save.ts",
+    "../../src/connect/protocol.ts",
+    "../../src/connect/consent.ts",
+    "../../src/connect/session.ts",
+    "../connect/flow.test.ts",
+    "../connect/session.test.ts",
+    "../connect/flow-hook.test.ts",
+    "wispr/*.test.ts",
+    "wispr/smoke.ts"
+  ]
 }

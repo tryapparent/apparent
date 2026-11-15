@@ -4,13 +4,14 @@ import {Button} from '@apparent/ui/button';
 import {Switch} from '@apparent/ui/switch';
 import {Tooltip,TooltipTrigger,TooltipContent,TooltipProvider} from '@apparent/ui/tooltip';
 import {Info,Copy,Check} from 'lucide-react';
-import {sharingEnabled,preferenceEnabled,autoPasteEnabled,t3PickerEnabled,skillCommand,type PreferenceFacts,type T3ConnectionResult} from './policy';
+import {sharingEnabled,preferenceEnabled,autoPasteEnabled,wisprEnabled,t3PickerEnabled,skillCommand,type PreferenceFacts,type T3ConnectionResult} from './policy';
 
 declare global {
   interface Window {
     apparentAgents: {
       read():Promise<PreferenceFacts>;
       save(enabled:boolean):Promise<PreferenceFacts>;
+      saveWispr(enabled:boolean):Promise<PreferenceFacts>;
       saveSharing(enabled:boolean):Promise<PreferenceFacts>;
       saveAutoPaste(enabled:boolean):Promise<PreferenceFacts>;
       saveT3(enabled:boolean):Promise<PreferenceFacts>;
@@ -35,7 +36,7 @@ function Help({label,children}:{label:string;children:string}) {
 export function Agents() {
   const [facts,setFacts]=useState<PreferenceFacts>();
   const [busy,setBusy]=useState(false),[operation,setOperation]=useState<'read'|'save'>('read');
-  const [setting,setSetting]=useState<'video'|'t3'|'autoPaste'|'sharing'>('video'),[error,setError]=useState('');
+  const [setting,setSetting]=useState<'video'|'t3'|'autoPaste'|'wisprFlow'|'sharing'>('video'),[error,setError]=useState('');
   const [copied,setCopied]=useState(false),[copyError,setCopyError]=useState(false);
   const [connecting,setConnecting]=useState(false),[disconnecting,setDisconnecting]=useState(false),[connectionError,setConnectionError]=useState('');
   const [connectionNotice,setConnectionNotice]=useState('');
@@ -45,12 +46,12 @@ export function Agents() {
   function closeSetup(){if(connecting)return;++previewRevision.current;setSetup(false);setPreview(undefined);void window.apparentAgents.cancelT3().catch(()=>{});}
   async function pasteLink(){const revision=++previewRevision.current;setConnectionError('');setPreview(undefined);try{const result=await window.apparentAgents.previewT3();if(!live.current||revision!==previewRevision.current)return;if(result.error)setConnectionError(result.error);else setPreview(result.preview);}catch{if(live.current&&revision===previewRevision.current)setConnectionError('Unable to read the pairing link. Copy it in T3, then try again.');}}
   const live=useRef(true),pending=useRef(false),revision=useRef(0);
-  async function request(enabled?:boolean,target:'video'|'t3'|'autoPaste'|'sharing'='video') {
+  async function request(enabled?:boolean,target:'video'|'t3'|'autoPaste'|'wisprFlow'|'sharing'='video') {
     if(pending.current)return;
     pending.current=true;setOperation(enabled===undefined?'read':'save');setSetting(target);setBusy(true);setError('');
     const version=++revision.current;
     try {
-      const result=await(enabled===undefined?window.apparentAgents.read():target==='sharing'?window.apparentAgents.saveSharing(enabled):target==='autoPaste'?window.apparentAgents.saveAutoPaste(enabled):target==='t3'?window.apparentAgents.saveT3(enabled):window.apparentAgents.save(enabled));
+      const result=await(enabled===undefined?window.apparentAgents.read():target==='sharing'?window.apparentAgents.saveSharing(enabled):target==='wisprFlow'?window.apparentAgents.saveWispr(enabled):target==='autoPaste'?window.apparentAgents.saveAutoPaste(enabled):target==='t3'?window.apparentAgents.saveT3(enabled):window.apparentAgents.save(enabled));
       if(!live.current||version!==revision.current)return;
       setFacts(result);
       if(result.error)setError(result.error==='config_read_failed'?'Unable to read this preference. Refresh to try again.':'Unable to save this preference. Refresh, then try again.');
@@ -90,9 +91,9 @@ export function Agents() {
     finally {if(live.current){setConnecting(false);setDisconnecting(false);setPreview(undefined);}}
   }
   const enabled=facts&&preferenceEnabled(facts),t3Enabled=facts&&t3PickerEnabled(facts);
-  const autoEnabled=facts&&autoPasteEnabled(facts),publicEnabled=facts&&sharingEnabled(facts);
+  const autoEnabled=facts&&autoPasteEnabled(facts),wisprOn=facts&&wisprEnabled(facts),publicEnabled=facts&&sharingEnabled(facts);
   const expired=Boolean(facts?.t3Configured&&(!facts.t3Origin||!facts.t3ExpiresAt||facts.t3ExpiresAt<=Date.now()));
-  const feedback=(target:'video'|'t3'|'autoPaste'|'sharing')=><>
+  const feedback=(target:'video'|'t3'|'autoPaste'|'wisprFlow'|'sharing')=><>
     <p role="status" className="settings-metadata settings-preference-status">{setting===target&&busy?(operation==='save'?'Saving preference…':'Reading saved preference…'):''}</p>
     {error&&setting===target&&<div className="settings-preference-error"><p role="alert">{error}</p><Button variant="secondary" disabled={busy} onClick={()=>void request(undefined,target)}>Refresh preference</Button></div>}
   </>;
@@ -148,6 +149,12 @@ export function Agents() {
       </div><Switch checked={autoEnabled??false} aria-labelledby="auto-paste-label" aria-describedby="auto-paste-help auto-paste-limits"
         disabled={busy||connecting||autoEnabled===undefined||!facts?.autoPasteSupported} onCheckedChange={value=>void request(value,'autoPaste')} /></div>
       {feedback('autoPaste')}
+      <div className="settings-agent-preference"><div>
+        <div className="settings-agent-heading"><h3 id="wispr-lab-label">Wispr onboarding</h3><Help label="About Wispr onboarding">On macOS, offer to quit Wispr Flow before choosing a shortcut. A frog dunk confirms it has closed. Off by default; applies when you next reach shortcut setup.</Help></div>
+        <p id="wispr-lab-help">Avoid shortcut clashes during setup. macOS only.</p>
+      </div><Switch checked={wisprOn??false} aria-labelledby="wispr-lab-label" aria-describedby="wispr-lab-help"
+        disabled={busy||connecting||wisprOn===undefined||!facts?.wisprSupported} onCheckedChange={value=>void request(value,'wisprFlow')} /></div>
+      {feedback('wisprFlow')}
     </section>
     <section className="settings-agent-group settings-agent-skill" aria-labelledby="agent-skill-label">
       <div className="settings-agent-heading"><h2 id="agent-skill-label">Agent skill <span className="settings-metadata">(optional)</span></h2><Help label="About the agent skill">Optional: run this in a terminal to teach Claude Code, OpenCode, Codex and other agents to read your captures. This is not needed to connect T3.</Help></div>

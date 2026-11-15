@@ -47,6 +47,8 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
         "t3Saved":config.get("experiments").and_then(|flags|flags.get("t3DestinationPicker")).and_then(|flag|flag.as_bool()),
         "autoPasteSaved":config.get("experiments").and_then(|flags|flags.get("autoPasteDraft")).and_then(|flag|flag.as_bool()),
         "autoPasteSupported":cfg!(target_os = "linux"),
+        "wisprSaved":config.get("experiments").and_then(|flags|flags.get("onboardingWisprFlow")).and_then(|flag|flag.as_bool()),
+        "wisprSupported":cfg!(target_os = "macos"),
         "t3Configured":config.pointer("/t3/origin").and_then(|v|v.as_str()).is_some()
             &&config.pointer("/t3/token").and_then(|v|v.as_str()).is_some()});
     // This private pipe terminates in Electron main. Its public facts parser
@@ -68,6 +70,8 @@ pub(super) fn request_for(path: &Path, request: u32, enabled: Option<bool>, sett
     let key = match setting { None | Some("video") => "agentDemoVideo", Some("t3") => "t3DestinationPicker", Some("sharing") => "hostedSharing",
         #[cfg(target_os = "linux")]
         Some("autoPaste") => "autoPasteDraft",
+        #[cfg(target_os = "macos")]
+        Some("wisprFlow") => "onboardingWisprFlow",
         _ => return serde_json::json!({"type":"agents-result","request":request,"facts":{"error":"config_write_failed"}}) };
     let facts = if let Some(enabled) = enabled {
         match crate::shared::handoff::set_experiment_in(path, key, enabled) {
@@ -81,6 +85,20 @@ pub(super) fn request_for(path: &Path, request: u32, enabled: Option<bool>, sett
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn wispr_lab_defaults_off_and_uses_the_shared_config_transaction_only_on_mac() {
+        let dir = tempfile::tempdir().unwrap(); let path = dir.path().join("config.json");
+        std::fs::write(&path, r#"{"secret":"private","experiments":{"other":true}}"#).unwrap();
+        assert!(facts(&path)["wisprSaved"].is_null());
+        assert!(!crate::shared::handoff::experiment_enabled_in(&crate::shared::handoff::load_config_from(&path), "onboardingWisprFlow"));
+        let reply = request_for(&path, 10, Some(true), Some("wisprFlow"));
+        if cfg!(target_os = "macos") {
+            assert_eq!(reply["facts"]["wisprSaved"], true);
+        } else { assert_eq!(reply["facts"]["error"], "config_write_failed"); }
+        let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(saved["secret"], "private"); assert_eq!(saved["experiments"]["other"], true);
+        assert!(!reply.to_string().contains("private"));
+    }
     #[test]
     fn settings_connection_uses_the_config_transaction_without_enabling_the_picker_or_logging_credentials() {
         let dir = tempfile::tempdir().unwrap(); let path = dir.path().join("config.json");
@@ -126,10 +144,10 @@ mod tests {
     fn agents_preference_preserves_config_and_reports_failed_writes() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.json");
-        assert_eq!(facts(&path), serde_json::json!({"saved": null,"t3Saved":null,"sharingSaved":null,"t3Configured":false,"autoPasteSaved":null,"autoPasteSupported":cfg!(target_os = "linux")}));
+        assert_eq!(facts(&path), serde_json::json!({"saved": null,"t3Saved":null,"sharingSaved":null,"t3Configured":false,"autoPasteSaved":null,"autoPasteSupported":cfg!(target_os = "linux"),"wisprSaved":null,"wisprSupported":cfg!(target_os = "macos")}));
         std::fs::write(&path, r#"{"secret":"private","experiments":{"other":true}}"#).unwrap();
         for on in [false, true] {
-            assert_eq!(request(&path, 7, Some(on)), serde_json::json!({"type":"agents-result","request":7,"facts":{"saved":on,"t3Saved":null,"sharingSaved":null,"t3Configured":false,"autoPasteSaved":null,"autoPasteSupported":cfg!(target_os = "linux")}}));
+            assert_eq!(request(&path, 7, Some(on)), serde_json::json!({"type":"agents-result","request":7,"facts":{"saved":on,"t3Saved":null,"sharingSaved":null,"t3Configured":false,"autoPasteSaved":null,"autoPasteSupported":cfg!(target_os = "linux"),"wisprSaved":null,"wisprSupported":cfg!(target_os = "macos")}}));
             let config: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
             assert_eq!(config["secret"], "private");
             assert_eq!(config["experiments"]["other"], true);

@@ -24,16 +24,17 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
   let saved: boolean | null = null;
   let t3Saved:boolean|null=null;
   let autoPasteSaved:boolean|null=null;
+  let wisprSaved:boolean|null=null;
   let failWrite = false;
   let holdWrite = false;
   let holdRead = true;
   let held: Record<string, unknown> | undefined;
   const reply = (action: Record<string, unknown>) => {
     if ('enabled' in action && !failWrite) {
-      if(action.setting==='sharing')sharingSaved=action.enabled as boolean;else if(action.setting==='t3')t3Saved=action.enabled as boolean;else if(action.setting==='autoPaste')autoPasteSaved=action.enabled as boolean;else saved=action.enabled as boolean;
+      if(action.setting==='sharing')sharingSaved=action.enabled as boolean;else if(action.setting==='t3')t3Saved=action.enabled as boolean;else if(action.setting==='autoPaste')autoPasteSaved=action.enabled as boolean;else if(action.setting==='wisprFlow')wisprSaved=action.enabled as boolean;else saved=action.enabled as boolean;
     }
     application.stdin.write(JSON.stringify({type: 'agents-result', request: action.request,
-      facts: failWrite && 'enabled' in action ? {error: 'config_write_failed'} : {saved,sharingSaved,t3Saved,t3Configured:false,autoPasteSaved,autoPasteSupported:process.platform==='linux'}}) + '\n');
+      facts: failWrite && 'enabled' in action ? {error: 'config_write_failed'} : {saved,sharingSaved,t3Saved,t3Configured:false,autoPasteSaved,autoPasteSupported:process.platform==='linux',wisprSaved,wisprSupported:process.platform==='darwin'}}) + '\n');
   };
   createInterface({input: application.stdout}).on('line', line => {
     try {
@@ -82,6 +83,9 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
       if(process.env.APPARENT_AGENTS_PROOF) await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,'auto-paste-on.png')});
       await autoToggle.click(); await expect(autoToggle).toHaveAttribute('aria-checked','false');
     } else await expect(autoToggle).toBeDisabled();
+    const wisprToggle=page.getByRole('switch',{name:'Wispr onboarding',exact:true});
+    await expect(wisprToggle).toHaveAttribute('aria-checked','false');
+    if(process.platform==='darwin'){await wisprToggle.click();await expect(wisprToggle).toHaveAttribute('aria-checked','true');assert.equal(actions.at(-1)?.setting,'wisprFlow');await wisprToggle.click();await expect(wisprToggle).toHaveAttribute('aria-checked','false');}else await expect(wisprToggle).toBeDisabled();
     const sharingToggle=page.getByRole('switch',{name:'Public sharing links'});
     await expect(sharingToggle).toHaveAttribute('aria-checked','false');
     await sharingToggle.focus();await page.keyboard.press('Space');

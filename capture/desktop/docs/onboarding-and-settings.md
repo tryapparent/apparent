@@ -748,3 +748,38 @@ Legacy native controls retain their private-link path and encrypted-sharing refu
 rolling back the Electron command restores that refusal, with no config migration
 or second writer. Installed platform capture and live upload acceptance remain
 separate from synthetic renderer and protocol checks.
+
+### Labs: Wispr onboarding (macOS, default off)
+
+Settings → Agents → Labs → **Wispr onboarding** saves
+`experiments.onboardingWisprFlow` through the existing shared config transaction.
+The default is false; enabling it applies when Electron next reaches shortcut
+setup. Direct config edits take effect on the next native onboarding state
+refresh. Disabling it removes the offer; a quit already requested may still finish.
+Linux keeps its existing shortcut flow and cannot enable this Mac-only control.
+
+The TypeScript workflow in `ui/frontend/src/onboarding/wispr/` asks whether Wispr
+Flow is running before an unchosen shortcut. A running app gets the quit/keep-open
+choice. Closed apps skip it; an unavailable check offers retry or continuation.
+The host independently rechecks the saved flag and current native step on each
+request. Its fixed AppKit adapter in `electron/onboarding/wispr.ts` requests normal
+termination of `com.electron.wispr-flow` and observes exit for up to five seconds.
+It never launches Wispr, force-quits, edits Wispr preferences or requests Apple
+Events Automation permission. Refusal/timeout does not trigger the success dunk.
+
+The accepted frog sequence starts only after a closed receipt. The finished pose
+holds for 1.2 seconds, then reveals existing shortcut setup without another click.
+The quit label stays stable; reduced motion uses the final pose and same hold.
+Keep open skips only this offer for the current setup visit. Renderer close/state
+changes invalidate pending callbacks. Existing native fallback, permission and
+capture routing remain authoritative; fallback does not gain this experiment.
+Rollback is turning the flag off. No legacy surface is removed by this slice.
+
+`tests/onboarding/wispr/policy.test.ts` covers admission/defaults and stale receipts;
+`wispr/smoke.ts` uses the built Electron renderer with synthetic native facts.
+On an isolated Mac, `APPARENT_WISPR_NATIVE_TEST=1` enables
+`wispr/macos.test.ts`, which refuses to run against an existing Wispr process and
+uses an owned AppKit fixture for normal quit and refusal. Synthetic proof is not
+verification of an active dictation in the vendor's app. The sprite sheet was
+generated from Apparent's existing frog reference; the key and basket carry no
+Wispr logo.

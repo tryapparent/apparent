@@ -250,6 +250,11 @@ app.whenReady().then(() => {
     if (!agents || process.platform !== 'linux' || args.length !== 1 || typeof args[0] !== 'boolean') throw new Error('Forbidden auto paste preference');
     return agentsPreferences.request(args[0], 'autoPaste');
   });
+  ipcMain.handle('apparent:agents-wispr-preference', (event, ...args) => {
+    validate(event, []);
+    if (!agents || process.platform !== 'darwin' || args.length !== 1 || typeof args[0] !== 'boolean') throw Error('Forbidden Wispr preference');
+    return agentsPreferences.request(args[0], 'wisprFlow');
+  });
   ipcMain.handle('apparent:agents-copy-skill', (event, ...args) => {
     validate(event, args);
     if (!agents) throw new Error('Unavailable outside Agents');
