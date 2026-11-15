@@ -101,9 +101,12 @@ remain migration debt. Agent's final range-fallback adoption removes the old roo
 and transcription. Linux's `decoder-check` and the decode half of `encoder-check`
 also use this published reader. The native adapter produces the synthetic encoder
 movie; composition supplies decoding without importing Record policy into it.
-Existing decoder-availability warnings remain unchanged. The legacy reader now
-remains only for comparison tests, until adopted screen and diagnostic callers
-have final package acceptance and it can be retired.
+Existing decoder-availability warnings remain unchanged. The adopted routes
+replace the legacy Linux file reader and Mac helper's `frames` command. Real SDK
+pixel/clock checks remain; donor-only comparison and box-filter tests are removed.
+Engine's extracted-package qualification retains open-GOP, backward-request,
+presentation-time and edge-clamp coverage. Restore retired readers before
+rolling an adopted route back to them; provider pins and persistence are unchanged.
 No competing configuration writer is introduced.
 
 Native checks exercise the actual published frame provider and private RGBA
@@ -183,5 +186,6 @@ held-frame video. Mac behavior for that skipped-track case is not established.
 
 Rollback restores the recovery/benchmark routing, injected contract and generated
 inventory together. The published pin, bundle schema and config writer do not
-change. Keep the remaining legacy diagnostic/reader until a separate verified
-consumer retirement; no live capture or permissions proof is inferred here.
+change. No live capture or permissions proof is inferred here. GStreamer still
+executes live capture and audio extraction; retiring file readers does not remove
+the root application's native build dependencies.
