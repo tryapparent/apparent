@@ -374,3 +374,14 @@ fn agents_setup_navigation_is_revision_bound_and_never_admitted_during_capture()
     let mut recording = view.clone(); recording.phase = "recording";
     assert!(recording.admit(command(9, "settings-agents")).is_none());
 }
+
+#[test]
+fn explicit_public_copy_requires_the_current_enabled_share_control() {
+    let view = View::new(&snapshot(Pres::Completed {share:Some(true),warning:false,label:"Saved".into(),routes:vec![]}), 10, false);
+    assert!(matches!(view.admit(command(10, "copy-public-link")), Some(PillAction::CopyPublicLink)));
+    assert!(view.admit(command(9, "copy-public-link")).is_none());
+    let disabled = View::new(&snapshot(Pres::Completed {share:Some(false),warning:false,label:"Saved".into(),routes:vec![]}), 10, false);
+    assert!(disabled.admit(command(10, "copy-public-link")).is_none());
+    let hidden = View::new(&snapshot(Pres::Completed {share:None,warning:false,label:"Saved".into(),routes:vec![]}), 10, false);
+    assert!(hidden.admit(command(10, "copy-public-link")).is_none());
+}
