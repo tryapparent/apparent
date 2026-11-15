@@ -125,7 +125,7 @@ function directConsumers(path: string): readonly Owner[] {
   const native = /\.(rs|swift|metal|c|cc|cpp|h|mm)$/.test(path) || /(^|\/)Cargo\.(toml|lock)$/.test(path);
   // Audited headless Record packages feed Desktop's generated adapters and the
   // packaged native application. Unknown files/packages and instructions stay broad.
-  if (/^record\/(?:storage|completion)\/(?:src\/.*\.ts|test\/.*\.test\.ts|package(?:-lock)?\.json|tsconfig\.json)$/.test(path) ||
+  if (/^record\/(?:storage|completion|capture-request)\/(?:src\/.*\.ts|test\/.*\.test\.ts|package(?:-lock)?\.json|tsconfig(?:\.build)?\.json)$/.test(path) ||
       path === 'record/storage/build.ts') return ['desktop', 'capture'];
   // This composed browser proof is executed by Connect's publication verifier.
   if (path === 'public/site/scripts/browser-proof/test-hosted-browser.mjs') return ['public', 'web'];

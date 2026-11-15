@@ -11,7 +11,7 @@ import type {Command} from './run.ts';
 
 export const desktopPackage = 'capture/desktop/ui/frontend';
 const install = ['npm', 'ci', '--no-audit', '--no-fund'];
-const localPackages = ['shared/ui', 'record/storage'];
+const localPackages = ['shared/ui', 'record/storage', 'record/capture-request'];
 const installScripts = new Map([
   ['node_modules/esbuild', '0.28.2'], ['node_modules/fsevents', '2.3.3'], ['node_modules/electron', '45.2.1'],
 ]);

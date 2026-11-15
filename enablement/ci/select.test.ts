@@ -401,8 +401,8 @@ test('recipient playback provisions FFmpeg and stable Chrome before the portable
 });
 
 test('audited Record inputs retain Desktop and native platform consumers only', () => {
-  for (const pkg of ['storage', 'completion']) {
-    for (const input of ['src/policy.ts', 'test/policy.test.ts', 'package.json', 'package-lock.json', 'tsconfig.json', ...(pkg === 'storage' ? ['build.ts'] : [])]) {
+  for (const pkg of ['storage', 'completion', 'capture-request']) {
+    for (const input of ['src/policy.ts', 'test/policy.test.ts', 'package.json', 'package-lock.json', 'tsconfig.json', ...(pkg === 'storage' ? ['build.ts'] : []), ...(pkg === 'capture-request' ? ['tsconfig.build.json'] : [])]) {
       const paths = [`record/${pkg}/${input}`];
       assert.deepEqual(selectedOwners(paths), ['capture', 'desktop', 'onboarding']);
       assert.deepEqual(suitePlan(paths), {root: true, engine: false, desktop: true, client: false, foreground: false,
