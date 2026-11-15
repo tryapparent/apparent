@@ -50,6 +50,12 @@
   --apparent-layout-gutter: 24px;
   --apparent-layout-inset: 32px;
   --apparent-navigation-width: 232px;
+  --apparent-desktop-settings-sidebar-width: 216px;
+  --apparent-desktop-settings-info-icon-size: 16px;
+  --apparent-desktop-settings-copy-icon-size: 16px;
+  --apparent-desktop-settings-switch-width: 48px;
+  --apparent-desktop-settings-switch-height: 24px;
+  --apparent-desktop-settings-switch-thumb-size: 18px;
   --apparent-motion-fast: 120ms;
   --apparent-motion-standard: 200ms;
   --apparent-motion-easing: cubic-bezier(0, 0, 0.2, 1);

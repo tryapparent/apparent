@@ -13,6 +13,7 @@ Use these sources instead of inferring rules from screenshots. Safety and access
 ## Implementation
 
 - [Product interface system](https://tryapparent.com/brand/design-system/product-interface.md): Product behavior, foundations, and patterns.
+- [Desktop Settings](https://tryapparent.com/brand/design-system/desktop-settings.md): Adopted composition, contextual help, command copying, utility icons, compact switches and pending state decisions.
 - [Svelte component system](https://tryapparent.com/brand/design-system/svelte-component-system.md): Bits UI, optional shadcn-svelte recipes, LayerChart, tokens, and validation.
 - [Frontend instructions](https://tryapparent.com/brand/design-system/instructions/frontend-implementation.md): Component contracts, architecture, privacy, and tests.
 - [Identifier standard](https://tryapparent.com/brand/design-system/identifiers.md): Canonical prefixed ULIDs.
