@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
+import {copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 
@@ -61,7 +61,12 @@ try {
         color(12 + (i % 3) * 490 + 360, 12 + Math.floor(i / 3) * 370 + 180, 2);
       } else color(12 + (i % 4) * 310 + 150, 12 + Math.floor(i / 4) * 460 + 225, i < 3 ? 0 : 2);
     }
-    assert.deepEqual(readdirSync(temporary), [], 'owned raw frame directories must be removed before return');
+    // extract-and-run keeps its runtime cache between CLI invocations. It is
+    // distinct from the adapter's owned apparent-frames-* pixel directories.
+    for (const entry of readdirSync(temporary)) {
+      assert(/^appimage_extracted_[0-9a-f]{32}$/.test(entry) && lstatSync(join(temporary, entry)).isDirectory(),
+        'owned raw frame directories must be removed before return');
+    }
     if (args.length === 6) {
       mkdirSync(resolve(args[5]), {recursive: true, mode: 0o700});
       copyFileSync(png, join(resolve(args[5]), full ? 'full.png' : 'cropped.png'));
