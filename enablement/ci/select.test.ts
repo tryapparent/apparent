@@ -142,8 +142,8 @@ test('portable checks execute once; nested platforms consume plans rather than e
   assert.equal(platform.on.workflow_call.inputs.plan.default, '');
   assert.ok(platform.jobs.select.steps.some((s: any) => s.run?.includes('--portable') && s.if === 'inputs.portable'));
   assert.doesNotMatch(readFileSync(new URL('.github/workflows/verification-platform.yml', root), 'utf8'), /hash-object -t tree/);
-  assert.equal(platform.jobs['desktop-ui'].if, "needs.select.outputs.desktop == 'true'");
-  assert.equal(platform.jobs['connect-client'].if, "needs.select.outputs.client == 'true'");
+  assert.equal(platform.jobs['desktop-ui'].if, "(inputs.runner != 'macos-15-intel' || inputs.release_receipt) && needs.select.outputs.desktop == 'true'");
+  assert.equal(platform.jobs['connect-client'].if, "(inputs.runner != 'macos-15-intel' || inputs.release_receipt) && needs.select.outputs.client == 'true'");
   assert.match(platform.jobs.rust.if, /outputs.root.*outputs.engine/);
   assert.ok(ci().jobs.portable.steps.some((s: any) => s.run?.includes('--portable')));
 });

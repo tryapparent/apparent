@@ -6,6 +6,9 @@ than creating another timing authority. Every timing row exposes exact
 `count × meanSeconds = totalSeconds` arithmetic; rank by total and keep tool
 envelopes, async spans, hosted execution and critical-path delay distinct.
 
+Timing `*.test.ts` files are discovered recursively by the canonical shared
+contract inventory. New tests need no registration edit in `local-tests/run.ts`.
+
 Read retained Codex rollout JSONL without a server, credentials, Rust, Electron
 or extra dependencies. Stream files; write only the aggregate JSON to stdout:
 

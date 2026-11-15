@@ -78,7 +78,7 @@ test('hosted producer and both platform plans keep parallel native execution and
   assert.equal(manual.jobs.verify.permissions.contents, 'read');
   const nativeSteps = platform.jobs.rust.steps;
   const installIndex = nativeSteps.findIndex((s: any) => s.name === 'Local Desktop install reuse contracts');
-  assert.equal(nativeSteps[installIndex].if, "runner.os == 'macOS'");
+  assert.equal(nativeSteps[installIndex].if, "runner.os == 'macOS' && (needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true' || needs.select.outputs.desktop == 'true')");
   assert.equal(nativeSteps[installIndex].env.GH_TOKEN, '${{ github.token }}');
   assert.ok(installIndex < nativeSteps.findIndex((s: any) => s.name === 'Prepare locked native prerequisites before first Cargo'));
   for (const plan of [checks.jobs.linux,checks.jobs.macos]) assert.equal(plan.with.portable, false);
