@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, cpSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, cpSync, rmSync, existsSync, realpathSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 function fixture(t: any, failure = '') {
-  const root = mkdtempSync('/tmp/apparent-dev-targeted-electron-');
+  const root = realpathSync(mkdtempSync('/tmp/apparent-dev-targeted-electron-'));
   t.after(() => rmSync(root, {recursive: true, force: true}));
   const frontend = resolve(root, 'capture/desktop/ui/frontend');
   const put = (name: string, text: string) => {
