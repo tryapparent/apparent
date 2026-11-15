@@ -67,3 +67,20 @@ test('real pill keeps Paste by default, then selects during processing and dispa
  await expect(page.getByRole('button',{name:'Paste',exact:true})).toBeVisible();await expect.poll(()=>app.windows().length).toBe(1);assert.equal(f.reads,reads);
  if(returning)assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isFocusable()),false,'turning off restores the original non-focusable recording role');
 });
+
+test('enabled unpaired pill opens Agents through the native pipe and can copy the kept recording', {timeout:30000},async t=>{
+ const {fixture}=await import('./testing/server.ts');const f=await fixture(t);
+ await fs.writeFile(f.config,JSON.stringify({experiments:{t3DestinationPicker:true}}));
+ const app=await electron.launch({args:[path.resolve(__dirname,'../host.cjs'),'--no-sandbox','--ozone-platform=x11'],env:{...process.env,APPARENT_CONFIG:f.config,HOME:f.home}});t.after(async()=>{await app.close().catch(()=>{});});
+ let page=await app.firstWindow(),buffer='',setup=false;
+ app.process().stdout.on('data',chunk=>{buffer+=String(chunk);let end;while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end);buffer=buffer.slice(end+1);try{const value=JSON.parse(line);if(value.ready)void app.evaluate((_electron,id)=>process.stdin.emit('data',JSON.stringify({type:'activate',windowId:id})+'\n'),value.windowId).catch(()=>{});if(value.action==='settings-agents')setup=true;}catch{}}});
+ const frame={type:'state',capture:'unpaired',t3Eligible:true,view:{revision:1,phase:'completed',clock:'00:04',label:'Saved',warning:null,notice:null,reducedMotion:true,draggable:false,inputWaveform:null,noteCount:0,actions:[{id:'paste',label:'Paste',enabled:true,selected:false,primary:true}]}};
+ const next=process.platform==='linux'?app.waitForEvent('window'):null;
+ const publish=()=>app.evaluate((_electron,value)=>process.stdin.emit('data',JSON.stringify(value)+'\n'),frame);
+ await publish();const heartbeat=setInterval(()=>void publish().catch(()=>{}),500);t.after(()=>clearInterval(heartbeat));if(next)page=await next;
+ await expect(page.getByRole('button',{name:'Connect T3',exact:true})).toBeVisible();await expect(page.getByRole('combobox')).toHaveCount(0);assert.equal(f.reads,0);
+ await page.getByRole('button',{name:'Connect T3',exact:true}).click();await expect.poll(()=>setup).toBe(true);
+ await app.evaluate(()=>process.stdin.emit('data',JSON.stringify({type:'handoff-ready',capture:'unpaired',text:'Kept synthetic recording'})+'\n'));
+ await page.getByRole('button',{name:'Copy instead',exact:true}).click();await expect(page.getByText('Copied',{exact:true})).toBeVisible();assert.equal(await app.evaluate(({clipboard})=>clipboard.readText()),'Kept synthetic recording');assert.equal(f.calls.length,0);
+ if(process.env.APPARENT_T3_PROOF)for(const colorScheme of ['light','dark']){await page.emulateMedia({colorScheme});await page.screenshot({path:path.join(process.env.APPARENT_T3_PROOF,'unpaired-'+colorScheme+'.png')});}
+});

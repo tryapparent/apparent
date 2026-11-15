@@ -13,13 +13,18 @@ Use these sources instead of inferring rules from screenshots. Safety and access
 ## Implementation
 
 - [Product interface system](https://tryapparent.com/brand/design-system/product-interface.md): Product behavior, foundations, and patterns.
-- [Svelte component system](https://tryapparent.com/brand/design-system/svelte-component-system.md): Bits UI, optional shadcn-svelte recipes, LayerChart, tokens, and validation.
+- [Desktop Settings](https://tryapparent.com/brand/design-system/desktop-settings.md): Adopted composition, contextual help, command copying, utility icons, compact switches and pending state decisions.
 - [Frontend instructions](https://tryapparent.com/brand/design-system/instructions/frontend-implementation.md): Component contracts, architecture, privacy, and tests.
 - [Identifier standard](https://tryapparent.com/brand/design-system/identifiers.md): Canonical prefixed ULIDs.
 - [Design tokens JSON](https://tryapparent.com/brand/design-system/tokens/apparent.tokens.json): Exact machine-readable token values.
 - [Design tokens CSS](https://tryapparent.com/brand/design-system/tokens/apparent.css): Ready-to-use CSS custom properties.
 
+- [Live component library](https://tryapparent.com/brand/#frontend-design-system): Shared React controls, states, keyboard behavior, usage and source.
+
 ## Assets
+
+- [Frog collection](https://tryapparent.com/brand/#frog-collection): Original poses and scenes to download.
+- [Frog asset index](https://tryapparent.com/brand/assets/frogs/collection.json): Image paths, dimensions, repository sources and a reference prompt.
 
 - [Primary wordmark](https://tryapparent.com/brand/assets/brand/apparent-wordmark.svg)
 - [Inverse wordmark](https://tryapparent.com/brand/assets/brand/apparent-wordmark-inverse.svg)

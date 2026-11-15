@@ -26,6 +26,22 @@ function toScreenInk() {
 function throughDrawing() {
   const p = toScreenInk(); p.ink(false, 0); p.ink(false, 1); p.stage('stop'); return p;
 }
+test('identical native polling snapshots are idempotent without an intervening event', () => {
+  for (const stage of stages) for (const visible of [false, true])
+    for (const board of [false, true]) for (const screen of [0, 3, 4])
+      for (const processing of [false, true]) for (const baseline of [0, 3]) {
+        const initial = {...initialPractice(), stage, screenBaseline: baseline};
+        const events: Event[] = [{type: 'whiteboard-visible', visible}, {type: 'ink', board, screen}];
+        if (processing) events.push({type: 'processing'});
+        const apply = (state: Practice) => events.reduce((state, event) => {
+          const next = reducePractice(state, event);
+          assert.equal(next.accepted, false, 'polling cannot authorize an intent');
+          return next.state;
+        }, state);
+        const once = apply(initial);
+        assert.deepEqual(apply(once), once, `${stage}/${visible}/${board}/${screen}/${processing}/${baseline}`);
+      }
+});
 // One-for-one ports of ALL ten donor test cases; original names retained.
 test('renderer_cannot_skip_real_capture_or_drawing', () => {
   const p = practice(); assert.equal(p.action('practice-pasted'), false); p.send('started');

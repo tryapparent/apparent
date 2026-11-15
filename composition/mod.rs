@@ -7,4 +7,6 @@ pub(crate) mod media_probe;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub(crate) mod movie_frames;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
+pub(crate) mod screen_frames;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 pub(crate) mod worker;

@@ -1159,16 +1159,12 @@ fn run_cli(cli: Cli) -> Result<()> {
                     }
                 } else {
                     let offset = old.video_offset_ms;
-                    let raw_candidates = helper::frames(
-                        &video,
-                        helper::FrameTimes::Every(220),
-                        crate::capture::engine::runtime::CANDIDATE_EDGE as u32,
-                    )?;
+                    let probe = crate::composition::media_probe::bundle_probe(&video)?;
+                    let raw_candidates = crate::composition::screen_frames::candidates(&video, probe.duration_ms, offset, "benchmark")?;
                     let mut candidate_buf = crate::capture::engine::runtime::CandidateBuffer::new(
                         crate::capture::engine::runtime::CANDIDATE_BUDGET_BYTES,
                     );
-                    for mut frame in raw_candidates {
-                        frame.t_ms += offset;
+                    for frame in raw_candidates {
                         let urgent = old.strokes.iter().any(|s| s.t1.abs_diff(frame.t_ms) <= 150)
                             || old.events.iter().any(|e| match e {
                                 InteractionEvent::Click { t, .. }
@@ -1432,7 +1428,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 "{}",
                 linux::media::decoder_warning().unwrap_or_default()
             );
-            let frames = linux::media::frames(&movie, helper::FrameTimes::At(&[0]), 0)?;
+            let frames = crate::composition::movie_frames::record(&movie, &[0], 0, 0)?;
             let frame = &frames[0];
             anyhow::ensure!(
                 frame.width > 0 && frame.height > 0,
@@ -1448,7 +1444,14 @@ fn run_cli(cli: Cli) -> Result<()> {
         }
         #[cfg(target_os = "linux")]
         Command::EncoderCheck { movie } => {
-            linux::media::encoder_check(&movie)?;
+            linux::media::encode_check_movie(&movie)?;
+            let frames = crate::composition::movie_frames::record(&movie, &[0], 0, 0)?;
+            anyhow::ensure!(
+                frames
+                    .first()
+                    .is_some_and(|frame| frame.width == 160 && frame.height == 90),
+                "H.264 movie cannot be decoded at 160x90"
+            );
             println!("Encoded and decoded H.264 MP4: {}", movie.display());
             Ok(())
         }

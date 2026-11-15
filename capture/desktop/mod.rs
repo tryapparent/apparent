@@ -2864,6 +2864,7 @@ impl ApparentCoordinator {
             PillAction::Paste(target) => self.paste_completed_bundle(target, cx),
             PillAction::CopyLink => self.copy_completed_link(cx),
             PillAction::Inspect => self.inspect_completed_bundle(cx),
+            PillAction::SettingsAgents => self.open_settings(Some(settings::Pane::Agents)),
             PillAction::DismissCompleted => self.dismiss_completed_bundle(cx),
             PillAction::Route(_) => {}
         }

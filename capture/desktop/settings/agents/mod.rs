@@ -1,6 +1,36 @@
 //! Agents persistence adapter. Defaults and presentation belong to TypeScript.
 use std::path::Path;
 
+#[derive(Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Connection {
+    origin: String,
+    token: String,
+    #[serde(rename = "expiresAt")]
+    expires_at: f64,
+}
+
+// Settings actions are logged by native callers. Credentials must never take
+// the ordinary derived-Debug path, including a failed persistence request.
+impl std::fmt::Debug for Connection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("T3Connection([redacted])")
+    }
+}
+
+pub(super) fn connection_request(path: &Path, request: u32, connection: Option<Connection>) -> serde_json::Value {
+    // TypeScript owns authorization/URL policy. Native retains the one config
+    // mutation contract and independently bounds the private pipe payload.
+    let valid = connection.as_ref().is_none_or(|value| !value.origin.is_empty() && value.origin.len() <= 2048
+        && !value.token.is_empty() && value.token.len() <= 8192 && value.expires_at.is_finite() && value.expires_at > 0.0);
+    let value = if valid { serde_json::to_value(connection).ok() } else { None };
+    let facts = match value.and_then(|value| crate::shared::handoff::set_config_value_in(path, "t3", value).ok()) {
+        Some(()) => facts(path),
+        None => serde_json::json!({"error":"config_write_failed"}),
+    };
+    serde_json::json!({"type":"agents-result","request":request,"facts":facts})
+}
+
 pub(super) fn facts(path: &Path) -> serde_json::Value {
     let config = match std::fs::read(path) {
         Ok(bytes) => match serde_json::from_slice::<serde_json::Value>(&bytes) {
@@ -12,10 +42,19 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
     };
     // Match the existing config reader: absent/non-boolean values have no
     // explicit preference. Never forward unrelated config or private keys.
-    serde_json::json!({"saved": config.get("experiments").and_then(|flags| flags.get("agentDemoVideo")).and_then(|flag| flag.as_bool()),
+    let mut result = serde_json::json!({"saved": config.get("experiments").and_then(|flags| flags.get("agentDemoVideo")).and_then(|flag| flag.as_bool()),
         "t3Saved":config.get("experiments").and_then(|flags|flags.get("t3DestinationPicker")).and_then(|flag|flag.as_bool()),
         "t3Configured":config.pointer("/t3/origin").and_then(|v|v.as_str()).is_some()
-            &&config.pointer("/t3/token").and_then(|v|v.as_str()).is_some()})
+            &&config.pointer("/t3/token").and_then(|v|v.as_str()).is_some()});
+    // This private pipe terminates in Electron main. Its public facts parser
+    // validates the origin before exposing it to the page; no token is sent.
+    if let Some(origin) = config.pointer("/t3/origin").and_then(|v|v.as_str()).filter(|s| s.len()<=2048) {
+        result["t3Origin"] = serde_json::json!(origin);
+    }
+    if let Some(expiry) = config.pointer("/t3/expiresAt").and_then(|v|v.as_f64()).filter(|n|n.is_finite()) {
+        result["t3ExpiresAt"] = serde_json::json!(expiry);
+    }
+    result
 }
 
 pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>) -> serde_json::Value {
@@ -36,6 +75,22 @@ pub(super) fn request_for(path: &Path, request: u32, enabled: Option<bool>, sett
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn settings_connection_uses_the_config_transaction_without_enabling_the_picker_or_logging_credentials() {
+        let dir = tempfile::tempdir().unwrap(); let path = dir.path().join("config.json");
+        std::fs::write(&path, r#"{"other":"keep","experiments":{"t3DestinationPicker":false}}"#).unwrap();
+        let connection: Connection = serde_json::from_value(serde_json::json!({"origin":"http://127.0.0.1:3773","token":"private-fixture","expiresAt":1234567890.0})).unwrap();
+        let action = super::super::settings::Action::AgentsConnection {request:4,connection:Some(connection.clone())};
+        assert!(!format!("{action:?}").contains("private-fixture"));
+        let reply = connection_request(&path,4,Some(connection));
+        assert_eq!(reply["facts"]["t3Configured"],true); assert_eq!(reply["facts"]["t3Saved"],false);
+        assert!(!reply.to_string().contains("private-fixture"));
+        let value: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(value["other"],"keep"); assert_eq!(value["t3"]["token"],"private-fixture");
+        assert_eq!(connection_request(&path,5,None)["facts"]["t3Configured"],false);
+        let value: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert!(value.get("t3").is_none());assert_eq!(value["other"],"keep");
+    }
     #[test]
     fn t3_preference_is_independent_and_keeps_pairing_private() {
         let dir = tempfile::tempdir().unwrap(); let path = dir.path().join("config.json");

@@ -213,6 +213,10 @@ impl View {
 
     /// Admission is checked again against current coordinator state before dispatch.
     pub fn admit(&self, command: Command) -> Option<PillAction> {
+        if command.revision == self.revision && command.action == "settings-agents" && command.target.is_none()
+            && matches!(self.phase, "processing" | "completed") {
+            return Some(PillAction::SettingsAgents);
+        }
         if command.revision != self.revision
             || !self
                 .actions

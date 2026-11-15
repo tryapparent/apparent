@@ -87,8 +87,8 @@ test('public reads spend the durable allowance, reject unshared IDs and fail clo
   assert.equal((await f.call('/s/'+a.token+'/manifest.json')).status,404);assert.equal((await f.call('/s/'+id(171))).status,404);
   const s=await (await f.call(p+'/share',{token:a.token,method:'POST'})).json(),path=new URL(s.url).pathname;
   const before=(await f.db.prepare('SELECT b_used FROM r2_budget').first()).b_used;
-  assert.equal(await (await f.call(path+'/files/summary.md')).text(),'hello');assert.equal((await f.db.prepare('SELECT b_used FROM r2_budget').first()).b_used,before+1);
-  await f.db.prepare('UPDATE r2_budget SET b_cap=b_used').run();assert.equal((await f.call(path+'/manifest.json')).status,200,'metadata does not call R2');
+  assert.equal(await (await f.call(path+'/files/summary.md')).text(),'hello');const reserved=(await f.db.prepare('SELECT b_used FROM r2_budget').first()).b_used;assert.ok(reserved>=before+1&&reserved<=before+256);
+  await f.db.prepare('UPDATE r2_budget SET b_cap=b_used').run();await f.reload();assert.equal((await f.call(path+'/manifest.json')).status,200,'metadata does not call R2');
   const denied=await f.call(path+'/files/summary.md',{headers:{Range:'bytes=0-1'}});assert.equal(denied.status,503);assert.equal((await denied.json()).error.code,'budget_exhausted');
   await f.db.prepare('DELETE FROM r2_budget').run();assert.equal((await f.call(path+'/files/summary.md')).status,503);
   await f.call(p,{token:a.token,method:'DELETE'});assert.equal((await f.call(path)).status,410);

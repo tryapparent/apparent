@@ -19,7 +19,7 @@ const SAFE_TIME: u64 = 9_007_199_254_740_991;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Reply {
+pub(super) struct Reply {
     version: u32,
     frames: Vec<Frame>,
 }
@@ -96,17 +96,19 @@ pub(crate) fn record_phone_candidates(movie: &Path, duration: u64) -> Result<Vec
 }
 
 fn candidate_times(reply: &Reply) -> Result<Vec<u64>> {
+    ensure!(!reply.frames.is_empty(), "Invalid candidate count");
+    sampled_times(reply, 0)
+}
+
+pub(super) fn sampled_times(reply: &Reply, offset: u64) -> Result<Vec<u64>> {
     // Finite bridge admission; cadence and duplicate selection belong to Record.
-    ensure!(
-        !reply.frames.is_empty() && reply.frames.len() <= 512,
-        "Invalid candidate count"
-    );
+    ensure!(reply.frames.len() <= 512, "Invalid candidate count");
     let mut times = Vec::with_capacity(reply.frames.len());
     for frame in &reply.frames {
         ensure!(
             frame.actual_movie_ms >= 0
                 && frame.requested_ms <= SAFE_TIME
-                && frame.requested_ms == frame.actual_movie_ms as u64
+                && (frame.actual_movie_ms as u64).checked_add(offset) == Some(frame.requested_ms)
                 && times.last().is_none_or(|last| *last < frame.requested_ms),
             "Invalid candidate clock"
         );
@@ -219,6 +221,24 @@ fn frame_response(
     movie: &Path,
     arguments: &[String],
 ) -> Result<(tempfile::TempDir, File, Vec<u8>)> {
+    timed_frame_response(
+        label,
+        package,
+        worker_file,
+        movie,
+        arguments,
+        Duration::from_secs(305),
+    )
+}
+
+pub(super) fn timed_frame_response(
+    label: &str,
+    package: &str,
+    worker_file: &str,
+    movie: &Path,
+    arguments: &[String],
+    timeout: Duration,
+) -> Result<(tempfile::TempDir, File, Vec<u8>)> {
     let (node, worker, engine) =
         super::worker::assets(label, package, "apparent-engine-frames", worker_file)?;
     let movie = std::fs::canonicalize(movie).context("Could not locate movie")?;
@@ -247,7 +267,10 @@ fn frame_response(
             .arg(input)
             .arg(output.path())
             .args(arguments),
-        Duration::from_secs(305),
+        timeout,
+        // A full 480-frame periodic reply exceeds the metadata envelope. Keep
+        // a finite transport cap; record counts and pixels are validated below.
+        128 * 1024,
     )?;
     Ok((output, directory, bytes))
 }
@@ -259,8 +282,18 @@ fn read_frames(
     times: &[u64],
     max_edge: u32,
 ) -> Result<Vec<RgbaFrame>> {
-    let identity = directory.metadata()?;
     let reply: Reply = serde_json::from_slice(bytes).context("Invalid movie frame response")?;
+    read_reply(output, directory, reply, times, max_edge)
+}
+
+pub(super) fn read_reply(
+    output: &Path,
+    directory: &File,
+    reply: Reply,
+    times: &[u64],
+    max_edge: u32,
+) -> Result<Vec<RgbaFrame>> {
+    let identity = directory.metadata()?;
     ensure!(
         reply.version == 1 && reply.frames.len() == times.len(),
         "Incomplete movie frames"

@@ -26,6 +26,7 @@ class SigningTests(unittest.TestCase):
                              "dist/assets/controls.js", "node_modules/electron/dist/electron",
                              "electron/pill/native/window.node",
                              "electron/pill/t3.cjs",
+                             "electron/settings/t3.cjs",
                              "electron/record-media/worker.js", "electron/record-media/policy.js",
                              "electron/record-media/node_modules/@apparent/engine-sdk/dist/index.js",
                              "electron/record-media/native/apparent-engine-media",

@@ -1,36 +1,41 @@
 # apparent brand guidelines
 
-Status: v0.3 review
-Updated: 22.07.2026
+Status: v0.4 capture
+Updated: 15.11.2026
 Owner: founder approval
 
 ## Brand foundations
 
-- Name: `apparent`. Always lowercase, including sentence starts, headings,
-  titles, metadata, and navigation.
-- Category: AI-ready operational data.
-- Company: the operational-data platform for AI-native companies.
-- Enduring promise: Operational data you can build on.
-- Product proposition: Documents ready for AI.
-- Character: lean, fast, technical, assured, and precise.
+- Name: `apparent`, lowercase. Unique handle: `tryapparent`.
+- Belief: We believe work should be enjoyable and leave us free for late nights with friends.
+- Conviction: Through fun, we make better products. Play invites experimentation and care for the details.
+- Principle: It’s the machine’s job to understand us, not our job to talk like a machine.
+- Purpose: Remove the friction between human expression and computer understanding.
+- Audience: Creative people who already have a coding agent set up, make personal projects for fun, and value good design. No professional design expertise, specialist vocabulary or particular technology stack is required.
+- Product line: Point. Talk. Draw.
+- Today: Screen, voice, pointing and drawing help people show their coding agent what they mean. An agent can use apparent to show what it made in a video walkthrough.
+- Vision: A more human collaboration with computers across media and senses. This is a direction, not a claim that all media and senses are supported today.
+- Character: Playful, warm, wonderfully weird, expressive and dependable.
+- Time: Save room for making your project more delightful and for friends, painting or life beyond the screen. More output is not an obligation.
 
-The display name is always `apparent`. When a service requires a globally
-unique handle or the plain name is unavailable, use `tryapparent`. Use it
-consistently for LinkedIn, GitHub, social accounts, package scopes, and similar
-namespaces. Do not create variants such as getapparent, apparent-ai, or
-apparent-hq.
+Keep the logo, five-color palette and Host Grotesk. The landing page’s existing character is the reference. Playfulness must be optional and effortless: no compulsory jokes, surprise sound or obstructive animations. Errors, permissions, capture and handoff stay literal and clear.
+
+For Desktop Settings follow the [adopted specification](./design-system/desktop-settings.md).
+
+## Frog collection
+
+Use the [visual collection](https://tryapparent.com/brand/#frog-collection) and [asset index with reference prompt](./assets/frogs/collection.json). Download and attach the closest original when creating a new pose. Preserve chunky pixels, olive body, cream belly, oversized eyes, dark outline and warm cheek accents. Keep text and logos outside generated artwork. Inspect backgrounds before compositing; new generations are candidates until reviewed. Frog artwork does not introduce new UI colors.
+
+## Component library
+
+The [live component library](https://tryapparent.com/brand/#frontend-design-system) renders shared React/shadcn Button, Tabs, NativeSelect and StatusCard from [shared/ui](https://github.com/tryapparent/apparent/tree/main/shared/ui), plus a native labeled field example and an optional switch composition using shared Button with switch semantics. It includes keyboard behavior, selected, disabled, empty, waiting, success, warning, error and retry states, usage snippets and source links. Examples do not capture, upload or persist settings. Keep the owning product’s theme and stack; the historical portal and Svelte material are not current product prescriptions.
 
 ## Logo and highlighting
 
 Use the supplied boxed wordmark whenever the name fits. Use the boxed lowercase
 `a` only for favicons, avatars, and compact controls. Never rebuild either mark.
 
-The wordmark color field is a highlighter metaphor. It represents apparent
-finding the part that matters, revealing structure, and making document
-knowledge usable. Use Lilac highlights for source evidence, extracted fields,
-selected regions, and structured information. Use Signal for one decisive
-action or transition. Highlights stay rectangular, close to the content they
-explain, and sparse. They never float as decoration.
+The wordmark color field keeps its highlighter character. Marks make human intention visible: a region, idea or change. Use Lilac for meaningful emphasis and selection, Signal for the primary action and focus. Hand-drawn circles, arrows and imperfect strokes can be expressive. Keep text legible and distinguish illustrative marks from real user input.
 
 - Wordmark clear space: 0.5 times the complete color-box height on every side.
 - Wordmark digital minimum: 120px wide.
@@ -70,6 +75,12 @@ Normal-size Signal text is allowed only on Paper. On Stock or Carbon, use
 Signal for non-text UI, focus, graphics, large text, or filled controls with
 Paper text. Signal and Lilac always need a second distinction such as a label,
 shape, pattern, position, or outline.
+
+Interaction roles: Signal identifies choices in the active decision or action flow, including alternatives such as “Activate upload / Not today”. Lilac identifies optional interactions outside that flow. Do not equate active with checked or optional with disabled. Distinguish emphasis within the active choice group through fill, border, placement and wording, rather than assigning an alternative to Lilac just because it is not the default. Carbon remains the readable foreground on Lilac.
+
+Optional command-copy surfaces and preference-switch tracks match in Lilac #B7A5D8. Switches have a Carbon thumb, left Off/right On, with no visible track outline in either theme; keyboard focus remains visible. Preference saves succeed quietly; show saving and errors inline with recovery. Keep preference consequences and errors visible. Put optional explanation behind an info control accessible on hover, focus and click. Commands remain visible with an embedded copy icon, not a full “Copy command” button.
+
+Desktop defaults: 216px sidebar, 16px info/copy glyphs with at least 44px targets, 48×24px track and 18px thumb; 36/40 weight-700 title, 18/27 weight-500 labels, weight-400 body. One Carbon divider below the Settings title; use spacing between ordinary groups. Dark mode keeps the five-color palette with Carbon canvas and Paper reading text. Do not add consumer-only gray #625B66. See the [Desktop Settings specification](./design-system/desktop-settings.md).
 
 ### Functional status colors
 
@@ -120,9 +131,7 @@ explicitly, for example `09:42 CEST`. Use UTC only for technical logs or
 genuinely cross-region coordination. Do not expose UTC merely because the
 backend stores it.
 
-LayerChart 2 is the single chart engine and remains behind locally owned
-apparent chart components. shadcn-svelte chart source is optional scaffolding,
-not a visual authority. Carbon establishes axes and baselines, Lilac provides
+Use the owning product’s chart implementation behind local components. Historical LayerChart examples do not mandate a new dependency. Carbon establishes axes and baselines, Lilac provides
 comparison structure, and Signal selects one series or threshold.
 
 The approved multi-series system is core plus pattern and introduces no new
@@ -139,17 +148,19 @@ with text, dash, pattern, outline, or another non-color cue.
 
 ## Voice and writing
 
+Be warm, playful, peculiar and clear. Invite people to make something. Contractions and an occasional natural exclamation are welcome. Keep instructions and recovery literal; never joke about lost work or permission.
+
+
 Write directly, compactly, and with technical precision.
 
-1. Lead with the operational fact.
+1. Lead with what the person wants to make or needs to do.
 2. Name the actor and action.
 3. Prefer short concrete words.
 4. Cut every word that does no work.
 5. Keep one claim per sentence.
 6. Attach proof, source, timeframe, and evidence status.
 
-Use sentence case and periods. Never use em dashes, hype, exclamation marks,
-emoji, decorative Unicode type, or unsupported superlatives. Label estimates,
+Use sentence case and periods. Never use em dashes, unsupported superlatives or decorative type that impairs reading. Label estimates,
 forecasts, and illustrative examples.
 
 ## Identifiers
@@ -163,11 +174,7 @@ used as authorization tokens. See the [identifier standard](./design-system/iden
 
 ## Frontend engineering
 
-For Svelte 5 and SvelteKit products, Bits UI is the single component-library
-dependency. shadcn-svelte is an optional source recipe catalogue, not a second
-runtime component system. Generated recipes become locally owned apparent
-components. LayerChart 2 is the single chart engine and remains behind local
-apparent chart components.
+Use TypeScript and the owning product’s established framework. Desktop and Connect use React with canonical shadcn controls in `shared/ui`. Public uses React and a TypeScript brand-document shell. Reuse the actual shared controls; do not introduce a parallel library. Historical Svelte and portal references are not current implementation requirements.
 
 Use semantic HTML, shared components, progressive enhancement where the product
 architecture allows it, and apparent tokens as the visual authority. Do not

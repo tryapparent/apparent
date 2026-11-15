@@ -57,21 +57,40 @@ separately authorized resource/schema cutover, not each ordinary deployment.
 
 `r2_budget` is one global D1 row, shared by accounts/tokens/Worker instances. Initial **lifetime** caps are **500,000 Class A**, **5,000,000 Class B**, and **9,500,000,000 physical-attempt bytes**. There is no calendar reset, caller-selected period, redeploy initializer or reset API. The source validates integer/nonnegative ledger values and caps no greater than those ceilings. Missing tables/row, invalid state or reservation database failure return JSON `budget_unavailable` (503); exhausted valid capacity returns `budget_exhausted` (503). Clients must retain the complete durable upload job for retry/operator resolution, not erase the capture, shrink the manifest or silently omit files.
 
-Before every controlled R2 PUT/GET/HEAD, D1 atomically reserves its operation allowance. Completion reserves the whole file count once before its HEAD loop, including unused grants after an early missing object. Ready completion and metadata reads need no R2 allowance. Failed/canceled/checksum-invalid provider attempts and duplicate retries consume operations permanently. Authentication, owner/scope, manifest/path and ordinary expiry denials precede the gate. All runtime R2 access is confined to `src/storage.ts`, with a nonempty TypeScript source-inventory test; there is no LIST bypass. Free DeleteObject remains allowed at every cap.
+Every controlled R2 PUT/GET/HEAD consumes an allowance durably reserved in D1 before provider I/O. GET/HEAD callers share isolate-local prepaid pools: reservations grow from one permit to batches of at most 256, while completion can reserve its whole file count before its HEAD loop. `b_used` counts reserved permits, including unused permits after an early missing object, isolate eviction, deployment or restart; it is not an exact provider-request counter. Unused permits are never refunded or restored. Cached permits still require an indexed ledger-validity read; they cause no counter write. Concurrent refills reserve independently and claim local permits synchronously, without sharing request-scoped I/O. Near-cap partial reservations keep the final allowance usable. An isolate loss reduces available allowance conservatively and cannot increase the hard cap. Ready completion and metadata reads need no R2 allowance. Failed/canceled/checksum-invalid provider attempts and duplicate retries consume operations permanently. Authentication, owner/scope, manifest/path and ordinary expiry denials precede the gate. All runtime R2 access is confined to `src/storage.ts`, with a nonempty TypeScript source-inventory test; there is no LIST bypass. Free DeleteObject remains allowed at every cap.
 
 Each PUT atomically grants one A operation, its exact manifest size and a new unique attempt/key before opening R2. Stream size/checksum enforcement is unchanged. Physical charges include published, in-flight, duplicate, orphan and tombstoned objects, not just live logical quota. Eviction/expiry does not release physical capacity. A durable `terminal` marker is written only after the unique provider PUT and body stream both settle. Successful deletion can release its bytes once in a conditional two-statement transaction with the cleanup stamp. Cleanup snapshots terminal eligibility **before deletion**, so a PUT settling after that deletion cannot be released by that sweep. Failed deletion/stamping stays retryable. An uncertain/crashed grant without a terminal marker stays charged even after repeated absent-key deletions; reconciliation needs a separate quiescent operator review. Keys/permits are never reused.
 
 The 15-minute sweep retains attempt tombstones but excludes attempts already both
-terminal and released. Uncertain attempts are revisited only after an hour since
-their last successful delete/stamp; a terminal marker bypasses that cooldown.
-The 1,000-key sweep bound and failures can delay reclamation further. Expiry and
-authorization still apply synchronously. Zero-reclaim pages do not write the
-budget row; zero-byte terminal attempts still retire against valid budget state.
-No migration or ledger reset is needed. Rolling back the Worker restores the
-older repeated cleanup traffic without changing the stored safety markers.
-`test/budgets/row-writes.test.ts` measures real local D1 `rows_written` for idle
-sweeps, zero-byte retirement, uncertain retry and unchanged account/analytics
-maintenance. These measurements do not establish remote CPU or total daily usage.
+terminal and released. Settled attempts are processed first. Uncertain attempts
+stay charged and receive free deletes in circular key order, using the latest
+uncertain `cleaned_at` marker as a cursor rather than stamping every key.
+At most 1,000 attempts are selected per sweep. A small uncertain backlog returns
+to the same cursor and requires no recurring SQL checkpoint; larger backlogs
+need at most one cursor write per sweep. Successful uncertain deletion alone
+never releases bytes. A terminal transition is eligible on the next sweep,
+independent of the cursor. The cursor records attempted pages, including a failed
+page, so a persistent failure cannot starve later keys. Failed uncertain keys
+remain charged and retry on wrap; the marker never authorizes release. Zero-reclaim pages
+do not write the budget row; zero-byte terminal attempts retire against valid
+budget state. No migration, new binding, counter reset or provider setting is
+needed. Rolling back loses only unused prepaid permits conservatively and
+restores the older cleanup traffic; durable safety markers remain compatible.
+
+High-throughput rate limits (currently the MCP relay) use the same prepaid
+principle in separate pools keyed by database, hourly window, key and limit.
+Atomic conditional grants preserve the global hourly ceiling across isolates;
+unused grants expire with the window. Conditional upserts only move the durable
+hour forward, so a delayed old-window request cannot erase newer grants. At most 1,024 key pools are retained per
+isolate; eviction leaks allowance safely. Tight authentication limits retain
+per-request accounting. No unreserved R2 operation or unreserved relay request
+is admitted based solely on in-memory state.
+
+`test/budgets/batched-reads.test.ts` exercises real workerd/D1 write accounting,
+multiple isolates, concurrency, restarts, invalid ledgers and prepaid cap edges.
+`test/budgets/row-writes.test.ts` covers circular uncertain cleanup, terminal
+retirement and unchanged account/analytics maintenance. These local measurements
+do not establish remote CPU, isolate reuse rates or total daily usage.
 
 The 500MB account quota remains a maximum, **not a guarantee that all 20 accounts can be physically full together**. The 9.5GB ceiling can reject an upload with logical quota remaining. These guards bound this Worker's controlled R2 work; they are **not an accountwide dollar cap**. Other credentials/resources, provider billing semantics, stored bytes during outages, D1 rows/storage and Free CPU still require operational verification. Billing alerts notify; they do not stop spending.
 
@@ -83,7 +102,7 @@ Official limits: [Workers](https://developers.cloudflare.com/workers/platform/li
 
 - Admission: **5 SQL statements**, down from 516 (one bearer lookup, one existing-ID lookup, a two-statement transaction, one live-capture lookup). The transaction inserts the reservation and all 512 files using `json_each(?)`, preserving the eviction trigger and atomic rollback. It binds six parameters for the reservation and two for the files, not a giant parameter list. Existing-ID retries use three statements; a failed insert can add one recovery lookup.
 - Completion: **512 R2 heads + 6 SQL statements**, including one bulk B reservation (518 combined internal operations). Insufficient budget: **5 SQL, zero HEAD**, pending unchanged. Ready retries use two SQL and zero R2. CPU remains unverified remotely.
-- A full 1,000-attempt cleanup: **30 SQL statements + 10 R2 deletes** (40 combined). Expiration and selection use two statements; each 100-key page uses one delete and two set statements for conditional physical release/stamping, followed by eight auth/rate cleanup statements. No per-object SQL. Injected first-page delete/stamp failures submit **2/4 SQL + 1 delete**; tenth-page failures **20/22 SQL + 10 deletes**, followed by a successful 30/10 retry. Failed deletes never advance the stamp; stamp failure rolls back release. Tombstones remain for late PUTs. Statements inside batches count individually.
+- A full 1,000-settled-attempt cleanup: **30 SQL statements + 10 R2 deletes** (40 combined). Expiration and selection use two statements; each 100-key page uses one delete and two set statements for conditional physical release/stamping, followed by eight auth/rate cleanup statements. No per-object SQL. Injected first-page delete/stamp failures submit **2/4 SQL + 1 delete**; tenth-page failures **20/22 SQL + 10 deletes**, followed by a successful 30/10 retry. Failed deletes never advance the stamp; stamp failure rolls back release. Tombstones remain for late PUTs. Statements inside batches count individually.
 - PUT: **7 SQL + 1 PUT** for first publication; **9 SQL + 1 PUT + 1 delete** for a correct duplicate; **8 SQL + 1 PUT + 1 delete** for a checksum failure; **6 SQL, zero R2** for budget denial. A tombstone after PUT, losing publication, deletion and subsequent 404/catch cleanup uses **12 SQL + 1 PUT + 2 deletes** (15 combined). The audit exercises these failure branches without weakening checksum/ownership rules.
 
 Budget tests first failed against the prior implementation at 516 admission statements and 1,007 cleanup statements. They now enforce at most 50 SQL statements and 1,000 combined SQL/R2 operations, including scheduled outcomes (Miniflare returns `outcome: exception` rather than rejecting the scheduler call). Tests also cover 20 accounts with 60 captures each, 512 files on each of the first account's existing captures, eviction isolation, full-manifest retries, rollback after an injected file-insert failure, 2,001 attempts across accounts, repeated rotation, late arrivals and injected delete/stamp failures. Existing concurrency, ready-state and streaming tests remain in the full suite.

@@ -69,7 +69,7 @@ Existing crop/camera/ink/encoding, explicit recorded/silent/narration policy,
 settings and persistence remain authoritative. Phone/file ingestion, recovery and
 retention consume this published provider through the bundle metadata contract.
 Frame decoding executes through native Engine capabilities; audio extraction,
-periodic candidate sampling and retention mutation/exclusion remain native in
+live sampling and retention mutation/exclusion remain native in
 the root runtime. The replaced Desktop probes, Linux metadata/audio-decode probe and Swift
 helper `probe` command are removed. Native audio edit checks used by the encoder
 remain safety/execution mechanics. Linux export's superseded FFprobe parser is
@@ -95,11 +95,15 @@ private-directory and pixel safety mechanisms for both Record and Agent. Record
 requests are read in batches of four: four maximum-sized 64MP frames fit the
 Engine 256MP job limit. This is a native resource limit, not a workflow budget.
 
-Default keyframe selection, caching, crop/render decisions and screen periodic sampling
+Default keyframe selection, caching and crop/render decisions
 remain migration debt. Agent's final range-fallback adoption removes the old root
 `movie_frames_at` entry point. Phone ingestion still uses native audio extraction
-and transcription. The shared periodic decoder remains for screen recovery and
-other real callers.
+and transcription. Linux's `decoder-check` and the decode half of `encoder-check`
+also use this published reader. The native adapter produces the synthetic encoder
+movie; composition supplies decoding without importing Record policy into it.
+Existing decoder-availability warnings remain unchanged. The legacy reader now
+remains only for comparison tests, until adopted screen and diagnostic callers
+have final package acceptance and it can be retired.
 No competing configuration writer is introduced.
 
 Native checks exercise the actual published frame provider and private RGBA
@@ -128,7 +132,7 @@ actual-time labels, file identity, single links, dimensions and pixel totals.
 
 Phone/file assembly's ordinary candidate path consumes this worker. Cadence and
 timestamp decisions are removed from the Rust phone caller. Selection, caching,
-rendering, audio/transcription and screen periodic sampling remain authoritative
+rendering and audio/transcription remain authoritative
 in the root runtime. Existing native readers/build inputs remain for those users.
 
 Both platforms now use Engine's last-sample-at-or-before contract and integer
@@ -142,3 +146,42 @@ No live phone, microphone or permission behavior is proved by these file tests.
 
 Rollback reverts the phone routing, worker/generated inventory and Record's pin
 together. No config writer, persistence schema or installed UI routing changes.
+
+## Screen recovery and benchmark candidates
+
+`screen-policy.ts` owns 220ms file sampling, bundle/movie offsets and the
+640px recovery / 480px capture-benchmark scales. The benchmark scale preserves
+the live sampler's current input size. Live capture's in-memory sampler and
+resource budgets remain native; this slice changes file decoding only.
+
+`screen-worker.js` produces at most 480 requests per page. It deduplicates actual
+presentation samples across pages and returns bundle-clock labels plus an
+opaque continuation token. Empty pages are valid when a sparse movie has no
+new sample. Native composition runs pages under one overall deadline, refuses
+repeated/invalid tokens and backwards or inconsistent labels, verifies private
+pixels, then removes each page before starting the next. It retains the legacy
+in-memory candidate vector; this is not a total workflow memory-bound claim.
+
+Recovery's `Media.screen_candidates` injection, production caller and real CLI
+benchmark use the same worker. Their Rust cadence and clock addition are removed.
+The package proof checks screen recovery and the actual benchmark with a 500ms
+offset, preserving input bytes. A native sparse-video test spans four pages and
+three empty continuations. Clean Node tests need no Rust/Electron; real-provider,
+Mac and final AppImage gates remain distinct. Small staged-fixture timing shows
+Node/probe startup overhead, not a controlled performance improvement.
+
+Frame replies have a separate bounded 128 KiB transport envelope: 480 distinct
+samples produce more than metadata's unchanged 32 KiB limit. A two-minute moving
+movie checks full phone and screen pages through the real native bridge; the
+packaged CLI benchmark also crosses that boundary. Frame counts, clocks, private
+pixels, process cleanup and overall deadlines retain their existing checks.
+
+During qualification GStreamer 1.24 classified a 2-second video inside a
+400-second audio container as a preview and skipped it. That existing decoder
+limitation is not paging evidence; the accepted test uses a real 400-second
+held-frame video. Mac behavior for that skipped-track case is not established.
+
+Rollback restores the recovery/benchmark routing, injected contract and generated
+inventory together. The published pin, bundle schema and config writer do not
+change. Keep the remaining legacy diagnostic/reader until a separate verified
+consumer retirement; no live capture or permissions proof is inferred here.

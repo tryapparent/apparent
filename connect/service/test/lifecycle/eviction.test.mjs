@@ -83,9 +83,7 @@ test('eviction tombstones block an in-flight upload and cleanup revisits late ob
  await f.db.prepare("INSERT INTO attempts(key,capture_id,created_at) VALUES('uncertain-evicted',?,0)").bind(id(1)).run();
  await worker.scheduled();
  await f.bucket.put('uncertain-evicted','hello');await worker.scheduled();
- assert.ok(await f.bucket.head('uncertain-evicted'));
- await f.db.prepare("UPDATE attempts SET cleaned_at=cleaned_at-3600000 WHERE key='uncertain-evicted'").run();
- await worker.scheduled();assert.equal(await f.bucket.get('uncertain-evicted'),null);
+ assert.equal(await f.bucket.get('uncertain-evicted'),null,'free late-object checks do not require per-attempt stamps');
  assert.equal((await f.db.prepare('SELECT status FROM captures WHERE id=?').bind(id(1)).first()).status,'deleted');
  }finally{if(controller)controller.close();await f.close();}
 });

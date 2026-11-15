@@ -26,14 +26,14 @@ function parents(outputs: any = {}, reuse: any = {}) {
 }
 test('automatic stream orchestrators, manual diagnostics, PR integration checkout and read-only verification', () => {
   assert.deepEqual(readdirSync(new URL('.github/workflows/', root)).filter(name =>
-    Object.keys(workflow(name).on).some(event => !['workflow_dispatch', 'workflow_call'].includes(event))).sort(), ['checks.yml', 'hermes.yml', 'stream-engine.yml', 'stream-public.yml', 'verification.yml']);
+    Object.keys(workflow(name).on).some(event => !['workflow_dispatch', 'workflow_call'].includes(event))).sort(), ['checks.yml', 'hermes.yml', 'stream-engine.yml', 'stream-public.yml']);
   assert.deepEqual(Object.keys(workflow('stream-connect.yml').on), ['workflow_dispatch', 'workflow_call']);
   assert.equal(ci().jobs.connect.uses, './.github/workflows/stream-connect.yml');
   assert.deepEqual(ci().jobs.connect.permissions, {contents:'read', actions:'read'});
   assert.deepEqual(Object.keys(ci().on), ['pull_request', 'push']);
   assert.deepEqual(ci().on.pull_request.types, ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft']);
   assert.equal(ci().permissions.contents, 'read');
-  assert.deepEqual(Object.keys(workflow('verification.yml').on), ['workflow_dispatch', 'workflow_run']);
+  assert.deepEqual(Object.keys(workflow('verification.yml').on), ['workflow_dispatch']);
   for (const job of Object.values(ci().jobs) as any[]) for (const step of job.steps ?? []) {
     if (step.uses === 'actions/checkout@v4') {
       assert.equal(step.with.ref, undefined, 'verify the proposed merge, not only the branch head');

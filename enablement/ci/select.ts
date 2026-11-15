@@ -188,7 +188,7 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
   // too; qualification never exempts those production verification inputs.
   const fixtureMac = fixtureMacRequired(qualifiedFixtures) || !!effective?.some(path =>
     ['enablement/local-tests/run.ts', 'enablement/ci/select.ts', '.github/workflows/checks.yml'].includes(path) ||
-    path.startsWith('enablement/ci/routing/fixture-portability/'));
+    path.startsWith('enablement/ci/routing/fixture-portability/') || path.startsWith('enablement/ci/install-contracts/'));
   const platform = plan.root || plan.engine || plan.desktop || plan.client;
   return {...routing, paths: paths ?? [], historyKnown: paths !== null, inputProofKnown: paths !== null && !unsafe, workflowControls, ...mac, fixtureMac, qualifiedFixtures, platform, plan,
     hermes: plan.hermes, portable: plan.browser || plan.service || plan.tools || plan.foreground,

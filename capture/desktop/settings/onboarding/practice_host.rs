@@ -19,6 +19,24 @@ pub struct Practice {
     #[cfg(test)]
     history: Vec<Value>,
 }
+
+#[cfg(test)]
+mod polling_scope_tests {
+    use super::*;
+
+    #[test]
+    fn identical_poll_is_new_after_native_scope_changes() {
+        let mut practice = Practice::default();
+        let events = vec![json!({"type":"whiteboard-visible","visible":false}),
+            json!({"type":"ink","board":false,"screen":0})];
+        practice.batch(1, 2, None, events.clone(), false);
+        assert!(practice.repeats_pending_poll(1, 2, None, &events));
+        assert!(!practice.repeats_pending_poll(3, 2, None, &events), "a different session cannot reuse pending facts");
+        assert!(!practice.repeats_pending_poll(1, 3, None, &events), "a different transport cannot reuse pending facts");
+        practice.attempt += 1;
+        assert!(!practice.repeats_pending_poll(1, 2, None, &events), "a new capture attempt needs its own observation");
+    }
+}
 #[derive(Debug, Deserialize)]
 #[serde(rename_all="camelCase", deny_unknown_fields)]
 pub struct Disposition {
@@ -30,6 +48,20 @@ pub struct Disposition {
     close_board: bool, accepted: bool,
 }
 impl Practice {
+    /// Refresh polling may repeat a level snapshot while its identical last
+    /// batch is still pending. Do not spend another queue slot or renew its ACK
+    /// deadline. Actions, reset barriers and other observations never coalesce.
+    pub fn repeats_pending_poll(&self, source:u64, transport:u64, board:Option<&str>, events:&[Value])->bool {
+        if !(events.len()==2 || events.len()==3)
+            || events[0]["type"]!="whiteboard-visible" || events[1]["type"]!="ink"
+            || (events.len()==3 && events[2]["type"]!="processing") { return false; }
+        let Some(last)=self.pending.back() else { return false; };
+        last["source"]==json!(source.to_string()) && last["transport"]==json!(transport.to_string())
+            && last["attempt"]==json!(self.attempt.to_string()) && last["capture"]==json!(self.attempt.to_string())
+            && last["intent"].is_null() && last["board"]==json!(board)
+            && last["events"].as_array().is_some_and(|previous|previous.as_slice()==events)
+    }
+
     pub fn batch(&mut self, source:u64, transport:u64, board:Option<String>, events:Vec<Value>, intent:bool)->Value {
         self.sequence+=1;
         let sequence=self.sequence.to_string();

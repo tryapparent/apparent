@@ -8,7 +8,7 @@ export type PillView = {
 declare global { interface Window { apparentPill?: {
   read:()=>Promise<PillView|null>;
   destinations:()=>Promise<DestinationView|null>;
-  destinationAction:(capture:string,action:'choose'|'retry'|'cancel'|'dismiss'|'copy',id?:string)=>Promise<DestinationView|null>;
+  destinationAction:(capture:string,action:'choose'|'retry'|'cancel'|'dismiss'|'copy'|'setup',id?:string)=>Promise<DestinationView|null>;
   destinationFocus:(focused:boolean)=>Promise<void>;
   subscribeDestinations:(callback:(state:DestinationView|null)=>void)=>()=>void;
   layout:(revision:number)=>Promise<void>;

@@ -1773,6 +1773,9 @@ impl Session {
         if self.fallback_pending {return Effect::None;}
         let board=self.board_view.as_ref().and_then(|v|v["id"].as_str()).map(str::to_owned);
         let Some(p)=self.practice.as_mut() else {return Effect::None;};
+        if !intent && p.repeats_pending_poll(self.source,self.transport_generation,board.as_deref(),&events) {
+            return Effect::None;
+        }
         if p.pending.len()>=32 {private_trace::failure("practice-pending-overflow",||format!("source={} transport={}",self.source,self.transport_generation));self.restore_native();return Effect::None;}
         let batch=p.batch(self.source,self.transport_generation,board,events,intent);
         private_trace::emit("batch",||private_trace::identity(&batch));
@@ -2151,6 +2154,82 @@ mod tests {
             .args(["--exact", name, "--nocapture"]).env(CHILD, &config).env("APPARENT_CONFIG", &config).output().unwrap();
         assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
         assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"), "child must execute the exact provider test");
+    }
+
+    #[test]
+    fn repeated_pending_native_observations_do_not_retire_the_practice_host() {
+        const CHILD: &str = "APPARENT_REPEAT_POLL_TEST_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            use std::os::unix::fs::DirBuilderExt;
+            struct Fixture(std::path::PathBuf);
+            impl Drop for Fixture {
+                fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+            }
+            let fixture = Fixture(std::env::temp_dir().join(format!(
+                "practice-poll-{}", crate::shared::ids::make_bundle_id(),
+            )));
+            std::fs::DirBuilder::new().mode(0o700).create(&fixture.0).unwrap();
+            let config = fixture.0.join("config.json");
+            std::fs::write(&config, br#"{"fixtureSentinel":"poll-burst"}"#).unwrap();
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "capture::desktop::settings::onboarding::tests::repeated_pending_native_observations_do_not_retire_the_practice_host", "--nocapture"])
+                .env(CHILD, &config).env("APPARENT_CONFIG", &config).output().unwrap();
+            assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(config).unwrap()).unwrap();
+            assert_eq!(saved["fixtureSentinel"], "poll-burst");
+            return;
+        }
+        assert_eq!(std::env::var_os(CHILD), std::env::var_os("APPARENT_CONFIG"));
+        let mut session = coached_session();
+        let mut command = std::process::Command::new("cat");
+        session.transport = Session::spawn_renderer_transport(
+            &mut command, session.transport_generation(), |_| {},
+        ).unwrap();
+        // The real GUI producer repeats this level snapshot every refresh. A
+        // slow reader may still be within its unchanged two-second ACK limit.
+        for _ in 0..128 {
+            session.observe_practice_batch(None, false, 0, false);
+        }
+        assert!(!session.fallback_pending, "unchanged polling facts must not revoke a responsive host before its ACK deadline");
+        assert!(matches!(session.transport, Transport::Renderer { .. }));
+        let pending = &session.practice.as_ref().expect("practice remains installed").pending;
+        assert_eq!(pending.len(), 1, "keep one ordered copy of identical unacknowledged level facts");
+        assert_eq!(pending.front().unwrap()["sequence"], "1");
+
+        session.observe_practice_batch(None, false, 1, false);
+        for _ in 0..2 {
+            session.practice_events(vec![serde_json::json!({"type":"action","action":"practice-paste"})], true);
+        }
+        session.observe_practice_batch(None, false, 1, false);
+        let pending = &session.practice.as_ref().unwrap().pending;
+        assert_eq!(pending.len(), 5, "changed facts and both intents remain ordered; a later snapshot cannot cross an intent");
+        assert_eq!(pending[2]["events"], pending[3]["events"]);
+        assert_ne!(pending[2]["intent"], pending[3]["intent"]);
+        for id in ["board-a", "board-b"] {
+            session.board_view(Some(serde_json::json!({"id":id,"strokes":[],"color":[255,59,48]})));
+            session.observe_practice_batch(Some([10.,20.,640.,480.]), false, 1, false);
+        }
+        let pending = &session.practice.as_ref().unwrap().pending;
+        assert_eq!(pending.len(), 7);
+        assert_eq!(pending[5]["board"], "board-a");
+        assert_eq!(pending[6]["board"], "board-b");
+        session.input(Input::CaptureStarted);
+        session.observe_practice_batch(Some([10.,20.,640.,480.]), false, 1, false);
+        let pending = &session.practice.as_ref().unwrap().pending;
+        assert_eq!(pending.len(), 9, "reset barrier and fresh attempt observations remain distinct");
+        assert_eq!(pending[7]["events"][0]["type"], "reset");
+        assert_eq!(pending[8]["attempt"], "1");
+        assert!(!session.flow.first_capture_completed);
+
+        let mut bounded = coached_session();
+        let mut command = std::process::Command::new("cat");
+        bounded.transport = Session::spawn_renderer_transport(
+            &mut command, bounded.transport_generation(), |_| {},
+        ).unwrap();
+        bounded.fallback = Some(Box::new(|_| Ok(Transport::InProcess(None))));
+        for screen in 0..33 { bounded.observe_practice_batch(None, false, screen, false); }
+        assert!(bounded.practice.is_none(), "distinct observations still revoke the transport at its existing bound");
+        assert!(!bounded.flow.first_capture_completed);
     }
 
     #[test]

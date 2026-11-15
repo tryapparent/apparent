@@ -61,6 +61,16 @@
     "contentInset": { "$type": "dimension", "$value": "32px" },
     "navigationWidth": { "$type": "dimension", "$value": "232px" }
   },
+  "component": {
+    "desktopSettings": {
+      "sidebarWidth": { "$type": "dimension", "$value": "216px" },
+      "infoIconSize": { "$type": "dimension", "$value": "16px" },
+      "copyIconSize": { "$type": "dimension", "$value": "16px" },
+      "switchWidth": { "$type": "dimension", "$value": "48px" },
+      "switchHeight": { "$type": "dimension", "$value": "24px" },
+      "switchThumbSize": { "$type": "dimension", "$value": "18px" }
+    }
+  },
   "motion": {
     "durationFast": { "$type": "duration", "$value": "120ms" },
     "durationStandard": { "$type": "duration", "$value": "200ms" },
