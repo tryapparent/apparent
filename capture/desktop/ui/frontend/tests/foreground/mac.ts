@@ -268,12 +268,16 @@ async function main() {
         await ui('upload progress', value => value.includes('uploading') && value.includes('cancel upload'), generated.pid);
         const during = await poll(status, value => value.putCount > 0, 'actual PUT body receipt', 5000);
         await native('click', 'Cancel upload');
-        await ui('cancelled local recording', value => value.includes('cancelled') && value.includes('retry upload'), generated.pid);
         const cancelled = await poll(status, value => value.cancelledPuts === 1, 'cancelled PUT connection', 5000);
         assert.equal(cancelled.uploadedBytes, 0, 'Cancelled transfer committed bytes');
-        await native('click', 'Retry upload');
-        await ui('retry public sharing disclosure', value => value.includes('create public link'), generated.pid);
-        await native('click', 'Create public link');
+        // Each native click retains its own fresh screenshot, OCR and exact AX
+        // target. Reuse that pre-click evidence within the 15-second recovery
+        // interval rather than spending it on duplicate screenshot/OCR passes.
+        const retry = await native('click', 'Retry upload');
+        assert.equal(retry.frontPid, generated.pid, 'Synthetic scene lost foreground');
+        assert.ok(text(retry).includes('cancelled') && text(retry).includes('retry upload'), 'Retry must come from the cancelled local recording');
+        const confirmedRetry = await native('click', 'Create public link');
+        assert.equal(confirmedRetry.frontPid, generated.pid, 'Synthetic scene lost foreground');
         await ui('link copied', value => value.includes('link copied') && value.includes('copy link'), generated.pid, 30_000);
         const completed = await status();
         assert.equal(completed.syntheticOnly, true); assert.equal(completed.shareCalls, 1);
