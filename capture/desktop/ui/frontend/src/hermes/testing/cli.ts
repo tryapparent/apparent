@@ -5,9 +5,11 @@ const file = process.env.APPARENT_SYNTHETIC_RECEIPT!;
 const trace = process.env.APPARENT_SYNTHETIC_TRACE!;
 appendFileSync(trace, JSON.stringify(args) + '\n');
 let receipt: { capture_id: string; status: string; source?: string; bundle_path?: string; remote_source?: string | null };
-if (args[0] === 'launch') { writeFileSync(file + '.launched', '1'); process.exit(0); }
+if (args[0] === 'launch') { writeFileSync(file + '.launched', String(Date.now())); process.exit(0); }
 if (args[1] === 'state') {
   if (process.env.APPARENT_SYNTHETIC_NEEDS_LAUNCH === '1' && !existsSync(file + '.launched')) process.exit(1);
+  const delay = Number(process.env.APPARENT_SYNTHETIC_STARTUP_DELAY_MS ?? '0');
+  if (delay > 0 && Date.now() < Number(readFileSync(file + '.launched', 'utf8')) + delay) process.exit(1);
   console.log('{"state":{"phase":"idle"}}'); process.exit(0);
 }
 if (args[1] === 'start') {

@@ -29,14 +29,14 @@ const owned = new Recording(request.token, args => new Promise<Receipt>((resolve
     try { resolve(JSON.parse(stdout)); } catch { reject(new Error('Apparent is unavailable. Open the installed app and finish onboarding.')); }
   });
 }));
-const captureState = () => new Promise<{ available: boolean; phase?: string }>(resolve => {
-  execFile(executable, ['capture', 'state'], { timeout: 4500, maxBuffer: 65536, encoding: 'utf8' }, (error, stdout) => {
+const captureState = (timeoutMs = 4500) => new Promise<{ available: boolean; phase?: string }>(resolve => {
+  execFile(executable, ['capture', 'state'], { timeout: timeoutMs, maxBuffer: 65536, encoding: 'utf8' }, (error, stdout) => {
     try { resolve({ available: !error, phase: JSON.parse(stdout)?.state?.phase }); }
     catch { resolve({ available: false }); }
   });
 });
-const ready = async () => {
-  const state = await captureState();
+const ready = async (timeoutMs = 4500) => {
+  const state = await captureState(timeoutMs);
   if (!state.available) throw new Error('Apparent capture runtime is unavailable');
 };
 app.whenReady().then(async () => {
@@ -58,9 +58,14 @@ app.whenReady().then(async () => {
       try { await ready(); }
       catch {
         await launchRecorder(executable);
-        for (let attempt = 0; ; attempt++) {
-          try { await ready(); break; }
-          catch { if (attempt === 9) throw new Error('Open Apparent and complete onboarding, then try again.'); await new Promise(resolve => setTimeout(resolve, 500)); }
+        // Native cold startup can spend several seconds loading its model before
+        // publishing control. Wait for that public listener without launching again.
+        const deadline = performance.now() + 30000;
+        for (;;) {
+          const remaining = deadline - performance.now();
+          if (remaining <= 0) throw new Error('Open Apparent and complete onboarding, then try again.');
+          try { await ready(Math.min(4500, Math.ceil(remaining))); break; }
+          catch { await new Promise(resolve => setTimeout(resolve, Math.min(500, Math.max(0, deadline - performance.now())))); }
         }
       }
       const state = await captureState();

@@ -52,6 +52,11 @@ once published. Verify the checksum, extract to a private directory, then use
 the normal Hermes plugin install, validate, doctor and enable flow. The installer
 writes only `plugins/apparent`; it does not edit account settings or activation.
 
+In Hermes Desktop, open **Capabilities → Plugins**, find the installed **User**
+package **Apparent**, and turn it **On**. Stock Hermes keeps this Desktop switch
+separate from CLI plugin enablement. The purple Apparent mark then appears in
+the composer. Use **Rescan** after replacing an already installed package.
+
 The Desktop SDK must expose `focusedSessionOwner`, `focusedSessionId`,
 `focusedStoredSessionId`, `profileRoutes`, `requestProfile`, `openSession`, and
 `composer.getDraft`, `composer.insertText` and `composer.submit`. An installed

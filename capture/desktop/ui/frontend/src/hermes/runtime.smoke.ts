@@ -11,8 +11,8 @@ import { availablePort } from './testing/port.ts';
 import { keyDirectory } from './key.ts';
 import { mailboxId, sign, authenticatedState } from '../../../../../../hermes/desktop/controller.ts';
 const root = fileURLToPath(new URL('../..', import.meta.url));
-async function until(predicate: () => unknown) {
-  const deadline = Date.now() + 10000;
+async function until(predicate: () => unknown, timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
   while (!(await predicate())) { if (Date.now() > deadline) throw new Error('Synthetic Hermes smoke timed out'); await new Promise(resolve => setTimeout(resolve, 20)); }
 }
 for (const needsLaunch of [false, true]) test(`real Electron confirmation/preload and bounded native CLI flow (${needsLaunch ? 'closed' : 'running'} recorder), then acknowledgement closes the bridge`, { timeout: 45000 }, async () => {
@@ -139,7 +139,7 @@ test('trusted local autostart records through the signed mailbox without creatin
   let application: Awaited<ReturnType<typeof electron.launch>> | undefined; let passed = false;
   try {
     application = await electron.launch({ args: [bootstrap, mainBundle, '--hermes-request', `${token}/${port}`, '--hermes-autostart', '--apparent-executable', path.join(root, 'src/hermes/testing/cli.ts')],
-      env: { ...process.env, HOME: home, APPARENT_SYNTHETIC_APP_DATA: appData, XDG_RUNTIME_DIR: runtime, XDG_CONFIG_HOME: path.join(job, 'config'), APPARENT_SYNTHETIC_NEEDS_LAUNCH: '1', APPARENT_SYNTHETIC_RECEIPT: path.join(job, 'receipt.json'), APPARENT_SYNTHETIC_TRACE: path.join(job, 'trace.jsonl') } });
+      env: { ...process.env, HOME: home, APPARENT_SYNTHETIC_APP_DATA: appData, XDG_RUNTIME_DIR: runtime, XDG_CONFIG_HOME: path.join(job, 'config'), APPARENT_SYNTHETIC_NEEDS_LAUNCH: '1', APPARENT_SYNTHETIC_STARTUP_DELAY_MS: '8000', APPARENT_SYNTHETIC_RECEIPT: path.join(job, 'receipt.json'), APPARENT_SYNTHETIC_TRACE: path.join(job, 'trace.jsonl') } });
     // A windowless launch has no firstWindow() readiness barrier. The key is
     // published only after the bridge binds; launch() can resolve before that.
     let key = '';
@@ -152,7 +152,7 @@ test('trusted local autostart records through the signed mailbox without creatin
     });
     const stateURL = `http://127.0.0.1:${port}/${id}/state/${await sign(key, `state:${id}`)}`;
     const readState = async () => authenticatedState(key, await (await fetch(stateURL, { headers: { Origin: 'null' } })).json());
-    await until(async () => (await readState() as any)?.phase === 'recording');
+    await until(async () => (await readState() as any)?.phase === 'recording', 20000);
     assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 0);
     const calls = (await readFile(path.join(job, 'trace.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
     assert.ok(calls.some(call => call[0] === 'launch' && call[1] === '--background'));
