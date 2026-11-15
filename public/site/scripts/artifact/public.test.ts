@@ -52,6 +52,16 @@ test('validates a Public homepage graph with imports, CSS URLs, srcset, data and
   finally { f.cleanup() }
 })
 
+test('module graph ignores documentation imports and ordinary from keys but follows re-exports', () => {
+  const f = fixture()
+  try {
+    f.put('assets/home-a.js', 'const example = `import { Button } from "@apparent/ui/button";`; const rules = {"from":[{from:()=>true}]}; export { site } from "./child-a.js";')
+    assert.doesNotThrow(() => validatePublic(f.files))
+    f.put('assets/home-a.js', 'export { missing } from "./missing.js";')
+    assert.throws(() => validatePublic(f.files), /Missing resource/)
+  } finally { f.cleanup() }
+})
+
 test('accepts canonical grouped assets only when bytes match and rejects Connect routes', () => {
   const f = fixture()
   try {

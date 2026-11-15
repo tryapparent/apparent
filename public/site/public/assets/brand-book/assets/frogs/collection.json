@@ -1,0 +1,126 @@
+{
+  "title": "apparent frog collection",
+  "referencePrompt": "Use the attached apparent frog image as the character reference. Preserve its chunky pixel-art silhouette, olive body, cream belly, oversized eyes, dark outline and warm cheek accents. Make a new pose: [describe the action]. Keep the expression friendly, peculiar and playful. Retain the pixel texture; do not turn it into a smooth vector, glossy 3D mascot or photorealistic frog. Keep text and logos out of the image. State the intended background explicitly.",
+  "assets": [
+    {
+      "name": "Resting",
+      "url": "/pond/frog-rest-cohesive.png",
+      "description": "Ready to play. Primary resting reference.",
+      "source": "public/site/public/assets/pond/frog-rest-cohesive.png",
+      "width": 768,
+      "height": 512,
+      "format": "PNG",
+      "usage": "Existing apparent artwork. Use the original image as a reference; inspect its background before compositing."
+    },
+    {
+      "name": "Jumping",
+      "url": "/pond/frog-air-cohesive.png",
+      "description": "Airborne companion to the resting pose.",
+      "source": "public/site/public/assets/pond/frog-air-cohesive.png",
+      "width": 768,
+      "height": 512,
+      "format": "PNG",
+      "usage": "Existing apparent artwork. Use the original image as a reference; inspect its background before compositing."
+    },
+    {
+      "name": "Lounging",
+      "url": "/pond/frog-lounge-cohesive.png",
+      "description": "Taking a break. Leisure belongs in the story.",
+      "source": "public/site/public/assets/pond/frog-lounge-cohesive.png",
+      "width": 768,
+      "height": 512,
+      "format": "PNG",
+      "usage": "Existing apparent artwork. Use the original image as a reference; inspect its background before compositing."
+    },
+    {
+      "name": "Waving",
+      "url": "/pond/frog-wave-cohesive.png",
+      "description": "A warm hello or an invitation to join.",
+      "source": "public/site/public/assets/pond/frog-wave-cohesive.png",
+      "width": 768,
+      "height": 512,
+      "format": "PNG",
+      "usage": "Existing apparent artwork. Use the original image as a reference; inspect its background before compositing."
+    },
+    {
+      "name": "Friends together",
+      "url": "/pond/belief/hug.png",
+      "description": "Three frogs together. Friendship beyond the screen.",
+      "source": "public/site/public/assets/pond/belief/hug.png",
+      "width": 766,
+      "height": 407,
+      "format": "PNG",
+      "usage": "Existing apparent artwork. Use the original image as a reference; inspect its background before compositing."
+    },
+    {
+      "name": "Friend on the left",
+      "url": "/pond/belief/pair-left.png",
+      "description": "Left half of the companion pair.",
+      "source": "public/site/public/assets/pond/belief/pair-left.png",
+      "width": 479,
+      "height": 388,
+      "format": "PNG",
+      "usage": "Existing apparent artwork. Use the original image as a reference; inspect its background before compositing."
+    },
+    {
+      "name": "Friend on the right",
+      "url": "/pond/belief/pair-right.png",
+      "description": "Right half of the companion pair.",
+      "source": "public/site/public/assets/pond/belief/pair-right.png",
+      "width": 478,
+      "height": 398,
+      "format": "PNG",
+      "usage": "Existing apparent artwork. Use the original image as a reference; inspect its background before compositing."
+    },
+    {
+      "name": "Small resting frog",
+      "url": "/pond/belief/jump-rest.png",
+      "description": "Resting frame from the belief-section jump.",
+      "source": "public/site/public/assets/pond/belief/jump-rest.png",
+      "width": 588,
+      "height": 371,
+      "format": "PNG",
+      "usage": "Existing apparent artwork. Use the original image as a reference; inspect its background before compositing."
+    },
+    {
+      "name": "Small jumping frog",
+      "url": "/pond/belief/jump-air.png",
+      "description": "Airborne frame from the belief-section jump.",
+      "source": "public/site/public/assets/pond/belief/jump-air.png",
+      "width": 588,
+      "height": 371,
+      "format": "PNG",
+      "usage": "Existing apparent artwork. Use the original image as a reference; inspect its background before compositing."
+    },
+    {
+      "name": "Lily pad",
+      "url": "/pond/lily-clean.png",
+      "description": "A separate prop for building a scene.",
+      "source": "public/site/public/assets/pond/lily-clean.png",
+      "width": 395,
+      "height": 123,
+      "format": "PNG",
+      "usage": "Existing apparent artwork. Use the original image as a reference; inspect its background before compositing."
+    },
+    {
+      "name": "Your computer",
+      "url": "/brand/assets/frogs/source-pond-v4.png",
+      "description": "Connect illustration with the capture computer.",
+      "source": "public/site/public/assets/hosted/source-pond-v4.png",
+      "width": 540,
+      "height": 280,
+      "format": "PNG",
+      "usage": "Existing apparent artwork. Use the original image as a reference; inspect its background before compositing."
+    },
+    {
+      "name": "Your agent",
+      "url": "/brand/assets/frogs/agent-pond-v4.png",
+      "description": "Connect illustration with the agent computer.",
+      "source": "public/site/public/assets/hosted/agent-pond-v4.png",
+      "width": 425,
+      "height": 295,
+      "format": "PNG",
+      "usage": "Existing apparent artwork. Use the original image as a reference; inspect its background before compositing."
+    }
+  ]
+}

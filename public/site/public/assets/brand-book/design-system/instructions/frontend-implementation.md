@@ -1,5 +1,8 @@
 # Frontend implementation instructions
 
+> Current capture-product direction: [brand foundations](https://tryapparent.com/brand/brand-guidelines.md), [frog collection](https://tryapparent.com/brand/#frog-collection), and [live React component library](https://tryapparent.com/brand/#frontend-design-system). These supersede document-processing positioning and historical Svelte/portal prescriptions below. Reuse the owning product’s shared React controls and existing theme. Optional playfulness is welcome; essential workflows stay effortless.
+
+
 These rules were extracted from the adopted product frontend guidance and
 generalized for any apparent interface.
 
@@ -15,17 +18,7 @@ generalized for any apparent interface.
 - Record a reusable deviation only when it changes a system convention; do not
   fork a component merely to match a mockup.
 
-For Svelte 5 and SvelteKit products, Bits UI is the single component-library
-dependency. Selected shadcn-svelte recipes may be copied into the application
-as locally owned source; they are not a second runtime component system.
-LayerChart 2 sits behind local apparent chart components. Follow
-[`../svelte-component-system.md`](../svelte-component-system.md). The libraries
-provide behavior and scaffolding; apparent tokens and guidance remain the
-visual and semantic authority.
-
-The preserved first portal uses vendored Bootstrap 5.3.8. Bootstrap is a
-reference implementation, not a permanent requirement for every apparent
-product.
+Use TypeScript and the owning product’s established framework. Desktop and Connect use React with canonical shadcn controls in shared/ui. Public uses React and a TypeScript brand-document shell. Reuse the shared primitives and existing product theme. Historical Svelte recipes and the Flask/Bootstrap portal are reference material, not current requirements.
 
 ## Required component contract
 
@@ -57,8 +50,7 @@ A component is not complete when only its default state matches a mockup.
   position, or outline.
 - Target 44 by 44 CSS pixels for primary controls. This exceeds the 24 by 24
   CSS pixel WCAG 2.2 AA minimum.
-- Use 120 to 200ms transitions only for real state changes and respect reduced
-  motion.
+- Use brief transitions for controls. Longer playful sequences must be optional, interruptible and respect reduced motion.
 
 ## Interaction rules
 
@@ -92,7 +84,7 @@ A component is not complete when only its default state matches a mockup.
 
 - Escape untrusted content by default and preserve CSRF protection for writes.
 - Avoid unsafe inline HTML and scripts.
-- Keep customer document content, filenames, source identifiers, and tenant
+- Keep private capture content, transcripts, filenames, source identifiers, and account
   details out of URLs, analytics, client logs, notifications, and browser
   persistence.
 
