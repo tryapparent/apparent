@@ -34,19 +34,14 @@ pub const MEDIA_SENDING: &str = ".media-sending";
 /// Written when the heavy media went to the Trash: when, and after how many days.
 pub const MEDIA_CLEANED: &str = ".media-cleaned";
 
+#[cfg(test)]
 const DAY_MS: u64 = 24 * 60 * 60 * 1000;
 /// A sync marker older than this belongs to a copy that died.
 const STALE_MARKER: Duration = Duration::from_secs(24 * 60 * 60);
 /// Long edge iPhone video is re-encoded to: the size its keyframes are decoded at.
 const SHRINK_EDGE: u32 = crate::capture::engine::runtime::phone::PHONE_FRAME_EDGE;
-/// Videos above this rate are worth re-encoding (native iPhone mirror video is ~18 Mbps; a
-/// shrunk one ~2).
-const SHRINK_ABOVE_BPS: u64 = 6_000_000;
 /// How long after a capture its video is shrunk, so pasting and sending go first.
 const SHRINK_DELAY: Duration = Duration::from_secs(60);
-/// The daily shrink sweep picks up bundles left alone this long (a capture whose shrink was
-/// missed, or one copied from another Mac).
-const SHRINK_SETTLE_MS: u64 = 10 * 60 * 1000;
 /// How often cleanup runs. Hourly, so media goes within an hour of `mediaDays`, not a day late.
 const PASS_EVERY: Duration = Duration::from_secs(3600);
 /// How often a pass also re-encodes missed iPhone videos (each try can take a while).
@@ -263,13 +258,13 @@ fn created_ms(dir: &Path, manifest: &Manifest) -> Option<u64> {
 }
 
 /// What one cleanup pass would do to the bundles in `captures`, given `now`.
-pub fn plan(captures: &Path, policy: &Policy, now: SystemTime) -> Vec<Action> {
+pub fn plan(captures: &Path, policy: &Policy, now: SystemTime) -> Result<Vec<Action>> {
     let now_ms = now
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64;
     let Ok(entries) = std::fs::read_dir(captures) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let mut bundles: Vec<PathBuf> = entries
         .filter_map(|e| e.ok().map(|e| e.path()))
@@ -278,7 +273,8 @@ pub fn plan(captures: &Path, policy: &Policy, now: SystemTime) -> Vec<Action> {
             && std::fs::symlink_metadata(p).is_ok_and(|metadata| metadata.is_dir()))
         .collect();
     bundles.sort();
-    let mut actions = Vec::new();
+    let mut observations = Vec::new();
+    let mut materials = Vec::new();
     for dir in bundles {
         if dir.join(PINNED).exists()
             || is_claimed(&dir)
@@ -301,55 +297,38 @@ pub fn plan(captures: &Path, policy: &Policy, now: SystemTime) -> Vec<Action> {
         };
         let age_ms = now_ms.saturating_sub(created);
         let unchanged_ms = changed_ago(&dir, now).map_or(0, |ago| ago.as_millis() as u64);
-        let settled = |ms: u64| age_ms >= ms && unchanged_ms >= ms;
-        if !settled(SHRINK_SETTLE_MS) {
-            continue;
-        }
-        if !settled(DAY_MS) {
-            if let Some(video) = shrinkable(&dir, &manifest) {
-                actions.push(Action::Shrink { bundle: dir, video });
-            }
-            continue;
-        }
-        let due = |days: Option<u32>| days.is_some_and(|d| age_ms >= u64::from(d.max(1)) * DAY_MS);
-        if due(policy.bundle_days) {
-            actions.push(Action::TrashBundle(dir));
-            continue;
-        }
-        if due(policy.media_days) {
-            let items: Vec<PathBuf> = crate::shared::handoff::HEAVY_MEDIA
-                .iter()
-                .chain(&DERIVED_MEDIA)
-                .map(|rel| dir.join(rel))
-                .filter(|p| p.exists())
-                .collect();
-            if !items.is_empty() {
-                actions.push(Action::TrashMedia { bundle: dir, items });
-            }
-            continue;
-        }
-        if let Some(video) = shrinkable(&dir, &manifest) {
-            actions.push(Action::Shrink { bundle: dir, video });
-        }
+        let items: Vec<PathBuf> = crate::shared::handoff::HEAVY_MEDIA.iter().chain(&DERIVED_MEDIA)
+            .map(|rel| dir.join(rel)).filter(|path| path.exists()).collect();
+        let (facts, video) = observe(&dir, &manifest, age_ms, unchanged_ms, !items.is_empty());
+        observations.push(facts);
+        materials.push((dir, items, video));
     }
-    actions
+    let mut actions = Vec::new();
+    for decision in crate::composition::retention::plan(policy, &observations, false)? {
+        let (bundle, items, video) = &materials[decision.index];
+        actions.push(match decision.kind {
+            crate::composition::retention::Kind::TrashBundle => Action::TrashBundle(bundle.clone()),
+            crate::composition::retention::Kind::TrashMedia => {
+                ensure!(!items.is_empty(), "Record selected unavailable retention media");
+                Action::TrashMedia {bundle:bundle.clone(),items:items.clone()}
+            }
+            crate::composition::retention::Kind::Shrink => Action::Shrink {
+                bundle:bundle.clone(),video:video.clone().context("Record selected unavailable retention video")?},
+        });
+    }
+    Ok(actions)
 }
 
-/// A cabled-iPhone video recorded at native size and rate.
-fn shrinkable(dir: &Path, manifest: &Manifest) -> Option<PathBuf> {
-    if manifest.source.as_deref() != Some("iphone")
-        || manifest
-            .device
-            .as_ref()
-            .is_none_or(|d| d.capture != "mirror")
-        || manifest.duration_ms == 0
-    {
-        return None;
-    }
-    let video = video::Video::open(dir, Path::new(manifest.video.as_deref()?)).ok()?;
-    let bytes = video.bytes();
-    let bps = bytes.saturating_mul(8_000) / manifest.duration_ms;
-    (bps > SHRINK_ABOVE_BPS).then(|| video.path().to_path_buf())
+/// Filesystem facts stay native; Record chooses age and bitrate policy.
+fn observe(dir: &Path, manifest: &Manifest, age_ms: u64, unchanged_ms: u64, heavy_media: bool)
+    -> (crate::composition::retention::Facts, Option<PathBuf>) {
+    let admitted = manifest.video.as_deref()
+        .and_then(|name| video::Video::open(dir, Path::new(name)).ok());
+    let video_bytes = admitted.as_ref().map(|video| video.bytes().to_string());
+    let video = admitted.as_ref().map(|video| video.path().to_path_buf());
+    (crate::composition::retention::Facts {age_ms:age_ms.to_string(),unchanged_ms:unchanged_ms.to_string(),
+        source:manifest.source.clone(),capture:manifest.device.as_ref().map(|device|device.capture.clone()),
+        duration_ms:manifest.duration_ms.to_string(),video_bytes,heavy_media}, video)
 }
 
 // MARK: Doing it
@@ -620,14 +599,14 @@ pub fn run_pass(
     dry_run: bool,
     ahead: Duration,
     shrink: bool,
-) -> (Vec<Action>, Report) {
+) -> Result<(Vec<Action>, Report)> {
     let now = SystemTime::now();
-    let mut actions = plan(captures, policy, now + ahead);
+    let mut actions = plan(captures, policy, now + ahead)?;
     if !shrink {
         actions.retain(|a| !matches!(a, Action::Shrink { .. }));
     }
     if dry_run {
-        return (actions, Report::default());
+        return Ok((actions, Report::default()));
     }
     sweep_leftovers(captures, now);
     let report = apply(&actions, policy, &trash, true);
@@ -641,7 +620,7 @@ pub fn run_pass(
             report.errors
         ));
     }
-    (actions, report)
+    Ok((actions, report))
 }
 
 /// Why a bundle's video is gone, for errors that need it.
@@ -772,7 +751,14 @@ fn worker(jobs: &flume::Receiver<Job>) {
             let shrink = last_shrink.is_none_or(|at| {
                 SystemTime::now().duration_since(at).unwrap_or_default() >= SHRINK_EVERY
             });
-            let (actions, report) = run_pass(&captures, &policy, false, Duration::ZERO, shrink);
+            let (actions, report) = match run_pass(&captures, &policy, false, Duration::ZERO, shrink) {
+                Ok(result) => result,
+                Err(_) => {
+                    apparent_log("retention: Record planning unavailable; no cleanup performed");
+                    next_pass = Instant::now() + PASS_EVERY;
+                    continue;
+                }
+            };
             if shrink {
                 last_shrink = Some(SystemTime::now());
             }
@@ -816,9 +802,15 @@ fn shrink_now(dir: &Path) -> std::result::Result<(), ()> {
     if dir.join(PINNED).exists() {
         return Ok(());
     }
-    if let Some(video) = shrinkable(dir, &manifest)
-        && let Err(error) = shrink_video(dir, &video)
-    {
+    let (facts, video) = observe(dir, &manifest, 0, 0, false);
+    // This existing after-capture job is independent of retention-day choices.
+    let neutral = Policy {media_days:None,bundle_days:None};
+    let decisions = crate::composition::retention::plan(&neutral, &[facts], true).map_err(|_| ())?;
+    if let Some(decision) = decisions.first() {
+        if decision.kind != crate::composition::retention::Kind::Shrink { return Err(()); }
+    } else { return Ok(()); }
+    let video = video.ok_or(())?;
+    if let Err(error) = shrink_video(dir, &video) {
         apparent_log(format!("shrink: {}: {error:#}", dir.display()));
     }
     Ok(())
@@ -1080,7 +1072,7 @@ mod tests {
     }
 
     fn planned(captures: &Path, policy: &Policy) -> Vec<Action> {
-        plan(captures, policy, later())
+        plan(captures, policy, later()).unwrap()
     }
 
     #[test]
@@ -1182,7 +1174,7 @@ mod tests {
         // Just copied from another Mac: made long ago, but the folder changed now.
         let arrived = bundle(&tmp.0, "apparent-arrived", 40.0, false);
         let today = later() - Duration::from_secs(24 * 3600);
-        assert!(plan(&tmp.0, &Policy::default(), today).is_empty());
+        assert!(plan(&tmp.0, &Policy::default(), today).unwrap().is_empty());
         assert_eq!(
             planned(&tmp.0, &Policy::default()),
             vec![Action::TrashBundle(arrived)]
@@ -1237,7 +1229,7 @@ mod tests {
         );
         // Nothing left to clean, and the bundle changed today besides.
         let next_week = later() + Duration::from_secs(2 * 24 * 3600);
-        assert!(plan(&captures, &Policy::default(), next_week).is_empty());
+        assert!(plan(&captures, &Policy::default(), next_week).unwrap().is_empty());
     }
 
     #[test]
