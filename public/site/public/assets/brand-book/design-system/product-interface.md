@@ -64,6 +64,11 @@ The following rules are proposed rather than observed in shipped product:
 
 ## Foundations
 
+Desktop Settings use the adopted [Desktop Settings specification](desktop-settings.md)
+for title dividers, navigation, contextual help, command copying and switches.
+Its scoped component rules extend these foundations without changing other
+products' shell defaults.
+
 ### Color roles
 
 | Token | Value | Product role |

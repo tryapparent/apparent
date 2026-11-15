@@ -6,6 +6,12 @@ Owner: founder approval
 
 ## Brand foundations
 
+For Desktop Settings, follow the adopted
+[Desktop Settings specification](./design-system/desktop-settings.md).
+It defines the title divider, 216px navigation sidebar, contextual help,
+16px utility icons with generous targets and strong-contrast compact switches.
+These component rules extend the foundations without introducing a sixth color.
+
 - Name: `apparent`. Always lowercase, including sentence starts, headings,
   titles, metadata, and navigation.
 - Category: AI-ready operational data.
