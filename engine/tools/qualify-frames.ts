@@ -85,6 +85,25 @@ export async function qualifyFrames(executable: string, directory: string, movie
   assert.deepEqual(samples.map(f => f.actualMs), [2500, 500, 1500, 1500, 2900, 1000, 2000]);
   assert.equal(hash(colors), colorsHash);
 
+  // Record's bounded periodic candidate pass can reuse one finite native job.
+  // This supplies explicit times; sampling policy is deliberately not native.
+  const batchTimes = Array.from({length:480},(_,index)=>index*10);
+  const batch = await decode('480-frame-batch',{executable,movie:colors,outputDirectory:output(),timesMs:batchTimes,maxEdge:32});
+  assert.equal(batch.length,480);
+  for (const [index,frame] of batch.entries()) {
+    assert.equal(frame.requestIndex,index); assert.equal(frame.requestedMs,batchTimes[index]);
+    assert.equal(frame.actualMs,Math.min(2900,Math.floor(batchTimes[index]/100)*100));
+    assert.deepEqual([frame.width,frame.height],[32,24]);
+    assert.equal(statSync(frame.file).mode&0o777,0o600);
+    const rgba=readFileSync(frame.file),pixel=(12*32+16)*4,channel=Math.min(2,Math.floor(frame.actualMs/1000));
+    assert.equal(rgba.length,32*24*4);
+    assert(rgba[pixel+channel]>90);
+    for(let other=0;other<3;other++) if(other!==channel) assert(rgba[pixel+channel]>rgba[pixel+other]+40);
+  }
+  assert.equal(hash(colors),colorsHash);
+  const oversized = spawnSync(executable,['frames-v1',colors,output(),'32',Array(481).fill(0).join(',')],{encoding:'utf8',timeout:10_000});
+  assert.notEqual(oversized.status,0); assert.equal(oversized.stdout,'');
+
   const delayed = join(directory, 'delayed-video.mp4');
   execFileSync('ffmpeg', ['-v', 'error', '-nostdin', '-itsoffset', '0.35', '-i', movie, '-map', '0:v',
     '-an', '-c', 'copy', '-y', delayed], {stdio: 'pipe'});
@@ -113,7 +132,7 @@ export async function qualifyFrames(executable: string, directory: string, movie
   console.log(JSON.stringify({capability: 'movie-frames/1', platform: process.platform, arch: process.arch,
     providerMode: process.platform === 'darwin' && process.env.APPARENT_ENGINE_QUALIFY_SEQUENTIAL === '1' ? 'sequential' : 'default',
     elapsedMs: Math.round(performance.now() - started), checks: ['packed-public-sdk', 'actual-native-decoding',
-      'request-identities', 'duplicates', 'backward-seek', 'presentation-clock', 'edge-clamps', 'scale',
+      'request-identities', '480-frame-batch', '481-frame-refusal', 'duplicates', 'backward-seek', 'presentation-clock', 'edge-clamps', 'scale',
       'display-rotation-and-pixels', 'edit-list-offsets', 'never-upscale', 'private-files',
       'unsafe-output-refusal', 'cancellation', 'source-preservation']}));
 }

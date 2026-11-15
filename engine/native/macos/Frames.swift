@@ -230,7 +230,7 @@ struct Frames {
         guard let n = Int64(value), n >= 0, n <= 9_007_199_254_740_991 else { throw Failure.invalidRequest }
         return n
       }
-      guard !times.isEmpty, times.count <= 48 else { throw Failure.invalidRequest }
+      guard !times.isEmpty, times.count <= 480 else { throw Failure.invalidRequest }
       let frames = try await decode(args[1], fd: fd, edge: edge, times: times)
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.sortedKeys]

@@ -25,7 +25,12 @@ uses the matching `apparent-engine-frames` artifact. All paths are absolute. The
 input is a trusted local MP4/QuickTime movie; this is not a hostile-codec sandbox.
 No tool discovery, installation, source compilation or network input is supplied.
 
-Supply 1–48 nonnegative safe-integer movie times in milliseconds. Order and
+SDK/native 0.3 supports 1–480 nonnegative safe-integer movie times in milliseconds
+(0.2 remains limited to 48). Provision the matching generation explicitly; an
+older provider rejects larger jobs. The existing 256 Mi pixel job limit still
+applies regardless of count: 480 small candidates fit; 480 full-size frames may
+not. Resource-limit failure returns no partial result; the caller still cleans
+the output directory. No automatic retry or sampling policy is introduced. Order and
 duplicates are preserved. Each result has `requestIndex`, `requestedMs`,
 `actualMs`, display-oriented `width`/`height` and an absolute `file` path. The
 native provider selects the last presentation sample at or before the requested
