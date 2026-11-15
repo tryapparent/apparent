@@ -42,6 +42,13 @@ class LocatorTests(unittest.TestCase):
             x, y = evidence.loading_button(Path(os.environ['APPARENT_UPDATER_OCR_FRAME']))
             self.assertTrue(492 <= x <= 596 and 374 <= y <= 410, (x, y))
 
+    @unittest.skipUnless(os.environ.get('APPARENT_UPDATER_DISMISS_FRAME'), 'needs a real deferred compositor frame')
+    def test_dismissal_reads_the_deferred_compositor_frame(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            evidence = self.gui.Evidence(Path(temporary))
+            frame = Path(os.environ['APPARENT_UPDATER_DISMISS_FRAME'])
+            self.assertTrue(self.gui.dialog_dismissed([evidence.words(frame), evidence.words(frame, cleaned=True), evidence.words(frame, page_mode=3)]))
+
     def test_portal_tabs_require_unique_ordered_labels_across_ocr_run_splits(self):
         for gap in [17, 27]:
             words = [{'text': text, 'left': x, 'top': 185, 'width': 65, 'height': 16}

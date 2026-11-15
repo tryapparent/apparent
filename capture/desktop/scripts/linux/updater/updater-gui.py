@@ -276,7 +276,7 @@ class Evidence:
             deadline = time.monotonic() + request.get('timeout', 20)
             while True:
                 path = self.frame()
-                if dialog_dismissed([self.words(path), self.words(path, cleaned=True)]):
+                if dialog_dismissed([self.words(path), self.words(path, cleaned=True), self.words(path, page_mode=3)]):
                     break
                 if time.monotonic() >= deadline:
                     raise RuntimeError(f'update dialog did not disappear; last frame: {path}')
