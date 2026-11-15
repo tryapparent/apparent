@@ -176,7 +176,7 @@ mod tests {
         let mut lines = std::io::BufReader::new(child.stdout.take().unwrap()).lines();
         while lines.next().unwrap().unwrap() != "ready" {}
         std::thread::sleep(Duration::from_millis(500));
-        assert!(Command::new("hyprctl").args(["dispatch", "focuswindow", "class:PasteFixture"]).status().unwrap().success());
+        assert!(Command::new("hyprctl").args(["eval", "hl.dispatch(hl.dsp.focus({ window = 'class:PasteFixture' }))"]).status().unwrap().success());
         std::thread::sleep(Duration::from_millis(100));
         let focused = super::super::hyprland::focused_window().unwrap();
         assert_eq!(focused.pid, child.id());
