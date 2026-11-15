@@ -15,13 +15,13 @@ export const wisprScript = String.raw`function run(argv) {
   if (argv[0] === 'read') return JSON.stringify({status: applications().count > 0 ? 'running' : 'closed'});
   var apps = applications();
   for (var i = 0; i < apps.count; i++) {
-    if (!apps.objectAtIndex(i).terminate) return JSON.stringify({status:applications().count === 0 ? 'closed' : 'refused'});
+    if (!apps.objectAtIndex(i).terminate) return JSON.stringify({status:Number(applications().count) === 0 ? 'closed' : 'refused'});
   }
   var deadline = Date.now() + 5000;
   while (applications().count > 0 && Date.now() < deadline) {
     $.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.1));
   }
-  return JSON.stringify({status: applications().count === 0 ? 'closed' : 'refused'});
+  return JSON.stringify({status: Number(applications().count) === 0 ? 'closed' : 'refused'});
 }`;
 
 export function macWispr(operation:'read'|'quit',signal:AbortSignal):Promise<WisprResult> {
