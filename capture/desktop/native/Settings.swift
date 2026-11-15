@@ -277,7 +277,7 @@ struct SettingsState: Decodable, Equatable {
 }
 
 enum SettingsPane: String, CaseIterable {
-  case general, recording, storage, permissions, agents, about
+  case general, recording, storage, permissions, agents, labs, about
 
   var title: String {
     switch self {
@@ -286,6 +286,7 @@ enum SettingsPane: String, CaseIterable {
     case .storage: "Storage"
     case .permissions: "Permissions"
     case .agents: "Agents"
+    case .labs: "Labs"
     case .about: "About"
     }
   }
@@ -297,6 +298,7 @@ enum SettingsPane: String, CaseIterable {
     case .storage: "internaldrive.fill"
     case .permissions: "hand.raised.fill"
     case .agents: "terminal.fill"
+    case .labs: "flask"
     case .about: "info"
     }
   }
@@ -308,7 +310,7 @@ enum SettingsPane: String, CaseIterable {
     case .recording: (Color(red: 1, green: 0.42, blue: 0.38), Color(red: 0.92, green: 0.2, blue: 0.17))
     case .storage: (Color(red: 0.36, green: 0.66, blue: 1), Color(red: 0.16, green: 0.45, blue: 0.95))
     case .permissions: (Color(red: 0.36, green: 0.82, blue: 0.56), Color(red: 0.16, green: 0.66, blue: 0.4))
-    case .agents: (Color(white: 0.36), Color(white: 0.18))
+    case .agents, .labs: (Color(white: 0.36), Color(white: 0.18))
     }
   }
 }
@@ -949,6 +951,7 @@ struct SettingsView: View {
       item(.storage)
       item(.permissions)
       item(.agents)
+      item(.labs)
       item(.about)
       Spacer()
     }
@@ -999,7 +1002,7 @@ struct SettingsView: View {
 
   private func select(_ pane: SettingsPane) {
     if model.state.recording != nil { model.act("cancel-shortcut") }
-    if pane == .storage || pane == .about {
+    if pane == .storage || pane == .labs || pane == .about {
       model.act("navigate", ["pane": pane.rawValue])
     } else {
       model.pane = pane
@@ -1036,6 +1039,7 @@ struct SettingsView: View {
       case .storage: storage
       case .permissions: permissions
       case .agents: agents
+      case .labs: Text("Reinstall Apparent to restore Labs in Settings.")
       case .about: about
       }
       Spacer(minLength: 0)
@@ -1909,6 +1913,7 @@ final class SettingsWindow: NSObject, NSApplicationDelegate, NSWindowDelegate {
       ("agents-homebrew", .agents, cliHomebrew),
       ("agents-taken", .agents, cliTaken),
       ("agents-dev", .agents, cliDev),
+      ("labs", .labs, base),
       ("about", .about, base),
       ("about-dev", .about, noUpdates),
     ]
