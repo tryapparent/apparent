@@ -1,5 +1,9 @@
 # Capsule motion
 
+The [accepted live-transcription pill design](design/live-transcription/README.md)
+preserves the approved browser motion prototype. It is a design checkpoint;
+backend, metering and production integration remain undecided.
+
 Read this before changing the capsule's animation (`capture/desktop/ui/lab.rs`, `capture/desktop/ui/motion.rs`, `src/native/`, `desktop/perf/pill/`).
 
 ## Capsule motion loop (`capture/desktop/ui/lab.rs`, `capture/desktop/ui/motion.rs`, `desktop/perf/pill/`)
