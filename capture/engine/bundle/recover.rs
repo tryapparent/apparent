@@ -347,6 +347,7 @@ pub fn orphan_recipe(
 /// The steps that read media, swapped out in tests.
 #[derive(Clone, Copy)]
 pub struct Media {
+    pub explicit_frames: fn(&Path, &[u64], u64, u32) -> Result<Vec<RgbaFrame>>,
     pub probe: fn(&Path) -> Result<crate::composition::media_probe::BundleProbe>,
     pub frames:
         fn(&Path, crate::capture::desktop::helper::FrameTimes, u32) -> Result<Vec<RgbaFrame>>,
@@ -358,6 +359,7 @@ pub struct Media {
 
 impl Media {
     pub const SYSTEM: Media = Media {
+        explicit_frames: crate::composition::movie_frames::record,
         probe: crate::composition::media_probe::bundle_probe,
         frames: crate::capture::desktop::helper::frames,
         transcribe: crate::capture::engine::runtime::audio::transcription::transcribe::transcribe,
@@ -706,6 +708,12 @@ mod tests {
     }
 
     const FAKE: Media = Media {
+        explicit_frames: |movie, times, offset, edge| {
+            let wanted: Vec<_> = times.iter().map(|t| t.saturating_sub(offset)).collect();
+            let mut decoded = fake_frames(movie, crate::capture::desktop::helper::FrameTimes::At(&wanted), edge)?;
+            for (frame, requested) in decoded.iter_mut().zip(times) { frame.t_ms = *requested; }
+            Ok(decoded)
+        },
         probe: fake_probe,
         frames: fake_frames,
         transcribe: fake_transcript,

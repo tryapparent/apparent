@@ -279,7 +279,7 @@ pub fn zoom(
         let mut out = Vec::with_capacity(times.len());
         for (chunk, rects) in times.chunks(6).zip(crops.chunks(6)) {
             let decoded =
-                crate::composition::agent_frames::frames(&video, chunk, bundle.video_offset_ms, 0)?;
+                crate::composition::movie_frames::agent(&video, chunk, bundle.video_offset_ms, 0)?;
             for (frame, rect) in decoded.into_iter().zip(rects) {
                 let frame = match rect {
                     Some(r) => crate::capture::engine::autocrop::autocrop::crop_frame(&frame, *r),
@@ -292,7 +292,7 @@ pub fn zoom(
         }
         out
     } else {
-        crate::composition::agent_frames::frames(&video, &times, bundle.video_offset_ms, 900)?
+        crate::composition::movie_frames::agent(&video, &times, bundle.video_offset_ms, 900)?
     };
     ensure!(!frames.is_empty(), "No frames could be decoded");
     let mut cells = Vec::with_capacity(frames.len());
