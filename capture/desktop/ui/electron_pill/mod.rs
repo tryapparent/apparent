@@ -50,6 +50,11 @@ pub struct Control {
 }
 
 impl View {
+    fn admits_sharing_confirmation(&self, revision: Option<u64>) -> bool {
+        self.phase == "completed" && revision == Some(self.revision)
+            && self.actions.iter().any(|action| action.id == "copy-link" && action.enabled)
+    }
+
     pub fn new(snapshot: &PillSnapshot, revision: u64, draggable: bool) -> Self {
         let mut view = Self {
             revision,

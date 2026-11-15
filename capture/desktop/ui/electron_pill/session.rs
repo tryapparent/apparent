@@ -37,6 +37,7 @@ pub struct Session {
     ready: Arc<AtomicBool>,
     window_changed: Arc<AtomicBool>,
     hovered: Arc<AtomicBool>,
+    sharing_confirmation: Arc<Mutex<Option<u64>>>,
     moved: Arc<AtomicBool>,
     child: Option<crate::capture::ui_process::UiChild>,
     opened: Instant,
@@ -207,6 +208,8 @@ impl Session {
         let (commands, actions) = flume::bounded(16);
         let hovered = Arc::new(AtomicBool::new(false));
         let hovering = hovered.clone();
+        let sharing_confirmation = Arc::new(Mutex::new(None));
+        let confirmation = sharing_confirmation.clone();
         let moved = Arc::new(AtomicBool::new(false));
         let moving = moved.clone();
         let pin_needed = Arc::new(AtomicBool::new(false));
@@ -317,6 +320,13 @@ impl Session {
                         moving.store(true, Ordering::Release);
                         continue;
                     }
+                    if let Some(active) = value.get("sharingConfirmation").and_then(|v| v.as_bool()) {
+                        let Some(revision) = value.get("revision").and_then(|v| v.as_u64()) else { break ReaderStop::InvalidCommand; };
+                        let mut held = confirmation.lock().unwrap();
+                        if active { *held = Some(revision); }
+                        else if *held == Some(revision) { *held = None; }
+                        continue;
+                    }
                     if let Some(value) = value.get("hovered").and_then(|v| v.as_bool()) {
                         hovering.store(value, Ordering::Release);
                         continue;
@@ -352,6 +362,7 @@ impl Session {
             ready,
             window_changed,
             hovered,
+            sharing_confirmation,
             moved,
             child: Some(crate::capture::ui_process::UiChild::new(child)),
             opened: Instant::now(),
@@ -473,6 +484,10 @@ impl Session {
     }
     pub fn hovered(&self) -> bool {
         self.hovered.load(Ordering::Acquire)
+    }
+    pub fn confirming_public_share(&self) -> bool {
+        self.alive.load(Ordering::Acquire) && self.ready()
+            && self.view.admits_sharing_confirmation(*self.sharing_confirmation.lock().unwrap())
     }
     pub fn update(&mut self, mut view: View, generation: u64, selection: Selection) {
         #[cfg(target_os = "linux")]

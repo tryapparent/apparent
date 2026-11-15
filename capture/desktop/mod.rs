@@ -3167,6 +3167,12 @@ impl ApparentCoordinator {
         // A late frame slows the motion rather than skipping it ahead (a new window's second
         // frame comes ~50 ms after its first).
         let dt = (real * motion::time_scale()).min(0.025);
+        // The TypeScript consent flow retains only its current native surface.
+        // Releasing it resumes the existing completion interval.
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        if self.electron_pill.as_ref().is_some_and(|session| session.confirming_public_share()) {
+            self.renew_completed_share_presentation();
+        }
         if let IslandPhase::Completed { finished_at, .. } = self.island_phase
             && finished_at.elapsed() >= Duration::from_millis(15_000)
             && self.share_pending.is_none()
