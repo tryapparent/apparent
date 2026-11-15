@@ -41,9 +41,16 @@ export function checkNativeInputs(root: string, platform = process.platform): st
     'capture/desktop/ui/frontend/electron/record-media/node_modules/@apparent/engine-sdk/dist/index.js',
     'capture/desktop/ui/frontend/electron/record-media/native/apparent-engine-media',
     'capture/desktop/ui/frontend/electron/record-media/native/manifest.json',
+    'capture/desktop/ui/frontend/electron/agent-media/worker.js',
+    'capture/desktop/ui/frontend/electron/agent-media/policy.js',
+    'capture/desktop/ui/frontend/electron/agent-media/package.json',
+    'capture/desktop/ui/frontend/electron/agent-media/node_modules/@apparent/engine-sdk/dist/index.js',
+    'capture/desktop/ui/frontend/electron/agent-media/native/apparent-engine-frames',
+    'capture/desktop/ui/frontend/electron/agent-media/engine-source-manifest.json',
   ];
   if (platform === 'darwin') inputs.push(
     'capture/desktop/ui/frontend/electron/record-media/native/apparent-engine-probe',
+    'capture/desktop/ui/frontend/electron/agent-media/native/apparent-engine-frames-native',
     'capture/desktop/ui/frontend/tests/mac-storage-native.cjs',
     'capture/desktop/scripts/native/copy-capture-id.swift',
     'capture/desktop/assets/Apparent.icns',
@@ -70,6 +77,8 @@ export function prepareNativeInputs(root: string, platform = process.platform): 
     execFileSync(process.execPath, ['--experimental-strip-types', `scripts/build-${generator}.ts`],
       {cwd: frontend, stdio: 'inherit'});
   }
+  execFileSync(process.execPath, ['--experimental-strip-types', 'scripts/agent-media/build.ts'],
+    {cwd: frontend, stdio: 'inherit'});
   return checkNativeInputs(root, platform);
 }
 

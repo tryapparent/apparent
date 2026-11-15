@@ -295,6 +295,9 @@ jobs:
       - name: Qualify Record media through the published Engine provider
         if: needs.select.outputs.root == 'true'
         run: npm --prefix record/media run test:native
+      - name: Qualify Agent frames through the published Engine provider
+        if: needs.select.outputs.root == 'true'
+        run: npm --prefix capture/agent/media run test:native
       - name: CI-sensitive fixtures before native checks
         if: needs.select.outputs.root == 'true'
         shell: bash
@@ -330,6 +333,7 @@ jobs:
           codesign --verify --deep --strict "$APPARENT_APP_DIR"
           npm --prefix capture/desktop/ui/frontend run build
           node --experimental-strip-types record/media/test/package.ts --binary "$APPARENT_APP_DIR/Contents/MacOS/apparent" --settings "$APPARENT_APP_DIR/Contents/Resources/settings"
+          node --experimental-strip-types capture/agent/media/test/package.ts --binary "$APPARENT_APP_DIR/Contents/MacOS/apparent" --settings "$APPARENT_APP_DIR/Contents/Resources/settings"
       - name: Retain the installed Mac CI candidate for a separate native test run
         if: runner.os == 'macOS' && needs.select.outputs.root == 'true' && needs.select.outputs.foreground == 'true'
         shell: bash

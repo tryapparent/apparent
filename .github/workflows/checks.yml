@@ -133,12 +133,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Check Record policy without Rust, Electron or native outputs
+      - name: Check Record and Agent policy without Rust, Electron or native outputs
         run: |
           if command -v cargo || command -v rustc; then exit 1; fi
           test ! -d ../../target
           test ! -d ../../capture/desktop/ui/frontend/node_modules
           node --experimental-strip-types ../../enablement/local-tests/run.ts --record-media
+          node --experimental-strip-types ../../enablement/local-tests/run.ts --agent-media
 
   onboarding-policy:
     name: Onboarding policy

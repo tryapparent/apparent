@@ -28,6 +28,9 @@ function fixture(t: any) {
   for (const name of ['worker.js', 'policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/manifest.json']) {
     put('capture/desktop/ui/frontend/electron/record-media/' + name);
   }
+  for (const name of ['worker.js', 'policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json']) {
+    put('capture/desktop/ui/frontend/electron/agent-media/' + name);
+  }
   for (const name of ['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json']) {
     put('capture/desktop/ui/frontend/electron/storage-owner/' + name);
   }
@@ -40,10 +43,11 @@ function generators(f: ReturnType<typeof fixture>, fail = '') {
     'connect-transport': ['electron/connect.cjs', 'electron/settings/agents.cjs'],
     'pill': ['worker.js', 'policy.js', 'package.json'].map(name => 'electron/record-completion/' + name),
     'record-media': ['worker.js', 'policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/manifest.json'].map(name => 'electron/record-media/' + name),
+    'agent-media': ['worker.js', 'policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json'].map(name => 'electron/agent-media/' + name),
   };
   for (const [name, files] of Object.entries(outputs)) {
     for (const file of files) rmSync(resolve(f.root, 'capture/desktop/ui/frontend', file));
-    f.put(`capture/desktop/ui/frontend/scripts/build-${name}.ts`, `
+    f.put(`capture/desktop/ui/frontend/scripts/${name === 'agent-media' ? 'agent-media/build' : 'build-' + name}.ts`, `
 import {appendFileSync, mkdirSync, writeFileSync} from 'node:fs';
 import {dirname} from 'node:path';
 appendFileSync('trace', '${name}\\n');
@@ -67,16 +71,16 @@ test('Linux release tests prepare their real published provider before Cargo', (
   for (const input of ['--preflight', 'ci --ignore-scripts', 'node_modules/electron/install.js', 'enablement/prerequisites/native.ts'])
     assert.ok(step.includes(input), input);
   assert.match(workflow, /Clean private release test inputs\n        if: always\(\)/);
-  const adapter = readFileSync('composition/media_probe.rs', 'utf8');
+  const adapter = readFileSync('composition/worker.rs', 'utf8');
   assert.match(adapter, /cfg!\(any\(test, debug_assertions\)\)/, 'release tests have prepared source assets; shipped releases do not');
 });
 
 test('one preparation entrypoint rebuilds absent native artifacts and can run again', t => {
   const f = fixture(t), trace = generators(f);
   assert.equal(prepareNativeInputs(f.root, 'linux'), f.electron);
-  assert.equal(trace(), 'storage-policy\nconnect-transport\npill\nrecord-media\n');
+  assert.equal(trace(), 'storage-policy\nconnect-transport\npill\nrecord-media\nagent-media\n');
   assert.equal(prepareNativeInputs(f.root, 'linux'), f.electron);
-  assert.equal(trace(), 'storage-policy\nconnect-transport\npill\nrecord-media\nstorage-policy\nconnect-transport\npill\nrecord-media\n');
+  assert.equal(trace(), 'storage-policy\nconnect-transport\npill\nrecord-media\nagent-media\nstorage-policy\nconnect-transport\npill\nrecord-media\nagent-media\n');
 });
 test('missing runtime stops before generating artifacts', t => {
   const f = fixture(t);

@@ -109,6 +109,16 @@ export function recordMediaCommands(): Command[] {
   ];
 }
 
+export function agentMediaCommands(): Command[] {
+  const cwd = 'capture/agent/media';
+  return [
+    {argv: ['npm', 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], cwd},
+    {argv: ['npm', 'run', 'typecheck'], cwd},
+    {argv: ['npm', 'test'], cwd},
+    {argv: ['npm', 'run', 'build'], cwd},
+  ];
+}
+
 export function commands(selected: Owner[], base: string, head: string, platform = process.platform, rustChanged = true,
   installScope: {paths: string[] | null; workflowControls?: string[]} = {paths: null}): Command[] {
   const result: Command[] = [];
@@ -121,7 +131,7 @@ export function commands(selected: Owner[], base: string, head: string, platform
   if (selected.includes('tooling')) result.push(...toolingCommands());
   else if (selected.includes('desktop')) result.push(...installationContracts(installScope.paths, installScope.workflowControls));
   if (selected.includes('onboarding')) result.push(...onboardingCommands());
-  if (selected.includes('capture')) result.push(...recordMediaCommands());
+  if (selected.includes('capture')) result.push(...recordMediaCommands(), ...agentMediaCommands());
   if (selected.includes('client-foreground')) result.push(...foregroundCommands());
   if (selected.includes('engine-media')) add(['node', '--experimental-strip-types', 'engine/tools/check.ts', ...(rustChanged ? [] : ['--sdk-only'])]);
   const tools = selected.includes('capture-tools') ? captureToolTests() : [];
@@ -203,7 +213,7 @@ export function execute(plan: Command[], cwd = root, admission?: Admission, sour
   // config/index. Preserve identity/credentials and all non-local environment.
   const local = spawnSync('git', ['rev-parse', '--local-env-vars'], { cwd, encoding: 'utf8' });
   if ((local.error || local.status !== 0) && !sourceOnly) throw Error('Cannot isolate hook Git environment');
-  if (sourceOnly && ![onboardingCommands(), recordMediaCommands()].some(inventory => JSON.stringify(plan) === JSON.stringify(inventory)))
+  if (sourceOnly && ![onboardingCommands(), recordMediaCommands(), agentMediaCommands()].some(inventory => JSON.stringify(plan) === JSON.stringify(inventory)))
     throw Error('Source-only execution is limited to the reviewed policy inventories');
   const env = { ...process.env };
   const gitVariables = sourceOnly ? Object.keys(env).filter(name => name.startsWith('GIT_')) : local.stdout.trim().split('\n');
@@ -223,6 +233,10 @@ export function execute(plan: Command[], cwd = root, admission?: Admission, sour
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const args = process.argv.slice(2);
+  if (args.length === 1 && args[0] === '--agent-media') {
+    execute(agentMediaCommands(), root, undefined, true);
+    process.exit(0);
+  }
   if (args.length === 1 && args[0] === '--record-media') {
     execute(recordMediaCommands(), root, undefined, true);
     process.exit(0);

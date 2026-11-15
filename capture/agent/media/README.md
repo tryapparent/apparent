@@ -1,0 +1,45 @@
+# Agent movie frames
+
+Agent's headless TypeScript worker maps requested bundle times onto the movie
+clock and back by request index. Offset-clamped requests can share movie zero;
+their original bundle times remain distinct for crop, annotation and cell labels.
+Sampling, crop selection and sheet rendering still use Agent's existing callers.
+
+`npm ci`, `npm test`, `npm run typecheck` and `npm run build` require only Node
+22.18+. They import the published SDK, never Engine source, Rust or Electron.
+This proves the component build boundary, not independence of the whole Agent CLI.
+
+`engine.json` pins the immutable SDK 0.2 and native frame provider published from
+`5bbe8e35e67b61703737991575860d4b1fd1ad57`. `stage.ts --out <owned-output>`
+verifies archive/SDK/file digests, source identity, capabilities and modes before
+staging. Only frame executables are installed; the complete source manifest is
+retained separately as provenance. Record keeps its existing SDK/provider pin.
+Runtime operations never download, build, discover providers or mutate config.
+
+Application composition hosts the worker in its packaged Electron runtime with
+Node mode enabled. Its shared finite-worker resource helper retains bounded
+output, a deadline and process-group cleanup. The frame adapter holds an output
+directory descriptor across execution, rejects links and unexpected identities,
+reads only bounded private pixels, then removes its temporary output. Both
+`apparent zoom` paths use this adapter: full frames and chunked native-size crops.
+
+`npm run test:native` stages and executes the actual published provider with
+synthetic 30fps media, offset duplicates, display rotation, private files and
+redacted failure output. FFmpeg and the platform media runtime are required.
+`test/package.ts --binary <CLI-or-AppImage> --settings <packaged-settings>`
+exercises the installed Node host and both real zoom callers, checking bundle
+labels, crop association, decoded PNG pixels, source preservation and cleanup.
+Linux AppImages and signed Mac candidate checks run it. Optional `--proof-dir`
+retains synthetic PNGs for inspection under a private disposable job directory.
+These checks do not establish GUI, capture, permissions or physical-device proof.
+
+The real composition test also observes elapsed time against the retained decoder
+on the same synthetic movie, alternating order. The published path adds a Node
+process and private-file transfer; this adoption is not a runtime optimization.
+These small warm-fixture observations cannot establish cold build savings.
+
+Revert the consumer routing, package pin and staging together for rollback.
+The legacy root decoder remains for its other real Record/media callers; only
+Agent's calls are replaced. No config writer or persistence format changes.
+Native policy/rendering elsewhere and the root CLI build remain migration debt;
+this slice makes no full independence or build-speed claim.
