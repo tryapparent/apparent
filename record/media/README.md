@@ -185,3 +185,26 @@ Rollback restores the recovery/benchmark routing, injected contract and generate
 inventory together. The published pin, bundle schema and config writer do not
 change. Keep the remaining legacy diagnostic/reader until a separate verified
 consumer retirement; no live capture or permissions proof is inferred here.
+
+## Native audio prerequisite
+
+Phone/file audio extraction still uses the root native runtime, ahead of a
+published Engine audio capability. It writes into a held private temporary WAV,
+validates that WAV, then publishes it for transcription and bundle assembly.
+Failures discard the owned temporary. File privacy does not depend on the
+caller's umask. Linux maps the first decoded sample through its GStreamer
+segment so a leading movie edit remains silence on the transcription clock.
+
+The package check uses a producer-generated bundle, real delayed AAC input and
+the actual reprocess caller under umask `002`. A deterministic local command
+checks the extracted WAV handoff without a model, service or playback. It checks
+private publication, leading silence, the source-timeline end and unchanged
+input/config bytes. This proves file ingestion and handoff, not recognition or
+live capture; signed Mac and final AppImage acceptance remain delivery gates.
+
+This is a native correctness prerequisite, not SDK audio adoption or owner build
+independence. Existing track selection, in-memory audio, transcription engines,
+pins, bundle schema and config writer remain authoritative. A later capability
+must align the current Mac all-track mix and Linux first-track behavior explicitly.
+Rollback reverts the private staging and Linux clock mapping together; it has no
+data or settings migration.
