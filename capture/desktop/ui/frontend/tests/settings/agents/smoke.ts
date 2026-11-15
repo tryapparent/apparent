@@ -21,6 +21,7 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
   const exited = new Promise<void>(resolve => application.once('exit', () => resolve()));
   const actions: Record<string, unknown>[] = [];
   let saved: boolean | null = null;
+  let sharingSaved:boolean|null=null;
   let t3Saved:boolean|null=null;
   let autoPasteSaved:boolean|null=null;
   let failWrite = false;
@@ -29,10 +30,10 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
   let held: Record<string, unknown> | undefined;
   const reply = (action: Record<string, unknown>) => {
     if ('enabled' in action && !failWrite) {
-      if(action.setting==='t3')t3Saved=action.enabled as boolean;else if(action.setting==='autoPaste')autoPasteSaved=action.enabled as boolean;else saved=action.enabled as boolean;
+      if(action.setting==='sharing')sharingSaved=action.enabled as boolean;else if(action.setting==='t3')t3Saved=action.enabled as boolean;else if(action.setting==='autoPaste')autoPasteSaved=action.enabled as boolean;else saved=action.enabled as boolean;
     }
     application.stdin.write(JSON.stringify({type: 'agents-result', request: action.request,
-      facts: failWrite && 'enabled' in action ? {error: 'config_write_failed'} : {saved,t3Saved,t3Configured:false,autoPasteSaved,autoPasteSupported:process.platform==='linux'}}) + '\n');
+      facts: failWrite && 'enabled' in action ? {error: 'config_write_failed'} : {saved,sharingSaved,t3Saved,t3Configured:false,autoPasteSaved,autoPasteSupported:process.platform==='linux'}}) + '\n');
   };
   createInterface({input: application.stdout}).on('line', line => {
     try {
@@ -88,6 +89,12 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
       await expect(autoToggle).toBeDisabled();
       await expect(autoToggle).toHaveCSS('opacity','0.45');
     }
+    const sharingToggle=page.getByRole('switch',{name:'Public sharing links'});
+    await expect(sharingToggle).toHaveAttribute('aria-checked','false');
+    await sharingToggle.focus();await page.keyboard.press('Space');
+    await expect(sharingToggle).toHaveAttribute('aria-checked','true');
+    assert.equal(actions.at(-1)?.setting,'sharing');assert.equal(saved,null);
+    await sharingToggle.click();await expect(sharingToggle).toHaveAttribute('aria-checked','false');
     const t3Toggle=page.getByRole('switch',{name:'Send recordings to T3'});
     await expect(t3Toggle).toHaveAttribute('aria-checked','false');
     await t3Toggle.click();await expect(t3Toggle).toHaveAttribute('aria-checked','true');

@@ -6,13 +6,14 @@ import frog from '../../../../assets/settings/frog-puzzled.png';
 import {Switch} from '@apparent/ui/switch';
 import {Tooltip,TooltipTrigger,TooltipContent,TooltipProvider} from '@apparent/ui/tooltip';
 import {Info,Copy,Check} from 'lucide-react';
-import {preferenceEnabled,autoPasteEnabled,t3PickerEnabled,skillCommand,type PreferenceFacts,type T3ConnectionResult} from './policy';
+import {sharingEnabled,preferenceEnabled,autoPasteEnabled,t3PickerEnabled,skillCommand,type PreferenceFacts,type T3ConnectionResult} from './policy';
 
 declare global {
   interface Window {
     apparentAgents: {
       read():Promise<PreferenceFacts>;
       save(enabled:boolean):Promise<PreferenceFacts>;
+      saveSharing(enabled:boolean):Promise<PreferenceFacts>;
       saveAutoPaste(enabled:boolean):Promise<PreferenceFacts>;
       saveT3(enabled:boolean):Promise<PreferenceFacts>;
       previewT3():Promise<{preview:PairingPreview;error?:never}|{error:string;preview?:never}>;
@@ -36,7 +37,7 @@ function Help({label,children}:{label:string;children:string}) {
 export function Agents() {
   const [facts,setFacts]=useState<PreferenceFacts>();
   const [busy,setBusy]=useState(false),[operation,setOperation]=useState<'read'|'save'>('read');
-  const [setting,setSetting]=useState<'video'|'t3'|'autoPaste'>('video'),[error,setError]=useState('');
+  const [setting,setSetting]=useState<'video'|'t3'|'autoPaste'|'sharing'>('video'),[error,setError]=useState('');
   const [copied,setCopied]=useState(false),[copyError,setCopyError]=useState(false);
   const [connecting,setConnecting]=useState(false),[disconnecting,setDisconnecting]=useState(false),[connectionError,setConnectionError]=useState('');
   const [connectionNotice,setConnectionNotice]=useState('');
@@ -46,12 +47,12 @@ export function Agents() {
   function closeSetup(){if(connecting)return;++previewRevision.current;setSetup(false);setPreview(undefined);void window.apparentAgents.cancelT3().catch(()=>{});}
   async function pasteLink(){const revision=++previewRevision.current;setConnectionError('');setPreview(undefined);try{const result=await window.apparentAgents.previewT3();if(!live.current||revision!==previewRevision.current)return;if(result.error)setConnectionError(result.error);else setPreview(result.preview);}catch{if(live.current&&revision===previewRevision.current)setConnectionError('Unable to read the pairing link. Copy it in T3, then try again.');}}
   const live=useRef(true),pending=useRef(false),revision=useRef(0);
-  async function request(enabled?:boolean,target:'video'|'t3'|'autoPaste'='video') {
+  async function request(enabled?:boolean,target:'video'|'t3'|'autoPaste'|'sharing'='video') {
     if(pending.current)return;
     pending.current=true;setOperation(enabled===undefined?'read':'save');setSetting(target);setBusy(true);
     const version=++revision.current;
     try {
-      const result=await(enabled===undefined?window.apparentAgents.read():target==='autoPaste'?window.apparentAgents.saveAutoPaste(enabled):target==='t3'?window.apparentAgents.saveT3(enabled):window.apparentAgents.save(enabled));
+      const result=await(enabled===undefined?window.apparentAgents.read():target==='sharing'?window.apparentAgents.saveSharing(enabled):target==='autoPaste'?window.apparentAgents.saveAutoPaste(enabled):target==='t3'?window.apparentAgents.saveT3(enabled):window.apparentAgents.save(enabled));
       if(!live.current||version!==revision.current)return;
       setFacts(result);
       setError(result.error?'Refresh the saved value, then try again.':'');
@@ -91,7 +92,7 @@ export function Agents() {
     finally {if(live.current){setConnecting(false);setDisconnecting(false);setPreview(undefined);}}
   }
   const enabled=facts&&preferenceEnabled(facts),t3Enabled=facts&&t3PickerEnabled(facts);
-  const autoEnabled=facts&&autoPasteEnabled(facts);
+  const autoEnabled=facts&&autoPasteEnabled(facts),publicEnabled=facts&&sharingEnabled(facts);
   const expired=Boolean(facts?.t3Configured&&(!facts.t3Origin||!facts.t3ExpiresAt||facts.t3ExpiresAt<=Date.now()));
   return <section className="settings-agents" aria-label="Agent preferences">
     <section className="settings-agent-skill" aria-labelledby="agent-skill-label">
@@ -112,6 +113,10 @@ export function Agents() {
     </section>
     <section className="agent-preference agent-labs" aria-labelledby="agent-labs-label">
       <h2 id="agent-labs-label">Labs</h2>
+      <div className="agent-lab"><div className="agent-preference-row"><h3 id="public-sharing-label">Public sharing links</h3><Switch id="agent-sharing-control" className="agent-switch" checked={publicEnabled??false} aria-labelledby="public-sharing-label" aria-describedby="public-sharing-help public-sharing-privacy" aria-busy={busy&&setting==='sharing'} disabled={busy||connecting||publicEnabled===undefined} onCheckedChange={value=>void request(value,'sharing')} /></div>
+        <p id="public-sharing-help">Show Copy link after recording. Off by default; applies to the next recording.</p>
+        <p id="public-sharing-privacy">Anyone with the link can view the shared capture. Shared captures are not end-to-end encrypted.</p>
+      </div>
       <div className="agent-preference-row"><h3 id="auto-paste-label">Auto paste</h3><Switch id="agent-autoPaste-control" className="agent-switch" checked={autoEnabled??false} aria-labelledby="auto-paste-label" aria-describedby="auto-paste-help auto-paste-limits" aria-busy={busy&&setting==='autoPaste'} disabled={busy||connecting||autoEnabled===undefined||!facts?.autoPasteSupported} onCheckedChange={value=>void request(value,'autoPaste')} /></div>
       <p id="auto-paste-help">Paste the image and text into your focused composer after recording. Off by default; applies to the next recording.</p>
       <p id="auto-paste-limits">Linux with Hyprland only. Keep your composer focused until processing finishes. Check the paste before sending; Apparent never presses Enter.</p>

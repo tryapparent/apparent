@@ -245,6 +245,11 @@ app.whenReady().then(() => {
     if (!agents || args.length !== 1 || typeof args[0] !== 'boolean') throw new Error('Forbidden Agents preference');
     return agentsPreferences.request(args[0], 't3');
   });
+  ipcMain.handle('apparent:agents-sharing-preference', (event, ...args) => {
+    validate(event, []);
+    if (!agents || args.length !== 1 || typeof args[0] !== 'boolean') throw new Error('Forbidden sharing preference');
+    return agentsPreferences.request(args[0], 'sharing');
+  });
   ipcMain.handle('apparent:agents-auto-paste-preference', (event, ...args) => {
     validate(event, []);
     if (!agents || process.platform !== 'linux' || args.length !== 1 || typeof args[0] !== 'boolean') throw new Error('Forbidden auto paste preference');

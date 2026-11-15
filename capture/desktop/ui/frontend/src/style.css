@@ -125,3 +125,5 @@ html:has(.settings-shell),body:has(.settings-shell),#root:has(>.settings-shell){
 
 .agent-labs>h2{margin-bottom:16px}.agent-labs #auto-paste-limits{margin-top:8px}
 @media(prefers-color-scheme:dark){.settings-t3-dialog{background:var(--apparent-carbon);color:var(--apparent-paper)}}
+
+.agent-lab{margin-bottom:24px}.agent-lab #public-sharing-privacy{margin-top:8px}
