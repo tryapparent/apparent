@@ -91,8 +91,8 @@ const { ConnectSettings, actions } = require('./connect.cjs');
 const followWindowTheme = require('@apparent/ui/window-theme');
 nativeTheme.themeSource = 'system';
 const settings = process.argv.includes('--settings-storage');
-const about = settings && process.argv.includes('--settings-about');
-const agents = settings && process.argv.includes('--settings-agents') && !about;
+let about = settings && process.argv.includes('--settings-about');
+let agents = settings && process.argv.includes('--settings-agents') && !about;
 const settingsHash = about ? '#about' : agents ? '#agents' : '';
 const { AgentsPreferences, skillCommand, preferenceFacts } = require('./settings/agents.cjs');
 const {PairingLinks} = require('./settings/t3.cjs');
@@ -122,7 +122,7 @@ app.whenReady().then(() => {
     ...(settings ? { paintWhenInitiallyHidden: true } : {}),
     width: settings ? 720 : 920, height: settings ? 530 : 760,
     minWidth: 640, minHeight: settings ? 530 : 620,
-    ...(settings ? require('./settings/frame.cjs').settingsWindowOptions(process.platform,agents) : {}),
+    ...(settings ? require('./settings/frame.cjs').settingsWindowOptions(process.platform,about || agents) : {}),
     title: settings ? 'Apparent Settings' : 'Apparent — UI foundation',
     backgroundColor: followWindowTheme.backgroundColor(nativeTheme),
     webPreferences: {
@@ -197,6 +197,11 @@ app.whenReady().then(() => {
     if (settingsClosing || window.isDestroyed()) return;
     settingsCommitted = true;
     return showSettings();
+  });
+  ipcMain.handle('apparent:settings-route', (event, ...args) => {
+    validate(event, args);
+    if (!settings || (!about && !agents)) throw new Error('Unavailable outside the shared Settings shell');
+    return about ? 'about' : 'agents';
   });
   ipcMain.handle('apparent:settings-frame-ready', (event, ...args) => {
     validate(event, args);
@@ -308,7 +313,16 @@ app.whenReady().then(() => {
           window.webContents.send('apparent:agents-state', preferenceFacts(command.facts));
         }
         if (command.type === 'close') closeSettings();
-        if (command.type === 'show') showSettings();
+        if (command.type === 'show') {
+          if ((about || agents) && ['agents', 'about'].includes(command.pane)) {
+            if (agents && command.pane === 'about') {
+              ++pairingPreviewVersion; pairingLinks.clear(); t3Approval?.abort(); agentsPreferences.close();
+            }
+            about = command.pane === 'about'; agents = !about;
+            window.webContents.send('apparent:settings-route', command.pane);
+          }
+          showSettings();
+        }
       } catch { /* malformed parent message has no effect */ }
     });
     lines.on('close', closeSettings);

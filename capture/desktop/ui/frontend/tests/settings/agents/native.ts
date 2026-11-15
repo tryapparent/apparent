@@ -35,8 +35,8 @@ try {
   });
   browser = await chromium.connectOverCDP(debuggerUrl);
   const page = browser.contexts()[0].pages()[0];
-  await expect(page.locator('.settings-agent-command')).toHaveText(process.argv[3]);
-  const toggle = page.getByRole('switch', {name: 'Ask for an Apparent video on complex changes'});
+  await expect(page.locator('.agent-command')).toHaveText(process.argv[3]);
+  const toggle = page.getByRole('switch', {name: 'Ask for video proof'});
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
   if(process.platform==='linux') {
     const auto=page.getByRole('switch',{name:'Auto paste',exact:true});

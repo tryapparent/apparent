@@ -70,10 +70,6 @@ body.brand-reading-route { color-scheme:normal; }
 .bb-reader-body .bb-download-row a { font-size:1rem; }
 .bb-library label { display:block; }
 .bb-library .bb-secondary { color:var(--apparent-color-signal); border-color:var(--apparent-color-signal); }
-.bb-switch { display:inline-flex; align-items:center; justify-content:center; width:48px; min-width:48px; height:44px; padding:0; border:0; border-radius:0; background:transparent; cursor:pointer; }
-.bb-switch-track { display:block; position:relative; width:48px; height:24px; border:0; outline:0; border-radius:12px; background:var(--apparent-color-lilac); }
-.bb-switch-thumb { position:absolute; left:3px; top:3px; width:18px; height:18px; border:0; border-radius:50%; background:var(--apparent-color-carbon); }
-.bb-switch[aria-checked=true] .bb-switch-thumb { transform:translateX(24px); }
 .bb-reader-body a { color:var(--apparent-color-signal); }
 .bb-library label { font-weight:500; }
 

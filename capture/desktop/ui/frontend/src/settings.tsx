@@ -20,10 +20,12 @@ const icons = [
 
 declare global {
   interface Window { apparentSettingsMounted?: () => Promise<void>; }
+  interface Window { apparentSettingsRoute?: (callback: (pane: string) => void) => () => void; }
 }
 
 function Settings() {
-  const current = location.hash === '#about' ? 'About' : location.hash === '#agents' ? 'Agents' : 'Storage';
+  const [current, setCurrent] = useState(location.hash === '#about' ? 'About' : location.hash === '#agents' ? 'Agents' : 'Storage');
+  useLayoutEffect(() => window.apparentSettingsRoute?.(pane => setCurrent(pane === 'about' ? 'About' : 'Agents')), []);
   useLayoutEffect(() => { document.title = `Apparent Settings — ${current}`; }, [current]);
   useLayoutEffect(() => {
     // React's DOM is committed here. The preload owns the first-frame wait;
