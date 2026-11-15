@@ -50,3 +50,16 @@ test('inaccessible receipts fail closed and a background persistence failure exp
  const restored=new Controller(()=>{},f.config);await restored.update('new','completed');await assert.rejects(restored.confirm('new','thread'),/receipts unavailable/);assert.equal(f.calls.length,0);
  await chmod(path.join(f.home,'t3-handoffs'),0o700);await c.retry('capture');assert.equal(c.view()?.phase,'sent');assert.equal(f.calls.length,1);
 });
+
+test('enabled but unpaired shows setup and retains the recording; check connection activates the same capture',async t=>{
+ const f=await fixture(t);await writeFile(f.config,JSON.stringify({experiments:{t3DestinationPicker:true}}));
+ const c=new Controller(()=>{},f.config);await c.update('kept','processing');assert.equal(c.view()?.phase,'setup');assert.equal(f.reads,0);
+ await c.ready('kept','Kept handoff');await c.update('kept','completed');assert.equal(c.text('kept'),'Kept handoff');assert.equal(c.view()?.phase,'setup');
+ await assert.rejects(c.confirm('kept','new'),/changed/);assert.equal(f.calls.length,0);
+ await f.save(true);await c.retry('kept');assert.equal(c.view()?.phase,'choosing');assert.equal(c.text('kept'),'Kept handoff');assert.deepEqual(c.view()?.choices.map(c=>c.id),['new','thread']);
+});
+
+test('expired credentials expose setup without making a T3 request',async t=>{
+ const f=await fixture(t);const saved=JSON.parse(await readFile(f.config,'utf8'));saved.t3.expiresAt=Date.now()-1;await writeFile(f.config,JSON.stringify(saved));
+ const c=new Controller(()=>{},f.config);await c.update('expired','completed');assert.equal(c.view()?.phase,'setup');assert.equal(f.reads,0);
+});

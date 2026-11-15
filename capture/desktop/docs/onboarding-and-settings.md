@@ -300,12 +300,24 @@ bundle readers remain compatible.
 
 **Send recordings to T3** is off by default. Only an explicit
 `experiments.t3DestinationPicker: true` enables it for subsequent recordings.
-Pairing alone leaves Paste in place. Create a pairing link in T3 and run
-`apparent t3 pair`, then provide the link on stdin; Node 22.23+ is required for
-this one-time exchange. The native shared config transaction stores the private
-session alongside unrelated preferences. Tokens never enter the renderer or
-command arguments. `apparent t3 status` shows the server; `apparent t3 forget`
-removes the saved connection. These commands do not change T3 or its providers.
+Connecting alone does not enable sending. **Connect T3** explains the one-time
+setup: in T3, open **Settings → Sharing & access → Authorized clients → Create
+link**, allow reading threads and sending messages, and **Copy link**. Return to
+Apparent and choose **Paste pairing link**, check the server shown, then
+**Connect**. No terminal or external Node installation is needed. The full link
+stays in Electron main and its short-lived confirmation handle is consumed once;
+clipboard changes cannot switch the server after preview. Closing or cancelling
+clears the pending link. The native shared config transaction stores the private
+session alongside unrelated preferences; raw tokens never enter the page or logs.
+Settings shows the saved server or expiry, and Disconnect removes its local
+credential without revoking existing server sessions. A confirmed handoff still
+needs a matching local credential before dispatch. Unknown save outcomes require
+Refresh connection. An enabled picker without a usable connection shows
+**Connect T3** instead of silently reverting to Paste. It keeps the recording;
+**Check connection** reloads setup for the same capture and **Copy instead**
+remains available when processing finishes.
+The optional CLI `apparent t3 pair` still accepts a pairing link on stdin (Node
+22.23+); `status` and `forget` remain available. No flow changes T3 or its providers.
 Disabling the setting affects the next recording; a previously confirmed handoff
 keeps its original destination. See the [pill workflow](../ui/electron_pill/README.md#t3-destinations).
 
@@ -314,6 +326,15 @@ After building the frontend, run its `tests/settings/agents/smoke.ts` under Elec
 `capture::desktop::settings::agents::tests::agents_electron_rust_roundtrip`
 exercises the real writer with the built renderer; it is separate from installed
 desktop/compositor acceptance.
+
+Native sidebar Agents dispatches the same presentation navigation as About;
+opening Agents from General must reach the shared page, not merely its retained
+native fallback. Agents uses a resizable 920×600 default with a 640×530 minimum.
+Its brand scope retains the selected Host Grotesk tiers, five-color palette,
+216px sidebar, title rule, functional switches and inline command copying. At
+zoomed/narrow widths the same navigation becomes horizontally scrollable and
+content remains independently scrollable. Other panes retain their existing
+window and migration policy.
 
 ### Apparent Connect (experiment)
 

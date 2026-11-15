@@ -10,15 +10,15 @@ export async function committedFrame(contents: {
 }
 
 // Desktop shell presentation, independent of the renderer and native backend.
-export function settingsWindowOptions(platform: string) {
+export function settingsWindowOptions(platform: string, agents = false) {
   return {
-    width: 720, height: 530, minWidth: 640, minHeight: 530,
+    width: agents ? 920 : 720, height: agents ? 600 : 530, minWidth: 640, minHeight: 530,
     ...(platform === 'linux' ? {
       // A normal XWayland window is tiled, even when given initial bounds.
-      type: 'dialog' as const, resizable: false, maximizable: false, fullscreenable: false,
+      type: 'dialog' as const, resizable: agents, maximizable: agents, fullscreenable: agents,
     } : {}),
     ...(platform === 'darwin' ? {
-      titleBarStyle: 'hiddenInset' as const, resizable: false, fullscreenable: false,
+      titleBarStyle: 'hiddenInset' as const, resizable: agents, fullscreenable: agents,
       acceptFirstMouse: true,
     } : {}),
   };

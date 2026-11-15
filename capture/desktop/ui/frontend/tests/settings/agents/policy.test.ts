@@ -68,3 +68,9 @@ test('T3 picker is off by default and has an independent acknowledged preference
   bridge.receive({request:1,facts:{saved:false,autoPasteSaved:true,autoPasteSupported:true}});
   assert.equal(autoPasteEnabled(await saving),true);
 });
+test('connection facts expose only a canonical origin, expiry and preference state',()=>{
+  const fields={saved:null,t3Configured:true,t3Origin:'https://t3.example',t3ExpiresAt:12345,token:'private',refreshToken:'private'};
+  assert.deepEqual(preferenceFacts(fields),{saved:null,t3Configured:true,t3Origin:'https://t3.example',t3ExpiresAt:12345});
+  for(const origin of ['https://user:private@t3.example','https://t3.example/?token=private','not a URL'])
+    assert.deepEqual(preferenceFacts({...fields,t3Origin:origin,t3ExpiresAt:Infinity}),{saved:null,t3Configured:true});
+});

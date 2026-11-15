@@ -40,6 +40,10 @@ contextBridge.exposeInMainWorld('apparentAgents', Object.freeze({
   save: enabled => ipcRenderer.invoke('apparent:agents-preference', enabled),
   saveAutoPaste: enabled => ipcRenderer.invoke('apparent:agents-auto-paste-preference', enabled),
   saveT3: enabled => ipcRenderer.invoke('apparent:agents-t3-preference', enabled),
+  previewT3: () => ipcRenderer.invoke('apparent:agents-t3-preview'),
+  connectT3: origin => ipcRenderer.invoke('apparent:agents-t3-connect', origin),
+  cancelT3: () => ipcRenderer.invoke('apparent:agents-t3-cancel'),
+  disconnectT3: () => ipcRenderer.invoke('apparent:agents-t3-disconnect'),
   copySkill: () => ipcRenderer.invoke('apparent:agents-copy-skill'),
   subscribe: callback => {
     const listener = (_event, facts) => callback(facts);

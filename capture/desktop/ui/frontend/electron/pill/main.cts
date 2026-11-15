@@ -158,6 +158,7 @@ app.whenReady().then(()=>{
       const text=destinations.text(key);await clipboard.writeText(text);
       if(await clipboard.readText()!==text)throw Error('Copy not confirmed');
     }
+    else if(action==='setup'){if(destinations.view()?.phase!=='setup')throw Error('Setup unavailable');emit({revision:current.revision,action:'settings-agents'});}
     else if(action==='dismiss'){pickerDismissed=capture;window.hide();}
     else throw Error('Invalid destination action');
     return destinations.view();

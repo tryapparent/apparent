@@ -1,6 +1,6 @@
 // Public presentation data only. Credentials, capture paths and handoff text stay in main.
 export type Destination = {id:string;title:string;project:string;kind:'new'|'pinned'|'working'|'active'|'snoozed'};
-export type DestinationView = {capture:string;choices:Destination[];selected:string;confirmed?:Destination;phase:'choosing'|'armed'|'sending'|'sent'|'error'|'uncertain';processing:boolean;error?:string};
+export type DestinationView = {capture:string;choices:Destination[];selected:string;confirmed?:Destination;phase:'setup'|'choosing'|'armed'|'sending'|'sent'|'error'|'uncertain';processing:boolean;error?:string};
 export type Thread = {id:string;projectId:string;title:string;createdAt:string;updatedAt:string;unsettledAt?:string|null;archivedAt?:string|null;deletedAt?:string|null;settledOverride?:string|null;settledAt?:string|null;pinnedAt?:string|null;pinOrderKey?:string|null;activeOrderKey?:string|null;snoozedUntil?:string|null;lastSnoozeWakeAt?:string|null;lineage?:{relationshipToParent?:string|null};status?:string};
 export type Project = {id:string;title:string;createdAt?:string;archivedAt?:string|null};
 const compare=(a:string,b:string)=>a<b?-1:a>b?1:0;
