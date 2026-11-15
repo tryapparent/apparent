@@ -15,6 +15,22 @@ existing config transaction, with experiment-only read/write capabilities. If
 packaged Settings assets are unavailable, the retained native shell explains how
 to restore Labs; it does not add a second experiment editor.
 
+## Shared onboarding visuals
+
+The Electron tour uses borderless agent artwork, a visual progress bar and shared
+`Keycap` controls. Shortcut practice loops the same tactile press cue used by the
+other teaching gestures; reduced motion disables the loops. The inert Whiteboard
+example uses the production `PillSurface`, sized to its visible row rather than
+the native window's transparent notes reservation. Processing hides the coach and
+keeps status in the existing pill. Native RGB ink renders without palette lookup.
+
+This visual slice retains the current native practice contract: Copied → paste
+steps → explicit paste confirmation → Locate → explicit Finish setup. The new
+paste-to-Settings completion workflow and trusted TypeScript practice-host adoption
+are separate work. Capture facts, permissions, completion receipts and the sole
+progress/config writer remain with the existing native owner. Reverting this
+renderer slice restores the earlier presentation without migrating stored progress.
+
 ## Opening the app
 
 Opening Apparent from the macOS or Linux app picker opens Settings on About,

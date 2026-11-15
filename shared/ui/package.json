@@ -16,7 +16,8 @@
     "./disclosure-menu": "./src/disclosure-menu.tsx",
     "./status.css": "./src/status.css",
     "./tokens.css": "./src/tokens.css",
-    "./window-theme": "./src/window-theme.cjs"
+    "./window-theme": "./src/window-theme.cjs",
+    "./keycap": "./src/keyboard/keycap.tsx"
   },
   "peerDependencies": {
     "react": "^19.2.0"

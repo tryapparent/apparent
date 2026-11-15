@@ -3,7 +3,7 @@ export type Rect = readonly [number, number, number, number];
 export type Area = {x: number; y: number; width: number; height?: number};
 
 export function coachDimensions(area: Area, phase: string) {
-  return {width: Math.min(area.width, phase === 'screen-ink' && area.width >= 720 ? 720 : 380),
+  return {width: Math.min(area.width, phase === 'whiteboard' || phase === 'screen-ink' && area.width >= 720 ? 720 : 380),
     height: Math.min(area.height ?? 440, 440)};
 }
 
@@ -42,4 +42,8 @@ export function practiceExit(phase: string) {
   const recording = ['whiteboard', 'board-ink', 'screen-ink', 'note', 'stop'].includes(phase);
   return {label: 'Close guide', detail: recording ? 'Recording continues.' : phase === 'screen' ? 'Capture controls stay available.' :
     'Capture and setup progress kept.'};
+}
+
+export function setupDimensions(area: {width:number;height:number}, _shortcut?:boolean) {
+  return {width:Math.min(area.width,760),height:Math.min(area.height,600)};
 }
