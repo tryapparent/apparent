@@ -7,7 +7,7 @@ import {changedPaths as inputPaths} from '../ci/inputs.ts';
 import {installCommand, publish, alreadyPassed} from '../ci/install-contracts/evidence.ts';
 import {serviceTests} from './service.ts';
 import {desktopDependencies, desktopPackage} from './desktop-install.ts';
-import {owners, selectedOwners, routeDecision, routingProblems} from '../ci/routing/consumers.ts';
+import {owners, selectedOwners, routeDecision, routingProblems, desktopPackagingInputs} from '../ci/routing/consumers.ts';
 import {selectRange} from '../ci/select.ts';
 import {explainSelection} from './preview/explain.ts';
 import {timingContracts} from './contracts.ts';
@@ -59,6 +59,7 @@ export function installationContracts(paths: string[] | null, workflowControls: 
   const manifests = new Set(['package.json', 'package-lock.json', '.npmrc', '.npmignore', '.gitignore']);
   const inputs = [desktopPackage, 'shared/ui', 'record/storage'];
   const affected = !paths?.length || selectedOwners(paths).includes('tooling') || paths.some(path =>
+    desktopPackagingInputs.has(path) ||
     ['.github/', 'enablement/', 'shared/ui/', 'record/storage/'].some(root => path.startsWith(root)) ||
     path.startsWith(desktopPackage + '/scripts/') ||
     new RegExp('^' + desktopPackage + '/(?:tsconfig[^/]*\\.json|vite\\.config\\.[^/]+)$').test(path) ||
