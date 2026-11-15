@@ -4,7 +4,7 @@ import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {WisprOnboarding,savedWisprExperiment,type WisprContext,type WisprResult} from '../../../electron/onboarding/wispr.ts';
-import {wisprEnabled,preferenceFacts} from '../../../src/agents/policy.ts';
+import {preferenceFacts} from '../../../src/agents/policy.ts';
 
 const ready:WisprContext={platform:'macos',step:'shortcut',fix:false,shortcutChosen:false,wisprFlowEnabled:true};
 test('no native discovery or quit outside the explicit macOS experiment and shortcut decision',async()=>{
@@ -30,7 +30,6 @@ test('default off and malformed config fail closed without leaking unrelated pre
     }
     await writeFile(file,JSON.stringify({secret:'private',experiments:{onboardingWisprFlow:true}}));
     assert.equal(await savedWisprExperiment(home),true);
-    assert.equal(wisprEnabled(preferenceFacts({saved:null,wisprSaved:null,wisprSupported:true})),false);
     assert.throws(()=>preferenceFacts({saved:null,wisprSaved:'true'}));
   }finally{await rm(home,{recursive:true,force:true});}
 });

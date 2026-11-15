@@ -107,6 +107,7 @@ test('complete Git deltas use one local/CI authority, safe additions execute and
     // Inventory must include additions in the owning source tree; execute it for real.
     mkdirSync(join(dir, 'enablement/prerequisites'), {recursive: true});
     put('enablement/prerequisites/finite.test.ts', "import {test} from 'node:test'; test('finite', () => {});");
+    put('enablement/timing/finite.test.ts', "import {test} from 'node:test'; test('timing owner', () => {});");
     const inventory = contractTests(dir);
     assert.ok(inventory[0].argv.includes('enablement/local-tests/fixtures/new.test.ts'));
     const output = execFileSync('node', ['--experimental-strip-types', '--test', 'enablement/local-tests/fixtures/new.test.ts'], {cwd: dir, env, encoding: 'utf8'});
