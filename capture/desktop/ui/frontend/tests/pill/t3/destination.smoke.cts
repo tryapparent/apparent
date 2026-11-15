@@ -4,6 +4,10 @@ test('real pill keeps Paste by default, then selects during processing and dispa
  const {fixture}=await import('./testing/server.ts');const f=await fixture(t);f.many();await f.save(false);
  const app=await electron.launch({args:[path.resolve(__dirname,'../host.cjs'),'--no-sandbox','--ozone-platform=x11','--force-device-scale-factor=1'],env:{...process.env,APPARENT_CONFIG:f.config,HOME:f.home,XDG_CONFIG_HOME:path.join(f.home,'config')}});
  let page=await app.firstWindow();
+ // Electron can publish the initial ready line before launch/firstWindow
+ // resolves. Read that window's actual identity; observe only future ready
+ // lines instead of assuming stdout replays the startup announcement.
+ const initialWindowId=await app.evaluate(({BrowserWindow})=>Number(BrowserWindow.getAllWindows()[0].getMediaSourceId().split(':')[1]));
  t.after(async()=>{await app.close().catch(()=>{});});
  let parentBuffer='',holdActivation=false;const readyIds=[];
  const activate=id=>app.evaluate((_electron,id)=>process.stdin.emit('data',JSON.stringify({type:'activate',windowId:id})+'\n'),id);
@@ -34,9 +38,10 @@ test('real pill keeps Paste by default, then selects during processing and dispa
  await f.save(true);frame={...frame,capture:'on',view:{...frame.view,revision:2,phase:'processing',label:'Processing recording…',actions:[]}};await publish();
  if(pickerWindow)page=await pickerWindow;
  if(pickerWindow){
-  await expect.poll(()=>readyIds.length).toBe(2);
-  await activate(readyIds[0]);assert.equal(await app.evaluate(({BrowserWindow},id)=>BrowserWindow.getAllWindows().find(w=>Number(w.getMediaSourceId().split(':')[1])===id).isVisible(),readyIds[1]),false,'stale activation cannot expose the replacement');
-  await activate(readyIds[1]);holdActivation=false;await expect.poll(()=>oldPage.isClosed()).toBe(true);
+  const replacementWindowId=await app.evaluate(({BrowserWindow},initialId)=>Number(BrowserWindow.getAllWindows().find(w=>Number(w.getMediaSourceId().split(':')[1])!==initialId).getMediaSourceId().split(':')[1]),initialWindowId);
+  await expect.poll(()=>readyIds.includes(replacementWindowId)).toBe(true);
+  await activate(initialWindowId);assert.equal(await app.evaluate(({BrowserWindow},id)=>BrowserWindow.getAllWindows().find(w=>Number(w.getMediaSourceId().split(':')[1])===id).isVisible(),replacementWindowId),false,'stale activation cannot expose the replacement');
+  await activate(replacementWindowId);holdActivation=false;await expect.poll(()=>oldPage.isClosed()).toBe(true);
  }
  const trigger=page.getByRole('combobox');await expect(trigger).toBeEnabled();await expect(trigger).toBeFocused();
  await page.keyboard.press('ArrowDown');await expect(trigger).toHaveAttribute('aria-expanded','true');await expect(page.getByRole('option')).toHaveCount(3);await expect(page.getByRole('option').first()).toHaveAttribute('aria-selected','true');await expect(page.getByRole('option').last()).toHaveAttribute('data-continuation','true');

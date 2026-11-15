@@ -20,6 +20,7 @@ function checkElectron(root: string): string {
 export function checkNativeInputs(root: string, platform = process.platform): string {
   const electron = checkElectron(root);
   const inputs = [
+    'capture/desktop/ui/frontend/node_modules/@apparent/record-capture-request/dist/lifecycle.js',
     'capture/desktop/ui/frontend/tests/reference-native.cjs',
     'capture/desktop/ui/frontend/electron/main.cjs',
     'capture/desktop/ui/frontend/electron/preload.cjs',
@@ -82,7 +83,7 @@ export function prepareNativeInputs(root: string, platform = process.platform): 
   // Refuse a missing runtime before paying for any TypeScript compilation.
   checkElectron(root);
   const frontend = resolve(root, 'capture/desktop/ui/frontend');
-  for (const generator of ['storage-policy', 'connect-transport', 'updates', 'pill', 'record-media']) {
+  for (const generator of ['record-capture-request', 'storage-policy', 'connect-transport', 'updates', 'pill', 'record-media']) {
     execFileSync(process.execPath, ['--experimental-strip-types', `scripts/build-${generator}.ts`],
       {cwd: frontend, stdio: 'inherit'});
   }
