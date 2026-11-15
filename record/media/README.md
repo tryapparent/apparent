@@ -246,8 +246,10 @@ The package check uses a producer-generated bundle, real delayed AAC input and
 the actual reprocess caller under umask `002`. A deterministic local command
 checks the extracted WAV handoff without a model, service or playback. It checks
 private publication, leading silence, the source-timeline end and unchanged
-input/config bytes. This proves file ingestion and handoff, not recognition or
-live capture; signed Mac and final AppImage acceptance remain delivery gates.
+input/config bytes. #1335 landed at `25ef94fd97efe8ddb3f04753a12538aa900414e6`;
+its exact-main CI, signed Mac packaged check, both Linux AppImages and preview
+publication passed. This proves file ingestion and handoff, not recognition or
+live capture. The separate SDK audio candidate retains its own acceptance gates.
 
 This is a native correctness prerequisite, not SDK audio adoption or owner build
 independence. Existing track selection, in-memory audio, transcription engines,
