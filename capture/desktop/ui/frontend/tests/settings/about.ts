@@ -49,8 +49,10 @@ test('installed About projects parent state and bounds actions', async () => {
     const channel = page.getByRole('combobox', {name: 'Update channel'});
     await expect(channel).toHaveAccessibleDescription('Checking for updates installs the latest release in this channel, even if it is an earlier version.');
     await channel.focus();
-    await page.keyboard.press('Home');
-    await page.keyboard.press('Enter');
+    await expect(channel).toBeFocused();
+    // This Linux state is exercised on both hosts. Native select keyboard maps
+    // differ on macOS; select the option through the portable control API.
+    await channel.selectOption('stable');
     await expect.poll(() => output.includes('"key":"updateChannel","value":"stable"')).toBe(true);
     assert.ok(output.indexOf('"action":"dismiss-update-check"') >= 0);
     assert.ok(output.indexOf('"action":"dismiss-update-check"') < output.indexOf('"key":"updateChannel","value":"stable"'),
