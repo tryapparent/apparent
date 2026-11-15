@@ -30,6 +30,9 @@ It does not record, transcribe, send audio, alter settings or enable a feature.
 The dark-lilac value `#3B2E50` is a scoped design proposal accepted for this
 transcript surface, not a new global brand token. Other colors follow the
 [product interface system](../../../../../public/site/public/assets/brand-book/design-system/product-interface.md).
+The renderer embeds existing shared brand tokens. The color guard's exact-path,
+counted allowance preserves only this accepted study's dark-lilac layer,
+synthetic recording cue and contact shadow; it grants no production exception.
 Preserve this composition during implementation. Accessibility and the shared
 component system take precedence over incidental prototype pixels; document
 necessary differences rather than silently redesigning the control.
