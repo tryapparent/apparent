@@ -85,7 +85,7 @@ jobs:
   desktop-ui:
     needs: select
     # Each caller verifies one platform independently.
-    if: needs.select.outputs.desktop == 'true'
+    if: (inputs.runner != 'macos-15-intel' || inputs.release_receipt) && needs.select.outputs.desktop == 'true'
     name: desktop-ui (${{ inputs.runner }})
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 15
@@ -133,7 +133,7 @@ jobs:
 
   connect-client:
     needs: select
-    if: needs.select.outputs.client == 'true'
+    if: (inputs.runner != 'macos-15-intel' || inputs.release_receipt) && needs.select.outputs.client == 'true'
     name: connect-client (${{ inputs.runner }})
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 20
@@ -192,8 +192,11 @@ jobs:
 
   rust:
     needs: select
-    if: (needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true') && (inputs.runner != 'macos-15-intel' || inputs.mac_rust || inputs.release_receipt)
-    name: rust (${{ inputs.runner }})
+    if: >-
+      needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true' ||
+      (inputs.runner == 'macos-15-intel' && !inputs.release_receipt &&
+      (needs.select.outputs.desktop == 'true' || needs.select.outputs.client == 'true'))
+    name: ${{ inputs.runner == 'macos-15-intel' && !inputs.release_receipt && 'platform' || 'rust' }} (${{ inputs.runner }})
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 60
     steps:
@@ -231,12 +234,12 @@ jobs:
           xcrun swiftc -D INSTALLER_TEST -parse-as-library capture/desktop/native/installer/Installer.swift capture/desktop/native/installer/InstallerTests.swift -o "$RUNNER_TEMP/installer-transaction-tests"
           "$RUNNER_TEMP/installer-transaction-tests"
       - uses: dtolnay/rust-toolchain@stable
-        if: needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true'
+        if: needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true' || needs.select.outputs.client == 'true'
         with:
           # Keep both platforms on the validated native build-output layout.
           toolchain: '1.99.1'
       - name: Normalize the disposable Intel Mac compiler inventory
-        if: runner.os == 'macOS' && (needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true')
+        if: runner.os == 'macOS' && (needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true' || needs.select.outputs.client == 'true')
         uses: ./.github/actions/mac-rust-cache
       - uses: Swatinem/rust-cache@v2
         if: needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true'
@@ -247,10 +250,25 @@ jobs:
             . -> target
             capture/engine -> target
             connect/client -> target
+      - uses: Swatinem/rust-cache@v2
+        if: inputs.runner == 'macos-15-intel' && !inputs.release_receipt && needs.select.outputs.client == 'true' && needs.select.outputs.root != 'true' && needs.select.outputs.engine != 'true'
+        with:
+          key: connect-client
+          workspaces: connect/client -> target
       - uses: actions/setup-node@v4
-        if: needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true' || needs.select.outputs.browser == 'true'
+        if: inputs.runner == 'macos-15-intel' || needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true' || needs.select.outputs.browser == 'true'
         with:
           node-version: ${{ runner.os == 'macOS' && '22.23.0' || '22' }}
+      - name: Reject an inconsistent Mac native exemption
+        if: inputs.runner == 'macos-15-intel' && !inputs.mac_rust && !inputs.release_receipt
+        env:
+          VERIFICATION_PLAN: ${{ inputs.plan }}
+        run: |
+          node --experimental-strip-types --input-type=module -e '
+            import {parsePlan} from "./enablement/ci/routing/run.ts";
+            const plan = parsePlan(process.env.VERIFICATION_PLAN);
+            if (plan.root || plan.engine) throw Error("Mac exemption must use the authoritative native-free plan");
+          '
       - name: Timing helper contracts
         id: timing
         run: |
@@ -264,7 +282,7 @@ jobs:
           APPARENT_SETUP_NATIVE_FIXTURE: '1'
         run: node --test capture/agent/setup/*.test.ts
       - name: Local Desktop install reuse contracts
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && (needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true' || needs.select.outputs.desktop == 'true')
         env:
           GH_TOKEN: ${{ github.token }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -294,6 +312,21 @@ jobs:
           node --experimental-strip-types enablement/prerequisites/native.ts
           # Later clean packaging installs must use the archive prepared here.
           printf 'electron_config_cache=%s\n' "$electron_config_cache" >> "$GITHUB_ENV"
+      - name: Install Mac renderer dependencies when native preparation did not install them
+        if: inputs.runner == 'macos-15-intel' && !inputs.release_receipt && needs.select.outputs.desktop == 'true' && needs.select.outputs.root != 'true'
+        working-directory: capture/desktop/ui/frontend
+        run: npm ci --no-audit --no-fund
+      - name: Prepare Mac Electron before timed renderer tests
+        if: inputs.runner == 'macos-15-intel' && !inputs.release_receipt && needs.select.outputs.desktop == 'true'
+        working-directory: capture/desktop/ui/frontend
+        run: node node_modules/electron/install.js
+      - name: Mac Desktop policy and renderer checks
+        if: inputs.runner == 'macos-15-intel' && !inputs.release_receipt && needs.select.outputs.desktop == 'true'
+        timeout-minutes: 15
+        working-directory: capture/desktop/ui/frontend
+        run: |
+          npm test
+          npm run test:electron
       - name: Qualify Record media through the published Engine provider
         if: needs.select.outputs.root == 'true'
         run: npm --prefix record/media run test:native
@@ -445,6 +478,7 @@ jobs:
             APPARENT_CONNECT_TEST_ELECTRON="$electron" \
             node --experimental-strip-types enablement/timing/command.ts bridge-readiness-and-assertions cargo test -j 3 --locked --timings _electron_rust_roundtrip -- --ignored --nocapture
       - name: Execute the same changed-tree checks (not GUI acceptance)
+        if: (needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true') && (inputs.runner != 'macos-15-intel' || inputs.mac_rust || inputs.release_receipt)
         env:
           VERIFICATION_PLAN: ${{ inputs.plan }}
         run: |
@@ -462,12 +496,6 @@ jobs:
           }
           trap cleanup EXIT
           node --experimental-strip-types enablement/ci/routing/native.ts
-      - name: Retain completed Mac dependency seeds after full verification
-        if: runner.os == 'macOS' && (needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true')
-        # Swatinem's post action reads this variable. Arm it only after all
-        # ordinary compilation/tests pass: an immutable partial seed cannot be
-        # completed on an exact cache hit. Branch cache access stays unchanged.
-        run: echo 'CACHE_ON_FAILURE=true' >> "$GITHUB_ENV"
       - name: Actual Electron to Rust Settings integration (not native GUI proof)
         if: runner.os == 'Linux' && needs.select.outputs.root == 'true'
         shell: bash
@@ -519,6 +547,47 @@ jobs:
             ${{ runner.temp }}/apparent-storage-native/*.log
           if-no-files-found: error
           retention-days: 7
+      - name: Prepare the client-owned TypeScript policy for native consumers
+        if: inputs.runner == 'macos-15-intel' && !inputs.release_receipt && needs.select.outputs.client == 'true'
+        run: python3 enablement/verification.py --base unknown --prepare-connect-typescript
+      - name: Independent Connect client build and tests
+        if: inputs.runner == 'macos-15-intel' && !inputs.release_receipt && needs.select.outputs.client == 'true'
+        id: client
+        timeout-minutes: 20
+        shell: bash
+        env:
+          APPARENT_TIMING_FILE: ${{ runner.temp }}/client-verification-timings.jsonl
+        run: |
+          verification_tmp="$(mktemp -d "$HOME/.apparent-client.XXXXXX")"
+          readonly verification_tmp
+          export TMPDIR="$verification_tmp"
+          cleanup() {
+            local status=$?
+            if ! rm -rf -- "$verification_tmp"; then
+              echo '::error::Could not remove the owned client temporary tree' >&2
+              if [ "$status" -eq 0 ]; then status=1; fi
+            fi
+            exit "$status"
+          }
+          trap cleanup EXIT
+          node --experimental-strip-types enablement/timing/command.ts client-compilation cargo build --manifest-path connect/client/Cargo.toml --locked --timings
+          node --experimental-strip-types enablement/timing/command.ts client-test-compilation cargo test --manifest-path connect/client/Cargo.toml --locked --timings --no-run
+          node --experimental-strip-types enablement/timing/command.ts client-test-execution cargo test --manifest-path connect/client/Cargo.toml --locked --timings -- --test-threads=2
+      - name: Retain independent client timings
+        if: always() && inputs.runner == 'macos-15-intel' && !inputs.release_receipt && needs.select.outputs.client == 'true' && steps.client.outcome != 'skipped' && steps.client.outcome != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-verification-timings-${{ inputs.runner }}
+          path: |
+            ${{ runner.temp }}/client-verification-timings.jsonl
+            connect/client/target/cargo-timings/*.html
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Retain completed Mac dependency seeds after full verification
+        if: runner.os == 'macOS' && (needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true')
+        # Arm only after ALL selected suites, including the packed client lane.
+        # Branch cache access and the existing complete-seed policy stay intact.
+        run: echo 'CACHE_ON_FAILURE=true' >> "$GITHUB_ENV"
       - name: Clean private prerequisite temporary root
         if: always()
         shell: bash

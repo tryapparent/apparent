@@ -7,7 +7,7 @@ import ts from 'typescript';
 import { build } from 'esbuild';
 
 // file: dependencies are snapshots. Refuse a build using stale shared controls.
-for (const file of ['button.tsx', 'tabs.tsx', 'utils.ts', 'theme.css', 'tokens.css', 'window-theme.cjs', 'status-card.tsx', 'disclosure-menu.tsx', 'status.css', 'forms/tooltip.tsx', 'forms/native-select.tsx', 'settings/theme.css']) {
+for (const file of ['button.tsx', 'keyboard/keycap.tsx', 'keyboard/keycap.css', 'tabs.tsx', 'utils.ts', 'theme.css', 'tokens.css', 'window-theme.cjs', 'status-card.tsx', 'disclosure-menu.tsx', 'status.css', 'forms/switch.tsx', 'forms/switch.css', 'forms/tooltip.tsx', 'forms/native-select.tsx', 'settings/theme.css']) {
   const canonical = readFileSync(new URL(`../../../../shared/ui/src/${file}`, import.meta.url), 'utf8');
   const installed = readFileSync(new URL(`./node_modules/@apparent/ui/src/${file}`, import.meta.url), 'utf8');
   if (canonical !== installed) throw new Error('Shared UI changed. Run npm ci before building.');
@@ -17,7 +17,7 @@ let reportingOutput: string;
 export default defineConfig({
   base: './',
   plugins: [react(), tailwindcss(), {name: 'onboarding-host-policy', closeBundle() {
-    for (const name of ['presentation', 'hyprland', 'selection', 'practice', 'practice-host']) {
+    for (const name of ['presentation', 'hyprland', 'selection', 'wispr', 'practice', 'practice-host']) {
       const file = `electron/onboarding/${name}.ts`;
       const result = ts.transpileModule(readFileSync(file, 'utf8'), {fileName: file,
         compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022}});

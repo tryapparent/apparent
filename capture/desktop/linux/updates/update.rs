@@ -10,18 +10,24 @@ use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result};
+use crate::capture::desktop::workflow::error_reporting::{self, updates::{self, Diagnose, Stage, Trigger}};
+
+macro_rules! ensure_update {
+    ($condition:expr, $($message:tt)*) => {
+        if !$condition {
+            return Err(updates::failure(Stage::Validation, anyhow::anyhow!($($message)*)));
+        }
+    };
+}
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 const REPO: &str = "tryapparent/apparent";
-// The pre-signing tip and its last published compatibility bridge. These
-// histories stay out of Main; only exact-tree release bridges may cross them.
-const LEGACY_MAIN: [&str; 2] = ["a5cf47d7dc7d0f89b1552cfb2d5e4b0ab489526a", "1a55d5ebe05c948211ff74356c00b8dbfe58ecc6"];
 static CHECK: Mutex<()> = Mutex::new(());
 
 pub fn set_channel_in(path: &Path, channel: &str) -> Result<()> {
-    ensure!(matches!(channel, "stable" | "main"), "channel must be stable or main");
+    ensure_update!(matches!(channel, "stable" | "main"), "channel must be stable or main");
     crate::shared::handoff::set_config_value_in(path, "updateChannel", channel.into())
 }
 
@@ -59,7 +65,7 @@ pub fn mark_relaunch_ready() -> Result<()> {
     let Some(path) = std::env::var_os("APPARENT_UPDATE_READY").map(PathBuf::from) else { return Ok(()) };
     let image = target()?.context("relaunch readiness requires an AppImage")?;
     let expected = format!(".{}.ready-", image.file_name().unwrap().to_string_lossy());
-    ensure!(path.parent() == image.parent() && path.file_name().is_some_and(|name| name.to_string_lossy().starts_with(&expected)),
+    ensure_update!(path.parent() == image.parent() && path.file_name().is_some_and(|name| name.to_string_lossy().starts_with(&expected)),
         "invalid relaunch readiness path");
     OpenOptions::new().write(true).create_new(true).open(path)?.sync_all()?;
     Ok(())
@@ -71,7 +77,7 @@ pub fn status_at(path: &Path) -> Result<serde_json::Value> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => serde_json::json!({}),
         Err(error) => return Err(error.into()),
     };
-    ensure!(config.is_object(), "config must be an object");
+    ensure_update!(config.is_object(), "config must be an object");
     let channel = if config["updateChannel"] == "main" { "main" } else { "stable" };
     let recorded = &config["running"];
     let running = match (recorded["pid"].as_u64().and_then(|n| u32::try_from(n).ok()), recorded["startTicks"].as_u64()) {
@@ -99,11 +105,18 @@ pub fn status() -> Result<serde_json::Value> {
 }
 
 pub fn check_cli() -> Result<&'static str> {
-    target()?.context("Updates require an AppImage owned by you under your home directory")?;
-    let _guard = CHECK.lock().map_err(|_| anyhow::anyhow!("update check lock poisoned"))?;
+    let result = check_cli_inner();
+    if let Err(error) = &result { error_reporting::report_update(error, Trigger::User); }
+    result
+}
+
+fn check_cli_inner() -> Result<&'static str> {
+    target().stage(Stage::Target)?
+        .context("Updates require an AppImage owned by you under your home directory").stage(Stage::Target)?;
+    let _guard = CHECK.lock().map_err(|_| anyhow::anyhow!("update check lock poisoned")).stage(Stage::Lock)?;
     Ok(if check()? {
         "installed; restart Apparent to use it"
-    } else if status()?["pendingRestart"] == true {
+    } else if status().stage(Stage::Config)?["pendingRestart"] == true {
         "already installed; restart Apparent to use it"
     } else {
         "up to date"
@@ -117,15 +130,15 @@ pub fn relaunch_staged() -> Result<()> {
     let backup = image.with_file_name(format!(".{name}.previous"));
     // Own the transaction from validation through post-exit readiness/recovery.
     let mut command = relaunch_command(&image, &backup, std::process::id())?;
-    ensure!(status()?["pendingRestart"] == true, "no installed update is waiting for a restart");
-    ensure!(backup.is_file(), "previous AppImage is unavailable for recovery");
-    ensure!(fs::metadata(&backup)?.permissions().mode() & 0o111 != 0, "previous AppImage is not executable");
+    ensure_update!(status()?["pendingRestart"] == true, "no installed update is waiting for a restart");
+    ensure_update!(backup.is_file(), "previous AppImage is unavailable for recovery");
+    ensure_update!(fs::metadata(&backup)?.permissions().mode() & 0o111 != 0, "previous AppImage is not executable");
     // A successful shell spawn proves nothing about the image it will execute later.
     // Check the new image before leaving the running app, and keep the old one as a
     // recovery path if the image disappears or fails to start after this process exits.
-    preflight_image(&image, Duration::from_secs(5))?;
+    preflight_image(&image, Duration::from_secs(5)).stage(Stage::Preflight)?;
     command.spawn()
-        .context("cannot start updated AppImage after exit")?;
+        .context("cannot start updated AppImage after exit").stage(Stage::RestartLaunch)?;
     Ok(())
 }
 
@@ -138,13 +151,15 @@ fn preflight_image(image: &Path, timeout: Duration) -> Result<()> {
     let start = Instant::now();
     loop {
         if let Some(status) = child.try_wait()? {
-            ensure!(status.success(), "updated AppImage failed its startup check");
+            if !status.success() {
+                return Err(updates::command_failure(updates::Process::Preflight, status, updates::Http::default(), anyhow::anyhow!("updated AppImage failed its startup check")));
+            }
             return Ok(());
         }
         if start.elapsed() >= timeout {
             let _ = child.kill();
             let _ = child.wait();
-            anyhow::bail!("updated AppImage startup check timed out");
+            return Err(updates::failure(Stage::PreflightTimeout, anyhow::anyhow!("updated AppImage startup check timed out")));
         }
         std::thread::sleep(Duration::from_millis(25));
     }
@@ -153,7 +168,7 @@ fn preflight_image(image: &Path, timeout: Duration) -> Result<()> {
 fn file_identity(path: &Path) -> Result<String> {
     match fs::symlink_metadata(path) {
         Ok(meta) => {
-            ensure!(meta.is_file() && !meta.file_type().is_symlink() && meta.uid() == unsafe { libc::geteuid() },
+            ensure_update!(meta.is_file() && !meta.file_type().is_symlink() && meta.uid() == unsafe { libc::geteuid() },
                 "update recovery input must be an owned regular file");
             Ok(format!("{}:{}", meta.dev(), meta.ino()))
         }
@@ -284,19 +299,19 @@ fn arch() -> Option<&'static str> {
 
 fn main_candidate(release: &Release, arch: &str, checksum: &str) -> Result<Candidate> {
     let sha = release.tag_name.strip_prefix("linux-main-v2-").context("not a main preview")?;
-    ensure!(sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit()), "invalid main revision");
+    ensure_update!(sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit()), "invalid main revision");
     let suffix = format!("-linux-{arch}.AppImage");
     let image = release.assets.iter().find(|asset| asset.name.starts_with("Apparent-") && asset.name.ends_with(&suffix))
         .context("main preview has no AppImage for this CPU")?;
     let version = image.name.strip_prefix("Apparent-").and_then(|name| name.strip_suffix(&suffix)).unwrap();
-    ensure!(!version.is_empty() && version.bytes().all(|b| b.is_ascii_digit() || b == b'.'), "invalid main AppImage version");
+    ensure_update!(!version.is_empty() && version.bytes().all(|b| b.is_ascii_digit() || b == b'.'), "invalid main AppImage version");
     let checksum_asset = release.assets.iter().find(|asset| asset.name == format!("{}.sha256", image.name))
         .context("main preview has no checksum")?;
     let prefix = format!("https://github.com/{REPO}/releases/download/{}/", release.tag_name);
-    ensure!(image.browser_download_url == format!("{prefix}{}", image.name)
+    ensure_update!(image.browser_download_url == format!("{prefix}{}", image.name)
         && checksum_asset.browser_download_url == format!("{prefix}{}", checksum_asset.name), "unexpected main preview asset URL");
     let (hash, name) = checksum.trim().split_once(char::is_whitespace).context("invalid main preview checksum")?;
-    ensure!(name.trim() == image.name, "checksum refers to another file");
+    ensure_update!(name.trim() == image.name, "checksum refers to another file");
     validate_hash(hash)?;
     Ok(Candidate { id: sha.to_owned(), channel: "main", url: image.browser_download_url.clone(), sha256: hash.to_owned() })
 }
@@ -322,9 +337,9 @@ fn candidate_from_release(release: &Release, arch: &str, fetch: &impl Fn(&str) -
     let checksum = release.assets.iter().find(|asset| asset.name.starts_with("Apparent-") && asset.name.ends_with(&suffix))
         .context("main preview has no checksum for this CPU")?;
     let prefix = format!("https://github.com/{REPO}/releases/download/{}/", release.tag_name);
-    ensure!(checksum.browser_download_url == format!("{prefix}{}", checksum.name), "unexpected main preview checksum URL");
-    let text = fetch(&checksum.browser_download_url)?;
-    main_candidate(&release, arch, std::str::from_utf8(&text)?)
+    ensure_update!(checksum.browser_download_url == format!("{prefix}{}", checksum.name), "unexpected main preview checksum URL");
+    let text = fetch(&checksum.browser_download_url).stage(Stage::ChecksumFetch)?;
+    main_candidate(&release, arch, std::str::from_utf8(&text).stage(Stage::ChecksumParse)?).stage(Stage::ChecksumParse)
 }
 
 fn first_usable_main(releases: Vec<Release>, arch: &str, fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<Option<Candidate>> {
@@ -353,12 +368,14 @@ fn latest_main_candidate_with(arch: &str, fetch: &impl Fn(&str) -> Result<Vec<u8
 }
 
 fn validate_hash(hash: &str) -> Result<()> {
-    ensure!(hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()), "invalid SHA-256");
+    ensure_update!(hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()), "invalid SHA-256");
     Ok(())
 }
 
+const CURL_HTTP_STATUS: &str = "%{stderr}\nAPPARENT_RATE_REMAINING:%header{x-ratelimit-remaining}\nAPPARENT_RETRY_AFTER:%header{retry-after}\nAPPARENT_HTTP_STATUS:%{http_code}\n";
+
 fn get(url: &str, out: Option<&Path>) -> Result<Vec<u8>> {
-    ensure!(url.starts_with("https://"), "update URL must use HTTPS");
+    ensure_update!(url.starts_with("https://"), "update URL must use HTTPS");
     let mut cmd = Command::new("curl");
     cmd.args(["--fail", "--silent", "--show-error", "--location", "--proto", "=https", "--proto-redir", "=https", "--connect-timeout", "10", "--max-time", "300", "--user-agent", "Apparent", "--url", url]);
     if let Some(path) = out {
@@ -369,8 +386,23 @@ fn get(url: &str, out: Option<&Path>) -> Result<Vec<u8>> {
         // Keep metadata bounded while avoiding dozens of anonymous API requests.
         cmd.args(["--max-filesize", "4194304"]);
     }
-    let result = cmd.output().context("curl is required for updates")?;
-    ensure!(result.status.success(), "download failed: {}", String::from_utf8_lossy(&result.stderr));
+    cmd.args(["--write-out", CURL_HTTP_STATUS]);
+    download_output(cmd.output().context("curl is required for updates")?)
+}
+
+fn download_output(result: std::process::Output) -> Result<Vec<u8>> {
+    if !result.status.success() {
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        let http_status = stderr.lines().last().and_then(|line| line.strip_prefix("APPARENT_HTTP_STATUS:"))
+            .filter(|value| value.len() == 3 && value.bytes().all(|b| b.is_ascii_digit()))
+            .and_then(|value| value.parse::<u16>().ok());
+        let numeric = |prefix: &str| stderr.lines().rev().find_map(|line| line.strip_prefix(prefix))
+            .filter(|value| !value.is_empty() && value.len() <= 10 && value.bytes().all(|b| b.is_ascii_digit()))
+            .and_then(|value| value.parse::<u32>().ok());
+        let http = updates::Http {status: http_status, rate_limit_remaining: numeric("APPARENT_RATE_REMAINING:"), retry_after_seconds: numeric("APPARENT_RETRY_AFTER:")};
+        return Err(updates::command_failure(updates::Process::Curl, result.status, http,
+            anyhow::anyhow!("download failed: {stderr}")));
+    }
     Ok(result.stdout)
 }
 
@@ -382,14 +414,14 @@ fn release_history(fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<Vec<Relea
     let mut releases = Vec::new();
     let mut complete = false;
     for page in 1..=10 {
-        let body = fetch(&format!("https://api.github.com/repos/{REPO}/releases?per_page=100&page={page}"))?;
-        let page_releases: Vec<Release> = serde_json::from_slice(&body).context("invalid release list")?;
-        ensure!(page_releases.len() <= 100, "oversized release page");
+        let body = fetch(&format!("https://api.github.com/repos/{REPO}/releases?per_page=100&page={page}")).stage(Stage::ReleaseListFetch)?;
+        let page_releases: Vec<Release> = serde_json::from_slice(&body).context("invalid release list").stage(Stage::ReleaseListParse)?;
+        ensure_update!(page_releases.len() <= 100, "oversized release page");
         complete = page_releases.len() < 100;
         releases.extend(page_releases);
         if complete { break; }
     }
-    ensure!(complete, "release discovery exceeded its page limit");
+    ensure_update!(complete, "release discovery exceeded its page limit");
     Ok(releases)
 }
 
@@ -413,11 +445,11 @@ fn stable_candidate_with(arch: &str, fetch: &impl Fn(&str) -> Result<Vec<u8>>) -
     let image = release.assets.iter().find(|a| a.name == name).context("no Linux AppImage in the stable release yet")?;
     let checksum = release.assets.iter().find(|a| a.name == format!("{name}.sha256")).context("stable release has no checksum")?;
     let prefix = format!("https://github.com/{REPO}/releases/download/{}/", release.tag_name);
-    ensure!(image.browser_download_url == format!("{prefix}{name}") && checksum.browser_download_url == format!("{prefix}{name}.sha256"), "unexpected release asset URL");
-    let body = fetch(&checksum.browser_download_url)?;
-    let text = std::str::from_utf8(&body)?;
-    let (hash, file) = text.trim().split_once(char::is_whitespace).context("invalid release checksum")?;
-    ensure!(file.trim() == name, "checksum refers to another file");
+    ensure_update!(image.browser_download_url == format!("{prefix}{name}") && checksum.browser_download_url == format!("{prefix}{name}.sha256"), "unexpected release asset URL");
+    let body = fetch(&checksum.browser_download_url).stage(Stage::ChecksumFetch)?;
+    let text = std::str::from_utf8(&body).stage(Stage::ChecksumParse)?;
+    let (hash, file) = text.trim().split_once(char::is_whitespace).context("invalid release checksum").stage(Stage::ChecksumParse)?;
+    ensure_update!(file.trim() == name, "checksum refers to another file");
     validate_hash(hash)?;
     Ok(Some(Candidate { id: release.tag_name, channel: "stable", url: image.browser_download_url.clone(), sha256: hash.to_owned() }))
 }
@@ -435,98 +467,75 @@ fn previously_failed(marker: &Path, candidate: &Candidate) -> bool {
     update_id(marker) == Some((candidate.channel.to_owned(), candidate.id.clone()))
 }
 
-fn newer(candidate: &Candidate, installed: Option<(String, String)>) -> bool {
-    let version = |s: &str| {
-        s.trim_start_matches('v').split('.').map(str::parse::<u32>).collect::<Result<Vec<_>, _>>()
-    };
-    if let Some((channel, id)) = installed {
-        if channel == candidate.channel {
-            if channel == "stable" {
-                return matches!((version(&candidate.id), version(&id)), (Ok(r), Ok(c)) if r > c);
+/// TypeScript owns channel convergence; native code owns discovery validation,
+/// locks, downloads, atomic replacement and recovery. Also used by CLI/hourly checks.
+fn needs_channel_release(candidate: &Candidate, installed: Option<(String, String)>) -> Result<bool> {
+    let (runtime, script) = update_policy_assets().context("packaged update policy is unavailable").stage(Stage::PolicyAssets)?;
+    let facts = serde_json::json!({
+        "candidate": {"channel": candidate.channel, "id": candidate.id},
+        "installed": installed.map(|(channel, id)| serde_json::json!({"channel":channel,"id":id})),
+        "revision": env!("APPARENT_COMMIT_SHA"),
+        "modified": env!("APPARENT_BUILD_MODIFIED") == "true",
+    });
+    let mut child = Command::new(runtime).env("ELECTRON_RUN_AS_NODE", "1")
+        .arg(script).arg(serde_json::to_string(&facts)?)
+        .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null()).spawn().stage(Stage::PolicyLaunch)?;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(status) = child.try_wait()? {
+            if !status.success() {
+                return Err(updates::command_failure(updates::Process::Policy, status, updates::Http::default(), anyhow::anyhow!("update policy failed")));
             }
-            return id != candidate.id;
+            let mut output = String::new();
+            child.stdout.take().context("missing update policy output").stage(Stage::PolicyResponse)?.take(16).read_to_string(&mut output).stage(Stage::PolicyResponse)?;
+            return serde_json::from_str(&output).context("invalid update policy decision").stage(Stage::PolicyResponse);
         }
-        // Switching channels installs the requested channel even when version strings match.
-        return true;
-    }
-    if candidate.channel == "stable" {
-        return matches!((version(&candidate.id), version(env!("CARGO_PKG_VERSION"))), (Ok(r), Ok(c)) if r > c);
-    }
-    // Old AppImages have no revision embedded; opt-in Main replaces them once.
-    true
-}
-
-fn main_advances(current: Option<&str>, candidate: &Candidate, fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<bool> {
-    if candidate.channel != "main" { return Ok(true) }
-    let Some(current) = current else { return Ok(true) };
-    ensure!([current, &candidate.id].iter().all(|sha| sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit())),
-        "invalid Main update revision");
-    if current == candidate.id { return Ok(false) }
-    // Page two retains comparison metadata but omits GitHub's potentially huge
-    // first-page file patches. Commit dates and publication times are not ancestry.
-    let body = fetch(&format!("https://api.github.com/repos/{REPO}/compare/{current}...{}?per_page=1&page=2", candidate.id))?;
-    let comparison: serde_json::Value = serde_json::from_slice(&body).context("invalid Main comparison")?;
-    ensure!(comparison["base_commit"]["sha"].as_str() == Some(current), "unexpected Main comparison base");
-    match comparison["status"].as_str() {
-        Some("ahead") => Ok(true),
-        Some("behind" | "identical") => Ok(false),
-        _ => anyhow::bail!("Main update is not a verified descendant of the installed revision"),
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(updates::failure(Stage::PolicyTimeout, anyhow::anyhow!("update policy timed out")));
+        }
+        std::thread::sleep(Duration::from_millis(10));
     }
 }
 
-/// Legacy updaters record a bridge ID while executing the unchanged canonical
-/// build. Authenticate that exact mapping before checking normal forward ancestry.
-fn main_advances_from_bridge(current: Option<&str>, candidate: &Candidate, compiled: Option<&str>,
-    fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<bool>
-{
-    let ordinary = main_advances(current, candidate, fetch);
-    if ordinary.is_ok() || candidate.channel != "main" { return ordinary }
-    let (Some(current), Some(compiled)) = (current, compiled) else { return ordinary };
-    if current == compiled { return ordinary }
-    ensure!([current, compiled].iter().all(|sha| sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit())),
-        "invalid bridge revision");
-    let commit = |sha: &str| -> Result<serde_json::Value> {
-        let body = fetch(&format!("https://api.github.com/repos/{REPO}/git/commits/{sha}"))?;
-        let value: serde_json::Value = serde_json::from_slice(&body)?;
-        ensure!(value["sha"].as_str() == Some(sha), "unexpected bridge commit identity");
-        Ok(value)
-    };
-    let bridge = commit(current)?;
-    ensure!(bridge["parents"].as_array().is_some_and(|parents| parents.len() == 2)
-        && bridge["parents"][0]["sha"].as_str().is_some_and(|parent| LEGACY_MAIN.contains(&parent))
-        && bridge["parents"][1]["sha"].as_str() == Some(compiled), "not a known Main compatibility bridge");
-    let source = commit(compiled)?;
-    let tree = source["tree"]["sha"].as_str().context("missing bridge source tree")?;
-    ensure!(tree.len() == 40 && tree.bytes().all(|b| b.is_ascii_hexdigit())
-        && bridge["tree"]["sha"].as_str() == Some(tree), "bridge differs from the verified build");
-    main_advances(Some(compiled), candidate, fetch)
+fn update_policy_assets() -> Option<(PathBuf, PathBuf)> {
+    let executable = std::env::current_exe().ok()?;
+    let root = executable.parent()?.parent()?.join("share/apparent/settings");
+    let mut candidates = vec![(root.join("runtime/electron"), root.join("app/electron/settings/update-worker.cjs"))];
+    if cfg!(any(test, debug_assertions)) {
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("capture/desktop/ui/frontend");
+        candidates.push((source.join("node_modules/electron/dist/electron"), source.join("electron/settings/update-worker.cjs")));
+    }
+    candidates.into_iter().find(|(runtime, script)| runtime.is_file() && script.is_file())
 }
 
 fn target() -> Result<Option<PathBuf>> {
     let Some(path) = std::env::var_os("APPIMAGE").map(PathBuf::from) else { return Ok(None) };
     let meta = fs::symlink_metadata(&path)?;
-    ensure!(meta.is_file() && !meta.file_type().is_symlink(), "update target must be an ordinary AppImage");
-    ensure!(meta.uid() == unsafe { libc::geteuid() }, "update target belongs to another user");
+    ensure_update!(meta.is_file() && !meta.file_type().is_symlink(), "update target must be an ordinary AppImage");
+    ensure_update!(meta.uid() == unsafe { libc::geteuid() }, "update target belongs to another user");
     let home = dirs::home_dir().context("home directory unavailable")?;
     let path = path.canonicalize()?;
-    ensure!(path.starts_with(home.canonicalize()?), "refusing to replace an AppImage outside your home");
+    ensure_update!(path.starts_with(home.canonicalize()?), "refusing to replace an AppImage outside your home");
     Ok(Some(path))
 }
 
 fn verify_download(stage: &Path, hash: &str) -> Result<()> {
     let mut hasher = Sha256::new();
-    let mut file = File::open(stage)?;
+    let mut file = File::open(stage).stage(Stage::DownloadRead)?;
     let mut bytes = [0u8; 128 * 1024];
     loop {
-        let n = file.read(&mut bytes)?;
+        let n = file.read(&mut bytes).stage(Stage::DownloadRead)?;
         if n == 0 { break; }
         hasher.update(&bytes[..n]);
     }
-    ensure!(format!("{:x}", hasher.finalize()) == hash, "AppImage checksum mismatch");
-    let mut perms = fs::metadata(stage)?.permissions();
+    ensure_update!(format!("{:x}", hasher.finalize()) == hash, "AppImage checksum mismatch");
+    let mut perms = fs::metadata(stage).stage(Stage::ImagePermissions)?.permissions();
     perms.set_mode(0o700);
-    fs::set_permissions(stage, perms)?;
-    File::open(stage)?.sync_all()?;
+    fs::set_permissions(stage, perms).stage(Stage::ImagePermissions)?;
+    File::open(stage).stage(Stage::DownloadSync)?.sync_all().stage(Stage::DownloadSync)?;
     Ok(())
 }
 
@@ -534,7 +543,9 @@ fn exchange(stage: &Path, image: &Path) -> Result<()> {
     let a = std::ffi::CString::new(stage.as_os_str().as_encoded_bytes())?;
     let b = std::ffi::CString::new(image.as_os_str().as_encoded_bytes())?;
     let rc = unsafe { libc::renameat2(libc::AT_FDCWD, a.as_ptr(), libc::AT_FDCWD, b.as_ptr(), libc::RENAME_EXCHANGE) };
-    ensure!(rc == 0, "atomic AppImage swap failed: {}", std::io::Error::last_os_error());
+    if rc != 0 {
+        return Err(std::io::Error::last_os_error()).context("atomic AppImage swap failed").stage(Stage::Swap);
+    }
     Ok(())
 }
 
@@ -547,28 +558,28 @@ fn install(candidate: &Candidate, image: &Path) -> Result<()> {
     let previous_sidecar = parent.join(format!(".{name}.previous.apparent-update.json"));
     let staged_sidecar = parent.join(format!(".{name}.update-{}", std::process::id()));
     // Reserve only our own temporary path; never reuse another process's download.
-    let _reserved = OpenOptions::new().write(true).create_new(true).open(&stage)?;
+    let _reserved = OpenOptions::new().write(true).create_new(true).open(&stage).stage(Stage::ReserveStage)?;
     let mut swapped = false;
     let result = (|| -> Result<()> {
-        get(&candidate.url, Some(&stage))?;
-        verify_download(&stage, &candidate.sha256)?;
+        get(&candidate.url, Some(&stage)).stage(Stage::AssetDownload)?;
+        verify_download(&stage, &candidate.sha256).stage(Stage::ChecksumVerify)?;
         // Fail closed if the launcher changed while the download was in flight.
-        let current = fs::symlink_metadata(image)?;
-        ensure!(current.is_file() && !current.file_type().is_symlink() && current.uid() == unsafe { libc::geteuid() }, "installed AppImage changed while downloading");
+        let current = fs::symlink_metadata(image).stage(Stage::InstallTarget)?;
+        ensure_update!(current.is_file() && !current.file_type().is_symlink() && current.uid() == unsafe { libc::geteuid() }, "installed AppImage changed while downloading");
         let config = crate::shared::handoff::load_config_from(&crate::shared::handoff::default_config_path());
         let selected = if config.update_channel.as_deref() == Some("main") { "main" } else { "stable" };
-        ensure!(selected == candidate.channel, "channel changed while downloading");
-        let mut f = OpenOptions::new().write(true).create_new(true).open(&staged_sidecar)?;
-        f.write_all(serde_json::to_string(&serde_json::json!({"channel": candidate.channel, "id": candidate.id}))?.as_bytes())?;
-        f.sync_all()?;
+        ensure_update!(selected == candidate.channel, "channel changed while downloading");
+        let mut f = OpenOptions::new().write(true).create_new(true).open(&staged_sidecar).stage(Stage::MarkerWrite)?;
+        f.write_all(serde_json::to_string(&serde_json::json!({"channel": candidate.channel, "id": candidate.id}))?.as_bytes()).stage(Stage::MarkerWrite)?;
+        f.sync_all().stage(Stage::MarkerWrite)?;
         // Keep the old version marker with its old image, or remove a stale one.
         if fs::symlink_metadata(&previous_sidecar).is_ok() {
-            fs::remove_file(&previous_sidecar)?;
+            fs::remove_file(&previous_sidecar).stage(Stage::BackupMarker)?;
         }
         match fs::symlink_metadata(&sidecar) {
             Ok(meta) => {
-                ensure!(meta.is_file() && !meta.file_type().is_symlink() && meta.uid() == unsafe { libc::geteuid() }, "update marker is not an owned regular file");
-                fs::copy(&sidecar, &previous_sidecar)?;
+                ensure_update!(meta.is_file() && !meta.file_type().is_symlink() && meta.uid() == unsafe { libc::geteuid() }, "update marker is not an owned regular file");
+                fs::copy(&sidecar, &previous_sidecar).stage(Stage::BackupMarker)?;
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
             Err(error) => return Err(error.into()),
@@ -579,12 +590,12 @@ fn install(candidate: &Candidate, image: &Path) -> Result<()> {
         if let Err(error) = fs::rename(&stage, &backup) {
             exchange(&stage, image).context("could not restore installed AppImage after backup failed")?;
             swapped = false;
-            return Err(error).context("could not retain the previous AppImage");
+            return Err(error).context("could not retain the previous AppImage").stage(Stage::BackupPublish);
         }
         if let Err(error) = fs::rename(&staged_sidecar, &sidecar) {
             exchange(&backup, image).context("could not restore installed AppImage after marker failed")?;
             let _ = fs::remove_file(&backup);
-            return Err(error).context("could not publish the updated version marker");
+            return Err(error).context("could not publish the updated version marker").stage(Stage::MarkerPublish);
         }
         Ok(())
     })();
@@ -602,39 +613,40 @@ fn transaction_lock(image: &Path) -> Result<File> {
     let lock = OpenOptions::new().read(true).write(true).create(true).mode(0o600)
         .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC).open(path)?;
     let meta = lock.metadata()?;
-    ensure!(meta.is_file() && meta.uid() == unsafe { libc::geteuid() }
+    ensure_update!(meta.is_file() && meta.uid() == unsafe { libc::geteuid() }
         && meta.nlink() == 1 && meta.mode() & 0o077 == 0, "update lock must be a private owned file");
-    ensure!(unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0,
-        "another update transaction is running: {}", std::io::Error::last_os_error());
+    if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        return Err(std::io::Error::last_os_error()).context("another update transaction is running").stage(Stage::Lock);
+    }
     Ok(lock)
 }
 
 fn check() -> Result<bool> {
-    let Some(image) = target()? else { return Ok(false) };
+    let mut attempt = updates::Attempt::default();
+    check_attempt(&mut attempt).map_err(|error| updates::attempted(error, attempt))
+}
+
+fn check_attempt(attempt: &mut updates::Attempt) -> Result<bool> {
+    let Some(image) = target().stage(Stage::Target)? else { return Ok(false) };
     // CLI processes and the GUI's hourly/manual worker share this lock. Acquire
     // before reading identity or discovering a release; hold through the swap.
-    let _transaction = transaction_lock(&image)?;
-    let status = status()?;
-    let arch = arch().context("no AppImage for this CPU")?;
+    let _transaction = transaction_lock(&image).stage(Stage::Lock)?;
+    let status = status().stage(Stage::Config)?;
+    let installed = installed_id(&image);
+    attempt.selected(status["channel"].as_str().unwrap_or("unknown"), installed.as_ref());
+    let arch = arch().context("no AppImage for this CPU").stage(Stage::Target)?;
     let candidate = if status["channel"] == "main" {
-        latest_main_candidate(arch)?
+        latest_main_candidate(arch).stage(Stage::MainRelease)?
     } else {
-        let Some(candidate) = stable_candidate(arch)? else { return Ok(false); };
+        let Some(candidate) = stable_candidate(arch).stage(Stage::StableRelease)? else { return Ok(false); };
         candidate
     };
+    attempt.candidate(candidate.channel, &candidate.id, installed.as_ref(), env!("APPARENT_COMMIT_SHA"));
     let name = image.file_name().context("AppImage has no name")?.to_string_lossy();
     let failed = image.with_file_name(format!(".{name}.failed-update.json"));
-    ensure!(!previously_failed(&failed, &candidate), "this update failed to start previously; waiting for a newer release");
-    let installed = installed_id(&image);
-    if !newer(&candidate, installed.clone()) { return Ok(false) }
-    let current = match &installed {
-        Some((channel, id)) if channel == "main" => Some(id.as_str()),
-        // No marker yet: a freshly packaged Main build already knows its SHA.
-        None => option_env!("GITHUB_SHA").filter(|sha| sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit())),
-        _ => None, // An explicit channel switch keeps its existing semantics.
-    };
-    if !main_advances_from_bridge(current, &candidate, option_env!("GITHUB_SHA"), &|url| get(url, None))? { return Ok(false) }
-    install(&candidate, &image)?;
+    ensure_update!(!previously_failed(&failed, &candidate), "this update failed to start previously; waiting for a newer release");
+    if !needs_channel_release(&candidate, installed).stage(Stage::Policy)? { return Ok(false) }
+    install(&candidate, &image).stage(Stage::Install)?;
     super::super::integration::shell::notify("Apparent updated", "The new version will start the next time you open Apparent. Your previous AppImage is kept beside it.");
     Ok(true)
 }
@@ -644,9 +656,7 @@ pub fn check_now() {
         && let Err(error) = check()
     {
         crate::capture::engine::runtime::apparent_log(format!("Linux update: {error:#}"));
-        crate::capture::desktop::workflow::error_reporting::report(
-            crate::capture::desktop::workflow::error_reporting::Failure::UpdateCheck,
-        );
+        error_reporting::report_update(&error, Trigger::Automatic);
     }
 }
 
@@ -663,6 +673,99 @@ mod tests {
     use super::*;
 
     #[test]
+    fn actual_curl_failures_report_http_rate_limits_and_safe_exception_details() {
+        use std::net::TcpListener;
+        let mut fingerprints = Vec::new();
+        for (status, remaining, retry) in [(200, "1", "0"), (403, "0", "60"), (429, "0", "15"), (503, "private-header-canary", "private-retry-canary")] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let endpoint = format!("http://{}", listener.local_addr().unwrap());
+            let server = std::thread::spawn(move || {
+                let deadline = Instant::now() + Duration::from_secs(4);
+                let mut stream = loop {
+                    match listener.accept() {
+                        Ok((stream, _)) => break stream,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(Instant::now() < deadline, "curl did not reach the fixture");
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("fixture accept failed: {error}"),
+                    }
+                };
+                stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+                let mut request = [0; 4096];
+                stream.read(&mut request).unwrap();
+                write!(stream, "HTTP/1.1 {status} Fixture\r\nX-RateLimit-Remaining: {remaining}\r\nRetry-After: {retry}\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]").unwrap();
+            });
+            // Real curl supplies the exit status and write-out fields. No
+            // production endpoint override, PostHog ingestion or injected event.
+            let output = Command::new("curl").args(["--silent", "--show-error", "--fail", "--noproxy", "*", "--max-time", "3", "--write-out", CURL_HTTP_STATUS, "--url", &endpoint]).output().unwrap();
+            server.join().unwrap();
+            if status == 200 {
+                assert_eq!(download_output(output).unwrap(), b"[]", "write-out diagnostics must never corrupt release JSON");
+                continue;
+            }
+            let error = download_output(output).stage(Stage::ReleaseListFetch).unwrap_err()
+                .context(format!("private-local-context {endpoint}/?token=private-token-canary"));
+            if status == 503 { assert!(format!("{error:#}").contains("private-header-canary"), "redaction canary must reach the raw error"); }
+            let installed = ("main".into(), "a".repeat(40));
+            let mut attempt = updates::Attempt::default();
+            attempt.selected("main", Some(&installed));
+            attempt.candidate("main", &"b".repeat(40), Some(&installed), &"c".repeat(40));
+            let payload = error_reporting::update_payload_for_test(&updates::attempted(error, attempt), Trigger::Automatic);
+            let diagnostics = &payload["properties"]["updater"];
+            assert_eq!(diagnostics["http_status"], status);
+            assert_eq!(diagnostics["process"], "curl");
+            assert_eq!(diagnostics["exit_code"], 22);
+            assert_eq!(diagnostics["trigger"], "automatic");
+            assert_eq!(diagnostics["attempt"]["selected_channel"], "main");
+            assert_eq!(diagnostics["attempt"]["installed_identity_kind"], "revision");
+            assert_eq!(diagnostics["attempt"]["candidate_id"], "b".repeat(40));
+            assert_eq!(diagnostics["attempt"]["installed_matches_target"], false);
+            assert_eq!(diagnostics["rate_limit_remaining"], if status == 503 { serde_json::Value::Null } else { serde_json::json!(0) });
+            assert_eq!(diagnostics["retry_after_seconds"], match status {403 => serde_json::json!(60), 429 => serde_json::json!(15), _ => serde_json::Value::Null});
+            let exception = &payload["properties"]["$exception_list"][0];
+            assert_eq!(exception["type"], "update_release_list_fetch_failed");
+            assert!(exception["value"].as_str().unwrap().contains(&format!("HTTP {status}")));
+            let frame = exception["stacktrace"]["frames"].as_array().unwrap().last().unwrap();
+            assert_eq!(frame["filename"], "capture/desktop/linux/updates/update.rs");
+            assert!(frame["lineno"].as_u64().unwrap() > 0);
+            for private in ["private-", &endpoint, &"a".repeat(40)] {
+                assert!(!payload.to_string().contains(private), "leaked {private}");
+            }
+            fingerprints.push(payload["properties"]["$exception_fingerprint"].clone());
+        }
+        assert_ne!(fingerprints[0], fingerprints[1]);
+        assert_ne!(fingerprints[1], fingerprints[2]);
+    }
+
+    #[test]
+    fn actual_release_parse_checksum_and_file_errors_have_distinct_reported_boundaries() {
+        let malformed = latest_main_candidate_with("x86_64", &|_| Ok(b"{private-bad-json".to_vec())).err().unwrap();
+        let payload = error_reporting::update_payload_for_test(&malformed, Trigger::User);
+        assert_eq!(payload["properties"]["updater"]["json_error_kind"], "data");
+        assert_eq!(payload["properties"]["$exception_list"][0]["type"], "update_release_list_parse_failed");
+        let dir = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
+        fs::create_dir(&dir).unwrap();
+        let stage = dir.join("private-image-canary");
+        let error = verify_download(&stage, &"0".repeat(64)).stage(Stage::ChecksumVerify).unwrap_err();
+        let missing = error_reporting::update_payload_for_test(&error, Trigger::User);
+        assert_eq!(missing["properties"]["updater"]["io_kind"], "not_found");
+        assert_eq!(missing["properties"]["updater"]["os_error_code"], libc::ENOENT);
+        assert_eq!(missing["properties"]["$exception_list"][0]["type"], "update_download_read_failed");
+        fs::write(&stage, b"private-file-content-canary").unwrap();
+        let error = verify_download(&stage, &"0".repeat(64)).stage(Stage::ChecksumVerify).unwrap_err();
+        let mismatch = error_reporting::update_payload_for_test(&error, Trigger::User);
+        assert!(mismatch["properties"]["updater"]["io_kind"].is_null());
+        assert_ne!(missing["properties"]["$exception_fingerprint"], mismatch["properties"]["$exception_fingerprint"]);
+        for payload in [payload, missing, mismatch] {
+            assert!(!payload.to_string().contains("private-"));
+            assert!(!payload.to_string().contains(dir.to_str().unwrap()));
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn update_transaction_lock_child() {
         let Some(image) = std::env::var_os("APPARENT_TEST_UPDATE_LOCK_IMAGE").map(PathBuf::from) else { return };
         let mode = std::env::var("APPARENT_TEST_UPDATE_LOCK_MODE").unwrap();
@@ -672,13 +775,11 @@ mod tests {
             return;
         }
         let _lock = lock.unwrap();
-        let candidate = Candidate { id: "b".repeat(40), channel: "main", url: String::new(), sha256: String::new() };
         let (channel, current) = installed_id(&image).unwrap();
         assert_eq!(channel, "main");
         assert_eq!(current, "c".repeat(40));
-        assert!(!main_advances(Some(&current), &candidate, &|_| Ok(serde_json::to_vec(
-            &serde_json::json!({"base_commit":{"sha":current},"status":"behind"}))?)).unwrap());
-        assert_eq!(fs::read(&image).unwrap(), b"newer C image", "stale B must not swap over C");
+        // Identity is read only after acquiring the lock; discovery follows it.
+        assert_eq!(fs::read(&image).unwrap(), b"newer C image");
     }
 
     #[test]
@@ -729,69 +830,6 @@ mod tests {
         assert!(transaction_lock(&image).is_err());
         assert_eq!(fs::read(&other).unwrap(), b"untouched");
         fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn signing_bridge_recovers_only_the_exact_verified_source() {
-        let bridge = "b".repeat(40);
-        let source = "c".repeat(40);
-        let tree = "d".repeat(40);
-        let next = "e".repeat(40);
-        let candidate = Candidate { id: next.clone(), channel: "main", url: String::new(), sha256: String::new() };
-        for legacy in LEGACY_MAIN {
-            for fault in ["", "parent", "tree", "identity", "offline", "extra-parent", "rollback"] {
-                let fetch = |url: &str| -> Result<Vec<u8>> {
-                    let value = if url.contains("/compare/") {
-                        let base = if url.contains(&format!("/{bridge}...")) { &bridge } else { &source };
-                        serde_json::json!({"base_commit":{"sha":base}, "status":
-                            if base == &bridge { "diverged" } else if fault == "rollback" { "behind" } else { "ahead" }})
-                    } else if url.ends_with(&format!("/git/commits/{bridge}")) {
-                        if fault == "offline" { anyhow::bail!("offline") }
-                        let mut parents = vec![serde_json::json!({"sha":if fault == "parent" { &source } else { legacy }}), serde_json::json!({"sha":source})];
-                        if fault == "extra-parent" { parents.push(serde_json::json!({"sha":next})); }
-                        serde_json::json!({"sha":if fault == "identity" { &source } else { &bridge }, "parents":parents,
-                            "tree":{"sha":if fault == "tree" { &source } else { &tree }}})
-                    } else {
-                        assert!(url.ends_with(&format!("/git/commits/{source}")));
-                        serde_json::json!({"sha":source,"tree":{"sha":tree}})
-                    };
-                    Ok(serde_json::to_vec(&value)?)
-                };
-                let result = main_advances_from_bridge(Some(&bridge), &candidate, Some(&source), &fetch);
-                match fault {
-                    "" => assert!(result.unwrap()),
-                    "rollback" => assert!(!result.unwrap()),
-                    _ => assert!(result.is_err(), "{fault}"),
-                }
-            }
-        }
-        // Once D is staged while bridge C is running, a repeat check must use D.
-        assert!(!main_advances_from_bridge(Some(&next), &candidate, Some(&source), &|_| panic!("staged identity needs no bridge lookup")).unwrap());
-        assert!(main_advances_from_bridge(Some(&bridge), &candidate, None, &|_| anyhow::bail!("no embedded source")).is_err());
-    }
-
-    #[test]
-    fn main_updates_require_forward_ancestry_not_different_shas() {
-        let current = "a".repeat(40);
-        let candidate = Candidate { id: "b".repeat(40), channel: "main", url: String::new(), sha256: String::new() };
-        for (status, expected) in [("ahead", Some(true)), ("behind", Some(false)), ("identical", Some(false)), ("diverged", None), ("unknown", None)] {
-            let result = main_advances(Some(&current), &candidate, &|url| {
-                assert_eq!(url, format!("https://api.github.com/repos/{REPO}/compare/{current}...{}?per_page=1&page=2", candidate.id));
-                Ok(serde_json::to_vec(&serde_json::json!({"status":status,"base_commit":{"sha":current}}))?)
-            });
-            match expected {
-                Some(expected) => assert_eq!(result.unwrap(), expected),
-                None => assert!(result.is_err()),
-            }
-        }
-        assert!(main_advances(Some(&current), &candidate, &|_| anyhow::bail!("offline")).is_err());
-        assert!(main_advances(Some(&current), &candidate, &|_| Ok(b"{}".to_vec())).is_err());
-        assert!(main_advances(Some(&current), &candidate, &|_| Ok(serde_json::to_vec(&serde_json::json!({"status":"ahead","base_commit":{"sha":candidate.id}}))?)).is_err());
-        assert!(main_advances(Some("bad-revision"), &candidate, &|_| panic!("must validate before fetch")).is_err());
-        assert!(!main_advances(Some(&candidate.id), &candidate, &|_| panic!("same revision needs no request")).unwrap());
-        assert!(main_advances(None, &candidate, &|_| panic!("legacy migration has no baseline")).unwrap());
-        let stable = Candidate { channel: "stable", ..candidate };
-        assert!(main_advances(Some(&current), &stable, &|_| panic!("Stable must not use Main comparison")).unwrap());
     }
 
     #[test]
@@ -1004,8 +1042,8 @@ mod tests {
         let mut foreign = release(&expected);
         foreign.assets[1].browser_download_url = "https://example.org/checksum".into();
         assert!(main_candidate(&foreign, "x86_64", &checksum).is_err());
-        assert!(!newer(&candidate, Some(("main".into(), "a".repeat(40)))));
-        assert!(newer(&candidate, Some(("stable".into(), "v0.3.13".into()))));
+        assert!(!needs_channel_release(&candidate, Some(("main".into(), "a".repeat(40)))).unwrap());
+        assert!(needs_channel_release(&candidate, Some(("stable".into(), "v0.3.13".into()))).unwrap());
     }
 
     #[test]
@@ -1268,12 +1306,13 @@ mod tests {
     }
 
     #[test]
-    fn stable_never_downgrades_without_a_channel_change() {
+    fn stable_converges_even_from_a_newer_or_unmarked_build() {
         let candidate = Candidate { id: "v0.3.13".into(), channel: "stable", url: String::new(), sha256: String::new() };
-        assert!(!newer(&candidate, Some(("stable".into(), "v0.3.14".into()))));
-        assert!(!newer(&candidate, Some(("stable".into(), "v0.3.13".into()))));
-        assert!(newer(&candidate, Some(("stable".into(), "v0.3.12".into()))));
-        assert!(newer(&candidate, Some(("main".into(), "a".repeat(40)))));
+        assert!(needs_channel_release(&candidate, Some(("stable".into(), "v0.3.14".into()))).unwrap());
+        assert!(needs_channel_release(&candidate, None).unwrap());
+        assert!(!needs_channel_release(&candidate, Some(("stable".into(), "v0.3.13".into()))).unwrap());
+        assert!(needs_channel_release(&candidate, Some(("stable".into(), "v0.3.12".into()))).unwrap());
+        assert!(needs_channel_release(&candidate, Some(("main".into(), "a".repeat(40)))).unwrap());
     }
 
     #[test]

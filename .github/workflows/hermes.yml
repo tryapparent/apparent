@@ -121,13 +121,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-          sparse-checkout: hermes
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /hermes/
+            /shared/assets/brand/apparent-app-icon.svg
       - name: Prove isolated package build and compiled integration tests
         env:
           HERMES_REVISION: ${{ github.sha }}
         run: |
           test ! -d target
           test ! -d capture
+          test ! -d record
+          test ! -d engine
+          test ! -f Cargo.toml
+          test -f shared/assets/brand/apparent-app-icon.svg
+          test "$(find shared -type f | wc -l)" -eq 1
           ! command -v rustc
           ! command -v cargo
           python3 -m venv /tmp/apparent-dev-hermes-clean-python

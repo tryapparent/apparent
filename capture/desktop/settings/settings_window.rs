@@ -345,6 +345,7 @@ fn pane_title(pane: Pane) -> &'static str {
         Pane::Storage => "Storage",
         Pane::Permissions => "Permissions",
         Pane::Agents => "Agents",
+        Pane::Labs => "Labs",
         Pane::About => "About",
     }
 }
@@ -356,6 +357,7 @@ fn pane_icon(pane: Pane) -> (&'static str, Tint) {
         Pane::Storage => (crate::capture::desktop::icons::DRIVE, BLUE),
         Pane::Permissions => (crate::capture::desktop::icons::HAND, GREEN),
         Pane::Agents => (crate::capture::desktop::icons::TERMINAL, (0x5c5c5c, 0x2e2e2e)),
+        Pane::Labs => (crate::capture::desktop::icons::FLASK, GREY),
         Pane::About => (crate::capture::desktop::icons::INFO, GREY),
     }
 }
@@ -1012,6 +1014,7 @@ impl SettingsWindow {
             .child(self.item(theme, Pane::Storage, cx))
             .child(self.item(theme, Pane::Permissions, cx))
             .child(self.item(theme, Pane::Agents, cx))
+            .child(self.item(theme, Pane::Labs, cx))
             .child(self.item(theme, Pane::About, cx))
     }
 
@@ -1042,7 +1045,7 @@ impl SettingsWindow {
                     view.act(Action::CancelShortcut);
                 }
                 view.menu = None;
-                if matches!(pane, Pane::About | Pane::Agents) || (!LINUX && pane == Pane::Storage) {
+                if matches!(pane, Pane::About | Pane::Agents | Pane::Labs) || (!LINUX && pane == Pane::Storage) {
                     view.act(Action::Navigate { pane });
                     return;
                 }
@@ -1059,6 +1062,7 @@ impl SettingsWindow {
             Pane::Storage => self.storage(theme, state, cx),
             Pane::Permissions => self.permissions(theme, state, cx),
             Pane::Agents => self.agents(theme, state, cx),
+            Pane::Labs => div().child("Labs needs the packaged Settings interface. Reinstall Apparent to restore it."),
             Pane::About => self.about(theme, state, width < 500.0, cx),
         };
         div()
@@ -2673,7 +2677,7 @@ mod tests {
 
     #[test]
     fn first_settings_group_has_room_below_the_title_rule() {
-        for pane in [Pane::General, Pane::Storage, Pane::Permissions, Pane::Agents, Pane::About] {
+        for pane in [Pane::General, Pane::Storage, Pane::Permissions, Pane::Agents, Pane::Labs, Pane::About] {
             assert_eq!(pane_top_inset(pane), 20.0, "{pane:?}");
         }
         // Recording already starts with a section header, which supplies its own spacing.

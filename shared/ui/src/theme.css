@@ -1,4 +1,5 @@
 @import "./tokens.css";
+@import "./keyboard/keycap.css";
 
 /* Register canonical tokens as Tailwind utilities; values live in tokens.css. */
 @theme inline {

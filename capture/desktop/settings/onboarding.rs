@@ -1837,6 +1837,8 @@ impl Session {
         view["shortcut"]=self.shortcut_label.clone().into();
         view["shortcutSelectionReleased"]=(!self.shortcut_choice_down).into();
         view["platform"]=std::env::consts::OS.into();
+        view["wisprFlowEnabled"]=(cfg!(target_os = "macos")
+            && crate::shared::handoff::experiment("onboardingWisprFlow")).into();
         view["shortcutEditor"]=serde_json::json!(self.editor);
         view["anchor"]=serde_json::json!(self.anchor);
         view["practiceBoard"]=serde_json::json!(self.practice_board);

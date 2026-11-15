@@ -213,6 +213,7 @@ test('committed concurrency-only workflow edits select contracts rather than pro
     {paths: result.paths, workflowControls: result.workflowControls}).map(command => command.argv), [
     ['python3', 'enablement/verification.py', '--base', base, '--head', 'HEAD', '--pr'],
     ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/desktop-install.test.ts'],
+      ['node', '--experimental-strip-types', '--test', 'enablement/posthog-fixer/test/service.test.ts', 'enablement/posthog-fixer/test/t3.test.ts'],
     ['python3', '-m', 'unittest', 'discover', '-s', 'enablement/directory-width/tests', '-p', 'test_*.py'],
   ]);
   assert.deepEqual(selection(base, 'HEAD', dir, true).selected, owners.filter(owner => !['public','hermes','engine-media'].includes(owner)));
@@ -304,6 +305,8 @@ test('new native prerequisite tests join the mandatory contract inventory automa
   assert.throws(() => contractTests(dir), /inventory is empty/);
   writeFileSync(join(folder, 'new-picker.test.ts'), '');
   writeFileSync(join(folder, 'helper.ts'), '');
+  mkdirSync(join(dir, 'enablement/timing'), {recursive:true});
+  writeFileSync(join(dir, 'enablement/timing/synthetic.test.ts'), '');
   const args = contractTests(dir)[0].argv;
   assert.ok(args.includes('enablement/prerequisites/new-picker.test.ts'));
   assert.ok(!args.includes('enablement/prerequisites/helper.ts'));
@@ -441,6 +444,16 @@ test('Record command plans keep package tests and native integration without unr
       assert.ok(plan.length < commands([...owners], 'base', 'head', platform).length);
     }
     assert.deepEqual(select([`record/${pkg}/src/policy.ts`], false), [...owners]);
+  }
+  assert.ok(scripts.test.includes('npm test --prefix ../../../../record/capture-request'));
+  for (const platform of ['linux', 'darwin']) {
+    const selected = select(['record/capture-request/src/lifecycle.ts']);
+    assert.deepEqual(selected, ['capture', 'desktop', 'onboarding']);
+    const plan = commands(selected, 'base', 'head', platform);
+    assert.ok(plan.some(c => c.cwd === frontend && c.argv.at(-1) === 'test'));
+    assert.ok(plan.some(c => c.cwd === frontend && c.argv.at(-1) === 'test:electron'));
+    assert.ok(plan.some(c => c.argv.includes('--run') && c.argv.includes('platform')));
+    assert.ok(!plan.some(c => /^(connect|public|hermes)\//.test(c.cwd)));
   }
   assert.deepEqual(select(['record/completion/src/worker.ts', 'public/site/src/App.tsx']), ['capture', 'desktop', 'public', 'onboarding']);
 });

@@ -72,6 +72,8 @@ def main():
     shutil.copy2(connect / "dist/shares.js", connect_dist / "shares.js")
     shutil.copy2(connect / "dist/handoff.js", connect_dist / "handoff.js")
     shutil.copy2(connect / "dist/foreground.js", connect_dist / "foreground.js")
+    (connect_dist / "activity").mkdir()
+    shutil.copy2(connect / "dist/activity/index.js", connect_dist / "activity/index.js")
     shutil.copy2(connect / "dist/transfer.js", connect_dist / "transfer.js")
     (connect_dist / "transfer").mkdir()
     shutil.copy2(connect / "dist/transfer/contract.js", connect_dist / "transfer/contract.js")
@@ -89,7 +91,7 @@ def main():
                     ignore=shutil.ignore_patterns("foundation-*"))
     shutil.copy2(frontend / "dist/settings.html", app / "dist/settings.html")
     shutil.copy2(frontend / "dist/onboarding.html", app / "dist/onboarding.html")
-    for name in ("presentation", "hyprland", "selection", "practice", "practice-host"):
+    for name in ("presentation", "hyprland", "selection", "wispr", "practice", "practice-host"):
         shutil.copy2(frontend / f"dist/onboarding-{name}.cjs", app / f"dist/onboarding-{name}.cjs")
     shutil.copytree(frontend / "dist/pill", app / "dist/pill")
     installer_ui = app / "electron/installer/ui"

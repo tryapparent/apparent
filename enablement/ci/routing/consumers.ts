@@ -39,6 +39,14 @@ export const onboardingPureInputs = new Set([
   'electron/onboarding/account.ts', 'electron/onboarding/presentation.ts', 'electron/onboarding/selection.ts',
   'src/onboarding/state.ts', 'src/onboarding/shortcut/keys.ts',
 ].map(path => 'capture/desktop/ui/frontend/' + path));
+// Reviewed Wispr adapter, renderer helpers/art and owning Electron proof.
+// These additions retain native/Desktop consumers and macOS verification;
+// they do not qualify for the import-free policy exemption above.
+export const onboardingWisprInputs = new Set([
+  'electron/onboarding/wispr.ts', 'src/onboarding/wispr/motion.ts',
+  'src/onboarding/wispr/use-wispr.ts', 'src/onboarding/wispr/frog-sprites.png',
+  'tests/onboarding/wispr/smoke.ts',
+].map(path => 'capture/desktop/ui/frontend/' + path));
 // Explicit retirements from the reviewed Electron onboarding port. A deletion
 // keeps its consumer and platform proof, while unrelated deletions remain
 // unproven boundary changes.
@@ -48,12 +56,16 @@ export const retiredOnboardingInputs = new Set([
   'capture/desktop/ui/frontend/electron/onboarding/account.ts',
   'capture/desktop/ui/frontend/src/onboarding/account.tsx',
   'capture/desktop/ui/frontend/tests/onboarding/account.test.ts',
+  // Replaced by the guide modules under src/onboarding/controls/.
+  'capture/desktop/ui/frontend/src/onboarding/control-guide.tsx',
+  'capture/desktop/ui/frontend/src/onboarding/control-guide.css',
 ]);
 export const onboardingRoots = ['capture/desktop/ui/frontend/src/onboarding/',
   'capture/desktop/ui/frontend/electron/onboarding/', 'capture/desktop/ui/frontend/tests/onboarding/'];
 const onboardingRendererTestInputs = new Set([
   'capture/desktop/ui/frontend/tests/onboarding/renderer/window-coach.smoke.ts',
   'capture/desktop/ui/frontend/tests/onboarding/renderer/tsconfig.json',
+  'capture/desktop/ui/frontend/tests/onboarding/wispr/smoke.ts',
 ]);
 // Shared Connect consent/session policy is consumed by onboarding and Settings.
 // Add the fast policy suite without exempting its bridge or native consumers.
@@ -126,7 +138,7 @@ function directConsumers(path: string): readonly Owner[] {
   const native = /\.(rs|swift|metal|c|cc|cpp|h|mm)$/.test(path) || /(^|\/)Cargo\.(toml|lock)$/.test(path);
   // Audited headless Record packages feed Desktop's generated adapters and the
   // packaged native application. Unknown files/packages and instructions stay broad.
-  if (/^record\/(?:storage|completion)\/(?:src\/.*\.ts|test\/.*\.test\.ts|package(?:-lock)?\.json|tsconfig\.json)$/.test(path) ||
+  if (/^record\/(?:storage|completion|capture-request)\/(?:src\/.*\.ts|test\/.*\.test\.ts|package(?:-lock)?\.json|tsconfig(?:\.build)?\.json)$/.test(path) ||
       path === 'record/storage/build.ts') return ['desktop', 'capture'];
   // This composed browser proof is executed by Connect's publication verifier.
   if (path === 'public/site/scripts/browser-proof/test-hosted-browser.mjs') return ['public', 'web'];
@@ -144,12 +156,16 @@ function directConsumers(path: string): readonly Owner[] {
   if (linuxDrivers.has(path)) return ['capture-tools'];
   if (path.startsWith('capture/desktop/ui/frontend/src/hermes/')) return ['desktop', 'capture', 'hermes'];
   if (path.startsWith('capture/desktop/ui/frontend/')) return ['desktop', 'capture'];
+  // These drivers are executed by the installed foreground proof, whose job
+  // condition requires a Desktop consumer as well as the native application.
+  if (path.startsWith('capture/desktop/scripts/native/foreground/')) return ['capture', 'engine', 'desktop', 'capture-tools'];
   if (path.startsWith('capture/desktop/scripts/') || path.startsWith('capture/agent/scripts/')) return ['capture', 'engine', 'capture-tools'];
   if (path.startsWith('capture/desktop/')) return ['desktop', 'capture', 'engine', 'capture-tools'];
   if (path.startsWith('capture/engine/tests/') || path.startsWith('capture/engine/src/') || ['capture/engine/Cargo.toml', 'capture/engine/Cargo.lock'].includes(path)) return ['engine'];
   if (path.startsWith('capture/') || path.startsWith('composition/')) return ['capture', 'engine'];
   if (path.startsWith('shared/analytics/')) return ['public', 'web', 'service', 'desktop', 'capture'];
   if (path.startsWith('shared/ui/')) return ['public', 'web', 'desktop', 'service', 'capture'];
+  if (path === 'shared/assets/brand/apparent-app-icon.svg') return ['public', 'web', 'desktop', 'service', 'capture', 'hermes'];
   if (path.startsWith('shared/assets/')) return ['public', 'web', 'desktop', 'service', 'capture'];
   // Native build inputs cannot affect the Rust-independent Public/Hermes packages.
   if (['Cargo.toml', 'Cargo.lock', 'build.rs', 'main.rs'].includes(path) || path.startsWith('.cargo/') ||
@@ -161,6 +177,7 @@ function directConsumers(path: string): readonly Owner[] {
   if (path.startsWith('enablement/prerequisites/')) return path.endsWith('.test.ts') ? ['tooling'] : ['capture', 'engine', 'desktop', 'client'];
   // Native build helpers and execution-sensitive CI still exercise the complete integration.
   if (toolingRegressionTests.has(path)) return ['tooling'];
+  if (path.startsWith('enablement/posthog-fixer/') && !native) return ['tooling'];
   if (path.startsWith('enablement/timing/') && !native) return ['tooling'];
   if (path.startsWith('enablement/directory-width/') && !native) return ['tooling'];
   // Existing unknown legacy inputs keep their previous conservative consumers.

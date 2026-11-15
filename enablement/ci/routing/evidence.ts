@@ -37,10 +37,16 @@ export function trustedProducer(before: Tree, after: Tree): boolean {
 export function authenticatedSuites(jobs: {name: string; status: string; conclusion: string | null}[], plan: Plan, macPlan: Plan) {
   const passed = new Set(jobs.filter(job => job.status === 'completed' && job.conclusion === 'success').map(job => job.name));
   const common = passed.has('contracts') && passed.has('select') && passed.has('tree-evidence');
-  const platform = (name: string, runner: string, value: Plan) => common && passed.has(name+' / select') &&
-    (!(value.root || value.engine) || passed.has(name+' / rust ('+runner+')')) &&
-    (!value.desktop || passed.has(name+' / desktop-ui ('+runner+')')) &&
-    (!value.client || passed.has(name+' / connect-client ('+runner+')'));
+  const platform = (name: string, runner: string, value: Plan) => {
+    // The packed Mac job executes every selected suite. Its successful actual
+    // conclusion is authenticated just like each former individual job; an
+    // artifact's claimed result cannot replace a failed or skipped producer.
+    const packed = name === 'macos' && passed.has(name+' / platform ('+runner+')');
+    return common && passed.has(name+' / select') &&
+      (!(value.root || value.engine) || packed || passed.has(name+' / rust ('+runner+')')) &&
+      (!value.desktop || packed || passed.has(name+' / desktop-ui ('+runner+')')) &&
+      (!value.client || packed || passed.has(name+' / connect-client ('+runner+')'));
+  };
   return {linux: platform('linux','ubuntu-24.04',plan), macos: platform('macos','macos-15-intel',macPlan),
     portable: common && passed.has('portable'), hermes: common && passed.has('Hermes inspection (ubuntu-24.04)'),
     hermes_macos: common && passed.has('Hermes inspection (macos-15-intel)')};

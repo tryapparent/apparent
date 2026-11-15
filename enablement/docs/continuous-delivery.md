@@ -53,6 +53,17 @@ It verifies the union of their required Linux/Mac platform suites once, then cal
 attempt. Connect retains its own contracts, portable checks and publication gates;
 manual dispatch retains independent platform execution when no valid shared
 receipt exists. Public keeps its direct `stream-public.yml` automatic entrypoint.
+Within each automatic Mac platform call, the selected native, Desktop and standalone client
+suites share one `platform (macos-15-intel)` allocation. Linux keeps independent
+parallel jobs. The shared Mac job retains selected signing/installed native proof,
+Electron checks and independent client builds/tests, with their existing private
+temporary roots and artifacts. Renderer-only plans do not install Rust or run
+native checks; an inconsistent native exemption fails instead of claiming proof.
+The packed job retains its 60-minute outer cap, plus the renderer/client step
+caps; correctness and hosted occupancy still require actual successful execution.
+Receipt authentication accepts the packed job only from its real successful
+GitHub conclusion with the matching complete plan, source, run and attempt.
+Manual receipt calls retain their separate jobs and historical admission names.
 The shared adapter adds only root/Engine, Desktop and client platform requirements
 from Connect. Capture keeps its original portable selection; Connect's own
 portable job remains required independently of the shared native receipt. A

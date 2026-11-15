@@ -144,6 +144,9 @@ pub fn prepare_public_link_handoff(bundle: &Path, allowed: &dyn Fn() -> bool, fo
     start_worker();
     Ok(link)
 }
+pub fn observe_recording_start(practice: bool) {
+    client().observe_recording_start(practice);
+}
 pub fn sharing_connected() -> bool {
     client().sharing_connected()
 }

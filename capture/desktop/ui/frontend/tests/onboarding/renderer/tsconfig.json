@@ -18,6 +18,7 @@
   },
   "include": [
     "window-coach.smoke.ts",
+    "../wispr/smoke.ts",
     "practice.smoke.ts"
   ]
 }

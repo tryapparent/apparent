@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {coachPosition, coachDimensions, practiceExit} from '../../electron/onboarding/presentation.ts';
+import {coachPosition, coachDimensions} from '../../electron/onboarding/presentation.ts';
 import {borderCommand} from '../../electron/onboarding/hyprland.ts';
 
 test('Omarchy walkthrough: coach clears the compositor-moved board and recording controls', () => {
@@ -19,15 +19,9 @@ test('Omarchy walkthrough: coach clears the compositor-moved board and recording
 test('missing Linux anchor keeps the coach near the top centre instead of the far edge', () => {
   const area = {x: 0, y: 30, width: 1920, height: 1170};
   const p = coachPosition(area, null, null, 'whiteboard');
-  assert.equal(p.x + 190, 960);
+  assert.equal(p.x + coachDimensions(area,'whiteboard').width / 2, 960);
   assert.ok(p.y < 200);
   assert.equal(p.pointsUp, false, 'an unknown control must not get a guessed arrow');
-});
-
-test('closing the active guide explicitly preserves recording and never claims completion', () => {
-  assert.match(practiceExit('note').detail, /Recording continues/);
-  assert.match(practiceExit('board-ink').detail, /Recording continues/);
-  assert.doesNotMatch(practiceExit('preparing').detail, /Recording continues/);
 });
 
 test('compositor mutation is addressed to the owned PID and exact native title only', () => {

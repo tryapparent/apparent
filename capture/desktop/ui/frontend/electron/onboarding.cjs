@@ -26,8 +26,9 @@ function traceIdentity(v){const out={};for(const k of ['source','transport','att
 const {PracticeHost}=require(process.versions.electron?'../dist/onboarding-practice-host.cjs':'./onboarding/practice-host.ts');
 const {transparentBackgroundColor}=require('@apparent/ui/window-theme');
 const {parseAction}=require('./onboarding-protocol.cjs');
-const {coachDimensions,coachPosition}=require(process.versions.electron?'../dist/onboarding-presentation.cjs':'./onboarding/presentation.ts');
+const {coachDimensions,coachPosition,setupDimensions}=require(process.versions.electron?'../dist/onboarding-presentation.cjs':'./onboarding/presentation.ts');
 const {completedSelection}=require(process.versions.electron?'../dist/onboarding-selection.cjs':'./onboarding/selection.ts');
+const {WisprOnboarding,savedWisprExperiment}=require(process.versions.electron?'../dist/onboarding-wispr.cjs':'./onboarding/wispr.ts');
 // A private, Rust-owned presentation transport. No capture commands or filesystem IPC.
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -42,13 +43,13 @@ function project(v) {
   const boardView=b&&typeof b.id==='string'&&/^[a-zA-Z0-9-]{1,80}$/.test(b.id)&&Array.isArray(b.strokes)&&b.strokes.length<=500&&b.strokes.every(s=>Array.isArray(s)&&s.length<=2000&&s.every(p=>Array.isArray(p)&&p.length===2&&p.every(Number.isFinite)&&p[0]>=0&&p[0]<1600&&p[1]>=0&&p[1]<1100))&&Array.isArray(b.color)&&b.color.length===3&&b.color.every(n=>Number.isInteger(n)&&n>=0&&n<=255)?{id:b.id,strokes:b.strokes,color:b.color}:null;
   return {tutorial:['skipped','watched','practiced'].includes(v.tutorial)?v.tutorial:null,step:v.step,ready:v.ready,fix:v.fix===true,rows,index:v.index,count:v.count,shortcut:typeof v.shortcut==='string'?v.shortcut.slice(0,80):'',shortcutEditing:v.shortcutEditing===true,shortcutChosen:v.shortcutChosen===true,shortcutTested:v.shortcutTested===true,shortcutSelectionReleased:v.shortcutSelectionReleased===true,boardView,
     penSaveId:typeof v.penSaveId==='string'?v.penSaveId:undefined,penPicker:v.penPicker===true,penSelected:v.penSelected===true,penError:v.penError===true,penRgb:Array.isArray(v.penRgb)&&v.penRgb.length===3&&v.penRgb.every(n=>Number.isInteger(n)&&n>=0&&n<=255)?v.penRgb:[255,59,48],
+    wisprFlowEnabled:v.platform==='macos'&&v.wisprFlowEnabled===true,
     platform:v.platform==='linux'?'linux':'macos',shortcutEditor:v.shortcutEditor&&typeof v.shortcutEditor==='object'?{recording:v.shortcutEditor.recording===true,externallyManaged:v.shortcutEditor.externallyManaged===true,error:typeof v.shortcutEditor.error==='string'?v.shortcutEditor.error.slice(0,240):null}:null,
     testInstance:v.testInstance===true,practice:phases.has(v.practice)?v.practice:null,firstCaptureRequired:v.firstCaptureRequired===true,
     ...(Array.isArray(v.practiceBoard)&&v.practiceBoard.length===4&&v.practiceBoard.every(Number.isFinite)&&v.practiceBoard[2]>0&&v.practiceBoard[3]>0?{practiceBoard:v.practiceBoard}:{}),
     ...(Array.isArray(v.anchor)&&v.anchor.length===4&&v.anchor.every(Number.isFinite)?{anchor:v.anchor}:{})};
 }
 // Screen coordinates supplied by this process's typed Whiteboard window only.
-function setupDimensions(area,shortcut){return {width:Math.min(area.width,760),height:Math.min(area.height,shortcut?520:720)};}
 function nativeRectangle(rect,toDip){
   if(!rect)return rect;
   const start=toDip({x:Math.round(rect[0]),y:Math.round(rect[1])});
@@ -84,6 +85,7 @@ const practiceHost=new PracticeHost();
 let practiceEnabled=false;
 let window,state=null,buffer='',page,lastPlacement='',lastMode=null,closing=false,borderReady=false,borderPending=false,borderAttempts=0;
 let connect;
+const wispr=new WisprOnboarding(()=>state,()=>savedWisprExperiment(require('node:os').homedir()));
 const channel=parentChannel(process.stdout,error=>{
   const expected=['EPIPE','ECONNRESET','ERR_STREAM_DESTROYED','ERR_STREAM_WRITE_AFTER_END'].includes(error?.code);
   if(!expected)console.error('Onboarding parent channel failed:',error);
@@ -92,7 +94,7 @@ const channel=parentChannel(process.stdout,error=>{
 function shutdown(code=0,reason='shutdown'){
   if(closing)return;
   // Record the decision before diagnostic settlement; close admission immediately.
-  closing=true;channel.close();connect?.close();
+  closing=true;channel.close();connect?.close();wispr.close();
   trace.emit(reason,{code},true);
   const exit=()=>{if(code)app.exit(code);else app.quit();};
   const settlement=trace.settle();
@@ -107,6 +109,10 @@ app.whenReady().then(()=>{
   window.removeMenu();page=pathToFileURL(path.join(__dirname,process.argv.includes('--native-onboarding')?'../dist/index.html':'../dist/onboarding.html')).href+(process.argv.includes('--native-onboarding')?'?nativeOnboarding':'');
   window.webContents.setWindowOpenHandler(()=>({action:'deny'}));window.webContents.on('will-navigate',e=>e.preventDefault());window.webContents.on('will-attach-webview',e=>e.preventDefault());
   const valid=e=>!window.isDestroyed()&&e.sender===window.webContents&&e.senderFrame===window.webContents.mainFrame&&e.senderFrame.url===page;
+  ipcMain.handle('onboarding:wispr',(e,...args)=>{
+    if(!valid(e)||args.length!==1)throw Error('Forbidden Wispr request');
+    return wispr.request(args[0]);
+  });
   const {ConnectSettings}=require('./connect.cjs');
   const {shell}=require('electron');
   connect=new ConnectSettings(require('node:os').homedir());
@@ -162,7 +168,11 @@ app.whenReady().then(()=>{
         continue;
       }
       const next=project(v);
-      if(next){if(practiceEnabled)next.practice=practiceHost.state.stage;state=next;const accepted=completedSelection(next);if(accepted)channel.send(accepted);present(next);}
+      if(next){
+        if(practiceEnabled)next.practice=practiceHost.state.stage;
+        if(JSON.stringify([state?.step,state?.fix,state?.shortcutChosen,state?.wisprFlowEnabled])!==JSON.stringify([next.step,next.fix,next.shortcutChosen,next.wisprFlowEnabled]))wispr.close();
+        state=next;const accepted=completedSelection(next);if(accepted)channel.send(accepted);present(next);
+      }
     }
   });
   process.stdin.on('end',()=>shutdown(0,'stdin-eof'));process.stdin.on('error',error=>{console.error('Onboarding input failed:',error);shutdown(1)});process.stdin.resume();
@@ -171,6 +181,7 @@ function present(v,activate=false){
  let diagnosticStage='entry';try{
   trace.emit('present-request',{phase:phases.has(v.practice)?v.practice:null});
   if(closing||!window||window.isDestroyed())return;
+  if(v.step==='try-it'&&v.practice==='preparing'){window.hide();return;}
   // Linux adapters report X11 pixels; Electron places windows in logical DIP.
   // macOS adapter coordinates are already points.
   if(process.platform==='linux')v={...v,anchor:nativeRectangle(v.anchor,p=>screen.screenToDipPoint(p)),practiceBoard:nativeRectangle(v.practiceBoard,p=>screen.screenToDipPoint(p))};

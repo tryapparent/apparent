@@ -20,13 +20,13 @@ class SigningTests(unittest.TestCase):
             frontend = root / "capture/desktop/ui/frontend"
             for relative in ("electron/main.cjs", "electron/preload.cjs", "electron/settings.cjs",
                              "dist/settings.html", "dist/onboarding.html", "dist/src/controls/index.html",
-                             "dist/onboarding-presentation.cjs", "dist/onboarding-hyprland.cjs", "dist/onboarding-selection.cjs",
+                             "dist/onboarding-presentation.cjs", "dist/onboarding-hyprland.cjs", "dist/onboarding-selection.cjs", "dist/onboarding-wispr.cjs",
                              "dist/onboarding-practice.cjs", "dist/onboarding-practice-host.cjs",
                              "dist/src/installer/index.html", "dist/pill/index.html",
                              "dist/assets/controls.js", "node_modules/electron/dist/electron",
                              "electron/pill/native/window.node",
                              "electron/pill/t3.cjs",
-                             "electron/settings/t3.cjs",
+                             "electron/settings/t3.cjs", "electron/settings/update-worker.cjs",
                              "electron/record-media/worker.js", "electron/record-media/policy.js",
                              "electron/record-media/node_modules/@apparent/engine-sdk/dist/index.js",
                              "electron/record-media/native/apparent-engine-media",
@@ -51,6 +51,8 @@ class SigningTests(unittest.TestCase):
             (connect / "dist/shares.js").write_text(module)
             (connect / "dist/handoff.js").write_text("synthetic handoff")
             (connect / "dist/foreground.js").write_text("synthetic foreground")
+            (connect / "dist/activity").mkdir()
+            (connect / "dist/activity/index.js").write_text("synthetic activity")
             (connect / "dist/transfer.js").write_text("synthetic transfer")
             (connect / "dist/transfer").mkdir()
             (connect / "dist/transfer/contract.js").write_text("synthetic transfer-contract")
@@ -64,6 +66,7 @@ class SigningTests(unittest.TestCase):
             self.assertEqual((destination / "app/connect-client/dist/shares.js").read_text(), module)
             self.assertEqual((destination / "app/connect-client/dist/handoff.js").read_text(), "synthetic handoff")
             self.assertEqual((destination / "app/connect-client/dist/foreground.js").read_text(), "synthetic foreground")
+            self.assertEqual((destination / "app/connect-client/dist/activity/index.js").read_text(), "synthetic activity")
             self.assertEqual((destination / "app/connect-client/dist/transfer.js").read_text(), "synthetic transfer")
             self.assertEqual((destination / "app/connect-client/dist/transfer/contract.js").read_text(), "synthetic transfer-contract")
             self.assertEqual(json.loads((destination / "app/connect-client/package.json").read_text()), {"type": "module"})
@@ -74,10 +77,11 @@ class SigningTests(unittest.TestCase):
             self.assertEqual((destination / "app/electron/installer/ui/src/installer/index.html").read_text(), "dist/src/installer/index.html")
             self.assertEqual((destination / "app/dist/pill/index.html").read_text(), "dist/pill/index.html")
             self.assertEqual((destination / "app/electron/pill/t3.cjs").read_text(), "electron/pill/t3.cjs")
-            for name in ("presentation", "hyprland", "selection", "practice", "practice-host"):
+            for name in ("presentation", "hyprland", "selection", "wispr", "practice", "practice-host"):
                 relative = f"dist/onboarding-{name}.cjs"
                 self.assertEqual((destination / "app" / relative).read_text(), relative)
             self.assertTrue((destination / "runtime/electron").is_file())
+            self.assertTrue((destination / "app/electron/settings/update-worker.cjs").is_file())
             self.assertTrue((destination / "app/electron/record-media/worker.js").is_file())
             self.assertTrue((destination / "app/electron/record-media/native/apparent-engine-media").is_file())
             self.assertFalse((destination / "app/electron/pill/native/window.node").exists())

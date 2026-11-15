@@ -1,6 +1,6 @@
 # Onboarding, permissions and Settings
 
-Settings → Agents → Labs offers **Auto paste**, off by default. It saves
+Settings → Labs offers **Auto paste**, off by default. It saves
 `experiments.autoPasteDraft` through the existing config transaction; changes
 apply at the next Finish without restart (including external file edits).
 Linux Hyprland with Lua dispatchers is the initial native adapter; other Linux
@@ -9,13 +9,33 @@ same window to remain focused from Finish through processing and both pastes.
 It never presses Enter. Check the receiving composer; dispatch does not prove
 attachment acceptance. Saved captures and the explicit Paste action remain
 available. Setup practice and agent/phone captures do not auto paste.
-Turning the experiment off restores ordinary copy; no donor surface is removed.
+Turning the experiment off restores ordinary copy. Labs is a separate Electron
+pane between Agents and About, with a flask icon in both sidebars. It shares the
+existing config transaction, with experiment-only read/write capabilities. If
+packaged Settings assets are unavailable, the retained native shell explains how
+to restore Labs; it does not add a second experiment editor.
+
+## Shared onboarding visuals
+
+The Electron tour uses borderless agent artwork, a visual progress bar and shared
+`Keycap` controls. Shortcut practice loops the same tactile press cue used by the
+other teaching gestures; reduced motion disables the loops. The inert Whiteboard
+example uses the production `PillSurface`, sized to its visible row rather than
+the native window's transparent notes reservation. Processing hides the coach and
+keeps status in the existing pill. Native RGB ink renders without palette lookup.
+
+This visual slice retains the current native practice contract: Copied → paste
+steps → explicit paste confirmation → Locate → explicit Finish setup. The new
+paste-to-Settings completion workflow and trusted TypeScript practice-host adoption
+are separate work. Capture facts, permissions, completion receipts and the sole
+progress/config writer remain with the existing native owner. Reverting this
+renderer slice restores the earlier presentation without migrating stored progress.
 
 ## Opening the app
 
 Opening Apparent from the macOS or Linux app picker opens Settings on About,
 including when the app is already running. The shared Electron Settings shell
-provides the sidebar to General, Recording, Storage, Permissions and Agents;
+provides the sidebar to General, Recording, Storage, Permissions, Agents and Labs;
 panes without an accepted Electron replacement retain their native presentation.
 This launch slice reuses that presentation contract and its existing config writer;
 it does not add a second preferences writer. Missing Electron assets or a failed
@@ -65,6 +85,41 @@ links, including Join our Discord, open the browser; Show welcome tour invokes t
 Focused controls own Enter/Space, so a version-copy or tour activation cannot
 also accept an update. Existing native routing and fallbacks are unchanged.
 
+Linux update checks converge on the latest published release of the selected
+channel, including from forks, modified builds and newer versions. Stable can
+therefore replace a newer Main build. A matching installed channel/release marker
+prevents repeated downloads while the old process awaits restart. Without a
+marker, a clean Main build uses its compiled revision; other builds install the
+selected release once. TypeScript About policy owns this decision, executed by
+the packaged Electron runtime for Settings, CLI and hourly checks. Rust retains
+the sole config writer, release/URL and checksum validation, transaction lock,
+atomic swap and failed-launch recovery. No Git ancestry lookup is needed.
+About dismisses the previous channel's update offer before changing the channel,
+so its next action checks the newly selected release instead of restarting into
+an earlier staged choice. The preference applies on the next check without
+restarting. macOS keeps
+its existing Sparkle feed and has no channel picker. Routing is unchanged; rollback
+must restore the previous native decision and remove its worker/copy together.
+
+### Shared Settings brand hierarchy
+
+The Electron Settings renderer uses Host Grotesk at 48px page titles, 24px
+section headings and 18px body/preference labels (4:2:1.5). Preference labels
+remain medium weight; a setting label is not a section title. Shared Switch
+tracks are Signal when Off and lighter Lilac when On, with Carbon thumbs in
+light mode and white thumbs with a Carbon edge in dark mode. Targets are at
+least 48×44px; utility glyphs remain 16px inside 44px targets. Appearance follows
+the system live and writes no preference. New styles take effect when the
+updated Settings renderer opens; native fallbacks and their routing remain.
+Reverting the renderer/shared CSS restores the prior presentation without
+changing saved settings. No fallback is removed by this styling adoption.
+
+
+At widths up to 700px, shared Electron Settings places navigation above the
+content rather than shrinking type or truncating retention durations. Verify
+the actual 640px viewport after resizing and wait for fonts before measuring
+complete option labels. Compact wordmarks remain at least 120px wide.
+
 ## Mac menu bar icon
 
 The Mac status item keeps the approved lowercase “a” at 18 points. It uses Lilac
@@ -111,8 +166,8 @@ must be available. CLI commands/tests never install the global reporter.
 Live ingestion, grouping and alerts require bounded synthetic verification in an
 isolated project before release; local HTTP tests are not that proof.
 
-The payload allows only a static failure category, version/build, OS/architecture
-and repo-relative source call site. Finalization diagnostics additionally contain
+The payload allows only static failure categories, version/build, OS/architecture,
+repo-relative source call sites and the typed diagnostics below. Finalization diagnostics contain
 up to eight typed native stages with repository source locations and structured
 I/O kind/OS error numbers, when available. These describe the failing boundary,
 not the original error message; an unclassified error can still need local logs.
@@ -132,10 +187,29 @@ share URLs or user paths. Each event gets a random identity; person profiles and
 geolocation are disabled. No session replay/usage tracking. The receiving service
 still sees the connection's IP address; transport is not anonymous.
 
-New non-panic exception types use the same static operation code as their value
+Schema 4 adds updater diagnostics. Linux manual and hourly checks preserve the
+typed error before the Settings string boundary: up to eight native stage/source
+frames, curl or worker exit/signal, HTTP status, numeric rate-limit remaining and
+Retry-After seconds when supplied, I/O kind/OS code and JSON error class. The
+exception name/message and synthetic source frames expose these safe facts in
+PostHog's ordinary error view; fingerprints separate transport and native causes.
+Attempt context identifies the selected channel, validated public target release,
+installed identity kind and match booleans. Arbitrary installed fork IDs are never
+sent. Relaunch failures use the same boundary. macOS reports an allowlisted Sparkle,
+URL-loading, Cocoa, POSIX or other domain category plus its numeric NSError code;
+it retains ordinary no-update/cancel/deferral exclusions.
+No raw error text, response body, URL, request/response headers, credentials or
+runtime paths are serialized. Only explicitly named numeric HTTP headers are
+projected. Existing consent, admission and queue limits apply; manual checks do
+not emit a second generic event after converting an error for the UI. Old events
+cannot be enriched retroactively. Local loopback tests exercise real curl and the
+report queue/HTTP payload without injecting production PostHog events.
+
+New non-panic exception types normally use the same static operation code as their value
 (for example `audio_start_failed` or `electron_renderer_gone`), rather than the
-generic `DesktopOperationError`. Panics retain `RustPanic`. Fingerprints are
-unchanged; historical event names are not rewritten.
+generic `DesktopOperationError`. Panics retain `RustPanic`. Structured updater
+failures use stage-specific names and content-free summaries instead. Historical
+event names and fingerprints are not rewritten.
 
 Reports also carry the full compiled `commit_sha`, `build_modified`,
 `package_version`, `release_version`, `channel`, `environment`, `component`,
@@ -280,6 +354,15 @@ the guided capture lesson. Permission-repair windows retain their existing behav
 
 ### Agents
 
+Agents and About share one live Electron window. Parent-admitted navigation changes
+the React pane and main-process capability checks without reloading the document;
+other panes retain the existing presentation replacement and fallback. Reverting
+this routing restores the previous child-per-pane path. No donor is removed.
+The accepted design uses compact command-copy/help controls, Stock-off/Lilac-on
+switches, a wait cursor during acknowledged saves and shared ErrorDialog popups.
+Error actions are left aligned with recovery first and Close second. Unknown
+preference outcomes require Refresh preference; dismissing never proves a save.
+
 Installed Settings routes Agents to the shared Electron shell on macOS and Linux.
 Desktop's `ui/frontend/src/agents` owns preference defaults, save/readback
 workflow, recovery and fixed skill command. The private parent pipe exposes only
@@ -302,12 +385,16 @@ bundle readers remain compatible.
 `experiments.t3DestinationPicker: true` enables it for subsequent recordings.
 Connecting alone does not enable sending. **Connect T3** explains the one-time
 setup: in T3, open **Settings → Sharing & access → Authorized clients → Create
-link**, allow reading threads and sending messages, and **Copy link**. Return to
-Apparent and choose **Paste pairing link**, check the server shown, then
-**Connect**. No terminal or external Node installation is needed. The full link
+link**, allow reading threads and sending messages, and copy the code or full link.
+Return to Apparent and choose **Paste code or link**, check the server shown,
+then **Connect**. For a code, the editable **T3 server address** defaults to the
+saved server or local T3 (`http://127.0.0.1:3773`); a full link supplies its own
+address. Direct fragment links, legacy query links and hosted app links with an
+embedded backend are supported; preview always shows the actual backend.
+No terminal or external Node installation is needed. The code or link
 stays in Electron main and its short-lived confirmation handle is consumed once;
-clipboard changes cannot switch the server after preview. Closing or cancelling
-clears the pending link. The native shared config transaction stores the private
+clipboard changes cannot switch the server after preview. Editing the address,
+closing or cancelling clears the pending confirmation. The native shared config transaction stores the private
 session alongside unrelated preferences; raw tokens never enter the page or logs.
 Settings shows the saved server or expiry, and Disconnect removes its local
 credential without revoking existing server sessions. A confirmed handoff still
@@ -576,24 +663,24 @@ preserve unrelated keys. See [candidate admission and proof](onboarding-release-
 
 ### Compact practice illustrations
 
-The shared Electron coach shows finite four-second key/gesture illustrations on
+The shared Electron coach shows looping four-second key/gesture illustrations on
 start/retry (the saved Record shortcut), screen drawing (Shift and drag), and
 copied/paste (Command V on Mac, Ctrl V on Linux). The inline strip is about
 68–74 points tall; secondary actions share a wrapping row to avoid excess blank
-space in the existing 380×440 coach window. Replay uses the canonical shared
-Button and restarts presentation only. Illustrations send no keys, draw no ink
+space in the existing coach window. Illustrations send no keys, draw no ink
 and advance no Rust milestones. Polling does not restart them; changing practice
-stage does. Reduced motion shows static keys/gesture and hides Replay.
+stage does. There is no Replay control; reduced motion shows static keys/gesture.
 
 Routing and native fallback remain available. The illustrations carry no
 config/data migration and must not be treated as native acceptance. Browser
 video uses synthetic onboarding state; actual Electron checks cover layout,
-saved platform keys, finite playback, replay isolation and reduced motion. New
-installed Mac/Linux acceptance is still required before publishing these illustrations.
+saved platform keys, looping presentation and reduced motion. These checks do
+not establish native capture or permission acceptance on either platform.
 
 During the whiteboard lesson, the Electron board view mirrors only human strokes
 from the native board. Its loose animated example is a separate, inert overlay;
-it is never sent to the capture adapter or counted as completion. Clear removes only real practice ink; replay never clears it. Single-point
+it is never sent to the capture adapter or counted as completion. It loops until
+human ink appears; Clear removes only real practice ink. Single-point
 clicks appear as round dots immediately and after native acknowledgement, matching
 the saved drawing. Pointer cancellation and renderer
 loss discard only an unfinished stroke; guide dismissal restores the native
@@ -605,13 +692,11 @@ Rollback is the existing onboarding renderer fallback. Keep the native board
 adapter until both platforms accept the Electron path; removal requires verified
 Mac and isolated Linux focus, geometry, capture and handoff behavior.
 
-The control illustrations additionally cover Screen → Whiteboard, Finish →
-Copied and the Apparent menu → Open Latest Capture. The real Rust capture phase
-selects the coach; replay/illustrated clicks are local presentation only. Screen
-selection can show only Screen, then the recording-stage coach demonstrates the
-Whiteboard control. The location example opens its menu below the icon with an
-arrow to the matching entry and uses neutral theme roles rather than wallpaper
-tint. These remain finite, replayable and static under reduced motion.
+The real Rust capture phase selects the coach. The Screen and Whiteboard examples
+reuse the production recording controls inertly. The location example opens its
+menu below the icon with an arrow to the matching Open Latest Capture entry and
+uses neutral theme roles rather than wallpaper tint. These examples loop and
+remain static under reduced motion.
 
 ### Required shortcut choice and trial
 
@@ -722,7 +807,8 @@ editor request. Note positions convert native pixels to Electron DIP and back, s
 scaled editors retain their complete controls.
 
 The Electron first-capture start state keeps “One more time.” and the saved shortcut in
-the setup window, shortened to 520 pixels with the keys centered in its content. It becomes the floating coach only after capture selection
+the 760×600 setup window with the keys centered in its content and an animated
+press cue. It becomes the floating coach only after capture selection
 begins; the next shortcut still uses the existing native recording path. Returning
 to the start state restores the setup window. Native fallback routing is unchanged.
 
@@ -756,7 +842,7 @@ shortcut-practice policy into TypeScript, not independent onboarding release or
 migration of the remaining Rust journey/progress writer. Installed Mac/Linux
 shortcut release, capture-start and remembered-progress acceptance remain required.
 
-The same Labs section exposes **Public sharing links**, off by default via
+Settings → Labs also exposes **Public sharing links**, off by default via
 `experiments.hostedSharing`. Enabling it grants no upload consent and uploads
 nothing by itself. The Electron recording controls confirm that anyone with the
 link can view the capture and that the shared copy is not end-to-end encrypted,
@@ -768,3 +854,38 @@ Legacy native controls retain their private-link path and encrypted-sharing refu
 rolling back the Electron command restores that refusal, with no config migration
 or second writer. Installed platform capture and live upload acceptance remain
 separate from synthetic renderer and protocol checks.
+
+### Labs: Wispr onboarding (macOS, default off)
+
+Settings → Labs → **Wispr onboarding** saves
+`experiments.onboardingWisprFlow` through the existing shared config transaction.
+The default is false; enabling it applies when Electron next reaches shortcut
+setup. Direct config edits take effect on the next native onboarding state
+refresh. Disabling it removes the offer; a quit already requested may still finish.
+Linux keeps its existing shortcut flow and cannot enable this Mac-only control.
+
+The TypeScript workflow in `ui/frontend/src/onboarding/wispr/` asks whether Wispr
+Flow is running before an unchosen shortcut. A running app gets the quit/keep-open
+choice. Closed apps skip it; an unavailable check offers retry or continuation.
+The host independently rechecks the saved flag and current native step on each
+request. Its fixed AppKit adapter in `electron/onboarding/wispr.ts` requests normal
+termination of `com.electron.wispr-flow` and observes exit for up to five seconds.
+It never launches Wispr, force-quits, edits Wispr preferences or requests Apple
+Events Automation permission. Refusal/timeout does not trigger the success dunk.
+
+The accepted frog sequence starts only after a closed receipt. The finished pose
+holds for 1.2 seconds, then reveals existing shortcut setup without another click.
+The quit label stays stable; reduced motion uses the final pose and same hold.
+Keep open skips only this offer for the current setup visit. Renderer close/state
+changes invalidate pending callbacks. Existing native fallback, permission and
+capture routing remain authoritative; fallback does not gain this experiment.
+Rollback is turning the flag off. No legacy surface is removed by this slice.
+
+`tests/onboarding/wispr/policy.test.ts` covers admission/defaults and stale receipts;
+`wispr/smoke.ts` uses the built Electron renderer with synthetic native facts.
+On an isolated Mac, `APPARENT_WISPR_NATIVE_TEST=1` enables
+`wispr/macos.test.ts`, which refuses to run against an existing Wispr process and
+uses an owned AppKit fixture for normal quit and refusal. Synthetic proof is not
+verification of an active dictation in the vendor's app. The sprite sheet was
+generated from Apparent's existing frog reference; the key and basket carry no
+Wispr logo.

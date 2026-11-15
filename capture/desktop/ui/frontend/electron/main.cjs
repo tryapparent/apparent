@@ -91,18 +91,20 @@ const { ConnectSettings, actions } = require('./connect.cjs');
 const followWindowTheme = require('@apparent/ui/window-theme');
 nativeTheme.themeSource = 'system';
 const settings = process.argv.includes('--settings-storage');
-const about = settings && process.argv.includes('--settings-about');
-const agents = settings && process.argv.includes('--settings-agents') && !about;
-const settingsHash = about ? '#about' : agents ? '#agents' : '';
+let about = settings && process.argv.includes('--settings-about');
+const labs = settings && process.argv.includes('--settings-labs') && !about;
+let agents = settings && process.argv.includes('--settings-agents') && !about && !labs;
+const settingsHash = about ? '#about' : agents ? '#agents' : labs ? '#labs' : '';
 const { AgentsPreferences, skillCommand, preferenceFacts } = require('./settings/agents.cjs');
 const {PairingLinks} = require('./settings/t3.cjs');
 const pairingLinks = new PairingLinks();
 let t3Approval;
 let pairingPreviewVersion=0;
 const agentsPreferences = new AgentsPreferences(message => {
-  if (!agents || !process.argv.includes('--settings-parent')) throw new Error('Agents parent unavailable');
+  if ((!agents && !labs) || !process.argv.includes('--settings-parent')) throw new Error('Settings parent unavailable');
   process.stdout.write(JSON.stringify(message) + '\n');
 });
+function labsFacts(value){const facts=preferenceFacts(value);return facts.error?{error:facts.error}:{saved:facts.autoPasteSaved??null,supported:facts.autoPasteSupported===true,sharingSaved:facts.sharingSaved??null,wisprSaved:facts.wisprSaved??null,wisprSupported:facts.wisprSupported===true};}
 let aboutState;
 
 // Deliberately separate from the installed application's profile and identity.
@@ -122,7 +124,7 @@ app.whenReady().then(() => {
     ...(settings ? { paintWhenInitiallyHidden: true } : {}),
     width: settings ? 720 : 920, height: settings ? 530 : 760,
     minWidth: 640, minHeight: settings ? 530 : 620,
-    ...(settings ? require('./settings/frame.cjs').settingsWindowOptions(process.platform,agents) : {}),
+    ...(settings ? require('./settings/frame.cjs').settingsWindowOptions(process.platform,about || agents || labs) : {}),
     title: settings ? 'Apparent Settings' : 'Apparent — UI foundation',
     backgroundColor: followWindowTheme.backgroundColor(nativeTheme),
     webPreferences: {
@@ -198,6 +200,11 @@ app.whenReady().then(() => {
     settingsCommitted = true;
     return showSettings();
   });
+  ipcMain.handle('apparent:settings-route', (event, ...args) => {
+    validate(event, args);
+    if (!settings || (!about && !agents)) throw new Error('Unavailable outside the shared Settings shell');
+    return about ? 'about' : 'agents';
+  });
   ipcMain.handle('apparent:settings-frame-ready', (event, ...args) => {
     validate(event, args);
     if (!settings) throw new Error('Unavailable outside Settings');
@@ -240,15 +247,11 @@ app.whenReady().then(() => {
     if (!agents || args.length !== 1 || typeof args[0] !== 'boolean') throw new Error('Forbidden Agents preference');
     return agentsPreferences.request(args[0], 't3');
   });
-  ipcMain.handle('apparent:agents-sharing-preference', (event, ...args) => {
-    validate(event, []);
-    if (!agents || args.length !== 1 || typeof args[0] !== 'boolean') throw new Error('Forbidden sharing preference');
-    return agentsPreferences.request(args[0], 'sharing');
-  });
-  ipcMain.handle('apparent:agents-auto-paste-preference', (event, ...args) => {
-    validate(event, []);
-    if (!agents || process.platform !== 'linux' || args.length !== 1 || typeof args[0] !== 'boolean') throw new Error('Forbidden auto paste preference');
-    return agentsPreferences.request(args[0], 'autoPaste');
+  ipcMain.handle('apparent:labs-preference',(event,...args)=>{
+    validate(event,[]);
+    const setting=args[1]??'autoPaste';
+    if(!labs||args.length>2||!['autoPaste','sharing','wisprFlow'].includes(setting)||args.length>0&&(typeof args[0]!=='boolean'||setting==='autoPaste'&&process.platform!=='linux'||setting==='wisprFlow'&&process.platform!=='darwin'))throw Error('Forbidden Labs preference');
+    return agentsPreferences.request(args[0],setting).then(labsFacts);
   });
   ipcMain.handle('apparent:agents-copy-skill', (event, ...args) => {
     validate(event, args);
@@ -256,11 +259,11 @@ app.whenReady().then(() => {
     return clipboard.writeText(skillCommand);
   });
   ipcMain.handle('apparent:agents-t3-preview', async (event, ...args) => {
-    validate(event,args);
-    if (!agents || !process.argv.includes('--settings-parent') || t3Approval) throw Error('T3 connection unavailable');
+    validate(event,[]);
+    if (!agents || !process.argv.includes('--settings-parent') || t3Approval || args.length>1 || args.length===1&&(typeof args[0]!=='string'||args[0].length>2048)) throw Error('T3 connection unavailable');
     const version=++pairingPreviewVersion;pairingLinks.clear();
-    try { const link=await clipboard.readText();if(settingsClosing||version!==pairingPreviewVersion)throw Error('Preview cancelled');return {preview:pairingLinks.preview(link)}; }
-    catch { return {error:'Copy a full pairing link from T3, then paste it here.'}; }
+    try { const link=await clipboard.readText();if(settingsClosing||version!==pairingPreviewVersion)throw Error('Preview cancelled');return {preview:pairingLinks.preview(link,args[0])}; }
+    catch { return {error:'Copy a T3 code or full link. For a code, check the server address and use HTTPS or localhost.'}; }
   });
   ipcMain.handle('apparent:agents-t3-connect', async (event, ...args) => {
     validate(event, []);
@@ -284,13 +287,13 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('apparent:navigate-settings', (event, ...args) => {
     validate(event, []);
-    const destinations = ['general', 'recording', 'permissions', 'agents', 'storage', 'about'].filter(pane => pane !== (about ? 'about' : agents ? 'agents' : 'storage'));
+    const destinations = ['general', 'recording', 'permissions', 'agents', 'labs', 'storage', 'about'].filter(pane => pane !== (about ? 'about' : agents ? 'agents' : labs ? 'labs' : 'storage'));
     if (!settings || args.length !== 1 || !destinations.includes(args[0])) throw new Error('Forbidden Settings page');
     process.stdout.write(`${JSON.stringify({ action: 'navigate', pane: args[0] })}\n`);
   });
   ipcMain.handle('apparent:show-capture-folder', (event, ...args) => {
     validate(event, args);
-    if (!settings || agents) throw new Error('Unavailable outside Storage Settings');
+    if (!settings || agents || labs || about) throw new Error('Unavailable outside Storage Settings');
     process.stdout.write(`${JSON.stringify({ action: 'show-captures' })}\n`);
   });
   if (settings) {
@@ -308,12 +311,22 @@ app.whenReady().then(() => {
           aboutState = command;
           window.webContents.send('apparent:about-state', command);
         }
-        if (agents && command.type === 'agents-result') agentsPreferences.receive(command);
+        if ((agents||labs) && command.type === 'agents-result') agentsPreferences.receive(command);
+        if(labs&&command.type==='agents-state')window.webContents.send('apparent:labs-state',labsFacts(command.facts));
         if (agents && command.type === 'agents-state') {
           window.webContents.send('apparent:agents-state', preferenceFacts(command.facts));
         }
         if (command.type === 'close') closeSettings();
-        if (command.type === 'show') showSettings();
+        if (command.type === 'show') {
+          if ((about || agents) && ['agents', 'about'].includes(command.pane)) {
+            if (agents && command.pane === 'about') {
+              ++pairingPreviewVersion; pairingLinks.clear(); t3Approval?.abort(); agentsPreferences.close();
+            }
+            about = command.pane === 'about'; agents = !about;
+            window.webContents.send('apparent:settings-route', command.pane);
+          }
+          showSettings();
+        }
       } catch { /* malformed parent message has no effect */ }
     });
     lines.on('close', closeSettings);
@@ -411,7 +424,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('apparent:read-capture-location', async (event, ...args) => {
     validate(event, args);
-    if (agents) throw new Error('Unavailable in Agents');
+    if (agents||labs) throw new Error('Unavailable in this Settings pane');
     const version = storageVersion;
     const result = await location.read();
     return version === storageVersion ? result : { status: 'cancelled' };
@@ -419,7 +432,7 @@ app.whenReady().then(() => {
   for (const operation of ['change', 'reset']) {
     ipcMain.handle(`apparent:${operation}-capture-location`, async (event, ...args) => {
       validate(event, args);
-      if (agents) throw new Error('Unavailable in Agents');
+      if (agents||labs) throw new Error('Unavailable in this Settings pane');
       if (mutation) return { status: 'error', code: 'app_busy' };
       mutation = true;
       storageVersion += 1;
@@ -459,13 +472,13 @@ app.whenReady().then(() => {
   }
   ipcMain.handle('apparent:read-retention', async (event, ...args) => {
     validate(event, args);
-    if (agents) throw new Error('Unavailable in Agents');
+    if (agents||labs) throw new Error('Unavailable in this Settings pane');
     const version = storageVersion;
     return retention.read(version, () => version === storageVersion);
   });
   ipcMain.handle('apparent:read-capture-usage', async (event, ...args) => {
     validate(event, args);
-    if (agents) throw new Error('Unavailable in Agents');
+    if (agents||labs) throw new Error('Unavailable in this Settings pane');
     const version = storageVersion;
     return retention.measure(() => version === storageVersion);
   });
@@ -473,7 +486,7 @@ app.whenReady().then(() => {
     ipcMain.handle(`apparent:${operation}-retention`, async (event, ...args) => {
       const policy = operation === 'save' ? args[0] : undefined;
       validate(event, operation === 'save' && args.length === 1 ? [] : args);
-      if (agents) throw new Error('Unavailable in Agents');
+      if (agents||labs) throw new Error('Unavailable in this Settings pane');
       if (operation === 'save' && !isRetentionPolicy(policy)) {
         throw new Error('Invalid retention policy');
       }

@@ -5,7 +5,7 @@ trap 'printf "scenario failed at line %s: %s\n" "$LINENO" "$BASH_COMMAND" >&2' E
 export UPDATER_EXPECTED_SOURCE_HEAD='__UPDATER_EXPECTED_SOURCE_HEAD__'
 export UPDATER_EXPECTED_SHA256='__UPDATER_EXPECTED_SHA256__'
 export UPDATER_CHANNEL='__UPDATER_CHANNEL__'
-export UPDATER_CANDIDATE_ID='v999.0.0'
+export UPDATER_CANDIDATE_ID='v0.0.1'
 if [[ "$UPDATER_CHANNEL" == main ]]; then
   export UPDATER_CANDIDATE_ID='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
   [[ "$UPDATER_EXPECTED_SOURCE_HEAD" != "$UPDATER_CANDIDATE_ID" ]]
@@ -38,6 +38,10 @@ version="$($image --version | awk '{print $2}')"
 original_hash="$(sha256sum "$image" | cut -d' ' -f1)"
 [[ "$original_hash" == "$UPDATER_EXPECTED_SHA256" ]]
 original_inode="$(stat -c %i "$image")"
+# Stable packages have no native release marker until first convergence.
+if [[ "$UPDATER_CHANNEL" == stable ]]; then
+  printf '{"channel":"stable","id":"v%s"}\n' "$version" > "$image.apparent-update.json"
+fi
 printf '%s\n' "$original_hash" > "$out/candidate.sha256"
 serial=0
 control() {
@@ -95,28 +99,23 @@ manual() {
 }
 manual current
 ui '{"op":"assert","text":"No update available","label":"no-update"}'
-ui '{"op":"click","text":"OK","label":"dismiss-current"}'
+ui '{"op":"key","key":"esc","label":"dismiss-current"}'
 manual error
 ui '{"op":"assert","text":"Update check failed","label":"network-error"}'
-ui '{"op":"click","text":"OK","label":"dismiss-error"}'
+ui '{"op":"key","key":"esc","label":"dismiss-error"}'
 manual current
 ui '{"op":"assert","text":"No update available","label":"retry-succeeded"}'
-ui '{"op":"click","text":"OK","label":"dismiss-retry"}'
-if [[ "$UPDATER_CHANNEL" == main ]]; then
-  manual diverged
-  ui '{"op":"assert","text":"Update check failed","label":"diverged-error"}'
-  [[ "$(stat -c %i "$image")" == "$original_inode" ]]
-  [[ ! -e "$image.apparent-update.json" ]]
-  ui '{"op":"click","text":"OK","label":"dismiss-diverged"}'
-fi
+ui '{"op":"key","key":"esc","label":"dismiss-retry"}'
+# Converge from an unresolvable fork, including an earlier Stable target.
+printf '{"channel":"main","id":"unpublished-fork"}\n' > "$image.apparent-update.json"
 manual bad-checksum
 ui '{"op":"assert","text":"Update check failed","label":"checksum-error"}'
 [[ "$(sha256sum "$image" | cut -d' ' -f1)" == "$original_hash" ]]
 [[ "$(stat -c %i "$image")" == "$original_inode" ]]
-[[ ! -e "$image.apparent-update.json" ]]
+[[ "$(cat "$image.apparent-update.json")" == '{"channel":"main","id":"unpublished-fork"}' ]]
 [[ -z "$(find "$(dirname "$image")" -maxdepth 1 -name '.*.download-*' -o -name '.*.update-*')" ]]
 status checksum-error
-ui '{"op":"click","text":"OK","label":"dismiss-checksum"}'
+ui '{"op":"key","key":"esc","label":"dismiss-checksum"}'
 manual available
 ui '{"op":"assert","text":"Update available","label":"available"}'
 ui '{"op":"click","text":"Update later","label":"defer"}'
@@ -145,17 +144,6 @@ ui '{"op":"assert","text":"Update available","label":"staged-result"}'
 ui '{"op":"key","key":"esc","label":"escape-defer"}'
 ui '{"op":"assert-dismissed","label":"escape-dismissed"}'
 assert_deferred escape-deferred
-if [[ "$UPDATER_CHANNEL" == main ]]; then
-  # A stale feed must not replace the already-staged descendant with source HEAD.
-  manual current
-  ui '{"op":"assert","text":"Update available","label":"stale-feed-pending"}'
-  assert_deferred stale-feed
-  [[ "$(stat -c %i "$image")" == "$(cat "$out/staged-inode.txt")" ]]
-  [[ "$(stat -c %i "$backup")" == "$original_inode" ]]
-  ui '{"op":"click","text":"Update later","label":"stale-feed-defer"}'
-  ui '{"op":"assert-dismissed","label":"stale-feed-dismissed"}'
-  control available
-fi
 ui '{"op":"click","text":"Check for Updates","label":"check-before-relaunch"}'
 ui '{"op":"assert","text":"Update available","label":"relaunch-offered"}'
 if [[ "$UPDATER_CHANNEL" == main ]]; then
@@ -271,16 +259,10 @@ requests=[json.loads(line) for line in open(sys.argv[1])]
 main=os.environ['UPDATER_CHANNEL']=='main'
 metadata='/repos/tryapparent/apparent/releases?per_page=100&page=1'
 counts=Counter(r['control']['serial'] for r in requests if r['control']['gate'] and r['path']==metadata)
-assert counts == ({2:1,3:1,4:1,5:1,6:1,7:1,9:1} if main else {2:1,3:1,4:1,5:1,6:1}), counts
+assert counts == {2:1,3:1,4:1,5:1,6:1}, counts
 downloads=[r for r in requests if r['path'].endswith('.AppImage')]
 assert len(downloads)==2, downloads  # rejected checksum, then staged; no re-download on recheck
 assert not any(r['control']['serial']==1 for r in downloads), downloads
-if main:
-    compare='/repos/tryapparent/apparent/compare/'
-    source=os.environ['UPDATER_EXPECTED_SOURCE_HEAD']; candidate=os.environ['UPDATER_CANDIDATE_ID']
-    query='?per_page=1&page=2'
-    assert any(r['path']==compare+source+'...'+candidate+query and r['control']['mode']=='diverged' for r in requests), requests
-    assert any(r['path']==compare+candidate+'...'+source+query and r['control']['serial']==9 for r in requests), requests
-    assert not any(r['control']['serial'] in (1,5,9) for r in downloads), downloads
+assert not any('/compare/' in r['path'] for r in requests), requests
 PY
 printf 'UPDATER_GUI_PASS\n'

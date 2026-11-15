@@ -12,7 +12,7 @@ const token = '0123456789abcdef0123456789abcdef';
 const key = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 test('mailbox signs only owned state and uses a separate authenticated acknowledgement', async () => {
   const port = await availablePort();
-  let view: View = { phase: 'recording', source: '/private/not-saved.apparent' };
+  let view: View = { phase: 'recording', bundlePath: '/private/not-saved.apparent', remoteSource: 'cccccccccccccccccccccccccccccccc' };
   let acks = 0;
   const server = await mailbox(token, port, key, () => view, () => { acks++; view = { phase: 'cancelled' }; });
   const id = await mailboxId(token);
@@ -27,9 +27,9 @@ test('mailbox signs only owned state and uses a separate authenticated acknowled
     assert.equal((await read('state')).status, 404);
     assert.equal((await read(`state/${await sign(token, `state:${id}`)}`)).status, 404);
     assert.equal((await read(ack)).status, 404);
-    view = { phase: 'saved', source: '/private/owned.apparent' };
+    view = { phase: 'saved', bundlePath: '/private/owned.apparent', remoteSource: 'dddddddddddddddddddddddddddddddd', source: 'dddddddddddddddddddddddddddddddd' };
     const packet = await (await read()).json();
-    assert.equal((await authenticatedState(key, packet)).source, '/private/owned.apparent');
+    assert.deepEqual(await authenticatedState(key, packet), { phase: 'saved', bundlePath: '/private/owned.apparent', remoteSource: 'dddddddddddddddddddddddddddddddd', source: 'dddddddddddddddddddddddddddddddd' });
     await assert.rejects(authenticatedState(token, packet), /Unauthenticated/);
     assert.equal((await read(`ack/${await sign(token, `ack:${id}`)}`)).status, 404);
     assert.equal((await read('ack/' + packet.mac)).status, 404);

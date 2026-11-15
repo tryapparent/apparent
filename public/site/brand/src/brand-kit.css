@@ -70,10 +70,26 @@ body.brand-reading-route { color-scheme:normal; }
 .bb-reader-body .bb-download-row a { font-size:1rem; }
 .bb-library label { display:block; }
 .bb-library .bb-secondary { color:var(--apparent-color-signal); border-color:var(--apparent-color-signal); }
-.bb-switch { display:inline-flex; align-items:center; justify-content:center; width:48px; min-width:48px; height:44px; padding:0; border:0; border-radius:0; background:transparent; cursor:pointer; }
-.bb-switch-track { display:block; position:relative; width:48px; height:24px; border:0; outline:0; border-radius:12px; background:var(--apparent-color-lilac); }
-.bb-switch-thumb { position:absolute; left:3px; top:3px; width:18px; height:18px; border:0; border-radius:50%; background:var(--apparent-color-carbon); }
-.bb-switch[aria-checked=true] .bb-switch-thumb { transform:translateX(24px); }
+.bb-switch-specimen { padding:1rem; margin:1rem 0; background:var(--apparent-color-paper); color:var(--apparent-color-carbon); }
+.bb-switch-specimen h4 { margin:0 0 1rem; font-size:1.125rem; font-weight:500; }
+.bb-switch-specimen .bb-control-row { justify-content:space-between; }
+.bb-switch-dark { background:var(--apparent-color-carbon); color:var(--apparent-color-paper); }
+.bb-switch-specimen .bb-switch { --color-ring:var(--apparent-color-signal); padding:0; border:0; width:48px; min-width:48px; height:44px; background:transparent; box-shadow:none; }
+.bb-switch-dark .bb-switch { --color-ring:var(--apparent-color-lilac); }
+.bb-library {
+  --apparent-carbon:var(--apparent-color-carbon);
+  --apparent-switch-off-track:var(--apparent-desktop-settings-switch-off-track);
+  --apparent-switch-on-track:var(--apparent-desktop-settings-switch-on-track);
+  --apparent-switch-light-thumb:var(--apparent-desktop-settings-switch-light-thumb);
+  --apparent-switch-dark-thumb:var(--apparent-desktop-settings-switch-dark-thumb);
+}
+/* Fixed specimens show both themes regardless of the reader's system theme. */
+.bb-switch-light .bb-switch { --apparent-switch-thumb:var(--apparent-switch-light-thumb); }
+.bb-switch-dark .bb-switch { --apparent-switch-thumb:var(--apparent-switch-dark-thumb); }
+.bb-type-hierarchy { padding:1.5rem; background:var(--apparent-color-stock); }
+.bb-type-hierarchy .bb-type-title { font-size:var(--apparent-font-size-heading); line-height:var(--apparent-line-height-heading); font-weight:700; margin:0 0 1.5rem; overflow-wrap:anywhere; }
+.bb-type-hierarchy .bb-type-section { font-size:var(--apparent-font-size-section); line-height:var(--apparent-line-height-section); font-weight:500; margin:0 0 1rem; }
+.bb-type-hierarchy p { font-size:var(--apparent-font-size-body); line-height:var(--apparent-line-height-body); margin:0; }
 .bb-reader-body a { color:var(--apparent-color-signal); }
 .bb-library label { font-weight:500; }
 
@@ -83,3 +99,20 @@ body.brand-reading-route { color-scheme:normal; }
 .bb-skip:focus { transform:none; }
 #brand-content { scroll-margin-top:80px; }
 .bb-reader-body .bb-download-row a { color:var(--apparent-color-paper); }
+/* Text enlargement must not leave the fixed-width header or logo rules wider
+   than the reading surface. */
+.bb-reader-header, .bb-reader-header > div { flex-wrap:wrap; }
+.bb-reader-header > div { min-width:0; }
+.bb-construction-values { grid-template-columns:repeat(4,minmax(0,1fr)); }
+.bb-construction-values > div { min-width:0; overflow-wrap:anywhere; }
+.bb-switch-specimen .bb-control-row { display:grid; grid-template-columns:minmax(0,1fr) 48px 3ch; gap:1rem; }
+@media(max-width:900px) { .bb-construction-values { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:520px) { .bb-construction-values { grid-template-columns:minmax(0,1fr); } }
+.bb-path-list code { min-width:0; overflow-wrap:anywhere; }
+.bb-icon-sample > div { min-width:0; overflow-wrap:anywhere; }
+@media(max-width:600px) {
+  .bb-icon-sample { grid-template-columns:minmax(0,1fr); }
+  .bb-data-example > div { grid-template-columns:minmax(0,1fr); }
+  .bb-data-example b { grid-column:1; text-align:start; }
+}
+.bb-reader-document { overflow-wrap:anywhere; }

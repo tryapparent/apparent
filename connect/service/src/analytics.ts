@@ -1,5 +1,6 @@
 // Explicit server-side product events only. Never pass requests, exceptions,
 // credentials, paths, manifests, recording content or arbitrary properties here.
+import {forgetProductActivity} from './reporting/product-activity.ts';
 import type {Env} from './types.ts';
 import {DAY,fail,hash,random,stmt} from './common.ts';
 interface Activity {
@@ -49,6 +50,7 @@ export async function setAnalyticsChoice(env:Env,account:string,consented:boolea
   ]);
  }catch{fail('analytics_unavailable',503);}
  if(!results[0].meta.changes)fail('consent_changed',409);
+ if(!consented)try{await forgetProductActivity(env,account);}catch{/* Scheduled cleanup retries; missing pre-migration schema is compatible. */}
  return analyticsChoice(env,account);
 }
 export async function analyticsIdentity(env:Env,account:string) {

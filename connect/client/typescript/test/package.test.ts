@@ -7,7 +7,7 @@ import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
 const owner=fileURLToPath(new URL('..',import.meta.url));
-const builtModules=['transfer','transfer/contract','transfer/files','foreground','handoff','index','shares','mcp-wire','mcp-files','mcp-bundle','mcp-endpoint','mcp-cli','mcp/stdio'];
+const builtModules=['activity/index','transfer','transfer/contract','transfer/files','foreground','handoff','index','shares','mcp-wire','mcp-files','mcp-bundle','mcp-endpoint','mcp-cli','mcp/stdio'];
 const builtFiles=builtModules.flatMap(name=>[name+'.d.ts',name+'.js']).sort();
 function run(command:string,args:string[],cwd:string,env=process.env):string {
   return execFileSync(command,args,{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe']});
@@ -71,6 +71,11 @@ test('packed consumer installs and runs without Rust, compilers or source resolu
   }));
   // Scripts deliberately enabled: a hidden consumer build must fail.
   run('npm',['ci','--offline','--ignore-scripts=false','--no-audit','--no-fund'],consumer,env);
+  const activityPolicy=path.join(consumer,'node_modules/@apparent/connect-crypto/dist/activity/index.js');
+  for(const [connected,practice,operation] of [[true,false,'recording-started'],[true,true,'skip'],[false,false,'skip']] as const){
+    const output=execFileSync(process.execPath,[activityPolicy],{cwd:consumer,env,input:JSON.stringify({connected,practice,recording:true})+'\n',encoding:'utf8'});
+    assert.deepEqual(JSON.parse(output),{operation});
+  }
   run(process.execPath,['--input-type=module','-e',`
     import assert from 'node:assert/strict';
     import {generateAgeIdentity,encryptAge,decryptAge,signEnvelope,verifyEnvelope} from '@apparent/connect-crypto';

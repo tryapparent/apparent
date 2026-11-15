@@ -142,8 +142,8 @@ test('portable checks execute once; nested platforms consume plans rather than e
   assert.equal(platform.on.workflow_call.inputs.plan.default, '');
   assert.ok(platform.jobs.select.steps.some((s: any) => s.run?.includes('--portable') && s.if === 'inputs.portable'));
   assert.doesNotMatch(readFileSync(new URL('.github/workflows/verification-platform.yml', root), 'utf8'), /hash-object -t tree/);
-  assert.equal(platform.jobs['desktop-ui'].if, "needs.select.outputs.desktop == 'true'");
-  assert.equal(platform.jobs['connect-client'].if, "needs.select.outputs.client == 'true'");
+  assert.equal(platform.jobs['desktop-ui'].if, "(inputs.runner != 'macos-15-intel' || inputs.release_receipt) && needs.select.outputs.desktop == 'true'");
+  assert.equal(platform.jobs['connect-client'].if, "(inputs.runner != 'macos-15-intel' || inputs.release_receipt) && needs.select.outputs.client == 'true'");
   assert.match(platform.jobs.rust.if, /outputs.root.*outputs.engine/);
   assert.ok(ci().jobs.portable.steps.some((s: any) => s.run?.includes('--portable')));
 });
@@ -196,6 +196,7 @@ test('standalone Enablement regression tests select tooling while execution inpu
     assert.deepEqual(localCommands(['tooling'], 'base', 'head').map(command => command.argv), [
       ['python3', 'enablement/verification.py', '--base', 'base', '--head', 'head', '--pr'],
       ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/desktop-install.test.ts'],
+      ['node', '--experimental-strip-types', '--test', 'enablement/posthog-fixer/test/service.test.ts', 'enablement/posthog-fixer/test/t3.test.ts'],
       ['python3', '-m', 'unittest', 'discover', '-s', 'enablement/directory-width/tests', '-p', 'test_*.py'],
     ]);
     assert.ok(contractTests().some(command => command.argv.includes(path)), `${path} remains in the mandatory full contract inventory`);
@@ -205,6 +206,20 @@ test('standalone Enablement regression tests select tooling while execution inpu
   assert.deepEqual(selectedOwners(['enablement/prerequisites/new-regression.test.ts']), ['tooling']);
   assert.deepEqual(selectedOwners([audited[0], 'capture/engine/src/lib.rs']), ['engine', 'tooling']);
 });
+
+test('PostHog fix service additions select portable tooling without product publication', () => repository((git,dir) => {
+  git('init', '-q');git('config','user.name','Synthetic');git('config','user.email','synthetic@example.invalid');
+  writeFileSync(join(dir,'baseline'),'synthetic');git('add','.');git('commit','-qm','baseline');const base=git('rev-parse','HEAD');
+  mkdirSync(join(dir,'enablement/posthog-fixer/test'),{recursive:true});
+  for(const path of ['main.ts','apparent-posthog-fixer.service','README.md','test/service.test.ts'])
+    writeFileSync(join(dir,'enablement/posthog-fixer',path),'synthetic');
+  git('add','.');git('commit','-qm','service');const head=git('rev-parse','HEAD');
+  const selected=selectRange(base,head,dir);
+  assert.deepEqual(selected.selected,['tooling']);assert.equal(selected.macos,false);
+  assert.ok(Object.values(selected.publicationStreams).every(value=>!value));
+  assert.ok(localCommands(selected.selected,base,head).some(command=>command.argv.includes('enablement/posthog-fixer/test/service.test.ts')));
+  assert.ok(!selectedOwners(['enablement/posthog-fixer/native.rs']).every(owner=>owner==='tooling'),'unexpected native input stays conservative');
+}));
 
 function repository(action: (git: (...args: string[]) => string, dir: string) => void) {
   const dir = mkdtempSync((process.env.TMPDIR || '/tmp') + '/apparent-dev-selector-');
@@ -356,6 +371,54 @@ test('audited onboarding pipe addition retains native consumers and local/CI par
     assert.equal(selected.inputProofKnown,operation==='mixed-native',operation);
   }
 }));
+test('Wispr onboarding additions retain native proof and reject unknown or unsafe neighbors', () => repository((git,dir) => {
+  const frontend='capture/desktop/ui/frontend/';
+  writeFileSync('README.md','baseline');git('add','.');git('commit','-qm','base');const base=git('rev-parse','HEAD');
+  const inputs=['electron/onboarding/wispr.ts','src/onboarding/wispr/motion.ts','src/onboarding/wispr/use-wispr.ts',
+    'src/onboarding/wispr/frog-sprites.png','tests/onboarding/wispr/smoke.ts'];
+  for(const path of inputs){mkdirSync(join(frontend,path.slice(0,path.lastIndexOf('/'))),{recursive:true});writeFileSync(frontend+path,'fixture');}
+  git('add','.');git('commit','-qm','Wispr inputs');const head=git('rev-parse','HEAD');
+  const hosted=cli(base,head,dir),local=localSelection(base,head,dir);
+  assert.equal(hosted.inputProofKnown,true);assert.deepEqual(hosted.plan,local.plan);
+  for(const suite of ['root','desktop','onboarding'])assert.equal(hosted.plan[suite],true,suite);
+  for(const suite of ['service','browser','public','hermes','engineMedia'])assert.equal(hosted.plan[suite],false,suite);
+  assert.equal(hosted.macos,true);assert.equal(hosted.mac_rust,true);assert.deepEqual(routingProblems(hosted),[]);
+  for(const operation of ['unknown-neighbor','executable','symlink']){
+    git('checkout','--detach',head);const path=frontend+inputs[0];
+    if(operation==='unknown-neighbor')writeFileSync(frontend+'electron/onboarding/unknown.ts','export {};');
+    if(operation==='executable')chmodSync(path,0o755);
+    if(operation==='symlink'){unlinkSync(path);symlinkSync('other.ts',path);}
+    git('add','.');git('commit','-qm',operation);
+    const result=cli(base,git('rev-parse','HEAD'),dir);
+    assert.equal(result.inputProofKnown,false,operation);assert.equal(result.macos,true,operation);
+  }
+}));
+test('reviewed control-guide relocation keeps both renderer consumers and rejects unrelated deletion', () => repository((git,dir) => {
+  const source='capture/desktop/ui/frontend/src/onboarding/';
+  mkdirSync(source+'controls',{recursive:true});
+  for(const name of ['control-guide.tsx','control-guide.css','unknown.tsx'])writeFileSync(source+name,'before');
+  git('add','.');git('commit','-qm','original guides');const base=git('rev-parse','HEAD');
+  for(const name of ['control-guide.tsx','control-guide.css'])git('mv',source+name,source+'controls/'+name);
+  git('commit','-qm','move reviewed guides');const head=git('rev-parse','HEAD');
+  const hosted=cli(base,head,dir),local=localSelection(base,head,dir);
+  assert.equal(hosted.inputProofKnown,true);assert.equal(hosted.plan.desktop,true);assert.equal(hosted.plan.onboarding,true);
+  assert.equal(hosted.macos,true,'a reviewed retirement retains platform proof');
+  assert.equal(hosted.mac_rust,false,'renderer-only guides retain Mac Electron coverage without adding Rust consumers');
+  for(const suite of ['engine','engineMedia','hermes','service','browser','public'])assert.equal(hosted.plan[suite as keyof typeof hosted.plan],false,suite);
+  assert.deepEqual(hosted.plan,local.plan);assert.deepEqual(routingProblems(hosted),[]);
+  for(const name of ['control-guide.tsx','control-guide.css']){
+    assert.ok(hosted.paths.includes(source+name));assert.ok(hosted.paths.includes(source+'controls/'+name));
+  }
+  git('rm',source+'unknown.tsx');git('commit','-qm','unknown deletion');
+  const unknown=cli(base,git('rev-parse','HEAD'),dir);assert.equal(unknown.inputProofKnown,false);assert.equal(unknown.plan.engine,true);
+  git('checkout','--detach',base);
+  mkdirSync(source+'controls',{recursive:true});
+  for(const name of ['control-guide.tsx','control-guide.css'])git('mv',source+name,source+'controls/'+name);
+  unlinkSync(source+'controls/control-guide.tsx');symlinkSync('elsewhere',source+'controls/control-guide.tsx');
+  git('add','.');git('commit','-qm','unsafe moved guide');
+  const unsafe=cli(base,git('rev-parse','HEAD'),dir);
+  assert.equal(unsafe.inputProofKnown,false);assert.equal(unsafe.mac_rust,true);
+}));
 for (const path of presentationInputs) test('renderer-only proof retains Mac Electron while mixed/native and unsafe statuses retain Rust: '+path, () => repository((git,dir) => {
   mkdirSync(path.slice(0,path.lastIndexOf('/')),{recursive:true});writeFileSync(path,'before');git('add','.');git('commit','-qm','base');const base=git('rev-parse','HEAD');
   writeFileSync(path,'after');git('commit','-qam','edit');const head=git('rev-parse','HEAD');
@@ -411,8 +474,8 @@ test('recipient playback provisions FFmpeg and stable Chrome before the portable
 });
 
 test('audited Record inputs retain Desktop and native platform consumers only', () => {
-  for (const pkg of ['storage', 'completion']) {
-    for (const input of ['src/policy.ts', 'test/policy.test.ts', 'package.json', 'package-lock.json', 'tsconfig.json', ...(pkg === 'storage' ? ['build.ts'] : [])]) {
+  for (const pkg of ['storage', 'completion', 'capture-request']) {
+    for (const input of ['src/policy.ts', 'test/policy.test.ts', 'package.json', 'package-lock.json', 'tsconfig.json', ...(pkg === 'storage' ? ['build.ts'] : []), ...(pkg === 'capture-request' ? ['tsconfig.build.json'] : [])]) {
       const paths = [`record/${pkg}/${input}`];
       assert.deepEqual(selectedOwners(paths), ['capture', 'desktop', 'onboarding']);
       assert.deepEqual(suitePlan(paths), {root: true, engine: false, desktop: true, client: false, foreground: false,
@@ -503,4 +566,13 @@ test('Mac release admits a selected source before checkout, version resolution o
     assert.equal(resolved.status, 0, resolved.stderr);
     assert.equal(readFileSync(output, 'utf8'), `tag=preview-mac-22-3\nsha=${sha}\n`);
   } finally { rmSync(dir, {recursive: true, force: true}); }
+});
+
+test('Hermes consumes the shared composer mark in both routing and isolated packaging', () => {
+  const asset = 'shared/assets/brand/apparent-app-icon.svg';
+  assert.deepEqual(new Set(selectedOwners([asset])), new Set(['public', 'web', 'desktop', 'service', 'capture', 'hermes']));
+  const clean = workflow('hermes.yml').jobs.clean;
+  const checkout = clean.steps.find((step: any) => step.uses?.startsWith('actions/checkout@'));
+  assert.equal(checkout.with['sparse-checkout-cone-mode'], false);
+  assert.deepEqual(checkout.with['sparse-checkout'].trim().split('\n'), ['/hermes/', '/' + asset]);
 });

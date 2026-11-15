@@ -9,6 +9,13 @@ workflow edits select tooling alone; execution-sensitive workflow changes retain
 integration coverage. Hosted and local execution call the same range selector and
 named suite plan; see [the CI contract](../docs/continuous-delivery.md).
 
+The always-run contracts discover `*.test.ts` recursively inside the audited
+`enablement/timing/` owner through `local-tests/contracts.ts`. Adding a timing
+test requires no edit to the shared executor and keeps tooling selection. The
+inventory rejects symlinks and empty roots. Adding an owner root or changing the
+loader/executor remains an execution-definition change with conservative
+verification; this is not a repository-wide test-file exemption.
+
 ## Explain a candidate before pushing
 
 After committing a slice, preview the full merge-base delta with the same
@@ -61,7 +68,7 @@ For native integration setup, install the locked frontend dependencies with
 `npm --prefix capture/desktop/ui/frontend ci --no-audit --no-fund`, then run
 `node --experimental-strip-types enablement/prerequisites/native.ts` from the
 repository root. CI uses the same preparation entrypoint. It checks the local
-Electron executable before compiling Storage, Connect and Record artifacts,
+Electron executable before compiling Storage, Connect, updater and Record artifacts,
 then validates the required files (and parses the Mac picker on macOS). Missing
 generated output is rebuilt; a runtime or generator failure stops preparation.
 Rerun after disposable outputs are cleaned. This prepares inputs without Cargo
@@ -207,7 +214,8 @@ environment and file/dependency invalidation, and mutation during verification.
 Real package timing evidence is recorded separately from these synthetic tests.
 
 Audited TypeScript sources/tests and package manifests, locks and tsconfig in
-`record/storage` and `record/completion` select Desktop plus native capture.
+`record/storage`, `record/completion` and `record/capture-request` select Desktop
+plus native capture.
 Storage's `build.ts` has the same consumers. Desktop's canonical `npm test`
 includes both Record test inventories; its Electron build generates the Storage
 adapters and Completion worker, which settings packaging stages for the native

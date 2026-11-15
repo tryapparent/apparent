@@ -1,26 +1,31 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@apparent/ui/button';
+import {Keycap} from '@apparent/ui/keycap';
 import { Whiteboard, type BoardView } from './board/whiteboard';
 import { recordKeys } from './shortcut/keys';
 import frog from '../../../../assets/onboarding/frog.png';
 import './onboarding.css';
 import { savePen } from './pen/save';
 import { GestureGuide } from './gesture-guide';
-import { ControlGuide } from './control-guide';
-import { practiceExit } from '../../electron/onboarding/presentation.ts';
+import { ControlGuide } from './controls/control-guide';
 import { AgentSetup } from './agent-setup';
 import { subscribeOnboardingState } from './state';
 import { desktopShortcutSelection, fnSelectionActions, shortcutCapture, shortcutInput } from '../../electron/onboarding/shortcut-editor.ts';
+import {useWisprFlow} from './wispr/use-wispr';
+import {WisprStep} from './wispr/step';
+import type {WisprResult} from '../../electron/onboarding/wispr';
 import { Permissions, type PermissionRow as Row } from './permissions';
 import type { ConnectAction, ConnectSettings } from '../bridge';
 type Action=string|{action:'board';id:string;operation:string;point?:number[]}|{action:'shortcut';kind:'record';keyCode:number;modifiers:number;key:string;reserved:false};
 type Editor={recording:boolean;externallyManaged:boolean;error:string|null};
-type State={boardView?:BoardView|null;tutorial:'skipped'|'watched'|'practiced'|null;platform:'macos'|'linux';shortcutEditor:Editor|null;step:string;ready:boolean;fix:boolean;rows:Row[];index:number;count:number;shortcut:string;shortcutEditing:boolean;shortcutChosen:boolean;shortcutTested:boolean;practice:string|null;firstCaptureRequired:boolean;penSaveId?:string;penPicker:boolean;penSelected:boolean;penError:boolean;penRgb:number[];testInstance:boolean;coachArrow?:number;coachPointsUp?:boolean};
-declare global {interface Window {nativeOnboarding?:{readState:()=>Promise<State|null>;readConnect:()=>Promise<ConnectSettings>;connect:(action:ConnectAction)=>Promise<ConnectSettings>;closeConnect:()=>void;action:(action:Action)=>Promise<boolean>;onState:(listener:(state:State)=>void)=>()=>void;onDesktopShortcut?:(listener:(key:unknown)=>void)=>()=>void}}}
+type State={wisprFlowEnabled?:boolean;boardView?:BoardView|null;tutorial:'skipped'|'watched'|'practiced'|null;platform:'macos'|'linux';shortcutEditor:Editor|null;step:string;ready:boolean;fix:boolean;rows:Row[];index:number;count:number;shortcut:string;shortcutEditing:boolean;shortcutChosen:boolean;shortcutTested:boolean;practice:string|null;firstCaptureRequired:boolean;penSaveId?:string;penPicker:boolean;penSelected:boolean;penError:boolean;penRgb:number[];testInstance:boolean;coachArrow?:number;coachPointsUp?:boolean};
+declare global {interface Window {nativeOnboarding?:{readState:()=>Promise<State|null>;wispr?:(operation:'read'|'quit')=>Promise<WisprResult>;readConnect:()=>Promise<ConnectSettings>;connect:(action:ConnectAction)=>Promise<ConnectSettings>;closeConnect:()=>void;action:(action:Action)=>Promise<boolean>;onState:(listener:(state:State)=>void)=>()=>void;onDesktopShortcut?:(listener:(key:unknown)=>void)=>()=>void}}}
 export function NativeOnboarding(){
   const [wideCoach,setWideCoach]=useState(window.innerWidth>=700);
   useEffect(()=>{const resize=()=>setWideCoach(window.innerWidth>=700);window.addEventListener('resize',resize);return()=>window.removeEventListener('resize',resize)},[]);
+  const [heldKeys,setHeldKeys]=useState<string[]>([]);
   const [state,setState]=useState<State|null>(null),[error,setError]=useState('');
+  const wispr=useWisprFlow(Boolean(state?.wisprFlowEnabled&&state.platform==='macos'&&state.step==='shortcut'&&!state.fix&&!state.shortcutChosen),window.nativeOnboarding?.wispr);
   const currentShortcutState=useRef<State|null>(null),shortcutCancelled=useRef(false);
   const [penPhase,setPenPhase]=useState<'idle'|'preparing'|'hopping'>('idle');
   const penLanding=penPhase==='hopping',penBusy=penPhase!=='idle';
@@ -46,7 +51,7 @@ export function NativeOnboarding(){
   }),[]);
   const shortcutAdvance=useRef<string|null>(null);
   useEffect(()=>{
-    const ready=state?.step==='shortcut'&&state.firstCaptureRequired&&state.shortcutChosen&&state.shortcutTested&&!state.shortcutEditing&&!state.shortcutEditor?.recording;
+    const ready=state?.step==='shortcut'&&state.shortcutChosen&&(state.shortcutTested||!state.firstCaptureRequired)&&!state.shortcutEditing&&!state.shortcutEditor?.recording;
     if(!ready){shortcutAdvance.current=null;return;}
     if(shortcutAdvance.current===state.shortcut)return;
     shortcutAdvance.current=state.shortcut;
@@ -97,8 +102,15 @@ export function NativeOnboarding(){
     }
   }
   const shortcutRecorder=useRef<HTMLDivElement|null>(null);
+  const listeningStep=useRef(false);
+  useEffect(()=>{
+    if(state?.step!=='shortcut'){listeningStep.current=false;return;}
+    if(wispr.visible||listeningStep.current)return;
+    listeningStep.current=true;
+    if(!state.shortcutChosen&&!state.shortcutEditor?.recording)void action('change-shortcut');
+  },[state?.step,wispr.visible]);
   const chooseFn=async()=>{for(const next of fnSelectionActions(state?.platform??'linux',Boolean(state?.shortcutEditor?.recording))){if(!await sendAction(next))break;}};
-  useEffect(()=>{if(state?.shortcutEditor?.recording)shortcutRecorder.current?.focus()},[state?.shortcutEditor?.recording]);
+  useEffect(()=>{setHeldKeys([]);if(!wispr.visible&&state?.shortcutEditor?.recording)shortcutRecorder.current?.focus()},[state?.shortcutEditor?.recording,wispr.visible]);
   if(!state)return <main className="native-setup"><p>Connecting to apparent…</p></main>;
   const goAgain=state.step==='try-it'&&(!state.practice||state.practice==='start');
   const practice=state.step==='try-it'&&!goAgain,penPage=state.step==='welcome'&&state.penPicker;
@@ -114,9 +126,9 @@ export function NativeOnboarding(){
       screen:{title:state.platform==='linux'?'Choose your display.':'Choose Screen.',text:state.platform==='linux'?'Choose a display in the system sharing dialog.':'Choose Screen in the capture controls. Whiteboard becomes available once recording starts.'},
       whiteboard:{title:`Open ${boardName}.`,text:''},
       'board-ink':{title:'Draw on the whiteboard.',text:''},
-      'screen-ink':{title:'Draw on your screen.',text:'Hold Shift and circle something in your window.'},
+      'screen-ink':{title:'Draw on your screen.',text:''},
       stop:{title:'Finish your capture.',text:''},
-      preparing:{title:'Preparing your capture…',text:'Recording has stopped. Your marks and context are being brought together.'},
+      preparing:{title:'',text:''},
       copied:{title:'Copied. Try pasting it.',text:'Your capture is copied. Paste it into your agent.',button:'Show paste steps',action:'practice-paste'},
       paste:{title:'Paste your capture.',text:`In your agent, press ${state.platform==='linux'?'Ctrl':'⌘'} V. Confirm when it appears.`,button:'Confirm paste',action:'practice-pasted'},
       locate:{title:'apparent lives here.',text:state.platform==='linux'?'Right-click the tray icon. Open Latest Capture.':'Click the a in your menu bar, then Open Latest Capture.'},
@@ -124,34 +136,36 @@ export function NativeOnboarding(){
       retry:{title:'Try another capture.',text:`Press ${state.shortcut} to start again, then follow the drawing prompts. Your previous capture is saved.`},
       'copy-failed':{title:'Saved, but not copied.',text:'Your capture is saved. Find it in apparent’s menu.',button:'Find saved capture',action:'practice-locate'},
     };
-    const c=content[practiceStage??'start']??content.start,exit=practiceExit(practiceStage??'start');
+    const c=content[practiceStage??'start']??content.start;
     const guideKind=state.practice==='screen-ink'||state.practice==='note'?'draw':state.practice==='copied'||state.practice==='paste'?'paste':'record';
-    return <><main className="native-coach" data-paired={trackpadHint&&wideCoach} data-stage={practiceStage} data-arrow={state.coachPointsUp} style={{'--coach-arrow':`${(state.coachArrow??190)-24}px`} as React.CSSProperties}><img key={practiceStage} src={frog} alt="Frog guide"/><div className="native-coach-content"><h1>{c.title}</h1>{c.text&&<p>{c.text}</p>}{state.practice==='stop'&&<div className="native-saved-keys" aria-label={state.shortcut}>{recordKeys(state.shortcut).map((key,index)=><kbd key={index}>{key}</kbd>)}</div>}{(['start','retry','screen-ink','note','copied','paste'].includes(practiceStage??'start'))&&<GestureGuide key={practiceStage} kind={guideKind} shortcut={state.shortcut} platform={state.platform}/>} {(['whiteboard','locate'].includes(state.practice??'')||(state.practice==='screen'&&state.platform!=='linux'))&&<ControlGuide key={state.practice} kind={state.practice==='locate'?'locate':'whiteboard'} screenOnly={state.practice==='screen'} directWhiteboard={state.platform==='linux'&&state.practice==='whiteboard'}/>} {c.button&&<Button onClick={()=>void action(c.action!)}>{c.button}</Button>}{trackpadHint&&!wideCoach&&helper}{error&&<p role="alert">{error}</p>}{state.practice==='stop'?<Button variant="ghost" size="icon" className="native-finish-close" aria-label="Close guide" onClick={()=>void action('later')}>×</Button>:<div className="native-coach-actions"><Button variant="outline" className="native-later" onClick={()=>void action('later')}>{exit.label}</Button><small className="native-exit-detail">{exit.detail}</small></div>}</div></main>{trackpadHint&&wideCoach&&helper}</>;
+    return <><main className="native-coach" data-paired={trackpadHint&&wideCoach} data-stage={practiceStage} data-arrow={state.coachPointsUp} style={{'--coach-arrow':`${(state.coachArrow??190)-24}px`} as React.CSSProperties}><img key={practiceStage} src={frog} alt="Frog guide"/><div className="native-coach-content">{c.title&&<h1>{c.title}</h1>}{c.text&&<p>{c.text}</p>}{state.practice==='stop'&&<div className="native-saved-keys" aria-label={state.shortcut}>{recordKeys(state.shortcut).map((key,index)=><Keycap key={index}>{key}</Keycap>)}</div>}{(['start','retry','screen-ink','note','copied','paste'].includes(practiceStage??'start'))&&<GestureGuide key={practiceStage} kind={guideKind} shortcut={state.shortcut} platform={state.platform}/>} {(['whiteboard','locate'].includes(state.practice??'')||(state.practice==='screen'&&state.platform!=='linux'))&&<ControlGuide key={state.practice} kind={state.practice==='locate'?'locate':'whiteboard'} screenOnly={state.practice==='screen'}/>} {c.button&&<Button onClick={()=>void action(c.action!)}>{c.button}</Button>}{trackpadHint&&!wideCoach&&helper}{error&&<p role="alert">{error}</p>}{<Button variant="ghost" size="icon" className="native-finish-close" aria-label={'Close guide'} onClick={()=>void action('later')}>×</Button>}</div></main>{trackpadHint&&wideCoach&&helper}</>;
   }
-  return <main className="native-setup" data-agent-setup={state.step==='welcome'&&!state.penPicker} data-shortcut-state={state.step==='shortcut'||goAgain}><header><span>{state.testInstance?'apparent · onboarding preview 9':'apparent · setup'}</span><Button variant="ghost" size="icon" aria-label="Close setup" onClick={()=>void action('close')}>×</Button></header><section>
+  return <main className="native-setup" data-agent-setup={state.step==='welcome'&&!state.penPicker} data-wispr={wispr.visible} data-shortcut-state={state.step==='shortcut'||goAgain}><header><span>{state.testInstance?'apparent · onboarding preview 9':'apparent · setup'}</span><Button variant="ghost" size="icon" aria-label="Close setup" onClick={()=>void action('close')}>×</Button></header><section>
+    {wispr.visible?<WisprStep flow={wispr}/>:<>
     {state.step==='welcome'&&!state.penPicker&&<AgentSetup onContinue={()=>action('continue')}/>}
     {penPage&&<div className="native-pen-picker" aria-busy={penBusy}><h1>Pick your pen.</h1>{(error||state.penError)&&<p role="alert">{error||'The colour could not be saved. Try choosing it again.'}</p>}<div className="native-pencils">{([['coral',[217,76,68]],['purple',[122,88,199]],['blue',[59,121,189]],['green',[57,123,97]]] as const).map(([name,rgb])=><Button variant="ghost" key={name} aria-label={`${name} pen`} disabled={penBusy} aria-pressed={state.penSelected&&state.penRgb.every((component,index)=>component===rgb[index])} style={{'--pencil':`var(--apparent-pen-${name})`} as React.CSSProperties} onClick={()=>void confirmPen(name)}><span aria-hidden="true"/></Button>)}</div><div className="native-pond" data-landing={penLanding} style={{'--pond-colour':state.penSelected?`rgb(${state.penRgb.join(',')})`:'var(--apparent-muted)'} as React.CSSProperties}><svg className="native-puddle" viewBox="0 0 300 100" role="img" aria-label="Puddle in your selected pen colour"><path d="M22 49C9 21 65 11 99 17C133 1 169 18 192 12C229 4 249 28 275 31C310 37 295 69 263 73C244 94 208 86 180 90C144 102 122 84 91 90C48 93 6 78 22 49Z"/><ellipse className="native-puddle-ring" cx="150" cy="49" rx="48" ry="15"/></svg><img ref={penFrog} className="native-pond-frog" src={frog} alt="Frog beside the puddle"/></div></div>}
     {state.step==='permissions'&&<><h1>{state.fix?'Allow access.':'We need three things.'}</h1><Permissions platform={state.platform} rows={state.rows} action={action}/></>}
     {state.step==='shortcut'&&<><h1 className={state.shortcutChosen?'native-shortcut-prompt':undefined} key={state.shortcutChosen?'chosen':'choose'}>{!state.shortcutChosen?'Choose your shortcut.':'One more time.'}</h1><div className="native-shortcut" data-managed={state.shortcutEditor?.externallyManaged}>
-      {state.shortcutEditor?.recording?<div ref={shortcutRecorder} tabIndex={0} role="group" aria-label="Shortcut recorder" onKeyDown={event=>{
+      {state.shortcutEditor?.recording?<div ref={shortcutRecorder} tabIndex={0} role="group" aria-label="Shortcut recorder" onBlur={()=>setHeldKeys([])} onKeyUp={event=>setHeldKeys([event.ctrlKey?'Ctrl':'',event.altKey?'Alt':'',event.metaKey?(state.platform==='macos'?'⌘':'Super'):'',event.shiftKey?'Shift':''].filter(Boolean))} onKeyDown={event=>{
       if(event.key==='Tab'||event.target!==event.currentTarget)return;
       event.preventDefault();if(event.key==='Escape'){void action('cancel-shortcut');return;}
       if(event.repeat)return;
       const input=shortcutInput(event,state.platform);
-      if(input==='pending'){setError('');return;}
+      if(input==='pending'){setHeldKeys([event.ctrlKey?'Ctrl':'',event.altKey?'Alt':'',event.metaKey?(state.platform==='macos'?'⌘':'Super'):'',event.shiftKey?'Shift':''].filter(Boolean));setError('');return;}
       if(input==='fn-unavailable'){setError('Fn is not available in this Linux shortcut recorder. Choose Copilot or another key.');return;}
       if(input==='native-copilot'){void action('resolve-copilot');return;}
       const pressed=shortcutCapture(event,state.platform);
       if(!pressed){setError(state.platform==='linux'?'Apparent cannot use that key. Try Copilot, a letter or a number.':'Apparent cannot use that key. Choose Fn alone, a letter or a number.');return;}
       setError('');
       void action({action:'shortcut',kind:'record',...pressed,reserved:false});
-      }}><p>Hold any modifiers, then press a key.</p>{state.platform==='linux'&&<p className="native-shortcut-detail">Copilot works alone or with modifiers. Fn works when your keyboard sends it to the app.</p>}<div className="native-shortcut-choices">{state.platform==='macos'&&<Button onClick={chooseFn}>Use Fn</Button>}<Button variant="outline" onClick={()=>void action('cancel-shortcut')}>Cancel</Button></div></div>:<>
-        {state.shortcutChosen?<kbd>{state.shortcut}</kbd>:state.shortcutEditor?.externallyManaged?<><p>Your desktop already has a recording shortcut:</p><kbd>{state.shortcut}</kbd></>:<p>No shortcut selected.</p>}
-        <div className="native-shortcut-choices">{state.platform==='macos'&&!state.shortcutChosen&&<Button onClick={chooseFn}>Use Fn</Button>}{state.shortcutEditor?.externallyManaged&&<Button onClick={()=>void action('use-desktop-shortcut')}>Use {state.shortcut}</Button>}
-        <Button variant="outline" onClick={()=>void action('change-shortcut')}>{state.shortcutEditor?.externallyManaged?'Choose another shortcut':state.shortcutChosen?'Change shortcut':'Choose shortcut'}</Button></div>{state.shortcutEditor?.externallyManaged&&<p className="native-shortcut-detail">Choosing another shortcut keeps the desktop binding available too.</p>}
+      }}><div className="native-held-keys" aria-live="polite">{heldKeys.length?heldKeys.map(key=><Keycap key={key} pressed>{key}</Keycap>):state.platform==='macos'?<Button variant="keycap" aria-label="Choose suggested Fn shortcut" onClick={chooseFn}>Fn</Button>:<span>Press a key</span>}</div><div className="native-shortcut-choices"><Button variant="outline" onClick={()=>void action('cancel-shortcut')}>Cancel</Button></div></div>:<>
+        {state.shortcutChosen?<Keycap className="native-shortcut-example">{state.shortcut}</Keycap>:state.shortcutEditor?.externallyManaged?null:<p>No shortcut selected.</p>}
+        <div className="native-shortcut-choices">{state.platform==='macos'&&!state.shortcutChosen&&<Button variant="keycap" aria-label="Choose suggested Fn shortcut" onClick={chooseFn}>Fn</Button>}{state.shortcutEditor?.externallyManaged&&<Button aria-label={`Choose ${state.shortcut}`} onClick={()=>void action('use-desktop-shortcut')}>{state.shortcut}</Button>}
+        <Button variant="outline" onClick={()=>void action('change-shortcut')}>{state.shortcutEditor?.externallyManaged?'Choose another shortcut':state.shortcutChosen?'Change shortcut':'Choose shortcut'}</Button></div>
       </>}{state.shortcutEditor?.error&&<p role="alert">{state.shortcutEditor.error}</p>}</div></>}
-    {goAgain&&<><h1 className="native-shortcut-prompt">One more time.</h1><div className="native-shortcut"><kbd>{state.shortcut}</kbd></div></>}
+    {goAgain&&<><h1 className="native-shortcut-prompt">One more time.</h1><div className="native-shortcut"><Keycap className="native-shortcut-example">{state.shortcut}</Keycap></div></>}
     {state.step==='done'&&<><h1>Ready for your next idea.</h1><div className="native-explain"><img src={frog} alt=""/></div><p>apparent stays in the menu bar, ready when you are.</p></>}
     {error&&!penPage&&<p role="alert">{error}</p>}
-    </section><footer><Button variant="ghost" onClick={()=>void action('back')} disabled={state.index===0||penBusy}>Back</Button>{!penPage&&<span>{state.index+1} / {state.count}</span>}{!goAgain&&!penPage&&<Button onClick={()=>void action('continue')} disabled={(state.step==='permissions'&&!state.ready)||(state.step==='shortcut'&&state.firstCaptureRequired&&(!state.shortcutChosen||!state.shortcutTested||state.shortcutEditor?.recording))}>{state.step==='welcome'?'Choose a pen':state.step==='done'?'Finish setup':state.step==='permissions'?(state.fix?'Finish permission setup':'Choose recording shortcut'):state.step==='shortcut'?'Continue':'Try a capture'}</Button>}</footer></main>;
+    </>}
+    </section>{!wispr.visible&&<footer><Button variant="ghost" onClick={()=>void action('back')} disabled={(state.index===0&&!penPage)||penBusy}>Back</Button>{!penPage&&<progress className="native-setup-progress" aria-label="Setup progress" value={state.index+1} max={state.count}/>}{!goAgain&&!penPage&&state.step!=='shortcut'&&<Button onClick={()=>void action('continue')} disabled={(state.step==='permissions'&&!state.ready)||(state.step==='shortcut'&&state.firstCaptureRequired&&(!state.shortcutChosen||!state.shortcutTested||state.shortcutEditor?.recording))}>{state.step==='welcome'?'Choose a pen':state.step==='done'?'Finish setup':state.step==='permissions'?(state.fix?'Finish permission setup':'Choose recording shortcut'):state.step==='shortcut'?'Continue':'Try a capture'}</Button>}</footer>}</main>;
 }

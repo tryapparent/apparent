@@ -1,0 +1,22 @@
+[Unit]
+Description=Apparent PostHog error fix queue
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Projects/github.com/tryapparent/apparent
+EnvironmentFile=%h/.config/apparent-posthog-fixer/environment
+ExecStart=/usr/bin/env node --experimental-strip-types enablement/posthog-fixer/main.ts
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/state/apparent-posthog-fixer
+
+[Install]
+WantedBy=default.target

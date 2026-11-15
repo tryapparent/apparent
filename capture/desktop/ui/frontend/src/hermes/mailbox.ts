@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import { createHash, createHmac } from 'node:crypto';
-import { tokenValid, sourceValid, type View } from './protocol.ts';
+import { tokenValid, bundlePathValid, sourceValid, type View } from './protocol.ts';
 // Read-only capability for this one recording. No capture controls, arbitrary file reads or credentials.
 export async function mailbox(token: string, port: number, key: string, read: () => View, acknowledged: () => void): Promise<Server> {
   if (!tokenValid(token) || !tokenValid(key) || key === token || !Number.isInteger(port) || port < 32768 || port > 60999) throw new Error('Invalid bridge address');
@@ -19,7 +19,9 @@ export async function mailbox(token: string, port: number, key: string, read: ()
     const headers = { 'Access-Control-Allow-Origin': origin ?? 'null', 'Cache-Control': 'no-store', 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff' };
     const view = read();
     if (request.url === `/${id}/state/${mac(`state:${id}`)}` && request.method === 'GET') {
-      const state = { phase: view.phase, ...(view.code === 'occupied' ? { code: 'occupied' } : {}), ...(view.phase === 'saved' && sourceValid(view.source) ? { source: view.source } : {}) };
+      const state = { phase: view.phase, ...(view.code === 'occupied' ? { code: 'occupied' } : {}),
+        ...(view.phase === 'saved' && bundlePathValid(view.bundlePath) ? { bundlePath: view.bundlePath, remoteSource: view.remoteSource } : {}),
+        ...(view.phase === 'saved' && sourceValid(view.source) ? { source: view.source } : {}) };
       const payload = JSON.stringify(state);
       response.writeHead(200, headers).end(JSON.stringify({ payload, mac: mac(payload) }));
     } else if (!acknowledgedOnce && request.url === `/${id}/ack/${mac(`ack:${id}`)}` && request.method === 'POST' && ['saved', 'cancelled', 'error'].includes(view.phase)) {

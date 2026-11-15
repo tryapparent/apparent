@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Button } from '@apparent/ui/button';
+import { Switch } from '@apparent/ui/switch';
+import { ErrorDialog } from '@apparent/ui/error-dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@apparent/ui/tabs';
 import { StatusCard, type StatusTone } from '@apparent/ui/status-card';
 import { NativeSelect, NativeSelectOption } from '@apparent/ui/native-select';
@@ -16,6 +18,7 @@ function Library() {
   const [name, setName] = useState('My little frog project');
   const [submitted, setSubmitted] = useState(false);
   const [playful, setPlayful] = useState(true);
+  const [errorOpen, setErrorOpen] = useState(false);
   const states: Record<StatusTone, [string, string]> = {
     neutral: ['Nothing here yet', 'Your next peculiar idea can start here.'],
     progress: ['Preparing your recording', 'Wait for the ready status before sharing. No invented percentage.'],
@@ -37,16 +40,29 @@ function Library() {
     </article>
     <article>
       <h3>Optional preference switch</h3>
-      <p id="example-playful-help">An in-memory example of an optional preference. Lilac means optional interaction in both states; thumb position and the accessible checked value communicate On or Off. No setting is saved.</p>
-      <div className="bb-control-row">
-        <span id="example-playful-label">Playful details</span>
-        <Button className="bb-switch" role="switch" aria-labelledby="example-playful-label" aria-describedby="example-playful-help" aria-checked={playful} onClick={() => setPlayful(value => !value)}>
-          <span className="bb-switch-track" aria-hidden="true"><span className="bb-switch-thumb" /></span>
-        </Button>
-        <span aria-hidden="true">{playful ? 'On' : 'Off'}</span>
-      </div>
-      <p>48 × 24px Lilac track, 18px Carbon thumb, no track outline in either theme. The focus indicator surrounds the 44px-tall interaction target. Real preferences save quietly; waiting and recoverable errors belong inline.</p>
-      <p>This composition uses shared Button with switch semantics; it does not claim a separate shared Switch component.</p>
+      <p id="example-playful-help">Signal when Off; lighter Lilac when On. Thumb position and the accessible checked value also communicate state. No setting is saved.</p>
+      {(['light', 'dark'] as const).map(theme => <div className={`bb-switch-specimen bb-switch-${theme}`} key={theme}>
+        <h4>{theme === 'light' ? 'Light mode' : 'Dark mode'}</h4>
+        <div className="bb-control-row">
+          <span id={`example-playful-${theme}`}>Playful details</span>
+          <Switch className="bb-switch" aria-labelledby={`example-playful-${theme}`} aria-describedby="example-playful-help" checked={playful} onCheckedChange={setPlayful} />
+          <span aria-hidden="true">{playful ? 'On' : 'Off'}</span>
+        </div>
+        <div className="bb-control-row">
+          <span id={`example-disabled-${theme}`}>Unavailable example</span>
+          <Switch className="bb-switch" aria-labelledby={`example-disabled-${theme}`} checked={false} onCheckedChange={() => {}} disabled />
+        </div>
+      </div>)}
+      <p>48 × 24px track, 18px thumb, 48 × 44px target. Carbon thumbs in light mode; white thumbs with a Carbon edge in dark mode. No track outline. Real preferences save quietly; a wait cursor indicates saving and operational failures open ErrorDialog.</p>
+      <Source file="forms/switch.tsx" example={'import { Switch } from "@apparent/ui/switch";\n<Switch aria-label="Playful details" checked={enabled} onCheckedChange={setEnabled} />'} />
+    </article>
+    <article>
+      <h3>Error dialog</h3><p>The default popup for operational failures. It leaves page layout unchanged, traps keyboard focus and supports Escape. The recovery action comes first, with the group aligned left. Field validation remains beside its field.</p>
+      <Button className="bb-control" onClick={()=>setErrorOpen(true)}>Show error example</Button>
+      <ErrorDialog open={errorOpen} title="Unable to save preference" description="Refresh the saved value, then try again." recoveryLabel="Refresh preference"
+        onRecover={()=>setErrorOpen(false)} onClose={()=>setErrorOpen(false)}/>
+      <p>Demonstration only. Recovery closes this example without changing preferences. An optional artwork slot can reuse the update dialog’s puzzled frog.</p>
+      <Source file="forms/error-dialog.tsx" example={'import { ErrorDialog } from "@apparent/ui/error-dialog";\n<ErrorDialog open={failed} title="Unable to save preference"\n  description="Refresh the saved value, then try again."\n  recoveryLabel="Refresh preference" onRecover={refresh} onClose={dismiss} />'} />
     </article>
     <article>
       <h3>Tabs</h3><p>Move between related views. Tab to the selected tab, then use Left/Right or Home/End. Entering a view does not grant permissions.</p>

@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
-import {mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
+import {chmodSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {fingerprint, inspectRetainedArchive, inventory, requireAdHoc, requireArm64, requireFreshDestination, sourceSnapshot, stageRetainedArchive, validateRetainedManifest} from './native-candidate.ts';
 
@@ -40,6 +40,8 @@ test('artifact hashes bind actual bytes and refuse symlink inputs', () => fixtur
 test('archive inventory binds every file, executable modes and internal framework links', () => fixture(async root => {
   mkdirSync(join(root, 'Versions/A'), {recursive: true});
   writeFileSync(join(root, 'Versions/A/runtime'), 'native', {mode: 0o755});
+  // The inventory must observe an exact executable mode under any caller umask.
+  chmodSync(join(root, 'Versions/A/runtime'), 0o755);
   symlinkSync('A', join(root, 'Versions/Current'));
   symlinkSync('Versions/Current/runtime', join(root, 'runtime'));
   writeFileSync(join(root, 'worker.js'), 'worker');

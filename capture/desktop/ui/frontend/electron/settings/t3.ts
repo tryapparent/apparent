@@ -6,15 +6,15 @@ export type T3Connection = {origin:string;token:string;expiresAt:number};
 export type PairingPreview = {id:string;origin:string};
 export class PairingLinks {
  private timer?:ReturnType<typeof setTimeout>;
- private pending?:{id:string;link:string;expires:number};
- preview(link:string):PairingPreview {
-  this.clear();const {origin}=parsePairingLink(link),id=randomBytes(24).toString('hex');
-  this.pending={id,link,expires:Date.now()+120000};this.timer=setTimeout(()=>this.clear(),120000);this.timer.unref();return {id,origin};
+ private pending?:{id:string;link:string;origin:string;expires:number};
+ preview(link:string,server?:string):PairingPreview {
+  this.clear();const {origin}=parsePairingLink(link,server),id=randomBytes(24).toString('hex');
+  this.pending={id,link,origin,expires:Date.now()+120000};this.timer=setTimeout(()=>this.clear(),120000);this.timer.unref();return {id,origin};
  }
  clear(){clearTimeout(this.timer);this.timer=undefined;this.pending=undefined;}
  async connect(id:string,signal:AbortSignal):Promise<T3Connection>{
   const pending=this.pending;this.clear();
-  if(!pending||pending.id!==id||Date.now()>pending.expires)throw Error('Paste a fresh pairing link.');
-  signal.throwIfAborted();return pair(pending.link,signal);
+  if(!pending||pending.id!==id||Date.now()>pending.expires)throw Error('Paste a fresh pairing code or link.');
+  signal.throwIfAborted();return pair(pending.link,signal,pending.origin);
  }
 }

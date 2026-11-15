@@ -7,6 +7,33 @@ use std::sync::atomic::{AtomicU64, Ordering};
 // public progress crosses into the pill; captures and secrets stay in this owner.
 static PROGRESS: AtomicU64 = AtomicU64::new(0);
 static COPIED_LINK: std::sync::Mutex<Option<PreparedLink>> = std::sync::Mutex::new(None);
+// The native acceptance fixture already opts into timing diagnostics. Preserve
+// the last completed boundary without exposing credentials or private inputs.
+#[derive(Debug)]
+enum ForegroundStage {
+    Admission,
+    WorkerLock,
+    QueueChecked,
+    ProgressAdmitted,
+    CredentialRead,
+    SnapshotReady,
+    PolicySpawned,
+    PolicyProgress,
+    Reserve,
+    Put,
+    Complete,
+    Verify,
+    Share,
+    PolicyDone,
+    PolicyError,
+    UnknownOperation,
+    Completed,
+}
+fn foreground_stage(stage: ForegroundStage) {
+    if std::env::var_os("APPARENT_START_TIMINGS").is_some() {
+        eprintln!("FOREGROUND_STAGE {stage:?}");
+    }
+}
 pub fn foreground_progress() -> Option<u64> {
     PROGRESS.load(Ordering::Relaxed).checked_sub(1)
 }
@@ -90,6 +117,7 @@ impl Client {
         public_copy: bool,
         caller: &dyn Fn() -> bool,
     ) -> Result<(Job, Option<String>)> {
+        foreground_stage(ForegroundStage::Admission);
         ensure!(caller() && self.enabled(), "Upload consent required");
         ensure!(
             !share || self.provider.experiment(HOSTED_SHARING),
@@ -99,6 +127,7 @@ impl Client {
         // Refuse switching while legacy work remains. Never cancel, migrate or
         // silently take over an existing job, including a retained failed job.
         let _worker = Lock::acquire(&self.state.join("worker.lock"), true)?;
+        foreground_stage(ForegroundStage::WorkerLock);
         {
             let _queue = Lock::acquire(&self.state.join("queue.lock"), false)?;
             ensure!(
@@ -109,6 +138,7 @@ impl Client {
                 "legacy_uploads_pending: finish or explicitly cancel existing uploads before switching"
             );
         }
+        foreground_stage(ForegroundStage::QueueChecked);
         ensure!(
             PROGRESS
                 .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
@@ -116,8 +146,10 @@ impl Client {
             "Foreground upload already active"
         );
         let _progress = ProgressGuard;
+        foreground_stage(ForegroundStage::ProgressAdmitted);
         let settings = self.settings();
         let credential = self.credential("upload", &settings.server)?;
+        foreground_stage(ForegroundStage::CredentialRead);
         let cancellation = self.cancellation()?;
         let mut job = Job {
             id: random_id()?,
@@ -171,7 +203,9 @@ impl Client {
                 && (public_copy || self.provider.experiment(HOSTED_ENCRYPTION) == job.encrypted)
         };
         ensure!(allowed(), "cancelled");
+        foreground_stage(ForegroundStage::SnapshotReady);
         let url = self.run_upload_policy(&job, &stage.0, &credential, &allowed, share, true)?;
+        foreground_stage(ForegroundStage::Completed);
         Ok((job, url))
     }
 
@@ -199,6 +233,7 @@ impl Client {
                 .stderr(Stdio::null())
                 .spawn()?,
         );
+        foreground_stage(ForegroundStage::PolicySpawned);
         let mut input = child.stdin.take().context("Missing upload input")?;
         let mut output = child.stdout.take().context("Missing upload output")?;
         let format = if job.encrypted {
@@ -223,6 +258,17 @@ impl Client {
             let operation = request["operation"]
                 .as_str()
                 .context("Invalid upload operation")?;
+            foreground_stage(match operation {
+                "progress" => ForegroundStage::PolicyProgress,
+                "reserve" => ForegroundStage::Reserve,
+                "put" => ForegroundStage::Put,
+                "complete" => ForegroundStage::Complete,
+                "verify" => ForegroundStage::Verify,
+                "share" => ForegroundStage::Share,
+                "done" => ForegroundStage::PolicyDone,
+                "error" => ForegroundStage::PolicyError,
+                _ => ForegroundStage::UnknownOperation,
+            });
             if operation == "done" {
                 ensure!(request["id"] == job.id && allowed(), "cancelled");
                 let url = if share {

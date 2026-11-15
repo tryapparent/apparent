@@ -44,8 +44,10 @@ test('missing Settings renderer stays hidden and exits for native fallback', { t
 
 // Hidden documents may defer animation callbacks even after React commits.
 // Cover both worlds: pausing page callbacks does not pause the isolated preload.
-for (const world of ['page', 'preload', 'compositor']) {
-test(world === 'compositor' ? 'committed Settings stays hidden until the native snapshot finishes' :
+for (const world of ['page', 'preload', 'compositor-light', 'compositor-dark']) {
+const compositor = world.startsWith('compositor-');
+const theme = world === 'compositor-dark' ? 'dark' : 'light';
+test(compositor ? `committed Settings stays hidden until the native snapshot finishes (${theme})` :
   `mounted Settings becomes visible without ${world}-world animation callbacks`, { timeout: 25000 }, async t => {
   const frontend = fileURLToPath(new URL('../..', import.meta.url));
   const fixture = await fs.mkdtemp(path.join(os.tmpdir(), 'ap-mounted-'));
@@ -78,7 +80,9 @@ exports.committedFrame = async contents => {
     const bitmap = image.resize({ width: 720, height: 530 }).toBitmap();
     const pixel = (x, y) => Array.from(bitmap.subarray((y * 720 + x) * 4, (y * 720 + x) * 4 + 4));
     // Sample within both accepted sidebar widths; nativeImage bitmap bytes are BGRA.
-    globalThis.settingsFramePixels = { sidebar: pixel(100, 450), content: pixel(300, 100) };
+    // The larger title puts its divider at y=100. Sample the empty top inset,
+    // outside both text and rules, to measure the canvas rather than content.
+    globalThis.settingsFramePixels = { sidebar: pixel(100, 450), content: pixel(680, 20) };
     return image;
   }});
 };
@@ -89,16 +93,21 @@ exports.committedFrame = async contents => {
   const page = await app.firstWindow();
   await page.locator('.settings-shell').waitFor();
   const { expect } = await import('@playwright/test');
-  if (world === 'compositor') {
+  if (compositor) {
     await expect.poll(() => app!.evaluate(() => typeof (globalThis as any).releaseSettingsFrame)).toBe('function');
     assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), false);
+    // Match the appearance fixture: Playwright otherwise forces light media.
+    await page.emulateMedia({colorScheme:null});
+    await app.evaluate(({ nativeTheme }, theme) => { nativeTheme.themeSource = theme; }, theme);
+    await expect.poll(() => page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches)).toBe(theme === 'dark');
     await app.evaluate(() => (globalThis as any).releaseSettingsFrame());
   }
   await expect.poll(() => app!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible())).toBe(true);
-  if (world === 'compositor') {
+  if (compositor) {
     const pixels = await app.evaluate(() => (globalThis as any).settingsFramePixels);
-    assert.deepEqual(pixels.sidebar, [29, 22, 25, 255], 'The pre-reveal snapshot contains the accepted Carbon sidebar, not a blank cream frame');
-    assert.notDeepEqual(pixels.content, pixels.sidebar, 'The content surface is separate from the sidebar');
+    assert.deepEqual(pixels.sidebar, [2, 1, 2, 255], 'The pre-reveal snapshot contains the accepted Carbon sidebar, not a blank cream frame');
+    assert.deepEqual(pixels.content, theme === 'dark' ? [2, 1, 2, 255] : [232, 240, 245, 255],
+      'The pre-reveal content frame uses Carbon in dark mode and Paper in light mode');
   }
   await expect(page.getByRole('heading', { name: 'Storage', level: 1, exact: true })).toBeVisible();
 });

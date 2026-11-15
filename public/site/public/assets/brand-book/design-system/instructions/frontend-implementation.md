@@ -39,7 +39,8 @@ A component is not complete when only its default state matches a mockup.
 ## Foundation contract
 
 - Use the canonical CSS or JSON tokens. Do not retype shared values in a page.
-- Use Host Grotesk at the approved 36/18/16 product scale. The 16px tier is
+- Use Host Grotesk at the approved 48/24/18 title/section/body product scale
+  (4:2:1.5). Preference labels use 18px at medium weight. The 16px tier is
   reserved for concise metadata; controls, labels, validation, body copy, and
   critical status use 18px or larger.
 - Use the 8px spacing base, square corners, 1px Carbon rules, and a clearly

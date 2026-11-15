@@ -38,6 +38,13 @@ save timestamp. Revoked tokens, changed captures and stale results cannot refres
 the current presentation. Ordinary completion and manual-handoff recovery keep
 their existing dismissal behavior.
 
+An open public-sharing confirmation retains its exact revision's completion
+surface while the user reads the disclosure. Confirm, cancel, a new semantic
+snapshot or renderer reload releases that hold. The native adapter accepts it
+only for the current completed view with an enabled sharing control; a closed
+child cannot retain the presentation. Closing the confirmation resumes the
+ordinary completion interval without uploading before consent.
+
 The existing Desktop coordinator owns child startup and readiness. A failed
 launch, expired readiness or child exit restores the native pill without
 stopping capture. Linux warms the hidden child at startup and retains native

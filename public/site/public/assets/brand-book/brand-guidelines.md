@@ -1,7 +1,7 @@
 # apparent brand guidelines
 
-Status: v0.4 capture
-Updated: 15.11.2026
+Status: v0.5 capture
+Updated: 16.11.2026
 Owner: founder approval
 
 ## Brand foundations
@@ -78,9 +78,9 @@ shape, pattern, position, or outline.
 
 Interaction roles: Signal identifies choices in the active decision or action flow, including alternatives such as “Activate upload / Not today”. Lilac identifies optional interactions outside that flow. Do not equate active with checked or optional with disabled. Distinguish emphasis within the active choice group through fill, border, placement and wording, rather than assigning an alternative to Lilac just because it is not the default. Carbon remains the readable foreground on Lilac.
 
-Optional command-copy surfaces and preference-switch tracks match in Lilac #B7A5D8. Switches have a Carbon thumb, left Off/right On, with no visible track outline in either theme; keyboard focus remains visible. Preference saves succeed quietly; show saving and errors inline with recovery. Keep preference consequences and errors visible. Put optional explanation behind an info control accessible on hover, focus and click. Commands remain visible with an embedded copy icon, not a full “Copy command” button.
+Optional command-copy surfaces use Lilac #B7A5D8. Preference-switch tracks use Signal when Off and lighter Lilac when On. Thumbs are Carbon in light mode and white in dark mode, with a 1px Carbon edge for contrast. This white is a functional thumb-only exception, not a sixth brand accent. Keep tracks free of outlines, thumbs left Off/right On, and keyboard focus visible. Saves succeed quietly; show a native wait cursor over the affected switch while awaiting acknowledgement and announce pending state to assistive technology without visible saving text. Operational failures use the shared ErrorDialog popup, not a new inline page region. Use failure red with an icon and clear message, optional update-style artwork, a specific recovery action first on the left, and Close second. Align the action group left, match DOM and keyboard order, focus recovery on open, support Escape and restore focus on dismissal. Keep field validation beside its field. Commands remain visible with an embedded copy icon, and optional explanations open on hover, focus and click.
 
-Desktop defaults: 216px sidebar, 16px info/copy glyphs with at least 44px targets, 48×24px track and 18px thumb; 36/40 weight-700 title, 18/27 weight-500 labels, weight-400 body. One Carbon divider below the Settings title; use spacing between ordinary groups. Dark mode keeps the five-color palette with Carbon canvas and Paper reading text. Do not add consumer-only gray #625B66. See the [Desktop Settings specification](./design-system/desktop-settings.md).
+Desktop defaults: 216px sidebar, 16px info/copy glyphs with at least 44px targets, 48×24px track and 18px thumb; 48/52 weight-700 title, 24/32 weight-500 section headings, 18/27 weight-500 preference labels and weight-400 body. One Carbon divider below the Settings title; use spacing between ordinary groups. Dark mode keeps the five-color palette with Carbon canvas and Paper reading text. Do not add consumer-only gray #625B66. See the [Desktop Settings specification](./design-system/desktop-settings.md).
 
 ### Functional status colors
 
@@ -99,12 +99,29 @@ fields for actions and escalation. Carbon on warning gold is 12.56:1; Paper text
 on warning gold is prohibited. Failure and destructive share a hue but retain
 separate semantic tokens and behaviors.
 
+### Theme pairings
+
+| Role | Light | Dark |
+| --- | --- | --- |
+| Reading | Carbon on Paper | Paper on Carbon |
+| Primary action | Paper on Signal | Paper on Signal |
+| Focus | Signal on Paper | Lilac on Carbon |
+| Switch Off / On | Signal / Lilac track, Carbon thumb | Signal / Lilac track, white thumb with Carbon edge |
+| ErrorDialog | Carbon on Paper, failure bar/icon | Carbon on Paper, failure bar/icon |
+| Warning field | Carbon on warning gold | Carbon on warning gold |
+
+Normal text requires 4.5:1; essential non-text cues require 3:1. Paper/Signal
+measures 4.57:1 and Carbon/Lilac 9.31:1. Do not use normal Signal text on Stock
+(4.03:1) or Carbon (4.02:1). Status names remain written; hue alone does not
+identify state. Presentation (120/60/30), editorial brand pages and the product
+scale below have distinct purposes; do not copy display sizes into Settings.
+
 ## Typeface and layout
 
 Use Host Grotesk only, at weights 400, 500, and 700.
 
 - Presentation: 120 / 60 / 30.
-- Product: 36 / 18 / 16. Reserve 16px for short companion metadata.
+- Product: 48 / 24 / 18 (4:2:1.5): page title / section heading / body. Reserve 16px for short companion metadata. Preference labels stay 18px at weight 500; they are not section headings.
 - Body: 18 / 27 with lines near 55 to 75 characters.
 - Product spacing uses an 8px base.
 - Desktop uses 12 columns, 24px gutters, and a 32px content inset.
@@ -160,7 +177,8 @@ Write directly, compactly, and with technical precision.
 5. Keep one claim per sentence.
 6. Attach proof, source, timeframe, and evidence status.
 
-Use sentence case and periods. Never use em dashes, unsupported superlatives or decorative type that impairs reading. Label estimates,
+Use sentence case. End sentences with periods; short control labels need no
+terminal punctuation. Never use em dashes, unsupported superlatives or decorative type that impairs reading. Label estimates,
 forecasts, and illustrative examples.
 
 ## Identifiers
@@ -216,3 +234,44 @@ proof from polish. Use the exact machine-readable [JSON tokens](./design-system/
 This repository is the source of truth. Exceptions require a reason, owner,
 approval, and expiry. Open decisions include print colors, co-branding, and
 final responsive type values.
+
+## Brand review: 15 November 2026
+
+Scope: brand foundations, logo rules/assets, color roles/tokens, typography,
+Desktop Settings specification, implementation guidance, and the interactive
+brand gallery. The supplied Agents screenshot is the product reference. This
+is a system review, not certification of every Desktop or Connect screen.
+
+Keep the lowercase boxed wordmark, Host Grotesk, purple/Paper/Carbon identity,
+pixel frogs and human-expression positioning. They form a coherent identity.
+The strongest rejection cases are flattened content hierarchy, ambiguous switch
+states, and theme rules that do not specify safe foreground/background pairs.
+
+| Priority | Evidence | Recommendation and disposition |
+| --- | --- | --- |
+| High | Desktop stylesheet `capture/desktop/ui/frontend/src/style.css` groups h2, h3 and preference labels at 18px; screenshot Labs has body-sized emphasis. | Adopt 48/24/18 for title/section/body with 700/500/400 weights. Keep preference labels 18px/500. Adopted in brand tokens, the shared Settings renderer and the gallery. The ratio is a brand choice, not a WCAG requirement. |
+| High | Previous Settings spec required identical Lilac tracks and Carbon thumbs in both themes. | Off Signal / On lighter Lilac; white dark thumb with Carbon edge, left/right position and accessible checked state. Adopted in brand rules, shared Switch and gallery. White/Lilac is 2.24:1 without the edge; Carbon/Lilac 9.31:1 and Carbon/Signal 4.02:1. |
+| Medium | Color rules give dark guidance generally but only a few explicit pairings; Signal/Stock measures 4.03:1. | Publish a theme-by-state pairing matrix before broader rollout. Normal text needs 4.5:1, essential non-text cues 3:1. Use Paper text on Signal, Carbon text on Lilac; avoid normal Signal text on Stock/Carbon. Keep semantic status text on a suitable field instead of placing raw status hues on Carbon. |
+| Medium | Presentation scale is 120/60/30 while product scale is 48/24/18; brand pages have independent editorial heading sizes. | Keep presentation, editorial and product scales explicitly separate. Do not shrink body copy to force desktop geometry onto narrow windows. Add responsive examples with real long labels and 200% text. |
+| Medium | Brand gallery composed a switch from Button while `shared/ui/src/forms/switch.tsx` already exists. | Use the shared Switch with scoped specimen styling. Gallery now uses the same shared Switch state styling as Desktop. |
+| Medium | Settings source contains 28px help targets and 36px action minimums; specification asks for 44px targets and 16px utility glyphs. | Shared Settings now pads utility/action targets to 44px while keeping 16px utility glyphs. 44px is our product target, stronger than WCAG AA's 24px minimum with exceptions; the source discrepancy alone does not prove an AA failure. |
+| Medium | Brand prose, JSON/CSS tokens, gallery and product theme CSS carry overlapping rules. | Designate tokens/specification as authority, generate aliases where practical, and validate the real computed role/size values in consumer checks. Keep theme scopes explicit. |
+| Low | Voice rules require periods universally, including short UI labels; typography says no intermediate sizes while allowing a separate metadata tier. | Clarify that sentences take periods, short control labels need not; reserve 16px only for metadata. Avoid editorial rules that obscure component semantics. Recommendation only. |
+| Low | Logo geometry and art provenance are documented; print colors, co-branding and responsive values remain open. | Preserve master SVGs and clear space. Label unresolved extensions as proposals; add production recipes only when needed, rather than inventing print or partner standards now. |
+
+Review coverage: accessibility (contrast, semantics, targets and stated reflow
+rules), layout (grouping, measure and narrow behavior), writing (voice and state
+truth), typography (roles/weights/scale), colors (measured palette pairings), and
+polish (geometry, icons and motion guidance). Runtime/native effects, assistive
+technology output, real preference persistence and all-app consistency are not
+established by this review. Gallery interaction/render checks are separate
+verification evidence; an attractive specimen is not a deployed product.
+
+Research basis: [WCAG non-text contrast](https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html),
+[resize text](https://www.w3.org/WAI/WCAG22/Understanding/resize-text.html),
+[target minimum](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html),
+and [USWDS typography](https://designsystem.digital.gov/components/typography/).
+The standards support measurable usability constraints; they do not mandate
+our aesthetic, palette or exact type ratio. The owner approved the revised brand candidate on 16 November 2026. The
+implementation adopts the type hierarchy, shared switch states and utility
+targets; remaining recommendations are proposals, not claims of all-app compliance.

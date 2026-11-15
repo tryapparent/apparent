@@ -7,9 +7,9 @@ import { resolve, join, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 type Row = { timestamp?: string; type?: string; payload?: Record<string, any> }
-type Call = { id: string; session: string; workspace: string; tool: string; category: string;
+export type Call = { id: string; session: string; workspace: string; tool: string; category: string;
   fingerprint: string; start: number; end?: number; asynchronous: boolean; batched: boolean;
-  processObservedEnd?: number }
+  processObservedEnd?: number; sourceRef?: {file: string; line: number} }
 const salt = randomBytes(32)
 const hash = (s: string) => createHash('sha256').update(salt).update(s).digest('hex').slice(0, 16)
 const within = (path: string, root: string) => path === root || path.startsWith(root + sep)
@@ -18,7 +18,7 @@ export const acceptsWorkspace = (cwd: string, root: string, excluded?: string) =
 
 export function describe(tool: string, source: string) {
   // Heuristics describe wrapper intent, never assert how many nested commands ran.
-  const category = /write_stdin|functions\.wait|clock\.sleep|t3_thread_wait/.test(tool + source) || tool === 'wait' ? 'poll/wait'
+  const category = /write_stdin|functions\.wait|clock\.sleep|t3_thread_wait|wait_agent/.test(tool + source) || ['wait', 'sleep'].includes(tool) ? 'poll/wait'
     : /git push|pre-push|verification\.py.*--run/.test(source) ? 'push/verification'
     : /cargo\s+(test|build|check|clippy)|t3-build/.test(source) ? 'rust/build'
     : /(?:bun|npm|node|pnpm)\s+(?:run\s+)?(?:test|build|ci)|--test/.test(source) ? 'js/test-build-install'
@@ -40,11 +40,15 @@ export async function readRollout(path: string, accept: (workspace: string) => b
   const calls = new Map<string, Call>()
   const processes = new Map<string, Call>()
   const pollTargets = new Map<string, string>()
-  let session = '', workspace = '', malformed = 0, orphanResults = 0
+  let session = '', workspace = '', malformed = 0, orphanResults = 0, lineNumber = 0
   const lines = createInterface({ input: createReadStream(path), crlfDelay: Infinity })
   for await (const line of lines) {
+    lineNumber++
     let row: Row
     try { row = JSON.parse(line) } catch { malformed++; continue }
+    if (!row || typeof row !== 'object' || (row.payload != null && (typeof row.payload !== 'object' || Array.isArray(row.payload)))) {
+      malformed++; continue
+    }
     const p = row.payload ?? {}
     if (row.type === 'session_meta') {
       session = String(p.id ?? p.session_id ?? '')
@@ -52,7 +56,8 @@ export async function readRollout(path: string, accept: (workspace: string) => b
       if (!accept(workspace)) { lines.close(); break }
     }
     if (!session || row.type !== 'response_item') continue
-    const time = Date.parse(row.timestamp ?? '')
+    const original = p.internal_chat_message_metadata_passthrough?.create_time
+    const time = typeof original === 'number' && Number.isFinite(original) ? original * 1000 : Date.parse(row.timestamp ?? '')
     if (!Number.isFinite(time)) continue
     if (p.type === 'function_call' || p.type === 'custom_tool_call') {
       if (typeof p.call_id !== 'string' || calls.has(p.call_id)) continue
@@ -61,7 +66,7 @@ export async function readRollout(path: string, accept: (workspace: string) => b
       const poll = /write_stdin/.test(tool + source) && source.match(/session_id["\s]*:\s*(\d+)/)
       if (poll) pollTargets.set(p.call_id, poll[1])
       calls.set(p.call_id, { id: p.call_id, session, workspace, tool, start: time,
-        ...describe(tool, source), asynchronous: false })
+        ...describe(tool, source), asynchronous: false, sourceRef: {file: path, line: lineNumber} })
     } else if (p.type === 'function_call_output' || p.type === 'custom_tool_call_output') {
       const call = calls.get(p.call_id)
       if (!call) { orphanResults++; continue }
@@ -75,15 +80,27 @@ export async function readRollout(path: string, accept: (workspace: string) => b
         processes.set(processId[1] ?? processId[2], call)
       const target = pollTargets.get(p.call_id)
       const launched = target && processes.get(target)
-      if (launched && /exit_code["\s]*:\s*\d+|Process exited with code\s*\d+/.test(output))
-        launched.processObservedEnd = time
+      if (launched && /exit_code["\s]*:\s*-?\d+|Process exited with code\s*-?\d+/.test(output))
+        launched.processObservedEnd ??= time
     }
   }
   return { calls: [...calls.values()], malformed, orphanResults }
 }
 
 export function summarize(calls: Call[], from: number, to: number) {
-  const unique = [...new Map(calls.map(c => [c.session + ':' + c.id, c])).values()]
+  // Provider rollovers can copy stable call IDs into different history files.
+  const merged = new Map<string, Call>()
+  for (const call of calls) {
+    const old = merged.get(call.id)
+    if (!old) { merged.set(call.id, {...call}); continue }
+    const earliest = old.start <= call.start ? old : call
+    const ends = [old.end, call.end].filter((t): t is number => t !== undefined && t >= earliest.start)
+    const processEnds = [old.processObservedEnd, call.processObservedEnd].filter((t): t is number => t !== undefined && t >= earliest.start)
+    merged.set(call.id, {...earliest, end: ends.length ? Math.min(...ends) : undefined,
+      processObservedEnd: processEnds.length ? Math.min(...processEnds) : undefined,
+      asynchronous: old.asynchronous || call.asynchronous, batched: old.batched || call.batched})
+  }
+  const unique = [...merged.values()]
   // Old unmatched records do not establish a still-running operation in this window.
   const selected = unique.filter(c => c.start < to && (c.end ?? to) > from &&
     (c.end !== undefined || c.start >= from))
@@ -94,15 +111,17 @@ export function summarize(calls: Call[], from: number, to: number) {
       const complete = rows.filter(c => c.end !== undefined)
       const ms = (c: Call) => Math.max(0, Math.min(c.end ?? to, to) - Math.max(c.start, from))
       const short = complete.filter(c => !c.asynchronous && c.end! - c.start < 300_000)
+      const totalSeconds = complete.reduce((n, c) => n + ms(c), 0) / 1000
       return { label, calls: rows.length, sessions: new Set(rows.map(c => c.session)).size,
         completed: complete.length, incomplete: rows.length - complete.length,
         asynchronous: rows.filter(c => c.asynchronous).length, batched: rows.filter(c => c.batched).length,
         activeAtCutoff: rows.filter(c => c.end === undefined || c.end > to).length,
         completedToolSeconds: Math.round(complete.reduce((n, c) => n + ms(c), 0) / 1000),
+        arithmetic: {count: complete.length, meanSeconds: complete.length ? totalSeconds / complete.length : 0, totalSeconds},
         shortCompletedCalls: short.length,
         shortToolSeconds: Math.round(short.reduce((n, c) => n + ms(c), 0) / 1000),
         incompleteObservedSeconds: Math.round(rows.filter(c => c.end === undefined).reduce((n, c) => n + ms(c), 0) / 1000) }
-    }).sort((a, b) => b.completedToolSeconds - a.completedToolSeconds || b.calls - a.calls)
+    }).sort((a, b) => b.arithmetic.totalSeconds - a.arithmetic.totalSeconds || b.calls - a.calls)
   }
   const intervals = selected.map(c => [Math.max(from, c.start), Math.min(to, c.end ?? to)])
     .sort((a, b) => a[0] - b[0])
@@ -111,11 +130,14 @@ export function summarize(calls: Call[], from: number, to: number) {
   return { window: { from: new Date(from).toISOString(), to: new Date(to).toISOString() },
     observedSessions: new Set(selected.map(c => c.session)).size, calls: selected.length,
     unmatchedBeforeWindow: unique.filter(c => c.end === undefined && c.start < from).length,
-    observedToolUnionSeconds: Math.round(union / 1000),
+    observedToolUnionSeconds: union / 1000,
     categories: group(c => c.category), tools: group(c => c.tool),
     repeatedWrappers: group(c => c.category + ':' + c.fingerprint).filter(g => g.calls > 1),
+    longest: selected.filter(c => c.end !== undefined).sort((a, b) => (b.end! - b.start) - (a.end! - a.start)).slice(0, 30)
+      .map(c => ({id: c.id, tool: c.tool, category: c.category, sourceRef: c.sourceRef,
+        seconds: (Math.min(c.end!, to) - Math.max(c.start, from)) / 1000})),
     correlatedProcesses: unique.filter(c => c.processObservedEnd !== undefined && c.start < to && c.processObservedEnd > from).map(c => ({
-      category: c.category, fingerprint: c.fingerprint,
+      category: c.category, fingerprint: c.fingerprint, sourceRef: c.sourceRef,
       observedSpanSeconds: Math.round((Math.min(to, c.processObservedEnd!) - Math.max(from, c.start)) / 1000) })),
     limitations: ['Codex rollouts only; other providers and hosted jobs are not included.',
       'Elapsed tool-call intervals include tool/service overhead and polling; not CPU time or subprocess runtime.',
@@ -127,7 +149,7 @@ export function summarize(calls: Call[], from: number, to: number) {
       'Missing results are censored at the cutoff; active-at-cutoff calls may complete later.'] }
 }
 
-async function* files(path: string): AsyncGenerator<string> {
+export async function* files(path: string): AsyncGenerator<string> {
   if (!(await stat(path)).isDirectory()) { yield path; return }
   for (const entry of await readdir(path, { withFileTypes: true })) {
     const child = join(path, entry.name)

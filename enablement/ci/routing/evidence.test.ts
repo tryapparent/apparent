@@ -107,3 +107,13 @@ test('GitHub job conclusions independently reject artifact claims for skipped or
   for(const name of names)for(const conclusion of ['skipped','cancelled','failure'])assert.equal(authenticatedSuites(jobs.map(job=>job.name===name?{...job,conclusion}:job),full,full).linux,false);
   assert.equal(authenticatedSuites(jobs,full,full).macos,false);
 });
+
+test('packed Mac evidence requires the real successful producer, not a claimed artifact result', () => {
+  const jobs=['contracts','select','tree-evidence','macos / select','macos / platform (macos-15-intel)']
+    .map(name=>({name,status:'completed',conclusion:'success'}));
+  assert.equal(authenticatedSuites(jobs,full,full).macos,true);
+  assert.equal(authenticatedSuites(jobs,full,full).linux,false);
+  for(const conclusion of ['skipped','cancelled','failure',''])
+    assert.equal(authenticatedSuites(jobs.map(j=>j.name.includes('/ platform')?{...j,conclusion}:j),full,full).macos,false);
+  assert.equal(authenticatedSuites(jobs.filter(j=>!j.name.includes('/ platform')),full,full).macos,false);
+});

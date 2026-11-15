@@ -395,7 +395,7 @@ test('permission refresh keeps setup unfocused and avoids repeating native geome
  // This Node fixture impersonates Electron before any bundle exists. Execute
  // the real TS policies; a cached dist directory must not be a test dependency.
  const hostRequire=require('node:module').createRequire(require.resolve('../electron/onboarding.cjs'));
- const policies=new Map(['presentation','hyprland','selection','practice-host'].map(name=>[`../dist/onboarding-${name}.cjs`,`./onboarding/${name}.ts`]));
+ const policies=new Map(['presentation','hyprland','selection','wispr','practice-host'].map(name=>[`../dist/onboarding-${name}.cjs`,`./onboarding/${name}.ts`]));
  const load=name=>{
   if(name==='electron')return electron;
   if(name.startsWith('../dist/'))assert.ok(policies.has(name),`Map the production policy source for ${name}`);
@@ -414,6 +414,10 @@ test('permission refresh keeps setup unfocused and avoids repeating native geome
  stdin.emit('data',JSON.stringify(boardState)+'\n');
  assert.ok(calls.includes('focus'),'opening the inline board view focuses its actual drawing surface');
  assert.ok(calls.some(x=>Array.isArray(x)&&x[0]==='position'&&x[1]===100&&x[2]===120));
+ stdin.emit('data',JSON.stringify({...boardState,boardView:null,practiceBoard:null,practice:'preparing'})+'\n');
+ assert.equal(window.isVisible(),false,'processing hides the owning window');
+ stdin.emit('data',JSON.stringify({...boardState,boardView:null,practiceBoard:null,practice:'copied'})+'\n');
+ assert.equal(window.isVisible(),true,'copied handoff restores the coach');
 });
 
 test('whiteboard bridge admits only finite human paper input and copies a minimal command',()=>{

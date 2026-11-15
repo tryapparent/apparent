@@ -1,4 +1,14 @@
 const { contextBridge, ipcRenderer } = require('electron');
+contextBridge.exposeInMainWorld('apparentSettingsRoute', callback => {
+  let live = true, received = false;
+  const listener = (_event, pane) => { received = true; if (live) callback(pane); };
+  ipcRenderer.on('apparent:settings-route', listener);
+  // A parent can select a pane before this document's preload is attached.
+  void ipcRenderer.invoke('apparent:settings-route').then(pane => {
+    if (live && !received && ['agents', 'about'].includes(pane)) callback(pane);
+  }).catch(() => {});
+  return () => { live = false; ipcRenderer.removeListener('apparent:settings-route', listener); };
+});
 
 contextBridge.exposeInMainWorld('apparentSettingsMounted', async () => {
   // React has committed its DOM. Do not hold that fact behind hidden-page
@@ -38,10 +48,8 @@ contextBridge.exposeInMainWorld('apparentAbout', Object.freeze({
 contextBridge.exposeInMainWorld('apparentAgents', Object.freeze({
   read: () => ipcRenderer.invoke('apparent:agents-preference'),
   save: enabled => ipcRenderer.invoke('apparent:agents-preference', enabled),
-  saveSharing: enabled => ipcRenderer.invoke('apparent:agents-sharing-preference', enabled),
-  saveAutoPaste: enabled => ipcRenderer.invoke('apparent:agents-auto-paste-preference', enabled),
   saveT3: enabled => ipcRenderer.invoke('apparent:agents-t3-preference', enabled),
-  previewT3: () => ipcRenderer.invoke('apparent:agents-t3-preview'),
+  previewT3: server => ipcRenderer.invoke('apparent:agents-t3-preview', server),
   connectT3: origin => ipcRenderer.invoke('apparent:agents-t3-connect', origin),
   cancelT3: () => ipcRenderer.invoke('apparent:agents-t3-cancel'),
   disconnectT3: () => ipcRenderer.invoke('apparent:agents-t3-disconnect'),
@@ -51,4 +59,10 @@ contextBridge.exposeInMainWorld('apparentAgents', Object.freeze({
     ipcRenderer.on('apparent:agents-state', listener);
     return () => ipcRenderer.removeListener('apparent:agents-state', listener);
   },
+}));
+
+contextBridge.exposeInMainWorld('apparentLabs',Object.freeze({
+  read:()=>ipcRenderer.invoke('apparent:labs-preference'),
+  save:(enabled,setting='autoPaste')=>ipcRenderer.invoke('apparent:labs-preference',enabled,setting),
+  subscribe:callback=>{const listener=(_event,facts)=>callback(facts);ipcRenderer.on('apparent:labs-state',listener);return()=>ipcRenderer.removeListener('apparent:labs-state',listener);},
 }));

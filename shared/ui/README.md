@@ -1,5 +1,20 @@
 # Shared UI sources
 
+`ErrorDialog` is the default operational-failure popup. Callers supply authoritative
+title/description, a named recovery action, dismissal and optional artwork. The
+native dialog traps focus, focuses recovery first, supports Escape and restores
+focus. Actions are left aligned: primary recovery first, Close second. Styling
+uses the canonical failure red, icon, Paper field and Signal recovery controls in
+both themes. Inline field validation remains local. Import from
+`@apparent/ui/error-dialog`; its stylesheet is included automatically.
+
+`@apparent/ui/switch` supplies optional binary preferences: a 48 × 24px
+Signal-off/Lilac-on track, 18px Carbon light-mode thumb and white dark-mode thumb with a Carbon edge and 44px interaction target, without
+a track outline in either theme. Supply a visible accessible label, controlled
+checked value and acknowledgement-based save handler. During persistence set
+`disabled` and `aria-busy`; the switch retains its pointer hotspot for the wait
+cursor. Its stylesheet is included automatically.
+
 Canonical React/shadcn controls and system appearance for every value stream.
 Desktop, Connect account and recording recipient pages, and Public consume the
 same framework-independent tokens. Engine and Agent frontends must use them too. Application policy,
@@ -13,11 +28,19 @@ separate Desktop/Connect copies. Theme tokens are shared, not OS-native skins.
 `@apparent/ui/icons` exports the shared Lucide `StickyNote` used by the saved-note
 extension; consume this export rather than copying SVG paths.
 
+`Keycap` and Button's `keycap` variant share the tactile keyboard treatment.
+Its styles load through `theme.css`. Keep component modules free of CSS imports:
+Connect's recipient and server renderers bundle JavaScript separately from CSS.
+
 NativeSelect and Tooltip use shadcn's MIT-licensed `new-york-v4/native-select`
 and `new-york/tooltip` registry sources. Import them from this package; Tooltip
 uses Radix for focus, hover and Escape behavior. The Settings-only theme opts
-into the accepted canonical blue Signal and Carbon roles without changing other
+into the accepted canonical Signal and Carbon roles without changing other
 surfaces or the system appearance contract.
+
+Input provides the native text/URL field with shared colors, a 44px minimum
+height and a visible keyboard focus outline. Supply a persistent label and
+field-specific help in the owning workflow.
 
 The Desktop foundation uses a `file:` dependency with npm `install-links=true`,
 so npm installs a snapshot rather than resolving dependencies from this source
@@ -77,3 +100,9 @@ evidence directory. The test changes only the guest's OS appearance, restores it
 and checks CSS, native window background and app-owned screenshots. It requires
 `gsettings` color-scheme support on Linux or System Events appearance on macOS;
 a missing system appearance route is an unrun gate, not a passing emulation.
+
+Product Settings uses the approved 48/24/18 title/section/body scale (4:2:1.5).
+Preference labels remain 18px at medium weight. White is a functional switch-thumb
+exception, not a brand accent. Left/right position and accessible checked state
+supplement color. At up to 700px, navigation moves above the content so complete
+retention choices remain readable.

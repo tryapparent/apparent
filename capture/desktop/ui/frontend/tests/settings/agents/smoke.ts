@@ -20,8 +20,8 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
   let browser: Awaited<ReturnType<typeof chromium.connectOverCDP>> | undefined;
   const exited = new Promise<void>(resolve => application.once('exit', () => resolve()));
   const actions: Record<string, unknown>[] = [];
-  let sharingSaved:boolean|null=null;
   let saved: boolean | null = null;
+  let sharingSaved:boolean|null=null;
   let t3Saved:boolean|null=null;
   let autoPasteSaved:boolean|null=null;
   let failWrite = false;
@@ -38,6 +38,10 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
   createInterface({input: application.stdout}).on('line', line => {
     try {
       const action = JSON.parse(line); actions.push(action);
+      if (action.action === 'navigate' && ['agents','about'].includes(action.pane)) {
+        application.stdin.write(JSON.stringify({type:'show',pane:action.pane})+'\n');
+        if(action.pane==='about') application.stdin.write(JSON.stringify({type:'about-state',version:'test-build',updates:false,linux:true,mainUpdates:false,updateChannel:'stable',updateCheck:{checking:false,result:null}})+'\n');
+      }
       if (action.action === 'agents-preference') {
         if (holdRead || holdWrite && 'enabled' in action) held = action;
         else reply(action);
@@ -58,9 +62,9 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     browser = await chromium.connectOverCDP(debuggerUrl);
     const page = browser.contexts()[0].pages()[0];
     await expect(page).toHaveTitle('Apparent Settings — Agents');
-    const toggle = page.getByRole('switch', {name: 'Ask for an Apparent video on complex changes'});
+    const toggle = page.getByRole('switch', {name: 'Ask for video proof'});
     await expect(toggle).toBeDisabled();
-    await expect(page.getByText('Reading saved preference…', {exact: true})).toBeVisible();
+    await expect(toggle).toHaveAttribute('aria-busy', 'true');
     await expect.poll(() => Boolean(held)).toBe(true);
     if (process.env.APPARENT_AGENTS_PROOF) {
       await fs.mkdir(process.env.APPARENT_AGENTS_PROOF, {recursive: true});
@@ -68,26 +72,8 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     }
     reply(held!); held = undefined; holdRead = false;
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
-    const autoToggle=page.getByRole('switch',{name:'Auto paste',exact:true});
-    await expect(autoToggle).toHaveAttribute('aria-checked','false');
-    if(process.platform==='linux') {
-      failWrite=true; await autoToggle.click();
-      await expect(page.getByRole('alert')).toContainText('Unable to save');
-      await expect(autoToggle).toBeDisabled(); failWrite=false;
-      await page.getByRole('button',{name:'Refresh preference'}).click();
-      await expect(autoToggle).toBeEnabled();
-      await autoToggle.focus(); await page.keyboard.press('Space');
-      await expect(autoToggle).toHaveAttribute('aria-checked','true');
-      assert.equal(actions.at(-1)?.setting,'autoPaste'); assert.equal(saved,null);
-      if(process.env.APPARENT_AGENTS_PROOF) await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,'auto-paste-on.png')});
-      await autoToggle.click(); await expect(autoToggle).toHaveAttribute('aria-checked','false');
-    } else await expect(autoToggle).toBeDisabled();
-    const sharingToggle=page.getByRole('switch',{name:'Public sharing links'});
-    await expect(sharingToggle).toHaveAttribute('aria-checked','false');
-    await sharingToggle.focus();await page.keyboard.press('Space');
-    await expect(sharingToggle).toHaveAttribute('aria-checked','true');
-    assert.equal(actions.at(-1)?.setting,'sharing');assert.equal(saved,null);
-    await sharingToggle.click();await expect(sharingToggle).toHaveAttribute('aria-checked','false');
+    await expect(page.getByRole('switch',{name:'Auto paste',exact:true})).toHaveCount(0);
+    await expect(page.getByRole('switch',{name:'Public sharing links',exact:true})).toHaveCount(0);
     const t3Toggle=page.getByRole('switch',{name:'Send recordings to T3'});
     await expect(t3Toggle).toHaveAttribute('aria-checked','false');
     await t3Toggle.click();await expect(t3Toggle).toHaveAttribute('aria-checked','true');
@@ -100,6 +86,9 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     await toggle.focus(); await page.keyboard.press('Space');
     await expect(toggle).toBeDisabled();
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
+    await expect(toggle).toHaveCSS('cursor','wait');
+    await expect(toggle).toHaveCSS('pointer-events','auto');
+    assert.equal(await toggle.evaluate(element=>{const r=element.getBoundingClientRect();const target=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return target===element||element.contains(target);}),true,'Busy switch owns the pointer hotspot');
     await expect.poll(() => Boolean(held)).toBe(true);
     reply(held!); holdWrite = false;
     await expect(toggle).toHaveAttribute('aria-checked', 'false');
@@ -112,29 +101,35 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     }));
     if(process.env.APPARENT_AGENTS_PROOF)await fs.writeFile(path.join(process.env.APPARENT_AGENTS_PROOF,'geometry.json'),JSON.stringify(initialGeometry,null,2));
     assert(initialGeometry.documentHeight<=initialGeometry.height,JSON.stringify(initialGeometry));
-    // Labs adds content beyond the fixed Settings viewport. Keep scrolling
-    // inside the content pane and verify its last action remains reachable.
-    assert.equal(await page.locator('.settings-content').evaluate(el=>getComputedStyle(el).overflowY),'auto');
-    await page.getByRole('button',{name:'Copy command',exact:true}).scrollIntoViewIfNeeded();
-    await expect(page.getByRole('button',{name:'Copy command',exact:true})).toBeInViewport();
+    assert(initialGeometry.content[1]<=initialGeometry.content[0],JSON.stringify(initialGeometry));
     if (process.env.APPARENT_AGENTS_PROOF) await page.screenshot({path: path.join(process.env.APPARENT_AGENTS_PROOF, 'agents-off.png')});
     failWrite = true;
     await toggle.click();
-    await expect(page.getByRole('alert')).toContainText('Unable to save');
+    await expect(page.getByRole('alertdialog')).toContainText('Unable to save');
     await expect(toggle).toBeDisabled();
+    const errorDialog=page.getByRole('alertdialog');
+    const recover=errorDialog.getByRole('button',{name:'Refresh preference'});
+    await expect(recover).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(errorDialog.getByRole('button',{name:'Close',exact:true})).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(recover).toBeFocused();
+    if(process.env.APPARENT_AGENTS_PROOF) await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,'agents-save-error.png')});
     failWrite = false;
     await page.getByRole('button', {name: 'Refresh preference'}).click();
     await expect(toggle).toHaveAttribute('aria-checked', 'false');
     await expect(toggle).toBeEnabled();
+    await expect(toggle).toBeFocused();
     // Out-of-band native readback follows external config edits.
     saved = true;
     application.stdin.write(JSON.stringify({type: 'agents-state', facts: {saved}}) + '\n');
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
-    await page.getByRole('button', {name: 'Copy command', exact: true}).focus();
+    await page.getByRole('button', {name: 'Copy install command', exact: true}).focus();
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('button',{name:'Command copied',exact:true})).toBeVisible();
+    await expect(page.getByText('Copied',{exact:true})).toBeVisible();
     await page.evaluate(() => {
       const field = document.createElement('textarea'); field.setAttribute('aria-label', 'Clipboard verification');
+      Object.assign(field.style,{position:'fixed',top:'0',left:'0',width:'1px',height:'1px'});
       document.body.append(field); field.focus();
     });
     await page.keyboard.press('ControlOrMeta+V');
@@ -152,9 +147,17 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
       await session.send('Emulation.setDeviceMetricsOverride',{width,height:530,deviceScaleFactor:1,mobile:false});
       for (const colorScheme of ['light', 'dark', 'light'] as const) {
         await page.emulateMedia({colorScheme, reducedMotion: 'reduce'});
+        await page.evaluate(() => document.fonts.ready);
+        assert.equal(await page.locator('h1').evaluate(e=>getComputedStyle(e).fontSize),'48px');
+        assert.equal(await page.locator('#agent-skill-label').evaluate(e=>getComputedStyle(e).fontSize),'24px');
+        assert.equal(await page.locator('#agent-video-label').evaluate(e=>getComputedStyle(e).fontSize),'18px');
+        assert.equal(await toggle.locator('.apparent-switch-thumb').evaluate(e=>getComputedStyle(e).backgroundColor),colorScheme==='dark'?'rgb(255, 255, 255)':'rgb(2, 1, 2)');
+        assert.equal(await toggle.locator('.apparent-switch-track').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(183, 165, 216)');
+        assert.equal(await t3Toggle.locator('.apparent-switch-track').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(122, 88, 199)');
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+        assert.equal(await page.locator('.settings-shell').evaluate(element=>element.getBoundingClientRect().top),0,'Settings shell stays fixed while pane scrolls');
         assert.equal(await page.locator('.settings-content').evaluate(element => element.scrollWidth <= element.clientWidth), true);
-        assert.equal(await page.locator('.settings-agent-command').evaluate(element => element.scrollWidth <= element.clientWidth), true);
+        assert.equal(await page.locator('.agent-command').evaluate(element => element.scrollWidth <= element.clientWidth), true);
         const contrasts = await page.evaluate(() => {
           const luminance = (color: Uint8ClampedArray) => {
             const channels = [...color].slice(0, 3).map(value => {
@@ -162,7 +165,7 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
             });
             return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722;
           };
-          return [...document.querySelectorAll('.settings-agents h2, .settings-agents h3, .settings-agents .settings-metadata, .settings-agent-command, .settings-agents button')].map(element => {
+          return [...document.querySelectorAll('.settings-agents h2, .settings-agents h3, .settings-agents .settings-metadata, .agent-command, .settings-agents button')].filter(element => element.textContent?.trim()).map(element => {
             // Chromium resolves CSS color-mix/oklab and alpha compositing;
             // parsing their numeric components as 8-bit RGB is incorrect.
             const canvas = new OffscreenCanvas(1, 1);
@@ -177,7 +180,7 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
           });
         });
         assert.ok(contrasts.every(value => value >= 4.5), `Text contrast: ${contrasts.join(', ')}`);
-        await page.getByRole('heading', {name: 'Public sharing links', exact: true}).evaluate(element=>element.scrollIntoView({block:'start'}));
+        await page.getByRole('button', {name: 'Copy install command', exact: true}).scrollIntoViewIfNeeded();
         if (process.env.APPARENT_AGENTS_PROOF) {
           await fs.mkdir(process.env.APPARENT_AGENTS_PROOF, {recursive: true});
           await page.screenshot({path: path.join(process.env.APPARENT_AGENTS_PROOF, `agents-${width}-${colorScheme}.png`)});
@@ -187,12 +190,56 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
       }
       await session.detach();
     }
+    const enlarged = await page.context().newCDPSession(page);
+    await enlarged.send('Emulation.setDeviceMetricsOverride',{width:640,height:530,deviceScaleFactor:1,mobile:false});
+    await page.evaluate(() => document.documentElement.style.fontSize = '200%');
+    assert.equal(await page.locator('h1').evaluate(e=>getComputedStyle(e).fontSize),'96px');
+    assert.equal(await page.locator('.settings-content').evaluate(e=>e.scrollWidth <= e.clientWidth),true,'enlarged text reflows inside the pane');
+    for (const control of [toggle,t3Toggle,page.getByRole('button',{name:'Copy install command',exact:true})]) {
+      await control.scrollIntoViewIfNeeded();
+      await control.focus();
+      await expect(control).toBeFocused();
+      assert.equal(await control.evaluate(e=>{const r=e.getBoundingClientRect();return r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight;}),true,'enlarged controls remain reachable');
+    }
+    if (process.env.APPARENT_AGENTS_PROOF) await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,'agents-640-enlarged-text.png')});
+    await page.evaluate(() => document.documentElement.style.removeProperty('font-size'));
+    await enlarged.detach();
     application.stdin.write(JSON.stringify({type: 'agents-state', facts: {error: 'config_read_failed'}}) + '\n');
     await expect(toggle).toBeDisabled();
-    await expect(page.getByRole('alert')).toContainText('Unable to read');
+    await expect(page.getByRole('alertdialog')).toContainText('Unable to read');
     if (process.env.APPARENT_AGENTS_PROOF) await page.screenshot({path: path.join(process.env.APPARENT_AGENTS_PROOF, 'agents-read-error.png')});
+    await page.getByRole('button', {name: 'Close', exact: true}).click();
+    await page.evaluate(()=>{Object.assign(window,{navigationMarker:'same-document'});});
+    const originalUrl=page.url();
     await page.getByRole('button', {name: 'About', exact: true}).click();
     await expect.poll(() => actions.some(action => action.action === 'navigate' && action.pane === 'about')).toBe(true);
+    await expect(page).toHaveTitle('Apparent Settings — About');
+    await expect(page.getByText('Version test-build')).toBeVisible();
+    assert.equal(await page.evaluate(async()=>{try{await window.apparentAgents.read();return false;}catch{return true;}}),true,'About refuses Agents capability');
+    await page.getByRole('button',{name:'Agents',exact:true}).click();
+    await expect(page).toHaveTitle('Apparent Settings — Agents');
+    await expect(toggle).toBeEnabled();
+    assert.equal(page.url(),originalUrl);
+    held=undefined;holdRead=true;
+    await page.getByRole('button',{name:'About',exact:true}).click();
+    await expect(page).toHaveTitle('Apparent Settings — About');
+    await page.getByRole('button',{name:'Agents',exact:true}).click();
+    await expect.poll(()=>Boolean(held)).toBe(true);
+    await expect(toggle).toBeDisabled();
+    const delayedRead=held!;
+    await page.getByRole('button',{name:'About',exact:true}).click();
+    await expect(page).toHaveTitle('Apparent Settings — About');
+    holdRead=false;
+    await page.getByRole('button',{name:'Agents',exact:true}).click();
+    await expect(toggle).toBeEnabled();
+    reply(delayedRead);
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
+    assert.equal(await page.evaluate(()=>Reflect.get(window,'navigationMarker')),'same-document','Navigation never reloads document');
+    await page.getByRole('button',{name:'About',exact:true}).click();
+    await expect(page).toHaveTitle('Apparent Settings — About');
+    await page.reload();
+    await expect(page).toHaveTitle('Apparent Settings — About');
+    await expect(page.getByText('Version test-build')).toBeVisible();
     assert.equal(actions.some(action => action.action === 'set'), false);
   } finally {
     await browser?.close().catch(() => {});
@@ -208,7 +255,8 @@ test('Agents clipboard failures recover and bridge refuses foreign frames or arb
     env: {...process.env, HOME: home, XDG_CONFIG_HOME: path.join(home, 'config'), XDG_CACHE_HOME: path.join(home, 'cache')}});
   try {
     const page = await application.firstWindow();
-    await expect(page.getByRole('button', {name: 'Copy command', exact: true})).toBeVisible();
+    await page.getByRole('button', {name:'Close',exact:true}).click();
+    await expect(page.getByRole('button', {name: 'Copy install command', exact: true})).toBeVisible();
     assert.equal(await application.evaluate(async ({ipcMain, BrowserWindow, clipboard}) => {
       const sender = BrowserWindow.getAllWindows()[0].webContents;
       const handler = ipcMain._invokeHandlers.get('apparent:agents-copy-skill');
@@ -219,18 +267,17 @@ test('Agents clipboard failures recover and bridge refuses foreign frames or arb
       clipboard.writeText = async () => { throw Error('Synthetic clipboard unavailable'); };
       return true;
     }), true);
-    await page.getByRole('button', {name: 'Copy command', exact: true}).click();
-    await expect(page.getByRole('alert').filter({hasText: 'Unable to copy'})).toBeVisible();
+    await page.getByRole('button', {name: 'Copy install command', exact: true}).click();
+    await expect(page.getByRole('alertdialog').filter({hasText: 'Unable to copy'})).toBeVisible();
     await expect(page.getByText('Copied', {exact: true})).toHaveCount(0);
     await application.evaluate(({clipboard}) => { clipboard.writeText = () => {}; });
-    await page.getByRole('button', {name: 'Copy command', exact: true}).focus();
-    await page.keyboard.press('Enter');
+    await page.getByRole('button', {name: 'Try again', exact: true}).click();
     await expect(page.getByText('Copied', {exact: true})).toBeVisible();
-    await expect(page.getByRole('alert').filter({hasText: 'Unable to copy'})).toHaveCount(0);
+    await expect(page.getByRole('alertdialog').filter({hasText: 'Unable to copy'})).toHaveCount(0);
   } finally { await application.close(); await fs.rm(home, {recursive: true, force: true}); }
 });
 
-test('guided pairing previews the clipboard destination, exchanges once and waits for native acknowledgement without enabling sending', {timeout:60000}, async context=>{
+test('guided pairing previews the clipboard destination and waits for explicit confirmation and native acknowledgement without enabling sending', {timeout:60000}, async context=>{
   const home=await fs.mkdtemp(path.join(os.tmpdir(),'agents-pair-'));
   const p=await provider(context),frontend=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../..');
   const application=await electron.launch({args:[path.join(frontend,'tests/settings/agents/parent.cjs'),'--settings-storage','--settings-agents','--settings-parent'],env:{...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config'),XDG_CACHE_HOME:path.join(home,'cache')}});
@@ -240,39 +287,104 @@ test('guided pairing previews the clipboard destination, exchanges once and wait
   application.process().stdout!.on('data',chunk=>{buffer+=String(chunk);let end:number;while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end);buffer=buffer.slice(end+1);try{const action=JSON.parse(line);if(action.action==='agents-connection')connection=action.connection;if(action.action==='agents-preference'||action.action==='agents-connection')void reply(action.request);}catch{}}});
   try{
     const page=await application.firstWindow();await reply(1);
+    const viewport=await page.context().newCDPSession(page);
+    const resize=async(width:number)=>{
+      await viewport.send('Emulation.setDeviceMetricsOverride',{width,height:width===640?530:600,deviceScaleFactor:1,mobile:false});
+      await expect.poll(()=>page.evaluate(()=>innerWidth)).toBe(width);
+      await page.evaluate(()=>document.fonts.ready);
+    };
     const toggle=page.getByRole('switch',{name:'Send recordings to T3'});await expect(toggle).toBeEnabled();
+    assert.equal(await application.evaluate(async({ipcMain,BrowserWindow})=>{
+      const sender=BrowserWindow.getAllWindows()[0].webContents,event={sender,senderFrame:sender.mainFrame};
+      for(const args of [[true],[{}],['https://t3.example','extra'],['x'.repeat(2049)]]){
+        try{await ipcMain._invokeHandlers.get('apparent:agents-t3-preview')(event,...args);return false;}catch{}
+      }
+      try{await ipcMain._invokeHandlers.get('apparent:agents-t3-preview')({sender,senderFrame:{url:sender.getURL()}},'http://localhost:3773');return false;}catch{}
+      return true;
+    }),true);
     if(process.env.APPARENT_AGENTS_PROOF)for(const colorScheme of ['light','dark'] as const){
-      await page.emulateMedia({colorScheme});await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(640,530));
+      await page.emulateMedia({colorScheme});await resize(640);
       await expect.poll(()=>page.evaluate(()=>innerWidth)).toBe(640);
       assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight),530,'the content pane owns scrolling');
       await fs.writeFile(path.join(process.env.APPARENT_AGENTS_PROOF,'minimum-geometry.json'),JSON.stringify(await page.evaluate(()=>({width:innerWidth,height:innerHeight,all:[document.documentElement,document.body,document.getElementById('root'),...document.querySelectorAll('.settings-shell,.settings-content,.settings-sidebar')].map(el=>({name:el!.tagName+'.'+el!.className,scroll:el!.scrollHeight,client:el!.clientHeight,rect:el!.getBoundingClientRect().toJSON(),overflow:getComputedStyle(el!).overflow,height:getComputedStyle(el!).height}))})),null,2));
       await page.locator('.settings-content').evaluate(element=>element.scrollTop=0);
       await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,'agents-native-min-'+colorScheme+'.png')});
-      await page.getByRole('button',{name:'Copy command',exact:true}).scrollIntoViewIfNeeded();
+      await page.getByRole('button',{name:'Copy install command',exact:true}).scrollIntoViewIfNeeded();
       await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,'agents-native-min-bottom-'+colorScheme+'.png')});
     }
-    await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(920,600));
+    await resize(920);
     await page.getByRole('button',{name:'Connect T3',exact:true}).click();
     const dialog=page.getByRole('dialog');await expect(dialog).toContainText('Sharing & access');
     if(process.env.APPARENT_AGENTS_PROOF)for(const width of [920,640])for(const colorScheme of ['light','dark'] as const){
-      await application.evaluate(({BrowserWindow},width)=>BrowserWindow.getAllWindows()[0].setSize(width,width===640?530:600),width);
+      await resize(width);
       await page.emulateMedia({colorScheme});await dialog.evaluate(element=>element.scrollTop=0);
       await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,`pairing-guide-${width}-${colorScheme}.png`)});
     }
-    await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(920,600));
-    await page.getByRole('button',{name:'Paste pairing link',exact:true}).click();await expect(dialog.getByRole('alert')).toContainText('Copy a full pairing link');
+    await resize(920);
+    await page.getByRole('button',{name:'Paste code or link',exact:true}).click();await expect(dialog.getByRole('alert')).toContainText('Copy a T3 code or full link');
     await application.evaluate(({clipboard},value)=>clipboard.writeText(value),p.link);
     assert.equal(await application.evaluate(({clipboard})=>clipboard.readText()),p.link);
-    await page.getByRole('button',{name:'Paste pairing link',exact:true}).click();await expect(dialog).toContainText(p.origin);assert.equal(p.exchanged,0);
+    await page.getByRole('button',{name:'Paste code or link',exact:true}).click();await expect(dialog).toContainText(p.origin);assert.equal(p.exchanged,0);
     // A changed clipboard cannot change the previewed destination at confirmation.
     await application.evaluate(({clipboard})=>clipboard.writeText('https://unexpected.example/pair?token=secret'));
-    assert.equal(await page.evaluate(()=>document.body.innerText.includes('one-time')),false);
+    assert.equal(await page.evaluate(code=>document.body.innerText.includes(code),p.code),false);
     await dialog.getByRole('button',{name:'Connect',exact:true}).click();
     await expect(page.getByText(`Connected to ${new URL(p.origin).host}`,{exact:true})).toBeVisible();assert.equal(p.exchanged,1);assert.equal(connection!.token,'private-fixture-token');await expect(toggle).toHaveAttribute('aria-checked','false');
     assert.equal(await page.evaluate(()=>document.body.innerText.includes('private-fixture-token')),false);
     await page.reload();await expect(page.getByText(`Connected to ${new URL(p.origin).host}`,{exact:true})).toBeVisible();
     await page.getByRole('button',{name:'Disconnect',exact:true}).click();await expect(page.getByRole('button',{name:'Connect T3',exact:true})).toBeEnabled();assert.equal(connection,null);
-    await page.getByRole('button',{name:'Connect T3',exact:true}).click();await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);assert.equal(p.exchanged,1);
+    await page.getByRole('button',{name:'Connect T3',exact:true}).click();
+    const server=dialog.getByRole('textbox',{name:'T3 server address'});await expect(server).toHaveValue('http://127.0.0.1:3773');
+    p.renew();
+    await application.evaluate(({clipboard},code)=>clipboard.writeText(code),p.code);
+    await server.fill('http://remote.example');
+    await dialog.getByRole('button',{name:'Paste code or link',exact:true}).click();await expect(dialog.getByRole('alert')).toBeVisible();assert.equal(p.exchanged,1);
+    await server.fill(p.origin);await server.focus();
+    await page.keyboard.press('Tab');await expect(dialog.getByRole('button',{name:'Paste code or link',exact:true})).toBeFocused();
+    await page.keyboard.press('Enter');await expect(dialog.locator('.settings-t3-preview')).toContainText(p.origin);assert.equal(p.exchanged,1);
+    assert.equal(await page.evaluate(code=>document.body.innerText.includes(code),p.code),false);
+    // Editing the address invalidates its already-approved destination.
+    await server.fill('http://localhost:3773');await expect(dialog.getByRole('button',{name:'Connect',exact:true})).toHaveCount(0);
+    await server.fill(p.origin);await dialog.getByRole('button',{name:'Paste code or link',exact:true}).click();
+    if(process.env.APPARENT_AGENTS_PROOF)for(const width of [920,640])for(const colorScheme of ['light','dark'] as const){
+      await resize(width);
+      await expect.poll(()=>page.evaluate(()=>innerWidth)).toBe(width);await page.emulateMedia({colorScheme});
+      await server.scrollIntoViewIfNeeded();await server.focus();await page.keyboard.press('Tab');await page.keyboard.press('Shift+Tab');await expect(server).toBeFocused();
+      const metrics=await server.evaluate(input=>{
+        const style=getComputedStyle(input),canvas=document.createElement('canvas'),ctx=canvas.getContext('2d')!;
+        function luminance(color:string){ctx.fillStyle=color;ctx.fillRect(0,0,1,1);const rgb=Array.from(ctx.getImageData(0,0,1,1).data).slice(0,3).map(v=>{const c=v/255;return c<=0.04045?c/12.92:((c+0.055)/1.055)**2.4;});return rgb[0]*0.2126+rgb[1]*0.7152+rgb[2]*0.0722;}
+        const background=luminance(style.backgroundColor);const contrast=(color:string)=>{const other=luminance(color);return (Math.max(background,other)+0.05)/(Math.min(background,other)+0.05);};
+        return {focus:input.matches(':focus-visible'),outline:style.outlineStyle,outlineWidth:parseFloat(style.outlineWidth),textContrast:contrast(style.color),focusContrast:contrast(style.outlineColor),height:input.getBoundingClientRect().height,fontSize:parseFloat(style.fontSize)};
+      });
+      assert.equal(metrics.focus,true);assert.notEqual(metrics.outline,'none');assert(metrics.outlineWidth>=2);assert(metrics.textContrast>=4.5);assert(metrics.focusContrast>=3);assert(metrics.height>=44);assert.equal(metrics.fontSize,18);
+      if(process.env.APPARENT_AGENTS_PROOF)await fs.writeFile(path.join(process.env.APPARENT_AGENTS_PROOF,`input-metrics-${width}-${colorScheme}.json`),JSON.stringify(metrics));
+      await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,`pairing-code-${width}-${colorScheme}.png`)});
+      await dialog.getByRole('button',{name:'Connect',exact:true}).scrollIntoViewIfNeeded();
+      await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,`pairing-confirm-${width}-${colorScheme}.png`)});
+      assert.equal(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth),true,'pairing dialog has no horizontal overflow');
+    }
+    await resize(920);
+    await application.evaluate(({clipboard})=>clipboard.writeText('https://unexpected.example/pair?token=other'));
+    const release=p.hold();
+    await dialog.getByRole('button',{name:'Connect',exact:true}).click();
+    await expect(server).toBeDisabled();await expect(dialog.getByRole('status')).toContainText('Connecting');
+    if(process.env.APPARENT_AGENTS_PROOF)await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,'pairing-connecting.png')});
+    release();
+    await expect(page.getByText(`Connected to ${new URL(p.origin).host}`,{exact:true})).toBeVisible();assert.equal(p.exchanged,2);await expect(toggle).toHaveAttribute('aria-checked','false');
+    await page.getByRole('button',{name:'Disconnect',exact:true}).click();
+    await page.getByRole('button',{name:'Connect T3',exact:true}).click();await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);assert.equal(p.exchanged,2);
+    // A trusted route change invalidates pending consent without recreating the window.
+    await page.getByRole('button',{name:'Connect T3',exact:true}).click();
+    await application.evaluate(({clipboard},value)=>clipboard.writeText(value),p.link);
+    await page.getByRole('button',{name:'Paste code or link',exact:true}).click();
+    await expect(dialog).toContainText(p.origin);
+    await page.evaluate(()=>Reflect.set(window,'pairingRouteMarker',true));
+    const show=(pane:string)=>application.evaluate((_electron,pane)=>process.stdin.emit('data',JSON.stringify({type:'show',pane})+'\n'),pane);
+    await show('about');await expect(page).toHaveTitle('Apparent Settings — About');
+    await show('agents');await expect(page).toHaveTitle('Apparent Settings — Agents');
+    await expect(toggle).toBeEnabled();await expect(dialog).toHaveCount(0);
+    assert.equal(await page.evaluate(()=>Reflect.get(window,'pairingRouteMarker')),true);
+    assert.equal(p.exchanged,2,'Leaving Agents never exchanges the unconfirmed preview');
   }finally{await application.close().catch(()=>{});await fs.rm(home,{recursive:true,force:true});}
 });
 
