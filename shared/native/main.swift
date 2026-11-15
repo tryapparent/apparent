@@ -154,5 +154,5 @@ case "qr":
   }
   emit(["qr": qr])
 default:
-  fail("usage: apparent-helper devices|mirror|transcribe|transcribe-stream|speech-model|frames|audio|export|shrink|permission-panel|permissions|sck-probe|onboarding|settings|qr …")
+  fail("usage: apparent-helper devices|mirror|transcribe|transcribe-stream|speech-model|audio|export|shrink|permission-panel|permissions|sck-probe|onboarding|settings|qr …")
 }
