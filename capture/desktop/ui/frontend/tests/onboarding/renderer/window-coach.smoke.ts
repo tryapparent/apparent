@@ -246,7 +246,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.locator('.native-pill-example .pill [data-action=finish]')).toBeVisible();
   await expect(page.locator('.native-pill-example .pill .meter')).toBeVisible();
   await expect.poll(()=>page.locator('.native-coach').evaluate(card=>{
-    const pill=card.querySelector('.pill');if(!pill)return Infinity;
+    const pill=card.querySelector('.pill-row');if(!pill)return Infinity;
     return card.getBoundingClientRect().right-pill.getBoundingClientRect().right;
   })).toBeLessThan(27);
   assert.equal(await page.locator('.native-pill-example .pill').evaluate(el=>Boolean(el.closest('[inert]'))),true);

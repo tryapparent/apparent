@@ -15,7 +15,9 @@ export function PillGuide({screenOnly=false,finish=false}:{screenOnly?:boolean;f
     const update=()=>{if(!host.current||!surface.current)return;
       const pill=surface.current.querySelector<HTMLElement>('.pill'),button=surface.current.querySelector<HTMLElement>(`[data-action=${target}]`);
       if(!pill||!button)return;
-      const width=pill.offsetWidth,scale=Math.min(1,host.current.clientWidth/width);
+      // The native window reserves transparent space for its notes extension.
+      // Fit the visible row, not that native-window reservation, inside the coach.
+      const width=pill.querySelector<HTMLElement>('.pill-row')?.offsetWidth??pill.offsetWidth,scale=Math.min(1,host.current.clientWidth/width);
       const rect=button.getBoundingClientRect(),origin=surface.current.getBoundingClientRect();
       const current=surface.current.offsetWidth?parseFloat(surface.current.style.getPropertyValue('--preview-scale'))||1:1;
       setLayout({width,scale,height:Math.ceil(pill.offsetHeight*scale)+24,x:(rect.left-origin.left+rect.width/2)/current*scale,y:(rect.top-origin.top+rect.height/2)/current*scale});
