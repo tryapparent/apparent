@@ -699,6 +699,7 @@ fn worker(jobs: &flume::Receiver<Job>) {
     let captures = crate::shared::handoff::default_captures_dir();
     let mut next_pass = Instant::now() + Duration::from_secs(90);
     let mut last_pass: Option<SystemTime> = None;
+    let mut last_attempt: Option<SystemTime> = None;
     let mut last_shrink: Option<SystemTime> = None;
     let mut shrinks: Vec<(Instant, Instant, PathBuf)> = Vec::new();
     loop {
@@ -739,10 +740,7 @@ fn worker(jobs: &flume::Receiver<Job>) {
         }
         shrinks = later;
         // The Mac sleeps through `Instant`s, so passes also go by the wall clock.
-        let pass_due = last_pass.is_none_or(|at| {
-            SystemTime::now().duration_since(at).unwrap_or_default() >= PASS_EVERY
-        });
-        if Instant::now() >= next_pass || (last_pass.is_some() && pass_due) {
+        if pass_due(next_pass, last_attempt, Instant::now(), SystemTime::now()) {
             if recording() {
                 next_pass = Instant::now() + Duration::from_secs(60);
                 continue;
@@ -751,7 +749,9 @@ fn worker(jobs: &flume::Receiver<Job>) {
             let shrink = last_shrink.is_none_or(|at| {
                 SystemTime::now().duration_since(at).unwrap_or_default() >= SHRINK_EVERY
             });
-            let (actions, report) = match run_pass(&captures, &policy, false, Duration::ZERO, shrink) {
+            let result = run_pass(&captures, &policy, false, Duration::ZERO, shrink);
+            last_attempt = Some(SystemTime::now());
+            let (actions, report) = match result {
                 Ok(result) => result,
                 Err(_) => {
                     apparent_log("retention: Record planning unavailable; no cleanup performed");
@@ -778,6 +778,12 @@ fn worker(jobs: &flume::Receiver<Job>) {
             next_pass = Instant::now() + PASS_EVERY;
         }
     }
+}
+
+fn pass_due(next: Instant, last_attempt: Option<SystemTime>, now: Instant, wall: SystemTime) -> bool {
+    now >= next
+        || last_attempt
+            .is_some_and(|at| wall.duration_since(at).unwrap_or_default() >= PASS_EVERY)
 }
 
 /// `Err` when the bundle is busy and should be retried.
@@ -916,6 +922,23 @@ mod tests {
     }
 
     #[test]
+    fn failed_attempt_waits_a_full_period_despite_frequent_shrink_wakes() {
+        let now = Instant::now();
+        let wall = UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let next = now + PASS_EVERY;
+        // An old success must not remain the wall-clock retry authority.
+        assert!(pass_due(next, Some(wall - PASS_EVERY * 2), now, wall));
+        for seconds in [30, 60, 1_800, 3_599] {
+            let elapsed = Duration::from_secs(seconds);
+            assert!(!pass_due(next, Some(wall), now + elapsed, wall + elapsed));
+        }
+        assert!(pass_due(next, Some(wall), now + PASS_EVERY, wall + PASS_EVERY));
+        // Wall time can advance during Mac sleep while monotonic time does not.
+        assert!(pass_due(next, Some(wall), now, wall + PASS_EVERY));
+        assert!(!pass_due(next, Some(wall), now, wall - Duration::from_secs(30)));
+    }
+
+    #[test]
     fn small_movie_retention_observation_uses_engine_without_rewriting_media() {
         let root = tempfile::tempdir().unwrap();
         let video = root.path().join("recording.mp4");
@@ -998,6 +1021,51 @@ mod tests {
         assert_eq!(std::fs::read(sentinel).unwrap(), b"untouched");
         assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 2);
         assert_eq!(std::fs::read_dir(bundle).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn after_capture_shrink_uses_record_and_real_engine_for_an_eligible_small_movie() {
+        // Other recorder tests hold the process-wide Recording guard. Exercise
+        // this real job in its own test process without weakening that guard.
+        if std::env::var_os("APPARENT_RETENTION_SHRINK_TEST_CHILD").is_none() {
+            let test = concat!("capture::engine::bundle::retention::tests::",
+                "after_capture_shrink_uses_record_and_real_engine_for_an_eligible_small_movie");
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", test, "--nocapture"])
+                .env("APPARENT_RETENTION_SHRINK_TEST_CHILD", "1")
+                .output().unwrap();
+            assert!(output.status.success(), "{}\n{}",
+                String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"));
+            return;
+        }
+        let root = tempfile::tempdir().unwrap();
+        let video = root.path().join("recording.mov");
+        let made = std::process::Command::new("ffmpeg").args([
+            "-v", "error", "-nostdin", "-y", "-f", "lavfi",
+            "-i", "testsrc=size=192x128:rate=30:duration=1",
+            "-c:v", "rawvideo", "-threads", "1", "-pix_fmt", "rgb24",
+        ]).arg(&video).output().unwrap();
+        assert!(made.status.success(), "{}", String::from_utf8_lossy(&made.stderr));
+        let original = std::fs::read(&video).unwrap();
+        assert!(original.len() as u64 * 8 > 6_000_000, "real movie must qualify by bitrate");
+        let probe = crate::composition::media_probe::bundle_probe(&video).unwrap();
+        assert_eq!((probe.width, probe.height, probe.duration_ms), (192, 128, 1000));
+        let metadata = serde_json::json!({"durationMs":probe.duration_ms,"source":"iphone",
+            "device":{"capture":"mirror"},"video":"recording.mov"}).to_string();
+        std::fs::write(root.path().join("apparent.json"), &metadata).unwrap();
+        let manifest: Manifest = serde_json::from_str(&metadata).unwrap();
+        let (facts, _) = observe(root.path(), &manifest, 0, 0, false);
+        let decisions = crate::composition::retention::plan(
+            &Policy {media_days:None,bundle_days:None}, &[facts], true,
+        ).unwrap();
+        assert_eq!(decisions.len(), 1);
+        assert_eq!(decisions[0].kind, crate::composition::retention::Kind::Shrink);
+        // Real native size observation makes this eligible request a no-op.
+        assert!(shrink_now(root.path()).is_ok());
+        assert_eq!(std::fs::read(video).unwrap(), original);
+        assert_eq!(std::fs::read_to_string(root.path().join("apparent.json")).unwrap(), metadata);
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 2);
     }
 
     struct TempDir(PathBuf);

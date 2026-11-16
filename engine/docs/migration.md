@@ -217,6 +217,17 @@ Mac and Linux AppImage acceptance remain required for this composition. Missing
 plans fail with existing recovery data; rollback restores routing, staging and
 the donor together. No SDK pin, persistence schema or config writer changes.
 
+Record Storage's cleanup planner is locally qualified through the native CLI,
+background-pass and after-capture routes; merge/platform delivery remains open.
+It owns age/settling, priority and bitrate decisions. Native exclusions, claims,
+mutation checks, encoding, config defaults and scheduling remain explicit debt.
+The real staged CLI passed twelve policy dry-runs and refused an invalid worker
+reply before any cleanup, preserving source/config and stale staging. The real
+after-capture caller also passed an eligible-small-movie no-op through Record
+and the published Engine probe. Packed Rust-free Node proof matches the staged
+runtime bytes; these checks do not establish Mac, AppImage or live-phone proof.
+See [the owner contract](../../record/storage/README.md#cleanup-planning).
+
 After each merge, trace current callers again and select the next smallest usable
 boundary above. Publish producer prerequisites only when they enable a named real
 consumer; package-only work is not completed application adoption. Keep the
