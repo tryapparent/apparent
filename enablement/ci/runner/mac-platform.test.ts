@@ -12,6 +12,18 @@ const jobs = YAML.parse(readFileSync(new URL('.github/workflows/verification-pla
 function enabled(expression: string, inputs: any, outputs: any) {
   return Function('inputs','needs',`return (${expression});`)(inputs,{select:{outputs}});
 }
+test('native foreground proof drivers select and execute their installed Mac consumer', () => {
+  const foreground=jobs.rust.steps.find((s:any)=>s.id==='native_foreground');
+  for(const path of ['capture/desktop/scripts/native/foreground/pill-input.swift',
+    'capture/desktop/scripts/native/foreground/scene.swift']) {
+    const plan=suitePlan([path]);
+    const outputs=Object.fromEntries(Object.entries(plan).map(([key,value])=>[key,String(value)]));
+    assert.equal(enabled(jobs.rust.if,{runner:'macos-15-intel',mac_rust:true,release_receipt:false},outputs),true,path);
+    const selected=Function('needs','runner','steps','cancelled',`return (${foreground.if});`)(
+      {select:{outputs}},{os:'macOS'},{mac_candidate_build:{outcome:'success'}},()=>false);
+    assert.equal(selected,true,`${path} must exercise the actual native foreground driver`);
+  }
+});
 test('each selected Mac platform uses one allocation; Linux retains independent parallel suites', () => {
   for (let mask=0;mask<16;mask++) {
     const flags=['root','engine','desktop','client'];
