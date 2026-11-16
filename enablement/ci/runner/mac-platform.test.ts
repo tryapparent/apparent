@@ -115,6 +115,34 @@ test('a failed packed client command propagates and cleans its private temporary
   assert.deepEqual(readdirSync(join(job,'home')),[]);
 });
 
+test('portable Cargo source-identity proof executes on Linux root selections and propagates failure', t => {
+  const proof=jobs.rust.steps.find((s:any)=>s.run?.includes('--test enablement/prerequisites/source-identity/git-index.test.ts'));
+  assert.ok(proof,'The real Cargo freshness fixture must keep a hosted executor');
+  for(const os of ['Linux','macOS']) for(const root of ['true','false']) {
+    const selected=Function('runner','needs',`return (${proof.if});`)({os},{select:{outputs:{root}}});
+    assert.equal(selected,os==='Linux'&&root==='true',`${os} root=${root}`);
+  }
+  for(const path of ['enablement/build_version.rs','.github/workflows/verification-platform.yml']) {
+    const outputs=Object.fromEntries(Object.entries(suitePlan([path])).map(([key,value])=>[key,String(value)]));
+    assert.equal(enabled(jobs.rust.if,{runner:'ubuntu-24.04',release_receipt:false},outputs),true,path);
+    assert.equal(Function('runner','needs',`return (${proof.if});`)({os:'Linux'},{select:{outputs}}),true,path);
+  }
+  const job=mkdtempSync(join(tmpdir(),'apparent-dev-source-identity-lane-'));
+  t.after(()=>rmSync(job,{recursive:true,force:true}));
+  const trace=join(job,'calls');
+  writeFileSync(join(job,'node'),'#!/bin/sh\nprintf "%s\\n" "$APPARENT_CARGO_INDEX_FIXTURE" "$@" > "$PROBE_CALLS"\nexit "${PROBE_FAILURE:-0}"\n',{mode:0o700});
+  for(const failure of [0,27]) {
+    const result=spawnSync('bash',['-eo','pipefail','-c',proof.run],{cwd:root,encoding:'utf8',
+      env:{...process.env,...proof.env,PATH:job+':'+process.env.PATH,PROBE_CALLS:trace,PROBE_FAILURE:String(failure)}});
+    assert.equal(result.status,failure,result.stderr);
+    assert.deepEqual(readFileSync(trace,'utf8').trim().split('\n'),[
+      '1','--experimental-strip-types','--test','enablement/prerequisites/source-identity/git-index.test.ts']);
+  }
+  assert.ok(!proof['continue-on-error']);
+  const preparation=jobs.rust.steps.findIndex((s:any)=>s.name==='Prepare locked native prerequisites before first Cargo');
+  assert.ok(jobs.rust.steps.indexOf(proof)>preparation,'Keep the actual prerequisite environment before Cargo');
+});
+
 test('a native exemption must receive the selector native-free plan, never an inconsistent or unknown plan', () => {
   const step=jobs.rust.steps.find((s:any)=>s.name==='Reject an inconsistent Mac native exemption');
   for(const [plan,success] of [[JSON.stringify(suitePlan(['public/site/src/main.tsx'])),true],

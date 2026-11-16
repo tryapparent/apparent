@@ -335,8 +335,10 @@ jobs:
       - name: Qualify Agent frames through the published Engine provider
         if: needs.select.outputs.root == 'true'
         run: npm --prefix capture/agent/media run test:native
-      - name: Mac Cargo source-identity freshness regression
-        if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
+      # This uses real Git/Cargo with a dependency-free fixture, not Darwin APIs.
+      # Keep the native app and Electron/Rust integration checks on each OS.
+      - name: Portable Cargo source-identity freshness regression
+        if: runner.os == 'Linux' && needs.select.outputs.root == 'true'
         env:
           APPARENT_CARGO_INDEX_FIXTURE: '1'
         run: node --experimental-strip-types --test enablement/prerequisites/source-identity/git-index.test.ts
