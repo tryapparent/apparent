@@ -4,8 +4,8 @@ import {Switch} from '@apparent/ui/switch';
 import {ErrorDialog} from '@apparent/ui/error-dialog';
 import frog from '../../../../assets/settings/frog-puzzled.png';
 
-type LabsSetting = 'autoPaste'|'sharing';
-export type LabsFacts = {saved:boolean|null;supported:boolean;sharingSaved:boolean|null;error?:never}|{error:'config_read_failed'|'config_write_failed';saved?:never;supported?:never;sharingSaved?:never};
+type LabsSetting = 'autoPaste'|'sharing'|'wisprFlow';
+export type LabsFacts = {saved:boolean|null;supported:boolean;sharingSaved:boolean|null;wisprSaved:boolean|null;wisprSupported:boolean;error?:never}|{error:'config_read_failed'|'config_write_failed';saved?:never;supported?:never;sharingSaved?:never;wisprSaved?:never;wisprSupported?:never};
 declare global {interface Window {apparentLabs:{read():Promise<LabsFacts>;save(enabled:boolean,setting?:LabsSetting):Promise<LabsFacts>;subscribe(callback:(facts:LabsFacts)=>void):()=>void}}}
 
 export function Labs(){
@@ -58,10 +58,17 @@ export function Labs(){
       <p id="public-sharing-help">Show Copy link after recording. Off by default; applies to the next recording.</p>
       <p id="public-sharing-limits">Anyone with the link can view the shared capture. Shared captures are not end-to-end encrypted.</p>
     </section>
+    <section className="agent-preference">
+      <div className="agent-preference-row">
+        <h2 id="wispr-lab-label">Wispr onboarding</h2>
+      <Switch id="wispr-lab-toggle" className="agent-switch" checked={facts?.wisprSaved??false} aria-labelledby="wispr-lab-label" aria-describedby="wispr-lab-help" aria-busy={busy&&setting==='wisprFlow'}
+        disabled={busy||!facts||Boolean(facts.error)||!facts.wisprSupported} onCheckedChange={value=>void request(value,'wisprFlow')} /></div>
+      <p id="wispr-lab-help">Avoid shortcut clashes during setup. macOS only. Off by default.</p>
+    </section>
     <span role="status" className="sr-only">{busy?(operation==='save'?'Saving preference':'Reading saved preference'):''}</span>
     {(!facts||facts.error)&&!busy&&!error&&<Button id="labs-refresh" variant="secondary" onClick={()=>void request(undefined,setting)}>Refresh preference</Button>}
     <ErrorDialog open={!!error} title={!facts?'Preference not confirmed':facts.error==='config_read_failed'?'Unable to read preference':'Unable to save preference'} description={error} artwork={<img src={frog} alt=""/>} recoveryLabel="Refresh preference" busy={busy}
-      restoreFocus={()=>{const target=document.getElementById(setting==='sharing'?'public-sharing-toggle':'auto-paste-toggle') as HTMLButtonElement|null;(target&&!target.disabled?target:document.getElementById('labs-refresh'))?.focus();}}
+      restoreFocus={()=>{const target=document.getElementById(setting==='wisprFlow'?'wispr-lab-toggle':setting==='sharing'?'public-sharing-toggle':'auto-paste-toggle') as HTMLButtonElement|null;(target&&!target.disabled?target:document.getElementById('labs-refresh'))?.focus();}}
       onRecover={()=>void request(undefined,setting)} onClose={()=>setError('')}/>
   </section>;
 }

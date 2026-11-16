@@ -104,7 +104,7 @@ const agentsPreferences = new AgentsPreferences(message => {
   if ((!agents && !labs) || !process.argv.includes('--settings-parent')) throw new Error('Settings parent unavailable');
   process.stdout.write(JSON.stringify(message) + '\n');
 });
-function labsFacts(value){const facts=preferenceFacts(value);return facts.error?{error:facts.error}:{saved:facts.autoPasteSaved??null,supported:facts.autoPasteSupported===true,sharingSaved:facts.sharingSaved??null};}
+function labsFacts(value){const facts=preferenceFacts(value);return facts.error?{error:facts.error}:{saved:facts.autoPasteSaved??null,supported:facts.autoPasteSupported===true,sharingSaved:facts.sharingSaved??null,wisprSaved:facts.wisprSaved??null,wisprSupported:facts.wisprSupported===true};}
 let aboutState;
 
 // Deliberately separate from the installed application's profile and identity.
@@ -250,7 +250,7 @@ app.whenReady().then(() => {
   ipcMain.handle('apparent:labs-preference',(event,...args)=>{
     validate(event,[]);
     const setting=args[1]??'autoPaste';
-    if(!labs||args.length>2||!['autoPaste','sharing'].includes(setting)||args.length>0&&(typeof args[0]!=='boolean'||setting==='autoPaste'&&process.platform!=='linux'))throw Error('Forbidden Labs preference');
+    if(!labs||args.length>2||!['autoPaste','sharing','wisprFlow'].includes(setting)||args.length>0&&(typeof args[0]!=='boolean'||setting==='autoPaste'&&process.platform!=='linux'||setting==='wisprFlow'&&process.platform!=='darwin'))throw Error('Forbidden Labs preference');
     return agentsPreferences.request(args[0],setting).then(labsFacts);
   });
   ipcMain.handle('apparent:agents-copy-skill', (event, ...args) => {

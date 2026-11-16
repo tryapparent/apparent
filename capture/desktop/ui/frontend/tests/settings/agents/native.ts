@@ -50,6 +50,9 @@ try {
       await sharing.click();await expect(sharing).toHaveAttribute('aria-checked',String(on));
       const saved=JSON.parse(await fs.readFile(process.argv[2],'utf8'));assert.equal(saved.experiments.hostedSharing,on);assert.equal(saved.experiments.autoPasteDraft,process.platform==='linux'?false:undefined);assert.equal(saved.secret,'private');
     }
+    const wispr=page.getByRole('switch',{name:'Wispr onboarding',exact:true});
+    await expect(wispr).toHaveAttribute('aria-checked','false');
+    if(process.platform==='darwin'){for(const on of [true,false]){await wispr.click();await expect(wispr).toHaveAttribute('aria-checked',String(on));const saved=JSON.parse(await fs.readFile(process.argv[2],'utf8'));assert.equal(saved.experiments.onboardingWisprFlow,on);assert.equal(saved.secret,'private');}}else await expect(wispr).toBeDisabled();
     await page.reload();await expect(toggle).toHaveAttribute('aria-checked','false');await expect(sharing).toHaveAttribute('aria-checked','false');
   }else{
   await expect(page.locator('.agent-command')).toHaveText(process.argv[3]);

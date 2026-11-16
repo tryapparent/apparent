@@ -2094,7 +2094,7 @@ impl Session {
             Event::Action(Action::AgentsPreference { request, enabled, setting }) => {
                 if self.electron && self.pane == Some(Pane::Agents) {
                     self.send(&super::agents::request_for(&host.config_path(), request, enabled, setting.as_deref()));
-                } else if self.electron && self.pane == Some(Pane::Labs) && matches!(setting.as_deref(), Some("autoPaste" | "sharing")) {
+                } else if self.electron && self.pane == Some(Pane::Labs) && matches!(setting.as_deref(), Some("autoPaste" | "sharing" | "wisprFlow")) {
                     self.send(&super::agents::labs_request(&host.config_path(), request, enabled, setting.as_deref().unwrap()));
                 }
                 Effect::None

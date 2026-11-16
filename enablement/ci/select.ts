@@ -5,7 +5,7 @@ import {pathToFileURL} from 'node:url';
 import {isDeepStrictEqual} from 'node:util';
 import {changedPaths as inputPaths, workflowControlPaths} from './inputs.ts';
 
-import {portableForegroundInputs, foregroundPortableChange, routingProblems, onboardingInput, onboardingPureInputs, retiredOnboardingInputs, routeDecision, documentationOnlyPath, linuxDrivers, suitePlan} from './routing/consumers.ts';
+import {portableForegroundInputs, foregroundPortableChange, routingProblems, onboardingInput, onboardingPureInputs, onboardingWisprInputs, retiredOnboardingInputs, routeDecision, documentationOnlyPath, linuxDrivers, suitePlan} from './routing/consumers.ts';
 export {documentationOnlyPath} from './routing/consumers.ts';
 
 export function needsPlatform(paths: string[] | null): boolean {
@@ -128,6 +128,7 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
     // Audited native resource adapter. This admits its existing native consumers;
     // it does not grant the pure-policy or portable renderer exemption.
     change.path === 'capture/desktop/settings/onboarding/pipe.rs' ||
+    onboardingWisprInputs.has(change.path) ||
     onboardingPureInputs.has(change.path) ||
     (change.path.startsWith('capture/desktop/ui/frontend/src/onboarding/') && /\.(tsx|css)$/.test(change.path)) ||
     (change.path.startsWith('capture/desktop/ui/frontend/tests/onboarding/') && /\.test\.ts$/.test(change.path))

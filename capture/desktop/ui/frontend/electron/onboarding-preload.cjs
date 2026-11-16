@@ -1,6 +1,7 @@
 const {contextBridge,ipcRenderer}=require('electron');
 contextBridge.exposeInMainWorld('nativeOnboarding',Object.freeze({
   readState:()=>ipcRenderer.invoke('onboarding:state'),
+  wispr:operation=>ipcRenderer.invoke('onboarding:wispr',operation),
   readConnect:()=>ipcRenderer.invoke('onboarding:connect',null),
   connect:action=>ipcRenderer.invoke('onboarding:connect',action),
   closeConnect:()=>{void ipcRenderer.invoke('onboarding:close-connect');},

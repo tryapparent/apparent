@@ -15,11 +15,11 @@ test('Labs is a separate flask pane with acknowledged experiment saves and bound
     {env:{...process.env,ELECTRON_RUN_AS_NODE:'',HOME:home,XDG_CONFIG_HOME:path.join(home,'config')},stdio:'pipe'});
   const exited=new Promise<void>(resolve=>child.once('exit',()=>resolve()));
   const actions:Record<string,unknown>[]=[];
-  let sharingSaved:boolean|null=null;
+  let sharingSaved:boolean|null=null,wisprSaved:boolean|null=null;
   let saved:boolean|null=null,hold=true,fail=false,held:Record<string,unknown>|undefined;
   const reply=(action:Record<string,unknown>)=>{
-    if('enabled'in action&&!fail){if(action.setting==='sharing')sharingSaved=action.enabled as boolean;else saved=action.enabled as boolean;}
-    child.stdin.write(JSON.stringify({type:'agents-result',request:action.request,facts:fail?{error:'config_write_failed'}:{saved:null,autoPasteSaved:saved,sharingSaved,autoPasteSupported:process.platform==='linux'}})+'\n');
+    if('enabled'in action&&!fail){if(action.setting==='sharing')sharingSaved=action.enabled as boolean;else if(action.setting==='wisprFlow')wisprSaved=action.enabled as boolean;else saved=action.enabled as boolean;}
+    child.stdin.write(JSON.stringify({type:'agents-result',request:action.request,facts:fail?{error:'config_write_failed'}:{saved:null,autoPasteSaved:saved,sharingSaved,wisprSaved,wisprSupported:process.platform==='darwin',autoPasteSupported:process.platform==='linux'}})+'\n');
   };
   createInterface({input:child.stdout}).on('line',line=>{try{const action=JSON.parse(line);actions.push(action);if(action.action==='agents-preference'){if(hold)held=action;else reply(action);}}catch{}});
   let browser:Awaited<ReturnType<typeof chromium.connectOverCDP>>|undefined;
@@ -63,6 +63,19 @@ test('Labs is a separate flask pane with acknowledged experiment saves and bound
     await expect(sharing).toHaveAttribute('aria-checked','true');await expect(sharing).toBeFocused();
     await sharing.click();await expect(sharing).toHaveAttribute('aria-checked','false');
     await page.reload();await expect(sharing).toHaveAttribute('aria-checked','false');
+    const wispr=page.getByRole('switch',{name:'Wispr onboarding',exact:true});
+    await expect(wispr).toHaveAttribute('aria-checked','false');
+    if(process.platform==='darwin'){
+      hold=true;await wispr.focus();await page.keyboard.press('Space');
+      await expect.poll(()=>held?.setting==='wisprFlow').toBe(true);
+      await expect(wispr).toHaveAttribute('aria-busy','true');await expect(wispr).toHaveCSS('cursor','wait');
+      reply(held!);hold=false;await expect(wispr).toHaveAttribute('aria-checked','true');await expect(wispr).toBeFocused();
+      assert.equal(actions.at(-1)?.setting,'wisprFlow');
+      fail=true;await wispr.click();await expect(page.getByRole('alertdialog')).toContainText('Unable to save preference');
+      fail=false;await page.getByRole('button',{name:'Refresh preference'}).click();
+      await expect(page.getByRole('alertdialog')).not.toBeVisible();await expect(wispr).toBeFocused();
+      await wispr.click();await expect(wispr).toHaveAttribute('aria-checked','false');
+    }else{await expect(wispr).toBeDisabled();await assert.rejects(()=>page.evaluate(()=>window.apparentLabs.save(true,'wisprFlow')));}
     assert.equal(await page.evaluate(async()=>{
       for(const call of [()=>window.apparentAgents.save(true),()=>window.apparentAgents.saveT3(true),()=>window.apparentAgents.copySkill(),()=>window.apparent.resetCaptureLocation(),()=>window.apparentLabs.save('true' as unknown as boolean),()=>window.apparentLabs.save(true,'t3' as 'sharing')]){
         try{await call();return false;}catch{}
@@ -81,6 +94,7 @@ test('Labs is a separate flask pane with acknowledged experiment saves and bound
         const track=sharing.locator('.apparent-switch-track');
         await expect(track).toHaveCSS('background-color','rgb(231, 224, 238)');
         await expect(track).toHaveCSS('border-width','0px');
+        await wispr.scrollIntoViewIfNeeded();await expect(wispr).toBeInViewport();
         if(process.env.APPARENT_LABS_PROOF){await fs.mkdir(process.env.APPARENT_LABS_PROOF,{recursive:true});await page.screenshot({path:path.join(process.env.APPARENT_LABS_PROOF,`labs-${width}-${colorScheme}.png`)});}
         for(const id of ['auto-paste-limits','public-sharing-limits']){
           const guidance=page.locator(`#${id}`);await guidance.scrollIntoViewIfNeeded();
