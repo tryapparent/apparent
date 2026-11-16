@@ -231,7 +231,7 @@ mod tests {
         for line in std::io::BufReader::new(child.stdout.take().unwrap()).lines() {
             let line = line.unwrap();
             if let Ok(super::super::settings::Action::AgentsPreference { request: id, enabled, setting }) = serde_json::from_str(&line) {
-                let result = if route == "labs" { assert!(matches!(setting.as_deref(), Some("autoPaste" | "sharing"))); labs_request(&config, id, enabled, setting.as_deref().unwrap()) } else { request_for(&config, id, enabled, setting.as_deref()) };
+                let result = if route == "labs" { assert!(matches!(setting.as_deref(), Some("autoPaste" | "sharing" | "wisprFlow"))); labs_request(&config, id, enabled, setting.as_deref().unwrap()) } else { request_for(&config, id, enabled, setting.as_deref()) };
                 writeln!(input, "{}", result).unwrap();
             } else { panic!("Unexpected Agents command: {line}"); }
         }
@@ -240,6 +240,11 @@ mod tests {
         let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&config).unwrap()).unwrap();
         assert_eq!(saved["experiments"]["agentDemoVideo"], true);
         assert_eq!(saved["experiments"]["t3DestinationPicker"], false);
+        if cfg!(target_os = "macos") {
+            assert_eq!(saved["experiments"]["onboardingWisprFlow"], false);
+        } else {
+            assert!(saved["experiments"]["onboardingWisprFlow"].is_null());
+        }
         assert_eq!(saved["experiments"]["other"], true);
         assert_eq!(saved["secret"], "private");
     }
