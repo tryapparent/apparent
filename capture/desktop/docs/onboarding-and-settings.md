@@ -284,6 +284,15 @@ the guided capture lesson. Permission-repair windows retain their existing behav
 
 ### Agents
 
+Agents and About share one live Electron window. Parent-admitted navigation changes
+the React pane and main-process capability checks without reloading the document;
+other panes retain the existing presentation replacement and fallback. Reverting
+this routing restores the previous child-per-pane path. No donor is removed.
+The accepted design uses compact command-copy/help controls, Stock-off/Lilac-on
+switches, a wait cursor during acknowledged saves and shared ErrorDialog popups.
+Error actions are left aligned with recovery first and Close second. Unknown
+preference outcomes require Refresh preference; dismissing never proves a save.
+
 Installed Settings routes Agents to the shared Electron shell on macOS and Linux.
 Desktop's `ui/frontend/src/agents` owns preference defaults, save/readback
 workflow, recovery and fixed skill command. The private parent pipe exposes only

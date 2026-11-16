@@ -921,11 +921,15 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>, origin: &str) {
             "approval-secret-substring" => format!("{origin}/connect/device"),
             _ => format!("{origin}/hosted/device?code=TEST-CODE"),
         };
+        // Successful approval scenarios exercise two real one-second polls.
+        // Keep their lifetime independent of small CI scheduling delays; expiry
+        // has an explicit zero-lifetime fixture instead of a five-second race.
+        let expires_in = if s.mode == "expired-device" { 0 } else { 30 };
         json!({"deviceCode":"synthetic-device-secret", "userCode":match s.mode.as_str() {
             "approval-secret-code" => "synthetic-device-secret",
             "approval-secret-substring" => "ABC-synthetic-device-secret-XYZ",
             _ => "TEST-CODE"
-        }, "verificationUri":uri, "expiresIn":5,"interval":1})
+        }, "verificationUri":uri, "expiresIn":expires_in,"interval":1})
         .to_string()
         .into_bytes()
     } else if route == "/v1/device/poll" {

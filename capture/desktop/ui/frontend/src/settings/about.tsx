@@ -4,6 +4,7 @@ import availableFrog from '../../../../assets/settings/frog-jump.png';
 import currentFrog from '../../../../assets/settings/frog-lounge.png';
 import failedFrog from '../../../../assets/settings/frog-puzzled.png';
 import { Button } from '@apparent/ui/button';
+import { ErrorDialog } from '@apparent/ui/error-dialog';
 import { NativeSelect, NativeSelectOption } from '@apparent/ui/native-select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@apparent/ui/tooltip';
 
@@ -62,17 +63,17 @@ export function About() {
   const checking = state?.updateCheck.checking;
   const title = checking ? 'Checking for updates…' : !state?.updates ? 'Updates unavailable'
     : result === 'available' ? 'Update available' : result === 'current' ? 'No update available'
-    : result === 'failed' ? 'Update check failed' : null;
+    : null;
   // Results are inline. Native button activation owns Enter/Space so a focused
   // link, copy or tour action cannot accidentally accept an available update.
   useEffect(() => {
-    if (!result) return;
+    if (!result || result === 'failed' || copyStatus === 'failed') return;
     const listener = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !event.defaultPrevented) void act({ action: 'dismiss-update-check' });
     };
     window.addEventListener('keydown', listener);
     return () => window.removeEventListener('keydown', listener);
-  }, [result]);
+  }, [result, copyStatus]);
   return <section aria-label="About Apparent" className="settings-about">
     {!state && <p role="status">Loading update status…</p>}
     {error && <p role="alert">{error}</p>}
@@ -85,7 +86,7 @@ export function About() {
               {copyStatus === 'copied' ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
             </Button>
           </TooltipTrigger><TooltipContent className="settings-help-content">Copy version</TooltipContent></Tooltip></TooltipProvider>
-          <span role="status" className="settings-metadata">{copyStatus === 'copied' ? 'Copied' : copyStatus === 'failed' ? 'Unable to copy. Try again.' : ''}</span>
+          <span role="status" className="settings-metadata">{copyStatus === 'copied' ? 'Copied' : ''}</span>
         </div>
       </section>
       <section className="settings-updates" aria-label="Update check" data-idle={!title || undefined}>
@@ -95,17 +96,16 @@ export function About() {
             <h3>{title}</h3>
           </>}</div>
           {!state.updates && <p className="settings-metadata">{state.linux ? 'Update checks work when Apparent runs from an AppImage.' : 'Updates work in the installed Apparent.app.'}</p>}
-          {result === 'failed' && !checking && <p className="settings-metadata">Try checking again.</p>}
           <div className="settings-actions">
             {result === 'available' && !checking ? <>
               <Button onClick={() => void act({ action: 'update-now' })}>Update now</Button>
-              <Button variant="secondary" onClick={() => void act({ action: 'update-later' })}>Update later</Button>
+              <Button variant="outline" className="settings-decision-alternative" onClick={() => void act({ action: 'update-later' })}>Update later</Button>
             </> : <Button disabled={!state.updates || checking} onClick={() => void act({ action: 'check-for-updates' })}>
               {checking ? 'Checking…' : result === 'failed' ? 'Try again' : result ? 'Check again' : 'Check for updates'}
             </Button>}
           </div>
         </div>
-        {result && !checking && <img className="settings-frog" src={result === 'available' ? availableFrog : result === 'current' ? currentFrog : failedFrog} alt="" />}
+        {result && result !== 'failed' && !checking && <img className="settings-frog" src={result === 'available' ? availableFrog : currentFrog} alt="" />}
       </section>
       {state.linux && state.mainUpdates && <div className="settings-channel"><label htmlFor="update-channel">Update channel</label>
         <NativeSelect id="update-channel" value={state.updateChannel} disabled={checking} onChange={event => void act({ action: 'set', key: 'updateChannel', value: event.target.value })}>
@@ -123,5 +123,11 @@ export function About() {
       <Button variant="link" asChild><a href="https://discord.gg/ZRGZwV32M" onClick={event => { event.preventDefault(); void open('discord'); }}>Join our Discord <ExternalLink aria-hidden="true" /></a></Button>
     </div>
     <Button variant="secondary" className="settings-tour" onClick={() => void act({ action: 'tour' })}>Show welcome tour</Button>
+    <ErrorDialog open={result === 'failed' && !checking} title="Update check failed" description="Try checking again."
+      artwork={<img src={failedFrog} alt=""/>} recoveryLabel="Try again" onRecover={()=>void act({action:'check-for-updates'})}
+      restoreFocus={()=>document.querySelector<HTMLButtonElement>('.settings-updates .settings-actions button')?.focus()}
+      onClose={()=>void act({action:'dismiss-update-check'})}/>
+    <ErrorDialog open={copyStatus === 'failed'} title="Unable to copy version" description="Unable to copy. Try again."
+      artwork={<img src={failedFrog} alt=""/>} recoveryLabel="Try again" onRecover={()=>void copyVersion()} onClose={()=>setCopyStatus('idle')}/>
   </section>;
 }

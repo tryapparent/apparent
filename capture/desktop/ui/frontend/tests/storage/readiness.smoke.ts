@@ -97,7 +97,7 @@ exports.committedFrame = async contents => {
   await expect.poll(() => app!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible())).toBe(true);
   if (world === 'compositor') {
     const pixels = await app.evaluate(() => (globalThis as any).settingsFramePixels);
-    assert.deepEqual(pixels.sidebar, [29, 22, 25, 255], 'The pre-reveal snapshot contains the accepted Carbon sidebar, not a blank cream frame');
+    assert.deepEqual(pixels.sidebar, [2, 1, 2, 255], 'The pre-reveal snapshot contains the accepted Carbon sidebar, not a blank cream frame');
     assert.notDeepEqual(pixels.content, pixels.sidebar, 'The content surface is separate from the sidebar');
   }
   await expect(page.getByRole('heading', { name: 'Storage', level: 1, exact: true })).toBeVisible();

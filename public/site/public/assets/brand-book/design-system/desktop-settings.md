@@ -19,8 +19,7 @@ generic shell for every web product. Reuse the canonical
   This is the Desktop default within the generic 216-240px range, not a new
   minimum for every product.
 - Use the existing 32px content inset and 8px spacing system. Main content is
-  Paper; neutral grouped surfaces are Stock. The optional skill-command copy
-  surface uses Lilac, matching the optional preference-switch track.
+  Paper; neutral grouped surfaces are Stock. The optional skill-command copy surface uses Lilac; optional preference switches use Stock when off and Lilac when on.
   Panels and command blocks are
   square, flat and free of gradients or diffuse shadows.
 - Verify the complete pane at ordinary and smallest supported window sizes,
@@ -52,12 +51,10 @@ generic shell for every web product. Reuse the canonical
 - Use a rounded 48 by 24px track with an 18px circular thumb, inside an
   interaction region at least 48 by 44px. The rounded track and thumb are a
   functional control exception to square panels, not permission for pill cards.
-- Optional preference switches use a Lilac track and Carbon thumb without a
+- Optional preference switches use a Stock track when off, Lilac when on, and Carbon thumb without a
   visible outline in both light and dark mode. Keep the geometry stable when
   removing an outline. The thumb is left when off and right when on; expose
-  the checked state accessibly. Lilac signals optional interactability in both
-  states, not whether the value is enabled. Color never supplies the only
-  distinction. The optional command-copy surface uses the same Lilac token.
+  the checked state accessibly. Stock and Lilac are existing brand colors, not newly invented shades. Thumb position and accessible checked state distinguish Off/On independently of color. The command-copy surface remains Lilac.
 - Retain a visible setting label and short consequence. A switch represents an
   immediately applied, reversible binary preference, not an arbitrary action.
   Do not introduce a pane-wide Save button for independent immediate settings.
@@ -65,9 +62,7 @@ generic shell for every web product. Reuse the canonical
   focus. Distinguish pending persistence, saved state and failure truthfully.
   Never turn a saved preference into proof that an OS effect or installation
   happened.
-- Keep successful preference saves quiet. Show saving and errors beside the
-  affected setting with a usable recovery action. Do not show routine success
-  toasts or add a persistent "Saved" label after every toggle.
+- Keep successful preference saves quiet. During persistence, use a native wait cursor over the switch, prevent repeat activation and announce pending state to assistive technology without visible saving text. Operational failures open the shared ErrorDialog with a failure icon/color, clear message, optional update-style artwork and a named recovery action. Put recovery first on the left, Close second, and align the action group left. Support keyboard focus, Escape and focus restoration. Keep field validation beside its field. Do not show routine success toasts or a persistent "Saved" label.
 - Essential component/state cues need at least 3:1 contrast with adjacent
   colors. Paper against Lilac alone is approximately 1.97:1; it must not be the
   only cue identifying a custom switch or its thumb. Carbon against Paper is
@@ -88,8 +83,7 @@ contrast. The precise dark-theme component treatments still need visual review.
 
 ## Remaining decisions and verification
 
-The owner selected the compact geometry, matching Lilac optional-interaction
-surfaces, no switch outline in either theme, quiet save success and the
+The owner selected the compact geometry, Stock-off / Lilac-on optional switches and Lilac command surfaces, no switch outline in either theme, quiet save success, wait cursor, shared error popup with primary-first left-aligned actions and the
 palette-preserving dark-theme principle. Detailed copy-feedback presentation
 and other unshown component states remain open; do not present an unreviewed
 variant as owner-approved. The implementing

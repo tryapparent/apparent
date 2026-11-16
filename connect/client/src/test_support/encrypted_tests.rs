@@ -448,6 +448,27 @@ fn encrypted_settings_future_capture_restart_retry_and_disconnect() {
 }
 
 #[test]
+fn encrypted_settings_expired_approval_never_polls_or_publishes_credentials() {
+    for scope in ["read", "upload"] {
+        let f = Fixture::new();
+        let server = encryption_server("expired-device");
+        encrypted(&f);
+        let config_before = fs::read(&f.client.config).unwrap();
+        let presented = std::cell::Cell::new(false);
+        let result = f.client.login_with_approval(
+            &server.url, scope, scope == "upload", &|| true, &|_| presented.set(true),
+        );
+        assert!(presented.get());
+        assert_eq!(result, Err(crate::settings::SafeError::Expired));
+        assert!(!f.client.state.join(format!("{scope}.credential")).exists());
+        assert_eq!(fs::read(&f.client.config).unwrap(), config_before);
+        assert_eq!(server.state.lock().unwrap().polls, 0);
+        assert!(server.state.lock().unwrap().encryption.as_ref().unwrap().devices.is_empty());
+        no_media(&server);
+    }
+}
+
+#[test]
 fn encrypted_settings_cancelled_approval_never_publishes_credentials_or_media() {
     let f = Fixture::new();
     let server = encryption_server("");
