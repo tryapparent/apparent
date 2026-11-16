@@ -1460,51 +1460,6 @@ struct PermissionLine: View {
 
 // MARK: Recording keys
 
-enum ShortcutKeys {
-  /// The name a key is shown with, as `settings::key_label` names it; nil for Esc or a key
-  /// that types nothing.
-  static func label(keyCode: Int, typed: String) -> String? {
-    if keyCode == Int(kVK_Function) { return "Fn" }
-    let named: [Int: String] = [
-      kVK_F1: "F1", kVK_F2: "F2", kVK_F3: "F3", kVK_F4: "F4", kVK_F5: "F5", kVK_F6: "F6",
-      kVK_F7: "F7", kVK_F8: "F8", kVK_F9: "F9", kVK_F10: "F10", kVK_F11: "F11", kVK_F12: "F12",
-      kVK_F13: "F13", kVK_F14: "F14", kVK_F15: "F15", kVK_F16: "F16",
-      kVK_Space: "Space", kVK_Return: "↩", kVK_Tab: "⇥", kVK_Delete: "⌫",
-      kVK_LeftArrow: "←", kVK_RightArrow: "→", kVK_DownArrow: "↓", kVK_UpArrow: "↑",
-    ]
-    if let name = named[keyCode] { return name }
-    if keyCode == kVK_Escape { return nil }
-    let chars = typed.filter { !$0.isWhitespace && !($0.unicodeScalars.first.map(CharacterSet.controlCharacters.contains) ?? false) }
-    guard chars.count == 1 else { return nil }
-    return chars.uppercased()
-  }
-
-  static func carbon(_ flags: NSEvent.ModifierFlags) -> Int {
-    var bits = 0
-    if flags.contains(.command) { bits |= cmdKey }
-    if flags.contains(.shift) { bits |= shiftKey }
-    if flags.contains(.option) { bits |= optionKey }
-    if flags.contains(.control) { bits |= controlKey }
-    return bits
-  }
-
-  /// Whether macOS has this combination as one of its enabled shortcuts (Keyboard Shortcuts).
-  static func reserved(keyCode: Int, modifiers: Int) -> Bool {
-    // Fn is observed without suppressing it, so any macOS Fn/Globe action remains active too.
-    if keyCode == Int(kVK_Function) && modifiers == 0 { return false }
-    var unmanaged: Unmanaged<CFArray>?
-    guard CopySymbolicHotKeys(&unmanaged) == noErr,
-          let hotkeys = unmanaged?.takeRetainedValue() as? [[String: Any]]
-    else { return true }
-    let mask = cmdKey | shiftKey | optionKey | controlKey
-    return hotkeys.contains { hotkey in
-      (hotkey[kHISymbolicHotKeyEnabled as String] as? Bool) == true
-        && (hotkey[kHISymbolicHotKeyCode as String] as? Int) == keyCode
-        && ((hotkey[kHISymbolicHotKeyModifiers as String] as? Int) ?? -1) & mask == modifiers
-    }
-  }
-}
-
 // MARK: Window
 
 final class SettingsWindow: NSObject, NSApplicationDelegate, NSWindowDelegate {
@@ -1542,6 +1497,7 @@ final class SettingsWindow: NSObject, NSApplicationDelegate, NSWindowDelegate {
   )
   private var monitor: Any?
   private var fnCandidate = false
+  private var optionGesture = OptionKeyGesture()
   /// Modifiers held while Settings is in front, so each shortcut presses the keys it uses.
   private var modifierMonitor: Any?
   private var presented = false
@@ -1611,6 +1567,7 @@ final class SettingsWindow: NSObject, NSApplicationDelegate, NSWindowDelegate {
   }
 
   func windowDidResignKey(_: Notification) {
+    fnCandidate = false; optionGesture.reset()
     if model.state.recording != nil { model.act("cancel-shortcut") }
     model.hold([])
   }
@@ -1622,14 +1579,19 @@ final class SettingsWindow: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
   /// Listens for keys only while a recorder is waiting for one.
   private func listen(_ on: Bool) {
-    if !on { fnCandidate = false }
+    if !on { fnCandidate = false; optionGesture.reset() }
     if on, monitor == nil {
-      monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
+      monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
         guard let self else { return event }
         guard let kind = self.model.state.recording else {
-          self.fnCandidate = false
+          self.fnCandidate = false; self.optionGesture.reset()
           return event
         }
+        if self.optionGesture.observe(event) {
+          self.model.act("shortcut", ["kind":kind, "keyCode":58, "modifiers":0, "key":"Option", "reserved":false])
+          return event
+        }
+        if [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event.type) { return event }
         if event.type == .flagsChanged {
           let modifiers = ShortcutKeys.carbon(event.modifierFlags)
           if event.keyCode == UInt16(kVK_Function) {

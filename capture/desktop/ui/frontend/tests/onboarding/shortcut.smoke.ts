@@ -99,5 +99,24 @@ test('shortcut composition waits for modifiers and preserves Fn/cancel recovery'
   await expect(page.getByRole('alert')).toHaveCount(0);
   await page.keyboard.press('r');
   await expect.poll(()=>output).toContain('"keyCode":15,"modifiers":4608,"key":"r"');
+
   await page.keyboard.up('Shift');await page.keyboard.up('Control');
+  await recorder.focus();output='';
+  await page.keyboard.down('Alt');
+  assert.equal(output,'');
+  await page.keyboard.up('Alt');
+  await expect.poll(()=>output).toContain('"keyCode":58,"modifiers":0,"key":"Option"');
+  output='';await page.keyboard.down('Alt');await page.keyboard.press('r');await page.keyboard.up('Alt');
+  await expect.poll(()=>output).toContain('"keyCode":15,"modifiers":2048,"key":"r"');
+  assert.equal(output.includes('"key":"Option"'),false);
+  output='';await page.keyboard.down('Alt');await page.keyboard.down('Shift');await page.keyboard.up('Shift');await page.keyboard.up('Alt');
+  await page.waitForTimeout(100);assert.equal(output,'');
+  for(const theme of ['light','dark'] as const)for(const width of [760,320]){
+    await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});
+    await page.setViewportSize({width,height:520});await recorder.focus();
+    await page.keyboard.down('Alt');
+    const evidence=process.env.ANNOTATION_EVIDENCE;
+    if(evidence)await page.screenshot({path:path.join(evidence,'option-'+theme+'-'+width+'.png')});
+    await page.keyboard.up('Alt');
+  }
 });
