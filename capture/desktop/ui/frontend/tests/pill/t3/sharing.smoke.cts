@@ -23,6 +23,7 @@ test('T3 destinations and public sharing coexist with explicit consent', {timeou
  for(const width of [1200,320]){
   await app.evaluate(({screen},width)=>{const matching=screen.getDisplayMatching.bind(screen);screen.getDisplayMatching=bounds=>{const display=matching(bounds);return {...display,workArea:{...display.workArea,width}};};},width);
   await page.evaluate(()=>window.apparentPill.layout(1));
+  if(width===1200)await expect.poll(()=>trigger.locator('.destination-label>span').evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
   for(const colorScheme of ['light','dark']){
    await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
    if(process.env.APPARENT_T3_PROOF){await fs.mkdir(process.env.APPARENT_T3_PROOF,{recursive:true});await page.screenshot({path:path.join(process.env.APPARENT_T3_PROOF,`completed-${width}-${colorScheme}.png`)});}

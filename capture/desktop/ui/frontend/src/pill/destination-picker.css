@@ -27,3 +27,7 @@
 .destination-share{flex-shrink:0;min-height:44px;border-radius:22px;padding:10px 12px;font:400 18px/24px 'Host Grotesk',sans-serif;gap:8px}.destination-share svg{width:18px;height:18px;stroke-width:1.5}.destination-pill:has(.destination-share) .destination-trigger{flex:1}
 
 .pill-destination{display:flex;flex-direction:column;align-items:center}
+
+/* Adding an action grows the capsule instead of squeezing the existing picker. */
+.destination-stack:has(.destination-share){max-width:min(540px,var(--pill-limit,1200px))}
+.destination-stack[data-open=true]:has(.destination-share) .destination-assembly{width:482px}
