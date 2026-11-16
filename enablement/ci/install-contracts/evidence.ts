@@ -63,19 +63,30 @@ export async function alreadyPassed(cwd: string): Promise<boolean> {
   try {
     const expected = identity(cwd);
     if (!trusted(expected, process.env)) return false;
-    const api = async (path: string) => {
-      const response = await fetch(`https://api.github.com/repos/tryapparent/apparent/${path}`, {
-        headers: {Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: 'application/vnd.github+json'},
-        signal: AbortSignal.timeout(3000)});
-      if (!response.ok) throw Error(`Installation evidence lookup: ${response.status}`);
-      return response;
+    const api = async <T>(path: string, read: (response: Response) => Promise<T>): Promise<T> => {
+      const controller = new AbortController();
+      let timer: ReturnType<typeof setTimeout>;
+      // Keep the deadline referenced until the body is consumed. An unref'ed
+      // AbortSignal timeout can abandon top-level await before fallback runs.
+      const expired = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {controller.abort(); reject(Error('Installation evidence deadline'));}, 3000);
+      });
+      try {
+        return await Promise.race([expired, (async () => {
+          const response = await fetch(`https://api.github.com/repos/tryapparent/apparent/${path}`, {
+            headers: {Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: 'application/vnd.github+json'},
+            signal: controller.signal});
+          if (!response.ok) throw Error(`Installation evidence lookup: ${response.status}`);
+          return read(response);
+        })()]);
+      } finally {clearTimeout(timer!); controller.abort();}
     };
-    const passed = await lookup(expected, async path => (await api(path)).json(), async id => {
+    const passed = await lookup(expected, path => api(path, response => response.json()), async id => {
       // Hosted Mac only; mkdtemp creates a private job under the runner's OS temp root.
       const directory = mkdtempSync(join(tmpdir(), 'apparent-dev-install-evidence-'));
       try {
         const archive = join(directory, 'evidence.zip');
-        writeFileSync(archive, Buffer.from(await (await api(`actions/artifacts/${id}/zip`)).arrayBuffer()));
+        writeFileSync(archive, Buffer.from(await api(`actions/artifacts/${id}/zip`, response => response.arrayBuffer())));
         return JSON.parse(execFileSync('unzip', ['-p', archive, 'mac-install-contracts.json'],
           {encoding: 'utf8', maxBuffer: 1024 * 1024, timeout: 3000}));
       } finally {rmSync(directory, {recursive: true, force: true});}
