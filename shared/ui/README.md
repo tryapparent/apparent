@@ -28,6 +28,10 @@ separate Desktop/Connect copies. Theme tokens are shared, not OS-native skins.
 `@apparent/ui/icons` exports the shared Lucide `StickyNote` used by the saved-note
 extension; consume this export rather than copying SVG paths.
 
+`Keycap` and Button's `keycap` variant share the tactile keyboard treatment.
+Its styles load through `theme.css`. Keep component modules free of CSS imports:
+Connect's recipient and server renderers bundle JavaScript separately from CSS.
+
 NativeSelect and Tooltip use shadcn's MIT-licensed `new-york-v4/native-select`
 and `new-york/tooltip` registry sources. Import them from this package; Tooltip
 uses Radix for focus, hover and Escape behavior. The Settings-only theme opts

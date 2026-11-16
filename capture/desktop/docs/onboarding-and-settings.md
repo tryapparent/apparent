@@ -15,6 +15,22 @@ existing config transaction, with experiment-only read/write capabilities. If
 packaged Settings assets are unavailable, the retained native shell explains how
 to restore Labs; it does not add a second experiment editor.
 
+## Shared onboarding visuals
+
+The Electron tour uses borderless agent artwork, a visual progress bar and shared
+`Keycap` controls. Shortcut practice loops the same tactile press cue used by the
+other teaching gestures; reduced motion disables the loops. The inert Whiteboard
+example uses the production `PillSurface`, sized to its visible row rather than
+the native window's transparent notes reservation. Processing hides the coach and
+keeps status in the existing pill. Native RGB ink renders without palette lookup.
+
+This visual slice retains the current native practice contract: Copied → paste
+steps → explicit paste confirmation → Locate → explicit Finish setup. The new
+paste-to-Settings completion workflow and trusted TypeScript practice-host adoption
+are separate work. Capture facts, permissions, completion receipts and the sole
+progress/config writer remain with the existing native owner. Reverting this
+renderer slice restores the earlier presentation without migrating stored progress.
+
 ## Opening the app
 
 Opening Apparent from the macOS or Linux app picker opens Settings on About,
@@ -628,24 +644,24 @@ preserve unrelated keys. See [candidate admission and proof](onboarding-release-
 
 ### Compact practice illustrations
 
-The shared Electron coach shows finite four-second key/gesture illustrations on
+The shared Electron coach shows looping four-second key/gesture illustrations on
 start/retry (the saved Record shortcut), screen drawing (Shift and drag), and
 copied/paste (Command V on Mac, Ctrl V on Linux). The inline strip is about
 68–74 points tall; secondary actions share a wrapping row to avoid excess blank
-space in the existing 380×440 coach window. Replay uses the canonical shared
-Button and restarts presentation only. Illustrations send no keys, draw no ink
+space in the existing coach window. Illustrations send no keys, draw no ink
 and advance no Rust milestones. Polling does not restart them; changing practice
-stage does. Reduced motion shows static keys/gesture and hides Replay.
+stage does. There is no Replay control; reduced motion shows static keys/gesture.
 
 Routing and native fallback remain available. The illustrations carry no
 config/data migration and must not be treated as native acceptance. Browser
 video uses synthetic onboarding state; actual Electron checks cover layout,
-saved platform keys, finite playback, replay isolation and reduced motion. New
-installed Mac/Linux acceptance is still required before publishing these illustrations.
+saved platform keys, looping presentation and reduced motion. These checks do
+not establish native capture or permission acceptance on either platform.
 
 During the whiteboard lesson, the Electron board view mirrors only human strokes
 from the native board. Its loose animated example is a separate, inert overlay;
-it is never sent to the capture adapter or counted as completion. Clear removes only real practice ink; replay never clears it. Single-point
+it is never sent to the capture adapter or counted as completion. It loops until
+human ink appears; Clear removes only real practice ink. Single-point
 clicks appear as round dots immediately and after native acknowledgement, matching
 the saved drawing. Pointer cancellation and renderer
 loss discard only an unfinished stroke; guide dismissal restores the native
@@ -657,13 +673,11 @@ Rollback is the existing onboarding renderer fallback. Keep the native board
 adapter until both platforms accept the Electron path; removal requires verified
 Mac and isolated Linux focus, geometry, capture and handoff behavior.
 
-The control illustrations additionally cover Screen → Whiteboard, Finish →
-Copied and the Apparent menu → Open Latest Capture. The real Rust capture phase
-selects the coach; replay/illustrated clicks are local presentation only. Screen
-selection can show only Screen, then the recording-stage coach demonstrates the
-Whiteboard control. The location example opens its menu below the icon with an
-arrow to the matching entry and uses neutral theme roles rather than wallpaper
-tint. These remain finite, replayable and static under reduced motion.
+The real Rust capture phase selects the coach. The Screen and Whiteboard examples
+reuse the production recording controls inertly. The location example opens its
+menu below the icon with an arrow to the matching Open Latest Capture entry and
+uses neutral theme roles rather than wallpaper tint. These examples loop and
+remain static under reduced motion.
 
 ### Required shortcut choice and trial
 
@@ -754,7 +768,8 @@ editor request. Note positions convert native pixels to Electron DIP and back, s
 scaled editors retain their complete controls.
 
 The Electron first-capture start state keeps “One more time.” and the saved shortcut in
-the setup window, shortened to 520 pixels with the keys centered in its content. It becomes the floating coach only after capture selection
+the 760×600 setup window with the keys centered in its content and an animated
+press cue. It becomes the floating coach only after capture selection
 begins; the next shortcut still uses the existing native recording path. Returning
 to the start state restores the setup window. Native fallback routing is unchanged.
 

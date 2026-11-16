@@ -346,6 +346,32 @@ test('audited onboarding pipe addition retains native consumers and local/CI par
     assert.equal(selected.inputProofKnown,operation==='mixed-native',operation);
   }
 }));
+test('reviewed control-guide relocation keeps both renderer consumers and rejects unrelated deletion', () => repository((git,dir) => {
+  const source='capture/desktop/ui/frontend/src/onboarding/';
+  mkdirSync(source+'controls',{recursive:true});
+  for(const name of ['control-guide.tsx','control-guide.css','unknown.tsx'])writeFileSync(source+name,'before');
+  git('add','.');git('commit','-qm','original guides');const base=git('rev-parse','HEAD');
+  for(const name of ['control-guide.tsx','control-guide.css'])git('mv',source+name,source+'controls/'+name);
+  git('commit','-qm','move reviewed guides');const head=git('rev-parse','HEAD');
+  const hosted=cli(base,head,dir),local=localSelection(base,head,dir);
+  assert.equal(hosted.inputProofKnown,true);assert.equal(hosted.plan.desktop,true);assert.equal(hosted.plan.onboarding,true);
+  assert.equal(hosted.macos,true,'a reviewed retirement retains platform proof');
+  assert.equal(hosted.mac_rust,false,'renderer-only guides retain Mac Electron coverage without adding Rust consumers');
+  for(const suite of ['engine','engineMedia','hermes','service','browser','public'])assert.equal(hosted.plan[suite as keyof typeof hosted.plan],false,suite);
+  assert.deepEqual(hosted.plan,local.plan);assert.deepEqual(routingProblems(hosted),[]);
+  for(const name of ['control-guide.tsx','control-guide.css']){
+    assert.ok(hosted.paths.includes(source+name));assert.ok(hosted.paths.includes(source+'controls/'+name));
+  }
+  git('rm',source+'unknown.tsx');git('commit','-qm','unknown deletion');
+  const unknown=cli(base,git('rev-parse','HEAD'),dir);assert.equal(unknown.inputProofKnown,false);assert.equal(unknown.plan.engine,true);
+  git('checkout','--detach',base);
+  mkdirSync(source+'controls',{recursive:true});
+  for(const name of ['control-guide.tsx','control-guide.css'])git('mv',source+name,source+'controls/'+name);
+  unlinkSync(source+'controls/control-guide.tsx');symlinkSync('elsewhere',source+'controls/control-guide.tsx');
+  git('add','.');git('commit','-qm','unsafe moved guide');
+  const unsafe=cli(base,git('rev-parse','HEAD'),dir);
+  assert.equal(unsafe.inputProofKnown,false);assert.equal(unsafe.mac_rust,true);
+}));
 for (const path of presentationInputs) test('renderer-only proof retains Mac Electron while mixed/native and unsafe statuses retain Rust: '+path, () => repository((git,dir) => {
   mkdirSync(path.slice(0,path.lastIndexOf('/')),{recursive:true});writeFileSync(path,'before');git('add','.');git('commit','-qm','base');const base=git('rev-parse','HEAD');
   writeFileSync(path,'after');git('commit','-qam','edit');const head=git('rev-parse','HEAD');

@@ -91,14 +91,14 @@ for(const outcome of ['connected','waitlisted','opt-out','initial-unavailable'] 
   if(!process.env.APPARENT_ONBOARDING_EVIDENCE)return;
   await fs.mkdir(process.env.APPARENT_ONBOARDING_EVIDENCE,{recursive:true});
   for(const width of [760,320])for(const colorScheme of ['light','dark'] as const){
-   await page.setViewportSize({width,height:720});
+   await page.setViewportSize({width,height:600});
    await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
    await page.evaluate(()=>document.fonts.ready);
    await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,name+' horizontal overflow');
    await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,name+'-'+width+'-'+colorScheme+'.png'),animations:'disabled'});
   }
-  await page.setViewportSize({width:760,height:720});
+  await page.setViewportSize({width:760,height:600});
   await page.emulateMedia({colorScheme:'light'});
  }
  await expect(page.getByRole('heading',{name:'Where’s ur agent at?',exact:true})).toBeVisible();

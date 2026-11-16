@@ -2,20 +2,13 @@ import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Button} from '@apparent/ui/button';
 import {StatusCard} from '@apparent/ui/status-card';
-import {StickyNote} from '@apparent/ui/icons';
 import type {PillView} from './bridge';
 import './style.css';
-import {InputMeter} from './input-meter';
 import {DestinationPicker} from './destination-picker';
 import type {DestinationView} from './destinations';
 import './destination-picker.css';
-import {Check,Circle,CircleAlert,ClipboardPaste,Link,LoaderCircle,Monitor,PenLine,Scan,ScanEye,Smartphone,Square,X,type LucideIcon} from 'lucide-react';
+import {PillSurface} from './pill-view';
 
-const actionIcons:Record<string,LucideIcon>={
- 'select-area':Scan,'switch-area':Scan,'select-screen':Monitor,'switch-screen':Monitor,
- 'select-iphone':Smartphone,'switch-iphone':Smartphone,record:Circle,whiteboard:PenLine,
- finish:Square,paste:ClipboardPaste,'copy-link':Link,inspect:ScanEye,cancel:X,dismiss:X,
-};
 
 function Pill() {
   const [view,setView]=useState<PillView|null>(null);
@@ -35,9 +28,9 @@ function Pill() {
   const [sharing,setSharing]=useState<number|null>(null);
   const [pending,setPending]=useState(false);
   const [error,setError]=useState(false);
+  const showingDestination=!!destination && !!view && ['processing','completed'].includes(view.phase);
   const current=useRef<PillView|null>(null);
   const busy=useRef(false);
-  const pasteStart=useRef<[number,number]|null>(null);
   useEffect(()=>{
     const bridge=window.apparentPill;
     if(!bridge){setError(true);return;}
@@ -68,7 +61,9 @@ function Pill() {
     if(element)observer.observe(element);
     void document.fonts.ready.then(report);
     return()=>{active=false;observer.disconnect();};
-  },[view?.revision,view?.phase]);
+  // The destination snapshot can replace PillSurface after the same capture
+  // revision. Observe the newly mounted main so tray expansion resizes its host.
+  },[view?.revision,view?.phase,showingDestination]);
   async function act(action:string,drop=false){
     const before=current.current;
     if(!before || busy.current)return;
@@ -88,57 +83,15 @@ function Pill() {
   },[view,sharing]);
   if(!view)return <div role="status" className="pill connection">{error?'Recording controls unavailable':'Connecting…'}</div>;
   if(view.phase==='hidden')return null;
-  if(destination && ['processing','completed'].includes(view.phase))return <main data-revision={view.revision} className="pill settings-shell" data-phase={view.phase} data-reduced={view.reducedMotion}>
+  if(showingDestination && destination)return <main data-revision={view.revision} className="pill apparent-theme" data-phase={view.phase} data-reduced={view.reducedMotion}>
     <DestinationPicker key={destination.capture} view={destination}/>
   </main>;
-  const uploading=view.phase==='completed' && view.actions.some(action=>action.label==='Cancel upload');
-  const uploadStopped=view.phase==='completed' && (view.label.startsWith('Upload failed') || view.label.startsWith('Upload cancelled'));
-  // Keep the named X at the trailing edge in both visual and keyboard order,
-  // independent of the backend's action admission order.
-  const isClose=(id:string)=>id==='cancel'||id==='dismiss';
-  const controls=view.actions.filter(action=>action.id!=='notes')
-    .sort((a,b)=>Number(isClose(a.id))-Number(isClose(b.id)));
-  // Mirror Whiteboard → Finish: Inspect precedes the primary Paste action.
-  const pasteIndex=controls.findIndex(action=>action.id==='paste');
-  const inspectIndex=controls.findIndex(action=>action.id==='inspect');
-  if(pasteIndex>=0 && inspectIndex>pasteIndex)
-    [controls[pasteIndex],controls[inspectIndex]]=[controls[inspectIndex],controls[pasteIndex]];
-  return <main data-revision={view.revision} className="pill settings-shell" aria-label={view.phase==='selecting'?view.label:undefined} data-phase={view.phase} data-reduced={view.reducedMotion} data-warning={view.warning!==null}>
-    <div className="pill-surface">
-    <div className="pill-row">
-    {(view.phase!=='selecting') && <div className={`lead ${view.draggable?'movable':''} ${window.apparentPill?.manualDrag?'manual-drag':''}`} title={view.draggable?'Drag recording controls':undefined}
-      onPointerDown={event=>{if(view.draggable && !(event.target as HTMLElement).closest('button') && window.apparentPill?.manualDrag && event.button===0 && event.isPrimary)void window.apparentPill.beginDrag(view.revision).catch(()=>{});}}>
-      <span className={`indicator-slot ${view.phase}`}>
-        {(uploading?<LoaderCircle aria-hidden="true" className="indicator processing"/>:uploadStopped?<CircleAlert aria-hidden="true" className="indicator stopped"/>:view.phase==='completed'?<Check aria-hidden="true" className="indicator completed"/>:view.phase==='processing'?<LoaderCircle aria-hidden="true" className="indicator processing"/>:<span aria-hidden="true" className={`indicator ${view.phase}`}/>)}
-      </span>
-      <span className="clock" role={view.phase==='completed'?'status':undefined} aria-label={view.phase==='recording'?`Recording ${view.clock}`:undefined}>
-        {view.phase==='recording'?view.clock:view.phase==='processing'?'Processing…':view.label}
-      </span>
-    </div>}
-    {view.inputWaveform!==null && view.phase==='recording' && <InputMeter input={view.inputWaveform} receivedAt={receivedAt} reduced={view.reducedMotion || systemReduced}/>}
-    {view.warning && view.warning!==view.label && <span className="warning" role="status">{view.warning}</span>}
-    {view.notice && <span className="notice" role="status">{view.notice}</span>}
-    {error && <span role="alert">Action not confirmed. Use the recording shortcut or tray menu.</span>}
-    {view.actions.length>0 && <div className="controls" role="group" aria-label="Recording controls" aria-busy={pending}>
-      {controls.map(action=>{const Icon=action.label==='Cancel upload'?X:actionIcons[action.id];const iconOnly=isClose(action.id);return <Button key={action.id} variant={action.primary?'default':action.selected?'secondary':'ghost'}
-        size={iconOnly?'icon':'default'} data-icon-only={iconOnly} aria-label={action.label} title={iconOnly?action.label:undefined}
-        data-primary={action.primary}
-        aria-pressed={action.id.startsWith('select-')?action.selected:undefined}
-        disabled={!action.enabled || pending || sharing!==null}
-        onPointerDown={event=>{if(action.id==='paste' && event.button===0 && event.isPrimary){pasteStart.current=[event.screenX,event.screenY];event.currentTarget.setPointerCapture(event.pointerId);void window.apparentPill?.beginPaste(view.revision).catch(()=>{pasteStart.current=null;});}}}
-        onPointerUp={event=>{if(action.id==='paste' && event.button===0 && event.isPrimary && pasteStart.current){const [x,y]=pasteStart.current;pasteStart.current=null;void act('paste',Math.hypot(event.screenX-x,event.screenY-y)>=24);}}}
-        onPointerCancel={()=>{pasteStart.current=null;void window.apparentPill?.cancelPaste();}}
-        onClick={event=>{if(action.id!=='paste' || event.detail===0)void act(action.id);}}>{Icon && <Icon aria-hidden="true"/>}{!iconOnly && <span>{action.label}</span>}</Button>;})}
-    </div>}
-    </div>
-    {view.phase==='recording' && view.noteCount>0 && <div className="pill-notes-layer"><Button className="pill-notes" variant="ghost"
-      aria-label={`${view.noteCount} saved ${view.noteCount===1?'note':'notes'}. Open notes`} disabled={pending || !view.actions.some(a=>a.id==='notes' && a.enabled)}
-      onClick={()=>void act('notes')}><StickyNote aria-hidden="true"/><span>{view.noteCount>99?'99+':view.noteCount}</span></Button></div>}
-    </div>
+  return <PillSurface view={view} pending={pending} controlsDisabled={sharing!==null} error={error} receivedAt={receivedAt} reduced={systemReduced} manualDrag={window.apparentPill?.manualDrag} onAction={(id,drop)=>void act(id,drop)} onBeginDrag={()=>window.apparentPill!.beginDrag(view.revision)} onBeginPaste={()=>window.apparentPill!.beginPaste(view.revision)} onCancelPaste={()=>void window.apparentPill?.cancelPaste()}>
     {sharing===view.revision&&<section className="public-share-confirmation" aria-label="Confirm public sharing"><StatusCard tone="neutral" headline="Create a public link?" compact>
       <p>Anyone with this link can view this capture. Shared captures are not end-to-end encrypted.</p>
       <div className="public-share-actions"><Button variant="outline" disabled={pending} onClick={()=>void act('cancel-public-link')}>Cancel sharing</Button><Button disabled={pending} onClick={()=>void act('confirm-public-link')}>Create public link</Button></div>
     </StatusCard></section>}
-  </main>;
+  </PillSurface>;
 }
+
 createRoot(document.getElementById('root')!).render(<Pill/>);
