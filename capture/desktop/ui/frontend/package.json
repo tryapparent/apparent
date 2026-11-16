@@ -23,7 +23,10 @@
     "typecheck:onboarding-policy": "tsc -p tests/onboarding/tsconfig.json",
     "typecheck:onboarding-renderer": "tsc -p tests/onboarding/renderer/tsconfig.json",
     "test:electron:targeted": "node --experimental-strip-types ../../../../enablement/prerequisites/targeted/run.ts",
-    "test:electron:mac": "npm run test:electron:targeted -- src/hermes/runtime.smoke.ts tests/pill/foreground/smoke.cts"
+    "test:electron:mac": "npm run test:electron:targeted -- src/hermes/runtime.smoke.ts tests/pill/foreground/smoke.cts",
+    "build:prepare": "node --experimental-strip-types scripts/build-record-capture-request.ts && node --experimental-strip-types scripts/build-record-media.ts && node --experimental-strip-types scripts/agent-media/build.ts && node --experimental-strip-types scripts/build-notes.ts && node --experimental-strip-types scripts/build-storage-policy.ts && node --experimental-strip-types scripts/build-updates.ts && node --experimental-strip-types scripts/build-pill.ts && python3 ../../../../shared/ui/scripts/check-theme.py",
+    "build:typecheck": "tsc --noEmit && npm run typecheck:settings-native && npm run typecheck:installer",
+    "build:emit": "vite build && node --experimental-strip-types scripts/build-connect-transport.ts"
   },
   "dependencies": {
     "@apparent/ui": "file:../../../../shared/ui",
