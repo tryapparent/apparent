@@ -13,7 +13,7 @@ This proves the component build boundary, not independence of the whole Agent CL
 `5bbe8e35e67b61703737991575860d4b1fd1ad57`. `stage.ts --out <owned-output>`
 verifies archive/SDK/file digests, source identity, capabilities and modes before
 staging. Only frame executables are installed; the complete source manifest is
-retained separately as provenance. Record independently pins the same generation.
+retained separately as provenance. Record independently pins its accepted 0.3 generation.
 Runtime operations never download, build, discover providers or mutate config.
 
 Application composition's `movie_frames.rs` hosts the worker in its packaged Electron runtime with
