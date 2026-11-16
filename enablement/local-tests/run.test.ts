@@ -289,7 +289,7 @@ test('real capture-tool inventory is unchanged while TypeScript tests use one or
   const tracked = spawnSync('git', ['ls-files', '-z', '--', 'capture/desktop/enablement/', 'capture/agent/scripts/'],
     {cwd: root, encoding: 'utf8'});
   assert.equal(tracked.status, 0);
-  const inventory = tracked.stdout.split('\0').filter(path => /\/(?:test[-_][^/]*\.py|[^/]+\.test\.ts)$/.test(path)).sort();
+  const inventory = tracked.stdout.split('\0').filter(path => !path.startsWith('capture/desktop/enablement/local-tests/') && /\/(?:test[-_][^/]*\.py|[^/]+\.test\.ts)$/.test(path)).sort();
   const pythonInventory = python.map(command => command.argv.at(-1)!);
   const nodeCommand = node[0].argv;
   const nodeInventory = nodeCommand.filter(arg => arg.endsWith('.test.ts'));

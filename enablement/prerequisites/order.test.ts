@@ -78,7 +78,7 @@ fi
 
 test('security fixtures and required packaging precede serial native checks; full suites and cache completion remain required', t => {
   assert.deepEqual(steps.map(step => step.name), relevant);
-  assert.equal((rust.match(/bash capture\/desktop\/scripts\/packaging\/install-app\.sh/g) ?? []).length, 1);
+  assert.equal((rust.match(/bash capture\/desktop\/enablement\/packaging\/install-app\.sh/g) ?? []).length, 1);
   const result = execute(t);
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(result.executed, relevant.filter(name => name !== linuxBridge));
