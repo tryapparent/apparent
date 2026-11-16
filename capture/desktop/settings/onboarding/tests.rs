@@ -598,15 +598,19 @@ mod tests {
         assert!(missing_to_record(Some(&grants(&ALL)), true, true).is_empty());
         // Nothing in Apparent or its helper asks macOS for it.
         let sources = [
+            include_str!("session.rs"),
+            include_str!("../../coordinator/setup.rs"),
+            include_str!("../../coordinator/recording.rs"),
+            include_str!("../../coordinator/windows.rs"),
+            include_str!("../../mod.rs"),
+            include_str!("../../../engine/runtime/platform/macos.rs"),
+            include_str!("../../ui/macos.rs"),
+            include_str!("../onboarding.rs"),
+            include_str!("../settings.rs"),
             include_str!("../mod.rs"),
-            include_str!("../../engine/runtime/platform/macos.rs"),
-            include_str!("../ui/macos.rs"),
-            include_str!("onboarding.rs"),
-            include_str!("settings.rs"),
-            include_str!("mod.rs"),
-            include_str!("../native/Onboarding.swift"),
-            include_str!("../native/Settings.swift"),
-            include_str!("../native/PermissionPanel.swift"),
+            include_str!("../../native/Onboarding.swift"),
+            include_str!("../../native/Settings.swift"),
+            include_str!("../../native/PermissionPanel.swift"),
         ];
         let calls = [
             concat!("CGRequest", "ListenEventAccess"),
