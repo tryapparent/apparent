@@ -82,9 +82,11 @@ objc2::define_class!(
                     &error.domain().to_string(), error.code(),
                 )
             }) {
-                crate::capture::desktop::workflow::error_reporting::report(
-                    crate::capture::desktop::workflow::error_reporting::Failure::UpdateCheck,
-                );
+                if let Some(error) = error {
+                    crate::capture::desktop::workflow::error_reporting::report_sparkle_update(
+                        &error.domain().to_string(), error.code(),
+                    );
+                }
             }
             let _ = self.ivars().compare_exchange(
                 UpdateStatus::Checking as u8,

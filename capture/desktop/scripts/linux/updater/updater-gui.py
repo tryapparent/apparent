@@ -98,6 +98,15 @@ def find_phrase(words, phrase):
     return matches[0]
 
 
+def find_loading_heading(words):
+    # OCR can turn the animated decorative spinner into C, U, O, etc. Strip
+    # tiny standalone glyphs only for this fixed heading, never ordinary labels.
+    words = [word for word in words if not (
+        len(tokens(word['text'])) == 1 and len(tokens(word['text'])[0]) == 1
+        and int(word['width']) <= 24 and int(word['height']) <= 24)]
+    return find_phrase(words, 'Checking for updates')
+
+
 def find_portal_outputs(words, _phrase):
     # Tesseract can split or join these tabs into different text runs. Require
     # the complete unique row without relaxing ordinary UI locators.
@@ -213,10 +222,34 @@ class Evidence:
                 return path, finder(self.words(path, page_mode=3), phrase)
             except ValueError as page_error:
                 last = page_error
+            if phrase == 'Checking':
+                try:
+                    return path, self.loading_button(path)
+                except ValueError as button_error:
+                    last = button_error
             if time.monotonic() >= deadline:
                 (self.directory / 'failed-ocr.tsv').write_text(self.last_ocr)
                 raise RuntimeError(f'{last}; last frame: {path}')
             time.sleep(0.1)
+
+    def loading_button(self, path):
+        # The inline heading moves the button. Locate current pixels, never
+        # reuse the idle button's old coordinates or click the status heading.
+        from PIL import Image, ImageOps
+        try:
+            x, y = find_loading_heading(self.words(path))
+        except PhraseMatchError:
+            x, y = find_loading_heading(self.words(path, page_mode=3))
+        derived = self.directory / 'loading-button-ocr.png'
+        with Image.open(path) as image:
+            left, top = max(0, x - 200), max(0, y + 16)
+            crop = image.crop((left, top, min(image.width, x + 200), min(image.height, y + 80)))
+            ImageOps.invert(crop.convert('RGB')).resize((crop.width * 4, crop.height * 4)).save(derived)
+        words = self.words(derived, page_mode=7)
+        for word in words:
+            for key, offset in [('left', left), ('top', top), ('width', 0), ('height', 0)]:
+                word[key] = str(round(int(word[key]) / 4 + offset))
+        return find_phrase(words, 'Checking')
 
     def perform(self, request):
         start = time.monotonic() - self.clock
@@ -255,7 +288,7 @@ class Evidence:
             deadline = time.monotonic() + request.get('timeout', 20)
             while True:
                 path = self.frame()
-                if dialog_dismissed([self.words(path), self.words(path, cleaned=True)]):
+                if dialog_dismissed([self.words(path), self.words(path, cleaned=True), self.words(path, page_mode=3)]):
                     break
                 if time.monotonic() >= deadline:
                     raise RuntimeError(f'update dialog did not disappear; last frame: {path}')

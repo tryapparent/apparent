@@ -85,7 +85,10 @@ retain the build/package logs alongside the evidence.
 2. Click **Check for Updates…**. Hold the fixture's metadata response at an
    explicit gate and assert the rendered **Checking…** button before releasing
    it. Click that disabled button again; the fixture request counts must show
-   exactly one manual request. Then assert **No update available**, and click OK.
+    exactly one manual request. Then assert **No update available** and press Escape.
+    If full-frame OCR misses disabled text, the controller crops below the
+    uniquely located loading heading, inverts/enlarges the image and requires
+    the exact button label before clicking. Raw compositor frames stay intact.
 3. Repeat with a controlled HTTP 503; assert **Update check failed**, dismiss,
    and retry successfully in the same GUI process.
 4. Offer a synthetic newer release with a wrong checksum; assert the failure,
@@ -111,18 +114,15 @@ no AppImage may be downloaded. The fixture serves the canonical paginated
 GitHub releases API: unrelated stable releases on page 1, the usable Main
 prerelease on page 2. Page 1 has 100 entries; the partial second page ends discovery. Tags use `linux-main-v2-<sha>`. Asset URLs retain the canonical GitHub
 release path. The synthetic newer revision is forty `b` characters (the runner
-refuses a matching source HEAD). Its compare response for `source...bbbb…` is
-`ahead`; the reverse is `behind`. Before checksum/staging, a controlled `diverged`
-response must produce a failure without replacing the image or installed marker.
-Comparisons use `?per_page=1&page=2`; `base_commit.sha` is the base revision in
-each direction, not the candidate revision.
-
-After staging, the fixture advertises the original source revision again. A real
-manual check must still offer the pending update, preserve the staged Main ID
-and target/backup inodes, and not download another image. `stale-feed.json`
-retains the status. Request assertions require the reverse comparison and exactly
-two total image downloads: the rejected checksum and successful stage. Restart
-must report the synthetic Main ID with pending restart cleared.
+refuses a matching source HEAD). Before checksum/staging the scenario records an
+unresolvable fork identity. Both channels must install their selected release
+without a Git comparison, including Stable when the running build is newer.
+A rejected checksum preserves that identity and the original image. Rechecking
+an already staged channel target must not redownload it. Request assertions
+require no ancestry calls and exactly two image downloads: the rejected checksum
+and successful stage. Restart must report the selected ID with pending restart
+cleared. The initial Stable check seeds a matching installed marker; an unmarked
+Stable build intentionally installs its selected release once.
 
 Immediately before restart, Main also starts an owned capture through
 `capture start --request-id <32hex>`. It selects the sole 1280×800 disposable
@@ -146,7 +146,7 @@ proves a saved bundle. Cancellation checks the CLI state, not disappearance of
 native portal windows/requests; this is not a portal cleanup acceptance test.
 
 Both channel variants deliberately serve **the same candidate AppImage bytes**
-under a synthetic newer identity. Main tests ancestry decisions and local
+under a synthetic newer identity. Main tests fork convergence and local
 staging/relaunch, not a genuinely newer binary, live GitHub publication or arm64.
 The lightweight Python tests exercise fixture routes and generated scenario
 syntax without booting a guest; they do not prove these GUI assertions.
