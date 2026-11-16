@@ -19,6 +19,7 @@ function fixture(t: any) {
   const electron = put('capture/desktop/ui/frontend/node_modules/electron/bin', 'synthetic executable');
   chmodSync(electron, 0o700);
   put('capture/desktop/ui/frontend/node_modules/electron/index.js', 'module.exports = __dirname + "/bin"');
+  put('capture/desktop/ui/frontend/node_modules/@apparent/record-capture-request/dist/lifecycle.js');
   for (const file of ['tests/reference-native.cjs', 'electron/main.cjs', 'electron/preload.cjs', 'electron/runtime.cjs', 'electron/connect.cjs', 'electron/settings/agents.cjs', 'electron/settings/update-worker.cjs', 'electron/storage-policy.cjs']) {
     put('capture/desktop/ui/frontend/' + file);
   }
@@ -39,6 +40,7 @@ function fixture(t: any) {
 
 function generators(f: ReturnType<typeof fixture>, fail = '') {
   const outputs = {
+    'record-capture-request': ['node_modules/@apparent/record-capture-request/dist/lifecycle.js'],
     'storage-policy': ['electron/storage-policy.cjs', ...['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json'].map(name => 'electron/storage-owner/' + name)],
     'connect-transport': ['electron/connect.cjs', 'electron/settings/agents.cjs'],
     'updates': ['electron/settings/update-worker.cjs'],
@@ -81,9 +83,9 @@ test('Linux release tests prepare their real published provider before Cargo', (
 test('one preparation entrypoint rebuilds absent native artifacts and can run again', t => {
   const f = fixture(t), trace = generators(f);
   assert.equal(prepareNativeInputs(f.root, 'linux'), f.electron);
-  assert.equal(trace(), 'storage-policy\nconnect-transport\nupdates\npill\nrecord-media\nagent-media\n');
+  assert.equal(trace(), 'record-capture-request\nstorage-policy\nconnect-transport\nupdates\npill\nrecord-media\nagent-media\n');
   assert.equal(prepareNativeInputs(f.root, 'linux'), f.electron);
-  assert.equal(trace(), 'storage-policy\nconnect-transport\nupdates\npill\nrecord-media\nagent-media\nstorage-policy\nconnect-transport\nupdates\npill\nrecord-media\nagent-media\n');
+  assert.equal(trace(), 'record-capture-request\nstorage-policy\nconnect-transport\nupdates\npill\nrecord-media\nagent-media\nrecord-capture-request\nstorage-policy\nconnect-transport\nupdates\npill\nrecord-media\nagent-media\n');
 });
 test('missing runtime stops before generating artifacts', t => {
   const f = fixture(t);
@@ -95,7 +97,7 @@ test('missing runtime stops before generating artifacts', t => {
 test('a failed generator stops preparation before subsequent generators', t => {
   const f = fixture(t), trace = generators(f, 'connect-transport');
   assert.throws(() => prepareNativeInputs(f.root, 'linux'));
-  assert.equal(trace(), 'storage-policy\nconnect-transport\n');
+  assert.equal(trace(), 'record-capture-request\nstorage-policy\nconnect-transport\n');
   assert.throws(() => checkNativeInputs(f.root, 'linux'), /ENOENT/);
 });
 
@@ -116,6 +118,11 @@ test('missing generated Storage policy fails before Cargo', t => {
 test('missing generated updater worker fails before Cargo', t => {
   const f = fixture(t);
   rmSync(resolve(f.root, 'capture/desktop/ui/frontend/electron/settings/update-worker.cjs'));
+  assert.throws(() => checkNativeInputs(f.root, 'linux'), /ENOENT/);
+});
+test('missing generated capture request package fails before Cargo', t => {
+  const f = fixture(t);
+  rmSync(resolve(f.root, 'capture/desktop/ui/frontend/node_modules/@apparent/record-capture-request/dist/lifecycle.js'));
   assert.throws(() => checkNativeInputs(f.root, 'linux'), /ENOENT/);
 });
 for (const name of ['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json']) {

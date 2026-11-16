@@ -12,7 +12,7 @@ export function HermesRecording() {
   return <main className="space-y-4 bg-background p-6 text-foreground"><h1 className="text-xl font-semibold">Record for Hermes</h1>
     <p role="status" className="text-sm text-muted-foreground">{captions[view.phase]}</p>
     {view.phase === 'confirm' && <Button onClick={() => { setView({ ...view, phase: 'starting' }); void window.hermesRecording?.start().then(setView); }}>Record and send when finished</Button>}
-    {view.source && <p className="break-all text-xs text-muted-foreground">Saved recording: {view.source}</p>}
+    {view.bundlePath && <p className="break-all text-xs text-muted-foreground">Saved recording: {view.bundlePath}</p>}
     {view.phase === 'error' && <p className="text-sm">Any recording already started remains in Apparent. Nothing is retried automatically.</p>}
   </main>;
 }

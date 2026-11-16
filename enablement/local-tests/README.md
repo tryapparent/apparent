@@ -214,7 +214,8 @@ environment and file/dependency invalidation, and mutation during verification.
 Real package timing evidence is recorded separately from these synthetic tests.
 
 Audited TypeScript sources/tests and package manifests, locks and tsconfig in
-`record/storage` and `record/completion` select Desktop plus native capture.
+`record/storage`, `record/completion` and `record/capture-request` select Desktop
+plus native capture.
 Storage's `build.ts` has the same consumers. Desktop's canonical `npm test`
 includes both Record test inventories; its Electron build generates the Storage
 adapters and Completion worker, which settings packaging stages for the native

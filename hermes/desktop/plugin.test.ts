@@ -7,250 +7,431 @@ const hooks = registerHooks({ resolve(specifier, context, next) {
   if (['@hermes/plugin-sdk', 'react/jsx-runtime'].includes(specifier)) return { url: new URL('./testing/sdk.ts', import.meta.url).href, shortCircuit: true };
   return next(specifier, context);
 } });
-const plugin = (await import(process.env.HERMES_PLUGIN_ENTRY || './plugin.ts')).default;
+const plugin = (await import('./plugin.ts')).default;
 hooks.deregister();
 async function until(predicate: () => unknown) {
-  const deadline = performance.now() + 1500;
-  while (!predicate()) { if (performance.now() > deadline) throw new Error('Async test condition did not settle'); await new Promise(resolve => setTimeout(resolve, 2)); }
+  const deadline = Date.now() + 1500;
+  while (!predicate()) { if (Date.now() > deadline) throw new Error('Async test condition did not settle'); await new Promise(resolve => setTimeout(resolve, 2)); }
 }
-function fixture(external = true, stored: any = null) {
-  let contribution: any, discard: any, interval: (() => void) | undefined, saved: any = structuredClone(stored), launch: string | undefined;
+function fixture(stored: any = null, delayedWrite: number | ((value: unknown) => boolean) = 0) {
+  let contribution: any, discard: any, interval: (() => void) | undefined, saved: any;
+  const history: unknown[] = [];
+  let writes = 0;
+  let startDelayedWrite!: () => void; let releaseDelayedWrite!: () => void;
+  const delayedStarted = new Promise<void>(resolve => { startDelayedWrite = resolve; });
+  const delayedRelease = new Promise<void>(resolve => { releaseDelayedWrite = resolve; });
   let dispose = () => {};
-  const ctx = { onDispose: (fn: () => void) => { dispose = fn; }, setInterval: (fn: () => void) => { interval = fn; return () => { interval = undefined; }; },
-    storage: { get: () => stored, set: (_key: string, value: unknown) => { saved = structuredClone(value); } },
-    os: { openExternal: async (url: string) => { launch = url; return external; } }, register: (c: any) => { if (c.id === 'record') contribution = c; else discard = c; } };
+  const ctx = {
+    onDispose: (fn: () => void) => { dispose = fn; },
+    setInterval: (fn: () => void) => { interval = fn; return () => { interval = undefined; }; },
+    storage: { get: () => stored, set: async (_key: string, value: unknown) => {
+      writes++;
+      if (typeof delayedWrite === 'number' ? writes === delayedWrite : delayedWrite(value)) { startDelayedWrite(); await delayedRelease; }
+      saved = structuredClone(value);
+      history.push(structuredClone(value));
+    } },
+    register: (item: any) => { if (item.id === 'record') contribution = item; else discard = item; },
+  };
   plugin.register(ctx);
-  return { click: () => contribution.render().props.onClick(), label: () => contribution.render().props['aria-label'], discard: () => discard.data.run(), tick: () => interval?.(), saved: () => saved, launch: () => launch, watching: () => Boolean(interval), dispose: () => dispose() };
+  return { click: () => contribution.render().props.onClick(), surface: () => contribution.render(), discard: () => discard.data.run(), tick: () => interval?.(), saved: () => saved,
+    watching: () => Boolean(interval), waitDelayedWrite: () => delayedStarted, releaseDelayedWrite, writes: () => writes, history: () => history, dispose: () => dispose() };
 }
-async function packet(secret: string, phase: string) {
-  const payload = JSON.stringify({ phase, ...(phase === 'saved' ? { source: '/private/owned.apparent' } : {}) });
-  return Response.json({ payload, mac: await sign(secret, payload) });
+
+test('composer keeps the accepted Apparent mark while recording state changes', async () => {
+  reset(); const f = fixture();
+  const icon = () => f.surface().props.children;
+  try {
+    const before = icon();
+    assert.equal(before.type, 'img');
+    assert.equal(before.props.src, '__APPARENT_ICON__');
+    f.click();
+    await until(() => shared.requests.some((item: any) => item.method === 'shell.exec'));
+    assert.deepEqual(icon(), before);
+  } finally { f.dispose(); }
+});
+async function packet(phase: string, remoteSource: string | null = shared.source, bundlePath = shared.bundlePath) {
+  const payload = JSON.stringify({ phase, ...(phase === 'saved' ? { bundlePath, remoteSource } : {}) });
+  return Response.json({ payload, mac: await sign(shared.key, payload) });
 }
 function reset() {
-  shared.submissions = []; shared.failSubmit = false; shared.session = 'runtime-A'; shared.owner = { connectionId: 'local-A', profile: 'work' };
-  shared.routes = [{ connectionId: 'local-A', profile: 'work', targetProfile: 'work', mode: 'local' }];
-  shared.runtime.instance_id = 'runtime-instance-A';
-  shared.launchWait = null; shared.keyReads = []; shared.failLaunch = false;
+  shared.sessionCreateGate = undefined; shared.sessionCreateStart = undefined;
+  shared.owner = { connectionId: 'ssh-A', profile: 'work' };
+  shared.session = 'runtime-A'; shared.storedSession = 'stored-A';
+  shared.routes = [
+    { connectionId: 'ssh-A', profile: 'work', targetProfile: 'work', mode: 'remote' },
+    { connectionId: 'local-A', profile: 'default', targetProfile: 'default', mode: 'local' },
+  ];
+  shared.requests = []; shared.submissions = []; shared.errors = [];
+  shared.insertions = []; shared.draftReads = []; shared.opens = [];
+  shared.source = 'cccccccccccccccccccccccccccccccc'; shared.bundlePath = '/private/owned.apparent'; shared.draft = 'typed draft must remain unchanged'; shared.acceptSubmit = true; shared.acceptInsert = true;
+  shared.newDraft = 'typed draft must remain unchanged'; shared.draftReadGate = undefined; shared.draftReadStart = undefined;
+  shared.sessionCreate = { session_id: 'created-runtime', stored_session_id: 'created-stored' };
+  shared.legacyRuntimeDescribe = false; shared.runtimeDescribeError = undefined;
 }
-test('completion submits once to captured gateway/session after foreground switches; next click records again', async () => {
+
+test('canonical remote recording uses an idempotent local helper shell session', async () => {
   reset(); const originalFetch = globalThis.fetch;
   let phase = 'recording'; let acknowledgements = 0; const f = fixture();
   globalThis.fetch = async url => {
     if (String(url).includes('/ack/')) { acknowledgements++; return Response.json({ ok: true }); }
-    return packet(shared.key, phase);
+    return packet(phase);
   };
   try {
-    f.click(); await until(() => f.launch());
-    assert.match(f.launch()!, /^apparent:\/\/hermes\/[a-f0-9]{32}\/\d+$/);
-    const first = f.saved();
-    shared.session = 'runtime-B'; shared.owner = { connectionId: 'other-gateway', profile: 'work' };
+    f.click(); await until(() => shared.requests.some((item: any) => item.method === 'shell.exec' && item.params.command.includes('hermes record')));
+    const start = shared.requests.find((item: any) => item.method === 'shell.exec' && item.params.command.includes('hermes record')) as any;
+    assert.equal(start.route.connectionId, 'local-A');
+    assert.deepEqual(Object.keys(start.params), ['session_id', 'command']);
+    assert.equal(start.params.session_id, 'helper-runtime');
+    const helper = shared.requests.find((item: any) => item.method === 'session.create' && item.route.connectionId === 'local-A') as any;
+    assert.deepEqual(Object.keys(helper.params), ['request_id', 'source']);
+    assert.match(helper.params.request_id, /^[a-f0-9]{32}$/);
+    assert.equal(helper.params.source, 'gui');
+    assert.equal(helper.params.hidden, undefined, 'send only parameters advertised by runtime.describe');
+    assert.match(start.params.command, /^apparent hermes record '[a-f0-9]{32}\/\d+'$/);
     phase = 'saved'; f.tick(); await until(() => acknowledgements === 1);
-    f.tick(); await new Promise(resolve => setTimeout(resolve, 5));
-    assert.equal(shared.submissions.length, 1);
-    assert.equal((shared.submissions[0] as any).params.session_id, 'runtime-A');
-    assert.equal((shared.submissions[0] as any).route.connectionId, 'local-A');
-    assert.equal((shared.submissions[0] as any).params.input_id, first.token);
-    assert.equal(shared.keyReads.length, 1);
-    assert.equal(shared.keyReads[0].route.connectionId, 'local-A');
-    assert.equal(shared.keyReads[0].params.session_id, 'runtime-A');
-    assert.ok(!JSON.stringify(f.saved()).includes(shared.key));
-    shared.owner = { connectionId: 'local-A', profile: 'work' }; phase = 'recording';
-    f.click(); await until(() => f.saved()?.token && f.saved().token !== first.token);
-  } finally { globalThis.fetch = originalFetch; }
-});
-test('lost submit replies retry only original input_id and stop; no title lookup', async () => {
-  reset(); shared.failSubmit = true; const originalFetch = globalThis.fetch; const f = fixture();
-  globalThis.fetch = async () => packet(shared.key, 'saved');
-  try {
-    f.click(); await until(() => f.launch()); f.tick(); await until(() => !f.watching());
-    assert.equal(shared.submissions.length, 2);
-    assert.deepEqual(shared.submissions[0], shared.submissions[1]);
-    assert.equal((shared.submissions[0] as any).method, 'prompt.submit');
-    f.tick(); assert.equal(shared.submissions.length, 2);
-  } finally { shared.failSubmit = false; globalThis.fetch = originalFetch; }
-});
-test('a transient bridge failure after 30 seconds retains the original handoff for manual retry', async t => {
-  reset(); const originalFetch = globalThis.fetch; const now = Date.now();
-  let elapsed = 0; let failing = false; let reads = 0; let phase = 'recording';
-  const notices: any[] = [];
-  t.mock.method(host, 'notify', notice => { notices.push(notice); });
-  t.mock.method(Date, 'now', () => now + elapsed);
-  const f = fixture();
-  globalThis.fetch = async url => {
-    if (String(url).includes('/ack/')) return Response.json({ ok: true });
-    reads++;
-    if (failing) throw new TypeError('Temporary bridge failure');
-    return packet(shared.key, phase);
-  };
-  try {
-    f.click(); await until(() => f.launch());
-    // Complete an initial successful poll before introducing a transient failure.
-    await until(() => { f.tick(); return reads > 0; });
-    const original = f.saved(); const launch = f.launch();
-    elapsed = 35000; failing = true;
-    await until(() => { f.tick(); return !f.watching(); });
-    assert.deepEqual(f.saved(), original);
-    assert.equal(f.label(), 'Check Apparent recording handoff');
-    assert.match(notices.at(-1).message, /retry this handoff.*discard pending handoff/);
-    const stoppedReads = reads;
-    f.tick(); await new Promise(resolve => setTimeout(resolve, 5));
-    assert.equal(reads, stoppedReads, 'automatic retries stop until the person retries');
     assert.equal(shared.submissions.length, 0);
-    // A second failed explicit check must still preserve the same request.
-    f.click(); await until(() => !f.watching());
-    assert.deepEqual(f.saved(), original);
-    failing = false; phase = 'saved';
-    shared.session = 'runtime-B'; shared.owner = { connectionId: 'other-gateway', profile: 'work' };
-    f.click(); await until(() => f.saved() === null);
-    assert.equal(f.launch(), launch, 'retry never launches another recording');
-    assert.equal(shared.submissions.length, 1);
-    const call = shared.submissions[0] as any;
-    assert.equal(call.params.input_id, original.token);
-    assert.equal(call.params.session_id, original.destination.session);
-    assert.equal(call.route.connectionId, original.destination.connectionId);
-  } finally { f.dispose(); globalThis.fetch = originalFetch; reset(); }
-});
-test('a bridge outage during reload preserves recovery until explicitly discarded', async () => {
-  reset(); const originalFetch = globalThis.fetch;
-  const stored = { version: 2, token: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', port: 45000, created: Date.now() - 35000,
-    destination: { session: 'runtime-A', connectionId: 'local-A', profile: 'work', targetProfile: 'work', mode: 'local', local: true }, runtime: structuredClone(shared.runtime) };
-  globalThis.fetch = async () => { throw new TypeError('Temporary bridge failure'); };
-  const f = fixture(true, stored);
-  try {
-    await until(() => shared.keyReads.length > 0);
-    await until(() => !f.watching());
-    assert.deepEqual(f.saved(), stored);
-    assert.equal(f.label(), 'Check Apparent recording handoff');
-    assert.equal(f.launch(), undefined);
-    assert.equal(shared.submissions.length, 0);
-    await f.discard();
+    assert.equal(shared.insertions.length, 1);
+    assert.equal(shared.insertions[0].session, 'runtime-A');
+    assert.ok(shared.draftReads.includes('runtime-A'));
+    assert.equal(shared.insertions[0].mode, 'block');
+    assert.match(shared.insertions[0].text, /apparent_inspect/);
+    assert.match(shared.insertions[0].text, /make-it-apparent/);
+    assert.match(shared.insertions[0].text, /playable video/);
+    assert.match(shared.draft, /^typed draft must remain unchanged\n\nApparent recording/);
+    assert.ok(shared.requests.filter((item: any) => item.method === 'shell.exec').every((item: any) => item.params.session_id === 'helper-runtime'));
+    assert.equal(shared.requests.some((item: any) => item.method === 'prompt.submit'), false);
     assert.equal(f.saved(), null);
-    assert.equal(f.label(), 'Record with Apparent');
-    assert.equal(f.watching(), false);
-  } finally { f.dispose(); globalThis.fetch = originalFetch; reset(); }
-});
-for (const terminal of ['cancelled', 'error', 'expired']) test(`${terminal} still clears an unsent handoff`, async () => {
-  reset(); const originalFetch = globalThis.fetch;
-  const stored = { version: 2, token: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', port: 45000,
-    created: Date.now() - (terminal === 'expired' ? 3600001 : 35000),
-    destination: { session: 'runtime-A', connectionId: 'local-A', profile: 'work', targetProfile: 'work', mode: 'local', local: true }, runtime: structuredClone(shared.runtime) };
-  let reads = 0;
-  globalThis.fetch = async url => {
-    if (String(url).includes('/ack/')) return Response.json({ ok: true });
-    reads++; return packet(shared.key, terminal);
-  };
-  const f = fixture(true, stored);
-  try {
-    await until(() => f.saved() === null);
-    assert.equal(f.label(), 'Record with Apparent');
-    assert.equal(f.watching(), false);
-    assert.equal(shared.submissions.length, 0);
-    if (terminal === 'expired') assert.equal(reads, 0, 'expired requests never contact the bridge');
-  } finally { f.dispose(); globalThis.fetch = originalFetch; reset(); }
-});
-test('a listener knowing the public launch ID cannot forge completion', async () => {
-  reset(); const originalFetch = globalThis.fetch; const f = fixture(); let requested: string | undefined;
-  globalThis.fetch = async url => { requested = String(url); return packet(f.launch()!.split('/')[3], 'saved'); };
-  try {
-    f.click(); await until(() => f.launch()); f.tick(); await until(() => requested);
-    await new Promise(resolve => setTimeout(resolve, 10));
-    assert.ok(!requested!.includes(shared.key));
-    assert.equal(shared.submissions.length, 0);
-    assert.equal(f.saved().source, undefined);
   } finally { globalThis.fetch = originalFetch; }
 });
-test('changed route mapping or replaced runtime cannot receive the saved recording', async () => {
-  const originalFetch = globalThis.fetch;
+
+test('canonical local recording binds shell work to the pinned destination session', async () => {
+  reset(); shared.owner = { connectionId: 'local-A', profile: 'default' };
+  shared.session = 'local-runtime'; shared.storedSession = 'local-stored';
+  const originalFetch = globalThis.fetch; const f = fixture();
+  globalThis.fetch = async () => packet('recording');
   try {
-    for (const change of [() => { shared.routes[0].targetProfile = 'other'; }, () => { shared.runtime.instance_id = 'replacement'; }]) {
-      reset(); const f = fixture();
-      let phase = 'recording';
-      let stateReads = 0; let releaseSaved!: () => void; let savedReadStarted!: () => void;
-      const savedRead = new Promise<void>(resolve => { savedReadStarted = resolve; });
-      const savedResponse = new Promise<void>(resolve => { releaseSaved = resolve; });
-      globalThis.fetch = async () => {
-        stateReads++;
-        if (stateReads === 2) { savedReadStarted(); await savedResponse; }
-        return packet(shared.key, phase);
-      };
-      f.click(); await until(() => f.launch());
-      // Drive until a second poll is actually in fetch. That proves the initial
-      // poll released its working guard; a single tick can be ignored while it runs.
-      await until(() => { f.tick(); return stateReads >= 2; });
-      await savedRead;
-      change(); phase = 'saved'; releaseSaved();
-      await until(() => !f.watching());
-      assert.equal(shared.submissions.length, 0);
-      assert.equal(f.saved().source, '/private/owned.apparent');
-      await f.discard(); assert.equal(f.saved(), null);
-    }
-  } finally { reset(); globalThis.fetch = originalFetch; }
+    f.click(); await until(() => shared.requests.some((item: any) => item.method === 'shell.exec'));
+    const shellCalls = shared.requests.filter((item: any) => item.method === 'shell.exec') as any[];
+    assert.equal(shellCalls[0].params.session_id, 'local-runtime');
+    assert.equal(shared.requests.some((item: any) => item.method === 'session.create' && item.route.mode === 'local'), false);
+  } finally { globalThis.fetch = originalFetch; f.dispose(); }
 });
-test('stock app-link refusal uses only the original local session safe shell; remote routes never execute', async () => {
-  reset();
-  const f = fixture(false);
-  f.click(); await until(() => f.watching());
-  assert.equal(shared.submissions.length, 1);
-  const call = shared.submissions[0] as any;
-  assert.equal(call.method, 'shell.exec');
-  assert.equal(call.route.connectionId, 'local-A');
-  assert.equal(call.params.session_id, 'runtime-A');
-  assert.ok(call.params.command.includes(f.launch()));
-  reset(); shared.routes[0].mode = 'ssh';
-  const remote = fixture(false); remote.click();
-  await until(() => remote.saved() === null);
-  assert.equal(remote.launch(), undefined);
-  assert.equal(shared.submissions.length, 0);
-  assert.equal(remote.watching(), false);
-  reset();
-});
-test('a lost local launch reply retains the original pending handoff without launching again', async () => {
-  reset(); shared.failLaunch = true;
-  const f = fixture(false); f.click();
-  await until(() => f.watching());
-  assert.ok(f.saved().token);
-  assert.equal(shared.submissions.length, 1);
-  f.click(); await new Promise(resolve => setTimeout(resolve, 5));
-  assert.equal(shared.submissions.length, 1);
-  f.dispose(); reset();
-});
-test('unloading during local launch leaves recovery persisted and never creates a timer afterward', async () => {
-  reset(); let finish!: () => void;
-  shared.launchWait = new Promise<void>(resolve => { finish = resolve; });
-  const f = fixture(false); f.click();
-  await until(() => shared.submissions.length === 1);
-  f.dispose(); finish(); await new Promise(resolve => setTimeout(resolve, 5));
-  assert.ok(f.saved().token);
-  assert.equal(f.watching(), false);
-  reset();
-});
-test('old pending sources cannot bypass the private-key protocol after reload', async () => {
-  reset();
-  const old = { token: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', port: 45000, created: Date.now(), source: '/private/old.apparent',
-    destination: { session: 'runtime-A', connectionId: 'local-A', profile: 'work', targetProfile: 'work', mode: 'local', local: true }, runtime: shared.runtime };
-  const f = fixture(true, old);
-  await until(() => f.saved() === null);
-  assert.equal(f.watching(), false);
-  assert.equal(shared.submissions.length, 0);
-  assert.equal(shared.keyReads.length, 0);
-});
-test('reload obtains the private key again and retries the same saved handoff without launching', async () => {
-  reset(); shared.failSubmit = true;
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async url => String(url).includes('/ack/') ? Response.json({ ok: true }) : packet(shared.key, 'saved');
+
+test('local delivery chooses the exact saved bundle even when Connect source and uploads are available', async () => {
+  reset(); shared.owner = { connectionId: 'local-A', profile: 'default' };
+  shared.session = 'local-runtime'; shared.storedSession = 'local-stored'; shared.draft = '';
+  const originalFetch = globalThis.fetch; const f = fixture(); globalThis.fetch = async () => packet('saved', shared.source, '/private/exact-capture.apparent');
   try {
-    const first = fixture(); first.click(); await until(() => first.launch()); first.tick();
-    await until(() => !first.watching());
-    const stored = first.saved(); first.dispose();
-    assert.ok(!JSON.stringify(stored).includes(shared.key));
-    reset();
-    const resumed = fixture(true, stored);
-    await until(() => resumed.saved() === null);
-    assert.equal(resumed.launch(), undefined);
-    assert.equal(shared.keyReads.length, 1);
-    assert.equal(shared.submissions.length, 1);
-    assert.equal((shared.submissions[0] as any).params.input_id, stored.token);
-    assert.equal((shared.submissions[0] as any).params.session_id, stored.destination.session);
-    resumed.dispose();
-  } finally { reset(); globalThis.fetch = originalFetch; }
+    f.click(); await until(() => shared.requests.some((item: any) => item.method === 'shell.exec'));
+    await new Promise(resolve => setTimeout(resolve, 10)); f.tick();
+    await until(() => shared.submissions.length === 1);
+    assert.equal(shared.submissions.length + shared.insertions.length, 1, JSON.stringify({ errors: shared.errors, requests: shared.requests, draftReads: shared.draftReads, draft: shared.draft }));
+    assert.match(shared.submissions[0].text, /\/private\/exact-capture\.apparent/);
+    assert.equal(shared.submissions[0].text.includes(shared.source), false);
+    assert.equal(shared.requests.some((item: any) => item.method === 'session.create'), false);
+  } finally { globalThis.fetch = originalFetch; f.dispose(); }
+});
+
+test('v3 local pending state migrates without treating its old Connect pointer as the source', async () => {
+  reset(); shared.owner = { connectionId: 'local-A', profile: 'default' };
+  shared.session = 'local-runtime'; shared.storedSession = 'local-stored';
+  const originalFetch = globalThis.fetch;
+  const legacy = { version: 3, token: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', port: 45000,
+    destination: { session: 'local-runtime', storedSession: 'local-stored', connectionId: 'local-A', profile: 'default', targetProfile: 'default', mode: 'local', local: true },
+    localRoute: { connectionId: 'local-A', profile: 'default', targetProfile: 'default' }, created: Date.now(),
+    source: shared.source };
+  const f = fixture(legacy);
+  globalThis.fetch = async () => packet('saved', shared.source, '/private/recovered.apparent');
+  try {
+    await until(() => shared.insertions.length === 1);
+    assert.match(shared.insertions[0].text, /\/private\/recovered\.apparent/);
+    assert.equal(shared.insertions[0].text.includes(shared.source), false);
+    assert.ok(f.history().some((value: any) => value?.version === 4 && value?.bundlePath === '/private/recovered.apparent'));
+  } finally { globalThis.fetch = originalFetch; f.dispose(); }
+});
+
+test('only an unsupported runtime.describe selects the legacy command-only contract', async () => {
+  reset(); shared.legacyRuntimeDescribe = true;
+  const f = fixture();
+  try {
+    f.click(); await until(() => shared.requests.some((item: any) => item.method === 'shell.exec'));
+    const calls = shared.requests.filter((item: any) => item.method === 'shell.exec') as any[];
+    assert.ok(calls.length >= 1);
+    assert.ok(calls.every(item => Object.keys(item.params).join(',') === 'command'));
+    assert.equal(shared.requests.some((item: any) => item.method === 'session.create' && item.route.mode === 'local'), false);
+  } finally { f.dispose(); }
+});
+
+test('unrelated runtime.describe errors stop before any shell launch', async () => {
+  reset(); shared.runtimeDescribeError = Object.assign(new Error('gateway permission denied'), { code: 4001, data: { reason: 'permission_denied' } });
+  const f = fixture();
+  try {
+    f.click(); await until(() => shared.errors.length > 0);
+    assert.equal(shared.requests.some((item: any) => item.method === 'shell.exec'), false);
+    assert.equal(f.saved(), null);
+    assert.match(shared.errors[0], /gateway permission denied/);
+  } finally { f.dispose(); }
+});
+
+test('destination owner, runtime id, stored id, and exact visible composer must still match', async () => {
+  reset(); const originalFetch = globalThis.fetch;
+  let phase = 'recording'; let reads = 0; const f = fixture();
+  globalThis.fetch = async () => { reads++; return packet(phase); };
+  try {
+    f.click(); await until(() => shared.requests.some((item: any) => item.method === 'shell.exec'));
+    phase = 'saved'; shared.owner = { connectionId: 'other', profile: 'work' };
+    await until(() => { f.tick(); return reads >= 2; });
+    assert.equal(shared.submissions.length, 0);
+    assert.equal(f.saved().source, shared.source);
+    shared.owner = { connectionId: 'ssh-A', profile: 'work' };
+    shared.storedSession = 'replaced-stored-session';
+    await until(() => { f.tick(); return reads >= 3; });
+    assert.equal(shared.submissions.length, 0);
+    assert.equal(f.saved().source, shared.source);
+  } finally { globalThis.fetch = originalFetch; f.dispose(); }
+});
+
+test('a changed authenticated receipt cannot switch the capture path or remote source', async () => {
+  reset(); const originalFetch = globalThis.fetch; let phase = 'recording'; let factsChanged = false; const f = fixture();
+  globalThis.fetch = async () => packet(phase, factsChanged ? 'dddddddddddddddddddddddddddddddd' : shared.source,
+    factsChanged ? '/private/other-capture.apparent' : shared.bundlePath);
+  try {
+    f.click(); await until(() => shared.requests.some((item: any) => item.method === 'shell.exec'));
+    await new Promise(resolve => setTimeout(resolve, 10));
+    phase = 'saved';
+    shared.owner = { connectionId: 'other', profile: 'work' };
+    f.tick(); await until(() => f.saved()?.bundlePath === shared.bundlePath);
+    assert.equal(shared.submissions.length, 0);
+    shared.owner = { connectionId: 'ssh-A', profile: 'work' };
+    factsChanged = true;
+    f.tick(); await until(() => shared.errors.some(message => message.includes('Recording return changed')));
+    assert.equal(shared.submissions.length, 0);
+    assert.equal(f.saved().bundlePath, shared.bundlePath);
+    assert.equal(f.saved().remoteSource, shared.source);
+  } finally { globalThis.fetch = originalFetch; f.dispose(); }
+});
+
+test('empty drafts submit once through the exact pinned composer', async () => {
+  reset(); shared.draft = '';
+  const originalFetch = globalThis.fetch; const f = fixture(); globalThis.fetch = async () => packet('saved');
+  try {
+    f.click(); await until(() => shared.requests.some((item: any) => item.method === 'shell.exec'));
+    f.tick(); await until(() => shared.submissions.length === 1);
+    assert.equal(shared.submissions[0].session, 'runtime-A');
+    assert.match(shared.submissions[0].text, /playable video/);
+    assert.equal(shared.insertions.length, 0);
+  } finally { globalThis.fetch = originalFetch; f.dispose(); }
+});
+
+test('fresh drafts bind through idempotent session.create and public openSession before recording', async () => {
+  reset(); shared.session = null as any; shared.storedSession = null as any;
+  shared.draft = '';
+  const originalFetch = globalThis.fetch; let phase = 'recording'; const f = fixture();
+  globalThis.fetch = async url => String(url).includes('/ack/') ? Response.json({ ok: true }) : packet(phase);
+  try {
+    f.click(); await until(() => shared.requests.some((item: any) => item.method === 'shell.exec'));
+    const create = shared.requests.find((item: any) => item.method === 'session.create') as any;
+    assert.equal(create.route.connectionId, 'ssh-A');
+    assert.deepEqual(Object.keys(create.params), ['request_id', 'source']);
+    assert.match(create.params.request_id, /^[a-f0-9]{32}$/);
+    assert.equal(create.params.source, 'gui');
+    assert.equal(shared.opens.length, 1);
+    assert.equal((shared.opens[0] as any).storedSession, 'created-stored');
+    assert.equal((shared.opens[0] as any).options.route.connectionId, 'ssh-A');
+    assert.equal((shared.opens[0] as any).options.awaitHydration, true);
+    assert.equal(shared.requests.some((item: any) => item.method === 'session.activate'), false);
+    assert.equal(shared.insertions.length, 1, 'the pre-existing new-chat draft is preserved in the bound conversation');
+    assert.equal(shared.insertions[0].text, 'typed draft must remain unchanged');
+    assert.equal(shared.insertions[0].mode, 'block');
+    assert.ok(shared.draftReads.includes('new'));
+    assert.ok(shared.draftReads.includes('resumed-runtime'));
+    const captureRequest = shared.requests.find((item: any) => item.method === 'shell.exec') as any;
+    assert.deepEqual(captureRequest.route, shared.routes[1]);
+    phase = 'saved'; f.tick(); await until(() => shared.insertions.length === 2);
+    assert.equal(shared.insertions[1].session, 'resumed-runtime');
+    assert.equal(shared.submissions.length, 0);
+    assert.match(shared.draft, /typed draft must remain unchanged[\s\S]*playable video/);
+  } finally { globalThis.fetch = originalFetch; f.dispose(); }
+});
+
+test('typing during fresh session creation preserves the live draft and aborts navigation and recording', async () => {
+  reset(); shared.session = null as any; shared.storedSession = null as any; shared.newDraft = 'initial text';
+  let release!: () => void;
+  shared.sessionCreateGate = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { shared.sessionCreateStart = resolve; });
+  const f = fixture();
+  try {
+    f.click(); await started;
+    shared.newDraft = 'initial text plus newly typed text';
+    release();
+    await until(() => shared.errors.length > 0);
+    assert.equal(shared.newDraft, 'initial text plus newly typed text');
+    assert.equal(shared.opens.length, 0);
+    assert.equal(shared.requests.some((request: any) => request.method === 'shell.exec'), false);
+    assert.equal(shared.insertions.length, 0);
+    assert.equal(shared.submissions.length, 0);
+  } finally { release(); f.dispose(); }
+});
+
+test('typing during the final fresh-route check aborts navigation with the latest text intact', async () => {
+  reset(); shared.session = null as any; shared.storedSession = null as any; shared.newDraft = 'initial text';
+  const originalRoutes = host.profileRoutes;
+  let calls = 0, checking = false;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  host.profileRoutes = async () => {
+    if (++calls === 4) { checking = true; await gate; }
+    return originalRoutes();
+  };
+  const f = fixture();
+  try {
+    f.click(); await until(() => checking);
+    shared.newDraft = 'initial text plus text during route validation';
+    release();
+    await until(() => shared.errors.length > 0);
+    assert.equal(shared.newDraft, 'initial text plus text during route validation');
+    assert.equal(shared.opens.length, 0);
+    assert.equal(shared.requests.some((request: any) => request.method === 'shell.exec'), false);
+    assert.equal(shared.insertions.length, 0);
+  } finally { release(); host.profileRoutes = originalRoutes; f.dispose(); }
+});
+
+test('remote destinations require an existing Connect ID and never trigger upload or read-grant changes', async () => {
+  reset(); const originalFetch = globalThis.fetch;
+  let phase = 'saved'; const f = fixture();
+  globalThis.fetch = async () => packet(phase, null);
+  try {
+    f.click(); await until(() => shared.requests.some((item: any) => item.method === 'shell.exec'));
+    f.tick(); await until(() => shared.errors.some(message => message.includes('existing Connect ID')));
+    assert.equal(shared.submissions.length, 0);
+    assert.ok(shared.requests.filter((item: any) => item.method === 'shell.exec').every((item: any) => item.params.session_id === 'helper-runtime'));
+    assert.ok(!JSON.stringify(shared.requests).includes('upload'));
+    assert.ok(!JSON.stringify(shared.requests).includes('read grant'));
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('a false composer dispatch retains the source for manual recovery without retrying', async () => {
+  reset(); shared.acceptInsert = false; const originalFetch = globalThis.fetch;
+  const f = fixture(); globalThis.fetch = async () => packet('saved');
+  try {
+    f.click(); await until(() => shared.requests.some((item: any) => item.method === 'shell.exec'));
+    f.tick(); await until(() => shared.errors.some(message => message.includes('did not dispatch')));
+    assert.equal(shared.submissions.length, 0);
+    assert.equal(shared.insertions.length, 0);
+    assert.equal(f.saved().source, shared.source);
+    f.tick(); await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(shared.insertions.length, 0);
+    f.dispose();
+    const reload = fixture(f.saved()); await new Promise(resolve => setTimeout(resolve, 10));
+    reload.tick(); assert.equal(shared.insertions.length, 0);
+    assert.equal(reload.watching(), false);
+    reload.dispose();
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('storage delay followed by focus change cannot mutate even when session IDs stay the same', async () => {
+  reset(); const originalFetch = globalThis.fetch; const f = fixture(null, value => (value as any)?.source === shared.source);
+  globalThis.fetch = async () => packet('saved');
+  try {
+    f.click(); await until(() => shared.requests.some((item: any) => item.method === 'shell.exec'));
+    f.tick(); await f.waitDelayedWrite();
+    shared.owner = { connectionId: 'ssh-B', profile: 'work' };
+    shared.routes = [
+      { connectionId: 'ssh-B', profile: 'work', targetProfile: 'work', mode: 'remote' },
+      { connectionId: 'local-A', profile: 'default', targetProfile: 'default', mode: 'local' },
+    ];
+    f.releaseDelayedWrite();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(shared.session, 'runtime-A');
+    assert.equal(shared.storedSession, 'stored-A');
+    assert.equal(shared.submissions.length, 0);
+    assert.equal(shared.insertions.length, 0);
+  } finally { globalThis.fetch = originalFetch; f.dispose(); }
+});
+
+test('a focus change while getDraft is delayed prevents composer mutation', async () => {
+  reset(); const originalFetch = globalThis.fetch; const f = fixture();
+  let begin!: () => void; let release!: () => void;
+  const started = new Promise<void>(resolve => { begin = resolve; });
+  shared.draftReadGate = new Promise<void>(resolve => { release = resolve; });
+  shared.draftReadStart = begin;
+  globalThis.fetch = async () => packet('saved');
+  try {
+    f.click(); await until(() => shared.requests.some((item: any) => item.method === 'shell.exec'));
+    f.tick(); await started;
+    shared.owner = { connectionId: 'ssh-B', profile: 'work' };
+    shared.routes = [
+      { connectionId: 'ssh-B', profile: 'work', targetProfile: 'work', mode: 'remote' },
+      { connectionId: 'local-A', profile: 'default', targetProfile: 'default', mode: 'local' },
+    ];
+    release(); await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(shared.insertions.length, 0);
+    assert.equal(shared.submissions.length, 0);
+  } finally { shared.draftReadGate = undefined; shared.draftReadStart = undefined; globalThis.fetch = originalFetch; f.dispose(); }
+});
+
+test('reload during post-dispatch storage save cannot replay an ambiguous handoff', async () => {
+  reset(); const originalFetch = globalThis.fetch; const f = fixture(null, value => value === null);
+  globalThis.fetch = async url => String(url).includes('/ack/') ? Response.json({ ok: true }) : packet('saved');
+  try {
+    f.click(); await until(() => shared.requests.some((item: any) => item.method === 'shell.exec'));
+    f.tick(); await until(() => shared.insertions.length === 1);
+    await f.waitDelayedWrite();
+    assert.equal(f.saved().sending, true);
+    f.dispose();
+    const reload = fixture(f.saved()); await until(() => shared.errors.some(message => message.includes('may have dispatched')));
+    reload.tick(); await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(shared.insertions.length, 1);
+    assert.equal(shared.submissions.length, 0);
+    assert.equal(reload.watching(), false);
+    reload.dispose();
+    f.releaseDelayedWrite();
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('a persisted ambiguous SDK dispatch is never replayed after reload', async () => {
+  reset();
+  const pending = {
+    version: 4, token: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', port: 45000, created: Date.now(), source: shared.source, bundlePath: shared.bundlePath, remoteSource: shared.source, sending: true,
+    destination: { session: 'runtime-A', storedSession: 'stored-A', connectionId: 'ssh-A', profile: 'work', targetProfile: 'work', mode: 'remote', local: false },
+    localRoute: { connectionId: 'local-A', profile: 'default', targetProfile: 'default' },
+  };
+  const f = fixture(pending); await until(() => shared.errors.length > 0);
+  f.tick(); await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(shared.submissions.length, 0);
+  assert.equal(shared.requests.length, 0);
+  assert.equal(f.watching(), false);
+});
+
+test('saved remote pending preserves exact receipt facts and sends only the Connect ID', async () => {
+  reset();
+  const pending = {
+    version: 4, token: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', port: 45000, created: Date.now(),
+    source: shared.source, bundlePath: shared.bundlePath, remoteSource: shared.source,
+    destination: { session: 'runtime-A', storedSession: 'stored-A', connectionId: 'ssh-A', profile: 'work', targetProfile: 'work', mode: 'remote', local: false },
+    localRoute: { connectionId: 'local-A', profile: 'default', targetProfile: 'default' },
+  };
+  const originalFetch = globalThis.fetch; globalThis.fetch = async () => packet('saved');
+  const f = fixture(pending);
+  try {
+    await until(() => shared.insertions.length === 1);
+    assert.equal(shared.insertions.length, 1);
+    assert.match(shared.insertions[0].text, new RegExp(shared.source));
+    assert.equal(shared.insertions[0].text.includes(shared.bundlePath), false);
+    assert.equal(f.saved(), null);
+  } finally { globalThis.fetch = originalFetch; f.dispose(); }
+});
+
+test('no route or source failure sends into a different conversation', async () => {
+  reset(); const originalFetch = globalThis.fetch;
+  let phase = 'recording'; const f = fixture();
+  globalThis.fetch = async () => packet(phase);
+  try {
+    f.click(); await until(() => shared.requests.some((item: any) => item.method === 'shell.exec'));
+    phase = 'saved'; shared.routes = shared.routes.filter(route => route.connectionId !== 'ssh-A');
+    f.tick(); await new Promise(resolve => setTimeout(resolve, 15));
+    assert.equal(shared.submissions.length, 0);
+    assert.equal(shared.insertions.length, 0);
+    assert.equal(f.saved().source, shared.source);
+  } finally { globalThis.fetch = originalFetch; }
 });

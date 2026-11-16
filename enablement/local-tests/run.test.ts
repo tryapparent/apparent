@@ -445,6 +445,16 @@ test('Record command plans keep package tests and native integration without unr
     }
     assert.deepEqual(select([`record/${pkg}/src/policy.ts`], false), [...owners]);
   }
+  assert.ok(scripts.test.includes('npm test --prefix ../../../../record/capture-request'));
+  for (const platform of ['linux', 'darwin']) {
+    const selected = select(['record/capture-request/src/lifecycle.ts']);
+    assert.deepEqual(selected, ['capture', 'desktop', 'onboarding']);
+    const plan = commands(selected, 'base', 'head', platform);
+    assert.ok(plan.some(c => c.cwd === frontend && c.argv.at(-1) === 'test'));
+    assert.ok(plan.some(c => c.cwd === frontend && c.argv.at(-1) === 'test:electron'));
+    assert.ok(plan.some(c => c.argv.includes('--run') && c.argv.includes('platform')));
+    assert.ok(!plan.some(c => /^(connect|public|hermes)\//.test(c.cwd)));
+  }
   assert.deepEqual(select(['record/completion/src/worker.ts', 'public/site/src/App.tsx']), ['capture', 'desktop', 'public', 'onboarding']);
 });
 

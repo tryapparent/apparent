@@ -449,8 +449,8 @@ test('recipient playback provisions FFmpeg and stable Chrome before the portable
 });
 
 test('audited Record inputs retain Desktop and native platform consumers only', () => {
-  for (const pkg of ['storage', 'completion']) {
-    for (const input of ['src/policy.ts', 'test/policy.test.ts', 'package.json', 'package-lock.json', 'tsconfig.json', ...(pkg === 'storage' ? ['build.ts'] : [])]) {
+  for (const pkg of ['storage', 'completion', 'capture-request']) {
+    for (const input of ['src/policy.ts', 'test/policy.test.ts', 'package.json', 'package-lock.json', 'tsconfig.json', ...(pkg === 'storage' ? ['build.ts'] : []), ...(pkg === 'capture-request' ? ['tsconfig.build.json'] : [])]) {
       const paths = [`record/${pkg}/${input}`];
       assert.deepEqual(selectedOwners(paths), ['capture', 'desktop', 'onboarding']);
       assert.deepEqual(suitePlan(paths), {root: true, engine: false, desktop: true, client: false, foreground: false,
@@ -541,4 +541,13 @@ test('Mac release admits a selected source before checkout, version resolution o
     assert.equal(resolved.status, 0, resolved.stderr);
     assert.equal(readFileSync(output, 'utf8'), `tag=preview-mac-22-3\nsha=${sha}\n`);
   } finally { rmSync(dir, {recursive: true, force: true}); }
+});
+
+test('Hermes consumes the shared composer mark in both routing and isolated packaging', () => {
+  const asset = 'shared/assets/brand/apparent-app-icon.svg';
+  assert.deepEqual(new Set(selectedOwners([asset])), new Set(['public', 'web', 'desktop', 'service', 'capture', 'hermes']));
+  const clean = workflow('hermes.yml').jobs.clean;
+  const checkout = clean.steps.find((step: any) => step.uses?.startsWith('actions/checkout@'));
+  assert.equal(checkout.with['sparse-checkout-cone-mode'], false);
+  assert.deepEqual(checkout.with['sparse-checkout'].trim().split('\n'), ['/hermes/', '/' + asset]);
 });
