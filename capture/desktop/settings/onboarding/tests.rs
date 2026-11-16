@@ -198,8 +198,7 @@ mod tests {
         s.input(Input::ShortcutTriggered);
         s.input(Input::CaptureStarted);
         s.practice_whiteboard();
-        s.observe_practice(true, 0, false, None);s.practice_board(None);
-        s.practice_board(None);
+        s.observe_practice_surface(true,0,false,None);
         s.practice_note_saved(false);s.observe_practice(false, 0, false, None);
         s.observe_practice(false, 1, true, Some(true));
         s.practice_saved_bundle(first);
@@ -602,6 +601,8 @@ mod tests {
             include_str!("../../coordinator/setup.rs"),
             include_str!("../../coordinator/recording.rs"),
             include_str!("../../coordinator/windows.rs"),
+            include_str!("../../coordinator/pill.rs"),
+            include_str!("../../coordinator/review.rs"),
             include_str!("../../mod.rs"),
             include_str!("../../../engine/runtime/platform/macos.rs"),
             include_str!("../../ui/macos.rs"),
