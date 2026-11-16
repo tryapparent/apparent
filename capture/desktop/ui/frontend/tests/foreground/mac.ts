@@ -292,7 +292,7 @@ async function main() {
       interact: async (_saved, prepared) => {
         await ui('saved foreground pill', value => value.includes('copy link'), generated.pid);
         const before = await status(); assert.equal(before.captures.length, 0); assert.equal(before.uploadedBytes, 0); assert.deepEqual(await jobs(), []);
-        await native('click', 'Copy link', undefined, prepared.pid);
+        await native('click', 'Public link', undefined, prepared.pid);
         await ui('public sharing disclosure', value => value.includes('anyone with this link') && value.includes('shared captures') && value.includes('encrypted') && value.includes('create public link'), generated.pid);
         const disclosed = await status(); assert.equal(disclosed.uploadedBytes, 0); assert.equal(disclosed.shareCalls, 0);
         await native('click', 'Create public link');

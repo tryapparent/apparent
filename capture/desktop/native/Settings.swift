@@ -1087,7 +1087,7 @@ struct SettingsView: View {
         SettingsHeader(state.connect == nil ? "Hosted account" : "Shared links")
         if state.connect == nil {
         SettingsCaption(text: hosted.connected
-          ? "Connected. Captures stay private until you click Copy link."
+          ? "Connected. Captures stay private until you click Public link."
           : "Connect to upload screen, voice, transcript and bundle media. New captures upload privately; only the selected capture is shared.")
         }
         SettingsGroup {
