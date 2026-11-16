@@ -40,10 +40,17 @@ if [[ $# == 0 ]]; then
   fi
   grep -E 'calling init: .*lib(ggml|transcribe)|device:|test result:' loader.log
   grep -q 'calling init: .*cpu-smoke/squashfs-root/usr/lib/libggml-cpu' loader.log
+  # Exercise the complete packaged CLI and its policy runtime with their real
+  # wall-clock deadlines before the compiler-baseline emulation below.
+  ./squashfs-root/usr/bin/apparent demo --out "$smoke/native-demo.apparent"
+  test -s "$smoke/native-demo.apparent/apparent.json"
 else
   "$@" -- ./speech-test "$test_name" --exact --ignored --nocapture
   # Also exercise the shipped Rust binary's keyframe/render/bundle path, without
-  # a display, microphone, clipboard or an installed speech model.
-  "$@" -- ./squashfs-root/usr/bin/apparent demo --out "$smoke/demo.apparent"
+  # a display, microphone, clipboard or an installed speech model. Keep this
+  # compiler-baseline probe on the Rust process: instrumenting the separately
+  # packaged Node policy runtime can exhaust its real startup deadline. The
+  # native run above still requires that runtime and the full demo to succeed.
+  "$@" -no-follow-child -- ./squashfs-root/usr/bin/apparent demo --out "$smoke/demo.apparent"
   test -s "$smoke/demo.apparent/apparent.json"
 fi
