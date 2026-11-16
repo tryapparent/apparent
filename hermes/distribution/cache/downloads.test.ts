@@ -12,7 +12,7 @@ async function job(run: (root: string) => Promise<void>) {
 
 test('cache keys invalidate every dependency, toolchain, platform and policy input', () => {
   const inputs = {lock: 'producer lock', project: 'producer project', workflow: 'install policy',
-    helper: 'snapshot policy', upstream: 'commit', uv: '0.12.13', python: '3.14.0', os: 'macOS', arch: 'X64'};
+    helper: 'snapshot policy', upstream: 'commit', uv: '0.13.5', python: '3.14.0', os: 'macOS', arch: 'X64'};
   const key = cacheKey(inputs);
   for (const name of Object.keys(inputs)) assert.notEqual(cacheKey({...inputs, [name]: inputs[name] + '-changed'}), key, name);
   assert.equal(cacheKey(Object.fromEntries(Object.entries(inputs).reverse())), key);
@@ -21,21 +21,21 @@ test('cache keys invalidate every dependency, toolchain, platform and policy inp
 
 test('snapshot keeps only downloaded wheel objects and relative links; excludes mutable/native state', async () => job(async root => {
   const cache = path.join(root, 'cache'), out = path.join(root, 'downloads');
-  const index = path.join(cache, 'wheels-v6/pypi/example');
+  const index = path.join(cache, 'wheels-v7/pypi/example');
   await mkdir(index, {recursive: true});
   await mkdir(path.join(cache, 'archive-v0/downloaded'), {recursive: true});
   await writeFile(path.join(cache, 'archive-v0/downloaded/module.py'), 'wheel content');
   await symlink('../../../archive-v0/downloaded', path.join(index, '1-py3-none-any'));
   await writeFile(path.join(index, '1-py3-none-any.msgpack'), 'metadata');
-  for (const excluded of ['sdists-v9', 'builds-v0', 'environments-v2', 'interpreter-v4', 'git-v0', 'profile', '.venv', 'node_modules', 'archive-v0/unreferenced-build']) {
+  for (const excluded of ['sdists-v10', 'builds-v0', 'environments-v2', 'interpreter-v4', 'git-v0', 'profile', '.venv', 'node_modules', 'archive-v0/unreferenced-build']) {
     await mkdir(path.join(cache, excluded), {recursive: true});
     await writeFile(path.join(cache, excluded, 'private'), 'must not persist');
   }
   await snapshot(cache, out);
-  assert.deepEqual((await readdir(out)).sort(), ['archive-v0', 'wheels-v6']);
+  assert.deepEqual((await readdir(out)).sort(), ['archive-v0', 'wheels-v7']);
   assert.deepEqual(await readdir(path.join(out, 'archive-v0')), ['downloaded']);
-  assert.equal(await readFile(path.join(out, 'wheels-v6/pypi/example/1-py3-none-any/module.py'), 'utf8'), 'wheel content');
-  assert.equal(await readlink(path.join(out, 'wheels-v6/pypi/example/1-py3-none-any')), '../../../archive-v0/downloaded');
+  assert.equal(await readFile(path.join(out, 'wheels-v7/pypi/example/1-py3-none-any/module.py'), 'utf8'), 'wheel content');
+  assert.equal(await readlink(path.join(out, 'wheels-v7/pypi/example/1-py3-none-any')), '../../../archive-v0/downloaded');
   await assert.rejects(snapshot(cache, out), {code: 'EEXIST'});
   await symlink(root, path.join(index, 'escape'));
   await assert.rejects(snapshot(cache, path.join(root, 'hostile')), /Invalid wheel archive/);
@@ -43,24 +43,27 @@ test('snapshot keeps only downloaded wheel objects and relative links; excludes 
 
 test('CLI key binds actual fetched dependency bytes and this workflow/helper', async () => job(async root => {
   const workflow = path.join(root, 'workflow.yml'), output = path.join(root, 'output');
+  await mkdir(path.join(root, 'pm'));
+  await writeFile(path.join(root, 'pm/lock.json'), 'tool pins');
   await writeFile(path.join(root, 'uv.lock'), 'lock');
   await writeFile(path.join(root, 'pyproject.toml'), 'dependencies');
   await writeFile(workflow, 'policy');
   function key() {
     execFileSync(process.execPath, ['--experimental-strip-types', 'hermes/distribution/cache/downloads.ts', 'key', root, workflow, output],
-      {env: {...process.env, VALIDATOR_IDENTITY: 'upstream|uv 0.12.13|3.14.0|macOS|X64|macos-15-intel'}});
+      {env: {...process.env, VALIDATOR_IDENTITY: 'upstream|uv 0.13.5|3.14.0|macOS|X64|macos-15-intel'}});
   }
   key(); await writeFile(path.join(root, 'uv.lock'), 'new lock'); key();
   await writeFile(path.join(root, 'pyproject.toml'), 'new dependencies'); key();
   await writeFile(workflow, 'new policy'); key();
+  await writeFile(path.join(root, 'pm/lock.json'), 'new tool pins'); key();
   const keys = (await readFile(output, 'utf8')).trim().split('\n');
-  assert.equal(new Set(keys).size, 4);
+  assert.equal(new Set(keys).size, 5);
 }));
 
 test('snapshot refuses unsupported layouts and links inside wheel payloads', async () => job(async root => {
   const cache = path.join(root, 'cache'); await mkdir(cache);
   await assert.rejects(snapshot(cache, path.join(root, 'unknown-layout')), {code: 'ENOENT'});
-  const index = path.join(cache, 'wheels-v6/pypi/example'); await mkdir(index, {recursive: true});
+  const index = path.join(cache, 'wheels-v7/pypi/example'); await mkdir(index, {recursive: true});
   const archive = path.join(cache, 'archive-v0/wheel'); await mkdir(archive, {recursive: true});
   await symlink('../../../archive-v0/wheel', path.join(index, '1-py3-none-any'));
   await symlink(root, path.join(archive, 'outside'));
@@ -72,15 +75,15 @@ test('workflow caches downloads only and always performs fresh frozen install an
   const prepare = workflow.slice(workflow.indexOf('- name: Prepare pinned Hermes validator'), workflow.indexOf('- name: Validate installed package'));
   assert.match(prepare, /job=\/tmp\/apparent-dev-hermes-validator-ci\n\s+mkdir -m 700 "\$job"/);
   assert.match(prepare, /rev-parse HEAD\)" = a867bb03fb35d4727ff0e9e2c0527745d4ff27cc/);
-  assert.match(prepare, /UV_CACHE_DIR="\$JOB\/cache" uv sync.*--frozen --no-dev --link-mode copy/);
+  assert.ok(prepare.includes('validator.ts install "$JOB"'));
   assert.match(prepare, /test ! -e "\$JOB\/runtime\/\.venv"/);
   assert.equal((prepare.match(/path: \/tmp\/apparent-dev-hermes-validator-ci\/downloads/g) || []).length, 2);
   assert.doesNotMatch(prepare, /restore-keys:|pull_request_target|if:.*cache-hit.*true'\n\s+.*uv sync/);
   assert.match(prepare, /PYTHON_VERSION: \$\{\{ steps.validator-python.outputs.python-version \}\}/);
-  assert.match(prepare, /\$\(uv --version\)\|\$PYTHON_VERSION\|\$\{\{ runner.os \}\}\|\$\{\{ runner.arch \}\}/);
+  assert.match(prepare, /\$\(cat "\$job\/validator-identity.json"\)\|\$\{\{ runner.os \}\}\|\$\{\{ runner.arch \}\}/);
   const validation = workflow.slice(workflow.indexOf('- name: Validate installed package'), workflow.indexOf('- uses: actions/upload-artifact'));
   assert.doesNotMatch(validation, /if:|cache-hit/);
-  for (const command of ['mktemp -d /tmp/apparent-dev-hermes-profile-XXXXXX', 'export HERMES_HOME="$job/profile"',
+  for (const command of ['mktemp -d /tmp/apparent-dev-hermes-profile-XXXXXX', 'export HERMES_HOME="$JOB/profile"',
     'shasum -a 256 -c ./*.sha256', 'node "$job/extracted/install.cjs" --profile "$HERMES_HOME"',
     'hermes plugins validate "$HERMES_HOME/plugins/apparent" --install-deps', 'hermes plugins doctor "$HERMES_HOME/plugins/apparent" --ci']) assert.ok(validation.includes(command), command);
   assert.match(workflow, /os: \[ubuntu-24.04, macos-15-intel\]/);
@@ -90,7 +93,7 @@ test('workflow caches downloads only and always performs fresh frozen install an
 // This is cache compatibility evidence, not Hermes or Mac native acceptance.
 test('real pinned uv: cold wheel download -> snapshot -> offline install in a fresh Python 3.14 venv',
   {skip: process.env.HERMES_DOWNLOAD_PROOF !== '1'}, async () => job(async root => {
-    assert.match(execFileSync('uv', ['--version'], {encoding: 'utf8'}), /^uv 0\.12\.13 /);
+    assert.match(execFileSync('uv', ['--version'], {encoding: 'utf8'}), /^uv 0\.13\.5 /);
     const source = path.join(root, 'source'), fresh = path.join(root, 'fresh');
     await mkdir(source); await mkdir(fresh);
     await writeFile(path.join(source, 'pyproject.toml'), '[project]\nname="cache-proof"\nversion="0.0.0"\nrequires-python=">=3.14"\ndependencies=["six==1.17.0"]\n');
@@ -105,5 +108,5 @@ test('real pinned uv: cold wheel download -> snapshot -> offline install in a fr
     await cp(downloads, warm, {recursive: true, verbatimSymlinks: true});
     execFileSync('uv', ['sync', '--project', fresh, '--python', '3.14', '--frozen', '--no-dev', '--offline', '--link-mode', 'copy'], {env: {...env, UV_CACHE_DIR: warm}});
     assert.equal(execFileSync(path.join(fresh, '.venv/bin/python'), ['-c', 'import six; print(six.__version__)'], {encoding: 'utf8'}).trim(), '1.17.0');
-    assert.deepEqual((await readdir(downloads)).sort(), ['archive-v0', 'wheels-v6']);
+    assert.deepEqual((await readdir(downloads)).sort(), ['archive-v0', 'wheels-v7']);
   }));
