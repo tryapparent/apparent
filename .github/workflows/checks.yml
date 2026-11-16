@@ -266,7 +266,9 @@ jobs:
 
   reuse:
     needs: select
-    if: always() && !cancelled()
+    # Evidence can only be consumed by main. PRs retain fresh suites without
+    # allocating a runner merely to return all-false reuse outputs.
+    if: always() && !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     outputs:
       linux: ${{ steps.evidence.outputs.linux }}

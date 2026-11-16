@@ -80,6 +80,27 @@ test('each consumer can be skipped independently; skipping Hermes does not block
   assert.equal(admitted(jobs.linux.if, needs), false);
   assert.equal(admitted(jobs.macos.if, needs), false);
 });
+test('main-only evidence lookup skips PR allocation without skipping fresh verification', () => {
+  const jobs = ci().jobs;
+  for (const result of ['success', 'failure', 'skipped', 'cancelled']) {
+    const needs = parents({platform: 'true', macos: 'true', mac_rust: 'true', portable: 'true'});
+    needs.select.result = result;
+    assert.equal(admitted(jobs.reuse.if, needs), false);
+    assert.equal(admitted(jobs.reuse.if, needs, 'push'), true);
+    assert.equal(admitted(jobs.reuse.if, needs, 'push', false, true), false);
+    assert.equal(admitted(jobs.reuse.if, needs, 'push', false, false, {ref: 'refs/heads/feature'}), false);
+    // GitHub exposes no outputs from a skipped job. Its downstream conditions
+    // must override implicit success(), including skipped transitive ancestors.
+    needs.reuse = {result: 'skipped', outputs: {}};
+    for (const name of ['linux', 'macos', 'portable']) {
+      assert.equal(admitted(jobs[name].if, needs, 'pull_request', false, false, {ancestors: ['skipped']}), true, `${name}: ${result}`);
+      assert.equal(admitted(jobs[name].if, needs, 'pull_request', true), false, name);
+      assert.equal(admitted(jobs[name].if, needs, 'pull_request', false, true), false, name);
+    }
+    needs.contracts.result = 'failure';
+    for (const name of ['linux', 'macos', 'portable']) assert.equal(admitted(jobs[name].if, needs), false, name);
+  }
+});
 test('main reuses only explicit passed evidence; PRs cannot claim main reuse', () => {
   for (const key of ['linux', 'macos', 'portable']) {
     const name = key === 'hermes_macos' ? 'hermes-macos' : key;

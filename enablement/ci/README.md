@@ -1,5 +1,12 @@
 Consumer selection, exact-tree PR evidence reuse and automatic Linux Main publication are documented in [continuous delivery](../docs/continuous-delivery.md). `routing/consumers.ts` owns directory triggers, named suites and shared consumer facts; local pushes and workflows both call `selectRange`. `routing/streams.ts` only compares publication inputs; native commands remain in the existing verifier adapter.
 
+The evidence lookup job allocates only for main pushes. PRs cannot consume main
+reuse evidence; their skipped lookup exposes empty outputs, which keep selected
+Linux, Mac and portable verification fresh. Those consumers retain explicit
+status conditions so a skipped ancestor cannot suppress required work. Unknown
+selection still broadens coverage; cancellation and failed contracts still block
+allocation. Main evidence authentication and publication admission are unchanged.
+
 `Manual Linux verification` runs only on manual dispatch. CI completion no longer
 starts a separate notification workflow or posts failed-head completion comments.
 
