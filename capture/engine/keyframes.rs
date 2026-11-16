@@ -14,6 +14,12 @@ pub struct SelectionLimits {
     pub ordinary: usize,
 }
 
+/// Image selection and its original action anchors; Record assigns the text.
+pub struct SelectedFrames {
+    pub(crate) frames: Vec<(Keyframe, RgbaFrame)>,
+    pub(crate) anchors: Vec<u64>,
+}
+
 #[cfg(test)]
 const MAX_KEYFRAMES: usize = 12;
 
@@ -166,8 +172,6 @@ fn nearest_frame(frames: &[&RgbaFrame], t: u64) -> usize {
     }
 }
 
-/// Speech that starts a new thought: after clause punctuation, a pause, or a recognizer segment.
-const CLAUSE_GAP_MS: u64 = 1_500;
 /// A spoken cue only cuts a keyframe if its image differs from every keyframe already chosen.
 const CUE_NOVELTY: f32 = 0.03;
 /// Marks share a keyframe while the screen around their ink (`INK_CONTEXT` beyond it, as a
@@ -332,130 +336,11 @@ fn spoken_cue(word: &str) -> Option<(&'static str, f32, bool)> {
     .find(|(cue, _, _)| *cue == word)
 }
 
-fn ends_clause(text: &str, clause_words: usize) -> bool {
-    let trimmed = text.trim_end_matches(['"', '\'', '”', '’', ')', ']']);
-    trimmed.ends_with(['.', '!', '?', ';', ':']) || (clause_words >= 3 && trimmed.ends_with(','))
-}
-
 fn word_count(text: &str) -> usize {
     text.split_whitespace()
         .filter(|w| w.chars().any(char::is_alphanumeric))
         .count()
         .max(1)
-}
-
-/// Each keyframe's text runs from the start of the clause in progress at its anchor (when its
-/// action began, or the cue word) until the next keyframe's start, so the transcript is
-/// partitioned in order with nothing repeated or dropped. Speech before the first keyframe
-/// belongs to it.
-fn align_transcript(
-    selected: &mut [(Keyframe, RgbaFrame)],
-    anchors: &[u64],
-    transcript: &TranscriptData,
-) {
-    let times: Vec<u64> = selected.iter().map(|(frame, _)| frame.t).collect();
-    for ((frame, _), said) in selected
-        .iter_mut()
-        .zip(said_per_keyframe(&times, anchors, transcript))
-    {
-        frame.said = said;
-    }
-}
-
-/// `align_transcript` for keyframes at `times` (anchored at `anchors`, or their own time where
-/// missing): each one's words, or `None`.
-pub fn said_per_keyframe(
-    times: &[u64],
-    anchors: &[u64],
-    transcript: &TranscriptData,
-) -> Vec<Option<String>> {
-    if times.is_empty() {
-        return Vec::new();
-    }
-    let mut units: Vec<(u64, u64, &str)> = if transcript.words.is_empty() {
-        transcript
-            .segments
-            .iter()
-            .map(|s| (s.t0, s.t1, s.text.as_str()))
-            .collect()
-    } else {
-        transcript
-            .words
-            .iter()
-            .map(|w| (w.t0, w.t1, w.text.as_str()))
-            .collect()
-    };
-    units.retain(|unit| !unit.2.trim().is_empty());
-    units.sort_by_key(|unit| unit.0);
-
-    let mut clauses: Vec<(u64, u64)> = Vec::new();
-    let mut previous: Option<(u64, &str)> = None;
-    let mut clause_words = 0_usize;
-    for &(t0, t1, text) in &units {
-        let segment_start = transcript.segments.iter().any(|s| s.t0.abs_diff(t0) <= 20);
-        let new_clause = previous.is_none_or(|(end, prev)| {
-            ends_clause(prev, clause_words)
-                || t0.saturating_sub(end) >= CLAUSE_GAP_MS
-                || segment_start
-        });
-        match clauses.last_mut() {
-            Some(clause) if !new_clause => {
-                clause.1 = clause.1.max(t1);
-                clause_words += word_count(text);
-            }
-            _ => {
-                clauses.push((t0, t1));
-                clause_words = word_count(text);
-            }
-        }
-        previous = Some((t1, text));
-    }
-    let clause_start = |anchor: u64| {
-        clauses
-            .iter()
-            .find(|(t0, t1)| *t0 <= anchor && anchor <= *t1)
-            .map_or(anchor, |clause| clause.0)
-    };
-    let mut starts: Vec<u64> = Vec::with_capacity(times.len());
-    for (i, &t) in times.iter().enumerate() {
-        let anchor = anchors.get(i).copied().unwrap_or(t);
-        let mut start = clause_start(anchor);
-        if let Some(&prev) = starts.last()
-            && start <= prev
-        {
-            // Two keyframes in one clause: the later one takes the words from its own moment.
-            start = anchor.max(prev + 1);
-        }
-        starts.push(start);
-    }
-
-    let mut text = vec![String::new(); times.len()];
-    for (t0, _, unit) in units {
-        let unit = unit.trim();
-        let mut index = starts
-            .iter()
-            .rposition(|&start| start <= t0.saturating_add(50))
-            .unwrap_or(0);
-        // ASR words normally include their punctuation; separate punctuation tokens
-        // and contractions should still produce natural text.
-        let attached = unit.starts_with([',', '.', '!', '?', ';', ':', '’', '\'', ')', ']', '”']);
-        // A separate punctuation token at a keyframe's start ends the one before.
-        if attached && text[index].is_empty() && index > 0 {
-            index -= 1;
-        }
-        let open = text[index].ends_with(['(', '[', '“']);
-        if !text[index].is_empty() && !attached && !open {
-            text[index].push(' ');
-        }
-        text[index].push_str(unit);
-    }
-    // Some transcribers supply full text without timings.
-    if text.iter().all(String::is_empty) && !transcript.text.trim().is_empty() {
-        text[0] = transcript.text.trim().to_owned();
-    }
-    text.into_iter()
-        .map(|text| if text.is_empty() { None } else { Some(text) })
-        .collect()
 }
 
 // Selection-mechanism fixtures use an explicit historical allocation.
@@ -481,8 +366,8 @@ fn select_keyframes_with_video_ink(
     max_keyframes: usize,
     video_ink: Option<VideoInk>,
 ) -> Vec<(Keyframe, RgbaFrame)> {
-    select_keyframes_with_limits(frames, strokes, marks, events, transcript,
-        SelectionLimits {maximum:max_keyframes,ordinary:6}, video_ink)
+    crate::composition::transcript::apply(select_keyframes_with_limits(frames, strokes, marks, events, transcript,
+        SelectionLimits {maximum:max_keyframes,ordinary:6}, video_ink), transcript).unwrap()
 }
 
 pub fn select_keyframes_with_limits(
@@ -493,13 +378,13 @@ pub fn select_keyframes_with_limits(
     transcript: &TranscriptData,
     limits: SelectionLimits,
     video_ink: Option<VideoInk>,
-) -> Vec<(Keyframe, RgbaFrame)> {
+) -> SelectedFrames {
     let max_keyframes = limits.maximum;
     for mark in marks.iter_mut() {
         mark.frame = None;
     }
     if frames.is_empty() || max_keyframes == 0 {
-        return Vec::new();
+        return SelectedFrames { frames: Vec::new(), anchors: Vec::new() };
     }
     let mut frames: Vec<_> = frames.iter().collect();
     frames.sort_by_key(|frame| frame.t_ms);
@@ -796,7 +681,7 @@ pub fn select_keyframes_with_limits(
         .iter()
         .map(|c| c.span.0.min(frames[c.frame].t_ms))
         .collect();
-    let mut out: Vec<_> = selected
+    let out: Vec<_> = selected
         .into_iter()
         .enumerate()
         .map(|(i, candidate)| {
@@ -822,8 +707,7 @@ pub fn select_keyframes_with_limits(
             )
         })
         .collect();
-    align_transcript(&mut out, &anchors, transcript);
-    out
+    SelectedFrames { frames: out, anchors }
 }
 
 /// Splits stretches a keyframe owns that hold more than `COVERAGE_WORDS` or `COVERAGE_MS`, with a
@@ -1000,7 +884,7 @@ mod tests {
         for ordinary in [1, 2] {
             let selected = select_keyframes_with_limits(&frames, &[], &mut [], &events,
                 &TranscriptData::default(), SelectionLimits {maximum:9, ordinary}, None);
-            assert_eq!(selected.len(), ordinary);
+            assert_eq!(selected.frames.len(), ordinary);
         }
     }
 
@@ -1693,7 +1577,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            said_per_keyframe(&[1_000, 5_000], &[], &transcript),
+            crate::composition::transcript::assign(&[1_000, 5_000], &[], &transcript).unwrap(),
             [Some("Lots of glitches.".into()), Some("Yeah".into())]
         );
     }

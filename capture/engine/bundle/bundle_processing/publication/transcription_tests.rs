@@ -79,6 +79,38 @@ fn pending_publication_waits_for_outer_final_mutation_before_transcribing() {
 }
 
 #[test]
+fn record_text_allocation_publishes_with_transcription_and_rolls_back_as_one_bundle() {
+    let fixture = Fixture::new();
+    let (_, original, _) = fixture.build().unwrap();
+    let before_manifest = std::fs::read(fixture.0.join("apparent.json")).unwrap();
+    let before_summary = std::fs::read(fixture.0.join("summary.md")).unwrap();
+    let before_frame = std::fs::read(fixture.0.join(&original.keyframes[0].file)).unwrap();
+    let before_audio = std::fs::read(fixture.0.join("audio.wav")).unwrap();
+    let transcript = || TranscriptData {
+        source: "synthetic-local-transcriber".into(),
+        text: "Hello.".into(),
+        words: vec![crate::shared::model::WordTiming {t0:0,t1:1,text:"Hello.".into()}],
+        ..Default::default()
+    };
+    assert!(transcribe_again_with_publication(&fixture.0, |_| Ok(transcript()),
+        |_| anyhow::bail!("synthetic publication failure")).is_err());
+    assert_eq!(std::fs::read(fixture.0.join("apparent.json")).unwrap(), before_manifest);
+    assert_eq!(std::fs::read(fixture.0.join("summary.md")).unwrap(), before_summary);
+    assert!(fixture.0.join(PENDING).is_file());
+    assert!(transcribe_again_with(&fixture.0, |_| Ok(transcript())).unwrap());
+    let bundle: crate::shared::model::ApparentBundle = serde_json::from_str(
+        &publication::read_text(&fixture.0, "apparent.json").unwrap()).unwrap();
+    let summary = publication::read_text(&fixture.0, "summary.md").unwrap();
+    assert_eq!(bundle.keyframes[0].said.as_deref(), Some("Hello."));
+    assert_eq!(bundle.transcript, transcript());
+    assert!(summary.contains("Hello."));
+    publication::checked(&fixture.0, &bundle, &summary).unwrap();
+    assert!(!fixture.0.join(PENDING).exists());
+    assert_eq!(std::fs::read(fixture.0.join(&original.keyframes[0].file)).unwrap(), before_frame);
+    assert_eq!(std::fs::read(fixture.0.join("audio.wav")).unwrap(), before_audio);
+}
+
+#[test]
 fn pending_error_retry_and_success_preserve_real_bundle_until_committed_update() {
     let fixture = Fixture::new();
     fixture.build().unwrap();

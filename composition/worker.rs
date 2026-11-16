@@ -2,7 +2,7 @@
 //! Owners supply packaged capabilities; this module has no workflow or config policy.
 use anyhow::{Context, Result, ensure};
 use std::{
-    io::{ErrorKind, Read},
+    io::{ErrorKind, Read, Seek, SeekFrom, Write},
     os::{
         fd::AsRawFd,
         unix::{fs::PermissionsExt, process::CommandExt},
@@ -101,6 +101,38 @@ pub(crate) fn run(command: &mut Command, timeout: Duration, max_output: usize) -
         (1..=128 * 1024).contains(&max_output),
         "Invalid worker output budget"
     );
+    run_bounded(command.stdin(Stdio::null()), timeout, max_output)
+}
+
+/// Prepare a bounded held input whose privacy does not depend on process umask.
+pub(crate) fn private_input(bytes: &[u8]) -> Result<std::fs::File> {
+    ensure!(bytes.len() <= 16 * 1024 * 1024, "Invalid worker input budget");
+    let mut input = tempfile::tempfile().context("Could not prepare private worker input")?;
+    // tempfile() can inherit 0666 masked by the caller's umask. Make the held
+    // inode private before writing text, including with umask 000 or 022.
+    input.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    input.write_all(bytes)?;
+    input.seek(SeekFrom::Start(0))?;
+    Ok(input)
+}
+
+/// A held finite file carries private text without argv, pipe-writer deadlocks,
+/// or a child reopening a mutable pathname. Existing small-reply callers keep
+/// their original budget; only this explicit entrypoint permits larger replies.
+pub(crate) fn run_with_input(
+    command: &mut Command,
+    input: std::fs::File,
+    timeout: Duration,
+    max_output: usize,
+) -> Result<Vec<u8>> {
+    let metadata = input.metadata()?;
+    ensure!(metadata.is_file() && metadata.len() <= 16 * 1024 * 1024,
+        "Invalid worker input budget");
+    ensure!((1..=16 * 1024 * 1024).contains(&max_output), "Invalid worker output budget");
+    run_bounded(command.stdin(Stdio::from(input)), timeout, max_output)
+}
+
+fn run_bounded(command: &mut Command, timeout: Duration, max_output: usize) -> Result<Vec<u8>> {
     struct Running {
         child: Child,
         armed: bool,
@@ -119,7 +151,6 @@ pub(crate) fn run(command: &mut Command, timeout: Duration, max_output: usize) -
     let mut running = Running {
         child: command
             .process_group(0)
-            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
@@ -211,6 +242,19 @@ pub(crate) fn run(command: &mut Command, timeout: Duration, max_output: usize) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn held_input_supports_bounded_text_replies_without_widening_small_worker_budgets() {
+        let bytes = vec![b'x'; 256 * 1024];
+        let file = private_input(&bytes).unwrap();
+        assert_eq!(file.metadata().unwrap().permissions().mode() & 0o777, 0o600);
+        let result = run_with_input(&mut Command::new("/bin/cat"), file, Duration::from_secs(2), bytes.len()).unwrap();
+        assert_eq!(result, bytes);
+        assert!(run(&mut Command::new("/bin/cat"), Duration::from_secs(2), 128*1024+1).is_err());
+        let oversized = tempfile::tempfile().unwrap();
+        oversized.set_len(16*1024*1024+1).unwrap();
+        assert!(run_with_input(&mut Command::new("/bin/cat"), oversized, Duration::from_secs(2), 1024).is_err());
+    }
+
     #[test]
     fn media_alias_is_private_and_preserves_filename_bytes() {
         use std::os::unix::ffi::OsStringExt;

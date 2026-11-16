@@ -519,7 +519,7 @@ pub fn build_movie_bundle(
                         &crate::shared::model::TranscriptData::default(),
                         limits,
                         None,
-                    );
+                    ).frames;
                     if preview.len() == budget
                         && preview
                             .iter()

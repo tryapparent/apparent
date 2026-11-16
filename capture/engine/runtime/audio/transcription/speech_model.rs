@@ -436,7 +436,7 @@ fn transcribe_again_with_publication(
         return Ok(false);
     }
     let times: Vec<u64> = bundle.keyframes.iter().map(|k| k.t).collect();
-    let said = crate::capture::engine::keyframes::said_per_keyframe(&times, &[], &transcript);
+    let said = crate::composition::transcript::assign(&times, &[], &transcript)?;
     for (frame, said) in bundle.keyframes.iter_mut().zip(said) {
         frame.said = said;
     }
