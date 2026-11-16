@@ -47,8 +47,8 @@ test('packed Mac preserves required native proof, renderer/client execution and 
     'Installed Mac foreground capture and sharing',
     'Early Mac Electron to Rust Settings integration (not native GUI proof)'])
     assert.ok(steps.some((s:any)=>s.name===name),name);
-  const renderer=steps.find((s:any)=>s.name==='Mac Desktop policy and renderer checks');
-  assert.match(renderer.run,/npm test\n.*npm run test:electron/);
+  const renderer=steps.find((s:any)=>s.name==='Mac Electron platform checks');
+  assert.equal(renderer.run,'npm run test:electron:mac');
   assert.match(renderer.if,/outputs.desktop == 'true'/);
   assert.equal(renderer['timeout-minutes'],15);
   const client=steps.findIndex((s:any)=>s.id==='client');
@@ -60,8 +60,46 @@ test('packed Mac preserves required native proof, renderer/client execution and 
     assert.ok(steps[client].run.includes(command));
   assert.ok(steps.findIndex((s:any)=>s.run?.includes("CACHE_ON_FAILURE=true"))>client);
   assert.equal(jobs.rust['timeout-minutes'],60);
-  assert.ok(steps.filter((s:any)=>s.name==='Mac Desktop policy and renderer checks'||s.id==='client')
+  assert.ok(steps.filter((s:any)=>s.name==='Mac Electron platform checks'||s.id==='client')
     .every((s:any)=>s.if.includes('!inputs.release_receipt')),'manual calls execute only their original independent suites');
+});
+
+test('automatic and release Mac paths retain platform checks without repeating the Linux Desktop suites', t => {
+  const job=mkdtempSync(join(tmpdir(),'apparent-dev-electron-platform-'));
+  t.after(()=>rmSync(job,{recursive:true,force:true}));
+  const trace=join(job,'calls');
+  writeFileSync(join(job,'npm'),'#!/bin/sh\nprintf "%s\\n" "$*" >> "$PROBE_CALLS"\nexit "${PROBE_FAILURE:-0}"\n',{mode:0o700});
+  writeFileSync(join(job,'xvfb-run'),'#!/bin/sh\n[ "$1" = -a ] || exit 99\nshift\nexec "$@"\n',{mode:0o700});
+  const env={...process.env,PATH:job+':'+process.env.PATH,PROBE_CALLS:trace};
+  const desktop=jobs['desktop-ui'].steps.filter((s:any)=>/npm (?:test|run test:electron)/.test(s.run??''));
+  function run(step:any, os:string, failure='0') {
+    if(step.if && !Function('runner',`return (${step.if});`)({os}))return;
+    const result=spawnSync('bash',['-eo','pipefail','-c',step.run],{cwd:root,encoding:'utf8',env:{...env,PROBE_FAILURE:failure}});
+    assert.equal(result.status,Number(failure),result.stderr);
+  }
+  const calls=()=>readFileSync(trace,'utf8').trim().split('\n');
+  for(const os of ['Linux','macOS']) {
+    writeFileSync(trace,'');
+    desktop.forEach((step:any)=>run(step,os));
+    assert.deepEqual(calls(),os==='Linux'?['test','run test:electron']:['run test:electron:mac']);
+  }
+  const packed=jobs.rust.steps.find((s:any)=>s.name==='Mac Electron platform checks');
+  writeFileSync(trace,'');run({...packed,if:undefined},'macOS');
+  assert.deepEqual(calls(),['run test:electron:mac']);
+  run({...packed,if:undefined},'macOS','23');
+  run(desktop.find((s:any)=>s.if==="runner.os == 'macOS'"),'macOS','24');
+  for(const steps of [jobs.rust.steps,jobs['desktop-ui'].steps])
+    assert.ok(!steps.some((s:any)=>s['continue-on-error'] && /test:electron/.test(s.run??'')));
+
+  const frontend='capture/desktop/ui/frontend/';
+  const scripts=JSON.parse(readFileSync(new URL(frontend+'package.json',root),'utf8')).scripts;
+  const files=['src/hermes/runtime.smoke.ts','tests/pill/foreground/smoke.cts'];
+  assert.equal(scripts['test:electron:mac'],'npm run test:electron:targeted -- '+files.join(' '));
+  assert.equal(scripts['test:electron:targeted'],'node --experimental-strip-types ../../../../enablement/prerequisites/targeted/run.ts');
+  for(const file of files) {
+    assert.ok(scripts['test:electron'].includes(file),'full Linux suite keeps '+file);
+    assert.match(readFileSync(new URL(frontend+file,root),'utf8'),/process.platform\s*===\s*'darwin'/,'Mac subset retains actual OS assertions');
+  }
 });
 
 test('a failed packed client command propagates and cleans its private temporary root', t => {
