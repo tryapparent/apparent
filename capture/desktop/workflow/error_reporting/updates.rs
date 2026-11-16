@@ -17,6 +17,45 @@ pub(crate) enum Stage {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Trigger { User, Automatic, Sparkle }
 
+#[derive(Clone, Copy, Debug, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum TargetStep { Metadata, FileType, Ownership, HomeDiscovery, ImageCanonicalization, HomeCanonicalization, HomeBoundary }
+
+#[derive(Clone, Copy, Debug, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum PathClass { Root, Home, Temporary, Opt, Usr, Run, Other }
+
+/// Fixed categories and predicates only; never retain paths or environment values.
+#[derive(Clone, Debug, serde::Serialize)]
+pub(crate) struct Target {
+    pub step: TargetStep,
+    pub image_absolute: bool,
+    pub home_from_environment: bool,
+    pub home_matches_account: Option<bool>,
+    pub image_regular: Option<bool>,
+    pub image_symlink: Option<bool>,
+    pub image_owned: Option<bool>,
+    pub home_absolute: Option<bool>,
+    pub image_path_changed: Option<bool>,
+    pub home_path_changed: Option<bool>,
+    pub image_under_home_before_canonicalization: Option<bool>,
+    pub image_under_home: Option<bool>,
+    pub image_location: Option<PathClass>,
+    pub home_location: Option<PathClass>,
+}
+
+#[derive(Debug)]
+struct TargetFailure { target: Target, source: anyhow::Error }
+impl fmt::Display for TargetFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { fmt::Display::fmt(&self.source, f) }
+}
+impl Error for TargetFailure {
+    fn source(&self) -> Option<&(dyn Error + 'static)> { Some(self.source.as_ref()) }
+}
+pub(crate) fn target_failure(source: anyhow::Error, target: Target) -> anyhow::Error {
+    anyhow::Error::new(TargetFailure {target, source})
+}
+
 #[derive(Debug)]
 struct Boundary {
     stage: Stage,
@@ -132,6 +171,7 @@ pub(super) struct Diagnostics {
     trigger: Trigger,
     stages: Vec<Frame>,
     attempt: Attempt,
+    target: Option<Target>,
     process: Option<Process>,
     exit_code: Option<i32>,
     signal: Option<i32>,
@@ -148,7 +188,7 @@ pub(super) struct Diagnostics {
 struct Frame { stage: Stage, file: Option<String>, line: u32 }
 impl Diagnostics {
     pub(super) fn from_error(error: &anyhow::Error, trigger: Trigger) -> Self {
-        let mut value = Self {trigger, stages: vec![], attempt: Attempt::default(), process: None,
+        let mut value = Self {trigger, stages: vec![], attempt: Attempt::default(), target: None, process: None,
             exit_code: None, signal: None, http_status: None, rate_limit_remaining: None, retry_after_seconds: None, io_kind: None, os_error_code: None,
             json_error_kind: None, sparkle_domain: None, sparkle_code: None};
         for cause in error.chain().take(64) {
@@ -157,6 +197,7 @@ impl Diagnostics {
                 value.stages.push(Frame {stage: boundary.stage, file: super::source_file(boundary.location.file()), line: boundary.location.line()});
             }
             if let Some(failure) = cause.downcast_ref::<AttemptFailure>() { value.attempt = failure.attempt.clone(); }
+            if let Some(failure) = cause.downcast_ref::<TargetFailure>() { value.target = Some(failure.target.clone()); }
             if let Some(failure) = cause.downcast_ref::<CommandFailure>() {
                 value.process = Some(failure.process);
                 value.exit_code = failure.exit_code;
