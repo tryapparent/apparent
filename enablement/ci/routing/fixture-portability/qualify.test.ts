@@ -140,6 +140,6 @@ test('historical PR1294 with the retired install-fixture layout retains conserva
   // Keep the candidate conservative rather than qualifying a missing fixture.
   assert.ok(hosted.selected.includes('capture'));
   assert.equal(hosted.platform, true);
-  assert.equal(hosted.inputProofKnown, false);
+  assert.deepEqual(hosted.qualifiedFixtures, []);
   assert.deepEqual(selection(base, head, source).plan, hosted.plan);
 });
