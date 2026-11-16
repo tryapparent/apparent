@@ -25,6 +25,7 @@ swiftTest('production Swift bootstrap overlaps OCR and refuses changed ownership
     const path = join(job, 'bootstrap.swift');
     writeFileSync(path, String.raw`
 import Foundation
+import CoreGraphics
 struct Refusal: Error { let message: String }
 func need(_ yes: @autoclosure () throws -> Bool, _ message: String) throws { if try !yes() { throw Refusal(message: message) } }
 struct Pill { let pid: pid_t; let id: UInt32; let rect: CGRect }
