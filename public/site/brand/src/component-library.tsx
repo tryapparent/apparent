@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Button } from '@apparent/ui/button';
+import { Switch } from '@apparent/ui/switch';
+import { ErrorDialog } from '@apparent/ui/error-dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@apparent/ui/tabs';
 import { StatusCard, type StatusTone } from '@apparent/ui/status-card';
 import { NativeSelect, NativeSelectOption } from '@apparent/ui/native-select';
@@ -16,6 +18,7 @@ function Library() {
   const [name, setName] = useState('My little frog project');
   const [submitted, setSubmitted] = useState(false);
   const [playful, setPlayful] = useState(true);
+  const [errorOpen, setErrorOpen] = useState(false);
   const states: Record<StatusTone, [string, string]> = {
     neutral: ['Nothing here yet', 'Your next peculiar idea can start here.'],
     progress: ['Preparing your recording', 'Wait for the ready status before sharing. No invented percentage.'],
@@ -37,16 +40,22 @@ function Library() {
     </article>
     <article>
       <h3>Optional preference switch</h3>
-      <p id="example-playful-help">An in-memory example of an optional preference. Lilac means optional interaction in both states; thumb position and the accessible checked value communicate On or Off. No setting is saved.</p>
+      <p id="example-playful-help">An in-memory example of an optional preference. Stock marks Off and Lilac marks On; thumb position and the accessible checked value also communicate state. No setting is saved.</p>
       <div className="bb-control-row">
         <span id="example-playful-label">Playful details</span>
-        <Button className="bb-switch" role="switch" aria-labelledby="example-playful-label" aria-describedby="example-playful-help" aria-checked={playful} onClick={() => setPlayful(value => !value)}>
-          <span className="bb-switch-track" aria-hidden="true"><span className="bb-switch-thumb" /></span>
-        </Button>
+        <Switch checked={playful} onCheckedChange={setPlayful} aria-labelledby="example-playful-label" aria-describedby="example-playful-help" />
         <span aria-hidden="true">{playful ? 'On' : 'Off'}</span>
       </div>
-      <p>48 × 24px Lilac track, 18px Carbon thumb, no track outline in either theme. The focus indicator surrounds the 44px-tall interaction target. Real preferences save quietly; waiting and recoverable errors belong inline.</p>
-      <p>This composition uses shared Button with switch semantics; it does not claim a separate shared Switch component.</p>
+      <p>48 × 24px Stock-off / Lilac-on track, 18px Carbon thumb, no track outline in either theme. The focus indicator surrounds the 44px-tall interaction target. Real preferences save quietly; a busy cursor indicates saving, and operational failures open ErrorDialog.</p>
+      <Source file="forms/switch.tsx" example={'import { Switch } from "@apparent/ui/switch";\n<Switch checked={enabled} onCheckedChange={save} aria-label="Ask for video proof" />'} />
+    </article>
+    <article>
+      <h3>Error dialog</h3><p>The default popup for operational failures. It leaves page layout unchanged, traps keyboard focus and supports Escape. The recovery action comes first, with the group aligned left. Field validation remains beside its field.</p>
+      <Button className="bb-control" onClick={()=>setErrorOpen(true)}>Show error example</Button>
+      <ErrorDialog open={errorOpen} title="Unable to save preference" description="Refresh the saved value, then try again." recoveryLabel="Refresh preference"
+        onRecover={()=>setErrorOpen(false)} onClose={()=>setErrorOpen(false)}/>
+      <p>Demonstration only. Recovery closes this example without changing preferences. An optional artwork slot can reuse the update dialog’s puzzled frog.</p>
+      <Source file="forms/error-dialog.tsx" example={'import { ErrorDialog } from "@apparent/ui/error-dialog";\n<ErrorDialog open={failed} title="Unable to save preference"\n  description="Refresh the saved value, then try again."\n  recoveryLabel="Refresh preference" onRecover={refresh} onClose={dismiss} />'} />
     </article>
     <article>
       <h3>Tabs</h3><p>Move between related views. Tab to the selected tab, then use Left/Right or Home/End. Entering a view does not grant permissions.</p>

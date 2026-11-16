@@ -292,6 +292,10 @@ async function main() {
         await ui('fresh recopy target', value => value.includes('link copied') && value.includes('copy link'), generated.pid);
         await native('click', 'Copy link');
         await ui('recopy public sharing disclosure', value => value.includes('create public link'), generated.pid);
+        // Reading consent must outlive the ordinary 15-second saved-pill timer.
+        await sleep(16_000);
+        await ui('recopy disclosure retained after completion deadline', value => value.includes('create public link'), generated.pid);
+        assert.deepEqual(footprint(await status()), footprint(completed), 'Waiting for consent changed the hosted recording');
         await native('click', 'Create public link');
         await poll(() => command('/usr/bin/pbpaste', [], {env: hostEnv}), value => value === copied, 'native clipboard restoration', 3000);
         const recopied = await status(); assert.deepEqual(footprint(recopied), footprint(completed)); assert.deepEqual(await jobs(), []);

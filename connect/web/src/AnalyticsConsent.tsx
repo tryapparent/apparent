@@ -36,8 +36,9 @@ export function AnalyticsConsent({ csrf }: { csrf: string }) {
     } finally { if (current === generation.current) { setPending(false); setDesired(null) } }
   }
   return <>
-    <p><strong>Daily service-activity totals.</strong> Separately from individual analytics, Connect counts accounts with a successful upload or a new share link per UTC day on its own servers. Temporary account/day records expire at UTC day end plus one hour and are removed by the next successful scheduled cleanup. Only daily totals and coverage metadata go to PostHog, never these account records. These are observed lower bounds, not a complete census; local-only recordings are not counted.</p>
-    <p>Saved refusals and withdrawals exclude new activity. Stopping below also objects to this counting; retained attributable contributions are removed by scheduled cleanup. After attribution expires, a daily total cannot be adjusted for one account. Small totals may still allow inferences; totals are not a promise of anonymity. No new browser tracking is used.</p>
+    <p><strong>Daily and weekly activity totals.</strong> Separately from individual analytics, signed-in Desktop recording starts and Connect uploads or new share links contribute to activity counts. On our servers, a keyed, product-specific account identifier stores only the last active UTC date for seven days from that date’s start. Email, Google IDs and recording contents are never stored in these activity records. Only aggregate counts and coverage metadata go to PostHog. The identifiers are pseudonymous, not anonymous; counts are observed lower bounds, not a complete census. Signed-out and practice recordings are excluded.</p>
+    <p>Existing Connect daily totals use separate temporary account/day records that expire at UTC day end plus one hour. Expired records are removed by the next successful scheduled cleanup.</p>
+    <p>Saved refusals and withdrawals exclude new activity. Stopping below also objects to this counting; last-active records are removed and scheduled cleanup retries failures. Previously aggregated daily totals may no longer be attributable to one account. Small totals may still allow inferences; totals are not a promise of anonymity. No new browser tracking is used.</p>
     <details className="hosted-details">
     <summary>Optional account analytics</summary>
     <p>Simon van Laak uses EU-hosted PostHog to measure account creation, device connections, completed uploads, creation of share links and storage quantities. Daily active Connect accounts counts accounts with a completed upload or a share link created that UTC day; it does not count local-only recordings. No recording contents, filenames, email, keys or capability links are sent.</p>
@@ -49,7 +50,7 @@ export function AnalyticsConsent({ csrf }: { csrf: string }) {
     <p>For access, correction, erasure, restriction, portability or consent questions, contact <a href="mailto:simon@tryapparent.com">simon@tryapparent.com</a>. You may complain to your data-protection authority.</p>
     </details>
     <button type="button" onClick={() => void choose(false)}>Stop account analytics</button>
-    <p className="hosted-quiet">Stops individual account analytics and objects to daily service-activity counting. Allowing individual analytics later does not withdraw that separate objection. Saying no does not disable Connect.</p>
+    <p className="hosted-quiet">Stops individual account analytics and objects to daily and weekly service-activity counting. Allowing individual analytics later does not withdraw that separate objection. Saying no does not disable Connect.</p>
     {pending && <p role="status">Confirming your choice…</p>}
     {status && <p role="status">{status}</p>}
     {error && <p role="alert">{error}</p>}

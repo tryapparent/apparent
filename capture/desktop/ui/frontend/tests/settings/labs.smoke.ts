@@ -40,23 +40,42 @@ test('Labs is a separate flask pane with acknowledged experiment saves and bound
     if(process.platform==='linux'){
       await expect(toggle).toBeEnabled();hold=true;await toggle.focus();await page.keyboard.press('Space');
       await expect.poll(()=>held?.enabled===true).toBe(true);await expect(toggle).toBeDisabled();
+      await expect(toggle).toHaveCSS('cursor','wait');await expect(toggle).toHaveAttribute('aria-busy','true');
+      await expect(page.getByText('Checking experiment…',{exact:true})).toHaveCount(0);
       await expect(toggle).toHaveAttribute('aria-checked','false');assert.equal(held?.setting,'autoPaste');
       reply(held!);hold=false;await expect(toggle).toHaveAttribute('aria-checked','true');await expect(toggle).toBeFocused();
-      fail=true;await toggle.click();await expect(page.getByRole('alert')).toContainText('Refresh');await expect(toggle).toBeDisabled();
+      fail=true;await toggle.click();const popup=page.getByRole('alertdialog');await expect(popup).toContainText('Unable to save preference');await expect(toggle).toBeDisabled();
+      assert.deepEqual(await popup.getByRole('button').allTextContents(),['Refresh preference','Close']);
+      await expect(popup.getByRole('button',{name:'Refresh preference'})).toBeFocused();
+      if(process.env.APPARENT_LABS_PROOF){await fs.mkdir(process.env.APPARENT_LABS_PROOF,{recursive:true});await page.screenshot({path:path.join(process.env.APPARENT_LABS_PROOF,'labs-error.png')});}
       fail=false;await page.getByRole('button',{name:'Refresh preference'}).click();await expect(toggle).toHaveAttribute('aria-checked','true');
+      await expect(popup).not.toBeVisible();await expect(toggle).toBeFocused();
       await toggle.click();await expect(toggle).toHaveAttribute('aria-checked','false');
       await page.reload();await expect(toggle).toHaveAttribute('aria-checked','false');
-    }else await expect(toggle).toBeDisabled();
+    }else {await expect(toggle).toBeDisabled();await expect(toggle).toHaveCSS('opacity','0.45');}
     const sharing=page.getByRole('switch',{name:'Public sharing links',exact:true});
     await expect(sharing).toHaveAttribute('aria-checked','false');
     await sharing.focus();await page.keyboard.press('Space');
     await expect(sharing).toHaveAttribute('aria-checked','true');await expect(sharing).toBeFocused();
     assert.equal(actions.at(-1)?.setting,'sharing');assert.equal(saved,process.platform==='linux'?false:null);
+    fail=true;await sharing.click();await expect(page.getByRole('alertdialog')).toBeVisible();
+    fail=false;await page.getByRole('button',{name:'Refresh preference'}).click();
+    await expect(sharing).toHaveAttribute('aria-checked','true');await expect(sharing).toBeFocused();
     await sharing.click();await expect(sharing).toHaveAttribute('aria-checked','false');
     await page.reload();await expect(sharing).toHaveAttribute('aria-checked','false');
     const wispr=page.getByRole('switch',{name:'Wispr onboarding',exact:true});
     await expect(wispr).toHaveAttribute('aria-checked','false');
-    if(process.platform==='darwin'){await wispr.focus();await page.keyboard.press('Space');await expect(wispr).toHaveAttribute('aria-checked','true');await expect(wispr).toBeFocused();assert.equal(actions.at(-1)?.setting,'wisprFlow');await wispr.click();await expect(wispr).toHaveAttribute('aria-checked','false');}else{await expect(wispr).toBeDisabled();await assert.rejects(()=>page.evaluate(()=>window.apparentLabs.save(true,'wisprFlow')));}
+    if(process.platform==='darwin'){
+      hold=true;await wispr.focus();await page.keyboard.press('Space');
+      await expect.poll(()=>held?.setting==='wisprFlow').toBe(true);
+      await expect(wispr).toHaveAttribute('aria-busy','true');await expect(wispr).toHaveCSS('cursor','wait');
+      reply(held!);hold=false;await expect(wispr).toHaveAttribute('aria-checked','true');await expect(wispr).toBeFocused();
+      assert.equal(actions.at(-1)?.setting,'wisprFlow');
+      fail=true;await wispr.click();await expect(page.getByRole('alertdialog')).toContainText('Unable to save preference');
+      fail=false;await page.getByRole('button',{name:'Refresh preference'}).click();
+      await expect(page.getByRole('alertdialog')).not.toBeVisible();await expect(wispr).toBeFocused();
+      await wispr.click();await expect(wispr).toHaveAttribute('aria-checked','false');
+    }else{await expect(wispr).toBeDisabled();await assert.rejects(()=>page.evaluate(()=>window.apparentLabs.save(true,'wisprFlow')));}
     assert.equal(await page.evaluate(async()=>{
       for(const call of [()=>window.apparentAgents.save(true),()=>window.apparentAgents.saveT3(true),()=>window.apparentAgents.copySkill(),()=>window.apparent.resetCaptureLocation(),()=>window.apparentLabs.save('true' as unknown as boolean),()=>window.apparentLabs.save(true,'t3' as 'sharing')]){
         try{await call();return false;}catch{}
@@ -66,11 +85,22 @@ test('Labs is a separate flask pane with acknowledged experiment saves and bound
       const session=await page.context().newCDPSession(page);await session.send('Emulation.setDeviceMetricsOverride',{width,height:530,deviceScaleFactor:1,mobile:false});
       for(const colorScheme of ['light','dark'] as const){
         await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
+        await page.evaluate(()=>document.fonts.ready);
         assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
         await toggle.scrollIntoViewIfNeeded();await expect(toggle).toBeInViewport();
         if(process.env.APPARENT_LABS_PROOF){await fs.mkdir(process.env.APPARENT_LABS_PROOF,{recursive:true});await page.screenshot({path:path.join(process.env.APPARENT_LABS_PROOF,`labs-${width}-${colorScheme}-auto.png`)});}
+        await sharing.scrollIntoViewIfNeeded();await expect(sharing).toBeInViewport();
+        await expect(sharing).toHaveCSS('font-size','18px');
+        const track=sharing.locator('.apparent-switch-track');
+        await expect(track).toHaveCSS('background-color','rgb(231, 224, 238)');
+        await expect(track).toHaveCSS('border-width','0px');
         await wispr.scrollIntoViewIfNeeded();await expect(wispr).toBeInViewport();
         if(process.env.APPARENT_LABS_PROOF){await fs.mkdir(process.env.APPARENT_LABS_PROOF,{recursive:true});await page.screenshot({path:path.join(process.env.APPARENT_LABS_PROOF,`labs-${width}-${colorScheme}.png`)});}
+        for(const id of ['auto-paste-limits','public-sharing-limits']){
+          const guidance=page.locator(`#${id}`);await guidance.scrollIntoViewIfNeeded();
+          const bounds=await guidance.boundingBox();
+          assert.ok(bounds&&bounds.y>=0&&bounds.y+bounds.height<=await page.evaluate(()=>innerHeight)+1,'Complete experiment guidance stays reachable');
+        }
       }await session.detach();
     }
     await page.getByRole('button',{name:'Agents',exact:true}).click();await expect.poll(()=>actions.some(action=>action.action==='navigate'&&action.pane==='agents')).toBe(true);

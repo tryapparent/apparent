@@ -55,8 +55,8 @@ try {
     if(process.platform==='darwin'){for(const on of [true,false]){await wispr.click();await expect(wispr).toHaveAttribute('aria-checked',String(on));const saved=JSON.parse(await fs.readFile(process.argv[2],'utf8'));assert.equal(saved.experiments.onboardingWisprFlow,on);assert.equal(saved.secret,'private');}}else await expect(wispr).toBeDisabled();
     await page.reload();await expect(toggle).toHaveAttribute('aria-checked','false');await expect(sharing).toHaveAttribute('aria-checked','false');
   }else{
-  await expect(page.locator('.settings-agent-command')).toHaveText(process.argv[3]);
-  const toggle = page.getByRole('switch', {name: 'Ask for an Apparent video on complex changes'});
+  await expect(page.locator('.agent-command')).toHaveText(process.argv[3]);
+  const toggle = page.getByRole('switch', {name: 'Ask for video proof'});
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
   const t3Toggle=page.getByRole('switch',{name:'Send recordings to T3'});
   await expect(t3Toggle).toHaveAttribute('aria-checked','false');

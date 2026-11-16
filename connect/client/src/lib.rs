@@ -20,6 +20,7 @@ mod policy;
 use policy::*;
 mod encryption;
 mod foreground;
+mod activity;
 pub use foreground::foreground_progress;
 pub mod settings;
 

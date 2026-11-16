@@ -2070,7 +2070,13 @@ impl Session {
     /// `Close`); the rest is done here.
     /// Filter retired windows before coordinator safety/permission checks too.
     pub fn current_event(&self, event: Event) -> Option<Event> {
-        event.for_presentation(self.generation)
+        let presentation = matches!(&event, Event::Presentation { .. });
+        let event = event.for_presentation(self.generation)?;
+        if presentation && self.electron
+            && let Event::Action(action) = &event
+            && !self.pane.is_some_and(|pane| super::presentation::admits(pane, action))
+        { return None; }
+        Some(event)
     }
 
     pub fn event(&mut self, event: Event, host: &mut dyn Host) -> Effect {
@@ -2243,7 +2249,8 @@ impl Session {
     pub fn show(&mut self, pane: Option<Pane>) {
         if let Some(pane) = pane {
             let electron = matches!(pane, Pane::About | Pane::Agents | Pane::Labs) || electron_storage(Some(pane), crate::shared::handoff::experiment("electronCaptureLocation"));
-            if electron != self.electron || (self.electron && self.pane != Some(pane)) {
+            let shared_shell = matches!(self.pane, Some(Pane::Agents | Pane::About)) && matches!(pane, Pane::Agents | Pane::About);
+            if electron != self.electron || (self.electron && self.pane != Some(pane) && !shared_shell) {
                 let generation = super::presentation::generation();
                 match Self::open_presentation(Some(pane), generation, &self.events, true) {
                     Ok((transport, electron)) => {

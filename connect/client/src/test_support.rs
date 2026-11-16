@@ -894,6 +894,11 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>, origin: &str) {
         if s.mode == "inspect-pending" { s.polls += 1; }
         status = if s.mode == "fetch-unauthorized" { 401 } else { 404 };
         json!({"error":{"code":if status == 401 {"unauthorized"} else {"not_found"}}}).to_string().into_bytes()
+    } else if route == "/v1/activity/recording-started" {
+        assert_eq!(method, "POST");
+        assert_eq!(serde_json::from_slice::<Value>(body).unwrap(), json!({}));
+        assert!(head.contains("Authorization: Bearer synthetic-upload-secret"));
+        json!({"ok":true}).to_string().into_bytes()
     } else if route == "/v1/device/start" {
         if let Some(encryption) = &mut s.encryption {
             let request: Value = serde_json::from_slice(body).unwrap();
@@ -916,11 +921,15 @@ fn serve(mut stream: TcpStream, state: &Mutex<State>, origin: &str) {
             "approval-secret-substring" => format!("{origin}/connect/device"),
             _ => format!("{origin}/hosted/device?code=TEST-CODE"),
         };
+        // Successful approval scenarios exercise two real one-second polls.
+        // Keep their lifetime independent of small CI scheduling delays; expiry
+        // has an explicit zero-lifetime fixture instead of a five-second race.
+        let expires_in = if s.mode == "expired-device" { 0 } else { 30 };
         json!({"deviceCode":"synthetic-device-secret", "userCode":match s.mode.as_str() {
             "approval-secret-code" => "synthetic-device-secret",
             "approval-secret-substring" => "ABC-synthetic-device-secret-XYZ",
             _ => "TEST-CODE"
-        }, "verificationUri":uri, "expiresIn":5,"interval":1})
+        }, "verificationUri":uri, "expiresIn":expires_in,"interval":1})
         .to_string()
         .into_bytes()
     } else if route == "/v1/device/poll" {
@@ -2621,4 +2630,41 @@ pub fn hosted_provider_write_failure_never_reports_disabled_or_login_success() {
     assert_eq!(client.jobs().unwrap()[0].status, "cancelled");
     assert!(server.state.lock().unwrap().data.is_empty());
     assert_eq!(fs::read(bundle.join("audio.wav")).unwrap(), b"audio");
+}
+
+#[cfg_attr(test, test)]
+pub fn hosted_activity_real_typescript_and_authenticated_transport() {
+    let f=Fixture::new();
+    let server=Server::new("upload");
+    f.authorize(&server.url);
+    let before=fs::read(&f.client.config).unwrap();
+    f.client.recording_activity(true,f.client.recording_account()).unwrap();
+    assert_eq!(server.state.lock().unwrap().requests,0,"practice must never send");
+    f.client.recording_activity(false,f.client.recording_account()).unwrap();
+    assert_eq!(server.state.lock().unwrap().request_routes,["POST /v1/activity/recording-started"]);
+    fs::remove_file(f.client.state.join("upload.credential")).unwrap();
+    fs::remove_file(f.client.state.join("read.credential")).unwrap();
+    f.client.recording_activity(false,f.client.recording_account()).unwrap();
+    assert_eq!(server.state.lock().unwrap().requests,1,"signed-out must never send");
+    assert_eq!(fs::read(&f.client.config).unwrap(),before,"activity must never enable upload/config permissions");
+}
+
+#[cfg_attr(test, test)]
+pub fn hosted_activity_pins_account_before_background_worker() {
+    let f=Fixture::new();let server=Server::new("upload");
+    let signed_out=f.client.recording_account();assert!(signed_out.is_none());
+    f.authorize(&server.url);
+    f.client.recording_activity(false,signed_out).unwrap();
+    assert_eq!(server.state.lock().unwrap().requests,0,"late sign-in cannot claim an earlier start");
+    let old=f.client.recording_account();assert!(old.is_some());
+    let mut replacement=f.client.credential("upload",&server.url).unwrap();
+    replacement.generation="b".repeat(32);
+    atomic_json(&f.client.state.join("upload.credential"),&replacement).unwrap();
+    assert!(f.client.recording_activity(false,old).is_err());
+    assert_eq!(server.state.lock().unwrap().requests,0,"account replacement revokes the pinned start");
+    let current=f.client.recording_account();
+    f.client.settings_disable(true).unwrap();
+    let before=server.state.lock().unwrap().requests;
+    assert!(f.client.recording_activity(false,current).is_err());
+    assert_eq!(server.state.lock().unwrap().requests,before,"disconnect revokes an already observed start");
 }

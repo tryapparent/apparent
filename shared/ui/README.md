@@ -1,5 +1,20 @@
 # Shared UI sources
 
+`ErrorDialog` is the default operational-failure popup. Callers supply authoritative
+title/description, a named recovery action, dismissal and optional artwork. The
+native dialog traps focus, focuses recovery first, supports Escape and restores
+focus. Actions are left aligned: primary recovery first, Close second. Styling
+uses the canonical failure red, icon, Paper field and Signal recovery controls in
+both themes. Inline field validation remains local. Import from
+`@apparent/ui/error-dialog`; its stylesheet is included automatically.
+
+`@apparent/ui/switch` supplies optional binary preferences: a 48 × 24px
+Stock-off/Lilac-on track, 18px Carbon thumb and 44px interaction target, without
+a track outline in either theme. Supply a visible accessible label, controlled
+checked value and acknowledgement-based save handler. During persistence set
+`disabled` and `aria-busy`; the switch retains its pointer hotspot for the wait
+cursor. Its stylesheet is included automatically.
+
 Canonical React/shadcn controls and system appearance for every value stream.
 Desktop, Connect account and recording recipient pages, and Public consume the
 same framework-independent tokens. Engine and Agent frontends must use them too. Application policy,
@@ -16,7 +31,7 @@ extension; consume this export rather than copying SVG paths.
 NativeSelect and Tooltip use shadcn's MIT-licensed `new-york-v4/native-select`
 and `new-york/tooltip` registry sources. Import them from this package; Tooltip
 uses Radix for focus, hover and Escape behavior. The Settings-only theme opts
-into the accepted canonical blue Signal and Carbon roles without changing other
+into the accepted canonical Signal and Carbon roles without changing other
 surfaces or the system appearance contract.
 
 The Desktop foundation uses a `file:` dependency with npm `install-links=true`,

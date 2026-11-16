@@ -1,4 +1,14 @@
 const { contextBridge, ipcRenderer } = require('electron');
+contextBridge.exposeInMainWorld('apparentSettingsRoute', callback => {
+  let live = true, received = false;
+  const listener = (_event, pane) => { received = true; if (live) callback(pane); };
+  ipcRenderer.on('apparent:settings-route', listener);
+  // A parent can select a pane before this document's preload is attached.
+  void ipcRenderer.invoke('apparent:settings-route').then(pane => {
+    if (live && !received && ['agents', 'about'].includes(pane)) callback(pane);
+  }).catch(() => {});
+  return () => { live = false; ipcRenderer.removeListener('apparent:settings-route', listener); };
+});
 
 contextBridge.exposeInMainWorld('apparentSettingsMounted', async () => {
   // React has committed its DOM. Do not hold that fact behind hidden-page

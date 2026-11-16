@@ -216,14 +216,27 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
     await content.evaluate(element => { element.scrollTop = 0; });
     await page.screenshot({ path: path.join(process.env.APPARENT_SETTINGS_PROOF, 'storage-720-light.png') });
   }
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(640, 530));
+  // Non-resizable Linux windows can ignore setSize; test the actual minimum
+  // renderer viewport on both platforms rather than silently retaining 720px.
+  const viewport = await page.context().newCDPSession(page);
+  await viewport.send('Emulation.setDeviceMetricsOverride', { width: 640, height: 530, deviceScaleFactor: 1, mobile: false });
+  await expect.poll(() => page.evaluate(() => innerWidth)).toBe(640);
+  await page.evaluate(() => document.fonts.ready);
+  await expect(select).toHaveCSS('font-size', '18px');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-  assert.equal(await select.evaluate(element => {
-    const style = getComputedStyle(element), context = document.createElement('canvas').getContext('2d');
-    context.font = style.font;
-    return [...element.options].every(option => context.measureText(option.label).width <=
-      element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
-  }), true, 'both retention durations remain readable at the minimum window width');
+  for (const mode of ['light', 'dark']) {
+    await page.emulateMedia({ colorScheme: mode });
+    assert.equal(await select.evaluate(element => {
+      const style = getComputedStyle(element), context = document.createElement('canvas').getContext('2d');
+      context.font = style.font;
+      return [...element.options].every(option => context.measureText(option.label).width <=
+        element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
+    }), true, `both retention durations remain readable at 640px in ${mode} mode`);
+    await select.selectOption('month');
+    await select.scrollIntoViewIfNeeded();
+    assert.equal(await page.locator('.settings-sidebar').evaluate(element => element.scrollWidth <= element.clientWidth), true);
+    if (process.env.APPARENT_SETTINGS_PROOF) await page.screenshot({animations:'disabled',path:path.join(process.env.APPARENT_SETTINGS_PROOF, `storage-640-${mode}.png`)});
+  }
   await select.focus(); await expect(select).toBeFocused();
   // Isolate the suspected macOS CDP select-menu shutdown hang: Escape alone
   // did not fix it. Keep this keyboard check Linux-only; selectOption above
@@ -242,7 +255,7 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   assert.equal(await page.evaluate(() => window.apparent.showCaptureFolder('arbitrary').then(() => false, () => true)), false, 'zero-argument preload cannot forward a path');
   for (const colorScheme of ['light', 'dark']) {
     await page.emulateMedia({ colorScheme });
-    await expect(page.locator('.settings-shell')).toHaveCSS('--apparent-primary', colorScheme === 'dark' ? '#b7a5d8' : '#0000f2');
+    await expect(page.locator('.settings-shell')).toHaveCSS('--apparent-primary', '#7a58c7');
     assert.equal(await page.locator('.settings-shell').evaluate(element => getComputedStyle(element).colorScheme), colorScheme);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     if (process.env.APPARENT_SETTINGS_PROOF) {

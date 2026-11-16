@@ -32,6 +32,10 @@ identify the captured edges; neither proves that all intervening pages or later
 human steering were inspected. Recover missing original context before a finding.
 Every direct web/mobile human message is a review reference, not an automatic
 unnecessary-message verdict. Server/delegate notices are not human steering.
+Explicit human answers to UI requests are server-transported `user_message`
+items with the `async-answer:runtime-request:provider:` identity (encoded in
+current snapshots). They also produce references; ordinary server notices and
+inherited copies do not. Classification still requires original context.
 Wait keywords produce leads only, never abandoned-owner classifications.
 
 The optional jobs input is an array of snapshots from
@@ -39,6 +43,11 @@ The optional jobs input is an array of snapshots from
 with `runId` plus REST `jobs`. Missing job creation timestamps leave queue time
 unknown. Never subtract workflow creation from job start and call it runner
 queue. Review individual step timestamps to distinguish install/build/test tails.
+REST queued jobs can already carry `started_at == created_at`, `runner_id:0`
+and empty steps. These placeholders are queue time, not runner execution.
+Cancellation before allocation ends the queue at completion; unknown allocation
+in incomplete CLI snapshots stays explicitly unknown. Zero-date completion
+placeholders do not make an unfinished job complete.
 
 Tool-envelope categories and repeated wrapper patterns expose exact unrounded
 `arithmetic`: complete/known clipped spans × mean seconds = summed seconds.
