@@ -677,7 +677,13 @@ fn transaction_lock(image: &Path) -> Result<File> {
     ensure_update!(meta.is_file() && meta.uid() == unsafe { libc::geteuid() }
         && meta.nlink() == 1 && meta.mode() & 0o077 == 0, "update lock must be a private owned file");
     if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-        return Err(std::io::Error::last_os_error()).context("another update transaction is running").stage(Stage::Lock);
+        let error = std::io::Error::last_os_error();
+        let error = if error.kind() == std::io::ErrorKind::WouldBlock {
+            updates::lock_contention(error)
+        } else {
+            anyhow::Error::from(error).context("cannot acquire update transaction lock")
+        };
+        return Err(error).stage(Stage::Lock);
     }
     Ok(lock)
 }
@@ -895,7 +901,10 @@ mod tests {
         let mode = std::env::var("APPARENT_TEST_UPDATE_LOCK_MODE").unwrap();
         let lock = transaction_lock(&image);
         if mode == "contended" {
-            assert!(lock.is_err(), "other process must not enter discovery/download/swap");
+            let error = updates::attempted(lock.unwrap_err(), updates::Attempt::default());
+            assert!(updates::is_lock_contention(&error), "expected contention must not become a production exception");
+            assert_eq!(error.chain().find_map(|cause| cause.downcast_ref::<std::io::Error>()).unwrap().kind(),
+                std::io::ErrorKind::WouldBlock);
             return;
         }
         let _lock = lock.unwrap();
