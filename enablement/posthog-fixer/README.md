@@ -34,7 +34,8 @@ systemd EnvironmentFile):
 | `T3_ORIGIN` | Owning server origin, HTTPS or loopback HTTP |
 | `T3_PROJECT_ID` | Exact registered Apparent project UUID |
 | `T3_PROVIDER_INSTANCE`, `T3_MODEL` | Explicit installed provider instance and available model |
-| `T3_RUNTIME_MODE` | `auto-accept-edits` by default; `auto` also supported |
+| `T3_REASONING_EFFORT` | Codex reasoning effort; defaults to `high` for `codex` |
+| `T3_RUNTIME_MODE` | `full-access` by default; `auto-accept-edits` and `auto` also supported |
 | `T3_TOKEN_FILE` | Absolute private file containing only the T3 bearer |
 | `WEBHOOK_TOKEN_FILE` | Absolute private file containing a random token of at least 32 characters |
 | `STATE_DIRECTORY` | Absolute private queue directory |
@@ -45,14 +46,23 @@ Use the owning T3 CLI's `auth session issue` with only `orchestration:read` and
 private file, not terminal output or Git. Renew before expiry by atomically
 replacing the file. Both credentials are read on each request; other environment
 changes require a service restart. The service does not mint tokens or change
-T3 provider/permission settings. Permission requests may still need human input.
+T3 provider settings. New fix threads use the configured permission mode; this
+does not relax the task's spending, access, consent or privacy limits. The deployed
+Apparent configuration uses `codex`, `gpt-6.1-sol`, `high`, and `full-access`.
 
 The PostHog CLI must already be authenticated for read access to this project.
 The bridge uses explicit host/project flags; it fetches compact issue details
 without personal breakdowns. A fix thread may retrieve a representative exception
 using existing access when necessary. Desktop content-free diagnostics may be
-insufficient; the thread must report that evidence gap. The immutable launch
+insufficient; fix threads are authorized to expand application instrumentation and
+the existing PostHog setup within existing access and budgets, preserving consent
+and privacy. Prefer bounded, content-free diagnostics and verify safely with
+synthetic inputs. Report what remains unknown and what the next occurrence will
+reveal; additional telemetry alone does not establish a fix. The immutable launch
 payload persists privately in SQLite and T3; do not publish private diagnostic data.
+Prompt and model/permission changes apply after deploying and restarting the
+service, only to jobs not yet reserved. Existing persisted launches retain their
+exact original payloads on retry.
 
 Run with the configured environment:
 
