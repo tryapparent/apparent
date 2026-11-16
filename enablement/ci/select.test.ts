@@ -245,6 +245,70 @@ test('executable comment changes explain exactly which input prevents narrow pro
   assert.deepEqual(decision.plan, routeDecision(null).plan, 'Explanation does not weaken fallback');
 }));
 
+test('installer and shared consumer-inventory changes retain full conservative admission', () => repository((git, dir) => {
+  const path = 'capture/desktop/scripts/packaging/install-app.sh';
+  mkdirSync('capture/desktop/scripts/packaging', {recursive: true});
+  writeFileSync(path, '#!/bin/sh\ntrue\n'); chmodSync(path, 0o755);
+  mkdirSync('enablement/ci/routing', {recursive: true});
+  writeFileSync('enablement/ci/routing/consumers.ts', 'before inventory');
+  git('add', '.'); git('commit', '-qm', 'base'); const base = git('rev-parse', 'HEAD');
+  writeFileSync(path, '#!/bin/sh\necho changed preparation\n');
+  writeFileSync('enablement/ci/routing/consumers.ts', 'updated preparation consumers');
+  git('commit', '-qam', 'installer'); const head = git('rev-parse', 'HEAD');
+  const decision = selectRange(base, head, dir);
+  assert.equal(decision.inputProofKnown, false, 'Executable uncertainty remains conservative');
+  assert.deepEqual(decision.selected, [...owners]);
+  assert.deepEqual(routingProblems(decision), []);
+  assert.equal(cli(base, head, dir).mac_rust, true);
+  assert.deepEqual(localSelection(base, head, dir).plan, decision.plan);
+  const plan = localCommands(decision.selected, base, head, 'linux', true, {paths: [path]});
+  for (const required of ['--run', 'test:electron', 'enablement/local-tests/desktop-install.test.ts'])
+    assert.ok(plan.some(command => command.argv.includes(required)), required);
+}));
+
+test('fresh UI staging has native, renderer, foreground and installation consumers without Worker publication', () => repository((git, dir) => {
+  const path = 'capture/desktop/scripts/packaging/frontend/stage.ts';
+  mkdirSync('capture/desktop/scripts/packaging/frontend', {recursive: true});
+  writeFileSync(path, 'before'); git('add', '.'); git('commit', '-qm', 'base'); const base = git('rev-parse', 'HEAD');
+  writeFileSync(path, 'after'); git('commit', '-qam', 'staging'); const head = git('rev-parse', 'HEAD');
+  const decision = selectRange(base, head, dir);
+  assert.equal(decision.inputProofKnown, true);
+  assert.deepEqual(decision.selected, ['capture', 'engine', 'desktop', 'capture-tools', 'client-foreground']);
+  assert.deepEqual(routingProblems(decision), []);
+  assert.equal(decision.requiredStreams.connect, true);
+  assert.equal(decision.publicationStreams.connect, false);
+  assert.equal(decision.plan.engineMedia, false);
+  assert.equal(cli(base, head, dir).mac_rust, true);
+  const plan = localCommands(decision.selected, base, head, 'linux', true, {paths: [path]});
+  for (const required of ['--run', 'test:electron', 'enablement/local-tests/desktop-install.test.ts'])
+    assert.ok(plan.some(command => command.argv.includes(required)), required);
+}));
+
+test('installer additions, deletions, renames and mode/type changes retain conservative fallback', () => repository((git, dir) => {
+  const path = 'capture/desktop/scripts/packaging/install-app.sh';
+  mkdirSync('capture/desktop/scripts/packaging', {recursive: true});
+  writeFileSync(path, '#!/bin/sh\ntrue\n'); chmodSync(path, 0o755);
+  git('add', '.'); git('commit', '-qm', 'base'); const base = git('rev-parse', 'HEAD');
+  for (const operation of ['delete', 'rename', 'mode', 'symlink', 'unknown-executable']) {
+    git('checkout', '--detach', base);
+    if (operation === 'delete') git('rm', path);
+    if (operation === 'rename') git('mv', path, path + '.renamed');
+    if (operation === 'mode') chmodSync(path, 0o644);
+    if (operation === 'symlink') {unlinkSync(path); symlinkSync('elsewhere', path);}
+    if (operation === 'unknown-executable') {writeFileSync(path + '.new', '#!/bin/sh\ntrue\n'); chmodSync(path + '.new', 0o755);}
+    git('add', '.'); git('commit', '-qm', operation);
+    const decision = selectRange(base, git('rev-parse', 'HEAD'), dir);
+    assert.equal(decision.inputProofKnown, false, operation);
+    assert.deepEqual(decision.plan, routeDecision(null).plan, operation);
+  }
+  git('checkout', '--detach', base); git('rm', path); git('commit', '-qm', 'absent');
+  const absent = git('rev-parse', 'HEAD');
+  mkdirSync('capture/desktop/scripts/packaging', {recursive: true});
+  writeFileSync(path, '#!/bin/sh\ntrue\n'); chmodSync(path, 0o755);
+  git('add', '.'); git('commit', '-qm', 'addition');
+  assert.equal(selectRange(absent, git('rev-parse', 'HEAD'), dir).inputProofKnown, false);
+}));
+
 function cli(base: string, head: string, dir: string) {
   const output = dir + '/.git/selection'; writeFileSync(output, '');
   const result = JSON.parse(execFileSync(process.execPath, [new URL('enablement/ci/select.ts', root).pathname], {

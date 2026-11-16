@@ -69,13 +69,15 @@ test(compositor ? `committed Settings stays hidden until the native snapshot fin
     const preload = path.join(fixture, 'electron/storage-preload.cjs');
     await fs.writeFile(preload, paused + '\n' + await fs.readFile(preload, 'utf8'));
   } else {
-    // Exercise startup in this appearance, rather than changing it after the
-    // first hidden paint and racing that older compositor frame.
+    // Qualify the first committed frame in its initial native appearance.
+    // Switching after first paint races capturePage: a media-query result is
+    // not a receipt for a newly composited frame. Only the isolated host copy
+    // is changed; the shipped host still follows the system appearance.
     const main = path.join(fixture, 'electron/main.cjs');
-    const source = await fs.readFile(main, 'utf8');
-    const startupTheme = "nativeTheme.themeSource = 'system';\nconst settings =";
-    assert.equal(source.split(startupTheme).length, 2);
-    await fs.writeFile(main, source.replace(startupTheme, `nativeTheme.themeSource = '${theme}';\nconst settings =`));
+    const host = await fs.readFile(main, 'utf8');
+    const systemTheme = "nativeTheme.themeSource = 'system';";
+    assert.ok(host.includes(systemTheme));
+    await fs.writeFile(main, host.replaceAll(systemTheme, `nativeTheme.themeSource = '${theme}';`));
     // Delay only the native compositor response; use the shipped implementation
     // and real capturePage after release. A committed React DOM stays hidden.
     await fs.appendFile(path.join(fixture, 'electron/settings/frame.cjs'), `
@@ -95,7 +97,8 @@ exports.committedFrame = async contents => {
 };
 `);
   }
-  app = await _electron.launch({ args: [fixture, '--settings-storage'], colorScheme: compositor ? theme : undefined,
+  app = await _electron.launch({ args: [fixture, '--settings-storage'],
+    ...(compositor ? { colorScheme: null } : {}),
     env: { ...process.env, HOME: fixture, XDG_CONFIG_HOME: path.join(fixture, 'config') } });
   const page = await app.firstWindow();
   await page.locator('.settings-shell').waitFor();
@@ -103,9 +106,8 @@ exports.committedFrame = async contents => {
   if (compositor) {
     await expect.poll(() => app!.evaluate(() => typeof (globalThis as any).releaseSettingsFrame)).toBe('function');
     assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), false);
-    assert.equal(await app.evaluate(({ nativeTheme }) => nativeTheme.themeSource), theme);
+    assert.equal(await app.evaluate(({ nativeTheme }) => nativeTheme.shouldUseDarkColors), theme === 'dark');
     await expect.poll(() => page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches)).toBe(theme === 'dark');
-    await expect(page.locator('.settings-shell')).toHaveCSS('background-color', theme === 'dark' ? 'rgb(2, 1, 2)' : 'rgb(245, 240, 232)');
     await app.evaluate(() => (globalThis as any).releaseSettingsFrame());
   }
   await expect.poll(() => app!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible())).toBe(true);

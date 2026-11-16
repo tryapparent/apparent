@@ -5,6 +5,7 @@ import { resolve, dirname } from 'node:path';
 import { checkNativeInputs, prepareNativeInputs } from './native.ts';
 import { spawnSync } from 'node:child_process';
 import '../native-build/build.test.ts';
+import './source-identity/git-index.test.ts';
 
 function fixture(t: any) {
   const root = realpathSync(mkdtempSync('/tmp/apparent-dev-native-inputs-'));

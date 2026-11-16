@@ -185,6 +185,10 @@ func pill(_ req: [String: Any]) throws -> (Pill, Set<pid_t>) {
     return (matches[0], owned.descendants)
 }
 struct Word { let text: String; let box: CGRect; let candidate: VNRecognizedText }
+enum ObservationError: Error, CustomStringConvertible {
+    case changedWindow
+    var description: String { "Pill window changed during screenshot" }
+}
 func observe(_ req: [String: Any], _ png: URL, recognizeText: Bool = true) throws -> ([String: Any], [Word], Set<pid_t>) {
     clickTrace?.add(["stage":"windowObservation", "recognizeText":recognizeText])
     let (w, _) = try pill(req)
@@ -196,7 +200,9 @@ func observe(_ req: [String: Any], _ png: URL, recognizeText: Bool = true) throw
         throw Refusal(message: "Could not read screenshot pixel dimensions")
     }
     let (afterShot, _) = try pill(req)
-    try need(afterShot.pid == w.pid && afterShot.id == w.id && afterShot.rect == w.rect, "Pill window changed during screenshot")
+    guard afterShot.pid == w.pid && afterShot.id == w.id && afterShot.rect == w.rect else {
+        throw ObservationError.changedWindow
+    }
     var words: [Word] = []
     if recognizeText {
         clickTrace?.add(["stage":"textRecognitionStart"])
@@ -213,6 +219,26 @@ func observe(_ req: [String: Any], _ png: URL, recognizeText: Bool = true) throw
         "pixelToPointX": Double(w.rect.width) / Double(image.pixelsWide),
         "pixelToPointY": Double(w.rect.height) / Double(image.pixelsHigh)]
     return (["pid": Int(w.pid), "windowId": Int(w.id), "bounds": [w.rect.minX,w.rect.minY,w.rect.width,w.rect.height], "geometry": geometry, "words": words.map { ["text":$0.text,"box":[$0.box.minX,$0.box.minY,$0.box.width,$0.box.height]] as [String:Any] }, "frontPid": Int(front)], words, pillDescendants)
+}
+
+// Only the initial read-only observation may settle an animated surface. Never
+// retry pointer input or the final guard after movement. Every unstable image
+// stays in the private evidence directory; the next attempt gets a fresh image.
+func observeBeforeInput(_ req: [String: Any], _ png: URL) throws -> ([String: Any], [Word], Set<pid_t>) {
+    guard let jobDir else { throw Refusal(message: "Private evidence directory unavailable") }
+    for attempt in 0..<3 {
+        try withinBudget()
+        do { return try observe(req, png) }
+        catch ObservationError.changedWindow {
+            let retained = png.deletingPathExtension().appendingPathExtension("unstable-\(attempt).png")
+            try safeOwnedPath(retained, root: jobDir)
+            try need(!fm.fileExists(atPath: retained.path), "Unstable observation evidence must be fresh")
+            try fm.moveItem(at: png, to: retained)
+            clickTrace?.add(["stage":"initialObservationChanged", "attempt":attempt + 1])
+            try clickTrace?.requireComplete()
+        }
+    }
+    throw ObservationError.changedWindow
 }
 
 func admitPillAccessibility(_ pill: Pill) throws {
@@ -388,7 +414,7 @@ func main() throws {
         clickTrace = try ClickTrace(traceURL)
         clickTraceName = traceURL.lastPathComponent
     }
-    let (before, words, pillDescendants) = try observe(req, out)
+    let (before, words, pillDescendants) = try (op == "click" ? observeBeforeInput(req, out) : observe(req, out))
     if op == "snapshot" { print(String(data: try JSONSerialization.data(withJSONObject: before), encoding: .utf8)!); return }
     try need(op == "click" || op == "prepare", "Unknown operation")
     let label = req["label"] as! String; try need((op == "prepare" ? ["Finish", "Copy link"] : ["Copy link", "Create public link", "Cancel upload", "Retry upload"]).contains(label), "Unsupported operation label")
