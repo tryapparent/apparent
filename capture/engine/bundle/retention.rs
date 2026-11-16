@@ -958,7 +958,9 @@ mod tests {
                 "-c:v",
                 "libx264",
                 "-qp",
-                "0",
+                "1",
+                "-profile:v",
+                "high",
                 "-threads",
                 "1",
                 "-pix_fmt",
@@ -972,6 +974,23 @@ mod tests {
             "{}",
             String::from_utf8_lossy(&made.stderr)
         );
+        // QP 0 selects High 4:4:4 Predictive even with yuv420p; use an
+        // ordinary H.264 profile so the fixture reaches AVFoundation encode.
+        let profile = std::process::Command::new("ffprobe")
+            .args([
+                "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=profile",
+                "-of", "json",
+            ])
+            .arg(&video)
+            .output()
+            .unwrap();
+        assert!(
+            profile.status.success(),
+            "{}",
+            String::from_utf8_lossy(&profile.stderr)
+        );
+        let profile: serde_json::Value = serde_json::from_slice(&profile.stdout).unwrap();
+        assert_eq!(profile["streams"][0]["profile"], "High");
         let before = std::fs::metadata(&video).unwrap().len();
         let sentinel = root.path().join("unrelated.mov");
         std::fs::write(&sentinel, b"untouched").unwrap();
