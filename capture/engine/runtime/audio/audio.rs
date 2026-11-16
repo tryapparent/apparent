@@ -858,7 +858,7 @@ mod tests {
         assert!(super::super::persistence::Lease::acquire(&dir).is_err());
         assert!(!crate::capture::engine::bundle::recover::owed(&dir));
         drop(audio);
-        assert!(super::super::persistence::Lease::acquire(&dir).is_ok());
+        super::super::persistence::acquire_released_lease(&dir).unwrap();
         std::fs::remove_dir_all(dir).unwrap();
     }
 
