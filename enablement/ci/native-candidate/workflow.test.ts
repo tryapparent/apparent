@@ -13,6 +13,7 @@ test('normal failed-job retry consumes immutable dependency outputs without comp
   assert.deepEqual(native.needs, ['select', 'rust']);
   assert.equal(native['runs-on'], 'macos-15-intel');
   const restore = native.steps.find((s: any) => s.id === 'install');
+  assert.equal(restore.run, 'node --experimental-strip-types capture/desktop/enablement/native-candidate/restore.ts');
   assert.equal(restore.env.CANDIDATE_ID, '${{ needs.rust.outputs.candidate_id }}');
   assert.equal(restore.env.CANDIDATE_DIGEST, '${{ needs.rust.outputs.candidate_digest }}');
   assert.equal(restore.env.CANDIDATE_ATTEMPT, '${{ needs.rust.outputs.candidate_attempt }}');

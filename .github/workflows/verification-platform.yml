@@ -544,7 +544,7 @@ jobs:
           CANDIDATE_ID: ${{ needs.rust.outputs.candidate_id }}
           CANDIDATE_DIGEST: ${{ needs.rust.outputs.candidate_digest }}
           CANDIDATE_ATTEMPT: ${{ needs.rust.outputs.candidate_attempt }}
-        run: node --experimental-strip-types enablement/ci/native-candidate/restore.ts
+        run: node --experimental-strip-types capture/desktop/enablement/native-candidate/restore.ts
       - name: Native Mac Storage and error-reporting controls against the installed Rust GUI
         id: native_storage
         if: runner.os == 'macOS' && needs.select.outputs.root == 'true'

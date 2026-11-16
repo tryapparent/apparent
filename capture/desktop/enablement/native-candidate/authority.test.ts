@@ -19,9 +19,21 @@ test('real failed producer metadata cannot become acceptance through a retained 
   assert.throws(() => authenticate(identity, run, run, liveArtifact(), jobs(job)));
   assert.ok(job.steps.some((s: any) => s.name === 'Build and package the exact Mac candidate for native checks' && s.conclusion === 'success'));
 });
-test('cold and failed-job retry bind to the same successful producer attempt and digest', () => {
-  authenticate(identity, run, run, liveArtifact(), jobs());
-  authenticate({...identity, currentAttempt: '2'}, {...run, run_attempt: 2, conclusion: null}, run, liveArtifact(), jobs());
+test('actual successful producer in a later-failed run qualifies cold and on a same-source retry', () => {
+  // Run43958374569 produced and restored this candidate and passed all native
+  // assertions before its later unrelated Connect contract timeout. These are
+  // captured API fields, not a failed producer relabelled as successful.
+  const actual = JSON.parse(readFileSync(new URL('successful-producer.json', import.meta.url), 'utf8'));
+  const i: Identity = {...identity, run: String(actual.run.id), source: actual.source.commit, tree: actual.source.tree,
+    head: actual.run.head_sha, ref: 'refs/pull/1388/merge', artifact: String(actual.artifact.id), digest: actual.artifact.digest.slice(7)};
+  const inventory = {total_count: 1, jobs: [actual.job]};
+  // Freeze identity bytes, not this historical artifact's two-day retention clock.
+  const fresh = {...actual.artifact, expires_at: new Date(Date.now() + 60000).toISOString()};
+  assert.equal(actual.run.conclusion, 'failure'); assert.equal(actual.job.conclusion, 'success');
+  authenticate(i, actual.run, actual.run, fresh, inventory);
+  // Only this current-run state is a projected second attempt. Actual hosted
+  // carried dependency outputs remain unclaimed until a natural retry occurs.
+  authenticate({...i, currentAttempt: '2'}, {...actual.run, run_attempt: 2, status: 'in_progress', conclusion: null}, actual.run, fresh, inventory);
 });
 test('missing, unsafe, stale, cancelled and changed authority fail closed', () => {
   for (const patch of [{repository: 'fork/apparent'}, {source: 'bad'}, {tree: ''}, {head: 'c'.repeat(40)},
@@ -31,7 +43,7 @@ test('missing, unsafe, stale, cancelled and changed authority fail closed', () =
   for (const patch of [{expired: true}, {expires_at: '2000-01-01'}, {digest: null}, {workflow_run: {id: 1}},
     {name: 'other'}, {size_in_bytes: 2 ** 31}])
     assert.throws(() => authenticate(identity, run, run, {...liveArtifact(), ...patch}, jobs()));
-  for (const patch of [{conclusion: 'cancelled'}, {repository: {full_name: 'other'}}, {head_repository: null},
+  for (const patch of [{status: undefined}, {status: 'unknown'}, {conclusion: undefined}, {conclusion: 'unknown'}, {conclusion: null}, {conclusion: 'cancelled'}, {repository: {full_name: 'other'}}, {head_repository: null},
     {path: '.github/workflows/other.yml'}, {head_sha: 'c'.repeat(40)}])
     assert.throws(() => authenticate(identity, {...run, ...patch}, run, liveArtifact(), jobs()));
   for (const conclusion of ['skipped', 'failure', 'cancelled', null]) {

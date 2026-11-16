@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
 import {Readable} from 'node:stream';
 import {download, unpack} from './archive.ts';
-import {inspectRetainedArchive} from '../../../capture/desktop/scripts/packaging/native-candidate.ts';
+import {inspectRetainedArchive} from '../../scripts/packaging/native-candidate.ts';
 test('download enforces authenticated byte count/digest and exclusive destination', async t => {
   const root = mkdtempSync(join(tmpdir(), 'apparent-dev-candidate-download-'));
   t.after(() => rmSync(root, {recursive: true, force: true}));

@@ -18,7 +18,9 @@ export function authenticate(identity: Identity, run: any, attempt: any, artifac
     assert.equal(value.head_sha, i.head);
     assert.equal(value.event, i.event);
     assert.ok(['push', 'pull_request', 'workflow_dispatch'].includes(value.event));
-    assert.ok(!['cancelled', 'timed_out', 'action_required', 'stale'].includes(value.conclusion));
+    assert.ok(['queued', 'in_progress', 'completed'].includes(value.status), 'Missing or unknown run state');
+    assert.ok(value.conclusion === null || ['success', 'failure'].includes(value.conclusion), 'Missing or unsafe run conclusion');
+    assert.ok(value.status !== 'completed' || value.conclusion !== null, 'Incomplete terminal evidence');
   }
   assert.equal(String(run.run_attempt), i.currentAttempt);
   assert.equal(String(attempt.run_attempt), i.attempt);

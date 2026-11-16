@@ -4,7 +4,7 @@ import {appendFileSync, mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {download, unpack} from './archive.ts';
 import {authenticate, bindManifest, type Identity} from './authority.ts';
-import {installRetainedArchive, sourceSnapshot} from '../../../capture/desktop/scripts/packaging/native-candidate.ts';
+import {installRetainedArchive, sourceSnapshot} from '../../scripts/packaging/native-candidate.ts';
 assert.equal(process.platform, 'darwin'); assert.equal(process.arch, 'x64');
 assert.equal(execFileSync('uname', ['-m'], {encoding: 'utf8'}).trim(), 'x86_64');
 assert.equal(execFileSync('sysctl', ['-in', 'hw.optional.arm64'], {encoding: 'utf8'}).trim() || '0', '0');

@@ -520,3 +520,16 @@ Before allocating a native provider, download and inspect that exact artifact:
 verify its run/source identity, archive checksum and expected owner worker bytes.
 The manifest records `nativeAcceptance: pending`. Separate installed
 clipboard/focus/pill and actual capture proof are still required.
+
+The same-source retained-candidate consumer and its producer-metadata/archive
+contracts live in `capture/desktop/enablement/native-candidate/`. The shared
+platform workflow invokes that owner directly; repository-wide native admission
+and workflow-result contracts remain in root Enablement. Capture-tool discovery
+executes the owner’s Node contracts in local hooks and portable CI. A source or
+artifact identity mismatch requires a cold producer; archive availability never
+replaces native GUI acceptance. See the repository CI guide for the retry boundary.
+Run its portable archive/authority contracts with
+`node --experimental-strip-types --test capture/desktop/enablement/native-candidate/*.test.ts`.
+The normal Capture tooling consumer discovers these owner tests and preserves
+nonzero failure propagation; repository-wide admission contracts remain under
+`enablement/ci/native-candidate/`.

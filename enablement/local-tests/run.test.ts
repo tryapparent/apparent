@@ -254,7 +254,8 @@ test('capture script changes execute offline contracts including hyphenated and 
   for (const path of ['capture/desktop/scripts/packaging/test_installer_guard.py',
     'capture/desktop/scripts/tests/mac/test_setup.py', 'capture/desktop/scripts/linux/gui/test-gui-vm.py',
     'capture/agent/scripts/tests/test_provision_narrator.py', 'capture/desktop/scripts/new/test_new.py',
-    'capture/desktop/scripts/linux/gui/input/qmp.test.ts']) {
+    'capture/desktop/scripts/linux/gui/input/qmp.test.ts',
+    'capture/desktop/enablement/native-candidate/new.test.ts']) {
     const parent = path.slice(0, path.lastIndexOf('/'));
     mkdirSync(join(dir, parent), { recursive: true }); writeFileSync(join(dir, path), '');
   }
@@ -275,7 +276,14 @@ test('capture script changes execute offline contracts including hyphenated and 
   // and silently skips its files. Exercise the real hook's outside-worker env.
   const context = process.env.NODE_TEST_CONTEXT;
   delete process.env.NODE_TEST_CONTEXT;
-  try { assert.throws(() => execute([typescript], dir), /failed \(1\)/); }
+  try {
+    assert.throws(() => execute([typescript], dir), /failed \(1\)/);
+    writeFileSync(join(dir, tsPath), '');
+    const ownerPath = 'capture/desktop/enablement/native-candidate/new.test.ts';
+    assert.ok(typescript.argv.includes(ownerPath), 'owner tests join the real serial Node consumer');
+    writeFileSync(join(dir, ownerPath), "import {test} from 'node:test'; test('owner failure propagates', () => { throw Error('owner regression reached'); });\n");
+    assert.throws(() => execute([typescript], dir), /failed \(1\)/);
+  }
   finally { if (context !== undefined) process.env.NODE_TEST_CONTEXT = context; }
   assert.ok(typescript.argv.includes('--test-concurrency=1'));
   assert.ok(typescript.argv.indexOf('capture/agent/scripts/tests/provision-narrator.test.ts') < typescript.argv.indexOf(tsPath));
@@ -286,7 +294,7 @@ test('real capture-tool inventory is unchanged while TypeScript tests use one or
   const python = plan.filter(command => command.argv[0] === 'python3');
   const node = plan.filter(command => command.argv[0] === 'node');
   assert.equal(node.length, 1);
-  const tracked = spawnSync('git', ['ls-files', '-z', '--', 'capture/desktop/scripts/', 'capture/agent/scripts/'],
+  const tracked = spawnSync('git', ['ls-files', '-z', '--', 'capture/desktop/scripts/', 'capture/desktop/enablement/', 'capture/agent/scripts/'],
     {cwd: root, encoding: 'utf8'});
   assert.equal(tracked.status, 0);
   const inventory = tracked.stdout.split('\0').filter(path => /\/(?:test[-_][^/]*\.py|[^/]+\.test\.ts)$/.test(path)).sort();
