@@ -121,6 +121,7 @@ export function foregroundPortableChange(path: string, before: string, after: st
 
 function directConsumers(path: string): readonly Owner[] {
   if (documentationOnlyPath(path)) return [];
+  if (desktopPackagingInputs.has(path)) return ['capture', 'engine', 'desktop', 'capture-tools', 'client-foreground'];
   // Independently delivered producer; Record media consumes a pinned artifact,
   // never this implementation tree. Consumer pin/policy/package changes retain
   // their installed application consumers through record/ below.
@@ -164,7 +165,6 @@ function directConsumers(path: string): readonly Owner[] {
   // These drivers are executed by the installed foreground proof, whose job
   // condition requires a Desktop consumer as well as the native application.
   if (path.startsWith('capture/desktop/scripts/native/foreground/')) return ['capture', 'engine', 'desktop', 'capture-tools'];
-  if (desktopPackagingInputs.has(path)) return ['capture', 'engine', 'desktop', 'capture-tools', 'client-foreground'];
   if (path.startsWith('capture/desktop/scripts/') || path.startsWith('capture/agent/scripts/')) return ['capture', 'engine', 'capture-tools'];
   if (path.startsWith('capture/desktop/')) return ['desktop', 'capture', 'engine', 'capture-tools'];
   if (path.startsWith('capture/engine/tests/') || path.startsWith('capture/engine/src/') || ['capture/engine/Cargo.toml', 'capture/engine/Cargo.lock'].includes(path)) return ['engine'];
