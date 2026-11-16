@@ -1480,4 +1480,3 @@ mod adapter_regressions {
         assert!(!session.restore_native());
     }
 }
-

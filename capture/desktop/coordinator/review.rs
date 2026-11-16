@@ -1054,4 +1054,3 @@ fn hint_button(
             )
         })
 }
-

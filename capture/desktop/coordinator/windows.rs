@@ -739,4 +739,3 @@ pub fn run_app(
         .detach();
     });
 }
-
