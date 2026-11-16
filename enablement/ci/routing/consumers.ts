@@ -253,16 +253,17 @@ export function affectsStream(stream: Stream, path: string): boolean {
 }
 
 // One decision feeds local commands, hosted suite gates and explainable output.
-export function routeDecision(paths: string[] | null, workflowControls: string[] = [], foregroundNative = false, qualifiedFixtures: string[] = []) {
+export function routeDecision(paths: string[] | null, workflowControls: string[] = [], foregroundNative = false, qualifiedFixtures: string[] = [], qualifiedCiTests: string[] = []) {
   const remaining = paths?.filter(path => !workflowControls.includes(path)) ?? null;
   const controlOnly = !!paths?.length && !remaining?.length && workflowControls.length > 0;
-  const unqualified = remaining?.filter(path => !qualifiedFixtures.includes(path)) ?? null;
+  const qualifiedTooling = [...qualifiedFixtures, ...qualifiedCiTests];
+  const unqualified = remaining?.filter(path => !qualifiedTooling.includes(path)) ?? null;
   const selected = controlOnly || (remaining?.length && !unqualified?.length) ? [] : selectedOwners(unqualified);
-  if (qualifiedFixtures.length && !selected.includes('tooling')) selected.push('tooling');
+  if (qualifiedTooling.length && !selected.includes('tooling')) selected.push('tooling');
   if (workflowControls.length && !selected.includes('tooling')) selected.push('tooling');
   if (foregroundNative) for (const owner of ['capture', 'client'] as const) if (!selected.includes(owner)) selected.push(owner);
   const plan = planFromOwners(selected);
-  const effective = remaining?.filter(path => !documentationOnlyPath(path));
+  const effective = remaining?.filter(path => !qualifiedCiTests.includes(path) && !documentationOnlyPath(path));
   const unknown = !paths?.length;
   const orchestration = effective?.some(path => path === '.github/workflows/checks.yml' || path.startsWith('enablement/ci/'));
   const publicSelected = selected.includes('public');
@@ -284,6 +285,7 @@ export function routeDecision(paths: string[] | null, workflowControls: string[]
     public: publicSelected, updater, streams,
     suites: plan,
     reasons: unknown ? ['fallback:unknown-or-empty-history'] : paths!.map(path =>
+      qualifiedCiTests.includes(path) ? 'tooling:qualified-ci-test:' + path :
       qualifiedFixtures.includes(path) ? 'tooling:qualified-fixture:' + path :
       workflowControls.includes(path) ? 'control:verified-concurrency:' + path :
       documentationOnlyPath(path) ? 'docs:reviewed-prose:' + path :
