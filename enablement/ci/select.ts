@@ -1,4 +1,5 @@
 import {fixtureCandidate, qualifyFixtures, fixtureMacRequired, fixturePlatformBoundary} from './routing/fixture-portability/qualify.ts';
+import {storageControllers, storageReferences, nativeStorageGraph, portableStorageController} from './routing/record-storage/qualify.ts';
 import {execFileSync} from 'node:child_process';
 import {appendFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
@@ -171,7 +172,22 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
         !fixturePlatformBoundary(change.status === 'A' ? '' : git(['show', base + ':' + path], cwd), files.get(path) ?? ''))));
     } catch { /* Unreadable candidate/consumer inventory retains every consumer. */ }
   }
-  const routing = routeDecision(effective, workflowControls, foregroundBoundaries.length > 0, qualifiedFixtures);
+  let qualifiedStorageControllers: string[] = [];
+  if (effective?.some(path => storageControllers.has(path)) && delta) {
+    try {
+      const references = git(['grep', '-I', '-l', '-E',
+        'LocationController|RetentionController|record-storage|record/storage|/location-controller|/retention-controller',
+        head, '--', ':!*.md'], cwd).trim().split('\n').map(line => line.slice(head.length + 1));
+      const graph = git(['ls-tree', '-r', head, '--', ...nativeStorageGraph.keys()], cwd).trim().split('\n').sort();
+      const expectedGraph = [...nativeStorageGraph].map(([path, blob]) => `100644 blob ${blob}\t${path}`).sort();
+      if (references.every(path => storageReferences.has(path)) && isDeepStrictEqual(graph, expectedGraph)) {
+        qualifiedStorageControllers = delta.filter(change => storageControllers.has(change.path) && !unsupported(change) &&
+          portableStorageController(change.path, git(['show', base + ':' + change.path], cwd), git(['show', head + ':' + change.path], cwd)))
+          .map(change => change.path);
+      }
+    } catch { /* Missing candidate/consumer proof keeps the ordinary native owners. */ }
+  }
+  const routing = routeDecision(effective, workflowControls, foregroundBoundaries.length > 0, qualifiedFixtures, [], qualifiedStorageControllers);
   const plan = routing.plan;
   const mac = macDecision(effective?.filter(path => !qualifiedFixtures.includes(path)) ?? null, delta?.filter(change => unsupported(change) && !qualifiedFixtures.includes(change.path) && needsPlatform([change.path])).map(change => change.path) ?? null);
   if (effective?.length && effective.every(path => qualifiedFixtures.includes(path))) {mac.macos = false; mac.reasons = [];}
@@ -181,7 +197,7 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
     ['enablement/local-tests/run.ts', 'enablement/ci/select.ts', '.github/workflows/checks.yml'].includes(path) ||
     path.startsWith('enablement/ci/routing/fixture-portability/') || path.startsWith('enablement/ci/install-contracts/'));
   const platform = plan.root || plan.engine || plan.desktop || plan.client;
-  return {...routing, paths: paths ?? [], historyKnown: paths !== null, inputProofKnown: paths !== null && !unsafe, workflowControls, ...mac, fixtureMac, qualifiedFixtures, platform, plan,
+  return {...routing, paths: paths ?? [], historyKnown: paths !== null, inputProofKnown: paths !== null && !unsafe, workflowControls, ...mac, fixtureMac, qualifiedFixtures, qualifiedStorageControllers, platform, plan,
     hermes: plan.hermes, portable: plan.browser || plan.service || plan.tools || plan.foreground,
     reasons: [...routing.reasons,
       ...(delta?.filter(change => !regularFileChange(change)).map(change =>
