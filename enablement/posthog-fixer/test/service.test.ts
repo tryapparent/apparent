@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {chmodSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {once} from 'node:events';
@@ -120,6 +120,8 @@ test('configuration rejects credential forwarding, unsupported permission escala
   assert.throws(()=>config({...env,T3_RUNTIME_MODE:'full-access'}));
   assert.throws(()=>config({...env,QUEUE_LIMIT:'0'}));
   writeFileSync(join(f.c.stateDirectory,'public'),'x'.repeat(40),{mode:0o644});
+  // Preserve the deliberately nonprivate fixture under a private caller umask.
+  chmodSync(join(f.c.stateDirectory,'public'),0o644);
   assert.throws(()=>secret(join(f.c.stateDirectory,'public')));
 });
 

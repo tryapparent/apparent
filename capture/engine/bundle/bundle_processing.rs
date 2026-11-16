@@ -12,7 +12,7 @@ use crate::capture::engine::runtime::audio::audio::RecordedAudio;
 pub mod publication;
 use crate::capture::engine::autocrop::autocrop;
 use crate::capture::engine::bundle::recover;
-use crate::capture::engine::keyframes::{captured_ink_frame_warning, select_keyframes_with_video_ink};
+use crate::capture::engine::keyframes::{captured_ink_frame_warning, select_keyframes_with_limits};
 #[cfg(test)]
 use crate::capture::engine::keyframes::select_keyframes;
 use crate::capture::engine::render;
@@ -27,7 +27,7 @@ use crate::shared::clock::now_epoch_ms;
 use crate::shared::model;
 use crate::shared::model::{
     ApparentBundle, CaptureMode, DeviceInfo, InteractionEvent, Mark, RgbaFrame, Shape, Stroke,
-    TargetInfo, TranscriptData, keyframe_budget,
+    TargetInfo, TranscriptData,
 };
 use crate::shared::windows;
 
@@ -226,6 +226,8 @@ pub struct SourceExtras {
     /// candidate frames (phone movies).
     pub full_frames: Option<FullFrames>,
     pub prepared: Option<PreparedVisuals>,
+    /// Reuse Record's plan across predecode and final selection for this exact duration.
+    pub(crate) assembly_plan: Option<crate::composition::assembly::AssemblyPlan>,
     pub timings: StageTimings,
 }
 
@@ -359,6 +361,8 @@ pub fn finalize_capture_bundle(
         let crop_settings = (target.mode == CaptureMode::Display)
             .then(autocrop::Settings::configured)
             .flatten();
+        let assembly_plan = crate::composition::assembly::plan(duration_ms)?;
+        let limits = assembly_plan.limits(duration_ms)?;
         let ((transcript, transcribe_ms), (predecoded, prepared)) = std::thread::scope(|scope| {
             let transcribe_handle = scope.spawn(|| {
                 let t0 = std::time::Instant::now();
@@ -372,14 +376,14 @@ pub fn finalize_capture_bundle(
                 && !frames.is_empty()
             {
                 let mut preview_marks = marks_of(&strokes);
-                let budget = keyframe_budget(duration_ms);
-                let preview = select_keyframes_with_video_ink(
+                let budget = limits.maximum;
+                let preview = select_keyframes_with_limits(
                     &frames,
                     &strokes,
                     &mut preview_marks,
                     &events,
                     &TranscriptData::default(),
-                    budget,
+                    limits,
                     video_ink,
                 );
                 // Marks alone filled the budget, so speech can't change the selection.
@@ -442,6 +446,7 @@ pub fn finalize_capture_bundle(
                 full_frames: video_path
                     .map(|movie| movie_keyframes_with_cache(movie, video_offset_ms, predecoded)),
                 prepared,
+                assembly_plan: Some(assembly_plan),
                 timings: StageTimings {
                     started_at: Some(started_at),
                     stop_ms,
@@ -580,6 +585,11 @@ pub fn build_bundle_from_parts(
             }
         }
         let mut extras = extras;
+        let assembly_plan = match extras.assembly_plan.take() {
+            Some(plan) => plan,
+            None => crate::composition::assembly::plan(duration_ms)?,
+        };
+        let limits = assembly_plan.limits(duration_ms)?;
         // Persisted intent is read before the journal is retired on successful publication.
         for (key, value) in recover::capture_context(bundle_dir)? {
             extras.context.entry(key).or_insert(value);
@@ -608,13 +618,13 @@ pub fn build_bundle_from_parts(
         }
         let bench = std::env::var_os("APPARENT_BENCH").is_some();
         let started = std::time::Instant::now();
-        let selected = select_keyframes_with_video_ink(
+        let selected = select_keyframes_with_limits(
             &frames,
             &strokes,
             &mut marks,
             &events,
             &transcript,
-            keyframe_budget(duration_ms),
+            limits,
             extras.video_ink,
         );
         let select_only_at = std::time::Instant::now();

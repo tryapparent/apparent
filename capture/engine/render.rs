@@ -4,7 +4,9 @@ use crate::capture::engine::sketch::{FreehandOptions, freehand_outline, slice_la
 use std::path::Path;
 
 type Color = [u8; 4];
-const MAX_SHEET_TILES: usize = MAX_KEYFRAMES + 1;
+// Native resource envelope: row partition search below is combinatorial.
+// Record supplies selection limits within this existing 13-tile bound.
+pub(crate) const MAX_SHEET_TILES: usize = 13;
 const RED: Color = [255, 59, 48, 255];
 const WHITE: Color = [255, 255, 255, 255];
 const TEXT: Color = [242, 242, 242, 255];
@@ -1044,7 +1046,7 @@ pub fn render_contact_sheet_for_duration(
     duration_ms: u64,
     annotated_frames: &[(Keyframe, RgbaFrame)],
 ) -> RgbaFrame {
-    // Selection is capped at MAX_KEYFRAMES; a finished whiteboard may add one paper tile.
+    // Bound partition-search work; a finished whiteboard can supply an extra paper tile.
     let frames = &annotated_frames[..annotated_frames.len().min(MAX_SHEET_TILES)];
     if frames.is_empty() {
         let mut sheet = solid(640, 360, SHEET_BG);

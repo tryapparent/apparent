@@ -7,6 +7,8 @@ import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {qualifyAudioIngestion} from './audio-package.ts';
 
+import {qualifyAssembly} from './assembly-package.ts';
+
 const args = process.argv.slice(2);
 assert([4, 6].includes(args.length)); assert.equal(args[0], '--binary'); assert.equal(args[2], '--settings');
 if (args.length === 6) assert.equal(args[4], '--proof-dir');
@@ -166,6 +168,9 @@ try {
   assert.equal(longBundle.videoOffsetMs,500);assert(longBundle.keyframes.length>0);
   assert(longBundle.keyframes.every((frame:{t:number})=>frame.t>=500&&frame.t<=120500));
   assert.equal(hash(longMovie),longHash);assert.equal(hash(join(longScreen,'apparent.json')),longMetadata);
+  const assemblySheet=qualifyAssembly(binary,root,{...process.env,HOME:home,CFFIXED_USER_HOME:home,
+    XDG_CONFIG_HOME:join(home,'config'),XDG_DATA_HOME:join(home,'data'),XDG_RUNTIME_DIR:runtimeDirectory,
+    DISPLAY:'',WAYLAND_DISPLAY:'',DBUS_SESSION_BUS_ADDRESS:'',APPIMAGE_EXTRACT_AND_RUN:'1'},ffmpeg);
   if (args.length === 6) {
     mkdirSync(resolve(args[5]),{recursive:true,mode:0o700});
     copyFileSync(join(markedOut,markedResult.keyframes[0].file),join(resolve(args[5]),'record-phone-flag.png'));
@@ -176,6 +181,8 @@ try {
     copyFileSync(join(recovered,'summary.md'),join(resolve(args[5]),'record-screen-summary.md'));
     copyFileSync(join(longOutput,longBundle.contactSheet),join(resolve(args[5]),'record-full-page-sheet.png'));
     writeFileSync(join(resolve(args[5]),'record-audio-proof.json'),JSON.stringify(audioProof,null,2),{mode:0o600});
+
+    copyFileSync(assemblySheet,join(resolve(args[5]),'record-assembly-limits-sheet.png'));
   }
   console.log('Packaged Record/Engine worker and CLI exported and ingested rotated media; decoded keyframes and source preservation verified.');
 } finally { rmSync(root, {recursive: true, force: true}); }
