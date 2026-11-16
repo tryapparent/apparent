@@ -27,7 +27,8 @@ test('fixture source closure follows a new nested import without copying real te
   const source = join(dir, 'source'), target = join(dir, 'fixture');
   mkdirSync(target);
   put(source, 'enablement/local-tests/run.ts', "export {value} from '../ci/new/helper.ts';\n");
-  put(source, 'enablement/ci/new/helper.ts', 'export const value = 42;\n');
+  put(source, 'enablement/ci/new/helper.ts', "export {value} from '../../../hermes/enablement/checks.ts';\n");
+  put(source, 'hermes/enablement/checks.ts', 'export const value = 42;\n');
   for (const path of ['enablement/local-tests/recursive.test.ts', 'enablement/ci/new/recursive.test.ts',
     'enablement/local-tests/node_modules/dependency/index.ts', 'enablement/ci/dist/generated.ts'])
     put(source, path, "throw Error('must not copy');\n");

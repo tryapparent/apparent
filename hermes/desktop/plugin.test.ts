@@ -1,13 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { host, shared } from './testing/sdk.ts';
 import { sign } from './controller.ts';
 const hooks = registerHooks({ resolve(specifier, context, next) {
   if (['@hermes/plugin-sdk', 'react/jsx-runtime'].includes(specifier)) return { url: new URL('./testing/sdk.ts', import.meta.url).href, shortCircuit: true };
   return next(specifier, context);
 } });
-const plugin = (await import('./plugin.ts')).default;
+const plugin = (await import(process.env.HERMES_PLUGIN_ENTRY
+  ? pathToFileURL(process.env.HERMES_PLUGIN_ENTRY).href : './plugin.ts')).default;
 hooks.deregister();
 async function until(predicate: () => unknown) {
   const deadline = Date.now() + 1500;

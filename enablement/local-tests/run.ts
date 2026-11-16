@@ -1,3 +1,4 @@
+import {localCommands as hermesCommands} from '../../hermes/enablement/checks.ts';
 // Local owner-level gates. Native/release proof remains separately required.
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
@@ -140,12 +141,7 @@ export function commands(selected: Owner[], base: string, head: string, platform
   if (selected.includes('engine-media')) add(['node', '--experimental-strip-types', 'engine/tools/check.ts', ...(rustChanged ? [] : ['--sdk-only'])]);
   const tools = selected.includes('capture-tools') ? captureToolTests() : [];
   result.push(...tools.filter(command => !command.env?.APPARENT_BIN));
-  if (selected.includes('hermes')) {
-    add(['npm', 'ci', '--ignore-scripts', '--prefix', 'hermes/desktop']);
-    add(['python3', '-m', 'unittest', 'discover', '-s', 'hermes/tests', '-p', 'test_*.py']);
-    add(['node', '--experimental-strip-types', '--test', 'hermes/desktop/controller.test.ts', 'hermes/desktop/plugin.test.ts', 'hermes/distribution/package.test.ts', 'hermes/distribution/consumer.test.ts', 'hermes/distribution/cache/downloads.test.ts', 'capture/agent/setup/hermes.test.ts', 'capture/agent/setup/hermes-receiver.test.ts',
-      'capture/desktop/ui/frontend/src/hermes/protocol.test.ts', 'capture/desktop/ui/frontend/src/hermes/mailbox.test.ts']);
-  }
+  if (selected.includes('hermes')) result.push(...hermesCommands());
   // These TypeScript/renderer checks are independent of Rust. Run their real
   // locked install and full Electron suite first so a broken download, display
   // or sandbox cannot waste a cold native build. Keep every canonical assertion.

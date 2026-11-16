@@ -5,13 +5,13 @@ import {mkdtemp, readFile, rm, stat, writeFile} from 'node:fs/promises';
 import {readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import path from 'node:path';
-import {installPackage, system} from '../../capture/agent/setup/hermes.ts';
+import {installPackage, system} from '../../../capture/agent/setup/hermes.ts';
 
 test('Agent consumes the compiled archive for empty, partial, repeat and conflicting installs', async()=>{
  const job=await mkdtemp('/tmp/apparent-dev-hermes-consumer-');
  try {
   const release=process.env.HERMES_PACKAGE || path.join(job,'release');
-  if(!process.env.HERMES_PACKAGE)execFileSync(process.execPath,['--experimental-strip-types','hermes/desktop/package.ts',release]);
+  if(!process.env.HERMES_PACKAGE)execFileSync(process.execPath,['--experimental-strip-types','hermes/enablement/package.ts',release]);
   const version=(await readFile('hermes/plugin.yaml','utf8')).match(/^version: "(.*)"/m)![1];
   const archive=path.join(release,`apparent-hermes-${version}.tar.gz`);
   const digest=(await readFile(archive+'.sha256','utf8')).trim().split(/\s+/)[0];
@@ -55,12 +55,12 @@ test('receiver installs the real release before enabling and does not require it
  const job=await mkdtemp('/tmp/apparent-dev-hermes-receiver-package-');
  try {
   const release=process.env.HERMES_PACKAGE || path.join(job,'release');
-  if(!process.env.HERMES_PACKAGE)execFileSync(process.execPath,['--experimental-strip-types','hermes/desktop/package.ts',release]);
+  if(!process.env.HERMES_PACKAGE)execFileSync(process.execPath,['--experimental-strip-types','hermes/enablement/package.ts',release]);
   const version=(await readFile('hermes/plugin.yaml','utf8')).match(/^version: "(.*)"/m)![1];
   const archive=path.join(release,`apparent-hermes-${version}.tar.gz`);
   const digest=(await readFile(archive+'.sha256','utf8')).trim().split(/\s+/)[0];
   const profile=path.join(job,'profile');
-  const {setup}=await import('../../capture/agent/setup/hermes.ts');
+  const {setup}=await import('../../../capture/agent/setup/hermes.ts');
   let enabled=false, enableCalls=0;
   const provider={...system, run(exe:string,args:string[],options?:{hermesHome:string;timeoutMs?:number}) {
    if(exe==='/fixture/apparent') {

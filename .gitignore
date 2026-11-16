@@ -15,4 +15,4 @@ __pycache__/
 
 /capture/desktop/ui/frontend/electron/connect.cjs
 
-/hermes/desktop/node_modules/
+/hermes/enablement/node_modules/

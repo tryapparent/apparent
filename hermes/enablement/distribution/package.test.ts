@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import {mkdtemp,readFile,mkdir,rm,writeFile,symlink,chmod} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import path from 'node:path';
-import {install} from './install.ts';
+import {install} from '../../distribution/install.ts';
 test('complete archive installs in empty profile; partial install is preserved', async()=>{
  const job=await mkdtemp('/tmp/apparent-dev-hermes-package-');
  try {
   const out=path.join(job,'release');
-  execFileSync(process.execPath,['--experimental-strip-types','hermes/desktop/package.ts',out]);
+  execFileSync(process.execPath,['--experimental-strip-types','hermes/enablement/package.ts',out]);
+  execFileSync(process.execPath,['--experimental-strip-types','hermes/enablement/publish.ts',out,'--check']);
   const name=(await readFile('hermes/plugin.yaml','utf8')).match(/^version: "(.*)"/m)![1];
   const unpack=path.join(job,'unpacked');await mkdir(unpack);
   execFileSync('tar',['-xzf',path.join(out,`apparent-hermes-${name}.tar.gz`),'-C',unpack]);
@@ -34,6 +35,8 @@ test('complete archive installs in empty profile; partial install is preserved',
   await symlink(outside,path.join(linked,'plugins/apparent/adapter.py'));
   await assert.rejects(install(path.join(unpack,'apparent'),linked),/Existing modified/);
   assert.equal(await readFile(outside,'utf8'),'untouched');
+  await writeFile(path.join(out,`apparent-hermes-${name}.tar.gz.sha256`),'corrupt');
+  assert.throws(()=>execFileSync(process.execPath,['--experimental-strip-types','hermes/enablement/publish.ts',out,'--check'],{stdio:'pipe'}),/Release checksum mismatch/);
   const writable=path.join(job,'writable');await mkdir(writable);await chmod(writable,0o777);
   await assert.rejects(install(path.join(unpack,'apparent'),writable),/untrusted/);
  } finally {await rm(job,{recursive:true,force:true});}
@@ -43,7 +46,7 @@ test('standard group-mode plugin directory is trusted only inside an owner-priva
  const job=await mkdtemp('/tmp/apparent-dev-hermes-private-profile-');
  try {
   const release=path.join(job,'release');
-  execFileSync(process.execPath,['--experimental-strip-types','hermes/desktop/package.ts',release]);
+  execFileSync(process.execPath,['--experimental-strip-types','hermes/enablement/package.ts',release]);
   const source=path.join(release,'apparent');
   const profile=path.join(job,'private-profile');
   await mkdir(path.join(profile,'plugins'),{recursive:true});

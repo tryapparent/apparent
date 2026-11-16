@@ -70,9 +70,9 @@ dependency and the shared static composer mark at
 needed; isolated CI checks out only Hermes and that single asset:
 
 ```sh
-npm ci --ignore-scripts --prefix hermes/desktop
+npm ci --ignore-scripts --prefix hermes/enablement
 HERMES_JOB=$(mktemp -d /tmp/apparent-dev-hermes-XXXXXX)
-node --experimental-strip-types hermes/desktop/package.ts "$HERMES_JOB/release"
+node --experimental-strip-types hermes/enablement/package.ts "$HERMES_JOB/release"
 ```
 
 The standalone Record lifecycle package lives at `record/capture-request`. Its
@@ -116,9 +116,12 @@ Run the focused package checks with:
 
 ```sh
 python3 -m unittest discover -s hermes/tests -v
-node --experimental-strip-types --test hermes/desktop/*.test.ts hermes/distribution/*.test.ts hermes/distribution/cache/*.test.ts
+node --experimental-strip-types --test hermes/desktop/*.test.ts hermes/enablement/distribution/*.test.ts hermes/distribution/cache/*.test.ts
 ```
 
 The ordinary Hermes package build does not require Rust. Installed renderer,
 local no-read-credential, remote SSH and native OS-consent acceptance remain
 separate checks.
+
+Engineering ownership, hosted gates and remaining cache migration are described in
+[enablement](enablement/README.md).

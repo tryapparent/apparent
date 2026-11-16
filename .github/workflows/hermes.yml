@@ -106,7 +106,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.3.10'
-      - run: bun test enablement/ci/ hermes/verification/
+      - run: bun test enablement/ci/ hermes/enablement/verification/
       - id: select
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -141,8 +141,8 @@ jobs:
           python3 -m venv /tmp/apparent-dev-hermes-clean-python
           /tmp/apparent-dev-hermes-clean-python/bin/pip install 'Pillow>=13,<14'
           /tmp/apparent-dev-hermes-clean-python/bin/python -m unittest discover -s hermes/tests -v
-          npm ci --ignore-scripts --prefix hermes/desktop
-          node --experimental-strip-types --test hermes/desktop/*.test.ts hermes/distribution/package.test.ts
+          npm ci --ignore-scripts --prefix hermes/enablement
+          node --experimental-strip-types hermes/enablement/check.ts clean
   verify:
     needs: contracts
     if: needs.contracts.outputs.affected != 'false'
@@ -163,7 +163,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install only Hermes build dependencies
-        run: npm ci --ignore-scripts --prefix hermes/desktop
+        run: npm ci --ignore-scripts --prefix hermes/enablement
       - run: python -m pip install 'Pillow>=10.2,<13'
       - run: python -m unittest discover -s hermes/tests -v
       - run: |
@@ -173,19 +173,19 @@ jobs:
       # package suite below retains its own plugin test invocation on both OSes.
       - name: Portable Hermes source contracts
         if: matrix.os == 'ubuntu-24.04'
-        run: node --experimental-strip-types --test hermes/desktop/*.test.ts
+        run: node --experimental-strip-types hermes/enablement/check.ts source
       - name: Routing, bridge and package installation contracts
-        run: node --experimental-strip-types --test hermes/distribution/package.test.ts hermes/distribution/consumer.test.ts hermes/distribution/cache/*.test.ts capture/desktop/ui/frontend/src/hermes/*.test.ts capture/agent/setup/hermes.test.ts capture/agent/setup/hermes-receiver.test.ts
+        run: node --experimental-strip-types hermes/enablement/check.ts integration
       - name: Package exact candidate without Rust or unrelated builds
         id: package
         run: |
           job=$(mktemp -d /tmp/apparent-dev-hermes-ci-XXXXXX)
-          node --experimental-strip-types hermes/desktop/package.ts "$job/release"
+          node --experimental-strip-types hermes/enablement/package.ts "$job/release"
           echo "directory=$job/release" >> "$GITHUB_OUTPUT"
       - name: Verify Agent setup consumes the exact compiled archive
         env:
           HERMES_PACKAGE: ${{ steps.package.outputs.directory }}
-        run: node --experimental-strip-types --test hermes/distribution/consumer.test.ts
+        run: node --experimental-strip-types hermes/enablement/check.ts consumer
       - uses: actions/setup-python@v5
         id: validator-python
         with:
@@ -267,6 +267,13 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: hermes/enablement
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
       - uses: actions/download-artifact@v4
         with:
           name: hermes-${{ github.sha }}
@@ -276,12 +283,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
-        run: |
-          cd /tmp/apparent-dev-hermes-publish
-          sha256sum -c *.sha256
-          test "$(find . -maxdepth 1 -name '*.tar.gz' | wc -l)" -eq 1
-          test "$(find . -maxdepth 1 -name '*.sha256' | wc -l)" -eq 1
-          archive=$(find . -maxdepth 1 -name '*.tar.gz')
-          version=${archive#./apparent-hermes-}
-          version=${version%.tar.gz}
-          gh release create "hermes-v${version}-${SHA}" --target "$SHA" --title "Hermes ${version} (${SHA})" --prerelease --notes 'Complete Hermes Agent and Desktop plugin. Verify the checksum, extract, and run node install.cjs --profile /absolute/Hermes/profile. Requires a compatible installed Apparent native app for recording; see bundled compatibility.json. This release is not catalog admission.' ./*.tar.gz ./*.sha256
+        run: node --experimental-strip-types hermes/enablement/publish.ts /tmp/apparent-dev-hermes-publish

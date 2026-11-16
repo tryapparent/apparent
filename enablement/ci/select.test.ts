@@ -547,16 +547,16 @@ test('Hermes owns independent package verification and publication; native admis
  assert.equal(h.jobs.verify.strategy.matrix.os.length,2);
  const consumer=h.jobs.verify.steps.find((s:any)=>s.name==='Verify Agent setup consumes the exact compiled archive');
  assert.equal(consumer.env.HERMES_PACKAGE,'${{ steps.package.outputs.directory }}');
- assert.match(consumer.run,/hermes\/distribution\/consumer\.test\.ts/);
+ assert.equal(consumer.run,'node --experimental-strip-types hermes/enablement/check.ts consumer');
  const routing=h.jobs.verify.steps.find((s:any)=>s.name==='Routing, bridge and package installation contracts');
- assert.match(routing.run,/capture\/agent\/setup\/hermes\.test\.ts/);
+ assert.equal(routing.run,'node --experimental-strip-types hermes/enablement/check.ts integration');
  assert.doesNotMatch(routing.run,/if \[/);
  const isolated=h.jobs.clean.steps.find((s:any)=>s.name==='Prove isolated package build and compiled integration tests').run;
  assert.doesNotMatch(isolated,/consumer\.test|capture\/agent/);
  for(const name of ['hermes','hermes-macos'])assert.equal(ci().jobs[name],undefined);
  for(const name of ['linux','macos','tree-evidence','linux-admission','macos-admission'])assert.ok(!ci().jobs[name].needs.some((n:string)=>n.startsWith('hermes')));
  assert.deepEqual(selectedOwners(['.github/workflows/hermes.yml']),['hermes']);
- assert.deepEqual(selectedOwners(['hermes/desktop/package-lock.json']),['hermes']);
+ assert.deepEqual(selectedOwners(['hermes/enablement/package-lock.json']),['hermes']);
  assert.deepEqual(selectedOwners(['hermes/skills/recordings/SKILL.md']),['hermes']);
 });
 
