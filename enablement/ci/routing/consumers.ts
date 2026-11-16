@@ -225,7 +225,7 @@ const directoryPaths = {
     '.github/workflows/release-linux.yml', '.github/workflows/release-mac-preview.yml',
     '.github/workflows/linux-updater-harness.yml',
     // The app embeds this wordmark; the remaining Public tree is independent.
-    'public/site/**'],
+    'public/**'],
   connect: [...common, ...independentEngine, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, ...desktopPackagingInputs, 'connect/**', 'public/**',
     '.github/workflows/stream-connect.yml', 'enablement/release_gate.py'],
   public: [...common, ...independentEngine, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/hermes.yml', 'public/**', '.github/workflows/stream-public.yml', 'README.md',
