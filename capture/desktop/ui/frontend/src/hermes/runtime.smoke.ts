@@ -179,6 +179,7 @@ test('composer recording action never submits an unsent draft by mouse or keyboa
   const sdk = path.resolve(root, '../../../../hermes/desktop/testing/sdk.ts');
   const plugin = path.resolve(root, '../../../../hermes/desktop/plugin.ts');
   await build({ stdin: { contents: `import { app, BrowserWindow } from 'electron';
+    app.setPath('appData', process.env.HOME!); app.setPath('userData', process.env.HOME!);
     app.whenReady().then(() => { const view = new BrowserWindow({ show: false,
       webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
       void view.loadFile(process.argv[2]); });`, loader: 'ts', resolveDir: root },
