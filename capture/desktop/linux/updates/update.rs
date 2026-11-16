@@ -372,7 +372,7 @@ fn validate_hash(hash: &str) -> Result<()> {
     Ok(())
 }
 
-const CURL_HTTP_STATUS: &str = "%{stderr}\nAPPARENT_RATE_REMAINING:%header{x-ratelimit-remaining}\nAPPARENT_RETRY_AFTER:%header{retry-after}\nAPPARENT_HTTP_STATUS:%{http_code}\n";
+const CURL_HTTP_STATUS: &str = "%{stderr}\nAPPARENT_RATE_REMAINING:%header{x-ratelimit-remaining}\nAPPARENT_RATE_LIMIT:%header{x-ratelimit-limit}\nAPPARENT_RATE_RESET:%header{x-ratelimit-reset}\nAPPARENT_RETRY_AFTER:%header{retry-after}\nAPPARENT_HTTP_STATUS:%{http_code}\n";
 
 fn get(url: &str, out: Option<&Path>) -> Result<Vec<u8>> {
     ensure_update!(url.starts_with("https://"), "update URL must use HTTPS");
@@ -399,11 +399,21 @@ fn download_output(result: std::process::Output) -> Result<Vec<u8>> {
         let numeric = |prefix: &str| stderr.lines().rev().find_map(|line| line.strip_prefix(prefix))
             .filter(|value| !value.is_empty() && value.len() <= 10 && value.bytes().all(|b| b.is_ascii_digit()))
             .and_then(|value| value.parse::<u32>().ok());
-        let http = updates::Http {status: http_status, rate_limit_remaining: numeric("APPARENT_RATE_REMAINING:"), retry_after_seconds: numeric("APPARENT_RETRY_AFTER:")};
+        let http = updates::Http {status: http_status, rate_limit_remaining: numeric("APPARENT_RATE_REMAINING:"),
+            rate_limit_limit: numeric("APPARENT_RATE_LIMIT:"),
+            // Publish only a bounded relative duration, never the server timestamp.
+            rate_limit_reset_after_seconds: numeric("APPARENT_RATE_RESET:").and_then(|reset| {
+                reset_after_seconds(reset, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_secs())
+            }),
+            retry_after_seconds: numeric("APPARENT_RETRY_AFTER:")};
         return Err(updates::command_failure(updates::Process::Curl, result.status, http,
             anyhow::anyhow!("download failed: {stderr}")));
     }
     Ok(result.stdout)
+}
+
+fn reset_after_seconds(reset: u32, now: u64) -> Option<u32> {
+    u64::from(reset).checked_sub(now).filter(|seconds| *seconds <= 86_400).map(|seconds| seconds as u32)
 }
 
 fn stable_candidate(arch: &str) -> Result<Option<Candidate>> {
@@ -411,10 +421,19 @@ fn stable_candidate(arch: &str) -> Result<Option<Candidate>> {
 }
 
 fn release_history(fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<Vec<Release>> {
+    use std::sync::{OnceLock, atomic::{AtomicU32, Ordering}};
+    static REQUESTS: AtomicU32 = AtomicU32::new(0);
+    static START: OnceLock<Instant> = OnceLock::new();
+    let start = START.get_or_init(Instant::now);
     let mut releases = Vec::new();
     let mut complete = false;
     for page in 1..=10 {
-        let body = fetch(&format!("https://api.github.com/repos/{REPO}/releases?per_page=100&page={page}")).stage(Stage::ReleaseListFetch)?;
+        let requests = REQUESTS.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| Some(value.saturating_add(1))).unwrap().saturating_add(1);
+        let body = fetch(&format!("https://api.github.com/repos/{REPO}/releases?per_page=100&page={page}"))
+            .map_err(|error| updates::discovery_failure(error, updates::ReleaseDiscovery {
+                page, requests_in_process: requests,
+                elapsed_seconds: start.elapsed().as_secs().min(u64::from(u32::MAX)) as u32,
+            })).stage(Stage::ReleaseListFetch)?;
         let page_releases: Vec<Release> = serde_json::from_slice(&body).context("invalid release list").stage(Stage::ReleaseListParse)?;
         ensure_update!(page_releases.len() <= 100, "oversized release page");
         complete = page_releases.len() < 100;
@@ -677,7 +696,13 @@ fn transaction_lock(image: &Path) -> Result<File> {
     ensure_update!(meta.is_file() && meta.uid() == unsafe { libc::geteuid() }
         && meta.nlink() == 1 && meta.mode() & 0o077 == 0, "update lock must be a private owned file");
     if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-        return Err(std::io::Error::last_os_error()).context("another update transaction is running").stage(Stage::Lock);
+        let error = std::io::Error::last_os_error();
+        let error = if error.kind() == std::io::ErrorKind::WouldBlock {
+            updates::lock_contention(error)
+        } else {
+            anyhow::Error::from(error).context("cannot acquire update transaction lock")
+        };
+        return Err(error).stage(Stage::Lock);
     }
     Ok(lock)
 }
@@ -819,7 +844,11 @@ mod tests {
                 stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
                 let mut request = [0; 4096];
                 stream.read(&mut request).unwrap();
-                write!(stream, "HTTP/1.1 {status} Fixture\r\nX-RateLimit-Remaining: {remaining}\r\nRetry-After: {retry}\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]").unwrap();
+                let limit = if status == 503 { "private-limit-canary" } else { "60" };
+                let reset = if status == 503 { "private-reset-canary".to_owned() } else {
+                    (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() + 120).to_string()
+                };
+                write!(stream, "HTTP/1.1 {status} Fixture\r\nX-RateLimit-Remaining: {remaining}\r\nX-RateLimit-Limit: {limit}\r\nX-RateLimit-Reset: {reset}\r\nRetry-After: {retry}\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]").unwrap();
             });
             // Real curl supplies the exit status and write-out fields. No
             // production endpoint override, PostHog ingestion or injected event.
@@ -829,7 +858,8 @@ mod tests {
                 assert_eq!(download_output(output).unwrap(), b"[]", "write-out diagnostics must never corrupt release JSON");
                 continue;
             }
-            let error = download_output(output).stage(Stage::ReleaseListFetch).unwrap_err()
+            let output = std::cell::RefCell::new(Some(output));
+            let error = release_history(&|_| download_output(output.borrow_mut().take().unwrap())).err().unwrap()
                 .context(format!("private-local-context {endpoint}/?token=private-token-canary"));
             if status == 503 { assert!(format!("{error:#}").contains("private-header-canary"), "redaction canary must reach the raw error"); }
             let installed = ("main".into(), "a".repeat(40));
@@ -839,6 +869,14 @@ mod tests {
             let payload = error_reporting::update_payload_for_test(&updates::attempted(error, attempt), Trigger::Automatic);
             let diagnostics = &payload["properties"]["updater"];
             assert_eq!(diagnostics["http_status"], status);
+            assert_eq!(diagnostics["release_discovery"]["page"], 1);
+            if status == 503 {
+                assert!(diagnostics["rate_limit_limit"].is_null());
+                assert!(diagnostics["rate_limit_reset_after_seconds"].is_null());
+            } else {
+                assert_eq!(diagnostics["rate_limit_limit"], 60);
+                assert!((115..=120).contains(&diagnostics["rate_limit_reset_after_seconds"].as_u64().unwrap()));
+            }
             assert_eq!(diagnostics["process"], "curl");
             assert_eq!(diagnostics["exit_code"], 22);
             assert_eq!(diagnostics["trigger"], "automatic");
@@ -861,6 +899,35 @@ mod tests {
         }
         assert_ne!(fingerprints[0], fingerprints[1]);
         assert_ne!(fingerprints[1], fingerprints[2]);
+    }
+
+    #[test]
+    fn rate_reset_diagnostics_reject_past_and_unbounded_timestamps() {
+        assert_eq!(reset_after_seconds(1_800_000_120, 1_800_000_000), Some(120));
+        assert_eq!(reset_after_seconds(1_800_000_000, 1_800_000_000), Some(0));
+        assert_eq!(reset_after_seconds(1_799_999_999, 1_800_000_000), None);
+        assert_eq!(reset_after_seconds(1_800_086_401, 1_800_000_000), None);
+        assert_eq!(reset_after_seconds(u32::MAX, u64::MAX), None);
+    }
+
+    #[test]
+    fn failed_release_page_has_bounded_discovery_context() {
+        let first_page = serde_json::to_vec(&vec![serde_json::json!({
+            "tag_name":"private-tag", "published_at":null, "assets":[]
+        }); 100]).unwrap();
+        let calls = std::cell::Cell::new(0);
+        let error = latest_main_candidate_with("x86_64", &|_| {
+            calls.set(calls.get() + 1);
+            if calls.get() == 1 { Ok(first_page.clone()) }
+            else { anyhow::bail!("private-url-and-response") }
+        }).err().unwrap();
+        let payload = error_reporting::update_payload_for_test(&error, Trigger::Automatic);
+        let discovery = &payload["properties"]["updater"]["release_discovery"];
+        assert_eq!(discovery["page"], 2);
+        assert!(discovery["requests_in_process"].as_u64().unwrap() >= 2);
+        assert!(discovery["elapsed_seconds"].is_u64());
+        assert_eq!(calls.get(), 2, "never retry or continue an incomplete history");
+        assert!(!payload.to_string().contains("private-"));
     }
 
     #[test]
@@ -895,7 +962,10 @@ mod tests {
         let mode = std::env::var("APPARENT_TEST_UPDATE_LOCK_MODE").unwrap();
         let lock = transaction_lock(&image);
         if mode == "contended" {
-            assert!(lock.is_err(), "other process must not enter discovery/download/swap");
+            let error = updates::attempted(lock.unwrap_err(), updates::Attempt::default());
+            assert!(updates::is_lock_contention(&error), "expected contention must not become a production exception");
+            assert_eq!(error.chain().find_map(|cause| cause.downcast_ref::<std::io::Error>()).unwrap().kind(),
+                std::io::ErrorKind::WouldBlock);
             return;
         }
         let _lock = lock.unwrap();

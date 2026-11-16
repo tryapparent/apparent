@@ -431,6 +431,7 @@ pub(crate) fn report_finalization(error: &anyhow::Error) {
 
 #[track_caller]
 pub(crate) fn report_update(error: &anyhow::Error, trigger: updates::Trigger) {
+    if updates::is_lock_contention(error) { return; }
     let location = std::panic::Location::caller();
     if let Some(reporter) = REPORTER.get() {
         reporter.enqueue(|consent| Report::update(error, trigger, location, consent));

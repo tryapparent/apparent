@@ -274,9 +274,10 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
             detail: String(subprocess?.stderr ?? error.message).slice(-2048),
             code: subprocess?.code ?? null, signal: subprocess?.signal ?? null });
         }
-        // A timed-out interpreter cannot answer another observation. Preserve
-        // its first failure instead of replacing it with a later retired error.
-        if (error.pickerRetired) throw new Error(`${label}: ${error.message}`, {cause: error});
+        // A retired interpreter or explicit permission refusal cannot become
+        // ready by repeating the observation. Record it above, then preserve
+        // the native failure as the cause for the existing report and cleanup.
+        if (error.pickerRetired || error.pickerPermissionDenied) throw new Error(`${label}: ${error.message}`, {cause: error});
       }
       await sleep();
     } while (Date.now() < until);

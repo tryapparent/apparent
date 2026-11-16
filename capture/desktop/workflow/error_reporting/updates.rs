@@ -2,6 +2,38 @@
 use std::{error::Error, fmt, panic::Location, process::ExitStatus};
 use std::os::unix::process::ExitStatusExt;
 
+/// Expected rejection by the native transaction guard, not an updater failure.
+/// Keep this typed: WouldBlock from any other operation still needs reporting.
+#[derive(Debug)]
+struct LockContention(std::io::Error);
+impl fmt::Display for LockContention {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("another update transaction is running")
+    }
+}
+impl Error for LockContention {
+    fn source(&self) -> Option<&(dyn Error + 'static)> { Some(&self.0) }
+}
+pub(crate) fn lock_contention(source: std::io::Error) -> anyhow::Error {
+    anyhow::Error::new(LockContention(source))
+}
+pub(crate) fn is_lock_contention(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| cause.is::<LockContention>())
+}
+
+#[cfg(test)]
+#[test]
+fn only_native_lock_contention_is_expected() {
+    let busy = attempted(failure(Stage::Lock,
+        lock_contention(std::io::Error::from_raw_os_error(libc::EWOULDBLOCK))), Attempt::default());
+    assert!(is_lock_contention(&busy));
+    for (stage, code) in [(Stage::Lock, libc::EACCES), (Stage::Lock, libc::EIO),
+        (Stage::AssetDownload, libc::EWOULDBLOCK), (Stage::Lock, libc::EWOULDBLOCK)] {
+        let error = failure(stage, std::io::Error::from_raw_os_error(code).into());
+        assert!(!is_lock_contention(&error), "untyped I/O errors must remain reportable");
+    }
+}
+
 #[derive(Clone, Copy, Debug, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Stage {
@@ -94,6 +126,8 @@ struct CommandFailure {
     signal: Option<i32>,
     http_status: Option<u16>,
     rate_limit_remaining: Option<u32>,
+    rate_limit_limit: Option<u32>,
+    rate_limit_reset_after_seconds: Option<u32>,
     retry_after_seconds: Option<u32>,
     source: anyhow::Error,
 }
@@ -107,12 +141,15 @@ impl Error for CommandFailure {
 pub(crate) struct Http {
     pub status: Option<u16>,
     pub rate_limit_remaining: Option<u32>,
+    pub rate_limit_limit: Option<u32>,
+    pub rate_limit_reset_after_seconds: Option<u32>,
     pub retry_after_seconds: Option<u32>,
 }
 pub(crate) fn command_failure(process: Process, status: ExitStatus, http: Http, source: anyhow::Error) -> anyhow::Error {
     anyhow::Error::new(CommandFailure {process, exit_code: status.code(), signal: status.signal(),
         http_status: http.status.filter(|code| (100..=599).contains(code)),
-        rate_limit_remaining: http.rate_limit_remaining, retry_after_seconds: http.retry_after_seconds, source})
+        rate_limit_remaining: http.rate_limit_remaining, rate_limit_limit: http.rate_limit_limit,
+        rate_limit_reset_after_seconds: http.rate_limit_reset_after_seconds, retry_after_seconds: http.retry_after_seconds, source})
 }
 
 #[derive(Clone, Debug, Default, serde::Serialize)]
@@ -154,6 +191,27 @@ impl Attempt {
         self.compiled_matches_target = Some(compiled == id);
     }
 }
+/// Discovery telemetry is bounded metadata, never release bodies or request URLs.
+#[derive(Clone, Copy, Debug, serde::Serialize)]
+pub(crate) struct ReleaseDiscovery {
+    pub page: u8,
+    // Release-list requests only; excludes other processes and API consumers.
+    pub requests_in_process: u32,
+    // Monotonic time since this process first requested release history.
+    pub elapsed_seconds: u32,
+}
+#[derive(Debug)]
+struct DiscoveryFailure { discovery: ReleaseDiscovery, source: anyhow::Error }
+impl fmt::Display for DiscoveryFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { fmt::Display::fmt(&self.source, f) }
+}
+impl Error for DiscoveryFailure {
+    fn source(&self) -> Option<&(dyn Error + 'static)> { Some(self.source.as_ref()) }
+}
+pub(crate) fn discovery_failure(source: anyhow::Error, discovery: ReleaseDiscovery) -> anyhow::Error {
+    anyhow::Error::new(DiscoveryFailure {discovery, source})
+}
+
 #[derive(Debug)]
 struct AttemptFailure { attempt: Attempt, source: anyhow::Error }
 impl fmt::Display for AttemptFailure {
@@ -172,11 +230,14 @@ pub(super) struct Diagnostics {
     stages: Vec<Frame>,
     attempt: Attempt,
     target: Option<Target>,
+    release_discovery: Option<ReleaseDiscovery>,
     process: Option<Process>,
     exit_code: Option<i32>,
     signal: Option<i32>,
     http_status: Option<u16>,
     rate_limit_remaining: Option<u32>,
+    rate_limit_limit: Option<u32>,
+    rate_limit_reset_after_seconds: Option<u32>,
     retry_after_seconds: Option<u32>,
     io_kind: Option<&'static str>,
     os_error_code: Option<i32>,
@@ -188,14 +249,15 @@ pub(super) struct Diagnostics {
 struct Frame { stage: Stage, file: Option<String>, line: u32 }
 impl Diagnostics {
     pub(super) fn from_error(error: &anyhow::Error, trigger: Trigger) -> Self {
-        let mut value = Self {trigger, stages: vec![], attempt: Attempt::default(), target: None, process: None,
-            exit_code: None, signal: None, http_status: None, rate_limit_remaining: None, retry_after_seconds: None, io_kind: None, os_error_code: None,
+        let mut value = Self {trigger, stages: vec![], attempt: Attempt::default(), target: None, release_discovery: None, process: None,
+            exit_code: None, signal: None, http_status: None, rate_limit_remaining: None, rate_limit_limit: None, rate_limit_reset_after_seconds: None, retry_after_seconds: None, io_kind: None, os_error_code: None,
             json_error_kind: None, sparkle_domain: None, sparkle_code: None};
         for cause in error.chain().take(64) {
             if let Some(boundary) = cause.downcast_ref::<Boundary>() {
                 if value.stages.len() == 8 { value.stages.remove(0); }
                 value.stages.push(Frame {stage: boundary.stage, file: super::source_file(boundary.location.file()), line: boundary.location.line()});
             }
+            if let Some(failure) = cause.downcast_ref::<DiscoveryFailure>() { value.release_discovery = Some(failure.discovery); }
             if let Some(failure) = cause.downcast_ref::<AttemptFailure>() { value.attempt = failure.attempt.clone(); }
             if let Some(failure) = cause.downcast_ref::<TargetFailure>() { value.target = Some(failure.target.clone()); }
             if let Some(failure) = cause.downcast_ref::<CommandFailure>() {
@@ -204,6 +266,8 @@ impl Diagnostics {
                 value.signal = failure.signal;
                 value.http_status = failure.http_status;
                 value.rate_limit_remaining = failure.rate_limit_remaining;
+                value.rate_limit_limit = failure.rate_limit_limit;
+                value.rate_limit_reset_after_seconds = failure.rate_limit_reset_after_seconds;
                 value.retry_after_seconds = failure.retry_after_seconds;
             }
             if let Some(error) = cause.downcast_ref::<std::io::Error>() {
