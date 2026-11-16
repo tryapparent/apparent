@@ -19,6 +19,7 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
   let rejectReportingWrite = true;
   let publicFailure=false;
   let server;
+  let closing = false;
   const application = await electron.launch({
     args: [path.join(__dirname, '..')],
     ...(process.env.PUBLIC_SHARE_VIDEO ? {recordVideo:{dir:process.env.PUBLIC_SHARE_VIDEO,size:{width:920,height:760}}}:{}),
@@ -44,6 +45,7 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
   t.after(async () => {
     clearInterval(diagnosticTimer);
     diagnose();
+    closing = true;
     await application.close();
     if(process.env.PUBLIC_SHARE_VIDEO && page.video()) await page.video().saveAs(path.join(process.env.PUBLIC_SHARE_VIDEO,'sender-electron.webm'));
     if (server) await new Promise((resolve) => server.close(resolve));
@@ -81,27 +83,34 @@ test('Electron preview, read-only bridge and isolation', { timeout: 45000 }, asy
   const directory = path.join(home, '.config/apparent/agent-control');
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   await fs.chmod(directory, 0o700);
-  server = net.createServer((socket) => socket.once('data', (data) => {
-    requests.push(data.toString());
-    const request = data.toString().startsWith('{') ? JSON.parse(data.toString()) : null;
-    if (request?.reference) {
-      socket.end('{"reference":{"id":"synthetic.apparent","copied":false}}\n');
-    } else if(request?.publicShare) {
-      if(request.publicShare==='deliver' && publicFailure) socket.end('{"error":"clipboard_failed"}\n');
-      else socket.end(JSON.stringify({publicShare:request.publicShare==='start'?{operation:'a'.repeat(32),state:'preparing'}:{state:request.publicShare==='read'?'prepared':request.publicShare==='deliver'?'copied':'cancelled'}})+'\n');
-    } else if (request?.errorReporting) {
-      if (request.errorReporting === 'read' && (++reportingReads <= 3 || reportingAlwaysBusy)) {
-        socket.end('{"error":"app_busy"}\n');
-        return;
-      }
-      if (request.errorReporting === 'set') {
-        reportingWrites += 1;
-        if (rejectReportingWrite) return socket.end('{"error":"app_busy"}\n');
-        reportingEnabled = request.enabled;
-      }
-      socket.end(JSON.stringify({ errorReporting: { enabled: reportingEnabled } }) + '\n');
-    } else socket.end(reply);
-  }));
+  server = net.createServer((socket) => {
+    socket.on('error', error => {
+      // Electron can reset an outstanding read while the owned app closes.
+      // Transport failures during the assertions must still fail this test.
+      if (!closing || error.code !== 'ECONNRESET') throw error;
+    });
+    socket.once('data', (data) => {
+      requests.push(data.toString());
+      const request = data.toString().startsWith('{') ? JSON.parse(data.toString()) : null;
+      if (request?.reference) {
+        socket.end('{"reference":{"id":"synthetic.apparent","copied":false}}\n');
+      } else if(request?.publicShare) {
+        if(request.publicShare==='deliver' && publicFailure) socket.end('{"error":"clipboard_failed"}\n');
+        else socket.end(JSON.stringify({publicShare:request.publicShare==='start'?{operation:'a'.repeat(32),state:'preparing'}:{state:request.publicShare==='read'?'prepared':request.publicShare==='deliver'?'copied':'cancelled'}})+'\n');
+      } else if (request?.errorReporting) {
+        if (request.errorReporting === 'read' && (++reportingReads <= 3 || reportingAlwaysBusy)) {
+          socket.end('{"error":"app_busy"}\n');
+          return;
+        }
+        if (request.errorReporting === 'set') {
+          reportingWrites += 1;
+          if (rejectReportingWrite) return socket.end('{"error":"app_busy"}\n');
+          reportingEnabled = request.enabled;
+        }
+        socket.end(JSON.stringify({ errorReporting: { enabled: reportingEnabled } }) + '\n');
+      } else socket.end(reply);
+    });
+  });
   const address = path.join(directory, 'capture.sock');
   await new Promise((resolve) => server.listen(address, resolve));
   await fs.chmod(address, 0o600);
