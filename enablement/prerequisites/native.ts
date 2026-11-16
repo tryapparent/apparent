@@ -26,6 +26,7 @@ export function checkNativeInputs(root: string, platform = process.platform): st
     'capture/desktop/ui/frontend/electron/runtime.cjs',
     'capture/desktop/ui/frontend/electron/connect.cjs',
     'capture/desktop/ui/frontend/electron/settings/agents.cjs',
+    'capture/desktop/ui/frontend/electron/settings/update-worker.cjs',
     'capture/desktop/ui/frontend/electron/storage-policy.cjs',
     'capture/desktop/ui/frontend/electron/storage-owner/location-workflow.js',
     'capture/desktop/ui/frontend/electron/storage-owner/location-policy.js',
@@ -81,7 +82,7 @@ export function prepareNativeInputs(root: string, platform = process.platform): 
   // Refuse a missing runtime before paying for any TypeScript compilation.
   checkElectron(root);
   const frontend = resolve(root, 'capture/desktop/ui/frontend');
-  for (const generator of ['storage-policy', 'connect-transport', 'pill', 'record-media']) {
+  for (const generator of ['storage-policy', 'connect-transport', 'updates', 'pill', 'record-media']) {
     execFileSync(process.execPath, ['--experimental-strip-types', `scripts/build-${generator}.ts`],
       {cwd: frontend, stdio: 'inherit'});
   }

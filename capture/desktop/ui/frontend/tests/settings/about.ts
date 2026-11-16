@@ -46,6 +46,37 @@ test('installed About projects parent state and bounds actions', async () => {
     await expect.poll(() => output.includes('"action":"tour"')).toBe(true);
     assert.equal(output.includes('"action":"update-now"'), false, 'Enter on a focused action must not accept an update');
     await expect(page.getByRole('button', { name: 'Update now', exact: true })).toBeVisible();
+    const channel = page.getByRole('combobox', {name: 'Update channel'});
+    await expect(channel).toHaveAccessibleDescription('Checking for updates installs the latest release in this channel, even if it is an earlier version.');
+    await channel.focus();
+    await expect(channel).toBeFocused();
+    // This Linux state is exercised on both hosts. Native select keyboard maps
+    // differ on macOS; select the option through the portable control API.
+    await channel.selectOption('stable');
+    await expect.poll(() => output.includes('"key":"updateChannel","value":"stable"')).toBe(true);
+    assert.ok(output.indexOf('"action":"dismiss-update-check"') >= 0);
+    assert.ok(output.indexOf('"action":"dismiss-update-check"') < output.indexOf('"key":"updateChannel","value":"stable"'),
+      'the old channel offer is dismissed before changing the persisted preference');
+    await page.keyboard.press('Escape');
+    await application.evaluate(({ BrowserWindow }, value) => BrowserWindow.getAllWindows()[0].webContents.send('apparent:about-state', value),
+      {...state, updateChannel: 'stable', updateCheck: {checking: false, result: null}});
+    await expect(channel).toHaveValue('stable');
+    for (const width of [720, 640]) {
+      await application.evaluate(({BrowserWindow}, width) => { const window = BrowserWindow.getAllWindows()[0]; window.setResizable(true); window.setSize(width, 530); }, width);
+      await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width);
+      for (const colorScheme of ['light', 'dark'] as const) {
+        await page.emulateMedia({colorScheme});
+        await expect(page.locator('.settings-shell')).toHaveCSS('--apparent-primary', colorScheme === 'dark' ? '#b7a5d8' : '#0000f2');
+        await channel.scrollIntoViewIfNeeded();
+        await expect(channel).toBeVisible();
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+        if (process.env.APPARENT_SETTINGS_PROOF) {
+          await fs.mkdir(process.env.APPARENT_SETTINGS_PROOF, {recursive: true});
+          await page.screenshot({animations: 'disabled', path: path.join(process.env.APPARENT_SETTINGS_PROOF, `channel-${width}-${colorScheme}.png`)});
+        }
+      }
+    }
+    await application.evaluate(({ BrowserWindow }, value) => BrowserWindow.getAllWindows()[0].webContents.send('apparent:about-state', value), state);
     if (process.env.APPARENT_ABOUT_PROOF) await page.screenshot({ path: process.env.APPARENT_ABOUT_PROOF });
     await page.getByRole('button', { name: 'Update later', exact: true }).click();
     await expect.poll(() => output.includes('"action":"update-later"')).toBe(true);
@@ -56,6 +87,7 @@ test('installed About projects parent state and bounds actions', async () => {
     await application.evaluate(({ BrowserWindow }, value) => BrowserWindow.getAllWindows()[0].webContents.send('apparent:about-state', value),
       { ...state, updateCheck: { checking: true, result: null } });
     await expect(page.getByRole('button', { name: 'Checking…' })).toBeDisabled();
+    await expect(channel).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Update now', exact: true })).toHaveCount(0);
     if (process.env.APPARENT_SETTINGS_PROOF) {
       await fs.mkdir(process.env.APPARENT_SETTINGS_PROOF, {recursive: true});

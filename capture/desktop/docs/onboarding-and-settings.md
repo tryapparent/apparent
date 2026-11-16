@@ -69,6 +69,22 @@ links, including Join our Discord, open the browser; Show welcome tour invokes t
 Focused controls own Enter/Space, so a version-copy or tour activation cannot
 also accept an update. Existing native routing and fallbacks are unchanged.
 
+Linux update checks converge on the latest published release of the selected
+channel, including from forks, modified builds and newer versions. Stable can
+therefore replace a newer Main build. A matching installed channel/release marker
+prevents repeated downloads while the old process awaits restart. Without a
+marker, a clean Main build uses its compiled revision; other builds install the
+selected release once. TypeScript About policy owns this decision, executed by
+the packaged Electron runtime for Settings, CLI and hourly checks. Rust retains
+the sole config writer, release/URL and checksum validation, transaction lock,
+atomic swap and failed-launch recovery. No Git ancestry lookup is needed.
+About dismisses the previous channel's update offer before changing the channel,
+so its next action checks the newly selected release instead of restarting into
+an earlier staged choice. The preference applies on the next check without
+restarting. macOS keeps
+its existing Sparkle feed and has no channel picker. Routing is unchanged; rollback
+must restore the previous native decision and remove its worker/copy together.
+
 ## Mac menu bar icon
 
 The Mac status item keeps the approved lowercase “a” at 18 points. It uses Lilac
@@ -115,8 +131,8 @@ must be available. CLI commands/tests never install the global reporter.
 Live ingestion, grouping and alerts require bounded synthetic verification in an
 isolated project before release; local HTTP tests are not that proof.
 
-The payload allows only a static failure category, version/build, OS/architecture
-and repo-relative source call site. Finalization diagnostics additionally contain
+The payload allows only static failure categories, version/build, OS/architecture,
+repo-relative source call sites and the typed diagnostics below. Finalization diagnostics contain
 up to eight typed native stages with repository source locations and structured
 I/O kind/OS error numbers, when available. These describe the failing boundary,
 not the original error message; an unclassified error can still need local logs.
@@ -136,10 +152,29 @@ share URLs or user paths. Each event gets a random identity; person profiles and
 geolocation are disabled. No session replay/usage tracking. The receiving service
 still sees the connection's IP address; transport is not anonymous.
 
-New non-panic exception types use the same static operation code as their value
+Schema 4 adds updater diagnostics. Linux manual and hourly checks preserve the
+typed error before the Settings string boundary: up to eight native stage/source
+frames, curl or worker exit/signal, HTTP status, numeric rate-limit remaining and
+Retry-After seconds when supplied, I/O kind/OS code and JSON error class. The
+exception name/message and synthetic source frames expose these safe facts in
+PostHog's ordinary error view; fingerprints separate transport and native causes.
+Attempt context identifies the selected channel, validated public target release,
+installed identity kind and match booleans. Arbitrary installed fork IDs are never
+sent. Relaunch failures use the same boundary. macOS reports an allowlisted Sparkle,
+URL-loading, Cocoa, POSIX or other domain category plus its numeric NSError code;
+it retains ordinary no-update/cancel/deferral exclusions.
+No raw error text, response body, URL, request/response headers, credentials or
+runtime paths are serialized. Only explicitly named numeric HTTP headers are
+projected. Existing consent, admission and queue limits apply; manual checks do
+not emit a second generic event after converting an error for the UI. Old events
+cannot be enriched retroactively. Local loopback tests exercise real curl and the
+report queue/HTTP payload without injecting production PostHog events.
+
+New non-panic exception types normally use the same static operation code as their value
 (for example `audio_start_failed` or `electron_renderer_gone`), rather than the
-generic `DesktopOperationError`. Panics retain `RustPanic`. Fingerprints are
-unchanged; historical event names are not rewritten.
+generic `DesktopOperationError`. Panics retain `RustPanic`. Structured updater
+failures use stage-specific names and content-free summaries instead. Historical
+event names and fingerprints are not rewritten.
 
 Reports also carry the full compiled `commit_sha`, `build_modified`,
 `package_version`, `release_version`, `channel`, `environment`, `component`,

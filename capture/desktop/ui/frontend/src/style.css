@@ -57,6 +57,7 @@
 .settings-frog { width:140px; height:105px; flex:none; object-fit:contain; }
 .settings-channel { margin-bottom:18px; display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
 .settings-channel select { font-size:16px; }
+.settings-channel-hint { margin-bottom:24px; }
 .settings-support { margin-bottom:18px; }
 .settings-content .settings-support a,.settings-content .settings-links a { height:auto; padding:0; min-height:28px; font-size:18px; box-shadow:none; text-decoration:underline; text-underline-offset:3px; }
 .settings-content a:focus-visible { outline:2px solid var(--color-ring); outline-offset:3px; }
