@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
-function checkElectron(root: string): string {
+export function checkElectron(root: string): string {
   const frontend = resolve(root, 'capture/desktop/ui/frontend');
   const require = createRequire(resolve(frontend, 'package.json'));
   const electron: unknown = require('electron');

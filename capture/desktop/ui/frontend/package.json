@@ -21,7 +21,8 @@
     "typecheck:settings-native": "tsc -p scripts/settings-native/tsconfig.json",
     "test:onboarding-policy": "node --experimental-strip-types --test tests/onboarding/*.test.ts tests/onboarding/wispr/*.test.ts tests/connect/flow.test.ts tests/connect/session.test.ts",
     "typecheck:onboarding-policy": "tsc -p tests/onboarding/tsconfig.json",
-    "typecheck:onboarding-renderer": "tsc -p tests/onboarding/renderer/tsconfig.json"
+    "typecheck:onboarding-renderer": "tsc -p tests/onboarding/renderer/tsconfig.json",
+    "test:electron:targeted": "node --experimental-strip-types ../../../../enablement/prerequisites/targeted/run.ts"
   },
   "dependencies": {
     "@apparent/ui": "file:../../../../shared/ui",
