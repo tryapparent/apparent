@@ -56,7 +56,7 @@ receipt exists. Public keeps its direct `stream-public.yml` automatic entrypoint
 Within each automatic Mac platform call, the selected native, Desktop and standalone client
 suites share one `platform (macos-15-intel)` allocation. Linux keeps independent
 parallel jobs. The shared Mac job retains selected signing/installed native proof,
-Electron checks and independent client builds/tests, with their existing private
+focused Mac Electron checks and independent client builds/tests, with their existing private
 temporary roots and artifacts. Renderer-only plans do not install Rust or run
 native checks; an inconsistent native exemption fails instead of claiming proof.
 The packed job retains its 60-minute outer cap, plus the renderer/client step
@@ -64,6 +64,15 @@ caps; correctness and hosted occupancy still require actual successful execution
 Receipt authentication accepts the packed job only from its real successful
 GitHub conclusion with the matching complete plan, source, run and attempt.
 Manual receipt calls retain their separate jobs and historical admission names.
+Shared Desktop policy tests and the complete Electron renderer/bridge suite run
+on Linux. Automatic and manual/release Mac callers use `test:electron:mac`:
+the existing prepared, serial targeted entrypoint builds the shipped frontend
+and executes Hermes app hide/focus restoration plus foreground pill/native-window
+checks. Those two source files also remain in the complete Linux suite; their
+Darwin-only assertions require real Mac execution. Installed-app, Rust bridge,
+native acceptance and publication gates remain separate and required. Local
+push hooks retain their full suites. This split is coverage policy, not proof
+of a measured speedup; compare successful hosted steps before claiming savings.
 The shared adapter adds only root/Engine, Desktop and client platform requirements
 from Connect. Capture keeps its original portable selection; Connect's own
 portable job remains required independently of the shared native receipt. A
@@ -584,7 +593,7 @@ Five Settings TSX cards and `src/style.css` are the finite renderer-only Mac Rus
 exemption. The cards feed Settings; the stylesheet feeds foundation, Settings,
 onboarding, installer, controls and pill. Vite builds their entries and
 `test:electron` executes the actual renderer smokes. `stage-settings.py` stages
-these assets separately from the native binary. Mac Electron remains selected;
+these assets separately from the native binary. Focused Mac Electron checks remain selected;
 Linux root/bridge verification remains selected. New entrypoints, bridge,
 main/preload, dependencies, packaging and unknown renderer files retain native
 checks. Settings frog PNGs remain native `include_bytes!` inputs. Build-version
