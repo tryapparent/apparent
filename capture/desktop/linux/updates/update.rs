@@ -734,6 +734,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn target_location_categories_use_components_and_never_expose_private_suffixes() {
+        for (path, expected) in [
+            ("/", "root"), ("/home/private-account/app", "home"), ("/root/app", "home"),
+            ("/tmp/private-session/app", "temporary"), ("/var/tmp/private-session/app", "temporary"),
+            ("/opt/private-install/app", "opt"), ("/usr/local/bin/app", "usr"), ("/run/private-session/app", "run"),
+            ("/home-other/private-account/app", "other"), ("/tmp-other/app", "other"), ("relative/private-app", "other"),
+        ] {
+            assert_eq!(serde_json::to_value(path_class(Path::new(path))).unwrap(), expected);
+        }
+    }
+
+    #[test]
     fn target_diagnostics_reproduce_home_mismatch_and_symlink_escape_without_paths() {
         use std::os::unix::fs::symlink;
         let scratch = tempfile::tempdir().unwrap();
@@ -756,8 +768,10 @@ mod tests {
         assert_eq!(facts["image_under_home_before_canonicalization"], false);
         assert_eq!(facts["image_under_home"], false);
         assert_eq!(facts["image_path_changed"], false);
-        assert_eq!(facts["image_location"], "temporary");
-        assert_eq!(facts["home_location"], "temporary");
+        // Both are siblings beneath the caller's TMPDIR, which CI places under
+        // /home rather than /tmp. Their common category must survive reporting.
+        assert_eq!(facts["image_location"], facts["home_location"]);
+        assert!(facts["image_location"].is_string());
         assert!(!payload.to_string().contains("private-"));
         assert!(!payload.to_string().contains(scratch.path().to_str().unwrap()));
         symlink(&outside, home.join("linked")).unwrap();

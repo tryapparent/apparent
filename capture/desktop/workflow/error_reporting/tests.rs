@@ -32,7 +32,8 @@ fn updater_target_facts_cross_consented_queue_and_http_without_private_paths() {
     assert_eq!(facts["home_matches_account"], true);
     assert_eq!(facts["image_under_home"], false);
     assert_eq!(facts["image_under_home_before_canonicalization"], false);
-    assert_eq!(facts["image_location"], "temporary");
+    assert_eq!(facts["image_location"], facts["home_location"]);
+    assert!(facts["image_location"].is_string());
     assert!(!payload.to_string().contains("private-"));
     assert!(!payload.to_string().contains(scratch.0.to_str().unwrap()));
 }
