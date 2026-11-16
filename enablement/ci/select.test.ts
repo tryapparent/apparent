@@ -26,10 +26,10 @@ function parents(outputs: any = {}, reuse: any = {}) {
 }
 test('automatic stream orchestrators, manual diagnostics, PR integration checkout and read-only verification', () => {
   assert.deepEqual(readdirSync(new URL('.github/workflows/', root)).filter(name =>
-    Object.keys(workflow(name).on).some(event => !['workflow_dispatch', 'workflow_call'].includes(event))).sort(), ['checks.yml', 'hermes.yml', 'stream-engine.yml', 'stream-public.yml']);
-  assert.deepEqual(Object.keys(workflow('stream-connect.yml').on), ['workflow_dispatch', 'workflow_call']);
-  assert.equal(ci().jobs.connect.uses, './.github/workflows/stream-connect.yml');
-  assert.deepEqual(ci().jobs.connect.permissions, {contents:'read', actions:'read'});
+    Object.keys(workflow(name).on).some(event => !['workflow_dispatch', 'workflow_call'].includes(event))).sort(), ['checks.yml', 'hermes.yml', 'stream-connect.yml', 'stream-engine.yml', 'stream-public.yml']);
+  assert.deepEqual(Object.keys(workflow('stream-connect.yml').on), ['pull_request', 'push', 'workflow_dispatch']);
+  assert.equal(ci().jobs.connect, undefined);
+  assert.equal(ci().jobs['native-evidence'], undefined);
   assert.deepEqual(Object.keys(ci().on), ['pull_request', 'push']);
   assert.deepEqual(ci().on.pull_request.types, ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft']);
   assert.equal(ci().permissions.contents, 'read');

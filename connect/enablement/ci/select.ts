@@ -1,8 +1,8 @@
-// Connect consumes the automatic shared producer or runs independent manual checks.
+// Connect owns its automatic and manual verification plan.
 import {appendFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
-import {suitePlan, routingProblems} from './consumers.ts';
-import {selectRange} from '../select.ts';
+import {suitePlan, planFromOwners, routingProblems} from '../../../enablement/ci/routing/consumers.ts';
+import {selectRange} from '../../../enablement/ci/select.ts';
 
 export function connectPlan(consumers: ReturnType<typeof suitePlan>) {
   // Existing service/client contracts are consumed by the root application on
@@ -18,8 +18,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
     const problems = routingProblems(range);
     if (problems.length) throw Error(problems.join('\n'));
   }
-  const plan = connectPlan(process.env.GITHUB_EVENT_NAME === 'pull_request' ? range.plan : suitePlan(null));
-  const {sharedNative, identity} = await import('./native-sharing/run.ts');
-  const shared = sharedNative(process.env.SHARED_NATIVE, identity(), plan);
-  appendFileSync(process.env.GITHUB_OUTPUT!, `shared=${shared}\npublish=${range.publicationStreams.connect}\nplan=${JSON.stringify(plan)}\nnative=${plan.root || plan.client}\nportable=${plan.browser || plan.service || plan.foreground}\n`);
+  const event = process.env.GITHUB_EVENT_NAME;
+  const plan = connectPlan(event === 'workflow_dispatch' ? suitePlan(null) : !range.requiredStreams.connect ? planFromOwners([]) :
+    event === 'pull_request' ? range.plan : suitePlan(null));
+  appendFileSync(process.env.GITHUB_OUTPUT!, `publish=${range.publicationStreams.connect}\nplan=${JSON.stringify(plan)}\nnative=${plan.root || plan.client}\nportable=${plan.browser || plan.service || plan.foreground}\n`);
 }
