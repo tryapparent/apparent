@@ -43,7 +43,7 @@ def inventory(root=ROOT, owner=None):
         file = root / path
         if file.suffix not in ('.css', '.tsx', '.ts', '.html', '.js', '.cjs') or not file.is_file():
             continue
-        if any(part in ('test', 'tests', 'scripts', 'node_modules') for part in file.relative_to(root).parts):
+        if any(part in ('test', 'tests', 'scripts', 'enablement', 'node_modules') for part in file.relative_to(root).parts):
             continue
         if path == 'shared/ui/src/tokens.css':
             continue

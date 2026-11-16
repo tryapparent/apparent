@@ -36,11 +36,11 @@ test('Connect retains real native client/service consumers and skips native for 
 });
 
 test('the composed browser proof selects its Connect consumer and publication', () => {
-  const plan = connectPlan(suitePlan(['public/site/scripts/browser-proof/test-hosted-browser.mjs']));
+  const plan = connectPlan(suitePlan(['public/enablement/browser-proof/test-hosted-browser.mjs']));
   assert.equal(plan.browser, true);
   assert.equal(plan.root, false);
   assert.equal(plan.client, false);
-  assert.equal(routeDecision(['public/site/scripts/browser-proof/test-hosted-browser.mjs']).publicationStreams.connect, true);
+  assert.equal(routeDecision(['public/enablement/browser-proof/test-hosted-browser.mjs']).publicationStreams.connect, true);
 });
 
 test('Connect publication requires successful stream-owned gates on canonical main', () => {

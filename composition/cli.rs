@@ -530,7 +530,7 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         port: u16,
     },
-    /// Build a bundle from a simulated Screen capture (`public/site/scripts/autocrop-corpus.mjs`).
+    /// Build a bundle from a simulated Screen capture (`public/enablement/browser-proof/motion/autocrop-corpus.mjs`).
     #[command(hide = true)]
     Fixture {
         /// The scenario's `scenario.json`.

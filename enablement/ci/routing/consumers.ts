@@ -7,10 +7,8 @@ export const desktopPackagingInputs = new Set([
   'capture/desktop/scripts/packaging/install-app.sh',
   'capture/desktop/scripts/packaging/frontend/stage.ts',
 ]);
-export const publicMarkdown = new Set([
-  'README.md', 'capture/agent/skills/apparent/SKILL.md', 'capture/agent/docs/usage.md',
-  'capture/desktop/docs/guides/recording.md', 'capture/engine/docs/guides/processing.md',
-]);
+import { publicMarkdown, hostedBrowserFixture } from '../../../public/enablement/cd/ci/inputs.ts';
+export { publicMarkdown };
 export function documentationOnlyPath(path: string): boolean {
   if (!path.endsWith('.md') || publicMarkdown.has(path)) return false;
   if (/(^|\/)(skills?|prompts?|instructions?|tests?|fixtures?|templates?)(\/|$)/i.test(path)) return false;
@@ -147,7 +145,7 @@ function directConsumers(path: string): readonly Owner[] {
   if (/^record\/(?:storage|completion|capture-request)\/(?:src\/.*\.ts|test\/.*\.test\.ts|package(?:-lock)?\.json|tsconfig(?:\.build)?\.json)$/.test(path) ||
       path === 'record/storage/build.ts') return ['desktop', 'capture'];
   // This composed browser proof is executed by Connect's publication verifier.
-  if (path === 'public/site/scripts/browser-proof/test-hosted-browser.mjs') return ['public', 'web'];
+  if (path === hostedBrowserFixture) return ['public', 'web'];
   if (path.startsWith('public/')) return webAssets.has(path) ? ['public', 'web'] : ['public'];
   if (!native && path.startsWith('connect/web/')) return ['web'];
   if (['connect/client/typescript/src/mcp-wire.ts','connect/client/typescript/src/transfer/contract.ts','connect/client/typescript/contracts.ts'].includes(path)) return ['client', 'capture', 'service'];
@@ -228,7 +226,7 @@ const directoryPaths = {
     '.github/workflows/linux-updater-harness.yml',
     // The app embeds this wordmark; the remaining Public tree is independent.
     'public/site/**'],
-  connect: [...common, ...independentEngine, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, ...desktopPackagingInputs, 'connect/**', 'public/site/**',
+  connect: [...common, ...independentEngine, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, ...desktopPackagingInputs, 'connect/**', 'public/**',
     '.github/workflows/stream-connect.yml', 'enablement/release_gate.py'],
   public: [...common, ...independentEngine, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/hermes.yml', 'public/**', '.github/workflows/stream-public.yml', 'README.md',
     'capture/agent/skills/apparent/SKILL.md', 'capture/agent/docs/usage.md',
