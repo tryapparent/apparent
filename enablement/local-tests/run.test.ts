@@ -1,3 +1,4 @@
+import {agentToolTests} from '../../capture/agent/enablement/checks.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync, chmodSync } from 'node:fs';
@@ -253,14 +254,15 @@ test('real Git delta includes earlier commits and both sides of cross-owner rena
 test('capture script changes execute offline contracts including hyphenated and new test files', () => fixture((dir, env) => {
   for (const path of ['capture/desktop/scripts/packaging/test_installer_guard.py',
     'capture/desktop/scripts/tests/mac/test_setup.py', 'capture/desktop/scripts/linux/gui/test-gui-vm.py',
-    'capture/agent/scripts/tests/test_provision_narrator.py', 'capture/desktop/scripts/new/test_new.py',
+    'capture/agent/enablement/scripts/tests/test_provision_narrator.py',
+    'capture/agent/enablement/scripts/tests/provision-narrator.test.ts', 'capture/desktop/scripts/new/test_new.py',
     'capture/desktop/scripts/linux/gui/input/qmp.test.ts']) {
     const parent = path.slice(0, path.lastIndexOf('/'));
     mkdirSync(join(dir, parent), { recursive: true }); writeFileSync(join(dir, path), '');
   }
   for (const args of [['init', '-q'], ['add', '.']]) assert.equal(spawnSync('git', args, { cwd: dir, env }).status, 0);
-  const suites = captureToolTests(dir);
-  assert.equal(suites.length, 6, 'five Python files stay isolated and the Node files share one runner');
+  const suites = [...captureToolTests(dir), ...agentToolTests(dir)];
+  assert.equal(suites.length, 7, 'five Python files stay isolated and each owner has one Node runner');
   assert.ok(suites.some(command => command.argv.includes('capture/desktop/scripts/new/test_new.py')));
   const hyphenated = suites.find(command => command.argv.includes('capture/desktop/scripts/linux/gui/test-gui-vm.py'))!;
   assert.ok(hyphenated);
@@ -278,21 +280,22 @@ test('capture script changes execute offline contracts including hyphenated and 
   try { assert.throws(() => execute([typescript], dir), /failed \(1\)/); }
   finally { if (context !== undefined) process.env.NODE_TEST_CONTEXT = context; }
   assert.ok(typescript.argv.includes('--test-concurrency=1'));
-  assert.ok(typescript.argv.indexOf('capture/agent/scripts/tests/provision-narrator.test.ts') < typescript.argv.indexOf(tsPath));
+  assert.ok(!typescript.argv.some(arg => arg.startsWith('capture/agent/')));
+  assert.ok(suites.some(command => command.argv.includes('capture/agent/enablement/scripts/tests/test_provision_narrator.py')));
 }));
 
 test('real capture-tool inventory is unchanged while TypeScript tests use one ordered runner', () => {
-  const plan = captureToolTests();
+  const plan = [...captureToolTests(), ...agentToolTests()];
   const python = plan.filter(command => command.argv[0] === 'python3');
   const node = plan.filter(command => command.argv[0] === 'node');
-  assert.equal(node.length, 1);
-  const tracked = spawnSync('git', ['ls-files', '-z', '--', 'capture/desktop/scripts/', 'capture/agent/scripts/'],
+  assert.equal(node.length, 2);
+  const tracked = spawnSync('git', ['ls-files', '-z', '--', 'capture/desktop/scripts/', 'capture/agent/enablement/scripts/'],
     {cwd: root, encoding: 'utf8'});
   assert.equal(tracked.status, 0);
   const inventory = tracked.stdout.split('\0').filter(path => /\/(?:test[-_][^/]*\.py|[^/]+\.test\.ts)$/.test(path)).sort();
   const pythonInventory = python.map(command => command.argv.at(-1)!);
   const nodeCommand = node[0].argv;
-  const nodeInventory = nodeCommand.filter(arg => arg.endsWith('.test.ts'));
+  const nodeInventory = node.flatMap(command => command.argv.filter(arg => arg.endsWith('.test.ts')));
   assert.deepEqual([...pythonInventory, ...nodeInventory].sort(), inventory);
   assert.equal(python.length, inventory.filter(path => path.endsWith('.py')).length);
   assert.ok(nodeCommand.includes('--test-concurrency=1'));

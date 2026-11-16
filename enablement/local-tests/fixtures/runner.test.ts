@@ -31,6 +31,7 @@ test('fixture source closure follows a new nested import without copying real te
   for (const path of ['enablement/local-tests/recursive.test.ts', 'enablement/ci/new/recursive.test.ts',
     'enablement/local-tests/node_modules/dependency/index.ts', 'enablement/ci/dist/generated.ts'])
     put(source, path, "throw Error('must not copy');\n");
+  for (const path of ['checks.ts', 'dependencies.ts']) put(source, 'capture/agent/enablement/' + path, 'export {};\n');
   copyRunnerSources(target, source);
   const module = pathToFileURL(join(target, 'enablement/local-tests/run.ts')).href;
   const result = spawnSync(process.execPath, ['--experimental-strip-types', '--input-type=module', '-e',

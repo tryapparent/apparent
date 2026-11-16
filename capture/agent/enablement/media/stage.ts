@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {basename, dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-const root = dirname(fileURLToPath(import.meta.url));
+const root = fileURLToPath(new URL('../../media/', import.meta.url));
 const pin = JSON.parse(readFileSync(join(root, 'engine.json'), 'utf8'));
 const key = `${process.platform}-${process.arch}`, runtime = pin.runtimes[key];
 if (!runtime) throw Error('Agent media supports Linux/macOS x64/arm64');

@@ -12,6 +12,8 @@ import {selectRange} from '../ci/select.ts';
 import {explainSelection} from './preview/explain.ts';
 import {timingContracts} from './contracts.ts';
 export {owners} from '../ci/routing/consumers.ts';
+import {agentToolTests, agentSetupCommands, agentMediaCommands} from '../../capture/agent/enablement/checks.ts';
+export {agentMediaCommands} from '../../capture/agent/enablement/checks.ts';
 import type {Admission} from './service.ts';
 
 export const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -34,7 +36,7 @@ export function selection(base: string, head: string, cwd = root, _conservativeW
 export function captureToolTests(cwd = root): Command[] {
   // Load tracked files explicitly: discovery skips hyphenated module filenames
   // and does not recurse into these non-package test folders.
-  const result = spawnSync('git', ['ls-files', '-z', '--', 'capture/desktop/scripts/', 'capture/agent/scripts/'], { cwd, encoding: 'utf8' });
+  const result = spawnSync('git', ['ls-files', '-z', '--', 'capture/desktop/scripts/'], { cwd, encoding: 'utf8' });
   if (result.error || result.status !== 0) throw Error('Cannot enumerate capture tooling tests');
   const paths = result.stdout.split('\0').filter(path => /\/(?:test[-_][^/]*\.py|[^/]+\.test\.ts)$/.test(path)).sort();
   const nodeTests = paths.filter(path => path.endsWith('.test.ts'));
@@ -61,6 +63,7 @@ export function installationContracts(paths: string[] | null, workflowControls: 
   const affected = !paths?.length || selectedOwners(paths).includes('tooling') || paths.some(path =>
     desktopPackagingInputs.has(path) ||
     ['.github/', 'enablement/', 'shared/ui/', 'record/storage/'].some(root => path.startsWith(root)) ||
+    path === 'capture/agent/enablement/media/build.ts' ||
     path.startsWith(desktopPackage + '/scripts/') ||
     new RegExp('^' + desktopPackage + '/(?:tsconfig[^/]*\\.json|vite\\.config\\.[^/]+)$').test(path) ||
     inputs.some(root => path.startsWith(root + '/') && manifests.has(path.slice(root.length + 1))));
@@ -113,16 +116,6 @@ export function recordMediaCommands(): Command[] {
   ];
 }
 
-export function agentMediaCommands(): Command[] {
-  const cwd = 'capture/agent/media';
-  return [
-    {argv: ['npm', 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], cwd},
-    {argv: ['npm', 'run', 'typecheck'], cwd},
-    {argv: ['npm', 'test'], cwd},
-    {argv: ['npm', 'run', 'build'], cwd},
-  ];
-}
-
 export function commands(selected: Owner[], base: string, head: string, platform = process.platform, rustChanged = true,
   installScope: {paths: string[] | null; workflowControls?: string[]} = {paths: null}): Command[] {
   const result: Command[] = [];
@@ -138,13 +131,13 @@ export function commands(selected: Owner[], base: string, head: string, platform
   if (selected.includes('capture')) result.push(...recordMediaCommands(), ...agentMediaCommands());
   if (selected.includes('client-foreground')) result.push(...foregroundCommands());
   if (selected.includes('engine-media')) add(['node', '--experimental-strip-types', 'engine/tools/check.ts', ...(rustChanged ? [] : ['--sdk-only'])]);
-  const tools = selected.includes('capture-tools') ? captureToolTests() : [];
+  const tools = selected.includes('capture-tools') ? [...captureToolTests(), ...agentToolTests()] : [];
   result.push(...tools.filter(command => !command.env?.APPARENT_BIN));
   if (selected.includes('hermes')) {
+    result.push(...agentSetupCommands());
     add(['npm', 'ci', '--ignore-scripts', '--prefix', 'hermes/desktop']);
     add(['python3', '-m', 'unittest', 'discover', '-s', 'hermes/tests', '-p', 'test_*.py']);
-    add(['node', '--experimental-strip-types', '--test', 'hermes/desktop/controller.test.ts', 'hermes/desktop/plugin.test.ts', 'hermes/distribution/package.test.ts', 'hermes/distribution/consumer.test.ts', 'hermes/distribution/cache/downloads.test.ts', 'capture/agent/setup/hermes.test.ts', 'capture/agent/setup/hermes-receiver.test.ts',
-      'capture/desktop/ui/frontend/src/hermes/protocol.test.ts', 'capture/desktop/ui/frontend/src/hermes/mailbox.test.ts']);
+    add(['node', '--experimental-strip-types', '--test', 'hermes/desktop/controller.test.ts', 'hermes/desktop/plugin.test.ts', 'hermes/distribution/package.test.ts', 'hermes/distribution/consumer.test.ts', 'hermes/distribution/cache/downloads.test.ts', 'capture/desktop/ui/frontend/src/hermes/protocol.test.ts', 'capture/desktop/ui/frontend/src/hermes/mailbox.test.ts']);
   }
   // These TypeScript/renderer checks are independent of Rust. Run their real
   // locked install and full Electron suite first so a broken download, display

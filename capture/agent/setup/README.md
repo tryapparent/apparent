@@ -78,7 +78,7 @@ launch, actual Hermes button loading, native recording and end-to-end handoff
 require separate real platform acceptance. Synthetic fixtures establish policy
 and idempotence, not GUI or recording success. Live X1 is not a test fixture.
 
-`node --test capture/agent/setup/*.test.ts` runs the policy suite independently.
+`node --test capture/agent/setup/*.test.ts capture/agent/enablement/setup/*.test.ts` runs the policy suite independently.
 The native fixture runs only on disposable GitHub-hosted Macs with CI's explicit
 `APPARENT_SETUP_NATIVE_FIXTURE=1` flag; it refuses ordinary or self-hosted accounts.
 It registers and selects an app for a unique synthetic URL scheme, queries the

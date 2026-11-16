@@ -11,9 +11,9 @@ recorded audio and are not narrator provisioning dependencies.
 From the repository root, run:
 
 ```sh
-node capture/agent/scripts/provision-narrator.ts --check
+node capture/agent/enablement/scripts/provision-narrator.ts --check
 # First setup only, when the native worker is absent:
-node capture/agent/scripts/provision-narrator.ts --build-from-source
+node capture/agent/enablement/scripts/provision-narrator.ts --build-from-source
 ```
 
 Requires Node 22.18+ and Python 3.10+. A missing worker additionally requires
@@ -145,7 +145,7 @@ mitigation, not perceptual approval or integrated app proof.
 Tests (from repository root; target stays outside source):
 
 ```sh
-python3 -m unittest discover -s capture/agent/scripts/tests -p test_provision_narrator.py
+python3 -m unittest discover -s capture/agent/enablement/scripts/tests -p test_provision_narrator.py
 cargo test --manifest-path capture/agent/narrator/Cargo.toml --locked --offline \
   --target-dir "$TMPDIR/narrator-build" -j 3
 ```

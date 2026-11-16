@@ -1,4 +1,5 @@
 import {independentInputs} from './engine-inputs/qualify.ts';
+import {agentConsumers} from '../../../capture/agent/enablement/dependencies.ts';
 // Owner facts shared by hosted admission and local pushes. Unknown inputs stay broad.
 export const owners = ['capture', 'engine', 'desktop', 'capture-tools', 'client', 'client-foreground', 'web', 'service', 'public', 'hermes', 'tooling', 'onboarding', 'engine-media'] as const;
 export type Owner = typeof owners[number];
@@ -155,7 +156,8 @@ function directConsumers(path: string): readonly Owner[] {
   if (['connect/client/typescript/src/mcp-wire.ts','connect/client/typescript/src/transfer/contract.ts','connect/client/typescript/contracts.ts'].includes(path)) return ['client', 'capture', 'service'];
   if (path.startsWith('connect/client/')) return ['client', 'capture'];
   if (!native && path.startsWith('connect/service/')) return ['service', 'client', 'web', 'capture'];
-  if (path.startsWith('capture/agent/setup/')) return ['capture', 'engine', 'hermes'];
+  const agent = agentConsumers(path);
+  if (agent) return agent;
   if (path === '.github/workflows/stream-public.yml') return ['public'];
   if (path === '.github/workflows/stream-connect.yml') return ['capture', 'client', 'client-foreground', 'web', 'service'];
   if (path === '.github/workflows/checks.yml') return ['capture', 'engine', 'desktop', 'client', 'client-foreground', 'web', 'service', 'capture-tools', 'tooling', 'onboarding'];
@@ -167,7 +169,7 @@ function directConsumers(path: string): readonly Owner[] {
   // These drivers are executed by the installed foreground proof, whose job
   // condition requires a Desktop consumer as well as the native application.
   if (path.startsWith('capture/desktop/scripts/native/foreground/')) return ['capture', 'engine', 'desktop', 'capture-tools'];
-  if (path.startsWith('capture/desktop/scripts/') || path.startsWith('capture/agent/scripts/')) return ['capture', 'engine', 'capture-tools'];
+  if (path.startsWith('capture/desktop/scripts/')) return ['capture', 'engine', 'capture-tools'];
   if (path.startsWith('capture/desktop/')) return ['desktop', 'capture', 'engine', 'capture-tools'];
   if (path.startsWith('capture/engine/tests/') || path.startsWith('capture/engine/src/') || ['capture/engine/Cargo.toml', 'capture/engine/Cargo.lock'].includes(path)) return ['engine'];
   if (path.startsWith('capture/') || path.startsWith('composition/')) return ['capture', 'engine'];
@@ -235,7 +237,8 @@ const directoryPaths = {
   public: [...common, ...independentEngine, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/hermes.yml', 'public/**', '.github/workflows/stream-public.yml', 'README.md',
     'capture/agent/skills/apparent/SKILL.md', 'capture/agent/docs/usage.md',
     'capture/desktop/docs/guides/recording.md', 'capture/engine/docs/guides/processing.md'],
-  hermes: [...common, ...independentEngine, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/stream-public.yml', 'hermes/**', 'capture/agent/setup/**',
+  hermes: [...common, ...independentEngine, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/stream-public.yml', 'hermes/**', 'capture/agent/setup/**', 'capture/agent/enablement/setup/**',
+    'capture/agent/enablement/checks.ts', 'capture/agent/enablement/dependencies.ts', 'capture/agent/enablement/package.json',
     'capture/desktop/ui/frontend/src/hermes/**', '.github/workflows/hermes.yml'],
   engine: ['engine/**', 'enablement/ci/**', 'enablement/local-tests/**', '.githooks/**', '.github/**',
     ...nativeWorkflowPaths.map(path => '!' + path), '!.github/workflows/hermes.yml',

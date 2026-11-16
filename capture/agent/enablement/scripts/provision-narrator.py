@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, build_opener
 
 DEFAULT_CACHE = Path.home() / ".local/share/apparent/narrator"
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[4]
 REVISION = "1939ad2a8e416c0acfeecc08a694d14ef25f2231"
 MODEL_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.0.int8.onnx"
 MODEL_BYTES = 114119327

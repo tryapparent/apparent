@@ -4,7 +4,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSyn
 import { isAbsolute, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { macHandler, system } from './hermes.ts';
+import { macHandler, system } from '../../setup/hermes.ts';
 
 // Native metadata proof, without opening a URL, launching an app, permissions,
 // Rust, Electron, or touching the real apparent scheme's registration.

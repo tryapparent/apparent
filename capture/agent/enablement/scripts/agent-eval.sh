@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Before/after comparison of what agents get from real captures, for an experiment.
 #
-#   capture/agent/scripts/agent-eval.sh [--experiment agentContext] [--out DIR] [bundle…]
+#   capture/agent/enablement/scripts/agent-eval.sh [--experiment agentContext] [--out DIR] [bundle…]
 #
 # Reprocesses each bundle twice with target/debug/apparent (build it first): once with no
 # experiments and once with the named one (for the images), then writes DIR/<bundle>/
@@ -37,7 +37,7 @@ if [[ ${#bundles[@]} -eq 0 ]]; then
   done
 fi
 
-root="$(cd "$(dirname "$0")/../.." && pwd)"
+root="$(cd "$(dirname "$0")/../../../.." && pwd)"
 apparent="$root/target/debug/apparent"
 [[ -x "$apparent" ]] || { echo "build first: cargo build" >&2; exit 1; }
 

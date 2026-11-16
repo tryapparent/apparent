@@ -42,6 +42,10 @@ on:
       - "!.github/workflows/stream-public.yml"
       - "hermes/**"
       - "capture/agent/setup/**"
+      - "capture/agent/enablement/setup/**"
+      - "capture/agent/enablement/checks.ts"
+      - "capture/agent/enablement/dependencies.ts"
+      - "capture/agent/enablement/package.json"
       - "capture/desktop/ui/frontend/src/hermes/**"
       - ".github/workflows/hermes.yml"
   push:
@@ -86,6 +90,10 @@ on:
       - "!.github/workflows/stream-public.yml"
       - "hermes/**"
       - "capture/agent/setup/**"
+      - "capture/agent/enablement/setup/**"
+      - "capture/agent/enablement/checks.ts"
+      - "capture/agent/enablement/dependencies.ts"
+      - "capture/agent/enablement/package.json"
       - "capture/desktop/ui/frontend/src/hermes/**"
       - ".github/workflows/hermes.yml"
 permissions:

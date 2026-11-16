@@ -281,7 +281,7 @@ jobs:
         if: needs.select.outputs.root == 'true'
         env:
           APPARENT_SETUP_NATIVE_FIXTURE: '1'
-        run: node --test capture/agent/setup/*.test.ts
+        run: node --test capture/agent/setup/*.test.ts capture/agent/enablement/setup/*.test.ts
       - name: Local Desktop install reuse contracts
         if: runner.os == 'macOS' && (needs.select.outputs.root == 'true' || needs.select.outputs.engine == 'true' || needs.select.outputs.desktop == 'true')
         env:
@@ -374,7 +374,7 @@ jobs:
           APPARENT_NO_LAUNCH=1 node --experimental-strip-types enablement/timing/command.ts packaging bash capture/desktop/scripts/packaging/install-app.sh
           codesign --verify --deep --strict "$APPARENT_APP_DIR"
           node --experimental-strip-types record/media/test/package.ts --binary "$APPARENT_APP_DIR/Contents/MacOS/apparent" --settings "$APPARENT_APP_DIR/Contents/Resources/settings"
-          node --experimental-strip-types capture/agent/media/test/package.ts --binary "$APPARENT_APP_DIR/Contents/MacOS/apparent" --settings "$APPARENT_APP_DIR/Contents/Resources/settings"
+          node --experimental-strip-types capture/agent/enablement/media/test/package.ts --binary "$APPARENT_APP_DIR/Contents/MacOS/apparent" --settings "$APPARENT_APP_DIR/Contents/Resources/settings"
       - name: Retain the installed Mac CI candidate for a separate native test run
         if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
         shell: bash

@@ -18,6 +18,7 @@ const dependencies = new Set([
   'enablement/local-tests/run.ts', 'enablement/local-tests/desktop-install.ts',
   'enablement/local-tests/receipt.ts',
   'enablement/local-tests/support/sources.ts',
+  'capture/agent/enablement/checks.ts',
 ]);
 const builtins = new Set(['assert/strict', 'test', 'fs', 'path', 'url', 'child_process', 'os']);
 function imports(text: string): string[] | null {

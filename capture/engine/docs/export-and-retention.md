@@ -105,9 +105,9 @@ and are removed on ordinary success/failure; a killed parent can leave private s
 From this source checkout, explicitly run:
 
 ```sh
-node capture/agent/scripts/provision-narrator.ts --check
+node capture/agent/enablement/scripts/provision-narrator.ts --check
 # A missing worker requires an explicit source build:
-node capture/agent/scripts/provision-narrator.ts --build-from-source
+node capture/agent/enablement/scripts/provision-narrator.ts --build-from-source
 ```
 
 Setup needs Node 22.18+ and Python 3.10+. Missing workers additionally need

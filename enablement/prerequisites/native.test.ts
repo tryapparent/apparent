@@ -52,7 +52,7 @@ function generators(f: ReturnType<typeof fixture>, fail = '') {
   };
   for (const [name, files] of Object.entries(outputs)) {
     for (const file of files) rmSync(resolve(f.root, 'capture/desktop/ui/frontend', file));
-    f.put(`capture/desktop/ui/frontend/scripts/${name === 'agent-media' ? 'agent-media/build' : 'build-' + name}.ts`, `
+    f.put(name === 'agent-media' ? 'capture/agent/enablement/media/build.ts' : `capture/desktop/ui/frontend/scripts/build-${name}.ts`, `
 import {appendFileSync, mkdirSync, writeFileSync} from 'node:fs';
 import {dirname} from 'node:path';
 appendFileSync('trace', '${name}\\n');

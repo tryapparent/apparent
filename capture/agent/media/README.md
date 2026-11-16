@@ -10,7 +10,7 @@ Sampling, crop selection and sheet rendering still use Agent's existing callers.
 This proves the component build boundary, not independence of the whole Agent CLI.
 
 `engine.json` pins the immutable SDK 0.2 and native frame provider published from
-`5bbe8e35e67b61703737991575860d4b1fd1ad57`. `stage.ts --out <owned-output>`
+`5bbe8e35e67b61703737991575860d4b1fd1ad57`. `../enablement/media/stage.ts --out <owned-output>`
 verifies archive/SDK/file digests, source identity, capabilities and modes before
 staging. Only frame executables are installed; the complete source manifest is
 retained separately as provenance. Record independently pins the same generation.
@@ -36,7 +36,7 @@ requested frames decode. Record's four-frame batching remains unchanged.
 `npm run test:native` stages and executes the actual published provider with
 synthetic 30fps media, offset duplicates, display rotation, private files and
 redacted failure output. FFmpeg and the platform media runtime are required.
-`test/package.ts --binary <CLI-or-AppImage> --settings <packaged-settings>`
+`../enablement/media/test/package.ts --binary <CLI-or-AppImage> --settings <packaged-settings>`
 exercises the installed Node host and both real zoom callers, checking bundle
 labels, crop association, decoded PNG pixels, source preservation and cleanup.
 It also excludes FFmpeg from the CLI child's executable search, requests 51

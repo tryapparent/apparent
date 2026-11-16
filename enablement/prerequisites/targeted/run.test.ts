@@ -162,7 +162,7 @@ test('flags, absent selections and paths outside source test owners are refused 
 // of phase selection. Moving a native producer/check changes this contract.
 const buildInventory = [
   ...['record-capture-request', 'record-media'].map(name => `node --experimental-strip-types scripts/build-${name}.ts`),
-  'node --experimental-strip-types scripts/agent-media/build.ts',
+  'node --experimental-strip-types ../../../agent/enablement/media/build.ts',
   ...['notes', 'storage-policy', 'updates', 'pill'].map(name => `node --experimental-strip-types scripts/build-${name}.ts`),
   'python3 ../../../../shared/ui/scripts/check-theme.py',
   'tsc --noEmit', 'npm run typecheck:settings-native', 'npm run typecheck:installer',

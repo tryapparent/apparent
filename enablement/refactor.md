@@ -230,7 +230,7 @@ The following exhaustive baseline ledger documents an earlier campaign proposal 
 | `perf/screen-guard.sh` | `capture/desktop/scripts/perf/screen-guard.sh` | MOVE | desktop |
 | `enablement/refactor.md` | `enablement/refactor.md` | RETAIN | shared-infrastructure |
 | `scripts/Apparent.entitlements` | `capture/desktop/scripts/packaging/Apparent.entitlements` | MOVE | desktop |
-| `scripts/agent-eval.sh` | `capture/agent/scripts/agent-eval.sh` | MOVE | capture-agent |
+| `scripts/agent-eval.sh` | `capture/agent/enablement/scripts/agent-eval.sh` | MOVE | capture-agent |
 | `scripts/apparent-restore-clipboard.py` | `capture/desktop/scripts/support/apparent-restore-clipboard.py` | MOVE | desktop |
 | `scripts/autocrop-corpus.mjs` | `public/site/scripts/autocrop-corpus.mjs` | MOVE | public |
 | `scripts/autocrop-gallery.mjs` | `public/site/scripts/autocrop-gallery.mjs` | MOVE | public |
@@ -272,7 +272,7 @@ The following exhaustive baseline ledger documents an earlier campaign proposal 
 | `scripts/linux/updater-gui.py` | `capture/desktop/scripts/linux/updater/updater-gui.py` | MOVE | desktop |
 | `scripts/prepare-mac-signing.sh` | `capture/desktop/scripts/release/prepare-mac-signing.sh` | MOVE | desktop |
 | `scripts/preview_appcast.py` | `capture/desktop/scripts/release/preview_appcast.py` | MOVE | desktop |
-| `scripts/provision-narrator.py` | `capture/agent/scripts/provision-narrator.py` | MOVE | capture-agent |
+| `scripts/provision-narrator.py` | `capture/agent/enablement/scripts/provision-narrator.py` | MOVE | capture-agent |
 | `scripts/release-app.sh` | `capture/desktop/scripts/release/release-app.sh` | MOVE | desktop |
 | `scripts/setup-sparkle.sh` | `capture/desktop/scripts/release/setup-sparkle.sh` | MOVE | desktop |
 | `scripts/tests/local_preview_update.py` | `capture/desktop/scripts/tests/local_preview_update.py` | MOVE | desktop |
@@ -283,7 +283,7 @@ The following exhaustive baseline ledger documents an earlier campaign proposal 
 | `scripts/tests/test_preview_apple_signing.py` | `capture/desktop/scripts/tests/test_preview_apple_signing.py` | MOVE | desktop |
 | `scripts/tests/test_preview_release.py` | `capture/desktop/scripts/tests/test_preview_release.py` | MOVE | desktop |
 | `scripts/tests/test_preview_sparkle_setup.py` | `capture/desktop/scripts/tests/test_preview_sparkle_setup.py` | MOVE | desktop |
-| `scripts/tests/test_provision_narrator.py` | `capture/agent/scripts/tests/test_provision_narrator.py` | MOVE | capture-agent |
+| `scripts/tests/test_provision_narrator.py` | `capture/agent/enablement/scripts/tests/test_provision_narrator.py` | MOVE | capture-agent |
 | `scripts/verification.py` | `enablement/verification.py` | MOVE | enablement |
 | `scripts/verify-preview-sparkle-key.swift` | `capture/desktop/scripts/release/verify-preview-sparkle-key.swift` | MOVE | desktop |
 | `scripts/virtual-display.swift` | `capture/desktop/scripts/support/virtual-display.swift` | MOVE | desktop |

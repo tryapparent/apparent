@@ -95,7 +95,7 @@ export function prepareNativeInputs(root: string, platform = process.platform): 
     execFileSync(process.execPath, ['--experimental-strip-types', `scripts/build-${generator}.ts`],
       {cwd: frontend, stdio: 'inherit'});
   }
-  execFileSync(process.execPath, ['--experimental-strip-types', 'scripts/agent-media/build.ts'],
+  execFileSync(process.execPath, ['--experimental-strip-types', '../../../agent/enablement/media/build.ts'],
     {cwd: frontend, stdio: 'inherit'});
   return checkNativeInputs(root, platform);
 }

@@ -1,0 +1,8 @@
+{
+  "extends": "../../media/tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../..", "noEmit": true, "allowImportingTsExtensions": true,
+    "typeRoots": ["../../media/node_modules/@types"]
+  },
+  "include": ["./**/*.ts", "../../media/test/**/*.ts"]
+}

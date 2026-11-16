@@ -31,7 +31,7 @@ function main() {
     else if (args[i] === '--check') check = true;
     else if (args[i] === '--build-from-source') build = true;
     else if (args[i] === '--rebuild-from-source') { build = true; rebuild = true; }
-    else throw new Error('Usage: node capture/agent/scripts/provision-narrator.ts [--cache DIR] [--check | --build-from-source | --rebuild-from-source]');
+    else throw new Error('Usage: node capture/agent/enablement/scripts/provision-narrator.ts [--cache DIR] [--check | --build-from-source | --rebuild-from-source]');
   }
   if (check && build) throw new Error('--check cannot be combined with source-build options');
   const emit = (status: Status, detail: string) => console.log(JSON.stringify({ status, detail }));

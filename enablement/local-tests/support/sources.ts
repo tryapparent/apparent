@@ -30,4 +30,10 @@ export function copyRunnerSources(destination: string, source = root): void {
     }
   }
   for (const owner of sourceOwners) copy(owner);
+  // Owner command/dependency facts are real imports of the shared runner.
+  for (const path of ['capture/agent/enablement/checks.ts', 'capture/agent/enablement/dependencies.ts']) {
+    const output = resolve(target, path);
+    mkdirSync(dirname(output), {recursive: true});
+    copyFileSync(resolve(origin, path), output);
+  }
 }
