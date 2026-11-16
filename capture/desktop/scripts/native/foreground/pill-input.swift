@@ -357,12 +357,34 @@ func ownedAccessibilityButton(_ expected: Pill, label: String, point: CGPoint, d
     return matches.first
 }
 
+func observeForPreparation(_ req: [String: Any], _ png: URL) throws -> ([String: Any], [Word], Set<pid_t>) {
+    let (expected, _) = try pill(req)
+    let frontBefore = frontPID()
+    if let required = req["expectedFrontPid"] {
+        try need(required is Int && (required as! Int) > 1 && Int(frontBefore) == (required as! Int),
+            "Synthetic scene lost foreground before accessibility admission")
+    }
+    // This enables only the verified owned process's accessibility tree. It
+    // neither activates a window nor sends input. Start Electron's asynchronous
+    // publication before screenshot/OCR so its debounce can overlap that work.
+    try admitPillAccessibility(expected)
+    let observed = try observe(req, png)
+    _ = try currentPill(req, expected)
+    let before = observed.0
+    try need(before["pid"] as? Int == Int(expected.pid) && before["windowId"] as? Int == Int(expected.id) &&
+        before["bounds"] as? [CGFloat] == [expected.rect.minX,expected.rect.minY,expected.rect.width,expected.rect.height],
+        "Pill changed during accessibility bootstrap observation")
+    try need(before["frontPid"] as? Int == Int(frontBefore) && frontPID() == frontBefore,
+        "Foreground drift during accessibility bootstrap observation")
+    try withinBudget()
+    return observed
+}
+
 func preparePillAccessibility(_ req: [String: Any], _ expected: Pill, label: String, point: CGPoint, descendants: Set<pid_t>) throws -> [String: Any] {
     _ = try currentPill(req, expected)
     let frontBefore = frontPID()
-    try admitPillAccessibility(expected)
-    // Electron 45 debounces this request for two seconds. A read-only bootstrap
-    // uses the helper's existing eight-second budget; input keeps its 1.5s cap.
+    // Admission already started before observation. Do not restart Electron 45's
+    // two-second debounce here. Bootstrap keeps 8s; input keeps its 1.5s cap.
     while true {
         try withinBudget()
         // Before hover the native panel is intentionally click-through. Tree
@@ -416,7 +438,8 @@ func main() throws {
         clickTrace = try ClickTrace(traceURL)
         clickTraceName = traceURL.lastPathComponent
     }
-    let (before, words, pillDescendants) = try (op == "click" ? observeBeforeInput(req, out) : observe(req, out))
+    let (before, words, pillDescendants) = try (op == "prepare" ? observeForPreparation(req, out) :
+        (op == "click" ? observeBeforeInput(req, out) : observe(req, out)))
     if let expected = req["expectedFrontPid"] {
         try need(expected is Int && (expected as! Int) > 1 && before["frontPid"] as? Int == (expected as! Int),
             "Synthetic scene lost foreground before native operation")

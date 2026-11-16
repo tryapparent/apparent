@@ -1,5 +1,5 @@
 // Public presentation data only. Credentials, capture paths and handoff text stay in main.
-export type Destination = {id:string;title:string;project:string;kind:'new'|'pinned'|'working'|'active'|'snoozed'};
+export type Destination = {id:string;title:string;project:string;computer?:string;kind:'new'|'pinned'|'working'|'active'|'snoozed'};
 export type DestinationView = {capture:string;choices:Destination[];selected:string;confirmed?:Destination;phase:'setup'|'choosing'|'armed'|'sending'|'sent'|'error'|'uncertain';processing:boolean;error?:string};
 export type Thread = {id:string;projectId:string;title:string;createdAt:string;updatedAt:string;unsettledAt?:string|null;archivedAt?:string|null;deletedAt?:string|null;settledOverride?:string|null;settledAt?:string|null;pinnedAt?:string|null;pinOrderKey?:string|null;activeOrderKey?:string|null;snoozedUntil?:string|null;lastSnoozeWakeAt?:string|null;lineage?:{relationshipToParent?:string|null};status?:string};
 export type Project = {id:string;title:string;createdAt?:string;archivedAt?:string|null};
@@ -21,4 +21,4 @@ export function destinations(threads:Thread[],projects:Project[],projectId:strin
  });
  return [{id:'new',title:'New thread',project:names.get(projectId)??'',kind:'new'},...rows.map(t=>({id:t.id,title:t.title,project:names.get(t.projectId)!,kind:snoozed(t)?'snoozed' as const:t.pinnedAt?'pinned' as const:working.has(t.status??'')?'working' as const:'active' as const}))];
 }
-export function visibleDestinations(choices:Destination[],index:number){const start=Math.max(1,Math.min(index-1,choices.length-3));return {start,rows:choices.slice(start,start+3)};}
+export function visibleDestinations(choices:Destination[],index:number){const start=Math.max(0,Math.min(index-1,choices.length-3));return {start,rows:choices.slice(start,start+3)};}

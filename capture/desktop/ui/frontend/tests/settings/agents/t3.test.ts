@@ -69,3 +69,15 @@ test('a preview expires without a network exchange',async context=>{
  context.mock.timers.enable({apis:['setTimeout','Date']});const preview=links.preview(p.link);
  context.mock.timers.tick(120001);await assert.rejects(links.connect(preview.id,new AbortController().signal),/fresh/);assert.equal(p.exchanged,0);
 });
+
+test('T3 producer desktop links and wrapped mobile links preview only the network destination',async context=>{
+ const p=await provider(context),links=new PairingLinks();
+ // resolveDesktopPairingUrl in T3 generates this app-renderer URL when no
+ // advertised endpoint is selected. It has no network host of its own.
+ assert.deepEqual(parsePairingLink('t3code://app/pair#token=synthetic-code',p.origin),{origin:p.origin,token:'synthetic-code'});
+ assert.throws(()=>parsePairingLink('t3code://app/pair#token=synthetic-code'));
+ const wrapped=new URL('t3code://pair');wrapped.searchParams.set('pairingUrl',p.link);
+ const preview=links.preview(wrapped.href);assert.equal(preview.origin,p.origin);assert.equal(p.exchanged,0);
+ await links.connect(preview.id,new AbortController().signal);assert.equal(p.exchanged,1);
+ for(const url of ['t3code://other/pair#token=synthetic-code','t3code://pair?pairingUrl=file:///tmp/private','t3code://pair?pairingUrl=t3code://pair'])assert.throws(()=>parsePairingLink(url,p.origin));
+});

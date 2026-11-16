@@ -38,6 +38,13 @@ try {
   const page = browser.contexts()[0].pages()[0];
   if(labs){
     await expect(page.getByRole('heading',{name:'Labs',exact:true})).toBeVisible();
+  const t3Toggle=page.getByRole('switch',{name:'Send recordings to T3'});
+  await expect(t3Toggle).toHaveAttribute('aria-checked','false');
+  for(const on of [true,false]){
+    await t3Toggle.click();await expect(t3Toggle).toHaveAttribute('aria-checked',String(on));
+    const saved=JSON.parse(await fs.readFile(process.argv[2],'utf8'));
+    assert.equal(saved.experiments.t3DestinationPicker,on);assert.equal(saved.experiments.agentDemoVideo,true);assert.equal(saved.secret,'private');
+  }
     const toggle=page.getByRole('switch',{name:'Auto paste',exact:true});
     await expect(toggle).toHaveAttribute('aria-checked','false');
     if(process.platform==='linux')for(const on of [true,false]){
@@ -58,13 +65,7 @@ try {
   await expect(page.locator('.agent-command')).toHaveText(process.argv[3]);
   const toggle = page.getByRole('switch', {name: 'Ask for video proof'});
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
-  const t3Toggle=page.getByRole('switch',{name:'Send recordings to T3'});
-  await expect(t3Toggle).toHaveAttribute('aria-checked','false');
-  for(const on of [true,false]){
-    await t3Toggle.click();await expect(t3Toggle).toHaveAttribute('aria-checked',String(on));
-    const saved=JSON.parse(await fs.readFile(process.argv[2],'utf8'));
-    assert.equal(saved.experiments.t3DestinationPicker,on);assert.equal(saved.experiments.agentDemoVideo,undefined);assert.equal(saved.secret,'private');
-  }
+  await expect(page.getByRole('switch',{name:'Send recordings to T3'})).toHaveCount(0);
   for (const on of [false, true]) {
     await expect(toggle).toBeEnabled();
     await toggle.click();
