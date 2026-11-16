@@ -156,3 +156,67 @@ test('explicit server-transported human answers remain review references while n
   assert.equal(report.humanMessageRefs[0].origin,'explicit-async-answer');
   assert.ok(!JSON.stringify(report).includes('private question'));
 });
+
+// Sanitized real REST responses: run 43823181821 /attempts/{1,2}/jobs,
+// collected with pagination (total_count checked). Keep execution/step identities.
+const carriedRuns = JSON.parse(readFileSync(new URL('./carried-jobs.fixture.json', import.meta.url), 'utf8'));
+const jobFrom = Date.parse('2026-11-16T07:20:00Z'), jobTo = Date.parse('2026-11-16T07:30:00Z');
+test('producer carried completion is terminal and attributes execution once to the original attempt', () => {
+  const partial = inspectJobs([carriedRuns[1]], jobFrom, jobTo);
+  assert.equal(partial.unfinishedJobs, 0);
+  assert.equal(partial.jobs.length, 1);
+  assert.equal(partial.jobs[0].runnerSeconds, null);
+  assert.equal(partial.jobs[0].queueSeconds, null);
+  assert.equal(partial.jobs[0].provenance, 'unknown-prior-execution');
+  for (const runs of [carriedRuns, [...carriedRuns].reverse(), [...carriedRuns, ...carriedRuns]]) {
+    const result = inspectJobs(runs, jobFrom, jobTo);
+    assert.equal(result.unfinishedJobs, 0);
+    assert.equal(result.jobs.length, 1);
+    assert.equal(result.jobs[0].id, '43823181821:1:133150747097');
+    assert.equal(result.jobs[0].runnerSeconds, 29);
+    assert.equal(result.jobs[0].queueSeconds, 2);
+  }
+  assert.equal(inspectJobs(carriedRuns, Date.parse('2026-11-16T07:21:00Z'), jobTo).jobs[0].runnerSeconds, 18);
+  assert.equal(inspectJobs(carriedRuns, Date.parse('2026-11-16T07:25:00Z'), jobTo).jobs.length, 0);
+});
+
+test('carried provenance requires a unique matching earlier execution, never just the name', () => {
+  const [original, carried] = structuredClone(carriedRuns);
+  const inspect = (runs: any[]) => inspectJobs(runs, jobFrom, jobTo);
+  const change = (patch: any) => ({...original, jobs: [{...original.jobs[0], ...patch}]});
+  for (const candidate of [
+    {...original, runId: 99}, {...original, headSha: 'f'.repeat(40)},
+    change({runner_id: 123}), change({name: 'contracts (matrix)'}),
+    change({steps: []}), change({steps: original.jobs[0].steps.map((s: any) => ({...s, completed_at: s.started_at}))}),
+  ]) assert.equal(inspect([candidate, carried]).jobs.find(j => j.attempt === 2).runnerSeconds, null);
+  const ambiguous = {...original, jobs: [...original.jobs, {...original.jobs[0], id: 100}]};
+  assert.equal(inspect([ambiguous, carried]).jobs.find(j => j.attempt === 2).runnerSeconds, null);
+  // A genuinely new same-name execution has normal creation chronology.
+  const rerun = {...carried, jobs: [{...carried.jobs[0], created_at: original.jobs[0].created_at}]};
+  assert.equal(inspect([original, rerun]).jobs.length, 2);
+  const matrix = change({id: 200, name: 'contracts (matrix)'});
+  assert.equal(inspect([original, matrix, carried]).jobs.length, 2);
+});
+
+test('terminal missing clocks stay unknown while active and unallocated semantics survive', () => {
+  const original = carriedRuns[0];
+  for (const conclusion of ['success', 'failure', 'cancelled']) {
+    for (const completed_at of [null, 'invalid', '0001-01-01T00:00:00Z']) {
+      const result = inspectJobs([{...original, jobs: [{...original.jobs[0], conclusion, completed_at}]}], jobFrom, jobTo);
+      assert.equal(result.unfinishedJobs, 0);
+      assert.equal(result.jobs[0].runnerSeconds, null);
+    }
+  }
+  const active = {...original.jobs[0], status:'in_progress', conclusion:null, completed_at:null};
+  assert.equal(inspectJobs([{...original, jobs:[active]}], jobFrom, jobTo).unfinishedJobs, 1);
+});
+
+test('missing and zero-date execution starts cannot create elapsed work', () => {
+  const original = carriedRuns[0];
+  for (const started_at of [null, 'invalid', '0001-01-01T00:00:00Z']) {
+    const result = inspectJobs([{...original, jobs:[{...original.jobs[0], started_at}]}], jobFrom, jobTo);
+    assert.equal(result.unfinishedJobs, 0);
+    assert.equal(result.jobs[0].runnerSeconds, null);
+    assert.equal(result.jobs[0].queueSeconds, null);
+  }
+});

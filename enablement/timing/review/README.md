@@ -127,3 +127,14 @@ Regression command:
 node --experimental-strip-types --test enablement/timing/census.test.ts \
   enablement/timing/review/review.test.ts
 ```
+
+Rerun snapshots can give a carried completed job a new ID/creation time after its
+original execution. Completion status is independent of missing/inconsistent
+clocks. When both attempts contain a unique match within the same run/SHA by
+name, allocated runner, execution endpoints, conclusion and step identities,
+retain only the earlier original row and its queue attribution. Names alone
+never identify executions. Unmatched or ambiguous prior execution remains a row
+with `provenance: unknown-prior-execution` and null runner/queue seconds; it is
+not active work. Supply earlier attempts to recover attribution. Terminal rows
+with missing clocks remain unknown rather than unfinished; zero known spans
+outside the window are omitted. These rules do not measure a speed benefit.
