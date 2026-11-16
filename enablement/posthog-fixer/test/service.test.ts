@@ -7,7 +7,7 @@ import {once} from 'node:events';
 import {spawn} from 'node:child_process';
 import {createServer} from 'node:net';
 import {Store} from '../store.ts';
-import {Worker} from '../worker.ts';
+import {Worker, launchPayload} from '../worker.ts';
 import {server, notification} from '../http.ts';
 import {config, secret} from '../config.ts';
 import type {Config} from '../config.ts';
@@ -110,14 +110,28 @@ test('malformed launch and active projections retain the only writer slot', asyn
   await worker.tick();assert.equal(f.store.jobs()[0].state,'launching');assert.equal(launches,1);
   f.store.update(issue,'active');await worker.tick();assert.equal(f.store.jobs()[0].state,'active');assert.equal(launches,1);
 });
-test('configuration rejects credential forwarding, unsupported permission escalation and nonprivate secrets', t => {
+test('configuration supports full-access Codex reasoning and rejects invalid settings and nonprivate secrets', t => {
   const f=fixture(t);const env={T3_ORIGIN:'http://127.0.0.1:3773',T3_PROJECT_ID:'synthetic', T3_TOKEN_FILE:f.c.t3TokenFile,
     WEBHOOK_TOKEN_FILE:f.c.webhookTokenFile,STATE_DIRECTORY:f.c.stateDirectory,POSTHOG_COMMAND:'/synthetic/posthog',
     T3_PROVIDER_INSTANCE:'codex',T3_MODEL:'synthetic'};
   assert.equal(config(env).dailyLimit,10);
+  const configured=config({...env,T3_MODEL:'gpt-6.1-sol'});
+  assert.equal(configured.runtimeMode,'full-access');
+  assert.deepEqual(configured.modelSelection,{instanceId:'codex',model:'gpt-6.1-sol',options:[{id:'reasoningEffort',value:'high'}]});
+  f.store.enqueue(issue,2);
+  const payload=launchPayload(configured,f.store.jobs()[0],'untrusted synthetic context');
+  assert.deepEqual(payload.modelSelection,configured.modelSelection);
+  assert.equal(payload.runtimeMode,'full-access');
+  assert.match(payload.initialMessage.text,/authorized to change application instrumentation/);
+  assert.match(payload.initialMessage.text,/preserve consent\/privacy boundaries/);
+  assert.match(payload.initialMessage.text,/Do not guess a repair/);
+  assert.equal(config({...env,T3_RUNTIME_MODE:'auto-accept-edits'}).runtimeMode,'auto-accept-edits');
+  assert.deepEqual(config({...env,T3_REASONING_EFFORT:'medium'}).modelSelection.options,[{id:'reasoningEffort',value:'medium'}]);
   for(const origin of ['http://remote.invalid','https://user:pass@host.invalid','https://host.invalid/path'])
     assert.throws(()=>config({...env,T3_ORIGIN:origin}));
-  assert.throws(()=>config({...env,T3_RUNTIME_MODE:'full-access'}));
+  assert.throws(()=>config({...env,T3_RUNTIME_MODE:'unsupported'}));
+  assert.throws(()=>config({...env,T3_REASONING_EFFORT:'invalid'}));
+  assert.throws(()=>config({...env,T3_PROVIDER_INSTANCE:'other',T3_REASONING_EFFORT:'high'}));
   assert.throws(()=>config({...env,QUEUE_LIMIT:'0'}));
   writeFileSync(join(f.c.stateDirectory,'public'),'x'.repeat(40),{mode:0o644});
   // Preserve the deliberately nonprivate fixture under a private caller umask.
