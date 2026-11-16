@@ -39,6 +39,7 @@ class SigningTests(unittest.TestCase):
                              "electron/record-media/native/apparent-engine-frames",
                              "electron/record-media/native/apparent-engine-frames-native",
                              "electron/agent-media/worker.js", "electron/agent-media/policy.js",
+                             "electron/agent-media/range-worker.js", "electron/agent-media/range-policy.js",
                              "electron/agent-media/node_modules/@apparent/engine-sdk/dist/index.js",
                              "electron/agent-media/native/apparent-engine-frames",
                              "electron/agent-media/native/apparent-engine-frames-native"):
