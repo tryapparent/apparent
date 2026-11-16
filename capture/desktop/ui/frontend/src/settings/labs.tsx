@@ -1,3 +1,4 @@
+import {T3Settings} from './t3';
 import {useEffect,useRef,useState} from 'react';
 import {Button} from '@apparent/ui/button';
 import {Switch} from '@apparent/ui/switch';
@@ -42,6 +43,7 @@ export function Labs(){
       target.focus({preventScroll:true});
   },[busy,facts]);
   return <section className="settings-labs" aria-label="Experiments">
+    <T3Settings />
     <section className="agent-preference">
     <div className="agent-preference-row">
       <h2 className="settings-preference-label" id="auto-paste-label">Auto paste</h2>
