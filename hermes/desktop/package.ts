@@ -15,9 +15,14 @@ await mkdir(target);
 for (const entry of ['__init__.py','adapter.py','process.py','evidence.py','plugin.yaml','skills','README.md']) await cp(path.join(root,entry),path.join(target,entry),{recursive:true});
 const version = (await readFile(path.join(root,'plugin.yaml'),'utf8')).match(/^version: "(\d+\.\d+\.\d+)"$/m)?.[1];
 if (!version) throw Error('Missing semantic plugin version');
-await build({ entryPoints: [path.join(root, 'desktop/plugin.ts')], bundle: true, format: 'esm', platform: 'browser', external: ['@hermes/plugin-sdk', 'react/jsx-runtime'], outfile: path.join(target, 'desktop/plugin.js') });
+const plugin = await build({ entryPoints: [path.join(root, 'desktop/plugin.ts')], bundle: true, format: 'esm', platform: 'browser', external: ['@hermes/plugin-sdk', 'react/jsx-runtime'], write: false });
+const icon = await readFile(path.join(root, '../shared/assets/brand/apparent-app-icon.svg'));
+const compiledPlugin = plugin.outputFiles[0]?.text;
+if (!compiledPlugin?.includes('__APPARENT_ICON__')) throw Error('The composer mark placeholder is missing');
+await mkdir(path.join(target, 'desktop'), { recursive: true });
+await writeFile(path.join(target, 'desktop/plugin.js'), compiledPlugin.replaceAll('__APPARENT_ICON__', `data:image/svg+xml;base64,${icon.toString('base64')}`));
 await build({entryPoints:[path.join(root,'distribution/install.ts')],bundle:true,format:'cjs',platform:'node',outfile:path.join(destination,'install.cjs')});
-await writeFile(path.join(target,'compatibility.json'), JSON.stringify({schema:1,plugin:'apparent',version,hermes: '>=0.23.0',platforms:['linux','darwin'],nodeInstaller:'>=22.23.0',apparent:{required:'installed full native app with apparent://hermes URL handler, capture handoff signed loopback bridge and inspect/fetch CLI',autoInstall:false},desktopSDK:['focusedSessionOwner','focusedSessionId','profileRoutes','requestProfile','retainProfile','composer.actions'],revision:process.env.HERMES_REVISION || execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()},null,2)+'\n');
+await writeFile(path.join(target,'compatibility.json'), JSON.stringify({schema:1,plugin:'apparent',version,hermes: '>=0.23.0',platforms:['linux','darwin'],nodeInstaller:'>=22.23.0',apparent:{required:'installed full native app with trusted hermes record CLI, capture handoff and authenticated signed mailbox',autoInstall:false},desktopSDK:['focusedSessionOwner','focusedSessionId','focusedStoredSessionId','profileRoutes','requestProfile','openSession','composer.getDraft','composer.insertText','composer.submit'],revision:process.env.HERMES_REVISION || execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()},null,2)+'\n');
 const files: Record<string,string> = {};
 async function inventory(directory: string, prefix='') {
  for(const item of await readdir(directory,{withFileTypes:true})) {

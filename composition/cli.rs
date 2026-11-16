@@ -228,9 +228,21 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         wait: u64,
     },
-    /// Open Apparent, or review a token-bound Hermes recording request.
+    /// Open Apparent, or start it without presenting Settings.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    Launch { url: Option<String> },
+    Launch {
+        #[arg(conflicts_with = "background")]
+        url: Option<String>,
+        /// Start the capture runtime without presenting Settings.
+        #[arg(long)]
+        background: bool,
+    },
+    /// Start one trusted recording requested by the local Hermes plugin.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    Hermes {
+        #[command(subcommand)]
+        command: HermesCommand,
+    },
     /// Explicitly register the Linux URL handler, or inspect the desktop's selected handler.
     #[cfg(target_os = "linux")]
     LaunchHandler {
@@ -675,6 +687,13 @@ enum CaptureCommand {
     Handoff { capture_id: String },
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[derive(Subcommand)]
+enum HermesCommand {
+    /// Start one token-bound local recording and return its signed result to Hermes.
+    Record { destination: String },
+}
+
 /// `capture/agent/skills/apparent/SKILL.md`, the same text served from app.tryapparent.com/skill.md.
 const SKILL: &str = include_str!("../capture/agent/skills/apparent/SKILL.md");
 
@@ -686,8 +705,9 @@ enum LaunchHandlerCommand {
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-fn run_owned_app(record: bool, iphone: bool) -> Result<()> {
+fn run_owned_app(record: bool, iphone: bool, background: bool) -> Result<()> {
     let Some(owner) = launch_instance::acquire()? else {
+        if background { return Ok(()); }
         #[cfg(target_os = "linux")]
         if record {
             let deadline = std::time::Instant::now() + Duration::from_secs(3);
@@ -715,7 +735,7 @@ fn run_owned_app(record: bool, iphone: bool) -> Result<()> {
     owner.listen()?;
     // Ordinary application launches reveal Settings after setup has initialized.
     // Explicit capture launches retain their existing behavior.
-    if !record && !iphone {
+    if !record && !iphone && !background {
         launch_instance::request_open();
     }
     hosted::start_worker();
@@ -832,16 +852,20 @@ fn run_cli(cli: Cli) -> Result<()> {
             }
         },
         #[cfg(any(target_os = "macos", target_os = "linux"))]
-        Command::Launch { url } => {
+        Command::Launch { url, background } => {
             if let Some(token) = url.as_deref().and_then(crate::capture::desktop::workflow::launch_url::hermes_request) {
                 return crate::capture::desktop::workflow::launch_url::open_hermes(token);
             }
             if let Some(url) = url {
                 launch_instance::request_url(&url)?;
-            } else {
+            } else if !background {
                 launch_instance::request_open();
             }
-            run_owned_app(false, false)
+            run_owned_app(false, false, background)
+        }
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        Command::Hermes { command: HermesCommand::Record { destination } } => {
+            crate::capture::desktop::workflow::launch_url::open_hermes_trusted(&destination)
         }
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         Command::Capture { command } => {
@@ -850,10 +874,11 @@ fn run_cli(cli: Cli) -> Result<()> {
                 let result = agent_capture::execute(Some((Action::Inspect, capture_id)), false, Duration::from_secs(4));
                 ensure!(result["status"] == "saved", "Capture has no saved handoff");
                 let path = PathBuf::from(result["bundle_path"].as_str().context("Missing saved bundle")?);
-                let source = hosted::handoff_pointer(&path)
-                    .and_then(|pointer| pointer.strip_prefix("apparent inspect ").map(|id| id.trim().to_owned()))
-                    .unwrap_or_else(|| path.to_string_lossy().into_owned());
-                println!("{}", serde_json::json!({"capture_id":capture_id,"source":source}));
+                let remote_source = hosted::handoff_pointer(&path)
+                    .and_then(|pointer| pointer.strip_prefix("apparent inspect ").map(str::trim).map(str::to_owned))
+                    .filter(|id| id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
+                let legacy_source = remote_source.clone().unwrap_or_else(|| path.to_string_lossy().into_owned());
+                println!("{}", serde_json::json!({"capture_id":capture_id,"bundle_path":path,"remote_source":remote_source,"source":legacy_source}));
                 return Ok(());
             }
             let (action, id, wait, timeout) = match command {
@@ -914,7 +939,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                 return Ok(());
             }
             #[cfg(any(target_os = "macos", target_os = "linux"))]
-            return run_owned_app(record, iphone);
+            return run_owned_app(record, iphone, false);
             #[cfg(target_os = "windows")]
             {
                 ui::run_app(None, record, iphone, None);
@@ -1848,6 +1873,20 @@ mod tests {
         assert!(Cli::try_parse_from(["apparent", "setup", "hermes", "--receiver"]).is_err());
         assert!(Cli::try_parse_from(["apparent", "setup", "hermes", "--receiver", "--profile", "/synthetic/profile", "--check", "--enable"]).is_err());
         assert!(Cli::try_parse_from(["apparent", "setup", "hermes", "--receiver", "--profile", "/synthetic/profile", "--check", "--verify-runtime"]).is_err());
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn trusted_hermes_record_and_background_launch_are_separate_cli_contracts() {
+        assert!(matches!(
+            Cli::try_parse_from(["apparent", "hermes", "record", "0123456789abcdef0123456789abcdef/45000"]).unwrap().command,
+            Some(Command::Hermes { command: HermesCommand::Record { .. } })
+        ));
+        assert!(matches!(
+            Cli::try_parse_from(["apparent", "launch", "--background"]).unwrap().command,
+            Some(Command::Launch { background: true, url: None })
+        ));
+        assert!(Cli::try_parse_from(["apparent", "launch", "--background", "apparent://open"]).is_err());
     }
 
     #[test]
