@@ -878,3 +878,97 @@ test('Mac picker protocol reports absent ownership through the real interpreter 
  }
  assert.deepEqual(driver.stats,{starts:1,requests:2});
 });
+
+// Sanitized native text from Actions 43839501569, attempt 1, job 133206828069.
+const assistiveDenial = 'osascript is not allowed assistive access.';
+function storagePoll(report: any, pause: () => Promise<void>) {
+ const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
+ const start=source.indexOf('  const poll ='),end=source.indexOf('  let env;',start);
+ assert.ok(start>=0&&end>start);
+ let now=0;
+ return new Function('report','Date','performance','budget','sleep','process','fs',
+  source.slice(start,end)+'\nreturn poll;')(report,{now:()=>now},{now:()=>now},(cap:number)=>cap,
+  async()=>{now+=150;await pause();},{env:{}},{});
+}
+function replyTransport(messages: string[], stderr = '') {
+ // Same ready/id/ok/error/value framing as persistentPanelScript. Real pipes
+ // exercise PickerProcess classification; this is not an AX/native test.
+ const worker=`
+ process.stdout.write('{"type":"ready"}\\n');
+ const messages=${JSON.stringify(messages)};
+ const rl=require('node:readline').createInterface({input:process.stdin});
+ rl.on('line',line=>{
+  const {id}=JSON.parse(line),error=messages.shift();
+  process.stderr.write(${JSON.stringify(stderr)},()=>{
+   process.stdout.write(JSON.stringify(error===undefined?{id,ok:true,value:'ready'}:{id,ok:false,error})+'\\n');
+  });
+ });`;
+ return new PickerProcess(()=>spawn(process.execPath,['-e',worker],{stdio:'pipe'}));
+}
+for(const message of [assistiveDenial,'System Events got an error: '+assistiveDenial])
+test('explicit assistive refusal stops the actual Storage poll and retains report/cleanup: '+message,async t=>{
+ const driver=replyTransport([message],'sanitized AX diagnostic');
+ t.after(()=>driver.close());await driver.start(1000);
+ let sleeps=0,original: any,terminal: any;
+ const report:any={cleanup:{},passed:false};
+ const poll=storagePoll(report,async()=>{sleeps++;});
+ const source=readFileSync('capture/desktop/ui/frontend/tests/mac-storage-native.cjs','utf8');
+ const receiptStart=source.indexOf('    const subprocess = error.cause ?? error;');
+ const receiptEnd=source.indexOf('    if (page && Date.now() < deadline)',receiptStart);
+ const receipt=new Function('error','report',source.slice(receiptStart,receiptEnd));
+ // Execute the fixture's actual picker-close block from its finally clause.
+ const closeStart=source.indexOf('    if (panel.driver) {');
+ const closeEnd=source.indexOf('    if (report.electronBootstrap)',closeStart);
+ assert.ok(receiptStart>=0&&receiptEnd>receiptStart&&closeStart>=0&&closeEnd>closeStart);
+ const cleanup=new (Object.getPrototypeOf(async function(){}).constructor)(
+  'panel','report','failure',source.slice(closeStart,closeEnd));
+ const {driver:workflow,calls}=fixture({picker:()=>poll(async()=>{
+  try{return await driver.observe(pickerArgs('inspect'),1000);}
+  catch(error){original=error;throw error;}
+ },'Native Change picker readiness')});
+ try {
+  await prepareStorageChange(workflow,'/synthetic/path');
+  assert.fail('Permission refusal must remain a required failure');
+ } catch(error) {
+  terminal=error;receipt(error,report);
+ } finally {await cleanup({driver},report,terminal);}
+ assert.equal(terminal.cause,original);
+ assert.equal(original.message,message);assert.equal(original.stderr,'sanitized AX diagnostic');
+ assert.equal(original.pickerPermissionDenied,true);assert.equal(original.pickerRetired,undefined);
+ assert.equal(sleeps,0);assert.equal(driver.stats.requests,1);
+ assert.deepEqual(calls,{change:1,openGo:0,navigate:0,picker:0});
+ assert.equal(report.error.message,'Native Change picker readiness: '+message);
+ assert.equal(report.error.subprocess.stderr,original.stderr);assert.equal(report.passed,false);
+ assert.equal(report.readinessAttempts['Native Change picker readiness'].length,1);
+ assert.equal(report.readinessAttempts['Native Change picker readiness'][0].message,message);
+ assert.equal(report.readinessAttempts['Native Change picker readiness'][0].detail,original.stderr);
+ assert.equal(report.cleanup.picker.requests,1);assert.equal(report.cleanup.picker.exitCode,0);
+ await assert.rejects(driver.observe(pickerArgs('inspect'),1000),/retired/);
+});
+test('protocol not-ready replies retry through Storage poll, even with denial text in stderr',async t=>{
+ const transient='Owned Go to Folder sheet not ready';
+ const driver=replyTransport([transient],assistiveDenial);
+ t.after(()=>driver.close());await driver.start(1000);
+ let sleeps=0;const report:any={};
+ const poll=storagePoll(report,async()=>{sleeps++;});
+ assert.equal(await poll(()=>driver.observe(pickerArgs('inspect-go'),1000),'Owned Go to Folder readiness'),'ready');
+ assert.equal(sleeps,1);assert.equal(driver.stats.requests,2);
+ assert.equal(report.readinessAttempts['Owned Go to Folder readiness'][0].message,transient);
+});
+test('unrecognized negative replies exhaust the original poll cap and keep the last cause',async t=>{
+ const driver=replyTransport(['permission state unknown','Owned window not ready']);
+ t.after(()=>driver.close());await driver.start(1000);
+ let sleeps=0,last:any;const report:any={};
+ const poll=storagePoll(report,async()=>{sleeps++;});
+ await assert.rejects(poll(async()=>{
+  try{return await driver.observe(pickerArgs('inspect'),1000);}catch(error){last=error;throw error;}
+ },'Native Change picker readiness',300),(error:Error)=>error.cause===last);
+ assert.equal(last.pickerPermissionDenied,false);assert.equal(sleeps,2);assert.equal(driver.stats.requests,2);
+});
+test('a permission-denied mutation is dispatched once and never enters readiness retry',async t=>{
+ const driver=replyTransport([assistiveDenial]);
+ t.after(()=>driver.close());await driver.start(1000);
+ const {driver:workflow,calls}=fixture({openGo:()=>driver.act(pickerArgs('open-go'),1000).then(()=>{})});
+ await assert.rejects(prepareStorageChange(workflow,'/synthetic/path'),(error:any)=>error.pickerPermissionDenied===true);
+ assert.equal(driver.stats.requests,1);assert.deepEqual(calls,{change:1,openGo:0,navigate:0,picker:1});
+});
