@@ -28,6 +28,7 @@ class SigningTests(unittest.TestCase):
                              "electron/pill/t3.cjs",
                              "electron/settings/t3.cjs", "electron/settings/update-worker.cjs",
                              "electron/record-media/worker.js", "electron/record-media/policy.js",
+                             "electron/record-media/assembly-worker.js", "electron/record-media/assembly-policy.js",
                              "electron/record-media/node_modules/@apparent/engine-sdk/dist/index.js",
                              "electron/record-media/native/apparent-engine-media",
                              "electron/record-media/native/apparent-engine-probe",
@@ -83,6 +84,7 @@ class SigningTests(unittest.TestCase):
             self.assertTrue((destination / "runtime/electron").is_file())
             self.assertTrue((destination / "app/electron/settings/update-worker.cjs").is_file())
             self.assertTrue((destination / "app/electron/record-media/worker.js").is_file())
+            self.assertTrue((destination / "app/electron/record-media/assembly-worker.js").is_file())
             self.assertTrue((destination / "app/electron/record-media/native/apparent-engine-media").is_file())
             self.assertFalse((destination / "app/electron/pill/native/window.node").exists())
             for identity in ("-", "Developer ID Application: Synthetic"):
