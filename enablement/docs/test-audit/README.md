@@ -2,7 +2,8 @@
 
 Baseline: `8cd7ce43ffd825ffe7a90fa27b6c7d1806cbe8e9` (origin/main).
 Scope: all retained tests, inline native tests, fixtures, mocks and QA scenarios in
-this repository; macOS/Linux boundaries remain distinct. No releases.
+this repository; macOS/Linux boundaries remain distinct. No manual releases; the user explicitly
+authorized existing automatic CI publication.
 
 `inventory.md` is the initial candidate inventory, assigned once to a production
 owner by path. It includes support/configuration/scenario files under test roots
@@ -27,7 +28,7 @@ no net test/support growth unless a distinct new contract justifies it.
 | --- | --- | --- |
 | Record capture-request | Audited; candidate below | Land and reconcile upstream |
 | Record completion | Audited; candidate below | Land and reconcile upstream |
-| Record storage | Pending | Read policy/controller/workflows/planner, then all tests |
+| Record storage | Audited; local candidate | [Contracts/evidence](../../../record/storage/enablement/test-audit.md); land after slice 1 |
 | Record media | Pending | Read workers/native ports and assembly, then tests |
 | Engine SDK | Pending | Published probe/frame contracts and real provider inputs |
 | Engine legacy/native | Pending | Capture, audio, cursor/ink, keyframes/text, exports, recovery |
@@ -76,7 +77,19 @@ four tests (false green), then failed the repaired malformed-handoff case with
 an unexpected saved result. Path and remote validators disabled independently each fail the repaired test. A duplicate auto-paste capability fails the consolidated assertion. Production source was restored byte-for-byte.
 Focused candidate: 19/19 pass. Disposable logs and probe are under
 `/tmp/apparent-dev-test-audit-OzLAH1/`; regenerate after cleanup.
-Independent preservation review found no lost guards; its combined admission-control finding is repaired above. Hook checks, PR and exact-main CI remain pending.
+Independent preservation review found no lost guards; its combined admission-control finding is repaired above. Hook checks passed: 332 Desktop unit/contract passes with one skip, 59 Electron
+passes, 1,066 native passes with 18 ignored. [PR #1400](https://github.com/tryapparent/apparent/pull/1400)
+is open; hosted and exact-main CI remain pending under its existing watch.
 
-Resume with this slice's delivery gates, then Record storage/media. Update this
+## Slice 2: Record Storage
+
+[Owner ledger](../../../record/storage/enablement/test-audit.md) records all six
+files and retained behavior contracts. One duplicate direct validator declaration
+is consolidated into the policy keeper; the malformed saved-path case now reaches
+its length contract. Test/support delta: -3 lines, 49 → 48 declarations.
+Independent review found a nullable/unknown-field combination that must remain;
+it is preserved and its shortcut mutant fails. Locked owner install, typecheck
+and all 48 tests pass. No production changes. Hook/PR and exact-main gates remain.
+
+Resume with slice 1 delivery, then land slice 2 and continue Record media. Update this
 ledger and inventory statuses with each landed slice; do not stop after slice 1.

@@ -570,16 +570,16 @@
 | Record | record/media/test/screen.test.ts | source candidate | 23 | pending |
 | Record | record/media/test/transcript/package.ts | support/scenario | 71 | pending |
 | Record | record/media/test/transcript/policy.test.ts | source candidate | 61 | pending |
-| Record | record/storage/src/location-policy.ts | source candidate | 75 | pending |
-| Record | record/storage/src/retention-workflow.ts | source candidate | 80 | pending |
-| Record | record/storage/src/retention/worker.ts | source candidate | 35 | pending |
-| Record | record/storage/test/controller.test.ts | source candidate | 172 | pending |
-| Record | record/storage/test/location-policy.test.ts | source candidate | 75 | pending |
-| Record | record/storage/test/location-workflow.test.ts | source candidate | 83 | pending |
-| Record | record/storage/test/package.ts | support/scenario | 63 | pending |
-| Record | record/storage/test/policy.test.ts | source candidate | 63 | pending |
-| Record | record/storage/test/retention-plan.test.ts | source candidate | 59 | pending |
-| Record | record/storage/test/retention-workflow.test.ts | source candidate | 124 | pending |
+| Record | record/storage/src/location-policy.ts | source candidate | 75 | read production; no inline tests |
+| Record | record/storage/src/retention-workflow.ts | source candidate | 80 | read production; no inline tests |
+| Record | record/storage/src/retention/worker.ts | source candidate | 35 | read production; no inline tests |
+| Record | record/storage/test/controller.test.ts | source candidate | 172 | audited; slice 2 delivery pending |
+| Record | record/storage/test/location-policy.test.ts | source candidate | 75 | audited; slice 2 delivery pending |
+| Record | record/storage/test/location-workflow.test.ts | source candidate | 83 | audited; slice 2 delivery pending |
+| Record | record/storage/test/package.ts | support/scenario | 63 | audited; slice 2 delivery pending |
+| Record | record/storage/test/policy.test.ts | source candidate | 63 | audited; slice 2 delivery pending |
+| Record | record/storage/test/retention-plan.test.ts | source candidate | 59 | audited; slice 2 delivery pending |
+| Record | record/storage/test/retention-workflow.test.ts | source candidate | 124 | audited; slice 2 delivery pending |
 | Shared | shared/analytics/browser.ts | source candidate | 151 | pending |
 | Shared | shared/analytics/config.test.ts | source candidate | 14 | pending |
 | Shared | shared/analytics/config.ts | source candidate | 12 | pending |
