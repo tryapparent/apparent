@@ -185,20 +185,29 @@ func pill(_ req: [String: Any]) throws -> (Pill, Set<pid_t>) {
     return (matches[0], owned.descendants)
 }
 struct Word { let text: String; let box: CGRect; let candidate: VNRecognizedText }
-func observe(_ req: [String: Any], _ png: URL) throws -> ([String: Any], [Word], Set<pid_t>) {
+func observe(_ req: [String: Any], _ png: URL, recognizeText: Bool = true) throws -> ([String: Any], [Word], Set<pid_t>) {
+    clickTrace?.add(["stage":"windowObservation", "recognizeText":recognizeText])
     let (w, _) = try pill(req)
+    clickTrace?.add(["stage":"screenshotStart", "pid":Int(w.pid), "windowId":Int(w.id)])
     _ = try run("/usr/sbin/screencapture", ["-x", "-o", "-l", String(w.id), png.path], 3)
+    clickTrace?.add(["stage":"screenshotComplete"])
     var imageStat = stat(); try need(png.path.withCString({ lstat($0, &imageStat) }) == 0 && (imageStat.st_mode & S_IFMT) == S_IFREG, "Window screenshot output is not a regular file")
     guard let image = NSBitmapImageRep(data: try Data(contentsOf: png)), image.pixelsWide > 0, image.pixelsHigh > 0 else {
         throw Refusal(message: "Could not read screenshot pixel dimensions")
     }
     let (afterShot, _) = try pill(req)
     try need(afterShot.pid == w.pid && afterShot.id == w.id && afterShot.rect == w.rect, "Pill window changed during screenshot")
-    let vr = VNRecognizeTextRequest(); vr.recognitionLevel = .accurate; vr.usesLanguageCorrection = false
-    try VNImageRequestHandler(url: png).perform([vr]); try withinBudget()
-    let words = (vr.results ?? []).compactMap { o -> Word? in guard let c = o.topCandidates(1).first else { return nil }; return Word(text: c.string, box: o.boundingBox, candidate: c) }
+    var words: [Word] = []
+    if recognizeText {
+        clickTrace?.add(["stage":"textRecognitionStart"])
+        let vr = VNRecognizeTextRequest(); vr.recognitionLevel = .accurate; vr.usesLanguageCorrection = false
+        try VNImageRequestHandler(url: png).perform([vr]); try withinBudget()
+        words = (vr.results ?? []).compactMap { o -> Word? in guard let c = o.topCandidates(1).first else { return nil }; return Word(text: c.string, box: o.boundingBox, candidate: c) }
+        clickTrace?.add(["stage":"textRecognitionComplete", "wordCount":words.count])
+    }
     let front = frontPID()
     let pillDescendants = try ancestry(w.pid)
+    clickTrace?.add(["stage":"observationComplete", "pid":Int(w.pid), "windowId":Int(w.id), "frontPid":Int(front)])
     let geometry: [String: Any] = ["pixelWidth": image.pixelsWide, "pixelHeight": image.pixelsHigh,
         "windowBounds": [w.rect.minX,w.rect.minY,w.rect.width,w.rect.height],
         "pixelToPointX": Double(w.rect.width) / Double(image.pixelsWide),
@@ -224,7 +233,9 @@ func buttonIdentity(_ element: AXUIElement, label: String, point: CGPoint, desce
         try withinBudget()
         try need(AXUIElementSetMessagingTimeout(current, 0.2) == .success, "Could not bound receiver AX messaging")
         var pid: pid_t = -1
-        try need(AXUIElementGetPid(current, &pid) == .success && descendants.contains(pid), "Input receiver is not owned by the pill renderer")
+        let ownershipResult = AXUIElementGetPid(current, &pid)
+        clickTrace?.add(["stage":"receiverOwnership", "depth":depth, "pid":Int(pid), "result":ownershipResult.rawValue, "owned":descendants.contains(pid)])
+        try need(ownershipResult == .success && descendants.contains(pid), "Input receiver is not owned by the pill renderer")
         var rawRole: CFTypeRef?, rawTitle: CFTypeRef?, rawDescription: CFTypeRef?
         try need(AXUIElementCopyAttributeValue(current, kAXRoleAttribute as CFString, &rawRole) == .success,
             "Input receiver role unavailable")
@@ -371,7 +382,7 @@ func main() throws {
         let closed = try closeLaunchSettings(req)
         print(String(data: try JSONSerialization.data(withJSONObject: closed), encoding: .utf8)!); return
     }
-    if op == "click" || op == "prepare" {
+    if op == "click" || op == "prepare" || op == "snapshot" {
         let traceURL = job.appendingPathComponent("pill-input-\(getpid()).log")
         try safeOwnedPath(traceURL, root: runner)
         clickTrace = try ClickTrace(traceURL)
@@ -429,13 +440,18 @@ func main() throws {
     try need(frontBefore == pid_t(before["frontPid"] as! Int), "Foreground drift before input")
     let fresh = out.deletingLastPathComponent().appendingPathComponent("reobserve-\(getpid()).png")
     try safeOwnedPath(fresh, root: runner); try need(!fm.fileExists(atPath: fresh.path), "Re-observation output is not fresh")
-    let (again, _, _) = try observe(req, fresh)
+    // The final guard consumes image geometry and identity, not OCR. Keep the
+    // fresh screenshot and all ownership checks without another Vision pass
+    // between the exact native hit and the immediate pre-input observation.
+    let (again, _, _) = try observe(req, fresh, recognizeText: false)
     try withinBudget()
     try need((again["windowId"] as! Int) == (before["windowId"] as! Int) && (again["bounds"] as! [CGFloat]) == b, "Pill window changed before input")
     try need((again["geometry"] as! [String: Any]) as NSDictionary == (before["geometry"] as! [String: Any]) as NSDictionary, "Screenshot geometry changed before input")
     try need((frontPID()) == frontBefore, "Foreground drift before click")
     var finalTarget: AXUIElement?
-    try need(AXUIElementCopyElementAtPosition(ax, Float(point.x), Float(point.y), &finalTarget) == .success, "Final input receiver unavailable")
+    let finalHit = AXUIElementCopyElementAtPosition(ax, Float(point.x), Float(point.y), &finalTarget)
+    trace.add(["stage":"finalInputHit", "result":finalHit.rawValue])
+    try need(finalHit == .success, "Final input receiver unavailable")
     guard let finalTarget else { throw Refusal(message: "Final input receiver unavailable") }
     guard let finalIdentity = try buttonIdentity(finalTarget, label: label, point: point, descendants: pillDescendants) else {
         throw Refusal(message: "Exact requested native button disappeared before click")
