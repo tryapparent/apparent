@@ -55,4 +55,12 @@ try {
 await mkdir(workflow, {recursive: true});
 await cp(temporary, workflow, {recursive: true});
 await writeFile(path.join(workflow, 'package.json'), '{"type":"commonjs"}\n');
+// Native cleanup consumes the owner's compiled ESM policy worker. Keep Node
+// filesystem imports outside the browser/CommonJS controller compilation graph.
+const cleanup = path.join(workflow, 'cleanup-policy');
+await mkdir(path.join(cleanup, 'retention'), {recursive: true});
+for (const relative of ['policy.js', 'retention/policy.js', 'retention/worker.js']) {
+  await copyFile(path.join(packageRoot, 'dist', relative), path.join(cleanup, relative));
+}
+await writeFile(path.join(cleanup, 'package.json'), '{"type":"module"}\n');
 await rm(temporary, { recursive: true, force: true });

@@ -34,19 +34,14 @@ pub const MEDIA_SENDING: &str = ".media-sending";
 /// Written when the heavy media went to the Trash: when, and after how many days.
 pub const MEDIA_CLEANED: &str = ".media-cleaned";
 
+#[cfg(test)]
 const DAY_MS: u64 = 24 * 60 * 60 * 1000;
 /// A sync marker older than this belongs to a copy that died.
 const STALE_MARKER: Duration = Duration::from_secs(24 * 60 * 60);
 /// Long edge iPhone video is re-encoded to: the size its keyframes are decoded at.
 const SHRINK_EDGE: u32 = crate::capture::engine::runtime::phone::PHONE_FRAME_EDGE;
-/// Videos above this rate are worth re-encoding (native iPhone mirror video is ~18 Mbps; a
-/// shrunk one ~2).
-const SHRINK_ABOVE_BPS: u64 = 6_000_000;
 /// How long after a capture its video is shrunk, so pasting and sending go first.
 const SHRINK_DELAY: Duration = Duration::from_secs(60);
-/// The daily shrink sweep picks up bundles left alone this long (a capture whose shrink was
-/// missed, or one copied from another Mac).
-const SHRINK_SETTLE_MS: u64 = 10 * 60 * 1000;
 /// How often cleanup runs. Hourly, so media goes within an hour of `mediaDays`, not a day late.
 const PASS_EVERY: Duration = Duration::from_secs(3600);
 /// How often a pass also re-encodes missed iPhone videos (each try can take a while).
@@ -128,7 +123,6 @@ impl Policy {
             .and_then(|value| serde_json::from_value(value).ok())
             .unwrap_or_default()
     }
-
 }
 
 // MARK: What Apparent is busy with
@@ -241,7 +235,10 @@ fn changed_ago(path: &Path, now: SystemTime) -> Option<Duration> {
 #[cfg(windows)]
 fn changed_ago(path: &Path, now: SystemTime) -> Option<Duration> {
     let changed =
-        crate::capture::engine::runtime::platform::legacy_windows::platform::shell::change_time(path).or_else(|| path.metadata().ok()?.modified().ok())?;
+        crate::capture::engine::runtime::platform::legacy_windows::platform::shell::change_time(
+            path,
+        )
+        .or_else(|| path.metadata().ok()?.modified().ok())?;
     Some(now.duration_since(changed).unwrap_or_default())
 }
 
@@ -263,22 +260,26 @@ fn created_ms(dir: &Path, manifest: &Manifest) -> Option<u64> {
 }
 
 /// What one cleanup pass would do to the bundles in `captures`, given `now`.
-pub fn plan(captures: &Path, policy: &Policy, now: SystemTime) -> Vec<Action> {
+pub fn plan(captures: &Path, policy: &Policy, now: SystemTime) -> Result<Vec<Action>> {
     let now_ms = now
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64;
     let Ok(entries) = std::fs::read_dir(captures) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let mut bundles: Vec<PathBuf> = entries
         .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| (p.extension().is_some_and(|ext| ext == "apparent")
-            || p.file_name().is_some_and(|name| name.to_string_lossy().starts_with(".cancelled-")))
-            && std::fs::symlink_metadata(p).is_ok_and(|metadata| metadata.is_dir()))
+        .filter(|p| {
+            (p.extension().is_some_and(|ext| ext == "apparent")
+                || p.file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with(".cancelled-")))
+                && std::fs::symlink_metadata(p).is_ok_and(|metadata| metadata.is_dir())
+        })
         .collect();
     bundles.sort();
-    let mut actions = Vec::new();
+    let mut observations = Vec::new();
+    let mut materials = Vec::new();
     for dir in bundles {
         if dir.join(PINNED).exists()
             || is_claimed(&dir)
@@ -301,55 +302,71 @@ pub fn plan(captures: &Path, policy: &Policy, now: SystemTime) -> Vec<Action> {
         };
         let age_ms = now_ms.saturating_sub(created);
         let unchanged_ms = changed_ago(&dir, now).map_or(0, |ago| ago.as_millis() as u64);
-        let settled = |ms: u64| age_ms >= ms && unchanged_ms >= ms;
-        if !settled(SHRINK_SETTLE_MS) {
-            continue;
-        }
-        if !settled(DAY_MS) {
-            if let Some(video) = shrinkable(&dir, &manifest) {
-                actions.push(Action::Shrink { bundle: dir, video });
-            }
-            continue;
-        }
-        let due = |days: Option<u32>| days.is_some_and(|d| age_ms >= u64::from(d.max(1)) * DAY_MS);
-        if due(policy.bundle_days) {
-            actions.push(Action::TrashBundle(dir));
-            continue;
-        }
-        if due(policy.media_days) {
-            let items: Vec<PathBuf> = crate::shared::handoff::HEAVY_MEDIA
-                .iter()
-                .chain(&DERIVED_MEDIA)
-                .map(|rel| dir.join(rel))
-                .filter(|p| p.exists())
-                .collect();
-            if !items.is_empty() {
-                actions.push(Action::TrashMedia { bundle: dir, items });
-            }
-            continue;
-        }
-        if let Some(video) = shrinkable(&dir, &manifest) {
-            actions.push(Action::Shrink { bundle: dir, video });
-        }
+        let items: Vec<PathBuf> = crate::shared::handoff::HEAVY_MEDIA
+            .iter()
+            .chain(&DERIVED_MEDIA)
+            .map(|rel| dir.join(rel))
+            .filter(|path| path.exists())
+            .collect();
+        let (facts, video) = observe(&dir, &manifest, age_ms, unchanged_ms, !items.is_empty());
+        observations.push(facts);
+        materials.push((dir, items, video));
     }
-    actions
+    let mut actions = Vec::new();
+    for decision in crate::composition::retention::plan(policy, &observations, false)? {
+        let (bundle, items, video) = &materials[decision.index];
+        actions.push(match decision.kind {
+            crate::composition::retention::Kind::TrashBundle => Action::TrashBundle(bundle.clone()),
+            crate::composition::retention::Kind::TrashMedia => {
+                ensure!(
+                    !items.is_empty(),
+                    "Record selected unavailable retention media"
+                );
+                Action::TrashMedia {
+                    bundle: bundle.clone(),
+                    items: items.clone(),
+                }
+            }
+            crate::composition::retention::Kind::Shrink => Action::Shrink {
+                bundle: bundle.clone(),
+                video: video
+                    .clone()
+                    .context("Record selected unavailable retention video")?,
+            },
+        });
+    }
+    Ok(actions)
 }
 
-/// A cabled-iPhone video recorded at native size and rate.
-fn shrinkable(dir: &Path, manifest: &Manifest) -> Option<PathBuf> {
-    if manifest.source.as_deref() != Some("iphone")
-        || manifest
-            .device
-            .as_ref()
-            .is_none_or(|d| d.capture != "mirror")
-        || manifest.duration_ms == 0
-    {
-        return None;
-    }
-    let video = video::Video::open(dir, Path::new(manifest.video.as_deref()?)).ok()?;
-    let bytes = video.bytes();
-    let bps = bytes.saturating_mul(8_000) / manifest.duration_ms;
-    (bps > SHRINK_ABOVE_BPS).then(|| video.path().to_path_buf())
+/// Filesystem facts stay native; Record chooses age and bitrate policy.
+fn observe(
+    dir: &Path,
+    manifest: &Manifest,
+    age_ms: u64,
+    unchanged_ms: u64,
+    heavy_media: bool,
+) -> (crate::composition::retention::Facts, Option<PathBuf>) {
+    let admitted = manifest
+        .video
+        .as_deref()
+        .and_then(|name| video::Video::open(dir, Path::new(name)).ok());
+    let video_bytes = admitted.as_ref().map(|video| video.bytes().to_string());
+    let video = admitted.as_ref().map(|video| video.path().to_path_buf());
+    (
+        crate::composition::retention::Facts {
+            age_ms: age_ms.to_string(),
+            unchanged_ms: unchanged_ms.to_string(),
+            source: manifest.source.clone(),
+            capture: manifest
+                .device
+                .as_ref()
+                .map(|device| device.capture.clone()),
+            duration_ms: manifest.duration_ms.to_string(),
+            video_bytes,
+            heavy_media,
+        },
+        video,
+    )
 }
 
 // MARK: Doing it
@@ -544,7 +561,9 @@ pub struct Shrunk {
 /// then swaps it in. The new movie is written beside the bundle, not in it, so a copy to
 /// another Mac never picks up half of it. `None` when it was already small.
 pub fn shrink_video(bundle: &Path, video: &Path) -> Result<Option<Shrunk>> {
-    let relative = video.strip_prefix(bundle).context("Video is outside its bundle")?;
+    let relative = video
+        .strip_prefix(bundle)
+        .context("Video is outside its bundle")?;
     let admitted = video::Video::open(bundle, relative)
         .context("Bundle video must be a regular file inside its bundle")?;
     let probe = crate::composition::media_probe::bundle_probe(admitted.path())?;
@@ -604,7 +623,8 @@ fn sweep_leftovers(captures: &Path, now: SystemTime) {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
         let leftover = name.ends_with(".shrinking.mov") || name == ".trash-staging";
-        if leftover && !is_claimed(&path)
+        if leftover
+            && !is_claimed(&path)
             && modified_ago(&path, now).is_some_and(|ago| ago > Duration::from_secs(6 * 3600))
         {
             let _ = std::fs::remove_dir_all(&path).or_else(|_| std::fs::remove_file(&path));
@@ -620,14 +640,14 @@ pub fn run_pass(
     dry_run: bool,
     ahead: Duration,
     shrink: bool,
-) -> (Vec<Action>, Report) {
+) -> Result<(Vec<Action>, Report)> {
     let now = SystemTime::now();
-    let mut actions = plan(captures, policy, now + ahead);
+    let mut actions = plan(captures, policy, now + ahead)?;
     if !shrink {
         actions.retain(|a| !matches!(a, Action::Shrink { .. }));
     }
     if dry_run {
-        return (actions, Report::default());
+        return Ok((actions, Report::default()));
     }
     sweep_leftovers(captures, now);
     let report = apply(&actions, policy, &trash, true);
@@ -641,7 +661,7 @@ pub fn run_pass(
             report.errors
         ));
     }
-    (actions, report)
+    Ok((actions, report))
 }
 
 /// Why a bundle's video is gone, for errors that need it.
@@ -720,6 +740,7 @@ fn worker(jobs: &flume::Receiver<Job>) {
     let captures = crate::shared::handoff::default_captures_dir();
     let mut next_pass = Instant::now() + Duration::from_secs(90);
     let mut last_pass: Option<SystemTime> = None;
+    let mut last_attempt: Option<SystemTime> = None;
     let mut last_shrink: Option<SystemTime> = None;
     let mut shrinks: Vec<(Instant, Instant, PathBuf)> = Vec::new();
     loop {
@@ -760,10 +781,7 @@ fn worker(jobs: &flume::Receiver<Job>) {
         }
         shrinks = later;
         // The Mac sleeps through `Instant`s, so passes also go by the wall clock.
-        let pass_due = last_pass.is_none_or(|at| {
-            SystemTime::now().duration_since(at).unwrap_or_default() >= PASS_EVERY
-        });
-        if Instant::now() >= next_pass || (last_pass.is_some() && pass_due) {
+        if pass_due(next_pass, last_attempt, Instant::now(), SystemTime::now()) {
             if recording() {
                 next_pass = Instant::now() + Duration::from_secs(60);
                 continue;
@@ -772,7 +790,16 @@ fn worker(jobs: &flume::Receiver<Job>) {
             let shrink = last_shrink.is_none_or(|at| {
                 SystemTime::now().duration_since(at).unwrap_or_default() >= SHRINK_EVERY
             });
-            let (actions, report) = run_pass(&captures, &policy, false, Duration::ZERO, shrink);
+            let result = run_pass(&captures, &policy, false, Duration::ZERO, shrink);
+            last_attempt = Some(SystemTime::now());
+            let (actions, report) = match result {
+                Ok(result) => result,
+                Err(_) => {
+                    apparent_log("retention: Record planning unavailable; no cleanup performed");
+                    next_pass = Instant::now() + PASS_EVERY;
+                    continue;
+                }
+            };
             if shrink {
                 last_shrink = Some(SystemTime::now());
             }
@@ -792,6 +819,16 @@ fn worker(jobs: &flume::Receiver<Job>) {
             next_pass = Instant::now() + PASS_EVERY;
         }
     }
+}
+
+fn pass_due(
+    next: Instant,
+    last_attempt: Option<SystemTime>,
+    now: Instant,
+    wall: SystemTime,
+) -> bool {
+    now >= next
+        || last_attempt.is_some_and(|at| wall.duration_since(at).unwrap_or_default() >= PASS_EVERY)
 }
 
 /// `Err` when the bundle is busy and should be retried.
@@ -816,9 +853,23 @@ fn shrink_now(dir: &Path) -> std::result::Result<(), ()> {
     if dir.join(PINNED).exists() {
         return Ok(());
     }
-    if let Some(video) = shrinkable(dir, &manifest)
-        && let Err(error) = shrink_video(dir, &video)
-    {
+    let (facts, video) = observe(dir, &manifest, 0, 0, false);
+    // This existing after-capture job is independent of retention-day choices.
+    let neutral = Policy {
+        media_days: None,
+        bundle_days: None,
+    };
+    let decisions =
+        crate::composition::retention::plan(&neutral, &[facts], true).map_err(|_| ())?;
+    if let Some(decision) = decisions.first() {
+        if decision.kind != crate::composition::retention::Kind::Shrink {
+            return Err(());
+        }
+    } else {
+        return Ok(());
+    }
+    let video = video.ok_or(())?;
+    if let Err(error) = shrink_video(dir, &video) {
         apparent_log(format!("shrink: {}: {error:#}", dir.display()));
     }
     Ok(())
@@ -924,14 +975,61 @@ mod tests {
     }
 
     #[test]
+    fn failed_attempt_waits_a_full_period_despite_frequent_shrink_wakes() {
+        let now = Instant::now();
+        let wall = UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let next = now + PASS_EVERY;
+        // An old success must not remain the wall-clock retry authority.
+        assert!(pass_due(next, Some(wall - PASS_EVERY * 2), now, wall));
+        for seconds in [30, 60, 1_800, 3_599] {
+            let elapsed = Duration::from_secs(seconds);
+            assert!(!pass_due(next, Some(wall), now + elapsed, wall + elapsed));
+        }
+        assert!(pass_due(
+            next,
+            Some(wall),
+            now + PASS_EVERY,
+            wall + PASS_EVERY
+        ));
+        // Wall time can advance during Mac sleep while monotonic time does not.
+        assert!(pass_due(next, Some(wall), now, wall + PASS_EVERY));
+        assert!(!pass_due(
+            next,
+            Some(wall),
+            now,
+            wall - Duration::from_secs(30)
+        ));
+    }
+
+    #[test]
     fn small_movie_retention_observation_uses_engine_without_rewriting_media() {
         let root = tempfile::tempdir().unwrap();
         let video = root.path().join("recording.mp4");
-        let made = std::process::Command::new("ffmpeg").args([
-            "-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i", "color=c=blue:s=64x48:r=10:d=1",
-            "-c:v", "libx264", "-threads", "1", "-pix_fmt", "yuv420p",
-        ]).arg(&video).output().unwrap();
-        assert!(made.status.success(), "{}", String::from_utf8_lossy(&made.stderr));
+        let made = std::process::Command::new("ffmpeg")
+            .args([
+                "-v",
+                "error",
+                "-nostdin",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=blue:s=64x48:r=10:d=1",
+                "-c:v",
+                "libx264",
+                "-threads",
+                "1",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&video)
+            .output()
+            .unwrap();
+        assert!(
+            made.status.success(),
+            "{}",
+            String::from_utf8_lossy(&made.stderr)
+        );
         let original = std::fs::read(&video).unwrap();
         assert!(shrink_video(root.path(), &video).unwrap().is_none());
         assert_eq!(std::fs::read(video).unwrap(), original);
@@ -978,8 +1076,14 @@ mod tests {
         // ordinary H.264 profile so the fixture reaches AVFoundation encode.
         let profile = std::process::Command::new("ffprobe")
             .args([
-                "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=profile",
-                "-of", "json",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=profile",
+                "-of",
+                "json",
             ])
             .arg(&video)
             .output()
@@ -1006,6 +1110,96 @@ mod tests {
         assert_eq!(std::fs::read(sentinel).unwrap(), b"untouched");
         assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 2);
         assert_eq!(std::fs::read_dir(bundle).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn after_capture_shrink_uses_record_and_real_engine_for_an_eligible_small_movie() {
+        // Other recorder tests hold the process-wide Recording guard. Exercise
+        // this real job in its own test process without weakening that guard.
+        if std::env::var_os("APPARENT_RETENTION_SHRINK_TEST_CHILD").is_none() {
+            let test = concat!(
+                "capture::engine::bundle::retention::tests::",
+                "after_capture_shrink_uses_record_and_real_engine_for_an_eligible_small_movie"
+            );
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", test, "--nocapture"])
+                .env("APPARENT_RETENTION_SHRINK_TEST_CHILD", "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"));
+            return;
+        }
+        let root = tempfile::tempdir().unwrap();
+        let video = root.path().join("recording.mov");
+        let made = std::process::Command::new("ffmpeg")
+            .args([
+                "-v",
+                "error",
+                "-nostdin",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=192x128:rate=30:duration=1",
+                "-c:v",
+                "rawvideo",
+                "-threads",
+                "1",
+                "-pix_fmt",
+                "rgb24",
+            ])
+            .arg(&video)
+            .output()
+            .unwrap();
+        assert!(
+            made.status.success(),
+            "{}",
+            String::from_utf8_lossy(&made.stderr)
+        );
+        let original = std::fs::read(&video).unwrap();
+        assert!(
+            original.len() as u64 * 8 > 6_000_000,
+            "real movie must qualify by bitrate"
+        );
+        let probe = crate::composition::media_probe::bundle_probe(&video).unwrap();
+        assert_eq!(
+            (probe.width, probe.height, probe.duration_ms),
+            (192, 128, 1000)
+        );
+        let metadata = serde_json::json!({"durationMs":probe.duration_ms,"source":"iphone",
+            "device":{"capture":"mirror"},"video":"recording.mov"})
+        .to_string();
+        std::fs::write(root.path().join("apparent.json"), &metadata).unwrap();
+        let manifest: Manifest = serde_json::from_str(&metadata).unwrap();
+        let (facts, _) = observe(root.path(), &manifest, 0, 0, false);
+        let decisions = crate::composition::retention::plan(
+            &Policy {
+                media_days: None,
+                bundle_days: None,
+            },
+            &[facts],
+            true,
+        )
+        .unwrap();
+        assert_eq!(decisions.len(), 1);
+        assert_eq!(
+            decisions[0].kind,
+            crate::composition::retention::Kind::Shrink
+        );
+        // Real native size observation makes this eligible request a no-op.
+        assert!(shrink_now(root.path()).is_ok());
+        assert_eq!(std::fs::read(video).unwrap(), original);
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("apparent.json")).unwrap(),
+            metadata
+        );
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 2);
     }
 
     struct TempDir(PathBuf);
@@ -1080,7 +1274,7 @@ mod tests {
     }
 
     fn planned(captures: &Path, policy: &Policy) -> Vec<Action> {
-        plan(captures, policy, later())
+        plan(captures, policy, later()).unwrap()
     }
 
     #[test]
@@ -1102,7 +1296,11 @@ mod tests {
             }
         );
         assert_eq!(loaded.preset(), None);
-        std::fs::write(&path, r#"{"retention":{"mediaDays":30,"bundleDays":90,"futurePolicy":42}}"#).unwrap();
+        std::fs::write(
+            &path,
+            r#"{"retention":{"mediaDays":30,"bundleDays":90,"futurePolicy":42}}"#,
+        )
+        .unwrap();
         assert_eq!(
             Policy::load_from(&path),
             Policy {
@@ -1182,7 +1380,7 @@ mod tests {
         // Just copied from another Mac: made long ago, but the folder changed now.
         let arrived = bundle(&tmp.0, "apparent-arrived", 40.0, false);
         let today = later() - Duration::from_secs(24 * 3600);
-        assert!(plan(&tmp.0, &Policy::default(), today).is_empty());
+        assert!(plan(&tmp.0, &Policy::default(), today).unwrap().is_empty());
         assert_eq!(
             planned(&tmp.0, &Policy::default()),
             vec![Action::TrashBundle(arrived)]
@@ -1237,7 +1435,11 @@ mod tests {
         );
         // Nothing left to clean, and the bundle changed today besides.
         let next_week = later() + Duration::from_secs(2 * 24 * 3600);
-        assert!(plan(&captures, &Policy::default(), next_week).is_empty());
+        assert!(
+            plan(&captures, &Policy::default(), next_week)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

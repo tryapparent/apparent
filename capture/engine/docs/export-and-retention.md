@@ -154,6 +154,16 @@ speak; silent recorded samples remain a valid recorded track.
 
 ## Retention and shrinking (`capture/engine/bundle/retention.rs`, `Media.shrink` in `capture/engine/native/Media.swift`)
 
+Record Storage's compiled headless planner now owns age/settling decisions,
+action priority and mirror-video bitrate eligibility for both the full pass and
+after-capture shrink job. Native code supplies observations and retains active,
+pinned, claimed and recovery exclusions, mutation rechecks, Trash and encoding.
+An unavailable plan fails before cleanup; the background pass retries after an
+hour, including when shrink jobs wake it sooner. The existing native config
+reader/writer and scheduler remain authoritative compatibility mechanisms. See
+[`record/storage`](../../../record/storage/README.md#cleanup-planning) for the
+wire, package, rollback and remaining adoption gates.
+
 The app's `retention` worker (utility QoS) runs a pass 90 s after launch and hourly (`PASS_EVERY`): heavy media (`handoff::HEAVY_MEDIA`, plus `zoom/` from `DERIVED_MEDIA`) to the Trash after `mediaDays` (default 7, writes `.media-cleaned`), whole bundles after `bundleDays` (30); `"retention"` in `~/.config/apparent/config.json`, Settings › Storage. It skips bundles under a day old or whose folder changed (ctime) in the last day, live `.media-pending`/`.media-sending` markers, `.pinned`, `.deliver.json`, and bundles `retention::claim`ed. Cabled-iPhone `recording.mov` (> 6 Mbps) is re-encoded to HEVC at 1600 px a minute after `finalize_live_capture`, written beside the bundle and renamed over the original; sample times are kept, so `apparent.json` is unchanged. Anything reading `video` must handle it missing (`retention::missing_media_reason`). Try passes on a temp folder with `apparent clean --captures DIR --days-ahead N [--dry-run]`.
 
 Native shrink admission requires a regular, relative video inside a real bundle;
@@ -164,6 +174,6 @@ target directories, validates the encoded file and renames through the held pare
 descriptor, preserving source permissions. Failed admission or encoding preserves
 the original; ordinary exits remove temporary output and the crash sweep skips
 active claims. These checks protect native mutation, not a sandbox against a
-same-user adversary racing the decoder's pathname reads. Retention policy and its
-config writer remain authoritative until the Record adoption is accepted; that
-adoption must preserve this guard and its platform tests, including on rollback.
+same-user adversary racing the decoder's pathname reads. Record supplies cleanup
+planning; the native config writer and these safety checks remain authoritative.
+Planner rollback must preserve this guard and its platform tests.
