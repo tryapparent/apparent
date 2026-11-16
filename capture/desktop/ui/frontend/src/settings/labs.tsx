@@ -44,7 +44,7 @@ export function Labs(){
   return <section className="settings-labs" aria-label="Experiments">
     <section className="agent-preference">
     <div className="agent-preference-row">
-      <h2 id="auto-paste-label">Auto paste</h2>
+      <h2 className="settings-preference-label" id="auto-paste-label">Auto paste</h2>
     <Switch id="auto-paste-toggle" className="agent-switch" checked={facts?.saved??false} aria-labelledby="auto-paste-label" aria-describedby="auto-paste-help auto-paste-limits" aria-busy={busy&&setting==='autoPaste'}
       disabled={busy||!facts||Boolean(facts.error)||!facts.supported} onCheckedChange={value=>void request(value)} /></div>
     <p id="auto-paste-help">Paste the image and text into your focused composer after recording. Off by default; applies to the next recording.</p>
@@ -52,7 +52,7 @@ export function Labs(){
     </section>
     <section className="agent-preference">
       <div className="agent-preference-row">
-        <h2 id="public-sharing-label">Public sharing links</h2>
+        <h2 className="settings-preference-label" id="public-sharing-label">Public sharing links</h2>
       <Switch id="public-sharing-toggle" className="agent-switch" checked={facts?.sharingSaved??false} aria-labelledby="public-sharing-label" aria-describedby="public-sharing-help public-sharing-limits" aria-busy={busy&&setting==='sharing'}
         disabled={busy||!facts||Boolean(facts.error)} onCheckedChange={value=>void request(value,'sharing')} /></div>
       <p id="public-sharing-help">Show Copy link after recording. Off by default; applies to the next recording.</p>

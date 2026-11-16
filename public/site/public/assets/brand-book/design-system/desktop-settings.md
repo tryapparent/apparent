@@ -1,6 +1,6 @@
 # Desktop Settings
 
-Status: adopted Desktop Settings interaction rules, 15.11.2026.
+Status: adopted Desktop Settings interaction rules, revised 16.11.2026.
 
 Use this specification for apparent Desktop Settings on macOS and Linux.
 It extends [the product interface system](product-interface.md), not the
@@ -9,8 +9,9 @@ generic shell for every web product. Reuse the canonical
 
 ## Composition and typography
 
-- Use Host Grotesk: page title 36/40 at weight 700; section and preference
-  labels 18/27 at 500; explanatory text 18/27 at 400. The 16/24 metadata tier
+- Use Host Grotesk: page title 48/52 at weight 700; section headings
+  24/32 at 500; preference labels 18/27 at 500; explanatory text 18/27 at 400.
+  Title / section / body use the 4:2:1.5 ratio. The 16/24 metadata tier
   remains limited to short companion information. Do not introduce weight 600.
 - Place one 1px Carbon divider below the page title, aligned to the content
   edges. Use spacing to separate ordinary groups instead of repeating rules.
@@ -19,12 +20,19 @@ generic shell for every web product. Reuse the canonical
   This is the Desktop default within the generic 216-240px range, not a new
   minimum for every product.
 - Use the existing 32px content inset and 8px spacing system. Main content is
-  Paper; neutral grouped surfaces are Stock. The optional skill-command copy surface uses Lilac; optional preference switches use Stock when off and Lilac when on.
+  Paper; neutral grouped surfaces are Stock. The optional skill-command copy
+  surface uses Lilac independently of switch state.
   Panels and command blocks are
   square, flat and free of gradients or diffuse shadows.
 - Verify the complete pane at ordinary and smallest supported window sizes,
   with actual labels, enlarged text and localization. Adapt the layout rather
   than shrinking the type or clipping content.
+
+
+At widths up to 700px, shared Electron Settings places navigation above the
+content rather than shrinking type or truncating retention durations. Verify
+the actual 640px viewport after resizing and wait for fonts before measuring
+complete option labels. Compact wordmarks remain at least 120px wide.
 
 ## Help, commands and utility icons
 
@@ -51,10 +59,15 @@ generic shell for every web product. Reuse the canonical
 - Use a rounded 48 by 24px track with an 18px circular thumb, inside an
   interaction region at least 48 by 44px. The rounded track and thumb are a
   functional control exception to square panels, not permission for pill cards.
-- Optional preference switches use a Stock track when off, Lilac when on, and Carbon thumb without a
-  visible outline in both light and dark mode. Keep the geometry stable when
-  removing an outline. The thumb is left when off and right when on; expose
-  the checked state accessibly. Stock and Lilac are existing brand colors, not newly invented shades. Thumb position and accessible checked state distinguish Off/On independently of color. The command-copy surface remains Lilac.
+- Preference-switch tracks are Signal when Off and lighter Lilac when On.
+  Use a Carbon thumb in light mode and a white (#FFFFFF) thumb in dark mode.
+  White is a functional thumb-only exception; do not use it for text, surfaces,
+  artwork or a new brand accent. Give the thumb a 1px Carbon edge within its
+  18px diameter so it remains distinct against both tracks. Tracks have no
+  visible outline. The thumb is left when Off and right when On; expose the
+  checked state accessibly. Color never supplies the only distinction.
+  A checked preference is not an in-progress status or primary action. The
+  optional command-copy surface remains Lilac independently of switch state.
 - Retain a visible setting label and short consequence. A switch represents an
   immediately applied, reversible binary preference, not an arbitrary action.
   Do not introduce a pane-wide Save button for independent immediate settings.
@@ -74,7 +87,7 @@ The reusable dimensions are under `component.desktopSettings` in JSON and
 
 ## Dark-theme principle
 
-Dark mode retains the same five canonical colors. Use Carbon for the main
+Dark mode retains the five canonical colors plus the white switch-thumb exception. Use Carbon for the main
 canvas and Paper for reading text; reuse Stock, Lilac and Signal for their
 appropriate surface, selection and focus roles. Do not introduce extra grays
 or replace the palette with framework defaults. Token roles may adapt to the
@@ -83,7 +96,7 @@ contrast. The precise dark-theme component treatments still need visual review.
 
 ## Remaining decisions and verification
 
-The owner selected the compact geometry, Stock-off / Lilac-on optional switches and Lilac command surfaces, no switch outline in either theme, quiet save success, wait cursor, shared error popup with primary-first left-aligned actions and the
+The owner selected the compact geometry, state-dependent purple switch tracks, white dark-mode thumbs, no track outline in either theme, quiet save success, a busy cursor, shared error dialogs and the
 palette-preserving dark-theme principle. Detailed copy-feedback presentation
 and other unshown component states remain open; do not present an unreviewed
 variant as owner-approved. The implementing

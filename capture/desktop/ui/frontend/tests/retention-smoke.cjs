@@ -255,6 +255,7 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   assert.equal(await page.evaluate(() => window.apparent.showCaptureFolder('arbitrary').then(() => false, () => true)), false, 'zero-argument preload cannot forward a path');
   for (const colorScheme of ['light', 'dark']) {
     await page.emulateMedia({ colorScheme });
+    await expect(page.locator('.settings-policy + [data-slot="native-select-icon"]')).toHaveCSS('color',await select.evaluate(e=>getComputedStyle(e).color));
     await expect(page.locator('.settings-shell')).toHaveCSS('--apparent-primary', '#7a58c7');
     assert.equal(await page.locator('.settings-shell').evaluate(element => getComputedStyle(element).colorScheme), colorScheme);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);

@@ -28,12 +28,14 @@
       "bold": { "$type": "fontWeight", "$value": 700 }
     },
     "size": {
-      "heading": { "$type": "dimension", "$value": "36px" },
+      "heading": { "$type": "dimension", "$value": "48px" },
+      "section": { "$type": "dimension", "$value": "24px" },
       "body": { "$type": "dimension", "$value": "18px" },
       "metadata": { "$type": "dimension", "$value": "16px" }
     },
     "lineHeight": {
-      "heading": { "$type": "dimension", "$value": "40px" },
+      "heading": { "$type": "dimension", "$value": "52px" },
+      "section": { "$type": "dimension", "$value": "32px" },
       "body": { "$type": "dimension", "$value": "27px" },
       "metadata": { "$type": "dimension", "$value": "24px" }
     }
@@ -68,7 +70,11 @@
       "copyIconSize": { "$type": "dimension", "$value": "16px" },
       "switchWidth": { "$type": "dimension", "$value": "48px" },
       "switchHeight": { "$type": "dimension", "$value": "24px" },
-      "switchThumbSize": { "$type": "dimension", "$value": "18px" }
+      "switchThumbSize": { "$type": "dimension", "$value": "18px" },
+      "switchOffTrack": { "$type": "color", "$value": "#7A58C7" },
+      "switchOnTrack": { "$type": "color", "$value": "#B7A5D8" },
+      "switchLightThumb": { "$type": "color", "$value": "#020102" },
+      "switchDarkThumb": { "$type": "color", "$value": "#FFFFFF", "$description": "Dark-mode switch thumb only; use a Carbon edge for contrast." }
     }
   },
   "motion": {

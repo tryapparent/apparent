@@ -67,6 +67,7 @@ test('installed About projects parent state and bounds actions', async () => {
       for (const colorScheme of ['light', 'dark'] as const) {
         await page.emulateMedia({colorScheme});
         await expect(page.locator('.settings-shell')).toHaveCSS('--apparent-primary', '#7a58c7');
+        await expect(channel).toHaveCSS('font-size', '18px');
         await channel.scrollIntoViewIfNeeded();
         await expect(channel).toBeVisible();
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);

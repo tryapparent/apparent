@@ -1,8 +1,5 @@
 /* Canonical system appearance for every value stream. No framework required. */
 :root, .apparent-theme {
-  /* Approved Settings redesign roles; opt-in avoids changing sibling products. */
-  --apparent-settings-carbon: #19161d;
-  --apparent-settings-signal: #0000f2;
   /* Public marketing roles are additive; native/desktop roles stay unchanged. */
   --apparent-site-paper: #F5F0E8;
   --apparent-site-stock: #E7E0EE;
@@ -17,6 +14,15 @@
   --apparent-carbon: #020102;
   --apparent-lilac: #b7a5d8;
   --apparent-signal: #7a58c7;
+  /* Approved product hierarchy: title / section / body = 4:2:1.5. */
+  --apparent-type-title: 3rem;
+  --apparent-type-section: 1.5rem;
+  --apparent-type-body: 1.125rem;
+  --apparent-switch-off-track: var(--apparent-signal);
+  --apparent-switch-on-track: var(--apparent-lilac);
+  --apparent-switch-light-thumb: var(--apparent-carbon);
+  /* Functional dark-mode thumb only; not an additional brand accent. */
+  --apparent-switch-dark-thumb: #ffffff;
   --apparent-confirmed: #146b43;
   --apparent-failed: #b42318;
   /* Drawing pigment stays the same across system appearances. Rust owns saved RGB. */

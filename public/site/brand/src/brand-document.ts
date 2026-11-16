@@ -105,7 +105,7 @@ const sections = [
         <div><b>4.57:1</b><span>Paper on Signal</span><small>AA</small></div>
       </div>
       <div class="bb-callout warning"><strong>Restricted</strong><p>Normal-size Signal text is allowed only on Paper. On Stock or Carbon, reserve Signal for non-text UI, focus, graphics, large text, or filled controls with Paper text. Signal and Lilac need a second non-color distinction.</p></div>
-      <h3>Active decisions and optional interactions</h3><p>Signal identifies the active decision or action flow, including alternatives such as “Activate upload / Not today”. Use fill, border and wording for emphasis inside that group. Lilac identifies optional interactions outside the flow. Active does not mean checked; optional does not mean disabled.</p><p>Optional command-copy surfaces use Lilac; optional switch tracks use Stock when off and Lilac when on. Switches use a Carbon thumb, left Off/right On, with no visible track outline in either theme and visible keyboard focus. Keep preference saves quiet, use a wait cursor while saving and the shared ErrorDialog popup for operational failures, commands visible with an embedded copy icon, and optional explanations accessible on hover, focus and click. Follow the <a href="/brand/design-system/desktop-settings.md">Desktop Settings specification</a> for exact geometry and dark mode.</p><p>Error dialogs use the failure color and icon, clear copy, optional update-style artwork, and left-aligned actions: primary recovery first, Close second. Focus recovery on open, support Escape and restore focus. Keep field validation beside its field.</p><h3>Functional status colors</h3>
+      <h3>Active decisions and optional interactions</h3><p>Signal identifies the active decision or action flow, including alternatives such as “Activate upload / Not today”. Use fill, border and wording for emphasis inside that group. Lilac identifies optional interactions outside the flow. Active does not mean checked; optional does not mean disabled.</p><p>Switch tracks use Signal when Off and lighter Lilac when On. Thumbs are Carbon in light mode and white in dark mode, with a Carbon edge for contrast. White is a thumb-only exception. Keep left Off/right On, no track outline and visible keyboard focus. Command-copy surfaces remain Lilac. Keep preference saves quiet, use a wait cursor while saving and the shared ErrorDialog popup for operational failures, commands visible with an embedded copy icon, and optional explanations accessible on hover, focus and click. Follow the <a href="/brand/design-system/desktop-settings.md">Desktop Settings specification</a> for exact geometry and dark mode.</p><p>Error dialogs use the failure color and icon, clear copy, optional update-style artwork, and left-aligned actions: primary recovery first, Close second. Focus recovery on open, support Escape and restore focus. Keep field validation beside its field.</p><h3>Functional status colors</h3>
       <div class="bb-spec-table bb-status-grid">
         <div class="success"><small>SUCCESS</small><strong>#146B43</strong><p>Completed, confirmed, delivered or healthy. Contrast on Paper: 5.76:1.</p></div>
         <div class="in-progress"><small>IN PROGRESS</small><strong>#7A58C7</strong><p>Processing, retrying, queued or incomplete. Uses Signal; contrast on Paper: 4.57:1.</p></div>
@@ -128,14 +128,16 @@ const sections = [
       <h3>Approved scale</h3>
       <div class="bb-type-table">
         <div><small>PRESENTATION</small><b>120 / 60 / 30</b><p>Hero, title and supporting copy.</p></div>
-        <div><small>PRODUCT</small><b>36 / 18 / 16</b><p>Heading, interface body and short metadata.</p></div>
+        <div><small>PRODUCT</small><b>48 / 24 / 18</b><p>Page title, section heading and body. Ratio 4:2:1.5; short metadata stays 16px.</p></div>
         <div><small>BODY COPY</small><b>18 / 27</b><p>55–75 characters per line.</p></div>
         <div><small>NUMERALS</small><b>Tabular</b><p>Always include unit, denominator and timeframe.</p></div>
       </div>
       <h3>Implementation</h3>
       <pre><code>font-family: "Host Grotesk", system-ui, sans-serif;
-font-size: 36px | 18px | 16px;
+font-size: 48px | 24px | 18px;
 font-weight: 400 | 500 | 700;</code></pre>
+<div class="bb-type-hierarchy"><h3 class="bb-type-title">Agents</h3><h4 class="bb-type-section">Labs</h4><p>Choose how apparent works with your coding agent.</p></div>
+
       <p>Do not introduce intermediate sizes. Use weight, spacing and grouping to create secondary hierarchy.</p>
       <div class="bb-callout"><strong>Accessibility floor</strong><p>Use 16 px only for short companion text such as timestamps, qualifiers and secondary table labels. Body copy, controls, form labels, validation and critical status must remain 18 px or larger.</p></div>
       <div class="bb-spec-table">
@@ -329,7 +331,7 @@ Do not promise unsupported capabilities or invent evidence.</code></pre>`,
     summary: 'The repository is the source of truth. Exceptions require approval and an expiry.',
     body: `
       <div class="bb-governance-table">
-        <div><small>STATUS</small><strong>Brand guidelines v0.4 / capture</strong></div>
+        <div><small>STATUS</small><strong>Brand guidelines v0.5 / capture</strong></div>
         <div><small>OWNER</small><strong>Founder approval until a named brand owner is assigned</strong></div>
         <div><small>DEVIATIONS</small><strong>Record reason, owner and expiry before publishing</strong></div>
         <div><small>EXTERNAL TEAMS</small><strong>Share this live reference and approved assets at kickoff</strong></div>
@@ -367,7 +369,7 @@ export function renderBrandDocument(root) {
     <a class="bb-skip" href="#brand-content">Skip to content</a>
     <header class="bb-reader-header">
       <a class="bb-reader-brand" href="#guidelines-top"><img src="${asset('brand/apparent-wordmark.svg')}" alt="apparent"><span>Brand guidelines</span></a>
-      <div><span>v0.4 · Capture</span><a href="#frog-collection">Frogs</a><a href="#frontend-design-system">Components</a><a href="?slides=1#slide-1">Brand presentation</a></div>
+      <div><span>v0.5 · Capture</span><a href="#frog-collection">Frogs</a><a href="#frontend-design-system">Components</a><a href="?slides=1#slide-1">Brand presentation</a></div>
     </header>
     <div class="bb-reader-layout" id="guidelines-top">
       <aside class="bb-reader-sidebar">
@@ -381,7 +383,7 @@ export function renderBrandDocument(root) {
           <small>apparent / BRAND GUIDELINES</small>
           <h1>Brand guidelines</h1>
           <p>Point. Talk. Draw. A practical kit for a more human, playful way to make things with computers.</p>
-          <dl><div><dt>Version</dt><dd>0.4 / capture</dd></div><div><dt>Updated</dt><dd>15.11.2026</dd></div><div><dt>Owner</dt><dd>Founder approval</dd></div></dl>
+          <dl><div><dt>Version</dt><dd>0.4 / capture</dd></div><div><dt>Updated</dt><dd>16.11.2026</dd></div><div><dt>Owner</dt><dd>Founder approval</dd></div></dl>
         </header>
         ${sections.map((item, index) => `
           <section id="${item.title.toLowerCase().replaceAll(' ', '-')}" class="bb-reader-section">

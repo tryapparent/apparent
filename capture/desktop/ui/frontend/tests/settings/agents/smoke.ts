@@ -147,6 +147,13 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
       await session.send('Emulation.setDeviceMetricsOverride',{width,height:530,deviceScaleFactor:1,mobile:false});
       for (const colorScheme of ['light', 'dark', 'light'] as const) {
         await page.emulateMedia({colorScheme, reducedMotion: 'reduce'});
+        await page.evaluate(() => document.fonts.ready);
+        assert.equal(await page.locator('h1').evaluate(e=>getComputedStyle(e).fontSize),'48px');
+        assert.equal(await page.locator('#agent-skill-label').evaluate(e=>getComputedStyle(e).fontSize),'24px');
+        assert.equal(await page.locator('#agent-video-label').evaluate(e=>getComputedStyle(e).fontSize),'18px');
+        assert.equal(await toggle.locator('.apparent-switch-thumb').evaluate(e=>getComputedStyle(e).backgroundColor),colorScheme==='dark'?'rgb(255, 255, 255)':'rgb(2, 1, 2)');
+        assert.equal(await toggle.locator('.apparent-switch-track').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(183, 165, 216)');
+        assert.equal(await t3Toggle.locator('.apparent-switch-track').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(122, 88, 199)');
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
         assert.equal(await page.locator('.settings-shell').evaluate(element=>element.getBoundingClientRect().top),0,'Settings shell stays fixed while pane scrolls');
         assert.equal(await page.locator('.settings-content').evaluate(element => element.scrollWidth <= element.clientWidth), true);
@@ -183,6 +190,20 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
       }
       await session.detach();
     }
+    const enlarged = await page.context().newCDPSession(page);
+    await enlarged.send('Emulation.setDeviceMetricsOverride',{width:640,height:530,deviceScaleFactor:1,mobile:false});
+    await page.evaluate(() => document.documentElement.style.fontSize = '200%');
+    assert.equal(await page.locator('h1').evaluate(e=>getComputedStyle(e).fontSize),'96px');
+    assert.equal(await page.locator('.settings-content').evaluate(e=>e.scrollWidth <= e.clientWidth),true,'enlarged text reflows inside the pane');
+    for (const control of [toggle,t3Toggle,page.getByRole('button',{name:'Copy install command',exact:true})]) {
+      await control.scrollIntoViewIfNeeded();
+      await control.focus();
+      await expect(control).toBeFocused();
+      assert.equal(await control.evaluate(e=>{const r=e.getBoundingClientRect();return r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight;}),true,'enlarged controls remain reachable');
+    }
+    if (process.env.APPARENT_AGENTS_PROOF) await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,'agents-640-enlarged-text.png')});
+    await page.evaluate(() => document.documentElement.style.removeProperty('font-size'));
+    await enlarged.detach();
     application.stdin.write(JSON.stringify({type: 'agents-state', facts: {error: 'config_read_failed'}}) + '\n');
     await expect(toggle).toBeDisabled();
     await expect(page.getByRole('alertdialog')).toContainText('Unable to read');

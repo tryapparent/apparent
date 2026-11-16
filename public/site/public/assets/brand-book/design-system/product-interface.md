@@ -1,6 +1,6 @@
 # apparent product interface system
 
-Updated: 15.11.2026. Current capture-product direction.
+Updated: 16.11.2026. Current capture-product direction.
 
 ## Purpose and precedence
 
@@ -27,7 +27,7 @@ Keep the supplied logo masters, Host Grotesk and the five-color identity:
 
 Use the [JSON tokens](tokens/apparent.tokens.json) and
 [CSS tokens](tokens/apparent.css). Host Grotesk weights are 400, 500 and 700;
-product type uses 36/18/16, with 16 reserved for short metadata. Use an 8px
+product type uses 48/24/18 for title/section/body (4:2:1.5), with 16 reserved for short metadata. Use an 8px
 spacing base, aligned edges, readable line lengths, and clear grouping. The
 [Desktop Settings specification](desktop-settings.md) owns its adopted layout,
 compact switches, utility icons, contextual help and theme mapping.
@@ -40,9 +40,9 @@ artwork colors are not additional interface tokens.
 
 Interaction roles: Signal identifies choices in the active decision or action flow, including alternatives such as “Activate upload / Not today”. Lilac identifies optional interactions outside that flow. Do not equate active with checked or optional with disabled. Distinguish emphasis within the active choice group through fill, border, placement and wording, rather than assigning an alternative to Lilac just because it is not the default. Carbon remains the readable foreground on Lilac.
 
-Optional command-copy surfaces use Lilac #B7A5D8. Optional preference switches use Stock #E7E0EE when off and Lilac when on, with a Carbon thumb, left Off/right On, and no track outline in either theme. Keyboard focus stays visible. Saves succeed quietly; show a native wait cursor over the affected switch while awaiting acknowledgement and announce pending state to assistive technology without visible saving text. Operational failures use the shared ErrorDialog popup, not a new inline page region. Use failure red with an icon and clear message, optional update-style artwork, a specific recovery action first on the left, and Close second. Align the action group left, match DOM and keyboard order, focus recovery on open, support Escape and restore focus on dismissal. Keep field validation beside its field. Commands remain visible with an embedded copy icon, and optional explanations open on hover, focus and click.
+Optional command-copy surfaces use Lilac #B7A5D8. Preference-switch tracks use Signal when Off and lighter Lilac when On. Thumbs are Carbon in light mode and white in dark mode, with a 1px Carbon edge for contrast. This white is a functional thumb-only exception, not a sixth brand accent. Keep tracks free of outlines, thumbs left Off/right On, and keyboard focus visible. Saves succeed quietly; show a native wait cursor over the affected switch while awaiting acknowledgement and announce pending state to assistive technology without visible saving text. Operational failures use the shared ErrorDialog popup, not a new inline page region. Use failure red with an icon and clear message, optional update-style artwork, a specific recovery action first on the left, and Close second. Align the action group left, match DOM and keyboard order, focus recovery on open, support Escape and restore focus on dismissal. Keep field validation beside its field. Commands remain visible with an embedded copy icon, and optional explanations open on hover, focus and click.
 
-Desktop defaults: 216px sidebar, 16px info/copy glyphs with at least 44px targets, 48×24px track and 18px thumb; 36/40 weight-700 title, 18/27 weight-500 labels, weight-400 body. One Carbon divider below the Settings title; use spacing between ordinary groups. Dark mode keeps the five-color palette with Carbon canvas and Paper reading text. Do not add consumer-only gray #625B66. See the [Desktop Settings specification](desktop-settings.md).
+Desktop defaults: 216px sidebar, 16px info/copy glyphs with at least 44px targets, 48×24px track and 18px thumb; 48/52 weight-700 title, 24/32 weight-500 section headings, 18/27 weight-500 preference labels and weight-400 body. One Carbon divider below the Settings title; use spacing between ordinary groups. Dark mode keeps the five-color palette with Carbon canvas and Paper reading text. Do not add consumer-only gray #625B66. See the [Desktop Settings specification](desktop-settings.md).
 
 ## Actual component library
 

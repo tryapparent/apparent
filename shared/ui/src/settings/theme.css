@@ -1,6 +1,12 @@
 /* Approved brand roles for the accepted Settings surface. Other consumers keep
    their existing appearance. Source: tryapparent/brand design-system/tokens. */
 .settings-shell {
+  --apparent-background:var(--apparent-paper);
+  --apparent-foreground:var(--apparent-carbon);
+  --apparent-muted-foreground:var(--apparent-carbon);
+  --color-background:var(--apparent-background);
+  --color-foreground:var(--apparent-foreground);
+  --color-muted-foreground:var(--apparent-muted-foreground);
   --apparent-settings-carbon: var(--apparent-carbon);
   --apparent-settings-signal: var(--apparent-signal);
   --apparent-primary: var(--apparent-settings-signal);
@@ -16,6 +22,9 @@
 }
 @media (prefers-color-scheme: dark) {
   .settings-shell {
+    --apparent-background:var(--apparent-carbon);
+    --apparent-foreground:var(--apparent-paper);
+    --apparent-muted-foreground:var(--apparent-paper);
     --apparent-primary: var(--apparent-signal);
     --apparent-primary-foreground: var(--apparent-paper);
     --apparent-secondary: var(--apparent-lilac);

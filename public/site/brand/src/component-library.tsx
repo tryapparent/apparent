@@ -40,14 +40,21 @@ function Library() {
     </article>
     <article>
       <h3>Optional preference switch</h3>
-      <p id="example-playful-help">An in-memory example of an optional preference. Stock marks Off and Lilac marks On; thumb position and the accessible checked value also communicate state. No setting is saved.</p>
-      <div className="bb-control-row">
-        <span id="example-playful-label">Playful details</span>
-        <Switch checked={playful} onCheckedChange={setPlayful} aria-labelledby="example-playful-label" aria-describedby="example-playful-help" />
-        <span aria-hidden="true">{playful ? 'On' : 'Off'}</span>
-      </div>
-      <p>48 × 24px Stock-off / Lilac-on track, 18px Carbon thumb, no track outline in either theme. The focus indicator surrounds the 44px-tall interaction target. Real preferences save quietly; a busy cursor indicates saving, and operational failures open ErrorDialog.</p>
-      <Source file="forms/switch.tsx" example={'import { Switch } from "@apparent/ui/switch";\n<Switch checked={enabled} onCheckedChange={save} aria-label="Ask for video proof" />'} />
+      <p id="example-playful-help">Signal when Off; lighter Lilac when On. Thumb position and the accessible checked value also communicate state. No setting is saved.</p>
+      {(['light', 'dark'] as const).map(theme => <div className={`bb-switch-specimen bb-switch-${theme}`} key={theme}>
+        <h4>{theme === 'light' ? 'Light mode' : 'Dark mode'}</h4>
+        <div className="bb-control-row">
+          <span id={`example-playful-${theme}`}>Playful details</span>
+          <Switch className="bb-switch" aria-labelledby={`example-playful-${theme}`} aria-describedby="example-playful-help" checked={playful} onCheckedChange={setPlayful} />
+          <span aria-hidden="true">{playful ? 'On' : 'Off'}</span>
+        </div>
+        <div className="bb-control-row">
+          <span id={`example-disabled-${theme}`}>Unavailable example</span>
+          <Switch className="bb-switch" aria-labelledby={`example-disabled-${theme}`} checked={false} onCheckedChange={() => {}} disabled />
+        </div>
+      </div>)}
+      <p>48 × 24px track, 18px thumb, 48 × 44px target. Carbon thumbs in light mode; white thumbs with a Carbon edge in dark mode. No track outline. Real preferences save quietly; a wait cursor indicates saving and operational failures open ErrorDialog.</p>
+      <Source file="forms/switch.tsx" example={'import { Switch } from "@apparent/ui/switch";\n<Switch aria-label="Playful details" checked={enabled} onCheckedChange={setEnabled} />'} />
     </article>
     <article>
       <h3>Error dialog</h3><p>The default popup for operational failures. It leaves page layout unchanged, traps keyboard focus and supports Escape. The recovery action comes first, with the group aligned left. Field validation remains beside its field.</p>
