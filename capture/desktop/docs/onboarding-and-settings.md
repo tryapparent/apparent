@@ -824,8 +824,14 @@ shortcut release, capture-start and remembered-progress acceptance remain requir
 
 General keeps its accepted compact composition in a pane-scoped layout; the
 other Settings panes retain their adopted shared layout and error dialogs.
-Agents and About keep their live shared-shell route, with native capabilities
-checked against the current pane. General opens with its own bounded bridge.
+General, Agents, Labs, About and adopted Storage share one live Electron window
+and document. Navigation preserves its position and size, switches the current
+pane's bounded capabilities and cancels pending pane work. General's bridge is
+available on entry without restarting Electron. Recording, Permissions and Linux
+Storage retain their native presentation and still cross the presentation boundary.
+Native fallback remains available; rollback restores the previous replacement
+route together with the launch-scoped preload. Donor removal still requires the
+remaining native-pane migration and installed platform acceptance.
 
 General opens in packaged Electron by default, independently of Connect card
 visibility. A fresh ordinary Settings session selects General; an existing session retains its pane. App-picker launches still

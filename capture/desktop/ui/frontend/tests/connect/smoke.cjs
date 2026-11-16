@@ -77,7 +77,7 @@ test('Connect shipped Electron IPC, consent presentation, browser action and lif
   await application.evaluate(({ shell }) => { global.openedUris = []; shell.openExternal = async uri => { global.openedUris.push(uri); }; });
   const page = await application.firstWindow();
   await expect(page).toHaveTitle('Apparent Settings — General');
-  assert.equal(await page.evaluate(()=>typeof window.apparent.changeCaptureLocation),'undefined');
+  assert.equal(await page.evaluate(async()=>{try{await window.apparent.changeCaptureLocation();return false;}catch{return true;}}),true);
   let parentOutput = '';
   application.process().stdout.on('data', data => { parentOutput += data; });
   const projectGeneral = async () => {
@@ -449,7 +449,7 @@ test('Connect shipped Electron IPC, consent presentation, browser action and lif
       await card.getByRole('button',{name:'Keep connected',exact:true}).click();await pause();
     } finally {recorder.stdin.write('q');await new Promise(resolve=>recorder.on('exit',resolve));await fs.writeFile(process.env.CONNECT_VIDEO+'.timing.json',JSON.stringify(timeline));await fs.writeFile(process.env.CONNECT_VIDEO+'.clock.json',JSON.stringify({started,firstFrameAt,mediaClock}));await fs.writeFile(process.env.CONNECT_VIDEO+'.ffmpeg.log',progress);assert.ok(firstFrameAt,'FFmpeg media timestamps establish the narration clock');}
   }
-  assert.equal(await page.evaluate(()=>!('apparentLabs' in window)),true);
+  assert.equal(await page.evaluate(async()=>{try{await window.apparentLabs.read();return false;}catch{return true;}}),true);
   await assert.rejects(application.evaluate(async ({ipcMain,webContents})=>{
     const wc=webContents.getAllWebContents().find(w=>w.getURL().includes('settings.html'));
     return ipcMain._invokeHandlers.get('apparent:labs-preference')({sender:wc,senderFrame:wc.mainFrame},true,'sharing');

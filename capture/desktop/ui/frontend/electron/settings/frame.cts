@@ -10,6 +10,10 @@ export async function committedFrame(contents: {
 }
 
 // Desktop shell presentation, independent of the renderer and native backend.
+export function isSharedSettingsPane(pane: unknown): pane is string {
+  return typeof pane === 'string' && ['general', 'agents', 'about', 'labs', 'storage'].includes(pane);
+}
+
 export function settingsWindowOptions(platform: string, agents = false) {
   return {
     width: agents ? 920 : 720, height: agents ? 600 : 530, minWidth: 640, minHeight: 530,

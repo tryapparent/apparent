@@ -5,7 +5,7 @@ contextBridge.exposeInMainWorld('apparentSettingsRoute', callback => {
   ipcRenderer.on('apparent:settings-route', listener);
   // A parent can select a pane before this document's preload is attached.
   void ipcRenderer.invoke('apparent:settings-route').then(pane => {
-    if (live && !received && ['agents', 'about'].includes(pane)) callback(pane);
+    if (live && !received && ['general', 'agents', 'about', 'labs', 'storage'].includes(pane)) callback(pane);
   }).catch(() => {});
   return () => { live = false; ipcRenderer.removeListener('apparent:settings-route', listener); };
 });
@@ -22,7 +22,6 @@ contextBridge.exposeInMainWorld('apparentSettingsMounted', async () => {
 
 // Settings handlers admit capabilities only on their owning page.
 contextBridge.exposeInMainWorld('apparent', Object.freeze({
-  ...(process.argv.includes('--settings-general') ? {
   readConnectSettings: () => ipcRenderer.invoke('apparent:read-connect-settings'),
   connectSettings: () => ipcRenderer.invoke('apparent:connect-connect'),
   resumeConnectUploads: () => ipcRenderer.invoke('apparent:connect-resume'),
@@ -35,8 +34,6 @@ contextBridge.exposeInMainWorld('apparent', Object.freeze({
   requestDisconnectConnectSettings: () => ipcRenderer.invoke('apparent:connect-request-disconnect'),
   openConnectSharedLinks: () => ipcRenderer.invoke('apparent:connect-open-shared-links'),
   openConnectBrowser: () => ipcRenderer.invoke('apparent:connect-open-browser'),
-  } : {}),
-  ...(process.argv.includes('--settings-general') ? {} : {
   readCaptureLocation: () => ipcRenderer.invoke('apparent:read-capture-location'),
   changeCaptureLocation: () => ipcRenderer.invoke('apparent:change-capture-location'),
   resetCaptureLocation: () => ipcRenderer.invoke('apparent:reset-capture-location'),
@@ -45,7 +42,6 @@ contextBridge.exposeInMainWorld('apparent', Object.freeze({
   resetRetention: () => ipcRenderer.invoke('apparent:reset-retention'),
   readCaptureUsage: () => ipcRenderer.invoke('apparent:read-capture-usage'),
   showCaptureFolder: () => ipcRenderer.invoke('apparent:show-capture-folder'),
-  }),
   navigateSettings: (pane) => ipcRenderer.invoke('apparent:navigate-settings', pane),
 }));
 
@@ -77,7 +73,7 @@ contextBridge.exposeInMainWorld('apparentAgents', Object.freeze({
   },
 }));
 
-if (process.argv.includes('--settings-general')) contextBridge.exposeInMainWorld('apparentGeneral', Object.freeze({
+contextBridge.exposeInMainWorld('apparentGeneral', Object.freeze({
   read: () => ipcRenderer.invoke('apparent:general-read'),
   act: action => ipcRenderer.invoke('apparent:general-action', action),
   subscribe: callback => {
@@ -87,7 +83,7 @@ if (process.argv.includes('--settings-general')) contextBridge.exposeInMainWorld
   },
 }));
 
-if (process.argv.includes('--settings-labs')) contextBridge.exposeInMainWorld('apparentLabs',Object.freeze({
+contextBridge.exposeInMainWorld('apparentLabs',Object.freeze({
   read:()=>ipcRenderer.invoke('apparent:labs-preference'),
   save:(enabled,setting='autoPaste')=>ipcRenderer.invoke('apparent:labs-preference',enabled,setting),
   subscribe:callback=>{const listener=(_event,facts)=>callback(facts);ipcRenderer.on('apparent:labs-state',listener);return()=>ipcRenderer.removeListener('apparent:labs-state',listener);},
