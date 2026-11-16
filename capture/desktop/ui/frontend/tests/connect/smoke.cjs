@@ -6,7 +6,7 @@ const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 // Transport/UI security fixture only. Actual consent policy is tested in Rust.
-test('Connect shipped Electron IPC, consent presentation, browser action and lifecycle ownership', { timeout: process.env.CONNECT_VIDEO ? 300000 : 120000 }, async t => {
+test('Connect shipped Electron IPC, consent presentation, browser action and lifecycle ownership', { timeout: process.env.CONNECT_VIDEO ? 300000 : 180000 }, async t => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'ec-'));
   const evidence = process.env.CONNECT_EVIDENCE;
   if(evidence) await fs.mkdir(evidence,{recursive:true});
@@ -103,7 +103,13 @@ test('Connect shipped Electron IPC, consent presentation, browser action and lif
   await page.locator('.settings-content').evaluate(element=>{element.scrollTop=0});
   await page.screenshot({path:path.join(os.tmpdir(),'general-initial.png'),fullPage:true});
   await expect(card.getByText('End-to-end encrypted captures.')).toBeVisible();
+  const activityText='While connected, recording starts contribute to daily and weekly account totals. Only a pseudonymous identifier and last active UTC date are kept for seven days; no recording content or email. Manage this in your Connect account’s analytics settings. Practice recordings are excluded.';
+  const commandsBeforePrivacy=requests.filter(r=>r.command).length, writesBeforePrivacy=parentOutput;
+  await expect(card.getByText(activityText,{exact:true})).toBeHidden();
   await card.locator('summary').filter({hasText:'Privacy'}).click();
+  await expect(card.getByText(activityText,{exact:true})).toBeVisible();
+  assert.equal(requests.filter(r=>r.command).length,commandsBeforePrivacy);
+  assert.equal(parentOutput,writesBeforePrivacy,'privacy expansion does not write preferences');
   await expect(card.getByText(/New captures upload end-to-end encrypted:/)).toBeVisible();
   const privacy=await card.locator('summary').filter({hasText:'Privacy'}).boundingBox(),primary=await card.getByRole('button',{name:'Connect with Google',exact:true}).boundingBox();
   assert.ok(Math.abs(privacy.y-primary.y)<2,'privacy disclosure keeps the primary desktop action beside its control');
@@ -244,6 +250,40 @@ test('Connect shipped Electron IPC, consent presentation, browser action and lif
       await page.screenshot({path:path.join(os.tmpdir(), `apparent-session-${mode}-${width}.png`), fullPage:true});
     }
   }
+  const activityScreenshot=async name=>{
+    if(!evidence)return;
+    const png=await application.evaluate(async({BrowserWindow})=>(await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64'));
+    await fs.writeFile(path.join(evidence,name),Buffer.from(png,'base64'));
+  };
+  // Activity disclosures remain readable without granting consent or writing settings.
+  for(const theme of ['light','dark'])for(const width of [720,640])for(const zoom of [1,2]) {
+    await application.evaluate(({nativeTheme,BrowserWindow},{theme,width,zoom})=>{nativeTheme.themeSource=theme;const w=BrowserWindow.getAllWindows()[0];w.setSize(width,530);w.webContents.setZoomFactor(zoom)}, {theme,width,zoom});
+    for(const state of ['initial','off','connected']) {
+      stage=state;
+      await expect(card.locator('h2')).toHaveText(state==='connected'?'You’re connected.':'Send captures to your cloud agent.');
+      if(state!=='connected')await expect(card.getByRole('button',{name:state==='off'?'Enable uploads':'Connect with Google',exact:true})).toBeVisible();
+      const summary=state==='connected'?page.getByText('Activity counts',{exact:true}):card.locator('summary').filter({hasText:'Privacy'});
+      if(state==='connected') { await account.focus();await page.keyboard.press('Enter'); }
+      const details=summary.locator('..');
+      if(await details.getAttribute('open')!==null) { await summary.focus();await page.keyboard.press('Escape'); }
+      await expect(details.locator('p').last()).toBeHidden();
+      await activityScreenshot(`activity-${state}-${theme}-${width}-${zoom}-collapsed.png`);
+      const commands=requests.filter(r=>r.command).length,writes=parentOutput;
+      await summary.focus();await page.keyboard.press('Enter');
+      await expect(details.getByText(activityText,{exact:true})).toBeVisible();
+      await details.getByText(activityText,{exact:true}).scrollIntoViewIfNeeded();
+      assert.equal(requests.filter(r=>r.command).length,commands);
+      assert.equal(parentOutput,writes,'disclosure does not write preferences');
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+      const last=details.locator('p').last();
+      assert.equal(await last.evaluate(el=>{const r=el.getBoundingClientRect();return r.x>=0&&r.right<=innerWidth+1}),true);
+      if(state==='connected')assert.equal(await page.locator('.disclosure-panel').evaluate(el=>el.getBoundingClientRect().bottom<=innerHeight+1),true,'account panel fits viewport');
+      await activityScreenshot(`activity-${state}-${theme}-${width}-${zoom}-expanded.png`);
+      await summary.focus();await page.keyboard.press('Escape');await expect(summary).toBeFocused();await expect(details).not.toHaveAttribute('open');
+      if(state==='connected') {await page.keyboard.press('Escape');await expect(account).toBeFocused();await expect(account).toHaveAttribute('aria-expanded','false');}
+    }
+  }
+  await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1));
   // Exact General renderer states; transport remains synthetic, never live auth proof.
   for(const theme of ['light','dark'])for(const width of [720,640]) {
     await application.evaluate(({nativeTheme,BrowserWindow},{theme,width})=>{nativeTheme.themeSource=theme;BrowserWindow.getAllWindows()[0].setSize(width,530)}, {theme,width});

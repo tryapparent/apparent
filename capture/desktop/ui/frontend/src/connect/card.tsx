@@ -6,7 +6,7 @@ import '@apparent/ui/status.css';
 import frogs from '../../../../../../shared/assets/brand/connect-frogs.png';
 import {useConnectFlow, type ConnectBridge} from './flow';
 import {openConnectSession} from './session';
-import {connectPresentation, connectActionRole, uploadDisclosure} from './presentation';
+import {connectPresentation, connectActionRole, uploadDisclosure, activityDisclosure} from './presentation';
 
 const settingsBridge: ConnectBridge = {
   open: current => window.apparent ? openConnectSession(window.apparent, current) : Promise.resolve({status:'disconnected'}),
@@ -20,7 +20,7 @@ const settingsBridge: ConnectBridge = {
 };
 
 function closeDisclosure(event: React.KeyboardEvent<HTMLDetailsElement>) {
-  if(event.key==='Escape') { event.currentTarget.open=false; event.currentTarget.querySelector('summary')?.focus(); event.stopPropagation(); }
+  if(event.key==='Escape' && event.currentTarget.open) { event.currentTarget.open=false; event.currentTarget.querySelector('summary')?.focus(); event.stopPropagation(); }
 }
 
 export function ConnectSettingsCard() {
@@ -45,6 +45,7 @@ export function ConnectSettingsCard() {
     {close => <>
       <p className="menu-context">This computer{view?.server && <><br />{view.server}</>}</p>
       {controls.map(button => renderButton(button, close))}
+      <div className="menu-context"><details className="connect-info" onKeyDown={closeDisclosure}><summary>Activity counts</summary><p>{activityDisclosure}</p></details></div>
       <p className="menu-context">Disconnecting does not delete uploaded captures.</p>
     </>}
   </DisclosureMenu>;
@@ -59,7 +60,7 @@ export function ConnectSettingsCard() {
         {browserFailed && browserButton && <p className="connect-browser-error" role="alert">The browser could not be opened. Try again, or cancel to keep captures local.</p>}
         <div className="status-actions">
           {actions.map(button => renderButton(button))}
-          {buttons.some(b=>b.command==='connect') && p?.tone!=='failure' && <details className="connect-info" onKeyDown={closeDisclosure}><summary>Privacy</summary><p>{uploadDisclosure(view?.encryption)}</p></details>}
+          {buttons.some(b=>b.command==='connect') && p?.tone!=='failure' && <details className="connect-info" onKeyDown={closeDisclosure}><summary>Privacy</summary><p>{uploadDisclosure(view?.encryption)}</p><p>{activityDisclosure}</p></details>}
           {p?.tone==='failure' && <details className="connect-info" onKeyDown={closeDisclosure}><summary>Details</summary><p>{p.detail}</p></details>}
         </div>
       </>}

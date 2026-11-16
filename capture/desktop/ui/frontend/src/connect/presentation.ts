@@ -1,5 +1,7 @@
 import type {ConnectView} from './protocol.ts';
 
+export const activityDisclosure = 'While connected, recording starts contribute to daily and weekly account totals. Only a pseudonymous identifier and last active UTC date are kept for seven days; no recording content or email. Manage this in your Connect account’s analytics settings. Practice recordings are excluded.';
+
 // Native receipts supply mode and authorization. Presentation never infers them
 // from account identity or the presence of an account menu.
 export function connectPresentation(view: ConnectView | undefined) {
