@@ -37,8 +37,22 @@ export function inspectThreads(snapshots: any[], from: number, to: number) {
     limitation: 'UI authorship is evidence, not a verdict on judgment. Review original authorization, later steering, live work and exact completion routes.'};
 }
 
+// Only complete, allocated, step-backed executions can establish carry provenance.
+// Normalize the REST/CLI aliases without using attempt-specific IDs as identity.
+function executionIdentity(job: any): string | null {
+  const start = Date.parse(job.started_at ?? job.startedAt), end = Date.parse(job.completed_at ?? job.completedAt);
+  const runner = job.runner_id ?? job.runnerId;
+  if (job.status !== 'completed' || !job.name || !(runner > 0) || !(start > 0) || end < start ||
+      !Number.isFinite(end) || !job.steps?.length) return null;
+  const steps = job.steps.map((s: any) => [s.number, s.name, s.status, s.conclusion,
+    s.started_at ?? s.startedAt, s.completed_at ?? s.completedAt]);
+  if (!steps.some((s: any[]) => Date.parse(s[4]) > 0 && Date.parse(s[5]) >= Date.parse(s[4]))) return null;
+  return JSON.stringify([job.name, runner, start, end, job.conclusion, steps]);
+}
+
 export function inspectJobs(runs: any[], from: number, to: number) {
   const seen = new Set<string>(), jobs: any[] = []; let invalid = 0, unfinishedJobs = 0, unknownAllocationJobs = 0;
+  const entries: any[] = [];
   for (const run of runs) {
     const runId = run?.runId ?? run?.databaseId;
     if (!Array.isArray(run?.jobs) || !runId || !/^[a-f0-9]{40}$/.test(run?.headSha ?? '') || !Number.isInteger(run.attempt)) {invalid++; continue;}
@@ -46,31 +60,46 @@ export function inspectJobs(runs: any[], from: number, to: number) {
       if (!(job?.id ?? job?.databaseId)) {invalid++; continue;}
       const id = `${runId}:${run.attempt}:${job.id ?? job.databaseId}`;
       if (seen.has(id)) continue; seen.add(id);
-      const start = Date.parse(job.started_at ?? job.startedAt), end = Date.parse(job.completed_at ?? job.completedAt);
-      const created = Date.parse(job.created_at ?? job.createdAt);
-      if (job.conclusion === 'skipped') continue;
-      // REST supplies started_at == created_at even before runner allocation.
-      // Status/runner identity must qualify that timestamp before calling it execution.
-      const pending = ['queued', 'waiting', 'pending'].includes(job.status);
-      const runner = job.runner_id ?? job.runnerId;
-      const unallocated = pending || runner === 0;
-      const unknownAllocation = !unallocated && runner === undefined &&
-        job.conclusion != null && job.conclusion !== 'success' && !job.steps?.some((s: any) => s.status === 'completed');
-      if (unknownAllocation) unknownAllocationJobs++;
-      const endKnown = Number.isFinite(end) && (!Number.isFinite(created) || end >= created) &&
-        (!Number.isFinite(start) || end >= start);
-      const executionKnown = !unallocated && !unknownAllocation && Number.isFinite(start) && endKnown;
-      const runnerSeconds = unallocated ? 0 : executionKnown ? Math.max(0, Math.min(end, to) - Math.max(start, from)) / 1000 : null;
-      const queueEnd = pending ? to : unallocated ? (endKnown ? end : NaN) :
-        !unknownAllocation && Number.isFinite(start) ? start : NaN;
-      const queueSeconds = Number.isFinite(created) && created <= queueEnd ? Math.max(0, Math.min(queueEnd, to) - Math.max(created, from)) / 1000 : null;
-      const unfinished = !unallocated && !unknownAllocation && Number.isFinite(start) && start < to && !endKnown;
-      if (unfinished) unfinishedJobs++;
-      if (!runnerSeconds && !queueSeconds && !unfinished) continue;
-      jobs.push({id, runId, attempt: run.attempt, headSha: run.headSha, name: job.name,
-        conclusion: job.conclusion, runnerSeconds, queueSeconds});
+      entries.push({run, runId, job, id});
     }
   }
+  for (const {run, runId, job, id} of entries) {
+    const start = Date.parse(job.started_at ?? job.startedAt), end = Date.parse(job.completed_at ?? job.completedAt);
+    const created = Date.parse(job.created_at ?? job.createdAt);
+    if (job.conclusion === 'skipped') continue;
+    const terminal = job.status === 'completed' || job.conclusion != null;
+    const priorExecution = terminal && Number.isFinite(created) && start > 0 && start < created;
+    if (priorExecution) {
+      const identity = executionIdentity(job);
+      const originals = identity === null ? [] : entries.filter(e => e.runId === runId &&
+        e.run.headSha === run.headSha && e.run.attempt < run.attempt &&
+        Date.parse(e.job.created_at ?? e.job.createdAt) <= start && executionIdentity(e.job) === identity);
+      // Keep the unique original reference and its queue, independent of input order.
+      if (originals.length === 1) continue;
+    }
+    // REST supplies started_at == created_at even before runner allocation.
+    // Status/runner identity must qualify that timestamp before calling it execution.
+    const pending = ['queued', 'waiting', 'pending'].includes(job.status);
+    const runner = job.runner_id ?? job.runnerId;
+    const unallocated = pending || runner === 0;
+    const unknownAllocation = !unallocated && runner === undefined &&
+      job.conclusion != null && job.conclusion !== 'success' && !job.steps?.some((s: any) => s.status === 'completed');
+    if (unknownAllocation) unknownAllocationJobs++;
+    const startKnown = Number.isFinite(start) && start > 0;
+    const endKnown = Number.isFinite(end) && end > 0 && (!Number.isFinite(created) || end >= created) &&
+      (!Number.isFinite(start) || end >= start);
+    const executionKnown = !priorExecution && !unallocated && !unknownAllocation && startKnown && endKnown;
+    const runnerSeconds = unallocated ? 0 : executionKnown ? Math.max(0, Math.min(end, to) - Math.max(start, from)) / 1000 : null;
+    const queueEnd = priorExecution ? NaN : pending ? to : unallocated ? (endKnown ? end : NaN) :
+      !unknownAllocation && startKnown ? start : NaN;
+    const queueSeconds = Number.isFinite(created) && created <= queueEnd ? Math.max(0, Math.min(queueEnd, to) - Math.max(created, from)) / 1000 : null;
+    const unfinished = !terminal && !unallocated && !unknownAllocation && startKnown && start < to && !endKnown;
+    if (unfinished) unfinishedJobs++;
+    if (runnerSeconds === 0 && queueSeconds === 0 && !unfinished) continue;
+    jobs.push({id, runId, attempt: run.attempt, headSha: run.headSha, name: job.name,
+      conclusion: job.conclusion, runnerSeconds, queueSeconds,
+      ...(priorExecution ? {provenance: 'unknown-prior-execution'} : {})});
+  }
   return {jobs: jobs.sort((a, b) => (b.runnerSeconds ?? 0) - (a.runnerSeconds ?? 0)), unfinishedJobs, unknownAllocationJobs, invalidSnapshots: invalid,
-    limitation: 'Queue uses job creation to allocation, cancellation before allocation, or the cutoff; missing clocks/allocation stay unknown. Parallel runner seconds are not critical-path delay.'};
+    limitation: 'Queue uses job creation to allocation, cancellation before allocation, or the cutoff; missing clocks/allocation stay unknown. Carried rows require a unique earlier step-backed execution to retain original attribution; unmatched prior execution has unknown provenance and timing. Terminal status never implies active work. Parallel runner seconds are not critical-path delay.'};
 }
