@@ -39,7 +39,7 @@ no net test/support growth unless a distinct new contract justifies it.
 | Hermes | Pending | Desktop integration, installation/distribution |
 | Shared | Pending | UI/theme, analytics, native utilities/handoff |
 | Composition | Pending | Real consumer assembly and CLI wiring |
-| Repository Enablement | Pending | Selection/admission, runners, hooks, prerequisites, timing |
+| Repository Enablement | Reporting-read fixture audited; rest pending | [Contracts/evidence](reporting-read.md); selection/admission, runners, hooks, timing remain |
 
 Platform/environment prerequisites are not yet assessed for pending areas. An
 unrun area is pending, not blocked or complete. No deletion target applies.
@@ -112,3 +112,14 @@ ledger and inventory statuses with each landed slice; do not stop after slice 1.
 All three Record slices share one bounded owner PR. Combined test/support delta:
 -5 lines and one duplicate declaration removed; production delta zero. Per-slice
 reviews, negative controls and development-composition evidence remain above.
+
+## Reporting-read prerequisite repair
+
+The combined Record hook exposed a 110-byte fixture socket path under a valid
+long `TMPDIR`: Node bound the truncated `capture.so`, then chmod failed before
+transport verification. [Audit/evidence](reporting-read.md) records the short
+private fixture repair and removal of unreachable set/click mocks/counters.
+All 21 cases pass; independent review and three negative controls preserve the
+read-only/deadline contracts. Net -5 further support lines, no new declarations;
+combined campaign candidate is -10 test/support lines and zero production changes.
+Normal hook/PR and exact-main gates remain pending.

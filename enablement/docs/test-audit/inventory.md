@@ -469,7 +469,7 @@
 | Repository Enablement | enablement/prerequisites/mac-picker.ts | source candidate | 523 | pending |
 | Repository Enablement | enablement/prerequisites/native.test.ts | source candidate | 275 | pending |
 | Repository Enablement | enablement/prerequisites/order.test.ts | source candidate | 169 | pending |
-| Repository Enablement | enablement/prerequisites/reporting-read.test.ts | source candidate | 176 | pending |
+| Repository Enablement | enablement/prerequisites/reporting-read.test.ts | source candidate | 176 | audited; repaired fixture; delivery pending |
 | Repository Enablement | enablement/prerequisites/routing.test.ts | source candidate | 65 | pending |
 | Repository Enablement | enablement/prerequisites/source-identity/git-index.test.ts | source candidate | 101 | pending |
 | Repository Enablement | enablement/prerequisites/targeted/run.test.ts | source candidate | 189 | pending |
