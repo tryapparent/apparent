@@ -213,6 +213,7 @@ test('committed concurrency-only workflow edits select contracts rather than pro
     {paths: result.paths, workflowControls: result.workflowControls}).map(command => command.argv), [
     ['python3', 'enablement/verification.py', '--base', base, '--head', 'HEAD', '--pr'],
     ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/desktop-install.test.ts'],
+      ['node', '--experimental-strip-types', '--test', 'enablement/posthog-fixer/test/service.test.ts', 'enablement/posthog-fixer/test/t3.test.ts'],
     ['python3', '-m', 'unittest', 'discover', '-s', 'enablement/directory-width/tests', '-p', 'test_*.py'],
   ]);
   assert.deepEqual(selection(base, 'HEAD', dir, true).selected, owners.filter(owner => !['public','hermes','engine-media'].includes(owner)));
@@ -304,6 +305,8 @@ test('new native prerequisite tests join the mandatory contract inventory automa
   assert.throws(() => contractTests(dir), /inventory is empty/);
   writeFileSync(join(folder, 'new-picker.test.ts'), '');
   writeFileSync(join(folder, 'helper.ts'), '');
+  mkdirSync(join(dir, 'enablement/timing'), {recursive:true});
+  writeFileSync(join(dir, 'enablement/timing/synthetic.test.ts'), '');
   const args = contractTests(dir)[0].argv;
   assert.ok(args.includes('enablement/prerequisites/new-picker.test.ts'));
   assert.ok(!args.includes('enablement/prerequisites/helper.ts'));

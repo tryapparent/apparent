@@ -107,8 +107,11 @@ test('foreground upload states stay private, bounded, and use one authorized pil
  await expect(retry).toBeFocused();
  if(evidence)await page.screenshot({path:path.join(evidence,'foreground-keyboard-focus.png'),fullPage:true});
  await page.keyboard.press('Enter');
- await expect.poll(()=>sent.filter(message=>message.action==='copy-link').length).toBe(2);
- assert.deepEqual(sent.filter(message=>message.action==='copy-link').at(-1),{revision:3,action:'copy-link'});
+ await expect(page.getByRole('button',{name:'Create public link',exact:true})).toBeVisible();
+ await assertNoOverflow('640px public sharing confirmation');
+ await page.getByRole('button',{name:'Create public link',exact:true}).click();
+ await expect.poll(()=>sent.filter(message=>message.action==='copy-public-link').length).toBe(1);
+ assert.deepEqual(sent.filter(message=>message.action==='copy-public-link').at(-1),{revision:3,action:'copy-public-link'});
 
  const cancelled={...base,revision:4,label:'Upload cancelled · recording saved locally',actions:actions('Retry upload',true)};
  await publish(cancelled);

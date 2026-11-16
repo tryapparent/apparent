@@ -660,22 +660,16 @@ mod tests {
 
     fn fake_frames(
         _: &Path,
-        times: crate::capture::desktop::helper::FrameTimes,
+        times: &[u64],
         max_edge: u32,
     ) -> Result<Vec<RgbaFrame>> {
-        let times: Vec<u64> = match times {
-            crate::capture::desktop::helper::FrameTimes::Every(step) => {
-                (0..MOVIE_MS).step_by(step as usize).collect()
-            }
-            crate::capture::desktop::helper::FrameTimes::At(at) => at.to_vec(),
-        };
         let (w, h) = if max_edge == 0 || max_edge >= W {
             (W, H)
         } else {
             (max_edge, H * max_edge / W)
         };
         Ok(times
-            .into_iter()
+            .iter().copied()
             .map(|t| {
                 let [r, g, b] = colour_at(t.min(MOVIE_MS - 1));
                 RgbaFrame::new(t, w, h, [r, g, b, 255].repeat((w * h) as usize))
@@ -709,13 +703,14 @@ mod tests {
     const FAKE: Media = Media {
         explicit_frames: |movie, times, offset, edge| {
             let wanted: Vec<_> = times.iter().map(|t| t.saturating_sub(offset)).collect();
-            let mut decoded = fake_frames(movie, crate::capture::desktop::helper::FrameTimes::At(&wanted), edge)?;
+            let mut decoded = fake_frames(movie, &wanted, edge)?;
             for (frame, requested) in decoded.iter_mut().zip(times) { frame.t_ms = *requested; }
             Ok(decoded)
         },
         probe: fake_probe,
         screen_candidates: |movie, _, offset, _| {
-            let mut frames = fake_frames(movie, crate::capture::desktop::helper::FrameTimes::Every(220), 640)?;
+            let times: Vec<_> = (0..MOVIE_MS).step_by(220).collect();
+            let mut frames = fake_frames(movie, &times, 640)?;
             for frame in &mut frames { frame.t_ms += offset; }
             Ok(frames)
         },

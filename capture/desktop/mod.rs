@@ -877,6 +877,7 @@ pub struct ApparentCoordinator {
     /// Prevent repeated publication callbacks from scheduling a second clipboard write.
     completion_pending: Option<u64>,
     capture_local_practice: bool,
+    recording_activity_attempted: bool,
     /// Media workers outlive their capsule and still own unfinished bundles.
     pending_finalizers: usize,
     #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -963,6 +964,7 @@ pub struct ApparentCoordinator {
     auto_paste_target: Option<(u64, linux::hyprland::FocusedWindow)>,
     /// The Completed island's lead text.
     completed_note: Option<String>,
+    share_public: bool,
     share_online: bool,
     share_probe_at: Option<Instant>,
     share_pending: Option<(PathBuf, u64, std::sync::Arc<std::sync::atomic::AtomicBool>)>,
@@ -1016,6 +1018,7 @@ impl ApparentCoordinator {
             capture_generation: 0,
             completion_pending: None,
             capture_local_practice: false,
+            recording_activity_attempted: false,
             pending_finalizers: 0,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             agent_capture_id: None,
@@ -1084,6 +1087,7 @@ impl ApparentCoordinator {
             #[cfg(target_os = "linux")]
             auto_paste_target: None,
             completed_note: None,
+            share_public: false,
             share_online: false,
             share_probe_at: None,
             share_pending: None,
@@ -2509,6 +2513,7 @@ impl ApparentCoordinator {
             self.capture_generation = self.capture_generation.wrapping_add(1);
         }
         if matches!(phase, IslandPhase::Recording) && !matches!(self.island_phase, IslandPhase::Recording) {
+            self.recording_activity_attempted = false;
             self.capture_local_practice = self.onboarding.as_ref().is_some_and(|session| session.local_practice());
         }
         let capture = match (self.island_phase, phase) {
@@ -2855,6 +2860,7 @@ impl ApparentCoordinator {
             },
             PillAction::Paste(target) => self.paste_completed_bundle(target, cx),
             PillAction::CopyLink => self.copy_completed_link(cx),
+            PillAction::CopyPublicLink => self.copy_completed_link_with_consent(true, cx),
             PillAction::Inspect => self.inspect_completed_bundle(cx),
             PillAction::SettingsAgents => self.open_settings(Some(settings::Pane::Agents)),
             PillAction::DismissCompleted => self.dismiss_completed_bundle(cx),
@@ -2982,6 +2988,10 @@ impl ApparentCoordinator {
     }
 
     pub fn copy_completed_link(&mut self, cx: &mut Context<Self>) {
+        self.copy_completed_link_with_consent(false, cx);
+    }
+
+    fn copy_completed_link_with_consent(&mut self, public: bool, cx: &mut Context<Self>) {
         if crate::connect::hosted::foreground_progress().is_some() {
             if self.cancel_completed_foreground_share() {
                 self.sync_native_pill();
@@ -2993,6 +3003,7 @@ impl ApparentCoordinator {
             || !matches!(self.island_phase, IslandPhase::Completed { .. })
             || !self.share_online || self.share_pending.is_some() { return; }
         let Some(bundle) = self.completed_dir.clone() else { return };
+        self.share_public = public;
         self.share_pending = Some((bundle, self.capture_generation, std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true))));
         if !crate::connect::hosted::sharing_connected() {
             self.share_waiting_account = true;
@@ -3009,14 +3020,17 @@ impl ApparentCoordinator {
         let Some((bundle, generation, active)) = self.share_pending.clone() else { return };
         self.share_waiting_account = false;
         let foreground = crate::connect::hosted::foreground_enabled();
+        let public = self.share_public;
         self.completed_note = Some(if connect { "Approve hosted upload in your browser…" } else { "Reserving link…" }.into());
         cx.spawn(async move |entity, cx| {
             let worker_bundle = bundle.clone();
             let worker_active = active.clone();
             let result = cx.background_executor().spawn(async move {
-                let allowed = || worker_active.load(std::sync::atomic::Ordering::SeqCst);
+                let allowed = || worker_active.load(std::sync::atomic::Ordering::SeqCst)
+                    && crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING);
                 if connect { crate::connect::hosted::connect_sharing(&allowed)?; }
-                crate::connect::hosted::copy_link_handoff(&worker_bundle, &allowed, foreground)
+                if public { crate::connect::hosted::prepare_public_link_handoff(&worker_bundle, &allowed, foreground) }
+                else { crate::connect::hosted::copy_link_handoff(&worker_bundle, &allowed, foreground) }
             }).await;
             let _ = entity.update(cx, |coord, cx| {
                 if !coord.admit_completed_share_result(&bundle, generation, &active, foreground) { return; }
@@ -3069,9 +3083,22 @@ impl ApparentCoordinator {
         });
     }
 
-    /// The UI loop's tick: advances the springs unless a new capsule window awaits its second
-    /// frame (`island_await_frame`).
+    /// Observe the native producer once; policy consumes the practice fact in TypeScript.
+    fn take_recording_start(&mut self) -> Option<bool> {
+        if self.recording_activity_attempted || self.agent_state().phase != crate::capture::desktop::workflow::agent_capture::Phase::Recording { return None; }
+        self.recording_activity_attempted = true;
+        Some(self.capture_local_practice)
+    }
+
+    fn observe_recording_activity(&mut self) {
+        if let Some(practice) = self.take_recording_start() {
+            crate::connect::hosted::observe_recording_start(practice);
+        }
+    }
+
+    /// Advance the UI without waiting on activity transport.
     pub fn island_tick(&mut self, cx: &mut Context<Self>) {
+        self.observe_recording_activity();
         #[cfg(target_os = "linux")]
         if self.discard_failed_screen_start() {
             cx.defer(whiteboard::close);
@@ -3156,6 +3183,12 @@ impl ApparentCoordinator {
         // A late frame slows the motion rather than skipping it ahead (a new window's second
         // frame comes ~50 ms after its first).
         let dt = (real * motion::time_scale()).min(0.025);
+        // The TypeScript consent flow retains only its current native surface.
+        // Releasing it resumes the existing completion interval.
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        if self.electron_pill.as_ref().is_some_and(|session| session.confirming_public_share()) {
+            self.renew_completed_share_presentation();
+        }
         if let IslandPhase::Completed { finished_at, .. } = self.island_phase
             && finished_at.elapsed() >= Duration::from_millis(15_000)
             && self.share_pending.is_none()
@@ -3918,6 +3951,7 @@ impl ApparentCoordinator {
     }
 
     pub fn finish_recording(&mut self, cx: &mut Context<Self>) {
+        self.observe_recording_activity();
         #[cfg(target_os = "linux")]
         if self.cancel_pending_screen_finish() {
             self.present_capture_cancellation(cx);
@@ -7721,6 +7755,31 @@ mod tests {
 
         assert!(coordinator.discard_recording().is_none());
         assert_eq!(coordinator.agent_state().capture_id, None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn recording_activity_observes_real_start_once_and_preserves_practice_fact() {
+        use std::sync::atomic::Ordering;
+        let (sender, _receiver) = flume::unbounded();
+        let mut coordinator = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
+        let (session, _failed, seen) = ScreenCaptureSession::test_pending_start();
+        coordinator.active_recording = Some(ActiveRecording {
+            started: Instant::now(), target: region_target(0.0,0.0,64.0,64.0,&[]),
+            bundle_dir: PathBuf::from("synthetic-unused.apparent"),
+            source: CaptureSource::Screen {session,audio:None,windows:None},
+            _metal_overlay:None,microphone_enabled:false,
+        });
+        coordinator.set_island_phase(IslandPhase::Recording);
+        assert_eq!(coordinator.take_recording_start(),None,"pending permission/frame is not activity");
+        seen.store(true,Ordering::Release);
+        assert_eq!(coordinator.take_recording_start(),Some(false));
+        assert_eq!(coordinator.take_recording_start(),None,"ticks and Finish cannot report twice");
+        coordinator.recording_activity_attempted=false;
+        coordinator.capture_local_practice=true;
+        assert_eq!(coordinator.take_recording_start(),Some(true),"TypeScript receives the practice exclusion fact");
+        coordinator.active_recording=None;
+        assert_eq!(coordinator.take_recording_start(),None);
     }
 
     #[cfg(target_os = "linux")]

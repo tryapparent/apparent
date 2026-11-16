@@ -6,6 +6,7 @@
   "exports": {
     "./input": "./src/forms/input.tsx",
     "./switch": "./src/forms/switch.tsx",
+    "./error-dialog": "./src/forms/error-dialog.tsx",
     "./icons": "./src/icons.ts",
     "./tooltip": "./src/forms/tooltip.tsx",
     "./native-select": "./src/forms/native-select.tsx",

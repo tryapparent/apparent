@@ -262,6 +262,9 @@ async function main() {
         await ui('saved foreground pill', value => value.includes('copy link'), generated.pid);
         const before = await status(); assert.equal(before.captures.length, 0); assert.equal(before.uploadedBytes, 0); assert.deepEqual(await jobs(), []);
         await native('click', 'Copy link', undefined, prepared.pid);
+        await ui('public sharing disclosure', value => value.includes('anyone with this link') && value.includes('shared captures') && value.includes('encrypted') && value.includes('create public link'), generated.pid);
+        const disclosed = await status(); assert.equal(disclosed.uploadedBytes, 0); assert.equal(disclosed.shareCalls, 0);
+        await native('click', 'Create public link');
         await ui('upload progress', value => value.includes('uploading') && value.includes('cancel upload'), generated.pid);
         const during = await poll(status, value => value.putCount > 0, 'actual PUT body receipt', 5000);
         await native('click', 'Cancel upload');
@@ -269,6 +272,8 @@ async function main() {
         const cancelled = await poll(status, value => value.cancelledPuts === 1, 'cancelled PUT connection', 5000);
         assert.equal(cancelled.uploadedBytes, 0, 'Cancelled transfer committed bytes');
         await native('click', 'Retry upload');
+        await ui('retry public sharing disclosure', value => value.includes('create public link'), generated.pid);
+        await native('click', 'Create public link');
         await ui('link copied', value => value.includes('link copied') && value.includes('copy link'), generated.pid, 30_000);
         const completed = await status();
         assert.equal(completed.syntheticOnly, true); assert.equal(completed.shareCalls, 1);
@@ -286,6 +291,12 @@ async function main() {
         assert.ok((await command('/usr/bin/pbpaste', [], {env: hostEnv})) === sentinel, 'Clipboard sentinel did not settle');
         await ui('fresh recopy target', value => value.includes('link copied') && value.includes('copy link'), generated.pid);
         await native('click', 'Copy link');
+        await ui('recopy public sharing disclosure', value => value.includes('create public link'), generated.pid);
+        // Reading consent must outlive the ordinary 15-second saved-pill timer.
+        await sleep(16_000);
+        await ui('recopy disclosure retained after completion deadline', value => value.includes('create public link'), generated.pid);
+        assert.deepEqual(footprint(await status()), footprint(completed), 'Waiting for consent changed the hosted recording');
+        await native('click', 'Create public link');
         await poll(() => command('/usr/bin/pbpaste', [], {env: hostEnv}), value => value === copied, 'native clipboard restoration', 3000);
         const recopied = await status(); assert.deepEqual(footprint(recopied), footprint(completed)); assert.deepEqual(await jobs(), []);
         await evidence('foreground-result', {passed: true, scope: 'Native installed Mac pill; explicit synthetic plaintext share; encrypted CLI proof separate',

@@ -1,5 +1,6 @@
 // Aggregate-only, fail-open service activity. No request/body/token/content is
 // retained. A primary success is never rolled back or awaited on these writes.
+import {queueProductActivity} from './product-activity.ts';
 import type {Env} from '../types.ts';
 import {DAY,stmt} from '../common.ts';
 const HOUR=3600000;
@@ -30,6 +31,7 @@ export async function admitDailyActivity(env:Env,account:string,occurredAt:numbe
  }
 }
 export function queueDailyActivity(env:Env,context:ExecutionContext|undefined,request:Request,account:string,occurredAt:number) {
+ queueProductActivity(env,context,request,account,'connect');
  if(!context||request.headers.get('Sec-GPC')==='1'||request.headers.get('DNT')==='1')return;
  try {context.waitUntil(admitDailyActivity(env,account,occurredAt));}catch{/* Primary service remains available. */}
 }

@@ -6,7 +6,6 @@
 //   apparent-helper transcribe FILE [--locale ID]          SpeechAnalyzer transcript with word timings
 //   apparent-helper transcribe-stream [--locale ID]        the same while recording: PCM on stdin, JSON lines (LiveTranscribe.swift)
 //   apparent-helper speech-model [--install] [--locale ID] the speech model's status; install it (JSON lines)
-//   apparent-helper frames MOVIE --out-dir DIR (--every MS | --at MS,MS…) [--max-edge PX]
 //   apparent-helper audio MOVIE OUT.wav                   16 kHz mono PCM of every audio track, mixed
 //   apparent-helper shrink MOVIE --out FILE.mov [--max-edge PX] [--bitrate BPS]   HEVC copy, same timeline
 //   apparent-helper export PLAN.json                      shareable .mp4: crop/camera, burned-in ink, audio (Export.swift)
@@ -123,16 +122,6 @@ case "transcribe-stream":
 case "speech-model":
   let install = arguments.contains("--install")
   runAsync { await SpeechModel.run(install: install, preferred: option("--locale", in: arguments)) }
-case "frames":
-  guard arguments.count >= 2, let dir = option("--out-dir", in: arguments) else {
-    fail("frames needs MOVIE --out-dir DIR (--every MS | --at MS,MS…)")
-  }
-  let maxEdge = option("--max-edge", in: arguments).flatMap(Int.init) ?? 0
-  let every = option("--every", in: arguments).flatMap(Int.init)
-  let at = option("--at", in: arguments)?.split(separator: ",").compactMap { Int($0) }
-  runAsync {
-    emit(try await Media.frames(movie: URL(filePath: arguments[1]), outDir: URL(filePath: dir), everyMs: every, atMs: at, maxEdge: maxEdge))
-  }
 case "audio":
   guard arguments.count >= 3 else { fail("audio needs MOVIE OUT.wav") }
   runAsync { emit(try await Media.exportAudio(movie: URL(filePath: arguments[1]), wav: URL(filePath: arguments[2]))) }
@@ -165,5 +154,5 @@ case "qr":
   }
   emit(["qr": qr])
 default:
-  fail("usage: apparent-helper devices|mirror|transcribe|transcribe-stream|speech-model|frames|audio|export|shrink|permission-panel|permissions|sck-probe|onboarding|settings|qr …")
+  fail("usage: apparent-helper devices|mirror|transcribe|transcribe-stream|speech-model|audio|export|shrink|permission-panel|permissions|sck-probe|onboarding|settings|qr …")
 }

@@ -74,10 +74,12 @@ test('installed About projects parent state and bounds actions', async () => {
         await expect.poll(() => page.evaluate(() => innerWidth)).toBe(size[0]);
         for (const colorScheme of ['light', 'dark'] as const) {
           await page.emulateMedia({ colorScheme });
-          await expect(page.locator('.settings-shell')).toHaveCSS('--apparent-primary', colorScheme === 'dark' ? '#b7a5d8' : '#0000f2');
-          await page.getByRole('button', { name: 'Show welcome tour', exact: true }).scrollIntoViewIfNeeded();
+          await expect(page.locator('.settings-shell')).toHaveCSS('--apparent-primary', '#7a58c7');
+          await expect(page.locator('.settings-links a').first()).toHaveCSS('color',colorScheme==='dark'?'rgb(245, 240, 232)':'rgb(2, 1, 2)');
+          if(result==='failed') await page.getByRole('alertdialog').scrollIntoViewIfNeeded();
+          else await page.getByRole('button', { name: 'Show welcome tour', exact: true }).scrollIntoViewIfNeeded();
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-          assert.equal(await page.locator('.settings-sidebar').evaluate(element => element.scrollWidth <= element.clientWidth), true, 'sidebar fits without a horizontal scroll');
+          assert.equal(await page.locator('.settings-sidebar').evaluate(element => element.scrollWidth <= element.clientWidth), true, 'sidebar viewport fits');
           if (process.env.APPARENT_SETTINGS_PROOF) {
             await fs.mkdir(process.env.APPARENT_SETTINGS_PROOF, { recursive: true });
             await page.screenshot({ animations: 'disabled', path: path.join(process.env.APPARENT_SETTINGS_PROOF, `about-${result ?? 'idle'}-${size[0]}-${colorScheme}.png`) });
@@ -93,6 +95,7 @@ test('installed About projects parent state and bounds actions', async () => {
     if (process.env.APPARENT_SETTINGS_PROOF) await page.screenshot({path: path.join(process.env.APPARENT_SETTINGS_PROOF, 'about-unavailable.png')});
     await page.getByRole('button', { name: 'Copy version', exact: true }).click();
     await expect(page.getByText('Unable to copy. Try again.', { exact: true })).toBeVisible();
+    await page.getByRole('button',{name:'Close',exact:true}).click();
     await page.getByRole('button', { name: 'Storage', exact: true }).click();
     await expect.poll(() => output.includes('"pane":"storage"')).toBe(true);
   } finally { await application.close(); await fs.rm(home, { recursive: true, force: true }); }

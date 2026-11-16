@@ -760,6 +760,7 @@ pub enum Pane {
     Storage,
     Permissions,
     Agents,
+    Labs,
     About,
 }
 
@@ -2005,7 +2006,7 @@ impl Session {
         let events: std::sync::Arc<dyn Fn(Event) + Send + Sync> = std::sync::Arc::new(move |event| {
             target(Event::Presentation { generation, event: Box::new(event) });
         });
-        if allow_electron && (matches!(pane, Some(Pane::About | Pane::Agents)) || electron_storage(pane, crate::shared::handoff::experiment("electronCaptureLocation"))) {
+        if allow_electron && (matches!(pane, Some(Pane::About | Pane::Agents | Pane::Labs)) || electron_storage(pane, crate::shared::handoff::experiment("electronCaptureLocation"))) {
             match super::presentation::open(pane.unwrap_or(Pane::Storage), events.clone()) {
                 Ok(transport) => return Ok((transport, true)),
                 Err(error) => crate::capture::engine::runtime::apparent_log(format!("Settings fallback: {error:#}")),
@@ -2069,7 +2070,13 @@ impl Session {
     /// `Close`); the rest is done here.
     /// Filter retired windows before coordinator safety/permission checks too.
     pub fn current_event(&self, event: Event) -> Option<Event> {
-        event.for_presentation(self.generation)
+        let presentation = matches!(&event, Event::Presentation { .. });
+        let event = event.for_presentation(self.generation)?;
+        if presentation && self.electron
+            && let Event::Action(action) = &event
+            && !self.pane.is_some_and(|pane| super::presentation::admits(pane, action))
+        { return None; }
+        Some(event)
     }
 
     pub fn event(&mut self, event: Event, host: &mut dyn Host) -> Effect {
@@ -2089,6 +2096,8 @@ impl Session {
             Event::Action(Action::AgentsPreference { request, enabled, setting }) => {
                 if self.electron && self.pane == Some(Pane::Agents) {
                     self.send(&super::agents::request_for(&host.config_path(), request, enabled, setting.as_deref()));
+                } else if self.electron && self.pane == Some(Pane::Labs) && matches!(setting.as_deref(), Some("autoPaste" | "sharing")) {
+                    self.send(&super::agents::labs_request(&host.config_path(), request, enabled, setting.as_deref().unwrap()));
                 }
                 Effect::None
             }
@@ -2239,8 +2248,9 @@ impl Session {
 
     pub fn show(&mut self, pane: Option<Pane>) {
         if let Some(pane) = pane {
-            let electron = matches!(pane, Pane::About | Pane::Agents) || electron_storage(Some(pane), crate::shared::handoff::experiment("electronCaptureLocation"));
-            if electron != self.electron || (self.electron && self.pane != Some(pane)) {
+            let electron = matches!(pane, Pane::About | Pane::Agents | Pane::Labs) || electron_storage(Some(pane), crate::shared::handoff::experiment("electronCaptureLocation"));
+            let shared_shell = matches!(self.pane, Some(Pane::Agents | Pane::About)) && matches!(pane, Pane::Agents | Pane::About);
+            if electron != self.electron || (self.electron && self.pane != Some(pane) && !shared_shell) {
                 let generation = super::presentation::generation();
                 match Self::open_presentation(Some(pane), generation, &self.events, true) {
                     Ok((transport, electron)) => {
@@ -2288,8 +2298,9 @@ impl Session {
                 let text = message.to_string();
                 if text != self.last_view { self.send(&message); self.last_view = text; }
             }
-            if self.pane == Some(Pane::Agents) {
-                let message = serde_json::json!({"type": "agents-state", "facts": super::agents::facts(&host.config_path())});
+            if matches!(self.pane, Some(Pane::Agents | Pane::Labs)) {
+                let facts = if self.pane == Some(Pane::Labs) { super::agents::labs_facts(&host.config_path()) } else { super::agents::facts(&host.config_path()) };
+                let message = serde_json::json!({"type": "agents-state", "facts": facts});
                 let text = message.to_string();
                 if text != self.last_view { self.send(&message); self.last_view = text; }
             }

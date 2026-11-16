@@ -50,6 +50,11 @@ pub struct Control {
 }
 
 impl View {
+    fn admits_sharing_confirmation(&self, revision: Option<u64>) -> bool {
+        self.phase == "completed" && revision == Some(self.revision)
+            && self.actions.iter().any(|action| action.id == "copy-link" && action.enabled)
+    }
+
     pub fn new(snapshot: &PillSnapshot, revision: u64, draggable: bool) -> Self {
         let mut view = Self {
             revision,
@@ -212,7 +217,9 @@ impl View {
     }
 
     /// Admission is checked again against current coordinator state before dispatch.
-    pub fn admit(&self, command: Command) -> Option<PillAction> {
+    pub fn admit(&self, mut command: Command) -> Option<PillAction> {
+        let public = command.action == "copy-public-link";
+        if public { command.action = "copy-link".into(); }
         if command.revision == self.revision && command.action == "settings-agents" && command.target.is_none()
             && matches!(self.phase, "processing" | "completed") {
             return Some(PillAction::SettingsAgents);
@@ -241,7 +248,7 @@ impl View {
             "whiteboard" => PillAction::Whiteboard,
             "notes" => PillAction::Notes,
             "paste" => PillAction::Paste(command.target),
-            "copy-link" => PillAction::CopyLink,
+            "copy-link" => if public { PillAction::CopyPublicLink } else { PillAction::CopyLink },
             "inspect" => PillAction::Inspect,
             "dismiss" => PillAction::DismissCompleted,
             action if action.starts_with("select-") => {

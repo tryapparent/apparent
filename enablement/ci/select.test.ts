@@ -142,8 +142,8 @@ test('portable checks execute once; nested platforms consume plans rather than e
   assert.equal(platform.on.workflow_call.inputs.plan.default, '');
   assert.ok(platform.jobs.select.steps.some((s: any) => s.run?.includes('--portable') && s.if === 'inputs.portable'));
   assert.doesNotMatch(readFileSync(new URL('.github/workflows/verification-platform.yml', root), 'utf8'), /hash-object -t tree/);
-  assert.equal(platform.jobs['desktop-ui'].if, "needs.select.outputs.desktop == 'true'");
-  assert.equal(platform.jobs['connect-client'].if, "needs.select.outputs.client == 'true'");
+  assert.equal(platform.jobs['desktop-ui'].if, "(inputs.runner != 'macos-15-intel' || inputs.release_receipt) && needs.select.outputs.desktop == 'true'");
+  assert.equal(platform.jobs['connect-client'].if, "(inputs.runner != 'macos-15-intel' || inputs.release_receipt) && needs.select.outputs.client == 'true'");
   assert.match(platform.jobs.rust.if, /outputs.root.*outputs.engine/);
   assert.ok(ci().jobs.portable.steps.some((s: any) => s.run?.includes('--portable')));
 });
@@ -196,6 +196,7 @@ test('standalone Enablement regression tests select tooling while execution inpu
     assert.deepEqual(localCommands(['tooling'], 'base', 'head').map(command => command.argv), [
       ['python3', 'enablement/verification.py', '--base', 'base', '--head', 'head', '--pr'],
       ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/desktop-install.test.ts'],
+      ['node', '--experimental-strip-types', '--test', 'enablement/posthog-fixer/test/service.test.ts', 'enablement/posthog-fixer/test/t3.test.ts'],
       ['python3', '-m', 'unittest', 'discover', '-s', 'enablement/directory-width/tests', '-p', 'test_*.py'],
     ]);
     assert.ok(contractTests().some(command => command.argv.includes(path)), `${path} remains in the mandatory full contract inventory`);
@@ -205,6 +206,20 @@ test('standalone Enablement regression tests select tooling while execution inpu
   assert.deepEqual(selectedOwners(['enablement/prerequisites/new-regression.test.ts']), ['tooling']);
   assert.deepEqual(selectedOwners([audited[0], 'capture/engine/src/lib.rs']), ['engine', 'tooling']);
 });
+
+test('PostHog fix service additions select portable tooling without product publication', () => repository((git,dir) => {
+  git('init', '-q');git('config','user.name','Synthetic');git('config','user.email','synthetic@example.invalid');
+  writeFileSync(join(dir,'baseline'),'synthetic');git('add','.');git('commit','-qm','baseline');const base=git('rev-parse','HEAD');
+  mkdirSync(join(dir,'enablement/posthog-fixer/test'),{recursive:true});
+  for(const path of ['main.ts','apparent-posthog-fixer.service','README.md','test/service.test.ts'])
+    writeFileSync(join(dir,'enablement/posthog-fixer',path),'synthetic');
+  git('add','.');git('commit','-qm','service');const head=git('rev-parse','HEAD');
+  const selected=selectRange(base,head,dir);
+  assert.deepEqual(selected.selected,['tooling']);assert.equal(selected.macos,false);
+  assert.ok(Object.values(selected.publicationStreams).every(value=>!value));
+  assert.ok(localCommands(selected.selected,base,head).some(command=>command.argv.includes('enablement/posthog-fixer/test/service.test.ts')));
+  assert.ok(!selectedOwners(['enablement/posthog-fixer/native.rs']).every(owner=>owner==='tooling'),'unexpected native input stays conservative');
+}));
 
 function repository(action: (git: (...args: string[]) => string, dir: string) => void) {
   const dir = mkdtempSync((process.env.TMPDIR || '/tmp') + '/apparent-dev-selector-');

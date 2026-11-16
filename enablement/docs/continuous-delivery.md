@@ -53,6 +53,17 @@ It verifies the union of their required Linux/Mac platform suites once, then cal
 attempt. Connect retains its own contracts, portable checks and publication gates;
 manual dispatch retains independent platform execution when no valid shared
 receipt exists. Public keeps its direct `stream-public.yml` automatic entrypoint.
+Within each automatic Mac platform call, the selected native, Desktop and standalone client
+suites share one `platform (macos-15-intel)` allocation. Linux keeps independent
+parallel jobs. The shared Mac job retains selected signing/installed native proof,
+Electron checks and independent client builds/tests, with their existing private
+temporary roots and artifacts. Renderer-only plans do not install Rust or run
+native checks; an inconsistent native exemption fails instead of claiming proof.
+The packed job retains its 60-minute outer cap, plus the renderer/client step
+caps; correctness and hosted occupancy still require actual successful execution.
+Receipt authentication accepts the packed job only from its real successful
+GitHub conclusion with the matching complete plan, source, run and attempt.
+Manual receipt calls retain their separate jobs and historical admission names.
 The shared adapter adds only root/Engine, Desktop and client platform requirements
 from Connect. Capture keeps its original portable selection; Connect's own
 portable job remains required independently of the shared native receipt. A
@@ -329,6 +340,9 @@ For broad root checkpoints, use `cargo build -j 3 --offline` and
 `target/debug/apparent`: `cargo test` does not rebuild the application executable.
 On Clanker run each heavy command or hook-backed push once through
 `/home/simon/.local/bin/t3-build`, never nested, honoring `T3_BUILD_JOBS`.
+For hook-backed pushes, use the [budget-preserving Clanker entrypoint](../local-tests/README.md#clanker-push-budget-and-workspace); it inherits the live runner deadline unless an explicit total cap applies.
+That guidance also covers T3 workspace binding for independent work and pinned
+unpublished dependencies; existing frozen-checkout holds remain authoritative.
 
 Run the commands in the checks section from the repository root (the Node commands
 from their package directories). For a no-network deployment wiring check, generate

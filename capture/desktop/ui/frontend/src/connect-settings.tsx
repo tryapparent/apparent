@@ -52,6 +52,7 @@ export function ConnectSettingsCard() {
       <p>{p?.detail ?? view?.detail ?? 'Open the current Apparent app, then refresh. Local recording remains available.'}</p>
       {buttons.some(b=>b.command==='connect')&&<p className="status-note">Continuing requests upload access for new captures, including recordings, screen images, voice, transcripts and context. Older captures stay local. You approve this computer in your browser.</p>}
       {p?.note && <p className="status-note">{p.note}</p>}
+      <p className="status-note">While connected, recording starts contribute to daily and weekly account totals. Only a pseudonymous identifier and last active UTC date are kept for seven days; no recording content or email. Manage this in your Connect account’s analytics settings. Practice recordings are excluded.</p>
       {cardButtons.length > 0 && <div className="status-actions">{cardButtons.map(button => renderButton(button))}</div>}
       {!view && <Button className="primary-action" disabled={busy} onClick={() => void request('check')}>Refresh connection</Button>}
     </StatusCard>

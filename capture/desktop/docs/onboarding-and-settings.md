@@ -1,6 +1,6 @@
 # Onboarding, permissions and Settings
 
-Settings → Agents → Labs offers **Auto paste**, off by default. It saves
+Settings → Labs offers **Auto paste**, off by default. It saves
 `experiments.autoPasteDraft` through the existing config transaction; changes
 apply at the next Finish without restart (including external file edits).
 Linux Hyprland with Lua dispatchers is the initial native adapter; other Linux
@@ -9,13 +9,17 @@ same window to remain focused from Finish through processing and both pastes.
 It never presses Enter. Check the receiving composer; dispatch does not prove
 attachment acceptance. Saved captures and the explicit Paste action remain
 available. Setup practice and agent/phone captures do not auto paste.
-Turning the experiment off restores ordinary copy; no donor surface is removed.
+Turning the experiment off restores ordinary copy. Labs is a separate Electron
+pane between Agents and About, with a flask icon in both sidebars. It shares the
+existing config transaction, with experiment-only read/write capabilities. If
+packaged Settings assets are unavailable, the retained native shell explains how
+to restore Labs; it does not add a second experiment editor.
 
 ## Opening the app
 
 Opening Apparent from the macOS or Linux app picker opens Settings on About,
 including when the app is already running. The shared Electron Settings shell
-provides the sidebar to General, Recording, Storage, Permissions and Agents;
+provides the sidebar to General, Recording, Storage, Permissions, Agents and Labs;
 panes without an accepted Electron replacement retain their native presentation.
 This launch slice reuses that presentation contract and its existing config writer;
 it does not add a second preferences writer. Missing Electron assets or a failed
@@ -279,6 +283,15 @@ the guided capture lesson. Permission-repair windows retain their existing behav
 ## Settings (`capture/desktop/settings/settings.rs`, `capture/desktop/native/Settings.swift`)
 
 ### Agents
+
+Agents and About share one live Electron window. Parent-admitted navigation changes
+the React pane and main-process capability checks without reloading the document;
+other panes retain the existing presentation replacement and fallback. Reverting
+this routing restores the previous child-per-pane path. No donor is removed.
+The accepted design uses compact command-copy/help controls, Stock-off/Lilac-on
+switches, a wait cursor during acknowledged saves and shared ErrorDialog popups.
+Error actions are left aligned with recovery first and Close second. Unknown
+preference outcomes require Refresh preference; dismissing never proves a save.
 
 Installed Settings routes Agents to the shared Electron shell on macOS and Linux.
 Desktop's `ui/frontend/src/agents` owns preference defaults, save/readback
@@ -739,3 +752,16 @@ host receipt and restores the existing native trial. This is a bounded move of
 shortcut-practice policy into TypeScript, not independent onboarding release or
 migration of the remaining Rust journey/progress writer. Installed Mac/Linux
 shortcut release, capture-start and remembered-progress acceptance remain required.
+
+Settings → Labs also exposes **Public sharing links**, off by default via
+`experiments.hostedSharing`. Enabling it grants no upload consent and uploads
+nothing by itself. The Electron recording controls confirm that anyone with the
+link can view the capture and that the shared copy is not end-to-end encrypted,
+then create a separate public copy while preserving the private job. Cancellation
+and stale recording actions do not admit a public copy. Disabling applies to the
+next recording without restart and does not revoke existing links. Direct config
+edits have the same timing. A copied link may still be preparing its upload.
+Legacy native controls retain their private-link path and encrypted-sharing refusal;
+rolling back the Electron command restores that refusal, with no config migration
+or second writer. Installed platform capture and live upload acceptance remain
+separate from synthetic renderer and protocol checks.

@@ -56,6 +56,7 @@ pub enum PillAction {
     Finish,
     Paste(Option<[f32; 2]>),
     CopyLink,
+    CopyPublicLink,
     Inspect,
     SettingsAgents,
     DismissCompleted,
