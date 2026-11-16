@@ -285,6 +285,10 @@ test('Connect shipped Electron IPC, consent presentation, browser action and lif
   }
   await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1));
   // Exact General renderer states; transport remains synthetic, never live auth proof.
+  await expect(page.locator('h1')).toHaveCSS('font-size','48px');
+  await expect(page.locator('h1')).toHaveCSS('font-weight','700');
+  await expect(page.locator('.general-shortcut h2').first()).toHaveCSS('font-size','24px');
+  await expect(page.locator('.general-row').first()).toHaveCSS('font-weight','500');
   for(const theme of ['light','dark'])for(const width of [720,640]) {
     await application.evaluate(({nativeTheme,BrowserWindow},{theme,width})=>{nativeTheme.themeSource=theme;BrowserWindow.getAllWindows()[0].setSize(width,530)}, {theme,width});
     await page.emulateMedia({reducedMotion:'reduce'});

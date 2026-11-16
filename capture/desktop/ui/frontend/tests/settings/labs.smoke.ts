@@ -82,7 +82,7 @@ test('Labs is a separate flask pane with acknowledged experiment saves and bound
         try{await call();return false;}catch{}
       }return true;
     }),true,'Labs cannot mutate other panes or send non-boolean preferences');
-    for(const width of [920,640,320]){
+    for(const width of [920,720,640,320]){
       const session=await page.context().newCDPSession(page);await session.send('Emulation.setDeviceMetricsOverride',{width,height:530,deviceScaleFactor:1,mobile:false});
       for(const colorScheme of ['light','dark'] as const){
         await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
@@ -107,6 +107,16 @@ test('Labs is a separate flask pane with acknowledged experiment saves and bound
         }
       }await session.detach();
     }
+    const enlarged=await page.context().newCDPSession(page);
+    await enlarged.send('Emulation.setDeviceMetricsOverride',{width:640,height:530,deviceScaleFactor:1,mobile:false});
+    await page.evaluate(()=>document.documentElement.style.fontSize='200%');
+    for(const colorScheme of ['light','dark'] as const){
+      await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
+      assert.equal(await page.locator('.settings-content').evaluate(e=>e.scrollWidth<=e.clientWidth),true);
+      for(const control of [toggle,sharing,wispr]){await control.scrollIntoViewIfNeeded();await expect(control).toBeInViewport();}
+      if(process.env.APPARENT_LABS_PROOF)await page.screenshot({path:path.join(process.env.APPARENT_LABS_PROOF,'labs-640-enlarged-'+colorScheme+'.png')});
+    }
+    await page.evaluate(()=>document.documentElement.style.removeProperty('font-size'));await enlarged.detach();
     for (const pane of ['General','Agents','Recording','Permissions','Storage','About']) {
       const before=actions.length;
       const target=page.getByRole('button',{name:pane,exact:true});

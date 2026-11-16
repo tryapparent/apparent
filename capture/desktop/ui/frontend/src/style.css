@@ -129,19 +129,8 @@ html:has(.settings-shell),body:has(.settings-shell),#root:has(>.settings-shell){
 @media(prefers-color-scheme:dark){.settings-t3-dialog{background:var(--apparent-carbon);color:var(--apparent-paper)}}
 
 .settings-content [data-slot='native-select-icon']{color:var(--apparent-carbon);opacity:1}
-/* Preserve the accepted compact General composition beside the adopted Settings panes. */
-.settings-general-shell { font:18px/1.4 'Host Grotesk',system-ui,sans-serif; background:var(--color-background);color:var(--color-foreground); }
-.settings-general-shell .settings-sidebar { width:184px;border-right:0; }
-.settings-general-shell .settings-brand { padding:0 20px 30px; }
-.settings-general-shell .settings-sidebar button { height:43px;padding:0 20px;gap:14px; }
-.settings-general-shell .settings-content { padding:26px 28px 20px;scrollbar-gutter:stable; }
-.settings-general-shell .settings-content header { border:0;padding-bottom:0;margin-bottom:22px; }
-.settings-general-shell .settings-content h1 { font-size:36px;line-height:1.15;font-weight:500; }
-.settings-general-shell .settings-content h2 { font-size:18px;line-height:1.4;font-weight:600; }
-.settings-general-shell :where(.settings-content) button { min-height:36px;border-radius:3px;font-size:16px; }
-@media(max-width:700px){.settings-general-shell .settings-sidebar{width:150px}.settings-general-shell .settings-sidebar button{padding-inline:16px;font-size:16px;gap:10px}.settings-general-shell .settings-brand{padding-inline:16px}.settings-general-shell .settings-content{padding-inline:20px}}
-@media(max-width:480px){.settings-general-shell .settings-sidebar{width:100%}}
-.general-row { display:flex; justify-content:space-between; align-items:center; gap:16px; padding-block:12px; border-bottom:1px solid var(--color-border); }
+/* General shares the approved shell/type roles; compact capture cards stay local. */
+.general-row { display:flex; justify-content:space-between; align-items:center; gap:16px; font-weight:500; padding-block:12px; border-bottom:1px solid var(--color-border); }
 .general-row input { width:20px; height:20px; flex:none; accent-color:var(--color-primary); }
 .general-row input:focus-visible { outline:2px solid var(--color-ring); outline-offset:3px; }
 .general-shortcut { margin-top:22px; }
@@ -151,7 +140,7 @@ html:has(.settings-shell),body:has(.settings-shell),#root:has(>.settings-shell){
 /* Compact Connect cards: task actions follow content in DOM order. */
 .apparent-connect-workflow { container-name:connect; container-type:inline-size; font:400 1.125rem/1.5 'Host Grotesk',sans-serif; }
 .apparent-connect-workflow .apparent-status-card { display:grid; grid-template-columns:minmax(0,1fr) auto; border-radius:0; border-inline-start-width:1px; padding:24px; gap:12px 24px; align-items:center; }
-.apparent-connect-workflow .apparent-status-card h2 { font-size:1.125rem; line-height:1.5; font-weight:700; margin:0; text-wrap:initial; }
+.apparent-connect-workflow .apparent-status-card h2 { font-size:var(--apparent-type-section); line-height:2rem; font-weight:500; margin:0; text-wrap:initial; }
 .apparent-connect-workflow .apparent-status-card p { margin:4px 0 0; }
 .apparent-connect-workflow .status-leading,.apparent-connect-workflow .status-footer { grid-column:1 / -1; min-width:0; }
 .apparent-connect-workflow .status-content { grid-column:1; }

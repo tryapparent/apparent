@@ -921,3 +921,9 @@ uses an owned AppKit fixture for normal quit and refusal. Synthetic proof is not
 verification of an active dictation in the vendor's app. The sprite sheet was
 generated from Apparent's existing frog reference; the key and basket carry no
 Wispr logo.
+
+General retains its compact capture-card artwork, action ordering and privacy
+and activity disclosures while inheriting the shared Settings title/section/body
+roles and narrow-window navigation. This follows the approved 48/24/18 hierarchy;
+General no longer pins the earlier 36px title or 18px section headings. Agents
+and Labs retain the shared switch states and the default-off Wispr experiment.
