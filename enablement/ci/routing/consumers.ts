@@ -1,3 +1,4 @@
+import {independentInputs} from './engine-inputs/qualify.ts';
 // Owner facts shared by hosted admission and local pushes. Unknown inputs stay broad.
 export const owners = ['capture', 'engine', 'desktop', 'capture-tools', 'client', 'client-foreground', 'web', 'service', 'public', 'hermes', 'tooling', 'onboarding', 'engine-media'] as const;
 export type Owner = typeof owners[number];
@@ -126,6 +127,7 @@ function directConsumers(path: string): readonly Owner[] {
   // never this implementation tree. Consumer pin/policy/package changes retain
   // their installed application consumers through record/ below.
   if (path.startsWith('engine/') || path === '.github/workflows/stream-engine.yml') return ['engine-media'];
+  if (independentInputs.has(path)) return owners.filter(owner => owner !== 'engine-media');
   if (path.startsWith('enablement/ci/') || path === 'enablement/local-tests/run.ts' || path.startsWith('.github/actions/ubuntu-apt/')) return owners;
   if (portableForegroundInputs.has(path)) return ['client-foreground'];
   if (onboardingPureInputs.has(path)) return ['desktop', 'onboarding'];

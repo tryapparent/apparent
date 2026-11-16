@@ -1,3 +1,4 @@
+import {engineIndependentRange} from './routing/engine-inputs/qualify.ts';
 import {fixtureCandidate, qualifyFixtures, fixtureMacRequired, fixturePlatformBoundary} from './routing/fixture-portability/qualify.ts';
 import {execFileSync} from 'node:child_process';
 import {appendFileSync} from 'node:fs';
@@ -138,7 +139,8 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
     ((change.status === 'D' && !supportedOnboardingDeletion(change)) ||
       (change.status === 'A' && !supportedOnboardingAddition(change) && !supportedToolingAddition(change)) ||
       (change.status !== 'D' && change.status !== 'A' && unsupported(change)))).map(change => change.path) ?? [];
-  const unsafe = changedOnboardingBoundary.length > 0 || (delta?.some(change => !regularFileChange(change)) ?? false) || changedPolicyImports.length > 0;
+  const engineBoundary = paths !== null && !engineIndependentRange(base, head, paths, cwd);
+  const unsafe = engineBoundary || changedOnboardingBoundary.length > 0 || (delta?.some(change => !regularFileChange(change)) ?? false) || changedPolicyImports.length > 0;
   const effective = unsafe ? null : paths;
   const workflowControls = !conservativeWorkflows && effective?.length ? workflowControlPaths(base, head, effective, cwd) : [];
   const foregroundBoundaries = delta?.filter(change => portableForegroundInputs.has(change.path)).filter(change => {
@@ -184,6 +186,7 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
   return {...routing, paths: paths ?? [], historyKnown: paths !== null, inputProofKnown: paths !== null && !unsafe, workflowControls, ...mac, fixtureMac, qualifiedFixtures, platform, plan,
     hermes: plan.hermes, portable: plan.browser || plan.service || plan.tools || plan.foreground,
     reasons: [...routing.reasons,
+      ...(engineBoundary ? ['fallback:engine-consumer-boundary'] : []),
       ...(delta?.filter(change => !regularFileChange(change)).map(change =>
         `fallback:unproven-input:${change.path}:${change.status}:${change.oldMode}->${change.newMode}`) ?? []),
       ...foregroundBoundaries.map(path => 'foreground:native-boundary:' + path), ...changedPolicyImports.map(path => 'fallback:onboarding-new-import:' + path), ...changedOnboardingBoundary.map(path => 'fallback:onboarding-boundary-change:' + path), ...mac.reasons]};
