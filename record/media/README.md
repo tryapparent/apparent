@@ -190,28 +190,27 @@ change. No live capture or permissions proof is inferred here. GStreamer still
 executes live capture and audio extraction; retiring file readers does not remove
 the root application's native build dependencies.
 
-## Native audio prerequisite
+## Transcript allocation
 
-Phone/file audio extraction still uses the root native runtime, ahead of a
-published Engine audio capability. It writes into a held private temporary WAV,
-validates that WAV, then publishes it for transcription and bundle assembly.
-Failures discard the owned temporary. File privacy does not depend on the
-caller's umask. Linux maps the first decoded sample through its GStreamer
-segment so a leading movie edit remains silence on the transcription clock.
+`src/transcript/policy.ts` partitions recognizer words (or segments/full text when
+timings are absent) across keyframes, preserving clause starts, punctuation and
+the original unsigned 64-bit clocks. Assembly supplies the selected action
+anchors; in-place re-transcription retains its existing frame-time anchors.
+Both production routes consume this same finite Record worker. Native selection,
+speech recognition and transactional bundle publication remain authoritative.
 
-The package check uses a producer-generated bundle, real delayed AAC input and
-the actual reprocess caller under umask `002`. A deterministic local command
-checks the extracted WAV handoff without a model, service or playback. It checks
-private publication, leading silence, the source-timeline end and unchanged
-input/config bytes. This proves file ingestion and handoff, not recognition or
-live capture; signed Mac and final AppImage acceptance remain delivery gates.
+Composition passes a held private file as stdin; speech never enters worker argv
+or diagnostics. Requests/replies are capped at 16 MiB, with a ten-second process
+deadline and the existing process-group cleanup. This includes serialization
+overhead above the command transcriber's existing 8 MiB response limit. Oversized
+or failed requests fail before publication; no words are silently truncated.
+Existing small-reply workers retain their original 128 KiB ceiling.
 
-This is a native correctness prerequisite, not SDK audio adoption or owner build
-independence. Existing track selection, in-memory audio, transcription engines,
-pins, bundle schema and config writer remain authoritative. A later capability
-must align the current Mac all-track mix and Linux first-track behavior explicitly.
-Rollback reverts the private staging and Linux clock mapping together; it has no
-data or settings migration.
+Compatibility checks compare the donor allocator, producer-normalized CLI
+phone/screen/recovery output, and real re-transcription publication/rollback.
+Stage both worker modules; signed Mac and both Linux AppImages remain acceptance
+gates. Restore the native allocator and both callers together when reverting;
+there is no config writer, SDK pin or persisted schema migration.
 
 ## Default assembly allocation
 
@@ -233,3 +232,28 @@ recovery data; no parallel native default or config writer is retained. Rollback
 reverts worker staging, caller routing and default removal together. Headless
 policy/worker checks need only Node; actual Mac/Linux CLI and package acceptance
 remain gates. This slice does not establish whole-Record build independence.
+
+## Native audio prerequisite
+
+Phone/file audio extraction still uses the root native runtime, ahead of a
+published Engine audio capability. It writes into a held private temporary WAV,
+validates that WAV, then publishes it for transcription and bundle assembly.
+Failures discard the owned temporary. File privacy does not depend on the
+caller's umask. Linux maps the first decoded sample through its GStreamer
+segment so a leading movie edit remains silence on the transcription clock.
+
+The package check uses a producer-generated bundle, real delayed AAC input and
+the actual reprocess caller under umask `002`. A deterministic local command
+checks the extracted WAV handoff without a model, service or playback. It checks
+private publication, leading silence, the source-timeline end and unchanged
+input/config bytes. #1335 landed at `25ef94fd97efe8ddb3f04753a12538aa900414e6`;
+its exact-main CI, signed Mac packaged check, both Linux AppImages and preview
+publication passed. This proves file ingestion and handoff, not recognition or
+live capture. The separate SDK audio candidate retains its own acceptance gates.
+
+This is a native correctness prerequisite, not SDK audio adoption or owner build
+independence. Existing track selection, in-memory audio, transcription engines,
+pins, bundle schema and config writer remain authoritative. A later capability
+must align the current Mac all-track mix and Linux first-track behavior explicitly.
+Rollback reverts the private staging and Linux clock mapping together; it has no
+data or settings migration.

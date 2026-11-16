@@ -92,9 +92,9 @@ const followWindowTheme = require('@apparent/ui/window-theme');
 nativeTheme.themeSource = 'system';
 const settings = process.argv.includes('--settings-storage');
 let about = settings && process.argv.includes('--settings-about');
-const labs = settings && process.argv.includes('--settings-labs') && !about;
+let labs = settings && process.argv.includes('--settings-labs') && !about;
 let agents = settings && process.argv.includes('--settings-agents') && !about && !labs;
-const general = settings && process.argv.includes('--settings-general') && !about && !agents && !labs;
+let general = settings && process.argv.includes('--settings-general') && !about && !agents && !labs;
 let generalState;
 const settingsHash = about ? '#about' : agents ? '#agents' : labs ? '#labs' : general ? '#general' : '';
 const { AgentsPreferences, skillCommand, preferenceFacts } = require('./settings/agents.cjs');
@@ -131,7 +131,6 @@ app.whenReady().then(() => {
     backgroundColor: followWindowTheme.backgroundColor(nativeTheme),
     webPreferences: {
       preload: path.join(__dirname, settings ? 'storage-preload.cjs' : 'preload.cjs'),
-      additionalArguments: general ? ['--settings-general'] : labs ? ['--settings-labs'] : [],
       contextIsolation: true, nodeIntegration: false, sandbox: true,
       webSecurity: true, spellcheck: false,
     },
@@ -205,8 +204,8 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('apparent:settings-route', (event, ...args) => {
     validate(event, args);
-    if (!settings || (!about && !agents)) throw new Error('Unavailable outside the shared Settings shell');
-    return about ? 'about' : 'agents';
+    if (!settings) throw new Error('Unavailable outside the shared Settings shell');
+    return about ? 'about' : agents ? 'agents' : labs ? 'labs' : general ? 'general' : 'storage';
   });
   ipcMain.handle('apparent:settings-frame-ready', (event, ...args) => {
     validate(event, args);
@@ -335,11 +334,14 @@ app.whenReady().then(() => {
         }
         if (command.type === 'close') closeSettings();
         if (command.type === 'show') {
-          if ((about || agents) && ['agents', 'about'].includes(command.pane)) {
-            if (agents && command.pane === 'about') {
+          if (require('./settings/frame.cjs').isSharedSettingsPane(command.pane)) {
+            if (command.pane !== (about ? 'about' : agents ? 'agents' : labs ? 'labs' : general ? 'general' : 'storage')) {
+              invalidate();
+              generalState = undefined; aboutState = undefined;
               ++pairingPreviewVersion; pairingLinks.clear(); t3Approval?.abort(); agentsPreferences.close();
             }
-            about = command.pane === 'about'; agents = !about;
+            about = command.pane === 'about'; agents = command.pane === 'agents';
+            general = command.pane === 'general'; labs = command.pane === 'labs';
             window.webContents.send('apparent:settings-route', command.pane);
           }
           showSettings();
@@ -443,7 +445,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('apparent:read-capture-location', async (event, ...args) => {
     validate(event, args);
-    if (agents||labs) throw new Error('Unavailable in this Settings pane');
+    if (settings && (general || agents || labs || about)) throw new Error('Unavailable outside Storage Settings');
     const version = storageVersion;
     const result = await location.read();
     return version === storageVersion ? result : { status: 'cancelled' };
@@ -451,7 +453,7 @@ app.whenReady().then(() => {
   for (const operation of ['change', 'reset']) {
     ipcMain.handle(`apparent:${operation}-capture-location`, async (event, ...args) => {
       validate(event, args);
-      if (agents||labs) throw new Error('Unavailable in this Settings pane');
+      if (settings && (general || agents || labs || about)) throw new Error('Unavailable outside Storage Settings');
       if (mutation) return { status: 'error', code: 'app_busy' };
       mutation = true;
       storageVersion += 1;
@@ -491,13 +493,13 @@ app.whenReady().then(() => {
   }
   ipcMain.handle('apparent:read-retention', async (event, ...args) => {
     validate(event, args);
-    if (agents||labs) throw new Error('Unavailable in this Settings pane');
+    if (settings && (general || agents || labs || about)) throw new Error('Unavailable outside Storage Settings');
     const version = storageVersion;
     return retention.read(version, () => version === storageVersion);
   });
   ipcMain.handle('apparent:read-capture-usage', async (event, ...args) => {
     validate(event, args);
-    if (agents||labs) throw new Error('Unavailable in this Settings pane');
+    if (settings && (general || agents || labs || about)) throw new Error('Unavailable outside Storage Settings');
     const version = storageVersion;
     return retention.measure(() => version === storageVersion);
   });
@@ -505,7 +507,7 @@ app.whenReady().then(() => {
     ipcMain.handle(`apparent:${operation}-retention`, async (event, ...args) => {
       const policy = operation === 'save' ? args[0] : undefined;
       validate(event, operation === 'save' && args.length === 1 ? [] : args);
-      if (agents||labs) throw new Error('Unavailable in this Settings pane');
+      if (settings && (general || agents || labs || about)) throw new Error('Unavailable outside Storage Settings');
       if (operation === 'save' && !isRetentionPolicy(policy)) {
         throw new Error('Invalid retention policy');
       }

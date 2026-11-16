@@ -124,7 +124,7 @@ pub(super) fn admits(pane: Pane, action: &Action) -> bool {
                     || key == "playbackLevel" && value.as_u64().is_some_and(|n| n <= 100)))
         || pane == Pane::Agents && (matches!(action, Action::AgentsConnection { .. })
             || matches!(action, Action::AgentsPreference { setting, .. } if matches!(setting.as_deref(), None | Some("video" | "t3"))))
-        || pane == Pane::Labs && matches!(action, Action::AgentsPreference { setting, .. } if matches!(setting.as_deref(), Some("autoPaste" | "sharing")))
+        || pane == Pane::Labs && matches!(action, Action::AgentsPreference { setting, .. } if matches!(setting.as_deref(), Some("autoPaste" | "sharing" | "wisprFlow")))
         || pane == Pane::About && (matches!(action, Action::CheckForUpdates | Action::DismissUpdateCheck | Action::UpdateNow | Action::UpdateLater | Action::Tour)
             || matches!(action, Action::Set { key, value } if key == "updateChannel" && matches!(value.as_str(), Some("stable" | "main"))))
 }
@@ -140,7 +140,7 @@ fn settings_page_capabilities_follow_live_route() {
     assert!(!admits(Pane::Storage, &connection));
     assert!(!admits(Pane::Labs, &connection));
     assert!(!admits(Pane::Labs, &preference));
-    for setting in ["autoPaste", "sharing"] {
+    for setting in ["autoPaste", "sharing", "wisprFlow"] {
         let experiment = Action::AgentsPreference { request: 2, enabled: Some(true), setting: Some(setting.into()) };
         assert!(admits(Pane::Labs, &experiment));
         assert!(!admits(Pane::Agents, &experiment));
@@ -173,9 +173,10 @@ pub(super) fn open(pane: Pane, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyh
             for line in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
                 // Each page receives only its bounded native capabilities.
                 if let Ok(action) = serde_json::from_str::<Action>(&line)
-                    && (admits(pane, &action)
-                        || matches!(pane, Pane::Agents | Pane::About)
-                            && (admits(Pane::Agents, &action) || admits(Pane::About, &action)))
+                    // The session checks the current pane after generation binding.
+                    // Launch-pane filtering would discard actions after live navigation.
+                    && [Pane::General, Pane::Storage, Pane::Agents, Pane::Labs, Pane::About]
+                        .into_iter().any(|pane| admits(pane, &action))
                 {
                     events(Event::Action(action));
                 }

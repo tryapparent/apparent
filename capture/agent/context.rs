@@ -243,7 +243,7 @@ fn normalized(text: &str) -> String {
         .collect()
 }
 
-/// Recovers which timed words each keyframe's `said` was built from (`keyframes::align_transcript`
+/// Recovers which timed words each keyframe's `said` was built from (Record's transcript policy
 /// gives every frame a run of the time-sorted words). `None` when the transcript has no word
 /// times or the text doesn't line up, and the speech is then shown whole.
 fn frame_words(bundle: &ApparentBundle) -> Option<Vec<Vec<&WordTiming>>> {
@@ -640,7 +640,7 @@ fn window_changes(snapshots: &[WindowSnapshot]) -> Vec<(u64, String)> {
     out
 }
 
-/// Joins recognizer words the way `keyframes::align_transcript` does.
+/// Joins recognizer words the way Record's transcript policy does.
 fn join_words(words: &[&WordTiming]) -> String {
     let mut text = String::new();
     for word in words {
