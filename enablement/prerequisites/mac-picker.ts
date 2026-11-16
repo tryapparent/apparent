@@ -449,7 +449,13 @@ export class PickerProcess {
         this.abort('Unexpected picker response identity or shape'); return;
       }
       this.pending = undefined;
-      pending.finish(reply.ok ? null : Object.assign(new Error(reply.error), {stderr: this.stderr}), reply.value);
+      // Explicit AX refusal cannot become ready under this fixture's unchanged
+      // grants. Classify only the native denial text, never arbitrary AX errors
+      // or stderr (which may include earlier diagnostic observations).
+      pending.finish(reply.ok ? null : Object.assign(new Error(reply.error), {
+        stderr: this.stderr,
+        pickerPermissionDenied: /^(?:System Events got an error: )?osascript is not allowed assistive access\.?$/.test(reply.error),
+      }), reply.value);
     }
     if (!this.pending && !this.starting && this.buffer.length) this.abort('Unsolicited picker response bytes');
   }
