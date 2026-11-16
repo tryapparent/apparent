@@ -123,7 +123,6 @@ impl Policy {
             .and_then(|value| serde_json::from_value(value).ok())
             .unwrap_or_default()
     }
-
 }
 
 // MARK: What Apparent is busy with
@@ -236,7 +235,10 @@ fn changed_ago(path: &Path, now: SystemTime) -> Option<Duration> {
 #[cfg(windows)]
 fn changed_ago(path: &Path, now: SystemTime) -> Option<Duration> {
     let changed =
-        crate::capture::engine::runtime::platform::legacy_windows::platform::shell::change_time(path).or_else(|| path.metadata().ok()?.modified().ok())?;
+        crate::capture::engine::runtime::platform::legacy_windows::platform::shell::change_time(
+            path,
+        )
+        .or_else(|| path.metadata().ok()?.modified().ok())?;
     Some(now.duration_since(changed).unwrap_or_default())
 }
 
@@ -268,9 +270,12 @@ pub fn plan(captures: &Path, policy: &Policy, now: SystemTime) -> Result<Vec<Act
     };
     let mut bundles: Vec<PathBuf> = entries
         .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| (p.extension().is_some_and(|ext| ext == "apparent")
-            || p.file_name().is_some_and(|name| name.to_string_lossy().starts_with(".cancelled-")))
-            && std::fs::symlink_metadata(p).is_ok_and(|metadata| metadata.is_dir()))
+        .filter(|p| {
+            (p.extension().is_some_and(|ext| ext == "apparent")
+                || p.file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with(".cancelled-")))
+                && std::fs::symlink_metadata(p).is_ok_and(|metadata| metadata.is_dir())
+        })
         .collect();
     bundles.sort();
     let mut observations = Vec::new();
@@ -297,8 +302,12 @@ pub fn plan(captures: &Path, policy: &Policy, now: SystemTime) -> Result<Vec<Act
         };
         let age_ms = now_ms.saturating_sub(created);
         let unchanged_ms = changed_ago(&dir, now).map_or(0, |ago| ago.as_millis() as u64);
-        let items: Vec<PathBuf> = crate::shared::handoff::HEAVY_MEDIA.iter().chain(&DERIVED_MEDIA)
-            .map(|rel| dir.join(rel)).filter(|path| path.exists()).collect();
+        let items: Vec<PathBuf> = crate::shared::handoff::HEAVY_MEDIA
+            .iter()
+            .chain(&DERIVED_MEDIA)
+            .map(|rel| dir.join(rel))
+            .filter(|path| path.exists())
+            .collect();
         let (facts, video) = observe(&dir, &manifest, age_ms, unchanged_ms, !items.is_empty());
         observations.push(facts);
         materials.push((dir, items, video));
@@ -309,26 +318,55 @@ pub fn plan(captures: &Path, policy: &Policy, now: SystemTime) -> Result<Vec<Act
         actions.push(match decision.kind {
             crate::composition::retention::Kind::TrashBundle => Action::TrashBundle(bundle.clone()),
             crate::composition::retention::Kind::TrashMedia => {
-                ensure!(!items.is_empty(), "Record selected unavailable retention media");
-                Action::TrashMedia {bundle:bundle.clone(),items:items.clone()}
+                ensure!(
+                    !items.is_empty(),
+                    "Record selected unavailable retention media"
+                );
+                Action::TrashMedia {
+                    bundle: bundle.clone(),
+                    items: items.clone(),
+                }
             }
             crate::composition::retention::Kind::Shrink => Action::Shrink {
-                bundle:bundle.clone(),video:video.clone().context("Record selected unavailable retention video")?},
+                bundle: bundle.clone(),
+                video: video
+                    .clone()
+                    .context("Record selected unavailable retention video")?,
+            },
         });
     }
     Ok(actions)
 }
 
 /// Filesystem facts stay native; Record chooses age and bitrate policy.
-fn observe(dir: &Path, manifest: &Manifest, age_ms: u64, unchanged_ms: u64, heavy_media: bool)
-    -> (crate::composition::retention::Facts, Option<PathBuf>) {
-    let admitted = manifest.video.as_deref()
+fn observe(
+    dir: &Path,
+    manifest: &Manifest,
+    age_ms: u64,
+    unchanged_ms: u64,
+    heavy_media: bool,
+) -> (crate::composition::retention::Facts, Option<PathBuf>) {
+    let admitted = manifest
+        .video
+        .as_deref()
         .and_then(|name| video::Video::open(dir, Path::new(name)).ok());
     let video_bytes = admitted.as_ref().map(|video| video.bytes().to_string());
     let video = admitted.as_ref().map(|video| video.path().to_path_buf());
-    (crate::composition::retention::Facts {age_ms:age_ms.to_string(),unchanged_ms:unchanged_ms.to_string(),
-        source:manifest.source.clone(),capture:manifest.device.as_ref().map(|device|device.capture.clone()),
-        duration_ms:manifest.duration_ms.to_string(),video_bytes,heavy_media}, video)
+    (
+        crate::composition::retention::Facts {
+            age_ms: age_ms.to_string(),
+            unchanged_ms: unchanged_ms.to_string(),
+            source: manifest.source.clone(),
+            capture: manifest
+                .device
+                .as_ref()
+                .map(|device| device.capture.clone()),
+            duration_ms: manifest.duration_ms.to_string(),
+            video_bytes,
+            heavy_media,
+        },
+        video,
+    )
 }
 
 // MARK: Doing it
@@ -523,7 +561,9 @@ pub struct Shrunk {
 /// then swaps it in. The new movie is written beside the bundle, not in it, so a copy to
 /// another Mac never picks up half of it. `None` when it was already small.
 pub fn shrink_video(bundle: &Path, video: &Path) -> Result<Option<Shrunk>> {
-    let relative = video.strip_prefix(bundle).context("Video is outside its bundle")?;
+    let relative = video
+        .strip_prefix(bundle)
+        .context("Video is outside its bundle")?;
     let admitted = video::Video::open(bundle, relative)
         .context("Bundle video must be a regular file inside its bundle")?;
     let probe = crate::composition::media_probe::bundle_probe(admitted.path())?;
@@ -583,7 +623,8 @@ fn sweep_leftovers(captures: &Path, now: SystemTime) {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
         let leftover = name.ends_with(".shrinking.mov") || name == ".trash-staging";
-        if leftover && !is_claimed(&path)
+        if leftover
+            && !is_claimed(&path)
             && modified_ago(&path, now).is_some_and(|ago| ago > Duration::from_secs(6 * 3600))
         {
             let _ = std::fs::remove_dir_all(&path).or_else(|_| std::fs::remove_file(&path));
@@ -780,10 +821,14 @@ fn worker(jobs: &flume::Receiver<Job>) {
     }
 }
 
-fn pass_due(next: Instant, last_attempt: Option<SystemTime>, now: Instant, wall: SystemTime) -> bool {
+fn pass_due(
+    next: Instant,
+    last_attempt: Option<SystemTime>,
+    now: Instant,
+    wall: SystemTime,
+) -> bool {
     now >= next
-        || last_attempt
-            .is_some_and(|at| wall.duration_since(at).unwrap_or_default() >= PASS_EVERY)
+        || last_attempt.is_some_and(|at| wall.duration_since(at).unwrap_or_default() >= PASS_EVERY)
 }
 
 /// `Err` when the bundle is busy and should be retried.
@@ -810,11 +855,19 @@ fn shrink_now(dir: &Path) -> std::result::Result<(), ()> {
     }
     let (facts, video) = observe(dir, &manifest, 0, 0, false);
     // This existing after-capture job is independent of retention-day choices.
-    let neutral = Policy {media_days:None,bundle_days:None};
-    let decisions = crate::composition::retention::plan(&neutral, &[facts], true).map_err(|_| ())?;
+    let neutral = Policy {
+        media_days: None,
+        bundle_days: None,
+    };
+    let decisions =
+        crate::composition::retention::plan(&neutral, &[facts], true).map_err(|_| ())?;
     if let Some(decision) = decisions.first() {
-        if decision.kind != crate::composition::retention::Kind::Shrink { return Err(()); }
-    } else { return Ok(()); }
+        if decision.kind != crate::composition::retention::Kind::Shrink {
+            return Err(());
+        }
+    } else {
+        return Ok(());
+    }
     let video = video.ok_or(())?;
     if let Err(error) = shrink_video(dir, &video) {
         apparent_log(format!("shrink: {}: {error:#}", dir.display()));
@@ -932,21 +985,51 @@ mod tests {
             let elapsed = Duration::from_secs(seconds);
             assert!(!pass_due(next, Some(wall), now + elapsed, wall + elapsed));
         }
-        assert!(pass_due(next, Some(wall), now + PASS_EVERY, wall + PASS_EVERY));
+        assert!(pass_due(
+            next,
+            Some(wall),
+            now + PASS_EVERY,
+            wall + PASS_EVERY
+        ));
         // Wall time can advance during Mac sleep while monotonic time does not.
         assert!(pass_due(next, Some(wall), now, wall + PASS_EVERY));
-        assert!(!pass_due(next, Some(wall), now, wall - Duration::from_secs(30)));
+        assert!(!pass_due(
+            next,
+            Some(wall),
+            now,
+            wall - Duration::from_secs(30)
+        ));
     }
 
     #[test]
     fn small_movie_retention_observation_uses_engine_without_rewriting_media() {
         let root = tempfile::tempdir().unwrap();
         let video = root.path().join("recording.mp4");
-        let made = std::process::Command::new("ffmpeg").args([
-            "-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i", "color=c=blue:s=64x48:r=10:d=1",
-            "-c:v", "libx264", "-threads", "1", "-pix_fmt", "yuv420p",
-        ]).arg(&video).output().unwrap();
-        assert!(made.status.success(), "{}", String::from_utf8_lossy(&made.stderr));
+        let made = std::process::Command::new("ffmpeg")
+            .args([
+                "-v",
+                "error",
+                "-nostdin",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=blue:s=64x48:r=10:d=1",
+                "-c:v",
+                "libx264",
+                "-threads",
+                "1",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&video)
+            .output()
+            .unwrap();
+        assert!(
+            made.status.success(),
+            "{}",
+            String::from_utf8_lossy(&made.stderr)
+        );
         let original = std::fs::read(&video).unwrap();
         assert!(shrink_video(root.path(), &video).unwrap().is_none());
         assert_eq!(std::fs::read(video).unwrap(), original);
@@ -993,8 +1076,14 @@ mod tests {
         // ordinary H.264 profile so the fixture reaches AVFoundation encode.
         let profile = std::process::Command::new("ffprobe")
             .args([
-                "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=profile",
-                "-of", "json",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=profile",
+                "-of",
+                "json",
             ])
             .arg(&video)
             .output()
@@ -1028,43 +1117,88 @@ mod tests {
         // Other recorder tests hold the process-wide Recording guard. Exercise
         // this real job in its own test process without weakening that guard.
         if std::env::var_os("APPARENT_RETENTION_SHRINK_TEST_CHILD").is_none() {
-            let test = concat!("capture::engine::bundle::retention::tests::",
-                "after_capture_shrink_uses_record_and_real_engine_for_an_eligible_small_movie");
+            let test = concat!(
+                "capture::engine::bundle::retention::tests::",
+                "after_capture_shrink_uses_record_and_real_engine_for_an_eligible_small_movie"
+            );
             let output = std::process::Command::new(std::env::current_exe().unwrap())
                 .args(["--exact", test, "--nocapture"])
                 .env("APPARENT_RETENTION_SHRINK_TEST_CHILD", "1")
-                .output().unwrap();
-            assert!(output.status.success(), "{}\n{}",
-                String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
             assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"));
             return;
         }
         let root = tempfile::tempdir().unwrap();
         let video = root.path().join("recording.mov");
-        let made = std::process::Command::new("ffmpeg").args([
-            "-v", "error", "-nostdin", "-y", "-f", "lavfi",
-            "-i", "testsrc=size=192x128:rate=30:duration=1",
-            "-c:v", "rawvideo", "-threads", "1", "-pix_fmt", "rgb24",
-        ]).arg(&video).output().unwrap();
-        assert!(made.status.success(), "{}", String::from_utf8_lossy(&made.stderr));
+        let made = std::process::Command::new("ffmpeg")
+            .args([
+                "-v",
+                "error",
+                "-nostdin",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=192x128:rate=30:duration=1",
+                "-c:v",
+                "rawvideo",
+                "-threads",
+                "1",
+                "-pix_fmt",
+                "rgb24",
+            ])
+            .arg(&video)
+            .output()
+            .unwrap();
+        assert!(
+            made.status.success(),
+            "{}",
+            String::from_utf8_lossy(&made.stderr)
+        );
         let original = std::fs::read(&video).unwrap();
-        assert!(original.len() as u64 * 8 > 6_000_000, "real movie must qualify by bitrate");
+        assert!(
+            original.len() as u64 * 8 > 6_000_000,
+            "real movie must qualify by bitrate"
+        );
         let probe = crate::composition::media_probe::bundle_probe(&video).unwrap();
-        assert_eq!((probe.width, probe.height, probe.duration_ms), (192, 128, 1000));
+        assert_eq!(
+            (probe.width, probe.height, probe.duration_ms),
+            (192, 128, 1000)
+        );
         let metadata = serde_json::json!({"durationMs":probe.duration_ms,"source":"iphone",
-            "device":{"capture":"mirror"},"video":"recording.mov"}).to_string();
+            "device":{"capture":"mirror"},"video":"recording.mov"})
+        .to_string();
         std::fs::write(root.path().join("apparent.json"), &metadata).unwrap();
         let manifest: Manifest = serde_json::from_str(&metadata).unwrap();
         let (facts, _) = observe(root.path(), &manifest, 0, 0, false);
         let decisions = crate::composition::retention::plan(
-            &Policy {media_days:None,bundle_days:None}, &[facts], true,
-        ).unwrap();
+            &Policy {
+                media_days: None,
+                bundle_days: None,
+            },
+            &[facts],
+            true,
+        )
+        .unwrap();
         assert_eq!(decisions.len(), 1);
-        assert_eq!(decisions[0].kind, crate::composition::retention::Kind::Shrink);
+        assert_eq!(
+            decisions[0].kind,
+            crate::composition::retention::Kind::Shrink
+        );
         // Real native size observation makes this eligible request a no-op.
         assert!(shrink_now(root.path()).is_ok());
         assert_eq!(std::fs::read(video).unwrap(), original);
-        assert_eq!(std::fs::read_to_string(root.path().join("apparent.json")).unwrap(), metadata);
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("apparent.json")).unwrap(),
+            metadata
+        );
         assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 2);
     }
 
@@ -1162,7 +1296,11 @@ mod tests {
             }
         );
         assert_eq!(loaded.preset(), None);
-        std::fs::write(&path, r#"{"retention":{"mediaDays":30,"bundleDays":90,"futurePolicy":42}}"#).unwrap();
+        std::fs::write(
+            &path,
+            r#"{"retention":{"mediaDays":30,"bundleDays":90,"futurePolicy":42}}"#,
+        )
+        .unwrap();
         assert_eq!(
             Policy::load_from(&path),
             Policy {
@@ -1297,7 +1435,11 @@ mod tests {
         );
         // Nothing left to clean, and the bundle changed today besides.
         let next_week = later() + Duration::from_secs(2 * 24 * 3600);
-        assert!(plan(&captures, &Policy::default(), next_week).unwrap().is_empty());
+        assert!(
+            plan(&captures, &Policy::default(), next_week)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
