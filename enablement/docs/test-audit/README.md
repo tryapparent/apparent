@@ -29,7 +29,7 @@ no net test/support growth unless a distinct new contract justifies it.
 | Record capture-request | Audited; candidate below | Land and reconcile upstream |
 | Record completion | Audited; candidate below | Land and reconcile upstream |
 | Record storage | Audited; local candidate | [Contracts/evidence](../../../record/storage/enablement/test-audit.md); land after slice 1 |
-| Record media | Pending | Read workers/native ports and assembly, then tests |
+| Record media | Headless audit; local cadence candidate | [Contracts/evidence](../../../record/media/enablement/test-audit.md); packaged CLI audits pending |
 | Engine SDK | Pending | Published probe/frame contracts and real provider inputs |
 | Engine legacy/native | Pending | Capture, audio, cursor/ink, keyframes/text, exports, recovery |
 | Desktop | Pending | Settings/onboarding, capture/pill, native adapters, packaging/VM |
@@ -91,5 +91,15 @@ Independent review found a nullable/unknown-field combination that must remain;
 it is preserved and its shortcut mutant fails. Locked owner install, typecheck
 and all 48 tests pass. No production changes. Hook/PR and exact-main gates remain.
 
-Resume with slice 1 delivery, then land slice 2 and continue Record media. Update this
+## Slice 3: Record media phone cadence
+
+[Owner ledger](../../../record/media/enablement/test-audit.md) records the retained
+headless contracts and the separate native/package boundaries. Consolidating
+count/end-point and implementation-mirroring cadence assertions into an exact
+sequence oracle removes one test line. All 21 headless tests pass; six independent
+mutants fail the cadence keeper. Preservation review found no lost guard.
+Packaged CLI checks remain unaudited; native suite was read and retained, not
+replayed for this assertion-only change. Hook/PR and exact-main gates remain.
+
+Resume with slice 1 delivery, then land slices 2/3 and finish packaged media audits. Update this
 ledger and inventory statuses with each landed slice; do not stop after slice 1.

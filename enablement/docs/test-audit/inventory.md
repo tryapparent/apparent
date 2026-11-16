@@ -552,24 +552,24 @@
 | Record | record/completion/src/worker.ts | source candidate | 52 | pending |
 | Record | record/completion/test/policy.test.ts | source candidate | 97 | audited, delivery pending |
 | Record | record/completion/test/worker.test.ts | source candidate | 51 | audited, delivery pending |
-| Record | record/media/src/assembly-worker.ts | source candidate | 11 | pending |
-| Record | record/media/src/frames-worker.ts | source candidate | 24 | pending |
-| Record | record/media/src/phone-worker.ts | source candidate | 34 | pending |
-| Record | record/media/src/screen-worker.ts | source candidate | 30 | pending |
-| Record | record/media/src/transcript/policy.ts | source candidate | 77 | pending |
-| Record | record/media/src/transcript/worker.ts | source candidate | 50 | pending |
+| Record | record/media/src/assembly-worker.ts | source candidate | 11 | read production; no inline tests |
+| Record | record/media/src/frames-worker.ts | source candidate | 24 | read production; no inline tests |
+| Record | record/media/src/phone-worker.ts | source candidate | 34 | read production; no inline tests |
+| Record | record/media/src/screen-worker.ts | source candidate | 30 | read production; no inline tests |
+| Record | record/media/src/transcript/policy.ts | source candidate | 77 | read production; no inline tests |
+| Record | record/media/src/transcript/worker.ts | source candidate | 50 | read production; no inline tests |
 | Record | record/media/stage.ts | source candidate | 96 | pending |
 | Record | record/media/test/assembly-package.ts | support/scenario | 35 | pending |
-| Record | record/media/test/assembly.test.ts | source candidate | 27 | pending |
+| Record | record/media/test/assembly.test.ts | source candidate | 27 | audited headless; slice 3 delivery pending |
 | Record | record/media/test/audio-package.ts | support/scenario | 81 | pending |
-| Record | record/media/test/frames.test.ts | source candidate | 34 | pending |
-| Record | record/media/test/native.test.ts | source candidate | 153 | pending |
+| Record | record/media/test/frames.test.ts | source candidate | 34 | audited headless; slice 3 delivery pending |
+| Record | record/media/test/native.test.ts | source candidate | 153 | read/retained; native replay not required for cadence edit |
 | Record | record/media/test/package.ts | support/scenario | 198 | pending |
-| Record | record/media/test/phone.test.ts | source candidate | 23 | pending |
-| Record | record/media/test/policy.test.ts | source candidate | 58 | pending |
-| Record | record/media/test/screen.test.ts | source candidate | 23 | pending |
+| Record | record/media/test/phone.test.ts | source candidate | 23 | audited headless; slice 3 delivery pending |
+| Record | record/media/test/policy.test.ts | source candidate | 58 | audited headless; slice 3 delivery pending |
+| Record | record/media/test/screen.test.ts | source candidate | 23 | audited headless; slice 3 delivery pending |
 | Record | record/media/test/transcript/package.ts | support/scenario | 71 | pending |
-| Record | record/media/test/transcript/policy.test.ts | source candidate | 61 | pending |
+| Record | record/media/test/transcript/policy.test.ts | source candidate | 61 | audited headless; slice 3 delivery pending |
 | Record | record/storage/src/location-policy.ts | source candidate | 75 | read production; no inline tests |
 | Record | record/storage/src/retention-workflow.ts | source candidate | 80 | read production; no inline tests |
 | Record | record/storage/src/retention/worker.ts | source candidate | 35 | read production; no inline tests |
