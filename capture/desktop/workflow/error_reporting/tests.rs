@@ -2,6 +2,42 @@
 use super::*;
 use std::net::{TcpListener, TcpStream};
 
+#[cfg(target_os = "linux")]
+#[test]
+fn updater_target_facts_cross_consented_queue_and_http_without_private_paths() {
+    use crate::capture::desktop::linux::updates::update::validate_target;
+    use updates::{Diagnose, Stage, Trigger};
+    let scratch = Scratch::new();
+    let home = scratch.0.join("private-home-canary");
+    std::fs::create_dir(&home).unwrap();
+    let image = scratch.0.join("private-AppImage-canary");
+    std::fs::write(&image, b"synthetic").unwrap();
+    let error = validate_target(&image, Some(&home), Some(&home), true).stage(Stage::Target).unwrap_err();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let endpoint = format!("http://{}/i/v0/e/", listener.local_addr().unwrap());
+    let server = std::thread::spawn(move || {
+        let mut stream = accept(&listener);
+        let payload = request(&mut stream);
+        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+        payload
+    });
+    let reporter = Reporter::start(scratch.config(), "phc_synthetic".into(), endpoint).unwrap();
+    reporter.enqueue(|consent| Report::update(&error, Trigger::Automatic, std::panic::Location::caller(), consent));
+    let payload = server.join().unwrap();
+    assert_eq!(payload["properties"]["diagnostics_schema_version"], 5);
+    assert_eq!(payload["properties"]["updater"]["trigger"], "automatic");
+    let facts = &payload["properties"]["updater"]["target"];
+    assert_eq!(facts["step"], "home_boundary");
+    assert_eq!(facts["image_owned"], true);
+    assert_eq!(facts["home_matches_account"], true);
+    assert_eq!(facts["image_under_home"], false);
+    assert_eq!(facts["image_under_home_before_canonicalization"], false);
+    assert_eq!(facts["image_location"], facts["home_location"]);
+    assert!(facts["image_location"].is_string());
+    assert!(!payload.to_string().contains("private-"));
+    assert!(!payload.to_string().contains(scratch.0.to_str().unwrap()));
+}
+
 #[test]
 fn updater_report_crosses_real_queue_and_http_transport_without_private_error_data() {
     use updates::{Diagnose, Stage, Trigger};
@@ -20,7 +56,7 @@ fn updater_report_crosses_real_queue_and_http_transport_without_private_error_da
     assert!(format!("{error:#}").contains("private-path-and-token-canary"));
     reporter.enqueue(|consent| Report::update(&error, Trigger::User, std::panic::Location::caller(), consent));
     let payload = server.join().unwrap();
-    assert_eq!(payload["properties"]["diagnostics_schema_version"], 4);
+    assert_eq!(payload["properties"]["diagnostics_schema_version"], 5);
     assert_eq!(payload["properties"]["updater"]["io_kind"], "storage_full");
     assert_eq!(payload["properties"]["updater"]["os_error_code"], libc::ENOSPC);
     assert_eq!(payload["properties"]["$exception_list"][0]["type"], "update_marker_write_failed");
@@ -75,7 +111,7 @@ fn finalization_audio_report_identifies_expired_writer_history_and_retains_saved
     assert_eq!(std::fs::read(scratch.0.join("audio.wav")).unwrap(), saved);
     assert!(Lease::acquire(&scratch.0).is_err(), "failed Stop must retain narration ownership");
     let payload = Report::finalization(&error, std::panic::Location::caller(), Consent { generation: "private-audio-consent".into() }).payload("phc_synthetic").unwrap();
-    assert_eq!(payload["properties"]["diagnostics_schema_version"], 4);
+    assert_eq!(payload["properties"]["diagnostics_schema_version"], 5);
     let stages = payload["properties"]["finalization"]["stages"].as_array().unwrap();
     assert_eq!(stages.last().unwrap()["stage"], "audio_writer_history");
     assert!(payload["properties"]["$exception_fingerprint"].as_str().unwrap().contains("AudioWriterHistory"));

@@ -61,7 +61,7 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     browser = await chromium.connectOverCDP(debuggerUrl);
     const page = browser.contexts()[0].pages()[0];
     await expect(page).toHaveTitle('Apparent Settings — Agents');
-    assert.equal(await page.evaluate(()=>!('apparentGeneral' in window) && !('apparentLabs' in window) && !('readConnectSettings' in window.apparent!)),true);
+    assert.equal(await page.evaluate(async()=>await window.apparentGeneral.read().then(()=>false,()=>true) && await window.apparentLabs.read().then(()=>false,()=>true) && await window.apparent!.readConnectSettings().then(()=>false,()=>true)),true);
     const toggle = page.getByRole('switch', {name: 'Ask for video proof'});
     await expect(toggle).toBeDisabled();
     await expect(toggle).toHaveAttribute('aria-busy', 'true');

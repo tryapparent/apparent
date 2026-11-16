@@ -167,16 +167,19 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   assert.deepEqual(await page.evaluate(() => Object.keys(window.apparent).sort()), [
     'readCaptureLocation', 'changeCaptureLocation', 'resetCaptureLocation', 'readRetention',
     'saveRetention', 'resetRetention', 'readCaptureUsage', 'navigateSettings', 'showCaptureFolder',
+    'readConnectSettings', 'connectSettings', 'resumeConnectUploads', 'allowConnectUploads',
+    'cancelConnectSettings', 'checkConnectConnection', 'disableConnectUploads', 'disconnectConnectSettings',
+    'requestDisableConnectUploads', 'requestDisconnectConnectSettings', 'openConnectSharedLinks', 'openConnectBrowser',
   ].sort());
   // Even a direct main-process call from this legitimate frame must not reach
   // unrelated handlers. Check all registered non-Storage capabilities, not only
-  // methods omitted by the preload.
+  // the bounded methods present in the persistent shared preload.
   const denied = await app.evaluate(async ({ ipcMain, BrowserWindow }) => {
     const sender = BrowserWindow.getAllWindows()[0].webContents;
     const event = { sender, senderFrame: sender.mainFrame };
     const allowed = new Set(['read-capture-location', 'change-capture-location', 'reset-capture-location',
       'read-retention', 'save-retention', 'reset-retention', 'read-capture-usage', 'navigate-settings', 'show-capture-folder',
-      'settings-mounted', 'settings-frame-ready']);
+      'settings-mounted', 'settings-frame-ready', 'settings-route']);
     const rejected = [];
     for (const [channel, handler] of ipcMain._invokeHandlers) {
       if (!channel.startsWith('apparent:') || allowed.has(channel.slice('apparent:'.length))) continue;

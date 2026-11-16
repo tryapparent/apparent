@@ -60,3 +60,47 @@ test('Labs pairs multiple computers without exposing credentials, changing sendi
  await expect(page.getByRole('textbox',{name:'T3 server address'})).toBeVisible();await expect(page.getByRole('textbox',{name:'T3 server address'})).toHaveValue('http://127.0.0.1:3773');await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.getByRole('button',{name:'Add computer',exact:true})).toBeFocused();
  await session.detach();
 });
+
+test('switching panes cancels a queued T3 connection before the private native write and Labs recovers',{timeout:30000},async t=>{
+ const p=await provider(t),home=await fs.mkdtemp(path.join(os.tmpdir(),'t3-route-'));
+ const app=await electron.launch({args:[path.resolve(import.meta.dirname,'agents/parent.cjs'),'--settings-storage','--settings-labs','--settings-parent','--no-sandbox'],env:{...process.env,HOME:home}});
+ t.after(async()=>{await app.close().catch(()=>{});await fs.rm(home,{recursive:true,force:true});});
+ let buffer='',hold=true,held:number|undefined,writes=0,preferenceWrites=0;
+ const send=(value:object)=>app.evaluate((_e,value)=>process.stdin.emit('data',JSON.stringify(value)+'\n'),value);
+ const reply=(request:number)=>send({type:'agents-result',request,facts:{saved:null,t3Saved:false,t3Configured:writes>0,autoPasteSupported:true}});
+ app.process().stdout!.on('data',chunk=>{buffer+=String(chunk);let end:number;while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end);buffer=buffer.slice(end+1);try{
+  const action=JSON.parse(line);
+  if(action.action==='agents-preference'){if(typeof action.enabled==='boolean')preferenceWrites++;if(hold)held=action.request;else void reply(action.request);}
+  if(action.action==='agents-connection'){writes++;void reply(action.request);}
+ }catch{}}});
+ const page=await app.firstWindow();await expect.poll(()=>Boolean(held)).toBe(true);
+ await app.evaluate((_e,file)=>{
+  const {PreferenceQueue}=process.mainModule!.require(file),run=PreferenceQueue.prototype.run;
+  Reflect.set(globalThis,'t3ConnectionQueued',false);
+  PreferenceQueue.prototype.run=function(operation:()=>Promise<unknown>,active:()=>boolean,signal?:AbortSignal){if(signal)Reflect.set(globalThis,'t3ConnectionQueued',true);return run.call(this,operation,active,signal);};
+ },path.resolve(import.meta.dirname,'../../electron/settings/agents.cjs'));
+ await app.evaluate(({clipboard},link)=>clipboard.writeText(link),p.link);
+ const preview=await app.evaluate(async({ipcMain,BrowserWindow})=>{
+  const sender=BrowserWindow.getAllWindows()[0].webContents;
+  return ipcMain._invokeHandlers.get('apparent:agents-t3-preview')!({sender,senderFrame:sender.mainFrame},'http://127.0.0.1:3773');
+ });
+ const queuedPreference=app.evaluate(async({ipcMain,BrowserWindow})=>{
+  const sender=BrowserWindow.getAllWindows()[0].webContents;
+  return ipcMain._invokeHandlers.get('apparent:agents-t3-preference')!({sender,senderFrame:sender.mainFrame},true).then(()=>false,()=>true);
+ });
+ const connecting=app.evaluate(async({ipcMain,BrowserWindow},id)=>{
+  const sender=BrowserWindow.getAllWindows()[0].webContents;
+  return ipcMain._invokeHandlers.get('apparent:agents-t3-connect')!({sender,senderFrame:sender.mainFrame},id);
+ },preview.preview.id);
+ await expect.poll(()=>app.evaluate(()=>Reflect.get(globalThis,'t3ConnectionQueued'))).toBe(true);assert.equal(p.exchanged,1);
+ hold=false;await send({type:'show',pane:'agents'});
+ await expect(page).toHaveTitle('Apparent Settings — Agents');assert.deepEqual(await connecting,{reason:'cancelled'});assert.equal(writes,0);assert.equal(await queuedPreference,true);assert.equal(preferenceWrites,0);
+ await reply(held!);await expect(page.getByRole('switch',{name:'Ask for video proof'})).toBeEnabled();
+ await send({type:'show',pane:'labs'});await expect(page).toHaveTitle('Apparent Settings — Labs');
+ await expect(page.getByRole('switch',{name:'Send recordings to T3'})).toBeEnabled();await expect(page.getByRole('alertdialog')).toHaveCount(0);
+ p.renew();await page.getByRole('button',{name:'Connect T3',exact:true}).click();
+ await app.evaluate(({clipboard},link)=>clipboard.writeText(link),p.link);
+ await page.getByRole('dialog').getByRole('button',{name:'Paste T3 link',exact:true}).click();
+ await page.getByRole('dialog').getByRole('button',{name:'Connect',exact:true}).click();
+ await expect(page.getByRole('dialog')).toHaveCount(0);assert.equal(writes,1);
+});

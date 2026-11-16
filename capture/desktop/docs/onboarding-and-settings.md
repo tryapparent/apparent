@@ -203,6 +203,18 @@ not emit a second generic event after converting an error for the UI. Old events
 cannot be enriched retroactively. Local loopback tests exercise real curl and the
 report queue/HTTP payload without injecting production PostHog events.
 
+Schema 5 adds Linux AppImage target facts on failure: the validation step,
+regular-file/symlink/ownership predicates, absolute-path flags, whether HOME was
+selected from the environment and matches the account home, whether canonicalization
+changed either path, and image/home containment before and after canonicalization.
+Resolved locations use only fixed root/home/temporary/opt/usr/run/other categories.
+Unavailable facts remain null. This distinguishes an outside-home installation,
+an overridden HOME and a parent-directory symlink escape without sending paths,
+usernames, environment values or file contents. The filesystem safety checks and
+reporting consent/limits remain unchanged; macOS leaves these Linux facts absent.
+These diagnostics require an updated desktop package and a new occurrence; changing
+PostHog settings cannot add facts to older binaries or historical events.
+
 New non-panic exception types normally use the same static operation code as their value
 (for example `audio_start_failed` or `electron_renderer_gone`), rather than the
 generic `DesktopOperationError`. Panics retain `RustPanic`. Structured updater
@@ -833,8 +845,14 @@ shortcut release, capture-start and remembered-progress acceptance remain requir
 
 General keeps its accepted compact composition in a pane-scoped layout; the
 other Settings panes retain their adopted shared layout and error dialogs.
-Agents and About keep their live shared-shell route, with native capabilities
-checked against the current pane. General opens with its own bounded bridge.
+General, Agents, Labs, About and adopted Storage share one live Electron window
+and document. Navigation preserves its position and size, switches the current
+pane's bounded capabilities and cancels pending pane work. General's bridge is
+available on entry without restarting Electron. Recording, Permissions and Linux
+Storage retain their native presentation and still cross the presentation boundary.
+Native fallback remains available; rollback restores the previous replacement
+route together with the launch-scoped preload. Donor removal still requires the
+remaining native-pane migration and installed platform acceptance.
 
 General opens in packaged Electron by default, independently of Connect card
 visibility. A fresh ordinary Settings session selects General; an existing session retains its pane. App-picker launches still

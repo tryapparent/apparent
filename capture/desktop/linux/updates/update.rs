@@ -513,13 +513,74 @@ fn update_policy_assets() -> Option<(PathBuf, PathBuf)> {
 
 fn target() -> Result<Option<PathBuf>> {
     let Some(path) = std::env::var_os("APPIMAGE").map(PathBuf::from) else { return Ok(None) };
-    let meta = fs::symlink_metadata(&path)?;
-    ensure_update!(meta.is_file() && !meta.file_type().is_symlink(), "update target must be an ordinary AppImage");
-    ensure_update!(meta.uid() == unsafe { libc::geteuid() }, "update target belongs to another user");
-    let home = dirs::home_dir().context("home directory unavailable")?;
-    let path = path.canonicalize()?;
-    ensure_update!(path.starts_with(home.canonicalize()?), "refusing to replace an AppImage outside your home");
-    Ok(Some(path))
+    let home_override = std::env::var_os("HOME").is_some_and(|value| !value.is_empty());
+    validate_target(&path, dirs::home_dir().as_deref(), account_home().as_deref(), home_override).map(Some)
+}
+
+fn account_home() -> Option<PathBuf> {
+    use std::{ffi::{CStr, OsStr}, os::unix::ffi::OsStrExt};
+    let mut size = 4096;
+    while size <= 65536 {
+        let mut buffer = vec![0u8; size];
+        let mut record = std::mem::MaybeUninit::<libc::passwd>::uninit();
+        let mut found = std::ptr::null_mut();
+        // getpwuid_r writes the record and its strings into caller-owned storage.
+        let rc = unsafe { libc::getpwuid_r(libc::geteuid(), record.as_mut_ptr(), buffer.as_mut_ptr().cast(), buffer.len(), &mut found) };
+        if rc == libc::ERANGE { size *= 2; continue; }
+        if rc != 0 || found.is_null() { return None; }
+        let record = unsafe { record.assume_init() };
+        if record.pw_dir.is_null() { return None; }
+        let bytes = unsafe { CStr::from_ptr(record.pw_dir) }.to_bytes();
+        return (!bytes.is_empty()).then(|| PathBuf::from(OsStr::from_bytes(bytes)));
+    }
+    None
+}
+
+fn path_class(path: &Path) -> updates::PathClass {
+    use updates::PathClass;
+    if path == Path::new("/") { PathClass::Root }
+    else if path.starts_with("/home") || path.starts_with("/root") { PathClass::Home }
+    else if path.starts_with("/tmp") || path.starts_with("/var/tmp") { PathClass::Temporary }
+    else if path.starts_with("/opt") { PathClass::Opt }
+    else if path.starts_with("/usr") { PathClass::Usr }
+    else if path.starts_with("/run") { PathClass::Run }
+    else { PathClass::Other }
+}
+
+pub(crate) fn validate_target(image: &Path, home: Option<&Path>, account: Option<&Path>, home_from_environment: bool) -> Result<PathBuf> {
+    use updates::TargetStep;
+    let mut facts = updates::Target { step: TargetStep::Metadata, image_absolute: image.is_absolute(), home_from_environment,
+        home_matches_account: home.zip(account).map(|(selected, account)| selected == account),
+        image_regular: None, image_symlink: None, image_owned: None, home_absolute: None,
+        image_path_changed: None, home_path_changed: None, image_under_home_before_canonicalization: None,
+        image_under_home: None, image_location: None, home_location: None };
+    let result = (|| {
+        let meta = fs::symlink_metadata(image)?;
+        facts.image_regular = Some(meta.is_file());
+        facts.image_symlink = Some(meta.file_type().is_symlink());
+        facts.image_owned = Some(meta.uid() == unsafe { libc::geteuid() });
+        facts.step = TargetStep::FileType;
+        ensure_update!(meta.is_file() && !meta.file_type().is_symlink(), "update target must be an ordinary AppImage");
+        facts.step = TargetStep::Ownership;
+        ensure_update!(facts.image_owned == Some(true), "update target belongs to another user");
+        facts.step = TargetStep::HomeDiscovery;
+        let home = home.context("home directory unavailable")?;
+        facts.home_absolute = Some(home.is_absolute());
+        facts.image_under_home_before_canonicalization = Some(image.starts_with(home));
+        facts.step = TargetStep::ImageCanonicalization;
+        let path = image.canonicalize()?;
+        facts.image_path_changed = Some(path != image);
+        facts.image_location = Some(path_class(&path));
+        facts.step = TargetStep::HomeCanonicalization;
+        let canonical_home = home.canonicalize()?;
+        facts.home_path_changed = Some(canonical_home != home);
+        facts.home_location = Some(path_class(&canonical_home));
+        facts.image_under_home = Some(path.starts_with(&canonical_home));
+        facts.step = TargetStep::HomeBoundary;
+        ensure_update!(facts.image_under_home == Some(true), "refusing to replace an AppImage outside your home");
+        Ok(path)
+    })();
+    result.map_err(|error| updates::target_failure(error, facts))
 }
 
 fn verify_download(stage: &Path, hash: &str) -> Result<()> {
@@ -671,6 +732,69 @@ pub fn start() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn target_location_categories_use_components_and_never_expose_private_suffixes() {
+        for (path, expected) in [
+            ("/", "root"), ("/home/private-account/app", "home"), ("/root/app", "home"),
+            ("/tmp/private-session/app", "temporary"), ("/var/tmp/private-session/app", "temporary"),
+            ("/opt/private-install/app", "opt"), ("/usr/local/bin/app", "usr"), ("/run/private-session/app", "run"),
+            ("/home-other/private-account/app", "other"), ("/tmp-other/app", "other"), ("relative/private-app", "other"),
+        ] {
+            assert_eq!(serde_json::to_value(path_class(Path::new(path))).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn target_diagnostics_reproduce_home_mismatch_and_symlink_escape_without_paths() {
+        use std::os::unix::fs::symlink;
+        let scratch = tempfile::tempdir().unwrap();
+        let home = scratch.path().join("private-home-canary");
+        let outside = scratch.path().join("private-other-canary");
+        fs::create_dir(&home).unwrap();
+        fs::create_dir(&outside).unwrap();
+        let image = outside.join("private-image-canary.AppImage");
+        fs::write(&image, b"synthetic image").unwrap();
+        let failure = |image: &Path, home: Option<&Path>, account: Option<&Path>| {
+            let error = validate_target(image, home, account, true).stage(Stage::Target).unwrap_err();
+            error_reporting::update_payload_for_test(&error, Trigger::Automatic)
+        };
+        let payload = failure(&image, Some(&home), Some(&outside));
+        let facts = &payload["properties"]["updater"]["target"];
+        assert_eq!(facts["step"], "home_boundary");
+        assert_eq!(facts["home_from_environment"], true);
+        assert_eq!(facts["home_matches_account"], false);
+        assert_eq!(facts["image_owned"], true);
+        assert_eq!(facts["image_under_home_before_canonicalization"], false);
+        assert_eq!(facts["image_under_home"], false);
+        assert_eq!(facts["image_path_changed"], false);
+        // Both are siblings beneath the caller's TMPDIR, which CI places under
+        // /home rather than /tmp. Their common category must survive reporting.
+        assert_eq!(facts["image_location"], facts["home_location"]);
+        assert!(facts["image_location"].is_string());
+        assert!(!payload.to_string().contains("private-"));
+        assert!(!payload.to_string().contains(scratch.path().to_str().unwrap()));
+        symlink(&outside, home.join("linked")).unwrap();
+        let payload = failure(&home.join("linked/private-image-canary.AppImage"), Some(&home), Some(&home));
+        let facts = &payload["properties"]["updater"]["target"];
+        assert_eq!(facts["home_matches_account"], true);
+        assert_eq!(facts["image_under_home_before_canonicalization"], true);
+        assert_eq!(facts["image_under_home"], false);
+        assert_eq!(facts["image_path_changed"], true);
+        assert!(!payload.to_string().contains("private-"));
+        symlink(&image, home.join("image-link")).unwrap();
+        assert_eq!(failure(&home.join("image-link"), Some(&home), Some(&home))["properties"]["updater"]["target"]["step"], "file_type");
+        assert_eq!(failure(&image, None, None)["properties"]["updater"]["target"]["step"], "home_discovery");
+        assert_eq!(failure(&image, Some(&home.join("missing")), None)["properties"]["updater"]["target"]["step"], "home_canonicalization");
+        let payload = failure(&home.join("missing"), Some(&home), Some(&home));
+        assert_eq!(payload["properties"]["updater"]["target"]["step"], "metadata");
+        assert_eq!(payload["properties"]["updater"]["io_kind"], "not_found");
+        let accepted = home.join("valid.AppImage");
+        fs::write(&accepted, b"synthetic").unwrap();
+        assert_eq!(validate_target(&accepted, Some(&home), Some(&home), false).unwrap(), accepted);
+        symlink(&home, scratch.path().join("home-alias")).unwrap();
+        assert_eq!(validate_target(&accepted, Some(&scratch.path().join("home-alias")), Some(&home), true).unwrap(), accepted);
+    }
 
     #[test]
     fn actual_curl_failures_report_http_rate_limits_and_safe_exception_details() {

@@ -52,7 +52,34 @@ but all routes persist recognized retention leaves through the same native
 Storage executor, preserving unknown nested keys. The fallback obtains a fresh
 owner revision before saving; a concurrent change is refused without replay.
 Engine no longer supplies a whole-object retention writer;
-capture-time default resolution and cleanup policy interpretation also remain
-native compatibility debt. This package's headless checks prove its policy and
+capture-time default resolution, native preset presentation and the cleanup
+scheduler remain compatibility debt. This package's headless checks prove its policy and
 controller loop, not Linux adoption, native GUI acceptance or whole-Settings build
 independence. Routing and fallback/removal gates remain in the frontend README.
+
+## Cleanup planning
+
+`planRetention` owns age/settling thresholds, action priority and mirror-video
+bitrate eligibility over bounded observations. Native CLI cleanup and the
+background pass consume its compiled private-stdin worker; the after-capture
+shrink job uses the same planner's separate `shrinkOnly` mode. Exact unsigned
+64-bit facts cross the bridge as decimal strings. Returned indices refer only
+to the native caller's observations; Record supplies no filesystem paths.
+
+Native code retains pin/live/busy/recovery exclusions, filesystem observations,
+claims, last-moment mutation checks, Trash publication and media encoding. A
+missing or invalid plan fails before cleanup; failed background passes wait an
+hour before automatic retry. Config reads keep the existing malformed-leaf
+fallback, and the native Storage transaction remains the only durable writer.
+The worker reloads retention preferences for each pass and retains its startup
+captures folder until restart.
+
+The app stages the compiled ESM worker separately from browser/CommonJS
+controllers and requires its assets before native verification. Package checks
+run the actual CLI over copied producer bundles in dry-run mode, preserving all
+source/config bytes; they do not prove destructive cleanup or live capture.
+Rollback restores planner routing, native donor decisions and staged assets
+together, preserving the accepted native video admission and mutation guards.
+Remove remaining native defaults/presets only with all their consumers
+and persistence contracts adopted. Mac, AppImage and exact-main delivery remain
+acceptance gates for this slice.

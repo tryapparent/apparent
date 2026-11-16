@@ -5,3 +5,4 @@ export * from './location-controller.js';
 export * from './retention-controller.js';
 export * from './location-workflow.js';
 export * from './retention-workflow.js';
+export * from './retention/policy.js';

@@ -139,7 +139,7 @@ fn settings_page_capabilities_follow_live_route() {
     assert!(!admits(Pane::Storage, &connection));
     assert!(!admits(Pane::Agents, &connection));
     assert!(!admits(Pane::Labs, &preference));
-    for setting in ["autoPaste", "sharing"] {
+    for setting in ["autoPaste", "sharing", "wisprFlow"] {
         let experiment = Action::AgentsPreference { request: 2, enabled: Some(true), setting: Some(setting.into()) };
         assert!(admits(Pane::Labs, &experiment));
         assert!(!admits(Pane::Agents, &experiment));
@@ -172,9 +172,10 @@ pub(super) fn open(pane: Pane, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyh
             for line in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
                 // Each page receives only its bounded native capabilities.
                 if let Ok(action) = serde_json::from_str::<Action>(&line)
-                    && (admits(pane, &action)
-                        || matches!(pane, Pane::Agents | Pane::About)
-                            && (admits(Pane::Agents, &action) || admits(Pane::About, &action)))
+                    // The session checks the current pane after generation binding.
+                    // Launch-pane filtering would discard actions after live navigation.
+                    && [Pane::General, Pane::Storage, Pane::Agents, Pane::Labs, Pane::About]
+                        .into_iter().any(|pane| admits(pane, &action))
                 {
                     events(Event::Action(action));
                 }
