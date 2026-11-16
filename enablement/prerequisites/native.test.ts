@@ -76,6 +76,8 @@ test('Linux release tests prepare their real published provider before Cargo', (
   assert.match(workflow, /Clean private release test inputs\n        if: always\(\)/);
   const adapter = readFileSync('composition/worker.rs', 'utf8');
   assert.match(adapter, /cfg!\(any\(test, debug_assertions\)\)/, 'release tests have prepared source assets; shipped releases do not');
+  const updater = readFileSync('capture/desktop/linux/updates/update.rs', 'utf8');
+  assert.match(updater, /cfg!\(any\(test, debug_assertions\)\)/, 'release updater tests also use prepared source assets');
 });
 
 test('one preparation entrypoint rebuilds absent native artifacts and can run again', t => {
