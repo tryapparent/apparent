@@ -5,7 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@apparent/ui/tabs';
 import type { RuntimeState } from './bridge';
 import { Storage } from './storage';
 import { ErrorReporting } from './error-reporting';
-import { ConnectSettingsCard } from './connect-settings';
+import { ConnectSettingsCard } from './connect/card';
 import { CaptureReference } from './reference';
 import './style.css';
 import { CaptureNotes } from './notes';

@@ -46,7 +46,7 @@ impl Drop for Fixture { fn drop(&mut self) { std::fs::remove_dir_all(&self.dir).
 fn fake() -> (Arc<Fake>, mpsc::Receiver<Allowed>, mpsc::Sender<()>) {
     let (login, started) = mpsc::channel();
     let (release, wait) = mpsc::channel();
-    (Arc::new(Fake { state: Mutex::new(Snapshot { server: None, connected: false, uploads_enabled: false, reauthorization_required: false, account_initial: None }),
+    (Arc::new(Fake { state: Mutex::new(Snapshot { encryption:true, reusable_upload_grant:false, server: None, connected: false, uploads_enabled: false, reauthorization_required: false, account_initial: None }),
         login, release: Mutex::new(wait), disables: AtomicUsize::new(0), completed: AtomicUsize::new(0) }), started, release)
 }
 fn start(config: &Path, backend: Arc<dyn Backend>, lease: Duration) -> (BufReader<UnixStream>, std::thread::JoinHandle<()>, Arc<AtomicUsize>) {
@@ -245,4 +245,31 @@ fn feature_edit_between_command_and_transport_admission_invalidates_the_client_p
     assert_eq!(backend.admitted.load(Ordering::SeqCst), 0);
     assert_eq!(workers.load(Ordering::SeqCst), 0);
     wait_for(|| inner.disables.load(Ordering::SeqCst)==1);
+}
+
+#[test]
+fn feature_adapter_forwards_resume_with_fresh_feature_and_caller_cancellation() {
+    struct ResumeBackend { receipt: Arc<Mutex<Option<Allowed>>> }
+    impl Backend for ResumeBackend {
+        fn snapshot(&self) -> Result<Snapshot,SafeError> { panic!("resume adapter must not infer from snapshot") }
+        fn login(&self,_:&str,_:Allowed,_:&dyn Fn(Approval))->Result<(),SafeError>{panic!("resume is not login")}
+        fn health(&self,_:Allowed)->Health{panic!("resume is not a generic health check")}
+        fn disable(&self,_:bool)->Result<(),SafeError>{panic!("resume must not disable")}
+        fn resume(&self,server:&str,allowed:Allowed)->Result<(),SafeError>{
+            assert_eq!(server,"https://example.com");
+            let current=allowed(); *self.receipt.lock().unwrap()=Some(allowed);
+            if current {Ok(())} else {Err(SafeError::Cancelled)}
+        }
+    }
+    let fixture=Fixture::new(true);
+    let receipt=Arc::new(Mutex::new(None));
+    let adapter=FeatureBackend{inner:Arc::new(ResumeBackend{receipt:receipt.clone()}),config:fixture.config.clone()};
+    let active=Arc::new(std::sync::atomic::AtomicBool::new(true));let caller=active.clone();
+    assert_eq!(adapter.resume("https://example.com",Arc::new(move||caller.load(Ordering::SeqCst))),Ok(()));
+    let predicate=receipt.lock().unwrap().take().unwrap();assert!(predicate());
+    std::fs::write(&fixture.config,r#"{"experiments":{"connectSettings":false}}"#).unwrap();
+    assert!(!predicate());
+    assert_eq!(adapter.resume("https://example.com",Arc::new(||true)),Err(SafeError::Cancelled));
+    std::fs::write(&fixture.config,r#"{"experiments":{"connectSettings":true}}"#).unwrap();
+    assert!(predicate());active.store(false,Ordering::SeqCst);assert!(!predicate());
 }

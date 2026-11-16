@@ -20,8 +20,23 @@ contextBridge.exposeInMainWorld('apparentSettingsMounted', async () => {
   await ipcRenderer.invoke('apparent:settings-frame-ready');
 });
 
-// Installed Storage has no Connect, reporting, clipboard or runtime capabilities.
+// Settings handlers admit capabilities only on their owning page.
 contextBridge.exposeInMainWorld('apparent', Object.freeze({
+  ...(process.argv.includes('--settings-general') ? {
+  readConnectSettings: () => ipcRenderer.invoke('apparent:read-connect-settings'),
+  connectSettings: () => ipcRenderer.invoke('apparent:connect-connect'),
+  resumeConnectUploads: () => ipcRenderer.invoke('apparent:connect-resume'),
+  allowConnectUploads: () => ipcRenderer.invoke('apparent:connect-allow'),
+  cancelConnectSettings: () => ipcRenderer.invoke('apparent:connect-cancel'),
+  checkConnectConnection: () => ipcRenderer.invoke('apparent:connect-check'),
+  disableConnectUploads: () => ipcRenderer.invoke('apparent:connect-disable'),
+  disconnectConnectSettings: () => ipcRenderer.invoke('apparent:connect-disconnect'),
+  requestDisableConnectUploads: () => ipcRenderer.invoke('apparent:connect-request-disable'),
+  requestDisconnectConnectSettings: () => ipcRenderer.invoke('apparent:connect-request-disconnect'),
+  openConnectSharedLinks: () => ipcRenderer.invoke('apparent:connect-open-shared-links'),
+  openConnectBrowser: () => ipcRenderer.invoke('apparent:connect-open-browser'),
+  } : {}),
+  ...(process.argv.includes('--settings-general') ? {} : {
   readCaptureLocation: () => ipcRenderer.invoke('apparent:read-capture-location'),
   changeCaptureLocation: () => ipcRenderer.invoke('apparent:change-capture-location'),
   resetCaptureLocation: () => ipcRenderer.invoke('apparent:reset-capture-location'),
@@ -29,8 +44,9 @@ contextBridge.exposeInMainWorld('apparent', Object.freeze({
   saveRetention: (preset) => ipcRenderer.invoke('apparent:save-retention', preset),
   resetRetention: () => ipcRenderer.invoke('apparent:reset-retention'),
   readCaptureUsage: () => ipcRenderer.invoke('apparent:read-capture-usage'),
-  navigateSettings: (pane) => ipcRenderer.invoke('apparent:navigate-settings', pane),
   showCaptureFolder: () => ipcRenderer.invoke('apparent:show-capture-folder'),
+  }),
+  navigateSettings: (pane) => ipcRenderer.invoke('apparent:navigate-settings', pane),
 }));
 
 contextBridge.exposeInMainWorld('apparentAbout', Object.freeze({
@@ -61,7 +77,17 @@ contextBridge.exposeInMainWorld('apparentAgents', Object.freeze({
   },
 }));
 
-contextBridge.exposeInMainWorld('apparentLabs',Object.freeze({
+if (process.argv.includes('--settings-general')) contextBridge.exposeInMainWorld('apparentGeneral', Object.freeze({
+  read: () => ipcRenderer.invoke('apparent:general-read'),
+  act: action => ipcRenderer.invoke('apparent:general-action', action),
+  subscribe: callback => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on('apparent:general-state', listener);
+    return () => ipcRenderer.removeListener('apparent:general-state', listener);
+  },
+}));
+
+if (process.argv.includes('--settings-labs')) contextBridge.exposeInMainWorld('apparentLabs',Object.freeze({
   read:()=>ipcRenderer.invoke('apparent:labs-preference'),
   save:(enabled,setting='autoPaste')=>ipcRenderer.invoke('apparent:labs-preference',enabled,setting),
   subscribe:callback=>{const listener=(_event,facts)=>callback(facts);ipcRenderer.on('apparent:labs-state',listener);return()=>ipcRenderer.removeListener('apparent:labs-state',listener);},

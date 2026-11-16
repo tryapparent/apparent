@@ -155,13 +155,44 @@ fn lock(file: &File) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::fd::AsRawFd;
-        ensure!(
-            unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0,
-            "{}",
-            std::io::Error::last_os_error()
-        );
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+            // Preserve errno so callers can distinguish contention from other failures.
+            return Err(std::io::Error::last_os_error().into());
+        }
     }
     Ok(())
+}
+
+#[cfg(test)]
+pub(super) fn acquire_released_lease(dir: &Path) -> Result<Lease> {
+    acquire_released_lease_with_timeout(dir, Duration::from_secs(5))
+}
+
+#[cfg(test)]
+fn acquire_released_lease_with_timeout(dir: &Path, timeout: Duration) -> Result<Lease> {
+    // Other tests can fork while our lease is open. CLOEXEC releases the child's
+    // inherited file description at exec, not at the last parent Arc's drop.
+    // Never unlock explicitly: that would also unlock a fork child's live lease.
+    let deadline = Instant::now() + timeout;
+    loop {
+        match Lease::acquire(dir) {
+            Ok(lease) => return Ok(lease),
+            Err(error) => {
+                let busy = error.downcast_ref::<std::io::Error>().is_some_and(|io| {
+                    io.raw_os_error().is_some_and(|code| {
+                        code == libc::EWOULDBLOCK || code == libc::EAGAIN
+                    })
+                });
+                if !busy {
+                    return Err(error);
+                }
+                if Instant::now() >= deadline {
+                    return Err(error.context("Narration lease still held after release deadline"));
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+    }
 }
 pub fn live(dir: &Path) -> bool {
     match options().open(dir.join(RECORDING)) {

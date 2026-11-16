@@ -43,11 +43,11 @@ export function useConnectFlow(bridge: ConnectBridge) {
       pending.current = true;
       const next = await (action==='connect' ? startConnect(bridge,()=>token===generation.current) : bridge.command(action));
       if(token===generation.current) {
-        setResult(next);
+        if(action!=='open-browser'||next.status!=='error')setResult(next);
         if(action==='open-browser'&&next.status==='error')setBrowserFailed(true);
       }
       return next;
-    } catch {if(token===generation.current){setResult({status:'error'});if(action==='open-browser')setBrowserFailed(true);}}
+    } catch {if(token===generation.current){if(action==='open-browser')setBrowserFailed(true);else setResult({status:'error'});}}
     finally {pending.current=false;actionBusy.current=false;if(token===generation.current)setBusy(false);}
   }
   const view = result.status==='connected' ? result.view : undefined;

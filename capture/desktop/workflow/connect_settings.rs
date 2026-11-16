@@ -58,6 +58,9 @@ impl Backend for FeatureBackend {
     fn login(&self, server: &str, allowed: Arc<dyn Fn() -> bool + Send + Sync>, approval: &dyn Fn(Approval)) -> Result<(), SafeError> {
         self.inner.login(server, self.allowed(allowed), approval)
     }
+    fn resume(&self, server: &str, allowed: Arc<dyn Fn() -> bool + Send + Sync>) -> Result<(), SafeError> {
+        self.inner.resume(server, self.allowed(allowed))
+    }
     fn health(&self, allowed: Arc<dyn Fn() -> bool + Send + Sync>) -> Health { self.inner.health(self.allowed(allowed)) }
     // Revocation must still settle when the feature has been disabled.
     fn disable(&self, logout: bool) -> Result<(), SafeError> { self.inner.disable(logout) }

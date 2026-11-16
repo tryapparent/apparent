@@ -94,7 +94,9 @@ const settings = process.argv.includes('--settings-storage');
 let about = settings && process.argv.includes('--settings-about');
 const labs = settings && process.argv.includes('--settings-labs') && !about;
 let agents = settings && process.argv.includes('--settings-agents') && !about && !labs;
-const settingsHash = about ? '#about' : agents ? '#agents' : labs ? '#labs' : '';
+const general = settings && process.argv.includes('--settings-general') && !about && !agents && !labs;
+let generalState;
+const settingsHash = about ? '#about' : agents ? '#agents' : labs ? '#labs' : general ? '#general' : '';
 const { AgentsPreferences, skillCommand, preferenceFacts } = require('./settings/agents.cjs');
 const {PairingLinks} = require('./settings/t3.cjs');
 const pairingLinks = new PairingLinks();
@@ -129,6 +131,7 @@ app.whenReady().then(() => {
     backgroundColor: followWindowTheme.backgroundColor(nativeTheme),
     webPreferences: {
       preload: path.join(__dirname, settings ? 'storage-preload.cjs' : 'preload.cjs'),
+      additionalArguments: general ? ['--settings-general'] : labs ? ['--settings-labs'] : [],
       contextIsolation: true, nodeIntegration: false, sandbox: true,
       webSecurity: true, spellcheck: false,
     },
@@ -211,6 +214,16 @@ app.whenReady().then(() => {
     settingsPainted = true;
     return showSettings();
   });
+  ipcMain.handle('apparent:general-read', (event, ...args) => {
+    validate(event, args);
+    if (!general) throw new Error('Unavailable outside General');
+    return generalState;
+  });
+  ipcMain.handle('apparent:general-action', (event, action, ...args) => {
+    validate(event, args);
+    if (!general || !require('./settings/general.cjs').validAction(action)) throw new Error('Forbidden General action');
+    process.stdout.write(JSON.stringify(action) + '\n');
+  });
   ipcMain.handle('apparent:about-link', (event, link, ...args) => {
     validate(event, args);
     if (!about || !['website', 'source', 'discord'].includes(link)) throw new Error('Forbidden link');
@@ -287,13 +300,13 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('apparent:navigate-settings', (event, ...args) => {
     validate(event, []);
-    const destinations = ['general', 'recording', 'permissions', 'agents', 'labs', 'storage', 'about'].filter(pane => pane !== (about ? 'about' : agents ? 'agents' : labs ? 'labs' : 'storage'));
+    const destinations = ['general', 'recording', 'permissions', 'agents', 'labs', 'storage', 'about'].filter(pane => pane !== (about ? 'about' : agents ? 'agents' : labs ? 'labs' : general ? 'general' : 'storage'));
     if (!settings || args.length !== 1 || !destinations.includes(args[0])) throw new Error('Forbidden Settings page');
     process.stdout.write(`${JSON.stringify({ action: 'navigate', pane: args[0] })}\n`);
   });
   ipcMain.handle('apparent:show-capture-folder', (event, ...args) => {
     validate(event, args);
-    if (!settings || agents || labs || about) throw new Error('Unavailable outside Storage Settings');
+    if (!settings || general || agents || labs || about) throw new Error('Unavailable outside Storage Settings');
     process.stdout.write(`${JSON.stringify({ action: 'show-captures' })}\n`);
   });
   if (settings) {
@@ -307,6 +320,10 @@ app.whenReady().then(() => {
     lines.on('line', line => {
       try {
         const command = JSON.parse(line);
+        if (command.type === 'general-state' && general) {
+          generalState = command;
+          window.webContents.send('apparent:general-state', command);
+        }
         if (command.type === 'about-state' && about) {
           aboutState = command;
           window.webContents.send('apparent:about-state', command);
@@ -363,12 +380,12 @@ app.whenReady().then(() => {
   const requestConnect = (action) => {
     if (pendingConnect) return action === undefined ? pendingConnect : Promise.resolve({ status: 'error' });
     const token = generation;
-    const request = connect.request(action).then(result => {
+    const request = connect.request(action).then(async result => {
       if (token !== generation || window.isDestroyed()) return { status: 'cancelled' };
       // Only this explicit zero-argument action may open the URI just authorized
       // by the current Rust controller. Never accept a renderer-supplied URL.
       if (result.openUri !== undefined) {
-        void shell.openExternal(result.openUri).catch(() => {});
+        await shell.openExternal(result.openUri);
       }
       const { openUri: _openUri, ...projected } = result;
       return projected;
@@ -379,12 +396,14 @@ app.whenReady().then(() => {
     return request;
   };
   ipcMain.handle('apparent:read-connect-settings', (event, ...args) => {
-    validateFoundation(event, args);
+    if (settings && !general) throw new Error('Unavailable outside General');
+    validate(event, args);
     return requestConnect();
   });
   for (const action of actions) {
     ipcMain.handle(`apparent:connect-${action}`, (event, ...args) => {
-      validateFoundation(event, args);
+      if (settings && !general) throw new Error('Unavailable outside General');
+      validate(event, args);
       return requestConnect(action);
     });
   }

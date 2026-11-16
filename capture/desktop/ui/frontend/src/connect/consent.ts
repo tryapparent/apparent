@@ -8,5 +8,5 @@ export async function startConnect(bridge: ConnectBridge, current=()=>true): Pro
   const consent = await bridge.command('connect');
   if(!current())return {status:'cancelled'};
   if (consent.status !== 'connected' || !consent.view.buttons.some(b => b.command === 'allow' && b.enabled)) return consent;
-  return bridge.command('allow');
+  return bridge.command(consent.view.reusableUploadGrant === true ? 'resume' : 'allow');
 }

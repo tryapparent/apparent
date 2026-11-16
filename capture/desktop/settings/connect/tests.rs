@@ -64,7 +64,7 @@ fn recv<T>(rx: &mpsc::Receiver<T>) -> T {
 }
 
 fn disconnected(server: Option<&str>) -> Snapshot {
-    Snapshot {
+    Snapshot { reusable_upload_grant: false, encryption: true,
         server: server.map(str::to_owned),
         connected: false,
         uploads_enabled: false,
@@ -73,7 +73,7 @@ fn disconnected(server: Option<&str>) -> Snapshot {
 }
 
 fn connected() -> Snapshot {
-    Snapshot {
+    Snapshot { reusable_upload_grant: false, encryption: true,
         server: Some(DEFAULT_SERVER.into()),
         connected: true,
         uploads_enabled: true,
@@ -269,13 +269,13 @@ fn login_requires_authoritative_enabled_state_not_transport_success() {
     for local in [
         Err(SafeError::LocalState),
         Ok(disconnected(None)),
-        Ok(Snapshot {
+        Ok(Snapshot { reusable_upload_grant: false, encryption: true,
             server: Some(DEFAULT_SERVER.into()),
             connected: true,
             uploads_enabled: false,
             reauthorization_required: false, account_initial: None,
         }),
-        Ok(Snapshot {
+        Ok(Snapshot { reusable_upload_grant: false, encryption: true,
             server: Some("https://other.example".into()),
             connected: true,
             uploads_enabled: true,
@@ -334,7 +334,7 @@ fn failed_disable_retains_retry_and_fresh_read_only_status_without_health_flood(
             .iter()
             .any(|b| b.command == Command::Disable && b.enabled)
     );
-    *backend.local.lock().unwrap() = Ok(Snapshot {
+    *backend.local.lock().unwrap() = Ok(Snapshot { reusable_upload_grant: false, encryption: true,
         server: Some(DEFAULT_SERVER.into()),
         connected: true,
         uploads_enabled: false,
@@ -554,4 +554,25 @@ fn account_initial_tracks_fresh_identity_without_changing_actions() {
     assert!(c.view().presentation.account_initial.is_none());
     *backend.local.lock().unwrap() = Ok(disconnected(None)); c.refresh();
     assert!(c.view().presentation.account_initial.is_none());
+}
+
+#[test]
+fn failed_resume_withdraws_receipt_without_starting_browser_login() {
+    let (mut controller,backend,events,logins,_,_)=fixture();
+    let mut state=connected(); state.uploads_enabled=false; state.reusable_upload_grant=true;
+    *backend.local.lock().unwrap()=Ok(state);
+    controller.refresh();
+    assert!(controller.view().reusable_upload_grant);
+    assert!(logins.try_recv().is_err());
+    controller.command(Command::Connect);
+    controller.command(Command::Resume);
+    assert!(!controller.receive(recv(&events)));
+    controller.command(Command::Connect);
+    assert!(!controller.view().reusable_upload_grant);
+    assert!(logins.try_recv().is_err());
+    controller.command(Command::Allow);
+    let call=recv(&logins);
+    assert!((call.allowed)());
+    call.finish.send(Err(SafeError::Rejected)).unwrap();
+    drop(call.approve);
 }

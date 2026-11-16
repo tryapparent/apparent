@@ -1,6 +1,8 @@
-export type ConnectAction = 'connect' | 'allow' | 'cancel' | 'check' | 'disable' | 'disconnect' | 'open-browser' | 'request-disable' | 'request-disconnect' | 'open-shared-links';
+export type ConnectAction = 'connect' | 'resume' | 'allow' | 'cancel' | 'check' | 'disable' | 'disconnect' | 'open-browser' | 'request-disable' | 'request-disconnect' | 'open-shared-links';
 export type ConnectView = {
-  phase?: 'disconnected' | 'consent' | 'starting' | 'approval' | 'connected' | 'cancelling' | 'waitlisted' | 'failed';
+  reusableUploadGrant?: boolean;
+  encryption?: boolean | null;
+  phase?: 'disconnected' | 'consent' | 'starting' | 'enabling' | 'checking' | 'approval' | 'connected' | 'cancelling' | 'waitlisted' | 'failed';
   localReady?: boolean;
   title: string; status: string; detail: string; server: string | null;
   verificationUri: string | null; userCode: string | null;

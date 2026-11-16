@@ -199,6 +199,7 @@ func observe(_ req: [String: Any], _ png: URL, recognizeText: Bool = true) throw
     guard let image = NSBitmapImageRep(data: try Data(contentsOf: png)), image.pixelsWide > 0, image.pixelsHigh > 0 else {
         throw Refusal(message: "Could not read screenshot pixel dimensions")
     }
+    clickTrace?.add(["stage":"windowRecheckStarted"])
     let (afterShot, _) = try pill(req)
     guard afterShot.pid == w.pid && afterShot.id == w.id && afterShot.rect == w.rect else {
         throw ObservationError.changedWindow
@@ -212,6 +213,7 @@ func observe(_ req: [String: Any], _ png: URL, recognizeText: Bool = true) throw
         clickTrace?.add(["stage":"textRecognitionComplete", "wordCount":words.count])
     }
     let front = frontPID()
+    clickTrace?.add(["stage":"receiverAncestryStarted"])
     let pillDescendants = try ancestry(w.pid)
     clickTrace?.add(["stage":"observationComplete", "pid":Int(w.pid), "windowId":Int(w.id), "frontPid":Int(front)])
     let geometry: [String: Any] = ["pixelWidth": image.pixelsWide, "pixelHeight": image.pixelsHigh,
@@ -415,6 +417,10 @@ func main() throws {
         clickTraceName = traceURL.lastPathComponent
     }
     let (before, words, pillDescendants) = try (op == "click" ? observeBeforeInput(req, out) : observe(req, out))
+    if let expected = req["expectedFrontPid"] {
+        try need(expected is Int && (expected as! Int) > 1 && before["frontPid"] as? Int == (expected as! Int),
+            "Synthetic scene lost foreground before native operation")
+    }
     if op == "snapshot" { print(String(data: try JSONSerialization.data(withJSONObject: before), encoding: .utf8)!); return }
     try need(op == "click" || op == "prepare", "Unknown operation")
     let label = req["label"] as! String; try need((op == "prepare" ? ["Finish", "Copy link"] : ["Copy link", "Create public link", "Cancel upload", "Retry upload"]).contains(label), "Unsupported operation label")

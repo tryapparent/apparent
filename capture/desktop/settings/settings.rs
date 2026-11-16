@@ -1898,6 +1898,15 @@ pub struct Session {
     _microphones: crate::capture::engine::runtime::audio::mic::Watch,
 }
 
+// Presentation is independent of Connect visibility and never grants consent.
+fn electron_general(pane: Option<Pane>) -> bool {
+    pane == Some(Pane::General)
+}
+
+fn initial_settings_pane(pane: Option<Pane>) -> Option<Pane> {
+    Some(pane.unwrap_or(Pane::General))
+}
+
 fn electron_storage(pane: Option<Pane>, enabled: bool) -> bool {
     // Linux panes share one GPUI frame. Replacing it for Storage loses the
     // compositor's position/focus and visibly unmaps Settings during startup.
@@ -1913,6 +1922,7 @@ impl Session {
         use std::sync::atomic::{AtomicBool, Ordering};
 
         let events: std::sync::Arc<dyn Fn(Event) + Send + Sync> = std::sync::Arc::new(events);
+        let pane = initial_settings_pane(pane);
         let generation = super::presentation::generation();
         let (transport, electron) = Self::open_presentation(pane, generation, &events, true)?;
 
@@ -2004,7 +2014,7 @@ impl Session {
         let events: std::sync::Arc<dyn Fn(Event) + Send + Sync> = std::sync::Arc::new(move |event| {
             target(Event::Presentation { generation, event: Box::new(event) });
         });
-        if allow_electron && (matches!(pane, Some(Pane::About | Pane::Agents | Pane::Labs)) || electron_storage(pane, crate::shared::handoff::experiment("electronCaptureLocation"))) {
+        if allow_electron && (electron_general(pane) || matches!(pane, Some(Pane::About | Pane::Agents | Pane::Labs)) || electron_storage(pane, crate::shared::handoff::experiment("electronCaptureLocation"))) {
             match super::presentation::open(pane.unwrap_or(Pane::Storage), events.clone()) {
                 Ok(transport) => return Ok((transport, true)),
                 Err(error) => crate::capture::engine::runtime::apparent_log(format!("Settings fallback: {error:#}")),
@@ -2248,7 +2258,7 @@ impl Session {
 
     pub fn show(&mut self, pane: Option<Pane>) {
         if let Some(pane) = pane {
-            let electron = matches!(pane, Pane::About | Pane::Agents | Pane::Labs) || electron_storage(Some(pane), crate::shared::handoff::experiment("electronCaptureLocation"));
+            let electron = electron_general(Some(pane)) || matches!(pane, Pane::About | Pane::Agents | Pane::Labs) || electron_storage(Some(pane), crate::shared::handoff::experiment("electronCaptureLocation"));
             let shared_shell = matches!(self.pane, Some(Pane::Agents | Pane::About)) && matches!(pane, Pane::Agents | Pane::About);
             if electron != self.electron || (self.electron && self.pane != Some(pane) && !shared_shell) {
                 let generation = super::presentation::generation();
@@ -2293,6 +2303,16 @@ impl Session {
         // Storage reads its narrow projected socket contract. Do not forward the
         // other pages' state to a renderer which does not present those pages.
         if self.electron {
+            if self.pane == Some(Pane::General) {
+                let view = self.panel.view(host);
+                let message = serde_json::json!({"type":"general-state",
+                    "platform": if cfg!(target_os="macos") {"macos"} else {"linux"},
+                    "login":view.login,"shortcuts":view.shortcuts,"errorReporting":view.error_reporting,
+                    "lowerPlayback":view.lower_playback,"playbackLevel":view.playback_level,
+                    "playbackAvailable":cfg!(target_os="macos") || crate::shared::handoff::experiment("linux-playback-ducking")});
+                let text = message.to_string();
+                if text != self.last_view { self.send(&message); self.last_view = text; }
+            }
             if self.pane == Some(Pane::About) {
                 let message = self.panel.about_state(&host.config_path());
                 let text = message.to_string();
@@ -3814,5 +3834,19 @@ mod tests {
             "{}",
             row.caption
         );
+    }
+}
+
+#[cfg(test)]
+mod general_routing_tests {
+    use super::*;
+    #[test]
+    fn default_general_preserves_explicit_app_launch_and_navigation_panes() {
+        assert_eq!(initial_settings_pane(None), Some(Pane::General));
+        assert!(electron_general(initial_settings_pane(None)));
+        for pane in [Pane::General, Pane::Recording, Pane::Storage, Pane::Permissions, Pane::Agents, Pane::Labs, Pane::About] {
+            assert_eq!(initial_settings_pane(Some(pane)), Some(pane));
+            assert_eq!(electron_general(Some(pane)), pane == Pane::General);
+        }
     }
 }
