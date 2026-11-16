@@ -2259,7 +2259,9 @@ impl Session {
     pub fn show(&mut self, pane: Option<Pane>) {
         if let Some(pane) = pane {
             let electron = electron_general(Some(pane)) || matches!(pane, Pane::About | Pane::Agents | Pane::Labs) || electron_storage(Some(pane), crate::shared::handoff::experiment("electronCaptureLocation"));
-            let shared_shell = matches!(self.pane, Some(Pane::Agents | Pane::About)) && matches!(pane, Pane::Agents | Pane::About);
+            // Every adopted pane uses settings.html and the same restricted bridge.
+            // Native-only destinations still replace the presentation.
+            let shared_shell = self.electron && electron;
             if electron != self.electron || (self.electron && self.pane != Some(pane) && !shared_shell) {
                 let generation = super::presentation::generation();
                 match Self::open_presentation(Some(pane), generation, &self.events, true) {
@@ -2278,7 +2280,10 @@ impl Session {
                 }
             }
         }
-        if pane.is_some() { self.pane = pane; }
+        if pane.is_some() {
+            if self.pane != pane { self.last_view.clear(); }
+            self.pane = pane;
+        }
         self.send(&serde_json::json!({"type": "show", "pane": pane}));
     }
 

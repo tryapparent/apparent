@@ -73,16 +73,16 @@ function host(mode: string, capture = () => Promise.resolve({ isEmpty: () => fal
 }
 
 test('every Linux Settings presentation opens as a compact managed dialog', () => {
-  // Replacing About with another pane creates a fresh window: the compositor
-  // must receive the floating hint each time, without relying on a user rule.
+  // New sessions keep the floating hint. The shared window remains resizable
+  // when its initial compact pane is replaced by Agents or About.
   for (let reopen = 0; reopen < 3; reopen++) {
     const { window } = host('--settings-storage', undefined, 'linux');
     assert.equal(window.options.type, 'dialog');
     assert.equal(window.options.width, 720);
     assert.equal(window.options.height, 530);
-    assert.equal(window.options.resizable, false);
-    assert.equal(window.options.maximizable, false);
-    assert.equal(window.options.fullscreenable, false);
+    assert.equal(window.options.resizable, true);
+    assert.equal(window.options.maximizable, true);
+    assert.equal(window.options.fullscreenable, true);
     assert.equal(window.options.alwaysOnTop, undefined, 'Settings stays an ordinary managed dialog');
   }
 });
@@ -167,8 +167,8 @@ for (const mode of ['--settings-storage']) {
     assert.equal(window.options.width, 720);
     assert.equal(window.options.height, 530);
     assert.equal(window.options.titleBarStyle, 'hiddenInset');
-    assert.equal(window.options.resizable, false);
-    assert.equal(window.options.fullscreenable, false);
+    assert.equal(window.options.resizable, true);
+    assert.equal(window.options.fullscreenable, true);
     assert.equal(window.options.acceptFirstMouse, true, 'Inactive pane clicks match the native helper');
     assert.equal(window.options.paintWhenInitiallyHidden, true, 'Hidden Settings must render to receive a first-frame confirmation');
     assert.equal(window.centers, 1, 'Center the final AppKit frame before presenting it');
@@ -301,9 +301,11 @@ test('Settings preloads acknowledge committed DOM before waiting for renderer fr
       requestAnimationFrame: (callback: () => void) => { callbacks.push(callback); },
     }, { filename: preload });
     const bridge = exposed.apparent as unknown as Record<string, unknown>;
-    assert.equal(typeof bridge.readConnectSettings, general ? 'function' : 'undefined');
-    assert.equal(typeof bridge.changeCaptureLocation, general ? 'undefined' : 'function');
-    assert.equal(typeof exposed.apparentGeneral, general ? 'object' : 'undefined');
+    // The shared preload survives navigation; the live host admits each API
+    // only on its owner pane (covered by the real Electron shell smoke).
+    assert.equal(typeof bridge.readConnectSettings, 'function');
+    assert.equal(typeof bridge.changeCaptureLocation, 'function');
+    assert.equal(typeof exposed.apparentGeneral, 'object');
     const acknowledgement = exposed.apparentSettingsMounted();
     assert.deepEqual(invoked, ['apparent:settings-mounted'], `${preload}: committed DOM is independent of frame scheduling`);
     // Complete the asynchronous IPC reply across the VM boundary without
