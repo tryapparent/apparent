@@ -7,11 +7,9 @@
 .native-board-lesson { position:absolute; inset:12% 20% auto; pointer-events:none; text-align:center; color:var(--apparent-carbon); }
 .native-board-lesson p { font-size:24px; }
 .native-board-lesson svg { width:100%; max-height:160px; }
-.native-board-lesson path { fill:none; stroke-width:3; stroke-linecap:round; stroke-dasharray:1; animation:board-example 4.2s linear both; }
-.native-board-replay { position:absolute; bottom:8px; right:8px; }
+.native-board-lesson path { fill:none; stroke-width:3; stroke-linecap:round; stroke-dasharray:1; animation:board-example 4.2s linear infinite both; }
 @keyframes board-example { 0%,10% {stroke-dashoffset:1;opacity:1} 65%,80% {stroke-dashoffset:0;opacity:1} 100% {stroke-dashoffset:0;opacity:0} }
 @media(prefers-reduced-motion:reduce) { .native-board-lesson path {animation:none;stroke-dashoffset:0;} }
 
 .native-board header { -webkit-app-region:drag; flex-wrap:wrap; }
 .native-board header button { -webkit-app-region:no-drag; min-width:44px; min-height:44px; font-size:18px; }
-.native-board-replay { min-width:44px; min-height:44px; font-size:18px; }

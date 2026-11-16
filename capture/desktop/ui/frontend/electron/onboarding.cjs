@@ -1,6 +1,6 @@
 const {transparentBackgroundColor}=require('@apparent/ui/window-theme');
 const {parseAction}=require('./onboarding-protocol.cjs');
-const {coachDimensions,coachPosition}=require(process.versions.electron?'../dist/onboarding-presentation.cjs':'./onboarding/presentation.ts');
+const {coachDimensions,coachPosition,setupDimensions}=require(process.versions.electron?'../dist/onboarding-presentation.cjs':'./onboarding/presentation.ts');
 const {completedSelection}=require(process.versions.electron?'../dist/onboarding-selection.cjs':'./onboarding/selection.ts');
 // A private, Rust-owned presentation transport. No capture commands or filesystem IPC.
 const path = require('node:path');
@@ -22,7 +22,6 @@ function project(v) {
     ...(Array.isArray(v.anchor)&&v.anchor.length===4&&v.anchor.every(Number.isFinite)?{anchor:v.anchor}:{})};
 }
 // Screen coordinates supplied by this process's typed Whiteboard window only.
-function setupDimensions(area,shortcut){return {width:Math.min(area.width,760),height:Math.min(area.height,shortcut?520:720)};}
 function nativeRectangle(rect,toDip){
   if(!rect)return rect;
   const start=toDip({x:Math.round(rect[0]),y:Math.round(rect[1])});
@@ -129,6 +128,7 @@ app.whenReady().then(()=>{
 });
 function present(v,activate=false){
   if(closing||!window||window.isDestroyed())return;
+  if(v.step==='try-it'&&v.practice==='preparing'){window.hide();return;}
   // Linux adapters report X11 pixels; Electron places windows in logical DIP.
   // macOS adapter coordinates are already points.
   if(process.platform==='linux')v={...v,anchor:nativeRectangle(v.anchor,p=>screen.screenToDipPoint(p)),practiceBoard:nativeRectangle(v.practiceBoard,p=>screen.screenToDipPoint(p))};

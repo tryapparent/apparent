@@ -1,0 +1,13 @@
+.apparent-key {
+  display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;
+  padding:8px 12px;border:1px solid var(--apparent-input);border-radius:6px;
+  font-family:inherit;font-size:var(--key-size,18px);font-weight:500;line-height:1.2;
+  background:var(--apparent-surface);color:var(--apparent-foreground);
+  box-shadow:0 3px 0 var(--apparent-border);text-align:center;overflow-wrap:anywhere;
+  transition:transform 120ms ease-out,box-shadow 120ms ease-out,background 120ms ease-out;
+}
+.apparent-key[data-pressed=true],button.apparent-key:active:not(:disabled) {
+  transform:translateY(3px);box-shadow:none;
+  background:var(--apparent-secondary);color:var(--apparent-secondary-foreground);
+}
+@media(prefers-reduced-motion:reduce){.apparent-key{transition:none;}}

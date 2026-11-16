@@ -88,11 +88,11 @@ test('shortcut composition waits for modifiers and preserves Fn/cancel recovery'
   output='';child.stdin.write(JSON.stringify({type:'desktop-shortcut',keyCode:201,modifiers:768,key:'Copilot'})+'\n');
   await page.waitForTimeout(100);assert.equal(output,'','cancel blocks late offers before provider state acknowledgement');
   send('macos');
-  await expect(page.getByRole('button',{name:'Use Fn',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Choose suggested Fn shortcut',exact:true})).toBeVisible();
   output='';
   child.stdin.write(JSON.stringify({type:'desktop-shortcut',keyCode:201,modifiers:768,key:'Copilot'})+'\n');
   await page.waitForTimeout(100);assert.equal(output,'','Mac does not accept Linux compositor callbacks');
-  output='';await page.getByRole('button',{name:'Use Fn',exact:true}).click();
+  output='';await page.getByRole('button',{name:'Choose suggested Fn shortcut',exact:true}).click();
   await expect.poll(()=>output).toContain('"keyCode":63,"modifiers":0,"key":"Fn"');
   await recorder.focus();output='';
   await page.keyboard.down('Control');await page.keyboard.down('Shift');
