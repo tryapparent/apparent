@@ -2,6 +2,38 @@
 use std::{error::Error, fmt, panic::Location, process::ExitStatus};
 use std::os::unix::process::ExitStatusExt;
 
+/// Expected rejection by the native transaction guard, not an updater failure.
+/// Keep this typed: WouldBlock from any other operation still needs reporting.
+#[derive(Debug)]
+struct LockContention(std::io::Error);
+impl fmt::Display for LockContention {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("another update transaction is running")
+    }
+}
+impl Error for LockContention {
+    fn source(&self) -> Option<&(dyn Error + 'static)> { Some(&self.0) }
+}
+pub(crate) fn lock_contention(source: std::io::Error) -> anyhow::Error {
+    anyhow::Error::new(LockContention(source))
+}
+pub(crate) fn is_lock_contention(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| cause.is::<LockContention>())
+}
+
+#[cfg(test)]
+#[test]
+fn only_native_lock_contention_is_expected() {
+    let busy = attempted(failure(Stage::Lock,
+        lock_contention(std::io::Error::from_raw_os_error(libc::EWOULDBLOCK))), Attempt::default());
+    assert!(is_lock_contention(&busy));
+    for (stage, code) in [(Stage::Lock, libc::EACCES), (Stage::Lock, libc::EIO),
+        (Stage::AssetDownload, libc::EWOULDBLOCK), (Stage::Lock, libc::EWOULDBLOCK)] {
+        let error = failure(stage, std::io::Error::from_raw_os_error(code).into());
+        assert!(!is_lock_contention(&error), "untyped I/O errors must remain reportable");
+    }
+}
+
 #[derive(Clone, Copy, Debug, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Stage {
