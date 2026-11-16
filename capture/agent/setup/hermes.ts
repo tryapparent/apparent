@@ -162,10 +162,13 @@ export function diagnose(p: Provider, exe: string, profile?: string): Check[] {
     const path = profile && join(profile, 'plugins/apparent', name);
     let status: Check['status'] = path ? file(path) : 'unknown';
     if (path && status === 'ok') try { if (!statSync(path).isFile()) status = 'incompatible'; } catch { status = 'unknown'; }
-    checks.push({ id, status, detail: path || 'Select the actual Hermes profile with --profile; no profile is inferred or scanned.', action: 'Install the complete published plugin through Hermes; source compilation is not a normal setup repair.' });
+    const missingDesktop = id === 'plugin-desktop' && status === 'absent';
+    checks.push({ id, status,
+      detail: missingDesktop ? `${path}: compiled Desktop entry is missing. The Agent plugin can be listed as installed without the composer button; restarting Hermes cannot generate this file.` : path || 'Select the actual Hermes profile with --profile; no profile is inferred or scanned.',
+      action: missingDesktop ? 'Install the complete published apparent-hermes archive, not the Git/source directory, in this active profile through Hermes. Then use Capabilities → Plugins → Apparent → On and Rescan. CLI enablement is separate from Desktop activation.' : 'Install the complete published plugin through Hermes; source compilation is not a normal setup repair.' });
   }
   checks.push({ id: 'plugin-loaded', status: 'unknown', detail: 'Installed files and enabled configuration do not establish Agent/Desktop runtime loading or SDK capability compatibility.', action: 'Reload Hermes through its supported flow and verify both halves in the intended session.' });
-  checks.push({ id: 'plugin-configured', status: 'unknown', detail: 'Hermes owns activation. Setup does not parse or rewrite its settings or run discovery that may populate caches.', action: 'Check both Agent and Desktop activation through Hermes’s plugin settings.' });
+  checks.push({ id: 'plugin-configured', status: 'unknown', detail: 'Hermes owns activation. Setup does not parse or rewrite its settings or run discovery that may populate caches.', action: 'In Hermes Desktop, open Capabilities → Plugins, find the installed User package Apparent and turn it On. Use Rescan after replacing the package. CLI plugin enablement alone does not enable the Desktop button.' });
   const manifest = profile && join(profile, 'plugins/apparent/compatibility.json');
   let compatibility: Check['status'] = manifest ? file(manifest) : 'unknown';
   if (manifest && compatibility === 'ok') try {
