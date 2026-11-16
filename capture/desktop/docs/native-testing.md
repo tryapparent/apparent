@@ -473,7 +473,7 @@ without changing the captures root. Parent-health failures retain separate queue
 and flushed state counts and maximum active gaps; hidden idle time is excluded.
 Mailbox updates can coalesce, so those counts are observations, not acknowledgments.
 
-`mac-foreground-native` retains the report, owned-window screenshots, synthetic
+`mac-foreground-native-<attempt>` retains the report, owned-window screenshots, synthetic
 bundle and compiler/application logs for two days. Capture command request/result/
 failure receipts identify Start, Inspect and Stop independently; an absent native
 log line does not identify which command failed. The click trace records image
