@@ -1,6 +1,12 @@
 // Owner facts shared by hosted admission and local pushes. Unknown inputs stay broad.
 export const owners = ['capture', 'engine', 'desktop', 'capture-tools', 'client', 'client-foreground', 'web', 'service', 'public', 'hermes', 'tooling', 'onboarding', 'engine-media'] as const;
 export type Owner = typeof owners[number];
+// These prepare the installed renderer/runtime and the app consumed by the
+// foreground client. They do not build the independently published Engine.
+export const desktopPackagingInputs = new Set([
+  'capture/desktop/scripts/packaging/install-app.sh',
+  'capture/desktop/scripts/packaging/frontend/stage.ts',
+]);
 export const publicMarkdown = new Set([
   'README.md', 'capture/agent/skills/apparent/SKILL.md', 'capture/agent/docs/usage.md',
   'capture/desktop/docs/guides/recording.md', 'capture/engine/docs/guides/processing.md',
@@ -115,6 +121,7 @@ export function foregroundPortableChange(path: string, before: string, after: st
 
 function directConsumers(path: string): readonly Owner[] {
   if (documentationOnlyPath(path)) return [];
+  if (desktopPackagingInputs.has(path)) return ['capture', 'engine', 'desktop', 'capture-tools', 'client-foreground'];
   // Independently delivered producer; Record media consumes a pinned artifact,
   // never this implementation tree. Consumer pin/policy/package changes retain
   // their installed application consumers through record/ below.
@@ -221,7 +228,7 @@ const directoryPaths = {
     '.github/workflows/linux-updater-harness.yml',
     // The app embeds this wordmark; the remaining Public tree is independent.
     'public/site/**'],
-  connect: [...common, ...independentEngine, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, 'connect/**', 'public/site/**',
+  connect: [...common, ...independentEngine, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, ...desktopPackagingInputs, 'connect/**', 'public/site/**',
     '.github/workflows/stream-connect.yml', 'enablement/release_gate.py'],
   public: [...common, ...independentEngine, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/hermes.yml', 'public/**', '.github/workflows/stream-public.yml', 'README.md',
     'capture/agent/skills/apparent/SKILL.md', 'capture/agent/docs/usage.md',

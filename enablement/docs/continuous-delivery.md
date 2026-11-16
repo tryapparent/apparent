@@ -506,6 +506,30 @@ After native prerequisites pass, the prepared Electron download-cache path is
 exported to subsequent job steps. Clean packaging installs reuse that archive
 while retaining the ordinary installer and its checksum/version checks.
 
+The development Mac installer stages Settings and popup assets through
+`packaging/frontend/stage.ts`. Settings performs its ordinary locked installs,
+full frontend/Connect builds and nested signing first; popups then consume that
+same fresh frontend output before outer app signing. There is no prepared flag,
+result cache or cross-run reuse. Standalone Notes/Settings packaging and other
+release/Linux packagers retain their cold paths. Native CI needs no additional
+frontend build after this installer; its packaged media tests and installed GUI
+assertions still run.
+The installer and staging entrypoint share explicit Desktop, native, tooling and
+foreground consumers in the canonical map, retaining installation contracts.
+Executable uncertainty still selects the full conservative plan. Shared consumer
+inventory changes exercise every affected stream's existing policy verification.
+
+After installation contracts and fresh root prerequisites, the platform Rust job
+exports `GIT_OPTIONAL_LOCKS=0` so later read-only source checks do not refresh the
+index after the installer's same-mode chmods. Installation-contract evidence
+retains its original environment. The identity build
+script still watches the index and all tracked source; real edits and explicit
+staging retain invalidation. A dependency-free real-Cargo fixture checks fresh
+test/dev outputs and genuine edits on Mac CI; cheap contracts check Git behavior
+without requiring Rust. This removes an invalidation cause, not a Cargo command
+or test. The final application build overlaps test execution, so reduced compiler
+work must not be added directly to end-to-end latency savings.
+
 Platform Rust jobs retain seven-day observation-only JSONL spans and Cargo HTML
 compiler timings. Spans report elapsed active command time, never CPU time or
 billed savings. Runner queue time is separate: use Actions job queued/started

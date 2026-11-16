@@ -56,7 +56,10 @@ case "$name" in
   security) exit 1 ;;
   node)
     case "$1" in
-      */package-notes.mjs) mkdir -p "$2/dist" ;;
+      --experimental-strip-types)
+        [[ "$2" == */packaging/frontend/stage.ts ]] || exit 90
+        printf 'stage-settings\\n' >> "$MOCK_LOG"
+        mkdir -p "$3/note-ui/dist" ;;
       *) exit 90 ;;
     esac ;;
   taskpolicy|cargo|git|codesign|open|sleep|pgrep|pkill|ditto) : ;;
@@ -119,8 +122,9 @@ esac
                     self.assertFalse(legacy_runtime.exists(), "ditto must not retain the obsolete popup runtime")
                 else:
                     self.assertEqual(executable.read_text(), "synthetic new asset")
-                    self.assertIn("package-notes.mjs", calls)
+                    self.assertIn("packaging/frontend/stage.ts", calls)
                     self.assertIn("stage-settings", calls)
+                    self.assertLess(calls.index("stage-settings"), calls.index("codesign "))
                 self.assertEqual("open " in calls, remote or not no_launch)
 
     def test_destination_processes_refuse_before_replacement(self):

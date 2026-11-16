@@ -34,7 +34,7 @@ test('owner selection retains consumers and unrelated packages stay out', () => 
   assert.deepEqual(select(['public/site/src/App.tsx']), ['public']);
   assert.deepEqual(select(['connect/web/src/api.ts']), ['web']);
   assert.deepEqual(select(['hermes/inspect.py']), ['hermes']);
-  assert.deepEqual(select(['capture/desktop/scripts/packaging/install-app.sh']), ['capture', 'engine', 'capture-tools']);
+  assert.deepEqual(select(['capture/desktop/scripts/packaging/install-app.sh']), ['capture', 'engine', 'desktop', 'capture-tools', 'client-foreground']);
   assert.deepEqual(select(['README.md']), ['public']);
 });
 
@@ -49,6 +49,7 @@ test('unknown, missing history and empty deltas cannot silently skip coverage', 
 
 test('new install fixtures run for their tooling/dependency inputs, not ordinary product edits', () => {
   for (const path of ['enablement/local-tests/desktop-install.ts', 'enablement/local-tests/receipt.ts',
+    'capture/desktop/scripts/packaging/install-app.sh', 'capture/desktop/scripts/packaging/frontend/stage.ts',
     'enablement/local-tests/service.ts', '.githooks/pre-push', '.github/workflows/verification-platform.yml',
     'capture/desktop/ui/frontend/package.json', 'capture/desktop/ui/frontend/package-lock.json',
     'capture/desktop/ui/frontend/.npmrc', 'capture/desktop/ui/frontend/scripts/build-storage-policy.ts',
