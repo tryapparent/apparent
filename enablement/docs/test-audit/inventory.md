@@ -559,16 +559,16 @@
 | Record | record/media/src/transcript/policy.ts | source candidate | 77 | read production; no inline tests |
 | Record | record/media/src/transcript/worker.ts | source candidate | 50 | read production; no inline tests |
 | Record | record/media/stage.ts | source candidate | 96 | pending |
-| Record | record/media/test/assembly-package.ts | support/scenario | 35 | pending |
+| Record | record/media/test/assembly-package.ts | support/scenario | 35 | audited/retained; Linux development CLI passed |
 | Record | record/media/test/assembly.test.ts | source candidate | 27 | audited headless; slice 3 delivery pending |
-| Record | record/media/test/audio-package.ts | support/scenario | 81 | pending |
+| Record | record/media/test/audio-package.ts | support/scenario | 81 | audited/retained; Linux development CLI passed |
 | Record | record/media/test/frames.test.ts | source candidate | 34 | audited headless; slice 3 delivery pending |
 | Record | record/media/test/native.test.ts | source candidate | 153 | read/retained; native replay not required for cadence edit |
-| Record | record/media/test/package.ts | support/scenario | 198 | pending |
+| Record | record/media/test/package.ts | support/scenario | 198 | audited/retained; Linux development CLI passed |
 | Record | record/media/test/phone.test.ts | source candidate | 23 | audited headless; slice 3 delivery pending |
 | Record | record/media/test/policy.test.ts | source candidate | 58 | audited headless; slice 3 delivery pending |
 | Record | record/media/test/screen.test.ts | source candidate | 23 | audited headless; slice 3 delivery pending |
-| Record | record/media/test/transcript/package.ts | support/scenario | 71 | pending |
+| Record | record/media/test/transcript/package.ts | support/scenario | 71 | audited/retained; Linux development CLI passed |
 | Record | record/media/test/transcript/policy.test.ts | source candidate | 61 | audited headless; slice 3 delivery pending |
 | Record | record/storage/src/location-policy.ts | source candidate | 75 | read production; no inline tests |
 | Record | record/storage/src/retention-workflow.ts | source candidate | 80 | read production; no inline tests |
@@ -576,7 +576,7 @@
 | Record | record/storage/test/controller.test.ts | source candidate | 172 | audited; slice 2 delivery pending |
 | Record | record/storage/test/location-policy.test.ts | source candidate | 75 | audited; slice 2 delivery pending |
 | Record | record/storage/test/location-workflow.test.ts | source candidate | 83 | audited; slice 2 delivery pending |
-| Record | record/storage/test/package.ts | support/scenario | 63 | audited; slice 2 delivery pending |
+| Record | record/storage/test/package.ts | support/scenario | 63 | audited; slice 2 delivery audited/retained; 12 development CLI dry-run cases passed |
 | Record | record/storage/test/policy.test.ts | source candidate | 63 | audited; slice 2 delivery pending |
 | Record | record/storage/test/retention-plan.test.ts | source candidate | 59 | audited; slice 2 delivery pending |
 | Record | record/storage/test/retention-workflow.test.ts | source candidate | 124 | audited; slice 2 delivery pending |

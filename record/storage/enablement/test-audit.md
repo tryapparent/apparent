@@ -1,7 +1,7 @@
 # Storage test audit
 
 Baseline: `c02f573379c6aa03d33d18073794b2208910fea8`; Storage sources/tests
-are unchanged from campaign baseline `8cd7ce43f`. All six owner test files and
+are unchanged from campaign baseline `8cd7ce43f`. All six headless owner test files and
 their parameter rows were read after their production implementations. Read the
 published types/index, policy, location policy/controller/workflow, retention
 controller/workflow/planner/worker, build entrypoint, Desktop Storage/Retention
@@ -106,3 +106,19 @@ Independent preservation review found the nullable/unknown-field preservation
 gap described above; that row is restored and the shortcut mutant now fails.
 No other lost contract was found. Full owner GREEN is complete. Hook/PR gates and exact-landed CI are still pending. This lane is audited, not yet delivered; it does not mark
 the repository-wide campaign complete.
+
+## CLI package boundary
+
+R: `test/package.ts` retains twelve real dry-run cases over copied producer
+bundles: recent/default media/default bundle/forever, zero-day settling/minimum,
+bundle priority, pinned exclusion, partial defaults, malformed-policy fallback,
+unknown-extension compatibility and full-u32 policy. Recursive source/config
+byte/mode/size snapshots must remain unchanged. This exercises native exclusions,
+config compatibility and the real worker/CLI bridge; rejecting extra mutation
+fields in pure policy tests does not replace config-extension compatibility.
+
+Read the actual Clean CLI caller, native policy loader, planner observations and
+dry-run return before judging this script. It passed as the nested Storage check
+in the media development-CLI composition proof (12 cases, no cleanup executed).
+See `../../media/enablement/test-audit.md` for candidate identity and limits;
+sealed package and Mac acceptance remain separate delivery gates.

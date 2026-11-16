@@ -29,7 +29,7 @@ no net test/support growth unless a distinct new contract justifies it.
 | Record capture-request | Audited; candidate below | Land and reconcile upstream |
 | Record completion | Audited; candidate below | Land and reconcile upstream |
 | Record storage | Audited; local candidate | [Contracts/evidence](../../../record/storage/enablement/test-audit.md); land after slice 1 |
-| Record media | Headless audit; local cadence candidate | [Contracts/evidence](../../../record/media/enablement/test-audit.md); packaged CLI audits pending |
+| Record media | Audited; local cadence/fixture candidate | [Contracts/evidence](../../../record/media/enablement/test-audit.md); delivery gates pending |
 | Engine SDK | Pending | Published probe/frame contracts and real provider inputs |
 | Engine legacy/native | Pending | Capture, audio, cursor/ink, keyframes/text, exports, recovery |
 | Desktop | Pending | Settings/onboarding, capture/pill, native adapters, packaging/VM |
@@ -98,8 +98,11 @@ headless contracts and the separate native/package boundaries. Consolidating
 count/end-point and implementation-mirroring cadence assertions into an exact
 sequence oracle removes one test line. All 21 headless tests pass; six independent
 mutants fail the cadence keeper. Preservation review found no lost guard.
-Packaged CLI checks remain unaudited; native suite was read and retained, not
-replayed for this assertion-only change. Hook/PR and exact-main gates remain.
+The native suite and all four CLI package checks are read and retained. The full
+Linux development-CLI proof passed, including nested Storage dry-run cases.
+Removing a redundant transcript-fixture manifest write removes one further
+support line (Media total -2). This is development composition, not sealed package
+or Mac proof. Hook/PR and exact-main gates remain.
 
-Resume with slice 1 delivery, then land slices 2/3 and finish packaged media audits. Update this
+Resume with slice 1 delivery, then land slices 2/3 and continue the remaining owner audits. Update this
 ledger and inventory statuses with each landed slice; do not stop after slice 1.

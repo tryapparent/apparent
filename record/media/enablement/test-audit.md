@@ -4,10 +4,10 @@ Campaign baseline `8cd7ce43f`; this local slice is based on `8762967dc`.
 Read all media policy/worker production sources, provisioning/staging, owner
 README and package commands, the published SDK/provider implementation, and the
 native metadata/assembly/frame/retention bridge before deciding this cut. Read
-all six headless test files and the separate native suite. The packaged CLI
-checks (`package.ts`, `assembly-package.ts`, `audio-package.ts`, and
-`transcript/package.ts`) still need a production-first audit. Media is partial,
-not a completed owner lane.
+all six headless files, the separate native suite and all four CLI package
+checks. Package decisions also trace the actual export, phone ingestion, screen
+finalization/recovery, command-transcriber and native audio callers, plus
+Storage dry-run planning. The lane is audited; delivery gates remain open.
 
 ## Phone cadence consolidation
 
@@ -57,9 +57,10 @@ The five native tests remain distinct: sparse screen paging and empty
 continuations; phone cross-batch dedup/private pixels; explicit frame identities
 and decoded pixels; provisioning refusal preserving an unowned destination; and
 real metadata/audio/rotation/source-preservation through the staged provider.
-These were read, not executed for this test-only assertion change. No native or
-packaged proof is claimed from the headless suite. Packaged CLI checks and the
-owning native resource harness remain pending audits, not deletion candidates.
+These five standalone native tests were read, not replayed for the cadence
+assertion change. Separate development-CLI composition evidence is recorded
+below; the headless suite does not establish packaged or native acceptance.
+The shared worker resource harness remains in the Composition audit queue.
 No headless flakiness/retry repair was indicated by this source/fixture review.
 
 ## Evidence and delivery gates
@@ -76,5 +77,36 @@ Private helper/log files in the same disposable job root may need regeneration.
 Independent preservation review found no lost guard, checked every matrix row
 and independently passed both phone tests. Hook/PR and exact-main delivery
 remain pending.
-Continue the remaining packaged media checks and then the other owner lanes;
-this one-line consolidation is not a campaign completion boundary.
+Continue delivery gates and then the other owner lanes; these bounded
+consolidations are not a campaign completion boundary.
+
+## Package-check follow-up
+
+| Check | Decision and independent contract |
+| --- | --- |
+| package.ts | R: real CLI export/decoder/encoder, rotated playback and audio, source preservation, ordinary/flagged ingestion, screen offset/recovery/benchmark and full transport page |
+| assembly-package.ts | R: actual default-plan consumer retains twelve marked frames with decoded pixels and unchanged source; six-flag coverage does not establish the maximum allocation |
+| audio-package.ts | R: producer-derived bundle, actual native audio extraction, private WAV publication under umask 002, exact transcriber input and leading-gap/end clocks; this proves handoff, not recognition |
+| transcript/package.ts | R: actual phone, screen-finalization and recovery callers preserve exact words/summary allocation and source/config hashes |
+
+D: remove the first of two consecutive manifest writes in transcript fixture
+preparation. It has no reader; route-specific mark adjustment and the final
+private write still precede hashes and CLI execution. Independent preservation
+review confirmed identical final manifest content/options and unchanged route,
+text and preservation assertions. This removes one fixture-support line; Media
+now removes two test/support lines in total, without adding/removing declarations.
+
+The entire `record/media/test/package.ts` entrypoint passed on the changed
+fixture using the existing development binary built at `c02f57337` and its
+matching generated worker/runtime assets. Rust and media-worker production inputs
+are unchanged. All four package modules and the nested Storage qualification ran.
+The first relocated-binary attempt failed before checks because its `$ORIGIN`
+shared libraries were absent; adding the existing matching sibling libraries to
+the private prefix repaired the setup. No source, assertion or timeout changed.
+
+Evidence: `/tmp/apparent-dev-media-package-audit-jbRFze/package-runtime.log` and
+`identity.json`. The prefix presents existing development assets through owned
+symlinks; this is Linux development composition proof, not a sealed AppImage,
+signed Mac package, live capture, permission or physical-device verdict. Existing
+packaged/platform gates remain. Synthetic media only; no destructive cleanup,
+release or live recognition was executed.
