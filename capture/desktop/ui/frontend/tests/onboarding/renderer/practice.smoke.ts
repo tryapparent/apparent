@@ -1,18 +1,16 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {spawn, type ChildProcessWithoutNullStreams} from 'node:child_process';
-import {createRequire} from 'node:module';
+import type {ChildProcessWithoutNullStreams} from 'node:child_process';
 import {mkdtemp,mkdir,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {chromium,expect,type Browser} from '@playwright/test';
+import {_electron as electron,expect,type ElectronApplication} from '@playwright/test';
 import type {Batch} from '../../../electron/onboarding/practice-host.ts';
-const require=createRequire(import.meta.url);
 test('production host alone reduces admitted practice; renderer intents wait for parent admission', {timeout:45000},async t=>{
  const profile=await mkdtemp(path.join(os.tmpdir(),'practice-host-'));
  let ownedChild:ChildProcessWithoutNullStreams|undefined;
- let browser:Browser|undefined;
+ let application:ElectronApplication|undefined;
  t.after(async()=>{
   const owned=ownedChild;
   try{
@@ -22,17 +20,17 @@ test('production host alone reduces admitted practice; renderer intents wait for
     try{owned.stdin.end();await exited;}finally{clearTimeout(timer);}
    }
   }finally{
-   try{await browser?.close();}finally{
+   try{await application?.close();}finally{
     owned?.stdin.destroy();owned?.stdout.destroy();owned?.stderr.destroy();
     await rm(profile,{recursive:true,force:true});
    }
   }
  });
- const child=spawn(require('electron'),[fileURLToPath(new URL('../../../',import.meta.url)),'--onboarding','--no-sandbox','--remote-debugging-port=0'],{env:{...process.env,APPARENT_UI_PROFILE:profile},stdio:['pipe','pipe','pipe']});
+ application=await electron.launch({args:[fileURLToPath(new URL('../../../',import.meta.url)),'--onboarding',...(process.platform==='linux'?['--no-sandbox']:[])],env:{...process.env,APPARENT_UI_PROFILE:profile}});
+ const child=application.process() as ChildProcessWithoutNullStreams;
  ownedChild=child;
  let output='';child.stdout.on('data',b=>output+=b);
- const endpoint=await new Promise<string>((resolve,reject)=>{let log='';const timer=setTimeout(()=>reject(Error('No debugger')),10000);child.stderr.on('data',b=>{log+=b;const m=log.match(/DevTools listening on (ws:\/\/[^\s]+)/);if(m){clearTimeout(timer);resolve(m[1]);}});child.once('error',error=>{clearTimeout(timer);reject(error);});child.once('exit',()=>{clearTimeout(timer);reject(Error(log));});});
- browser=await chromium.connectOverCDP(endpoint);const page=browser.contexts()[0].pages()[0];
+ const page=await application.firstWindow();
  const send=(v:unknown)=>child.stdin.write(JSON.stringify(v)+'\n');
  send({type:'state',step:'try-it',rows:[],ready:true,platform:'linux',shortcut:'Test',practice:'start'});
  let seq=0,attempt=0;
@@ -55,7 +53,7 @@ test('production host alone reduces admitted practice; renderer intents wait for
  await batch([{type:'ink',board:false,screen:5}]);await inspect('stop');
  await batch([{type:'ink',board:false,screen:0},{type:'processing'}]);
  assert.equal(JSON.parse(output.trim().split('\n').at(-1)!).stage,'preparing');
- await expect.poll(()=>page.evaluate(()=>document.visibilityState)).toBe('hidden');
+ await expect.poll(()=>application!.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible())).toBe(false);
  await batch([{type:'saved',copied:true}]);await inspect('copied');
  const before=output;await page.getByRole('button',{name:'Paste into your agent',exact:true}).count().then(async count=>{if(count)await page.getByRole('button',{name:'Paste into your agent',exact:true}).press('Enter');else await page.evaluate(()=>window.nativeOnboarding.action('practice-paste'));});
  await expect.poll(()=>output.slice(before.length)).toContain('practice-paste');await stage('copied');
