@@ -7,6 +7,8 @@ test('T3 destinations and public sharing coexist with explicit consent', {timeou
  const {fixture}=await import('./testing/server.ts');const f=await fixture(t);
  const app=await electron.launch({args:[path.resolve(__dirname,'../host.cjs'),'--no-sandbox','--ozone-platform=x11'],env:{...process.env,APPARENT_CONFIG:f.config,HOME:f.home,XDG_CONFIG_HOME:path.join(f.home,'config')}});
  t.after(async()=>{await app.close().catch(()=>{});});
+ // Consume the initial window before awaiting Linux's focusable replacement.
+ await app.firstWindow();
  const sent=[];let buffer='';
  app.process().stdout.on('data',chunk=>{buffer+=chunk;let end;while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end);buffer=buffer.slice(end+1);try{const message=JSON.parse(line);sent.push(message);if(message.ready)void app.evaluate((_e,id)=>process.stdin.emit('data',JSON.stringify({type:'activate',windowId:id})+'\n'),message.windowId).catch(()=>{});}catch{}}});
  let frame={type:'state',capture:'sharing',t3Eligible:true,view:{revision:1,phase:'completed',clock:'00:04',label:'Saved',warning:null,notice:null,reducedMotion:true,draggable:false,inputWaveform:null,noteCount:0,actions:[{id:'copy-link',label:'Public link',enabled:true,selected:false,primary:false}]}};
@@ -16,6 +18,7 @@ test('T3 destinations and public sharing coexist with explicit consent', {timeou
  let page=replacement?await replacement:await app.firstWindow();
  const trigger=page.getByRole('combobox'),copy=page.getByRole('button',{name:'Public link',exact:true}),confirm=page.getByRole('button',{name:'Create public link',exact:true});
  await expect(trigger).toBeEnabled();await expect(copy).toBeEnabled();
+ await expect.poll(()=>app.evaluate(({BrowserWindow})=>{const windows=BrowserWindow.getAllWindows();return windows.length===1&&windows[0].isVisible();})).toBe(true);
  if(process.platform==='linux')await app.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0],shape=w.setShape.bind(w);w.__sharingShape=[];w.setShape=rects=>{w.__sharingShape=rects;return shape(rects);};});
  for(const width of [1200,320]){
   await app.evaluate(({screen},width)=>{const matching=screen.getDisplayMatching.bind(screen);screen.getDisplayMatching=bounds=>{const display=matching(bounds);return {...display,workArea:{...display.workArea,width}};};},width);
