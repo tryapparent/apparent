@@ -207,7 +207,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   }
   const {reasons, plan, ...result} = decision;
   const mac_rust = requiresMacRustRange(process.env.BASE_SHA ?? '', process.env.GITHUB_SHA ?? '');
-  const macEnabled = result.macos || !mac_rust;
+  const macEnabled = result.macos;
   const macPlan = {...plan, root: plan.root && mac_rust && macEnabled, engine: plan.engine && mac_rust && macEnabled,
     desktop: plan.desktop && macEnabled, client: plan.client && macEnabled};
   console.log(JSON.stringify({...result, mac_rust, plan, mac_plan: macPlan, reasons}));

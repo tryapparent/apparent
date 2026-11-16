@@ -212,12 +212,13 @@ jobs:
     # Share the cheap admission barrier; neither full platform waits for the other.
     needs: [contracts, select, reuse, portable, record-media]
     # Only a successful explicit false can exempt a reviewed ready-PR delta.
-    # Renderer-only PRs retain Electron; only their root Rust job is omitted.
+    # Reviewed Settings cards use Linux's full renderer/bridge proof. Shared
+    # styles and platform seams still require the Mac plan and Electron checks.
     # Failed/unknown selection keeps Mac coverage after the cheap guards pass.
     if: >-
       !cancelled() && needs.contracts.result == 'success' && (needs['record-media'].result == 'success' || needs['record-media'].result == 'skipped') && (needs.portable.result == 'success' || needs.portable.result == 'skipped') &&
       (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))
-      && (needs.select.result != 'success' || needs.select.outputs.macos != 'false' || needs.select.outputs.mac_rust == 'false')
+      && (needs.select.result != 'success' || needs.select.outputs.macos != 'false')
       && (needs.select.result != 'success' || needs.select.outputs.platform != 'false')
       && needs.reuse.outputs.macos != 'true'
     uses: ./.github/workflows/verification-platform.yml

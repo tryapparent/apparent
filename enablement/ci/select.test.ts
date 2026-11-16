@@ -458,10 +458,10 @@ test('reviewed control-guide relocation keeps both renderer consumers and reject
   const unsafe=cli(base,git('rev-parse','HEAD'),dir);
   assert.equal(unsafe.inputProofKnown,false);assert.equal(unsafe.mac_rust,true);
 }));
-for (const path of presentationInputs) test('renderer-only proof retains Mac Electron while mixed/native and unsafe statuses retain Rust: '+path, () => repository((git,dir) => {
+for (const path of presentationInputs) test('reviewed Settings omit Mac; shared styles, mixed/native and unsafe statuses retain platform proof: '+path, () => repository((git,dir) => {
   mkdirSync(path.slice(0,path.lastIndexOf('/')),{recursive:true});writeFileSync(path,'before');git('add','.');git('commit','-qm','base');const base=git('rev-parse','HEAD');
   writeFileSync(path,'after');git('commit','-qam','edit');const head=git('rev-parse','HEAD');
-  const result=cli(base,head,dir);assert.equal(result.mac_rust,false);assert.equal(result.mac_plan.root,false);assert.equal(result.mac_plan.desktop,true);assert.equal(result.plan.root,true);
+  const result=cli(base,head,dir);assert.equal(result.mac_rust,false);assert.equal(result.mac_plan.root,false);assert.equal(result.mac_plan.desktop,path.endsWith('/style.css'));assert.equal(result.plan.root,true);
   assert.equal(requiresMacRustRange(base,head),false);
   for (const operation of ['delete','rename','chmod','symlink']) {
     git('checkout','--detach',base);

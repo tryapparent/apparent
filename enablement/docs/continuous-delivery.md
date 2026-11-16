@@ -194,8 +194,9 @@ The complete base-to-merge/push delta produces a suite plan. Platform callers
 consume that plan; they never replace it with an empty-tree comparison. Portable
 Connect web/service/driver checks run once on Linux. Desktop renderer tests run in
 Electron on each selected platform; native root/staged Engine and standalone
-client suites are separately selected. The finite renderer-only Mac Rust
-exemption retains Mac Electron. Ordinary prose cannot undo a Linux exemption.
+client suites are separately selected. The four reviewed Settings cards use
+Linux's full renderer/bridge proof without Mac allocation; shared styles retain
+Mac Electron. Ordinary prose cannot undo a Linux exemption.
 The manual Linux workflow defaults to all suites and retains full-tree diagnostics.
 The standalone manual Mac workflow and its candidate-build jobs are retired;
 automatic Mac suites and exact-main admission remain in `checks.yml`.
@@ -589,14 +590,19 @@ GUI VM/capture drivers in `routing/consumers.ts` select launch-free contracts,
 not a Mac build. Unknown/additional native inputs and unsupported file types/modes
 retain conservative coverage. Both rename sides always contribute consumers.
 
-Five Settings TSX cards and `src/style.css` are the finite renderer-only Mac Rust
-exemption. The cards feed Settings; the stylesheet feeds foundation, Settings,
+Regular modifications to four existing Settings TSX cards (`storage`, `retention`,
+`error-reporting`, `reference`) omit Mac allocation. The stale `connect-settings.tsx`
+name cannot qualify as an addition. The cards feed Settings; `src/style.css` feeds foundation, Settings,
 onboarding, installer, controls and pill. Vite builds their entries and
 `test:electron` executes the actual renderer smokes. `stage-settings.py` stages
-these assets separately from the native binary. Focused Mac Electron checks remain selected;
-Linux root/bridge verification remains selected. New entrypoints, bridge,
-main/preload, dependencies, packaging and unknown renderer files retain native
-checks. Settings frog PNGs remain native `include_bytes!` inputs. Build-version
+these assets separately from the native binary. Linux's full policy, Electron
+renderer and root/bridge verification remain selected. Shared styles still select
+focused Mac Electron without root Rust. Installed Storage/reference Mac fixtures
+already require the root plan, which card-only deltas did not select; that guard
+is unchanged. New entrypoints, bridge, permissions, native, main/preload,
+dependencies, packaging, mixed and unknown inputs retain Mac checks. Unsupported
+statuses/modes and manual/full-release callers remain conservative. Settings frog
+PNGs remain native `include_bytes!` inputs. Build-version
 watches remain intact: a revision-label change is not evidence of a new policy
 consumer, and proof reuse never reuses a packaged binary with an old revision.
 Manual full-tree/release callers default to full native execution.

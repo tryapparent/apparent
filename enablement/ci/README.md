@@ -1,5 +1,13 @@
 Consumer selection, exact-tree PR evidence reuse and automatic Linux Main publication are documented in [continuous delivery](../docs/continuous-delivery.md). `routing/consumers.ts` owns directory triggers, named suites and shared consumer facts; local pushes and workflows both call `selectRange`. `routing/streams.ts` only compares publication inputs; native commands remain in the existing verifier adapter.
 
+Regular modifications to the four extant reviewed Settings cards use Linux's full
+policy, Electron renderer and bridge checks without allocating Mac. The selector,
+shared native projection and caller must agree on an empty Mac native plan.
+Shared styles, bridge/main/preload, permissions, packaging, native, unknown and
+mixed inputs retain Mac proof; manual/release callers remain full. The stale
+`connect-settings.tsx` name cannot qualify as an addition. See the bounded
+[admission audit and regression](routing/renderer-platform/README.md).
+
 `Manual Linux verification` runs only on manual dispatch. CI completion no longer
 starts a separate notification workflow or posts failed-head completion comments.
 
