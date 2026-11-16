@@ -127,7 +127,6 @@ app.whenReady().then(() => {
     width: settings ? 720 : 920, height: settings ? 530 : 760,
     minWidth: 640, minHeight: settings ? 530 : 620,
     ...(settings ? require('./settings/frame.cjs').settingsWindowOptions(process.platform,about || agents || labs) : {}),
-    ...(settings ? {resizable: true, maximizable: true, fullscreenable: true} : {}),
     title: settings ? 'Apparent Settings' : 'Apparent — UI foundation',
     backgroundColor: followWindowTheme.backgroundColor(nativeTheme),
     webPreferences: {

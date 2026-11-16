@@ -19,10 +19,10 @@ export function settingsWindowOptions(platform: string, agents = false) {
     width: agents ? 920 : 720, height: agents ? 600 : 530, minWidth: 640, minHeight: 530,
     ...(platform === 'linux' ? {
       // A normal XWayland window is tiled, even when given initial bounds.
-      type: 'dialog' as const, resizable: agents, maximizable: agents, fullscreenable: agents,
+      type: 'dialog' as const, resizable: true, maximizable: true, fullscreenable: true,
     } : {}),
     ...(platform === 'darwin' ? {
-      titleBarStyle: 'hiddenInset' as const, resizable: agents, fullscreenable: agents,
+      titleBarStyle: 'hiddenInset' as const, resizable: true, fullscreenable: true,
       acceptFirstMouse: true,
     } : {}),
   };
