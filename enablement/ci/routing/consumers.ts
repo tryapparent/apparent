@@ -55,6 +55,9 @@ export const retiredOnboardingInputs = new Set([
   'capture/desktop/ui/frontend/electron/onboarding/account.ts',
   'capture/desktop/ui/frontend/src/onboarding/account.tsx',
   'capture/desktop/ui/frontend/tests/onboarding/account.test.ts',
+  // Replaced by the guide modules under src/onboarding/controls/.
+  'capture/desktop/ui/frontend/src/onboarding/control-guide.tsx',
+  'capture/desktop/ui/frontend/src/onboarding/control-guide.css',
 ]);
 export const onboardingRoots = ['capture/desktop/ui/frontend/src/onboarding/',
   'capture/desktop/ui/frontend/electron/onboarding/', 'capture/desktop/ui/frontend/tests/onboarding/'];
