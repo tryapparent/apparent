@@ -212,7 +212,7 @@ export function planFromOwners(selected: readonly Owner[]) {
 }
 export function suitePlan(paths: string[] | null) {return planFromOwners(selectedOwners(paths));}
 
-const common = ['shared/**', 'composition/**', 'enablement/**', '.github/**', '.githooks/**'];
+const common = ['capture/desktop/enablement/inputs.ts', 'capture/desktop/enablement/local-tests/**', 'shared/**', 'composition/**', 'enablement/**', '.github/**', '.githooks/**'];
 const independentEngine = ['!.github/workflows/stream-engine.yml'];
 const native = ['Cargo.toml', 'Cargo.lock', 'build.rs', 'main.rs', '.cargo/**',
   '.github/workflows/verification-platform.yml', 'enablement/verification.py',
@@ -234,7 +234,7 @@ const directoryPaths = {
     'capture/desktop/docs/guides/recording.md', 'capture/engine/docs/guides/processing.md'],
   hermes: [...common, ...independentEngine, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/stream-public.yml', 'hermes/**', 'capture/agent/setup/**',
     'capture/desktop/ui/frontend/src/hermes/**', '.github/workflows/hermes.yml'],
-  engine: ['engine/**', 'enablement/ci/**', 'enablement/local-tests/**', '.githooks/**', '.github/**',
+  engine: ['capture/desktop/enablement/inputs.ts', 'engine/**', 'enablement/ci/**', 'enablement/local-tests/**', '.githooks/**', '.github/**',
     ...nativeWorkflowPaths.map(path => '!' + path), '!.github/workflows/hermes.yml',
     '!.github/workflows/stream-connect.yml', '!.github/workflows/stream-public.yml', '.github/workflows/stream-engine.yml'],
 } as const;

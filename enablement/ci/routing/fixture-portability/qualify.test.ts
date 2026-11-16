@@ -130,14 +130,16 @@ test('complete Git deltas use one local/CI authority, safe additions execute and
   } finally {rmSync(dir, {recursive: true, force: true});}
 });
 
-test('the actual PR1294 six-file consolidation selects tooling and lightweight Mac proof', () => {
+test('historical PR1294 with the retired install-fixture layout retains conservative proof', () => {
   const git = (...args: string[]) => execFileSync('git', args, {cwd: source, encoding: 'utf8'}).trim();
   const head = git('rev-parse', '04ab6588ae36d8fec14754dd6867a0498ecab0cf');
   const base = git('rev-parse', head + '^');
   const hosted = selectRange(base, head, source);
   assert.equal(hosted.paths.length, 6);
-  assert.deepEqual(hosted.selected, ['tooling']);
-  assert.equal(hosted.platform, false);
-  assert.equal(hosted.fixtureMac, true);
+  // Historical blobs do not contain the current audited owner fixture closure.
+  // Keep the candidate conservative rather than qualifying a missing fixture.
+  assert.ok(hosted.selected.includes('capture'));
+  assert.equal(hosted.platform, true);
+  assert.equal(hosted.inputProofKnown, false);
   assert.deepEqual(selection(base, head, source).plan, hosted.plan);
 });
