@@ -27,10 +27,12 @@
   --apparent-font-weight-medium: 500;
   --apparent-font-weight-bold: 700;
 
-  --apparent-font-size-heading: 2.25rem;
+  --apparent-font-size-heading: 3rem;
+  --apparent-font-size-section: 1.5rem;
   --apparent-font-size-body: 1.125rem;
   --apparent-font-size-metadata: 1rem;
-  --apparent-line-height-heading: 2.5rem;
+  --apparent-line-height-heading: 3.25rem;
+  --apparent-line-height-section: 2rem;
   --apparent-line-height-body: 1.6875rem;
   --apparent-line-height-metadata: 1.5rem;
 
@@ -56,6 +58,10 @@
   --apparent-desktop-settings-switch-width: 48px;
   --apparent-desktop-settings-switch-height: 24px;
   --apparent-desktop-settings-switch-thumb-size: 18px;
+  --apparent-desktop-settings-switch-off-track: var(--apparent-color-signal);
+  --apparent-desktop-settings-switch-on-track: var(--apparent-color-lilac);
+  --apparent-desktop-settings-switch-light-thumb: var(--apparent-color-carbon);
+  --apparent-desktop-settings-switch-dark-thumb: #FFFFFF;
   --apparent-motion-fast: 120ms;
   --apparent-motion-standard: 200ms;
   --apparent-motion-easing: cubic-bezier(0, 0, 0.2, 1);

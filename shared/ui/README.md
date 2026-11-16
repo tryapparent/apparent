@@ -9,7 +9,7 @@ both themes. Inline field validation remains local. Import from
 `@apparent/ui/error-dialog`; its stylesheet is included automatically.
 
 `@apparent/ui/switch` supplies optional binary preferences: a 48 × 24px
-Stock-off/Lilac-on track, 18px Carbon thumb and 44px interaction target, without
+Signal-off/Lilac-on track, 18px Carbon light-mode thumb and white dark-mode thumb with a Carbon edge and 44px interaction target, without
 a track outline in either theme. Supply a visible accessible label, controlled
 checked value and acknowledgement-based save handler. During persistence set
 `disabled` and `aria-busy`; the switch retains its pointer hotspot for the wait
@@ -100,3 +100,9 @@ evidence directory. The test changes only the guest's OS appearance, restores it
 and checks CSS, native window background and app-owned screenshots. It requires
 `gsettings` color-scheme support on Linux or System Events appearance on macOS;
 a missing system appearance route is an unrun gate, not a passing emulation.
+
+Product Settings uses the approved 48/24/18 title/section/body scale (4:2:1.5).
+Preference labels remain 18px at medium weight. White is a functional switch-thumb
+exception, not a brand accent. Left/right position and accessible checked state
+supplement color. At up to 700px, navigation moves above the content so complete
+retention choices remain readable.

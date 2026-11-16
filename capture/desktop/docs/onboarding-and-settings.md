@@ -101,6 +101,25 @@ restarting. macOS keeps
 its existing Sparkle feed and has no channel picker. Routing is unchanged; rollback
 must restore the previous native decision and remove its worker/copy together.
 
+### Shared Settings brand hierarchy
+
+The Electron Settings renderer uses Host Grotesk at 48px page titles, 24px
+section headings and 18px body/preference labels (4:2:1.5). Preference labels
+remain medium weight; a setting label is not a section title. Shared Switch
+tracks are Signal when Off and lighter Lilac when On, with Carbon thumbs in
+light mode and white thumbs with a Carbon edge in dark mode. Targets are at
+least 48×44px; utility glyphs remain 16px inside 44px targets. Appearance follows
+the system live and writes no preference. New styles take effect when the
+updated Settings renderer opens; native fallbacks and their routing remain.
+Reverting the renderer/shared CSS restores the prior presentation without
+changing saved settings. No fallback is removed by this styling adoption.
+
+
+At widths up to 700px, shared Electron Settings places navigation above the
+content rather than shrinking type or truncating retention durations. Verify
+the actual 640px viewport after resizing and wait for fonts before measuring
+complete option labels. Compact wordmarks remain at least 120px wide.
+
 ## Mac menu bar icon
 
 The Mac status item keeps the approved lowercase “a” at 18 points. It uses Lilac

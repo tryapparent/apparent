@@ -86,13 +86,16 @@ test('Labs is a separate flask pane with acknowledged experiment saves and bound
       for(const colorScheme of ['light','dark'] as const){
         await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
         await page.evaluate(()=>document.fonts.ready);
+        assert.equal(await page.locator('h1').evaluate(e=>getComputedStyle(e).fontSize),'48px');
+        assert.equal(await page.locator('#auto-paste-label').evaluate(e=>getComputedStyle(e).fontSize),'18px');
+        assert.equal(await sharing.locator('.apparent-switch-thumb').evaluate(e=>getComputedStyle(e).backgroundColor),colorScheme==='dark'?'rgb(255, 255, 255)':'rgb(2, 1, 2)');
         assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
         await toggle.scrollIntoViewIfNeeded();await expect(toggle).toBeInViewport();
         if(process.env.APPARENT_LABS_PROOF){await fs.mkdir(process.env.APPARENT_LABS_PROOF,{recursive:true});await page.screenshot({path:path.join(process.env.APPARENT_LABS_PROOF,`labs-${width}-${colorScheme}-auto.png`)});}
         await sharing.scrollIntoViewIfNeeded();await expect(sharing).toBeInViewport();
         await expect(sharing).toHaveCSS('font-size','18px');
         const track=sharing.locator('.apparent-switch-track');
-        await expect(track).toHaveCSS('background-color','rgb(231, 224, 238)');
+        await expect(track).toHaveCSS('background-color','rgb(122, 88, 199)');
         await expect(track).toHaveCSS('border-width','0px');
         await wispr.scrollIntoViewIfNeeded();await expect(wispr).toBeInViewport();
         if(process.env.APPARENT_LABS_PROOF){await fs.mkdir(process.env.APPARENT_LABS_PROOF,{recursive:true});await page.screenshot({path:path.join(process.env.APPARENT_LABS_PROOF,`labs-${width}-${colorScheme}.png`)});}

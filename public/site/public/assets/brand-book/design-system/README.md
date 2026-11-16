@@ -6,13 +6,14 @@ work in the apparent brand.
 
 ## Start here
 
-1. Read the live 15-slide brand book and the machine-readable values in
+1. Read the live brand book and the machine-readable values in
    `tokens/apparent.tokens.json` or `tokens/apparent.css`. The live book source
-   is `../src/brand-document.js`, ordered by `../src/brand-slides.js`.
+   is `public/site/brand/src/brand-document.ts`, with presentation content in
+   `public/site/brand/src/brand-slides.ts`.
 2. Read `product-interface.md` before designing an application or workflow.
    For Desktop Settings, also read `desktop-settings.md`.
-3. Read `svelte-component-system.md` before implementing a Svelte or SvelteKit
-   product interface.
+3. Use the owning product’s established stack and canonical controls in
+   `shared/ui`; Svelte material is historical reference.
 4. Use the token files above; do not retype
    color, spacing, type, geometry, or motion values.
 5. Follow `instructions/design-work.md` for design decisions and
