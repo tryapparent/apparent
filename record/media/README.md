@@ -257,24 +257,3 @@ pins, bundle schema and config writer remain authoritative. A later capability
 must align the current Mac all-track mix and Linux first-track behavior explicitly.
 Rollback reverts the private staging and Linux clock mapping together; it has no
 data or settings migration.
-
-## Default assembly allocation
-
-`assembly-policy.ts` owns the duration-based total keyframe limit and the ordinary
-event allocation. A finite provider-free Node worker returns one plan per bundle;
-screen predecode and phone direct-mark preparation reuse that same plan at final
-selection. Recovery obtains a plan for its retained bundle duration. Decimal
-durations preserve the native unsigned 64-bit clock without JavaScript rounding.
-
-Native composition validates the response and exact duration, bounds subprocess
-output/time and retains cleanup. Native selection still owns grouping, scoring,
-coverage and image mechanics; those product decisions remain migration debt.
-The unchanged native 13-tile rendering bound protects combinatorial layout work,
-including a possible whiteboard tile. It is not a second default allocator.
-
-Stage both assembly outputs with the application and require them in native
-prerequisites. Missing/broken plans fail assembly with its existing durable
-recovery data; no parallel native default or config writer is retained. Rollback
-reverts worker staging, caller routing and default removal together. Headless
-policy/worker checks need only Node; actual Mac/Linux CLI and package acceptance
-remain gates. This slice does not establish whole-Record build independence.
