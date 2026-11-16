@@ -399,7 +399,7 @@ export default {
     function RecordButton() {
       const waiting = useValue(hasPending);
       const label = pending?.manual ? 'Retry saved Apparent handoff' : waiting ? 'Check Apparent recording handoff' : 'Record with Apparent';
-      return jsx(Button, { variant: 'ghost', size: 'icon', title: label, 'aria-label': label,
+      return jsx(Button, { type: 'button', variant: 'ghost', size: 'icon', title: label, 'aria-label': label,
         onClick: () => void record(), children: jsx('img', { src: '__APPARENT_ICON__', width: 20, height: 20, alt: '' }) });
     }
     ctx.register({ id: 'record', area: COMPOSER_AREAS.actions, render: RecordButton });
