@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {shouldClosePracticeBoard} from '../../src/onboarding/board/completion.ts';
+import {shouldClosePracticeBoard} from '../../src/onboarding/state.ts';
 
 test('practice keeps the first acknowledged mark and closes after two, including dots',()=>{
   assert.equal(shouldClosePracticeBoard([]),false);

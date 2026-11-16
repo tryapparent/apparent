@@ -2,7 +2,7 @@ import {useEffect, useRef, useState, type CSSProperties} from 'react';
 import {Button} from '@apparent/ui/button';
 import wordmark from '../../../../../../../shared/assets/brand/apparent-wordmark.svg';
 import './whiteboard.css';
-import { shouldClosePracticeBoard } from './completion';
+import { shouldClosePracticeBoard } from '../state';
 export type BoardView={id:string;strokes:number[][][];color:number[]};
 type Action={action:'board';id:string;operation:string;point?:number[]};
 /** Only pointer input crosses the bridge. The example is a separate, inert SVG. */

@@ -128,9 +128,9 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
   const toolingManifests = new Set(['package.json', 'package-lock.json', 'renderer/window-coach.smoke.ts', 'renderer/tsconfig.json'].map(name => 'capture/desktop/ui/frontend/tests/onboarding/' + name));
   const supportedToolingAddition = (change: Change) => toolingManifests.has(change.path) && change.status === 'A' && regularFileChange(change);
   const supportedOnboardingAddition = (change: Change) => change.status === 'A' && regularFileChange(change) && (
-    // Audited native resource adapter. This admits its existing native consumers;
+    // Audited native transport and extracted session/test items retain native consumers;
     // it does not grant the pure-policy or portable renderer exemption.
-    change.path === 'capture/desktop/settings/onboarding/pipe.rs' ||
+    ['pipe.rs','session.rs','tests.rs'].some(name => change.path === 'capture/desktop/settings/onboarding/' + name) ||
     onboardingWisprInputs.has(change.path) ||
     onboardingPureInputs.has(change.path) ||
     (change.path.startsWith('capture/desktop/ui/frontend/src/onboarding/') && /\.(tsx|css)$/.test(change.path)) ||
