@@ -620,4 +620,3 @@ fn open_login_items_settings() {
 }
 
 // MARK: What the window shows
-
