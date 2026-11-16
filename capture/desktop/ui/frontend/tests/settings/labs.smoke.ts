@@ -76,12 +76,13 @@ test('Labs is a separate flask pane with acknowledged experiment saves and bound
       await expect(page.getByRole('alertdialog')).not.toBeVisible();await expect(wispr).toBeFocused();
       await wispr.click();await expect(wispr).toHaveAttribute('aria-checked','false');
     }else{await expect(wispr).toBeDisabled();await assert.rejects(()=>page.evaluate(()=>window.apparentLabs.save(true,'wisprFlow')));}
+    assert.equal(await page.evaluate(()=>!('apparentGeneral' in window) && !('readConnectSettings' in window.apparent!)),true);
     assert.equal(await page.evaluate(async()=>{
       for(const call of [()=>window.apparentAgents.save(true),()=>window.apparentAgents.saveT3(true),()=>window.apparentAgents.copySkill(),()=>window.apparent.resetCaptureLocation(),()=>window.apparentLabs.save('true' as unknown as boolean),()=>window.apparentLabs.save(true,'t3' as 'sharing')]){
         try{await call();return false;}catch{}
       }return true;
     }),true,'Labs cannot mutate other panes or send non-boolean preferences');
-    for(const width of [920,640,320]){
+    for(const width of [920,720,640,320]){
       const session=await page.context().newCDPSession(page);await session.send('Emulation.setDeviceMetricsOverride',{width,height:530,deviceScaleFactor:1,mobile:false});
       for(const colorScheme of ['light','dark'] as const){
         await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
@@ -105,6 +106,22 @@ test('Labs is a separate flask pane with acknowledged experiment saves and bound
           assert.ok(bounds&&bounds.y>=0&&bounds.y+bounds.height<=await page.evaluate(()=>innerHeight)+1,'Complete experiment guidance stays reachable');
         }
       }await session.detach();
+    }
+    const enlarged=await page.context().newCDPSession(page);
+    await enlarged.send('Emulation.setDeviceMetricsOverride',{width:640,height:530,deviceScaleFactor:1,mobile:false});
+    await page.evaluate(()=>document.documentElement.style.fontSize='200%');
+    for(const colorScheme of ['light','dark'] as const){
+      await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
+      assert.equal(await page.locator('.settings-content').evaluate(e=>e.scrollWidth<=e.clientWidth),true);
+      for(const control of [toggle,sharing,wispr]){await control.scrollIntoViewIfNeeded();await expect(control).toBeInViewport();}
+      if(process.env.APPARENT_LABS_PROOF)await page.screenshot({path:path.join(process.env.APPARENT_LABS_PROOF,'labs-640-enlarged-'+colorScheme+'.png')});
+    }
+    await page.evaluate(()=>document.documentElement.style.removeProperty('font-size'));await enlarged.detach();
+    for (const pane of ['General','Agents','Recording','Permissions','Storage','About']) {
+      const before=actions.length;
+      const target=page.getByRole('button',{name:pane,exact:true});
+      await expect(target).toBeEnabled();await target.focus();await expect(target).toBeFocused();await target.press('Enter');
+      await expect.poll(()=>actions.slice(before).some(action=>action.action==='navigate'&&action.pane===pane.toLowerCase())).toBe(true);
     }
     await page.getByRole('button',{name:'Agents',exact:true}).click();await expect.poll(()=>actions.some(action=>action.action==='navigate'&&action.pane==='agents')).toBe(true);
   }finally{

@@ -26,6 +26,7 @@ declare global {
       setErrorReporting: (enabled: boolean) => Promise<ErrorReporting>;
       readConnectSettings: () => Promise<ConnectSettings>;
       connectSettings: () => Promise<ConnectSettings>;
+      resumeConnectUploads: () => Promise<ConnectSettings>;
       allowConnectUploads: () => Promise<ConnectSettings>;
       cancelConnectSettings: () => Promise<ConnectSettings>;
       checkConnectConnection: () => Promise<ConnectSettings>;

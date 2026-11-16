@@ -286,18 +286,24 @@ test('first-frame acknowledgement refuses another frame and unexpected arguments
 });
 
 test('Settings preloads acknowledge committed DOM before waiting for renderer frame callbacks', async () => {
-  for (const preload of ['storage-preload.cjs']) {
+  for (const general of [false, true]) {
+    const preload = 'storage-preload.cjs';
     const callbacks: (() => void)[] = [];
     const exposed: Record<string, (...args: any[]) => Promise<void>> = {};
     const invoked: string[] = [];
     const preloadSource = readFileSync(path.join(path.dirname(filename), preload), 'utf8');
     vm.runInNewContext(preloadSource, {
+      process: { argv: general ? ['--settings-general'] : [] },
       require: () => ({
         contextBridge: { exposeInMainWorld: (name: string, value: (...args: any[]) => Promise<void>) => { exposed[name] = value; } },
         ipcRenderer: { invoke: async (channel: string) => { invoked.push(channel); } },
       }),
       requestAnimationFrame: (callback: () => void) => { callbacks.push(callback); },
     }, { filename: preload });
+    const bridge = exposed.apparent as unknown as Record<string, unknown>;
+    assert.equal(typeof bridge.readConnectSettings, general ? 'function' : 'undefined');
+    assert.equal(typeof bridge.changeCaptureLocation, general ? 'undefined' : 'function');
+    assert.equal(typeof exposed.apparentGeneral, general ? 'object' : 'undefined');
     const acknowledgement = exposed.apparentSettingsMounted();
     assert.deepEqual(invoked, ['apparent:settings-mounted'], `${preload}: committed DOM is independent of frame scheduling`);
     // Complete the asynchronous IPC reply across the VM boundary without

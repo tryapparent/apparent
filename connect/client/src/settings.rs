@@ -5,6 +5,8 @@ pub const DEFAULT_SERVER: &str = "https://hosted.tryapparent.com";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Snapshot {
+    pub reusable_upload_grant: bool,
+    pub encryption: bool,
     pub server: Option<String>,
     pub connected: bool,
     pub uploads_enabled: bool,
@@ -115,9 +117,9 @@ impl Client {
         let object = value.as_object().ok_or(SafeError::LocalState)?;
         if let Some(experiments) = object.get("experiments") {
             let experiments = experiments.as_object().ok_or(SafeError::LocalState)?;
-            if experiments
-                .get(HOSTED_SYNC)
-                .is_some_and(|flag| !flag.is_boolean())
+            if [HOSTED_SYNC, HOSTED_ENCRYPTION].iter().any(|key| experiments
+                .get(*key)
+                .is_some_and(|flag| !flag.is_boolean()))
             {
                 return Err(SafeError::LocalState);
             }
@@ -165,6 +167,8 @@ impl Client {
             .and_then(|grant| grant.account_initial.as_deref())
             .filter(|value| renewal::valid_account_initial(value)).map(str::to_owned);
         Ok(Snapshot {
+            reusable_upload_grant: upload.as_ref().is_some_and(|g| g.grant_id.is_some() && self.settings_usable(g)),
+            encryption: self.provider.experiment(HOSTED_ENCRYPTION),
             account_initial,
             uploads_enabled: server.is_some()
                 && !self.revocation_pending()
@@ -249,6 +253,34 @@ impl Client {
             }
             _ => Health::Offline,
         }
+    }
+    /// Explicit local consent; live upload-grant check then existing writer.
+    pub fn settings_resume(&self, server: &str, allowed: &dyn Fn() -> bool) -> std::result::Result<(), SafeError> {
+        let attempt = || -> Result<()> {
+            ensure!(allowed() && !self.revocation_pending(), "cancelled");
+            let epoch = self.cancellation()?;
+            ensure!(self.settings_local_config().map_err(|_| anyhow::anyhow!("Local state unavailable"))?.server == server, "auth_required: server changed");
+            let grant = self.credential("upload", server)?;
+            ensure!(grant.grant_id.is_some() && self.settings_usable(&grant), "auth_required: approve upload access");
+            let encryption = self.provider.experiment(HOSTED_ENCRYPTION);
+            let current = || allowed() && !self.revocation_pending() && self.cancellation().is_ok_and(|v| v == epoch);
+            let deadline = Instant::now() + Duration::from_secs(3);
+            let receipt = self.json_request_until(server, Some(&grant), "GET", "/v1/encryption/peers", None, Duration::from_secs(3), &current, Some(deadline))?;
+            ensure!(receipt["scope"] == "upload" && receipt["grantId"].as_str() == grant.grant_id.as_deref(), "auth_required: grant changed");
+            #[cfg(any(test, feature = "test-support"))]
+            test_support::run_hook("resume_before_commit", &self.config);
+            let _lock = Lock::acquire_until(&self.state.join("queue.lock"), false, Some(deadline))?;
+            ensure!(current(), "cancelled");
+            let latest = self.credential("upload", server)?;
+            ensure!(latest.generation == grant.generation && latest.grant_id == grant.grant_id && self.settings_usable(&latest)
+                && self.provider.experiment(HOSTED_ENCRYPTION) == encryption && self.settings().server == server,
+                "auth_required: grant changed");
+            self.provider.set_experiment(HOSTED_SYNC, true)?;
+            self.provider.set_cloud_allowed(&CloudConfig { enabled:true, upload_consent:true, server:server.into() }, &current)?;
+            ensure!(current(), "cancelled");
+            Ok(())
+        };
+        attempt().map_err(|error| safe_error(&error, allowed))
     }
     pub fn settings_disable(&self, logout: bool) -> std::result::Result<(), SafeError> {
         self.disable_until(logout, Some(Instant::now() + Duration::from_secs(3)))

@@ -5,7 +5,8 @@ export type Config = {
   projectId: number; t3ProjectId: string; t3Origin: string; t3TokenFile: string;
   webhookTokenFile: string; stateDirectory: string; posthogCommand: string;
   posthogOrigin: string; port: number; dailyLimit: number; queueLimit: number;
-  modelSelection: {instanceId: string; model: string}; runtimeMode: 'auto-accept-edits' | 'auto';
+  modelSelection: {instanceId: string; model: string; options?: {id: string; value: string}[]};
+  runtimeMode: 'auto-accept-edits' | 'auto' | 'full-access';
 };
 export function secret(path: string): string {
   const stat = lstatSync(path);
@@ -29,11 +30,17 @@ export function config(env: NodeJS.ProcessEnv): Config {
     throw Error('T3_ORIGIN must be HTTPS or loopback HTTP, without credentials or a path');
   const posthogOrigin = env.POSTHOG_ORIGIN ?? 'https://eu.posthog.com';
   if (!['https://eu.posthog.com', 'https://us.posthog.com'].includes(posthogOrigin)) throw Error('Unsupported PostHog origin');
-  const runtimeMode = env.T3_RUNTIME_MODE ?? 'auto-accept-edits';
-  if (runtimeMode !== 'auto-accept-edits' && runtimeMode !== 'auto') throw Error('Unsupported runtime mode');
+  const runtimeMode = env.T3_RUNTIME_MODE ?? 'full-access';
+  if (!['auto-accept-edits', 'auto', 'full-access'].includes(runtimeMode)) throw Error('Unsupported runtime mode');
+  const instanceId = required('T3_PROVIDER_INSTANCE');
+  const reasoning = env.T3_REASONING_EFFORT ?? (instanceId === 'codex' ? 'high' : undefined);
+  if (reasoning !== undefined && (instanceId !== 'codex' || !['low','medium','high','xhigh','max','ultra'].includes(reasoning)))
+    throw Error('Unsupported Codex reasoning effort');
   return {projectId: integer('POSTHOG_PROJECT_ID', 329943, 2147483647), t3ProjectId: required('T3_PROJECT_ID'),
     t3Origin: t3Origin.origin, posthogOrigin, t3TokenFile: path('T3_TOKEN_FILE'), webhookTokenFile: path('WEBHOOK_TOKEN_FILE'),
     stateDirectory: path('STATE_DIRECTORY'), posthogCommand: path('POSTHOG_COMMAND'),
     port: integer('PORT', 8646, 65535), dailyLimit: integer('DAILY_LIMIT', 10, 100), queueLimit: integer('QUEUE_LIMIT', 100, 1000),
-    modelSelection: {instanceId: required('T3_PROVIDER_INSTANCE'), model: required('T3_MODEL')}, runtimeMode};
+    modelSelection: {instanceId, model: required('T3_MODEL'),
+      ...(reasoning === undefined ? {} : {options: [{id:'reasoningEffort', value:reasoning}]})},
+    runtimeMode: runtimeMode as Config['runtimeMode']};
 }

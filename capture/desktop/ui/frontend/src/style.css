@@ -74,7 +74,6 @@
   .settings-frog { width:98px; }
   .settings-updates { gap:4px; }
 }
-.apparent-connect-workflow { font-family:'Connect Host Grotesk',var(--font-sans); }
 .settings-agents button { transition:none; }
 @media (max-width:480px) {
   .settings-agents button { white-space:normal; height:auto; }
@@ -130,3 +129,69 @@ html:has(.settings-shell),body:has(.settings-shell),#root:has(>.settings-shell){
 @media(prefers-color-scheme:dark){.settings-t3-dialog{background:var(--apparent-carbon);color:var(--apparent-paper)}}
 
 .settings-content [data-slot='native-select-icon']{color:var(--apparent-carbon);opacity:1}
+/* General shares the approved shell/type roles; compact capture cards stay local. */
+.general-row { display:flex; justify-content:space-between; align-items:center; gap:16px; font-weight:500; padding-block:12px; border-bottom:1px solid var(--color-border); }
+.general-row input { width:20px; height:20px; flex:none; accent-color:var(--color-primary); }
+.general-row input:focus-visible { outline:2px solid var(--color-ring); outline-offset:3px; }
+.general-shortcut { margin-top:22px; }
+.general-settings .apparent-connect-workflow { margin-bottom:20px; }
+.connect-progress progress::-webkit-progress-value { background:var(--color-primary); }
+.connect-progress progress::-moz-progress-bar { background:var(--color-primary); }
+/* Compact Connect cards: task actions follow content in DOM order. */
+.apparent-connect-workflow { container-name:connect; container-type:inline-size; font:400 1.125rem/1.5 'Host Grotesk',sans-serif; }
+.apparent-connect-workflow .apparent-status-card { display:grid; grid-template-columns:minmax(0,1fr) auto; border-radius:0; border-inline-start-width:1px; padding:24px; gap:12px 24px; align-items:center; }
+.apparent-connect-workflow .apparent-status-card h2 { font-size:var(--apparent-type-section); line-height:2rem; font-weight:500; margin:0; text-wrap:initial; }
+.apparent-connect-workflow .apparent-status-card p { margin:4px 0 0; }
+.apparent-connect-workflow .status-leading,.apparent-connect-workflow .status-footer { grid-column:1 / -1; min-width:0; }
+.apparent-connect-workflow .status-content { grid-column:1; }
+/* A heading alert is not a standalone error paragraph with block margins. */
+.apparent-connect-workflow .status-heading { margin:0; }
+.apparent-connect-workflow .status-artwork { width:144px; max-width:100%; grid-column:2; grid-row:1; }
+.apparent-connect-workflow .apparent-status-card:has(.status-leading) .status-artwork { grid-row:2; }
+.apparent-connect-workflow[data-layout=connected] .status-artwork { width:112px; }
+.apparent-connect-workflow[data-layout=connected] .apparent-status-card,
+.apparent-connect-workflow[data-layout=status] .apparent-status-card { padding:16px 24px; }
+.apparent-connect-workflow[data-layout=status] .status-content { grid-column:1 / -1; }
+.apparent-connect-workflow .status-actions { margin:0; gap:var(--action-gap,12px); }
+.apparent-connect-workflow button,.connect-info summary { font-size:1.125rem; line-height:1.5; font-weight:500; min-height:44px; }
+.apparent-connect-workflow .primary-action { background:var(--apparent-settings-signal); color:var(--apparent-paper); }
+.apparent-connect-workflow .destructive-action { background:transparent; color:var(--color-destructive); border-color:var(--color-destructive); }
+.apparent-connect-workflow [data-tone=failure] { border-inline-start:4px solid var(--color-failure-solid); }
+.apparent-connect-workflow [data-tone=warning] { border-inline-start:4px solid var(--color-warning-surface); }
+.apparent-connect-workflow [data-tone=failure] .status-icon { color:var(--apparent-paper); background:var(--apparent-failed); padding:3px; }
+.apparent-connect-workflow [data-tone=failure] .status-heading { color:var(--color-foreground); }
+.connect-progress { display:flex; gap:16px; padding:0; margin:0; list-style:none; font-size:1rem; line-height:1.5; }
+.connect-progress li { flex:1; border-top:3px solid var(--color-border); padding-top:4px; }
+.connect-progress li[aria-current=step] { border-color:var(--color-primary); font-weight:500; }
+.connect-info,.connect-info::details-content { display:contents; }
+.connect-info summary { cursor:pointer; text-decoration:underline; text-underline-offset:3px; display:flex; align-items:center; padding:8px 0; width:max-content; }
+.connect-info summary::after { content:'⌄'; margin-inline-start:6px; }
+.connect-info[open] summary::after { content:'⌃'; }
+.connect-info p { flex-basis:100%; max-width:44ch; font-size:1.125rem; line-height:1.5; }
+.connect-info:not([open]) p { display:none; }
+.connect-info summary:focus-visible { outline:2px solid var(--color-ring); outline-offset:3px; }
+.apparent-connect-workflow .status-footer .connect-browser-error { margin:0 0 12px; color:var(--color-destructive); }
+/* The only trailing action: a single contextual stop beside normal waiting. */
+.apparent-connect-workflow[data-waiting] .status-content { grid-column:1; }
+.apparent-connect-workflow[data-waiting] .status-footer { grid-column:2; }
+.apparent-connect-workflow [data-tone=progress] .status-icon { border:2px solid var(--color-border); border-top-color:var(--color-primary); border-radius:50%; animation:connect-spin 1s linear infinite; }
+.apparent-connect-workflow [data-tone=progress] .status-icon svg { display:none; }
+@keyframes connect-spin { to { transform:rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { .apparent-connect-workflow [data-tone=progress] .status-icon { animation:none; } }
+@media(max-width:560px) {
+  .settings-general-shell .settings-sidebar { display:none; }
+  .settings-general-shell .settings-content { padding-inline:16px; }
+  .apparent-connect-workflow .apparent-status-card { padding:16px; gap:12px; }
+}
+@media(max-width:350px) {
+  .apparent-connect-workflow .apparent-status-card { grid-template-columns:minmax(0,1fr) 88px; }
+  .apparent-connect-workflow[data-layout=invitation] .status-content { display:contents; }
+  .apparent-connect-workflow[data-layout=invitation] h2 { grid-column:1; }
+  .apparent-connect-workflow[data-layout=invitation] p { grid-column:1 / -1; }
+  .apparent-connect-workflow[data-layout=invitation] .status-artwork { width:88px; }
+}
+.settings-page-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+#settings-account { flex:none; }
+#settings-account .disclosure-panel { max-height:calc(100dvh - 96px); overflow-y:auto; }
+
+.settings-page-heading .apparent-disclosure > button { font:500 1.125rem/1.5 'Host Grotesk',sans-serif; min-height:44px; }

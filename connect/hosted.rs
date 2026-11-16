@@ -94,6 +94,8 @@ impl settings_controller::Backend for SettingsBackend {
         self.0
             .settings_snapshot()
             .map(|state| settings_controller::Snapshot {
+                reusable_upload_grant: state.reusable_upload_grant,
+                encryption: state.encryption,
                 server: state.server,
                 connected: state.connected,
                 uploads_enabled: state.uploads_enabled,
@@ -116,6 +118,9 @@ impl settings_controller::Backend for SettingsBackend {
                 });
             })
             .map_err(settings_error)
+    }
+    fn resume(&self, server: &str, allowed: Arc<dyn Fn() -> bool + Send + Sync>) -> std::result::Result<(), settings_controller::SafeError> {
+        self.0.settings_resume(server, &*allowed).map_err(settings_error)
     }
     fn health(&self, allowed: Arc<dyn Fn() -> bool + Send + Sync>) -> settings_controller::Health {
         match self.0.settings_health(&*allowed) {

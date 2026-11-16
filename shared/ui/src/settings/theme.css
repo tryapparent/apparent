@@ -1,5 +1,4 @@
-/* Approved brand roles for the accepted Settings surface. Other consumers keep
-   their existing appearance. Source: tryapparent/brand design-system/tokens. */
+/* Published product brand roles, scoped to Settings. Other owners keep their theme. */
 .settings-shell {
   --apparent-background:var(--apparent-paper);
   --apparent-foreground:var(--apparent-carbon);
@@ -13,12 +12,20 @@
   --apparent-primary-foreground: var(--apparent-paper);
   --apparent-secondary: var(--apparent-lilac);
   --apparent-secondary-foreground: var(--apparent-settings-carbon);
+  --apparent-surface: var(--apparent-paper);
+  --color-surface: var(--apparent-surface);
+  --apparent-foreground: var(--apparent-carbon);
   --apparent-ring: var(--apparent-settings-signal);
+  --color-warning-foreground: var(--apparent-carbon);
+  --color-background: var(--apparent-background);
+  --color-foreground: var(--apparent-foreground);
   --color-primary: var(--apparent-primary);
   --color-primary-foreground: var(--apparent-primary-foreground);
   --color-secondary: var(--apparent-secondary);
   --color-secondary-foreground: var(--apparent-secondary-foreground);
   --color-ring: var(--apparent-ring);
+  /* Signal on Lilac misses non-text contrast; selected fields use Carbon. */
+  --color-ring-on-selected: var(--apparent-carbon);
 }
 @media (prefers-color-scheme: dark) {
   .settings-shell {
@@ -30,5 +37,8 @@
     --apparent-secondary: var(--apparent-lilac);
     --apparent-secondary-foreground: var(--apparent-carbon);
     --apparent-ring: var(--apparent-signal);
+    --apparent-foreground: var(--apparent-paper);
+    /* Functional hues stay legible on a dark field; solid actions retain masters. */
+    --apparent-surface: var(--apparent-carbon);
   }
 }

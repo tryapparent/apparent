@@ -80,7 +80,7 @@ fn settings_snapshot_is_fresh_local_and_read_does_not_enable_upload() {
     let server = Server::new("");
     assert_eq!(
         f.client.settings_snapshot().unwrap(),
-        crate::settings::Snapshot {
+        crate::settings::Snapshot { reusable_upload_grant: false, encryption: false,
             server: None,
             connected: false,
             uploads_enabled: false,
@@ -357,4 +357,30 @@ fn settings_is_silent_and_cli_output_is_compatible() {
             }
         }
     }
+}
+
+#[test]
+fn settings_encryption_receipt_tracks_provider_without_writing() {
+    let f = Fixture::new();
+    let client = &f.client;
+    for mode in [true, false] {
+        client.provider.set_experiment(HOSTED_ENCRYPTION, mode).unwrap();
+        let before = fs::read(&client.config).unwrap();
+        assert_eq!(client.settings_snapshot().unwrap().encryption, mode);
+        assert_eq!(fs::read(&client.config).unwrap(), before);
+    }
+}
+
+#[test]
+fn settings_resume_refuses_legacy_read_and_cancelled_grants() {
+    let f = Fixture::new();
+    let server = Server::new("");
+    f.authorize(&server.url);
+    f.client.settings_disable(false).unwrap();
+    let before = fs::read(&f.client.config).unwrap();
+    assert!(!f.client.settings_snapshot().unwrap().reusable_upload_grant);
+    assert!(f.client.settings_resume(&server.url, &|| true).is_err());
+    assert_eq!(f.client.settings_resume(&server.url, &|| false), Err(SafeError::Cancelled));
+    assert_eq!(fs::read(&f.client.config).unwrap(), before);
+    assert_eq!(server.state.lock().unwrap().requests, 0);
 }

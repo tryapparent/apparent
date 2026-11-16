@@ -429,9 +429,12 @@ test('no route or source failure sends into a different conversation', async () 
   try {
     f.click(); await until(() => shared.requests.some((item: any) => item.method === 'shell.exec'));
     phase = 'saved'; shared.routes = shared.routes.filter(route => route.connectionId !== 'ssh-A');
-    f.tick(); await new Promise(resolve => setTimeout(resolve, 15));
+    f.tick(); await until(() => f.saved()?.source === shared.source);
+    // The immediate mocked route check resolves in the microtask queue after save.
+    await new Promise<void>(resolve => setImmediate(resolve));
     assert.equal(shared.submissions.length, 0);
     assert.equal(shared.insertions.length, 0);
+    assert.equal(shared.draftReads.length, 0);
     assert.equal(f.saved().source, shared.source);
-  } finally { globalThis.fetch = originalFetch; }
+  } finally { globalThis.fetch = originalFetch; f.dispose(); }
 });

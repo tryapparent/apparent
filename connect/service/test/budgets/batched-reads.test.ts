@@ -8,7 +8,7 @@ const compiled=await build({stdin:{resolveDir:process.cwd(),contents:`
  const proxies=new WeakMap();let writes=0,gets=0,clock=0,failGrant=false,holdRate=false,held=false,released=false;const realNow=Date.now;Date.now=()=>clock||realNow();
  function db(inner){if(proxies.has(inner))return proxies.get(inner);const record=r=>{writes+=r.meta.rows_written;return r;};
  const out={prepare(sql){const wrap=s=>({bind(...v){return wrap(s.bind(...v));},async run(){const r=record(await s.run());if(failGrant&&sql.startsWith('UPDATE r2_budget SET b_used')){failGrant=false;throw Error('lost commit acknowledgement');}return r;},async all(){return record(await s.all());},async first(col){if(holdRate&&sql.startsWith('INSERT INTO rate_limits')){holdRate=false;held=true;for(let i=0;!released&&i<1000;i++)await new Promise(r=>setTimeout(r,5));if(!released)throw Error('barrier timeout');}const r=record(await s.all()),row=r.results[0]??null;return col?row?.[col]??null:row;}});return wrap(inner.prepare(sql));}};proxies.set(inner,out);return out;}
- export default {async fetch(req,env){const u=new URL(req.url);if(u.pathname==='/release'){released=true;return Response.json({});}if(u.searchParams.has('holdRate'))holdRate=true;if(u.searchParams.has('failGrant'))failGrant=true;if(u.searchParams.has('advance'))clock=Date.now()+Number(u.searchParams.get('advance'));if(u.pathname==='/stats')return Response.json({writes,gets,held});
+ export default {async fetch(req,env){const u=new URL(req.url);if(u.searchParams.has('at'))clock=Number(u.searchParams.get('at'));if(u.pathname==='/release'){released=true;return Response.json({});}if(u.searchParams.has('holdRate'))holdRate=true;if(u.searchParams.has('failGrant'))failGrant=true;if(u.searchParams.has('advance'))clock=Date.now()+Number(u.searchParams.get('advance'));if(u.pathname==='/stats')return Response.json({writes,gets,held});
  const target={...env,DB:db(env.DB),BUCKET:{async get(){gets++;return null;}}};try{for(let i=0;i<Number(u.searchParams.get('n')??1);i++){
  if(u.pathname==='/rate')await rate(target,'mcp-relay:test',Number(u.searchParams.get('max')??20000));else await getObject(target,'synthetic');}
  return Response.json({writes,gets});}catch(e){return Response.json({code:e.code,writes,gets},{status:e.status??500});}}};`},bundle:true,format:'esm',platform:'browser',conditions:['workerd'],external:['node:*'],write:false});
@@ -47,6 +47,8 @@ test('restart never restores unused grants and invalid ledgers block cached perm
 });
 test('batched rate grants retain the global limit across workers',async()=>{
  const f=await setup({instances:true});try{
+  // All 180 requests exercise one hourly window, even across a wall-clock rollover.
+  await Promise.all(['first','second'].map(instance=>f.call('/stats?at=1763208000000',{instance})));
   const replies=await Promise.all(Array.from({length:180},(_,i)=>f.call('/rate?max=130',{instance:i%2?'first':'second'})));
   const admitted=replies.filter(r=>r.status===200).length;assert.ok(admitted>0&&admitted<=130);
   assert.ok(replies.some(r=>r.status===429));

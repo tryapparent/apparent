@@ -31,6 +31,7 @@ pub const DEFAULT_SERVER: &str = "https://hosted.tryapparent.com";
 pub enum Command {
     Connect,
     Allow,
+    Resume,
     Cancel,
     Check,
     Disable,
@@ -52,6 +53,10 @@ pub struct Button {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct View {
+    #[serde(default)]
+    pub reusable_upload_grant: bool,
+    #[serde(default)]
+    pub encryption: Option<bool>,
     #[serde(default)]
     pub phase: String,
     #[serde(default)]
@@ -75,6 +80,8 @@ pub struct View {
 /// gates plus a usable upload grant for this server, not just cloud.enabled.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Snapshot {
+    pub reusable_upload_grant: bool,
+    pub encryption: bool,
     pub server: Option<String>,
     pub connected: bool,
     pub uploads_enabled: bool,
@@ -158,6 +165,7 @@ pub trait Backend: Send + Sync + 'static {
         allowed: Arc<dyn Fn() -> bool + Send + Sync>,
         on_approval: &dyn Fn(Approval),
     ) -> Result<(), SafeError>;
+    fn resume(&self, _server: &str, _allowed: Arc<dyn Fn() -> bool + Send + Sync>) -> Result<(), SafeError> { Err(SafeError::AuthRequired) }
     fn health(&self, allowed: Arc<dyn Fn() -> bool + Send + Sync>) -> Health;
     fn disable(&self, logout: bool) -> Result<(), SafeError>;
 }
@@ -165,6 +173,7 @@ pub trait Backend: Send + Sync + 'static {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Operation {
     Login,
+    Resume,
     Probe,
     Disable { logout: bool },
 }
@@ -217,6 +226,7 @@ pub struct Controller {
     // A failed durable cancellation must remain actionable even if snapshot fails.
     retry_disable: Option<bool>,
     confirmation: Option<bool>,
+    resume_failed: bool,
 }
 
 impl Controller {
@@ -234,6 +244,7 @@ impl Controller {
             closed: false,
             retry_disable: None,
             confirmation: None,
+            resume_failed: false,
         };
         controller.refresh();
         controller
@@ -283,7 +294,7 @@ impl Controller {
         if self
             .request
             .as_ref()
-            .is_some_and(|r| r.operation == Operation::Login)
+            .is_some_and(|r| matches!(r.operation, Operation::Login | Operation::Resume))
         {
             // A click can race a committed login whose UI receipt has not arrived.
             // Serialize cancellation through the same durable client transaction.
@@ -332,6 +343,7 @@ impl Controller {
                         });
                     Outcome::Login(result)
                 }
+                Operation::Resume => Outcome::Login(backend.resume(&request.server, request.allowed())),
                 Operation::Probe => Outcome::Health(backend.health(request.allowed())),
                 Operation::Disable { logout } => Outcome::Disabled(backend.disable(logout)),
             };
@@ -379,7 +391,7 @@ impl Controller {
             if self
                 .request
                 .as_ref()
-                .is_some_and(|r| r.operation == Operation::Login)
+                .is_some_and(|r| matches!(r.operation, Operation::Login | Operation::Resume))
             {
                 self.cancel_request();
                 self.retry_disable = Some(false);
@@ -402,14 +414,14 @@ impl Controller {
                     self.consent = true;
                 }
             }
-            Command::Allow if self.consent && self.retry_disable.is_none() => {
+            Command::Allow | Command::Resume if self.consent && self.retry_disable.is_none() => {
                 self.refresh();
                 if let Some(snapshot) = &self.snapshot {
                     let server = snapshot
                         .server
                         .clone()
                         .unwrap_or_else(|| DEFAULT_SERVER.into());
-                    self.start(Operation::Login, server);
+                    self.start(if command == Command::Resume { Operation::Resume } else { Operation::Login }, server);
                 }
             }
             Command::Check if !self.consent => {
@@ -439,6 +451,9 @@ impl Controller {
             }
             return false;
         }
+        if event.request.operation == Operation::Resume {
+            self.resume_failed = !matches!(event.outcome, Outcome::Login(Ok(())));
+        } else if event.request.operation == Operation::Login && matches!(event.outcome, Outcome::Login(Ok(()))) { self.resume_failed = false; }
         // Terminal receipts retire ONLY their own request; duplicate delivery is inert.
         self.cancel_request();
         self.refresh();
@@ -474,8 +489,10 @@ impl Controller {
 
     pub fn view(&self) -> View {
         let mut view = View {
+            reusable_upload_grant: !self.resume_failed && self.snapshot.as_ref().is_some_and(|s| s.reusable_upload_grant),
+            encryption: self.snapshot.as_ref().map(|s| s.encryption),
             phase: if self.request.is_some() {
-                if self.disabling() { "cancelling" } else if self.approval.is_some() { "approval" } else { "starting" }
+                if self.disabling() { "cancelling" } else if self.request.as_ref().is_some_and(|r| r.operation == Operation::Resume) { "enabling" } else if self.request.as_ref().is_some_and(|r| r.operation == Operation::Probe) { "checking" } else if self.approval.is_some() { "approval" } else { "starting" }
             } else if self.error == Some(SafeError::Waitlisted) { "waitlisted" }
             else if self.local_error.is_some() || self.error.is_some() { "failed" }
             else if self.consent { "consent" }
@@ -552,6 +569,10 @@ impl Controller {
                         .push(button(Command::Disable, "Disable uploads", true));
                     view.buttons
                         .push(button(Command::Disconnect, "Disconnect", true));
+                }
+                Operation::Resume => {
+                    view.status = "Enabling uploads…".into();
+                    view.buttons.push(button(Command::Cancel, "Cancel", true));
                 }
                 Operation::Probe => {
                     view.status = "Checking connection…".into();

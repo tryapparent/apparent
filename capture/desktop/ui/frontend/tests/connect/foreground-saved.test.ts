@@ -3,7 +3,26 @@ import {test} from 'node:test';
 import {cp, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
-import {savedForeground, withRetainedEvidence} from '../foreground/saved.ts';
+import {recopyForeground, savedForeground, withRetainedEvidence, withObservedFailure} from '../foreground/saved.ts';
+
+test('polling retains each distinct native failure before later recovery or timeout', async () => {
+  const failures = [Error('Window changed during screenshot'), Error('OCR command deadline')];
+  const retained: unknown[] = [], secondary: unknown[] = [];
+  let calls = 0;
+  for (const failure of failures) {
+    await assert.rejects(withObservedFailure(async () => { calls++; throw failure; },
+      async error => { retained.push(error); }, error => secondary.push(error)), error => error === failure);
+  }
+  assert.equal(await withObservedFailure(async () => { calls++; return 'owned Finish'; },
+    async () => assert.fail('success must not invent failure evidence'), error => secondary.push(error)), 'owned Finish');
+  assert.equal(calls, 3, 'No observation may be replayed');
+  assert.deepEqual(retained, failures);
+  assert.deepEqual(secondary, []);
+  const evidenceFailure = Error('diagnostic disk full');
+  await assert.rejects(withObservedFailure(async () => { throw failures[0]; },
+    async () => { throw evidenceFailure; }, error => secondary.push(error)), error => error === failures[0]);
+  assert.deepEqual(secondary, [evidenceFailure]);
+});
 
 // Virtual time models slow AX admission and disk proof, not native Mac behavior.
 function scenario() {
@@ -95,4 +114,39 @@ test('Recording controls settle before Accessibility preparation and Stop', asyn
     prepareRecording: async () => { assert.equal(phase, 'recording-controls', 'Finish surface not ready'); return {pid: 42}; },
     interact: async () => undefined,
   });
+});
+
+// Retained Mac timings: terminal-result observation 1665ms; duplicate target
+// snapshot 2379ms; Copy click 5296ms; disclosure snapshot 3257ms; final observer
+// 3207ms failed after the presentation retired. This virtual schedule proves
+// orchestration only; CI must still prove the actual installed native adapter.
+test('recopy uses each native click observation without extra transient-window snapshots', async () => {
+  let elapsed = 1665;
+  const events: string[] = [];
+  const oldElapsed = elapsed + 2379 + 5296 + 3257 + 3207;
+  assert.ok(oldElapsed >= 15_000);
+  const result = await recopyForeground({
+    readClipboard: async () => { events.push('clipboard'); elapsed += 50; return 'synthetic handoff'; },
+    seedClipboard: async () => { events.push('sentinel'); elapsed += 100; },
+    click: async label => {
+      events.push(label); elapsed += 5296;
+      assert.ok(elapsed < 15_000, 'Native input missed the presentation window');
+      return {label, fresh: true};
+    },
+    verifyRestored: async copied => { assert.equal(copied, 'synthetic handoff'); events.push('restored'); },
+  });
+  assert.deepEqual(events, ['clipboard', 'sentinel', 'Copy link', 'Create public link', 'restored']);
+  assert.deepEqual(result, {copied: 'synthetic handoff', copy: {label: 'Copy link', fresh: true}, confirmation: {label: 'Create public link', fresh: true}});
+});
+
+test('recopy propagates uncertain native input without replay or false clipboard success', async () => {
+  for (const failAt of ['Copy link', 'Create public link']) {
+    const clicks: string[] = [], failure = Error('input outcome unknown');
+    await assert.rejects(recopyForeground({
+      readClipboard: async () => 'synthetic handoff', seedClipboard: async () => {},
+      click: async label => { clicks.push(label); if (label === failAt) throw failure; return label; },
+      verifyRestored: async () => assert.fail('failed input cannot establish restoration'),
+    }), error => error === failure);
+    assert.deepEqual(clicks, failAt === 'Copy link' ? ['Copy link'] : ['Copy link', 'Create public link']);
+  }
 });

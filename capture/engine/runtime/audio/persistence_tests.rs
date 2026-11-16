@@ -315,6 +315,73 @@ fn graceful_sigterm_drains_every_accepted_sample() {
 }
 
 #[test]
+fn forked_descriptor_keeps_lease_until_exec() {
+    use std::os::fd::{AsRawFd, FromRawFd};
+    let dir = Scratch::new("fork-lease");
+    let lease = Lease::create(&dir.0).unwrap();
+    assert_ne!(unsafe { libc::fcntl(lease.file.as_raw_fd(), libc::F_GETFD) } & libc::FD_CLOEXEC, 0);
+    let mut pipe = [0; 2];
+    assert_eq!(unsafe { libc::pipe(pipe.as_mut_ptr()) }, 0);
+    let pid = unsafe { libc::fork() };
+    assert!(pid >= 0);
+    if pid == 0 {
+        // Only async-signal-safe calls in the fork child of the threaded harness.
+        unsafe {
+            libc::close(pipe[1]);
+            libc::signal(libc::SIGALRM, libc::SIG_DFL);
+            libc::alarm(10);
+            let mut byte = 0u8;
+            libc::read(pipe[0], (&mut byte as *mut u8).cast(), 1);
+            libc::close(pipe[0]);
+            libc::execl(c"/bin/sleep".as_ptr(), c"sleep".as_ptr(), c"30".as_ptr(), std::ptr::null::<libc::c_char>());
+            libc::_exit(127);
+        }
+    }
+    unsafe { libc::close(pipe[0]); }
+    struct Child { pid: libc::pid_t, gate: Option<File> }
+    impl Drop for Child {
+        fn drop(&mut self) {
+            self.gate.take();
+            if self.pid > 0 {
+                unsafe {
+                    libc::kill(self.pid, libc::SIGKILL);
+                    libc::waitpid(self.pid, std::ptr::null_mut(), 0);
+                }
+            }
+        }
+    }
+    let mut child = Child { pid, gate: Some(unsafe { File::from_raw_fd(pipe[1]) }) };
+    drop(lease);
+    let error = Lease::acquire(&dir.0).unwrap_err();
+    assert_eq!(error.downcast_ref::<std::io::Error>().unwrap().kind(), std::io::ErrorKind::WouldBlock);
+    // A real retained owner must fail, rather than being hidden by the wait.
+    let error = acquire_released_lease_with_timeout(&dir.0, Duration::from_millis(30)).unwrap_err();
+    assert!(error.to_string().contains("release deadline"), "{error:#}");
+    child.gate.take();
+    let _lease = acquire_released_lease(&dir.0).unwrap();
+    // exec closes CLOEXEC descriptors even while the child process stays alive.
+    let mut status = 0;
+    assert_eq!(unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) }, 0);
+    assert_eq!(unsafe { libc::kill(pid, libc::SIGTERM) }, 0);
+    assert_eq!(unsafe { libc::waitpid(pid, &mut status, 0) }, pid);
+    assert!(libc::WIFSIGNALED(status));
+    assert_eq!(libc::WTERMSIG(status), libc::SIGTERM);
+    child.pid = -1;
+}
+
+#[test]
+fn release_wait_reports_non_contention_errors_without_retrying() {
+    let dir = Scratch::new("lease-error");
+    let error = acquire_released_lease(&dir.0).unwrap_err();
+    assert_eq!(error.downcast_ref::<std::io::Error>().unwrap().kind(), std::io::ErrorKind::NotFound);
+    let lease = Lease::create(&dir.0).unwrap();
+    drop(lease);
+    std::fs::write(dir.0.join(RECORDING), "unknown journal").unwrap();
+    let error = acquire_released_lease(&dir.0).unwrap_err();
+    assert!(error.to_string().contains("Unknown narration journal"), "{error:#}");
+}
+
+#[test]
 fn long_recording_saves_expired_history_without_growing_callback_memory() {
     let dir = Scratch::new("long");
     let samples = Arc::new(Mutex::new(Samples::default()));
@@ -344,7 +411,7 @@ fn long_recording_saves_expired_history_without_growing_callback_memory() {
         assert!((sample - tone(at)).abs() < 0.0001);
     }
     drop((writer, lease));
-    assert!(Lease::acquire(&dir.0).is_ok());
+    acquire_released_lease(&dir.0).unwrap();
 }
 
 #[test]

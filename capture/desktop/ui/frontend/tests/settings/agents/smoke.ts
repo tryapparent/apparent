@@ -62,6 +62,7 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     browser = await chromium.connectOverCDP(debuggerUrl);
     const page = browser.contexts()[0].pages()[0];
     await expect(page).toHaveTitle('Apparent Settings — Agents');
+    assert.equal(await page.evaluate(()=>!('apparentGeneral' in window) && !('apparentLabs' in window) && !('readConnectSettings' in window.apparent!)),true);
     const toggle = page.getByRole('switch', {name: 'Ask for video proof'});
     await expect(toggle).toBeDisabled();
     await expect(toggle).toHaveAttribute('aria-busy', 'true');
@@ -195,13 +196,16 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     await page.evaluate(() => document.documentElement.style.fontSize = '200%');
     assert.equal(await page.locator('h1').evaluate(e=>getComputedStyle(e).fontSize),'96px');
     assert.equal(await page.locator('.settings-content').evaluate(e=>e.scrollWidth <= e.clientWidth),true,'enlarged text reflows inside the pane');
+    for(const colorScheme of ['light','dark'] as const){
+      await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
     for (const control of [toggle,t3Toggle,page.getByRole('button',{name:'Copy install command',exact:true})]) {
       await control.scrollIntoViewIfNeeded();
       await control.focus();
       await expect(control).toBeFocused();
       assert.equal(await control.evaluate(e=>{const r=e.getBoundingClientRect();return r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight;}),true,'enlarged controls remain reachable');
     }
-    if (process.env.APPARENT_AGENTS_PROOF) await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,'agents-640-enlarged-text.png')});
+    if (process.env.APPARENT_AGENTS_PROOF) await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,`agents-640-enlarged-text-${colorScheme}.png`)});
+    }
     await page.evaluate(() => document.documentElement.style.removeProperty('font-size'));
     await enlarged.detach();
     application.stdin.write(JSON.stringify({type: 'agents-state', facts: {error: 'config_read_failed'}}) + '\n');

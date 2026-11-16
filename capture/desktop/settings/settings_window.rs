@@ -338,6 +338,11 @@ const BLUE: Tint = (0x5ca8ff, 0x2973f2);
 const GREEN: Tint = (0x5cd18f, 0x29a866);
 const ORANGE: Tint = (0xff9e4d, 0xf2701f);
 
+// Native frame routing only; the parent retains the candidate/fallback owner.
+fn parent_routes_pane(pane: Pane) -> bool {
+    matches!(pane, Pane::General | Pane::About | Pane::Agents | Pane::Labs) || (!LINUX && pane == Pane::Storage)
+}
+
 fn pane_title(pane: Pane) -> &'static str {
     match pane {
         Pane::General => "General",
@@ -1045,7 +1050,7 @@ impl SettingsWindow {
                     view.act(Action::CancelShortcut);
                 }
                 view.menu = None;
-                if matches!(pane, Pane::About | Pane::Agents | Pane::Labs) || (!LINUX && pane == Pane::Storage) {
+                if parent_routes_pane(pane) {
                     view.act(Action::Navigate { pane });
                     return;
                 }
@@ -2573,7 +2578,7 @@ mod tests {
     fn shared_connect_view_and_commands_reach_the_gpui_transport() {
         use crate::capture::desktop::settings::connect::{Button, Command, View};
         assert!(serde_json::from_value::<ViewState>(serde_json::json!({})).unwrap().connect.is_none());
-        let connect = View {
+        let connect = View { encryption: None, reusable_upload_grant: false,
             phase: "approval".into(),
             local_ready: false,
             title: "Apparent Connect".into(),
@@ -2779,6 +2784,22 @@ mod tests {
             let paper = luminance(rgb(0xf5f0e8));
             let contrast = (paper.max(b) + 0.05) / (paper.min(b) + 0.05);
             assert!(contrast >= 4.5, "Paper text on Signal update action must remain readable: {contrast}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod general_parent_route_tests {
+    use super::*;
+    #[test]
+    fn general_candidate_escapes_the_native_frame_without_changing_other_routes() {
+        assert!(parent_routes_pane(Pane::General));
+        assert!(parent_routes_pane(Pane::About));
+        assert!(parent_routes_pane(Pane::Agents));
+        assert!(parent_routes_pane(Pane::Labs));
+        assert_eq!(parent_routes_pane(Pane::Storage), !LINUX);
+        for pane in [Pane::Recording, Pane::Permissions] {
+            assert!(!parent_routes_pane(pane));
         }
     }
 }

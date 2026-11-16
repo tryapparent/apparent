@@ -2,6 +2,7 @@ import { useLayoutEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { About } from './settings/about';
 import { Labs } from './settings/labs';
+import { General } from './general';
 import { Agents } from './agents/agents';
 import { Storage } from './storage';
 import './style.css';
@@ -26,7 +27,7 @@ declare global {
 }
 
 function Settings() {
-  const [current, setCurrent] = useState(location.hash === '#about' ? 'About' : location.hash === '#agents' ? 'Agents' : location.hash === '#labs' ? 'Labs' : 'Storage');
+  const [current, setCurrent] = useState(location.hash === '#about' ? 'About' : location.hash === '#agents' ? 'Agents' : location.hash === '#labs' ? 'Labs' : location.hash === '#general' ? 'General' : 'Storage');
   useLayoutEffect(() => window.apparentSettingsRoute?.(pane => setCurrent(pane === 'about' ? 'About' : 'Agents')), []);
   useLayoutEffect(() => { document.title = `Apparent Settings — ${current}`; }, [current]);
   useLayoutEffect(() => {
@@ -43,7 +44,7 @@ function Settings() {
     } catch { setError('Unable to open that Settings page. Please try again.'); }
     finally { setNavigating(false); }
   }
-  return <div className="settings-shell">
+  return <div className={`settings-shell${current==='General'?' settings-general-shell':''}`}>
     <aside className="settings-sidebar" aria-label="Settings pages">
       <div className="settings-brand"><img src={wordmark} alt="Apparent" /></div>
       <nav>{panes.map((pane, index) => <Button variant="ghost" key={pane} type="button" disabled={navigating}
@@ -52,9 +53,9 @@ function Settings() {
         <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{icons[index]}</svg>{pane}</Button>)}</nav>
     </aside>
     <main className="settings-content">
-      <header><h1>{current}</h1></header>
+      <header className="settings-page-heading"><h1>{current}</h1><div id="settings-account" /></header>
       {error && <p role="alert">{error}</p>}
-      {current === 'About' ? <About /> : current === 'Agents' ? <Agents /> : current === 'Labs' ? <Labs /> : <Storage settings />}
+      {current === 'About' ? <About /> : current === 'Agents' ? <Agents /> : current === 'Labs' ? <Labs /> : current === 'General' ? <General /> : <Storage settings />}
     </main>
   </div>;
 }

@@ -35,8 +35,12 @@ Connect's recipient and server renderers bundle JavaScript separately from CSS.
 NativeSelect and Tooltip use shadcn's MIT-licensed `new-york-v4/native-select`
 and `new-york/tooltip` registry sources. Import them from this package; Tooltip
 uses Radix for focus, hover and Escape behavior. The Settings-only theme opts
-into the accepted canonical Signal and Carbon roles without changing other
-surfaces or the system appearance contract.
+into the canonical Signal and Carbon roles without changing other
+surfaces or the system appearance contract. Settings pairs Paper/Carbon card fields
+with violet primary, progress and focus, keeps red failure/destructive and
+gold/Carbon preventive caution, and retains legible theme-specific success cues.
+Selected Lilac navigation uses Carbon focus to retain non-text contrast.
+The native window background remains paired with the system canvas.
 
 Input provides the native text/URL field with shared colors, a 44px minimum
 height and a visible keyboard focus outline. Supply a persistent label and
@@ -52,7 +56,7 @@ StatusCard and DisclosureMenu supply the shared Connect surface. `status.css` ow
 functional status roles from the Apparent brand guidelines: green confirmation,
 Signal progress, gold/Carbon caution and red failure/destructive actions. Ordinary
 Tab navigation, Escape and outside-click dismissal are retained by the disclosure.
-Rust owns state, authorization, action placement and confirmation decisions.
+Native receipts own state, authorization and confirmation. TypeScript maps those receipts to the accepted action layout.
 
 ## System appearance contract
 
@@ -106,3 +110,5 @@ Preference labels remain 18px at medium weight. White is a functional switch-thu
 exception, not a brand accent. Left/right position and accessible checked state
 supplement color. At up to 700px, navigation moves above the content so complete
 retention choices remain readable.
+See [content-card action guidance](actions.md) for recommendation ordering,
+wrapping, help, contextual Cancel, icon geometry and keyboard behavior.
