@@ -1,7 +1,7 @@
 # Linux native capture smoke recipe
 
 This is one supported **guest scenario**, not another VM controller:
-`capture/desktop/scripts/linux/gui/capture-smoke.py`, run by `capture/desktop/scripts/linux/gui/gui-vm.py`. It starts the
+`capture/desktop/enablement/linux/gui/capture-smoke.py`, run by `capture/desktop/enablement/linux/gui/gui-vm.py`. It starts the
 candidate GUI, creates a changing synthetic X11 window, saves one normal GUI
 screen capture, then starts and cancels a second. Both requests use persisted,
 32-hex-character request IDs; all stop/cancel/inspect calls use those IDs only.
@@ -125,9 +125,9 @@ new private results directory for preparation, then pass its receipt to the
 admitted run. The runner has no `doctor` subcommand.
 
 ```sh
-python3 capture/desktop/scripts/linux/gui/test-gui-vm.py
-python3 capture/desktop/scripts/linux/gui/test-capture-smoke.py
-python3 capture/desktop/scripts/linux/gui/gui-vm.py --help
+python3 capture/desktop/enablement/linux/gui/test-gui-vm.py
+python3 capture/desktop/enablement/linux/gui/test-capture-smoke.py
+python3 capture/desktop/enablement/linux/gui/gui-vm.py --help
 for tool in qemu-system-x86_64 qemu-img ssh scp systemd-run python3; do
   command -v "$tool" || exit 1
 done
@@ -136,11 +136,11 @@ test -r "$GUI_TEST_KEY" && test -x "$CANDIDATE"
 systemctl --user show-environment >/dev/null
 qemu-img info --output=json "$GUI_TEMPLATE/system.qcow2"
 sha256sum "$CANDIDATE"
-python3 capture/desktop/scripts/linux/gui/gui-vm.py \
+python3 capture/desktop/enablement/linux/gui/gui-vm.py \
   --template "$GUI_TEMPLATE/system.qcow2" \
   --ovmf-vars "$GUI_TEMPLATE/OVMF_VARS.fd" \
   --ssh-user "$GUI_TEST_USER" --ssh-key "$GUI_TEST_KEY" \
-  --binary "$CANDIDATE" --scenario capture/desktop/scripts/linux/gui/capture-smoke.py \
+  --binary "$CANDIDATE" --scenario capture/desktop/enablement/linux/gui/capture-smoke.py \
   --results "$RUN-preflight" --isolated-network --preflight-only
 ```
 
@@ -294,11 +294,11 @@ proof only, with the same read-only/disposable-consumer rules and unrun product
 gates as GNOME.
 
 ```sh
-python3 capture/desktop/scripts/linux/gui/gui-vm.py \
+python3 capture/desktop/enablement/linux/gui/gui-vm.py \
   --template "$GUI_TEMPLATE/system.qcow2" \
   --ovmf-vars "$GUI_TEMPLATE/OVMF_VARS.fd" \
   --ssh-user "$GUI_TEST_USER" --ssh-key "$GUI_TEST_KEY" \
-  --binary "$CANDIDATE" --scenario capture/desktop/scripts/linux/gui/capture-smoke.py \
+  --binary "$CANDIDATE" --scenario capture/desktop/enablement/linux/gui/capture-smoke.py \
   --prepared-inputs "$RUN-preflight/result.json" \
   --results "$RUN" --memory 3072 --isolated-network \
   --boot-timeout 180 --scenario-timeout 300 --job-timeout 660

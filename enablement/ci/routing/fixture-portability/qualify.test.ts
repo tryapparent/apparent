@@ -95,9 +95,9 @@ test('complete Git deltas use one local/CI authority, safe additions execute and
     assert.equal(currentStream('capture',base,head,dir),true,'qualified tooling must not supersede pending Capture delivery');
     assert.equal(currentStream('connect',base,head,dir),true,'qualified tooling must not supersede pending Connect delivery');
     assert.ok(commands(accepted.selected, base, head).some(command => command.argv.includes('--pr')));
-    assert.ok(toolingCommands().some(command => command.argv.includes('enablement/local-tests/desktop-install.test.ts')));
+    assert.ok(toolingCommands().some(command => command.argv.includes('capture/desktop/enablement/local-tests/desktop-install.test.ts')));
     assert.ok(contractTests().some(command => command.argv.includes('enablement/local-tests/run.test.ts')));
-    put('enablement/local-tests/desktop-install.test.ts', readFileSync(join(source, 'enablement/local-tests/desktop-install.test.ts'), 'utf8') + '\n// install repair\n');
+    put('capture/desktop/enablement/local-tests/desktop-install.test.ts', readFileSync(join(source, 'capture/desktop/enablement/local-tests/desktop-install.test.ts'), 'utf8') + '\n// install repair\n');
     head = commit();
     assert.equal(selectRange(base, head, dir).fixtureMac, true);
     assert.equal(selectRange(base, head, dir).plan.root, false);

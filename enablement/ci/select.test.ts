@@ -195,7 +195,7 @@ test('standalone Enablement regression tests select tooling while execution inpu
       browser:false, service:false, tools:false, hermes:false, public:false, tooling:true, onboarding:false, engineMedia:false}, path);
     assert.deepEqual(localCommands(['tooling'], 'base', 'head').map(command => command.argv), [
       ['python3', 'enablement/verification.py', '--base', 'base', '--head', 'head', '--pr'],
-      ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/desktop-install.test.ts'],
+      ['node', '--experimental-strip-types', '--test', 'capture/desktop/enablement/local-tests/desktop-install.test.ts'],
       ['node', '--experimental-strip-types', '--test', 'enablement/posthog-fixer/test/service.test.ts', 'enablement/posthog-fixer/test/t3.test.ts'],
       ['python3', '-m', 'unittest', 'discover', '-s', 'enablement/directory-width/tests', '-p', 'test_*.py'],
     ]);
@@ -246,8 +246,8 @@ test('executable comment changes explain exactly which input prevents narrow pro
 }));
 
 test('installer and shared consumer-inventory changes retain full conservative admission', () => repository((git, dir) => {
-  const path = 'capture/desktop/scripts/packaging/install-app.sh';
-  mkdirSync('capture/desktop/scripts/packaging', {recursive: true});
+  const path = 'capture/desktop/enablement/packaging/install-app.sh';
+  mkdirSync('capture/desktop/enablement/packaging', {recursive: true});
   writeFileSync(path, '#!/bin/sh\ntrue\n'); chmodSync(path, 0o755);
   mkdirSync('enablement/ci/routing', {recursive: true});
   writeFileSync('enablement/ci/routing/consumers.ts', 'before inventory');
@@ -262,13 +262,13 @@ test('installer and shared consumer-inventory changes retain full conservative a
   assert.equal(cli(base, head, dir).mac_rust, true);
   assert.deepEqual(localSelection(base, head, dir).plan, decision.plan);
   const plan = localCommands(decision.selected, base, head, 'linux', true, {paths: [path]});
-  for (const required of ['--run', 'test:electron', 'enablement/local-tests/desktop-install.test.ts'])
+  for (const required of ['--run', 'test:electron', 'capture/desktop/enablement/local-tests/desktop-install.test.ts'])
     assert.ok(plan.some(command => command.argv.includes(required)), required);
 }));
 
 test('fresh UI staging has native, renderer, foreground and installation consumers without Worker publication', () => repository((git, dir) => {
-  const path = 'capture/desktop/scripts/packaging/frontend/stage.ts';
-  mkdirSync('capture/desktop/scripts/packaging/frontend', {recursive: true});
+  const path = 'capture/desktop/enablement/packaging/frontend/stage.ts';
+  mkdirSync('capture/desktop/enablement/packaging/frontend', {recursive: true});
   writeFileSync(path, 'before'); git('add', '.'); git('commit', '-qm', 'base'); const base = git('rev-parse', 'HEAD');
   writeFileSync(path, 'after'); git('commit', '-qam', 'staging'); const head = git('rev-parse', 'HEAD');
   const decision = selectRange(base, head, dir);
@@ -280,13 +280,13 @@ test('fresh UI staging has native, renderer, foreground and installation consume
   assert.equal(decision.plan.engineMedia, false);
   assert.equal(cli(base, head, dir).mac_rust, true);
   const plan = localCommands(decision.selected, base, head, 'linux', true, {paths: [path]});
-  for (const required of ['--run', 'test:electron', 'enablement/local-tests/desktop-install.test.ts'])
+  for (const required of ['--run', 'test:electron', 'capture/desktop/enablement/local-tests/desktop-install.test.ts'])
     assert.ok(plan.some(command => command.argv.includes(required)), required);
 }));
 
 test('installer additions, deletions, renames and mode/type changes retain conservative fallback', () => repository((git, dir) => {
-  const path = 'capture/desktop/scripts/packaging/install-app.sh';
-  mkdirSync('capture/desktop/scripts/packaging', {recursive: true});
+  const path = 'capture/desktop/enablement/packaging/install-app.sh';
+  mkdirSync('capture/desktop/enablement/packaging', {recursive: true});
   writeFileSync(path, '#!/bin/sh\ntrue\n'); chmodSync(path, 0o755);
   git('add', '.'); git('commit', '-qm', 'base'); const base = git('rev-parse', 'HEAD');
   for (const operation of ['delete', 'rename', 'mode', 'symlink', 'unknown-executable']) {
@@ -303,7 +303,7 @@ test('installer additions, deletions, renames and mode/type changes retain conse
   }
   git('checkout', '--detach', base); git('rm', path); git('commit', '-qm', 'absent');
   const absent = git('rev-parse', 'HEAD');
-  mkdirSync('capture/desktop/scripts/packaging', {recursive: true});
+  mkdirSync('capture/desktop/enablement/packaging', {recursive: true});
   writeFileSync(path, '#!/bin/sh\ntrue\n'); chmodSync(path, 0o755);
   git('add', '.'); git('commit', '-qm', 'addition');
   assert.equal(selectRange(absent, git('rev-parse', 'HEAD'), dir).inputProofKnown, false);

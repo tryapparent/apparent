@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / 'capture/desktop/scripts/mac/prepare.py'
+SCRIPT = ROOT / 'capture/desktop/enablement/mac/prepare.py'
 spec = importlib.util.spec_from_file_location('mac_prepare', SCRIPT)
 prepare = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(prepare)

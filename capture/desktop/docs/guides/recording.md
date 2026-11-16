@@ -158,7 +158,7 @@ video when you need them.
 ## Linux
 
 Apparent runs on Linux desktops (GNOME and KDE Plasma, on Wayland or X11) as the same app, from
-the same GPUI code. It ships as an AppImage (`capture/desktop/scripts/linux/appimage/appimage.sh`; every pull request's CI
+the same GPUI code. It ships as an AppImage (`capture/desktop/enablement/linux/appimage/appimage.sh`; every pull request's CI
 run has one) with GStreamer inside, so movies record without extra packages. On Wayland its
 windows run through XWayland.
 

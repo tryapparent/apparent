@@ -7,7 +7,7 @@ export const fixtureInputs = new Set([
   'enablement/local-tests/fixtures/runner.ts',
   'enablement/local-tests/fixtures/runner.test.ts',
   'enablement/local-tests/run.test.ts',
-  'enablement/local-tests/desktop-install.test.ts',
+  'capture/desktop/enablement/local-tests/desktop-install.test.ts',
   'enablement/tests/test_pre_push_guard.py',
 ]);
 const fixtureRoot = 'enablement/local-tests/fixtures/';
@@ -15,7 +15,7 @@ export const fixtureCandidate = (path: string) => fixtureInputs.has(path) ||
   (path.startsWith(fixtureRoot) && /^[\w-]+(?:\.test)?\.ts$/.test(path.slice(fixtureRoot.length)));
 
 const dependencies = new Set([
-  'enablement/local-tests/run.ts', 'enablement/local-tests/desktop-install.ts',
+  'enablement/local-tests/run.ts', 'capture/desktop/enablement/local-tests/desktop-install.ts',
   'enablement/local-tests/receipt.ts',
   'enablement/local-tests/support/sources.ts',
 ]);
@@ -43,7 +43,7 @@ export function qualifyFixtures(files: Map<string, string>, changed: string[]): 
     }
     // The installed-hook test writes this exact finite driver into a synthetic
     // repository. It is not an import of a production runner.ts module.
-    const moduleText = path === 'enablement/local-tests/desktop-install.test.ts' ?
+    const moduleText = path === 'capture/desktop/enablement/local-tests/desktop-install.test.ts' ?
       text.replace("import {execute} from './runner.ts';", '') : text;
     const modules = imports(moduleText);
     if (!modules) return false;

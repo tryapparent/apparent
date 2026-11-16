@@ -46,11 +46,11 @@ and reduce concurrency when shared resource capacity requires it:
 ```sh
 cargo test -j 1 --offline -- --test-threads=2
 GITHUB_SHA=$(git rev-parse HEAD) cargo build -j 1 --offline
-./capture/desktop/scripts/linux/appimage/appimage.sh target/debug/apparent
-python3 capture/desktop/scripts/linux/updater/test-updater-gui.py
-python3 capture/desktop/scripts/linux/gui/test-gui-vm.py
+./capture/desktop/enablement/linux/appimage/appimage.sh target/debug/apparent
+python3 capture/desktop/enablement/linux/updater/test-updater-gui.py
+python3 capture/desktop/enablement/linux/gui/test-gui-vm.py
 
-python3 capture/desktop/scripts/linux/updater/updater-gui.py \
+python3 capture/desktop/enablement/linux/updater/updater-gui.py \
   --template "$GUI_TEMPLATE/system.qcow2" \
   --ovmf-vars "$GUI_TEMPLATE/OVMF_VARS.fd" \
   --ssh-user "$GUI_TEST_USER" --ssh-key "$GUI_TEST_KEY" \

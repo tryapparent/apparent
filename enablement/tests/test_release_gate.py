@@ -27,7 +27,7 @@ class AdmissionTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory() as temporary:
             environment_file = Path(temporary) / 'version-env'
-            subprocess.run(['node', '--experimental-strip-types', str(root / 'capture/desktop/scripts/release/desktop-version.ts')],
+            subprocess.run(['node', '--experimental-strip-types', str(root / 'capture/desktop/enablement/release/desktop-version.ts')],
                            check=True, env=dict(os.environ, GITHUB_ENV=str(environment_file), TAG=''))
             shared = dict(line.split('=', 1) for line in environment_file.read_text().splitlines())
         version = shared['APPARENT_RELEASE_VERSION']

@@ -105,7 +105,7 @@ test('runner mirror transport preserves sources and is idempotent; unsafe target
 const installsApt=(command:string)=>/apt-get|(?<!-)install-deps|with-deps|appimage\/dependencies/.test(command);
 test('APT inventory distinguishes OS provisioning from plugin Python dependencies',()=>{
  for(const command of ['sudo apt-get update', 'npx --no-install playwright install-deps chromium',
-  './node_modules/.bin/playwright-core install --with-deps chromium', './capture/desktop/scripts/linux/appimage/dependencies.sh'])
+  './node_modules/.bin/playwright-core install --with-deps chromium', './capture/desktop/enablement/linux/appimage/dependencies.sh'])
   assert.equal(installsApt(command),true,command);
  assert.equal(installsApt('hermes plugins validate "$PACKAGE" --install-deps'),false);
 });

@@ -96,7 +96,7 @@ baseline does not update the tap.
 ### Preview signing and installation
 
 Before the first dispatch, generate a **dedicated preview** Sparkle EdDSA key pair on a Mac using
-the pinned `capture/desktop/scripts/release/setup-sparkle.sh` tools. Run its `bin/generate_keys --account apparent-preview`
+the pinned `capture/desktop/enablement/release/setup-sparkle.sh` tools. Run its `bin/generate_keys --account apparent-preview`
 in an interactive Mac login session, then `bin/generate_keys --account apparent-preview -p` to see
 the public key and `bin/generate_keys --account apparent-preview -x <private-file>` to export the
 private seed. Set repository Actions variable `SPARKLE_PREVIEW_PUBLIC_KEY` to the public base64
@@ -181,7 +181,7 @@ or publish a Windows zip.
 1. **Version:** bump `version` in `Cargo.toml` and `Cargo.lock` in a `release/<version>` PR.
    PRs do not start Actions; the exact commit’s platform-specific main verification gates publication (Linux/shared for Linux; Linux/shared plus Mac for Mac).
    Test changed behavior locally before merging.
-2. **Mac build** (Studio, from that commit): `APPARENT_BUILD_NUMBER=<n> APPARENT_SPARKLE_DIR=~/.local/share/apparent-release/sparkle-2.9.4 ./capture/desktop/scripts/release/release-app.sh`.
+2. **Mac build** (Studio, from that commit): `APPARENT_BUILD_NUMBER=<n> APPARENT_SPARKLE_DIR=~/.local/share/apparent-release/sparkle-2.9.4 ./capture/desktop/enablement/release/release-app.sh`.
    The build number goes up by one every release (Sparkle compares it, not the version). The script
    builds, signs, notarizes and staples `dist/Apparent-<version>-arm64.dmg` and `.zip`. Its own
    `dist/updates/appcast.xml` is throwaway: the published appcast comes from step 4.
@@ -207,7 +207,7 @@ or publish a Windows zip.
 
 Keep the Sparkle tools and the updates folder under `~/.local/share/apparent-release/`, never in `target/`
 or `/tmp`: a clean or a reboot would take the tools and every earlier zip with them.
-`capture/desktop/scripts/release/setup-sparkle.sh` fetches Sparkle (checksummed) into `$APPARENT_SPARKLE_DIR`, or `target/` when
+`capture/desktop/enablement/release/setup-sparkle.sh` fetches Sparkle (checksummed) into `$APPARENT_SPARKLE_DIR`, or `target/` when
 it's unset.
 
 Check after deploying: the live DMG, Sparkle zip and newest delta match the release's sha256s,

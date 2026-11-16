@@ -174,7 +174,7 @@ pub fn run(options: Options) {
             open_backdrop(display, cx);
         }
         coordinator.update(cx, |coord, _| coord.ensure_native_pill());
-        // For screen recordings (`capture/desktop/scripts/perf/pill/record.sh`): the backdrop's rect in screen points.
+        // For screen recordings (`capture/desktop/enablement/perf/pill/record.sh`): the backdrop's rect in screen points.
         println!(
             "region {},{},{},{}",
             ((display[0] - BACKDROP[2]) * 0.5).round(),

@@ -97,7 +97,7 @@ consumers/engines for those jobs. This is browser evidence; macOS and isolated L
 propagation remain separate platform acceptance gates.
 
 For native OS propagation, stage Settings using
-`capture/desktop/scripts/packaging/stage-settings.py`, then run the staged Electron
+`capture/desktop/enablement/packaging/stage-settings.py`, then run the staged Electron
 runtime with `shared/ui/test/native.cjs` in an owned disposable macOS/Linux guest.
 Set `APPARENT_THEME_APP` to its staged `app` and `SCRAWL_GUI_OUTPUT` to a private
 evidence directory. The test changes only the guest's OS appearance, restores it,

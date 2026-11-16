@@ -57,7 +57,7 @@ fallback controls when idle; an explicit app launch opens Settings instead.
 
 ### Mac development installation
 
-Install and launch through `capture/desktop/scripts/packaging/install-app.sh`, or
+Install and launch through `capture/desktop/enablement/packaging/install-app.sh`, or
 `install-app-remote.sh` for remote installs, rather than running a `target/`
 daemon. Cleanup can unlink a target executable and disturb its TCC identity.
 Finish captures and quit the destination app before replacement; the installers'
@@ -135,7 +135,7 @@ This is an OS adapter change, not a new Settings workflow;
 the development Electron Settings window does not create a second tray icon.
 
 Regenerate the light variant from the approved menu bar raster with
-`swift capture/desktop/scripts/native/make-menu-bar-light.swift`; append
+`swift capture/desktop/enablement/native/make-menu-bar-light.swift`; append
 `--check` to verify shape, colors and contrast. Native acceptance still needs the running
 candidate's status item in Light and Dark mode, in full-screen and normal windows,
 a live transition without restarting the app, and an
@@ -335,7 +335,7 @@ When a row turns on, the window comes forward once macOS stops asking (no UserNo
 
 Onboarding follows the system's light or dark appearance. The macOS window and its SwiftUI canvas resolve dynamic colors before the first visible frame and update together when appearance changes. Linux reads the desktop portal's color-scheme setting before opening the GPUI window, then refreshes the visible window when that setting changes; no user preference is written. Render every macOS screen and permission state with `apparent-helper onboarding --render DIR --light` or `--dark` (render-only overrides, not system preference changes).
 
-Rows for draggable lists (`Permission::draggable`: Screen Recording, Accessibility) go straight to `OpenSettings`, which launches `apparent-helper permission-panel` (`capture/desktop/native/PermissionPanel.swift`) from the row's button: the card flies to just below System Settings (inside its empty lower area when the screen has no room; `PermissionPanel.dock`, checked by `capture/desktop/scripts/support/check-permission-panel-dock.sh`), drags the `Apparent.app` that contains the helper, reads grants from a fresh `--check` process (never trusts the drop), and is told `granted` when the row turns on. Preview it with `permission-panel --permission screen-recording --preview`; never `tccutil reset` Kit's real grants to test it.
+Rows for draggable lists (`Permission::draggable`: Screen Recording, Accessibility) go straight to `OpenSettings`, which launches `apparent-helper permission-panel` (`capture/desktop/native/PermissionPanel.swift`) from the row's button: the card flies to just below System Settings (inside its empty lower area when the screen has no room; `PermissionPanel.dock`, checked by `capture/desktop/enablement/support/check-permission-panel-dock.sh`), drags the `Apparent.app` that contains the helper, reads grants from a fresh `--check` process (never trusts the drop), and is told `granted` when the row turns on. Preview it with `permission-panel --permission screen-recording --preview`; never `tccutil reset` Kit's real grants to test it.
 
 ### First-capture onboarding
 
@@ -620,7 +620,7 @@ requests the same Stop path; its atomic boolean is only a copy of the coordinato
 Force quit/SIGKILL cannot finish a bundle: see narration-only recovery and durability limits in
 `capture/engine/docs/capture.md`.
 
-Before running `capture/desktop/scripts/packaging/install-app.sh` or `install-app-remote.sh`,
+Before running `capture/desktop/enablement/packaging/install-app.sh` or `install-app-remote.sh`,
 finish captures and quit the destination app. Both installers refuse replacement while an
 executable inside that exact destination bundle is running, including its helpers; inability to
 inspect processes also refuses. They do not kill other installations or CLI recorders, and

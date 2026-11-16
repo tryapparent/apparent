@@ -210,7 +210,7 @@ jobs:
         uses: ./.github/actions/ubuntu-apt
       - name: Linux application dependencies
         if: runner.os == 'Linux' && needs.select.outputs.root == 'true'
-        run: ./capture/desktop/scripts/linux/appimage/dependencies.sh
+        run: ./capture/desktop/enablement/linux/appimage/dependencies.sh
       - name: Select the macOS 26 SDK required by native helpers
         if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
         uses: maxim-lobanov/setup-xcode@v1
@@ -371,7 +371,7 @@ jobs:
           test "$RUNNER_ENVIRONMENT" = github-hosted
           export APPARENT_APP_DIR="$HOME/Applications/Apparent-Storage-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.app"
           test ! -e "$APPARENT_APP_DIR"
-          APPARENT_NO_LAUNCH=1 node --experimental-strip-types enablement/timing/command.ts packaging bash capture/desktop/scripts/packaging/install-app.sh
+          APPARENT_NO_LAUNCH=1 node --experimental-strip-types enablement/timing/command.ts packaging bash capture/desktop/enablement/packaging/install-app.sh
           codesign --verify --deep --strict "$APPARENT_APP_DIR"
           node --experimental-strip-types record/media/test/package.ts --binary "$APPARENT_APP_DIR/Contents/MacOS/apparent" --settings "$APPARENT_APP_DIR/Contents/Resources/settings"
           node --experimental-strip-types capture/agent/media/test/package.ts --binary "$APPARENT_APP_DIR/Contents/MacOS/apparent" --settings "$APPARENT_APP_DIR/Contents/Resources/settings"
@@ -379,8 +379,8 @@ jobs:
         if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
         shell: bash
         run: |
-          node --experimental-strip-types --test capture/desktop/scripts/packaging/native-candidate.test.ts
-          node --experimental-strip-types capture/desktop/scripts/packaging/native-candidate.ts --retain-installed
+          node --experimental-strip-types --test capture/desktop/enablement/packaging/native-candidate.test.ts
+          node --experimental-strip-types capture/desktop/enablement/packaging/native-candidate.ts --retain-installed
       - name: Upload the pending native test candidate
         if: runner.os == 'macOS' && needs.select.outputs.root == 'true'
         uses: actions/upload-artifact@v4
@@ -419,7 +419,7 @@ jobs:
           # Keep compiler diagnostics even when native compilation fails. The
           # fixture itself creates its fresh private evidence subdirectory.
           mkdir -m 700 "$evidence"
-          swiftc capture/desktop/scripts/native/copy-capture-id.swift \
+          swiftc capture/desktop/enablement/native/copy-capture-id.swift \
             -o "$evidence/copy-capture-id" > "$evidence/compile.log" 2>&1
           node --experimental-strip-types enablement/timing/command.ts native-copy-assertions "$evidence/copy-capture-id" "$app" "$evidence/run"
       - name: Native Electron selected-reference control against the installed Rust App
@@ -444,9 +444,9 @@ jobs:
           evidence="$RUNNER_TEMP/apparent-foreground-native"
           test ! -e "$evidence"
           mkdir -m 700 "$evidence"
-          swiftc capture/desktop/scripts/native/foreground/pill-input.swift \
+          swiftc capture/desktop/enablement/native/foreground/pill-input.swift \
             -o "$evidence/pill-input" > "$evidence/pill-input-compile.log" 2>&1
-          swiftc capture/desktop/scripts/native/foreground/scene.swift \
+          swiftc capture/desktop/enablement/native/foreground/scene.swift \
             -o "$evidence/scene" > "$evidence/scene-compile.log" 2>&1
           APPARENT_FOREGROUND_NATIVE_OUTPUT="$evidence" \
           APPARENT_FOREGROUND_NATIVE_INPUT="$evidence/pill-input" \

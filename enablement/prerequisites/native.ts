@@ -70,7 +70,7 @@ export function checkNativeInputs(root: string, platform = process.platform): st
     'capture/desktop/ui/frontend/electron/record-media/native/apparent-engine-frames-native',
     'capture/desktop/ui/frontend/electron/agent-media/native/apparent-engine-frames-native',
     'capture/desktop/ui/frontend/tests/mac-storage-native.cjs',
-    'capture/desktop/scripts/native/copy-capture-id.swift',
+    'capture/desktop/enablement/native/copy-capture-id.swift',
     'capture/desktop/assets/Apparent.icns',
     'shared/assets/fonts/HostGrotesk-Variable.ttf',
     'shared/assets/brand/apparent-wordmark.png',

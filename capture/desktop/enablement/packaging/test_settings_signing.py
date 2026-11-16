@@ -1,0 +1,185 @@
+"""Exercise nested Electron signing order without invoking a real signer."""
+import importlib.util
+import json
+from pathlib import Path
+import plistlib
+import subprocess
+import tempfile
+import unittest
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location("stage_settings", Path(__file__).with_name("stage-settings.py"))
+stage = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(stage)
+
+
+class SigningTests(unittest.TestCase):
+    def test_controls_page_is_in_the_installed_settings_closure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            frontend = root / "capture/desktop/ui/frontend"
+            for relative in ("electron/main.cjs", "electron/preload.cjs", "electron/settings.cjs",
+                             "dist/settings.html", "dist/onboarding.html", "dist/src/controls/index.html",
+                             "dist/onboarding-presentation.cjs", "dist/onboarding-hyprland.cjs", "dist/onboarding-selection.cjs", "dist/onboarding-wispr.cjs",
+                             "dist/src/installer/index.html", "dist/pill/index.html",
+                             "dist/assets/controls.js", "node_modules/electron/dist/electron",
+                             "electron/pill/native/window.node",
+                             "electron/pill/t3.cjs",
+                             "electron/settings/t3.cjs", "electron/settings/update-worker.cjs",
+                             "electron/storage-owner/cleanup-policy/package.json",
+                             "electron/storage-owner/cleanup-policy/policy.js",
+                             "electron/storage-owner/cleanup-policy/retention/policy.js",
+                             "electron/storage-owner/cleanup-policy/retention/worker.js",
+                             "electron/record-media/worker.js", "electron/record-media/policy.js",
+                             "electron/record-media/assembly-worker.js", "electron/record-media/assembly-policy.js",
+                             "electron/record-media/transcript/worker.js", "electron/record-media/transcript/policy.js",
+                             "electron/record-media/node_modules/@apparent/engine-sdk/dist/index.js",
+                             "electron/record-media/native/apparent-engine-media",
+                             "electron/record-media/native/apparent-engine-probe",
+                             "electron/record-media/native/apparent-engine-frames",
+                             "electron/record-media/native/apparent-engine-frames-native",
+                             "electron/agent-media/worker.js", "electron/agent-media/policy.js",
+                             "electron/agent-media/node_modules/@apparent/engine-sdk/dist/index.js",
+                             "electron/agent-media/native/apparent-engine-frames",
+                             "electron/agent-media/native/apparent-engine-frames-native"):
+                file = frontend / relative
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_text(relative)
+            for name in ("window-theme.cjs", "tokens.css"):
+                file = root / "shared/ui/src" / name
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_text(name)
+            destination = root / "staged"
+            connect = root / "connect/client/typescript"
+            (connect / "dist").mkdir(parents=True)
+            module = "export const syntheticListing = true;\n"
+            (connect / "dist/shares.js").write_text(module)
+            (connect / "dist/handoff.js").write_text("synthetic handoff")
+            (connect / "dist/foreground.js").write_text("synthetic foreground")
+            (connect / "dist/activity").mkdir()
+            (connect / "dist/activity/index.js").write_text("synthetic activity")
+            (connect / "dist/transfer.js").write_text("synthetic transfer")
+            (connect / "dist/transfer").mkdir()
+            (connect / "dist/transfer/contract.js").write_text("synthetic transfer-contract")
+            script = root / "capture/desktop/enablement/packaging/stage-settings.py"
+            with patch.object(stage, "__file__", str(script)), \
+                 patch.object(stage.sys, "argv", [str(script), str(destination)]), \
+                 patch.object(stage.sys, "platform", "linux"), \
+                 patch.object(stage.subprocess, "run") as build:
+                stage.main()
+            self.assertTrue(any(call.kwargs.get("cwd") == connect and call.args[0] == ["npm", "run", "build"] for call in build.call_args_list))
+            self.assertEqual((destination / "app/connect-client/dist/shares.js").read_text(), module)
+            self.assertEqual((destination / "app/connect-client/dist/handoff.js").read_text(), "synthetic handoff")
+            self.assertEqual((destination / "app/connect-client/dist/foreground.js").read_text(), "synthetic foreground")
+            self.assertEqual((destination / "app/connect-client/dist/activity/index.js").read_text(), "synthetic activity")
+            self.assertEqual((destination / "app/connect-client/dist/transfer.js").read_text(), "synthetic transfer")
+            self.assertEqual((destination / "app/connect-client/dist/transfer/contract.js").read_text(), "synthetic transfer-contract")
+            self.assertEqual(json.loads((destination / "app/connect-client/package.json").read_text()), {"type": "module"})
+            self.assertEqual((destination / "app/dist/src/controls/index.html").read_text(), "dist/src/controls/index.html")
+            for relative in ("electron/main.cjs", "electron/preload.cjs", "dist/assets/controls.js",
+                             "node_modules/@apparent/ui/src/window-theme.cjs"):
+                self.assertTrue((destination / "app" / relative).is_file(), relative)
+            self.assertEqual((destination / "app/electron/installer/ui/src/installer/index.html").read_text(), "dist/src/installer/index.html")
+            self.assertEqual((destination / "app/dist/pill/index.html").read_text(), "dist/pill/index.html")
+            self.assertEqual((destination / "app/electron/pill/t3.cjs").read_text(), "electron/pill/t3.cjs")
+            for name in ("presentation", "hyprland", "selection", "wispr"):
+                relative = f"dist/onboarding-{name}.cjs"
+                self.assertEqual((destination / "app" / relative).read_text(), relative)
+            self.assertTrue((destination / "runtime/electron").is_file())
+            self.assertTrue((destination / "app/electron/settings/update-worker.cjs").is_file())
+            self.assertTrue((destination / "app/electron/record-media/worker.js").is_file())
+            self.assertTrue((destination / "app/electron/record-media/assembly-worker.js").is_file())
+            self.assertTrue((destination / "app/electron/storage-owner/cleanup-policy/retention/worker.js").is_file())
+            self.assertTrue((destination / "app/electron/record-media/transcript/worker.js").is_file())
+            self.assertTrue((destination / "app/electron/record-media/native/apparent-engine-media").is_file())
+            self.assertFalse((destination / "app/electron/pill/native/window.node").exists())
+            for identity in ("-", "Developer ID Application: Synthetic"):
+                mac = root / ("mac-ad-hoc" if identity == "-" else "mac-release")
+                addon = mac / "app/electron/pill/native/window.node"
+                signed = []
+
+                def invoke(command, **kwargs):
+                    signed.append(command)
+
+                def runtime_signer(runtime, sign, entitlements):
+                    self.assertIn(sign + [str(addon)], signed)
+                    self.assertIn(["codesign", "--verify", "--strict", str(addon)], signed)
+                    for name in ("apparent-engine-media", "apparent-engine-probe", "apparent-engine-frames", "apparent-engine-frames-native"):
+                        binary = mac / "app/electron/record-media/native" / name
+                        self.assertIn(sign + [str(binary)], signed)
+                        self.assertIn(["codesign", "--verify", "--strict", str(binary)], signed)
+                    for name in ("apparent-engine-frames", "apparent-engine-frames-native"):
+                        binary = mac / "app/electron/agent-media/native" / name
+                        self.assertIn(sign + [str(binary)], signed)
+                        self.assertIn(["codesign", "--verify", "--strict", str(binary)], signed)
+                    self.assertEqual("--timestamp" in sign, identity != "-")
+
+                with patch.object(stage, "__file__", str(script)), \
+                     patch.object(stage.sys, "argv", [str(script), str(mac), "--sign", identity]), \
+                     patch.object(stage.sys, "platform", "darwin"), \
+                     patch.object(stage.subprocess, "run", side_effect=invoke), \
+                     patch.object(stage, "sign_runtime", side_effect=runtime_signer) as runtime:
+                    stage.main()
+                self.assertEqual(addon.read_text(), "electron/pill/native/window.node")
+                runtime.assert_called_once()
+            (frontend / "electron/pill/native/window.node").unlink()
+            with patch.object(stage, "__file__", str(script)), \
+                 patch.object(stage.sys, "argv", [str(script), str(root / "missing-adapter"), "--sign", "-"]), \
+                 patch.object(stage.sys, "platform", "darwin"), \
+                 patch.object(stage.subprocess, "run"):
+                with self.assertRaises(SystemExit):
+                    stage.main()
+
+    def test_principal_executables_wait_for_nested_code(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            runtime = Path(temporary) / "Electron.app"
+            helper = runtime / "Contents/Frameworks/Electron Helper (Renderer).app"
+            framework = runtime / "Contents/Frameworks/Electron Framework.framework"
+            principals = []
+            for bundle in (runtime, helper, framework):
+                bundle.mkdir(parents=True, exist_ok=True)
+                name = bundle.stem
+                if bundle.suffix == ".app":
+                    info = bundle / "Contents/Info.plist"
+                    binary = bundle / "Contents/MacOS" / name
+                else:
+                    info = bundle / "Versions/A/Resources/Info.plist"
+                    binary = bundle / "Versions/A" / name
+                    (bundle / "Resources").symlink_to("Versions/A/Resources")
+                    (bundle / name).symlink_to("Versions/A/" + name)
+                info.parent.mkdir(parents=True, exist_ok=True)
+                info.write_bytes(plistlib.dumps({} if bundle == helper else {"CFBundleExecutable": name}))
+                binary.parent.mkdir(parents=True, exist_ok=True)
+                binary.write_bytes(b"\xcf\xfa\xed\xfe synthetic Mach-O")
+                principals.append(binary)
+            library = framework / "Versions/A/Libraries/libfixture.dylib"
+            library.parent.mkdir()
+            library.write_bytes(b"\xcf\xfa\xed\xfe synthetic library")
+            signed = []
+
+            def signer(command, check):
+                target = Path(command[-1])
+                if "--verify" in command:
+                    self.assertEqual(command, ["codesign", "--verify", "--deep", "--strict", str(runtime)])
+                    self.assertEqual(signed[-1], runtime)
+                    return
+                # codesign treats the principal path as its bundle; this failed in CI.
+                self.assertNotIn(target, principals)
+                if target == framework:
+                    self.assertIn(library, signed)
+                if target == runtime:
+                    self.assertIn(helper, signed)
+                    self.assertIn(framework, signed)
+                signed.append(target)
+
+            with patch.object(stage.subprocess, "run", side_effect=signer):
+                stage.sign_runtime(runtime, ["codesign", "--force", "--sign", "-"], Path("Settings.entitlements"))
+            self.assertEqual(set(signed), {library, helper, framework, runtime})
+            with patch.object(stage.subprocess, "run", side_effect=subprocess.CalledProcessError(1, "codesign")) as run:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    stage.sign_runtime(runtime, ["codesign", "--sign", "-"], Path("Settings.entitlements"))
+                self.assertEqual(run.call_count, 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

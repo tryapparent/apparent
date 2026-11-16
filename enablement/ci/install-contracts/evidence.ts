@@ -4,7 +4,7 @@ import {mkdtempSync, writeFileSync, rmSync} from 'node:fs';
 import {tmpdir, release} from 'node:os';
 import {join} from 'node:path';
 
-export const installCommand = {argv: ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/desktop-install.test.ts'], cwd: '.'};
+export const installCommand = {argv: ['node', '--experimental-strip-types', '--test', 'capture/desktop/enablement/local-tests/desktop-install.test.ts'], cwd: '.'};
 export const fixtureStep = 'Real hook and dependency-install fixtures without native application builds';
 export type Identity = {sha: string; tree: string; run: string; attempt: string; workflow: string;
   node: string; npm: string; platform: string; arch: string; image: string; osRelease: string; suite: typeof installCommand};

@@ -5,7 +5,7 @@ import {dirname, isAbsolute, relative, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-const sourceOwners = ['enablement/local-tests', 'enablement/ci'];
+const sourceOwners = ['enablement/local-tests', 'enablement/ci', 'capture/desktop/enablement'];
 const excluded = new Set(['fixtures', 'node_modules', 'dist', 'target', '.git']);
 function within(parent: string, child: string): boolean {
   const path = relative(parent, child);
@@ -19,6 +19,7 @@ export function copyRunnerSources(destination: string, source = root): void {
   function copy(path: string): void {
     for (const entry of readdirSync(resolve(origin, path), {withFileTypes: true})) {
       if (excluded.has(entry.name)) continue;
+      if (path === 'capture/desktop/enablement' && entry.name !== 'local-tests' && entry.name !== 'inputs.ts') continue;
       const child = resolve(origin, path, entry.name);
       if (entry.isSymbolicLink()) throw Error(`Unsupported fixture source symlink: ${child}`);
       if (entry.isDirectory()) copy(relative(origin, child));

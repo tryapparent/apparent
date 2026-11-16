@@ -68,7 +68,7 @@ jobs:
         id: release
         run: |
           if [ "$GITHUB_REF" = refs/heads/main ]; then
-            node --experimental-strip-types capture/desktop/scripts/release/desktop-version.ts
+            node --experimental-strip-types capture/desktop/enablement/release/desktop-version.ts
           fi
           tag=$(sed -n 's/^APPARENT_PREVIEW_TAG=//p' "$GITHUB_ENV" | tail -n 1)
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -86,7 +86,7 @@ jobs:
           APPLE_DEVELOPER_ID_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
           APPLE_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
           APPLE_NOTARY_PRIVATE_KEY: ${{ secrets.APPLE_NOTARY_PRIVATE_KEY }}
-        run: bash capture/desktop/scripts/release/prepare-mac-signing.sh
+        run: bash capture/desktop/enablement/release/prepare-mac-signing.sh
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -99,17 +99,17 @@ jobs:
         env:
           POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
         run: |
-          node --experimental-strip-types --test capture/desktop/scripts/release/desktop-version.test.ts capture/desktop/scripts/release/posthog-release.test.ts
-          node --experimental-strip-types capture/desktop/scripts/release/posthog-release.ts macos
+          node --experimental-strip-types --test capture/desktop/enablement/release/desktop-version.test.ts capture/desktop/enablement/release/posthog-release.test.ts
+          node --experimental-strip-types capture/desktop/enablement/release/posthog-release.ts macos
       - name: Build and verify the preview app
         env:
           APPARENT_APPLE_SIGNING_DIR: ${{ runner.temp }}/apparent-apple-signing
           APPARENT_PREVIEW_PUBLIC_KEY: ${{ vars.SPARKLE_PREVIEW_PUBLIC_KEY }}
           APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
         run: |
-          python3 -m unittest discover -s capture/desktop/scripts/tests -p 'test_preview_*.py'
-          bash capture/desktop/scripts/packaging/build-mac-preview.sh
-          capture/desktop/scripts/support/check-ca-roots.sh target/release/apparent
+          python3 -m unittest discover -s capture/desktop/enablement/tests -p 'test_preview_*.py'
+          bash capture/desktop/enablement/packaging/build-mac-preview.sh
+          capture/desktop/enablement/support/check-ca-roots.sh target/release/apparent
           target/release/apparent --help
       - name: Sign the Sparkle archive
         env:
@@ -118,12 +118,12 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$SPARKLE_PREVIEW_PRIVATE_KEY" || { echo 'Missing preview Sparkle signing secret' >&2; exit 1; }
-          swift capture/desktop/scripts/release/verify-preview-sparkle-key.swift
+          swift capture/desktop/enablement/release/verify-preview-sparkle-key.swift
           version="$APPARENT_PREVIEW_VERSION"
           zip="dist/Apparent-Preview-${version}-arm64.zip"
           # Sparkle reads the key from stdin; do not put it in arguments, logs or the checkout.
           printf '%s\n' "$SPARKLE_PREVIEW_PRIVATE_KEY" | \
-            "$(capture/desktop/scripts/release/setup-sparkle.sh)/bin/sign_update" --ed-key-file - "$zip" \
+            "$(capture/desktop/enablement/release/setup-sparkle.sh)/bin/sign_update" --ed-key-file - "$zip" \
             > "$RUNNER_TEMP/preview-signature-attributes"
       - name: Recheck candidate against live feed before public release
         env:
@@ -132,7 +132,7 @@ jobs:
           set -euo pipefail
           gh api 'repos/tryapparent/apparent/contents/appcast.xml?ref=preview-mac-feed' --jq .content | \
             python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read()))' > "$RUNNER_TEMP/live-preview-before-release.xml"
-          python3 capture/desktop/scripts/release/preview_appcast.py \
+          python3 capture/desktop/enablement/release/preview_appcast.py \
             --previous "$RUNNER_TEMP/live-preview-before-release.xml" \
             --zip "dist/Apparent-Preview-${APPARENT_PREVIEW_VERSION}-arm64.zip" \
             --version "$APPARENT_PREVIEW_VERSION" --build-number "$APPARENT_PREVIEW_BUILD_NUMBER" \
@@ -218,7 +218,7 @@ jobs:
             python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["content"].replace("\n", ""), end="")' \
               "$RUNNER_TEMP/preview-feed-response.json" | base64 -D > "$previous"
           fi
-          python3 capture/desktop/scripts/release/preview_appcast.py \
+          python3 capture/desktop/enablement/release/preview_appcast.py \
             --previous "$previous" --zip "$zip" --version "$version" --build-number "$build" \
             --tag "$APPARENT_PREVIEW_TAG" \
             --signature-attributes "$(cat "$RUNNER_TEMP/preview-signature-attributes")" \
@@ -265,8 +265,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          node --experimental-strip-types --test capture/desktop/scripts/release/homebrew/publish.test.ts
-          node --experimental-strip-types capture/desktop/scripts/release/homebrew/publish.ts prepare \
+          node --experimental-strip-types --test capture/desktop/enablement/release/homebrew/publish.test.ts
+          node --experimental-strip-types capture/desktop/enablement/release/homebrew/publish.ts prepare \
             "$RELEASE_TAG" "$RELEASE_SHA" "$RUNNER_TEMP/apparent.rb"
       - name: Verify Homebrew installation on Apple silicon
         run: |
@@ -306,5 +306,5 @@ jobs:
           ssh-key: ${{ secrets.HOMEBREW_TAP_SSH_KEY }}
       - name: Publish and read back the verified cask
         run: |
-          node --experimental-strip-types capture/desktop/scripts/release/homebrew/publish.ts publish \
+          node --experimental-strip-types capture/desktop/enablement/release/homebrew/publish.ts publish \
             "$GITHUB_WORKSPACE/homebrew-publish" "$RUNNER_TEMP/apparent.rb"

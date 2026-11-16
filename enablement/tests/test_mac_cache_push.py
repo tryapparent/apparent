@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
-SPEC = importlib.util.spec_from_file_location('mac_cache', ROOT / 'capture/desktop/scripts/mac/cache.py')
+SPEC = importlib.util.spec_from_file_location('mac_cache', ROOT / 'capture/desktop/enablement/mac/cache.py')
 cache = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(cache)
 
@@ -98,7 +98,7 @@ class CacheTests(unittest.TestCase):
     def test_fifo_archive_is_rejected_without_blocking(self):
         os.mkfifo(self.archive)
         result = subprocess.run(
-            [sys.executable, str(ROOT / 'capture/desktop/scripts/mac/cache.py'),
+            [sys.executable, str(ROOT / 'capture/desktop/enablement/mac/cache.py'),
              'import', '--cargo-home', str(self.dest), '--archive',
              str(self.archive), '--lock', str(self.lock)],
             capture_output=True, text=True, timeout=2)

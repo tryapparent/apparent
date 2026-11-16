@@ -269,7 +269,7 @@ with patch.object(sys, 'argv', [script, destination]), patch.object(stage.subpro
 assert calls == [['npm', 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], ['node', 'node_modules/electron/install.js']]
 assert not Path(destination).exists()
 `;
-  const result = spawnSync('python3', ['-c', probe, resolve('capture/desktop/scripts/packaging/stage-settings.py'),
+  const result = spawnSync('python3', ['-c', probe, resolve('capture/desktop/enablement/packaging/stage-settings.py'),
     cache, resolve(f.root, 'staged-app')], { env, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
 });

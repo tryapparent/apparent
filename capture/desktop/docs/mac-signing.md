@@ -90,7 +90,7 @@ on the disposable session; NoMac can otherwise default to a relaxed environment.
 ## Local checks
 
 Run `python3 -m unittest discover -s scripts/tests -p 'test_preview_*.py'` and
-`bash -n capture/desktop/scripts/release/prepare-mac-signing.sh capture/desktop/scripts/packaging/build-mac-preview.sh`.
+`bash -n capture/desktop/enablement/release/prepare-mac-signing.sh capture/desktop/enablement/packaging/build-mac-preview.sh`.
 The tests use synthetic credentials and fake Mac tools to exercise failure/ordering/layout.
 They do not establish certificate validity, native tool compatibility, Apple acceptance,
 Gatekeeper behavior or a successful live update. Record native acceptance separately; these local checks cannot close those gates.

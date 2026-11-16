@@ -48,7 +48,7 @@ runs these steps automatically, and the app does not install or restart services
    Tests also need Python 3 and an installed Lua 5.3/5.4 library:
 
    ```sh
-   sh capture/desktop/scripts/linux/maintenance/build-playback.sh "$HOME/.cache/apparent-playback-build" --test
+   sh capture/desktop/enablement/linux/maintenance/build-playback.sh "$HOME/.cache/apparent-playback-build" --test
    ```
 
    Alternatively set `SPA_INCLUDE_DIR` to the `spa/include` directory of the

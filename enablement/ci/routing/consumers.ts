@@ -1,13 +1,9 @@
 import {independentInputs} from './engine-inputs/qualify.ts';
+import {desktopPackagingInputs, linuxDrivers} from '../../../capture/desktop/enablement/inputs.ts';
+export {desktopPackagingInputs, linuxDrivers} from '../../../capture/desktop/enablement/inputs.ts';
 // Owner facts shared by hosted admission and local pushes. Unknown inputs stay broad.
 export const owners = ['capture', 'engine', 'desktop', 'capture-tools', 'client', 'client-foreground', 'web', 'service', 'public', 'hermes', 'tooling', 'onboarding', 'engine-media'] as const;
 export type Owner = typeof owners[number];
-// These prepare the installed renderer/runtime and the app consumed by the
-// foreground client. They do not build the independently published Engine.
-export const desktopPackagingInputs = new Set([
-  'capture/desktop/scripts/packaging/install-app.sh',
-  'capture/desktop/scripts/packaging/frontend/stage.ts',
-]);
 export const publicMarkdown = new Set([
   'README.md', 'capture/agent/skills/apparent/SKILL.md', 'capture/agent/docs/usage.md',
   'capture/desktop/docs/guides/recording.md', 'capture/engine/docs/guides/processing.md',
@@ -24,8 +20,7 @@ export function documentationOnlyPath(path: string): boolean {
       'connect/service', 'public/site', 'shared', 'enablement', 'record/storage', 'record/completion', 'record/media', 'engine', 'engine/sdk'].some(owner =>
       path.startsWith(owner + '/docs/') || ['README', 'CHANGELOG', 'CONTRIBUTING', 'LICENSE'].some(name => path === `${owner}/${name}.md`));
 }
-export const linuxDrivers = new Set(['capture-smoke.py', 'gui-vm.py', 'gui-vm-reaper.py',
-  'test-capture-smoke.py', 'test-gui-vm.py'].map(name => 'capture/desktop/scripts/linux/gui/' + name));
+
 const webAssets = new Set(['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.png',
   'hosted/agent-reading-v4.png', 'fonts/HostGrotesk-Variable.ttf', 'brand/apparent-wordmark.svg']
   .map(path => 'public/site/public/assets/' + path));
@@ -166,8 +161,10 @@ function directConsumers(path: string): readonly Owner[] {
   if (path.startsWith('capture/desktop/ui/frontend/')) return ['desktop', 'capture'];
   // These drivers are executed by the installed foreground proof, whose job
   // condition requires a Desktop consumer as well as the native application.
-  if (path.startsWith('capture/desktop/scripts/native/foreground/')) return ['capture', 'engine', 'desktop', 'capture-tools'];
-  if (path.startsWith('capture/desktop/scripts/') || path.startsWith('capture/agent/scripts/')) return ['capture', 'engine', 'capture-tools'];
+  if (path.startsWith('capture/desktop/enablement/native/foreground/')) return ['capture', 'engine', 'desktop', 'capture-tools'];
+  if (path.startsWith('capture/desktop/enablement/local-tests/')) return owners.filter(owner => owner !== 'engine-media');
+  if (path === 'capture/desktop/enablement/inputs.ts') return owners;
+  if (path.startsWith('capture/desktop/enablement/') || path.startsWith('capture/agent/scripts/')) return ['capture', 'engine', 'capture-tools'];
   if (path.startsWith('capture/desktop/')) return ['desktop', 'capture', 'engine', 'capture-tools'];
   if (path.startsWith('capture/engine/tests/') || path.startsWith('capture/engine/src/') || ['capture/engine/Cargo.toml', 'capture/engine/Cargo.lock'].includes(path)) return ['engine'];
   if (path.startsWith('capture/') || path.startsWith('composition/')) return ['capture', 'engine'];
@@ -271,7 +268,7 @@ export function routeDecision(paths: string[] | null, workflowControls: string[]
   const publicSelected = selected.includes('public');
   if (publicSelected && !selected.includes('public')) selected.push('public');
   const updater = unknown || !!orchestration || !!effective?.some(path =>
-    ['capture/desktop/scripts/linux/gui/', 'capture/desktop/scripts/linux/updater/'].some(prefix => path.startsWith(prefix)) ||
+    ['capture/desktop/enablement/linux/gui/', 'capture/desktop/enablement/linux/updater/'].some(prefix => path.startsWith(prefix)) ||
     ['.github/workflows/linux-updater-harness.yml', 'capture/desktop/linux/update.rs',
       'capture/desktop/settings/settings.rs', 'capture/desktop/settings/settings_window.rs'].includes(path));
   const streams = Object.fromEntries(Object.keys(streamPaths).map(stream => [stream, unknown || !!paths?.some(path => affectsStream(stream as Stream, path))]));

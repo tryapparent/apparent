@@ -14,8 +14,8 @@ function enabled(expression: string, inputs: any, outputs: any) {
 }
 test('native foreground proof drivers select and execute their installed Mac consumer', () => {
   const foreground=jobs.rust.steps.find((s:any)=>s.id==='native_foreground');
-  for(const path of ['capture/desktop/scripts/native/foreground/pill-input.swift',
-    'capture/desktop/scripts/native/foreground/scene.swift']) {
+  for(const path of ['capture/desktop/enablement/native/foreground/pill-input.swift',
+    'capture/desktop/enablement/native/foreground/scene.swift']) {
     const plan=suitePlan([path]);
     const outputs=Object.fromEntries(Object.entries(plan).map(([key,value])=>[key,String(value)]));
     assert.equal(enabled(jobs.rust.if,{runner:'macos-15-intel',mac_rust:true,release_receipt:false},outputs),true,path);

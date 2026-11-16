@@ -34,7 +34,7 @@ test('owner selection retains consumers and unrelated packages stay out', () => 
   assert.deepEqual(select(['public/site/src/App.tsx']), ['public']);
   assert.deepEqual(select(['connect/web/src/api.ts']), ['web']);
   assert.deepEqual(select(['hermes/inspect.py']), ['hermes']);
-  assert.deepEqual(select(['capture/desktop/scripts/packaging/install-app.sh']), ['capture', 'engine', 'desktop', 'capture-tools', 'client-foreground']);
+  assert.deepEqual(select(['capture/desktop/enablement/packaging/install-app.sh']), ['capture', 'engine', 'desktop', 'capture-tools', 'client-foreground']);
   assert.deepEqual(select(['README.md']), ['public']);
 });
 
@@ -48,8 +48,8 @@ test('unknown, missing history and empty deltas cannot silently skip coverage', 
 });
 
 test('new install fixtures run for their tooling/dependency inputs, not ordinary product edits', () => {
-  for (const path of ['enablement/local-tests/desktop-install.ts', 'enablement/local-tests/receipt.ts',
-    'capture/desktop/scripts/packaging/install-app.sh', 'capture/desktop/scripts/packaging/frontend/stage.ts',
+  for (const path of ['capture/desktop/enablement/local-tests/desktop-install.ts', 'enablement/local-tests/receipt.ts',
+    'capture/desktop/enablement/packaging/install-app.sh', 'capture/desktop/enablement/packaging/frontend/stage.ts',
     'enablement/local-tests/service.ts', '.githooks/pre-push', '.github/workflows/verification-platform.yml',
     'capture/desktop/ui/frontend/package.json', 'capture/desktop/ui/frontend/package-lock.json',
     'capture/desktop/ui/frontend/.npmrc', 'capture/desktop/ui/frontend/scripts/build-storage-policy.ts',
@@ -64,10 +64,10 @@ test('new install fixtures run for their tooling/dependency inputs, not ordinary
   const workflow = '.github/workflows/checks.yml';
   assert.equal(installationContracts([workflow], [workflow]).length, 0, 'proven control-only edits retain their cheap gate');
   assert.equal(installationContracts([workflow, 'capture/desktop/ui/frontend/package.json'], [workflow]).length, 1);
-  assert.ok(!contractTests().some(command => command.argv.includes('enablement/local-tests/desktop-install.test.ts')),
+  assert.ok(!contractTests().some(command => command.argv.includes('capture/desktop/enablement/local-tests/desktop-install.test.ts')),
     'unrelated cheap contracts retain their old inventory');
   const plan = commands(['capture', 'desktop'], 'base', 'head', 'linux', true, {paths: ['capture/desktop/ui/frontend/src/main.tsx']});
-  assert.ok(!plan.some(command => command.argv.includes('enablement/local-tests/desktop-install.test.ts')));
+  assert.ok(!plan.some(command => command.argv.includes('capture/desktop/enablement/local-tests/desktop-install.test.ts')));
   assert.ok(plan.some(command => command.argv.includes('test:electron')), 'actual renderer tests stay selected');
 });
 
@@ -213,7 +213,7 @@ test('committed concurrency-only workflow edits select contracts rather than pro
   assert.deepEqual(commands(result.selected, base, 'HEAD', process.platform, result.rustChanged,
     {paths: result.paths, workflowControls: result.workflowControls}).map(command => command.argv), [
     ['python3', 'enablement/verification.py', '--base', base, '--head', 'HEAD', '--pr'],
-    ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/desktop-install.test.ts'],
+    ['node', '--experimental-strip-types', '--test', 'capture/desktop/enablement/local-tests/desktop-install.test.ts'],
       ['node', '--experimental-strip-types', '--test', 'enablement/posthog-fixer/test/service.test.ts', 'enablement/posthog-fixer/test/t3.test.ts'],
     ['python3', '-m', 'unittest', 'discover', '-s', 'enablement/directory-width/tests', '-p', 'test_*.py'],
   ]);
@@ -251,25 +251,25 @@ test('real Git delta includes earlier commits and both sides of cross-owner rena
 }));
 
 test('capture script changes execute offline contracts including hyphenated and new test files', () => fixture((dir, env) => {
-  for (const path of ['capture/desktop/scripts/packaging/test_installer_guard.py',
-    'capture/desktop/scripts/tests/mac/test_setup.py', 'capture/desktop/scripts/linux/gui/test-gui-vm.py',
-    'capture/agent/scripts/tests/test_provision_narrator.py', 'capture/desktop/scripts/new/test_new.py',
-    'capture/desktop/scripts/linux/gui/input/qmp.test.ts']) {
+  for (const path of ['capture/desktop/enablement/packaging/test_installer_guard.py',
+    'capture/desktop/enablement/tests/mac/test_setup.py', 'capture/desktop/enablement/linux/gui/test-gui-vm.py',
+    'capture/agent/scripts/tests/test_provision_narrator.py', 'capture/desktop/enablement/new/test_new.py',
+    'capture/desktop/enablement/linux/gui/input/qmp.test.ts']) {
     const parent = path.slice(0, path.lastIndexOf('/'));
     mkdirSync(join(dir, parent), { recursive: true }); writeFileSync(join(dir, path), '');
   }
   for (const args of [['init', '-q'], ['add', '.']]) assert.equal(spawnSync('git', args, { cwd: dir, env }).status, 0);
   const suites = captureToolTests(dir);
   assert.equal(suites.length, 6, 'five Python files stay isolated and the Node files share one runner');
-  assert.ok(suites.some(command => command.argv.includes('capture/desktop/scripts/new/test_new.py')));
-  const hyphenated = suites.find(command => command.argv.includes('capture/desktop/scripts/linux/gui/test-gui-vm.py'))!;
+  assert.ok(suites.some(command => command.argv.includes('capture/desktop/enablement/new/test_new.py')));
+  const hyphenated = suites.find(command => command.argv.includes('capture/desktop/enablement/linux/gui/test-gui-vm.py'))!;
   assert.ok(hyphenated);
   const receipt = join(dir, 'executed');
   writeFileSync(join(dir, hyphenated.argv.at(-1)!), `import unittest\nfrom pathlib import Path\nclass Contract(unittest.TestCase):\n def test_failure(self):\n  Path(${JSON.stringify(receipt)}).write_text('executed')\n  self.fail('hyphenated regression reached')\n`);
   assert.throws(() => execute([hyphenated], dir), /failed \(1\)/);
   assert.equal(readFileSync(receipt, 'utf8'), 'executed');
-  const typescript = suites.find(command => command.argv.includes('capture/desktop/scripts/linux/gui/input/qmp.test.ts'))!;
-  const tsPath = 'capture/desktop/scripts/linux/gui/input/qmp.test.ts';
+  const typescript = suites.find(command => command.argv.includes('capture/desktop/enablement/linux/gui/input/qmp.test.ts'))!;
+  const tsPath = 'capture/desktop/enablement/linux/gui/input/qmp.test.ts';
   writeFileSync(join(dir, tsPath), "import {test} from 'node:test'; test('must run', () => { throw Error('native input regression reached'); });\n");
   // A nested Node runner otherwise inherits this test worker's recursion guard
   // and silently skips its files. Exercise the real hook's outside-worker env.
@@ -286,7 +286,7 @@ test('real capture-tool inventory is unchanged while TypeScript tests use one or
   const python = plan.filter(command => command.argv[0] === 'python3');
   const node = plan.filter(command => command.argv[0] === 'node');
   assert.equal(node.length, 1);
-  const tracked = spawnSync('git', ['ls-files', '-z', '--', 'capture/desktop/scripts/', 'capture/agent/scripts/'],
+  const tracked = spawnSync('git', ['ls-files', '-z', '--', 'capture/desktop/enablement/', 'capture/agent/scripts/'],
     {cwd: root, encoding: 'utf8'});
   assert.equal(tracked.status, 0);
   const inventory = tracked.stdout.split('\0').filter(path => /\/(?:test[-_][^/]*\.py|[^/]+\.test\.ts)$/.test(path)).sort();

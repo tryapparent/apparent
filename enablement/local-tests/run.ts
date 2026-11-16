@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {changedPaths as inputPaths} from '../ci/inputs.ts';
 import {installCommand, publish, alreadyPassed} from '../ci/install-contracts/evidence.ts';
 import {serviceTests} from './service.ts';
-import {desktopDependencies, desktopPackage} from './desktop-install.ts';
+import {desktopDependencies, desktopPackage} from '../../capture/desktop/enablement/local-tests/desktop-install.ts';
 import {owners, selectedOwners, routeDecision, routingProblems, desktopPackagingInputs} from '../ci/routing/consumers.ts';
 import {selectRange} from '../ci/select.ts';
 import {explainSelection} from './preview/explain.ts';
@@ -34,9 +34,9 @@ export function selection(base: string, head: string, cwd = root, _conservativeW
 export function captureToolTests(cwd = root): Command[] {
   // Load tracked files explicitly: discovery skips hyphenated module filenames
   // and does not recurse into these non-package test folders.
-  const result = spawnSync('git', ['ls-files', '-z', '--', 'capture/desktop/scripts/', 'capture/agent/scripts/'], { cwd, encoding: 'utf8' });
+  const result = spawnSync('git', ['ls-files', '-z', '--', 'capture/desktop/enablement/', 'capture/agent/scripts/'], { cwd, encoding: 'utf8' });
   if (result.error || result.status !== 0) throw Error('Cannot enumerate capture tooling tests');
-  const paths = result.stdout.split('\0').filter(path => /\/(?:test[-_][^/]*\.py|[^/]+\.test\.ts)$/.test(path)).sort();
+  const paths = result.stdout.split('\0').filter(path => !path.startsWith('capture/desktop/enablement/local-tests/') && /\/(?:test[-_][^/]*\.py|[^/]+\.test\.ts)$/.test(path)).sort();
   const nodeTests = paths.filter(path => path.endsWith('.test.ts'));
   // Node's test runner isolates files in workers; keep it serial to retain the
   // former sorted file order while paying for one runtime startup. Python tests

@@ -184,6 +184,6 @@ test('producer phase inventory preserves full order, native/theme preparation an
   assert.match(scripts['test:electron'], /&& npm run build &&/);
   const workflow = readFileSync('.github/workflows/verification-platform.yml', 'utf8');
   assert.match(workflow, /if: runner.os == 'Linux'\n        shell: bash\n        run: xvfb-run -a npm run test:electron/);
-  const settings = readFileSync('capture/desktop/scripts/packaging/stage-settings.py', 'utf8');
+  const settings = readFileSync('capture/desktop/enablement/packaging/stage-settings.py', 'utf8');
   assert.ok(settings.includes('subprocess.run(["npm", "run", "build"], cwd=frontend, env=env, check=True)'));
 });

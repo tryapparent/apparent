@@ -26,7 +26,7 @@ then `granted` or `cancelled` with a `reason` (`back`, `settings-closed`, `no-se
 `parent`, `timeout`), and exits. On stdin it takes `cancel`, `back` and `granted`.
 `permission-panel --check P` prints `{"granted":…}` from a fresh process. `permission-panel --plan --settings
 X,Y,W,H --visible X,Y,W,H` prints where the card would dock (`below`, `inside`, `right`, `left` or
-`clamped`); `capture/desktop/scripts/support/check-permission-panel-dock.sh` checks the cases.
+`clamped`); `capture/desktop/enablement/support/check-permission-panel-dock.sh` checks the cases.
 
 Movie frames use the [published Engine capability](../../engine/README.md#explicit-time-movie-frames).
 The app helper's old `frames` command is retired after caller adoption.
@@ -35,7 +35,7 @@ The app helper's old `frames` command is retired after caller adoption.
 
 ```sh
 taskpolicy -c utility cargo test -j 3 --offline -- --test-threads=2
-./capture/desktop/scripts/packaging/install-app.sh
+./capture/desktop/enablement/packaging/install-app.sh
 ```
 
 On Linux, run `cargo test`; then run `apparent app` in a desktop session and record with `Alt+Shift+S`.

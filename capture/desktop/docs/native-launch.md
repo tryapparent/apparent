@@ -74,7 +74,7 @@ queued, **not** that a browser can confirm installation or foreground success.
 
 The install, preview and release bundle builders declare `apparent` in
 `CFBundleURLTypes`; GPUI's native URL-open callback applies the shared contract.
-Install and launch via `./capture/desktop/scripts/packaging/install-app.sh`, never a background daemon from
+Install and launch via `./capture/desktop/enablement/packaging/install-app.sh`, never a background daemon from
 `target/`. Use its normal Applications destination for URL verification: directly
 opening a temporary staged bundle does not establish URL-handler registration.
 On a safe Mac test surface, inspect the installed bundle with
