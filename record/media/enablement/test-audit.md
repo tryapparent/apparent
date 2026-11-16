@@ -110,3 +110,6 @@ symlinks; this is Linux development composition proof, not a sealed AppImage,
 signed Mac package, live capture, permission or physical-device verdict. Existing
 packaged/platform gates remain. Synthetic media only; no destructive cleanup,
 release or live recognition was executed.
+
+Delivery: included in [PR #1400](https://github.com/tryapparent/apparent/pull/1400)
+with the other Record test audits; final hook, hosted and exact-main gates apply.

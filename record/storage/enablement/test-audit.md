@@ -122,3 +122,6 @@ dry-run return before judging this script. It passed as the nested Storage check
 in the media development-CLI composition proof (12 cases, no cleanup executed).
 See `../../media/enablement/test-audit.md` for candidate identity and limits;
 sealed package and Mac acceptance remain separate delivery gates.
+
+Delivery: included in [PR #1400](https://github.com/tryapparent/apparent/pull/1400)
+with the other Record test audits; final hook, hosted and exact-main gates apply.

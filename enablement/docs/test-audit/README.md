@@ -28,8 +28,8 @@ no net test/support growth unless a distinct new contract justifies it.
 | --- | --- | --- |
 | Record capture-request | Audited; candidate below | Land and reconcile upstream |
 | Record completion | Audited; candidate below | Land and reconcile upstream |
-| Record storage | Audited; local candidate | [Contracts/evidence](../../../record/storage/enablement/test-audit.md); land after slice 1 |
-| Record media | Audited; local cadence/fixture candidate | [Contracts/evidence](../../../record/media/enablement/test-audit.md); delivery gates pending |
+| Record storage | Audited; PR #1400 candidate | [Contracts/evidence](../../../record/storage/enablement/test-audit.md); hook/CI gates pending |
+| Record media | Audited; PR #1400 candidate | [Contracts/evidence](../../../record/media/enablement/test-audit.md); delivery gates pending |
 | Engine SDK | Pending | Published probe/frame contracts and real provider inputs |
 | Engine legacy/native | Pending | Capture, audio, cursor/ink, keyframes/text, exports, recovery |
 | Desktop | Pending | Settings/onboarding, capture/pill, native adapters, packaging/VM |
@@ -77,9 +77,10 @@ four tests (false green), then failed the repaired malformed-handoff case with
 an unexpected saved result. Path and remote validators disabled independently each fail the repaired test. A duplicate auto-paste capability fails the consolidated assertion. Production source was restored byte-for-byte.
 Focused candidate: 19/19 pass. Disposable logs and probe are under
 `/tmp/apparent-dev-test-audit-OzLAH1/`; regenerate after cleanup.
-Independent preservation review found no lost guards; its combined admission-control finding is repaired above. Hook checks passed: 332 Desktop unit/contract passes with one skip, 59 Electron
+Independent preservation review found no lost guards; its combined admission-control finding is repaired above. Initial c02f57337 checkpoint hook passed: 332 Desktop unit/contract passes with one skip, 59 Electron
 passes, 1,066 native passes with 18 ignored. [PR #1400](https://github.com/tryapparent/apparent/pull/1400)
-is open; hosted and exact-main CI remain pending under its existing watch.
+contains the combined Record audit; its latest hook, hosted and exact-main CI
+gates remain under this owner.
 
 ## Slice 2: Record Storage
 
@@ -104,5 +105,10 @@ Removing a redundant transcript-fixture manifest write removes one further
 support line (Media total -2). This is development composition, not sealed package
 or Mac proof. Hook/PR and exact-main gates remain.
 
-Resume with slice 1 delivery, then land slices 2/3 and continue the remaining owner audits. Update this
+Deliver the combined Record slices through PR #1400, verify exact-main CI, then
+continue the remaining owner audits. Update this
 ledger and inventory statuses with each landed slice; do not stop after slice 1.
+
+All three Record slices share one bounded owner PR. Combined test/support delta:
+-5 lines and one duplicate declaration removed; production delta zero. Per-slice
+reviews, negative controls and development-composition evidence remain above.
