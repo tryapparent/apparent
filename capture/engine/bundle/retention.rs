@@ -25,6 +25,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::capture::engine::runtime::apparent_log;
 
+mod video;
+
 /// Marks a bundle to keep forever.
 pub const PINNED: &str = ".pinned";
 /// Present on this Mac while a bundle's heavy media streams to another one.
@@ -272,7 +274,8 @@ pub fn plan(captures: &Path, policy: &Policy, now: SystemTime) -> Vec<Action> {
     let mut bundles: Vec<PathBuf> = entries
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| (p.extension().is_some_and(|ext| ext == "apparent")
-            || p.file_name().is_some_and(|name| name.to_string_lossy().starts_with(".cancelled-"))) && p.is_dir())
+            || p.file_name().is_some_and(|name| name.to_string_lossy().starts_with(".cancelled-")))
+            && std::fs::symlink_metadata(p).is_ok_and(|metadata| metadata.is_dir()))
         .collect();
     bundles.sort();
     let mut actions = Vec::new();
@@ -343,10 +346,10 @@ fn shrinkable(dir: &Path, manifest: &Manifest) -> Option<PathBuf> {
     {
         return None;
     }
-    let video = dir.join(manifest.video.as_deref()?);
-    let bytes = video.metadata().ok()?.len();
+    let video = video::Video::open(dir, Path::new(manifest.video.as_deref()?)).ok()?;
+    let bytes = video.bytes();
     let bps = bytes.saturating_mul(8_000) / manifest.duration_ms;
-    (bps > SHRINK_ABOVE_BPS).then_some(video)
+    (bps > SHRINK_ABOVE_BPS).then(|| video.path().to_path_buf())
 }
 
 // MARK: Doing it
@@ -541,21 +544,19 @@ pub struct Shrunk {
 /// then swaps it in. The new movie is written beside the bundle, not in it, so a copy to
 /// another Mac never picks up half of it. `None` when it was already small.
 pub fn shrink_video(bundle: &Path, video: &Path) -> Result<Option<Shrunk>> {
-    let probe = crate::composition::media_probe::bundle_probe(video)?;
+    let relative = video.strip_prefix(bundle).context("Video is outside its bundle")?;
+    let admitted = video::Video::open(bundle, relative)
+        .context("Bundle video must be a regular file inside its bundle")?;
+    let probe = crate::composition::media_probe::bundle_probe(admitted.path())?;
     if probe.width.max(probe.height) <= SHRINK_EDGE * 115 / 100 {
         return Ok(None);
     }
-    let name = bundle
-        .file_stem()
-        .context("Bundle has no name")?
-        .to_string_lossy();
-    let tmp = bundle
-        .parent()
-        .context("Bundle has no parent")?
-        .join(format!(".{name}.shrinking.mov"));
-    let result = crate::capture::desktop::helper::shrink(video, &tmp, SHRINK_EDGE);
+    let staged = video::stage(bundle)?;
+    let _output_claim = claim(staged.path()).context("Temporary video is busy")?;
+    let tmp = staged.path().join("video.mov");
+    let result = crate::capture::desktop::helper::shrink(admitted.path(), &tmp, SHRINK_EDGE);
     let shrunk = match result {
-        Ok(s) if s.after > 0 && s.after < s.before => s,
+        Ok(s) if s.before == admitted.bytes() && s.after > 0 && s.after < s.before => s,
         Ok(s) => {
             let _ = std::fs::remove_file(&tmp);
             apparent_log(format!(
@@ -579,7 +580,7 @@ pub fn shrink_video(bundle: &Path, video: &Path) -> Result<Option<Shrunk>> {
         let _ = std::fs::remove_file(&tmp);
         anyhow::bail!("its media started copying while it was being shrunk");
     }
-    std::fs::rename(&tmp, video)?;
+    admitted.replace(&staged, std::ffi::OsStr::new("video.mov"), shrunk.after)?;
     apparent_log(format!(
         "shrink: {} {} → {} ({}×{}, {:.1} s)",
         video.display(),
@@ -603,7 +604,7 @@ fn sweep_leftovers(captures: &Path, now: SystemTime) {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
         let leftover = name.ends_with(".shrinking.mov") || name == ".trash-staging";
-        if leftover
+        if leftover && !is_claimed(&path)
             && modified_ago(&path, now).is_some_and(|ago| ago > Duration::from_secs(6 * 3600))
         {
             let _ = std::fs::remove_dir_all(&path).or_else(|_| std::fs::remove_file(&path));
@@ -828,6 +829,101 @@ mod tests {
     use super::*;
 
     #[test]
+    fn retention_plan_refuses_manifest_video_escapes_and_linked_bundles() {
+        use std::os::unix::fs::symlink;
+        let root = tempfile::tempdir().unwrap();
+        let captures = root.path().join("captures");
+        std::fs::create_dir(&captures).unwrap();
+        let outside = captures.join("outside.mov");
+        std::fs::File::create(&outside)
+            .unwrap()
+            .set_len(32 * 1024 * 1024)
+            .unwrap();
+        let valid = bundle(&captures, "inside", 0.5, true);
+        std::fs::File::create(valid.join("recording.mov"))
+            .unwrap()
+            .set_len(32 * 1024 * 1024)
+            .unwrap();
+        let external = bundle(root.path(), "external", 0.5, true);
+        symlink(&external, captures.join("linked.apparent")).unwrap();
+        for (name, relative) in [
+            ("traversal", "../outside.mov".to_owned()),
+            ("absolute", outside.to_string_lossy().into_owned()),
+            ("symlink", "linked.mov".to_owned()),
+        ] {
+            let dir = bundle(&captures, name, 0.5, true);
+            symlink(&outside, dir.join("linked.mov")).unwrap();
+            let manifest_path = dir.join("apparent.json");
+            let mut manifest: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&manifest_path).unwrap()).unwrap();
+            manifest["video"] = relative.into();
+            std::fs::write(manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        }
+        assert_eq!(
+            planned(
+                &captures,
+                &Policy {
+                    media_days: None,
+                    bundle_days: None
+                }
+            ),
+            vec![Action::Shrink {
+                bundle: valid.clone(),
+                video: valid.join("recording.mov")
+            }]
+        );
+        assert_eq!(std::fs::metadata(outside).unwrap().len(), 32 * 1024 * 1024);
+    }
+
+    #[test]
+    fn direct_shrink_refuses_escape_before_media_probe_or_encoding() {
+        let root = tempfile::tempdir().unwrap();
+        let bundle = root.path().join("capture.apparent");
+        std::fs::create_dir(&bundle).unwrap();
+        let outside = root.path().join("outside.mov");
+        std::fs::write(&outside, b"not a movie").unwrap();
+        std::os::unix::fs::symlink(&outside, bundle.join("linked.mov")).unwrap();
+        for path in [
+            &outside,
+            &bundle.join("../outside.mov"),
+            &bundle.join("linked.mov"),
+        ] {
+            let error = shrink_video(&bundle, path)
+                .err()
+                .expect("must reject invalid video");
+            let error = format!("{error:#}");
+            assert!(
+                error.contains("outside its bundle")
+                    || error.contains("regular file inside its bundle"),
+                "{error}"
+            );
+        }
+        assert_eq!(std::fs::read(&outside).unwrap(), b"not a movie");
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn leftover_sweep_preserves_active_private_encoder_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let active = root.path().join(".active.random.shrinking.mov");
+        let stale = root.path().join(".stale.random.shrinking.mov");
+        let legacy = root.path().join(".legacy.shrinking.mov");
+        std::fs::create_dir(&active).unwrap();
+        std::fs::write(active.join("video.mov"), b"partial").unwrap();
+        std::fs::create_dir(&stale).unwrap();
+        std::fs::write(&legacy, b"legacy partial").unwrap();
+        let claim = claim(&active).unwrap();
+        let now = SystemTime::now() + Duration::from_secs(7 * 3600);
+        sweep_leftovers(root.path(), now);
+        assert_eq!(std::fs::read(active.join("video.mov")).unwrap(), b"partial");
+        assert!(!stale.exists());
+        assert!(!legacy.exists());
+        drop(claim);
+        sweep_leftovers(root.path(), now);
+        assert!(!active.exists());
+    }
+
+    #[test]
     fn small_movie_retention_observation_uses_engine_without_rewriting_media() {
         let root = tempfile::tempdir().unwrap();
         let video = root.path().join("recording.mp4");
@@ -840,6 +936,57 @@ mod tests {
         assert!(shrink_video(root.path(), &video).unwrap().is_none());
         assert_eq!(std::fs::read(video).unwrap(), original);
         assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn native_shrink_replaces_only_admitted_movie_and_cleans_private_output() {
+        let root = tempfile::tempdir().unwrap();
+        let bundle = root.path().join("synthetic.apparent");
+        std::fs::create_dir(&bundle).unwrap();
+        let video = bundle.join("recording.mov");
+        let made = std::process::Command::new("ffmpeg")
+            .args([
+                "-v",
+                "error",
+                "-nostdin",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=s=2048x1152:r=10:d=2",
+                "-c:v",
+                "libx264",
+                "-qp",
+                "0",
+                "-threads",
+                "1",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&video)
+            .output()
+            .unwrap();
+        assert!(
+            made.status.success(),
+            "{}",
+            String::from_utf8_lossy(&made.stderr)
+        );
+        let before = std::fs::metadata(&video).unwrap().len();
+        let sentinel = root.path().join("unrelated.mov");
+        std::fs::write(&sentinel, b"untouched").unwrap();
+        let shrunk = shrink_video(&bundle, &video)
+            .unwrap()
+            .expect("large movie shrunk");
+        assert_eq!(shrunk.before, before);
+        assert!(shrunk.after > 0 && shrunk.after < before);
+        assert_eq!(std::fs::metadata(&video).unwrap().len(), shrunk.after);
+        let probe = crate::composition::media_probe::bundle_probe(&video).unwrap();
+        assert!(probe.width.max(probe.height) <= SHRINK_EDGE);
+        assert!(probe.duration_ms.abs_diff(2_000) < 100);
+        assert_eq!(std::fs::read(sentinel).unwrap(), b"untouched");
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 2);
+        assert_eq!(std::fs::read_dir(bundle).unwrap().count(), 1);
     }
 
     struct TempDir(PathBuf);
