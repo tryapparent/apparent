@@ -22,7 +22,8 @@
     "test:onboarding-policy": "node --experimental-strip-types --test tests/onboarding/*.test.ts tests/onboarding/wispr/*.test.ts tests/connect/flow.test.ts tests/connect/session.test.ts",
     "typecheck:onboarding-policy": "tsc -p tests/onboarding/tsconfig.json",
     "typecheck:onboarding-renderer": "tsc -p tests/onboarding/renderer/tsconfig.json",
-    "test:electron:targeted": "node --experimental-strip-types ../../../../enablement/prerequisites/targeted/run.ts"
+    "test:electron:targeted": "node --experimental-strip-types ../../../../enablement/prerequisites/targeted/run.ts",
+    "test:electron:mac": "npm run test:electron:targeted -- src/hermes/runtime.smoke.ts tests/pill/foreground/smoke.cts"
   },
   "dependencies": {
     "@apparent/ui": "file:../../../../shared/ui",

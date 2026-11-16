@@ -18,6 +18,7 @@ function fixture(t: any, failure = '') {
   const canonical = JSON.parse(readFileSync('capture/desktop/ui/frontend/package.json', 'utf8'));
   put('package.json', JSON.stringify({type: 'module', scripts: {
     'test:electron:targeted': canonical.scripts['test:electron:targeted'],
+    'test:electron:mac': canonical.scripts['test:electron:mac'],
     build: 'node --experimental-strip-types build.ts',
   }}));
   put('build.ts', `import {appendFileSync} from 'node:fs'; appendFileSync('trace', 'build\\n'); process.exit(${failure === 'build' ? 23 : 0});`);
@@ -40,12 +41,28 @@ test('${name}', async () => {
  fs.appendFileSync('trace', '${name}:end\\n'); fs.rmdirSync('active-worker');
  ${failure === 'test' && name === 'a' ? "throw Error('genuine assertion');" : ''}
 });`);
+  const macFiles=canonical.scripts['test:electron:mac'].split(' -- ')[1].split(' ');
+  assert.equal(macFiles.length,2);
+  macFiles.forEach((file:string,index:number)=>put(file,
+    (file.endsWith('.ts')?"import {createRequire} from 'node:module'; const require=createRequire(import.meta.url);\n":'')+
+    readFileSync(resolve(frontend,`tests/${['a','b'][index]}.cts`),'utf8')));
+  put('tests/unrelated.smoke.ts', "throw Error('Unrelated renderer suite must remain outside the Mac entrypoint');");
   const env = {...process.env};
   delete env.NODE_TEST_CONTEXT; // Exercise a real independent CLI, not a nested Node test worker.
   return {root, frontend, run: (files = ['tests/a.cts', 'tests/b.cts']) => spawnSync('npm',
     ['run', 'test:electron:targeted', '--', ...files], {cwd: frontend, encoding: 'utf8', env}),
+    runMac: () => spawnSync('npm',['run','test:electron:mac'],{cwd:frontend,encoding:'utf8',env}),
     trace: () => readFileSync(resolve(frontend, 'trace'), 'utf8')};
 }
+
+test('actual Mac package entrypoint prepares and runs only its bounded files, preserving failures', t => {
+  for(const failure of ['', 'runtime', 'build', 'test']) {
+    const f=fixture(t,failure),result=f.runMac();
+    assert.equal(result.status===0,failure==='',result.stdout+result.stderr);
+    assert.equal(f.trace(),failure==='runtime'?'install\n':failure==='build'?'install\nbuild\n':
+      'install\nbuild\na:start\na:end\nb:start\nb:end\n');
+  }
+});
 
 test('actual package entrypoint prepares a fresh lazy runtime before build and serial test processes', t => {
   const f = fixture(t);
