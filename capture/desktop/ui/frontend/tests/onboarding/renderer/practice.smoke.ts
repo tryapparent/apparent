@@ -53,7 +53,9 @@ test('production host alone reduces admitted practice; renderer intents wait for
  }
 
  await batch([{type:'ink',board:false,screen:5}]);await inspect('stop');
- await batch([{type:'ink',board:false,screen:0},{type:'processing'}]);await inspect('preparing');
+ await batch([{type:'ink',board:false,screen:0},{type:'processing'}]);
+ assert.equal(JSON.parse(output.trim().split('\n').at(-1)!).stage,'preparing');
+ await expect.poll(()=>page.evaluate(()=>document.visibilityState)).toBe('hidden');
  await batch([{type:'saved',copied:true}]);await inspect('copied');
  const before=output;await page.getByRole('button',{name:'Paste into your agent',exact:true}).count().then(async count=>{if(count)await page.getByRole('button',{name:'Paste into your agent',exact:true}).press('Enter');else await page.evaluate(()=>window.nativeOnboarding.action('practice-paste'));});
  await expect.poll(()=>output.slice(before.length)).toContain('practice-paste');await stage('copied');
