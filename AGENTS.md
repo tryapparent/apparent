@@ -36,7 +36,7 @@ These are ownership targets, not claims of completed migration. Engine's destina
 | Desktop | `capture/desktop/` | `capture/desktop/enablement/` | [Settings/permissions](capture/desktop/docs/onboarding-and-settings.md), [Linux](capture/desktop/docs/linux/linux.md), [motion](capture/desktop/docs/motion.md), [iPhone/routing](capture/engine/docs/iphone-and-routing.md) |
 | Agent | `capture/agent/` | `capture/agent/enablement/` | [Agent video workflow](capture/agent/docs/agent-video-workflow.md) |
 | Connect | `connect/` | `connect/enablement/` | [Hosted web](connect/docs/hosted-web.md), [client](connect/docs/hosted-client.md) |
-| Public | `public/` | `public/enablement/` | [Website/deployment](public/site/docs/pages-deploy.md) |
+| Public | `public/` | `public/enablement/` | [Website/deployment](public/enablement/docs/pages-deploy.md) |
 | Hermes | `hermes/` | `hermes/enablement/` | [Integration and distribution](hermes/README.md) |
 | Shared | `shared/` | `shared/enablement/` for shared-package tooling | Reusable UI, schemas, assets and utilities |
 | Repository Enablement | `enablement/` | Shared engineering mechanisms and repository-wide coordination only | [Verification/CI](enablement/docs/continuous-delivery.md), [local checks](enablement/local-tests/README.md), [commit hook](enablement/directory-width/README.md) |
