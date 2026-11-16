@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 
-const source = readFileSync(new URL('../../../capture/desktop/scripts/native/foreground/pill-input.swift', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../../../capture/desktop/enablement/native/foreground/pill-input.swift', import.meta.url), 'utf8');
 // Compile the production orchestration, not a TypeScript translation of it.
 // Darwin providers remain covered only by the installed foreground native case.
 function declaration(name: string) {
