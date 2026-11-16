@@ -38,6 +38,10 @@ uses Radix for focus, hover and Escape behavior. The Settings-only theme opts
 into the accepted canonical Signal and Carbon roles without changing other
 surfaces or the system appearance contract.
 
+Input provides the native text/URL field with shared colors, a 44px minimum
+height and a visible keyboard focus outline. Supply a persistent label and
+field-specific help in the owning workflow.
+
 The Desktop foundation uses a `file:` dependency with npm `install-links=true`,
 so npm installs a snapshot rather than resolving dependencies from this source
 directory. After changing this package, run `npm ci` in

@@ -366,12 +366,16 @@ bundle readers remain compatible.
 `experiments.t3DestinationPicker: true` enables it for subsequent recordings.
 Connecting alone does not enable sending. **Connect T3** explains the one-time
 setup: in T3, open **Settings → Sharing & access → Authorized clients → Create
-link**, allow reading threads and sending messages, and **Copy link**. Return to
-Apparent and choose **Paste pairing link**, check the server shown, then
-**Connect**. No terminal or external Node installation is needed. The full link
+link**, allow reading threads and sending messages, and copy the code or full link.
+Return to Apparent and choose **Paste code or link**, check the server shown,
+then **Connect**. For a code, the editable **T3 server address** defaults to the
+saved server or local T3 (`http://127.0.0.1:3773`); a full link supplies its own
+address. Direct fragment links, legacy query links and hosted app links with an
+embedded backend are supported; preview always shows the actual backend.
+No terminal or external Node installation is needed. The code or link
 stays in Electron main and its short-lived confirmation handle is consumed once;
-clipboard changes cannot switch the server after preview. Closing or cancelling
-clears the pending link. The native shared config transaction stores the private
+clipboard changes cannot switch the server after preview. Editing the address,
+closing or cancelling clears the pending confirmation. The native shared config transaction stores the private
 session alongside unrelated preferences; raw tokens never enter the page or logs.
 Settings shows the saved server or expiry, and Disconnect removes its local
 credential without revoking existing server sessions. A confirmed handoff still

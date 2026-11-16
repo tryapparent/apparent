@@ -49,7 +49,7 @@ contextBridge.exposeInMainWorld('apparentAgents', Object.freeze({
   read: () => ipcRenderer.invoke('apparent:agents-preference'),
   save: enabled => ipcRenderer.invoke('apparent:agents-preference', enabled),
   saveT3: enabled => ipcRenderer.invoke('apparent:agents-t3-preference', enabled),
-  previewT3: () => ipcRenderer.invoke('apparent:agents-t3-preview'),
+  previewT3: server => ipcRenderer.invoke('apparent:agents-t3-preview', server),
   connectT3: origin => ipcRenderer.invoke('apparent:agents-t3-connect', origin),
   cancelT3: () => ipcRenderer.invoke('apparent:agents-t3-cancel'),
   disconnectT3: () => ipcRenderer.invoke('apparent:agents-t3-disconnect'),
