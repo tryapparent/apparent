@@ -52,20 +52,15 @@ Linux AppImages and signed Mac candidate checks run it. Optional `--proof-dir`
 retains synthetic PNGs for inspection under a private disposable job directory.
 These checks do not establish GUI, capture, permissions or physical-device proof.
 
-The real composition test also observes elapsed time against the retained decoder
-on the same synthetic movie, alternating order. The published path adds a Node
-process and private-file transfer; this adoption is not a runtime optimization.
-These small warm-fixture observations cannot establish cold build savings.
-
 Revert the range caller/CLI routing and its two staged policy assets together for
 range-policy rollback; it changes neither the SDK pin nor persistence. Restoring
 the previous consumer restores the native default and margin calculation. Remove
 this bridge only after its successor adopts all three extraction paths and passes
 the same packaged Linux/macOS checks.
 Revert the decoding consumer routing, package pin and staging together for rollback.
-The legacy root decoder remains for periodic/phone media. Its superseded
-bundle-clock `movie_frames_at` wrapper is removed after adopting its final range
-caller. Record's explicit assembly frames use their own
+The replaced root file-frame readers and bundle-clock wrapper have been retired;
+restore their code and callers before rolling decoding back to them. Live capture,
+audio, encoding and image rendering remain native. Record's assembly frames use their own
 published-SDK worker through the same resource adapter. No config writer or persistence format changes.
 Native policy/rendering elsewhere and the root CLI build remain migration debt;
 this slice makes no full independence or build-speed claim.
