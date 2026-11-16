@@ -1,3 +1,5 @@
+import {connectCommands, connectClientCommands, foregroundCommands} from '../../connect/enablement/ci/commands.ts';
+export {foregroundCommands} from '../../connect/enablement/ci/commands.ts';
 // Local owner-level gates. Native/release proof remains separately required.
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
@@ -83,15 +85,7 @@ export function toolingCommands(): Command[] {
   ];
 }
 
-export function foregroundCommands(): Command[] {
-  const cwd = 'connect/client/typescript';
-  return [
-    {argv: ['npm', 'ci', '--no-audit', '--no-fund'], cwd},
-    {argv: ['npm', 'test'], cwd},
-    {argv: ['npm', 'run', 'typecheck'], cwd},
-    {argv: ['npm', 'run', 'build'], cwd},
-  ];
-}
+
 
 export function onboardingCommands(): Command[] {
   const cwd = 'capture/desktop/ui/frontend';
@@ -165,32 +159,8 @@ export function commands(selected: Owner[], base: string, head: string, platform
   // rebuilt. Its existing APPARENT_BIN contract supports private target dirs.
   // CLI integration follows a rebuilt root only; isolated driver contracts need no app.
   result.push(...tools.filter(command => rustChanged && selected.includes('capture') && command.env?.APPARENT_BIN));
-  if (rustChanged && selected.includes('client')) {
-    // The Rust client-only lane also consumes the compiled shares policy. The
-    // broad root verifier above prepares it when present; this route keeps the
-    // standalone client owner lane safe without duplicating that work.
-    if (!selected.includes('capture') && !selected.includes('engine'))
-      add(['python3', 'enablement/verification.py', '--base', base, '--head', head, '--prepare-connect-typescript']);
-    const cargo = platform === 'darwin' ? ['taskpolicy', '-c', 'utility', 'cargo'] : ['cargo'];
-    for (const action of ['build', 'test']) add([...cargo, action, '--manifest-path', 'connect/client/Cargo.toml',
-      '-j', process.env.T3_BUILD_JOBS || '3', '--offline', ...(action === 'test' ? ['--', '--test-threads=2'] : [])]);
-  }
-  if (selected.includes('service')) {
-    add(['npm', 'ci', '--no-audit', '--no-fund'], 'connect/service');
-    add(['npm', 'test'], 'connect/service');
-    add(['npm', 'run', 'test:mcp'], 'connect/service');
-    add(['npm', 'run', 'test:recipient'], 'connect/service');
-  }
-  if (selected.includes('web')) {
-    add(['bun', 'install', '--frozen-lockfile'], 'connect/web');
-    add(['npm', 'test'], 'connect/web');
-  }
-  if (selected.includes('service') || selected.includes('web')) {
-    // Exercise the same mounted gateway and static artifact that CD publishes.
-    if (!selected.includes('web')) add(['bun', 'install', '--frozen-lockfile'], 'connect/web');
-    add(['npm', 'ci', '--no-audit', '--no-fund'], 'connect/tooling/hosting');
-    add(['npm', 'test'], 'connect/tooling/hosting');
-  }
+  result.push(...connectClientCommands(selected, rustChanged, base, head, platform));
+  result.push(...connectCommands(selected));
   if (selected.includes('public')) add(['node', 'scripts/site-build/verify.mjs'], 'public/site');
   return result;
 }
@@ -207,7 +177,7 @@ export function contractTests(cwd = root): Command[] {
     { argv: ['node', '--experimental-strip-types', '--test', ...fixtureTests, 'enablement/local-tests/run.test.ts', 'enablement/local-tests/reuse.test.ts',
       'enablement/local-tests/preview/explain.test.ts',
       ...prerequisites, ...timingContracts(cwd)], cwd: '.' },
-    { argv: ['bun', 'test', 'enablement/ci/'], cwd: '.' },
+    { argv: ['bun', 'test', 'enablement/ci/', 'connect/enablement/ci/'], cwd: '.' },
   ];
 }
 

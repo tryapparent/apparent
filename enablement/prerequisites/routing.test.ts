@@ -37,7 +37,7 @@ test('explicit routing partitions the unchanged local full inventory', () => {
   assert.deepEqual(inventory('full'), full);
   assert.deepEqual([...portable, ...platform].map(JSON.stringify).sort(), full.map(JSON.stringify).sort());
   assert.ok(portable.some(c => c[0] === 'bun'));
-  assert.ok(portable.some(c => c.includes('scripts/test-browser.mjs')));
+  assert.ok(portable.some(c => c.includes('../enablement/web/test-browser.mjs')));
   assert.ok(!portable.some(c => c[0] === 'cargo' || c.includes('test_temp_preflight.py')));
   const preparation = platform.findIndex(c => c[0] === 'connect-typescript-prerequisite');
   const cargo = platform.findIndex(c => c[0] === 'cargo' || c.includes('cargo'));

@@ -790,7 +790,7 @@ fn emit_typescript_producer_fixture() {
 #[test]
 fn checked_in_producer_fixture_remains_readable_by_native_consumer() {
     let vector: Value =
-        serde_json::from_str(include_str!("../typescript/test/fixtures/rust-v1.json")).unwrap();
+        serde_json::from_str(include_str!("../../enablement/verification/client/fixtures/rust-v1.json")).unwrap();
     let f = Fixture::new();
     new_private_file(&f.root.join("vector.identity"))
         .unwrap()

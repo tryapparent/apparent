@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile,readdir} from 'node:fs/promises';
 import {build} from 'esbuild';
 import {Miniflare} from 'miniflare';
-import {fixture,digest,id,file} from '../helpers.mjs';
+import {fixture,digest,id,file} from '../../../enablement/verification/service/helpers.mjs';
 const settings={POSTHOG_ENABLED:'true',POSTHOG_PROJECT_TOKEN:'phc_synthetic',POSTHOG_HOST:'https://eu.i.posthog.com',POSTHOG_ENVIRONMENT:'synthetic'};
 // Generated public-only wire fixture; no endpoint private key is retained.
 const encryptionKey={version:1,recipient:'age1jyg59kq02njlzz0h99thxywpltpp2ywtsgef3h8sawepwnglyq3qqz5957',signing:'e9a2f3b2c655bc429dda6c8e5486f3f776ad3d13ea41662ae089176bbb1604ba'};

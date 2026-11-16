@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {Miniflare} from 'miniflare';
-import {fixture,digest} from '../helpers.mjs';
+import {fixture,digest} from '../../../enablement/verification/service/helpers.mjs';
 
 async function authorize(f,a,scope='upload') {
  const start=await f.call('/v1/device/start',{method:'POST',body:{scope}});

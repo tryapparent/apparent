@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {fixture} from '../helpers.mjs';
+import {fixture} from '../../../enablement/verification/service/helpers.mjs';
 import {trustedSiteOrigin} from '../../src/common.ts';
 import type {Env} from '../../src/types.ts';
 

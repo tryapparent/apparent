@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {fixture,id,file,digest} from '../helpers.mjs';
+import {fixture,id,file,digest} from '../../../enablement/verification/service/helpers.mjs';
 
 test('uploads retain an R2-verified SHA256, retries validate bytes and preserve the original object',async()=>{
  const f=await fixture();try{

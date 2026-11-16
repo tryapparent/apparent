@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 import {readFile,readdir} from 'node:fs/promises';
 import {setTimeout as delay} from 'node:timers/promises';
-import {fixture,id,file} from '../helpers.mjs';
+import {fixture,id,file} from '../../../enablement/verification/service/helpers.mjs';
 
 const instrumented=await build({stdin:{resolveDir:process.cwd(),contents:`
  import worker from './src/worker.ts';

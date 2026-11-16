@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
-import {fixture,id,file} from '../helpers.mjs';
+import {fixture,id,file} from '../../../enablement/verification/service/helpers.mjs';
 
 // Count SQL statements, NOT merely batch RPCs. This is an audit seam around
 // real D1/R2, not an emulation of Cloudflare's remote CPU or billing enforcement.

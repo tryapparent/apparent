@@ -5,7 +5,7 @@ import {appendFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {parsePlan} from '../run.ts';
 import {accepted, covers} from '../evidence.ts';
-import {connectPlan} from '../connect.ts';
+import {connectPlan} from '../../../../connect/enablement/ci/plan.ts';
 import {suitePlan, planFromOwners} from '../consumers.ts';
 import {selectRange} from '../../select.ts';
 

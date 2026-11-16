@@ -8,7 +8,7 @@ import {openFileIndex,decryptSelectedFiles} from '../../dist/transfer/files.js';
 import {generateAgeIdentity} from '../../dist/index.js';
 
 async function nativeFixture(t:test.TestContext){
-  const vector=JSON.parse(await fs.readFile(new URL('../fixtures/rust-v2.json',import.meta.url),'utf8'));
+  const vector=JSON.parse(await fs.readFile(new URL('../../../../enablement/verification/client/fixtures/rust-v2.json',import.meta.url),'utf8'));
   const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'apparent-dev-files-'));await fs.chmod(root,0o700);t.after(()=>fs.rm(root,{recursive:true,force:true}));
   const spool=path.join(root,'spool');await fs.mkdir(path.join(spool,'sealed'),{recursive:true,mode:0o700});
   const files=fileTransport(vector.transport.map(({path,size,sha256}:any)=>({path,size,sha256})));

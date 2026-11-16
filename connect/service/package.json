@@ -4,12 +4,12 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "node scripts/stage-migrations.ts && python3 ../../shared/ui/scripts/check-theme.py && npm run build:recipient && npm run typecheck && esbuild src/worker.ts --bundle --format=esm --platform=browser --conditions=workerd --external:node:* --outfile=dist/worker.js",
+    "build": "node ../enablement/service/stage-migrations.ts && python3 ../../shared/ui/scripts/check-theme.py && npm run build:recipient && npm run typecheck && esbuild src/worker.ts --bundle --format=esm --platform=browser --conditions=workerd --external:node:* --outfile=dist/worker.js",
     "test": "npm run build && node --experimental-strip-types --test --test-concurrency=1 test/*/*.test.mjs test/*/*.test.ts",
     "dev": "npm run build && wrangler dev",
     "deploy": "npm run build && wrangler deploy",
-    "build:recipient": "node scripts/build-recipient.mjs",
-    "test:recipient": "node test/sharing/recipient-browser.mjs",
+    "build:recipient": "node ../enablement/service/build-recipient.mjs",
+    "test:recipient": "node ../enablement/verification/service/recipient-browser.mjs",
     "test:mcp": "npm run build && npm --prefix ../client/typescript ci --ignore-scripts --no-audit --no-fund && npm --prefix ../client/typescript run build && node --experimental-strip-types --test --test-concurrency=1 test/mcp/endpoint.integration.ts"
   },
   "dependencies": {

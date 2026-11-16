@@ -27,7 +27,7 @@ OAuth, real account, backend deployment, native app or production routing is pro
 If Bun is not on PATH, `npx --yes bun@1.3.10 install --frozen-lockfile` works.
 Do not generate an npm lock. The ordinary generated Bun lock stays below 2,000 lines.
 
-`npm run dev` serves the browser template; first run `node scripts/assets.mjs` if
+`npm run dev` serves the browser template; first run `node ../enablement/web/assets.mjs` if
 assets have not been staged. Build failures are safe to retry; Vite clears the
 chosen output and prerender recreates all six routes. `dist-ssr` is transient.
 Never substitute `dist-test` for `dist`; it embeds a loopback API origin.
@@ -87,9 +87,9 @@ composition; no API, cookie, schema or native credential migration is required.
 
 ## Verification scope
 
-`test/artifact.test.mjs` rejects marketing/root/discovery output, verifies all
+`../enablement/verification/web/artifact.test.mjs` rejects marketing/root/discovery output, verifies all
 six private loading pages and exact approved asset bytes, and checks owner-local
-runtime imports/storage/logging. `test/browser.mjs` exercises packaged output,
+runtime imports/storage/logging. `../enablement/verification/web/browser.mjs` exercises packaged output,
 slash aliases, query-code preservation, keyboard/modal/layout and auth behavior:
 separate upload consent/read scope, CSRF + cookies, duplicate-write guards,
 readback mismatch, expiry, malformed responses, waitlist, logout and no token DOM

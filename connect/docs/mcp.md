@@ -198,7 +198,7 @@ requires no schema migration or new cloud resource and adds no public sharing.
 The separate v2 capture format requires migration `0011.sql`; see the encryption
 contract for deployment order and retained v1 compatibility.
 
-The mounted beta gateway is built from `connect/tooling/hosting` and automatically
+The mounted beta gateway is built from `connect/enablement/hosting` and automatically
 published after affected main verification. Delivery preserves its binding/secret
 profile, routes and cleanup schedule; the sealed browser assets and Worker version
 are checked after publication. See the Connect delivery section in the CI guide.

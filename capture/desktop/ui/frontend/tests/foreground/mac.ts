@@ -239,7 +239,7 @@ async function main() {
     const grant = (await cli(['screen-permission-status'])).trim();
     await evidence('permission', {passiveInstalledBinaryGrant: grant});
     assert.equal(grant, 'true', 'Installed candidate lacks Screen Recording grant; no TCC changes permitted');
-    service = spawn(process.execPath, ['--experimental-strip-types', path.join(repo, 'connect/client/typescript/test/foreground-fixture.ts'), 'serve', '--port', '0', '--delay-first-put-ms', '30000', '--root', root], {env: appEnv, stdio: ['ignore', 'pipe', 'pipe']});
+    service = spawn(process.execPath, ['--experimental-strip-types', path.join(repo, 'connect/enablement/verification/client/foreground-fixture.ts'), 'serve', '--port', '0', '--delay-first-put-ms', '30000', '--root', root], {env: appEnv, stdio: ['ignore', 'pipe', 'pipe']});
     origin = (await readyChild(service, 'synthetic loopback service')).origin;
     const serviceURL = new URL(origin); assert.equal(serviceURL.hostname, '127.0.0.1'); assert.equal(serviceURL.protocol, 'http:');
     await cli(['connect', 'login', '--server', origin, '--scope', 'upload', '--consent-upload', '--no-browser'], 20_000);

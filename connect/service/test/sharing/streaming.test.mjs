@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
-import {fixture,id,file} from '../helpers.mjs';
+import {fixture,id,file} from '../../../enablement/verification/service/helpers.mjs';
 
 test('90MB real streaming upload fits v1 bound without whole-file Worker buffering',async()=>{
  const f=await fixture();try{

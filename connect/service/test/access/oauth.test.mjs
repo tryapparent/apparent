@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {generateKeyPair,exportJWK,SignJWT} from 'jose';
-import {fixture,digest} from '../helpers.mjs';
+import {fixture,digest} from '../../../enablement/verification/service/helpers.mjs';
 
 async function provider() {
  const {privateKey,publicKey}=await generateKeyPair('RS256'),other=await generateKeyPair('RS256');

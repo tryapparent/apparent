@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
-import {fixture} from '../helpers.mjs';
+import {fixture} from '../../../enablement/verification/service/helpers.mjs';
 
 const compiled=await build({stdin:{resolveDir:process.cwd(),contents:`
  import {getObject} from './src/storage.ts';import {rate} from './src/common.ts';

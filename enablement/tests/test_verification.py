@@ -55,7 +55,7 @@ class SelectionTests(unittest.TestCase):
 
     def test_independent_browser_selects_its_existing_build_and_fixtures(self):
         result = verification.select(["connect/web/src/Hosted.tsx", "connect/web/package.json",
-                                      "connect/web/test/closure.test.mjs", "connect/web/test/routes.test.mjs"])
+                                      "connect/enablement/verification/web/closure.test.mjs", "connect/enablement/verification/web/routes.test.mjs"])
         self.assertFalse(result["root"])
         self.assertFalse(result["engine"])
         self.assertTrue(result["browser"])
@@ -80,7 +80,7 @@ class SelectionTests(unittest.TestCase):
         def execute(command, **kwargs):
             # Isolate installation/compilation, but execute the selected driver
             # with real Node: absent test coverage must not become a green lane.
-            if command == ["node", "scripts/test-browser.mjs"]:
+            if command == ["node", "../enablement/web/test-browser.mjs"]:
                 return real_run(command, **kwargs, capture_output=True)
             return subprocess.CompletedProcess(command, 0)
         selected = verification.select(["connect/web/src/SharedLinks.tsx"])
@@ -211,7 +211,7 @@ class SelectionTests(unittest.TestCase):
     def test_production_cli_check_follows_build_and_tests_and_propagates_failure(self):
         selection = {"root": True, "engine": False, "browser": False, "focused": []}
         command = ["node", "--experimental-strip-types", "--test",
-                   "connect/client/tests/encryption-default.test.ts", "enablement/cli-version.test.ts",
+                   "connect/enablement/verification/client/encryption-default.test.ts", "enablement/cli-version.test.ts",
                    "enablement/native-build/linux-runtime.test.ts"]
         with patch.object(verification, "prepare_connect_typescript"), patch.dict(
                 verification.os.environ, {"LD_LIBRARY_PATH": "/custom/lib"}), patch.object(

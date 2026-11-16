@@ -16,8 +16,10 @@ async function fixture(t:test.TestContext) {
   const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'connect-package-'));
   await fs.chmod(root,0o700);
   t.after(()=>fs.rm(root,{recursive:true,force:true}));
-  const source=path.join(root,'source');await fs.mkdir(source);
-  for(const name of ['src','scripts','package.json','tsconfig.json','README.md']) {
+  const source=path.join(root,'source/connect/client/typescript');await fs.mkdir(source,{recursive:true});
+  const tooling=path.join(root,'source/connect/enablement/client');
+  await fs.cp(new URL('../../../enablement/client/',import.meta.url),tooling,{recursive:true});
+  for(const name of ['src','package.json','tsconfig.json','README.md']) {
     await fs.cp(path.join(owner,name),path.join(source,name),{recursive:true});
   }
   await fs.symlink(path.join(owner,'node_modules'),path.join(source,'node_modules'));

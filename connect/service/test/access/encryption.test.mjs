@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {generateKeyPairSync} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {Miniflare} from 'miniflare';
-import {fixture,id,file,digest} from '../helpers.mjs';
+import {fixture,id,file,digest} from '../../../enablement/verification/service/helpers.mjs';
 
 // Real endpoint public keys, encoded with the age X25519 Bech32 wire grammar.
 function key() {

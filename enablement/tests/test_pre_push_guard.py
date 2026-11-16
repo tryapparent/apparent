@@ -72,11 +72,11 @@ class PrePushGuardTests(unittest.TestCase):
         self.env.pop("T3_BUILD_JOBS", None)
         # Complete owner-level fallback is intentional for unknown history.
         # Stub expensive package tools, retaining the real selector and guards.
-        for directory in ("connect/client", "connect/service", "connect/web", "connect/tooling/hosting", "public/site",
+        for directory in ("connect/client", "connect/service", "connect/web", "connect/enablement/hosting", "public/site",
                           "capture/desktop/ui/frontend", "record/media", "capture/agent/media", "enablement/directory-width/tests", "hermes/tests"):
             (self.repo / directory).mkdir(parents=True, exist_ok=True)
-        browser_tests = self.repo / "connect/web/test"
-        browser_tests.mkdir()
+        browser_tests = self.repo / "connect/enablement/verification/web"
+        browser_tests.mkdir(parents=True)
         for name in ("artifact.test.mjs", "closure.test.mjs", "routes.test.mjs"):
             (browser_tests / name).write_text("import {test} from 'node:test'; test('finite browser contract', () => {});\n")
         # Model the prerequisite package without network work in this finite repo.
@@ -87,7 +87,7 @@ class PrePushGuardTests(unittest.TestCase):
         (package / ".gitignore").write_text("dist/\n")
         # Cargo is stubbed in this hook fixture, so the production-binary check
         # needs a finite TS fixture too. Its real behavior has its own CLI test.
-        encryption_test = self.repo / "connect/client/tests/encryption-default.test.ts"
+        encryption_test = self.repo / "connect/enablement/verification/client/encryption-default.test.ts"
         encryption_test.parent.mkdir()
         encryption_test.write_text("import {test} from 'node:test'; test('finite production CLI fixture', () => {});\n")
         (self.repo / "enablement/cli-version.test.ts").write_text(encryption_test.read_text())
@@ -116,7 +116,7 @@ class PrePushGuardTests(unittest.TestCase):
         # selected client invokes Cargo directly. Observe that allocation too.
         (self.bin / "cargo").write_text('#!/bin/sh\nprintf "cargo %s\\n" "$*" >> "$COMMAND_LOG"\nexit "${MOCK_STATUS:-0}"\n')
         node = self.bin / "node"
-        node.write_text('#!/bin/sh\ncase "$1" in scripts/site-build/verify.mjs|scripts/test-browser.mjs) exit "${MOCK_STATUS:-0}";; esac\nexec ' + shutil.which("node") + ' "$@"\n')
+        node.write_text('#!/bin/sh\ncase "$1" in scripts/site-build/verify.mjs|../enablement/web/test-browser.mjs) exit "${MOCK_STATUS:-0}";; esac\nexec ' + shutil.which("node") + ' "$@"\n')
         node.chmod(0o755)
         run("git", "add", ".", cwd=self.repo)
         run("git", "commit", "-qm", "finite owner fixtures", cwd=self.repo)

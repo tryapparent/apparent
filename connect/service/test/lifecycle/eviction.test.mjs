@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
-import {fixture,id,file} from '../helpers.mjs';
+import {fixture,id,file} from '../../../enablement/verification/service/helpers.mjs';
 
 // Manifest-only fixtures exercise byte reservations without allocating large R2 objects.
 const sized = bytes => Array.from({length:Math.max(1,Math.ceil(bytes/90000000))},(_,i)=>({...file(`frames/frame-${i}.png`),size:Math.min(90000000,Math.max(0,bytes-i*90000000))}));

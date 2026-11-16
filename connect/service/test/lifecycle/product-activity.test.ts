@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {fixture,id,file} from '../helpers.mjs';
+import {fixture,id,file} from '../../../enablement/verification/service/helpers.mjs';
 import {activitySubject,admitProductActivity,cleanupProductActivity} from '../../src/reporting/product-activity.ts';
 import {setAnalyticsChoice} from '../../src/analytics.ts';
 import type {Env} from '../../src/types.ts';

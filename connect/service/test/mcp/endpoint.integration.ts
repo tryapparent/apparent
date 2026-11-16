@@ -9,7 +9,7 @@ import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import {fileURLToPath} from 'node:url';
 import {CompactEncrypt, compactDecrypt, exportJWK, generateKeyPair, importJWK} from 'jose';
-import {fixture,digest} from '../helpers.mjs';
+import {fixture,digest} from '../../../enablement/verification/service/helpers.mjs';
 import {initEndpoint,acceptEndpoint,nextEndpoint,fetchEndpoint,revokeEndpoint,cancelEndpoint} from '../../../client/typescript/dist/mcp-endpoint.js';
 import {generateAgeIdentity,encryptAge,encodeArchive,signEnvelope} from '../../../client/typescript/dist/index.js';
 import {getPublicKeyAsync} from '../../../client/typescript/node_modules/@noble/ed25519/index.js';

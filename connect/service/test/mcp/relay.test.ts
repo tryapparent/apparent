@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {fixture} from '../helpers.mjs';
+import {fixture} from '../../../enablement/verification/service/helpers.mjs';
 
 test('remote MCP advertises an encrypted endpoint relay instead of server-side image inspection', async () => {
   const f = await fixture();

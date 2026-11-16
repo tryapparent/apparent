@@ -496,7 +496,7 @@ test('portable tool contracts retain the updater harness disk-image/OCR prerequi
 });
 
 test('recipient playback provisions FFmpeg and stable Chrome before the portable suite', () => {
-  const recipient=readFileSync(new URL('connect/service/test/sharing/recipient-browser.mjs',root),'utf8');
+  const recipient=readFileSync(new URL('connect/enablement/verification/service/recipient-browser.mjs',root),'utf8');
   assert.match(recipient,/execFileSync\('ffmpeg'/);
   assert.match(recipient,/libx264/);
   for(const [steps,condition] of [

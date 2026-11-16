@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {fixture,id,file} from '../helpers.mjs';
+import {fixture,id,file} from '../../../enablement/verification/service/helpers.mjs';
 
 test('bundle fidelity includes original frames, uncropped sheet and timeline; device preview has ISO expiry',async()=>{
  const f=await fixture();try{

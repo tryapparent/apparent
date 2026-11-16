@@ -14,7 +14,7 @@ cannot substitute for either product's qualifying activity. Label missing source
 explicitly until deployment and a real aggregate import are verified. Collection
 starts prospectively; first-day and first-week coverage are partial.
 
-The old offline `connect/service/scripts/usage-dashboard.mjs` plan remains a
+The old offline `connect/enablement/service/usage-dashboard.mjs` plan remains a
 separate legacy event view. It counts optional account-created/device-connected/
 upload events and pageview identities, not the new aggregate DAU/WAU. A zero there
 means no matching opted-in events; it does not establish zero product activity.

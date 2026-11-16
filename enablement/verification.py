@@ -290,7 +290,7 @@ def run_checks(selection, offline=True, execution="full", overlap_root_build=Fal
         candidate = (ROOT / os.environ.get("CARGO_TARGET_DIR", "target") / "debug/apparent").resolve()
         test_env = dict(os.environ, APPARENT_BIN=str(candidate))
         observed_run(["node", "--experimental-strip-types", "--test",
-                      "connect/client/tests/encryption-default.test.ts",
+                      "connect/enablement/verification/client/encryption-default.test.ts",
                       "enablement/cli-version.test.ts",
                       "enablement/native-build/linux-runtime.test.ts"], cwd=ROOT,
                      env=test_env, check=True)
@@ -305,8 +305,8 @@ def run_checks(selection, offline=True, execution="full", overlap_root_build=Fal
         # build. Do not substitute a production artifact with synthetic config.
         browser = ROOT / "connect/web"
         for command in (["bun", "install", "--frozen-lockfile"], ["bun", "run", "build"],
-                        ["node", "--test", "test/artifact.test.mjs", "test/closure.test.mjs", "test/routes.test.mjs"],
-                        ["node", "scripts/test-browser.mjs"]):
+                        ["node", "--test", "../enablement/verification/web/artifact.test.mjs", "../enablement/verification/web/closure.test.mjs", "../enablement/verification/web/routes.test.mjs"],
+                        ["node", "../enablement/web/test-browser.mjs"]):
             observed_run(command, cwd=browser, check=True)
 
 

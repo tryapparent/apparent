@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {usageDashboardPlan} from '../../scripts/usage-dashboard.mjs';
+import {usageDashboardPlan} from '../../../enablement/service/usage-dashboard.mjs';
 
 test('separate private dashboard discloses missing coverage and login limitation',()=>{
  const plan=usageDashboardPlan();

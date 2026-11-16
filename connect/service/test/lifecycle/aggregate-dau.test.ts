@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {DatabaseSync} from 'node:sqlite';
-import {fixture,id,file} from '../helpers.mjs';
+import {fixture,id,file} from '../../../enablement/verification/service/helpers.mjs';
 import {admitDailyActivity,cleanupDailyActivity} from '../../src/reporting/aggregate-dau.ts';
 import {setAnalyticsChoice} from '../../src/analytics.ts';
 import type {Env} from '../../src/types.ts';

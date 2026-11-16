@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {fixture} from '../helpers.mjs';
+import {fixture} from '../../../enablement/verification/service/helpers.mjs';
 
 test('only a verified waitlisted session can report eligibility; polling issues no credentials',async()=>{
  const f=await fixture();try{

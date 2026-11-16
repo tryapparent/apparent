@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fixture } from '../helpers.mjs';
+import { fixture } from '../../../enablement/verification/service/helpers.mjs';
 
 test('real Worker device authorization starts pending with requested scope', async () => {
  const f = await fixture();

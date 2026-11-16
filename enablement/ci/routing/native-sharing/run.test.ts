@@ -5,7 +5,7 @@ import {execFileSync, spawnSync} from 'node:child_process';
 import {join} from 'node:path';
 import {YAML} from 'bun';
 import {suitePlan} from '../consumers.ts';
-import {connectPlan} from '../connect.ts';
+import {connectPlan} from '../../../../connect/enablement/ci/plan.ts';
 import {covers} from '../evidence.ts';
 import {unionPlan, sharedNative, nativeRequired, nativePlan, type Identity} from './run.ts';
 const full = suitePlan(null), web = connectPlan(suitePlan(['connect/web/src/main.tsx']));
@@ -97,7 +97,7 @@ test('Connect CLI falls back cold on absent or invalid receipt and accepts the a
   try {
     for (const [raw, expected] of [[undefined,false],['{}',false],[JSON.stringify({...valid,attempt:'1'}),false],[JSON.stringify(valid),true]] as const) {
       const output = join(dir,'output'); rmSync(output,{force:true});
-      const result = spawnSync('bun',['enablement/ci/routing/connect.ts'], {encoding:'utf8',env:{...process.env,
+      const result = spawnSync('bun',['connect/enablement/ci/plan.ts'], {encoding:'utf8',env:{...process.env,
         GITHUB_EVENT_NAME:'workflow_dispatch',GITHUB_RUN_ID:who.run,GITHUB_RUN_ATTEMPT:who.attempt,
         GITHUB_WORKFLOW_REF:who.workflow,GITHUB_OUTPUT:output,SHARED_NATIVE:raw}});
       assert.equal(result.status,0,result.stderr);

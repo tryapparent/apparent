@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
-import {fixture,id,file} from '../helpers.mjs';
+import {fixture,id,file} from '../../../enablement/verification/service/helpers.mjs';
 const rejected=await build({stdin:{resolveDir:process.cwd(),contents:`
  import worker from './src/worker.ts';
  export default {fetch(request,env){

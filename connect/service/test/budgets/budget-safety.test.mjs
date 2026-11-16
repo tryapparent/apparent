@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {fixture,id,file} from '../helpers.mjs';
+import {fixture,id,file} from '../../../enablement/verification/service/helpers.mjs';
 
 // The injected SQL failure occurs inside the real D1 batch, after the insert
 // trigger has run; no mock transaction can substitute for rollback evidence.

@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
-import {fixture,id,file,digest} from '../helpers.mjs';
+import {fixture,id,file,digest} from '../../../enablement/verification/service/helpers.mjs';
 
 test('identity refuses missing or weak configured secrets instead of library development defaults',async()=>{
  for(const secret of ['', 'short']){

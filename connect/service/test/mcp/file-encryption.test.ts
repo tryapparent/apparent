@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile,readdir} from 'node:fs/promises';
-import {fixture,id,file} from '../helpers.mjs';
+import {fixture,id,file} from '../../../enablement/verification/service/helpers.mjs';
 
 test('v2 constraint migration preserves existing captures, file ownership, sequence and budgets',async()=>{
   const f=await fixture({}, {v2Migration:false});try{

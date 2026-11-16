@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {fixture,id,file} from '../helpers.mjs';
+import {fixture,id,file} from '../../../enablement/verification/service/helpers.mjs';
 
 const files=()=>['evidence/envelope.json','evidence/sealed/part-000000.age',
  'media/envelope.json','media/sealed/part-000000.age'].map(path=>file(path,path));

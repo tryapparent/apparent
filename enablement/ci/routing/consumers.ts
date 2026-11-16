@@ -1,4 +1,5 @@
 import {independentInputs} from './engine-inputs/qualify.ts';
+import {connectConsumers, connectStreamInputs, connectPublicAssets} from '../../../connect/enablement/ci/inputs.ts';
 // Owner facts shared by hosted admission and local pushes. Unknown inputs stay broad.
 export const owners = ['capture', 'engine', 'desktop', 'capture-tools', 'client', 'client-foreground', 'web', 'service', 'public', 'hermes', 'tooling', 'onboarding', 'engine-media'] as const;
 export type Owner = typeof owners[number];
@@ -26,9 +27,6 @@ export function documentationOnlyPath(path: string): boolean {
 }
 export const linuxDrivers = new Set(['capture-smoke.py', 'gui-vm.py', 'gui-vm-reaper.py',
   'test-capture-smoke.py', 'test-gui-vm.py'].map(name => 'capture/desktop/scripts/linux/gui/' + name));
-const webAssets = new Set(['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.png',
-  'hosted/agent-reading-v4.png', 'fonts/HostGrotesk-Variable.ttf', 'brand/apparent-wordmark.svg']
-  .map(path => 'public/site/public/assets/' + path));
 
 // These are isolated Enablement regression tests. They are also run by the
 // always-on contracts command; changing them does not change their tested
@@ -149,15 +147,11 @@ function directConsumers(path: string): readonly Owner[] {
   if (/^record\/(?:storage|completion|capture-request)\/(?:src\/.*\.ts|test\/.*\.test\.ts|package(?:-lock)?\.json|tsconfig(?:\.build)?\.json)$/.test(path) ||
       path === 'record/storage/build.ts') return ['desktop', 'capture'];
   // This composed browser proof is executed by Connect's publication verifier.
-  if (path === 'public/site/scripts/browser-proof/test-hosted-browser.mjs') return ['public', 'web'];
-  if (path.startsWith('public/')) return webAssets.has(path) ? ['public', 'web'] : ['public'];
-  if (!native && path.startsWith('connect/web/')) return ['web'];
-  if (['connect/client/typescript/src/mcp-wire.ts','connect/client/typescript/src/transfer/contract.ts','connect/client/typescript/contracts.ts'].includes(path)) return ['client', 'capture', 'service'];
-  if (path.startsWith('connect/client/')) return ['client', 'capture'];
-  if (!native && path.startsWith('connect/service/')) return ['service', 'client', 'web', 'capture'];
+  const connect = connectConsumers(path, native);
+  if (connect) return connect;
+  if (path.startsWith('public/')) return connectPublicAssets.has(path) ? ['public', 'web'] : ['public'];
   if (path.startsWith('capture/agent/setup/')) return ['capture', 'engine', 'hermes'];
   if (path === '.github/workflows/stream-public.yml') return ['public'];
-  if (path === '.github/workflows/stream-connect.yml') return ['capture', 'client', 'client-foreground', 'web', 'service'];
   if (path === '.github/workflows/checks.yml') return ['capture', 'engine', 'desktop', 'client', 'client-foreground', 'web', 'service', 'capture-tools', 'tooling', 'onboarding'];
   if (path === '.github/workflows/hermes.yml') return ['hermes'];
   if (path.startsWith('hermes/')) return ['hermes'];
@@ -179,7 +173,6 @@ function directConsumers(path: string): readonly Owner[] {
   if (['Cargo.toml', 'Cargo.lock', 'build.rs', 'main.rs'].includes(path) || path.startsWith('.cargo/') ||
       path.startsWith('enablement/native-build/') || path === 'enablement/build_version.rs' || path === 'enablement/verification.py')
     return ['capture', 'engine', 'desktop', 'client', 'capture-tools'];
-  if (path.startsWith('connect/')) return ['capture', 'client', 'web', 'service'];
   if (path.startsWith('record/')) return ['capture', 'engine', 'desktop'];
   if (nativeWorkflowPaths.includes(path)) return ['capture', 'engine', 'desktop', 'client', 'capture-tools'];
   if (path.startsWith('enablement/prerequisites/')) return path.endsWith('.test.ts') ? ['tooling'] : ['capture', 'engine', 'desktop', 'client'];
@@ -230,8 +223,7 @@ const directoryPaths = {
     '.github/workflows/linux-updater-harness.yml',
     // The app embeds this wordmark; the remaining Public tree is independent.
     'public/site/**'],
-  connect: [...common, ...independentEngine, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, ...desktopPackagingInputs, 'connect/**', 'public/site/**',
-    '.github/workflows/stream-connect.yml', 'enablement/release_gate.py'],
+  connect: [...common, ...independentEngine, ...native, ...desktopPackagingInputs, ...connectStreamInputs],
   public: [...common, ...independentEngine, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/hermes.yml', 'public/**', '.github/workflows/stream-public.yml', 'README.md',
     'capture/agent/skills/apparent/SKILL.md', 'capture/agent/docs/usage.md',
     'capture/desktop/docs/guides/recording.md', 'capture/engine/docs/guides/processing.md'],

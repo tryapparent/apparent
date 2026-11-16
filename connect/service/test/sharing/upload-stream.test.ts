@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
-import {fixture,id,digest} from '../helpers.mjs';
+import {fixture,id,digest} from '../../../enablement/verification/service/helpers.mjs';
 
 // Count JS reads of the actual incoming body, rather than timing the local R2
 // emulator. Native piping must keep upload size out of the JS execution budget.

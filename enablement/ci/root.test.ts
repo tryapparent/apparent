@@ -154,7 +154,7 @@ for jobs,requested,focused,execution in [('3',True,[],'platform'),('3',False,[],
    first_native=next(i for i,c in enumerate(commands) if 'cargo' in c or (c[0]=='node' and any(arg.endswith('/ci/root.ts') for arg in c)))
    assert commands.index(['connect-preparation']) < first_native,commands
   helpers=[c for c in commands if c[0]=='node' and any(arg.endswith('/ci/root.ts') for arg in c)]
-  production=[c for c in commands if 'connect/client/tests/encryption-default.test.ts' in c]
+  production=[c for c in commands if 'connect/enablement/verification/client/encryption-default.test.ts' in c]
   assert bool(production)==(execution!='portable' and not focused),commands
   if production:
    assert commands.index(production[0]) < next(i for i,c in enumerate(commands) if 'capture/engine/Cargo.toml' in c),commands

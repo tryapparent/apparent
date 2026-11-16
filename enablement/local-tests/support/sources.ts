@@ -1,11 +1,11 @@
 // Shared source materialization for synthetic hook and publisher repositories.
 // This module copies files only; it never imports or executes the test runner.
-import {copyFileSync, mkdirSync, readdirSync, realpathSync} from 'node:fs';
+import {existsSync, copyFileSync, mkdirSync, readdirSync, realpathSync} from 'node:fs';
 import {dirname, isAbsolute, relative, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-const sourceOwners = ['enablement/local-tests', 'enablement/ci'];
+const sourceOwners = ['enablement/local-tests', 'enablement/ci', 'connect/enablement/ci'];
 const excluded = new Set(['fixtures', 'node_modules', 'dist', 'target', '.git']);
 function within(parent: string, child: string): boolean {
   const path = relative(parent, child);
@@ -29,5 +29,10 @@ export function copyRunnerSources(destination: string, source = root): void {
       }
     }
   }
-  for (const owner of sourceOwners) copy(owner);
+  for (const owner of sourceOwners) {
+    // Minimal synthetic source repositories need not contain a Connect caller.
+    // Production imports still fail normally if its required module is absent.
+    if (owner === 'connect/enablement/ci' && !existsSync(resolve(origin, owner))) continue;
+    copy(owner);
+  }
 }

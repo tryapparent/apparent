@@ -315,7 +315,7 @@ The `hosted-production` environment is restricted to `main`, with:
 
 | Kind | Name | Meaning |
 | --- | --- | --- |
-| Variable | `CLOUDFLARE_ACCOUNT_ID` | Existing account pinned by `connect/tooling/hosting/scripts/profile.ts` |
+| Variable | `CLOUDFLARE_ACCOUNT_ID` | Existing account pinned by `connect/enablement/hosting/scripts/profile.ts` |
 | Secret | `CLOUDFLARE_API_TOKEN` | Worker version upload/deployment and configuration read access |
 
 The adopted target is the existing `apparent-hosted-beta` Worker, private bucket

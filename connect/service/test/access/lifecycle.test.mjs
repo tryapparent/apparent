@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 import {setTimeout as delay} from 'node:timers/promises';
-import {fixture,digest} from '../helpers.mjs';
+import {fixture,digest} from '../../../enablement/verification/service/helpers.mjs';
 
 // Faults surround real library SQL, never fabricated token responses. Two
 // workerd isolates share D1; production has no fault headers or hooks.

@@ -362,7 +362,7 @@ fn connect_shares_installed_electron_rust_roundtrip() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let output = std::process::Command::new("node")
         .args(["--experimental-strip-types", "--test"])
-        .arg(root.join("connect/client/typescript/test/cli.integration.ts"))
+        .arg(root.join("connect/enablement/verification/client/cli.integration.ts"))
         .env(
             "APPARENT_CONNECT_TEST_BINARY",
             app.join("Contents/MacOS/apparent"),
@@ -379,7 +379,7 @@ fn connect_shares_installed_electron_rust_roundtrip() {
     println!("{}", String::from_utf8_lossy(&output.stdout));
     let foreground = std::process::Command::new("node")
         .args(["--experimental-strip-types", "--test"])
-        .arg(root.join("connect/client/typescript/test/foreground.integration.ts"))
+        .arg(root.join("connect/enablement/verification/client/foreground.integration.ts"))
         .env("APPARENT_CONNECT_TEST_BINARY", app.join("Contents/MacOS/apparent"))
         .env("APPARENT_CONNECT_TEST_INSTALLED_APP", &app)
         .output()

@@ -41,21 +41,21 @@ These commands operate on TypeScript and npm dependencies; they do not invoke Ca
 
 The reproducible `production_typescript_crypto_interop` Rust test calls the
 actual production `pack` and `unpack` functions. It generates private synthetic
-identities and a 33 MiB payload, then invokes `test/production-interop.ts`.
+identities and a 33 MiB payload, then invokes `../../enablement/verification/client/production-interop.ts`.
 TypeScript verifies Rust's signed bytes/signature, stored identities, multipart
 stream and original bytes, and publishes a newly encrypted/signed stream for
 Rust to unpack. Both sides reject wrong recipients and tampering; strict
 Ed25519 negative vectors are checked against Rust's `verify_strict` result.
 That lane’s generated identities and payloads stay in its private fixture and
 are removed by its existing cleanup. Ordinary `npm test` also reads a small
-[checked-in Rust producer vector](test/fixtures/README.md), including an explicitly
+[checked-in Rust producer vector](../../enablement/verification/client/fixtures/README.md), including an explicitly
 synthetic test identity. It requires no Rust toolchain and certifies only the
 current single-archive format. Run the larger migration-only compatibility lane
 from the repository root:
 
 ```sh
 APPARENT_CONNECT_INTEROP_NODE="$(command -v node)" \
-APPARENT_CONNECT_INTEROP_SCRIPT="$PWD/connect/client/typescript/test/production-interop.ts" \
+APPARENT_CONNECT_INTEROP_SCRIPT="$PWD/connect/enablement/verification/client/production-interop.ts" \
 cargo test --manifest-path connect/client/Cargo.toml --offline \
   production_typescript_crypto_interop -- --ignored --nocapture
 ```
@@ -104,7 +104,7 @@ filesystem and encryption enforcement; no token or local path enters this policy
 failure-without-retry. Ordinary package commands still require no Rust tools.
 See `connect/docs/hosted-client.md` for trial routing and remaining native gates.
 
-`node --experimental-strip-types test/push-proof.ts` is an opt-in ordinary-hook
+`node --experimental-strip-types ../../enablement/verification/client/push-proof.ts` is an opt-in ordinary-hook
 execution proof (on Clanker, wrap it once in `t3-build`). It materializes immutable
 HEAD in a private synthetic Git repository and pushes only to a local bare
 remote. A policy-only refactor must run the real package install/tests/typecheck/

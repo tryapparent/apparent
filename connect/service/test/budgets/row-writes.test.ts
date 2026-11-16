@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {build} from 'esbuild';
-import {fixture,id,file} from '../helpers.mjs';
+import {fixture,id,file} from '../../../enablement/verification/service/helpers.mjs';
 
 // Observe actual workerd/D1 row accounting, excluding fixture setup. No fake DB.
 const instrumented=await build({stdin:{resolveDir:process.cwd(),contents:`

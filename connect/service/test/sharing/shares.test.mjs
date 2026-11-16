@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {fixture,id,file,digest} from '../helpers.mjs';
+import {fixture,id,file,digest} from '../../../enablement/verification/service/helpers.mjs';
 import {readFile} from 'node:fs/promises';
 
 async function setup(bindings={}){

@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {fixture} from '../helpers.mjs';
+import {fixture} from '../../../enablement/verification/service/helpers.mjs';
 const noticeVersion='product-analytics-v1';
 async function setup(bindings={}) {
  const sent=[];
