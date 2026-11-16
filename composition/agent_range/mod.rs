@@ -68,7 +68,9 @@ fn decode(bytes: &[u8], from: u64, to: u64, requested_fps: Option<u32>) -> Resul
                 version == 1
                     && from_ms == from
                     && to_ms == to
+                    && from_ms <= to_ms
                     && fps > 0
+                    && fps <= 240
                     && step_ms > 0
                     && lower_ms <= from
                     && upper_ms >= to
@@ -116,10 +118,15 @@ mod tests {
             ("\"stepMs\":\"250\"", "\"stepMs\":\"0\""),
             ("\"upperMs\":\"1125\"", "\"upperMs\":\"999\""),
             ("\"fps\":4", "\"fps\":0"),
+            ("\"fps\":4", "\"fps\":241"),
         ] {
             let bad = String::from_utf8_lossy(good).replace(from, to);
             assert!(decode(bad.as_bytes(), 0, 1000, None).is_err());
         }
+        let reversed = String::from_utf8_lossy(good)
+            .replace("\"fromMs\":\"0\"", "\"fromMs\":\"1000\"")
+            .replace("\"toMs\":\"1000\"", "\"toMs\":\"0\"");
+        assert!(decode(reversed.as_bytes(), 1000, 0, None).is_err());
         let exact = br#"{"version":1,"status":"plan","fromMs":"18446744073709551615","toMs":"18446744073709551615","fps":7,"stepMs":"142","lowerMs":"18446744073709551544","upperMs":"18446744073709551615"}"#;
         assert_eq!(
             decode(exact, u64::MAX, u64::MAX, Some(7)).unwrap().upper_ms,
