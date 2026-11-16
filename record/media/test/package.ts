@@ -5,6 +5,7 @@ import {createHash} from 'node:crypto';
 import {chmodSync, copyFileSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {qualifyAudioIngestion} from './audio-package.ts';
 import {qualifyTranscript} from './transcript/package.ts';
 
@@ -98,6 +99,11 @@ try {
     ffmpeg(['-xerror', '-i', file, '-f', 'null', '-']);
   }
   assert.equal(hash(silent), beforeIngestion); assert.equal(hash(join(input, 'apparent.json')), beforeManifest);
+  // Storage consumes this actual assembled bundle through its staged worker and
+  // native CLI. Its owner checks age/policy decisions without executing cleanup.
+  execFileSync(process.execPath, ['--experimental-strip-types',
+    fileURLToPath(new URL('../../storage/test/package.ts', import.meta.url)),
+    '--binary', binary, '--source-bundle', rebuilt], {stdio: 'inherit', timeout: 200_000});
   // Six distinct flags fill the ordinary budget and exercise phone assembly's
   // direct-mark path, independently of its periodic-candidate/full-frame path.
   const marked = join(root, 'marked.apparent'), markedOut = join(root, 'marked-rebuilt.apparent');

@@ -28,7 +28,10 @@ declare global {
 
 function Settings() {
   const [current, setCurrent] = useState(location.hash === '#about' ? 'About' : location.hash === '#agents' ? 'Agents' : location.hash === '#labs' ? 'Labs' : location.hash === '#general' ? 'General' : 'Storage');
-  useLayoutEffect(() => window.apparentSettingsRoute?.(pane => setCurrent(pane === 'about' ? 'About' : 'Agents')), []);
+  useLayoutEffect(() => window.apparentSettingsRoute?.(pane => {
+    const selected = panes.find(value => value.toLowerCase() === pane);
+    if (selected) { setCurrent(selected); setError(''); }
+  }), []);
   useLayoutEffect(() => { document.title = `Apparent Settings — ${current}`; }, [current]);
   useLayoutEffect(() => {
     // React's DOM is committed here. The preload owns the first-frame wait;
