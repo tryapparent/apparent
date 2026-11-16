@@ -419,7 +419,7 @@ pub fn run_app(
         if let Err(error) =
             cx.text_system()
                 .add_fonts(vec![std::borrow::Cow::Borrowed(include_bytes!(
-                    "../../shared/assets/fonts/HostGrotesk-Variable.ttf"
+                    "../../../shared/assets/fonts/HostGrotesk-Variable.ttf"
                 ))])
         {
             apparent_log(format!("Host Grotesk unavailable: {error}"));
