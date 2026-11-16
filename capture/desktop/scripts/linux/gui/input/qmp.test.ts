@@ -60,6 +60,7 @@ test('timeout while Shift is held releases it within the fixed deadline', async 
       {kind: 'key', code: 'shift', down: true}, {kind: 'wait', ms: 2000}, {kind: 'key', code: 'shift', down: false}]}, 1000), /deadline/);
     assert.ok(Date.now() - start < 1500);
     assert.deepEqual(commands.at(-3).arguments.events, [{type: 'key', data: {down: false, key: {type: 'qcode', data: 'shift'}}}]);
+    assert.equal(commands.at(-2).arguments['command-line'], 'mouse_set 0');
   });
 });
 test('refuses mixed devices, held keys, numeric keysym names and off-screen coordinates before connecting', () => {

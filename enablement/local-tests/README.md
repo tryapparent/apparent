@@ -68,7 +68,7 @@ For native integration setup, install the locked frontend dependencies with
 `npm --prefix capture/desktop/ui/frontend ci --no-audit --no-fund`, then run
 `node --experimental-strip-types enablement/prerequisites/native.ts` from the
 repository root. CI uses the same preparation entrypoint. It checks the local
-Electron executable before compiling Storage, Connect and Record artifacts,
+Electron executable before compiling Storage, Connect, updater and Record artifacts,
 then validates the required files (and parses the Mac picker on macOS). Missing
 generated output is rebuilt; a runtime or generator failure stops preparation.
 Rerun after disposable outputs are cleaned. This prepares inputs without Cargo

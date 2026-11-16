@@ -12,6 +12,7 @@ const ENDPOINT: &str = "https://eu.i.posthog.com/i/v0/e/";
 const QUEUE_SIZE: usize = 16;
 static REPORTER: OnceLock<Reporter> = OnceLock::new();
 mod finalization;
+pub(crate) mod updates;
 
 /// Only installed release children inherit production reporting admission.
 pub(crate) fn configure_child(command: &mut Command) {
@@ -164,9 +165,15 @@ struct Report {
     consent: Consent,
     delivered: Option<mpsc::SyncSender<()>>,
     finalization: Option<finalization::Diagnostics>,
+    updater: Option<updates::Diagnostics>,
 }
 
 impl Report {
+    fn update(error: &anyhow::Error, trigger: updates::Trigger, location: &std::panic::Location<'_>, consent: Consent) -> Self {
+        let mut report = Self::new(Failure::UpdateCheck, location, consent);
+        report.updater = Some(updates::Diagnostics::from_error(error, trigger));
+        report
+    }
     fn finalization(error: &anyhow::Error, location: &std::panic::Location<'_>, consent: Consent) -> Self {
         let mut report = Self::new(Failure::FinalizeCapture, location, consent);
         report.finalization = Some(finalization::Diagnostics::from_error(error));
@@ -181,6 +188,7 @@ impl Report {
             consent,
             delivered: None,
             finalization: None,
+            updater: None,
         }
     }
 
@@ -219,7 +227,7 @@ impl Report {
                     Failure::ElectronChildGone => "electron-child",
                     _ => "rust",
                 },
-                "diagnostics_schema_version": 3,
+                "diagnostics_schema_version": 4,
                 "$os": std::env::consts::OS,
                 "architecture": std::env::consts::ARCH,
                 "operation": code,
@@ -239,6 +247,16 @@ impl Report {
         if let Some(diagnostics) = &self.finalization {
             payload["properties"]["finalization"] = serde_json::to_value(diagnostics)?;
             payload["properties"]["$exception_fingerprint"] = json!(diagnostics.fingerprint());
+        }
+        if let Some(diagnostics) = &self.updater {
+            payload["properties"]["updater"] = serde_json::to_value(diagnostics)?;
+            payload["properties"]["$exception_fingerprint"] = json!(diagnostics.fingerprint());
+            payload["properties"]["$exception_list"][0]["type"] = json!(diagnostics.exception_type());
+            payload["properties"]["$exception_list"][0]["value"] = json!(diagnostics.summary());
+            let frames = diagnostics.frames();
+            if !frames.is_empty() {
+                payload["properties"]["$exception_list"][0]["stacktrace"]["frames"] = json!(frames);
+            }
         }
         if !release_id.is_empty() {
             payload["properties"]["$release_id"] = json!(release_id);
@@ -408,6 +426,32 @@ pub(crate) fn report_finalization(error: &anyhow::Error) {
     let location = std::panic::Location::caller();
     if let Some(reporter) = REPORTER.get() {
         reporter.enqueue(|consent| Report::finalization(error, location, consent));
+    }
+}
+
+#[track_caller]
+pub(crate) fn report_update(error: &anyhow::Error, trigger: updates::Trigger) {
+    let location = std::panic::Location::caller();
+    if let Some(reporter) = REPORTER.get() {
+        reporter.enqueue(|consent| Report::update(error, trigger, location, consent));
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn update_payload_for_test(error: &anyhow::Error, trigger: updates::Trigger) -> Value {
+    Report::update(error, trigger, std::panic::Location::caller(), Consent {generation: "initial".into()})
+        .payload("phc_synthetic").unwrap()
+}
+
+#[track_caller]
+pub(crate) fn report_sparkle_update(domain: &str, code: isize) {
+    let location = std::panic::Location::caller();
+    if let Some(reporter) = REPORTER.get() {
+        reporter.enqueue(|consent| {
+            let mut report = Report::new(Failure::UpdateCheck, location, consent);
+            report.updater = Some(updates::Diagnostics::sparkle(domain, code));
+            report
+        });
     }
 }
 

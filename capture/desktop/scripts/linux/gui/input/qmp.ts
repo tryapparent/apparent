@@ -110,9 +110,16 @@ export async function sendPlan(qmp: Qmp, plan: Plan, timeoutMs = 10000, signal?:
   const button = (down: boolean) => ({type: 'btn', data: {down, button: 'left'}});
   const key = (code: string, down: boolean) => ({type: 'key', data: {down, key: {type: 'qcode', data: code}}});
   const pause = async (ms: number) => {
-    const available = workDeadline - performance.now();
-    await delay(Math.max(0, Math.min(ms, available)), undefined, {signal});
-    if (performance.now() >= workDeadline) throw Error('input deadline expired');
+    const end = performance.now() + ms;
+    // Timers can wake before a fractional monotonic deadline. A truncated wait
+    // must expire, never make the remaining actions look successfully complete.
+    while (true) {
+      signal?.throwIfAborted();
+      const now = performance.now();
+      if (now >= workDeadline) throw Error('input deadline expired');
+      if (now >= end) return;
+      await delay(Math.max(1, Math.min(end, workDeadline) - now), undefined, {signal});
+    }
   };
   try {
     signal?.throwIfAborted();

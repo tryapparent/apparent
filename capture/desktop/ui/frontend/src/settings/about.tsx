@@ -7,6 +7,7 @@ import { Button } from '@apparent/ui/button';
 import { ErrorDialog } from '@apparent/ui/error-dialog';
 import { NativeSelect, NativeSelectOption } from '@apparent/ui/native-select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@apparent/ui/tooltip';
+import { channelUpdateHint } from './update-policy';
 
 export interface AboutState {
   version: string;
@@ -54,6 +55,15 @@ export function About() {
     setError('');
     try { await window.apparentAbout.act(action); }
     catch { setError('Unable to complete that action. Please try again.'); }
+  }
+  async function changeChannel(channel: string) {
+    setError('');
+    try {
+      // Clear the previous channel's offer before saving the new preference.
+      // Both messages use the existing ordered parent pipe and config writer.
+      await window.apparentAbout.act({ action: 'dismiss-update-check' });
+      await window.apparentAbout.act({ action: 'set', key: 'updateChannel', value: channel });
+    } catch { setError('Unable to change the update channel. Please try again.'); }
   }
   async function open(link: 'website' | 'source' | 'discord') {
     try { await window.apparentAbout.link(link); }
@@ -107,11 +117,11 @@ export function About() {
         </div>
         {result && result !== 'failed' && !checking && <img className="settings-frog" src={result === 'available' ? availableFrog : currentFrog} alt="" />}
       </section>
-      {state.linux && state.mainUpdates && <div className="settings-channel"><label htmlFor="update-channel">Update channel</label>
-        <NativeSelect id="update-channel" value={state.updateChannel} disabled={checking} onChange={event => void act({ action: 'set', key: 'updateChannel', value: event.target.value })}>
+      {state.linux && state.mainUpdates && <><div className="settings-channel"><label htmlFor="update-channel">Update channel</label>
+        <NativeSelect id="update-channel" aria-describedby="update-channel-hint" value={state.updateChannel} disabled={checking} onChange={event => void changeChannel(event.target.value)}>
           <NativeSelectOption value="stable">Stable releases</NativeSelectOption><NativeSelectOption value="main">Latest main</NativeSelectOption>
         </NativeSelect>
-      </div>}
+      </div><p id="update-channel-hint" className="settings-metadata settings-channel-hint">{channelUpdateHint}</p></>}
     </>}
     <section className="settings-support" aria-label="Support apparent">
       <Button variant="link" asChild><a href="https://github.com/tryapparent/apparent" onClick={event => { event.preventDefault(); void open('source'); }}><Star aria-hidden="true" />Star on GitHub <ExternalLink aria-hidden="true" /></a></Button>

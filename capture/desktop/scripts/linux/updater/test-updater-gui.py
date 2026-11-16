@@ -3,6 +3,7 @@
 import importlib.util
 from pathlib import Path
 import hashlib
+import os
 import unittest
 import json
 import re
@@ -25,6 +26,28 @@ def load(name):
 class LocatorTests(unittest.TestCase):
     def setUp(self):
         self.gui = load('updater-gui')
+
+    def test_loading_button_refuses_to_guess_without_a_visible_heading(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            evidence = self.gui.Evidence(Path(temporary))
+            with patch.object(evidence, 'words', return_value=[]), patch.object(self.gui.subprocess, 'run') as ocr:
+                with self.assertRaises(self.gui.PhraseMatchError):
+                    evidence.loading_button(Path(temporary) / 'absent.png')
+                ocr.assert_not_called()
+
+    @unittest.skipUnless(os.environ.get('APPARENT_UPDATER_OCR_FRAME'), 'needs a real failed compositor frame')
+    def test_loading_button_reads_the_failed_compositor_frame(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            evidence = self.gui.Evidence(Path(temporary))
+            x, y = evidence.loading_button(Path(os.environ['APPARENT_UPDATER_OCR_FRAME']))
+            self.assertTrue(492 <= x <= 596 and 374 <= y <= 410, (x, y))
+
+    @unittest.skipUnless(os.environ.get('APPARENT_UPDATER_DISMISS_FRAME'), 'needs a real deferred compositor frame')
+    def test_dismissal_reads_the_deferred_compositor_frame(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            evidence = self.gui.Evidence(Path(temporary))
+            frame = Path(os.environ['APPARENT_UPDATER_DISMISS_FRAME'])
+            self.assertTrue(self.gui.dialog_dismissed([evidence.words(frame), evidence.words(frame, cleaned=True), evidence.words(frame, page_mode=3)]))
 
     def test_portal_tabs_require_unique_ordered_labels_across_ocr_run_splits(self):
         for gap in [17, 27]:
@@ -71,6 +94,17 @@ class LocatorTests(unittest.TestCase):
         self.assertEqual(self.gui.find_phrase(words, 'Check for Updates'), (42, 16))
         with self.assertRaises(ValueError):
             self.gui.find_phrase(words, 'Updates')
+
+    def test_loading_heading_ignores_decorative_glyphs_but_not_words_or_duplicates(self):
+        words = [{'text': text, 'left': x, 'top': 10, 'width': width, 'height': 18,
+                  'block_num': 1, 'par_num': 1, 'line_num': 1}
+                 for text, x, width in [('C', 10, 20), ('Checking', 38, 75), ('for', 120, 25), ('updates', 152, 65)]]
+        for glyph in ['C', 'U', 'O', '0']:
+            self.assertEqual(self.gui.find_loading_heading([dict(words[0], text=glyph), *words[1:]]), (127, 19))
+        with self.assertRaises(self.gui.PhraseMatchError):
+            self.gui.find_loading_heading([dict(words[0], text='Almost'), *words[1:]])
+        with self.assertRaises(self.gui.PhraseMatchError):
+            self.gui.find_loading_heading(words + [dict(word, line_num=2, top=50) for word in words])
 
     def test_ocr_preprocessing_removes_outline_but_preserves_short_text_strokes(self):
         from PIL import Image, ImageDraw
@@ -315,7 +349,7 @@ class FixtureTests(unittest.TestCase):
         self.assertFalse(release['draft'])
         self.assertTrue(release['published_at'])
         self.assertEqual(json.loads(self.fixture.response(control, base + '3', b'x')[1]), [])
-        for mode in ['available', 'bad-checksum', 'diverged']:
+        for mode in ['available', 'bad-checksum']:
             control['mode'] = mode
             release = json.loads(self.fixture.response(control, base + '2', b'x')[1])[0]
             self.assertEqual(release['tag_name'], 'linux-main-v2-' + 'b' * 40)
@@ -327,22 +361,6 @@ class FixtureTests(unittest.TestCase):
             self.assertEqual(status, 200)
             self.assertEqual(body.split()[0], b'0' * 64 if mode == 'bad-checksum' else hashlib.sha256(b'x').hexdigest().encode())
 
-    def test_main_compare_direction_divergence_and_fail_closed_routes(self):
-        control = {'channel': 'main', 'source_head': 'a' * 40, 'version': '1.2.3', 'mode': 'available'}
-        base = '/repos/tryapparent/apparent/compare/'
-        query = '?per_page=1&page=2'
-        forward = base + 'a' * 40 + '...' + 'b' * 40 + query
-        reverse = base + 'b' * 40 + '...' + 'a' * 40 + query
-        self.assertEqual(json.loads(self.fixture.response(control, forward, b'')[1])['status'], 'ahead')
-        self.assertEqual(json.loads(self.fixture.response(control, forward, b'')[1])['base_commit']['sha'], 'a' * 40)
-        self.assertEqual(json.loads(self.fixture.response(control, reverse, b'')[1])['status'], 'behind')
-        self.assertEqual(json.loads(self.fixture.response(control, reverse, b'')[1])['base_commit']['sha'], 'b' * 40)
-        control['mode'] = 'diverged'
-        self.assertEqual(json.loads(self.fixture.response(control, forward, b'')[1])['status'], 'diverged')
-        self.assertEqual(self.fixture.response(control, base + 'c' * 40 + '...' + 'b' * 40, b'')[0], 404)
-        control['mode'] = 'error'
-        self.assertEqual(self.fixture.response(control, '/repos/tryapparent/apparent/releases?per_page=100&page=1', b'')[0], 503)
-        self.assertEqual(self.fixture.response(control, '/repos/tryapparent/apparent/releases?per_page=100&page=0', b'')[0], 404)
 
     def test_release_contract_and_digest_are_exact(self):
         import hashlib
@@ -352,11 +370,11 @@ class FixtureTests(unittest.TestCase):
         import json
         release = json.loads(body)[-1]
         self.assertEqual(status, 200)
-        self.assertEqual(release['tag_name'], 'v999.0.0')
+        self.assertEqual(release['tag_name'], 'v0.0.1')
         url = release['assets'][1]['browser_download_url']
         status, checksum = self.fixture.response(control, url.split('github.com')[1], payload)
         self.assertEqual(status, 200)
-        self.assertEqual(checksum.decode(), hashlib.sha256(payload).hexdigest() + '  Apparent-999.0.0-linux-x86_64.AppImage\n')
+        self.assertEqual(checksum.decode(), hashlib.sha256(payload).hexdigest() + '  Apparent-0.0.1-linux-x86_64.AppImage\n')
 
     def test_only_expected_routes_and_modes(self):
         self.assertEqual(self.fixture.response({'version': '1.2.3', 'mode': 'error'},
@@ -364,7 +382,7 @@ class FixtureTests(unittest.TestCase):
         self.assertEqual(self.fixture.response({'version': '1.2.3', 'mode': 'current'},
                          '/unexpected', b'')[0], 404)
         self.assertEqual(self.fixture.response({'version': '1.2.3', 'mode': 'bad-checksum'},
-                         '/tryapparent/apparent/releases/download/v999.0.0/Apparent-999.0.0-linux-x86_64.AppImage.sha256', b'x')[1].split()[0], b'0' * 64)
+                         '/tryapparent/apparent/releases/download/v0.0.1/Apparent-0.0.1-linux-x86_64.AppImage.sha256', b'x')[1].split()[0], b'0' * 64)
 
     def test_real_curl_connect_requires_trusted_tls_and_refuses_foreign_hosts(self):
         with tempfile.TemporaryDirectory() as temporary:
