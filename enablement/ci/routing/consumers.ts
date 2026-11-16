@@ -146,6 +146,9 @@ function directConsumers(path: string): readonly Owner[] {
   if (linuxDrivers.has(path)) return ['capture-tools'];
   if (path.startsWith('capture/desktop/ui/frontend/src/hermes/')) return ['desktop', 'capture', 'hermes'];
   if (path.startsWith('capture/desktop/ui/frontend/')) return ['desktop', 'capture'];
+  // These drivers are executed by the installed foreground proof, whose job
+  // condition requires a Desktop consumer as well as the native application.
+  if (path.startsWith('capture/desktop/scripts/native/foreground/')) return ['capture', 'engine', 'desktop', 'capture-tools'];
   if (path.startsWith('capture/desktop/scripts/') || path.startsWith('capture/agent/scripts/')) return ['capture', 'engine', 'capture-tools'];
   if (path.startsWith('capture/desktop/')) return ['desktop', 'capture', 'engine', 'capture-tools'];
   if (path.startsWith('capture/engine/tests/') || path.startsWith('capture/engine/src/') || ['capture/engine/Cargo.toml', 'capture/engine/Cargo.lock'].includes(path)) return ['engine'];
