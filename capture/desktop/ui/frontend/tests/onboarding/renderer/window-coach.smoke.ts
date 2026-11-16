@@ -79,6 +79,11 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await page.getByRole('button',{name:'Right here →',exact:true}).click();
   await expect.poll(()=>output).toContain('"action":"continue"');
   send({ penPicker:true });
+  await page.getByRole('button',{name:'Back',exact:true}).click();
+  await expect.poll(latestAction).toBe('back');
+  send({penPicker:false});
+  await expect(page.getByRole('heading',{name:'Pick your pen.',exact:true})).toHaveCount(0);
+  send({penPicker:true});
   await expect(page.getByRole('heading', { name:'Pick your pen.', exact:true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
   assert.deepEqual(await page.locator('.native-pencils button').allTextContents(),['','','','']);
@@ -224,6 +229,25 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   const beforeReplay=output;
   await expect(page.getByRole('button',{name:'Replay guide',exact:true})).toHaveCount(0);
   assert.equal(output,beforeReplay,'replay cannot clear or export human ink');
+  // Only the native receipt of the second completed stroke closes practice.
+  const closesBefore=(output.match(/"operation":"close"/g)||[]).length;
+  send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:{...board,strokes:[human]}});
+  await expect(page.locator('.native-board-paper > svg polyline')).toHaveCount(1);
+  assert.equal((output.match(/"operation":"close"/g)||[]).length,closesBefore);
+  send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:{...board,strokes:[human,[[140,160]]]}});
+  await expect.poll(()=>(output.match(/"operation":"close"/g)||[]).length).toBe(closesBefore+1);
+  send({step:'try-it',practice:'screen-ink',boardView:null});
+  await expect(page.getByRole('heading',{name:'Draw on your screen.',exact:true})).toBeVisible();
+  send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:{...board,strokes:[]}});
+  await expect(page.locator('.native-board')).toBeVisible();
+  const pendingPaper=await page.getByLabel('Whiteboard drawing canvas').boundingBox();assert.ok(pendingPaper);
+  await page.mouse.click(pendingPaper.x+60,pendingPaper.y+100);
+  await expect(page.locator('.native-board-paper > svg circle')).toHaveCount(1);
+  await page.mouse.move(pendingPaper.x+90,pendingPaper.y+100);await page.mouse.down();
+  await page.getByLabel('Whiteboard drawing canvas').dispatchEvent('pointercancel',{pointerId:1});
+  await page.mouse.up();
+  await expect(page.locator('.native-board-paper > svg circle')).toHaveCount(1);
+  await page.getByRole('button',{name:'Clear',exact:true}).click();
   const canvas=await page.getByLabel('Whiteboard drawing canvas').boundingBox();assert.ok(canvas);
   await page.mouse.move(canvas.x+20,canvas.y+30);await page.mouse.down();
   await page.mouse.move(canvas.x+100,canvas.y+90,{steps:5});await page.mouse.up();
