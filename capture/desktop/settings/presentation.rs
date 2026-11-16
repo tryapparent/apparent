@@ -329,7 +329,6 @@ pub(super) fn retire(transport: Transport) {
 }
 
 
-
 #[cfg(test)]
 mod capability_tests {
     use super::*;

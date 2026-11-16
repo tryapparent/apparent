@@ -190,8 +190,8 @@ html:has(.settings-shell),body:has(.settings-shell),#root:has(>.settings-shell){
 @keyframes connect-spin { to { transform:rotate(360deg); } }
 @media(prefers-reduced-motion:reduce) { .apparent-connect-workflow [data-tone=progress] .status-icon { animation:none; } }
 @media(max-width:560px) {
-  .settings-shell:not(.settings-agents-shell) .settings-sidebar { display:none; }
-  .settings-content { padding-inline:16px; }
+  .settings-general-shell .settings-sidebar { display:none; }
+  .settings-general-shell .settings-content { padding-inline:16px; }
   .apparent-connect-workflow .apparent-status-card { padding:16px; gap:12px; }
 }
 @media(max-width:350px) {

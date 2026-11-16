@@ -822,6 +822,11 @@ shortcut release, capture-start and remembered-progress acceptance remain requir
 
 ### Default Electron General
 
+General keeps its accepted compact composition in a pane-scoped layout; the
+other Settings panes retain their adopted shared layout and error dialogs.
+Agents and About keep their live shared-shell route, with native capabilities
+checked against the current pane. General opens with its own bounded bridge.
+
 General opens in packaged Electron by default, independently of Connect card
 visibility. A fresh ordinary Settings session selects General; an existing session retains its pane. App-picker launches still
 explicitly select About. Explicit pane navigation retains its existing route.

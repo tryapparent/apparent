@@ -31,7 +31,7 @@ test('Settings renderer and window follow Electron theme changes without reload'
     await expect(page.locator('.settings-sidebar')).toHaveCSS('background-color','rgb(2, 1, 2)');
     await expect(page.getByRole('button',{name:'Storage',exact:true})).toHaveCSS('color','rgb(2, 1, 2)');
     assert.equal(await page.locator('.settings-sidebar').evaluate(element => element.getBoundingClientRect().width), 216);
-    for(const [name,color] of [['General','rgb(122, 88, 199)'],['Storage','rgb(2, 1, 2)']]) {
+    for(const [name,color] of [['General','rgb(183, 165, 216)'],['Storage','rgb(2, 1, 2)']]) {
       const control=page.getByRole('button',{name,exact:true});
       await control.focus();await page.keyboard.press('Tab');await page.keyboard.press('Shift+Tab');
       await expect(control).toBeFocused();
