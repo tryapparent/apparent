@@ -1,3 +1,12 @@
+/** Keep each failed observation before an outer readiness poll replaces it. */
+export async function withObservedFailure<R>(work: () => Promise<R>, retain: (error: unknown) => Promise<void>, secondary: (error: unknown) => void): Promise<R> {
+  try { return await work(); }
+  catch (error) {
+    try { await retain(error); } catch (evidenceError) { secondary(evidenceError); }
+    throw error;
+  }
+}
+
 /** Preserve the first failure while still attempting and reporting evidence work. */
 export async function withRetainedEvidence<R>(work: () => Promise<R>, retain: () => Promise<void>, reportSecondary: (error: unknown) => void): Promise<R> {
   let failed = false;

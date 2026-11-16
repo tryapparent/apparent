@@ -3,7 +3,26 @@ import {test} from 'node:test';
 import {cp, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
-import {recopyForeground, savedForeground, withRetainedEvidence} from '../foreground/saved.ts';
+import {recopyForeground, savedForeground, withRetainedEvidence, withObservedFailure} from '../foreground/saved.ts';
+
+test('polling retains each distinct native failure before later recovery or timeout', async () => {
+  const failures = [Error('Window changed during screenshot'), Error('OCR command deadline')];
+  const retained: unknown[] = [], secondary: unknown[] = [];
+  let calls = 0;
+  for (const failure of failures) {
+    await assert.rejects(withObservedFailure(async () => { calls++; throw failure; },
+      async error => { retained.push(error); }, error => secondary.push(error)), error => error === failure);
+  }
+  assert.equal(await withObservedFailure(async () => { calls++; return 'owned Finish'; },
+    async () => assert.fail('success must not invent failure evidence'), error => secondary.push(error)), 'owned Finish');
+  assert.equal(calls, 3, 'No observation may be replayed');
+  assert.deepEqual(retained, failures);
+  assert.deepEqual(secondary, []);
+  const evidenceFailure = Error('diagnostic disk full');
+  await assert.rejects(withObservedFailure(async () => { throw failures[0]; },
+    async () => { throw evidenceFailure; }, error => secondary.push(error)), error => error === failures[0]);
+  assert.deepEqual(secondary, [evidenceFailure]);
+});
 
 // Virtual time models slow AX admission and disk proof, not native Mac behavior.
 function scenario() {

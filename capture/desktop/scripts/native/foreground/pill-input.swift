@@ -199,6 +199,7 @@ func observe(_ req: [String: Any], _ png: URL, recognizeText: Bool = true) throw
     guard let image = NSBitmapImageRep(data: try Data(contentsOf: png)), image.pixelsWide > 0, image.pixelsHigh > 0 else {
         throw Refusal(message: "Could not read screenshot pixel dimensions")
     }
+    clickTrace?.add(["stage":"windowRecheckStarted"])
     let (afterShot, _) = try pill(req)
     guard afterShot.pid == w.pid && afterShot.id == w.id && afterShot.rect == w.rect else {
         throw ObservationError.changedWindow
@@ -212,6 +213,7 @@ func observe(_ req: [String: Any], _ png: URL, recognizeText: Bool = true) throw
         clickTrace?.add(["stage":"textRecognitionComplete", "wordCount":words.count])
     }
     let front = frontPID()
+    clickTrace?.add(["stage":"receiverAncestryStarted"])
     let pillDescendants = try ancestry(w.pid)
     clickTrace?.add(["stage":"observationComplete", "pid":Int(w.pid), "windowId":Int(w.id), "frontPid":Int(front)])
     let geometry: [String: Any] = ["pixelWidth": image.pixelsWide, "pixelHeight": image.pixelsHigh,

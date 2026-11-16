@@ -67,6 +67,12 @@ on run argv
   set goMode to operation is "inspect-go" or operation is "enter-go-path" or operation is "inspect-go-path" or operation is "navigate-go"
   set nativeApp to my ownedApplication(targetPID, expectedExecutable)
   if ((nativeApp's bundleIdentifier()) as text) is not (item 5 of argv) then error "Owned Electron bundle identity differs"
+  -- AppKit-only observation: distinguish a competing launch presentation from
+  -- missing AX windows without activating or admitting another process.
+  set observedFrontApp to current application's NSWorkspace's sharedWorkspace()'s frontmostApplication()
+  set observedFrontPID to -1
+  if observedFrontApp is not missing value then set observedFrontPID to (observedFrontApp's processIdentifier()) as integer
+  log ("Owned picker observation targetPID=" & targetPID & " frontPID=" & observedFrontPID & " active=" & ((nativeApp's isActive()) as boolean))
   tell application "System Events"
     set owned to first application process whose unix id is targetPID
     -- Materialize the remote property before comparison. Comparing a System

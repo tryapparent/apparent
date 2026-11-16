@@ -6,7 +6,7 @@ import path from 'node:path';
 import {spawn, execFileSync, type ChildProcess} from 'node:child_process';
 import {constants} from 'node:fs';
 import {prepareForegroundScene, type LaunchObservation, type LaunchWindow} from './startup.ts';
-import {recopyForeground, savedForeground, withRetainedEvidence} from './saved.ts';
+import {recopyForeground, savedForeground, withRetainedEvidence, withObservedFailure} from './saved.ts';
 import {auditedControl, type ControlOperation, type ControlReceipt} from './control.ts';
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
@@ -83,10 +83,12 @@ async function native(operation: 'snapshot' | 'prepare' | 'click' | 'startup' | 
     ...(preparedPid ? {preparedPid} : {}),
     ...(settings ? {settingsPid: settings.pid, settingsWindowId: settings.windowId} : {})}), {mode: 0o600, flag: 'wx'});
   const startedAt = Date.now(), started = performance.now();
-  return withRetainedEvidence(async () => {
+  return withRetainedEvidence(() => withObservedFailure(async () => {
     const result = JSON.parse(await command(hostEnv.APPARENT_FOREGROUND_NATIVE_INPUT!, [request], {env: hostEnv}));
     await evidence(stem, result); return result as LaunchObservation & {pid: number; windowId: number; words: Array<{text: string}>; prepared?: boolean};
-  }, () => evidence(stem + '-timing', {startedAt, elapsedMs: performance.now() - started}),
+  }, error => evidence(stem + '-failure', {error: redact(error)}),
+  error => { cleanupErrors.push('native failure evidence: ' + redact(error)); }),
+  () => evidence(stem + '-timing', {startedAt, elapsedMs: performance.now() - started}),
   error => { cleanupErrors.push('native timing: ' + redact(error)); });
 }
 const text = (snapshot: {words: Array<{text: string}>}) => snapshot.words.map(word => word.text).join(' ').toLowerCase();
