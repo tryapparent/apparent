@@ -1,7 +1,7 @@
 //! Resource adapter for Record's read-only transcript allocation contract.
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
-use std::{io::{Seek, SeekFrom, Write}, process::Command, time::Duration};
+use std::{process::Command, time::Duration};
 use crate::{capture::engine::keyframes::SelectedFrames, shared::model::*};
 
 const MAX_BYTES: usize = 16 * 1024 * 1024;
@@ -36,9 +36,7 @@ pub(crate) fn assign(times: &[u64], anchors: &[u64], transcript: &TranscriptData
     };
     let bytes = serde_json::to_vec(&request)?;
     ensure!(bytes.len() <= MAX_BYTES, "Record transcript request exceeds its resource limit");
-    let mut input = tempfile::tempfile().context("Could not prepare private transcript input")?;
-    input.write_all(&bytes)?;
-    input.seek(SeekFrom::Start(0))?;
+    let input = super::worker::private_input(&bytes)?;
     let (node, worker) = super::worker::policy_assets("Record transcript", "record-media", "transcript/worker.js")?;
     let output = super::worker::run_with_input(Command::new(node)
         .env("ELECTRON_RUN_AS_NODE", "1").arg(worker), input, Duration::from_secs(10), MAX_BYTES)?;

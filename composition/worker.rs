@@ -2,7 +2,7 @@
 //! Owners supply packaged capabilities; this module has no workflow or config policy.
 use anyhow::{Context, Result, ensure};
 use std::{
-    io::{ErrorKind, Read},
+    io::{ErrorKind, Read, Seek, SeekFrom, Write},
     os::{
         fd::AsRawFd,
         unix::{fs::PermissionsExt, process::CommandExt},
@@ -102,6 +102,18 @@ pub(crate) fn run(command: &mut Command, timeout: Duration, max_output: usize) -
         "Invalid worker output budget"
     );
     run_bounded(command.stdin(Stdio::null()), timeout, max_output)
+}
+
+/// Prepare a bounded held input whose privacy does not depend on process umask.
+pub(crate) fn private_input(bytes: &[u8]) -> Result<std::fs::File> {
+    ensure!(bytes.len() <= 16 * 1024 * 1024, "Invalid worker input budget");
+    let mut input = tempfile::tempfile().context("Could not prepare private worker input")?;
+    // tempfile() can inherit 0666 masked by the caller's umask. Make the held
+    // inode private before writing text, including with umask 000 or 022.
+    input.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    input.write_all(bytes)?;
+    input.seek(SeekFrom::Start(0))?;
+    Ok(input)
 }
 
 /// A held finite file carries private text without argv, pipe-writer deadlocks,
@@ -232,11 +244,8 @@ mod tests {
     use super::*;
     #[test]
     fn held_input_supports_bounded_text_replies_without_widening_small_worker_budgets() {
-        use std::io::{Seek, SeekFrom, Write};
         let bytes = vec![b'x'; 256 * 1024];
-        let mut file = tempfile::tempfile().unwrap();
-        file.write_all(&bytes).unwrap();
-        file.seek(SeekFrom::Start(0)).unwrap();
+        let file = private_input(&bytes).unwrap();
         assert_eq!(file.metadata().unwrap().permissions().mode() & 0o777, 0o600);
         let result = run_with_input(&mut Command::new("/bin/cat"), file, Duration::from_secs(2), bytes.len()).unwrap();
         assert_eq!(result, bytes);
