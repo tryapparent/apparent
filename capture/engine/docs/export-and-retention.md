@@ -174,6 +174,6 @@ target directories, validates the encoded file and renames through the held pare
 descriptor, preserving source permissions. Failed admission or encoding preserves
 the original; ordinary exits remove temporary output and the crash sweep skips
 active claims. These checks protect native mutation, not a sandbox against a
-same-user adversary racing the decoder's pathname reads. Retention policy and its
-config writer remain authoritative until the Record adoption is accepted; that
-adoption must preserve this guard and its platform tests, including on rollback.
+same-user adversary racing the decoder's pathname reads. Record supplies cleanup
+planning; the native config writer and these safety checks remain authoritative.
+Planner rollback must preserve this guard and its platform tests.

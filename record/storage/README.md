@@ -79,6 +79,7 @@ controllers and requires its assets before native verification. Package checks
 run the actual CLI over copied producer bundles in dry-run mode, preserving all
 source/config bytes; they do not prove destructive cleanup or live capture.
 Rollback restores planner routing, native donor decisions and staged assets
-together. Remove remaining native defaults/presets only with all their consumers
+together, preserving the accepted native video admission and mutation guards.
+Remove remaining native defaults/presets only with all their consumers
 and persistence contracts adopted. Mac, AppImage and exact-main delivery remain
 acceptance gates for this slice.

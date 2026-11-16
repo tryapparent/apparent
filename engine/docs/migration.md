@@ -13,7 +13,7 @@ CI, Mac packaged CLI, both Linux AppImages and Linux preview publication.
 | Engine media frames | Published SDK/native 0.3 executes bounded explicit requests; Record owns periodic sampling. Record explicit/phone/screen consumers, Agent zoom/range fallback and Linux decoder diagnostics are adopted. #1328 removed replaced Linux/Mac file readers and donor-only tests. | Preserve producer/consumer platform and package contracts. Live capture, audio, transcription, encoders and remaining image mechanisms still retain native app inputs. |
 | Engine media audio | SDK/native 0.4 is an unpublished candidate for explicit selected-track, bounded private PCM execution. Record remains pinned to published 0.3. | Fix and qualify Mac movie-clock gaps, publish immutable SDK/runtime artifacts, then adopt through Record's real caller and staged package. Private-copy compatibility proof does not satisfy this gate. |
 | Native audio safety prerequisite | #1335 landed at `25ef94fd97efe8ddb3f04753a12538aa900414e6`; exact-main CI, signed Mac packaged Record, both Linux AppImages and preview publication passed. Legacy phone/file extraction preserves private WAV publication and Linux leading movie edits. | This accepts the legacy correctness prerequisite; it neither publishes nor adopts SDK 0.4. |
-| Record workflow | Headless completion, storage controllers, export metadata, file-frame sampling and default frame allocation have real consumers. Transcript allocation now has a local candidate through assembly and in-place re-transcription; platform/package acceptance is pending. | Remaining capture-to-handoff assembly, recovery decisions, preferences/defaults, retention planning, keyframe selection and export policy still cross Rust owners. |
+| Record workflow | Headless completion, storage controllers, export metadata, file-frame sampling and default frame allocation have real consumers. #1366 adopts transcript allocation through assembly, recovery and in-place re-transcription; its Linux and shared Mac PR checks passed, with exact-main package acceptance pending. Retention planning has a locally qualified candidate below. | Remaining capture-to-handoff assembly, recovery decisions, preferences/defaults, retention scheduling, keyframe selection and export policy still cross Rust owners. |
 | Desktop | Accepted React Settings, onboarding and recording controls coexist with native shell/legacy fallback paths. | Complete actual Electron workflows and shell/platform integration, then remove replaced Rust policy/UI and its build closure. Preserve one durable config writer until its accepted replacement. |
 | Agent | Zoom and the native range fallback consume published Engine frames; their accepted package checks cover real CLI output. | Range/FPS policy, preferred FFmpeg execution, PNG writing, existing-keyframe fallback and CLI composition remain. Whole-Agent independence is not established. |
 | Connect / Public | Public and hosted web/service loops are TypeScript. Connect has compiled TypeScript crypto, listing/foreground/MCP consumers alongside authoritative Rust transfer/identity/queue code. | Finish native Connect caller/persistence adoption and remove repo-owned Rust from Connect build/release inputs. Preserve encryption, consent, cancellation, retry and publication semantics. |
@@ -220,12 +220,13 @@ the donor together. No SDK pin, persistence schema or config writer changes.
 Record Storage's cleanup planner is locally qualified through the native CLI,
 background-pass and after-capture routes; merge/platform delivery remains open.
 It owns age/settling, priority and bitrate decisions. Native exclusions, claims,
-mutation checks, encoding, config defaults and scheduling remain explicit debt.
-The real staged CLI passed twelve policy dry-runs and refused an invalid worker
-reply before any cleanup, preserving source/config and stale staging. The real
-after-capture caller also passed an eligible-small-movie no-op through Record
-and the published Engine probe. Packed Rust-free Node proof matches the staged
-runtime bytes; these checks do not establish Mac, AppImage or live-phone proof.
+mutation safety and encoding remain native responsibilities; config-default
+resolution and workflow scheduling still need adoption. The real staged Linux
+CLI passed twelve policy dry-runs with unchanged producer/config bytes. Native
+guard tests and the after-capture eligible-small-movie no-op passed. A clean,
+offline Node container built the owner and passed all 49 tests, including the
+compiled worker, without Rust, Electron or native outputs. This proves the owner
+build and staged-prefix routes, not Mac, final AppImage or live-phone behavior.
 See [the owner contract](../../record/storage/README.md#cleanup-planning).
 
 After each merge, trace current callers again and select the next smallest usable
