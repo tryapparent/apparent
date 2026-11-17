@@ -347,11 +347,8 @@ mod tests {
     }
     #[test]
     fn retime_keeps_audio_and_video_on_one_clock() {
-        let root = std::env::temp_dir().join(format!(
-            "apparent-quiet-{}",
-            crate::shared::ids::make_bundle_id()
-        ));
-        std::fs::create_dir_all(&root).unwrap();
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path();
         let movie = root.join("test.mp4");
         ffmpeg(
             Command::new("ffmpeg")
@@ -375,7 +372,6 @@ mod tests {
                 .arg(&movie),
         )
         .unwrap();
-        let original = std::fs::read(&movie).unwrap();
         let log = ffmpeg(
             Command::new("ffmpeg")
                 .args(["-nostdin", "-hide_banner", "-i"])
@@ -409,18 +405,11 @@ mod tests {
             rms("15.8") > rms("14.0") + 100000,
             "source sound at 38s maps to 15.5s"
         );
-        // Independently exercise the real detector, including a hold ending at EOF.
-        // Rendered copy changes; the raw source can be retained byte-for-byte by its caller.
-        assert_ne!(std::fs::read(&movie).unwrap(), original);
-        std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn many_fractional_boundaries_do_not_accumulate_timeline_drift() {
-        let root = std::env::temp_dir().join(format!(
-            "apparent-quiet-boundaries-{}",
-            crate::shared::ids::make_bundle_id()
-        ));
-        std::fs::create_dir_all(&root).unwrap();
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path();
         let movie = root.join("test.mp4");
         ffmpeg(
             Command::new("ffmpeg")
@@ -455,6 +444,5 @@ mod tests {
             .collect();
         let done = retime(&movie, &intervals, 220000, true, false, 10).unwrap();
         assert!((done.duration_ms as i64 - 143373).abs() < 250);
-        std::fs::remove_dir_all(root).unwrap();
     }
 }

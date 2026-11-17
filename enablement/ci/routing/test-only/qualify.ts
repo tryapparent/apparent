@@ -11,8 +11,8 @@ const dependencies = ['node:test', 'node:assert/strict', 'node:fs', 'node:path',
 const reviewedMentions = new Map([
   ['enablement/ci/routing/engine-inputs/qualify.ts', '81e64db4b1e44d84ddec53c47908c06bedc40392'],
   ['enablement/ci/routing/engine-inputs/range.test.ts', '57e53af4325bfc51ce19c686cf65a9bd3a355e61'],
-  ['capture/desktop/ui/frontend/tests/foreground/mac.ts', '7e98a906a5add5ab2b3229bb61b1c632e9e915a0'],
-  ['enablement/ci/runner/mac-pill-bootstrap.test.ts', 'c885dfcbd9176d9da7f9f59a921ec80ea4bea258'],
+  ['capture/desktop/ui/frontend/tests/foreground/mac.ts', '33bd87d974b8940cbf8875a1f68c8a9a9c7b98b9'],
+  ['enablement/ci/runner/mac-pill-bootstrap.test.ts', 'a9c82401add2a37546776de3afd803ee3f5af4e1'],
 ]);
 
 export function qualifyCiTests(base: string, head: string, candidates: string[], cwd: string): string[] {

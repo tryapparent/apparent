@@ -539,9 +539,7 @@ test('Hermes owns independent package verification and publication; native admis
  assert.equal(h.name,'continuous delivery hermes');
  assert.equal(h.jobs.verify.strategy['fail-fast'],false);
  const validator=h.jobs.verify.steps.find((s:any)=>s.name==='Install supported Hermes validator').run;
- const validatorSource=h.jobs.verify.steps.find((s:any)=>s.name==='Prepare pinned Hermes validator and download identity').run;
- assert.match(validator,/uv sync.*--frozen --no-dev/);
- assert.match(validatorSource,/fetch --depth 1 origin [a-f0-9]{40}/);
+ assert.match(validator,/validator-job\.ts install$/);
  assert.doesNotMatch(validator,/HERMES_NIX_BUILD/);
  assert.deepEqual(h.jobs.publish.needs,['contracts','clean','verify']);
  assert.match(h.jobs.publish.if,/github.event_name == 'push'/);

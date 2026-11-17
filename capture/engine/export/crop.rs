@@ -219,12 +219,18 @@ mod tests {
     fn auto_crop_needs_a_screen_capture_with_activity() {
         let mut b = bundle();
         assert_eq!(auto(&b), FULL, "nothing happened");
+        b.autocrop = Some(serde_json::from_value(serde_json::json!({
+            "label": "the activity", "fullFrames": "frames-full", "fullContactSheet": "contact-sheet-full.png",
+            "crops": [{"index": 1, "x": 640.0, "y": 360.0, "width": 1280.0, "height": 720.0,
+                "kind": "focus", "reason": "activity", "apps": []}]
+        })).unwrap());
+        assert_eq!(auto(&b), [0.25, 0.25, 0.75, 0.75], "stored screen activity survives missing keyframes");
         b.target.mode = CaptureMode::Device;
         assert_eq!(auto(&b), FULL, "a phone is never cropped");
     }
 
     #[test]
-    fn output_sizes_keep_the_aspect_with_even_sides_and_never_upscale() {
+    fn output_sizes_keep_the_aspect_with_even_sides_and_round_native_crops_to_even() {
         assert_eq!(output_size((2560.0, 1440.0), 1920).unwrap(), (1920, 1080));
         assert_eq!(output_size((2023.0, 1059.0), 1920).unwrap(), (1920, 1006));
         let (w, h) = output_size((733.0, 309.0), 1920).unwrap();

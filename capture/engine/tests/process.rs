@@ -1,26 +1,14 @@
-use apparent_capture_engine::{Admission, Control, LeaseKind, Runtime, Status, new_id};
+#[path = "../../../engine/enablement/fixtures/legacy-support.rs"]
+mod support;
+use support::Fixture;
+use apparent_capture_engine::{Admission, Control, LeaseKind, Runtime, Status};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
 const A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOKEN: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
-
-struct Fixture(PathBuf);
-impl Fixture {
-    fn new() -> Self {
-        let path = std::env::temp_dir().join(format!("engine-{}", new_id().unwrap()));
-        std::fs::create_dir(&path).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
-        Self(path)
-    }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
 
 #[test]
 fn fixture_roots_are_private_distinct_and_independently_owned() {
@@ -49,7 +37,7 @@ struct Worker(Child);
 impl Worker {
     fn start(path: &Path, role: &str) -> Self {
         let mut child = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "worker", "--nocapture"])
+            .args(["--ignored", "--exact", "worker", "--nocapture"])
             .env("ENGINE_ROOT", path)
             .env("ENGINE_ROLE", role)
             .stdout(Stdio::piped())
@@ -77,6 +65,7 @@ impl Drop for Worker {
     }
 }
 #[test]
+#[ignore = "subprocess fixture entrypoint"]
 fn worker() {
     let Ok(root) = std::env::var("ENGINE_ROOT") else {
         return;

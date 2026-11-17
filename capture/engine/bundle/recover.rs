@@ -202,13 +202,6 @@ pub fn capture_context(bundle_dir: &Path) -> Result<std::collections::BTreeMap<S
     Ok(context)
 }
 
-pub fn finished(bundle_dir: &Path) {
-    let _ = std::fs::remove_file(bundle_dir.join(UNFINISHED));
-    let _ = std::fs::remove_file(bundle_dir.join(RECOVERING));
-    let _ = std::fs::remove_file(bundle_dir.join(UNSAFE_VIDEO));
-    let _ = std::fs::remove_file(bundle_dir.join(persistence::RECORDING));
-}
-
 /// Protect a new screen recording before its movie can be written. Refuse occupied directories:
 /// an old orphan's recovery could already be in flight and must not decode the new movie.
 pub fn begin_screen_capture(bundle_dir: &Path) -> Result<()> {
@@ -510,16 +503,9 @@ pub fn run(captures: &Path) -> Vec<(PathBuf, Result<String>)> {
 mod tests {
     use super::*;
 
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("apparent-recover-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-        }
-        dir
+    fn temp_dir() -> tempfile::TempDir {
+        use std::os::unix::fs::PermissionsExt;
+        tempfile::Builder::new().permissions(std::fs::Permissions::from_mode(0o700)).tempdir().unwrap()
     }
 
     fn unfinished() -> Unfinished {
@@ -537,7 +523,8 @@ mod tests {
 
     #[test]
     fn microphone_intent_survives_journal_replacement_and_manifest_handoff() {
-        let dir = temp_dir("microphone-json");
+        let fixture = temp_dir();
+        let dir = fixture.path();
         record_microphone_off(&dir, &unfinished().target).unwrap();
         assert!(!dir.join("microphone-off").exists());
         let mut recipe = unfinished();
@@ -548,27 +535,27 @@ mod tests {
         write_metadata(&dir, "apparent.json", &serde_json::to_vec(&serde_json::json!({
             "context": recipe.context
         })).unwrap()).unwrap();
-        finished(&dir);
+        std::fs::remove_file(dir.join(UNFINISHED)).unwrap();
         assert_eq!(capture_context(&dir).unwrap(), recipe.context);
         assert!(!dir.join(UNFINISHED).exists());
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
     fn legacy_microphone_marker_is_fallback_only_and_bad_json_is_not_ignored() {
-        let dir = temp_dir("microphone-legacy");
+        let fixture = temp_dir();
+        let dir = fixture.path();
         write_metadata(&dir, "microphone-off", b"").unwrap();
         assert_eq!(capture_context(&dir).unwrap()["microphoneCapture"], "off");
         write_metadata(&dir, "apparent.json", br#"{"context":{"microphoneCapture":"on"}}"#).unwrap();
         assert_eq!(capture_context(&dir).unwrap()["microphoneCapture"], "on");
         write_metadata(&dir, UNFINISHED, b"invalid json").unwrap();
         assert!(capture_context(&dir).is_err());
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
     fn legacy_admission_is_consumed_into_json_before_media_start() {
-        let dir = temp_dir("microphone-admission");
+        let fixture = temp_dir();
+        let dir = fixture.path();
         write_metadata(&dir, "microphone-off", b"").unwrap();
         adopt_microphone_intent(&dir, &unfinished().target).unwrap();
         assert!(!dir.join("microphone-off").exists());
@@ -580,19 +567,14 @@ mod tests {
         write_metadata(&dir, "microphone-off", b"unexpected").unwrap();
         assert!(adopt_microphone_intent(&dir, &unfinished().target).is_err());
         assert_eq!(std::fs::read(dir.join(UNFINISHED)).unwrap(), before);
-        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
     fn a_bundle_without_its_manifest_is_rebuilt_once_after_it_settles() {
-        let captures = temp_dir("pending");
+        let fixture = temp_dir();
+        let captures = fixture.path();
         let bundle = |name: &str| {
             let dir = captures.join(name);
-            std::fs::create_dir_all(&dir).unwrap();
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-            }
             write(&dir, &unfinished()).unwrap();
             dir
         };
@@ -609,7 +591,7 @@ mod tests {
         assert_eq!(pending(&captures, later), vec![crashed.clone()]);
         assert_eq!(read(&crashed).unwrap(), unfinished());
 
-        finished(&crashed);
+        std::fs::remove_file(crashed.join(UNFINISHED)).unwrap();
         assert!(pending(&captures, later).is_empty());
     }
 
@@ -629,11 +611,6 @@ mod tests {
     /// What a 0.3.10 capture left: its video and audio, nothing else.
     fn orphan(captures: &Path, name: &str) -> PathBuf {
         let dir = captures.join(name);
-        std::fs::create_dir_all(&dir).unwrap();
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-        }
         crate::capture::engine::bundle::bundle_processing::publication::write(
             &dir,
             VIDEO,
@@ -720,7 +697,8 @@ mod tests {
     #[test]
     fn recovery_preserves_video_ink_facts_without_guessing_old_sources() {
         use crate::shared::model::VideoInk;
-        let captures = temp_dir("video-ink");
+        let fixture = temp_dir();
+        let captures = fixture.path();
         for (name, source) in [("old", None), ("captured", Some(VideoInk::Captured)), ("captured-video", Some(VideoInk::CapturedVideo)), ("excluded", Some(VideoInk::Excluded))] {
             let dir = orphan(&captures, &format!("{name}.apparent"));
             let mut recipe = unfinished();
@@ -734,7 +712,6 @@ mod tests {
             assert_eq!(rebuilt.video_ink, source);
             assert_eq!(rebuilt.target, recipe.target);
         }
-        std::fs::remove_dir_all(captures).unwrap();
     }
 
     fn assert_rebuilt(dir: &Path) -> crate::shared::model::ApparentBundle {
@@ -762,7 +739,8 @@ mod tests {
 
     #[test]
     fn recover_picks_up_old_video_and_audio_without_a_journal_but_never_a_live_capture() {
-        let captures = temp_dir("orphans");
+        let fixture = temp_dir();
+        let captures = fixture.path();
         let lost = orphan(&captures, "a.apparent");
         // Recording now: the movie grows, the audio is still in memory.
         let live = captures.join("b.apparent");
@@ -790,7 +768,8 @@ mod tests {
 
     #[test]
     fn interrupted_screen_recording_never_recovers_raw_movie() {
-        let captures = temp_dir("interrupted-screen");
+        let fixture = temp_dir();
+        let captures = fixture.path();
         let dir = captures.join("new.apparent");
         begin_screen_capture(&dir).unwrap();
         std::fs::write(dir.join(VIDEO), b"new raw movie").unwrap();
@@ -807,7 +786,8 @@ mod tests {
 
     #[test]
     fn screen_capture_refuses_reused_or_recoverable_directory() {
-        let captures = temp_dir("reused-screen");
+        let fixture = temp_dir();
+        let captures = fixture.path();
         let dir = orphan(&captures, "old.apparent");
         let before_video = std::fs::read(dir.join(VIDEO)).unwrap();
         let error = begin_screen_capture(&dir).unwrap_err().to_string();
@@ -822,18 +802,9 @@ mod tests {
     }
 
     #[test]
-    fn completed_screen_bundle_removes_its_pre_recording_guard() {
-        let captures = temp_dir("completed-screen");
-        let dir = captures.join("complete.apparent");
-        begin_screen_capture(&dir).unwrap();
-        std::fs::write(dir.join("apparent.json"), b"{}").unwrap();
-        finished(&dir);
-        assert!(!dir.join(UNSAFE_VIDEO).exists());
-    }
-
-    #[test]
     fn recover_rebuilds_a_bundle_from_its_video_and_audio_alone() {
-        let captures = temp_dir("rebuild");
+        let fixture = temp_dir();
+        let captures = fixture.path();
         let dir = orphan(&captures, "lost.apparent");
         rebuild(&dir, &FAKE).unwrap();
         let bundle = assert_rebuilt(&dir);
@@ -853,7 +824,8 @@ mod tests {
 
     #[test]
     fn recover_tries_an_orphan_once_and_retries_only_when_asked() {
-        let captures = temp_dir("once");
+        let fixture = temp_dir();
+        let captures = fixture.path();
         let dir = orphan(&captures, "broken.apparent");
         fn no_probe(_: &Path) -> Result<crate::composition::media_probe::BundleProbe> {
             anyhow::bail!("unreadable movie")
@@ -874,7 +846,8 @@ mod tests {
     /// via `apparent-helper` on a Mac (with ffmpeg on the PATH to make the movie).
     #[test]
     fn recover_rebuilds_a_real_movie() {
-        let captures = temp_dir("real");
+        let fixture = temp_dir();
+        let captures = fixture.path();
         let dir = orphan(&captures, "real.apparent");
         let frames: Vec<(u64, [u8; 3])> = (0..MOVIE_MS)
             .step_by(100)

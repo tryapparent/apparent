@@ -105,6 +105,10 @@ strings, embedded HTML scripts/styles and unknown source formats currently fail 
 plain text, LICENSE/NOTICE, listed binary/media/font suffixes and lock data are non-code; there is no
 blanket generated/vendor comment skip. See comments.ts for exact grammar/suffix mappings.
 
+Rust retains its primary grammar and retries a rejected parse with the locked `tree-sitter-wasms` Rust grammar,
+which handles identifiers named `raw`. Only a complete error-free parse supplies comments; both grammars failing
+still rejects. Files combining the primary grammar's `raw` identifier bug with newer raw-pointer syntax remain unsupported.
+
 `.gitignore` recognizes column-zero `#` comments, with Git's BOM/CRLF handling; escaped and inline hashes are patterns.
 
 For safe setup and verified legacy LOC retirement, see

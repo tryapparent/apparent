@@ -185,6 +185,26 @@ func pill(_ req: [String: Any]) throws -> (Pill, Set<pid_t>) {
     return (matches[0], owned.descendants)
 }
 struct Word { let text: String; let box: CGRect; let candidate: VNRecognizedText }
+func recognizeWords(_ png: URL) throws -> [Word] {
+    func trace(_ stage: String) { clickTrace?.add(["stage":stage]) }
+    clickTrace?.add(["stage":"textRecognitionStart"])
+    trace("visionRequestCreationStart")
+    let vr = VNRecognizeTextRequest()
+    trace("visionRequestCreationComplete")
+    trace("visionRequestConfigurationStart")
+    vr.recognitionLevel = .accurate; vr.usesLanguageCorrection = false
+    trace("visionRequestConfigurationComplete")
+    trace("visionHandlerCreationStart")
+    let handler = VNImageRequestHandler(url: png)
+    trace("visionHandlerCreationComplete")
+    trace("visionPerformStart")
+    try handler.perform([vr])
+    trace("visionPerformComplete")
+    try withinBudget()
+    let words = (vr.results ?? []).compactMap { o -> Word? in guard let c = o.topCandidates(1).first else { return nil }; return Word(text: c.string, box: o.boundingBox, candidate: c) }
+    clickTrace?.add(["stage":"textRecognitionComplete", "wordCount":words.count])
+    return words
+}
 enum ObservationError: Error, CustomStringConvertible {
     case changedWindow
     var description: String { "Pill window changed during screenshot" }
@@ -206,11 +226,7 @@ func observe(_ req: [String: Any], _ png: URL, recognizeText: Bool = true) throw
     }
     var words: [Word] = []
     if recognizeText {
-        clickTrace?.add(["stage":"textRecognitionStart"])
-        let vr = VNRecognizeTextRequest(); vr.recognitionLevel = .accurate; vr.usesLanguageCorrection = false
-        try VNImageRequestHandler(url: png).perform([vr]); try withinBudget()
-        words = (vr.results ?? []).compactMap { o -> Word? in guard let c = o.topCandidates(1).first else { return nil }; return Word(text: c.string, box: o.boundingBox, candidate: c) }
-        clickTrace?.add(["stage":"textRecognitionComplete", "wordCount":words.count])
+        words = try recognizeWords(png)
     }
     let front = frontPID()
     clickTrace?.add(["stage":"receiverAncestryStarted"])
@@ -247,8 +263,6 @@ func admitPillAccessibility(_ pill: Pill) throws {
     try withinBudget()
     let application = AXUIElementCreateApplication(pill.pid)
     try need(AXUIElementSetMessagingTimeout(application, 0.2) == .success, "Could not bound pill accessibility admission")
-    // Electron exposes its renderer tree on demand to native assistive clients.
-    // The caller has already verified this exact owned pill and executable.
     let result = AXUIElementSetAttributeValue(application, "AXManualAccessibility" as CFString, kCFBooleanTrue)
     clickTrace?.add(["stage":"accessibilityAdmission", "pid":Int(pill.pid), "windowId":Int(pill.id), "result":result.rawValue])
     try need(result == .success, "Owned Electron accessibility admission failed")
@@ -325,8 +339,6 @@ func ownedAccessibilityButton(_ expected: Pill, label: String, point: CGPoint, d
         try withinBudget()
         let (element, depth) = queue.removeFirst()
         if seen.contains(where: { CFEqual($0, element) }) { continue }
-        // The total element bound also bounds depth. Electron's native wrappers
-        // and the production renderer can put an ordinary button below level 12.
         try need(seen.count < 128, "Owned accessibility tree exceeds its traversal bound")
         seen.append(element)
         clickTrace?.add(["stage":"accessibilityTreeElement", "depth":depth, "visited":seen.count])
@@ -383,8 +395,6 @@ func observeForPreparation(_ req: [String: Any], _ png: URL) throws -> ([String:
 func preparePillAccessibility(_ req: [String: Any], _ expected: Pill, label: String, point: CGPoint, descendants: Set<pid_t>) throws -> [String: Any] {
     _ = try currentPill(req, expected)
     let frontBefore = frontPID()
-    // Admission already started before observation. Do not restart Electron 45's
-    // two-second debounce here. Bootstrap keeps 8s; input keeps its 1.5s cap.
     while true {
         try withinBudget()
         // Before hover the native panel is intentionally click-through. Tree
@@ -496,8 +506,6 @@ func main() throws {
     let fresh = out.deletingLastPathComponent().appendingPathComponent("reobserve-\(getpid()).png")
     try safeOwnedPath(fresh, root: runner); try need(!fm.fileExists(atPath: fresh.path), "Re-observation output is not fresh")
     // The final guard consumes image geometry and identity, not OCR. Keep the
-    // fresh screenshot and all ownership checks without another Vision pass
-    // between the exact native hit and the immediate pre-input observation.
     let (again, _, _) = try observe(req, fresh, recognizeText: false)
     try withinBudget()
     try need((again["windowId"] as! Int) == (before["windowId"] as! Int) && (again["bounds"] as! [CGFloat]) == b, "Pill window changed before input")

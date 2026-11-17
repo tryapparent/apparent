@@ -161,6 +161,8 @@ mod tests {
     fn refuses_invalid_encoder_output_without_changing_source() {
         for invalid in ["symlink", "hardlink", "size", "empty", "traversal"] {
             let (root, bundle, staged) = fixture();
+            let outside = root.path().join("video.mov");
+            std::fs::write(&outside, b"small").unwrap();
             let video = Video::open(&bundle, Path::new("media/video.mov")).unwrap();
             let output = staged.path().join("video.mov");
             let mut bytes = 5;
@@ -168,7 +170,7 @@ mod tests {
             match invalid {
                 "symlink" => {
                     std::fs::remove_file(&output).unwrap();
-                    symlink(bundle.join("media/video.mov"), &output).unwrap();
+                    symlink(&outside, &output).unwrap();
                 }
                 "hardlink" => std::fs::hard_link(&output, root.path().join("linked.mov")).unwrap(),
                 "size" => bytes = 6,
