@@ -252,6 +252,17 @@ test("restore authenticates real archive bytes and exact producer attempt; missi
     await publish(runId, attempt, join(directory, "publish-idempotent"));
     assert.equal(state().uploads, uploads);
     const published = state();
+    for (const draft of [true, false]) {
+      const missingTag = structuredClone(published);
+      delete missingTag.tag;
+      missingTag.release.draft = draft;
+      writeFileSync(process.env.FIXTURE_STATE, JSON.stringify(missingTag));
+      await assert.rejects(
+        publish(runId, attempt, join(directory, `missing-tag-${draft}`)),
+        /Existing stable release has no source tag/,
+      );
+      assert.deepEqual(state(), missingTag);
+    }
     const altered = structuredClone(published);
     altered.release.assets[0].digest = "sha256:" + "f".repeat(64);
     writeFileSync(process.env.FIXTURE_STATE, JSON.stringify(altered));

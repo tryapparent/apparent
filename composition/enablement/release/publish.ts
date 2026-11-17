@@ -58,6 +58,8 @@ export async function publish(
     throw Error("Stable tag/source mismatch");
   const releases = pages<Release>("releases");
   let release = releases.find((r) => r.tag_name === candidate.tag);
+  if (release && !existingTag)
+    throw Error("Existing stable release has no source tag");
   for (const current of releases.filter(
     (r) => !r.draft && !r.prerelease && /^v\d+\.\d+\.\d+$/.test(r.tag_name),
   )) {
@@ -112,10 +114,11 @@ export async function publish(
   assertAssets(release, manifests, true);
   const tag = optional<Ref>(`git/ref/tags/${candidate.tag}`);
   if (
-    tag &&
-    (tag.object.type !== "commit" || tag.object.sha !== candidate.sourceSha)
+    !tag ||
+    tag.object.type !== "commit" ||
+    tag.object.sha !== candidate.sourceSha
   )
-    throw Error("Tag moved during staging");
+    throw Error("Tag missing or moved during staging");
   api(`releases/${release.id}`, "PATCH", { draft: false, make_latest: "true" });
   const publicRelease = api<Release>(`releases/${release.id}`);
   if (publicRelease.draft || publicRelease.prerelease)
