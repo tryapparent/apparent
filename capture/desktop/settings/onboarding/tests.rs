@@ -74,16 +74,18 @@ mod tests {
                 s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);s.practice_whiteboard();
                 s.observe_practice(true,0,false,None);s.practice_board(None);s.observe_practice(false,1,false,None);
                 s.observe_practice(false,0,true,Some(true));s.input(Input::CaptureEnded{completed:true});
-                s.action("practice-paste");s.action("practice-pasted");s.practice_latest();
+                s.action("practice-review");
                 assert_eq!(s.action("practice-finish"),Effect::None);
                 assert!(!s.flow.first_capture_completed);
                 s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);s.practice_whiteboard();
                 s.observe_practice(true,0,false,None);s.practice_board(None);s.observe_practice(false,1,false,None);
                 let bundle=Path::new("/synthetic/finished.apparent");
                 s.practice_completion(7,"capture",Some("request"),Some(bundle),Some(true));
-                s.input(Input::CaptureEnded{completed:true});s.action("practice-paste");s.action("practice-pasted");s.practice_opened_bundle(bundle);
+                s.input(Input::CaptureEnded{completed:true});s.action("practice-review");
+                assert!(!s.flow.first_capture_completed);
                 if failure {std::fs::write(&path,b"invalid config").unwrap();}
-                assert_eq!(s.action("practice-finish"),if failure{Effect::None}else{Effect::Close});
+                assert_eq!(s.action("practice-settings"),Effect::None);
+                assert_eq!(s.practice_settings_opened(),if failure{Effect::None}else{Effect::Close});
                 assert_eq!(s.flow.first_capture_completed,!failure);
                 if failure {assert_eq!(std::fs::read(&path).unwrap(),b"invalid config");
                     std::fs::write(&path,br#"{"secret":"synthetic","unrelated":{"nested":7},"microphoneEnabled":false}"#).unwrap();

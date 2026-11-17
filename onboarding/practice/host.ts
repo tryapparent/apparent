@@ -5,6 +5,8 @@ import {
   type Practice,
 } from "./policy.ts";
 export const intents = [
+  "practice-review",
+  "practice-settings",
   "practice-paste",
   "practice-pasted",
   "practice-locate",

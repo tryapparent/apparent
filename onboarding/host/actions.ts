@@ -13,6 +13,7 @@ const actions = new Set([
   "practiced",
   "reset-shortcut",
   "cancel-shortcut",
+  "practice-review",
   "practice-paste",
   "practice-locate",
   "practice-pasted",

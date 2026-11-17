@@ -260,10 +260,33 @@ test("trusted practice host drives the real renderer without accepting renderer 
     }),
     true,
   );
-  await batch([{ type: "action", action: "practice-paste" }]);
-  await stage("paste");
-  await batch([{ type: "action", action: "practice-pasted" }]);
-  await stage("locate");
-  await batch([{ type: "opened-latest" }]);
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect.poll(() => output).toContain('"action":"practice-review"');
+  await stage("copied");
+  await batch([{ type: "action", action: "practice-review" }]);
   await stage("complete");
+  await expect(
+    page.getByRole("heading", { name: "Feel like customizing more?" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Open Settings from apparent’s tray icon."),
+  ).toBeVisible();
+  for (const width of [380, 320])
+    for (const theme of ["light", "dark"] as const) {
+      await page.setViewportSize({ width, height: 440 });
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+      const close = page.getByRole("button", {
+        name: "Finish setup",
+        exact: true,
+      });
+      await close.focus();
+      await expect(close).toBeFocused();
+      await expect(close).toBeInViewport();
+      if (evidence)
+        await page.screenshot({
+          path: path.join(evidence, `complete-${theme}-${width}.png`),
+        });
+    }
+  await page.keyboard.press("Enter");
+  await expect.poll(() => output).toContain('"action":"practice-finish"');
 });

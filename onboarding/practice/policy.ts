@@ -133,7 +133,17 @@ export function reducePractice(
         next = { ...state, stage: "retry" };
       break;
     case "action":
-      if (stage === "copied" && event.action === "practice-paste") {
+      if (
+        (stage === "copied" || stage === "paste") &&
+        event.action === "practice-review"
+      ) {
+        accepted = state.boardInk && state.screenInk;
+        next = {
+          ...state,
+          pasted: true,
+          stage: accepted ? "complete" : "retry",
+        };
+      } else if (stage === "copied" && event.action === "practice-paste") {
         next = { ...state, stage: "paste" };
         accepted = true;
       } else if (stage === "paste" && event.action === "practice-pasted") {
@@ -145,7 +155,12 @@ export function reducePractice(
       ) {
         next = { ...state, stage: "locate" };
         accepted = true;
-      } else if (stage === "complete" && event.action === "practice-finish")
+      } else if (
+        stage === "complete" &&
+        state.pasted &&
+        (event.action === "practice-finish" ||
+          event.action === "practice-settings")
+      )
         accepted = true;
       break;
     case "opened-latest":

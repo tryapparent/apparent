@@ -374,8 +374,8 @@ impl Session {
         }
 
         if action.starts_with("practice-") {
-            if !["practice-paste","practice-pasted","practice-locate","practice-finish"].contains(&action)||!self.practice_active() {return Effect::None;}
-            let effect=self.practice_events(vec![serde_json::json!({"type":"action","action":action})],true);
+            if !["practice-review","practice-paste","practice-pasted","practice-locate","practice-finish"].contains(&action)||!self.practice_active() {return Effect::None;}
+            let effect=self.practice_intent(action);
             self.sync();return effect;
         }
         let input = match action {
@@ -467,9 +467,11 @@ impl Session {
 
     pub fn observe_practice(&mut self,board:bool,screen:usize,processing:bool,saved:Option<bool>) {
         if !self.practice_active() {return;}
-        let mut events=vec![serde_json::json!({"type":"ink","board":board,"screen":screen})];
-        if let Some(visible)=self.practice.as_mut().and_then(|p|p.visibility.take()) {events.push(serde_json::json!({"type":"whiteboard-visible","visible":visible}));}
-        if events.len()==2 {events.push(serde_json::json!({"type":"ink","board":board,"screen":screen}));}
+        let ink=serde_json::json!({"type":"ink","board":board,"screen":screen});
+        let mut events=match self.practice.as_mut().and_then(|p|p.visibility.take()) {
+            Some(visible)=>vec![ink.clone(),serde_json::json!({"type":"whiteboard-visible","visible":visible}),ink],
+            None=>vec![ink],
+        };
         if processing {events.push(serde_json::json!({"type":"processing"}));}
         if let Some(copied)=saved {events.push(serde_json::json!({"type":"saved","copied":copied}));}
         self.practice_events(events,false);self.sync();
@@ -491,7 +493,6 @@ impl Session {
     pub fn practice_locating(&self)->bool {self.practice.as_ref().is_some_and(|p|p.locating)}
     pub fn practice_desktop_stage(&self)->bool {self.practice.as_ref().is_some_and(|p|p.desktop_stage)}
     pub fn practice_whiteboard(&mut self) {self.practice_events(vec![serde_json::json!({"type":"whiteboard"})],false);self.sync();}
-    pub fn practice_saved_bundle(&mut self, path: &Path) { if self.practice_active() { self.practice_bundle=Some(path.to_owned()); } }
     pub(crate) fn practice_completion(
         &mut self, generation: u64, capture_id: &str, request_id: Option<&str>,
         bundle: Option<&Path>, clipboard: Option<bool>,
@@ -501,13 +502,19 @@ impl Session {
         self.practice_receipt = Some((generation, capture_id.to_owned(), request_id.map(str::to_owned)));
         match bundle {
             Some(path) => {
-                self.practice_saved_bundle(path);
+                self.practice_bundle=Some(path.to_owned());
                 self.observe_practice(false, 0, true, Some(clipboard == Some(true)));
             }
             None => { self.input(Input::CaptureEnded { completed: false }); }
         }
     }
     pub fn practice_opened_bundle(&mut self, path: &Path) { if self.practice_bundle.as_deref()==Some(path) {self.practice_latest();} }
+    pub fn practice_settings_opened(&mut self) -> Effect {
+        self.practice_intent("practice-settings")
+    }
+    fn practice_intent(&mut self, action:&str)->Effect {
+        self.practice_events(vec![serde_json::json!({"type":"action","action":action})],true)
+    }
     pub fn practice_latest(&mut self) {self.practice_events(vec![serde_json::json!({"type":"opened-latest"})],false);self.sync();}
 
     fn practice_events(&mut self, events:Vec<serde_json::Value>, intent:bool)->Effect {
@@ -533,8 +540,7 @@ impl Session {
         if let Transport::Renderer {input,..}=&self.transport {
             if !input.ack(&sequence) {self.restore_native();return Effect::None;}
         }
-        let result=self.practice.as_mut().unwrap().admit(value);
-        let Ok((finish,_))=result else {self.restore_native();return Effect::None;};
+        let Ok((finish,_))=self.practice.as_mut().unwrap().admit(value) else {self.restore_native();return Effect::None;};
         if !active {self.practice.as_mut().unwrap().close_board=None;return Effect::None;}
         if finish && self.practice_completed && self.practice_receipt.is_some() && self.practice_bundle.is_some() {
             self.flow.first_capture_completed=true;self.flow.step=Step::Done;self.sync();

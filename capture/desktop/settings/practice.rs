@@ -92,7 +92,7 @@ impl Practice {
     }
     pub fn admit(&mut self, value:Value)->Result<(bool, String),()> {
         let d=self.disposition(value)?;
-        let finish=d.accepted && self.pending.front().unwrap()["events"].as_array().is_some_and(|events|events.iter().any(|e|e["action"]=="practice-finish"));
+        let finish=d.accepted && d.stage==Stage::Complete && self.pending.front().unwrap()["events"].as_array().is_some_and(|events|events.iter().any(|e|matches!(e["action"].as_str(),Some("practice-finish"|"practice-settings"))));
         self.pending.pop_front();
         if d.attempt==self.attempt.to_string() {
             self.stage=d.stage;self.latest=d.latest;self.locating=d.locating;self.desktop_stage=d.desktop_stage;
