@@ -60,7 +60,7 @@ pub(super) struct Notification { pub title: String, pub body: String }
 pub(super) enum Effect { Copy { capture: Capture, mode: CopyMode } }
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) enum CopyMode { Text, Bundle, AutoPaste }
+pub(super) enum CopyMode { Text, Bundle, AutoPasteAndSubmit }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Decision { pub state: State, pub effects: Vec<Effect> }
@@ -169,7 +169,7 @@ impl Worker {
             ensure!(*capture == self.facts.capture && matches!(self.outcome, Outcome::Saved { .. })
                 && state.current && state.copy_pending && observation.clipboard == Clipboard::NotRequested,
                 "Invalid Record copy capability");
-            if matches!(mode, CopyMode::AutoPaste) {
+            if matches!(mode, CopyMode::AutoPasteAndSubmit) {
                 ensure!(self.facts.platform == "linux" && self.facts.source == "screen"
                     && self.facts.automatic_trial_enabled && !self.facts.agent_requested
                     && !self.facts.lab && self.facts.hyprland && self.facts.wayland,

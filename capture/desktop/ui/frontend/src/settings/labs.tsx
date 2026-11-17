@@ -49,8 +49,8 @@ export function Labs(){
       <h2 className="settings-preference-label" id="auto-paste-label">Auto paste</h2>
     <Switch id="auto-paste-toggle" className="agent-switch" checked={facts?.saved??false} aria-labelledby="auto-paste-label" aria-describedby="auto-paste-help auto-paste-limits" aria-busy={busy&&setting==='autoPaste'}
       disabled={busy||!facts||Boolean(facts.error)||!facts.supported} onCheckedChange={value=>void request(value)} /></div>
-    <p id="auto-paste-help">Paste the image and text into your focused composer after recording. Off by default; applies to the next recording.</p>
-    <p id="auto-paste-limits">Linux with Hyprland only. Keep your composer focused until processing finishes. Check the paste before sending; Apparent never presses Enter.</p>
+    <p id="auto-paste-help">Paste the image and text into your focused composer, then press Enter to send. Off by default; applies to the next recording.</p>
+    <p id="auto-paste-limits">Linux with Hyprland only. Keep your composer focused until processing finishes. Enter is pressed automatically; attachment acceptance and sending depend on your app.</p>
     </section>
     <section className="agent-preference">
       <div className="agent-preference-row">
