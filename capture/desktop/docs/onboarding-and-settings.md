@@ -6,8 +6,9 @@ apply at the next Finish without restart (including external file edits).
 Linux Hyprland with Lua dispatchers is the initial native adapter; other Linux
 desktops and macOS keep ordinary copy. The image-then-text trial requires the
 same window to remain focused from Finish through processing and both pastes.
-It never presses Enter. Check the receiving composer; dispatch does not prove
-attachment acceptance. Saved captures and the explicit Paste action remain
+Auto paste now presses Enter after both pastes, with another focus and clipboard
+check before Enter. Manual Paste does not press Enter. Dispatch does not prove
+attachment acceptance or successful sending; check the receiving composer. Saved captures and the explicit Paste action remain
 available. Setup practice and agent/phone captures do not auto paste.
 Turning the experiment off restores ordinary copy. Labs is a separate Electron
 pane between Agents and About, with a flask icon in both sidebars. It shares the
@@ -903,7 +904,10 @@ only; native confirmations, effects, receipt scope and fallback remain authorita
 
 Settings → Labs also exposes **Public sharing links**, off by default via
 `experiments.hostedSharing`. Enabling it grants no upload consent and uploads
-nothing by itself. The Electron recording controls confirm that anyone with the
+nothing by itself. The completed pill labels the action **Public link**, including
+when the T3 destination picker is active. T3 selection and public sharing remain
+separate explicit actions; neither submits the other. Upload cancel/retry stays
+available beside the destination. The Electron recording controls confirm that anyone with the
 link can view the capture and that the shared copy is not end-to-end encrypted,
 then create a separate public copy while preserving the private job. Cancellation
 and stale recording actions do not admit a public copy. Disabling applies to the

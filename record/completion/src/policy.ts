@@ -28,7 +28,7 @@ export type Event =
   | {type: 'finalized'; capture: Capture; outcome: Outcome}
   | {type: 'clipboard'; capture: Capture; result: 'copied' | 'failed'}
   | {type: 'dismiss' | 'cancel' | 'revoke' | 'disconnect' | 'reconnect'};
-export type Effect = Readonly<{type: 'copy'; capture: Capture; mode: 'text' | 'bundle' | 'autoPaste'}>;
+export type Effect = Readonly<{type: 'copy'; capture: Capture; mode: 'text' | 'bundle' | 'autoPasteAndSubmit'}>;
 export type Decision = Readonly<{state: State; effects: readonly Effect[]}>;
 
 export function begin(context: Context, current: boolean): State {
@@ -64,14 +64,14 @@ export function reduce(previous: State, event: Event): Decision {
         status: event.outcome.kind === 'saved' ? 'Saved' : event.outcome.message.startsWith('No screen frames were captured')
           ? 'Capture failed — no screen frames' : 'Capture failed'};
       if (state.copyPending) effects.push({type: 'copy', capture: state.context.capture,
-        mode: autoPasteTrial(state.context) ? 'autoPaste' : 'bundle'});
+        mode: autoPasteTrial(state.context) ? 'autoPasteAndSubmit' : 'bundle'});
     } else if (event.type === 'clipboard' && state.copyPending && state.observation?.outcome.kind === 'saved') {
       state = {...state, copyPending: false, observation: {...state.observation, clipboard: event.result},
-        status: event.result === 'failed' ? 'Saved · open bundle (copy failed)'
-          : autoPasteTrial(state.context) ? 'Saved · check paste' : 'Saved · copied',
-        notifications: autoPasteTrial(state.context) ? [...state.notifications, {title: 'Check auto paste', body: event.result === 'failed'
-          ? 'Could not copy the handoff. Use the saved bundle from the paper tile.'
-          : `Check the image and text in your composer before sending. If anything is missing, use Paste on the saved capture at ${state.observation.outcome.bundlePath}`}] : state.notifications};
+        status: event.result === 'failed' ? autoPasteTrial(state.context) ? 'Saved · auto paste stopped' : 'Saved · open bundle (copy failed)'
+          : autoPasteTrial(state.context) ? 'Saved · Enter pressed' : 'Saved · copied',
+        notifications: autoPasteTrial(state.context) ? [...state.notifications, {title: 'Auto paste', body: event.result === 'failed'
+          ? 'Auto paste stopped. Check your composer before retrying from the saved bundle.'
+          : `Image and text paste dispatched, then Enter pressed. Check your composer for the result. Saved capture: ${state.observation.outcome.bundlePath}`}] : state.notifications};
     }
   }
   return {state, effects};

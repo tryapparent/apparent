@@ -96,6 +96,9 @@ test('prerequisite, CI routing, selector and timing regressions are mandatory ev
   }
   assert.ok(args.includes('--pr'));
   assert.ok(args.includes('enablement/ci/'));
+  const contracts = contractTests().map(command => command.argv.join(' '));
+  assert.ok(contracts.includes('bun test enablement/ci/'));
+  assert.ok(contracts.includes('bun test connect/enablement/ci/'));
   assert.ok(!args.includes('cargo'));
   assert.ok(!args.some(arg => arg.includes('verification-status')), 'retired reporter stays absent from local gates');
 });
@@ -103,7 +106,7 @@ test('prerequisite, CI routing, selector and timing regressions are mandatory ev
 test('package gates execute complete canonical suites including browser and Electron smoke', () => {
   const plan = commands([...owners], 'base', 'head', 'linux');
   for (const [cwd, last] of [['connect/web', 'test'], ['connect/service', 'test:recipient'],
-    ['capture/desktop/ui/frontend', 'test:electron'], ['public/site', 'scripts/site-build/verify.mjs']]) {
+    ['capture/desktop/ui/frontend', 'test:electron'], ['public/site', '../enablement/site-build/verify.mjs']]) {
     assert.ok(plan.some(command => command.cwd === cwd && command.argv.at(-1) === last), `${cwd} ${last}`);
   }
   assert.ok(plan.some(command => command.argv.includes('--run')));
@@ -256,7 +259,8 @@ test('capture script changes execute offline contracts including hyphenated and 
     'capture/desktop/scripts/tests/mac/test_setup.py', 'capture/desktop/scripts/linux/gui/test-gui-vm.py',
     'capture/agent/enablement/scripts/tests/test_provision_narrator.py',
     'capture/agent/enablement/scripts/tests/provision-narrator.test.ts', 'capture/desktop/scripts/new/test_new.py',
-    'capture/desktop/scripts/linux/gui/input/qmp.test.ts']) {
+    'capture/desktop/scripts/linux/gui/input/qmp.test.ts',
+    'capture/desktop/enablement/native-candidate/new.test.ts']) {
     const parent = path.slice(0, path.lastIndexOf('/'));
     mkdirSync(join(dir, parent), { recursive: true }); writeFileSync(join(dir, path), '');
   }
@@ -277,7 +281,14 @@ test('capture script changes execute offline contracts including hyphenated and 
   // and silently skips its files. Exercise the real hook's outside-worker env.
   const context = process.env.NODE_TEST_CONTEXT;
   delete process.env.NODE_TEST_CONTEXT;
-  try { assert.throws(() => execute([typescript], dir), /failed \(1\)/); }
+  try {
+    assert.throws(() => execute([typescript], dir), /failed \(1\)/);
+    writeFileSync(join(dir, tsPath), '');
+    const ownerPath = 'capture/desktop/enablement/native-candidate/new.test.ts';
+    assert.ok(typescript.argv.includes(ownerPath), 'owner tests join the real serial Node consumer');
+    writeFileSync(join(dir, ownerPath), "import {test} from 'node:test'; test('owner failure propagates', () => { throw Error('owner regression reached'); });\n");
+    assert.throws(() => execute([typescript], dir), /failed \(1\)/);
+  }
   finally { if (context !== undefined) process.env.NODE_TEST_CONTEXT = context; }
   assert.ok(typescript.argv.includes('--test-concurrency=1'));
   assert.ok(!typescript.argv.some(arg => arg.startsWith('capture/agent/')));
@@ -289,7 +300,7 @@ test('real capture-tool inventory is unchanged while TypeScript tests use one or
   const python = plan.filter(command => command.argv[0] === 'python3');
   const node = plan.filter(command => command.argv[0] === 'node');
   assert.equal(node.length, 2);
-  const tracked = spawnSync('git', ['ls-files', '-z', '--', 'capture/desktop/scripts/', 'capture/agent/enablement/scripts/'],
+  const tracked = spawnSync('git', ['ls-files', '-z', '--', 'capture/desktop/scripts/', 'capture/desktop/enablement/', 'capture/agent/enablement/scripts/'],
     {cwd: root, encoding: 'utf8'});
   assert.equal(tracked.status, 0);
   const inventory = tracked.stdout.split('\0').filter(path => /\/(?:test[-_][^/]*\.py|[^/]+\.test\.ts)$/.test(path)).sort();
@@ -360,14 +371,14 @@ test('actual feature push runs selected package tests and rejects their failure'
   const log = join(dir, '.git/commands');
   for (const tool of ['node', 'python3', 'bun']) {
     const body = tool === 'node' ? `if [ "$2" = enablement/local-tests/run.ts ]; then exec '${process.execPath}' "$@"; fi\n` : '';
-    writeFileSync(join(bin, tool), `#!/bin/sh\n${body}printf '%s\\n' '${tool}'" $*" >> "$COMMAND_LOG"\ncase "$*" in *scripts/site-build/verify.mjs*) exit "${'${FAIL_PACKAGE:-0}'}";; esac\n`, { mode: 0o755 });
+    writeFileSync(join(bin, tool), `#!/bin/sh\n${body}printf '%s\\n' '${tool}'" $*" >> "$COMMAND_LOG"\ncase "$*" in *../enablement/site-build/verify.mjs*) exit "${'${FAIL_PACKAGE:-0}'}";; esac\n`, { mode: 0o755 });
   }
   const push = (fail: string) => spawnSync('sh', [join(root, '.githooks/pre-push')], {
     cwd: dir, env: { ...env, PATH: `${bin}:${env.PATH}`, COMMAND_LOG: log, FAIL_PACKAGE: fail },
     input: `refs/heads/feature ${head} refs/heads/feature ${'0'.repeat(40)}\n`, encoding: 'utf8',
   });
   const passed = push('0'); assert.equal(passed.status, 0, passed.stderr);
-  assert.match(readFileSync(log, 'utf8'), /node scripts\/site-build\/verify.mjs/);
+  assert.match(readFileSync(log, 'utf8'), /node \.\.\/enablement\/site-build\/verify.mjs/);
   assert.doesNotMatch(readFileSync(log, 'utf8'), /cargo|npm/);
   const failed = push('7'); assert.notEqual(failed.status, 0); assert.match(failed.stderr, /push rejected/);
 }));

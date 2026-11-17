@@ -1,4 +1,5 @@
 //! Resource adapter for Record's read-only transcript allocation contract.
+pub(crate) mod speech;
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use std::{process::Command, time::Duration};
