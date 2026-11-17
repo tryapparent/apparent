@@ -13,7 +13,7 @@ const languages: Record<string, string> = {
   c:'c', h:'c', m:'objc', mm:'cpp', html:'html', htm:'html',
   json:'json', jsonc:'json',
 };
-const fallback = new Set(['bash','toml','objc','html','json']);
+const fallback = new Set(['toml','objc','html','json']);
 const noncode = new Set(['md','txt','png','jpg','jpeg','gif','webp','ico','icns','ttf','woff','woff2','mp4','mp3','wav','pdf','lock']);
 const cache = new Map<string, Language>();
 let initialized = false;
@@ -41,7 +41,7 @@ export async function comments(file: string, text: string): Promise<string[]> {
     return result;
   }
   if (!initialized) {await Parser.init(); initialized = true;}
-  if (!cache.has(language)) cache.set(language, await Language.load(path.join(here, 'node_modules', fallback.has(language) ? 'tree-sitter-wasms' : '@repomix/tree-sitter-wasms', 'out', `tree-sitter-${language}.wasm`)));
+  if (!cache.has(language)) cache.set(language, await Language.load(language === 'bash' ? path.join(here, 'node_modules/tree-sitter-bash/tree-sitter-bash.wasm') : path.join(here, 'node_modules', fallback.has(language) ? 'tree-sitter-wasms' : '@repomix/tree-sitter-wasms', 'out', `tree-sitter-${language}.wasm`)));
   const parser = new Parser();
   parser.setLanguage(cache.get(language)!);
   const tree = parser.parse(text);

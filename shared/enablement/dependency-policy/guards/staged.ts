@@ -2,7 +2,7 @@ import path from "node:path";
 import { tokens, sourceBudget, lockfiles } from "./budgets.ts";
 export { tokens } from "./budgets.ts";
 import { git } from "../snapshot.ts";
-import { checkStyle } from "./style.ts";
+import { checkStyles } from "./style.ts";
 
 export async function checkStaged(
   cwd: string,
@@ -45,6 +45,7 @@ export async function checkStaged(
     }
   }
   const errors: string[] = [];
+  const style: { file: string; text: string; old?: string }[] = [];
   for (const [file, meta] of after) {
     if (meta === before.get(file) || !meta.startsWith("100")) continue;
     const text = git(["show", `${tree}:${file}`], cwd);
@@ -120,7 +121,8 @@ export async function checkStaged(
         );
     }
     if (!lockfiles.has(base) && /\.(?:[cm]?[jt]sx?|css|jsonc?)$/i.test(file))
-      errors.push(...checkStyle(file, text, inherited));
+      style.push({ file, text, old: inherited });
   }
+  errors.push(...checkStyles(style));
   return errors;
 }

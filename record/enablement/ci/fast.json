@@ -1,0 +1,16 @@
+{
+  "projects": [
+    {
+      "root": "record/completion",
+      "inputs": ["record/enablement/ci/fast.json"],
+      "tests": ["test/policy.test.ts", "test/worker.test.ts"],
+      "typecheck": true
+    },
+    {
+      "root": "record/capture-request",
+      "inputs": ["record/enablement/ci/fast.json"],
+      "tests": ["test/lifecycle.test.ts"],
+      "typecheck": true
+    }
+  ]
+}

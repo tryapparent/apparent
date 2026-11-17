@@ -6,15 +6,19 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "test": "node --experimental-strip-types --test test/*.test.ts test/contracts/*.test.ts",
     "check": "node --experimental-strip-types check.ts"
   },
   "dependencies": {
     "@biomejs/biome": "2.6.8",
     "@repomix/tree-sitter-wasms": "0.1.17",
+    "@types/node": "22.19.0",
+    "eslint": "10.15.0",
     "js-tiktoken": "1.0.21",
+    "tree-sitter-bash": "0.25.1",
     "tree-sitter-wasms": "0.1.13",
     "typescript": "5.9.3",
+    "typescript-eslint": "8.73.0",
     "web-tree-sitter": "0.25.10",
     "yaml": "2.9.0"
   }

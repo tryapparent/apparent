@@ -61,7 +61,7 @@ export class Snapshot {
       return {file, mode, hash};
     });
     const wanted = entries.filter(({file, mode}) => mode.startsWith('100') &&
-      (source.test(file) || file.endsWith('.json')) && !file.split('/').some(p => ['node_modules', 'vendor', 'third_party', 'target', '.git'].includes(p)));
+      (source.test(file) || /\.(json|ya?ml|sh|py)$/.test(file)) && !file.split('/').some(p => ['node_modules', 'vendor', 'third_party', 'target', '.git'].includes(p)));
     // Buffer framing matters: blob sizes are bytes, not UTF-16 string lengths.
     const bytes = execFileSync('git', ['cat-file', '--batch'], {cwd,
       input: wanted.map(e => e.hash).join('\n') + '\n', maxBuffer: 128 * 1024 * 1024});

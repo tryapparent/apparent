@@ -1,6 +1,4 @@
 #!/bin/sh
-# Enforce width against the staged tree, never the mutable worktree.
 set -eu
 repo_root=$(git rev-parse --show-toplevel)
-python3 "$repo_root/enablement/directory-width/check.py"
-exec node --experimental-strip-types "$repo_root/shared/enablement/dependency-policy/check.ts"
+exec node --experimental-strip-types "$repo_root/shared/enablement/dependency-policy/guards/bootstrap.ts"

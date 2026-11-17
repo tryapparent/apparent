@@ -1,7 +1,7 @@
 # Staged commit policy
 
 Install once with Node 22.18+ and `npm ci --ignore-scripts --prefix shared/enablement/dependency-policy`.
-The tracked pre-commit runs directory-width, then this checker. Commits run installed tools only:
+The tracked pre-commit pins one immutable tree for width and all staged checks. Commits run installed tools only:
 no network, installs, native builds or services. No new CI or pre-push invocation exists.
 The existing pre-push protection remains separate. Missing tooling rejects with installation guidance.
 Run `npm test --prefix shared/enablement/dependency-policy` and
@@ -82,9 +82,9 @@ Pinned Biome 2.6.8 checks changed regular TS/JS variants, CSS, JSON and JSONC st
 isolated scratch, with explicit config and no candidate project execution. Standard formatting is required
 for new files and files whose HEAD passed formatting. Already-unformatted existing files retain formatting
 debt; this does not claim formatting enforcement on their edited lines. Error-level lint is a per-file,
-category/message multiplicity ratchet: no increase over HEAD. Moving identical diagnostic text is tolerated.
-Conservative explicit rules cover unreachable code, invalid super constructors, duplicate parameters and
-unsafe equality. New files have zero allowance. Syntax errors always reject. Oversized/skipped/incomplete
+category/message/source-line identity ratchet: no increase over HEAD. Moving identical offending lines is tolerated.
+Pinned syntactic rules cover unreachable code, invalid super constructors, duplicate parameters,
+unsafe equality, focused tests, duplicate branches and explicit any. New files have zero allowance. Syntax errors always reject. Candidate and baseline blobs run in one Biome batch. Oversized/skipped/incomplete
 Biome results fail closed. Warnings are informational. Unrelated legacy files are not checked.
 There is no Rust/Swift/Python/shell/native-language style or lint coverage yet; owning tools must be
 provisioned before claiming it. Comment parsing is not a substitute for those checks.
@@ -99,7 +99,7 @@ A Git-detected 50%+ rename transfers deleted-source comment allowance once to a 
 path; copies do not. Both languages parse separately on language-changing renames. Missed renames fail
 safely. Changed invalid/unsupported syntax and nonregular files reject; symlink targets are never read.
 
-Pinned Tree-sitter WASM covers TS/JS variants, Rust, Swift, Python, CSS, shell, C/headers, Objective-C,
+Pinned Tree-sitter WASM (including tree-sitter-bash 0.25.1 for the current runtime ABI) covers TS/JS variants, Rust, Swift, Python, CSS, shell, C/headers, Objective-C,
 C++, TOML, JSON/JSONC and HTML without embedded code. YAML uses its pinned CST parser. Swift raw
 strings, embedded HTML scripts/styles and unknown source formats currently fail safely. Markdown,
 plain text, LICENSE/NOTICE, listed binary/media/font suffixes and lock data are non-code; there is no
@@ -107,3 +107,7 @@ blanket generated/vendor comment skip. See comments.ts for exact grammar/suffix 
 
 For safe setup and verified legacy LOC retirement, see
 [hook preparation](../../../enablement/directory-width/README.md#hook-activation-and-preservation).
+
+Additional execution-context, React effect, secrets and CI admission contracts and limitations are in
+[runtime safeguards](runtime/README.md); [owner fast checks](fast/README.md) describes provisioned
+typechecking, typed promise lint, focused tests and immutable source/tool validation.

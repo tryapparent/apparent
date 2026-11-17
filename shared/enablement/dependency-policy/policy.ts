@@ -1,3 +1,4 @@
+import {executionEdges, type Edge} from "./runtime/contexts.ts";
 import path from 'node:path';
 import {builtinModules} from 'node:module';
 import ts from 'typescript';
@@ -50,11 +51,12 @@ function publicFile(snapshot: Snapshot, file: string): boolean {
   }
   return false;
 }
-export function analyze(snapshot: Snapshot): Set<string> {
+export function analyze(snapshot: Snapshot, observed?: Edge[], ambient: Edge[] = []): Set<string> {
   const forbidden = new Set<string>();
+  const edges: Edge[] = [...ambient];
   for (const [file, text] of snapshot.files) {
     const from = owner(file);
-    if (!from || !source.test(file)) continue;
+    if ((!from && !observed) || !source.test(file)) continue;
     const ast = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
     for (const d of (ast as any).parseDiagnostics ?? [])
       snapshot.issues.add(`${file}: syntax: ${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`);
@@ -74,9 +76,11 @@ export function analyze(snapshot: Snapshot): Set<string> {
           if (!target) target = `${pkg.dir}/package.json#${spec.slice(pkgName.length) || '.'}`;
         } else if (!target) target = `${pkg.dir}/package.json#private:${spec}`;
       }
+      edges.push({from: file, target, spec});
+      observed?.push({from: file, target, spec});
       if (target) {
         const to = owner(target);
-        if (to !== from && (!to || !allowed[from].includes(to) || !isPublic))
+        if (from && to !== from && (!to || !allowed[from].includes(to) || !isPublic))
           forbidden.add(`${file} -> ${target} (${from} to ${to}${isPublic ? '' : ', non-public contract'})`);
         return;
       }
@@ -107,6 +111,7 @@ export function analyze(snapshot: Snapshot): Set<string> {
     }
     visit(ast);
   }
+  for (const issue of executionEdges(edges)) forbidden.add(issue);
   for (const issue of snapshot.issues) forbidden.add(`unsupported: ${issue}`);
   return forbidden;
 }
