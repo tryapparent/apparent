@@ -580,23 +580,43 @@ mod tests {
     use super::*;
     use std::io::{BufRead, BufReader};
     use std::net::TcpListener;
+    use std::os::unix::fs::PermissionsExt;
     use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
 
     struct Fake {
         port: u16,
         requests: Arc<Mutex<Vec<(String, String, usize)>>>,
+        listener: TcpListener,
+        stopped: Arc<AtomicBool>,
+        worker: Option<std::thread::JoinHandle<()>>,
     }
 
-    /// Serves `respond(method, path, authorized)` on a loopback port until the test ends.
+    impl Drop for Fake {
+        fn drop(&mut self) {
+            self.stopped.store(true, Ordering::Release);
+            // Retaining our listener prevents address reuse even after a worker panic.
+            let _ = TcpStream::connect_timeout(&self.listener.local_addr().unwrap(), CONNECT_TIMEOUT);
+            let joined = self.worker.take().unwrap().join();
+            if !std::thread::panicking() { joined.unwrap(); }
+        }
+    }
+
+    /// Serves the external HTTP boundary until its owner wakes and joins the worker.
     fn fake_hex(respond: impl Fn(&str, &str, bool) -> (u16, String) + Send + 'static) -> Fake {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
         let requests = Arc::new(Mutex::new(Vec::new()));
         let log = Arc::clone(&requests);
-        std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                let Ok(mut stream) = stream else { return };
+        let stopped = Arc::new(AtomicBool::new(false));
+        let stopping = Arc::clone(&stopped);
+        let incoming = listener.try_clone().unwrap();
+        let worker = std::thread::spawn(move || {
+            for stream in incoming.incoming() {
+                if stopping.load(Ordering::Acquire) { return; }
+                let mut stream = stream.expect("fake Hex accept failed");
+                stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                stream.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
                 let mut reader = BufReader::new(stream.try_clone().unwrap());
                 let mut line = String::new();
                 reader.read_line(&mut line).unwrap();
@@ -629,7 +649,7 @@ mod tests {
                 );
             }
         });
-        Fake { port, requests }
+        Fake { port, requests, listener, stopped, worker: Some(worker) }
     }
 
     fn client(port: u16) -> Client {
@@ -672,26 +692,26 @@ mod tests {
 
     #[test]
     fn missing_discovery_or_refused_connection_is_not_connected() {
-        let dir = std::env::temp_dir().join(format!("apparent-hex-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        assert!(Client::connect_at(&dir.join("nope.json")).is_err());
-        let closed = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-        let port = closed.local_addr().unwrap().port();
-        drop(closed);
-        let path = dir.join("local-api.json");
+        let dir = tempfile::Builder::new().permissions(std::fs::Permissions::from_mode(0o700)).tempdir().unwrap();
+        assert!(Client::connect_at(&dir.path().join("nope.json")).is_err());
+        let fake = fake_hex(|_, _, _| (200, r#"{"version":"2.2.0","apiVersion":"2"}"#.into()));
+        assert_eq!(client(fake.port).health().unwrap(), "2.2.0");
+        let port = fake.port;
+        let log = Arc::downgrade(&fake.requests);
+        drop(fake);
+        assert!(log.upgrade().is_none(), "fake server worker outlived its owner");
+        let path = dir.path().join("local-api.json");
         std::fs::write(
             &path,
             format!(r#"{{"port":{port},"token":"t","apiVersion":"2"}}"#),
         )
         .unwrap();
         assert!(Client::connect_at(&path).is_err());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn connect_checks_token_and_api_version() {
-        let dir = std::env::temp_dir().join(format!("apparent-hex-v-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = tempfile::Builder::new().permissions(std::fs::Permissions::from_mode(0o700)).tempdir().unwrap();
         let fake = fake_hex(|_, path, authorized| {
             match (path, authorized) {
             (_, false) => (401, String::new()),
@@ -705,7 +725,7 @@ mod tests {
         }
         });
         let write = |token: &str| {
-            let path = dir.join("local-api.json");
+            let path = dir.path().join("local-api.json");
             std::fs::write(
                 &path,
                 format!(
@@ -727,7 +747,6 @@ mod tests {
 
         let old = fake_hex(|_, _, _| (200, r#"{"version":"1.9","apiVersion":"1"}"#.into()));
         assert!(client(old.port).health().is_err());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -758,10 +777,10 @@ mod tests {
     #[test]
     fn language_is_sent_to_hex_without_injecting_query_parameters() {
         let fake = fake_hex(|_, _, _| (200, r#"{"transcript":"tekst"}"#.into()));
-        for language in ["nl", "auto", "en"] {
-            client(fake.port)
-                .transcribe(b"RIFF", "m", language)
-                .unwrap();
+        let cases = [("nl", "nl"), ("auto", "auto"), ("en", "en"),
+            ("", "en"), (" NL ", "nl"), ("new-Language", "new-language")];
+        for (language, _) in cases {
+            assert_eq!(client(fake.port).transcribe(b"RIFF", "m", language).unwrap(), "tekst");
         }
         let paths: Vec<_> = fake
             .requests
@@ -772,31 +791,13 @@ mod tests {
             .collect();
         assert_eq!(
             paths,
-            [
-                "/transcriptions?model=m&language=nl",
-                "/transcriptions?model=m&language=auto",
-                "/transcriptions?model=m&language=en",
-            ]
+            cases.map(|(_, expected)| format!("/transcriptions?model=m&language={expected}"))
         );
-        assert!(
-            client(fake.port)
-                .transcribe(b"RIFF", "m", "nl&language=en")
-                .is_err()
-        );
-        assert_eq!(fake.requests.lock().unwrap().len(), 3);
-    }
-
-    #[test]
-    fn language_codes_allow_future_languages_but_not_url_syntax() {
-        assert_eq!(language_code("").as_deref(), Some("en"));
-        assert_eq!(language_code(" NL ").as_deref(), Some("nl"));
-        assert_eq!(
-            language_code("new-Language").as_deref(),
-            Some("new-language")
-        );
-        for invalid in ["nl&x=y", "nl?", "en\r\nInjected", "*", "1", "two words"] {
-            assert!(language_code(invalid).is_none(), "{invalid:?}");
+        for invalid in ["nl&language=en", "nl&x=y", "nl?", "en\r\nInjected", "*", "1", "two words"] {
+            assert!(matches!(client(fake.port).transcribe(b"RIFF", "m", invalid),
+                Err(Failure::Rejected { status: 400, code }) if code == "invalid-language"), "{invalid:?}");
         }
+        assert_eq!(fake.requests.lock().unwrap().len(), cases.len(), "invalid languages never reach Hex");
     }
 
     #[test]
@@ -817,24 +818,21 @@ mod tests {
             .transcribe_retrying(b"RIFF", "m", "nl")
             .unwrap();
         assert_eq!(text, "hello there");
-        assert_eq!(calls.load(Ordering::SeqCst), 3);
-        let (method, path, length) = fake.requests.lock().unwrap()[0].clone();
-        assert_eq!(method, "POST");
-        assert_eq!(path, "/transcriptions?model=m&language=nl");
-        assert_eq!(length, 4);
-        assert!(fake.requests.lock().unwrap().iter()
-            .all(|(_, path, _)| path == "/transcriptions?model=m&language=nl"));
+        assert_eq!(*fake.requests.lock().unwrap(),
+            vec![("POST".into(), "/transcriptions?model=m&language=nl".into(), 4); 3]);
 
         let refused = fake_hex(|_, _, _| (409, r#"{"code":"model-not-ready"}"#.into()));
         assert!(matches!(
-            client(refused.port).transcribe(b"x", "m", "en"),
+            client(refused.port).transcribe_retrying(b"x", "m", "en"),
             Err(Failure::Unavailable(_))
         ));
+        assert_eq!(refused.requests.lock().unwrap().len(), 1, "HTTP 409 must not be retried");
         let bad = fake_hex(|_, _, _| (400, r#"{"code":"invalid-audio"}"#.into()));
         assert!(matches!(
-            client(bad.port).transcribe(b"x", "m", "en"),
+            client(bad.port).transcribe_retrying(b"x", "m", "en"),
             Err(Failure::Rejected { status: 400, .. })
         ));
+        assert_eq!(bad.requests.lock().unwrap().len(), 1, "HTTP 400 must not be retried");
     }
 
     #[test]

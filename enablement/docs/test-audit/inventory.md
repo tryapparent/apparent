@@ -547,6 +547,7 @@
 | Public | public/site/src/demo/core/Demo.tsx | source candidate | 730 | pending |
 | Public | public/site/src/latest-download.ts | source candidate | 24 | pending |
 | Public | public/site/src/platform.ts | source candidate | 130 | pending |
+| Public | public/enablement/site-build/runtime-caches.test.ts | upstream addition | 0 | added by #1426; pending Public owner audit |
 | Record | record/capture-request/src/lifecycle.ts | source candidate | 59 | pending |
 | Record | record/capture-request/test/lifecycle.test.ts | source candidate | 40 | audited, delivery pending |
 | Record | record/completion/src/worker.ts | source candidate | 52 | pending |
@@ -588,7 +589,7 @@
 | Shared | shared/handoff/mod.rs | source candidate | 1996 | pending |
 | Shared | shared/handoff/pen.rs | source candidate | 62 | pending |
 | Shared | shared/handoff/test_modules.rs | source candidate | 1350 | pending |
-| Shared | shared/hex.rs | source candidate | 964 | pending |
+| Shared | shared/hex.rs | source candidate | 964 | audited candidate; 13 to 12 declarations, -2 support lines; [contracts/evidence](../../../shared/enablement/test-audit.md); hosted/delivery gates pending |
 | Shared | shared/model.rs | source candidate | 811 | pending |
 | Shared | shared/routing.rs | source candidate | 132 | pending |
 | Shared | shared/ui/test/appearance.mjs | source candidate | 97 | pending |
