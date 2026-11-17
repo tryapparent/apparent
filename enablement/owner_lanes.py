@@ -24,7 +24,7 @@ def consumers(path):
         ('connect/client/', {'connect-client', 'capture'}, 'client package and real application provider integration'),
         ('connect/web/', {'connect-web', 'public-site'}, 'browser package and Public composition'),
         ('connect/service/', {'connect-service', 'connect-client', 'connect-web', 'public-site', 'capture'}, 'service API and application/browser consumers'),
-        ('public/site/', {'public-site'}, 'Public build, packaging and browser contracts'),
+        ('public/', {'public-site'}, 'Public build, packaging and browser contracts'),
         ('shared/ui/', {'desktop-ui', 'connect-service', 'capture'}, 'shared Desktop and service recipient UI; Rust bridge integration'),
         ('capture/desktop/ui/frontend/', {'desktop-ui', 'capture'}, 'renderer/Electron and real Rust bridge integration'),
         ('capture/desktop/', {'capture', 'desktop-ui', 'engine-staged'}, 'Desktop native/Rust bridge and renderer consumers'),
@@ -106,7 +106,7 @@ def run_lane(lane, online=False):
         run(['npm', 'test'], directory)
         run((['xvfb-run', '-a'] if sys.platform == 'linux' else []) + ['npm', 'run', 'test:electron'], directory)
     elif lane == 'public-site':
-        run(['node', 'scripts/site-build/verify.mjs'], 'public/site')
+        run(['node', '../enablement/site-build/verify.mjs'], 'public/site')
 
 
 def main():

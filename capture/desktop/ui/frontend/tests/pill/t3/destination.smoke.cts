@@ -1,14 +1,16 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');
 const {_electron:electron,expect}=require('@playwright/test');const path=require('node:path');const fs=require('node:fs/promises');
 test('real pill keeps Paste by default, then selects during processing and dispatches through main only', {timeout:60000},async t=>{
+ // Close Electron before fixture teardown waits for sockets and removes its HOME.
+ let app; t.after(async()=>{await app?.close().catch(()=>{});});
  const {fixture}=await import('./testing/server.ts');const f=await fixture(t);f.many();await f.save(false);
- const app=await electron.launch({args:[path.resolve(__dirname,'../host.cjs'),'--no-sandbox','--ozone-platform=x11','--force-device-scale-factor=1'],env:{...process.env,APPARENT_CONFIG:f.config,HOME:f.home,XDG_CONFIG_HOME:path.join(f.home,'config')}});
+ app=await electron.launch({args:[path.resolve(__dirname,'../host.cjs'),'--no-sandbox','--ozone-platform=x11',`--force-device-scale-factor=${process.env.APPARENT_T3_SCALE??'1'}`],env:{...process.env,APPARENT_CONFIG:f.config,HOME:f.home,XDG_CONFIG_HOME:path.join(f.home,'config')}});
  let page=await app.firstWindow();
  // Electron can publish the initial ready line before launch/firstWindow
  // resolves. Read that window's actual identity; observe only future ready
  // lines instead of assuming stdout replays the startup announcement.
  const initialWindowId=await app.evaluate(({BrowserWindow})=>Number(BrowserWindow.getAllWindows()[0].getMediaSourceId().split(':')[1]));
- t.after(async()=>{await app.close().catch(()=>{});});
+
  let parentBuffer='',holdActivation=false;const readyIds=[];
  const activate=id=>app.evaluate((_electron,id)=>process.stdin.emit('data',JSON.stringify({type:'activate',windowId:id})+'\n'),id);
  app.process().stdout.on('data',chunk=>{parentBuffer+=String(chunk);let end;while((end=parentBuffer.indexOf('\n'))>=0){const line=parentBuffer.slice(0,end);parentBuffer=parentBuffer.slice(end+1);try{const message=JSON.parse(line);if(message.ready){readyIds.push(message.windowId);if(!holdActivation)void activate(message.windowId).catch(()=>{});}}catch{}}});
@@ -55,7 +57,7 @@ test('real pill keeps Paste by default, then selects during processing and dispa
  for(const colorScheme of ['dark','light']){await page.emulateMedia({colorScheme,reducedMotion:'reduce'});await proof('processing-expanded-'+colorScheme);}
  assert.ok((await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].getBounds())).height>160,'native window must fit the expanded tray');
  await page.keyboard.press('Escape');await expect(trigger).toHaveAttribute('aria-expanded','false');await expect(trigger).toContainText('New thread');assert.equal(f.calls.length,0);
- await trigger.click();await page.keyboard.press('Enter');await expect(page.getByRole('button',{name:'Cancel handoff',exact:true})).toBeVisible();assert.equal(f.calls.length,0);
+ await trigger.click();await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');await expect(page.getByRole('button',{name:'Cancel handoff',exact:true})).toBeVisible();assert.equal(f.calls.length,0);
  const handoff='PRIVATE exact recording handoff';await app.evaluate((_electron,args)=>process.stdin.emit('data',JSON.stringify({type:'handoff-ready',capture:'on',text:args})+'\n'),handoff);
  frame={...frame,view:{...frame.view,revision:3,phase:'completed',label:'Saved',actions:[{id:'paste',label:'Paste',enabled:true,selected:false,primary:true}]}};await publish();
  await expect.poll(()=>f.calls.length).toBe(1);await expect(trigger).toBeDisabled();assert.equal(f.calls[0].payload.threadId,'thread');assert.equal(f.calls[0].payload.text,handoff);assert.equal(await page.evaluate(()=>document.body.textContent.includes('PRIVATE')),false);
@@ -80,13 +82,13 @@ test('real pill keeps Paste by default, then selects during processing and dispa
   await app.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0],shape=w.setShape.bind(w);w.__pickerShapes=[];w.setShape=rects=>{w.__pickerShapes.push(rects);return shape(rects);};});
   await page.evaluate(()=>{window.__originalPickerFrame=window.requestAnimationFrame;window.__pickerFrames=[];window.requestAnimationFrame=callback=>window.__pickerFrames.push(callback);});
   await page.keyboard.press('Escape');
-  await expect.poll(()=>app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].getBounds().height)).toBe(58);
+  await expect.poll(async()=>{const height=await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].getBounds().height),body=await page.locator('main').boundingBox();return !!body&&height>=body.height&&height<=Math.ceil(body.height)+3;}).toBe(true);
   await trigger.focus();await page.keyboard.press('ArrowDown');await expect(page.getByRole('option')).toHaveCount(3);
   await expect.poll(()=>app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].getBounds().height)).toBeGreaterThan(160);
   assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].__pickerShapes.every(shape=>shape.length===1)),true);
   await page.evaluate(async revision=>{for(let i=0;i<8;i++){for(const callback of window.__pickerFrames.splice(0))callback(performance.now());await new Promise(r=>setTimeout(r,10));}window.requestAnimationFrame=window.__originalPickerFrame;await window.apparentPill.layout(revision);},frame.view.revision);
   const masks=await app.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0];return {height:w.getBounds().height,rounded:w.__pickerShapes.filter(shape=>shape.length>1).map(shape=>Math.max(...shape.map(r=>r.y+r.height)))};});
-  assert.ok(masks.rounded.length>0);assert.ok(masks.rounded.every(height=>height===masks.height),'only the current list size may restore the rounded mask');
+  assert.ok(masks.rounded.length>0);assert.ok(masks.rounded.every(height=>Math.abs(height-masks.height)<=2),'only the current list size may restore the rounded mask, allowing X11 fractional-DPI rounding');
  }
  assert.equal(await page.evaluate(async()=>{try{await fetch('https://example.com');return false;}catch{return true;}}),true);
  const reads=f.reads,returning=process.platform==='linux'?app.waitForEvent('window'):null;
@@ -95,12 +97,14 @@ test('real pill keeps Paste by default, then selects during processing and dispa
  if(returning)assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isFocusable()),false,'turning off restores the original non-focusable recording role');
 });
 
-test('enabled unpaired pill opens Agents through the native pipe and can copy the kept recording', {timeout:30000},async t=>{
+test('enabled unpaired pill opens Labs through the native pipe and can copy the kept recording', {timeout:30000},async t=>{
+ // Close Electron before fixture teardown waits for sockets and removes its HOME.
+ let app; t.after(async()=>{await app?.close().catch(()=>{});});
  const {fixture}=await import('./testing/server.ts');const f=await fixture(t);
  await fs.writeFile(f.config,JSON.stringify({experiments:{t3DestinationPicker:true}}));
- const app=await electron.launch({args:[path.resolve(__dirname,'../host.cjs'),'--no-sandbox','--ozone-platform=x11'],env:{...process.env,APPARENT_CONFIG:f.config,HOME:f.home}});t.after(async()=>{await app.close().catch(()=>{});});
+ app=await electron.launch({args:[path.resolve(__dirname,'../host.cjs'),'--no-sandbox','--ozone-platform=x11'],env:{...process.env,APPARENT_CONFIG:f.config,HOME:f.home}});
  let page=await app.firstWindow(),buffer='',setup=false;
- app.process().stdout.on('data',chunk=>{buffer+=String(chunk);let end;while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end);buffer=buffer.slice(end+1);try{const value=JSON.parse(line);if(value.ready)void app.evaluate((_electron,id)=>process.stdin.emit('data',JSON.stringify({type:'activate',windowId:id})+'\n'),value.windowId).catch(()=>{});if(value.action==='settings-agents')setup=true;}catch{}}});
+ app.process().stdout.on('data',chunk=>{buffer+=String(chunk);let end;while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end);buffer=buffer.slice(end+1);try{const value=JSON.parse(line);if(value.ready)void app.evaluate((_electron,id)=>process.stdin.emit('data',JSON.stringify({type:'activate',windowId:id})+'\n'),value.windowId).catch(()=>{});if(value.action==='settings-labs')setup=true;}catch{}}});
  const frame={type:'state',capture:'unpaired',t3Eligible:true,view:{revision:1,phase:'completed',clock:'00:04',label:'Saved',warning:null,notice:null,reducedMotion:true,draggable:false,inputWaveform:null,noteCount:0,actions:[{id:'paste',label:'Paste',enabled:true,selected:false,primary:true}]}};
  const next=process.platform==='linux'?app.waitForEvent('window'):null;
  const publish=()=>app.evaluate((_electron,value)=>process.stdin.emit('data',JSON.stringify(value)+'\n'),frame);
@@ -110,4 +114,20 @@ test('enabled unpaired pill opens Agents through the native pipe and can copy th
  await app.evaluate(()=>process.stdin.emit('data',JSON.stringify({type:'handoff-ready',capture:'unpaired',text:'Kept synthetic recording'})+'\n'));
  await page.getByRole('button',{name:'Copy instead',exact:true}).click();await expect(page.getByText('Copied',{exact:true})).toBeVisible();assert.equal(await app.evaluate(({clipboard})=>clipboard.readText()),'Kept synthetic recording');assert.equal(f.calls.length,0);
  if(process.env.APPARENT_T3_PROOF)for(const colorScheme of ['light','dark']){await page.emulateMedia({colorScheme});await page.screenshot({path:path.join(process.env.APPARENT_T3_PROOF,'unpaired-'+colorScheme+'.png')});}
+});
+
+test('a first Enter and a mouse selection both launch New thread when it is the only destination',{timeout:30000},async t=>{
+ // Close Electron before fixture teardown waits for sockets and removes its HOME.
+ let app; t.after(async()=>{await app?.close().catch(()=>{});});
+ const {fixture}=await import('./testing/server.ts');const f=await fixture(t);f.empty();
+ app=await electron.launch({args:[path.resolve(__dirname,'../host.cjs'),'--no-sandbox','--ozone-platform=x11'],env:{...process.env,APPARENT_CONFIG:f.config,HOME:f.home}});
+ let buffer='';app.process().stdout.on('data',chunk=>{buffer+=String(chunk);let end;while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end);buffer=buffer.slice(end+1);try{const message=JSON.parse(line);if(message.ready)void app.evaluate((_electron,id)=>process.stdin.emit('data',JSON.stringify({type:'activate',windowId:id})+'\n'),message.windowId).catch(()=>{});}catch{}}});
+ const send=value=>app.evaluate((_electron,value)=>process.stdin.emit('data',JSON.stringify(value)+'\n'),value);
+ let frame={type:'state',capture:'keyboard',t3Eligible:true,view:{revision:1,phase:'completed',clock:'00:04',label:'Saved',warning:null,notice:null,reducedMotion:true,draggable:false,inputWaveform:null,noteCount:0,actions:[]}};
+ await send(frame);const heartbeat=setInterval(()=>void send(frame).catch(()=>{}),500);t.after(()=>clearInterval(heartbeat));
+ let page;await expect.poll(async()=>{page=app.windows().find(p=>!p.isClosed());return page?await page.getByRole('combobox').count():0;}).toBe(1);
+ const trigger=()=>page.getByRole('combobox');await expect(trigger()).toBeFocused();
+ await send({type:'handoff-ready',capture:'keyboard',text:'Synthetic first Enter'});await page.keyboard.press('Enter');await expect.poll(()=>f.calls.length).toBe(1);assert.equal(f.calls[0].tag,'orchestration.launchThread');
+ frame={...frame,capture:'mouse',view:{...frame.view,revision:2}};await send(frame);await expect(trigger()).toBeEnabled();await send({type:'handoff-ready',capture:'mouse',text:'Synthetic mouse choice'});
+ await trigger().click();await expect(page.getByRole('option')).toHaveCount(1);await page.getByRole('option').click();await expect.poll(()=>f.calls.length).toBe(2);assert.equal(f.calls[1].tag,'orchestration.launchThread');
 });

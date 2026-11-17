@@ -116,7 +116,7 @@ class PrePushGuardTests(unittest.TestCase):
         # selected client invokes Cargo directly. Observe that allocation too.
         (self.bin / "cargo").write_text('#!/bin/sh\nprintf "cargo %s\\n" "$*" >> "$COMMAND_LOG"\nexit "${MOCK_STATUS:-0}"\n')
         node = self.bin / "node"
-        node.write_text('#!/bin/sh\ncase "$1" in scripts/site-build/verify.mjs|scripts/test-browser.mjs) exit "${MOCK_STATUS:-0}";; esac\nexec ' + shutil.which("node") + ' "$@"\n')
+        node.write_text('#!/bin/sh\ncase "$1" in ../enablement/site-build/verify.mjs|scripts/test-browser.mjs) exit "${MOCK_STATUS:-0}";; esac\nexec ' + shutil.which("node") + ' "$@"\n')
         node.chmod(0o755)
         run("git", "add", ".", cwd=self.repo)
         run("git", "commit", "-qm", "finite owner fixtures", cwd=self.repo)

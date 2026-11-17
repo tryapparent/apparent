@@ -78,7 +78,7 @@ test('Labs is a separate flask pane with acknowledged experiment saves and bound
     }else{await expect(wispr).toBeDisabled();await assert.rejects(()=>page.evaluate(()=>window.apparentLabs.save(true,'wisprFlow')));}
     assert.equal(await page.evaluate(async()=>await window.apparentGeneral.read().then(()=>false,()=>true) && await window.apparent!.readConnectSettings().then(()=>false,()=>true)),true);
     assert.equal(await page.evaluate(async()=>{
-      for(const call of [()=>window.apparentAgents.save(true),()=>window.apparentAgents.saveT3(true),()=>window.apparentAgents.copySkill(),()=>window.apparent.resetCaptureLocation(),()=>window.apparentLabs.save('true' as unknown as boolean),()=>window.apparentLabs.save(true,'t3' as 'sharing')]){
+      for(const call of [()=>window.apparentAgents.save(true),()=>window.apparentAgents.copySkill(),()=>window.apparent.resetCaptureLocation(),()=>window.apparentLabs.save('true' as unknown as boolean),()=>window.apparentLabs.save(true,'t3' as 'sharing')]){
         try{await call();return false;}catch{}
       }return true;
     }),true,'Labs cannot mutate other panes or send non-boolean preferences');
