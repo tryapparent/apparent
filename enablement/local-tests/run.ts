@@ -1,3 +1,4 @@
+import { verification as publicVerification } from '../../public/enablement/cd/ci/inputs.ts';
 // Local owner-level gates. Native/release proof remains separately required.
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
@@ -191,7 +192,7 @@ export function commands(selected: Owner[], base: string, head: string, platform
     add(['npm', 'ci', '--no-audit', '--no-fund'], 'connect/tooling/hosting');
     add(['npm', 'test'], 'connect/tooling/hosting');
   }
-  if (selected.includes('public')) add(['node', 'scripts/site-build/verify.mjs'], 'public/site');
+  if (selected.includes('public')) add(publicVerification.argv, publicVerification.cwd);
   return result;
 }
 
