@@ -57,6 +57,27 @@ scheduler remain compatibility debt. This package's headless checks prove its po
 controller loop, not Linux adoption, native GUI acceptance or whole-Settings build
 independence. Routing and fallback/removal gates remain in the frontend README.
 
+## Renderer controller verification boundary
+
+Committed modifications to `location-controller.ts` and `retention-controller.ts`
+can use Desktop renderer verification without root Rust compilation when their
+imports, public ports and method signatures remain unchanged and the audited
+consumer inventory has no new references. Public additions and newly called
+capabilities also fail qualification. Native-consumer source/build blobs are
+pinned; changes require re-auditing that graph before later controller edits can
+qualify. This catches indirect imports through the package barrel.
+The ordinary frontend build consumes
+the compiled package; Linux package/controller tests and actual Electron Storage
+and Retention screens remain checked. The existing Mac Electron inventory checks
+Hermes runtime and pill foreground, not these screens. Main still requires normal
+packaging/publication and its applicable native acceptance.
+New files, deletions, mode changes, new capabilities, shared validators/types,
+host workflows, cleanup planning, compiler/dependency and staging changes retain
+native integration. Unknown history or unavailable proof also retains it.
+The qualification lives in `enablement/ci/routing/record-storage/`.
+This is a compilation boundary, not proof of native chooser/config/cleanup
+effects or a measured recurring CI speedup.
+
 ## Cleanup planning
 
 `planRetention` owns age/settling thresholds, action priority and mirror-video

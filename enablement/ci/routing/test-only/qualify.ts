@@ -6,6 +6,14 @@ import {moduleImports} from '../fixture-portability/imports.ts';
 export const ciTestInputs = new Set(['enablement/ci/runner/mac-platform.test.ts']);
 const dependencies = ['node:test', 'node:assert/strict', 'node:fs', 'node:path',
   'node:os', 'node:child_process', 'bun', '../routing/consumers.ts'].sort();
+// Reviewed ownership comments and literal references to other named contracts.
+// Pin complete regular-file blobs: changed code, aliases or modes need an audit.
+const reviewedMentions = new Map([
+  ['enablement/ci/routing/engine-inputs/qualify.ts', '81e64db4b1e44d84ddec53c47908c06bedc40392'],
+  ['enablement/ci/routing/engine-inputs/range.test.ts', 'eced31d7c5320a93a30c42dfb35dfd09bb4ced79'],
+  ['capture/desktop/ui/frontend/tests/foreground/mac.ts', '607aaf08210f935de4bad8a9b720e46a37bdfcdc'],
+  ['enablement/ci/runner/mac-pill-bootstrap.test.ts', 'c885dfcbd9176d9da7f9f59a921ec80ea4bea258'],
+]);
 
 export function qualifyCiTests(base: string, head: string, candidates: string[], cwd: string): string[] {
   const git = (args: string[]) => execFileSync('git', args, {cwd, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024});
@@ -30,7 +38,9 @@ export function qualifyCiTests(base: string, head: string, candidates: string[],
       catch (error) { if ((error as {status?: number}).status !== 1) throw error; }
       return references.trim().split('\n').filter(Boolean).every(line => {
         const consumer = line.slice(head.length + 1);
-        return consumer === path || consumer.endsWith('.md') ||
+        const reviewed = reviewedMentions.get(consumer);
+        return (reviewed !== undefined && git(['ls-tree', head, '--', consumer]).trim() === `100644 blob ${reviewed}\t${consumer}`) ||
+          consumer === path || consumer.endsWith('.md') ||
           consumer === 'enablement/ci/routing/test-only/qualify.ts' ||
           consumer === 'enablement/ci/routing/test-only/qualify.test.ts';
       });

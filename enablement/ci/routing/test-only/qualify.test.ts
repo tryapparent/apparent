@@ -18,6 +18,11 @@ function repository(t: any) {
   const put = (name: string, text: string) => {mkdirSync(dirname(join(cwd, name)), {recursive:true}); writeFileSync(join(cwd, name), text);};
   git('init', '-q'); git('config', 'user.name', 'Synthetic'); git('config', 'user.email', 'synthetic@example.invalid');
   put(path, original); put('capture/engine/src/lib.rs', '// native');
+  // Real adjacent caller bytes are part of the candidate reference inventory.
+  for (const adjacent of ['enablement/ci/routing/engine-inputs/qualify.ts',
+    'enablement/ci/routing/engine-inputs/range.test.ts',
+    'capture/desktop/ui/frontend/tests/foreground/mac.ts',
+    'enablement/ci/runner/mac-pill-bootstrap.test.ts']) put(adjacent, readFileSync(adjacent, 'utf8'));
   const commit = () => {git('add', '.'); git('-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'synthetic'); return git('rev-parse', 'HEAD');};
   return {cwd, git, put, commit, base: commit()};
 }
@@ -86,6 +91,16 @@ for (const kind of ['import','dynamic','export','invalid','consumer','alias','un
 });
 test('unknown history cannot qualify', t => {
   const r=repository(t); assert.deepEqual(selectRange('absent',r.base,r.cwd).selected,[...owners]);
+});
+for (const kind of ['bytes', 'import', 'mode']) test('an earlier adjacent qualifier change revokes its reviewed mention: '+kind, t => {
+  const r=repository(t), adjacent='enablement/ci/routing/engine-inputs/qualify.ts';
+  if (kind === 'mode') chmodSync(join(r.cwd,adjacent),0o755);
+  else r.put(adjacent,readFileSync(adjacent,'utf8')+(kind === 'import' ? "\nimport '../../runner/mac-platform.test.ts';\n" : '\n// changed observation\n'));
+  const base=r.commit();
+  r.put(path,original+'\n// regression\n');
+  const result=selectRange(base,r.commit(),r.cwd);
+  assert.deepEqual(result.qualifiedCiTests,[]);
+  assert.deepEqual(result.selected,[...owners]);
 });
 test('five-file Desktop platform split retains actual execution consumers', t => {
   const r=repository(t);

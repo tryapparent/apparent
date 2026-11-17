@@ -129,3 +129,6 @@ Only its unrelated product consumers are removed; mixed execution inputs retain
 their own suites, native admission and publication policy. Unknown tests and the
 qualifier/selector implementations remain broad. Roll back by removing the
 `qualifiedCiTests` routing input; workflow triggers are unchanged.
+Adjacent ownership comments and explicit references to other named contracts
+are recognized only at four reviewed regular-file blobs; any byte or mode change
+revokes that recognition.

@@ -2862,7 +2862,7 @@ impl ApparentCoordinator {
             PillAction::CopyLink => self.copy_completed_link(cx),
             PillAction::CopyPublicLink => self.copy_completed_link_with_consent(true, cx),
             PillAction::Inspect => self.inspect_completed_bundle(cx),
-            PillAction::SettingsAgents => self.open_settings(Some(settings::Pane::Agents)),
+            PillAction::SettingsAgents => self.open_settings(Some(settings::Pane::Labs)),
             PillAction::DismissCompleted => self.dismiss_completed_bundle(cx),
             PillAction::Route(_) => {}
         }
