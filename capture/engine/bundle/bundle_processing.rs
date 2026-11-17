@@ -382,7 +382,7 @@ pub fn finalize_capture_bundle(
                     &strokes,
                     &mut preview_marks,
                     &events,
-                    &TranscriptData::default(),
+                    &crate::capture::engine::keyframes::SpeechInput::empty(&TranscriptData::default()),
                     limits,
                     video_ink,
                 ).frames;
@@ -618,12 +618,13 @@ pub fn build_bundle_from_parts(
         }
         let bench = std::env::var_os("APPARENT_BENCH").is_some();
         let started = std::time::Instant::now();
+        let speech = crate::composition::transcript::speech::plan(&transcript)?;
         let selected = crate::composition::transcript::apply(select_keyframes_with_limits(
             &frames,
             &strokes,
             &mut marks,
             &events,
-            &transcript,
+            &speech,
             limits,
             extras.video_ink,
         ), &transcript)?;
