@@ -1,13 +1,100 @@
 name: Connect continuous delivery
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "**"
+      - "!capture/**"
+      - "!record/**"
+      - "!connect/**"
+      - "!public/**"
+      - "!hermes/**"
+      - "!enablement/**"
+      - "!shared/**"
+      - "!composition/**"
+      - "!.cargo/**"
+      - "!.github/**"
+      - "!.githooks/**"
+      - "!engine/**"
+      - "!AGENTS.md"
+      - "!README.md"
+      - "!Cargo.toml"
+      - "!Cargo.lock"
+      - "!build.rs"
+      - "!main.rs"
+      - "shared/**"
+      - "composition/**"
+      - "enablement/**"
+      - ".github/**"
+      - ".githooks/**"
+      - "!.github/workflows/stream-engine.yml"
+      - "!.github/workflows/hermes.yml"
+      - "!.github/workflows/stream-public.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "build.rs"
+      - "main.rs"
+      - ".cargo/**"
+      - ".github/workflows/verification-platform.yml"
+      - "enablement/verification.py"
+      - "enablement/prerequisites/**"
+      - "enablement/local-tests/**"
+      - "enablement/native-build/**"
+      - "capture/desktop/scripts/packaging/install-app.sh"
+      - "capture/desktop/scripts/packaging/frontend/stage.ts"
+      - "connect/**"
+      - "public/**"
+      - ".github/workflows/stream-connect.yml"
+      - "enablement/release_gate.py"
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
+  push:
+    branches: [main]
+    paths:
+      - "**"
+      - "!capture/**"
+      - "!record/**"
+      - "!connect/**"
+      - "!public/**"
+      - "!hermes/**"
+      - "!enablement/**"
+      - "!shared/**"
+      - "!composition/**"
+      - "!.cargo/**"
+      - "!.github/**"
+      - "!.githooks/**"
+      - "!engine/**"
+      - "!AGENTS.md"
+      - "!README.md"
+      - "!Cargo.toml"
+      - "!Cargo.lock"
+      - "!build.rs"
+      - "!main.rs"
+      - "shared/**"
+      - "composition/**"
+      - "enablement/**"
+      - ".github/**"
+      - ".githooks/**"
+      - "!.github/workflows/stream-engine.yml"
+      - "!.github/workflows/hermes.yml"
+      - "!.github/workflows/stream-public.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "build.rs"
+      - "main.rs"
+      - ".cargo/**"
+      - ".github/workflows/verification-platform.yml"
+      - "enablement/verification.py"
+      - "enablement/prerequisites/**"
+      - "enablement/local-tests/**"
+      - "enablement/native-build/**"
+      - "capture/desktop/scripts/packaging/install-app.sh"
+      - "capture/desktop/scripts/packaging/frontend/stage.ts"
+      - "connect/**"
+      - "public/**"
+      - ".github/workflows/stream-connect.yml"
+      - "enablement/release_gate.py"
   workflow_dispatch:
-  workflow_call:
-    inputs:
-      shared_native:
-        description: Exact candidate receipt from the automatic caller's native dependencies
-        type: string
-        default: ''
 
 permissions:
   contents: read
@@ -25,7 +112,6 @@ jobs:
       native: ${{ steps.paths.outputs.native }}
       portable: ${{ steps.paths.outputs.portable }}
       publish: ${{ steps.paths.outputs.publish }}
-      shared: ${{ steps.paths.outputs.shared }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,8 +125,7 @@ jobs:
           # Every affected main candidate verifies the complete Connect tree;
           # irrelevant main advances do not supersede its pending delivery.
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          SHARED_NATIVE: ${{ inputs.shared_native }}
-        run: bun enablement/ci/routing/connect.ts --admit
+        run: bun connect/enablement/ci/select.ts --admit
 
   contracts:
     runs-on: ubuntu-24.04
@@ -52,7 +137,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.3.10'
-      - run: bun test enablement/ci/
+      - run: bun test enablement/ci/ connect/enablement/ci/
 
   portable:
     needs: [select, contracts]
@@ -87,7 +172,7 @@ jobs:
     needs: [select, contracts, portable]
     if: >-
       !cancelled() && needs.select.result == 'success' && needs.contracts.result == 'success' &&
-      (needs.portable.result == 'success' || needs.portable.result == 'skipped') && needs.select.outputs.native == 'true' && needs.select.outputs.shared != 'true' &&
+      (needs.portable.result == 'success' || needs.portable.result == 'skipped') && needs.select.outputs.native == 'true' &&
       (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     uses: ./.github/workflows/verification-platform.yml
     with:
@@ -100,7 +185,7 @@ jobs:
     needs: [select, contracts, portable]
     if: >-
       !cancelled() && needs.select.result == 'success' && needs.contracts.result == 'success' &&
-      (needs.portable.result == 'success' || needs.portable.result == 'skipped') && needs.select.outputs.native == 'true' && needs.select.outputs.shared != 'true' &&
+      (needs.portable.result == 'success' || needs.portable.result == 'skipped') && needs.select.outputs.native == 'true' &&
       (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     uses: ./.github/workflows/verification-platform.yml
     with:
@@ -117,7 +202,7 @@ jobs:
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       needs.select.result == 'success' && needs.contracts.result == 'success' && needs.portable.result == 'success' &&
       needs.select.outputs.publish != 'false' &&
-      (needs.select.outputs.shared == 'true' || needs.select.outputs.native == 'false' || (needs.linux.result == 'success' && needs.macos.result == 'success'))
+      (needs.select.outputs.native == 'false' || (needs.linux.result == 'success' && needs.macos.result == 'success'))
     permissions:
       contents: read
       actions: read
@@ -144,13 +229,12 @@ jobs:
           set -euo pipefail
           [[ "$GITHUB_REPOSITORY" == tryapparent/apparent && "$GITHUB_REF" == refs/heads/main ]]
           [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]
-          [[ "$GITHUB_WORKFLOW_REF" == tryapparent/apparent/.github/workflows/stream-connect.yml@refs/heads/main || "$GITHUB_WORKFLOW_REF" == tryapparent/apparent/.github/workflows/checks.yml@refs/heads/main ]]
+          [[ "$GITHUB_WORKFLOW_REF" == tryapparent/apparent/.github/workflows/stream-connect.yml@refs/heads/main ]]
           node --experimental-strip-types enablement/ci/routing/streams.ts connect "$REQUEST_SHA" || exit 0
           echo "sha=$REQUEST_SHA" >> "$GITHUB_OUTPUT"
 
   verify:
     needs: admit
-    # Shared native receipts intentionally skip the standalone platform jobs.
     if: >-
       !cancelled() && needs.admit.result == 'success' && needs.admit.outputs.sha != ''
     runs-on: ubuntu-24.04
@@ -173,15 +257,15 @@ jobs:
         with:
           bun-version: '1.3.10'
       - name: Test publication contracts
-        run: python3 -m unittest discover -s public/site/scripts/cd -p 'test_*.py'
+        run: python3 -m unittest discover -s public/enablement/cd -p 'test_*.py'
       - name: Verify Worker in local workerd with synthetic accounts
         working-directory: connect/service
         run: npm ci && npm test
       - name: Install locked website dependencies and browser
         working-directory: public/site
         run: |
-          bun install --frozen-lockfile
-          ./node_modules/.bin/playwright-core install --with-deps chromium firefox
+          bun install --cwd .. --frozen-lockfile
+          ../node_modules/.bin/playwright-core install --with-deps chromium firefox
           echo "CHROME_PATH=$(node --input-type=module -e 'import {chromium} from "playwright-core"; console.log(chromium.executablePath())')" >> "$GITHUB_ENV"
       - name: Independently build and verify Connect browser package
         working-directory: connect/web
@@ -196,23 +280,23 @@ jobs:
           VITE_HOSTED_API_ORIGIN: https://hosted.tryapparent.com
         run: |
           npm run build
-          node scripts/site-build/package-apparent.mjs
-          node --test scripts/brand/test-brand-favicon.mjs scripts/browser-proof/test-github-stars.mjs scripts/pages/test-latest-download.mjs scripts/pages/test-platform-os.mjs scripts/pages/test-public-homepage.ts scripts/browser-proof/test-video-demo.ts
-          node --test scripts/commerce/test-package-text.mjs scripts/commerce/test-feature-grid.mjs scripts/site-build/test-expected-canonical-packaging.mjs scripts/browser-proof/test-upstream-link-guard.mjs scripts/browser-proof/test-og-stage-redirect.mjs scripts/browser-proof/test-og-video-stage-browser.mjs ../../shared/analytics/config.test.ts
-          node scripts/cd/analytics-smoke.ts
+          node ../enablement/site-build/package-apparent.mjs
+          node --test ../enablement/brand/test-brand-favicon.mjs ../enablement/browser-proof/test-github-stars.mjs ../enablement/pages/test-latest-download.mjs ../enablement/pages/test-platform-os.mjs ../enablement/pages/test-public-homepage.ts ../enablement/browser-proof/test-video-demo.ts
+          node --test ../enablement/commerce/test-package-text.mjs ../enablement/commerce/test-feature-grid.mjs ../enablement/site-build/test-expected-canonical-packaging.mjs ../enablement/browser-proof/test-upstream-link-guard.mjs ../enablement/browser-proof/test-og-stage-redirect.mjs ../enablement/browser-proof/test-og-video-stage-browser.mjs ../../shared/analytics/config.test.ts
+          node ../enablement/cd/analytics-smoke.ts
           cp -a dist-apparent "$RUNNER_TEMP/public-artifact"
-          node scripts/connect/compose-connect.mjs
+          node ../enablement/connect/compose-connect.mjs
       - name: Preserve source-built homepage and prepare Pages-only artifact
         working-directory: public/site
         run: |
-          node --test scripts/connect/test-compose-connect.mjs scripts/pages/test-pages-package.ts scripts/pages/test-pages-video.mjs
-          node scripts/pages/prepare-pages.mjs
-          COMPOSE_PUBLIC_INPUT="$RUNNER_TEMP/public-artifact" node scripts/site-build/verify-composed.mjs
+          node --test ../enablement/connect/test-compose-connect.mjs ../enablement/pages/test-pages-package.ts ../enablement/pages/test-pages-video.mjs
+          node ../enablement/pages/prepare-pages.mjs
+          COMPOSE_PUBLIC_INPUT="$RUNNER_TEMP/public-artifact" node ../enablement/site-build/verify-composed.mjs
           PUBLIC_THEME_ARTIFACT=public/site/dist-apparent THEME_SURFACES=public,connect,recipient node ../../shared/ui/test/appearance.mjs
           npm run build:pages-worker
-          PAGES_WORKER=dist-apparent/_worker.js node --test scripts/pages/test-pages-video-runtime.ts
-          node scripts/pages/prepare-pages-video.mjs
-          SITE_ARTIFACT=dist-apparent node --test scripts/pages/test-public-homepage.ts
+          PAGES_WORKER=dist-apparent/_worker.js node --test ../enablement/pages/test-pages-video-runtime.ts
+          node ../enablement/pages/prepare-pages-video.mjs
+          SITE_ARTIFACT=dist-apparent node --test ../enablement/pages/test-public-homepage.ts
       - name: Verify Connect browser behavior across credentialed origins
         working-directory: public/site
         env:
@@ -226,9 +310,9 @@ jobs:
           SITE_EVIDENCE: ${{ runner.temp }}/connect-evidence
         run: |
           (cd ../../connect/web && CONNECT_BUILD_DIR=dist-test npm run build)
-          node scripts/connect/compose-connect.mjs
-          node scripts/pages/prepare-pages.mjs
-          node scripts/site-build/verify-composed.mjs
+          node ../enablement/connect/compose-connect.mjs
+          node ../enablement/pages/prepare-pages.mjs
+          node ../enablement/site-build/verify-composed.mjs
           npm run test:hosted
       - name: Verify and seal the mounted production gateway
         working-directory: connect/tooling/hosting

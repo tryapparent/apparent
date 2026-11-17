@@ -124,8 +124,11 @@ test('a first Enter and a mouse selection both launch New thread when it is the 
  let buffer='';app.process().stdout.on('data',chunk=>{buffer+=String(chunk);let end;while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end);buffer=buffer.slice(end+1);try{const message=JSON.parse(line);if(message.ready)void app.evaluate((_electron,id)=>process.stdin.emit('data',JSON.stringify({type:'activate',windowId:id})+'\n'),message.windowId).catch(()=>{});}catch{}}});
  const send=value=>app.evaluate((_electron,value)=>process.stdin.emit('data',JSON.stringify(value)+'\n'),value);
  let frame={type:'state',capture:'keyboard',t3Eligible:true,view:{revision:1,phase:'completed',clock:'00:04',label:'Saved',warning:null,notice:null,reducedMotion:true,draggable:false,inputWaveform:null,noteCount:0,actions:[]}};
+ // Linux replaces the ordinary pill with a focusable picker window. Observe
+ // that replacement before publishing; the initial page can close mid-query.
+ let page=await app.firstWindow();const next=process.platform==='linux'?app.waitForEvent('window'):null;
  await send(frame);const heartbeat=setInterval(()=>void send(frame).catch(()=>{}),500);t.after(()=>clearInterval(heartbeat));
- let page;await expect.poll(async()=>{page=app.windows().find(p=>!p.isClosed());return page?await page.getByRole('combobox').count():0;}).toBe(1);
+ if(next)page=await next;await expect(page.getByRole('combobox')).toBeVisible();
  const trigger=()=>page.getByRole('combobox');await expect(trigger()).toBeFocused();
  await send({type:'handoff-ready',capture:'keyboard',text:'Synthetic first Enter'});await page.keyboard.press('Enter');await expect.poll(()=>f.calls.length).toBe(1);assert.equal(f.calls[0].tag,'orchestration.launchThread');
  frame={...frame,capture:'mouse',view:{...frame.view,revision:2}};await send(frame);await expect(trigger()).toBeEnabled();await send({type:'handoff-ready',capture:'mouse',text:'Synthetic mouse choice'});

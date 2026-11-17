@@ -43,6 +43,7 @@ export function authenticatedSuites(jobs: {name: string; status: string; conclus
     // artifact's claimed result cannot replace a failed or skipped producer.
     const packed = name === 'macos' && passed.has(name+' / platform ('+runner+')');
     return common && passed.has(name+' / select') &&
+      (name !== 'macos' || !value.root || passed.has('macos / Native acceptance (macos-15-intel)')) &&
       (!(value.root || value.engine) || packed || passed.has(name+' / rust ('+runner+')')) &&
       (!value.desktop || packed || passed.has(name+' / desktop-ui ('+runner+')')) &&
       (!value.client || packed || passed.has(name+' / connect-client ('+runner+')'));

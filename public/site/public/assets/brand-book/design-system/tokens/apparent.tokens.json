@@ -71,10 +71,10 @@
       "switchWidth": { "$type": "dimension", "$value": "48px" },
       "switchHeight": { "$type": "dimension", "$value": "24px" },
       "switchThumbSize": { "$type": "dimension", "$value": "18px" },
-      "switchOffTrack": { "$type": "color", "$value": "#7A58C7" },
-      "switchOnTrack": { "$type": "color", "$value": "#B7A5D8" },
-      "switchLightThumb": { "$type": "color", "$value": "#020102" },
-      "switchDarkThumb": { "$type": "color", "$value": "#FFFFFF", "$description": "Dark-mode switch thumb only; use a Carbon edge for contrast." }
+      "switchOffTrack": { "$type": "color", "$value": "#767676", "$description": "Functional neutral for available Off switches only; not disabled or a general brand color." },
+      "switchOnTrack": { "$type": "color", "$value": "#7A58C7" },
+      "switchLightThumb": { "$type": "color", "$value": "#FFFFFF", "$description": "White circular switch thumb in both states; retain a Carbon edge." },
+      "switchDarkThumb": { "$type": "color", "$value": "#FFFFFF", "$description": "White circular switch thumb in both states; retain a Carbon edge." }
     }
   },
   "motion": {
