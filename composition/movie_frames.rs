@@ -376,15 +376,15 @@ mod tests {
 
     #[test]
     fn candidate_clock_is_actual_unique_and_bounded_before_reading_pixels() {
-        let reply = |times: &[(u64, i64)]| Reply {
+        let reply = |times: Vec<_>| Reply {
             version: 1,
             frames: times
-                .iter()
+                .into_iter()
                 .enumerate()
-                .map(|(index, (requested, actual))| Frame {
+                .map(|(index, (requested_ms, actual_movie_ms))| Frame {
                     request_index: index,
-                    requested_ms: *requested,
-                    actual_movie_ms: *actual,
+                    requested_ms,
+                    actual_movie_ms,
                     width: 1,
                     height: 1,
                     file: format!("frame-{index:03}.rgba"),
@@ -392,7 +392,7 @@ mod tests {
                 .collect(),
         };
         assert_eq!(
-            candidate_times(&reply(&[(0, 0), (200, 200)])).unwrap(),
+            candidate_times(&reply(vec![(0, 0), (200, 200)])).unwrap(),
             [0, 200]
         );
         for invalid in [
@@ -401,9 +401,9 @@ mod tests {
             vec![(1, 0)],
             vec![(0, 0), (0, 0)],
             vec![(200, 200), (0, 0)],
-            vec![(0, 0); 513],
+            (0..513).zip(0..513).collect(),
         ] {
-            assert!(candidate_times(&reply(&invalid)).is_err());
+            assert!(candidate_times(&reply(invalid)).is_err());
         }
     }
 
