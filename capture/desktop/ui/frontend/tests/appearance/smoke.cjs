@@ -31,6 +31,24 @@ test('Settings renderer and window follow Electron theme changes without reload'
     await expect(page.locator('.settings-sidebar')).toHaveCSS('background-color','rgb(2, 1, 2)');
     await expect(page.getByRole('button',{name:'Storage',exact:true})).toHaveCSS('color','rgb(2, 1, 2)');
     assert.equal(await page.locator('.settings-sidebar').evaluate(element => element.getBoundingClientRect().width), 216);
+    for(const width of [720,640]) {
+      await application.evaluate(({BrowserWindow},width)=>BrowserWindow.getAllWindows()[0].setSize(width,530),width);
+      for(const name of ['General','Recording','Storage','Permissions','Agents','Labs','About']) {
+        const control=page.getByRole('button',{name,exact:true});
+        await control.hover();
+        await expect(control).toHaveCSS('color','rgb(2, 1, 2)');
+        await expect(control.locator('svg')).toHaveCSS('color','rgb(2, 1, 2)');
+        await expect(control.locator('svg')).toHaveCSS('stroke','rgb(2, 1, 2)');
+      }
+      if(process.env.APPARENT_SHELL_PROOF) {
+        await fs.mkdir(process.env.APPARENT_SHELL_PROOF,{recursive:true});
+        await page.getByRole('button',{name:'Agents',exact:true}).hover();
+        await page.screenshot({path:path.join(process.env.APPARENT_SHELL_PROOF,`sidebar-hover-${width}-${mode}.png`)});
+      }
+      await page.mouse.move(0,529);
+      await expect(page.getByRole('button',{name:'Agents',exact:true}).locator('svg')).toHaveCSS('color','rgb(183, 165, 216)');
+    }
+    await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(720,530));
     for(const [name,color] of [['General','rgb(183, 165, 216)'],['Storage','rgb(2, 1, 2)']]) {
       const control=page.getByRole('button',{name,exact:true});
       await control.focus();await page.keyboard.press('Tab');await page.keyboard.press('Shift+Tab');

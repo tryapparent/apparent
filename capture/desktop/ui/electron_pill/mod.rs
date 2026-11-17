@@ -1,5 +1,6 @@
 //! Rust-authoritative presentation contract for the shared recording pill.
-//! No paths, capture contents, credentials or renderer-selected capture IDs cross it.
+//! Only bounded, opted-in live text crosses the private presentation pipe. No
+//! paths, credentials or renderer-selected capture IDs cross it or diagnostics.
 use serde::{Deserialize, Serialize};
 mod coordinator;
 mod session;
@@ -27,6 +28,7 @@ pub(crate) fn capture_exclusion_ready(window: Option<u32>, applied: &[u32], scre
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct View {
+    pub transcript: Option<crate::capture::engine::runtime::audio::transcription::parakeet_stream::Preview>,
     pub revision: u64,
     pub phase: &'static str,
     pub clock: String,
@@ -57,6 +59,7 @@ impl View {
 
     pub fn new(snapshot: &PillSnapshot, revision: u64, draggable: bool) -> Self {
         let mut view = Self {
+            transcript: None,
             revision,
             phase: "hidden",
             clock: snapshot.clock.clone(),
@@ -120,7 +123,7 @@ impl View {
                 }
                 view.control("paste", "Paste", true, false, !warning);
                 if let Some(enabled) = share {
-                    view.control("copy-link", "Copy link", *enabled, false, false);
+                    view.control("copy-link", "Public link", *enabled, false, false);
                 }
                 view.control("inspect", "Inspect", true, false, false);
                 view.control("dismiss", "Dismiss", true, false, false);
@@ -220,7 +223,7 @@ impl View {
     pub fn admit(&self, mut command: Command) -> Option<PillAction> {
         let public = command.action == "copy-public-link";
         if public { command.action = "copy-link".into(); }
-        if command.revision == self.revision && command.action == "settings-agents" && command.target.is_none()
+        if command.revision == self.revision && command.action == "settings-labs" && command.target.is_none()
             && matches!(self.phase, "processing" | "completed") {
             return Some(PillAction::SettingsAgents);
         }

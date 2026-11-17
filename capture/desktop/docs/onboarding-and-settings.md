@@ -1,19 +1,16 @@
 # Onboarding, permissions and Settings
 
-Settings → Labs offers **Auto paste**, off by default. It saves
+Settings → Labs offers **Auto paste** on Linux, off by default. It saves
 `experiments.autoPasteDraft` through the existing config transaction; changes
 apply at the next Finish without restart (including external file edits).
 Linux Hyprland with Lua dispatchers is the initial native adapter; other Linux
 desktops and macOS keep ordinary copy. The image-then-text trial requires the
 same window to remain focused from Finish through processing and both pastes.
-It never presses Enter. Check the receiving composer; dispatch does not prove
-attachment acceptance. Saved captures and the explicit Paste action remain
+Auto paste now presses Enter after both pastes, with another focus and clipboard
+check before Enter. Manual Paste does not press Enter. Dispatch does not prove
+attachment acceptance or successful sending; check the receiving composer. Saved captures and the explicit Paste action remain
 available. Setup practice and agent/phone captures do not auto paste.
-Turning the experiment off restores ordinary copy. Labs is a separate Electron
-pane between Agents and About, with a flask icon in both sidebars. It shares the
-existing config transaction, with experiment-only read/write capabilities. If
-packaged Settings assets are unavailable, the retained native shell explains how
-to restore Labs; it does not add a second experiment editor.
+Turning the experiment off restores ordinary copy; no donor surface is removed.
 
 ## Shared onboarding visuals
 
@@ -362,6 +359,24 @@ the guided capture lesson. Permission-repair windows retain their existing behav
 
 ## Settings (`capture/desktop/settings/settings.rs`, `capture/desktop/native/Settings.swift`)
 
+### Labs
+
+Labs exposes **Live local transcription**, off by default. It saves
+`experiments.localStreamingTranscription` through the existing native config
+transaction and waits for acknowledgement. Errors require Refresh preference;
+the renderer cannot write arbitrary settings or read secrets. File edits are
+read by the Settings refresh and the next recording, without a restart.
+
+Enabling prepares the verified English Parakeet model in the background. The
+next recording uses a local stream once the model is ready, on Linux and macOS.
+Live text appears below the pill; Finish flushes the saved audio tail. Streaming
+failure preserves recording and retries the whole saved audio locally. This
+experiment overrides the ordinary Apple live/pause worker for that recording;
+disabling restores the existing path on the next recording. Missing Electron
+assets leave an explicit unavailable message in native Labs, with other Settings
+pages still reachable. Record's policy/bridge contract is in
+`record/transcription/README.md`; native inference remains in Engine.
+
 ### Agents
 
 Agents and About share one live Electron window. Parent-admitted navigation changes
@@ -374,7 +389,7 @@ Error actions are left aligned with recovery first and Close second. Unknown
 preference outcomes require Refresh preference; dismissing never proves a save.
 
 Installed Settings routes Agents to the shared Electron shell on macOS and Linux.
-Desktop's `ui/frontend/src/agents` owns preference defaults, save/readback
+Desktop's `ui/frontend/src/settings/agents` owns preference defaults, save/readback
 workflow, recovery and fixed skill command. The private parent pipe exposes only
 the saved `experiments.agentDemoVideo` and `experiments.t3DestinationPicker`
 booleans (or absence), connection-presence facts and bounded errors;
@@ -391,34 +406,43 @@ clipboard, persistence and failure recovery are accepted on both platforms.
 Rollback reverts the paired routing and bridge; the existing config key and
 bundle readers remain compatible.
 
-**Send recordings to T3** is off by default. Only an explicit
+**Labs → Send recordings to T3** is off by default. Only an explicit
 `experiments.t3DestinationPicker: true` enables it for subsequent recordings.
 Connecting alone does not enable sending. **Connect T3** explains the one-time
 setup: in T3, open **Settings → Sharing & access → Authorized clients → Create
-link**, allow reading threads and sending messages, and copy the code or full link.
-Return to Apparent and choose **Paste code or link**, check the server shown,
-then **Connect**. For a code, the editable **T3 server address** defaults to the
-saved server or local T3 (`http://127.0.0.1:3773`); a full link supplies its own
-address. Direct fragment links, legacy query links and hosted app links with an
-embedded backend are supported; preview always shows the actual backend.
+link**, allow reading threads and sending messages, and choose **Copy link**.
+Return to Apparent and choose **Paste T3 link**, check the server shown,
+then **Connect**. Under **Use a code instead**, the editable **T3 server address** defaults to the
+local T3 (`http://127.0.0.1:3773`); a full link supplies its own
+address. Direct fragment links, legacy query links, hosted links with an embedded backend,
+and wrapped mobile links are supported. Desktop `t3code://app/pair` links have no
+network address, so they use the shown local/code address. Preview always shows
+the network destination before confirmation.
 No terminal or external Node installation is needed. The code or link
 stays in Electron main and its short-lived confirmation handle is consumed once;
 clipboard changes cannot switch the server after preview. Editing the address,
-closing or cancelling clears the pending confirmation. The native shared config transaction stores the private
-session alongside unrelated preferences; raw tokens never enter the page or logs.
-Settings shows the saved server or expiry, and Disconnect removes its local
-credential without revoking existing server sessions. A confirmed handoff still
+closing or cancelling clears the pending confirmation. The native shared config transaction stores private sessions by origin, retaining
+the first in the legacy `t3` shape and additional computers in `t3.connections`.
+Removing the first promotes the next; unrelated preferences and connection metadata
+are preserved. Older readers see only the first computer. Rollback to an older
+writer can replace the list, so retain the new writer while using multiple computers; raw tokens never enter the page or logs.
+Labs lists each saved computer and its expiry. **Add computer** preserves existing
+connections; threads from every reachable computer appear together with computer
+and project labels. New thread is selectable even when no existing threads exist.
+A failed computer load leaves the other destinations available and names the
+unavailable host. Disconnect removes only that computer’s local credential without revoking existing server sessions. A confirmed handoff still
 needs a matching local credential before dispatch. Unknown save outcomes require
 Refresh connection. An enabled picker without a usable connection shows
 **Connect T3** instead of silently reverting to Paste. It keeps the recording;
 **Check connection** reloads setup for the same capture and **Copy instead**
 remains available when processing finishes.
 The optional CLI `apparent t3 pair` still accepts a pairing link on stdin (Node
-22.23+); `status` and `forget` remain available. No flow changes T3 or its providers.
+22.23+), and shares the same keyed connection transaction. `status` reports the
+first saved server; `forget` removes all local T3 connections. No flow changes T3 or its providers.
 Disabling the setting affects the next recording; a previously confirmed handoff
 keeps its original destination. See the [pill workflow](../ui/electron_pill/README.md#t3-destinations).
 
-After building the frontend, run its `tests/settings/agents/smoke.ts` under Electron
+After building the frontend, run its `tests/settings/agents/smoke.ts`, `tests/settings/t3.smoke.ts` and the pill destination suite under Electron
 (`xvfb-run` on Linux). The ignored Rust test
 `capture::desktop::settings::agents::tests::agents_electron_rust_roundtrip`
 exercises the real writer with the built renderer; it is separate from installed
@@ -894,7 +918,10 @@ only; native confirmations, effects, receipt scope and fallback remain authorita
 
 Settings → Labs also exposes **Public sharing links**, off by default via
 `experiments.hostedSharing`. Enabling it grants no upload consent and uploads
-nothing by itself. The Electron recording controls confirm that anyone with the
+nothing by itself. The completed pill labels the action **Public link**, including
+when the T3 destination picker is active. T3 selection and public sharing remain
+separate explicit actions; neither submits the other. Upload cancel/retry stays
+available beside the destination. The Electron recording controls confirm that anyone with the
 link can view the capture and that the shared copy is not end-to-end encrypted,
 then create a separate public copy while preserving the private job. Cancellation
 and stale recording actions do not admit a public copy. Disabling applies to the

@@ -47,3 +47,9 @@ test('saved count is bounded and notes requires authoritative availability',()=>
  assert.deepEqual(command(view({...state,noteCount:12,actions:[notes]}),12,'notes'),{revision:12,action:'notes'});
  assert.throws(()=>command(view(state),12,'notes'));
 });
+test('live text is confined to a recording and drops unrelated private fields',()=>{
+ const transcript={state:'streaming',text:'Synthetic live words',token:'private'};
+ assert.deepEqual(view({...state,transcript}).transcript,{state:'streaming',text:'Synthetic live words'});
+ for(const change of [{phase:'completed',transcript},{transcript:{state:'other',text:''}},
+  {transcript:{state:'streaming',text:'x'.repeat(16385)}}])assert.throws(()=>view({...state,...change}));
+});

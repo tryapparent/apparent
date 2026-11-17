@@ -3,6 +3,19 @@
 use std::{path::PathBuf, process::{Command, Stdio}, sync::Arc};
 use super::settings::{Action, Event, Transport, Pane};
 
+#[cfg(test)]
+pub(super) fn build_test_renderer() {
+    // All Settings bridge tests share Vite's output directory. Build it once
+    // before either renderer starts, including when Cargo runs tests in parallel.
+    static BUILT: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    BUILT.get_or_init(|| {
+        let frontend = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("capture/desktop/ui/frontend");
+        assert!(Command::new("node").arg(frontend.join("node_modules/vite/bin/vite.js"))
+            .arg("build").current_dir(&frontend).status().unwrap().success());
+    });
+}
+
 /// Unique across Settings sessions too: late events from a closed session must
 /// never match the first window of a newly opened session.
 pub(super) fn generation() -> u64 {
@@ -122,9 +135,8 @@ pub(super) fn admits(pane: Pane, action: &Action) -> bool {
             || matches!(action, Action::Set { key, value }
                 if matches!(key.as_str(), "launchAtLogin" | "errorReporting" | "lowerPlayback") && value.is_boolean()
                     || key == "playbackLevel" && value.as_u64().is_some_and(|n| n <= 100)))
-        || pane == Pane::Agents && (matches!(action, Action::AgentsConnection { .. })
-            || matches!(action, Action::AgentsPreference { setting, .. } if matches!(setting.as_deref(), None | Some("video" | "t3"))))
-        || pane == Pane::Labs && matches!(action, Action::AgentsPreference { setting, .. } if matches!(setting.as_deref(), Some("autoPaste" | "sharing" | "wisprFlow")))
+        || pane == Pane::Agents && matches!(action, Action::AgentsPreference { setting, .. } if matches!(setting.as_deref(), None | Some("video")))
+        || pane == Pane::Labs && (matches!(action, Action::AgentsConnection { .. }) || matches!(action, Action::AgentsPreference { setting, enabled, .. } if setting.as_deref() == Some("t3") || setting.is_none() && enabled.is_none()) || matches!(action, Action::LabsPreference { setting, .. } if matches!(setting.as_deref(), None | Some("streaming" | "autoPaste" | "sharing" | "wisprFlow"))))
         || pane == Pane::About && (matches!(action, Action::CheckForUpdates | Action::DismissUpdateCheck | Action::UpdateNow | Action::UpdateLater | Action::Tour)
             || matches!(action, Action::Set { key, value } if key == "updateChannel" && matches!(value.as_str(), Some("stable" | "main"))))
 }
@@ -134,18 +146,23 @@ fn settings_page_capabilities_follow_live_route() {
     let preference: Action = serde_json::from_str(r#"{"action":"agents-preference","request":1}"#).unwrap();
     assert!(admits(Pane::Agents, &preference));
     assert!(!admits(Pane::About, &preference));
-    let connection = Action::AgentsConnection { request: 1, connection: None };
-    assert!(admits(Pane::Agents, &connection));
+    let connection = Action::AgentsConnection { request: 1, connection: None, disconnect: None };
+    assert!(admits(Pane::Labs, &connection));
     assert!(!admits(Pane::About, &connection));
     assert!(!admits(Pane::Storage, &connection));
-    assert!(!admits(Pane::Labs, &connection));
-    assert!(!admits(Pane::Labs, &preference));
-    for setting in ["autoPaste", "sharing", "wisprFlow"] {
-        let experiment = Action::AgentsPreference { request: 2, enabled: Some(true), setting: Some(setting.into()) };
+    assert!(!admits(Pane::Agents, &connection));
+    assert!(admits(Pane::Labs, &preference));
+    for setting in ["streaming", "autoPaste", "sharing", "wisprFlow"] {
+        let experiment = Action::LabsPreference { request: 2, enabled: Some(true), setting: Some(setting.into()) };
         assert!(admits(Pane::Labs, &experiment));
         assert!(!admits(Pane::Agents, &experiment));
         assert!(!admits(Pane::About, &experiment));
+        let legacy = Action::AgentsPreference { request: 2, enabled: Some(true), setting: Some(setting.into()) };
+        assert!(!admits(Pane::Labs, &legacy));
+        assert!(!admits(Pane::Agents, &legacy));
     }
+    let invalid = Action::LabsPreference { request: 2, enabled: Some(true), setting: Some("t3".into()) };
+    assert!(!admits(Pane::Labs, &invalid));
     assert!(!admits(Pane::Labs, &Action::ShowCaptures));
     assert!(!admits(Pane::Labs, &Action::CheckForUpdates));
     assert!(admits(Pane::About, &Action::CheckForUpdates));
@@ -340,10 +357,16 @@ mod capability_tests {
             (r#"{"action":"show-captures"}"#, vec![Pane::Storage]),
             (r#"{"action":"set","key":"launchAtLogin","value":true}"#, vec![Pane::General]),
             (r#"{"action":"set","key":"playbackLevel","value":101}"#, vec![]),
-            (r#"{"action":"agents-preference","request":1,"setting":"autoPaste","enabled":true}"#, vec![Pane::Labs]),
-            (r#"{"action":"agents-preference","request":2,"setting":"sharing","enabled":true}"#, vec![Pane::Labs]),
-            (r#"{"action":"agents-connection","request":4,"connection":null}"#, vec![Pane::Agents]),
-            (r#"{"action":"agents-preference","request":3,"setting":"t3","enabled":true}"#, vec![Pane::Agents]),
+            (r#"{"action":"agents-preference","request":1,"setting":"autoPaste","enabled":true}"#, vec![]),
+            (r#"{"action":"agents-preference","request":2,"setting":"sharing","enabled":true}"#, vec![]),
+            (r#"{"action":"labs-preference","request":1,"setting":"streaming","enabled":true}"#, vec![Pane::Labs]),
+            (r#"{"action":"labs-preference","request":2,"setting":"autoPaste","enabled":true}"#, vec![Pane::Labs]),
+            (r#"{"action":"labs-preference","request":3,"setting":"sharing","enabled":true}"#, vec![Pane::Labs]),
+            (r#"{"action":"labs-preference","request":4,"setting":"wisprFlow","enabled":true}"#, vec![Pane::Labs]),
+            (r#"{"action":"agents-connection","request":4,"connection":null}"#, vec![Pane::Labs]),
+            (r#"{"action":"agents-preference","request":3,"setting":"t3","enabled":true}"#, vec![Pane::Labs]),
+            (r#"{"action":"agents-preference","request":5}"#, vec![Pane::Agents, Pane::Labs]),
+            (r#"{"action":"agents-preference","request":6,"enabled":true}"#, vec![Pane::Agents]),
         ] {
             let action: Action = serde_json::from_str(wire).expect(wire);
             for pane in panes { assert_eq!(admits(pane, &action), owners.contains(&pane), "{wire}: {pane:?}"); }

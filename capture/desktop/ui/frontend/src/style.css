@@ -17,7 +17,7 @@
 .settings-sidebar button svg { flex:none; width:19px; height:19px; color:var(--apparent-lilac); }
 .settings-sidebar button:hover { background:var(--color-secondary); color:var(--color-secondary-foreground); }
 .settings-sidebar button[aria-current='page'] { background:var(--apparent-lilac); color:var(--apparent-settings-carbon); }
-.settings-sidebar button[aria-current='page'] svg { color:inherit; }
+.settings-sidebar button:hover svg,.settings-sidebar button[aria-current='page'] svg { color:inherit; }
 .settings-sidebar button:focus-visible { outline:2px solid var(--apparent-lilac); outline-offset:-4px; box-shadow:none; }
 .settings-sidebar button[aria-current='page']:focus-visible { outline-color:var(--apparent-settings-carbon); }
 .settings-content { overflow-wrap:anywhere; min-width:0; flex:1; overflow-y:auto; padding:26px 28px 20px; scrollbar-gutter:stable; }
@@ -123,7 +123,7 @@ html:has(.settings-shell),body:has(.settings-shell),#root:has(>.settings-shell){
 .settings-t3-preview p + strong { display:block; margin:4px 0 8px; }
 .settings-t3-dialog-actions { display:flex; flex-wrap:wrap; justify-content:flex-start; gap:8px; margin-top:24px; }
 
-.settings-t3-connection{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin-top:12px}.settings-t3-connection p{flex:1 1 200px;min-width:0;overflow-wrap:anywhere}.settings-t3-next{margin-top:8px}
+.settings-t3-connection{display:grid;gap:12px;align-items:start;margin-top:12px}.settings-t3-connection>button{justify-self:start}.settings-t3-connection p{flex:1 1 200px;min-width:0;overflow-wrap:anywhere}.settings-t3-next{margin-top:8px}
 .settings-agents{position:relative}.settings-content .settings-help{width:44px;min-height:44px;height:44px;padding:14px}.settings-help svg{width:16px;height:16px}.settings-agents-help{background:var(--apparent-paper);color:var(--apparent-carbon);border:1px solid var(--apparent-carbon);border-radius:0;font:400 var(--apparent-type-body)/1.5 'Host Grotesk',system-ui,sans-serif}
 
 @media(prefers-color-scheme:dark){.settings-t3-dialog{background:var(--apparent-carbon);color:var(--apparent-paper)}}
@@ -195,3 +195,5 @@ html:has(.settings-shell),body:has(.settings-shell),#root:has(>.settings-shell){
 #settings-account .disclosure-panel { max-height:calc(100dvh - 96px); overflow-y:auto; }
 
 .settings-page-heading .apparent-disclosure > button { font:500 1.125rem/1.5 'Host Grotesk',sans-serif; min-height:44px; }
+
+.settings-t3-computer{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}.settings-t3-computer p{overflow-wrap:anywhere;min-width:0}

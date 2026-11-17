@@ -10,6 +10,16 @@ contextBridge.exposeInMainWorld('apparentSettingsRoute', callback => {
   return () => { live = false; ipcRenderer.removeListener('apparent:settings-route', listener); };
 });
 
+contextBridge.exposeInMainWorld('apparentLabs', Object.freeze({
+  read: () => ipcRenderer.invoke('apparent:labs-preference'),
+  save: (enabled, setting) => ipcRenderer.invoke('apparent:labs-preference', enabled, ...(setting === undefined ? [] : [setting])),
+  subscribe: callback => {
+    const listener = (_event, facts) => callback(facts);
+    ipcRenderer.on('apparent:labs-state', listener);
+    return () => ipcRenderer.removeListener('apparent:labs-state', listener);
+  },
+}));
+
 contextBridge.exposeInMainWorld('apparentSettingsMounted', async () => {
   // React has committed its DOM. Do not hold that fact behind hidden-page
   // animation scheduling: Chromium may already have supplied first paint.
@@ -64,7 +74,7 @@ contextBridge.exposeInMainWorld('apparentAgents', Object.freeze({
   previewT3: server => ipcRenderer.invoke('apparent:agents-t3-preview', server),
   connectT3: origin => ipcRenderer.invoke('apparent:agents-t3-connect', origin),
   cancelT3: () => ipcRenderer.invoke('apparent:agents-t3-cancel'),
-  disconnectT3: () => ipcRenderer.invoke('apparent:agents-t3-disconnect'),
+  disconnectT3: origin => ipcRenderer.invoke('apparent:agents-t3-disconnect',origin),
   copySkill: () => ipcRenderer.invoke('apparent:agents-copy-skill'),
   subscribe: callback => {
     const listener = (_event, facts) => callback(facts);
@@ -81,10 +91,4 @@ contextBridge.exposeInMainWorld('apparentGeneral', Object.freeze({
     ipcRenderer.on('apparent:general-state', listener);
     return () => ipcRenderer.removeListener('apparent:general-state', listener);
   },
-}));
-
-contextBridge.exposeInMainWorld('apparentLabs',Object.freeze({
-  read:()=>ipcRenderer.invoke('apparent:labs-preference'),
-  save:(enabled,setting='autoPaste')=>ipcRenderer.invoke('apparent:labs-preference',enabled,setting),
-  subscribe:callback=>{const listener=(_event,facts)=>callback(facts);ipcRenderer.on('apparent:labs-state',listener);return()=>ipcRenderer.removeListener('apparent:labs-state',listener);},
 }));

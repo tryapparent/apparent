@@ -1174,7 +1174,8 @@ pub(crate) fn external_record_owned(kind: ShortcutKind) -> bool {
 pub enum Action {
     Navigate { pane: Pane },
     AgentsPreference { request: u32, enabled: Option<bool>, #[serde(default)] setting: Option<String> },
-    AgentsConnection { request: u32, connection: Option<super::agents::Connection> },
+    AgentsConnection { request: u32, connection: Option<super::agents::Connection>, #[serde(default)] disconnect: Option<String> },
+    LabsPreference { request: u32, enabled: Option<bool>, #[serde(default)] setting: Option<String> },
     #[cfg(target_os = "linux")]
     Storage { command: super::storage::Command },
     Connect { command: super::connect::Command },
@@ -1429,7 +1430,7 @@ impl Panel {
                     Effect::None
                 }
             }
-            Action::Navigate { .. } | Action::AgentsPreference { .. } | Action::AgentsConnection { .. } => Effect::None, // Session owns presentation routing.
+            Action::Navigate { .. } | Action::AgentsPreference { .. } | Action::LabsPreference { .. } | Action::AgentsConnection { .. } => Effect::None, // Session owns presentation routing.
             Action::ShowCaptures => Effect::ShowCaptures,
             Action::CheckForUpdates => {
                 if cfg!(target_os = "linux") && self.update_check.checking {
@@ -2104,14 +2105,27 @@ impl Session {
             Event::Action(Action::AgentsPreference { request, enabled, setting }) => {
                 if self.electron && self.pane == Some(Pane::Agents) {
                     self.send(&super::agents::request_for(&host.config_path(), request, enabled, setting.as_deref()));
-                } else if self.electron && self.pane == Some(Pane::Labs) && matches!(setting.as_deref(), Some("autoPaste" | "sharing" | "wisprFlow")) {
-                    self.send(&super::agents::labs_request(&host.config_path(), request, enabled, setting.as_deref().unwrap()));
+                } else if self.electron && self.pane == Some(Pane::Labs) && (setting.as_deref() == Some("t3") || setting.is_none() && enabled.is_none()) {
+                    self.send(&super::agents::request_for(&host.config_path(), request, enabled, setting.as_deref()));
                 }
                 Effect::None
             }
-            Event::Action(Action::AgentsConnection { request, connection }) => {
-                if self.electron && self.pane == Some(Pane::Agents) {
-                    self.send(&super::agents::connection_request(&host.config_path(), request, connection));
+            Event::Action(Action::AgentsConnection { request, connection, disconnect }) => {
+                if self.electron && self.pane == Some(Pane::Labs) {
+                    self.send(&super::agents::connection_request(&host.config_path(), request, connection, disconnect));
+                }
+                Effect::None
+            }
+            Event::Action(Action::LabsPreference { request, enabled, setting }) => {
+                if self.electron && self.pane == Some(Pane::Labs) {
+                    let reply = super::labs::request(&host.config_path(), request, enabled, setting.as_deref());
+                    #[cfg(any(target_os = "linux", target_os = "macos"))]
+                    if setting.as_deref().is_none_or(|name| name == "streaming")
+                        && let Some(on) = enabled && reply["facts"]["saved"].as_bool() == Some(on) {
+                        if on { crate::capture::engine::runtime::audio::transcription::parakeet_stream::prepare(); }
+                        else { crate::capture::engine::runtime::audio::transcription::parakeet_stream::release_cache(); }
+                    }
+                    self.send(&reply);
                 }
                 Effect::None
             }
@@ -2318,13 +2332,21 @@ impl Session {
                 let text = message.to_string();
                 if text != self.last_view { self.send(&message); self.last_view = text; }
             }
+            if self.pane == Some(Pane::Labs) {
+                let message = serde_json::json!({"type":"labs-state","facts":super::labs::facts(&host.config_path())});
+                let t3 = serde_json::json!({"type":"agents-state","facts":super::agents::facts(&host.config_path())});
+                // One view key for both channels avoids resending unchanged
+                // preferences every tick when their messages alternate.
+                let text = serde_json::json!([message, t3]).to_string();
+                if text != self.last_view {self.send(&message); self.send(&t3); self.last_view = text;}
+            }
             if self.pane == Some(Pane::About) {
                 let message = self.panel.about_state(&host.config_path());
                 let text = message.to_string();
                 if text != self.last_view { self.send(&message); self.last_view = text; }
             }
-            if matches!(self.pane, Some(Pane::Agents | Pane::Labs)) {
-                let facts = if self.pane == Some(Pane::Labs) { super::agents::labs_facts(&host.config_path()) } else { super::agents::facts(&host.config_path()) };
+            if self.pane == Some(Pane::Agents) {
+                let facts = super::agents::facts(&host.config_path());
                 let message = serde_json::json!({"type": "agents-state", "facts": facts});
                 let text = message.to_string();
                 if text != self.last_view { self.send(&message); self.last_view = text; }

@@ -11,6 +11,7 @@ function view(value) {
       !(value.warning === null || typeof value.warning === 'string' && value.warning.length <= 300) ||
       !(value.inputWaveform == null || Array.isArray(value.inputWaveform) && value.inputWaveform.length === 24 && value.inputWaveform.every(level => Number.isFinite(level) && level >= 0 && level <= 1)) ||
       !(value.notice == null || typeof value.notice === 'string' && value.notice.length<=120) ||
+      !(value.transcript == null || value.phase === 'recording' && ['starting','streaming','failed'].includes(value.transcript.state) && typeof value.transcript.text === 'string' && value.transcript.text.length <= 16384) ||
       typeof value.reducedMotion !== 'boolean' || typeof value.draggable !== 'boolean' ||
       !Array.isArray(value.actions) || value.actions.length > 10) throw Error('Invalid pill state');
   const seen = new Set();
@@ -21,7 +22,8 @@ function view(value) {
     return {id:a.id,label:a.label,enabled:a.enabled,selected:a.selected,primary:a.primary};
   });
   return {revision:value.revision,phase:value.phase,clock:value.clock,label:value.label,warning:value.warning,notice:value.notice??null,
-    reducedMotion:value.reducedMotion,draggable:value.draggable,inputWaveform:value.inputWaveform??null,noteCount:value.noteCount??0,actions:controls};
+    reducedMotion:value.reducedMotion,draggable:value.draggable,inputWaveform:value.inputWaveform??null,noteCount:value.noteCount??0,
+    transcript:value.transcript == null ? null : {state:value.transcript.state,text:value.transcript.text},actions:controls};
 }
 function command(current, revision, action) {
   if (!current || revision !== current.revision || !actions.has(action) ||

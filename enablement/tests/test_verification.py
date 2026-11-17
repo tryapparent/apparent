@@ -98,7 +98,7 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual((selected["root"], selected["engine"], selected["browser"]),
                          (False, False, True))
         for path in ["connect/web/src/Other.tsx", "connect/web/src/sharedlinks.tsx",
-                     "public/site/scripts/cd/publish-pages.ts", "public/site/public/hosted/source-pond-v4.png",
+                     "public/enablement/cd/publish-pages.ts", "public/site/public/hosted/source-pond-v4.png",
                      "public/site/public/hosted/agent-pond-v4.png", "public/site/public/hosted/agent-reading-v4.png",
                      "public/site/public/HostGrotesk-Variable.ttf", "public/site/public/apparent-wordmark.svg"]:
             with self.subTest(path=path):

@@ -1,4 +1,4 @@
-//! On-device transcription on Windows and Linux, with measured word timings: Parakeet through
+//! On-device Parakeet execution and verified model downloads, with measured word timings, through
 //! `transcribe.cpp`, the engine Hex uses. It loads a model Hex has already installed
 //! (`voice-control/models` in the user's data folder), else Apparent's own copy of Hex's Parakeet
 //! Unified English (`%LOCALAPPDATA%\Apparent\models`, `~/.local/share/apparent/models`), which
@@ -111,6 +111,11 @@ fn default_models_dir() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("apparent/models")
+}
+
+#[cfg(target_os = "macos")]
+fn default_models_dir() -> PathBuf {
+    dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join("apparent/models")
 }
 
 fn receipt_path(model: &Path) -> PathBuf {
@@ -270,7 +275,7 @@ pub fn transcribe(audio: &Path) -> Result<TranscriptData> {
 
 /// Register the runtime-selected CPU backend once, before any thread loads a model.
 /// The native registry cannot be mutated concurrently with model loading.
-fn init_backends() -> Result<()> {
+pub(super) fn init_backends() -> Result<()> {
     static INIT: std::sync::OnceLock<std::result::Result<(), String>> = std::sync::OnceLock::new();
     INIT.get_or_init(|| {
         transcribe_cpp::disable_logging();
@@ -307,6 +312,9 @@ pub fn install(mut line: impl FnMut(SpeechModelLine)) -> Result<()> {
 /// `.verified.json` receipt that `installed_models` looks for. A file that fails the check is
 /// deleted, so the next try starts over.
 pub fn download(artifact: &Artifact, dir: &Path, progress: &mut dyn FnMut(f64)) -> Result<PathBuf> {
+    // Startup's installer and Labs share a resumable partial and receipt.
+    static DOWNLOAD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _download = DOWNLOAD.lock().map_err(|_| anyhow::anyhow!("Model preparation unavailable"))?;
     std::fs::create_dir_all(dir).with_context(|| format!("Could not create {}", dir.display()))?;
     let model = dir.join(artifact.filename);
     if !model.is_file() {
@@ -403,8 +411,8 @@ fn spawn_fetch(url: &str, partial: &Path) -> Result<(String, std::process::Child
     Ok(("curl".into(), child))
 }
 
-/// `curl`, else `wget`: one of them is on nearly every desktop Linux.
-#[cfg(target_os = "linux")]
+/// macOS supplies curl; Linux can also use wget when curl is unavailable.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn spawn_fetch(url: &str, partial: &Path) -> Result<(String, std::process::Child)> {
     let mut command = if crate::shared::handoff::on_path("curl").is_some() {
         let mut command = std::process::Command::new("curl");

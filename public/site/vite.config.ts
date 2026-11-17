@@ -2,7 +2,7 @@ import { defineConfig, type Plugin } from "vite"
 import { fileURLToPath } from "node:url"
 import { publicAssetPlugin } from "./lib/public-assets.mjs"
 import react from "@vitejs/plugin-react"
-import { agentFiles, jsonLd } from "./scripts/site-build/agent-files.ts"
+import { agentFiles, jsonLd } from "../enablement/site-build/agent-files.ts"
 
 
 const TYPES: Record<string, string> = { ".txt": "text/plain; charset=utf-8", ".md": "text/markdown; charset=utf-8" }

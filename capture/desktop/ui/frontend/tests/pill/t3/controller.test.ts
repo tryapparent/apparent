@@ -63,3 +63,27 @@ test('expired credentials expose setup without making a T3 request',async t=>{
  const f=await fixture(t);const saved=JSON.parse(await readFile(f.config,'utf8'));saved.t3.expiresAt=Date.now()-1;await writeFile(f.config,JSON.stringify(saved));
  const c=new Controller(()=>{},f.config);await c.update('expired','completed');assert.equal(c.view()?.phase,'setup');assert.equal(f.reads,0);
 });
+
+test('all connected computers are combined without collisions and dispatch to the selected origin',async t=>{
+ const a=await fixture(t),b=await fixture(t);a.label('Laptop project');b.label('Build project');
+ const credentials=(origin:string)=>({origin,token:'private-test-token',expiresAt:Date.now()+3600000});
+ await writeFile(a.config,JSON.stringify({t3:{...credentials(a.origin),connections:[credentials(b.origin)]},experiments:{t3DestinationPicker:true}}));
+ const c=new Controller(()=>{},a.config);await c.update('combined','completed');
+ const choices=c.view()!.choices;assert.equal(choices.length,4);assert.equal(new Set(choices.map(c=>c.id)).size,4);
+ assert.equal(JSON.stringify(choices).includes('private-test-token'),false);
+ const target=choices.find(choice=>choice.computer===new URL(b.origin).host&&choice.kind==='new')!;
+ await c.ready('combined','Synthetic recording');b.lose();await c.confirm('combined',target.id);
+ assert.equal(c.view()!.phase,'uncertain');assert.equal(c.view()!.confirmed!.project,'Build project');assert.equal(a.calls.length,0);assert.equal(b.calls.length,1);
+ await c.retry('combined');assert.equal(c.view()!.phase,'sent');assert.equal(a.calls.length,0);assert.equal(b.accepted.size,1);
+ assert.deepEqual(b.calls[0],b.calls[1]);
+});
+
+test('one unreachable computer leaves the other computer selectable and reports the missing host',async t=>{
+ const a=await fixture(t);
+ await writeFile(a.config,JSON.stringify({t3:{origin:a.origin,token:'private-test-token',expiresAt:Date.now()+3600000,connections:[{origin:'http://127.0.0.1:1',token:'offline',expiresAt:Date.now()+3600000}]},experiments:{t3DestinationPicker:true}}));
+ const c=new Controller(()=>{},a.config);await c.update('partial','completed');
+ assert.equal(c.view()!.choices.length,2);assert.match(c.view()!.error!,/127\.0\.0\.1:1/);
+ const target=c.view()!.choices.find(choice=>choice.kind!=='new')!;
+ await c.ready('partial','Synthetic recording');await c.confirm('partial',target.id);
+ assert.equal(c.view()!.phase,'sent');assert.equal(a.calls.length,1);
+});

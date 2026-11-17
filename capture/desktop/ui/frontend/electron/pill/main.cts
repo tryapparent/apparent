@@ -158,7 +158,7 @@ app.whenReady().then(()=>{
   ipcMain.handle('pill:read',(event,...args)=>{valid(event,args);return current;});
   ipcMain.handle('pill:destinations',(event,...args)=>{valid(event,args);return destinations.view();});
   ipcMain.handle('pill:destination-action',async(event,key,action,id,...args)=>{
-    valid(event,args);if(key!==capture||!['processing','completed'].includes(current?.phase))throw Error('Recording changed');
+    valid(event,args);if(sharingConfirmation!==null||pending||key!==capture||!['processing','completed'].includes(current?.phase))throw Error('Recording changed');
     try{
     if(action==='choose')await destinations.confirm(key,id);
     else if(action==='retry')await destinations.retry(key);
@@ -167,7 +167,7 @@ app.whenReady().then(()=>{
       const text=destinations.text(key);await clipboard.writeText(text);
       if(await clipboard.readText()!==text)throw Error('Copy not confirmed');
     }
-    else if(action==='setup'){if(destinations.view()?.phase!=='setup')throw Error('Setup unavailable');emit({revision:current.revision,action:'settings-agents'});}
+    else if(action==='setup'){if(destinations.view()?.phase!=='setup')throw Error('Setup unavailable');emit({revision:current.revision,action:'settings-labs'});}
     else if(action==='dismiss'){pickerDismissed=capture;window.hide();}
     else throw Error('Invalid destination action');
     return destinations.view();
@@ -210,9 +210,11 @@ app.whenReady().then(()=>{
       const size=await window.webContents.executeJavaScript(`(() => {
         document.documentElement.style.setProperty('--pill-limit', '${area.width}px');
         const element=document.querySelector('main'),rect=element?.getBoundingClientRect();
-        const regions=[...document.querySelectorAll('.destination-assembly,.destination-notification')].map(element=>{
+        const live = document.querySelector('.pill[data-live=true]');
+        const selector = live ? '.pill-row,.live-caption,.pill-notes-layer' : '.destination-assembly,.destination-notification,.public-share-confirmation';
+        const regions=live || document.querySelector('.destination-assembly')?[...document.querySelectorAll(selector)].map(element=>{
           const r=element.getBoundingClientRect();return {x:r.x-rect.x,y:r.y-rect.y,width:r.width,height:r.height,radius:parseFloat(getComputedStyle(element).borderTopLeftRadius)||0};
-        });
+        }):[];
         return rect && {width:Math.ceil(rect.width),height:Math.ceil(rect.height),revision:Number(element.dataset.revision),regions};
       })()`);
       // A newer parent state may arrive while the renderer answers. Never apply

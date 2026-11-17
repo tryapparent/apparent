@@ -22,16 +22,16 @@ function fixture(t: any) {
   chmodSync(electron, 0o700);
   put('capture/desktop/ui/frontend/node_modules/electron/index.js', 'module.exports = __dirname + "/bin"');
   put('capture/desktop/ui/frontend/node_modules/@apparent/record-capture-request/dist/lifecycle.js');
-  for (const file of ['tests/reference-native.cjs', 'electron/main.cjs', 'electron/preload.cjs', 'electron/runtime.cjs', 'electron/connect.cjs', 'electron/settings/agents.cjs', 'electron/settings/update-worker.cjs', 'electron/storage-policy.cjs']) {
+  for (const file of ['tests/reference-native.cjs', 'electron/main.cjs', 'electron/preload.cjs', 'electron/runtime.cjs', 'electron/connect.cjs', 'electron/settings/agents.cjs', 'electron/settings/update-worker.cjs', 'electron/settings/labs.cjs', 'electron/notes/record-transcription.cjs', 'electron/storage-policy.cjs']) {
     put('capture/desktop/ui/frontend/' + file);
   }
   for (const name of ['worker.js', 'policy.js', 'package.json']) {
     put('capture/desktop/ui/frontend/electron/record-completion/' + name);
   }
-  for (const name of ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'assembly-worker.js', 'assembly-policy.js', 'transcript/worker.js', 'transcript/policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/apparent-engine-frames', 'native/manifest.json']) {
+  for (const name of ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'assembly-worker.js', 'assembly-policy.js', 'transcript/worker.js', 'transcript/policy.js', 'selection/worker.js', 'selection/cues.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/apparent-engine-frames', 'native/manifest.json']) {
     put('capture/desktop/ui/frontend/electron/record-media/' + name);
   }
-  for (const name of ['worker.js', 'policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json']) {
+  for (const name of ['worker.js', 'policy.js', 'range-worker.js', 'range-policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json']) {
     put('capture/desktop/ui/frontend/electron/agent-media/' + name);
   }
   for (const name of ['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json', 'cleanup-policy/package.json', 'cleanup-policy/policy.js', 'cleanup-policy/retention/policy.js', 'cleanup-policy/retention/worker.js']) {
@@ -47,9 +47,12 @@ function generators(f: ReturnType<typeof fixture>, fail = '') {
     'connect-transport': ['electron/connect.cjs', 'electron/settings/agents.cjs'],
     'updates': ['electron/settings/update-worker.cjs'],
     'pill': ['worker.js', 'policy.js', 'package.json'].map(name => 'electron/record-completion/' + name),
-    'record-media': ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'assembly-worker.js', 'assembly-policy.js', 'transcript/worker.js', 'transcript/policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/apparent-engine-frames', 'native/manifest.json'].map(name => 'electron/record-media/' + name),
-    'agent-media': ['worker.js', 'policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json'].map(name => 'electron/agent-media/' + name),
+    'record-media': ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'assembly-worker.js', 'assembly-policy.js', 'transcript/worker.js', 'transcript/policy.js', 'selection/worker.js', 'selection/cues.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/apparent-engine-frames', 'native/manifest.json'].map(name => 'electron/record-media/' + name),
+    'agent-media': ['worker.js', 'policy.js', 'range-worker.js', 'range-policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json'].map(name => 'electron/agent-media/' + name),
   };
+  // This feature adds adapters alongside the baseline owner-generated inputs.
+  outputs['connect-transport'].push('electron/settings/labs.cjs');
+  outputs.pill.push('electron/notes/record-transcription.cjs');
   for (const [name, files] of Object.entries(outputs)) {
     for (const file of files) rmSync(resolve(f.root, 'capture/desktop/ui/frontend', file));
     f.put(`capture/desktop/ui/frontend/scripts/${name === 'agent-media' ? 'agent-media/build' : 'build-' + name}.ts`, `
@@ -146,6 +149,13 @@ for (const name of ['worker.js', 'policy.js', 'package.json']) {
     assert.throws(() => checkNativeInputs(f.root, 'linux'), /ENOENT/);
   });
 }
+for (const name of ['range-worker.js','range-policy.js']) {
+  test(`missing generated Agent range ${name} fails before Cargo`, t => {
+    const f = fixture(t);
+    rmSync(resolve(f.root,'capture/desktop/ui/frontend/electron/agent-media/' + name));
+    assert.throws(() => checkNativeInputs(f.root,'linux'), /ENOENT/);
+  });
+}
 test('installer/setup failure propagates through Electron resolution', t => {
   const f = fixture(t);
   f.put('capture/desktop/ui/frontend/node_modules/electron/index.js', 'throw new Error("Electron setup failed")');
@@ -162,7 +172,7 @@ test('Mac packaging and native fixture inputs are required', t => {
 });
 test('workflow installs and checks prerequisites before every Cargo command, preserves native checks and cleanup', () => {
   const workflow = readFileSync('.github/workflows/verification-platform.yml', 'utf8');
-  const rust = workflow.split('\n  rust:')[1].split('\n  release-ready:')[0];
+  const rust = workflow.split('\n  rust:')[1].split('\n  native-acceptance:')[0];
   const firstCargo = rust.indexOf('cargo ');
   for (const marker of ['--preflight', 'npm --prefix capture/desktop/ui/frontend ci', 'node_modules/electron/install.js', 'enablement/prerequisites/native.ts']) {
     assert.ok(rust.indexOf(marker) >= 0 && rust.indexOf(marker) < firstCargo, marker);
@@ -171,7 +181,7 @@ test('workflow installs and checks prerequisites before every Cargo command, pre
   assert.equal((rust.match(/npm --prefix capture\/desktop\/ui\/frontend ci/g) || []).length, 1);
   assert.match(rust, /timeout-minutes: 5/);
   assert.match(rust, /_electron_rust_roundtrip -- --ignored --nocapture/);
-  assert.match(rust, /mac-storage-native.cjs/);
+  assert.match(workflow.split('\n  native-acceptance:')[1], /mac-storage-native.cjs/);
   assert.match(rust, /Clean private prerequisite temporary root\n        if: always\(\)/);
 });
 

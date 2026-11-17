@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {AgentsPreferences, preferenceEnabled, preferenceFacts} from '../../../src/agents/policy.ts';
+import {AgentsPreferences, preferenceEnabled, preferenceFacts} from '../../../src/settings/agents/policy.ts';
 
 test('Agents defaults on, respects saved false and never treats read failure as enabled', () => {
   assert.equal(preferenceEnabled({saved: null}), true);
@@ -43,7 +43,7 @@ test('An unacknowledged write times out and allows a fresh read', async context 
 });
 
 test('T3 picker is off by default and has an independent acknowledged preference', async()=>{
- const {t3PickerEnabled}=await import('../../../src/agents/policy.ts');
+ const {t3PickerEnabled}=await import('../../../src/settings/agents/policy.ts');
  assert.equal(t3PickerEnabled({saved:null}),false);
  assert.equal(t3PickerEnabled({saved:true,t3Saved:null}),false);
  assert.equal(t3PickerEnabled({saved:true,t3Saved:true}),true);
@@ -62,12 +62,14 @@ test('connection facts expose only a canonical origin, expiry and preference sta
   for(const origin of ['https://user:private@t3.example','https://t3.example/?token=private','not a URL'])
     assert.deepEqual(preferenceFacts({...fields,t3Origin:origin,t3ExpiresAt:Infinity}),{saved:null,t3Configured:true});
 });
-
-test('Sharing requests validate and return independent acknowledged preferences',async()=>{
- assert.throws(()=>preferenceFacts({saved:null,sharingSaved:'true'}));
- const messages:object[]=[],bridge=new AgentsPreferences(value=>messages.push(value));
- const saving=bridge.request(true,'sharing');
- assert.deepEqual(messages,[{action:'agents-preference',request:1,enabled:true,setting:'sharing'}]);
- bridge.receive({request:1,facts:{saved:false,sharingSaved:true,autoPasteSaved:false,t3Saved:false}});
- assert.deepEqual(await saving,{saved:false,sharingSaved:true,autoPasteSaved:false,t3Saved:false});
+test('a cancelled queued connection and closed Settings never dispatch a native mutation; later requests recover',async()=>{
+ const {PreferenceQueue}=await import('../../../src/settings/agents/policy.ts');
+ const queue=new PreferenceQueue(),abort=new AbortController();
+ let release!:()=>void,writes=0,active=true;
+ const reading=queue.run(()=>new Promise<void>(resolve=>release=resolve));
+ await Promise.resolve();
+ const saving=queue.run(async()=>{writes++;},()=>active,abort.signal);
+ abort.abort();release();await reading;await assert.rejects(saving);assert.equal(writes,0);
+ active=false;await assert.rejects(queue.run(async()=>{writes++;},()=>active));assert.equal(writes,0);
+ active=true;await queue.run(async()=>{writes++;},()=>active);assert.equal(writes,1);
 });
