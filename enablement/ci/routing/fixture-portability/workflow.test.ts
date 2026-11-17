@@ -26,7 +26,7 @@ test('qualified fixtures get a named real Mac lane behind cheap guards; Linux ad
   assert.equal(admitted('success','success','true','pull_request',true), false);
   assert.equal(admitted('success','success','true','push'), true);
   assert.equal(admitted('success','success','true','push',false,true), false);
-  for (const name of ['macos-admission', 'native-evidence']) {
+  for (const name of ['macos-admission']) {
     assert.ok(flow.jobs[name].needs.includes('fixture-mac'));
     assert.equal(flow.jobs[name].steps.at(-1).env.FIXTURE_MAC, '${{ needs.select.outputs.fixtureMac }}');
   }
@@ -34,7 +34,7 @@ test('qualified fixtures get a named real Mac lane behind cheap guards; Linux ad
   assert.ok(!flow.jobs['linux-admission'].needs.includes('fixture-mac'));
 });
 
-test('real admission and shared receipts cannot waive required fresh Mac fixture proof', () => {
+test('real admission cannot waive required fresh Mac fixture proof', () => {
   const empty = suitePlan(['enablement/local-tests/reuse.test.ts']);
   const dir = mkdtempSync('/tmp/apparent-dev-fixture-admission-');
   try {
@@ -43,8 +43,7 @@ test('real admission and shared receipts cannot waive required fresh Mac fixture
       CI_REUSE:JSON.stringify({macos:'true','fixture-mac':'true'})};
     for (const outcome of ['failure','cancelled','skipped',undefined,'success']) {
       const needs = {select:{result:'success'},contracts:{result:'success'},'fixture-mac':{result:outcome}};
-      for (const [entry,flag] of [['enablement/ci/routing/evidence.ts','--admit'],
-        ['enablement/ci/routing/native-sharing/run.ts','--receipt']]) {
+      for (const [entry,flag] of [['enablement/ci/routing/evidence.ts','--admit']]) {
         const result = spawnSync('node',['--experimental-strip-types',entry,flag],
           {cwd:root,env:{...env,CI_NEEDS:JSON.stringify(needs)},encoding:'utf8'});
         assert.equal(result.status === 0, outcome === 'success', `${entry}:${outcome}\n${result.stderr}`);

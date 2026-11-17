@@ -1855,10 +1855,9 @@ pub fn extract_frames_range(
     bundle_dir: &Path,
     from_ms: u64,
     to_ms: u64,
-    fps: u32,
+    fps: Option<u32>,
 ) -> Result<Vec<PathBuf>> {
-    ensure!(from_ms <= to_ms, "Frame range ends before it starts");
-    ensure!(fps > 0 && fps <= 240, "FPS must be between 1 and 240");
+    let plan = crate::composition::agent_range::plan(from_ms, to_ms, fps)?;
     let directory = resolve_bundle_dir(bundle_dir)?;
     let loaded = load_bundle(&directory).ok().map(|(_, bundle)| bundle);
     let offset_ms = loaded.as_ref().map_or(0, |b| b.video_offset_ms);
@@ -1895,7 +1894,7 @@ pub fn extract_frames_range(
                 .arg("-t")
                 .arg(format!("{:.3}", (to_ms - from_ms) as f64 / 1_000.0))
                 .arg("-vf")
-                .arg(format!("fps={fps}"))
+                .arg(format!("fps={}", plan.fps))
                 .args(["-threads", "1"])
                 .arg(output_dir.join("frame-%03d.png"))
                 .output()
@@ -1916,8 +1915,7 @@ pub fn extract_frames_range(
             return Ok(frames);
         }
 
-        let step_ms = (1_000 / u64::from(fps)).max(1);
-        let times: Vec<u64> = (from_ms..=to_ms).step_by(step_ms as usize).collect();
+        let times: Vec<u64> = (from_ms..=to_ms).step_by(plan.step_ms as usize).collect();
         if !times.is_empty()
             && let Ok(decoded) = crate::composition::movie_frames::agent_range(&video, &times, offset_ms)
             && !decoded.is_empty()
@@ -1938,7 +1936,7 @@ pub fn extract_frames_range(
             return Ok(written);
         }
     }
-    existing_keyframes(&directory, from_ms, to_ms, fps)
+    existing_keyframes(&directory, &plan)
 }
 
 fn generated_frame(path: &Path) -> bool {
@@ -1955,15 +1953,12 @@ fn generated_frame(path: &Path) -> bool {
 
 fn existing_keyframes(
     directory: &Path,
-    from_ms: u64,
-    to_ms: u64,
-    fps: u32,
+    plan: &crate::composition::agent_range::FrameRangePlan,
 ) -> Result<Vec<PathBuf>> {
     let (_, bundle) = load_bundle(directory)?;
-    let margin = 1_000_u64.div_ceil(u64::from(fps)) / 2;
     let mut frames = Vec::new();
     for frame in bundle.keyframes {
-        if frame.t < from_ms.saturating_sub(margin) || frame.t > to_ms.saturating_add(margin) {
+        if frame.t < plan.lower_ms || frame.t > plan.upper_ms {
             continue;
         }
         let relative = Path::new(&frame.file);

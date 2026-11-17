@@ -3663,7 +3663,9 @@ impl ApparentCoordinator {
                 self.cancel_recording(cx); return;
             }
         }
-        let audio_recorder = if !microphone_enabled { None } else { match AudioRecorder::start(&bundle_dir) {
+        let stream_admission = crate::shared::handoff::experiment("localStreamingTranscription")
+            .then(workflow::local_transcription::admission);
+        let audio_recorder = if !microphone_enabled { None } else { match AudioRecorder::start_with_local_stream(&bundle_dir, stream_admission) {
             Ok(recorder) => Some(recorder),
             Err(error) => {
                 let message = format!("Capture refused: narration could not be saved: {error:#}");

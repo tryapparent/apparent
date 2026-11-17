@@ -1,6 +1,6 @@
 // Desktop owns the Agents preference workflow. Native only reads/writes the
 // persisted experiment through the shared config transaction.
-import type {T3Connection} from '../../electron/settings/t3.ts';
+import type {T3Connection} from '../../../electron/settings/t3.ts';
 export const skillCommand = 'bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent';
 export type T3ConnectionResult = {facts:PreferenceFacts;reason?:never}|{reason:'cancelled'|'unavailable'|'unconfirmed';facts?:never};
 export type PreferenceFacts = { saved: boolean | null; sharingSaved?:boolean|null;t3Saved?:boolean|null;t3Configured?:boolean;t3Origin?:string;t3ExpiresAt?:number;t3Connections?:{origin:string;expiresAt:number}[];autoPasteSaved?:boolean|null;autoPasteSupported?:boolean;wisprSaved?:boolean|null;wisprSupported?:boolean;error?: never } | { error: 'config_read_failed' | 'config_write_failed'; saved?: never;sharingSaved?:never;t3Saved?:never;t3Configured?:never;t3Origin?:never;t3ExpiresAt?:never;t3Connections?:never;autoPasteSaved?:never;autoPasteSupported?:never;wisprSaved?:never;wisprSupported?:never };
@@ -14,8 +14,6 @@ export function preferenceFacts(value: unknown): PreferenceFacts {
   if (facts.error === 'config_read_failed' || facts.error === 'config_write_failed') return {error: facts.error};
   if (facts.saved === null || typeof facts.saved === 'boolean') {
     if(facts.t3Saved!==undefined&&facts.t3Saved!==null&&typeof facts.t3Saved!=='boolean'||facts.t3Configured!==undefined&&typeof facts.t3Configured!=='boolean')throw Error('Invalid T3 preference');
-    if(facts.autoPasteSaved!==undefined&&facts.autoPasteSaved!==null&&typeof facts.autoPasteSaved!=='boolean'||facts.autoPasteSupported!==undefined&&typeof facts.autoPasteSupported!=='boolean')throw Error('Invalid auto paste preference');
-    if(facts.wisprSaved!==undefined&&facts.wisprSaved!==null&&typeof facts.wisprSaved!=='boolean'||facts.wisprSupported!==undefined&&typeof facts.wisprSupported!=='boolean')throw Error('Invalid Wispr preference');
     let origin:string|undefined;
     if(typeof facts.t3Origin==='string'&&facts.t3Origin.length<=2048)try{
       const url=new URL(facts.t3Origin);
@@ -40,9 +38,9 @@ export class AgentsPreferences {
   private pending = new Map<number, {resolve: (facts: PreferenceFacts) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>}>();
   private send: (message: object) => void;
   constructor(send: (message: object) => void) { this.send = send; }
-  request(enabled?: unknown,setting:'video'|'t3'|'autoPaste'|'wisprFlow'|'sharing'='video'): Promise<PreferenceFacts> {
+  request(enabled?: unknown,setting:'video'|'t3'='video'): Promise<PreferenceFacts> {
     if (enabled !== undefined && typeof enabled !== 'boolean') return Promise.reject(Error('Invalid preference'));
-    return this.issue({action:'agents-preference',...(enabled===undefined?{}:{enabled}),...(setting==='video'?{}:{setting})});
+    return this.issue({action:'agents-preference',...(enabled===undefined?{}:{enabled}),...(setting==='t3'?{setting:'t3'}:{})});
   }
   storeConnection(connection:T3Connection|null,disconnect?:string):Promise<PreferenceFacts> {
     return this.issue({action:'agents-connection',connection,...disconnect?{disconnect}:{}});

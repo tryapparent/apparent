@@ -34,12 +34,14 @@ class SigningTests(unittest.TestCase):
                              "electron/record-media/worker.js", "electron/record-media/policy.js",
                              "electron/record-media/assembly-worker.js", "electron/record-media/assembly-policy.js",
                              "electron/record-media/transcript/worker.js", "electron/record-media/transcript/policy.js",
+                             "electron/record-media/selection/worker.js", "electron/record-media/selection/cues.js",
                              "electron/record-media/node_modules/@apparent/engine-sdk/dist/index.js",
                              "electron/record-media/native/apparent-engine-media",
                              "electron/record-media/native/apparent-engine-probe",
                              "electron/record-media/native/apparent-engine-frames",
                              "electron/record-media/native/apparent-engine-frames-native",
                              "electron/agent-media/worker.js", "electron/agent-media/policy.js",
+                             "electron/agent-media/range-worker.js", "electron/agent-media/range-policy.js",
                              "electron/agent-media/node_modules/@apparent/engine-sdk/dist/index.js",
                              "electron/agent-media/native/apparent-engine-frames",
                              "electron/agent-media/native/apparent-engine-frames-native"):
@@ -92,6 +94,8 @@ class SigningTests(unittest.TestCase):
             self.assertTrue((destination / "app/electron/record-media/assembly-worker.js").is_file())
             self.assertTrue((destination / "app/electron/storage-owner/cleanup-policy/retention/worker.js").is_file())
             self.assertTrue((destination / "app/electron/record-media/transcript/worker.js").is_file())
+            self.assertTrue((destination / "app/electron/record-media/selection/worker.js").is_file())
+            self.assertTrue((destination / "app/electron/record-media/selection/cues.js").is_file())
             self.assertTrue((destination / "app/electron/record-media/native/apparent-engine-media").is_file())
             self.assertFalse((destination / "app/electron/pill/native/window.node").exists())
             for identity in ("-", "Developer ID Application: Synthetic"):

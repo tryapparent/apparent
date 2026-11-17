@@ -1,6 +1,7 @@
 pub(crate) mod connect;
 mod agents;
 pub(crate) use agents::persist_t3_connection;
+mod labs;
 pub(crate) mod onboarding;
 pub(crate) mod onboarding_window;
 pub(crate) mod settings;

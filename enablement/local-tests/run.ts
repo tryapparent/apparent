@@ -209,6 +209,7 @@ export function contractTests(cwd = root): Command[] {
       'enablement/local-tests/preview/explain.test.ts',
       ...prerequisites, ...timingContracts(cwd)], cwd: '.' },
     { argv: ['bun', 'test', 'enablement/ci/'], cwd: '.' },
+    { argv: ['bun', 'test', 'connect/enablement/ci/'], cwd: '.' },
   ];
 }
 

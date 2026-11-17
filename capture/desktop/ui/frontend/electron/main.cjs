@@ -97,6 +97,11 @@ let agents = settings && process.argv.includes('--settings-agents') && !about &&
 let general = settings && process.argv.includes('--settings-general') && !about && !agents && !labs;
 let generalState;
 const settingsHash = about ? '#about' : agents ? '#agents' : labs ? '#labs' : general ? '#general' : '';
+const {LabsPreferences, facts: labsFacts} = require('./settings/labs.cjs');
+const labsPreferences = new LabsPreferences(message => {
+  if (!labs || !process.argv.includes('--settings-parent')) throw new Error('Labs parent unavailable');
+  process.stdout.write(JSON.stringify(message) + '\n');
+});
 const { AgentsPreferences, PreferenceQueue, skillCommand, preferenceFacts } = require('./settings/agents.cjs');
 const {PairingLinks} = require('./settings/t3.cjs');
 const pairingLinks = new PairingLinks();
@@ -107,7 +112,6 @@ const agentsPreferences = new AgentsPreferences(message => {
   process.stdout.write(JSON.stringify(message) + '\n');
 });
 const preferenceQueue=new PreferenceQueue();
-function labsFacts(value){const facts=preferenceFacts(value);return facts.error?{error:facts.error}:{saved:facts.autoPasteSaved??null,supported:facts.autoPasteSupported===true,sharingSaved:facts.sharingSaved??null,wisprSaved:facts.wisprSaved??null,wisprSupported:facts.wisprSupported===true};}
 let aboutState;
 
 // Deliberately separate from the installed application's profile and identity.
@@ -259,16 +263,15 @@ app.whenReady().then(() => {
     if ((!agents && !(labs && args.length===0)) || args.length > 1 || args.length === 1 && typeof args[0] !== 'boolean') throw new Error('Forbidden Agents preference');
     return labs ? preferenceRequest(undefined,'t3') : agentsPreferences.request(...args);
   });
+  ipcMain.handle('apparent:labs-preference', (event, ...args) => {
+    validate(event, []);
+    if (!labs || args.length > 2 || args.length > 0 && typeof args[0] !== 'boolean' || args.length === 2 && !['streaming','autoPaste','sharing','wisprFlow'].includes(args[1]) || args[1] === 'autoPaste' && process.platform !== 'linux' || args[1] === 'wisprFlow' && process.platform !== 'darwin') throw new Error('Forbidden Labs preference');
+    return labsPreferences.request(...args);
+  });
   ipcMain.handle('apparent:agents-t3-preference', (event, ...args) => {
     validate(event, []);
     if (!labs || args.length !== 1 || typeof args[0] !== 'boolean') throw new Error('Forbidden Agents preference');
     return preferenceRequest(args[0], 't3');
-  });
-  ipcMain.handle('apparent:labs-preference',(event,...args)=>{
-    validate(event,[]);
-    const setting=args[1]??'autoPaste';
-    if(!labs||args.length>2||!['autoPaste','sharing','wisprFlow'].includes(setting)||args.length>0&&(typeof args[0]!=='boolean'||setting==='autoPaste'&&process.platform!=='linux'||setting==='wisprFlow'&&process.platform!=='darwin'))throw Error('Forbidden Labs preference');
-    return preferenceRequest(args[0],setting).then(labsFacts);
   });
   ipcMain.handle('apparent:agents-copy-skill', (event, ...args) => {
     validate(event, args);
@@ -314,7 +317,7 @@ app.whenReady().then(() => {
     process.stdout.write(`${JSON.stringify({ action: 'show-captures' })}\n`);
   });
   if (settings) {
-    const closeSettings = () => { settingsClosing = true; ++pairingPreviewVersion; pairingLinks.clear(); t3Approval?.abort(); agentsPreferences.close(); clearTimeout(startupTimer); app.quit(); };
+    const closeSettings = () => { settingsClosing = true; ++pairingPreviewVersion; pairingLinks.clear(); t3Approval?.abort(); agentsPreferences.close(); labsPreferences.close(); clearTimeout(startupTimer); app.quit(); };
     // A parent can exit before Chromium closes its child. Retire quietly when
     // its output pipe breaks instead of opening Electron's error dialog.
     process.stdout.on('error', error => { if (error.code === 'EPIPE') closeSettings(); else failSettings(); });
@@ -333,7 +336,9 @@ app.whenReady().then(() => {
           window.webContents.send('apparent:about-state', command);
         }
         if ((agents||labs) && command.type === 'agents-result') agentsPreferences.receive(command);
-        if(labs&&command.type==='agents-state'){window.webContents.send('apparent:labs-state',labsFacts(command.facts));window.webContents.send('apparent:agents-state',preferenceFacts(command.facts));}
+        if(labs&&command.type==='agents-state')window.webContents.send('apparent:agents-state',preferenceFacts(command.facts));
+        if (labs && command.type === 'labs-result') labsPreferences.receive(command);
+        if (labs && command.type === 'labs-state') window.webContents.send('apparent:labs-state', labsFacts(command.facts));
         if (agents && command.type === 'agents-state') {
           window.webContents.send('apparent:agents-state', preferenceFacts(command.facts));
         }
@@ -343,7 +348,7 @@ app.whenReady().then(() => {
             if (command.pane !== (about ? 'about' : agents ? 'agents' : labs ? 'labs' : general ? 'general' : 'storage')) {
               invalidate();++preferenceEpoch;
               generalState = undefined; aboutState = undefined;
-              ++pairingPreviewVersion; pairingLinks.clear(); t3Approval?.abort(); agentsPreferences.close();
+              ++pairingPreviewVersion; pairingLinks.clear(); t3Approval?.abort(); agentsPreferences.close(); labsPreferences.close();
             }
             about = command.pane === 'about'; agents = command.pane === 'agents';
             general = command.pane === 'general'; labs = command.pane === 'labs';
@@ -359,6 +364,7 @@ app.whenReady().then(() => {
       const userDismissed = !settingsClosing && !settingsFailed;
       settingsClosing = true;
       agentsPreferences.close();
+      labsPreferences.close();
       clearTimeout(startupTimer);
       // Failure is not user dismissal: Rust must be allowed to restore Storage.
       if (userDismissed) process.stdout.write(`${JSON.stringify({ action: 'close' })}\n`);
