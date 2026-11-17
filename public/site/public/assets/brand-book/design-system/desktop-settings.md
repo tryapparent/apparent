@@ -59,10 +59,12 @@ complete option labels. Compact wordmarks remain at least 120px wide.
 - Use a rounded 48 by 24px track with an 18px circular thumb, inside an
   interaction region at least 48 by 44px. The rounded track and thumb are a
   functional control exception to square panels, not permission for pill cards.
-- Preference-switch tracks are Signal when Off and lighter Lilac when On.
-  Use a Carbon thumb in light mode and a white (#FFFFFF) thumb in dark mode.
-  White is a functional thumb-only exception; do not use it for text, surfaces,
-  artwork or a new brand accent. Give the thumb a 1px Carbon edge within its
+- Preference-switch tracks are muted neutral gray (#767676) when Off and
+  Signal (#7A58C7) when On. Use a white (#FFFFFF) circular thumb in both
+  themes and states. Gray tracks and white thumbs are functional switch-only
+  exceptions; do not use them for text, general surfaces, artwork or new brand
+  accents. Gray means Off, not unavailable: preserve full enabled contrast
+  and keyboard operation; distinguish genuinely disabled controls separately. Give the thumb a 1px Carbon edge within its
   18px diameter so it remains distinct against both tracks. Tracks have no
   visible outline. The thumb is left when Off and right when On; expose the
   checked state accessibly. Color never supplies the only distinction.
@@ -77,9 +79,10 @@ complete option labels. Compact wordmarks remain at least 120px wide.
   happened.
 - Keep successful preference saves quiet. During persistence, use a native wait cursor over the switch, prevent repeat activation and announce pending state to assistive technology without visible saving text. Operational failures open the shared ErrorDialog with a failure icon/color, clear message, optional update-style artwork and a named recovery action. Put recovery first on the left, Close second, and align the action group left. Support keyboard focus, Escape and focus restoration. Keep field validation beside its field. Do not show routine success toasts or a persistent "Saved" label.
 - Essential component/state cues need at least 3:1 contrast with adjacent
-  colors. Paper against Lilac alone is approximately 1.97:1; it must not be the
-  only cue identifying a custom switch or its thumb. Carbon against Paper is
-  approximately 18.37:1 with the current main palette.
+  colors. Neutral #767676 against Paper measures 4.00:1, against Carbon
+  4.59:1 and against the white thumb 4.54:1. Signal against Paper measures
+  4.57:1, against Carbon 4.02:1 and against white 5.19:1. Retain thumb
+  position and accessible checked state so hue is never the only state cue.
 
 The reusable dimensions are under `component.desktopSettings` in JSON and
 `--apparent-desktop-settings-*` in CSS. Reuse the existing
@@ -87,16 +90,16 @@ The reusable dimensions are under `component.desktopSettings` in JSON and
 
 ## Dark-theme principle
 
-Dark mode retains the five canonical colors plus the white switch-thumb exception. Use Carbon for the main
+Dark mode retains the five canonical colors plus the neutral Off-track and white switch-thumb exceptions. Use Carbon for the main
 canvas and Paper for reading text; reuse Stock, Lilac and Signal for their
-appropriate surface, selection and focus roles. Do not introduce extra grays
+appropriate surface, selection and focus roles. Do not introduce other grays
 or replace the palette with framework defaults. Token roles may adapt to the
 theme, but essential text, control and state cues must retain their required
 contrast. The precise dark-theme component treatments still need visual review.
 
 ## Remaining decisions and verification
 
-The owner selected the compact geometry, state-dependent purple switch tracks, white dark-mode thumbs, no track outline in either theme, quiet save success, a busy cursor, shared error dialogs and the
+The owner’s 16 November recording selects neutral Off tracks, highlighted On tracks and white circular thumbs in both themes, replacing the earlier purple-in-both-states rule. This revision adopts that direction in brand tokens and the gallery; it does not establish Desktop rollout. Retain the compact geometry, no track outline, quiet save success, busy cursor, shared error dialogs and the
 palette-preserving dark-theme principle. Detailed copy-feedback presentation
 and other unshown component states remain open; do not present an unreviewed
 variant as owner-approved. The implementing
