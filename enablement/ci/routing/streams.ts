@@ -1,6 +1,5 @@
 // Publication guards consume the shared directory/consumer authority.
 // This module supplies Git ancestry/input proof, not another selector.
-import {routeDecision} from './consumers.ts';
 import {selectRange} from '../select.ts';
 import {execFileSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
@@ -21,7 +20,7 @@ export function currentStream(stream: Stream, candidate: string, main = 'origin/
   const paths = git('diff', '--no-renames', '--name-only', '-z', candidate, main, '--').split('\0').filter(Boolean);
   if (!paths.length) return true;
   const decision = selectRange(candidate, main, cwd, true);
-  return !routeDecision(paths, [], false, decision.inputProofKnown ? decision.qualifiedFixtures : []).publicationStreams[stream];
+  return !decision.publicationStreams[stream];
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [stream, candidate] = process.argv.slice(2);

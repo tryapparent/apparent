@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 const selectedOwners = process.env.THEME_SURFACES?.split(',')
 const publicOnly = selectedOwners?.length === 1 && selectedOwners[0] === 'public'
 const { chromium, firefox } = await import(publicOnly
- ? '../../../public/site/node_modules/playwright-core/index.mjs'
+ ? '../../../public/node_modules/playwright-core/index.mjs'
  : '../../../connect/web/node_modules/playwright-core/index.mjs')
 const needsRecipient = !selectedOwners || selectedOwners.includes('recipient')
 const root = fileURLToPath(new URL('../../../', import.meta.url))

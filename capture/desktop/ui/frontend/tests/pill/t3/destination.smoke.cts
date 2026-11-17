@@ -1,14 +1,16 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');
 const {_electron:electron,expect}=require('@playwright/test');const path=require('node:path');const fs=require('node:fs/promises');
 test('real pill keeps Paste by default, then selects during processing and dispatches through main only', {timeout:60000},async t=>{
+ // Close Electron before fixture teardown waits for sockets and removes its HOME.
+ let app; t.after(async()=>{await app?.close().catch(()=>{});});
  const {fixture}=await import('./testing/server.ts');const f=await fixture(t);f.many();await f.save(false);
- const app=await electron.launch({args:[path.resolve(__dirname,'../host.cjs'),'--no-sandbox','--ozone-platform=x11',`--force-device-scale-factor=${process.env.APPARENT_T3_SCALE??'1'}`],env:{...process.env,APPARENT_CONFIG:f.config,HOME:f.home,XDG_CONFIG_HOME:path.join(f.home,'config')}});
+ app=await electron.launch({args:[path.resolve(__dirname,'../host.cjs'),'--no-sandbox','--ozone-platform=x11',`--force-device-scale-factor=${process.env.APPARENT_T3_SCALE??'1'}`],env:{...process.env,APPARENT_CONFIG:f.config,HOME:f.home,XDG_CONFIG_HOME:path.join(f.home,'config')}});
  let page=await app.firstWindow();
  // Electron can publish the initial ready line before launch/firstWindow
  // resolves. Read that window's actual identity; observe only future ready
  // lines instead of assuming stdout replays the startup announcement.
  const initialWindowId=await app.evaluate(({BrowserWindow})=>Number(BrowserWindow.getAllWindows()[0].getMediaSourceId().split(':')[1]));
- t.after(async()=>{await app.close().catch(()=>{});});
+
  let parentBuffer='',holdActivation=false;const readyIds=[];
  const activate=id=>app.evaluate((_electron,id)=>process.stdin.emit('data',JSON.stringify({type:'activate',windowId:id})+'\n'),id);
  app.process().stdout.on('data',chunk=>{parentBuffer+=String(chunk);let end;while((end=parentBuffer.indexOf('\n'))>=0){const line=parentBuffer.slice(0,end);parentBuffer=parentBuffer.slice(end+1);try{const message=JSON.parse(line);if(message.ready){readyIds.push(message.windowId);if(!holdActivation)void activate(message.windowId).catch(()=>{});}}catch{}}});
@@ -96,9 +98,11 @@ test('real pill keeps Paste by default, then selects during processing and dispa
 });
 
 test('enabled unpaired pill opens Labs through the native pipe and can copy the kept recording', {timeout:30000},async t=>{
+ // Close Electron before fixture teardown waits for sockets and removes its HOME.
+ let app; t.after(async()=>{await app?.close().catch(()=>{});});
  const {fixture}=await import('./testing/server.ts');const f=await fixture(t);
  await fs.writeFile(f.config,JSON.stringify({experiments:{t3DestinationPicker:true}}));
- const app=await electron.launch({args:[path.resolve(__dirname,'../host.cjs'),'--no-sandbox','--ozone-platform=x11'],env:{...process.env,APPARENT_CONFIG:f.config,HOME:f.home}});t.after(async()=>{await app.close().catch(()=>{});});
+ app=await electron.launch({args:[path.resolve(__dirname,'../host.cjs'),'--no-sandbox','--ozone-platform=x11'],env:{...process.env,APPARENT_CONFIG:f.config,HOME:f.home}});
  let page=await app.firstWindow(),buffer='',setup=false;
  app.process().stdout.on('data',chunk=>{buffer+=String(chunk);let end;while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end);buffer=buffer.slice(end+1);try{const value=JSON.parse(line);if(value.ready)void app.evaluate((_electron,id)=>process.stdin.emit('data',JSON.stringify({type:'activate',windowId:id})+'\n'),value.windowId).catch(()=>{});if(value.action==='settings-labs')setup=true;}catch{}}});
  const frame={type:'state',capture:'unpaired',t3Eligible:true,view:{revision:1,phase:'completed',clock:'00:04',label:'Saved',warning:null,notice:null,reducedMotion:true,draggable:false,inputWaveform:null,noteCount:0,actions:[{id:'paste',label:'Paste',enabled:true,selected:false,primary:true}]}};
@@ -113,8 +117,10 @@ test('enabled unpaired pill opens Labs through the native pipe and can copy the 
 });
 
 test('a first Enter and a mouse selection both launch New thread when it is the only destination',{timeout:30000},async t=>{
+ // Close Electron before fixture teardown waits for sockets and removes its HOME.
+ let app; t.after(async()=>{await app?.close().catch(()=>{});});
  const {fixture}=await import('./testing/server.ts');const f=await fixture(t);f.empty();
- const app=await electron.launch({args:[path.resolve(__dirname,'../host.cjs'),'--no-sandbox','--ozone-platform=x11'],env:{...process.env,APPARENT_CONFIG:f.config,HOME:f.home}});t.after(async()=>{await app.close().catch(()=>{});});
+ app=await electron.launch({args:[path.resolve(__dirname,'../host.cjs'),'--no-sandbox','--ozone-platform=x11'],env:{...process.env,APPARENT_CONFIG:f.config,HOME:f.home}});
  let buffer='';app.process().stdout.on('data',chunk=>{buffer+=String(chunk);let end;while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end);buffer=buffer.slice(end+1);try{const message=JSON.parse(line);if(message.ready)void app.evaluate((_electron,id)=>process.stdin.emit('data',JSON.stringify({type:'activate',windowId:id})+'\n'),message.windowId).catch(()=>{});}catch{}}});
  const send=value=>app.evaluate((_electron,value)=>process.stdin.emit('data',JSON.stringify(value)+'\n'),value);
  let frame={type:'state',capture:'keyboard',t3Eligible:true,view:{revision:1,phase:'completed',clock:'00:04',label:'Saved',warning:null,notice:null,reducedMotion:true,draggable:false,inputWaveform:null,noteCount:0,actions:[]}};

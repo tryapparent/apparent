@@ -155,7 +155,7 @@ test('Public-only inputs keep their actual web verification and avoid native sui
     assert.deepEqual(selectedOwners([path]), ['public']);
   }
   assert.equal(needsPlatform(['capture/agent/skills/apparent/SKILL.md']), true, 'skill body is embedded in the native CLI');
-  const source = readFileSync(new URL('public/site/scripts/site-build/agent-files.ts', root), 'utf8');
+  const source = readFileSync(new URL('public/enablement/site-build/agent-files.ts', root), 'utf8');
   const consumed = [...new Set([...source.matchAll(/\b(?:repo|guide)\("([^"]+\.md)"\)/g)].map(m => m[1]))].sort();
   assert.deepEqual(consumed, [...publicMarkdown].sort(), 'new build consumers require review');
 });

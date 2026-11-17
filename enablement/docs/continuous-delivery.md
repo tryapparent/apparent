@@ -273,10 +273,10 @@ failures. Dispatch current main to publish a replacement when appropriate.
 ## Website activation: Cloudflare Pages
 
 The Public deploy job publishes only the sealed `dist-apparent` to the isolated
-`apparent-capture` Pages project, using `public/site/scripts/cd/publish-pages.ts` and
+`apparent-capture` Pages project, using `public/enablement/cd/publish-pages.ts` and
 `public/site/wrangler.pages.jsonc`. It does not execute `public/site/wrangler.jsonc`, deploy the
 hosted Worker, or connect to Clanker. See
-[`../public/site/docs/pages-deploy.md`](../public/site/docs/pages-deploy.md) for the current build,
+[`../public/enablement/docs/pages-deploy.md`](../public/enablement/docs/pages-deploy.md) for the current build,
 source-built homepage preservation, video limits, exact hostname cutover and rollback.
 Set `WEBSITE_PAGES_API_TOKEN` in `website-production`; the existing
 `WEBSITE_CD_ENABLED=true` gate enables only Pages. Remove obsolete SSH settings
@@ -289,7 +289,7 @@ release symlink and historical release directories were removed. Do not restore
 the old DNS A record, configure website SSH credentials, recreate that release
 tree or run historical overlay activators. Production `publish_site.py` already
 rejects this root; its temporary-filesystem tests are not a deployment procedure.
-Use only the Pages rollback in `public/site/docs/pages-deploy.md`.
+Use only the Pages rollback in `public/enablement/docs/pages-deploy.md`.
 
 The proxy is shared. Its container, volumes, unrelated sites and separate
 document-product poller/deploy-control services remain in place. They must not
