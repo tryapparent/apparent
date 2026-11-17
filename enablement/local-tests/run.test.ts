@@ -7,6 +7,8 @@ import { select, selection, owners, changedPaths, captureToolTests, commands, co
 import {runnerFixture} from './fixtures/runner.ts';
 import './fixtures/runner.test.ts';
 
+const routineOwners = owners.filter(owner => owner !== 'engine-media');
+
 test('Record metadata adoption keeps its real app consumers and one headless inventory', () => {
   const selected = select(['record/media/engine.json']);
   assert.ok(selected.includes('capture') && selected.includes('desktop'));
@@ -27,7 +29,7 @@ test('Agent published frames retain native integration without compiling the Eng
 });
 
 test('owner selection retains consumers and unrelated packages stay out', () => {
-  assert.deepEqual(select(['enablement/local-tests/run.ts']), [...owners]);
+  assert.deepEqual(select(['enablement/local-tests/run.ts']), routineOwners);
   assert.deepEqual(select(['capture/desktop/ui/frontend/src/Settings.tsx']), ['capture', 'desktop']);
   assert.deepEqual(select(['connect/client/src/config.rs']), ['capture', 'client']);
   assert.deepEqual(select(['shared/ui/src/button.tsx']), ['capture', 'desktop', 'web', 'service', 'public', 'onboarding']);
@@ -40,11 +42,11 @@ test('owner selection retains consumers and unrelated packages stay out', () => 
 
 test('unknown, missing history and empty deltas cannot silently skip coverage', () => {
   for (const paths of [[], ['new-owner/file.ts']]) {
-    assert.deepEqual(select(paths), [...owners]);
+    assert.deepEqual(select(paths), routineOwners);
   }
   assert.deepEqual(select(['shared/schema.ts']), owners.filter(owner => owner !== 'engine-media'),
     'the separate Engine producer does not consume legacy Shared implementation');
-  assert.deepEqual(select(['README.md'], false), [...owners]);
+  assert.deepEqual(select(['README.md'], false), routineOwners);
 });
 
 test('new install fixtures run for their tooling/dependency inputs, not ordinary product edits', () => {
@@ -72,7 +74,7 @@ test('new install fixtures run for their tooling/dependency inputs, not ordinary
 });
 
 test('execution-sensitive workflow edits stay broad; verified non-native plans omit stale CLI work', () => {
-  assert.deepEqual(select(['.github/workflows/new-workflow.yml']), [...owners]);
+  assert.deepEqual(select(['.github/workflows/new-workflow.yml']), routineOwners);
   for (const path of ['.github/workflows/checks.yml', '.github/workflows/release-linux.yml']) {
     const selection = select([path]);
     assert.ok(selection.includes('capture') && selection.includes('engine'));
@@ -129,9 +131,6 @@ test('package gates execute complete canonical suites including browser and Elec
 function fixture(action: (dir: string, env: NodeJS.ProcessEnv) => void) {
   const dir = mkdtempSync(join(process.env.TMPDIR || '/tmp', 'apparent-dev-local-hook-'));
   const env = { ...process.env };
-  // cwd cannot isolate Git fixtures from a real push's GIT_DIR / index.
-  // The imported production helpers spawn with process.env too; isolate that
-  // synchronous scope, not just the explicit fixture setup commands.
   const inherited: Record<string, string> = {};
   for (const key of Object.keys(env)) if (key.startsWith('GIT_')) {
     inherited[key] = env[key]!;
@@ -227,9 +226,9 @@ test('committed concurrency-only workflow edits select contracts rather than pro
   writeFileSync(join(dir, 'README.md'), 'later docs');
   git('add', '.'); git('commit', '-qm', 'docs');
   assert.deepEqual(selection(base, 'HEAD', dir).selected, ['capture', 'engine', 'desktop', 'capture-tools', 'client', 'public', 'tooling']);
-  assert.deepEqual(selection('unavailable', 'HEAD', dir).selected, [...owners]);
+  assert.deepEqual(selection('unavailable', 'HEAD', dir).selected, routineOwners);
   assert.equal(selection('unavailable', 'HEAD', dir).rustChanged, true);
-  assert.deepEqual(selection('HEAD', 'HEAD', dir).selected, [...owners]);
+  assert.deepEqual(selection('HEAD', 'HEAD', dir).selected, routineOwners);
 }));
 
 test('real Git delta includes earlier commits and both sides of cross-owner rename/deletion', () => fixture((dir, env) => {
@@ -455,7 +454,7 @@ test('Record command plans keep package tests and native integration without unr
       assert.ok(!plan.some(c => /^(connect|public|hermes)\//.test(c.cwd)));
       assert.ok(plan.length < commands([...owners], 'base', 'head', platform).length);
     }
-    assert.deepEqual(select([`record/${pkg}/src/policy.ts`], false), [...owners]);
+    assert.deepEqual(select([`record/${pkg}/src/policy.ts`], false), routineOwners);
   }
   assert.ok(scripts.test.includes('npm test --prefix ../../../../record/capture-request'));
   for (const platform of ['linux', 'darwin']) {

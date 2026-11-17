@@ -26,6 +26,7 @@ function childEnvironment(): NodeJS.ProcessEnv {
 test('fixture source closure follows a new nested import without copying real tests or build output', () => fixture(dir => {
   const source = join(dir, 'source'), target = join(dir, 'fixture');
   mkdirSync(target);
+  put(source, 'engine/enablement/ci/inputs.json', readFileSync(new URL('../../../engine/enablement/ci/inputs.json', import.meta.url), 'utf8'));
   put(source, 'enablement/local-tests/run.ts', "export {value} from '../ci/new/helper.ts';\n");
   put(source, 'enablement/ci/new/helper.ts', 'export const value = 42;\n');
   put(source, 'public/enablement/cd/ci/inputs.ts', 'export const publicInput = true;\n');
