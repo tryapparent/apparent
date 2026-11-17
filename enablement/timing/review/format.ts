@@ -8,6 +8,10 @@ export function markdown(data: any): string {
   const actionLines: string[] = [];
   const ci = data.jobs?.analysis;
   actionLines.push('## Largest measured costs', '');
+  if (ci?.preJobWaits?.length) {
+    const total=ci.preJobWaits.reduce((n:number,r:any)=>n+r.windowSeconds,0);
+    actionLines.push(`- CI pre-job admission (no captured jobs): ${ci.preJobWaits.length} × ${number(total/ci.preJobWaits.length)}s = ${number(total)}s in-window. Cause and current owner impact require original context.`);
+  }
   for (const [clock,row] of [
     ['CI queue',ci?.queueByRunner[0]],['CI execution',ci?.executionByJob[0]],
     ['CI step',ci?.executionByStep?.[0]],['Local observed process',data.census.actionRanking?.processes?.candidate]
