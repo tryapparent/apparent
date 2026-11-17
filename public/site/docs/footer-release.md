@@ -18,7 +18,7 @@ pauseable rotation; reduced motion disables it. Actions use square brand frames.
 ## Verification
 
 Build and package the Public artifact, then run
-`node --test scripts/pages/test-public-homepage.ts` and
+`node --test ../enablement/pages/test-public-homepage.ts` and
 `SITE_ARTIFACT=/absolute/artifact SITE_EVIDENCE=/private/evidence npm run test:try-button`.
 The latter uses synthetic release responses and a text download fixture, with
 Mac/Linux CPU variants, unknown/unsupported platforms, API failure, keyboard
@@ -26,4 +26,4 @@ activation and reconnect coverage. It proves web routing, not native launch or
 native protocol-consent behavior. Evidence stays outside served content.
 
 Simon approved publishing the matching live design on 2026-11-08. Normal
-main-branch Pages verification, CD and rollback are described in `pages-deploy.md`.
+main-branch Pages verification, CD and rollback are described in `../../enablement/docs/pages-deploy.md`.

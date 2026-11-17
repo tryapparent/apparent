@@ -9,10 +9,8 @@ export const desktopPackagingInputs = new Set([
   'capture/desktop/scripts/packaging/install-app.sh',
   'capture/desktop/scripts/packaging/frontend/stage.ts',
 ]);
-export const publicMarkdown = new Set([
-  'README.md', 'capture/agent/skills/apparent/SKILL.md', 'capture/agent/docs/usage.md',
-  'capture/desktop/docs/guides/recording.md', 'capture/engine/docs/guides/processing.md',
-]);
+import { publicMarkdown, hostedBrowserFixture } from '../../../public/enablement/cd/ci/inputs.ts';
+export { publicMarkdown };
 export function documentationOnlyPath(path: string): boolean {
   if (!path.endsWith('.md') || publicMarkdown.has(path)) return false;
   if (/(^|\/)(skills?|prompts?|instructions?|tests?|fixtures?|templates?)(\/|$)/i.test(path)) return false;
@@ -147,6 +145,7 @@ function directConsumers(path: string): readonly Owner[] {
   if (/^record\/(?:storage|completion|capture-request)\/(?:src\/.*\.ts|test\/.*\.test\.ts|package(?:-lock)?\.json|tsconfig(?:\.build)?\.json)$/.test(path) ||
       path === 'record/storage/build.ts') return ['desktop', 'capture'];
   // This composed browser proof is executed by Connect's publication verifier.
+  if (path === hostedBrowserFixture) return ['public', 'web'];
   const connect = connectConsumers(path, native);
   if (connect) return connect;
   if (path.startsWith('public/')) return connectPublicAssets.has(path) ? ['public', 'web'] : ['public'];
@@ -222,7 +221,7 @@ const directoryPaths = {
     '.github/workflows/release-linux.yml', '.github/workflows/release-mac-preview.yml',
     '.github/workflows/linux-updater-harness.yml',
     // The app embeds this wordmark; the remaining Public tree is independent.
-    'public/site/**'],
+    'public/**'],
   connect: [...common, ...independentEngine, ...native, ...desktopPackagingInputs, ...connectStreamInputs],
   public: [...common, ...independentEngine, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/hermes.yml', 'public/**', '.github/workflows/stream-public.yml', 'README.md',
     'capture/agent/skills/apparent/SKILL.md', 'capture/agent/docs/usage.md',

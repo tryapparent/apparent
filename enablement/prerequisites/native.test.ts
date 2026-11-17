@@ -162,7 +162,7 @@ test('Mac packaging and native fixture inputs are required', t => {
 });
 test('workflow installs and checks prerequisites before every Cargo command, preserves native checks and cleanup', () => {
   const workflow = readFileSync('.github/workflows/verification-platform.yml', 'utf8');
-  const rust = workflow.split('\n  rust:')[1].split('\n  release-ready:')[0];
+  const rust = workflow.split('\n  rust:')[1].split('\n  native-acceptance:')[0];
   const firstCargo = rust.indexOf('cargo ');
   for (const marker of ['--preflight', 'npm --prefix capture/desktop/ui/frontend ci', 'node_modules/electron/install.js', 'enablement/prerequisites/native.ts']) {
     assert.ok(rust.indexOf(marker) >= 0 && rust.indexOf(marker) < firstCargo, marker);
@@ -171,7 +171,7 @@ test('workflow installs and checks prerequisites before every Cargo command, pre
   assert.equal((rust.match(/npm --prefix capture\/desktop\/ui\/frontend ci/g) || []).length, 1);
   assert.match(rust, /timeout-minutes: 5/);
   assert.match(rust, /_electron_rust_roundtrip -- --ignored --nocapture/);
-  assert.match(rust, /mac-storage-native.cjs/);
+  assert.match(workflow.split('\n  native-acceptance:')[1], /mac-storage-native.cjs/);
   assert.match(rust, /Clean private prerequisite temporary root\n        if: always\(\)/);
 });
 

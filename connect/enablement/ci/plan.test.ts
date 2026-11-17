@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {YAML, Glob} from 'bun';
-import {suitePlan, routeDecision} from '../../../enablement/ci/routing/consumers.ts';
+import {suitePlan, routeDecision, streamPaths} from '../../../enablement/ci/routing/consumers.ts';
 import {connectPlan} from './plan.ts';
 
 const workflow = (name: string) => YAML.parse(readFileSync(new URL(`../../../.github/workflows/${name}`, import.meta.url), 'utf8')) as any;
@@ -13,8 +13,11 @@ test('automatic entry covers the union of Capture and standalone Connect trigger
   const checks = workflow('checks.yml');
   for (const event of ['push', 'pull_request']) {
     const patterns = checks.on[event].paths;
-    for (const path of ['connect/web/src/main.tsx', 'public/site/src/App.tsx'])
+    for (const path of ['connect/web/src/main.tsx', 'public/site/src/App.tsx', 'public/package.json', 'public/bun.lock',
+      'public/enablement/browser-proof/test-hosted-browser.mjs']) {
       assert.equal(matches(patterns, path), true, path);
+      assert.equal(matches(streamPaths.connect, path), true, `Connect consumes ${path}`);
+    }
     for (const path of ['capture/engine/runtime/mod.rs', 'shared/ui/button.tsx', 'composition/main.rs',
       'connect/client/src/lib.rs', 'connect/service/src/worker.ts', 'unknown/file.ts', 'connect/hosted.rs', 'record/storage/src/config.ts', 'Cargo.toml'])
       assert.equal(matches(patterns, path), true, path);
@@ -36,11 +39,11 @@ test('Connect retains real native client/service consumers and skips native for 
 });
 
 test('the composed browser proof selects its Connect consumer and publication', () => {
-  const plan = connectPlan(suitePlan(['public/site/scripts/browser-proof/test-hosted-browser.mjs']));
+  const plan = connectPlan(suitePlan(['public/enablement/browser-proof/test-hosted-browser.mjs']));
   assert.equal(plan.browser, true);
   assert.equal(plan.root, false);
   assert.equal(plan.client, false);
-  assert.equal(routeDecision(['public/site/scripts/browser-proof/test-hosted-browser.mjs']).publicationStreams.connect, true);
+  assert.equal(routeDecision(['public/enablement/browser-proof/test-hosted-browser.mjs']).publicationStreams.connect, true);
 });
 
 test('Connect publication requires successful stream-owned gates on canonical main', () => {
