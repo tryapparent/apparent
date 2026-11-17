@@ -149,6 +149,7 @@ function directConsumers(path: string): readonly Owner[] {
   // This composed browser proof is executed by Connect's publication verifier.
   if (path === hostedBrowserFixture) return ['public', 'web'];
   if (path.startsWith('public/')) return webAssets.has(path) ? ['public', 'web'] : ['public'];
+  if (!native && path.startsWith('connect/enablement/')) return ['tooling'];
   if (!native && path.startsWith('connect/web/')) return ['web'];
   if (['connect/client/typescript/src/mcp-wire.ts','connect/client/typescript/src/transfer/contract.ts','connect/client/typescript/contracts.ts'].includes(path)) return ['client', 'capture', 'service'];
   if (path.startsWith('connect/client/')) return ['client', 'capture'];

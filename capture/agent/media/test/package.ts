@@ -42,6 +42,13 @@ try {
   }));
   const hash = (file: string) => createHash('sha256').update(readFileSync(file)).digest('hex');
   const sourceHash = hash(movie), manifestHash = hash(manifest);
+  const rangePlan = JSON.parse(execFileSync(runtime,[join(app,'range-worker.js'),
+    '18446744073709551615','18446744073709551615','-'],{
+    env:{...env,ELECTRON_RUN_AS_NODE:'1'},encoding:'utf8',timeout:5000}));
+  assert.equal(rangePlan.status,'plan');assert.equal(rangePlan.fps,4);
+  assert.equal(rangePlan.upperMs,'18446744073709551615');
+  const ordinary=run(binary,['frames',bundle,'--from','0','--to','1']).trim().split('\n');
+  assert.equal(ordinary.length,4,'omitted CLI FPS must use the Agent-owned default');
   // Exercise the installed Electron runtime as a headless Node host as well.
   const directory = join(temporary, 'direct'); mkdirSync(directory, {mode: 0o700});
   const direct = JSON.parse(execFileSync(runtime, [join(app, 'worker.js'), join(app, 'native/apparent-engine-frames'), movie,
@@ -117,6 +124,27 @@ try {
   const fewer = range(1); assert.equal(fewer.length,3);
   assert.deepEqual(readdirSync(join(bundle,'zoom/range-0-2500')).sort(),['frame-001.png','frame-002.png','frame-003.png','keep.txt']);
   assert.equal(readFileSync(retained,'utf8'),'unrelated output');
+  const omitted = execFileSync(binary,['frames',bundle,'--from','0','--to','1'],{
+    env:fallbackEnv,encoding:'utf8',timeout:90000}).trim().split('\n');
+  assert.equal(omitted.length,5,'native fallback keeps its inclusive default cadence');
+  const saved=join(root,'saved-frames.apparent');mkdirSync(join(saved,'frames'),{recursive:true,mode:0o700});
+  for(const [i,path] of fewer.entries())copyFileSync(path,join(saved,`frames/frame-00${i+1}.png`));
+  writeFileSync(join(saved,'apparent.json'),JSON.stringify({...JSON.parse(readFileSync(manifest,'utf8')),
+    video:'missing.mp4',keyframes:[0,1000,2000].map((t,i)=>({index:i+1,t,reason:'speech',
+      file:`frames/frame-00${i+1}.png`,event:''}))}),{mode:0o600});
+  for(const [time,fps,count] of [['0.875',undefined,1],['0.874',4,0],['0.929',7,1],['0.928',7,0]] as const) {
+    const output=run(binary,['frames',saved,'--from',time,'--to',time,...(fps===undefined?[]:['--fps',String(fps)])]);
+    const files=output.trim().split('\n').filter(Boolean);assert.equal(files.length,count);
+    if(count)assert.equal(files[0],join(saved,'frames/frame-002.png'));
+  }
+  const before= readdirSync(join(bundle,'zoom/range-0-2500')).sort();
+  for(const [from,to,fps,message] of [['2.5','0',4,'Frame range ends before it starts'],
+    ['0','2.5',0,'FPS must be between 1 and 240'],['0','2.5',241,'FPS must be between 1 and 240']] as const) {
+    const failure=spawnSync(binary,['frames',bundle,'--from',from,'--to',to,'--fps',String(fps)],{
+      env,encoding:'utf8',timeout:10000});
+    assert.equal(failure.status,1);assert.equal(failure.stdout,'');assert(failure.stderr.includes(message));
+    assert.deepEqual(readdirSync(join(bundle,'zoom/range-0-2500')).sort(),before,'invalid request changed generated outputs');
+  }
   assertTemporaryClean();
   console.log('Synthetic range fallback observations (not a controlled benchmark): '+JSON.stringify(observations));
   assert.equal(hash(movie), sourceHash); assert.equal(hash(manifest), manifestHash);

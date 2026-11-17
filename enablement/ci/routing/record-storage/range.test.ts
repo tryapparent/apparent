@@ -35,20 +35,12 @@ test('real Git controller changes preserve Desktop renderer and main packaging, 
       assert.equal(result.plan.onboarding, false);
       assert.equal(result.installer, true); assert.equal(result.publicationStreams.capture, true);
       assert.equal(result.mac_rust, false);
-      const sharedFile = join(root, '.git', 'shared');
-      execFileSync(process.execPath, ['--experimental-strip-types',
-        new URL('../native-sharing/run.ts', import.meta.url).pathname, '--plan'], {
-        cwd: root, env: {...env, BASE_SHA: base, GITHUB_SHA: head, GITHUB_EVENT_NAME: 'pull_request',
-          VERIFICATION_PLAN: JSON.stringify(result.plan), MAC_VERIFICATION_PLAN: JSON.stringify(result.mac_plan),
-          MAC_RUST: String(result.mac_rust), GITHUB_OUTPUT: sharedFile},
-      });
-      const shared = Object.fromEntries(readFileSync(sharedFile, 'utf8').trim().split('\n').map(line => {
-        const split = line.indexOf('='); return [line.slice(0, split), line.slice(split + 1)];
-      }));
-      assert.deepEqual(JSON.parse(shared.plan), result.plan);
-      assert.equal(shared.platform, 'true'); assert.equal(shared.mac_rust, 'false');
+      assert.equal(result.platform, true);
       const workflow = (name: string) => YAML.parse(readFileSync(new URL('../../../../.github/workflows/' + name, import.meta.url), 'utf8'));
       const evaluate = (expression: string, inputs: object, needs: object) => Function('inputs', 'needs', `return (${expression});`)(inputs, needs);
+      const capture = workflow('checks.yml').jobs;
+      assert.equal(capture.select.outputs.plan, '${{ steps.paths.outputs.plan }}');
+      assert.equal(capture.select.outputs.mac_rust, '${{ steps.paths.outputs.mac_rust }}');
       const platform = workflow('verification-platform.yml').jobs;
       const needs = {select: {outputs: {root: 'false', engine: 'false', client: 'false', desktop: 'true'}}};
       assert.equal(evaluate(platform['desktop-ui'].if, {runner: 'ubuntu-24.04', release_receipt: false}, needs), true);

@@ -538,7 +538,7 @@ mod tests {
     fn frame_fallback_uses_manifest_times_not_file_indices() {
         let fixture = Fixture::new();
         let path = fixture.bundle("example", 123);
-        let frames = extract_frames_range(&path, 2_000, 5_000, 4).unwrap();
+        let frames = extract_frames_range(&path, 2_000, 5_000, Some(4)).unwrap();
         let names: Vec<_> = frames
             .iter()
             .map(|frame| frame.file_name().unwrap().to_str().unwrap())
@@ -553,12 +553,12 @@ mod tests {
             ]
         );
         assert!(
-            extract_frames_range(&path, 10_000, 11_000, 4)
+            extract_frames_range(&path, 10_000, 11_000, Some(4))
                 .unwrap()
                 .is_empty()
         );
-        assert!(extract_frames_range(&path, 5_000, 2_000, 4).is_err());
-        assert!(extract_frames_range(&path, 0, 2_000, 0).is_err());
+        assert!(extract_frames_range(&path, 5_000, 2_000, Some(4)).is_err());
+        assert!(extract_frames_range(&path, 0, 2_000, Some(0)).is_err());
     }
 
     #[test]
