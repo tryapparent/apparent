@@ -112,11 +112,17 @@ on run argv
           if panelNameValue is not missing value then set panelName to panelNameValue as text
         end try
         set panelRole to role of picker as text
-        set labels to name of every button of picker
-        set trace to trace & "depth=" & depth & ";role=" & panelRole & ";title=" & panelName & ";buttons="
-        repeat with labelText in labels
-          set trace to trace & (labelText as text) & "|"
-        end repeat
+        set trace to trace & "depth=" & depth & ";role=" & panelRole & ";title=" & panelName
+        -- Intermediate-window labels are diagnostic only. A hosted receipt
+        -- spent four seconds here before reaching the required footer lookup.
+        -- Observations/actions still validate the exact picker footer below.
+        if operation is "diagnose" then
+          set labels to name of every button of picker
+          set trace to trace & ";buttons="
+          repeat with labelText in labels
+            set trace to trace & (labelText as text) & "|"
+          end repeat
+        end if
         set trace to trace & linefeed
         set childSheets to sheets of picker
         if (count of childSheets) is 0 then exit repeat
