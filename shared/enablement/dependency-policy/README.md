@@ -105,6 +105,8 @@ strings, embedded HTML scripts/styles and unknown source formats currently fail 
 plain text, LICENSE/NOTICE, listed binary/media/font suffixes and lock data are non-code; there is no
 blanket generated/vendor comment skip. See comments.ts for exact grammar/suffix mappings.
 
+`.gitignore` recognizes column-zero `#` comments, with Git's BOM/CRLF handling; escaped and inline hashes are patterns.
+
 For safe setup and verified legacy LOC retirement, see
 [hook preparation](../../../enablement/directory-width/README.md#hook-activation-and-preservation).
 
