@@ -69,7 +69,7 @@ test('path values enforce UTF-8 byte bounds, NUL exclusion, trimming and absolut
   assert.equal(normalizeSelectedPath('/tmp/\0bad'), undefined);
   assert.equal(normalizeSelectedPath('/' + 'é'.repeat(2048)), undefined);
   assert.throws(() => locationCandidate(facts({ environment: { present: true, value: '\0' } }) as never));
-  const oversizedSaved = locationCandidate(facts({ saved: { kind: 'string', value: 'x'.repeat(4097) } }) as never);
+  const oversizedSaved = locationCandidate(facts({ saved: { kind: 'string', value: '/' + 'x'.repeat(4096) } }) as never);
   assert.equal(oversizedSaved.snapshot?.source, 'builtin');
   assert.equal(oversizedSaved.snapshot?.custom, false);
 });

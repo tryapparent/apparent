@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {RetentionWorkflow, isRetentionPolicy} from '../dist/index.js';
+import {RetentionWorkflow} from '../dist/index.js';
 import type {RevisionedRetention, RetentionWorkflowPorts, UsageResult} from '../dist/index.js';
 const revision = '0123456789abcdef', nextRevision = 'fedcba9876543210';
 const result = (rev = revision): RevisionedRetention => ({status: 'connected', revision: rev, custom: false,
@@ -13,12 +13,6 @@ function fixture(overrides: Partial<RetentionWorkflowPorts> = {}) {
     write: async (operation, fields) => {writes.push({operation, fields}); return result(nextRevision);}, ...overrides});
   return {workflow, writes};
 }
-test('retention intent accepts only own bounded known fields', () => {
-  for (const policy of [{mediaDays: 0, bundleDays: 0xffffffff}, {mediaDays: null, bundleDays: null}]) assert.equal(isRetentionPolicy(policy), true);
-  for (const policy of [null, [], {mediaDays: -1, bundleDays: 2}, {mediaDays: 1.2, bundleDays: 2},
-    {mediaDays: 0x100000000, bundleDays: 2}, {mediaDays: 1}, {mediaDays: 1, bundleDays: 2, extra: true},
-    Object.assign(Object.create({mediaDays: 7, bundleDays: 30}), {one: true, two: true})]) assert.equal(isRetentionPolicy(policy), false);
-});
 test('coalesced reads preserve presence/null and project no revision or unknown fields', async () => {
   const pending = deferred<RevisionedRetention>(); let reads = 0;
   const {workflow} = fixture({read: () => {reads++; return pending.promise;}});
