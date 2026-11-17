@@ -52,6 +52,15 @@ test('shortcut composition waits for modifiers and preserves Fn/cancel recovery'
   const recorder=page.getByRole('group',{name:'Shortcut recorder'});
   send('linux');
   await expect(recorder).toBeFocused();
+  const suggestions=page.getByRole('button',{name:'Show suggestions',exact:true});
+  await suggestions.focus();await page.keyboard.press('Space');
+  await expect(suggestions).toHaveAttribute('aria-expanded','true');
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button',{name:'Ctrl + Alt + R',exact:true})).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect.poll(()=>output).toContain('"keyCode":82,"modifiers":6144,"key":"r"');
+  await expect(suggestions).toHaveAttribute('aria-expanded','false');
+  output='';await recorder.focus();
   await page.keyboard.down('Control');
   await page.keyboard.down('Shift');
   await expect(page.getByRole('alert')).toHaveCount(0);
@@ -135,4 +144,64 @@ test('shortcut composition waits for modifiers and preserves Fn/cancel recovery'
   assert.equal(output.includes('"action":"continue"'),false,'selection needs the native test acknowledgement');
   child.stdin.write(JSON.stringify(chosen)+'\n');
   await expect.poll(()=>output).toContain('"action":"continue"');
+
+  send('macos');
+  await expect(recorder).toBeVisible();
+  await expect(page.getByText('Fn switches languages? Try another shortcut.',{exact:true})).toBeVisible();
+  for(const theme of ['light','dark'] as const){
+    await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});
+    for(const width of [760,320]){
+      await page.setViewportSize({width,height:600});
+      await suggestions.scrollIntoViewIfNeeded();
+      if(evidence)await page.screenshot({path:path.join(evidence,`suggestions-closed-${theme}-${width}.png`)});
+      await suggestions.click();
+      const alternative=page.getByRole('button',{name:'Control + Option + R',exact:true});
+      await alternative.scrollIntoViewIfNeeded();
+      await expect(alternative).toBeInViewport();
+      await expect(page.getByRole('button',{name:'Control + Option + S',exact:true})).toBeInViewport();
+      assert.equal(await page.locator('.native-setup section').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
+      if(evidence)await page.screenshot({path:path.join(evidence,`suggestions-open-${theme}-${width}.png`)});
+      output='';await alternative.focus();await page.keyboard.press('Escape');
+      await expect(suggestions).toBeFocused();
+      await expect(suggestions).toHaveAttribute('aria-expanded','false');
+      assert.equal(output,'','Escape closes suggestions without cancelling the recorder');
+    }
+  }
+  await page.evaluate(()=>document.documentElement.style.fontSize='200%');
+  await suggestions.scrollIntoViewIfNeeded();await suggestions.click();
+  for(const key of ['R','S']){
+    const option=page.getByRole('button',{name:`Control + Option + ${key}`,exact:true});
+    await option.scrollIntoViewIfNeeded();
+    await expect(option).toBeInViewport({ratio:1});
+  }
+  assert.equal(await page.locator('.native-setup section').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
+  if(evidence)await page.screenshot({path:path.join(evidence,'suggestions-enlarged.png')});
+  await page.keyboard.press('Escape');
+  await page.evaluate(()=>document.documentElement.style.fontSize='');
+  await page.setViewportSize({width:760,height:600});
+  await suggestions.click();output='';
+  await page.getByRole('button',{name:'Control + Option + R',exact:true}).click();
+  await expect.poll(()=>output).toContain('"keyCode":15,"modifiers":6144,"key":"r"');
+  assert.equal(output.includes('"action":"continue"'),false,'suggestions do not bypass native validation');
+  child.stdin.write(JSON.stringify({...chosen,shortcutChosen:false,shortcutTested:false,shortcutEditor:{recording:false,error:'That shortcut is already in use. Choose another shortcut.'}})+'\n');
+  await expect(page.getByRole('alert')).toContainText('already in use');
+  await suggestions.click();output='';
+  await page.getByRole('button',{name:'Control + Option + S',exact:true}).click();
+  await expect.poll(()=>output).toContain('"keyCode":1,"modifiers":6144,"key":"s"');
+  assert.ok(output.indexOf('"action":"change-shortcut"')<output.indexOf('"keyCode":1'),'recovery starts listening before submitting another suggestion');
+  child.stdin.write(JSON.stringify({...chosen,step:'try-it',practice:'start'})+'\n');
+  await expect(page.getByRole('heading',{name:'One more time.',exact:true})).toBeVisible();
+  const acknowledgeBack=(bytes:Buffer)=>{
+    if(bytes.toString().includes('"action":"back"'))child.stdin.write(JSON.stringify(chosen)+'\n');
+  };
+  child.stdout.on('data',acknowledgeBack);
+  await suggestions.click();output='';
+  if(evidence)await page.screenshot({path:path.join(evidence,'suggestions-practice.png')});
+  await page.getByRole('button',{name:'Control + Option + R',exact:true}).click();
+  await expect.poll(()=>output).toContain('"keyCode":15,"modifiers":6144,"key":"r"');
+  await expect(page.getByRole('heading',{name:'One more time.',exact:true})).toBeVisible();
+  await page.waitForTimeout(100);
+  child.stdout.off('data',acknowledgeBack);
+  const actions=output.trim().split('\n').map(line=>JSON.parse(line).action);
+  assert.deepEqual(actions,['back','change-shortcut','shortcut'],'the practice prompt can reopen the real editor before choosing an alternative');
 });

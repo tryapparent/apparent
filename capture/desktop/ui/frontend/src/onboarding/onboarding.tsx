@@ -3,6 +3,7 @@ import { Button } from '@apparent/ui/button';
 import {Keycap} from '@apparent/ui/keycap';
 import { Whiteboard, type BoardView } from './board/whiteboard';
 import { recordKeys } from './shortcut/keys';
+import {ShortcutSuggestions} from './shortcut/suggestions';
 import frog from '../../../../assets/onboarding/frog.png';
 import './onboarding.css';
 import { savePen } from './pen/save';
@@ -112,6 +113,17 @@ export function NativeOnboarding(){
     if((!state.shortcutChosen||shortcutCancelled.current)&&!state.shortcutEditor?.recording)void action('change-shortcut');
   },[state?.step,wispr.visible]);
   const chooseFn=async()=>{for(const next of fnSelectionActions(state?.platform??'linux',Boolean(state?.shortcutEditor?.recording))){if(!await sendAction(next))break;}};
+  async function chooseSuggested(shortcut:ReturnType<typeof shortcutCapture>){
+    if(!shortcut)return;
+    if(state?.step==='try-it'){
+      // This explicit sequence owns reopening; a Back snapshot must not also
+      // start the automatic listener after the new choice has been submitted.
+      listeningStep.current=true;
+      if(!await sendAction('back')){listeningStep.current=false;return;}
+    }
+    if((state?.step==='try-it'||!state?.shortcutEditor?.recording)&&!await sendAction('change-shortcut'))return;
+    await sendAction({action:'shortcut',kind:'record',...shortcut,reserved:false});
+  }
   useEffect(()=>{setHeldKeys([]);if(!wispr.visible&&state?.shortcutEditor?.recording)shortcutRecorder.current?.focus()},[state?.shortcutEditor?.recording,wispr.visible]);
   if(!state)return <main className="native-setup"><p>Connecting to apparent…</p></main>;
   const goAgain=state.step==='try-it'&&(!state.practice||state.practice==='start');
@@ -164,8 +176,9 @@ export function NativeOnboarding(){
         {state.shortcutChosen?<Keycap className="native-shortcut-example">{state.shortcut}</Keycap>:state.shortcutEditor?.externallyManaged?null:<p>No shortcut selected.</p>}
         <div className="native-shortcut-choices">{state.platform==='macos'&&!state.shortcutChosen&&<Button variant="keycap" aria-label="Choose suggested Fn shortcut" onClick={chooseFn}>Fn</Button>}{state.shortcutEditor?.externallyManaged&&<Button aria-label={`Choose ${state.shortcut}`} onClick={()=>void action('use-desktop-shortcut')}>{state.shortcut}</Button>}
         <Button variant="outline" onClick={()=>void action('change-shortcut')}>{state.shortcutEditor?.externallyManaged?'Choose another shortcut':state.shortcutChosen?'Change shortcut':'Choose shortcut'}</Button></div>
-      </>}{state.shortcutEditor?.error&&<p role="alert">{state.shortcutEditor.error}</p>}</div></>}
-    {goAgain&&<><h1 className="native-shortcut-prompt">One more time.</h1><div className="native-shortcut"><Keycap className="native-shortcut-example">{state.shortcut}</Keycap></div></>}
+      </>}{state.shortcutEditor?.error&&<p role="alert">{state.shortcutEditor.error}</p>}
+      {(state.shortcutEditor?.recording||!state.shortcutChosen)&&<ShortcutSuggestions platform={state.platform} onChoose={shortcut=>void chooseSuggested(shortcut)}/>}</div></>}
+    {goAgain&&<><h1 className="native-shortcut-prompt">One more time.</h1><div className="native-shortcut"><Keycap className="native-shortcut-example">{state.shortcut}</Keycap><ShortcutSuggestions platform={state.platform} onChoose={shortcut=>void chooseSuggested(shortcut)}/></div></>}
     {state.step==='done'&&<><h1>Ready for your next idea.</h1><div className="native-explain"><img src={frog} alt=""/></div><p>apparent stays in the menu bar, ready when you are.</p></>}
     {error&&!penPage&&<p role="alert">{error}</p>}
     </>}
