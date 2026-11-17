@@ -50,7 +50,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: mac-${{ inputs.channel == 'stable' && 'stable-candidate' || 'preview-release' }}
+  group: mac-${{ inputs.channel != '' && format('candidate-{0}', inputs.channel) || 'preview-release' }}
   cancel-in-progress: false
 
 env:
@@ -62,7 +62,7 @@ env:
 
 jobs:
   preview:
-    if: inputs.channel != 'stable' && github.repository == 'tryapparent/apparent' && inputs.homebrew_tag == '' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/t3/onboarding-mac-release-baseline')
+    if: inputs.channel == '' && github.repository == 'tryapparent/apparent' && inputs.homebrew_tag == '' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/t3/onboarding-mac-release-baseline')
     runs-on: macos-latest
     timeout-minutes: 90
     outputs:
@@ -269,7 +269,7 @@ jobs:
     name: Publish Homebrew cask
     needs: preview
     if: >-
-      !cancelled() && inputs.channel != 'stable' && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
+      !cancelled() && inputs.channel == '' && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
       (needs.preview.result == 'success' || (needs.preview.result == 'skipped' && inputs.homebrew_tag != ''))
     runs-on: macos-latest
     timeout-minutes: 20
@@ -337,7 +337,7 @@ jobs:
             "$GITHUB_WORKSPACE/homebrew-publish" "$RUNNER_TEMP/apparent.rb"
 
   frontend:
-    if: inputs.channel == 'stable' && github.repository == 'tryapparent/apparent'
+    if: (inputs.channel == 'stable' || inputs.channel == 'main') && github.repository == 'tryapparent/apparent'
     permissions:
       contents: read
       actions: read
@@ -391,7 +391,7 @@ jobs:
       APPARENT_SOURCE_ROOT: ${{ github.workspace }}/release-source
       APPARENT_PREVIEW_VERSION: ${{ inputs.version }}
       APPARENT_RELEASE_VERSION: ${{ inputs.version }}
-      APPARENT_RELEASE_CHANNEL: stable
+      APPARENT_RELEASE_CHANNEL: ${{ inputs.channel == 'stable' && 'stable' || 'preview' }}
       APPARENT_PREVIEW_BUILD_NUMBER: ${{ github.run_id }}.${{ github.run_attempt }}
       APPARENT_PREVIEW_NOTARIZE: 'true'
       APPARENT_APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}

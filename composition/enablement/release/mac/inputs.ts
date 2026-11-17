@@ -1,3 +1,4 @@
+import { releaseTag } from "../manifest.ts";
 import { assertNewVersion } from "./publication/feed.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -16,8 +17,10 @@ export function validate(env: NodeJS.ProcessEnv, cargo: string, head: string) {
     packageSection?.match(/^version\s*=\s*"([^"]+)"/m)?.[1],
     env.APPARENT_VERSION,
   );
-  assert.equal(env.RELEASE_CHANNEL, "stable");
-  assert.equal(env.RELEASE_TAG, `v${env.APPARENT_VERSION}`);
+  assert.equal(
+    env.RELEASE_TAG,
+    releaseTag(env.RELEASE_CHANNEL!, env.APPARENT_VERSION!, env.CANDIDATE_SHA!),
+  );
   assert.equal(env.APPARENT_PREVIEW_NOTARIZE, "true");
 }
 if (process.argv[1]?.endsWith("/inputs.ts")) {
@@ -28,18 +31,20 @@ if (process.argv[1]?.endsWith("/inputs.ts")) {
     readFileSync("Cargo.toml", "utf8"),
     execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
   );
-  const contents = JSON.parse(
-    execFileSync(
-      "gh",
-      [
-        "api",
-        "repos/tryapparent/apparent/contents/appcast.xml?ref=preview-mac-feed",
-      ],
-      { encoding: "utf8", timeout: 60_000 },
-    ),
-  );
-  assertNewVersion(
-    Buffer.from(contents.content, "base64").toString("utf8"),
-    process.env.APPARENT_VERSION!,
-  );
+  if (process.env.RELEASE_CHANNEL === "stable") {
+    const contents = JSON.parse(
+      execFileSync(
+        "gh",
+        [
+          "api",
+          "repos/tryapparent/apparent/contents/appcast.xml?ref=preview-mac-feed",
+        ],
+        { encoding: "utf8", timeout: 60_000 },
+      ),
+    );
+    assertNewVersion(
+      Buffer.from(contents.content, "base64").toString("utf8"),
+      process.env.APPARENT_VERSION!,
+    );
+  }
 }

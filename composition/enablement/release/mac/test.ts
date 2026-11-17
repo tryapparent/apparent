@@ -34,6 +34,15 @@ const cargo =
   '[package]\nname = "apparent"\nversion = "1.2.3"\n[dependencies]\n';
 test("accepts exactly the admitted checkout, Cargo version and stable tag", () => {
   validate(env, cargo, env.CANDIDATE_SHA);
+  validate(
+    {
+      ...env,
+      RELEASE_CHANNEL: "main",
+      RELEASE_TAG: `linux-main-v2-${env.CANDIDATE_SHA}`,
+    },
+    cargo,
+    env.CANDIDATE_SHA,
+  );
   for (const [key, value] of Object.entries({
     GITHUB_REPOSITORY: "kitlangton/apparent",
     CANDIDATE_SHA: "main",
@@ -98,8 +107,11 @@ test("reusable workflow has one Mac allocation after portable preparation, no pu
     stable,
     /contents: write|workflow_dispatch:|gh release|HOMEBREW_TAP_SSH_KEY/,
   );
-  assert.match(workflow, /if: inputs.channel != 'stable' && github.repository/);
-  assert.match(stable, /if: inputs.channel == 'stable' && github.repository/);
+  assert.match(workflow, /if: inputs.channel == '' && github.repository/);
+  assert.match(
+    stable,
+    /if: \(inputs.channel == 'stable' \|\| inputs.channel == 'main'\) && github.repository/,
+  );
   assert(
     workflow.indexOf("Validate candidate installation") <
       workflow.indexOf("Sign Sparkle bytes"),

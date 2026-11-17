@@ -71,7 +71,7 @@ test("automatic PR and main never allocate general Mac runners, including unknow
 
 test("Linux admission excludes Mac and queues publication independently", () => {
   const ci = () => workflow("checks.yml");
-  const job = ci().jobs["release-linux"];
+  const job = ci().jobs.release;
   assert.deepEqual(job.needs, ["linux-admission", "select"]);
   assert.equal(job.uses, undefined);
   assert.equal(job["runs-on"], "ubuntu-24.04");
@@ -79,7 +79,7 @@ test("Linux admission excludes Mac and queues publication independently", () => 
   assert.equal(job.permissions.contents, "read");
   assert.ok(
     job.steps.some((step: { run?: string }) =>
-      step.run?.includes("composition/enablement/release/linux/dispatch.ts"),
+      step.run?.includes("composition/enablement/release/main/dispatch.ts"),
     ),
   );
   assert.ok(
@@ -102,6 +102,6 @@ test("Linux admission excludes Mac and queues publication independently", () => 
     workflow("release-linux.yml").jobs.admit.steps.find(
       (s: { id: string }) => s.id === "gate",
     ).run,
-    /composition\/enablement\/release\/linux.ts admit/,
+    /composition\/enablement\/release\/linux.ts/,
   );
 });

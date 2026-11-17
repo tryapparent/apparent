@@ -1,16 +1,20 @@
-name: Release application
-run-name: Stable application · source ${{ inputs.source_sha || github.event.workflow_run.head_sha || github.sha }} · candidate run ${{ inputs.candidate_run_id || github.run_id }}
+name: Release
+run-name: ${{ inputs.mode }} · source ${{ inputs.source_sha || github.event.workflow_run.head_sha || github.sha }} · candidate run ${{ inputs.candidate_run_id || github.run_id }}
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Stable paired release or retained manual Linux verification
+        description: Paired Main or stable release, verification, or distribution retry
         type: choice
-        options: [stable, verify, distribution]
-        default: verify
+        options: [main, stable, verify, distribution]
+        default: main
       source_sha:
-        description: Exact verified main source (blank selects latest eligible pending version)
+        description: Exact verified main source (blank uses current main or latest eligible stable source)
+        type: string
+        default: ''
+      verification_run_id:
+        description: Exact Main CI receipt (optional for manual dispatch)
         type: string
         default: ''
       candidate_run_id:
@@ -27,7 +31,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: application-${{ inputs.mode == 'verify' && github.ref || 'stable' }}
+  group: application-${{ inputs.mode == 'verify' && github.ref || (inputs.mode == 'main' && 'main' || 'stable') }}
   cancel-in-progress: false
 
 jobs:
@@ -40,7 +44,7 @@ jobs:
     with:
       runner: ubuntu-24.04
   admit:
-    if: github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' && inputs.candidate_run_id == '' && inputs.mode == 'stable'
+    if: github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' && inputs.candidate_run_id == '' && (inputs.mode == 'stable' || inputs.mode == 'main')
     runs-on: ubuntu-24.04
     outputs:
       sha: ${{ steps.candidate.outputs.sha }}
@@ -56,15 +60,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.23.0'
+      - id: current
+        name: Check whether newer installer inputs superseded this source
+        if: inputs.mode == 'main' && inputs.verification_run_id != '' && inputs.source_sha != ''
+        continue-on-error: true
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: node --experimental-strip-types enablement/ci/routing/streams.ts capture "$SOURCE_SHA"
       - id: candidate
+        if: steps.current.outcome == 'success' || steps.current.outcome == 'skipped'
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ inputs.source_sha }}
+          SOURCE_SHA: ${{ inputs.source_sha || (inputs.mode == 'main' && github.sha) || '' }}
+          RELEASE_CHANNEL: ${{ inputs.mode }}
+          VERIFY_RUN_ID: ${{ inputs.verification_run_id }}
           GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: node --experimental-strip-types composition/enablement/release/admit.ts "$SOURCE_SHA"
       - name: Check signing configuration before scarce allocation
         if: steps.candidate.outputs.sha != ''
         env:
+          RELEASE_CHANNEL: ${{ inputs.mode }}
           APPLE_ENABLED: ${{ vars.MAC_APPLE_SIGNING_ENABLED }}
           APPLE_TEAM: ${{ vars.APPLE_TEAM_ID }}
           SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
@@ -87,7 +102,7 @@ jobs:
           test -n "$SIGNING_CERT"
           test -n "$NOTARY_KEY"
           test -n "$SPARKLE_KEY"
-          test -n "$TAP_KEY"
+          if [[ "$RELEASE_CHANNEL" == stable ]]; then test -n "$TAP_KEY"; fi
           [[ "$APPLE_TEAM" =~ ^[A-Z0-9]{10}$ ]]
           [[ "$NOTARY_ID" =~ ^[A-Z0-9]{10}$ ]]
           [[ "$NOTARY_ISSUER" =~ ^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$ ]]
@@ -101,12 +116,13 @@ jobs:
       actions: read
     uses: ./.github/workflows/release-linux.yml
     with:
-      stable_candidate: true
+      release_channel: ${{ inputs.mode }}
+      tag: ${{ needs.admit.outputs.tag }}
       source_sha: ${{ needs.admit.outputs.sha }}
       version: ${{ needs.admit.outputs.version }}
     secrets: inherit
   macos:
-    needs: [admit, linux]
+    needs: admit
     if: needs.admit.outputs.sha != ''
     permissions:
       contents: write
@@ -116,12 +132,12 @@ jobs:
       source_sha: ${{ needs.admit.outputs.sha }}
       version: ${{ needs.admit.outputs.version }}
       tag: ${{ needs.admit.outputs.tag }}
-      channel: stable
+      channel: ${{ inputs.mode }}
     secrets: inherit
   publish:
     needs: [admit, linux, macos]
     if: >-
-      !cancelled() && inputs.mode == 'stable' && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
+      !cancelled() && (inputs.mode == 'stable' || inputs.mode == 'main') && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
       ((needs.linux.result == 'success' && needs.macos.result == 'success') ||
       (inputs.candidate_run_id != '' && inputs.source_sha == '' && inputs.candidate_attempt != ''))
     runs-on: ubuntu-24.04
@@ -142,12 +158,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PRODUCER_RUN: ${{ inputs.candidate_run_id || github.run_id }}
           PRODUCER_ATTEMPT: ${{ inputs.candidate_attempt || needs.admit.outputs.producer_attempt }}
+          RELEASE_CHANNEL: ${{ inputs.mode }}
         run: node --experimental-strip-types composition/enablement/release/publish.ts "$PRODUCER_RUN" "$PRODUCER_ATTEMPT"
   feed:
     needs: [admit, publish]
     if: >-
       !cancelled() && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
-      (needs.publish.result == 'success' || (inputs.mode == 'distribution' && inputs.candidate_run_id != '' && inputs.candidate_attempt != '' && inputs.source_sha == ''))
+      ((inputs.mode == 'stable' && needs.publish.result == 'success') || (inputs.mode == 'distribution' && inputs.candidate_run_id != '' && inputs.candidate_attempt != '' && inputs.source_sha == ''))
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -170,7 +187,7 @@ jobs:
     needs: [admit, publish]
     if: >-
       !cancelled() && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
-      (needs.publish.result == 'success' || (inputs.mode == 'distribution' && inputs.candidate_run_id != '' && inputs.candidate_attempt != '' && inputs.source_sha == ''))
+      ((inputs.mode == 'stable' && needs.publish.result == 'success') || (inputs.mode == 'distribution' && inputs.candidate_run_id != '' && inputs.candidate_attempt != '' && inputs.source_sha == ''))
     runs-on: ubuntu-24.04
     permissions:
       contents: read

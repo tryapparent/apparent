@@ -118,6 +118,16 @@ test("a later unrelated failed main receipt cannot discard a pending version; pu
     await admit();
     assert.equal(existsSync(process.env.GITHUB_OUTPUT), false);
     await assert.rejects(admit(source), /new numeric version/);
+    process.env.RELEASE_CHANNEL = "main";
+    process.env.VERIFY_RUN_ID = String(runs[1].id);
+    routes[`${base}actions/runs/${runs[1].id}`] = { json: runs[1] };
+    writeFileSync(process.env.FIXTURE_ROUTES, JSON.stringify(routes));
+    await admit(source);
+    assert.match(
+      readFileSync(process.env.GITHUB_OUTPUT, "utf8"),
+      new RegExp(`tag=linux-main-v2-${source}`),
+    );
+    await assert.rejects(admit(docs), /No exact-source Linux/);
   } finally {
     process.chdir(cwd);
     process.env = saved;
