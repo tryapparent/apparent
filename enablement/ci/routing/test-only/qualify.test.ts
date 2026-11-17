@@ -50,7 +50,10 @@ test('real committed modification selects contracts only on PR and main, with gu
       needs.contracts.result = 'failure'; assert.equal(enabled(), false, 'contracts failure cannot bypass admission');
     }
   }
-  assert.ok(contractTests().some(command => command.argv.join(' ') === 'bun test enablement/ci/'));
+  // Owner contract directories may share the invocation; root contracts must
+  // still run without flags that could filter out the reviewed test.
+  assert.ok(contractTests().some(({argv}) => argv[0] === 'bun' && argv[1] === 'test'
+    && argv.slice(2).includes('enablement/ci/') && argv.slice(2).every(path => !path.startsWith('-'))));
   const cli = spawnSync('bun', [new URL('../../select.ts',import.meta.url).pathname, '--admit'], {
     cwd:r.cwd, encoding:'utf8', env:{...process.env, BASE_SHA:r.base, GITHUB_SHA:head,
       GITHUB_EVENT_NAME:'pull_request', GITHUB_OUTPUT:join(r.cwd,'output')}});

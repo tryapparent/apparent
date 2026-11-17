@@ -8,6 +8,7 @@ import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {qualifyAudioIngestion} from './audio-package.ts';
 import {qualifyTranscript} from './transcript/package.ts';
+import {qualifySpeechCues} from '../../enablement/media/cues-package.ts';
 
 import {qualifyAssembly} from './assembly-package.ts';
 
@@ -129,6 +130,7 @@ try {
   }
   const audioProof = qualifyAudioIngestion({binary, sourceBundle: markedOut, root, home, runtimeDirectory});
   const transcriptProof = qualifyTranscript({binary, sourceBundle: markedOut, root, home, runtimeDirectory});
+  const speechProof = qualifySpeechCues({binary, sourceBundle: markedOut, root, home, runtimeDirectory});
   // Screen recovery/reprocessing has a distinct explicit-frame provider from
   // phone ingestion. Exercise its real packaged caller and nonzero movie offset.
   const screen = join(root, 'screen.apparent'), recovered = join(root, 'screen-rebuilt.apparent');
@@ -193,6 +195,9 @@ try {
     writeFileSync(join(resolve(args[5]),'record-transcript-proof.json'),JSON.stringify(transcriptProof,null,2),{mode:0o600});
     for (const proof of transcriptProof) copyFileSync(proof.sheet,
       join(resolve(args[5]),`record-transcript-${proof.route}-sheet.png`));
+    writeFileSync(join(resolve(args[5]), 'record-speech-proof.json'), JSON.stringify(speechProof, null, 2), {mode: 0o600});
+    for (const proof of speechProof) copyFileSync(proof.sheet,
+      join(resolve(args[5]), `record-speech-${proof.route}-${proof.estimated ? 'estimated' : 'measured'}-sheet.png`));
   }
   console.log('Packaged Record/Engine worker and CLI exported and ingested rotated media; decoded keyframes and source preservation verified.');
 } finally { rmSync(root, {recursive: true, force: true}); }

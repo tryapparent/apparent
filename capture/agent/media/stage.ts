@@ -28,7 +28,7 @@ const sdk = join(root, 'node_modules/@apparent/engine-sdk');
 for (const [name, expected] of Object.entries(pin.sdkFiles)) {
   assert(lstatSync(join(sdk, name)).isFile()); assert.equal(hash(join(sdk, name)), expected, `Pinned SDK differs: ${name}`);
 }
-for (const name of ['worker.js', 'policy.js']) assert(lstatSync(join(root, 'dist', name)).isFile());
+for (const name of ['worker.js', 'policy.js', 'range-worker.js', 'range-policy.js']) assert(lstatSync(join(root, 'dist', name)).isFile());
 const names = ['LICENSE', 'apparent-engine-media', 'apparent-engine-frames', 'manifest.json'];
 const selected = ['LICENSE', 'apparent-engine-frames'];
 if (process.platform === 'darwin') {
@@ -79,7 +79,7 @@ try {
   // The original distribution manifest is provenance, not an installed inventory:
   // unused metadata readers are omitted; app signing/bundling seals installed bytes.
   cpSync(manifest, join(prepared, 'engine-source-manifest.json'));
-  for (const name of ['worker.js', 'policy.js']) cpSync(join(root, 'dist', name), join(prepared, name));
+  for (const name of ['worker.js', 'policy.js', 'range-worker.js', 'range-policy.js']) cpSync(join(root, 'dist', name), join(prepared, name));
   mkdirSync(join(prepared, 'node_modules/@apparent'), {recursive: true});
   cpSync(sdk, join(prepared, 'node_modules/@apparent/engine-sdk'), {recursive: true});
   writeFileSync(join(prepared, 'package.json'), '{"type":"module"}\n');
