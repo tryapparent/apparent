@@ -44,7 +44,7 @@ on:
       - "capture/desktop/scripts/packaging/install-app.sh"
       - "capture/desktop/scripts/packaging/frontend/stage.ts"
       - "connect/**"
-      - "public/site/**"
+      - "public/**"
       - ".github/workflows/stream-connect.yml"
       - "enablement/release_gate.py"
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
@@ -91,7 +91,7 @@ on:
       - "capture/desktop/scripts/packaging/install-app.sh"
       - "capture/desktop/scripts/packaging/frontend/stage.ts"
       - "connect/**"
-      - "public/site/**"
+      - "public/**"
       - ".github/workflows/stream-connect.yml"
       - "enablement/release_gate.py"
   workflow_dispatch:
