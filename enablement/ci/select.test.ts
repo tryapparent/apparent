@@ -14,7 +14,6 @@ const workflow = (name: string) => YAML.parse(readFileSync(new URL(`.github/work
 const ci = () => workflow('checks.yml');
 function admitted(expression: string, needs: any, event = 'pull_request', draft = false, cancelled = false,
   context: {repository?: string; ref?: string; ancestors?: string[]} = {}) {
-  // GitHub applies success() to conditions without a status function, including
   // skipped transitive ancestors even when a direct admission job succeeded.
   if (!/\b(?:always|cancelled|success|failure)\s*\(/.test(expression) &&
       [...Object.values(needs).map((job: any) => job.result), ...(context.ancestors ?? [])].some(result => result !== 'success')) return false;
@@ -255,8 +254,8 @@ test('installer and shared consumer-inventory changes retain full conservative a
   writeFileSync('enablement/ci/routing/consumers.ts', 'updated preparation consumers');
   git('commit', '-qam', 'installer'); const head = git('rev-parse', 'HEAD');
   const decision = selectRange(base, head, dir);
-  assert.equal(decision.inputProofKnown, false, 'Executable uncertainty remains conservative');
-  assert.deepEqual(decision.selected, [...owners]);
+  assert.equal(decision.inputProofKnown, false, 'Conservative uncertainty');
+  assert.deepEqual(decision.selected, owners.filter(owner => owner !== 'engine-media'));
   assert.deepEqual(routingProblems(decision), []);
   assert.equal(cli(base, head, dir).mac_rust, true);
   assert.deepEqual(localSelection(base, head, dir).plan, decision.plan);

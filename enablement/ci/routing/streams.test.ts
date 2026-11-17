@@ -71,7 +71,7 @@ test('both automatic events use the reviewed positive directory inventory', () =
   }
   for (const stream of Object.keys(workflows) as Stream[]) {
     for (const path of ['shared/new/file.ts', 'composition/new/file.ts']) assert.equal(affectsStream(stream, path), stream !== 'engine');
-    assert.equal(affectsStream(stream, 'unowned/new.ts'), true);
+    assert.equal(affectsStream(stream, 'unowned/new.ts'), stream !== 'engine');
   }
   assert.equal(affectsStream('public', 'capture/desktop/ui/frontend/tests/reference-native.cjs'), false);
   assert.equal(affectsStream('public', 'enablement/prerequisites/mac-picker.test.ts'), false);
@@ -91,7 +91,7 @@ test('cheap contracts surface new top-level ownership instead of selecting every
 
 test('Engine producer inputs select their real owner without acquiring legacy app or product builds', () => {
   for (const path of ['engine/native/src/main.rs', 'engine/native/macos/Probe.swift',
-    'engine/sdk/src/index.ts', 'engine/tools/check.ts', '.github/workflows/stream-engine.yml']) {
+    'engine/sdk/src/index.ts', 'engine/tools/check.ts']) {
     const decision = routeDecision([path]);
     assert.deepEqual(decision.selected, ['engine-media']);
     assert.equal(decision.plan.engineMedia, true);
@@ -106,8 +106,8 @@ test('Engine producer inputs select their real owner without acquiring legacy ap
   }
   assert.deepEqual(routeDecision(['engine/README.md']).selected, []);
   for (const path of ['enablement/ci/routing/consumers.ts', 'enablement/local-tests/run.ts']) {
-    assert.equal(routeDecision([path]).plan.engineMedia, true, 'shared execution inputs retain Engine');
-    assert.equal(affectsStream('engine', path), true);
+    assert.equal(routeDecision([path]).plan.engineMedia, false, 'shared execution inputs do not allocate Engine');
+    assert.equal(affectsStream('engine', path), false);
   }
 });
 

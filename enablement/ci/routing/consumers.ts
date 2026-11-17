@@ -1,3 +1,7 @@
+import {readFileSync} from 'node:fs';
+const rule = JSON.parse(readFileSync(new URL('../../../engine/enablement/ci/inputs.json', import.meta.url), 'utf8')) as {root: string; excludedSuffixes: string[]};
+const automaticPaths = [rule.root + '/**', ...rule.excludedSuffixes.map(suffix => '!' + rule.root + '/**/*' + suffix)];
+const affectsEngine = (path: string) => path.startsWith(rule.root + '/') && !rule.excludedSuffixes.some(suffix => path.endsWith(suffix));
 import {admissionTooling} from '../../../shared/enablement/ci/inputs.ts';
 import {independentInputs} from './engine-inputs/qualify.ts';
 export const owners = ['capture', 'engine', 'desktop', 'capture-tools', 'client', 'client-foreground', 'web', 'service', 'public', 'hermes', 'tooling', 'onboarding', 'engine-media'] as const;
@@ -23,11 +27,6 @@ export const linuxDrivers = new Set(['capture-smoke.py', 'gui-vm.py', 'gui-vm-re
 const webAssets = new Set(['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.png',
   'hosted/agent-reading-v4.png', 'fonts/HostGrotesk-Variable.ttf', 'brand/apparent-wordmark.svg']
   .map(path => 'public/site/public/assets/' + path));
-
-// These are isolated Enablement regression tests. They are also run by the
-// always-on contracts command; changing them does not change their tested
-// runtime/build consumers. Keep this inventory exact so new Enablement files
-// and execution inputs retain the conservative owner fallback.
 const toolingRegressionTests = new Set([
   'enablement/local-tests/reuse.test.ts',
   'enablement/prerequisites/native.test.ts',
@@ -37,23 +36,16 @@ export const onboardingPureInputs = new Set([
   'electron/onboarding/account.ts', 'electron/onboarding/presentation.ts', 'electron/onboarding/selection.ts',
   'src/onboarding/state.ts', 'src/onboarding/shortcut/keys.ts',
 ].map(path => 'capture/desktop/ui/frontend/' + path));
-// Reviewed Wispr adapter, renderer helpers/art and owning Electron proof.
-// These additions retain native/Desktop consumers and macOS verification;
-// they do not qualify for the import-free policy exemption above.
 export const onboardingWisprInputs = new Set([
   'electron/onboarding/wispr.ts', 'src/onboarding/wispr/motion.ts',
   'src/onboarding/wispr/use-wispr.ts', 'src/onboarding/wispr/frog-sprites.png',
   'tests/onboarding/wispr/smoke.ts',
 ].map(path => 'capture/desktop/ui/frontend/' + path));
-// Explicit retirements from the reviewed Electron onboarding port. A deletion
-// keeps its consumer and platform proof, while unrelated deletions remain
-// unproven boundary changes.
 export const retiredOnboardingInputs = new Set([
   'capture/desktop/settings/onboarding/account.rs',
   'capture/desktop/ui/frontend/electron/onboarding/account.ts',
   'capture/desktop/ui/frontend/src/onboarding/account.tsx',
   'capture/desktop/ui/frontend/tests/onboarding/account.test.ts',
-  // Replaced by the guide modules under src/onboarding/controls/.
   'capture/desktop/ui/frontend/src/onboarding/control-guide.tsx',
   'capture/desktop/ui/frontend/src/onboarding/control-guide.css',
 ]);
@@ -64,8 +56,6 @@ const onboardingRendererTestInputs = new Set([
   'capture/desktop/ui/frontend/tests/onboarding/renderer/tsconfig.json',
   'capture/desktop/ui/frontend/tests/onboarding/wispr/smoke.ts',
 ]);
-// Shared Connect consent/session policy is consumed by onboarding and Settings.
-// Add the fast policy suite without exempting its bridge or native consumers.
 const onboardingConnectInputs = new Set([
   'src/connect/consent.ts', 'src/connect/protocol.ts', 'src/connect/session.ts',
   'src/connect/flow.ts', 'src/bridge.ts', 'tests/connect/flow.test.ts',
@@ -115,10 +105,8 @@ function directConsumers(path: string): readonly Owner[] {
   if (documentationOnlyPath(path)) return [];
   if (admissionTooling(path)) return ['tooling'];
   if (desktopPackagingInputs.has(path)) return ['capture', 'engine', 'desktop', 'capture-tools', 'client-foreground'];
-  // Independently delivered producer; Record media consumes a pinned artifact,
-  // never this implementation tree. Consumer pin/policy/package changes retain
-  // their installed application consumers through record/ below.
-  if (path.startsWith('engine/') || path === '.github/workflows/stream-engine.yml') return ['engine-media'];
+  if (path.startsWith('engine/')) return affectsEngine(path) ? ['engine-media'] : [];
+  if (path === '.github/workflows/stream-engine.yml') return ['tooling'];
   if (independentInputs.has(path)) return owners.filter(owner => owner !== 'engine-media');
   if (path.startsWith('enablement/ci/') || path === 'enablement/local-tests/run.ts' || path.startsWith('.github/actions/ubuntu-apt/')) return owners;
   if (portableForegroundInputs.has(path)) return ['client-foreground'];
@@ -134,13 +122,9 @@ function directConsumers(path: string): readonly Owner[] {
   if (path === 'hermes/skills/recordings/SKILL.md') return ['hermes'];
   if (path === 'capture/agent/skills/apparent/SKILL.md') return ['capture', 'engine', 'public'];
   if (/(^|\/)(AGENTS|SKILL|CLAUDE|GEMINI)\.md$/i.test(path) && !['capture/', 'connect/', 'public/', 'hermes/', 'record/'].some(root => path.startsWith(root))) return owners.filter(owner => owner !== 'engine-media');
-  // No extension-based native exemption: unexpected native sources in web/tool owners broaden.
   const native = /\.(rs|swift|metal|c|cc|cpp|h|mm)$/.test(path) || /(^|\/)Cargo\.(toml|lock)$/.test(path);
-  // Audited headless Record packages feed Desktop's generated adapters and the
-  // packaged native application. Unknown files/packages and instructions stay broad.
   if (/^record\/(?:storage|completion|capture-request|transcription)\/(?:src\/.*\.ts|test\/.*\.test\.ts|package(?:-lock)?\.json|tsconfig(?:\.build)?\.json)$/.test(path) ||
       path === 'record/storage/build.ts') return ['desktop', 'capture'];
-  // This composed browser proof is executed by Connect's publication verifier.
   if (path === hostedBrowserFixture) return ['public', 'web'];
   if (path.startsWith('public/')) return webAssets.has(path) ? ['public', 'web'] : ['public'];
   if (!native && path.startsWith('connect/enablement/')) return ['tooling'];
@@ -157,8 +141,6 @@ function directConsumers(path: string): readonly Owner[] {
   if (linuxDrivers.has(path)) return ['capture-tools'];
   if (path.startsWith('capture/desktop/ui/frontend/src/hermes/')) return ['desktop', 'capture', 'hermes'];
   if (path.startsWith('capture/desktop/ui/frontend/')) return ['desktop', 'capture'];
-  // These drivers are executed by the installed foreground proof, whose job
-  // condition requires a Desktop consumer as well as the native application.
   if (path.startsWith('capture/desktop/scripts/native/foreground/')) return ['capture', 'engine', 'desktop', 'capture-tools'];
   if (path.startsWith('capture/desktop/scripts/') || path.startsWith('capture/agent/scripts/')) return ['capture', 'engine', 'capture-tools'];
   if (path.startsWith('capture/desktop/')) return ['desktop', 'capture', 'engine', 'capture-tools'];
@@ -168,7 +150,6 @@ function directConsumers(path: string): readonly Owner[] {
   if (path.startsWith('shared/ui/')) return ['public', 'web', 'desktop', 'service', 'capture'];
   if (path === 'shared/assets/brand/apparent-app-icon.svg') return ['public', 'web', 'desktop', 'service', 'capture', 'hermes'];
   if (path.startsWith('shared/assets/')) return ['public', 'web', 'desktop', 'service', 'capture'];
-  // Native build inputs cannot affect the Rust-independent Public/Hermes packages.
   if (['Cargo.toml', 'Cargo.lock', 'build.rs', 'main.rs'].includes(path) || path.startsWith('.cargo/') ||
       path.startsWith('enablement/native-build/') || path === 'enablement/build_version.rs' || path === 'enablement/verification.py')
     return ['capture', 'engine', 'desktop', 'client', 'capture-tools'];
@@ -176,14 +157,10 @@ function directConsumers(path: string): readonly Owner[] {
   if (path.startsWith('record/')) return ['capture', 'engine', 'desktop'];
   if (nativeWorkflowPaths.includes(path)) return ['capture', 'engine', 'desktop', 'client', 'capture-tools'];
   if (path.startsWith('enablement/prerequisites/')) return path.endsWith('.test.ts') ? ['tooling'] : ['capture', 'engine', 'desktop', 'client'];
-  // Native build helpers and execution-sensitive CI still exercise the complete integration.
   if (toolingRegressionTests.has(path)) return ['tooling'];
   if (path.startsWith('enablement/posthog-fixer/') && !native) return ['tooling'];
   if (path.startsWith('enablement/timing/') && !native) return ['tooling'];
   if (path.startsWith('enablement/directory-width/') && !native) return ['tooling'];
-  // Existing unknown legacy inputs keep their previous conservative consumers.
-  // Engine does not consume those implementation trees. Unknown top-level
-  // ownership still selects every owner and fails the ownership contract.
   if (path.startsWith('.github/') || path.startsWith('.githooks/')) return owners;
   return path.includes('/') && knownDirectories.includes(path.split('/')[0])
     ? owners.filter(owner => owner !== 'engine-media') : owners;
@@ -191,10 +168,10 @@ function directConsumers(path: string): readonly Owner[] {
 export function consumers(path: string): readonly Owner[] {
   const selected = [...directConsumers(path)];
   if (onboardingInput(path) && !documentationOnlyPath(path) && !selected.includes('onboarding')) selected.push('onboarding');
-  return owners.filter(owner => selected.includes(owner));
+  return owners.filter(owner => selected.includes(owner) && (owner !== 'engine-media' || affectsEngine(path)));
 }
 export function selectedOwners(paths: string[] | null): Owner[] {
-  if (!paths?.length) return [...owners];
+  if (!paths?.length) return owners.filter(owner => owner !== 'engine-media');
   const selected = new Set(paths.flatMap(path => [...consumers(path)]));
   return owners.filter(owner => selected.has(owner));
 }
@@ -221,7 +198,6 @@ const directoryPaths = {
     '.github/workflows/verification.yml',
     '.github/workflows/release-linux.yml', '.github/workflows/release-mac-preview.yml',
     '.github/workflows/linux-updater-harness.yml',
-    // The app embeds this wordmark; the remaining Public tree is independent.
     'public/**'],
   connect: [...common, ...independentEngine, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, ...desktopPackagingInputs, 'connect/**', 'public/**',
     '.github/workflows/stream-connect.yml', 'enablement/release_gate.py'],
@@ -230,50 +206,45 @@ const directoryPaths = {
     'capture/desktop/docs/guides/recording.md', 'capture/engine/docs/guides/processing.md'],
   hermes: [...common, ...independentEngine, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/stream-public.yml', 'hermes/**', 'capture/agent/setup/**',
     'capture/desktop/ui/frontend/src/hermes/**', '.github/workflows/hermes.yml'],
-  engine: ['engine/**', 'enablement/ci/**', 'enablement/local-tests/**', '.githooks/**', '.github/**',
-    ...nativeWorkflowPaths.map(path => '!' + path), '!.github/workflows/hermes.yml',
-    '!.github/workflows/stream-connect.yml', '!.github/workflows/stream-public.yml', '.github/workflows/stream-engine.yml'],
+  engine: automaticPaths,
 } as const;
 export type Stream = keyof typeof directoryPaths;
 const knownDirectories = ['capture', 'record', 'connect', 'public', 'hermes', 'enablement', 'shared', 'composition', '.cargo', '.github', '.githooks', 'engine'];
 const knownFiles = ['AGENTS.md', 'README.md', 'Cargo.toml', 'Cargo.lock', 'build.rs', 'main.rs'];
 export const streamPaths = Object.fromEntries(Object.entries(directoryPaths).map(([stream, paths]) =>
-  [stream, ['**', ...knownDirectories.map(root => '!' + root + '/**'), ...knownFiles.map(path => '!' + path), ...paths]])) as Record<Stream, string[]>;
+  [stream, stream === 'engine' ? automaticPaths : ['**', ...knownDirectories.map(root => '!' + root + '/**'), ...knownFiles.map(path => '!' + path), ...paths]])) as Record<Stream, string[]>;
 export function affectsStream(stream: Stream, path: string): boolean {
+  if (stream === 'engine') return affectsEngine(path);
   return streamPaths[stream].reduce((selected, rule) => {
     const pattern = rule.replace(/^!/, '');
     const matches = pattern === '**' || (pattern.endsWith('/**') ? path.startsWith(pattern.slice(0, -2)) : path === pattern);
     return matches ? !rule.startsWith('!') : selected;
   }, false);
 }
-
-// One decision feeds local commands, hosted suite gates and explainable output.
-export function routeDecision(paths: string[] | null, workflowControls: string[] = [], foregroundNative = false, qualifiedFixtures: string[] = [], qualifiedCiTests: string[] = [], qualifiedStorageControllers: string[] = []) {
+export function routeDecision(paths: string[] | null, workflowControls: string[] = [], foregroundNative = false, qualifiedFixtures: string[] = [], qualifiedCiTests: string[] = [], qualifiedStorageControllers: string[] = [], enginePaths: string[] | null = paths) {
   const remaining = paths?.filter(path => !workflowControls.includes(path)) ?? null;
   const controlOnly = !!paths?.length && !remaining?.length && workflowControls.length > 0;
   const qualifiedTooling = [...qualifiedFixtures, ...qualifiedCiTests];
   const unqualified = remaining?.filter(path => !qualifiedTooling.includes(path) && !qualifiedStorageControllers.includes(path)) ?? null;
-  const selected = controlOnly || (remaining?.length && !unqualified?.length) ? [] : selectedOwners(unqualified);
+  const selected = controlOnly || (remaining?.length && !unqualified?.length) ? [] : selectedOwners(unqualified).filter(owner => owner !== 'engine-media');
   if (qualifiedTooling.length && !selected.includes('tooling')) selected.push('tooling');
   if (qualifiedStorageControllers.length && !selected.includes('desktop')) selected.push('desktop');
   if (workflowControls.length && !selected.includes('tooling')) selected.push('tooling');
   if (foregroundNative) for (const owner of ['capture', 'client'] as const) if (!selected.includes(owner)) selected.push(owner);
+  if (enginePaths?.some(affectsEngine)) selected.push('engine-media');
   const plan = planFromOwners(selected);
   const effective = remaining?.filter(path => !qualifiedCiTests.includes(path) && !documentationOnlyPath(path));
   const unknown = !paths?.length;
   const orchestration = effective?.some(path => path === '.github/workflows/checks.yml' || path.startsWith('enablement/ci/'));
   const publicSelected = selected.includes('public');
-  if (publicSelected && !selected.includes('public')) selected.push('public');
   const updater = unknown || !!orchestration || !!effective?.some(path =>
     ['capture/desktop/scripts/linux/gui/', 'capture/desktop/scripts/linux/updater/'].some(prefix => path.startsWith(prefix)) ||
     ['.github/workflows/linux-updater-harness.yml', 'capture/desktop/linux/update.rs',
       'capture/desktop/settings/settings.rs', 'capture/desktop/settings/settings_window.rs'].includes(path));
-  const streams = Object.fromEntries(Object.keys(streamPaths).map(stream => [stream, unknown || !!paths?.some(path => affectsStream(stream as Stream, path))]));
+  const streams = Object.fromEntries(Object.keys(streamPaths).map(stream => [stream, (unknown && stream !== 'engine') || !!paths?.some(path => affectsStream(stream as Stream, path))]));
   const requiredStreams = {capture: plan.root || plan.engine || plan.desktop || plan.client || plan.tools || plan.onboarding,
     connect: plan.browser || plan.service || plan.client || plan.foreground, public: plan.public, hermes: plan.hermes,
     engine: plan.engineMedia};
-  // Verification-only inputs must not strand a pending unchanged product.
-  // Native clients consume Connect, but are not inputs to its Worker payload.
   const foregroundRuntime = !!remaining?.includes('connect/client/typescript/src/foreground.ts');
   const publicationStreams = {capture: plan.root || plan.engine || plan.desktop || plan.client || foregroundRuntime,
     connect: plan.browser || plan.service, public: plan.public, hermes: plan.hermes, engine: plan.engineMedia};

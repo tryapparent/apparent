@@ -5,7 +5,7 @@ import {execFileSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 
 export {streamPaths, affectsStream} from './consumers.ts';
-import {streamPaths} from './consumers.ts';
+import {streamPaths, affectsStream} from './consumers.ts';
 import type {Stream} from './consumers.ts';
 export type {Stream} from './consumers.ts';
 
@@ -18,6 +18,7 @@ export function currentStream(stream: Stream, candidate: string, main = 'origin/
   const git = (...args: string[]) => execFileSync('git', args, {cwd, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024});
   git('merge-base', '--is-ancestor', candidate, main);
   const paths = git('diff', '--no-renames', '--name-only', '-z', candidate, main, '--').split('\0').filter(Boolean);
+  if (stream === 'engine') return !paths.some(path => affectsStream(stream, path));
   if (!paths.length) return true;
   const decision = selectRange(candidate, main, cwd, true);
   return !decision.publicationStreams[stream];

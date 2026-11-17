@@ -57,19 +57,19 @@ test('real source commits and both CLIs remove only independent Engine fanout; w
     }
   } finally {f.close();}
 });
-test('Engine source, SDK, qualifiers, shared routing, unknown and mixed inputs retain Engine', () => {
+test('only Engine source, SDK and qualifiers select native production', () => {
   for (const path of ['engine/native/src/main.rs','engine/sdk/src/index.ts','engine/tools/qualify.ts',
     'engine/tools/check.ts','.github/workflows/stream-engine.yml','.github/actions/ubuntu-apt/action.yml',
     'enablement/ci/select.ts','enablement/ci/routing/consumers.ts','enablement/ci/runner/new.test.ts']) {
     const f=fixture(); try {
       const base=f.commit(); f.put('enablement/ci/root.ts',readFileSync(join(root,'enablement/ci/root.ts'),'utf8')+'\n// observation\n');
       f.put(path,'// changed input\n'); const head=f.commit();
-      assert.equal(selectRange(base,head,f.cwd).plan.engineMedia,true,path);
+      assert.equal(selectRange(base,head,f.cwd).plan.engineMedia,path.startsWith('engine/'),path);
       assert.equal(cli(f.cwd,base,head,true),`selected=${path.startsWith('engine/')}`,path);
     } finally {f.close();}
   }
 });
-test('new imports, inbound Engine callers, mode/status changes and missing history fail conservative', () => {
+test('only changes inside Engine select production despite other conservative fallback', () => {
   for (const kind of ['import','inbound','mode','delete','rename','history']) {
     const f=fixture();try {
       const base=f.commit(); const path='enablement/ci/root.ts';
@@ -80,21 +80,21 @@ test('new imports, inbound Engine callers, mode/status changes and missing histo
       if(kind==='delete') f.git('rm','-f',path);
       if(kind==='rename') f.git('mv',path,'enablement/ci/renamed.ts');
       const head=f.commit(); const decision=selectRange(kind==='history'?'missing':base,head,f.cwd);
-      assert.equal(decision.plan.engineMedia,true,kind);
-      if(kind!=='history') assert.equal(currentStream('engine',base,head,f.cwd),false,kind);
+      assert.equal(decision.plan.engineMedia,kind==='inbound',kind);
+      if(kind!=='history') assert.equal(currentStream('engine',base,head,f.cwd),kind!=='inbound',kind);
       if(kind==='inbound') assert.equal(engineIndependentRange(base,head,[path],f.cwd),false);
     } finally {f.close();}
   }
 });
 
-test('earlier main import expansion and extensionless/aliased inbound consumers revoke the exception', () => {
+test('earlier external imports do not expand Engine automatic triggers', () => {
   for (const edge of ["import '../../enablement/ci/root';","import '@ci/root';","import '../../enablement/ci/routing/native';"]) {
     const f=fixture();try {
       f.put('engine/tools/new.ts',edge); const base=f.commit();
       const path='enablement/ci/root.ts'; f.put(path,readFileSync(join(root,path),'utf8')+'\n// observation\n');
       const head=f.commit();
-      assert.equal(selectRange(base,head,f.cwd).plan.engineMedia,true,edge);
-      assert.equal(currentStream('engine',base,head,f.cwd),false,edge);
+      assert.equal(selectRange(base,head,f.cwd).plan.engineMedia,false,edge);
+      assert.equal(currentStream('engine',base,head,f.cwd),true,edge);
       assert.equal(cli(f.cwd,base,head,true),'selected=false',edge);
     } finally {f.close();}
   }

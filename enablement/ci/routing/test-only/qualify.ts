@@ -10,7 +10,7 @@ const dependencies = ['node:test', 'node:assert/strict', 'node:fs', 'node:path',
 // Pin complete regular-file blobs: changed code, aliases or modes need an audit.
 const reviewedMentions = new Map([
   ['enablement/ci/routing/engine-inputs/qualify.ts', '81e64db4b1e44d84ddec53c47908c06bedc40392'],
-  ['enablement/ci/routing/engine-inputs/range.test.ts', 'eced31d7c5320a93a30c42dfb35dfd09bb4ced79'],
+  ['enablement/ci/routing/engine-inputs/range.test.ts', '35a60d214e5c10b12c09e6dca2ae6fcc15777776'],
   ['capture/desktop/ui/frontend/tests/foreground/mac.ts', '7e98a906a5add5ab2b3229bb61b1c632e9e915a0'],
   ['enablement/ci/runner/mac-pill-bootstrap.test.ts', 'c885dfcbd9176d9da7f9f59a921ec80ea4bea258'],
 ]);

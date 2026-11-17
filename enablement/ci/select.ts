@@ -38,7 +38,6 @@ export function requiresMacRust(paths: string[] | null, unsupported: string[] | 
 }
 
 const portal = 'capture/desktop/linux/capture/portal.rs';
-// Audited cfg(linux) leaf adapter; no shared policy or Mac compiler consumer.
 const linuxAdapters = new Set(['capture/desktop/linux/integration/appearance.rs']);
 const linuxDoc = 'capture/desktop/docs/linux/linux.md';
 
@@ -194,8 +193,8 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
   }
   const qualifiedCiTests = effective ? qualifyCiTests(base, head, effective, cwd) : [];
   const qualifiedTooling = [...qualifiedFixtures, ...qualifiedCiTests];
-  const routing = routeDecision(effective, workflowControls, foregroundBoundaries.length > 0, qualifiedFixtures, qualifiedCiTests, qualifiedStorageControllers);
-  const plan = routing.plan;
+  const routing = routeDecision(effective, workflowControls, foregroundBoundaries.length > 0, qualifiedFixtures, qualifiedCiTests, qualifiedStorageControllers, paths);
+  const {plan} = routing;
   const mac = macDecision(effective?.filter(path => !qualifiedTooling.includes(path)) ?? null, delta?.filter(change => unsupported(change) && !qualifiedTooling.includes(change.path) && needsPlatform([change.path])).map(change => change.path) ?? null);
   if (effective?.length && effective.every(path => qualifiedTooling.includes(path))) {mac.macos = false; mac.reasons = [];}
   const fixtureMac = fixtureMacRequired(qualifiedFixtures) || !!effective?.some(path =>

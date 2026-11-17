@@ -1,12 +1,16 @@
 import { execFileSync } from "node:child_process";
 
-export const automaticPaths = ["engine/**", "!engine/**/*.md"];
+import rule from "./inputs.json" with { type: "json" };
+
+export const automaticPaths = [
+  rule.root + "/**",
+  ...rule.excludedSuffixes.map((suffix) => "!" + rule.root + "/**/*" + suffix),
+];
+export const affectsEngine = (path: string) =>
+  path.startsWith(rule.root + "/") &&
+  !rule.excludedSuffixes.some((suffix) => path.endsWith(suffix));
 export const linuxRunners = ["ubuntu-24.04", "ubuntu-24.04-arm"];
 export const nativeRunners = [...linuxRunners, "macos-15", "macos-15-intel"];
-
-export function affectsEngine(path: string): boolean {
-  return path.startsWith("engine/") && !path.endsWith(".md");
-}
 
 export function changedInputs(
   base: string,
