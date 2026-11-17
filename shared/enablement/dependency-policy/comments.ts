@@ -18,7 +18,7 @@ const noncode = new Set(['md','txt','png','jpg','jpeg','gif','webp','ico','icns'
 const cache = new Map<string, Language>();
 let initialized = false;
 export async function comments(file: string, text: string): Promise<string[]> {
-  const ext = path.posix.extname(file).slice(1);
+  const ext = path.posix.extname(file).slice(1).toLowerCase();
   if (noncode.has(ext) || ['LICENSE','NOTICE'].includes(path.posix.basename(file))) return [];
   const firstLine = text.split('\n')[0];
   const shebang = /^#!.*\b(?:ba|da|z)?sh\b/.test(firstLine) ? 'bash'

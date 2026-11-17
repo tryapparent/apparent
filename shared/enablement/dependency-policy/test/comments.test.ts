@@ -11,14 +11,16 @@ function fixture(t: any) {
   const dir=mkdtempSync('/tmp/apparent-dev-comments-');
   t.after(()=>rmSync(dir,{recursive:true,force:true}));
   const git=(...args: string[])=>execFileSync('git',args,{cwd:dir,encoding:'utf8',stdio:['pipe','pipe','pipe']});
-  const put=(file: string,text: string)=>{mkdirSync(path.dirname(path.join(dir,file)),{recursive:true});writeFileSync(path.join(dir,file),text);};
+  const put=(file: string,text: string)=>{mkdirSync(path.dirname(path.join(dir,file)),{recursive:true});if (/\.(?:[cm]?[jt]sx?|css|jsonc?)$/.test(file)) {
+    const formatted=spawnSync(path.join(tool,'node_modules/.bin/biome'),['format','--config-path='+path.join(tool,'guards/biome.json'),'--stdin-file-path='+file,'--write'],{input:text,encoding:'utf8'});
+    if(formatted.status===0) text=formatted.stdout;
+  } writeFileSync(path.join(dir,file),text);};
   git('init','-q');git('config','user.name','Synthetic');git('config','user.email','synthetic@example.invalid');
   put('.githooks/pre-commit',readFileSync(path.join(root,'.githooks/pre-commit'),'utf8'));
   chmodSync(path.join(dir,'.githooks/pre-commit'),0o755);
   put('enablement/directory-width/check.py',readFileSync(path.join(root,'enablement/directory-width/check.py'),'utf8'));
   mkdirSync(path.join(dir,'shared/enablement'),{recursive:true});
   symlinkSync(tool,path.join(dir,'shared/enablement/dependency-policy'),'dir');
-  put('enablement/hooks/lines.ts',readFileSync(path.join(root,'enablement/hooks/lines.ts'),'utf8'));
   git('config','core.hooksPath','.githooks');
   git('add','-A');git('-c','core.hooksPath=/dev/null','commit','-qm','trusted tool fixture');
   const stage=()=>git('add','-A');
@@ -72,7 +74,7 @@ test('outbound migration carries comments, including unparseable unsupported unc
 });
 test('unsupported and invalid changed files fail closed; language additions fail',t=>{
   const f=fixture(t);f.baseline();f.put('new.sql','SELECT 1;');f.stage();f.check(/unsupported comment syntax/);
-  f.git('rm','-f','new.sql');f.put('record/a.py','def broken(:');f.stage();f.check(/syntax parser/);
+  f.git('rm','-f','new.sql');f.put('hermes/a.py','def broken(:');f.stage();f.check(/syntax parser/);
 });
 test('named root allowances do not exempt arbitrary roots or nested width',t=>{
   const f=fixture(t);

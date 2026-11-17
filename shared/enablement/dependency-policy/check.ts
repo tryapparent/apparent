@@ -2,6 +2,7 @@ import {spawnSync} from 'node:child_process';
 import {analyze} from './policy.ts';
 import {Snapshot, git} from './snapshot.ts';
 import {checkComments} from './comments.ts';
+import {checkStaged} from './guards/staged.ts';
 
 try {
   const cwd = git(['rev-parse', '--show-toplevel'], process.cwd()).trim();
@@ -19,6 +20,11 @@ try {
   if (added.length) {
     console.error('Dependency policy: new forbidden or unsupported edges in the staged snapshot:\n' + added.sort().map(e => '  ' + e).join('\n'));
     console.error('Use the allowed owner’s public exports, or stage the missing source/config/dependency declaration. Existing committed debt is tolerated.');
+    process.exitCode = 1;
+  }
+  const stagedErrors = await checkStaged(cwd, head, tree);
+  if (stagedErrors.length) {
+    console.error(stagedErrors.join("\n"));
     process.exitCode = 1;
   }
   if (!process.exitCode) {

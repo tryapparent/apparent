@@ -1,137 +1,109 @@
-# Staged dependency policy
+# Staged commit policy
 
-The pre-commit hook runs directory-width, then the preserved LOC rule, then this checker. No CI or
-pre-push invocation is installed. Set up once with Node 22.18+ and
-`npm ci --ignore-scripts --prefix shared/enablement/dependency-policy`; use the
-repository's existing hook installation. Commits only run installed tooling:
-no install, network, native build or service. Missing Node/TypeScript fails the
-hook; install the locked tool before committing. The hook/tool themselves are
-trusted checkout tooling, like the existing width checker, not a security sandbox
-against an author who edits/disables hooks.
+Install once with Node 22.18+ and `npm ci --ignore-scripts --prefix shared/enablement/dependency-policy`.
+The tracked pre-commit runs directory-width, then this checker. Commits run installed tools only:
+no network, installs, native builds or services. No new CI or pre-push invocation exists.
+The existing pre-push protection remains separate. Missing tooling rejects with installation guidance.
+Run `npm test --prefix shared/enablement/dependency-policy` and
+`node --experimental-strip-types --test enablement/hooks/test.ts` for synthetic tests.
 
-`node --experimental-strip-types shared/enablement/dependency-policy/check.ts`
-checks the index against HEAD. `npm test --prefix shared/enablement/dependency-policy`
-runs isolated Git repositories through the real hook, preserving the width guard.
+The checker compares exact Git index blobs with HEAD, including manifests and compiler configs;
+it never stages or changes source. Unborn HEAD means an empty baseline. Unmerged indexes reject.
+Renames/copies are additions except the explicit comment allowance below. Amend compares with HEAD,
+not its parent; merge compares with current/first HEAD. Hooks are bypassable trusted checkout tools,
+not a security sandbox or universal history certification. Run `node --experimental-strip-types
+shared/enablement/dependency-policy/check.ts` when the committing client skips pre-commit.
 
-## Rules and ratchet
+## Ownership and capture freeze
 
-Canonical product roots: onboarding/, record/, handoff/, connect/, agent/; public/ and hermes/ remain unchanged. Supporting owners: engine/, shared/. Composition assembles public contracts/surfaces and injects narrow callbacks. Agent -> Record -> Engine -> Shared is the special public capability chain. Onboarding, Handoff, Connect, Public and Hermes may use own code, Shared public packages and declared externals only. No sibling implementation imports or stream -> Composition edges. Record owns React recording UI as well as headless APIs; there is no Desktop owner or desktop/ canonical root. Unknown legacy shell is classified Legacy with no new cross-owner edges. Same-owner internals are allowed. Cross-owner edges require public exports.
+Canonical streams are onboarding/, record/, handoff/, connect/, agent/; public/ and hermes/ remain.
+Supporting owners are engine/ and shared/; composition/ assembles public contracts. There is no Desktop
+stream. Record includes recording UI. Agent -> Record -> Engine -> Shared is the special capability chain.
+Other streams may use own code, Shared public packages and declared externals. Only Record imports
+Engine capabilities; Composition cannot import Engine directly. Same-owner internals are allowed; cross-owner edges
+require public exports and an explicit allowed edge. Engine cannot import products or Composition.
 
-Each forbidden edge is keyed by importer path and resolved module path (or
-workspace package/subpath for unbuilt exports), with its policy reason. The index
-must introduce no edge absent from HEAD. Counts and owner pairs are insufficient;
-a new importer, target swap or rename fails even if the total stays constant.
-Existing violations remain debt without an exception file. Removal is allowed;
-a later commit cannot reintroduce removed debt. New resolution/syntax/unsupported
-form diagnostics are similarly ratcheted by file and diagnostic. The checker
-never executes analyzed modules or writes/stages source.
+Each forbidden/unsupported dependency is keyed by importer, resolved target and reason. No new exact
+edge may appear relative to HEAD, even if counts or owner pairs stay constant. Removed debt cannot
+return. Changed staged configs reanalyze unchanged sources. No exception file disguises inherited debt.
 
-Both complete snapshots come from Git trees and blobs, including manifests and
-compiler configs, so partial staging and deletes work. Every owned source is
-reanalyzed: changing staged configuration can redirect an unchanged importer.
-An unborn HEAD is an empty baseline. An unmerged index fails closed. Renames
-are deletion plus addition, not an exemption. Symlink source/config and owner
-gitlinks are unsupported and ratcheted; their contents are never followed.
+TypeScript 5.9 parses TS/TSX/MTS/CTS and JS variants. Literal import/export, import types,
+import-equals, require/require.resolve and dynamic imports are covered. Computed calls diagnose;
+indirect/eval/custom loaders remain outside complete static detection. Resolution uses staged nearest
+tsconfig.json, relative extends, paths/baseUrl and standard TS resolution, never installed node_modules.
+Staged package names and exact/pattern exports (including null exclusions and condition alternatives)
+define public contracts. Exported unbuilt dist specifiers need no build; private paths fail.
+External packages require nearest-manifest dependency declarations; Node builtins pass.
 
-A normal commit compares with current HEAD. During `--amend`, HEAD is the commit
-being replaced, so debt already in it is tolerated (not compared with HEAD's
-parent). A resolved merge compares with first/current HEAD, not the union of
-merge parents; incoming forbidden edges absent there fail. Hooks are not
-universally run by all Git operations (including some sequencer/merge paths),
-can be bypassed, and do not certify history or infer amend/rebase intent. Run the
-checker explicitly when the committing client does not invoke pre-commit.
+Unresolved forms diagnose. Alternate tsconfig selection, bundler aliases, external config packages and
+resolver plugins are unsupported. CSS/assets/JSON resource imports, manifest-only edges, native linkage,
+build graphs and runtime delivery are outside graph coverage. Unowned root/enablement importers and
+dependency/vendor/target sources are excluded. This ratchet does not prove owner build independence.
 
-## Supported resolution and limits
+All new paths under capture/ reject, including copies and inbound relocations. Existing repairs,
+deletions and moves out remain possible. snapshot.ts maps evidenced legacy onboarding, recording,
+handoff, connect, agent and engine donors; unknown shell stays Legacy, not a new stream. This checks
+path growth, not semantic feature expansion in an existing file. Width allowances stay exact and bounded.
 
-TypeScript 5.9's AST parses tracked `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`,
-`.mjs`, `.cjs` (including declarations). Literal import/export, type-only edges,
-import types, import-equals, `require`, `require.resolve` and dynamic import are
-covered. Non-literal calls receive diagnostics; indirect/eval/custom loader and
-runtime-built dependencies are not a complete statically detectable graph.
+## Markdown budgets
 
-The TypeScript resolver reads an in-memory Git filesystem, never candidate
-worktree or installed node_modules. It uses the nearest ancestor `tsconfig.json`,
-staged relative config extends, baseUrl/paths and standard TS extension resolution.
-It does not infer separate bundler aliases, alternate `tsconfig.*.json` project
-selection, package-manager links, custom resolver plugins or external config
-packages: unresolved forms fail with the importer/specifier and a remediation.
-Repository packages are discovered by staged package.json names. Exact/pattern
-`exports` and condition alternatives define public contracts; package imports of
-exported unbuilt dist paths need no build. Private package subpaths fail. Direct
-relative/alias cross-owner imports must resolve to an actual export target;
-source behind a dist export is not implicitly public. Prefer the package's
-exported specifier. Packages lacking exports expose no cross-owner contract.
-All export condition alternatives are considered public, not a promise that a
-particular runtime condition loads. External bare packages require declaration
-in the nearest manifest's dependencies/devDependencies/peerDependencies/
-optionalDependencies; Node builtins are allowed. A resolved local path takes
-precedence over external declarations.
+Authored repository Markdown additions must use exact canonical basenames AGENTS.md, README.md or
+SKILL.md. Extension/name detection is case-insensitive, so `.MD` cannot evade policy; new spelling must
+still be canonical. Limits are 2,000, 2,000 and 3,000 tokens respectively, using pinned js-tiktoken 1.0.21
+with o200k_base. The entire exact staged text counts, including frontmatter and code. Special-token-like
+text is ordinary text (`encode(raw, [], [])`). Existing oversized allowed-name files cannot grow beyond
+their HEAD token count; existing other-named Markdown cannot grow at all. Removal or migration to a
+canonical name within its cap is allowed. Rename/copy destinations inherit no debt. No documents are
+automatically deleted. This repository hook does not govern external skill directories.
+Source files have a 4,000-token cap with the same tokenizer and entire-file counting, including tests,
+strings and comments. Existing oversized paths may shrink but not grow. Only exact-content R100 renames
+with the source deleted and destination absent from HEAD carry debt once; copies/new paths cannot.
+This includes moves out of capture/ without relaxing language destination or dependency policy.
+TS/JS variants, Rust, Python, Swift, shell, CSS, HTML, C-family, Metal and recognized shebang source
+are covered. Unknown .lock/.lockb text also receives the cap; arbitrary JSON/config/data is not code.
+Exact dependency lock basenames Cargo.lock, package-lock.json, npm-shrinkwrap.json, bun.lock/bun.lockb,
+yarn.lock, pnpm-lock.yaml, uv.lock and poetry.lock are exempt (also from Biome). Near matches are not.
+The narrow dependency/cache and named generated-output inventories listed in the width guide stay
+excluded from source budgets; tests/fixtures/generated-named folders have no blanket exemption.
+Unknown languages remain a documented scope limit. There is no physical-line gate.
 
-This checks source module edges, not manifest-only dependency edges, Rust,
-CSS/assets, build graphs, native linkage, shell invocations or runtime delivery.
-Resource imports (CSS, common media/fonts, JSON) are outside coverage. Unowned
-root/enablement sources are not checked as importers. Dependency/vendor/target
-sources are excluded. This establishes a bounded ratchet, not full owner build
-independence. Git plumbing/I/O failures reject; existing unsupported diagnostics
-are debt rather than a claim that those files were analyzed completely.
+## Languages and staged style
 
-## Frozen capture migration source
+TypeScript/TSX/MTS/CTS is the default. New Python is allowed only under hermes/; new Rust only under
+engine/. New authored JS/JSX/MJS/CJS rejects. Existing files in these languages may be repaired;
+renames/copies receive destination policy. New Swift, shell, C-family and extensionless shebang scripts
+require an exact reviewed allowance (currently none). Existing native/tool scripts remain repairable.
+Recognized JSON/YAML/TOML config/data and CSS/HTML remain valid formats. This is not permission to
+move product behavior into Engine. Generated JS belongs ignored outside Git. Python/Node/shell shebangs
+cannot bypass destination rules. Unknown languages without recognized suffix/shebang are not inferred;
+the comment parser independently rejects unsupported changed source. This is not universal language detection.
 
-The canonical roots and responsibilities are declared in root AGENTS.md. snapshot.ts maps evidenced donor feature paths: onboarding/practice to Onboarding; pill, meter, captions, notes, whiteboard and storage to Record; destination picker/T3 delivery and clipboard to Handoff; connect settings/flow to Connect; capture/agent to Agent and capture/engine to Engine. Destination overrides precede the Record pill mapping. Mixed shell/hosting remains Legacy; this is migration debt with no-growth constraints, not a new product stream. Settings is assembled by Composition from owner public sections, including validation, persistence and effective state. Shared provides canonical controls.
+Pinned Biome 2.6.8 checks changed regular TS/JS variants, CSS, JSON and JSONC staged blobs in private
+isolated scratch, with explicit config and no candidate project execution. Standard formatting is required
+for new files and files whose HEAD passed formatting. Already-unformatted existing files retain formatting
+debt; this does not claim formatting enforcement on their edited lines. Error-level lint is a per-file,
+category/message multiplicity ratchet: no increase over HEAD. Moving identical diagnostic text is tolerated.
+Conservative explicit rules cover unreachable code, invalid super constructors, duplicate parameters and
+unsafe equality. New files have zero allowance. Syntax errors always reject. Oversized/skipped/incomplete
+Biome results fail closed. Warnings are informational. Unrelated legacy files are not checked.
+There is no Rust/Swift/Python/shell/native-language style or lint coverage yet; owning tools must be
+provisioned before claiming it. Comment parsing is not a substitute for those checks.
 
-The hook rejects every new index path under **all** `capture/`, regardless of
-language, label or owner. Renames/copies into it are additions and fail; existing
-path edits, deletions and moves out are permitted subject to the edge ratchet.
-This includes frozen `capture/mod.rs` and `capture/ui_process.rs`. It does not
-force relocation now, or detect semantic feature growth inside an existing file;
-the AGENTS prose freeze still applies. An unborn repository cannot add capture
-files. Amend/merge use the same HEAD comparison described above.
+## Lexical comments
 
-## Staged lexical comment ban
+Changed code cannot add/change lexical comments, including documentation and lint/type directives.
+Existing exact comment text and multiplicity may remain or shrink. Position does not establish identity;
+duplicating or changing whitespace inside a comment fails. Shebangs at offset zero are executable syntax.
+Strings, regexes, templates, JSX text and Python docstrings are not lexical comments.
+A Git-detected 50%+ rename transfers deleted-source comment allowance once to a previously absent
+path; copies do not. Both languages parse separately on language-changing renames. Missed renames fail
+safely. Changed invalid/unsupported syntax and nonregular files reject; symlink targets are never read.
 
-After width and dependency checks, the same pre-commit invocation compares
-comments in changed regular staged blobs with HEAD. New files have no allowance.
-Existing comments may stay or be removed; adding/changing comments, including
-JSDoc, Rust/Swift docs and eslint/ts-ignore/source directives, rejects the commit.
-Shebangs at offset zero are executable syntax, not comments. Literal text in
-strings, regexes, templates, JSX text and fixtures is not a lexical comment.
-Python docstrings are string expressions, not lexical comments.
+Pinned Tree-sitter WASM covers TS/JS variants, Rust, Swift, Python, CSS, shell, C/headers, Objective-C,
+C++, TOML, JSON/JSONC and HTML without embedded code. YAML uses its pinned CST parser. Swift raw
+strings, embedded HTML scripts/styles and unknown source formats currently fail safely. Markdown,
+plain text, LICENSE/NOTICE, listed binary/media/font suffixes and lock data are non-code; there is no
+blanket generated/vendor comment skip. See comments.ts for exact grammar/suffix mappings.
 
-Identity is exact parsed comment text (excluding its terminal line ending), with
-multiplicity per file. Position and surrounding code are not identity: moving an
-unchanged comment inside its file is allowed, duplicating it is not. Whitespace
-inside the comment and directive text remain significant. A Git-detected 50%+
-rename transfers the deleted source file's allowance once, only to a previously
-absent destination; the source must disappear. No copies or retained sources
-transfer allowance. A missed rename fails safely. Language-changing renames parse
-both sides separately. Deletions need no parsing. Unchanged blobs need no parsing;
-changed unsupported or invalid source fails closed, even with no comments. No
-ratchet tolerates newly unsupported comment analysis. The introduction commit is
-checked against the actual predecessor HEAD, including this checker and tests.
-
-Pinned Tree-sitter WASM grammars cover TS/TSX/JS/JSX (and module variants), Rust,
-Swift, Python, CSS, shell/bash, C/headers, Objective-C, C++, TOML, JSON/JSONC and
-HTML without embedded script/style code. YAML uses the pinned yaml CST parser.
-No native build, downloads or execution of analyzed code occurs during commit.
-The Repomix grammar package supplies current main-language grammars; the older
-upstream WASM pack supplies bash/TOML/Objective-C/HTML/JSON. Unsupported grammar
-features reject changed files. HTML embedded code, SQL, Metal, XML/plists,
-PowerShell, unknown extensions and extensionless code without a recognized shell, Python or Node shebang
-currently reject edits until a pinned suitable parser is added. This is bounded
-coverage, not a claim of universal parsing. Markdown/plain text, LICENSE/NOTICE,
-explicit binary/media/font suffixes and lock data are non-code. There is no
-blanket generated/vendor skip in this comment rule. Symlink/gitlink changes
-reject; their targets are not read. The trusted hook/tooling limitations and
-amend/merge semantics above also apply here. No CI or pre-push invocation exists.
-
-Swift raw-string syntax is a known grammar limitation and rejects edits safely.
-Hook activation must preserve the installed guards: see
-[hook composition and LOC preservation](../../../enablement/directory-width/README.md#hook-activation-and-preservation).
-The tracked hook now orders width, LOC, dependencies, then comments; prepared
-composition first runs the preserved installed pre-commit. The old installed LOC
-check and the repository LOC check may both run. This bounded duplicate check
-preserves protection while portable new setups also receive the LOC guard.
-
-Composition's public assembly permission does not grant Engine access: only
-Record may import public Engine capabilities. Allowed edges are explicit and
-acyclic across owners, not inferred from reachability or export availability.
+For safe setup and verified legacy LOC retirement, see
+[hook preparation](../../../enablement/directory-width/README.md#hook-activation-and-preservation).

@@ -33,31 +33,31 @@ three existing tool roots without permitting arbitrary further root growth.
 
 ## Hook activation and preservation
 
-The tracked pre-commit runs width, the staged 2,000-physical-line guard, then
-owner dependencies and lexical comments. The LOC implementation in
-`enablement/hooks/lines.ts` preserves the discovered installed guard's contract:
-added/modified regular staged blobs, no rename detection, NUL within the first
-8,000 bytes means binary, and only exact root `Cargo.lock` is exempt. Newline
-termination, blank lines and comments count. This does not introduce a language
-matrix or Markdown token budgets.
+The tracked pre-commit runs width, owner dependencies, Markdown tokens, language,
+staged Biome style/lint and lexical comments. The old 2,000-line gate is retired.
+Source code now has a staged 4,000-token cap and inherited no-growth debt. Pre-push remains unchanged.
 
-**Tracked hook tests are not activation proof.** The current configured hook may
-be an unrelated standalone guard. Do not replace it with `core.hooksPath=.githooks`
-and lose existing protection. `node --experimental-strip-types
-enablement/hooks/prepare.ts --output /absolute/new/private/hook-directory`
-prepares a candidate only, without changing configuration. It copies every active
-regular hook (including pre-push byte-for-byte), preserves modes, and wraps the
-old pre-commit before the tracked pre-commit. Any existing style/lint guards
-therefore run before the new guards; no such guards were found in the inspected
-installed hook, only LOC. Symlink/non-regular entries fail for manual review.
+Run `node --experimental-strip-types enablement/hooks/prepare.ts --output
+/absolute/new/private/hook-directory` to prepare a candidate without changing
+configuration. It copies all active regular hooks and modes, including pre-push
+byte-for-byte, and wraps the old pre-commit before the tracked hook. Nonregular
+entries reject for manual review; existing output directories are never overwritten.
 
-Use a private per-job /tmp path for review/testing. Parent-coordinated activation
-must prepare a fresh durable candidate inside the repository's Git metadata,
-review the reported configuration origin and all preserved hooks, check the
-composed candidate with representative staged changes, then set the appropriate
-repository/worktree-local hooksPath to that absolute candidate. Keep the previous
-value and scope for rollback. Never activate a disposable /tmp path, overwrite a
-shared hook directory, change global configuration or activate during another
-writer's commit/push. The prepare command does none of these activation steps.
-It intentionally preserves the installed pre-push contract, not the different
-tracked pre-push selector. There is no new CI or pre-push checker invocation.
+Optional `--retire-verified-line-guard` omits only the byte-verified standalone
+Python LOC pre-commit (SHA-256
+`170a84654e64035afc5cafffa8a2387c6814f4c4315cc2250ae15e9333d664ed`).
+It retains its exact bytes/mode as preserved-pre-commit and records source,
+configuration origin, fingerprint and retirement in provenance.json. A missing,
+customized or unknown guard rejects this option; unrelated hooks remain active.
+Without the option every existing pre-commit remains active, including LOC.
+
+Use private per-job /tmp output for review/testing only. Parent-coordinated durable
+activation must prepare a fresh candidate inside Git metadata, review provenance
+and all hooks, and exercise representative staged changes before selecting it.
+Prefer worktree-local core.hooksPath after reviewing whether extensions.worktreeConfig
+is enabled and safe; enabling it affects repository config interpretation and must
+be coordinated. Do not silently fall back to shared local/global config. Preserve
+the previous value/scope (or absence) for rollback. Never activate a /tmp path,
+overwrite shared hooks or switch during another writer's commit/push. Preparation
+performs none of these activation steps. Its pre-push contract is the installed
+one, not a replacement with the tracked selector. Tests are not live activation proof.

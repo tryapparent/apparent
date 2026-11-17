@@ -10,7 +10,9 @@
     "check": "node --experimental-strip-types check.ts"
   },
   "dependencies": {
+    "@biomejs/biome": "2.6.8",
     "@repomix/tree-sitter-wasms": "0.1.17",
+    "js-tiktoken": "1.0.21",
     "tree-sitter-wasms": "0.1.13",
     "typescript": "5.9.3",
     "web-tree-sitter": "0.25.10",
