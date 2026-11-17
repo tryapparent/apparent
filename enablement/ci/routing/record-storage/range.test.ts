@@ -24,6 +24,9 @@ test('real Git controller changes preserve Desktop renderer and main packaging, 
     git('init', '-q');
     for (const [path, source] of sources) write(path, source);
     for (const path of nativeStorageGraph.keys()) write(path, readFileSync(new URL('../../../../' + path, import.meta.url), 'utf8'));
+    // Include the real moved install consumer in the reference audit.
+    const install = 'capture/desktop/enablement/local-tests/desktop-install.ts';
+    write(install, readFileSync(new URL('../../../../' + install, import.meta.url), 'utf8'));
     const base = commit();
     for (const [path, source] of sources) {
       git('reset', '--hard', base);

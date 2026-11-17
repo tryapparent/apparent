@@ -91,7 +91,7 @@ export const storageReferences = new Set([
   'enablement/ci/select.ts', 'enablement/ci/select.test.ts',
   'enablement/ci/routing/record-storage/qualify.ts', 'enablement/ci/routing/record-storage/qualify.test.ts',
   'enablement/ci/routing/record-storage/range.test.ts',
-  'enablement/local-tests/desktop-install.ts', 'enablement/local-tests/run.ts', 'enablement/local-tests/run.test.ts',
+  'capture/desktop/enablement/local-tests/desktop-install.ts', 'enablement/local-tests/run.ts', 'enablement/local-tests/run.test.ts',
 ]);
 
 // Keep the existing public ports and method signatures. This is an audited
