@@ -2,18 +2,22 @@
 // stays in stream-connect.yml; this command uses no Connect implementation.
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { withRuntimeCaches } from './runtime-caches.ts'
 
 const cwd = fileURLToPath(new URL('../../site/', import.meta.url))
-const env = { ...process.env, APPARENT_PUBLIC_SITE: '1',
+try {
+withRuntimeCaches(process.env, runtimeEnv => {
+const env = { ...runtimeEnv, APPARENT_PUBLIC_SITE: '1',
   VITE_HOSTED_API_ORIGIN: 'https://hosted.tryapparent.com' }
 function run(command, args, extraEnv = {}) {
   const result = spawnSync(command, args, { cwd, env: { ...env, ...extraEnv }, stdio: 'inherit' })
   if (result.error) throw result.error
-  if (result.status !== 0) process.exit(result.status ?? 1)
+  if (result.status !== 0) throw Object.assign(new Error(`${command} failed during Public verification`), { exitCode: result.status ?? 1 })
 }
 run('bun', ['install', '--cwd', '..', '--frozen-lockfile'])
 run('npm', ['run', 'build'])
 run('node', ['../enablement/site-build/package-apparent.mjs'])
+run('node', ['--test', '../enablement/site-build/runtime-caches.test.ts'])
 run('bun', ['test', '../enablement/cd/workflow.test.ts'])
 const tests = [
   'brand/test-brand-route.ts', 'brand/test-brand-favicon.mjs', 'brand/test-social-preview.mjs', 'browser-proof/test-github-stars.mjs',
@@ -34,3 +38,8 @@ run('node', ['../enablement/pages/verify-prepared.ts'])
 run('node', ['../enablement/cd/analytics-smoke.ts'])
 run('node', ['../enablement/artifact/prepare.ts'])
 run('node', ['../enablement/pages/prepare-pages-video.mjs'])
+})
+} catch (error) {
+  console.error(error)
+  process.exitCode = error.exitCode ?? 1
+}
