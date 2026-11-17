@@ -516,7 +516,7 @@ pub fn build_movie_bundle(
                         strokes_ref,
                         &mut preview_marks,
                         events_ref,
-                        &crate::shared::model::TranscriptData::default(),
+                        &crate::capture::engine::keyframes::SpeechInput::empty(&crate::shared::model::TranscriptData::default()),
                         limits,
                         None,
                     ).frames;
