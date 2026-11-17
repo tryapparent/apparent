@@ -12,10 +12,10 @@ impl Practice {
     pub fn whiteboard(&mut self) { if self.stage==Stage::Whiteboard {self.stage=Stage::BoardInk;} }
     pub fn whiteboard_visible(&mut self, visible: bool) {
         if visible { self.whiteboard(); }
-        else if self.stage == Stage::BoardInk { self.stage=Stage::Whiteboard; }
+        else if self.stage == Stage::BoardInk { self.stage=if self.board_ink {Stage::ScreenInk} else {Stage::Whiteboard}; }
     }
     pub fn observe_ink(&mut self,board:bool,screen:usize) {
-        if self.stage==Stage::BoardInk && board {self.board_ink=true;self.screen_baseline=screen;self.stage=Stage::ScreenInk;return;}
+        if self.stage==Stage::BoardInk && board {self.board_ink=true;self.screen_baseline=screen;return;}
         if self.stage==Stage::Note {
             // Compatibility with an in-memory state from the removed note lesson.
             // Require a fresh screen stroke after observing that state.
@@ -48,8 +48,19 @@ impl Practice {
 }
 #[cfg(test)] mod tests {
     use super::*;
+    #[test] fn ink_stays_on_the_board_until_it_closes_and_short_strokes_count() {
+        let mut p=Practice::default();p.started();p.whiteboard();
+        p.observe_ink(true,3);
+        assert_eq!(p.stage,Stage::BoardInk);
+        p.observe_ink(true,3);
+        assert_eq!(p.stage,Stage::BoardInk,"polling must not dismiss the board");
+        p.whiteboard_visible(false);
+        assert_eq!(p.stage,Stage::ScreenInk);
+        p.observe_ink(true,3);assert_eq!(p.stage,Stage::ScreenInk);
+        p.observe_ink(true,4);assert_eq!(p.stage,Stage::Stop);
+    }
     fn to_screen_ink()->Practice {
-        let mut p=Practice::default();p.started();p.whiteboard();p.observe_ink(true,0);
+        let mut p=Practice::default();p.started();p.whiteboard();p.observe_ink(true,0);p.whiteboard_visible(false);
         assert_eq!(p.stage,Stage::ScreenInk);p
     }
     fn through_drawing()->Practice {
@@ -58,8 +69,8 @@ impl Practice {
     }
     #[test] fn renderer_cannot_skip_real_capture_or_drawing() {
         let mut p=Practice::default();assert!(!p.action("practice-pasted"));p.started();
-        p.observe_ink(true,1);assert_eq!(p.stage,Stage::Whiteboard);
-        p.whiteboard();p.observe_ink(true,1);assert_eq!(p.stage,Stage::ScreenInk);
+        p.observe_ink(true,1);p.whiteboard_visible(false);assert_eq!(p.stage,Stage::Whiteboard);
+        p.whiteboard();p.observe_ink(true,1);p.whiteboard_visible(false);assert_eq!(p.stage,Stage::ScreenInk);
         p.observe_ink(false,1);assert_eq!(p.stage,Stage::ScreenInk);
         p.observe_ink(false,2);assert_eq!(p.stage,Stage::Stop);
         p.processing();p.saved(true);assert_eq!(p.stage,Stage::Copied);
@@ -72,7 +83,7 @@ impl Practice {
         p.started();p.whiteboard_visible(false);assert_eq!(p.stage,Stage::Whiteboard);
         p.whiteboard_visible(true);assert_eq!(p.stage,Stage::BoardInk);
         p.whiteboard_visible(false);assert_eq!(p.stage,Stage::Whiteboard);
-        p.whiteboard_visible(true);p.observe_ink(true,0);assert_eq!(p.stage,Stage::ScreenInk);
+        p.whiteboard_visible(true);p.observe_ink(true,0);p.whiteboard_visible(false);assert_eq!(p.stage,Stage::ScreenInk);
         p.whiteboard_visible(false);assert_eq!(p.stage,Stage::ScreenInk);
     }
     #[test] fn failed_copy_and_early_stop_never_claim_copied() {
@@ -99,12 +110,12 @@ impl Practice {
     #[test] fn note_receipts_do_not_gate_practice_and_retry_resets_drawing() {
         let mut p=Practice::default();p.observe_note(true);assert_eq!(p.stage,Stage::Start);
         p.started();p.observe_note(true);assert_eq!(p.stage,Stage::Whiteboard);
-        p.whiteboard();p.observe_ink(true,0);assert_eq!(p.stage,Stage::ScreenInk);
-        p.cancelled();p.started();p.whiteboard();p.observe_ink(true,0);
+        p.whiteboard();p.observe_ink(true,0);p.whiteboard_visible(false);assert_eq!(p.stage,Stage::ScreenInk);
+        p.cancelled();p.started();p.whiteboard();p.observe_ink(true,0);p.whiteboard_visible(false);
         assert_eq!(p.stage,Stage::ScreenInk);
     }
     #[test] fn legacy_note_stage_resumes_at_screen_drawing_and_requires_a_fresh_stroke() {
-        let mut p=Practice::default();p.started();p.whiteboard();p.observe_ink(true,4);
+        let mut p=Practice::default();p.started();p.whiteboard();p.observe_ink(true,4);p.whiteboard_visible(false);
         p.stage=Stage::Note;
         p.observe_ink(false,4);assert_eq!(p.stage,Stage::ScreenInk);
         p.observe_ink(false,4);assert_eq!(p.stage,Stage::ScreenInk);

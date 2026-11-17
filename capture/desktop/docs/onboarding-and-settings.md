@@ -803,8 +803,17 @@ observation acknowledgements, attempt admission and lesson-policy migration are
 still required before retiring `settings/practice.rs`. Rollback reverts the
 writer and its Session transport variant together; there is no config change.
 
-After a real whiteboard stroke, the whiteboard closes and the Electron coach
-continues directly to **Draw on your screen.** The person must make a later,
+The Electron whiteboard retains the first completed human stroke and closes after
+two native-acknowledged strokes. The person can also close it after one stroke.
+Dots and short strokes count; cancelling a new stroke preserves completed ink.
+Native ink is observed before board visibility, so drawing and closing between
+polls still advances directly to **Draw on your screen.** Closing an empty board
+returns to the Whiteboard prompt. The native fallback retains manual close;
+neither route clears the saved drawing on close. TypeScript owns automatic close;
+Rust retains native stroke/visibility receipts and the remaining lesson reducer
+until its separately held host migration is accepted. Routing is unchanged;
+rollback reverts this close policy and receipt ordering together.
+The person must make a later,
 separate screen stroke before the coach advances to Finish. The note lesson and
 its Shift-click illustration are removed; adding notes remains optional, and the
 existing notes editor, save receipts and bundle output are unchanged. Old in-memory

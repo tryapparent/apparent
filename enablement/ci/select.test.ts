@@ -388,8 +388,8 @@ test('renderer onboarding test tooling additions stay Desktop plus onboarding', 
   assert.deepEqual(hosted.plan,local.plan); assert.deepEqual(hosted.reasons,local.reasons);
   assert.deepEqual(routingProblems(hosted),[]);
 }));
-test('audited onboarding pipe addition retains native consumers and local/CI parity', () => repository((git,dir) => {
-  const path='capture/desktop/settings/onboarding/pipe.rs';
+for(const name of ['pipe.rs','session.rs','tests.rs'])test(`audited onboarding ${name} addition retains native consumers and local/CI parity`, () => repository((git,dir) => {
+  const path='capture/desktop/settings/onboarding/'+name;
   mkdirSync('capture/desktop/settings/onboarding',{recursive:true});
   writeFileSync('capture/desktop/settings/onboarding.rs','mod pipe;');
   git('add','.');git('commit','-qm','native owner');const base=git('rev-parse','HEAD');

@@ -193,7 +193,6 @@ html.native-onboarding-shell:has(.native-setup) .apparent-build-identity { top: 
 
 /* Recorded review: let spacing carry setup chrome and the complete pill guide. */
 .native-setup header,.native-setup footer {border:0;}
-.native-coach[data-stage=whiteboard] {right:auto;width:max-content;max-width:calc(100% - 48px);}
 
 .native-setup-progress { appearance:none;width:120px;height:6px;border:0;border-radius:3px;overflow:hidden;background:var(--apparent-muted);color:var(--apparent-primary); }
 .native-setup-progress::-webkit-progress-bar {background:var(--apparent-muted);}
