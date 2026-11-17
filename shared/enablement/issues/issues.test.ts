@@ -50,6 +50,8 @@ url: 'https://api.github.com/repos/' + (process.env.ISSUE_TEST_REPO || 'tryappar
   );
   const runGit = (...args: string[]) => git(repo, args).trim();
   runGit("init", "-q");
+  runGit("config", "gc.auto", "0");
+  runGit("config", "maintenance.auto", "false");
   runGit("config", "user.name", "Synthetic");
   runGit("config", "user.email", "synthetic@example.invalid");
   writeFileSync(join(repo, "file"), "base");
@@ -296,6 +298,9 @@ test("real Git push checks issues before verification and preserves HEAD and del
   );
   const remote = join(f.dir, "remote.git");
   f.runGit("init", "--bare", "-q", remote);
+  git(remote, ["config", "receive.autogc", "false"]);
+  git(remote, ["config", "gc.auto", "0"]);
+  git(remote, ["config", "maintenance.auto", "false"]);
   f.runGit("remote", "add", "origin", remote);
   const push = (...args: string[]) =>
     spawnSync("git", ["push", "origin", ...args], {
