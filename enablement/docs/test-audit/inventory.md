@@ -426,6 +426,7 @@
 | Repository Enablement | enablement/ci/release-admission.test.ts | source candidate | 81 | pending |
 | Repository Enablement | enablement/ci/root.test.ts | source candidate | 217 | pending |
 | Repository Enablement | enablement/ci/routing/connect.test.ts | source candidate | 90 | pending |
+| Repository Enablement | enablement/ci/routing/agent-retirement.test.ts | new admission regression | 0 | justified 40-line addition; exact reviewed Agent executable retirement, unsafe-neighbor controls and local/hosted parity; owner Agent ledger |
 | Repository Enablement | enablement/ci/routing/consumers.ts | source candidate | 304 | pending |
 | Repository Enablement | enablement/ci/routing/evidence.test.ts | source candidate | 119 | pending |
 | Repository Enablement | enablement/ci/routing/evidence.ts | source candidate | 130 | pending |

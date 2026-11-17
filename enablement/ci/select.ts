@@ -117,6 +117,17 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
   } catch { /* Unknown revisions retain conservative selection. */ }
   const delta = changes(base, head, cwd);
   const paths = delta?.map(change => change.path) ?? null;
+  // Reviewed Agent manual-QA retirement, not an executable-file exemption.
+  // Require the exact accepted replacement; retain all normal owner/Mac lanes.
+  const supportedRetirement = (change: Change) => {
+    if (change.path !== 'capture/agent/scripts/agent-eval.sh' || change.status !== 'D' ||
+      change.oldMode !== '100755' || change.newMode !== '000000') return false;
+    try {
+      return git(['ls-tree', head, '--', 'capture/agent/enablement/context-comparison.ts'], cwd).trim() ===
+        '100644 blob 46e38fd8bc49d0cd808c0bc955941397d8143784\tcapture/agent/enablement/context-comparison.ts';
+    } catch {return false;}
+  };
+  const provenFileChange = (change: Change) => regularFileChange(change) || supportedRetirement(change);
   // Imports are a property of candidate content. A deleted, previously audited
   // policy file has no candidate imports to inspect; its deletion still flows
   // through the normal consumer and platform boundary decisions below.
@@ -142,7 +153,7 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
       (change.status === 'A' && !supportedOnboardingAddition(change) && !supportedToolingAddition(change)) ||
       (change.status !== 'D' && change.status !== 'A' && unsupported(change)))).map(change => change.path) ?? [];
   const engineBoundary = paths !== null && !engineIndependentRange(base, head, paths, cwd);
-  const unsafe = engineBoundary || changedOnboardingBoundary.length > 0 || (delta?.some(change => !regularFileChange(change)) ?? false) || changedPolicyImports.length > 0;
+  const unsafe = engineBoundary || changedOnboardingBoundary.length > 0 || (delta?.some(change => !provenFileChange(change)) ?? false) || changedPolicyImports.length > 0;
   const effective = unsafe ? null : paths;
   const workflowControls = !conservativeWorkflows && effective?.length ? workflowControlPaths(base, head, effective, cwd) : [];
   const foregroundBoundaries = delta?.filter(change => portableForegroundInputs.has(change.path)).filter(change => {
@@ -206,7 +217,7 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
     hermes: plan.hermes, portable: plan.browser || plan.service || plan.tools || plan.foreground,
     reasons: [...routing.reasons,
       ...(engineBoundary ? ['fallback:engine-consumer-boundary'] : []),
-      ...(delta?.filter(change => !regularFileChange(change)).map(change =>
+      ...(delta?.filter(change => !provenFileChange(change)).map(change =>
         `fallback:unproven-input:${change.path}:${change.status}:${change.oldMode}->${change.newMode}`) ?? []),
       ...foregroundBoundaries.map(path => 'foreground:native-boundary:' + path), ...changedPolicyImports.map(path => 'fallback:onboarding-new-import:' + path), ...changedOnboardingBoundary.map(path => 'fallback:onboarding-boundary-change:' + path), ...mac.reasons]};
 }
