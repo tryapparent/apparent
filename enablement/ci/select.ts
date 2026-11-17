@@ -126,7 +126,12 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
     catch {return true;}
   }).map(change => change.path) ?? [];
   const toolingManifests = new Set(['package.json', 'package-lock.json', 'renderer/window-coach.smoke.ts', 'renderer/tsconfig.json'].map(name => 'capture/desktop/ui/frontend/tests/onboarding/' + name));
-  const supportedToolingAddition = (change: Change) => toolingManifests.has(change.path) && change.status === 'A' && regularFileChange(change);
+  // Move the expanded shortcut smoke into the owning renderer directory without
+  // treating arbitrary onboarding additions/deletions as portable policy.
+  const shortcutSmoke = 'capture/desktop/ui/frontend/tests/onboarding/';
+  const shortcutSmokeMove = delta?.some(change => change.path === shortcutSmoke + 'shortcut.smoke.ts' && change.status === 'D' && regularFileChange(change)) &&
+    delta?.some(change => change.path === shortcutSmoke + 'renderer/shortcut.smoke.ts' && change.status === 'A' && regularFileChange(change));
+  const supportedToolingAddition = (change: Change) => (toolingManifests.has(change.path) || (shortcutSmokeMove && change.path === shortcutSmoke + 'renderer/shortcut.smoke.ts')) && change.status === 'A' && regularFileChange(change);
   const supportedOnboardingAddition = (change: Change) => change.status === 'A' && regularFileChange(change) && (
     // Audited native transport and extracted session/test items retain native consumers;
     // it does not grant the pure-policy or portable renderer exemption.
@@ -136,7 +141,8 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
     (change.path.startsWith('capture/desktop/ui/frontend/src/onboarding/') && /\.(tsx|css)$/.test(change.path)) ||
     (change.path.startsWith('capture/desktop/ui/frontend/tests/onboarding/') && /\.test\.ts$/.test(change.path))
   );
-  const supportedOnboardingDeletion = (change: Change) => change.status === 'D' && regularFileChange(change) && retiredOnboardingInputs.has(change.path);
+  const supportedOnboardingDeletion = (change: Change) => change.status === 'D' && regularFileChange(change) &&
+    (retiredOnboardingInputs.has(change.path) || (shortcutSmokeMove && change.path === shortcutSmoke + 'shortcut.smoke.ts'));
   const changedOnboardingBoundary = delta?.filter(change => change.path.startsWith('capture/desktop/') && onboardingInput(change.path) &&
     ((change.status === 'D' && !supportedOnboardingDeletion(change)) ||
       (change.status === 'A' && !supportedOnboardingAddition(change) && !supportedToolingAddition(change)) ||

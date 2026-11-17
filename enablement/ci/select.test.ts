@@ -388,6 +388,21 @@ test('renderer onboarding test tooling additions stay Desktop plus onboarding', 
   assert.deepEqual(hosted.plan,local.plan); assert.deepEqual(hosted.reasons,local.reasons);
   assert.deepEqual(routingProblems(hosted),[]);
 }));
+for(const operation of ['move','delete-only','add-only','executable','symlink'])test(`shortcut renderer relocation admits only its regular paired move: ${operation}`, () => repository((git,dir) => {
+  const root='capture/desktop/ui/frontend/tests/onboarding/', old=root+'shortcut.smoke.ts', next=root+'renderer/shortcut.smoke.ts';
+  mkdirSync(root+'renderer',{recursive:true});writeFileSync(old,'export {};');
+  git('add','.');git('commit','-qm','existing shortcut smoke');const base=git('rev-parse','HEAD');
+  if(operation!=='add-only')git('rm',old);
+  if(operation!=='delete-only'){
+    if(operation==='symlink')symlinkSync('../shortcut.smoke.ts',next);
+    else{writeFileSync(next,'export {};');if(operation==='executable')chmodSync(next,0o755);}
+  }
+  git('add','.');git('commit','-qm',operation);const head=git('rev-parse','HEAD');
+  const hosted=cli(base,head,dir),local=localSelection(base,head,dir);
+  assert.equal(hosted.inputProofKnown,operation==='move');assert.deepEqual(hosted.plan,local.plan);
+  assert.equal(hosted.plan.desktop,true);assert.equal(hosted.macos,true);assert.equal(hosted.mac_rust,true);
+  if(operation==='move')for(const suite of ['service','browser','public','hermes','engineMedia'])assert.equal(hosted.plan[suite],false,suite);
+}));
 for(const name of ['pipe.rs','session.rs','tests.rs'])test(`audited onboarding ${name} addition retains native consumers and local/CI parity`, () => repository((git,dir) => {
   const path='capture/desktop/settings/onboarding/'+name;
   mkdirSync('capture/desktop/settings/onboarding',{recursive:true});

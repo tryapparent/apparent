@@ -372,6 +372,10 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await page.getByRole('button',{name:'Choose shortcut',exact:true}).click();
   await expect.poll(()=>output).toContain('change-shortcut');
   assert.equal(output.includes('use-current-shortcut'),false);
+  // The real provider acknowledges a fresh listener before accepting a choice.
+  // Earlier Back/close actions must not be cleared by stale chosen/tested facts.
+  send({step:'shortcut',platform:'macos',firstCaptureRequired:true,shortcutChosen:false,shortcutEditor:{recording:true,externallyManaged:false}});
+  await expect(page.getByRole('group',{name:'Shortcut recorder'})).toBeFocused();
   send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:false});
   await expect(page.getByRole('heading',{name:'One more time.',exact:true})).toBeVisible();
   assert.equal(await page.getByText(/This check won’t record/).count(),0);
