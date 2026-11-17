@@ -17,7 +17,7 @@
 .settings-sidebar button svg { flex:none; width:19px; height:19px; color:var(--apparent-lilac); }
 .settings-sidebar button:hover { background:var(--color-secondary); color:var(--color-secondary-foreground); }
 .settings-sidebar button[aria-current='page'] { background:var(--apparent-lilac); color:var(--apparent-settings-carbon); }
-.settings-sidebar button[aria-current='page'] svg { color:inherit; }
+.settings-sidebar button:hover svg,.settings-sidebar button[aria-current='page'] svg { color:inherit; }
 .settings-sidebar button:focus-visible { outline:2px solid var(--apparent-lilac); outline-offset:-4px; box-shadow:none; }
 .settings-sidebar button[aria-current='page']:focus-visible { outline-color:var(--apparent-settings-carbon); }
 .settings-content { overflow-wrap:anywhere; min-width:0; flex:1; overflow-y:auto; padding:26px 28px 20px; scrollbar-gutter:stable; }

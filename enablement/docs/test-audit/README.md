@@ -123,3 +123,14 @@ All 21 cases pass; independent review and three negative controls preserve the
 read-only/deadline contracts. Net -5 further support lines, no new declarations;
 combined campaign candidate is -10 test/support lines and zero production changes.
 Normal hook/PR and exact-main gates remain pending.
+
+## Current-main completion reconciliation
+
+Main `eae9408abba4` changes the opt-in completion capability to
+`autoPasteAndSubmit` and adds stopped/failure/no-replay assertions. Read the new
+Record policy and Desktop transport/native consumers before resolving the test
+conflict. Keep the exact singleton effect with the new mode and every upstream
+status/notification/replay and platform/source exclusion check. No production
+code is changed by the campaign. Refresh the duplicate-effect sensitivity and
+normal combined-tree hook/hosted checks; the prior head
+`d302cc07cef4af2c49994b174a4c8640f90632d7` passed its hosted checks before main moved.
