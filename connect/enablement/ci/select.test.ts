@@ -93,15 +93,20 @@ test('Connect publication requires successful stream-owned gates on canonical ma
   const connect = workflow('stream-connect.yml');
   assert.deepEqual(Object.keys(connect.on), ['pull_request', 'push', 'workflow_dispatch']);
   const guard = connect.jobs.admit.if;
+  assert.deepEqual(connect.jobs.admit.needs, ['select','contracts','portable','linux']);
   const evaluate = (event: string, overrides: any = {}, repo = 'tryapparent/apparent', ref = 'refs/heads/main', enabled = 'true') => {
     const needs = {select: {result: 'success', outputs: {native: 'true'}}, contracts: {result: 'success'},
-      portable: {result: 'success'}, linux: {result: 'success'}, macos: {result: 'success'}, ...overrides};
+      portable: {result: 'success'}, linux: {result: 'success'}, ...overrides};
     return Function('github','needs','cancelled','vars',`return (${guard})`)(
       {event_name: event, repository: repo, ref}, needs, () => false, {HOSTED_CD_ENABLED: enabled});
   };
   for (const event of ['push','workflow_dispatch']) {
     assert.equal(evaluate(event), true);
-    for (const name of ['select','contracts','portable','linux','macos']) for (const result of ['failure','cancelled','skipped'])
+    for (const result of ['failure','cancelled','skipped','queued'])
+      assert.equal(evaluate(event, {macos: {result}}), true, `${event}:optional Mac ${result}`);
+    assert.equal(evaluate(event, {select: {result: 'success', outputs: {native: 'false'}}, linux: {result: 'skipped'}}), true);
+    assert.equal(evaluate(event, {select: {result: 'success', outputs: {native: 'true', publish: 'false'}}}), false);
+    for (const name of ['select','contracts','portable','linux']) for (const result of ['failure','cancelled','skipped'])
       assert.equal(evaluate(event, {[name]: {result, outputs: {native: 'true'}}}), false, `${event}:${name}:${result}`);
   }
   assert.equal(evaluate('pull_request'), false);
@@ -111,6 +116,28 @@ test('Connect publication requires successful stream-owned gates on canonical ma
   assert.equal(evaluate('push', {}, undefined, 'refs/heads/other'), false);
   assert.equal(workflow('stream-connect.yml').jobs.hosted.environment.name, 'hosted-production');
   assert.match(workflow('stream-connect.yml').jobs.hosted.if, /vars.HOSTED_CD_ENABLED == 'true'/);
+});
+
+test('Connect allocates Mac only for explicitly requested manual diagnostics', () => {
+  const {macos, linux} = workflow('stream-connect.yml').jobs;
+  assert.equal(workflow('stream-connect.yml').on.workflow_dispatch.inputs.macos_diagnostics.default, false);
+  const needs = {select: {result: 'success', outputs: {native: 'true'}}, contracts: {result: 'success'},
+    portable: {result: 'success'}};
+  const evaluate = (job: any, event: string, requested = false, state: any = needs, cancelled = false) =>
+    Function('github','inputs','needs','cancelled',`return (${job.if})`)(
+      {event_name: event, event: {pull_request: {draft: false}}}, {macos_diagnostics: requested}, state, () => cancelled);
+  for (const event of ['pull_request','push']) for (const requested of [false,true]) {
+    assert.equal(evaluate(macos,event,requested),false);
+    assert.equal(evaluate(linux,event,requested),true);
+  }
+  assert.equal(evaluate(macos,'workflow_dispatch'),false);
+  assert.equal(evaluate(macos,'workflow_dispatch',true),true);
+  assert.equal(evaluate(macos,'workflow_dispatch',true,needs,true),false);
+  for (const job of [macos,linux]) for (const name of ['select','contracts'])
+    for (const result of ['failure','cancelled','skipped'])
+      assert.equal(evaluate(job,'workflow_dispatch',true,{...needs,[name]: {...needs[name as 'select'],result}}),false);
+  assert.equal(macos.with.runner,'macos-15-intel');
+  assert.equal(linux.with.runner,'ubuntu-24.04');
 });
 
 test('publication survives skipped native ancestors but refuses failed admission, verification and cancellation', () => {

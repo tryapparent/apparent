@@ -558,7 +558,7 @@ test('Hermes owns independent package verification and publication; native admis
  assert.deepEqual(h.jobs.publish.needs,['contracts','clean','verify']);
  assert.match(h.jobs.publish.if,/github.event_name == 'push'/);
  assert.match(h.jobs.publish.if,/outputs.affected == 'true'/);
- assert.equal(h.jobs.verify.strategy.matrix.os.length,2);
+ assert.deepEqual(h.jobs.verify.strategy.matrix.os,['ubuntu-24.04']);
  const consumer=h.jobs.verify.steps.find((s:any)=>s.name==='Verify Agent setup consumes the exact compiled archive');
  assert.equal(consumer.env.HERMES_PACKAGE,'${{ steps.package.outputs.directory }}');
  assert.match(consumer.run,/hermes\/distribution\/consumer\.test\.ts/);

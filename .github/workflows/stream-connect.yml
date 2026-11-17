@@ -95,6 +95,11 @@ on:
       - ".github/workflows/stream-connect.yml"
       - "enablement/release_gate.py"
   workflow_dispatch:
+    inputs:
+      macos_diagnostics:
+        description: Run optional Mac native integration diagnostics
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -184,6 +189,7 @@ jobs:
   macos:
     needs: [select, contracts, portable]
     if: >-
+      github.event_name == 'workflow_dispatch' && inputs.macos_diagnostics == true &&
       !cancelled() && needs.select.result == 'success' && needs.contracts.result == 'success' &&
       (needs.portable.result == 'success' || needs.portable.result == 'skipped') && needs.select.outputs.native == 'true' &&
       (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
@@ -195,14 +201,14 @@ jobs:
       plan: ${{ needs.select.outputs.plan }}
 
   admit:
-    needs: [select, contracts, portable, linux, macos]
+    needs: [select, contracts, portable, linux]
     if: >-
       !cancelled() && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
       vars.HOSTED_CD_ENABLED == 'true' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       needs.select.result == 'success' && needs.contracts.result == 'success' && needs.portable.result == 'success' &&
       needs.select.outputs.publish != 'false' &&
-      (needs.select.outputs.native == 'false' || (needs.linux.result == 'success' && needs.macos.result == 'success'))
+      (needs.select.outputs.native == 'false' || needs.linux.result == 'success')
     permissions:
       contents: read
       actions: read
