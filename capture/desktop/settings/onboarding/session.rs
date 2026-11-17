@@ -1,5 +1,4 @@
 impl Session {
-    /// State-only transport: tests exercise coordinator lifecycle without a window or user config.
     #[cfg(test)]
     pub(crate) fn for_test(flow: Flow) -> Self {
         Self {
@@ -199,7 +198,7 @@ impl Session {
                 return Err(error.into());
             }
         };
-        if let Some(stdout) = child.stdout.take() { Self::read_actions(stdout, events); }
+        if let Some(stdout) = child.stdout.take() { pipe::read_actions(stdout, events); }
         Ok(Transport::Renderer { child: crate::capture::ui_process::UiChild::new(child), input })
     }
 
@@ -207,96 +206,13 @@ impl Session {
         command.stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null());
         let mut child = command.spawn()?;
         let stdin = child.stdin.take();
-        if let Some(stdout) = child.stdout.take() { Self::read_actions(stdout, events); }
+        if let Some(stdout) = child.stdout.take() { pipe::read_actions(stdout, events); }
         Ok(Transport::Helper { child: crate::capture::ui_process::UiChild::new(child), stdin })
     }
 
-    fn read_actions(stdout: std::process::ChildStdout, events: impl Fn(Event)+Send+Sync+Clone+'static) {
-        std::thread::spawn(move || {
-            let mut closed = false;
-            {
-                let mut reader = std::io::BufReader::new(stdout);
-                loop {
-                    let mut line = Vec::new();
-                    let read = read_protocol_line(&mut reader, &mut line);
-                    if !matches!(read, Ok(n) if n > 0 && n <= 65_536) { break; }
-                    let Ok(line) = std::str::from_utf8(&line) else { continue; };
-                    let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) else {
-                        continue;
-                    };
-                    if value.get("action").and_then(|v| v.as_str()) == Some("board") {
-                        events(Event::Board(value));
-                        continue;
-                    }
-                    let Some(action) = value.get("action").and_then(|v| v.as_str()) else {
-                        continue;
-                    };
-                    let action = action.to_owned();
-                    #[cfg(target_os="linux")]
-                    if action=="resolve-copilot" {
-                        // Chromium's XF86Assistant event has no key/code on the
-                        // X1 keymap. Resolve only a currently held native key,
-                        // never an arbitrary unidentified renderer event.
-                        let pressed = native_shortcut_press().unwrap_or(crate::capture::desktop::settings::Pressed {
-                            key_code: 0, modifiers: 0, key: String::new(), reserved: false,
-                        });
-                        events(Event::Shortcut(crate::capture::desktop::settings::Action::Shortcut {
-                            kind: crate::capture::engine::runtime::ShortcutKind::Record, pressed,
-                        }));
-                        continue;
-                    }
-                    #[cfg(target_os="linux")]
-                    if action=="shortcut-key" {
-                        if let (Some(key),Some(modifiers))=(value["key"].as_str(),value["modifiers"].as_u64()) {
-                            if key.len()<=32 && modifiers & !0x1b00 == 0 {
-                                if let Some(key_code)=crate::capture::desktop::settings::settings_window::key_code(key) {
-                                    events(Event::Shortcut(crate::capture::desktop::settings::Action::Shortcut {
-                                        kind:crate::capture::engine::runtime::ShortcutKind::Record,
-                                        pressed:crate::capture::desktop::settings::Pressed {key_code,modifiers:modifiers as u32,key:key.to_owned(),reserved:false},
-                                    }));
-                                }
-                            }
-                        }
-                        continue;
-                    }
-                    if matches!(
-                        action.as_str(),
-                        "shortcut" | "cancel-shortcut" | "reset-shortcut"
-                    ) {
-                        let mut value = value;
-                        if action == "reset-shortcut" && value.get("kind").is_none() {
-                            value["kind"] = "record".into();
-                        }
-                        if let Ok(mut action) = serde_json::from_value(value) {
-                            #[cfg(target_os = "macos")]
-                            if let super::settings::Action::Shortcut { pressed, .. } = &mut action {
-                                pressed.reserved = native_shortcut_reserved(pressed.key_code, pressed.modifiers);
-                            }
-                            events(Event::Shortcut(action));
-                        }
-                        continue;
-                    }
-                    let action = match value.get("permission").and_then(|v| v.as_str()) {
-                        Some(permission) => format!("{action}:{permission}"),
-                        None => action.to_owned(),
-                    };
-                    closed |= action == "close";
-                    events(Event::Action(action));
-                }
-            }
-            if !closed {
-                crate::capture::engine::runtime::apparent_log("onboarding renderer transport stdout closed");
-                events(Event::Exited);
-            }
-        });
-    }
-
     pub fn restore_native(&mut self) -> bool {
-        // Invalidate queued actions/EOF before dropping the old child's input.
         if self.fallback.is_some() { self.transport_generation = next_session_source(); }
         if self.fallback.is_some() && self.flow.hidden {
-            // A replacement native window may map before a queued hide reaches it.
-            // Defer creating any replacement until capture completion reveals the flow.
             self.fallback_pending = true;
             let old = std::mem::replace(&mut self.transport, Transport::InProcess(None));
             retire_transport(old);
@@ -311,7 +227,6 @@ impl Session {
         match fallback(self.transport_generation) {
             Ok(transport) => {
                 self.transport = transport;
-                // The native fallback has its own optional/required practice presentation.
                 self.practice = None;
                 self.pen_picker = false;
                 self.last_view.clear();
@@ -340,7 +255,6 @@ impl Session {
     }
 
     pub fn leave(&self, exited: bool) {
-        // A helper crash was not a completed tour before this experiment either.
         if exited && !self.flow.first_capture_required {
             return;
         }
@@ -349,34 +263,34 @@ impl Session {
         progress.save();
     }
 
-    /// Feeds the flow and carries out what the window can do itself. Returns what needs the
-    /// app: `Close` or `Relaunch`.
     pub fn input(&mut self, input: Input) -> Effect {
         if matches!(&input, Input::ShortcutChosen) { self.shortcut_choice_down = true; }
         if self.practice.is_some() && self.flow.step()==Step::TryIt && !self.fallback_pending {
             match &input {
-                Input::CaptureSelecting => self.practice.as_mut().unwrap().selecting(),
+                Input::CaptureSelecting => {self.practice_events(vec![serde_json::json!({"type":"selecting"})],false);},
                 Input::CaptureStarted => {
                     self.practice_completed=false;
                     self.practice_bundle=None;
                     self.practice_receipt=None;
-                    self.practice=Some(super::practice::Practice::default());
+                    self.practice.as_mut().unwrap().attempt+=1;
+                    self.practice.as_mut().unwrap().close_board=None;
                 },
                 Input::CaptureEnded { completed:true } => {
                     self.practice_completed=self.flow.practice_recording;
-                    // A finished capture owns no live shortcut/hidden state. Coaching
-                    // keeps its own eligibility until the person finishes the lesson.
                     self.flow.on(Input::CaptureEnded{completed:false});
                     self.sync();return Effect::None;
                 },
-                Input::CaptureEnded { completed:false } => self.practice.as_mut().unwrap().cancelled(),
+                Input::CaptureEnded { completed:false } => {self.practice_events(vec![serde_json::json!({"type":"cancelled"})],false);},
                 _=>{},
             }
         }
         let started=matches!(input,Input::CaptureStarted);
         let effect = self.flow.on(input);
-        if started && self.flow.practice_recording {if let Some(p)=self.practice.as_mut(){p.started();}}
-        // The in-process window feeds the flow on every refresh: log only what changed.
+        if started && self.practice.is_some() && self.flow.step()==Step::TryIt {
+            let mut events=vec![serde_json::json!({"type":"reset"})];
+            if self.flow.practice_recording {events.push(serde_json::json!({"type":"started"}));}
+            self.practice_events(events,false);
+        }
         static LAST: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
         let line = format!("onboarding: {:?} -> {effect:?}", self.flow.step());
         let mut last = LAST.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -386,7 +300,6 @@ impl Session {
         }
         drop(last);
         let result = match effect {
-            // Attributed to whichever process asks, so Apparent itself asks.
             Effect::Request(Permission::ScreenRecording) => {
                 crate::capture::engine::runtime::request_screen_capture();
                 Effect::None
@@ -409,9 +322,6 @@ impl Session {
             }
             Effect::ConfirmScreen => {
                 std::thread::spawn(|| {
-                    // After macOS's own questions (System Settings' "Quit & Reopen") are
-                    // answered and this window is back in front with its note, so the one
-                    // question comes up by itself, over the explanation.
                     #[cfg(target_os = "macos")]
                     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
                     #[cfg(target_os = "macos")]
@@ -436,11 +346,7 @@ impl Session {
         result
     }
 
-    /// An action string from the helper as an `Input`.
     pub fn action(&mut self, action: &str) -> Effect {
-        // TypeScript owns the choice-as-first-practice policy. This adapter
-        // admits only the current native selection after release, never capture.
-        // The existing native progress writer remains authoritative.
         if let Some(label) = action.strip_prefix("accept-shortcut-choice:") {
             if self.practice.is_some() && self.fallback.is_some() && !self.fallback_pending
                 && self.flow.step() == Step::Shortcut
@@ -459,7 +365,6 @@ impl Session {
                     if receipt.is_some_and(|id| id.len()!=36 || !id.bytes().all(|c| c.is_ascii_hexdigit() || c==b'-')) {return Effect::None;}
                     self.pen_error=crate::shared::handoff::pen::save(name).is_err();
                     self.pen_selected=!self.pen_error;
-                    // Echo only after the authoritative config writer has returned.
                     self.pen_save_id=receipt.map(str::to_owned);
                     self.sync();
                 }
@@ -469,15 +374,9 @@ impl Session {
         }
 
         if action.starts_with("practice-") {
-            if let Some(practice)=self.practice.as_mut() {
-                if practice.action(action) && action=="practice-finish" && self.practice_completed {
-                    self.flow.first_capture_completed=true;
-                    self.flow.step=Step::Done;
-                    self.sync();
-                    return self.input(Input::Continue);
-                }
-            }
-            self.sync();return Effect::None;
+            if !["practice-paste","practice-pasted","practice-locate","practice-finish"].contains(&action)||!self.practice_active() {return Effect::None;}
+            let effect=self.practice_events(vec![serde_json::json!({"type":"action","action":action})],true);
+            self.sync();return effect;
         }
         let input = match action {
             "continue" => Input::Continue,
@@ -510,7 +409,6 @@ impl Session {
         self.send(&serde_json::json!({"type": "show"}));
     }
 
-    /// Keep every step's displayed Record keys in sync with the active shortcut.
     pub fn shortcut_changed(&mut self, label: &str) {
         if !self.shortcut_label.is_empty() && self.shortcut_label != label
             && self.flow.mode == Mode::Tour && !self.flow.practice_recording && !self.flow.first_capture_completed
@@ -534,8 +432,6 @@ impl Session {
 
     #[cfg(target_os="linux")]
     pub(crate) fn desktop_shortcut_pressed(&mut self) {
-        // OS metadata only: TypeScript decides whether this offered binding
-        // belongs to the current listening state and uses the ordinary editor.
         if let Some(cfg)=crate::capture::desktop::linux::hyprland::external_record() {
             crate::capture::engine::runtime::apparent_log("shortcut recorder: offering desktop binding");
             self.send(&serde_json::json!({"type":"desktop-shortcut", "keyCode":cfg.key_code,
@@ -557,8 +453,6 @@ impl Session {
         if released { self.shortcut_choice_down = false; }
     }
 
-    /// Both adapters return only modifiers, but macOS uses CGEventFlags and
-    /// Linux uses Carbon shortcut bits. Zero means released on either platform.
     pub(crate) fn observe_shortcut_modifiers(&mut self, flags: u64) {
         self.shortcut_selection_released(flags == 0);
     }
@@ -571,43 +465,33 @@ impl Session {
         self.flow.step() == Step::Shortcut
     }
 
-    pub fn observe_practice(&mut self, board:bool, screen:usize, processing:bool, saved:Option<bool>) {
-        if self.flow.step()!=Step::TryIt {return;}
-        if let Some(practice)=self.practice.as_mut() {
-            practice.observe_ink(board,screen);
-            if processing {practice.processing();}
-            if let Some(copied)=saved {practice.saved(copied);}
-        }
-        self.sync();
+    pub fn observe_practice(&mut self,board:bool,screen:usize,processing:bool,saved:Option<bool>) {
+        if !self.practice_active() {return;}
+        let mut events=vec![serde_json::json!({"type":"ink","board":board,"screen":screen})];
+        if let Some(visible)=self.practice.as_mut().and_then(|p|p.visibility.take()) {events.push(serde_json::json!({"type":"whiteboard-visible","visible":visible}));}
+        if events.len()==2 {events.push(serde_json::json!({"type":"ink","board":board,"screen":screen}));}
+        if processing {events.push(serde_json::json!({"type":"processing"}));}
+        if let Some(copied)=saved {events.push(serde_json::json!({"type":"saved","copied":copied}));}
+        self.practice_events(events,false);self.sync();
     }
-    pub fn observe_practice_surface(&mut self, board:bool, screen:usize, processing:bool, frame:Option<[f32;4]>) {
-        // Ink and Close can arrive in one tick. Consume native ink first, then
-        // visibility, and publish the resulting lesson only once.
-        if let Some(practice)=self.practice.as_mut() {practice.observe_ink(board,screen);}
-        self.practice_board(frame);
+    pub fn observe_practice_surface(&mut self,board:bool,screen:usize,processing:bool,frame:Option<[f32;4]>) {
+        self.practice_board=frame;
+        if let Some(p)=self.practice.as_mut() {p.visibility=Some(frame.is_some());}
         self.observe_practice(board,screen,processing,None);
     }
-    pub fn practice_note_saved(&mut self, saved: bool) {
-        if self.flow.step()==Step::TryIt {
-            if let Some(practice)=self.practice.as_mut() {practice.observe_note(saved);}
-        }
-    }
+    pub fn practice_note_saved(&mut self,_saved:bool) {}
     pub fn practice_anchor(&mut self,anchor:Option<[f32;4]>) {self.anchor=anchor;}
     pub fn practice_board(&mut self, frame: Option<[f32;4]>) {
         self.practice_board=frame;
-        if let Some(p)=self.practice.as_mut() { p.whiteboard_visible(frame.is_some()); }
+        self.practice_events(vec![serde_json::json!({"type":"whiteboard-visible","visible":frame.is_some()})],false);
     }
     pub fn board_view(&mut self, view: Option<serde_json::Value>) { self.board_view=view; }
     pub fn electron_practice(&self)->bool { self.practice_active() && self.fallback.is_some() && !self.fallback_pending }
     pub fn practice_active(&self)->bool {self.practice.is_some() && self.flow.step()==Step::TryIt}
-    pub fn practice_locating(&self)->bool {self.practice.as_ref().is_some_and(|p|p.stage==super::practice::Stage::Locate)}
-    pub fn practice_desktop_stage(&self)->bool {self.practice.as_ref().is_some_and(|p|matches!(p.stage,super::practice::Stage::Note|super::practice::Stage::ScreenInk))}
-    pub fn practice_whiteboard(&mut self) {if let Some(p)=self.practice.as_mut(){p.whiteboard();}self.sync();}
+    pub fn practice_locating(&self)->bool {self.practice.as_ref().is_some_and(|p|p.locating)}
+    pub fn practice_desktop_stage(&self)->bool {self.practice.as_ref().is_some_and(|p|p.desktop_stage)}
+    pub fn practice_whiteboard(&mut self) {self.practice_events(vec![serde_json::json!({"type":"whiteboard"})],false);self.sync();}
     pub fn practice_saved_bundle(&mut self, path: &Path) { if self.practice_active() { self.practice_bundle=Some(path.to_owned()); } }
-    /// A finalizer/clipboard observation, delivered only after the caller's native
-    /// current-generation gate. Capture and request IDs retain their producer identity;
-    /// the renderer cannot manufacture this receipt. This compatible adapter feeds
-    /// the existing lesson until the headless TypeScript consumer is adopted.
     pub(crate) fn practice_completion(
         &mut self, generation: u64, capture_id: &str, request_id: Option<&str>,
         bundle: Option<&Path>, clipboard: Option<bool>,
@@ -624,7 +508,50 @@ impl Session {
         }
     }
     pub fn practice_opened_bundle(&mut self, path: &Path) { if self.practice_bundle.as_deref()==Some(path) {self.practice_latest();} }
-    pub fn practice_latest(&mut self) {if let Some(p)=self.practice.as_mut(){p.opened_latest();}self.sync();}
+    pub fn practice_latest(&mut self) {self.practice_events(vec![serde_json::json!({"type":"opened-latest"})],false);self.sync();}
+
+    fn practice_events(&mut self, events:Vec<serde_json::Value>, intent:bool)->Effect {
+        if self.fallback_pending {return Effect::None;}
+        let board=self.board_view.as_ref().and_then(|v|v["id"].as_str()).map(str::to_owned);
+        let Some(p)=self.practice.as_mut() else {return Effect::None;};
+        if !intent && p.repeats_pending_poll(self.source,self.transport_generation,board.as_deref(),&events) {
+            return Effect::None;
+        }
+        if p.pending.len()>=32 {self.restore_native();return Effect::None;}
+        let batch=p.batch(self.source,self.transport_generation,board,events,intent);
+        #[cfg(test)]
+        if matches!(self.transport,Transport::InProcess(_)) {
+            let reply=self.practice.as_ref().unwrap().test_reply();return self.practice_disposition(reply);
+        }
+        if let Transport::Renderer {input,..}=&self.transport {input.expect(batch["sequence"].as_str().unwrap().to_owned());}
+        self.send(&batch);Effect::None
+    }
+    pub fn practice_disposition(&mut self, value:serde_json::Value)->Effect {
+        if self.practice.is_none() || self.fallback_pending {return Effect::None;}
+        let active=self.practice_active();
+        let Ok(sequence)=self.practice.as_ref().unwrap().acknowledgement(&value) else {self.restore_native();return Effect::None;};
+        if let Transport::Renderer {input,..}=&self.transport {
+            if !input.ack(&sequence) {self.restore_native();return Effect::None;}
+        }
+        let result=self.practice.as_mut().unwrap().admit(value);
+        let Ok((finish,_))=result else {self.restore_native();return Effect::None;};
+        if !active {self.practice.as_mut().unwrap().close_board=None;return Effect::None;}
+        if finish && self.practice_completed && self.practice_receipt.is_some() && self.practice_bundle.is_some() {
+            self.flow.first_capture_completed=true;self.flow.step=Step::Done;self.sync();
+            #[cfg(test)]
+            if matches!(self.transport,Transport::InProcess(None)) {return self.input(Input::Continue);}
+            if self.saved_first_capture_completed {return self.input(Input::Continue);}
+            self.flow.first_capture_completed=false;self.flow.step=Step::TryIt;
+        }
+        self.sync();Effect::None
+    }
+    pub fn take_practice_board_close(&mut self)->Option<(u64,u64,u64,String)> {
+        let p=self.practice.as_mut()?;Some((self.source,self.transport_generation,p.attempt,p.close_board.take()?))
+    }
+    pub fn current_practice_scope(&self,source:u64,transport:u64,attempt:u64)->bool {
+        self.practice_active() && self.source==source && self.transport_generation==transport && !self.fallback_pending
+            && self.practice.as_ref().is_some_and(|p|p.attempt==attempt)
+    }
 
     pub fn editing_shortcut(&self) -> bool {
         self.flow.step() == Step::Shortcut && self.flow.shortcut_editing
@@ -664,7 +591,6 @@ impl Session {
             self.send(&view);
             self.last_view = text;
         }
-        // Remember the step, so whatever quits Apparent, the tour comes back here.
         let resume = self.flow.resume_point();
         let tutorial = self.flow.tutorial();
         let new_resume = resume.is_some() && resume != self.saved_resume;
@@ -678,8 +604,6 @@ impl Session {
             if new_resume {
                 progress.resume = resume;
             }
-            // Persist when the successful trial advances, not only when a
-            // window closes: force-quit/relaunch must not repeat Go again.
             if self.flow.mode == Mode::Tour { progress.leave(&self.flow); }
             progress.tutorial = tutorial;
             if self.flow.mode == Mode::Tour {
@@ -699,8 +623,6 @@ impl Session {
         }
     }
 
-    // Electron owns presentation; the installed helper retains consent attribution and
-    // the lifetime of asynchronous native prompts. Never send it a presentation state.
     fn permission_action(&mut self, action: &str, permission: Permission) {
         if self.fallback_pending { return; }
         if self.fallback.is_none() {
@@ -709,9 +631,6 @@ impl Session {
         }
         #[cfg(target_os = "linux")]
         if permission == Permission::Accessibility {
-            // The Electron input-device action has the same bounded clipboard effect
-            // as native onboarding. Copying never grants access or advances setup;
-            // the existing poller must observe readable devices after login.
             crate::capture::desktop::linux::privacy::copy_input_command();
         } else {
             crate::capture::desktop::linux::privacy::open_settings(permission);

@@ -23,6 +23,7 @@ class SigningTests(unittest.TestCase):
                              "dist/onboarding-presentation.cjs", "dist/onboarding-hyprland.cjs", "dist/onboarding-selection.cjs", "dist/onboarding-wispr.cjs",
                              "dist/src/installer/index.html", "dist/pill/index.html",
                              "dist/assets/controls.js", "node_modules/electron/dist/electron",
+                             "dist/composition/onboarding/entry.cjs",
                              "electron/pill/native/window.node",
                              "electron/pill/t3.cjs",
                              "electron/settings/t3.cjs", "electron/settings/update-worker.cjs",
@@ -78,6 +79,7 @@ class SigningTests(unittest.TestCase):
             self.assertEqual((destination / "app/connect-client/dist/transfer/contract.js").read_text(), "synthetic transfer-contract")
             self.assertEqual(json.loads((destination / "app/connect-client/package.json").read_text()), {"type": "module"})
             self.assertEqual((destination / "app/dist/src/controls/index.html").read_text(), "dist/src/controls/index.html")
+            self.assertTrue((destination / "app/dist/composition/onboarding/entry.cjs").is_file())
             for relative in ("electron/main.cjs", "electron/preload.cjs", "dist/assets/controls.js",
                              "node_modules/@apparent/ui/src/window-theme.cjs"):
                 self.assertTrue((destination / "app" / relative).is_file(), relative)

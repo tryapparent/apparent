@@ -1,135 +1,122 @@
-//! Authoritative first-capture coaching. Renderer actions cannot fake capture events.
-use serde::Serialize;
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use std::collections::VecDeque;
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all="kebab-case")]
-pub enum Stage { Start, Screen, Whiteboard, BoardInk, Note, ScreenInk, Stop, Preparing, Copied, Paste, Locate, Complete, Retry, CopyFailed }
-#[derive(Debug)]
-pub struct Practice { pub stage: Stage, board_ink: bool, screen_ink: bool, pub latest: bool, screen_baseline: usize, pasted: bool }
-impl Default for Practice { fn default()->Self { Self{stage:Stage::Start,board_ink:false,screen_ink:false,latest:false,screen_baseline:0,pasted:false} } }
-impl Practice {
-    pub fn selecting(&mut self) { if self.stage!=Stage::Screen {*self=Self::default();self.stage=Stage::Screen;} }
-    pub fn started(&mut self) { if matches!(self.stage,Stage::Start|Stage::Screen|Stage::Retry|Stage::CopyFailed) {*self=Self::default();self.stage=Stage::Whiteboard;} }
-    pub fn whiteboard(&mut self) { if self.stage==Stage::Whiteboard {self.stage=Stage::BoardInk;} }
-    pub fn whiteboard_visible(&mut self, visible: bool) {
-        if visible { self.whiteboard(); }
-        else if self.stage == Stage::BoardInk { self.stage=if self.board_ink {Stage::ScreenInk} else {Stage::Whiteboard}; }
-    }
-    pub fn observe_ink(&mut self,board:bool,screen:usize) {
-        if self.stage==Stage::BoardInk && board {self.board_ink=true;self.screen_baseline=screen;return;}
-        if self.stage==Stage::Note {
-            // Compatibility with an in-memory state from the removed note lesson.
-            // Require a fresh screen stroke after observing that state.
-            self.screen_baseline=screen;
-            self.stage=Stage::ScreenInk;
-            return;
-        }
-        if self.stage==Stage::ScreenInk && screen>self.screen_baseline {self.screen_ink=true;self.stage=Stage::Stop;}
-    }
-    /// Retained for the notes session callback; annotations no longer gate coaching.
-    pub fn observe_note(&mut self, _saved: bool) {}
-    pub fn processing(&mut self) { if matches!(self.stage,Stage::Whiteboard|Stage::BoardInk|Stage::ScreenInk|Stage::Note|Stage::Stop) {self.stage=Stage::Preparing;} }
-    pub fn saved(&mut self,copied:bool) {
-        if self.stage!=Stage::Preparing {return;}
-        self.stage=if copied {Stage::Copied} else {Stage::CopyFailed};
-    }
-    pub fn cancelled(&mut self) { if matches!(self.stage,Stage::Screen|Stage::Whiteboard|Stage::BoardInk|Stage::ScreenInk|Stage::Note|Stage::Stop|Stage::Preparing) {self.stage=Stage::Retry;} }
-    // A person confirms their manual paste. A key press is never treated as proof
-    // of delivery to another application; no monitoring of a private composer.
-    pub fn action(&mut self,action:&str)->bool {
-        match (self.stage,action) {
-            (Stage::Copied,"practice-paste")=>{self.stage=Stage::Paste;true},
-            (Stage::Paste,"practice-pasted")=>{self.pasted=true;self.stage=Stage::Locate;true},
-            (Stage::CopyFailed,"practice-locate")=>{self.stage=Stage::Locate;true},
-            (Stage::Complete,"practice-finish")=>true,
-            _=>false,
-        }
-    }
-    pub fn opened_latest(&mut self) {if self.stage==Stage::Locate {self.latest=true;self.stage=if self.board_ink&&self.screen_ink&&self.pasted {Stage::Complete} else {Stage::Retry};}}
+pub enum Stage { #[default] Start, Screen, Whiteboard, BoardInk, Note, ScreenInk, Stop, Preparing, Copied, Paste, Locate, Complete, Retry, CopyFailed }
+#[derive(Debug, Default)]
+pub struct Practice {
+    pub stage: Stage,
+    pub latest: bool,
+    pub locating: bool,
+    pub desktop_stage: bool,
+    pub attempt: u64,
+    sequence: u64,
+    pub pending: VecDeque<Value>,
+    pub visibility: Option<bool>,
+    pub close_board: Option<String>,
+    #[cfg(test)]
+    history: Vec<Value>,
 }
-#[cfg(test)] mod tests {
+
+#[cfg(test)]
+mod polling_scope_tests {
     use super::*;
-    #[test] fn ink_stays_on_the_board_until_it_closes_and_short_strokes_count() {
-        let mut p=Practice::default();p.started();p.whiteboard();
-        p.observe_ink(true,3);
-        assert_eq!(p.stage,Stage::BoardInk);
-        p.observe_ink(true,3);
-        assert_eq!(p.stage,Stage::BoardInk,"polling must not dismiss the board");
-        p.whiteboard_visible(false);
-        assert_eq!(p.stage,Stage::ScreenInk);
-        p.observe_ink(true,3);assert_eq!(p.stage,Stage::ScreenInk);
-        p.observe_ink(true,4);assert_eq!(p.stage,Stage::Stop);
+
+    #[test]
+    fn replies_bind_the_pending_native_identity_and_retire_once() {
+        let mut p=Practice::default();p.batch(1,2,None,vec![json!({"type":"reset"}),json!({"type":"started"})],false);
+        let reply=p.test_reply();let mut forged=reply.clone();forged["source"]="3".into();
+        assert!(p.admit(forged).is_err());assert_eq!(p.pending.len(),1);assert_eq!(p.stage,Stage::Start);
+        assert_eq!(p.admit(reply.clone()).unwrap().0,false);assert_eq!(p.stage,Stage::Whiteboard);
+        assert!(p.admit(reply).is_err());
+        p.batch(1,2,None,vec![json!({"type":"whiteboard"})],false);let stale=p.test_reply();
+        p.attempt+=1;p.stage=Stage::Start;assert_eq!(p.admit(stale).unwrap().0,false);
+        assert_eq!(p.stage,Stage::Start);assert!(p.close_board.is_none());
     }
-    fn to_screen_ink()->Practice {
-        let mut p=Practice::default();p.started();p.whiteboard();p.observe_ink(true,0);p.whiteboard_visible(false);
-        assert_eq!(p.stage,Stage::ScreenInk);p
+    #[test]
+    fn identical_poll_is_new_after_native_scope_changes() {
+        let mut practice = Practice::default();
+        let events = vec![json!({"type":"ink","board":false,"screen":0}),json!({"type":"whiteboard-visible","visible":false}),
+            json!({"type":"ink","board":false,"screen":0})];
+        practice.batch(1, 2, None, events.clone(), false);
+        assert!(practice.repeats_pending_poll(1, 2, None, &events));
+        assert!(!practice.repeats_pending_poll(3, 2, None, &events), "a different session cannot reuse pending facts");
+        assert!(!practice.repeats_pending_poll(1, 3, None, &events), "a different transport cannot reuse pending facts");
+        practice.attempt += 1;
+        assert!(!practice.repeats_pending_poll(1, 2, None, &events), "a new capture attempt needs its own observation");
     }
-    fn through_drawing()->Practice {
-        let mut p=to_screen_ink();p.observe_ink(false,0);p.observe_ink(false,1);
-        assert_eq!(p.stage,Stage::Stop);p
+}
+#[derive(Debug, Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
+pub struct Disposition {
+    #[serde(rename="type")] kind: String,
+    version: u8,
+    source: String, transport: String, attempt: String, capture: String,
+    sequence: String, intent: Option<String>, board: Option<String>,
+    stage: Stage, latest: bool, locating: bool, desktop_stage: bool,
+    close_board: bool, accepted: bool,
+}
+impl Practice {
+    pub fn repeats_pending_poll(&self, source:u64, transport:u64, board:Option<&str>, events:&[Value])->bool {
+        if !(events.len()==3 || events.len()==4)
+            || events[0]["type"]!="ink" || events[1]["type"]!="whiteboard-visible"
+            || events[2]["type"]!="ink" || (events.len()==4 && events[3]["type"]!="processing") { return false; }
+        let Some(last)=self.pending.back() else { return false; };
+        last["source"]==json!(source.to_string()) && last["transport"]==json!(transport.to_string())
+            && last["attempt"]==json!(self.attempt.to_string()) && last["capture"]==json!(self.attempt.to_string())
+            && last["intent"].is_null() && last["board"]==json!(board)
+            && last["events"].as_array().is_some_and(|previous|previous.as_slice()==events)
     }
-    #[test] fn renderer_cannot_skip_real_capture_or_drawing() {
-        let mut p=Practice::default();assert!(!p.action("practice-pasted"));p.started();
-        p.observe_ink(true,1);p.whiteboard_visible(false);assert_eq!(p.stage,Stage::Whiteboard);
-        p.whiteboard();p.observe_ink(true,1);p.whiteboard_visible(false);assert_eq!(p.stage,Stage::ScreenInk);
-        p.observe_ink(false,1);assert_eq!(p.stage,Stage::ScreenInk);
-        p.observe_ink(false,2);assert_eq!(p.stage,Stage::Stop);
-        p.processing();p.saved(true);assert_eq!(p.stage,Stage::Copied);
-        assert!(!p.action("practice-finish"));assert!(p.action("practice-paste"));
-        assert!(p.action("practice-pasted"));p.opened_latest();
-        assert_eq!(p.stage,Stage::Complete);assert!(p.action("practice-finish"));
+
+    pub fn batch(&mut self, source:u64, transport:u64, board:Option<String>, events:Vec<Value>, intent:bool)->Value {
+        self.sequence+=1;
+        let sequence=self.sequence.to_string();
+        let batch=json!({"type":"practice-batch","version":1,"source":source.to_string(),"transport":transport.to_string(),
+            "attempt":self.attempt.to_string(),"capture":self.attempt.to_string(),"sequence":sequence,
+            "intent":if intent {Some(sequence)}else{None},"board":board,"events":events});
+        self.pending.push_back(batch.clone());
+        #[cfg(test)] self.history.push(batch.clone());
+        batch
     }
-    #[test] fn owned_board_visibility_reconciles_open_and_close_without_skipping_ink() {
-        let mut p=Practice::default();p.whiteboard_visible(true);assert_eq!(p.stage,Stage::Start);
-        p.started();p.whiteboard_visible(false);assert_eq!(p.stage,Stage::Whiteboard);
-        p.whiteboard_visible(true);assert_eq!(p.stage,Stage::BoardInk);
-        p.whiteboard_visible(false);assert_eq!(p.stage,Stage::Whiteboard);
-        p.whiteboard_visible(true);p.observe_ink(true,0);p.whiteboard_visible(false);assert_eq!(p.stage,Stage::ScreenInk);
-        p.whiteboard_visible(false);assert_eq!(p.stage,Stage::ScreenInk);
+    fn disposition(&self, value:Value)->Result<Disposition,()> {
+        let d:Disposition=serde_json::from_value(value).map_err(|_|())?;
+        let b=self.pending.front().ok_or(())?;
+        if d.kind!="practice-disposition"||d.version!=1||
+            [&d.source,&d.transport,&d.attempt,&d.capture,&d.sequence].into_iter().zip(["source","transport","attempt","capture","sequence"])
+                .any(|(v,k)|b[k].as_str()!=Some(v.as_str())) || b["intent"]!=json!(d.intent)||b["board"]!=json!(d.board) {return Err(());}
+        Ok(d)
     }
-    #[test] fn failed_copy_and_early_stop_never_claim_copied() {
-        let mut p=Practice::default();p.started();p.processing();p.saved(true);assert_eq!(p.stage,Stage::Copied);
-        p=through_drawing();p.processing();p.saved(false);assert_eq!(p.stage,Stage::CopyFailed);
-        p=Practice::default();p.started();p.cancelled();assert_eq!(p.stage,Stage::Retry);
+    pub fn acknowledgement(&self, value:&Value)->Result<String,()> {
+        Ok(self.disposition(value.clone())?.sequence)
     }
-    #[test] fn partial_saved_capture_still_teaches_where_the_app_lives_without_completing_practice() {
-        let mut p=to_screen_ink();p.processing();p.saved(true);assert_eq!(p.stage,Stage::Copied);
-        assert!(p.action("practice-paste"));assert!(p.action("practice-pasted"));p.opened_latest();
-        assert_eq!(p.stage,Stage::Retry);assert!(!p.action("practice-finish"));
+    pub fn admit(&mut self, value:Value)->Result<(bool, String),()> {
+        let d=self.disposition(value)?;
+        let finish=d.accepted && self.pending.front().unwrap()["events"].as_array().is_some_and(|events|events.iter().any(|e|e["action"]=="practice-finish"));
+        self.pending.pop_front();
+        if d.attempt==self.attempt.to_string() {
+            self.stage=d.stage;self.latest=d.latest;self.locating=d.locating;self.desktop_stage=d.desktop_stage;
+            if d.close_board {self.close_board=d.board;}
+            Ok((finish,d.sequence))
+        } else {Ok((false,d.sequence))}
     }
-    #[test] fn screen_is_taught_before_whiteboard_and_cancellation_cannot_complete_practice() {
-        let mut p=Practice::default();p.selecting();assert_eq!(p.stage,Stage::Screen);
-        p.processing();p.saved(true);assert_eq!(p.stage,Stage::Screen);
-        p.whiteboard_visible(true);assert_eq!(p.stage,Stage::Screen);
-        p.started();assert_eq!(p.stage,Stage::Whiteboard);
-        p.cancelled();assert_eq!(p.stage,Stage::Retry);assert!(!p.action("practice-finish"));
+    #[cfg(test)]
+    pub fn test_reply(&self)->Value {
+        use std::{io::Write,process::{Command,Stdio}};
+        let mut child=Command::new("node").arg("--experimental-strip-types")
+            .arg(concat!(env!("CARGO_MANIFEST_DIR"),"/onboarding/enablement/ci/native-driver.ts"))
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        child.stdin.take().unwrap().write_all(&serde_json::to_vec(&self.history).unwrap()).unwrap();
+        let output=child.wait_with_output().unwrap();
+        assert!(output.status.success(),"{}",String::from_utf8_lossy(&output.stderr));
+        serde_json::from_slice(&output.stdout).unwrap()
     }
-    #[test] fn failed_copy_can_find_the_saved_capture_but_cannot_claim_a_paste() {
-        let mut p=through_drawing();p.processing();p.saved(false);assert_eq!(p.stage,Stage::CopyFailed);
-        assert!(p.action("practice-locate"));p.opened_latest();assert_eq!(p.stage,Stage::Retry);
-    }
-    #[test] fn note_receipts_do_not_gate_practice_and_retry_resets_drawing() {
-        let mut p=Practice::default();p.observe_note(true);assert_eq!(p.stage,Stage::Start);
-        p.started();p.observe_note(true);assert_eq!(p.stage,Stage::Whiteboard);
-        p.whiteboard();p.observe_ink(true,0);p.whiteboard_visible(false);assert_eq!(p.stage,Stage::ScreenInk);
-        p.cancelled();p.started();p.whiteboard();p.observe_ink(true,0);p.whiteboard_visible(false);
-        assert_eq!(p.stage,Stage::ScreenInk);
-    }
-    #[test] fn legacy_note_stage_resumes_at_screen_drawing_and_requires_a_fresh_stroke() {
-        let mut p=Practice::default();p.started();p.whiteboard();p.observe_ink(true,4);p.whiteboard_visible(false);
-        p.stage=Stage::Note;
-        p.observe_ink(false,4);assert_eq!(p.stage,Stage::ScreenInk);
-        p.observe_ink(false,4);assert_eq!(p.stage,Stage::ScreenInk);
-        p.observe_ink(false,5);assert_eq!(p.stage,Stage::Stop);
-    }
-    #[test] fn late_note_receipt_at_finish_cannot_skip_required_screen_drawing() {
-        let mut p=Practice::default();p.stage=Stage::Note;p.processing();p.observe_note(true);
-        assert_eq!(p.stage,Stage::Preparing);
-        p.saved(true);p.action("practice-paste");p.action("practice-pasted");p.opened_latest();
-        assert_eq!(p.stage,Stage::Retry,"note receipt cannot invent a screen drawing");
-    }
-    #[test] fn optional_note_receipt_does_not_change_drawing_completion() {
-        let mut p=through_drawing();p.processing();p.observe_note(true);assert_eq!(p.stage,Stage::Preparing);p.saved(true);
-        p.action("practice-paste");p.action("practice-pasted");p.opened_latest();
-        assert_eq!(p.stage,Stage::Complete);
-    }
+}
+
+#[cfg(test)]
+pub(crate) fn exercise_native_surfaces(session:&mut super::onboarding::Session,receive:impl Fn(&mut super::onboarding::Session,&str)) {
+    session.practice_whiteboard();receive(session,"board-ink");
+    session.observe_practice_surface(true,3,false,None);receive(session,"screen-ink");
+    session.observe_practice_surface(false,3,false,None);receive(session,"screen-ink");
+    session.observe_practice_surface(false,4,false,None);receive(session,"stop");
 }

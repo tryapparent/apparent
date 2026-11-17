@@ -104,7 +104,6 @@ impl ApparentCoordinator {
         }
     }
 
-    /// Remembers the mode a recording is starting in, so the next picker opens on it.
     fn remember_mode(&mut self, mode: SelectionMode) {
         if self.last_mode != mode {
             self.last_mode = mode;
@@ -112,15 +111,12 @@ impl ApparentCoordinator {
         }
     }
 
-    /// Kit opened, copied, pasted or dismissed `dir`, so it leaves the inbox.
     fn mark_handled(&mut self, dir: &std::path::Path) {
         if self.inbox.remove(dir) {
             refresh_status_bar(self.inbox.len());
         }
     }
 
-    /// What ⌥⇧V pastes: the bundle on the Completed island, else the newest unhandled iPhone
-    /// capture unless this Mac captured something since, else the latest bundle.
     fn take_paste_target(&mut self) -> PathBuf {
         let showing = matches!(self.island_phase, IslandPhase::Completed { .. })
             .then(|| self.completed_dir.clone())
@@ -138,8 +134,6 @@ impl ApparentCoordinator {
     }
 
     pub fn paste_latest(&mut self, cx: &mut Context<Self>) {
-        // Without Accessibility macOS drops the posted ⌘V (onboarding asks for it, but it can be
-        // turned off later); bring the permissions window instead.
         if !crate::capture::engine::runtime::accessibility_granted() {
             apparent_log("⌥⇧V without Accessibility; asking for it");
             self.gate
@@ -165,7 +159,6 @@ impl ApparentCoordinator {
         });
     }
 
-    /// Looks for a cabled iPhone in the background; the picker shows "iPhone" when one is there.
     fn refresh_iphone(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |entity, cx| {
             let found = cx
@@ -231,8 +224,6 @@ impl ApparentCoordinator {
         }
     }
 
-    /// Native callbacks cannot borrow the GPUI entity. This is only a copy of the
-    /// coordinator-owned admission decision, never separate lifecycle accounting.
     fn publish_capture_busy(&self) {
         crate::capture::desktop::workflow::shutdown::set_phase_busy(self.capture_busy());
     }
@@ -326,8 +317,6 @@ impl ApparentCoordinator {
             let _ = request.reply.send(response.to_string());
             return;
         }
-        // Report an ended sampler, but never discard another session as a side
-        // effect of State, Inspect or a competing Start. Cancellation stays explicit.
         if matches!(self.active_recording.as_ref().map(|r| &r.source),
             Some(CaptureSource::Screen { session, .. }) if session.failed_to_start()) {
             if let Some(id) = &self.agent_capture_id {
@@ -380,7 +369,6 @@ impl ApparentCoordinator {
         let response = match outcome {
             Some(outcome) => {
                 let mut response = self.agent_captures.inspect(&request.action.as_ref().unwrap().1);
-                // Preserve non-wait Stop/Cancel's existing outcome semantics.
                 response["outcome"] = serde_json::json!(outcome);
                 response["state"] = serde_json::json!(self.agent_state());
                 if outcome == Outcome::AlreadyEnded && response["status"] == "unknown" {
@@ -394,7 +382,6 @@ impl ApparentCoordinator {
     }
 
     pub fn open_onboarding(&mut self, flow: crate::capture::desktop::settings::onboarding::Flow) {
-        // Drop the old window before the new one opens.
         self.cancel_onboarding_editor();
         self.onboarding = None;
         let sender = self.telemetry.ui_sender.clone();
@@ -410,7 +397,6 @@ impl ApparentCoordinator {
         }
     }
 
-    /// Opens Settings, or brings it forward on `pane`.
     pub fn open_settings(&mut self, pane: Option<crate::capture::desktop::settings::Pane>) {
         if let Some(session) = self.settings.as_mut() {
             session.show(pane);
@@ -438,8 +424,6 @@ impl ApparentCoordinator {
         };
         #[cfg(target_os = "linux")]
         if self.defer_update_restart(&event) {
-            // Check before Session spawns its relaunch helper. Capture admission
-            // and this decision run on the same UI thread.
             apparent_log("Update restart deferred until capture is idle");
             crate::capture::desktop::linux::shell::notify("Update ready", "Finish or cancel the capture before restarting Apparent.");
             return;
@@ -526,7 +510,6 @@ impl ApparentCoordinator {
             && self.capture_busy()
     }
 
-    /// UI-thread snapshot for restart/termination admission, not just visible UI.
     pub(crate) fn capture_busy(&self) -> bool {
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         if self.agent_capture_id.is_some() { return true; }
@@ -551,8 +534,6 @@ impl ApparentCoordinator {
     }
 
     fn finish_share_login(&mut self, active: &std::sync::Arc<std::sync::atomic::AtomicBool>, succeeded: bool) -> bool {
-        // A cancelled request can finish after Settings has started another login.
-        // Only its owner may clear the cancellation handle or start the worker.
         if !self.share_login.as_ref().is_some_and(|current| std::sync::Arc::ptr_eq(current, active)) {
             return false;
         }
@@ -560,8 +541,6 @@ impl ApparentCoordinator {
         succeeded && active.load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    /// Keeps a fresh read of the grants and remembers what was granted. (The key tap follows
-    /// Accessibility by itself, in the HID poller.)
     fn note_grants(&mut self, grants: &crate::capture::desktop::settings::onboarding::Grants) {
         use crate::capture::desktop::settings::onboarding::Progress;
         let mut progress = Progress::load();
@@ -571,14 +550,12 @@ impl ApparentCoordinator {
         self.grants = Some(grants.clone());
     }
 
-    /// Required permissions that keep a capture from starting now.
     fn missing_to_record(&mut self, microphone: bool) -> Vec<crate::capture::desktop::settings::onboarding::Permission> {
         use crate::capture::desktop::settings::onboarding::{Permission, missing_to_record};
         let screen = crate::capture::engine::runtime::screen_capture_usable(false);
         let accessibility = crate::capture::engine::runtime::accessibility_granted();
         let mut missing = missing_to_record(self.grants.as_ref(), screen, accessibility);
         if !microphone { missing.retain(|p| *p != Permission::Microphone); }
-        // The last read may be old; read again before standing in the way.
         if missing.contains(&Permission::Microphone)
             && let Some(fresh) = crate::capture::desktop::settings::onboarding::read_grants()
         {
@@ -588,8 +565,6 @@ impl ApparentCoordinator {
         missing
     }
 
-    /// Whether this may go on: with a required permission off it starts nothing, and the
-    /// permissions window comes forward once the modifiers are up.
     fn ready_to_record(&mut self) -> bool {
         if self.lab {
             return true;
@@ -608,8 +583,6 @@ impl ApparentCoordinator {
         false
     }
 
-    /// Whether `permission`, asked for on first use (Camera, Accessibility), is on. If not, its
-    /// window comes forward once the modifiers are up.
     fn ready_for(&mut self, permission: crate::capture::desktop::settings::onboarding::Permission) -> bool {
         let granted = |g: &crate::capture::desktop::settings::onboarding::Grants| g.granted(permission);
         if self.lab || self.grants.as_ref().is_none_or(granted) {
@@ -626,7 +599,6 @@ impl ApparentCoordinator {
         false
     }
 
-    /// Polled while the gate holds a request: shows the permissions window once ⌥⇧ is up.
     pub(in crate::capture::desktop) fn tick_onboarding_practice(&mut self,cx:&mut Context<Self>) {
         if let Some(session) = self.onboarding.as_mut() {
             session.observe_shortcut_modifiers(crate::capture::engine::runtime::modifier_flags());
@@ -653,12 +625,10 @@ impl ApparentCoordinator {
         let screen=self.telemetry.strokes.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().filter(|s|!s.laser && !s.pts.is_empty()).count();
         let processing=self.is_processing();
         let note_saved=self.note_ui.as_ref().is_some_and(|notes|notes.has_saved_note());
-        let was_desktop=self.onboarding.as_ref().unwrap().practice_desktop_stage();
         if let Some(session)=self.onboarding.as_mut() {
             session.practice_note_saved(note_saved);
             session.observe_practice_surface(board,screen,processing,board_frame);
         }
-        if !was_desktop && self.onboarding.as_ref().is_some_and(|s|s.practice_desktop_stage()) {self.whiteboard.borrow_mut().presentation=None;cx.defer(whiteboard::close);}
     }
 
     pub fn tick_gate(&mut self) {
@@ -705,7 +675,6 @@ impl ApparentCoordinator {
             }
             Event::Grants(grants) => {
                 self.note_grants(&grants);
-                // A single app-wide Mac poller feeds both windows and the capture gate.
                 #[cfg(target_os = "macos")]
                 if let Some(session) = self.settings.as_mut() {
                     session.event(
@@ -719,6 +688,21 @@ impl ApparentCoordinator {
                     .as_mut()
                     .map_or(Effect::None, |session| session.grants(grants))
             }
+            Event::Practice(value) => {
+                let effect=self.onboarding.as_mut().map_or(Effect::None,|session|session.practice_disposition(value));
+                let close=self.onboarding.as_mut().and_then(|session|session.take_practice_board_close());
+                if let Some((source,transport,attempt,id))=close {
+                    let owner=cx.entity().downgrade();
+                    cx.defer(move |cx| { let _=owner.update(cx,|coord,cx| {
+                        if coord.is_recording() && coord.onboarding.as_ref().is_some_and(|s|s.current_practice_scope(source,transport,attempt)) && coord.whiteboard.borrow().presentation.as_ref().is_some_and(|(current,_)|current==&id) {
+                            coord.whiteboard.borrow_mut().presentation=None;
+                            whiteboard::close(cx);
+                        }
+                    }); });
+                }
+                effect
+            }
+
             Event::Board(value) => {
                 if self.is_recording() && self.onboarding.as_ref().is_some_and(|s|s.electron_practice()) {
                     let mut board=self.whiteboard.borrow_mut();
@@ -895,8 +879,6 @@ impl ApparentCoordinator {
         self.onboarding.as_ref().map_or(ShortcutPolicy::Record, |s| s.shortcut_policy())
     }
 
-    /// Shared by real-start admission and the picker/iPhone entry points.
-    /// Only the guided shortcut may own the first-capture start; Finish is unaffected.
     fn setup_blocks_capture(&mut self) -> bool {
         use crate::capture::desktop::settings::onboarding::ShortcutPolicy;
         if self.lab { return false; }
@@ -908,7 +890,6 @@ impl ApparentCoordinator {
         blocked
     }
 
-    /// Consume the release as a setup trial, never as a recording request.
     fn consume_setup_shortcut(&mut self) -> bool {
         use crate::capture::desktop::settings::onboarding::{Input, ShortcutPolicy};
         let policy = self.onboarding_shortcut_policy();
@@ -920,13 +901,9 @@ impl ApparentCoordinator {
         true
     }
 
-    /// The capture shortcut went down (from Carbon, the event tap or the HID poller).
     pub fn press_shortcut(&mut self, cx: &mut Context<Self>) {
         #[cfg(target_os="linux")]
         if let Some(session)=self.onboarding.as_mut().filter(|session|session.editing_shortcut()) {
-            // A permanent compositor binding consumes Copilot before Electron
-            // receives it. Forward that native callback as binding metadata;
-            // the shared TypeScript recorder owns selection, never capture.
             session.desktop_shortcut_pressed();
             return;
         }
@@ -951,8 +928,6 @@ impl ApparentCoordinator {
                 }
                 ShortcutPolicy::Record => {}
             }
-            // No picker or overlay before the permissions are on: they sit above
-            // macOS's permission prompts and take the clicks meant for them.
             let missing = self.missing_to_record(crate::capture::engine::runtime::audio::mic::enabled());
             if !self.gate.press(missing) {
                 apparent_log("Shortcut held back: a required permission is off");
@@ -960,15 +935,12 @@ impl ApparentCoordinator {
             }
             self.begin_playback();
             self.hold_mods = crate::capture::engine::runtime::modifier_flags();
-            // An Esc from before this press doesn't cancel it.
             self.telemetry.take_escape();
         }
         let action = self.shortcut.press(activity);
         self.apply_shortcut(action, cx);
     }
 
-    /// Polled from the UI loop while a press is pending: watches for ⌥⇧ coming up and Esc,
-    /// whichever app or window has focus.
     pub fn tick_shortcut(&mut self, cx: &mut Context<Self>) {
         if !self.shortcut.is_pending() {
             return;
@@ -994,7 +966,6 @@ impl ApparentCoordinator {
                 if let Some(session) = self.onboarding.as_mut() {
                     session.input(crate::capture::desktop::settings::onboarding::Input::CaptureEnded { completed: false });
                 }
-                // Esc can cancel before the picker or a recording exists.
                 self.playback.take();
             }
             Action::RecordScreen => {
@@ -1015,7 +986,6 @@ impl ApparentCoordinator {
         }
     }
 
-    /// The menu's Record Screen item, the review window's Record button and `app --record`.
     pub fn record_or_finish(&mut self, cx: &mut Context<Self>) {
         if self.is_recording() {
             self.finish_recording(cx);
@@ -1026,7 +996,6 @@ impl ApparentCoordinator {
         }
     }
 
-    /// Records the display under the cursor straight away (no picker), auto-cropped.
     pub fn record_screen_now(&mut self, cx: &mut Context<Self>) {
         let target = if self.lab {
             lab::target()
@@ -1039,8 +1008,6 @@ impl ApparentCoordinator {
         }
     }
 
-    /// Activity that means the user got to work: clicks, drags, scrolls and strokes. Clicks on
-    /// Apparent's own windows (the capsule and its chips) are never recorded, so they don't count.
     fn reveal_activity(&self) -> usize {
         use std::sync::PoisonError;
         let t = &self.telemetry;
@@ -1060,15 +1027,11 @@ impl ApparentCoordinator {
             )
     }
 
-    /// macOS and lab tap starts reveal switch chips; ordinary Linux starts keep controls.
     fn show_reveal(&mut self, cx: &mut Context<Self>) {
-        // Linux exposes one full-display capture path. Keep the native fallback
-        // consistent with Electron even when a renderer cannot start.
         #[cfg(target_os = "linux")]
         if !self.lab {
             return;
         }
-        // The iPhone chip shows only while one is cabled (a USB registry read, no prompt).
         if !self.lab {
             self.refresh_iphone(cx);
         }
@@ -1088,7 +1051,6 @@ impl ApparentCoordinator {
         cx.notify();
     }
 
-    /// The chips fold back into the recording pill (timeout, work started, or a chip chosen).
     fn fold_reveal(&mut self) {
         if self.reveal.is_open() {
             self.reveal.close();
@@ -1103,13 +1065,7 @@ impl ApparentCoordinator {
         self.sync_native_pill();
     }
 
-    /// A switch chip on a tap-started recording. Screen keeps it. Anything else drops the few
-    /// seconds recorded so far and starts over on the new target, exactly as if it had been
-    /// chosen first: Window and Area morph the capsule into the picker (hover and click a window,
-    /// or drag an area), iPhone goes straight into the phone's mirror.
     pub fn switch_recording(&mut self, mode: SelectionMode, cx: &mut Context<Self>) {
-        // Native lifetime guard: a stale child action must not discard an
-        // active full-display capture to reopen the retired Linux picker.
         #[cfg(target_os = "linux")]
         if !self.lab && mode != SelectionMode::Screen {
             return;
@@ -1127,25 +1083,19 @@ impl ApparentCoordinator {
             return;
         }
         apparent_log(format!("switch_recording -> {mode:?}"));
-        // The morph continues the chips, so it needs them on screen.
         let chips_shown = self.reveal.is_open();
         let Some((_, overlay)) = self.discard_recording() else {
             return;
         };
         if mode == SelectionMode::Iphone {
-            // Recording → Recording: the chips fold into the pill as the phone starts.
             self.fold_reveal();
             drop(overlay);
             self.start_recording_iphone(cx);
             return;
         }
-        // Window and Area: the chips stay up while the capsule morphs into the picker.
-        // The recording's overlay becomes the picker's (moved if the picker opens on another
-        // display), so the border never swaps windows (as the picker → recording path does).
         self.picker_metal_overlay = overlay;
         self.open_picker(Some(mode), cx);
         if self.is_selecting() && chips_shown && !self.reduced_motion {
-            // The chips showed Screen; the picker shows `mode`.
             self.highlight_prev = Some(SelectionMode::Screen);
             self.highlight_since = motion::now();
             self.island_morph = Morph::Switch;
@@ -1153,8 +1103,6 @@ impl ApparentCoordinator {
         }
     }
 
-    /// Stops the active recording and deletes its bundle, leaving the island as it is. Returns
-    /// its target and overlay.
     fn discard_recording(&mut self) -> Option<(TargetInfo, Option<LaserOverlay>)> {
         if let Some(rec) = &self.active_recording
             && !matches!(rec.source, CaptureSource::Lab)
@@ -1263,7 +1211,6 @@ impl ApparentCoordinator {
         self.open_iphone_when_found = false;
         if let IslandPhase::Selecting { mode: prev_mode } = self.island_phase {
             if prev_mode != mode {
-                // Crisp tactile Dynamic Island scale micro-pulse when Space toggles camera/crosshair mode.
                 self.island_scale_velocity += 1.25;
             }
             if mode != SelectionMode::Iphone
@@ -1299,14 +1246,11 @@ impl ApparentCoordinator {
         }
     }
 
-    /// Opens the live iPhone mirror window in preview mode so the user can see their phone before
-    /// starting a recording. Clicking `iPhone` a second time or clicking `Record` starts recording.
     pub fn preview_iphone(&mut self, cx: &mut Context<Self>) {
         if self.is_recording() || self.is_processing() {
             return;
         }
         apparent_log("preview_iphone invoked");
-        // The mirror would raise the camera prompt under the picker, which takes its clicks.
         if !self.ready_for(crate::capture::desktop::settings::onboarding::Permission::Camera) {
             self.cancel_recording(cx);
             return;
@@ -1350,7 +1294,6 @@ impl ApparentCoordinator {
         }
     }
 
-    /// Switches the picker to `mode`; choosing iPhone opens its live preview.
     pub fn choose_selection_mode(&mut self, mode: SelectionMode, cx: &mut Context<Self>) {
         if self.selection_mode().is_none() {
             return;
@@ -1362,7 +1305,6 @@ impl ApparentCoordinator {
         }
     }
 
-    /// A HUD segment click: picks the mode, or records when Screen/iPhone is already selected.
     pub fn click_selection_mode(&mut self, mode: SelectionMode, cx: &mut Context<Self>) {
         if self.selection_mode() == Some(mode) && mode.shows_record() {
             self.record_selected_mode(cx);
@@ -1371,8 +1313,6 @@ impl ApparentCoordinator {
         }
     }
 
-    /// Return, `s`, the capture shortcut, or Record: iPhone records the phone, anything else
-    /// records the full screen.
     pub fn record_selected_mode(&mut self, cx: &mut Context<Self>) {
         match self.selection_mode() {
             Some(SelectionMode::Iphone) => self.start_recording_iphone(cx),
@@ -1381,13 +1321,8 @@ impl ApparentCoordinator {
         }
     }
 
-    /// Picker keyboard map, shared by the picker window and the HUD pill. Returns whether the
-    /// key was handled.
-    /// ⌘Q and ⌘, in Apparent's own windows: a menu bar (accessory) app has no main menu to
-    /// carry them (Ctrl+Q and Ctrl+, on Windows).
     pub fn handle_app_key(&mut self, keystroke: &Keystroke, cx: &mut Context<Self>) -> bool {
         let mods = keystroke.modifiers;
-        // `secondary` is ⌘ on macOS and Ctrl elsewhere; the other of the two must be up.
         if !mods.secondary() || (mods.control && mods.platform) || mods.alt || mods.shift {
             return false;
         }
@@ -1404,7 +1339,6 @@ impl ApparentCoordinator {
         true
     }
 
-    /// `repeat`: the key is held and repeating, which never records.
     pub fn handle_selection_key(
         &mut self,
         keystroke: &Keystroke,
@@ -1415,7 +1349,6 @@ impl ApparentCoordinator {
             return false;
         };
         let mods = keystroke.modifiers;
-        // Esc cancels even with ⌥⇧ still held from the shortcut.
         if keystroke.key == "escape" {
             self.cancel_recording(cx);
             return true;
@@ -1423,7 +1356,6 @@ impl ApparentCoordinator {
         if self.handle_app_key(keystroke, cx) {
             return true;
         }
-        // The shortcut itself, if it reaches a picker window instead of Carbon.
         if let Some(cfg) = shortcut_from_key_and_mods(
             &keystroke.key,
             mods.platform,
@@ -1446,7 +1378,6 @@ impl ApparentCoordinator {
             return false;
         }
         let has_iphone = self.iphone.is_some();
-        // The record shortcut's key ("S") also records on its own while the picker is up.
         let label = self.shortcut_label();
         let record_key = crate::capture::engine::runtime::shortcut_parts(&label).1;
         let records = |key: &str| key == "enter" || key.eq_ignore_ascii_case(record_key);

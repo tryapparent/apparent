@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 import { build } from 'esbuild';
@@ -17,6 +17,8 @@ let reportingOutput: string;
 export default defineConfig({
   base: './',
   plugins: [react(), tailwindcss(), {name: 'onboarding-host-policy', closeBundle() {
+    mkdirSync('dist/composition/onboarding', { recursive: true });
+    cpSync('../../../../composition/onboarding/dist/entry.cjs', 'dist/composition/onboarding/entry.cjs');
     for (const name of ['presentation', 'hyprland', 'selection', 'wispr']) {
       const file = `electron/onboarding/${name}.ts`;
       const result = ts.transpileModule(readFileSync(file, 'utf8'), {fileName: file,

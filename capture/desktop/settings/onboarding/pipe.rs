@@ -1,10 +1,9 @@
-//! Bounded delivery to the private Electron child. Capture never waits for its reader.
 use std::{
     io::{self, Write},
     os::fd::AsRawFd,
     process::ChildStdin,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc,
     },
@@ -19,6 +18,8 @@ struct Shared {
     stopped: AtomicBool,
     bytes: AtomicUsize,
     lost: Box<dyn Fn() + Send + Sync>,
+    deadline: Duration,
+    acknowledgements: Mutex<std::collections::VecDeque<(String, Instant)>>,
 }
 impl Shared {
     fn fail(&self) {
@@ -54,8 +55,6 @@ impl Input {
         max_bytes: usize,
         deadline: Duration,
     ) -> io::Result<Self> {
-        // Only this worker owns the descriptor. O_NONBLOCK also bounds retirement
-        // when a live child stops reading without closing its output.
         let fd = pipe.as_raw_fd();
         let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
         if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
@@ -66,9 +65,18 @@ impl Input {
             stopped: AtomicBool::new(false),
             bytes: AtomicUsize::new(0),
             lost: Box::new(lost),
+            deadline,
+            acknowledgements: Mutex::new(std::collections::VecDeque::new()),
         });
+        let monitor=shared.clone();
+        let monitor_thread=std::thread::Builder::new().name("onboarding-ack".into()).spawn(move || {
+            while !monitor.stopped.load(Ordering::Acquire) {
+                if monitor.acknowledgements.lock().unwrap().front().is_some_and(|(_,time)|time.elapsed()>=deadline) {monitor.fail();break;}
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        })?;
         let worker = shared.clone();
-        std::thread::Builder::new()
+        let writer=std::thread::Builder::new()
             .name("onboarding-input".into())
             .spawn(move || {
                 while !worker.stopped.load(Ordering::Acquire) {
@@ -78,7 +86,6 @@ impl Input {
                     };
                     let mut offset = 0;
                     while offset < message.bytes.len() && !worker.stopped.load(Ordering::Acquire) {
-                        // Deadline includes queue residence, not just time inside write.
                         if message.queued.elapsed() >= deadline {
                             worker.fail();
                             break;
@@ -103,7 +110,8 @@ impl Input {
                         .bytes
                         .fetch_sub(message.bytes.len(), Ordering::AcqRel);
                 }
-            })?;
+            });
+        if let Err(error)=writer {shared.stopped.store(true,Ordering::Release);let _=monitor_thread.join();return Err(error);}
         Ok(Self {
             queue,
             shared,
@@ -111,8 +119,20 @@ impl Input {
         })
     }
 
-    /// Already-serialized JSON line, including its newline. Never drop a barrier
-    /// and continue: overflow revokes the transport through its scoped EOF path.
+    pub(super) fn expect(&self, sequence:String) {
+        let mut pending=self.shared.acknowledgements.lock().unwrap();
+        if pending.len()>=MAX_MESSAGES {drop(pending);self.shared.fail();return;}
+        pending.push_back((sequence,Instant::now()));
+    }
+    pub(super) fn ack(&self, sequence:&str)->bool {
+        let mut pending=self.shared.acknowledgements.lock().unwrap();
+        if !self.shared.stopped.load(Ordering::Acquire) &&
+            pending.front().is_some_and(|(id,time)|id==sequence && time.elapsed()<self.shared.deadline) {
+            pending.pop_front();true
+        } else {drop(pending);self.shared.fail();false}
+    }
+
+
     pub(super) fn send(&self, bytes: Vec<u8>) -> bool {
         if self.shared.stopped.load(Ordering::Acquire) {
             return false;
@@ -145,6 +165,85 @@ impl Input {
         true
     }
 }
+
+pub(super) fn read_actions(stdout: std::process::ChildStdout, events: impl Fn(super::Event)+Send+Sync+Clone+'static) {
+        std::thread::spawn(move || {
+            let mut closed = false;
+            {
+                let mut reader = std::io::BufReader::new(stdout);
+                loop {
+                    let mut line = Vec::new();
+                    let read = super::read_protocol_line(&mut reader, &mut line);
+                    if !matches!(read, Ok(n) if n > 0 && n <= 65_536) { break; }
+                    let Ok(line) = std::str::from_utf8(&line) else { continue; };
+                    let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) else {
+                        continue;
+                    };
+                    if value["type"]=="practice-disposition" {events(super::Event::Practice(value));continue;}
+                    if value.get("action").and_then(|v| v.as_str()) == Some("board") {
+                        events(super::Event::Board(value));
+                        continue;
+                    }
+                    let Some(action) = value.get("action").and_then(|v| v.as_str()) else {
+                        continue;
+                    };
+                    let action = action.to_owned();
+                    #[cfg(target_os="linux")]
+                    if action=="resolve-copilot" {
+                        let pressed = super::native_shortcut_press().unwrap_or(crate::capture::desktop::settings::Pressed {
+                            key_code: 0, modifiers: 0, key: String::new(), reserved: false,
+                        });
+                        events(super::Event::Shortcut(crate::capture::desktop::settings::Action::Shortcut {
+                            kind: crate::capture::engine::runtime::ShortcutKind::Record, pressed,
+                        }));
+                        continue;
+                    }
+                    #[cfg(target_os="linux")]
+                    if action=="shortcut-key" {
+                        if let (Some(key),Some(modifiers))=(value["key"].as_str(),value["modifiers"].as_u64()) {
+                            if key.len()<=32 && modifiers & !0x1b00 == 0 {
+                                if let Some(key_code)=crate::capture::desktop::settings::settings_window::key_code(key) {
+                                    events(super::Event::Shortcut(crate::capture::desktop::settings::Action::Shortcut {
+                                        kind:crate::capture::engine::runtime::ShortcutKind::Record,
+                                        pressed:crate::capture::desktop::settings::Pressed {key_code,modifiers:modifiers as u32,key:key.to_owned(),reserved:false},
+                                    }));
+                                }
+                            }
+                        }
+                        continue;
+                    }
+                    if matches!(
+                        action.as_str(),
+                        "shortcut" | "cancel-shortcut" | "reset-shortcut"
+                    ) {
+                        let mut value = value;
+                        if action == "reset-shortcut" && value.get("kind").is_none() {
+                            value["kind"] = "record".into();
+                        }
+                        if let Ok(mut action) = serde_json::from_value(value) {
+                            #[cfg(target_os = "macos")]
+                            if let super::super::settings::Action::Shortcut { pressed, .. } = &mut action {
+                                pressed.reserved = super::native_shortcut_reserved(pressed.key_code, pressed.modifiers);
+                            }
+                            events(super::Event::Shortcut(action));
+                        }
+                        continue;
+                    }
+                    let action = match value.get("permission").and_then(|v| v.as_str()) {
+                        Some(permission) => format!("{action}:{permission}"),
+                        None => action.to_owned(),
+                    };
+                    closed |= action == "close";
+                    events(super::Event::Action(action));
+                }
+            }
+            if !closed {
+                crate::capture::engine::runtime::apparent_log("onboarding renderer transport stdout closed");
+                events(super::Event::Exited);
+            }
+        });
+    }
+
 
 impl Drop for Input {
     fn drop(&mut self) {
@@ -193,6 +292,37 @@ mod tests {
         )
         .unwrap();
         (input, rx)
+    }
+
+    #[test]
+    fn live_reader_without_policy_ack_expires_even_after_consuming_the_entire_line() {
+        let mut child=child("cat");let (input,lost)=input(&mut child,32,MAX_BYTES);
+        input.expect("1".into());assert!(input.send(b"fact\n".to_vec()));
+        let mut bytes=[0;5];child.0.stdout.as_mut().unwrap().read_exact(&mut bytes).unwrap();
+        assert_eq!(&bytes,b"fact\n");
+        lost.recv_timeout(Duration::from_secs(2)).expect("reading is not acknowledgement");
+        assert!(child.0.try_wait().unwrap().is_none());
+    }
+    #[test]
+    fn timely_ack_retires_deadline_and_wrong_ack_revokes() {
+        let mut child=child("cat");let (input,lost)=input(&mut child,32,MAX_BYTES);
+        input.expect("1".into());assert!(input.ack("1"));
+        assert!(lost.recv_timeout(Duration::from_millis(180)).is_err());
+        input.expect("2".into());assert!(!input.ack("1"));lost.recv_timeout(Duration::from_secs(1)).unwrap();
+    }
+    #[test]
+    fn expired_or_failed_transport_never_admits_an_ack() {
+        for expired in [false,true] {
+            let mut child=child("cat");let (input,lost)=input(&mut child,32,MAX_BYTES);
+            input.expect("1".into());
+            if expired {
+                input.shared.acknowledgements.lock().unwrap().front_mut().unwrap().1=Instant::now()-Duration::from_secs(1);
+            } else {input.shared.fail();}
+            assert!(!input.ack("1"));
+            assert_eq!(input.shared.acknowledgements.lock().unwrap().len(),1,"rejected ack cannot retire admission evidence");
+            lost.recv_timeout(Duration::from_secs(1)).unwrap();
+            assert!(lost.try_recv().is_err(),"failure emitted once");
+        }
     }
 
     #[test]
@@ -278,7 +408,6 @@ mod tests {
         let mut child = child("sleep");
         let (input, lost) = input(&mut child, 1, MAX_BYTES);
         assert!(input.send(vec![b'x'; 1024 * 1024]));
-        // At most one write is in flight and one message is queued.
         let accepted = (0..3)
             .take_while(|_| input.send(b"barrier\n".to_vec()))
             .count();
