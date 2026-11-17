@@ -52,10 +52,16 @@ function executionIdentity(job: any): string | null {
 
 export function inspectJobs(runs: any[], from: number, to: number) {
   const seen = new Set<string>(), jobs: any[] = []; let invalid = 0, unfinishedJobs = 0, unknownAllocationJobs = 0;
+  const preJobWaits:any[] = [];
   const entries: any[] = [];
   for (const run of runs) {
     const runId = run?.runId ?? run?.databaseId;
     if (!Array.isArray(run?.jobs) || !runId || !/^[a-f0-9]{40}$/.test(run?.headSha ?? '') || !Number.isInteger(run.attempt)) {invalid++; continue;}
+    const requested = Date.parse(run.createdAt ?? run.created_at);
+    if (!run.jobs.length && ['queued','waiting','pending','in_progress'].includes(run.status) && requested <= to &&
+      !preJobWaits.some(r=>r.runId===runId && r.attempt===run.attempt)) preJobWaits.push({runId,attempt:run.attempt,headSha:run.headSha,
+        name:run.name,status:run.status,ageSeconds:(to-requested)/1000,windowSeconds:Math.max(0,to-Math.max(from,requested))/1000,
+        reason:'No job rows in snapshot: workflow admission/concurrency/provider wait, not observed runner queue; exact cause unavailable'});
     for (const job of run.jobs) {
       if (!(job?.id ?? job?.databaseId)) {invalid++; continue;}
       const id = `${runId}:${run.attempt}:${job.id ?? job.databaseId}`;
@@ -67,7 +73,7 @@ export function inspectJobs(runs: any[], from: number, to: number) {
     const start = Date.parse(job.started_at ?? job.startedAt), end = Date.parse(job.completed_at ?? job.completedAt);
     const created = Date.parse(job.created_at ?? job.createdAt);
     if (job.conclusion === 'skipped') continue;
-    const terminal = job.status === 'completed' || job.conclusion != null;
+    const terminal = job.status === 'completed' || !!job.conclusion;
     const priorExecution = terminal && Number.isFinite(created) && start > 0 && start < created;
     if (priorExecution) {
       const identity = executionIdentity(job);
@@ -96,10 +102,48 @@ export function inspectJobs(runs: any[], from: number, to: number) {
     const unfinished = !terminal && !unallocated && !unknownAllocation && startKnown && start < to && !endKnown;
     if (unfinished) unfinishedJobs++;
     if (runnerSeconds === 0 && queueSeconds === 0 && !unfinished) continue;
+    const waitingAtCutoff = !priorExecution && Number.isFinite(created) && created <= to && (pending || (unallocated && endKnown && end > to) || (!unallocated && startKnown && start > to));
+    const runningAtCutoff = !unallocated && !unknownAllocation && startKnown && start <= to && (!endKnown || end > to) && !priorExecution;
+    const stepRows = (!unallocated && !unknownAllocation && !priorExecution ? job.steps ?? [] : []).flatMap((s:any) => {
+      if (s.conclusion === 'skipped') return [];
+      const a = Date.parse(s.started_at ?? s.startedAt), b = Date.parse(s.completed_at ?? s.completedAt);
+      if (!(a > 0) || a >= to || (Number.isFinite(b) && b > 0 && b < from)) return [];
+      const complete = b > 0 && b >= a;
+      if (!complete && s.status !== 'in_progress') return [];
+      const seconds = Math.max(0,Math.min(complete ? b : to,to)-Math.max(a,from))/1000;
+      return [{number:s.number,name:s.name,conclusion:s.conclusion,seconds,complete:complete && b <= to}];
+    });
     jobs.push({id, runId, attempt: run.attempt, headSha: run.headSha, name: job.name,
-      conclusion: job.conclusion, runnerSeconds, queueSeconds,
+      conclusion: job.conclusion, runnerSeconds, queueSeconds, status:job.status,
+      labels:job.labels ?? [], runnerName:job.runner_name ?? job.runnerName ?? null,
+      waitingAtCutoff,runningAtCutoff,
+      executionAgeSeconds:runningAtCutoff ? (to-start)/1000 : null,
+      queueAgeSeconds:waitingAtCutoff ? (to-created)/1000 : null,
+      waitReason: waitingAtCutoff ? (job.waitingReason ?? (pending && job.status !== 'queued' ? 'Provider wait; runner/dependency/concurrency/approval cause not supplied' : 'No runner execution by cutoff; allocation/capacity cause requires provider evidence')) : null,
+      steps:stepRows,
       ...(priorExecution ? {provenance: 'unknown-prior-execution'} : {})});
   }
+  const group = (field:'queueSeconds'|'runnerSeconds', key:(j:any)=>string) => {
+    const groups=new Map<string,number[]>();
+    for (const j of jobs) if (j[field] !== null) {const label=key(j);groups.set(label,[...(groups.get(label) ?? []),j[field]]);}
+    return [...groups].map(([label,seconds])=>{const totalSeconds=seconds.reduce((a,b)=>a+b,0);return {label,count:seconds.length,meanSeconds:totalSeconds/seconds.length,totalSeconds};}).sort((a,b)=>b.totalSeconds-a.totalSeconds);
+  };
+  const steps = jobs.flatMap(j=>j.steps.map((s:any)=>({...s,jobRef:j.id,runId:j.runId,attempt:j.attempt,headSha:j.headSha,jobName:j.name}))).sort((a,b)=>b.seconds-a.seconds);
+  const stepGroups = new Map<string,any[]>();
+  for (const step of steps) stepGroups.set(step.name,[...(stepGroups.get(step.name) ?? []),step]);
+  const executionByStep = [...stepGroups].map(([label,rows])=>{const totalSeconds=rows.reduce((n,s)=>n+s.seconds,0);return {label,count:rows.length,meanSeconds:totalSeconds/rows.length,totalSeconds,incompleteRows:rows.filter(s=>!s.complete).length};}).sort((a,b)=>b.totalSeconds-a.totalSeconds);
   return {jobs: jobs.sort((a, b) => (b.runnerSeconds ?? 0) - (a.runnerSeconds ?? 0)), unfinishedJobs, unknownAllocationJobs, invalidSnapshots: invalid,
+    analysis:{
+      preJobWaits:preJobWaits.sort((a,b)=>b.ageSeconds-a.ageSeconds),
+      queueByRunner:group('queueSeconds',j=>j.labels.length ? j.labels.join(', ') : 'runner label unavailable: '+j.name),
+      executionByJob:group('runnerSeconds',j=>j.name ?? 'job name unavailable'),
+      executionByStep,
+      longestWaitingJobs:jobs.filter(j=>j.waitingAtCutoff).sort((a,b)=>b.queueAgeSeconds-a.queueAgeSeconds),
+      runningJobs:jobs.filter(j=>j.runningAtCutoff),longestSteps:steps.slice(0,30),
+      missingStepJobs:jobs.filter(j=>(j.runnerSeconds ?? 0)>0 && !j.steps.length).map(j=>j.id),
+      unknownQueueJobs:jobs.filter(j=>j.queueSeconds === null).map(j=>j.id),
+      unknownExecutionJobs:jobs.filter(j=>j.runnerSeconds === null).map(j=>j.id),
+      coverage:{runs:new Set(runs.filter(r=>r && (r.databaseId ?? r.runId)).map(r=>`${r.databaseId ?? r.runId}:${r.attempt}`)).size,inputJobRows:entries.length,retainedJobRows:jobs.length},
+      limitation:'Snapshot coverage only. Job creation-to-allocation does not distinguish workflow dependency, concurrency, approvals or runner capacity without provider evidence. Queue age is full age at cutoff; queue/execution totals are window-clipped. Steps overlap job spans; parallel jobs overlap each other. No critical-path sum or proof that a majority of threads await CI.'},
     limitation: 'Queue uses job creation to allocation, cancellation before allocation, or the cutoff; missing clocks/allocation stay unknown. Carried rows require a unique earlier step-backed execution to retain original attribution; unmatched prior execution has unknown provenance and timing. Terminal status never implies active work. Parallel runner seconds are not critical-path delay.'};
 }

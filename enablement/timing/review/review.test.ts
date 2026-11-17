@@ -220,3 +220,48 @@ test('missing and zero-date execution starts cannot create elapsed work', () => 
     assert.equal(result.jobs[0].queueSeconds, null);
   }
 });
+
+test('CI analysis separates three-hour allocation waits, runner execution and step costs at the cutoff',()=>{
+  const start=Date.parse('2026-11-17T06:00:00Z'),end=Date.parse('2026-11-17T10:00:00Z');
+  const a=(hour:string)=>`2026-11-17T${hour}:00:00Z`;
+  const r=inspectJobs([{databaseId:123,attempt:1,headSha:'a'.repeat(40),jobs:[
+    {id:10,name:'native Mac',status:'queued',conclusion:null,created_at:a('05'),started_at:a('05'),runner_id:0,labels:['macos-15-intel'],steps:[]},
+    {id:11,name:'Linux verification',status:'completed',conclusion:'success',created_at:a('06'),started_at:a('07'),completed_at:a('09'),runner_id:4,labels:['ubuntu-latest'],steps:[
+      {number:1,name:'Install dependencies',status:'completed',started_at:a('07'),completed_at:a('08'),conclusion:'success'},
+      {number:2,name:'Build and test',status:'completed',started_at:a('08'),completed_at:a('09'),conclusion:'success'}]},
+    {id:12,name:'running build',status:'in_progress',conclusion:null,created_at:a('08'),started_at:a('09'),runner_id:5,steps:[{number:1,name:'Compile',status:'in_progress',started_at:a('09'),completed_at:null}]}
+  ]}],start,end);
+  assert.equal(r.analysis.longestWaitingJobs[0].id,'123:1:10');
+  assert.equal(r.analysis.longestWaitingJobs[0].queueAgeSeconds,18000);
+  assert.equal(r.analysis.longestWaitingJobs[0].queueSeconds,14400);
+  assert.equal(r.analysis.longestWaitingJobs[0].runnerSeconds,0);
+  assert.match(r.analysis.longestWaitingJobs[0].waitReason,/requires provider evidence/);
+  assert.equal(r.analysis.longestSteps[0].seconds,3600);
+  assert.equal(r.analysis.longestSteps.find(s=>s.name==='Compile').complete,false);
+  assert.equal(r.analysis.runningJobs[0].executionAgeSeconds,3600);
+  assert.equal(r.analysis.queueByRunner[0].totalSeconds,14400);
+  const html=chart({census:{window:{from:a('06'),to:a('10')},categories:[]},processGroups:[]});
+  assert.ok(html.includes('Tool envelopes'));
+});
+
+test('report makes CI coverage gaps and unresolved action attribution explicit',async()=>{
+  const {markdown}=await import('./format.ts');
+  const data={census:{window:{from,to},categories:[],actionRanking:{envelopes:{clock:'tool-envelope',candidate:{label:'test build',count:2,meanSeconds:5,totalSeconds:10},largestObserved:{label:'mixed',count:1,meanSeconds:50,totalSeconds:50},winnerEstablished:false,unresolvedSeconds:50,ranked:[],limitation:'unknown attribution'}}},processGroups:[]};
+  const text=markdown(data);
+  assert.match(text,/Largest observed operation group: mixed/);
+  assert.match(text,/Overall winner unresolved/);
+  assert.match(text,/CI coverage missing/);
+  assert.match(text,/2 × 5s = 10s/);
+});
+
+test('queued workflows with zero job rows retain pre-job admission waits rather than disappearing',async()=>{
+  const r=inspectJobs([{databaseId:99,attempt:2,headSha:'a'.repeat(40),name:'Queued workflow',status:'queued',createdAt:'2026-11-15T00:00:00Z',jobs:[]}],Date.parse('2026-11-15T02:00:00Z'),Date.parse('2026-11-15T06:00:00Z'));
+  assert.equal(r.analysis.preJobWaits[0].ageSeconds,21600);
+  assert.equal(r.analysis.preJobWaits[0].windowSeconds,14400);
+  assert.equal(r.analysis.coverage.runs,1);
+  assert.equal(r.analysis.queueByRunner.length,0,'no invented job/runner queue');
+  assert.match(r.analysis.preJobWaits[0].reason,/admission/);
+  const {markdown}=await import('./format.ts');
+  const text=markdown({census:{window:{from,to},categories:[]},processGroups:[],jobs:r});
+  assert.match(text,/CI pre-job admission.*1 × 14400s = 14400s/);
+});

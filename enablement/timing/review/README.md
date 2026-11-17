@@ -49,6 +49,38 @@ Cancellation before allocation ends the queue at completion; unknown allocation
 in incomplete CLI snapshots stays explicitly unknown. Zero-date completion
 placeholders do not make an unfinished job complete.
 
+For a live review, replace `--jobs` with `--github-repo tryapparent/apparent`
+and optionally `--ci-run-limit 12` (1–40). This uses authenticated, read-only
+`gh` once per selected run/attempt, pages its jobs, and never watches, reruns or
+cancels anything. Discovery includes old queued/running/waiting runs regardless
+of creation age; it reserves sample slots for oldest queues, executing work and
+recent completions. Listing caps, run caps, job-page coverage and access failures
+remain explicit. Completed runs created before the window can be missed; supply
+their exact snapshots with `--jobs` when they matter. Fetch earlier attempts when
+carried-job provenance needs reconciliation. A live snapshot is not a historical
+state reconstruction. Use existing immutable snapshots rather than refetching
+healthy watched PRs during one review.
+
+`format` leads with the largest observed operation and the largest identified
+action for each clock, count × mean = total, and whether mixed/unresolved time
+could overturn that ranking. Static inspection reads literal executable tool
+arguments without evaluating them; patch text, review prose and heredoc bodies
+are not commands. Dynamic scripts stay unknown. Workflow envelopes can combine
+preparation with execution; nested phase durations are never invented. Process
+waits inherit the known launch intent only through exact local session/cell IDs.
+Classified command purpose, identified mixtures and attributed timing are
+different coverage measures. Raw commands/arguments are not emitted in reports.
+
+CI reports rank queue totals by requested runner, execution by job and step
+totals (including frequent short setup), plus exact run/attempt/SHA/job/step
+references, longest full-age queues and running steps. Full queue age is distinct
+from window-clipped queue occupancy. Missing allocation/step clocks stay unknown;
+runner labels alone do not prove capacity, concurrency, dependency or approval
+causes. Read provider evidence before assigning those causes. Missing CI input
+is an explicit report gap, never evidence that local work dominates. These
+overlapping clocks cannot establish critical-path delay or how many human
+threads were blocked without original owner/dependency context.
+
 Tool-envelope categories and repeated wrapper patterns expose exact unrounded
 `arithmetic`: complete/known clipped spans × mean seconds = summed seconds.
 Rank descending by **total**, including frequent short calls. Inspect longest
