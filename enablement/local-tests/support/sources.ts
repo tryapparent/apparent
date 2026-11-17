@@ -30,4 +30,7 @@ export function copyRunnerSources(destination: string, source = root): void {
     }
   }
   for (const owner of sourceOwners) copy(owner);
+  const declaration = 'engine/enablement/ci/inputs.json';
+  mkdirSync(dirname(resolve(target, declaration)), {recursive: true});
+  copyFileSync(resolve(origin, declaration), resolve(target, declaration));
 }
