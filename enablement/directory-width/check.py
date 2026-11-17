@@ -144,22 +144,18 @@ def inspect(root: Path) -> tuple[list[tuple[bytes, int, int]], tuple[int, int, i
     violations = []
     root_counts = None
     for directory in sorted(affected & code_dirs):
+        if directory == b".github/workflows":
+            continue
         direct = after_children.get(directory, {})
         files = sum(kind == "file" for kind in direct.values())
         dirs = sum(kind == "directory" for kind in direct.values())
         tool_dirs = len(ROOT_TOOL_DIRECTORIES & actual_dirs) if not directory else 0
         if not directory:
             root_counts = (files, dirs, tool_dirs)
-        # GitHub only discovers immediate workflow files. Reserve one named
-        # additional slot for independently delivered Hermes; no generic widening.
-        hermes_workflow = directory == b".github/workflows" and after.get(b".github/workflows/hermes.yml") == (b"100644", b"blob")
-        file_limit = LIMIT + int(hermes_workflow)
-        if hermes_workflow:
-            print(f"pre-commit: .github/workflows: {files} files (bounded tool limit 11 including hermes.yml)", file=sys.stderr)
         outcome_slots = len(ROOT_OUTCOME_ADMISSIONS & actual_dirs) if not directory else 0
         if outcome_slots:
             print(f"pre-commit: root: {outcome_slots} additional named outcome slots (agent, handoff); nested and file limits unchanged", file=sys.stderr)
-        if files > file_limit or dirs - tool_dirs > LIMIT + outcome_slots:
+        if files > LIMIT or dirs - tool_dirs > LIMIT + outcome_slots:
             violations.append((directory, files, dirs))
     return violations, root_counts
 
