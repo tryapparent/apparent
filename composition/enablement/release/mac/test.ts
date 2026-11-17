@@ -137,6 +137,14 @@ test("control checkout precedes nested source checkout on both candidate runners
     );
   }
 });
+test("standalone preview fixtures resolve their own isolated source roots", () => {
+  const workflow = readFileSync(
+    ".github/workflows/release-mac-preview.yml",
+    "utf8",
+  );
+  const standalone = workflow.split("\n  frontend:\n")[0];
+  assert.doesNotMatch(standalone, /APPARENT_SOURCE_ROOT:/);
+});
 test("all Mac shell entrypoints parse without executing native commands", () => {
   execFileSync("bash", [
     "-n",

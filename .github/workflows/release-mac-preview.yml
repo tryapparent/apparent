@@ -58,7 +58,6 @@ env:
   APPARENT_VERSION: ${{ inputs.version }}
   RELEASE_TAG: ${{ inputs.tag }}
   RELEASE_CHANNEL: ${{ inputs.channel }}
-  APPARENT_SOURCE_ROOT: ${{ github.workspace }}
 
 jobs:
   preview:
