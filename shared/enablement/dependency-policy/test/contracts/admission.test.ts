@@ -118,3 +118,25 @@ test("real hook redacts credential-bearing filenames before all other diagnostic
   assert.match(stderr, /path-id/);
   assert.ok(!(stderr + stdout).includes(credential));
 });
+test("staged Biome configuration governs admission despite an unstaged relaxation", async (t) => {
+  const f = fixture(t);
+  const { readFileSync, unlinkSync } = await import("node:fs");
+  const { checkStaged } = await import("../../guards/staged.ts");
+  unlinkSync(path.join(f.dir, "shared/enablement/dependency-policy"));
+  const configuration = "shared/enablement/dependency-policy/guards/biome.json";
+  const strict = readFileSync(
+    new URL("../../guards/biome.json", import.meta.url),
+    "utf8",
+  );
+  f.put(configuration, strict);
+  f.put("record/a.ts", "export const x = 1 == 2;");
+  f.stage();
+  const tree = f.git("write-tree").trim();
+  const relaxed = JSON.parse(strict);
+  relaxed.linter.rules.suspicious.noDoubleEquals = "off";
+  f.put(configuration, JSON.stringify(relaxed));
+  assert.match(
+    (await checkStaged(f.dir, f.git("rev-parse", "HEAD").trim(), tree)).join(),
+    /noDoubleEquals/,
+  );
+});

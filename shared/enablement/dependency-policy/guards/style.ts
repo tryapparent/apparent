@@ -26,7 +26,7 @@ type Diagnostic = {
 export function checkStyle(file: string, text: string, old?: string): string[] {
   return checkStyles([{ file, text, old }]);
 }
-export function checkStyles(inputs: Input[]): string[] {
+export function checkStyles(inputs: Input[], config?: string): string[] {
   if (!inputs.length) return [];
   const scratch = mkdtempSync("/tmp/apparent-dev-staged-style-");
   try {
@@ -38,10 +38,12 @@ export function checkStyles(inputs: Input[]): string[] {
         );
       verified = true;
     }
-    copyFileSync(
-      path.join(here, "biome.json"),
-      path.join(scratch, "biome.json"),
-    );
+    if (config === undefined)
+      copyFileSync(
+        path.join(here, "biome.json"),
+        path.join(scratch, "biome.json"),
+      );
+    else writeFileSync(path.join(scratch, "biome.json"), config);
     const sources = new Map<
       string,
       { input: Input; content: string; before: boolean }

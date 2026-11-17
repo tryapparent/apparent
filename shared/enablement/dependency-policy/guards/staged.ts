@@ -123,6 +123,14 @@ export async function checkStaged(
     if (!lockfiles.has(base) && /\.(?:[cm]?[jt]sx?|css|jsonc?)$/i.test(file))
       style.push({ file, text, old: inherited });
   }
-  errors.push(...checkStyles(style));
+  const configuration = "shared/enablement/dependency-policy/guards/biome.json";
+  errors.push(
+    ...checkStyles(
+      style,
+      after.has(configuration)
+        ? git(["show", `${tree}:${configuration}`], cwd)
+        : undefined,
+    ),
+  );
   return errors;
 }
