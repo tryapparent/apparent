@@ -20,6 +20,31 @@ pub struct SelectedFrames {
     pub(crate) anchors: Vec<u64>,
 }
 
+/// Validated caller-owned cues, bound to the exact borrowed transcript snapshot.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SpeechCue { index: usize, cue: String, score: f32, strong: bool }
+pub(crate) struct SpeechInput<'a> { transcript: &'a TranscriptData, cues: Vec<SpeechCue> }
+impl<'a> SpeechInput<'a> {
+    pub(crate) fn empty(transcript: &'a TranscriptData) -> Self {
+        assert!(transcript.words.is_empty(), "Empty speech input requires an empty transcript");
+        Self { transcript, cues: Vec::new() }
+    }
+    pub(crate) fn from_plan(transcript: &'a TranscriptData, cues: Vec<SpeechCue>) -> anyhow::Result<Self> {
+        anyhow::ensure!(cues.len() <= transcript.words.len(), "Invalid Record speech cues");
+        let mut previous = None;
+        for cue in &cues {
+            anyhow::ensure!(cue.index < transcript.words.len()
+                && previous.is_none_or(|index| cue.index > index)
+                && !cue.cue.is_empty() && cue.cue.len() <= 32
+                && cue.cue.chars().all(|c| c.is_ascii_alphabetic())
+                && cue.score.is_finite() && cue.score >= 0.0, "Invalid Record speech cues");
+            previous = Some(cue.index);
+        }
+        Ok(Self { transcript, cues })
+    }
+}
+
 #[cfg(test)]
 const MAX_KEYFRAMES: usize = 12;
 
@@ -313,29 +338,6 @@ fn group_marks(
     groups
 }
 
-/// Words that point at the screen. The strong ones are deliberate cues ("now", "look");
-/// the rest are just as often filler ("I see why", "here and there", "that's weird"), so they
-/// rank with ordinary scene changes and only break ties when they coincide with one.
-fn spoken_cue(word: &str) -> Option<(&'static str, f32, bool)> {
-    let word = word
-        .trim_matches(|c: char| !c.is_alphanumeric())
-        .to_lowercase();
-    [
-        ("now", 58.0, true),
-        ("here", 56.0, true),
-        ("look", 58.0, true),
-        ("watch", 58.0, true),
-        ("see", 44.0, false),
-        ("there", 44.0, false),
-        ("this", 44.0, false),
-        ("these", 44.0, false),
-        ("that", 42.0, false),
-        ("those", 42.0, false),
-    ]
-    .into_iter()
-    .find(|(cue, _, _)| *cue == word)
-}
-
 fn word_count(text: &str) -> usize {
     text.split_whitespace()
         .filter(|w| w.chars().any(char::is_alphanumeric))
@@ -366,19 +368,21 @@ fn select_keyframes_with_video_ink(
     max_keyframes: usize,
     video_ink: Option<VideoInk>,
 ) -> Vec<(Keyframe, RgbaFrame)> {
-    crate::composition::transcript::apply(select_keyframes_with_limits(frames, strokes, marks, events, transcript,
+    let speech = crate::composition::transcript::speech::plan(transcript).unwrap();
+    crate::composition::transcript::apply(select_keyframes_with_limits(frames, strokes, marks, events, &speech,
         SelectionLimits {maximum:max_keyframes,ordinary:6}, video_ink), transcript).unwrap()
 }
 
-pub fn select_keyframes_with_limits(
+pub(crate) fn select_keyframes_with_limits(
     frames: &[RgbaFrame],
     strokes: &[Stroke],
     marks: &mut [Mark],
     events: &[InteractionEvent],
-    transcript: &TranscriptData,
+    speech: &SpeechInput<'_>,
     limits: SelectionLimits,
     video_ink: Option<VideoInk>,
 ) -> SelectedFrames {
+    let transcript = speech.transcript;
     let max_keyframes = limits.maximum;
     for mark in marks.iter_mut() {
         mark.frame = None;
@@ -554,39 +558,36 @@ pub fn select_keyframes_with_limits(
     // a transition that starts around the word; otherwise it takes what was on screen as it
     // was said. Speech alone never cuts a keyframe over an unchanged screen: cues must show
     // something new (checked during selection), and pauses never cut at all.
-    if !transcript.estimated {
-        for word in &transcript.words {
-            let Some((cue, score, strong)) = spoken_cue(&word.text) else {
-                continue;
-            };
-            let snapped = transitions
-                .iter()
-                .filter(|(_, (start, _), _)| {
-                    start.saturating_add(300) >= word.t0 && *start <= word.t0 + 1_200
-                })
-                .min_by_key(|(_, (start, _), _)| start.abs_diff(word.t0));
-            let (frame, score, event) = match snapped {
-                Some(&(frame, _, diff)) => (
-                    frame,
-                    score.max(40.0 + 40.0 * diff) + if strong { 6.0 } else { 1.0 },
-                    format!("said “{cue}” as the screen changed"),
-                ),
-                None => (
-                    nearest_frame(&frames, word.t0 + 150),
-                    score,
-                    format!("said “{cue}”"),
-                ),
-            };
-            candidates.push(Candidate {
+    for SpeechCue { index, cue, score, strong } in &speech.cues {
+        let word = &transcript.words[*index];
+        let (score, strong) = (*score, *strong);
+        let snapped = transitions
+            .iter()
+            .filter(|(_, (start, _), _)| {
+                start.saturating_add(300) >= word.t0 && *start <= word.t0 + 1_200
+            })
+            .min_by_key(|(_, (start, _), _)| start.abs_diff(word.t0));
+        let (frame, score, event) = match snapped {
+            Some(&(frame, _, diff)) => (
                 frame,
-                span: (word.t0, word.t0),
+                score.max(40.0 + 40.0 * diff) + if strong { 6.0 } else { 1.0 },
+                format!("said “{cue}” as the screen changed"),
+            ),
+            None => (
+                nearest_frame(&frames, word.t0 + 150),
                 score,
-                reason: KeyframeReason::Speech,
-                marks: Vec::new(),
-                event,
-                cursor: None,
-            });
-        }
+                format!("said “{cue}”"),
+            ),
+        };
+        candidates.push(Candidate {
+            frame,
+            span: (word.t0, word.t0),
+            score,
+            reason: KeyframeReason::Speech,
+            marks: Vec::new(),
+            event,
+            cursor: None,
+        });
     }
     if candidates.is_empty() {
         let mid = frames.len() / 2;
@@ -883,7 +884,7 @@ mod tests {
         let events = vec![click(1000), click(5000)];
         for ordinary in [1, 2] {
             let selected = select_keyframes_with_limits(&frames, &[], &mut [], &events,
-                &TranscriptData::default(), SelectionLimits {maximum:9, ordinary}, None);
+                &SpeechInput::empty(&TranscriptData::default()), SelectionLimits {maximum:9, ordinary}, None);
             assert_eq!(selected.frames.len(), ordinary);
         }
     }
@@ -1226,6 +1227,10 @@ mod tests {
             selected[0].0.said.as_deref(),
             Some("Look at this. Now it's stuck.")
         );
+        let estimated = TranscriptData { estimated: true, ..transcript.clone() };
+        let without_cues = select_keyframes(&frames, &[], &mut [], &[], &estimated, MAX_KEYFRAMES);
+        assert_eq!(without_cues.len(), 1);
+        assert_eq!(without_cues[0].0.reason, KeyframeReason::Initial);
 
         // Even when a scene change (score < 58) settles onto a screen and a strong unsnapped
         // cue ("Look", score 58) is spoken later over that same settled screen, cue novelty
