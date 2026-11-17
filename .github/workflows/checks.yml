@@ -1,6 +1,7 @@
 name: Continuous delivery
 
 on:
+  workflow_dispatch:
   pull_request:
     branches: [main]
     paths:
@@ -209,14 +210,10 @@ jobs:
       APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
 
   macos:
-    # Share the cheap admission barrier; neither full platform waits for the other.
     needs: [contracts, select, reuse, portable, record-media]
-    # Only a successful explicit false can exempt a reviewed ready-PR delta.
-    # Renderer-only PRs retain Electron; only their root Rust job is omitted.
-    # Failed/unknown selection keeps Mac coverage after the cheap guards pass.
     if: >-
       !cancelled() && needs.contracts.result == 'success' && (needs['record-media'].result == 'success' || needs['record-media'].result == 'skipped') && (needs.portable.result == 'success' || needs.portable.result == 'skipped') &&
-      (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))
+      github.event_name == 'workflow_dispatch'
       && (needs.select.result != 'success' || needs.select.outputs.macos != 'false' || needs.select.outputs.mac_rust == 'false')
       && (needs.select.result != 'success' || needs.select.outputs.platform != 'false')
       && needs.reuse.outputs.macos != 'true'
@@ -229,7 +226,7 @@ jobs:
       mac_rust: ${{ !(needs.select.result == 'success' && needs.select.outputs.mac_rust == 'false') }}
 
   select:
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     outputs:
       macos: ${{ steps.paths.outputs.macos }}
@@ -290,7 +287,7 @@ jobs:
     needs: [contracts, select, reuse]
     if: >-
       !cancelled() && needs.contracts.result == 'success' &&
-      (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)) &&
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)) &&
       (needs.select.result != 'success' || needs.select.outputs.portable != 'false') && needs.reuse.outputs.portable != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -330,7 +327,7 @@ jobs:
         run: node --experimental-strip-types enablement/ci/routing/run.ts --portable
 
   contracts:
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -367,8 +364,7 @@ jobs:
     needs: [select, contracts]
     if: >-
       !cancelled() && needs.contracts.result == 'success' &&
-      (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)) &&
-      (needs.select.result != 'success' || needs.select.outputs.fixtureMac == 'true')
+      github.event_name == 'workflow_dispatch'
     runs-on: macos-15-intel
     timeout-minutes: 10
     steps:
@@ -389,6 +385,7 @@ jobs:
         run: node --experimental-strip-types enablement/local-tests/run.ts --fixture-mac
 
       - name: Supply same-attempt installation-contract evidence
+        if: github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
           name: mac-install-contracts-${{ github.run_attempt }}
@@ -441,7 +438,7 @@ jobs:
   macos-admission:
     name: Mac verification
     needs: [select, contracts, reuse, macos, portable, onboarding-policy, record-media, fixture-mac]
-    if: always() && !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: always() && !cancelled() && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -456,5 +453,5 @@ jobs:
           VERIFICATION_PLAN: ${{ needs.select.outputs.plan }}
           MAC_VERIFICATION_PLAN: ${{ needs.select.outputs.mac_plan }}
           VERIFY_PLATFORM: macos
-          FIXTURE_MAC: ${{ needs.select.outputs.fixtureMac }}
+          FIXTURE_MAC: 'true'
         run: node --experimental-strip-types enablement/ci/routing/evidence.ts --admit

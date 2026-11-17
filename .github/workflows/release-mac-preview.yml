@@ -43,7 +43,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Require Linux/shared and Mac verification of this exact main commit
+      - name: Require Linux/shared verification of this exact main commit
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

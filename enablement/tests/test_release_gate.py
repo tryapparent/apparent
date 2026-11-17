@@ -114,7 +114,7 @@ class AdmissionTests(unittest.TestCase):
         return gate.admit(self.repo, self.sha, run_id, self.fetch, platform=platform)
 
     def test_exact_successful_main_commit_is_admitted(self):
-        for platform, number in [('linux', '42'), ('macos', '84')]:
+        for platform, number in [('linux', '42'), ('macos', '42')]:
             self.assertEqual(self.admit(platform, number), self.sha)
             self.assertEqual(self.admit(platform), self.sha)
 
@@ -145,8 +145,7 @@ class AdmissionTests(unittest.TestCase):
             if job['name'].startswith('macos /'):
                 job['conclusion'] = 'skipped'
         self.runs['macos']['conclusion'] = 'failure'
-        with self.assertRaises(ValueError):
-            gate.admit(self.repo, self.sha, fetch=fetch, platform='macos')
+        self.assertEqual(gate.admit(self.repo, self.sha, fetch=fetch, platform='macos'), self.sha)
         self.assertEqual(gate.admit(self.repo, self.sha, fetch=fetch), self.sha)
 
     def test_manual_feature_checks_preserve_publication_boundary(self):
@@ -170,7 +169,7 @@ class AdmissionTests(unittest.TestCase):
     def test_exact_successful_manual_main_verification_is_admitted(self):
         for run in self.runs.values():
             run['event'] = 'workflow_dispatch'
-        for platform, number in [('linux', '42'), ('macos', '84')]:
+        for platform, number in [('linux', '42'), ('macos', '42')]:
             self.assertEqual(self.admit(platform, number), self.sha)
             self.assertEqual(self.admit(platform), self.sha)
 
@@ -180,12 +179,12 @@ class AdmissionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.admit('macos', '84')
 
-    def test_manual_mac_workflow_is_retired_but_automatic_verification_remains(self):
+    def test_general_mac_verification_requires_manual_dispatch(self):
         root = Path(__file__).resolve().parents[2] / '.github/workflows'
         self.assertFalse((root / 'verification-mac.yml').exists())
         checks = (root / 'checks.yml').read_text()
         self.assertIn('  macos:', checks)
-        self.assertIn('    name: Mac verification', checks)
+        self.assertIn("github.event_name == 'workflow_dispatch'", checks)
         self.assertNotIn('verification-mac.yml', checks)
 
     def test_manual_main_verification_retains_identity_and_required_job_checks(self):
@@ -203,7 +202,7 @@ class AdmissionTests(unittest.TestCase):
         self.jobs['linux'][-1]['conclusion'] = 'skipped'
         with self.assertRaises(ValueError): self.admit()
 
-    def test_historical_intel_mac_receipt_is_required(self):
+    def test_historical_mac_receipt_is_not_required_for_regular_release(self):
         names = ['verify / select', 'verify / desktop-ui (macos-15-intel)',
                  'verify / rust (macos-15-intel)', 'verify / connect-client (macos-15-intel)',
                  'verify / Release verification']
@@ -212,7 +211,7 @@ class AdmissionTests(unittest.TestCase):
         self.assertEqual(self.admit('macos'), self.sha)
         for job in self.jobs['macos']:
             job['name'] = job['name'].replace('macos-15-intel', 'macos-latest')
-        with self.assertRaises(ValueError): self.admit('macos')
+        self.assertEqual(self.admit('macos'), self.sha)
 
     def test_linux_checks_can_publish_without_a_mac_receipt(self):
         self.runs['macos'].update(status='queued', conclusion=None)
@@ -220,21 +219,20 @@ class AdmissionTests(unittest.TestCase):
         self.assertEqual(self.admit(run_id='42'), self.sha)
         self.assertEqual(self.admit(), self.sha)
         self.assertFalse(any('verification-mac' in call or '/runs/84' in call for call in self.calls))
-        with self.assertRaisesRegex(ValueError, 'macos main verification'):
-            self.admit('macos')
+        self.assertEqual(self.admit('macos'), self.sha)
 
-    def test_mac_release_requires_linux_shared_and_mac_checks(self):
-        for platform in self.runs:
+    def test_mac_release_requires_linux_shared_checks(self):
+        for platform in ['linux']:
             old = self.runs[platform]['conclusion']
             self.runs[platform]['conclusion'] = 'failure'
             with self.assertRaisesRegex(ValueError, platform + ' main verification'):
                 self.admit('macos')
             self.runs[platform]['conclusion'] = old
-        with self.assertRaises(ValueError): self.admit('macos', '42')
+        self.assertEqual(self.admit('macos', '42'), self.sha)
         with self.assertRaises(ValueError): self.admit('linux', '84')
 
     def test_unrelated_or_unsuccessful_runs_never_admit(self):
-        for platform in self.runs:
+        for platform in ['linux']:
             for key, value in [('head_sha', 'b'*40), ('head_branch', 'feature'),
                                ('event', 'pull_request'), ('event', 'workflow_run'), ('event', 'schedule'),
                                ('path', '.github/workflows/other.yml'), ('status', 'in_progress'),
@@ -248,7 +246,7 @@ class AdmissionTests(unittest.TestCase):
                     self.runs[platform] = old
 
     def test_every_required_job_must_have_run_and_passed(self):
-        for platform in self.runs:
+        for platform in ['linux']:
             original = copy.deepcopy(self.jobs[platform])
             for job in self.jobs[platform]:
                 for conclusion in ('failure', 'skipped', 'cancelled', None):
@@ -302,7 +300,7 @@ class AdmissionTests(unittest.TestCase):
                 return dict(total_count=len(jobs), jobs=jobs[:2] if page == 1 else jobs[2:])
             return self.fetch(path)
         self.assertEqual(gate.admit(self.repo, self.sha, '42', fetch), self.sha)
-        self.assertEqual(gate.admit(self.repo, self.sha, '84', fetch, platform='macos'), self.sha)
+        self.assertEqual(gate.admit(self.repo, self.sha, '42', fetch, platform='macos'), self.sha)
         with self.assertRaises(ValueError):
             gate.pages('jobs', lambda _: dict(total_count=1, workflow_runs=[]))
 

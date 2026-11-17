@@ -46,7 +46,7 @@ test('real committed modification selects contracts only on PR and main, with gu
       const needs = {contracts:{result:'success'}, select:{result:'success', outputs:Object.fromEntries(Object.entries(result).map(([key,value])=>[key,String(value)]))}, reuse:{result:'success',outputs:{}}, portable:{result:'skipped'}, 'record-media':{result:'skipped'}};
       const enabled = () => Function('needs','github','cancelled',`return (${expression})`)(needs,{event_name:main?'push':'pull_request',event:{pull_request:{draft:false}}},()=>false);
       assert.equal(enabled(), false);
-      needs.select.result = 'failure'; assert.equal(enabled(), true, 'selector failure retains native fallback');
+      needs.select.result = 'failure'; assert.equal(enabled(), name === 'linux', 'selector failure retains Linux native fallback');
       needs.contracts.result = 'failure'; assert.equal(enabled(), false, 'contracts failure cannot bypass admission');
     }
   }

@@ -53,7 +53,7 @@ def verified_run(repo, sha, platform, run_id, fetch, *, onboarding_candidate=Fal
             if run['path'] != '.github/workflows/checks.yml':
                 continue
             jobs = pages(f'{prefix}/actions/runs/{run["id"]}/attempts/{run["run_attempt"]}/jobs', fetch)
-            policy = Path(__file__).resolve().parent / 'ci/release-admission.ts'
+            policy = Path(__file__).resolve().parents[1] / 'enablement/ci/release-admission.ts'
             accepted = subprocess.check_output(
                 ['node', '--experimental-strip-types', str(policy)], text=True,
                 input=json.dumps(dict(run=run, jobs=jobs, repo=repo, sha=sha, platform=platform)))
@@ -95,11 +95,9 @@ def admit(repo, sha, run_id=None, fetch=api, platform='linux', *, onboarding_can
         raise ValueError('Invalid verification run ID')
     if onboarding_candidate and (repo != 'tryapparent/apparent' or platform != 'macos'):
         raise ValueError('Onboarding exception is only for this repository Mac Preview')
-    # Linux also covers shared/browser contracts. Mac publication retains that
-    # receipt plus its own native platform checks. No Mac lookup blocks Linux.
-    platforms = ['linux'] if platform == 'linux' else ['linux', 'macos']
+    platforms = ['linux', 'macos'] if onboarding_candidate else ['linux']
     for required in platforms:
-        verified_run(repo, sha, required, run_id if required == platform else None, fetch, onboarding_candidate=onboarding_candidate)
+        verified_run(repo, sha, required, run_id if not onboarding_candidate or required == platform else None, fetch, onboarding_candidate=onboarding_candidate)
     if onboarding_candidate:
         baseline = '75dc870c240e415820384ced32f4390f798615bc'
         status = fetch(f'repos/{repo}/compare/{baseline}...{sha}')['status']

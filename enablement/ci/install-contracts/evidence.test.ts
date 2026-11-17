@@ -55,7 +55,8 @@ test('every candidate/runtime/plan identity field is required; selector flags ca
   assert.equal(matches({...receipt(), schema: 2}, identity), false);
   assert.equal(matches(undefined, identity), false);
   for (const patch of [{GITHUB_ACTIONS: ''}, {GITHUB_REPOSITORY: 'elsewhere/repo'}, {GITHUB_SHA: 'c'.repeat(40)},
-    {GITHUB_EVENT_NAME:'workflow_dispatch'}]) assert.equal(trusted(identity, {...env,...patch}), false);
+    {GITHUB_EVENT_NAME:'schedule'}]) assert.equal(trusted(identity, {...env,...patch}), false);
+  assert.equal(trusted({...identity,workflow:'tryapparent/apparent/.github/workflows/checks.yml@refs/heads/main'}, {...env,GITHUB_EVENT_NAME:'workflow_dispatch'}), true);
   for (const patch of [{platform:'linux'}, {arch:'arm64'}, {workflow:'tryapparent/apparent/.github/workflows/verification.yml@refs/heads/main'},
     {run:''}, {attempt:'0'}]) assert.equal(trusted({...identity,...patch},env), false);
 });
@@ -71,7 +72,7 @@ test('hosted producer and both platform plans keep parallel native execution and
   const steps = checks.jobs['fixture-mac'].steps;
   assert.equal(steps.find((s: any) => s.name === fixtureStep).run, 'node --experimental-strip-types enablement/local-tests/run.ts --fixture-mac');
   assert.equal(steps.at(-1).with.name, 'mac-install-contracts-${{ github.run_attempt }}');
-  assert.equal(steps.at(-1).if, undefined, 'upload only after fixture success');
+  assert.equal(steps.at(-1).if, "github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main'");
   assert.equal(platform.permissions.actions, 'read');
   const manual = YAML.parse(readFileSync('.github/workflows/verification.yml', 'utf8'));
   assert.equal(manual.jobs.verify.permissions.actions, 'read');

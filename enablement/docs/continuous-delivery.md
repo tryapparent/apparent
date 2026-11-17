@@ -52,20 +52,19 @@ Connect has its own automatic `stream-connect.yml` run, with stream-owned select
 checks and publication gates in `connect/enablement/`. Public keeps its direct
 `stream-public.yml` automatic entrypoint. Connect runs its selected Linux/Mac
 checks independently; no cross-workflow native receipt admits publication.
-Within each automatic Mac platform call, the selected native, Desktop and standalone client
+General PR/main verification is Linux-only. Explicit dispatch of
+`checks.yml` runs general Mac diagnostics, including hook fixtures and native acceptance.
+Within each manually dispatched Mac platform call, the selected native, Desktop and standalone client
 non-GUI suites share one `platform (macos-15-intel)` allocation; root Mac GUI
 acceptance consumes its retained candidate in a separate required job. Linux keeps independent
-parallel jobs. The shared Mac producer retains selected signing and packaging proof,
-focused Mac Electron checks and independent client builds/tests, with their existing private
-temporary roots and artifacts. Renderer-only plans do not install Rust or run
-native checks; an inconsistent native exemption fails instead of claiming proof.
+parallel jobs. The manual Mac producer retains packaging proof, Electron checks and client tests.
 The packed job retains its 60-minute outer cap, plus the renderer/client step
 caps; correctness and hosted occupancy still require actual successful execution.
 Receipt authentication accepts the packed job only from its real successful
 GitHub conclusion with the matching complete plan, source, run and attempt.
 Manual receipt calls retain their separate jobs and historical admission names.
 Shared Desktop policy tests and the complete Electron renderer/bridge suite run
-on Linux. Automatic and manual/release Mac callers use `test:electron:mac`:
+on Linux. Manual/release Mac callers use `test:electron:mac`:
 the existing prepared, serial targeted entrypoint builds the shipped frontend
 and executes Hermes app hide/focus restoration plus foreground pill/native-window
 checks. Those two source files also remain in the complete Linux suite; their
@@ -100,11 +99,10 @@ Audited finite hook fixtures can select tooling without app/native builds.
 Qualification reads candidate Git blobs, parses module imports and checks the
 test-only consumer closure. Unknown imports, changed native probes, unsafe modes,
 deletions and moves keep conservative consumers. Reachable helper additions and
-discovered fixture tests retain their actual shared contract inventory. The
-`fixtureMac` flag separately requires `run.ts --fixture-mac`: real installed-hook
+discovered fixture tests retain their actual shared contract inventory. Explicit general Mac diagnostics run `run.ts --fixture-mac`: real installed-hook
 and dependency-install tests on Mac, without Cargo or the native application.
-Its own selector/executor/workflow changes also exercise that lane. Mac admission
-and shared receipts require fresh fixture success; Linux admission stays independent.
+Manual Mac admission requires fresh fixture success; ordinary PR tree receipts
+and main Linux admission do not require Mac results.
 Publication supersession uses the same candidate-blob fixture qualification: an
 unrelated tooling-only push cannot cancel pending product delivery without a
 replacement. Its parser uses Node alone, preserves type-only dependency edges and
@@ -196,9 +194,8 @@ Electron on each selected platform; native root/staged Engine and standalone
 client suites are separately selected. The finite renderer-only Mac Rust
 exemption retains Mac Electron. Ordinary prose cannot undo a Linux exemption.
 The manual Linux workflow defaults to all suites and retains full-tree diagnostics.
-The standalone manual Mac workflow and its candidate-build jobs are retired;
-automatic Mac suites and exact-main admission remain in `checks.yml`.
-Historical exact-commit Mac receipts remain valid for release admission.
+The standalone manual Mac workflow is retired; dispatch `checks.yml` for Mac
+diagnostics. Ordinary PR/main events allocate no general Mac runners.
 The advisory owner report does not control admission.
 
 Main first runs fresh cheap contracts and selection. Ready PRs record their actual
@@ -216,7 +213,7 @@ PRs cannot consume this main-only reuse route. Public artifact verification stay
 fresh; reuse does not copy build artifacts, installed dependencies or native
 binaries. Packaging still builds the exact main SHA and its revision metadata.
 
-Fresh main `Linux verification` / `Mac verification` admission jobs require
+Fresh main `Linux verification` admission jobs require
 successful contracts/selection plus every affected suite to pass now or have
 validated identical-tree PR evidence. Missing selected coverage fails admission.
 The Linux gate never waits for Mac. After Linux admission succeeds,
@@ -225,7 +222,9 @@ existing Linux latest-Main channel. Its exact-SHA/attempt/repository admission,
 stale-main suppression, packaging checks and noncancelling publication lock remain
 required. A later main push cannot cancel an active publication. Mac publication
 remains separately operated; Connect uses its own automatic tested delivery.
-Linux success cannot admit Mac.
+Regular Mac releases require exact-source Linux/shared admission plus the dedicated
+Mac release build, signing, notarization and smoke checks; separate full general
+Mac CI is not required. Mac diagnostics do not authorize publication.
 Historical full main CI and existing exact-main manual receipts remain valid.
 Native/product acceptance and current-base integration remain owner obligations.
 A successful draft or aggregate workflow conclusion alone supplies no release proof.

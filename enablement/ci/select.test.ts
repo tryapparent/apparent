@@ -30,7 +30,7 @@ test('automatic stream orchestrators, manual diagnostics, PR integration checkou
   assert.deepEqual(Object.keys(workflow('stream-connect.yml').on), ['pull_request', 'push', 'workflow_dispatch']);
   assert.equal(ci().jobs.connect, undefined);
   assert.equal(ci().jobs['native-evidence'], undefined);
-  assert.deepEqual(Object.keys(ci().on), ['pull_request', 'push']);
+  assert.deepEqual(Object.keys(ci().on), ['workflow_dispatch', 'pull_request', 'push']);
   assert.deepEqual(ci().on.pull_request.types, ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft']);
   assert.equal(ci().permissions.contents, 'read');
   assert.deepEqual(Object.keys(workflow('verification.yml').on), ['workflow_dispatch']);
@@ -47,15 +47,15 @@ test('PR updates coalesce but main commits cannot cancel earlier code verificati
   for (const [event, expected] of [['pull_request', true], ['push', false]])
     assert.equal(admitted(c['cancel-in-progress'].slice(3, -2), {}, String(event)), expected);
 });
-test('source suites run on ready PRs and main; unknown selection broadens and cancellation prevents allocation', () => {
+test('Linux suites run on ready PRs and main; unknown selection broadens', () => {
   for (const name of ['linux', 'macos']) {
     const job = ci().jobs[name];
     assert.deepEqual(job.needs, ['contracts', 'select', 'reuse', 'portable', 'record-media']);
     for (const result of ['success', 'failure', 'skipped', 'cancelled']) {
       const needs = parents({platform: 'true', macos: 'true', mac_rust: 'true', hermes: 'true'});
       needs.select.result = result;
-      assert.equal(admitted(job.if, needs), true, `${name}: ${result}`);
-      assert.equal(admitted(job.if, needs, 'push'), true);
+      assert.equal(admitted(job.if, needs), name === 'linux', `${name}: ${result}`);
+      assert.equal(admitted(job.if, needs, 'push'), name === 'linux');
       assert.equal(admitted(job.if, needs, 'pull_request', true), false);
       assert.equal(admitted(job.if, needs, 'pull_request', false, true), false);
       needs.contracts.result = 'failure';
@@ -63,31 +63,31 @@ test('source suites run on ready PRs and main; unknown selection broadens and ca
     }
   }
 });
-test('failed Record policy blocks native allocation; an unselected suite does not', () => {
+test('Record policy guards native allocation', () => {
   for (const name of ['linux', 'macos']) for (const result of ['success', 'skipped', 'failure', 'cancelled']) {
     const needs = parents({platform: 'true', macos: 'true', mac_rust: 'true'});
     needs['record-media'].result = result;
-    assert.equal(admitted(ci().jobs[name].if, needs), ['success', 'skipped'].includes(result));
+    assert.equal(admitted(ci().jobs[name].if, needs), name === 'linux' && ['success', 'skipped'].includes(result));
   }
 });
-test('each consumer can be skipped independently; skipping Hermes does not block unrelated suites', () => {
+test('Hermes skips preserve unrelated suites', () => {
   const jobs = ci().jobs;
   const needs = parents({platform: 'true', macos: 'true', mac_rust: 'true', hermes: 'false'});
   needs.hermes.result = 'skipped';
   assert.equal(admitted(jobs.linux.if, needs), true);
-  assert.equal(admitted(jobs.macos.if, needs), true);
+  assert.equal(admitted(jobs.macos.if, needs), false);
   needs.select.outputs.platform = 'false';
   assert.equal(admitted(jobs.linux.if, needs), false);
   assert.equal(admitted(jobs.macos.if, needs), false);
 });
-test('main reuses only explicit passed evidence; PRs cannot claim main reuse', () => {
+test('main reuse requires passed evidence', () => {
   for (const key of ['linux', 'macos', 'portable']) {
     const name = key === 'hermes_macos' ? 'hermes-macos' : key;
     const needs = parents({platform: 'true', macos: 'true', mac_rust: 'true', portable: 'true', hermes: 'true'}, {[key]: 'true'});
     assert.equal(admitted(ci().jobs[name].if, needs, 'push'), false, name);
     for (const value of ['', 'unknown', 'false', undefined]) {
       needs.reuse.outputs[key] = value;
-      assert.equal(admitted(ci().jobs[name].if, needs, 'push'), true, name);
+      assert.equal(admitted(ci().jobs[name].if, needs, 'push'), name !== 'macos', name);
     }
   }
 });
