@@ -65,7 +65,7 @@ test('hosted producer and both platform plans keep parallel native execution and
   const platform = YAML.parse(readFileSync('.github/workflows/verification-platform.yml','utf8'));
   assert.ok(!checks.jobs.macos.needs.includes('fixture-mac'), 'no new serialization edge');
   assert.ok(!checks.jobs.linux.needs.includes('fixture-mac'));
-  for (const name of ['macos-admission','tree-evidence','native-evidence']) assert.ok(checks.jobs[name].needs.includes('fixture-mac'));
+  for (const name of ['macos-admission','tree-evidence']) assert.ok(checks.jobs[name].needs.includes('fixture-mac'));
   assert.equal(checks.jobs.macos.with.plan, '${{ needs.select.outputs.mac_plan }}');
   assert.equal(checks.jobs.linux.with.plan, '${{ needs.select.outputs.plan }}');
   const steps = checks.jobs['fixture-mac'].steps;

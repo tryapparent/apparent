@@ -70,9 +70,9 @@ test('shared pill renders authoritative states and isolates commands',async t=>{
  await expect.poll(()=>sent.filter(x=>x.action==='cancel').length).toBe(1);
  await publish({...base,revision:5,phase:'completed',label:'Saved',draggable:false,actions:[
   {id:'paste',label:'Paste',enabled:true,selected:false,primary:true},
-  {id:'copy-link',label:'Copy link',enabled:false,selected:false,primary:false},
+  {id:'copy-link',label:'Public link',enabled:false,selected:false,primary:false},
   {id:'dismiss',label:'Dismiss',enabled:true,selected:false,primary:false}]});
- await expect(page.getByRole('button',{name:'Copy link',exact:true})).toBeDisabled();
+ await expect(page.getByRole('button',{name:'Public link',exact:true})).toBeDisabled();
  if(evidence)await page.screenshot({path:path.join(evidence,'completed.png')});
  await page.reload();
  await expect(page.getByRole('button',{name:'Paste',exact:true})).toBeEnabled();

@@ -521,7 +521,7 @@ fn island_content_width(
                 + divider
                 + chip_width(window, "Paste", FontWeight::SEMIBOLD)
                 + if crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING) {
-                    CHIP_GAP + chip_width(window, "Copy link", FontWeight::MEDIUM)
+                    CHIP_GAP + chip_width(window, "Public link", FontWeight::MEDIUM)
                 } else { 0.0 }
                 + chip_width(window, "Inspect", FontWeight::MEDIUM)
                 + CHIP_H
@@ -2862,7 +2862,7 @@ impl ApparentCoordinator {
             PillAction::CopyLink => self.copy_completed_link(cx),
             PillAction::CopyPublicLink => self.copy_completed_link_with_consent(true, cx),
             PillAction::Inspect => self.inspect_completed_bundle(cx),
-            PillAction::SettingsAgents => self.open_settings(Some(settings::Pane::Agents)),
+            PillAction::SettingsAgents => self.open_settings(Some(settings::Pane::Labs)),
             PillAction::DismissCompleted => self.dismiss_completed_bundle(cx),
             PillAction::Route(_) => {}
         }
@@ -3040,10 +3040,10 @@ impl ApparentCoordinator {
                             if foreground { "Link copied".into() }
                             else { coord.share_copied = Some(bundle.clone()); crate::connect::hosted::sharing_progress(&bundle) }
                         }
-                        Err(_) => "Copy failed · click Copy link to retry".into(),
+                        Err(_) => "Copy failed · click Public link to retry".into(),
                     },
                     Ok(_) | Err(_) => if foreground { "Upload failed · recording saved locally".into() }
-                        else { "Sharing stopped · click Copy link to retry".into() },
+                        else { "Sharing stopped · click Public link to retry".into() },
                 });
                 coord.sync_native_pill();
                 cx.notify();
@@ -4594,7 +4594,7 @@ impl Render for HudPillWindow {
             .when(crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING), |row| {
                 let enabled = self.coordinator.read(cx).share_online && self.coordinator.read(cx).share_pending.is_none();
                 let coordinator = self.coordinator.clone();
-                row.child(pill_chip("hud-copy-link", "Copy link", pill_theme)
+                row.child(pill_chip("hud-copy-link", "Public link", pill_theme)
                     .opacity(if enabled { 1.0 } else { 0.4 })
                     .on_click(move |_, _, cx| {
                         if enabled { coordinator.update(cx, |coord, cx| coord.copy_completed_link(cx)); }

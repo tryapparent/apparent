@@ -44,7 +44,7 @@ test('client retains independent Linux/manual execution and joins the automatic 
   assert.match(packed, /inputs.runner == 'macos-15-intel' && !inputs.release_receipt && needs.select.outputs.client == 'true'/);
   assert.match(packed, /--manifest-path connect\/client\/Cargo.toml/);
   assert.match(job('select'), /routing\/run\.ts --portable/);
-  assert.match(job('release-ready'), /needs: \[select, desktop-ui, connect-client, rust\]/);
+  assert.match(job('release-ready'), /needs: \[select, desktop-ui, connect-client, rust, native-acceptance\]/);
 });
 test('the real client shell retains build, test compilation/execution, flags and private cleanup', t => {
   const result = execute(t);

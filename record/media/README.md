@@ -65,6 +65,19 @@ file-ingestion proof, not evidence of a live phone/camera capture session.
 
 ## Scope and rollback
 
+`src/selection/cues.ts` owns pointing-word classification, priorities and
+suppression for estimated timings. Final phone/file, screen and recovery
+assembly consume its private, finite `selection/worker.js` contract through
+`composition/transcript/speech.rs`. Empty-transcript predecode previews need no cue worker.
+Native selection binds validated cue indices to the original transcript and
+retains image comparisons, transition snapping and the remaining selection
+algorithm. Those remaining ranking/coverage decisions are migration debt.
+No SDK pin, bundle schema or configuration writer changes. A missing worker
+fails assembly before publication; there is no duplicate classification fallback.
+Rollback restores the classifier, callers and staged worker inventory together.
+Policy tests/builds need no Rust; final app and signed/AppImage acceptance still
+require their native/package gates. This is not whole-Record build independence.
+
 Existing crop/camera/ink/encoding, explicit recorded/silent/narration policy,
 settings and persistence remain authoritative. Phone/file ingestion, recovery and
 retention consume this published provider through the bundle metadata contract.

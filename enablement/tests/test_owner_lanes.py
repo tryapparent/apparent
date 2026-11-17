@@ -86,19 +86,19 @@ class OwnerTests(unittest.TestCase):
                 path = root / command
                 path.write_text(stub); path.chmod(0o755)
             env = dict(os.environ, PATH=str(root), CALL_LOG=str(log))
-            script = lanes.ROOT / 'public/site/scripts/site-build/verify.mjs'
+            script = lanes.ROOT / 'public/enablement/site-build/verify.mjs'
             result = subprocess.run([node, str(script)], env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             calls = [json.loads(line) for line in log.read_text().splitlines()]
             self.assertGreaterEqual(len(calls), 5)
             self.assertTrue(all(call[2:] == ['1', 'https://hosted.tryapparent.com'] for call in calls))
-            self.assertIn('scripts/site-build/package-apparent.mjs', calls[2][1])
-            self.assertTrue(any('scripts/pages/test-public-homepage.ts' in call[1] for call in calls))
-            self.assertTrue(any('scripts/pages/verify-prepared.ts' in call[1] for call in calls))
+            self.assertIn('../enablement/site-build/package-apparent.mjs', calls[2][1])
+            self.assertTrue(any('../enablement/pages/test-public-homepage.ts' in call[1] for call in calls))
+            self.assertTrue(any('../enablement/pages/verify-prepared.ts' in call[1] for call in calls))
             self.assertEqual(Path(calls[-1][0]).name, 'node')
-            self.assertEqual(calls[-1][1], ['scripts/pages/prepare-pages-video.mjs'])
+            self.assertEqual(calls[-1][1], ['../enablement/pages/prepare-pages-video.mjs'])
             self.assertFalse(any('connect/' in arg for call in calls for arg in call[1]))
-            self.assertFalse(any('scripts/cd' in arg and arg.endswith('.py')
+            self.assertFalse(any('../enablement/cd' in arg and arg.endswith('.py')
                                  for call in calls for arg in call[1]))
             log.unlink()
             result = subprocess.run([node, str(script)], env=dict(env, FAIL_COMMAND='npm'), capture_output=True)
