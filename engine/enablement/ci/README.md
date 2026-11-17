@@ -27,3 +27,10 @@ publication contracts. These tests do not build native packages or establish
 hosted execution savings. The prior `engine/tools/select.ts` donor is removed;
 global coordination must consume this owner's contract rather than recreating a
 broad Engine fallback. Revert workflow and owner tooling together for rollback.
+
+The producer check creates a fresh artifact directory and compiles the copied
+native source outside the repository so ancestor Cargo configuration cannot enter
+the build. Qualification installs the packed public SDK in a private consumer
+and exercises extracted providers with synthetic media. The SDK-only job stops
+before Cargo, and both hosted jobs export their private artifact path only after
+qualification succeeds.

@@ -46,7 +46,7 @@ test('real source commits and both CLIs remove only independent Engine fanout; w
     assert.equal(currentStream('engine',base,head,f.cwd),true);
     const local = selection(base,head,f.cwd);
     assert.equal(local.plan.engineMedia,false);
-    assert.equal(commands(local.selected,base,head,'linux',local.rustChanged,{paths:local.paths,workflowControls:local.workflowControls}).some(command => command.argv.includes('engine/tools/check.ts')),false);
+    assert.equal(commands(local.selected,base,head,'linux',local.rustChanged,{paths:local.paths,workflowControls:local.workflowControls}).some(command => command.argv.includes('engine/enablement/ci/producer/check.ts')),false);
     const workflow=YAML.parse(readFileSync(join(root,'.github/workflows/stream-engine.yml'),'utf8'));
     for (const name of ['sdk','native']) {
       const expression=workflow.jobs[name].if;
@@ -58,8 +58,8 @@ test('real source commits and both CLIs remove only independent Engine fanout; w
   } finally {f.close();}
 });
 test('only Engine source, SDK and qualifiers select native production', () => {
-  for (const path of ['engine/native/src/main.rs','engine/sdk/src/index.ts','engine/tools/qualify.ts',
-    'engine/tools/check.ts','.github/workflows/stream-engine.yml','.github/actions/ubuntu-apt/action.yml',
+  for (const path of ['engine/native/src/main.rs','engine/sdk/src/index.ts','engine/enablement/ci/producer/qualify.ts',
+    'engine/enablement/ci/producer/check.ts','.github/workflows/stream-engine.yml','.github/actions/ubuntu-apt/action.yml',
     'enablement/ci/select.ts','enablement/ci/routing/consumers.ts','enablement/ci/runner/new.test.ts']) {
     const f=fixture(); try {
       const base=f.commit(); f.put('enablement/ci/root.ts',readFileSync(join(root,'enablement/ci/root.ts'),'utf8')+'\n// observation\n');

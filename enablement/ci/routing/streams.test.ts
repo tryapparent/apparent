@@ -89,19 +89,19 @@ test('cheap contracts surface new top-level ownership instead of selecting every
   assert.deepEqual(unowned, [], 'declare new directory ownership and workflow consumers');
 });
 
-test('Engine producer inputs select their real owner without acquiring legacy app or product builds', () => {
+test('Engine producer inputs select only Engine', () => {
   for (const path of ['engine/native/src/main.rs', 'engine/native/macos/Probe.swift',
-    'engine/sdk/src/index.ts', 'engine/tools/check.ts']) {
+    'engine/sdk/src/index.ts', 'engine/enablement/ci/producer/check.ts']) {
     const decision = routeDecision([path]);
     assert.deepEqual(decision.selected, ['engine-media']);
     assert.equal(decision.plan.engineMedia, true);
     assert.equal(decision.plan.root, false);
-    assert.equal(decision.plan.engine, false, 'staged legacy Engine is not the new producer');
+    assert.equal(decision.plan.engine, false, 'legacy Engine excluded');
     assert.deepEqual(routingProblems({paths: [path], historyKnown: true, ...decision}), []);
     for (const stream of ['capture', 'connect', 'public', 'hermes'] as const)
       assert.equal(affectsStream(stream, path), false, `${stream} must not start for ${path}`);
     const commands = localCommands(decision.selected, 'base', 'head');
-    assert.ok(commands.some(command => command.argv.includes('engine/tools/check.ts')));
+    assert.ok(commands.some(command => command.argv.includes('engine/enablement/ci/producer/check.ts')));
     assert.ok(!commands.some(command => command.argv.includes('cargo') || command.argv.includes('--run') || /^(capture|connect|public|hermes)\//.test(command.cwd)));
   }
   assert.deepEqual(routeDecision(['engine/README.md']).selected, []);
