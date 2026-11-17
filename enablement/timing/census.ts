@@ -63,13 +63,14 @@ export async function readRollout(path: string, accept: (workspace: string) => b
       if (typeof p.call_id !== 'string' || calls.has(p.call_id)) continue
       const tool = [p.namespace, p.name].filter(Boolean).join('.')
       const source = String(p.arguments ?? p.input ?? '')
-      const poll = /write_stdin/.test(tool + source) && source.match(/session_id["\s]*:\s*(\d+)/)
+      const inspected = describe(tool,source);
+      const poll = inspected.operations.includes('process wait') && /write_stdin/.test(tool + source) && source.match(/session_id["\s]*:\s*(\d+)/)
       if (poll) pollTargets.set(p.call_id, poll[1])
       const cell = /(?:^|\.)wait$/.test(tool) && source.match(/cell_id["\s]*:\s*"([\w:.-]+)"/);
       const owner = poll ? processes.get(poll[1]) : cell ? cells.get(cell[1]) : undefined;
       const waitedOperations = owner?.waitedOperations ?? owner?.operations;
       calls.set(p.call_id, { id: p.call_id, session, workspace, tool, start: time,
-        ...describe(tool, source), ...(waitedOperations ? {waitedOperations} : {}), asynchronous: false, sourceRef: {file: path, line: lineNumber} })
+        ...inspected, ...(waitedOperations ? {waitedOperations} : {}), asynchronous: false, sourceRef: {file: path, line: lineNumber} })
     } else if (p.type === 'function_call_output' || p.type === 'custom_tool_call_output') {
       const call = calls.get(p.call_id)
       if (!call) { orphanResults++; continue }
