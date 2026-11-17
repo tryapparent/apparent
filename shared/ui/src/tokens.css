@@ -69,6 +69,8 @@
   --apparent-shadow: #00000033;
   --apparent-brand: #b7a5d8;
   --apparent-brand-foreground: #19161d;
+  --apparent-transcript-background: var(--apparent-lilac);
+  --apparent-transcript-foreground: var(--apparent-carbon);
   --apparent-artwork: #f5f0e8;
   --color-background: var(--apparent-background);
   --color-foreground: var(--apparent-foreground);
@@ -104,6 +106,8 @@
   :root, .apparent-theme {
     color-scheme: dark;
     --apparent-background: #201b24;
+    --apparent-transcript-background: #3b2e50;
+    --apparent-transcript-foreground: var(--apparent-paper);
     --apparent-foreground: #f5f0e8;
     --apparent-surface: #29232f;
     --apparent-primary: #c4a9e6;

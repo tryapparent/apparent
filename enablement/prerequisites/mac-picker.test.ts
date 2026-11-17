@@ -163,6 +163,15 @@ test('picker names use one local snapshot for missing-value checks and text conv
   const selector=script.split('\n').filter(line=>!line.trimStart().startsWith('log ("AX probe source-line=')).join('\n');
   assert.match(selector,/set (\w+) to name of picker\s+if \1 is not missing value then set panelName to \1 as text/,
    'Normalize the same materialized value that was checked');
+  // Main 5c921a9d's retained AX receipt spent four of the five command
+  // seconds listing intermediate-window labels before the required footer
+  // lookup. Keep that diagnostic query out of observations and actions.
+  const walk=selector.slice(selector.indexOf('      repeat\n'),selector.indexOf('      -- Failure diagnostics'));
+  const diagnostic=walk.match(/if operation is "diagnose" then\n([\s\S]*?)        end if/);
+  assert.ok(diagnostic,'Intermediate button labels must be an explicit diagnostic only');
+  assert.match(diagnostic[1],/set labels to name of every button of picker/);
+  assert.doesNotMatch(walk.replace(diagnostic[0],''),/every button/);
+  assert.match(selector,/set footerButtons to buttons of controls/,'Real footer identity remains mandatory');
  }
 });
 test('native focus retains the admitted app instance and rechecks identity after servicing AppKit', () => {

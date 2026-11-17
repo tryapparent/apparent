@@ -210,7 +210,9 @@ app.whenReady().then(()=>{
       const size=await window.webContents.executeJavaScript(`(() => {
         document.documentElement.style.setProperty('--pill-limit', '${area.width}px');
         const element=document.querySelector('main'),rect=element?.getBoundingClientRect();
-        const regions=document.querySelector('.destination-assembly')?[...document.querySelectorAll('.destination-assembly,.destination-notification,.public-share-confirmation')].map(element=>{
+        const live = document.querySelector('.pill[data-live=true]');
+        const selector = live ? '.pill-row,.live-caption,.pill-notes-layer' : '.destination-assembly,.destination-notification,.public-share-confirmation';
+        const regions=live || document.querySelector('.destination-assembly')?[...document.querySelectorAll(selector)].map(element=>{
           const r=element.getBoundingClientRect();return {x:r.x-rect.x,y:r.y-rect.y,width:r.width,height:r.height,radius:parseFloat(getComputedStyle(element).borderTopLeftRadius)||0};
         }):[];
         return rect && {width:Math.ceil(rect.width),height:Math.ceil(rect.height),revision:Number(element.dataset.revision),regions};
