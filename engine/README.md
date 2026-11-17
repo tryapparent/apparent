@@ -5,8 +5,9 @@ The ongoing application migration and remaining adoption gates are tracked in
 
 Engine owns native capture/media execution and resource, durability and safety
 mechanisms, its TypeScript SDK, and capability delivery. Record owns workflow,
-preferences, retention decisions and ordinary assembly/export policy; Desktop
-owns human controls and shell presentation. Engine must not import those owners'
+preferences, retention decisions and ordinary assembly/export policy; Record
+also owns recording controls; Onboarding owns teaching/practice and Handoff owns
+outbound delivery intent. Composition assembles owner public surfaces. Engine must not import those owners'
 implementations. Linux and macOS are supported; there is no Windows provider.
 
 ## Local movie metadata

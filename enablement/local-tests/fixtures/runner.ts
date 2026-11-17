@@ -42,6 +42,9 @@ export function writeFiniteChecks(destination: string, plan = finiteCheckPlan())
 export function runnerFixture(destination: string): void {
   copyRunnerSources(destination);
   writeFiniteChecks(destination);
+  const issue = resolve(destination, 'shared/enablement/issues/run.ts');
+  mkdirSync(dirname(issue), {recursive: true});
+  writeFileSync(issue, "process.stdin.resume();\n");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

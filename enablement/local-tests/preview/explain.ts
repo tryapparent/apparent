@@ -10,6 +10,10 @@ export function explainSelection(result: ReturnType<typeof selection>, plan: Com
     'Selection reasons:', ...result.reasons.map(reason => `  ${reason}`),
     'Commands (not executed unless --run is supplied):',
     ...plan.map(command => `  [${command.cwd}] ${command.argv.map(arg => JSON.stringify(arg)).join(' ')}`),
+    'Evidence lookup occurs during execution after fresh preparation. A preview cannot establish a receipt hit.',
+    'Connect service npm test: qualified local receipt lookup; unsupported inputs run fresh.',
+    'Desktop npm ci: validated installation lookup; unit/Electron commands run fresh when selected.',
+    'Other commands: run fresh. Admission/queue time is unknown.',
     'This plan does not establish native acceptance, permission state or publication.',
   ].join('\n');
 }

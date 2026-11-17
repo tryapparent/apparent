@@ -1,0 +1,36 @@
+{
+  "root": false,
+  "$schema": "https://biomejs.dev/schemas/2.6.8/schema.json",
+  "vcs": {
+    "enabled": false
+  },
+  "files": {
+    "maxSize": 16777216
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2
+  },
+  "assist": {
+    "enabled": false
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "none",
+      "correctness": {
+        "noUnreachable": "error",
+        "noInvalidConstructorSuper": "error"
+      },
+      "suspicious": {
+        "noDuplicateParameters": "error",
+        "noDoubleEquals": "error",
+        "noExplicitAny": "error",
+        "noFocusedTests": "error",
+        "noDuplicateCase": "error",
+        "noDuplicateElseIf": "error"
+      }
+    }
+  }
+}

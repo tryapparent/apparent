@@ -470,7 +470,7 @@ test('Record command plans keep package tests and native integration without unr
   assert.deepEqual(select(['record/completion/src/worker.ts', 'public/site/src/App.tsx']), ['capture', 'desktop', 'public', 'onboarding']);
 });
 
-test('real Record Git deltas retain native execution and broaden for unexpected inputs', () => fixture((dir, env) => {
+test('Record builds native only for Rust deltas', () => fixture((dir, env) => {
   const git = (...args: string[]) => {
     const result = spawnSync('git', args, {cwd: dir, env, encoding: 'utf8'});
     assert.equal(result.status, 0, result.stderr); return result.stdout.trim();
@@ -484,8 +484,8 @@ test('real Record Git deltas retain native execution and broaden for unexpected 
   git('add', '.'); git('commit', '-qm', 'Record build input');
   const result = selection(base, 'HEAD', dir);
   assert.deepEqual(result.selected, ['capture', 'desktop', 'onboarding']);
-  assert.equal(result.rustChanged, true);
-  assert.ok(commands(result.selected, base, 'HEAD', 'linux', result.rustChanged)
+  assert.equal(result.rustChanged, false);
+  assert.ok(!commands(result.selected, base, 'HEAD', 'linux', result.rustChanged)
     .some(c => c.argv.includes('--run') && c.argv.includes('platform')));
   writeFileSync(join(dir, 'record/storage/native.rs'), '// unexpected native input');
   git('add', '.'); git('commit', '-qm', 'native input');

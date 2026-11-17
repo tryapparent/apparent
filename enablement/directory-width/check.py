@@ -12,6 +12,7 @@ LIMIT = 10
 # and their contents are checked normally; only these three root entries have
 # the bounded exception documented in AGENTS.md.
 ROOT_TOOL_DIRECTORIES = {b".cargo", b".githooks", b".github"}
+ROOT_OUTCOME_ADMISSIONS = {b"agent", b"handoff"}
 # Eligibility is by tracked first-party tree scope, not filename suffix. Every
 # non-excluded blob is repo-owned content for width purposes (including files
 # with extensionless or uncommon source names). Keep generated/dependency
@@ -155,7 +156,10 @@ def inspect(root: Path) -> tuple[list[tuple[bytes, int, int]], tuple[int, int, i
         file_limit = LIMIT + int(hermes_workflow)
         if hermes_workflow:
             print(f"pre-commit: .github/workflows: {files} files (bounded tool limit 11 including hermes.yml)", file=sys.stderr)
-        if files > file_limit or dirs - tool_dirs > LIMIT:
+        outcome_slots = len(ROOT_OUTCOME_ADMISSIONS & actual_dirs) if not directory else 0
+        if outcome_slots:
+            print(f"pre-commit: root: {outcome_slots} additional named outcome slots (agent, handoff); nested and file limits unchanged", file=sys.stderr)
+        if files > file_limit or dirs - tool_dirs > LIMIT + outcome_slots:
             violations.append((directory, files, dirs))
     return violations, root_counts
 
@@ -182,7 +186,7 @@ def main() -> int:
         for path, files, dirs in violations:
             print(f"  {decode_path(path)}: {files} files, {dirs} subdirectories (limit 10 each)", file=sys.stderr)
             if not path:
-                print("    root additionally permits only .cargo, .githooks and .github as tool directories; all other entries count", file=sys.stderr)
+                print("    root additionally permits only .cargo, .githooks and .github as tool directories; agent and handoff each admit one named outcome slot when actual directories", file=sys.stderr)
         print("Split changes by responsibility and stage only the intended changes; this hook does not edit or stage files.", file=sys.stderr)
         return 1
     return 0

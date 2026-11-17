@@ -230,7 +230,7 @@ function repository(action: (git: (...args: string[]) => string, dir: string) =>
   try {git('init', '-qb', 'main');git('config', 'user.name', 'CI fixture');git('config', 'user.email', 'ci@example.invalid');action(git, dir);}
   finally {process.chdir(previous);Object.assign(process.env, inherited);rmSync(dir, {recursive: true, force: true});}
 }
-test('executable comment changes explain exactly which input prevents narrow proof', () => repository((git, dir) => {
+test('known admission tooling executable changes retain tooling ownership', () => repository((git, dir) => {
   mkdirSync('enablement/directory-width', {recursive:true});
   const path = 'enablement/directory-width/check.py';
   writeFileSync(path, '# original checker\n'); chmodSync(path, 0o755);
@@ -240,9 +240,8 @@ test('executable comment changes explain exactly which input prevents narrow pro
   git('add', '.'); git('commit', '-qm', 'comment');
   const head = git('rev-parse', 'HEAD');
   const decision = selectRange(base, head, dir);
-  assert.equal(decision.inputProofKnown, false);
-  assert.ok(decision.reasons.includes(`fallback:unproven-input:${path}:M:100755->100755`));
-  assert.deepEqual(decision.plan, routeDecision(null).plan, 'Explanation does not weaken fallback');
+  assert.equal(decision.inputProofKnown, true);
+  assert.deepEqual(decision.selected, ['tooling']);
 }));
 
 test('installer and shared consumer-inventory changes retain full conservative admission', () => repository((git, dir) => {
@@ -323,7 +322,7 @@ test('repository AGENTS guidance uses contracts only through hosted and local Gi
     const head = git('rev-parse', 'HEAD'), hosted = cli(from, head, dir);
     const local = localSelection(from, head, dir);
     assert.equal(hosted.platform, product);assert.equal(hosted.mac_rust, product);
-    assert.equal(local.rustChanged, product);
+    assert.equal(local.rustChanged, local.paths.some(path => path.endsWith('.rs')));
     if (!product) {
       assert.ok(Object.values(hosted.plan).every(value => value === false));
       assert.equal(hosted.public, false);assert.equal(hosted.macos, false);assert.equal(hosted.updater, false);

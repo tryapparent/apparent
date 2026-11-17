@@ -1,3 +1,4 @@
+import {admissionTooling, admissionConsumersKnown} from '../../shared/enablement/ci/inputs.ts';
 import {engineIndependentRange} from './routing/engine-inputs/qualify.ts';
 import {fixtureCandidate, qualifyFixtures, fixtureMacRequired, fixturePlatformBoundary} from './routing/fixture-portability/qualify.ts';
 import {qualifyCiTests} from './routing/test-only/qualify.ts';
@@ -21,15 +22,11 @@ export function select(paths: string[] | null): {public: boolean; updater: boole
   return {public: publicSelected, updater};
 }
 
-// Exact portable Settings renderer inputs, not a directory/extension exemption.
-// Shell, bridge, styles, onboarding, notes and unknown inputs retain Mac proof.
 const portableSettings = new Set([
   'storage.tsx', 'retention.tsx', 'connect-settings.tsx',
   'error-reporting.tsx', 'reference.tsx',
 ].map(name => 'capture/desktop/ui/frontend/src/' + name));
 
-// Exact renderer-only build inputs. See continuous-delivery.md for consumers.
-// No TS/TSX/CSS directory glob: bridge, policy, entrypoints and new files fail closed.
 export const presentationInputs = new Set([
   ...portableSettings,
   'capture/desktop/ui/frontend/src/style.css',
@@ -99,8 +96,6 @@ function changes(base: string, head: string, cwd = process.cwd()): Change[] | nu
 
 const unsupported = (change: Change) => change.status !== 'M' || change.oldMode !== '100644' || change.newMode !== '100644';
 
-// Main's prose exception permits regular additions/deletions and both regular
-// rename sides. A symlink, executable or unknown mode is not proven prose.
 const regularFileChange = (change: Change) =>
   (change.status === 'M' && change.oldMode === '100644' && change.newMode === '100644') ||
   (change.status === 'A' && change.oldMode === '000000' && change.newMode === '100644') ||
@@ -117,9 +112,6 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
   } catch { /* Unknown revisions retain conservative selection. */ }
   const delta = changes(base, head, cwd);
   const paths = delta?.map(change => change.path) ?? null;
-  // Imports are a property of candidate content. A deleted, previously audited
-  // policy file has no candidate imports to inspect; its deletion still flows
-  // through the normal consumer and platform boundary decisions below.
   const changedPolicyImports = delta?.filter(change => change.status !== 'D' && onboardingPureInputs.has(change.path)).filter(change => {
     const path = change.path;
     try {return /\b(?:import|require)\b|\bexport\s+[^;]*\bfrom\s*['"]/.test(git(['show', head + ':' + path], cwd));}
@@ -148,7 +140,11 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
       (change.status === 'A' && !supportedOnboardingAddition(change) && !supportedToolingAddition(change)) ||
       (change.status !== 'D' && change.status !== 'A' && unsupported(change)))).map(change => change.path) ?? [];
   const engineBoundary = paths !== null && !engineIndependentRange(base, head, paths, cwd);
-  const unsafe = engineBoundary || changedOnboardingBoundary.length > 0 || (delta?.some(change => !regularFileChange(change)) ?? false) || changedPolicyImports.length > 0;
+  const admissionChanges = delta?.filter(change => admissionTooling(change.path)) ?? [];
+  const admissionKnown = !admissionChanges.length || admissionConsumersKnown(cwd, head);
+  const supportedAdmission = (change: Change) => admissionKnown && admissionTooling(change.path) &&
+    ['M','A','D'].includes(change.status) && [change.oldMode,change.newMode].every(mode => ['000000','100644','100755'].includes(mode));
+  const unsafe = !admissionKnown || engineBoundary || changedOnboardingBoundary.length > 0 || (delta?.some(change => !regularFileChange(change) && !supportedAdmission(change)) ?? false) || changedPolicyImports.length > 0;
   const effective = unsafe ? null : paths;
   const workflowControls = !conservativeWorkflows && effective?.length ? workflowControlPaths(base, head, effective, cwd) : [];
   const foregroundBoundaries = delta?.filter(change => portableForegroundInputs.has(change.path)).filter(change => {
@@ -202,8 +198,6 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
   const plan = routing.plan;
   const mac = macDecision(effective?.filter(path => !qualifiedTooling.includes(path)) ?? null, delta?.filter(change => unsupported(change) && !qualifiedTooling.includes(change.path) && needsPlatform([change.path])).map(change => change.path) ?? null);
   if (effective?.length && effective.every(path => qualifiedTooling.includes(path))) {mac.macos = false; mac.reasons = [];}
-  // Exercise this lane when its executor, selector or workflow definition changes
-  // too; qualification never exempts those production verification inputs.
   const fixtureMac = fixtureMacRequired(qualifiedFixtures) || !!effective?.some(path =>
     ['enablement/local-tests/run.ts', 'enablement/ci/select.ts', '.github/workflows/checks.yml'].includes(path) ||
     path.startsWith('enablement/ci/routing/fixture-portability/') || path.startsWith('enablement/ci/install-contracts/'));
@@ -211,8 +205,9 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
   return {...routing, paths: paths ?? [], historyKnown: paths !== null, inputProofKnown: paths !== null && !unsafe, workflowControls, ...mac, fixtureMac, qualifiedFixtures, qualifiedCiTests, qualifiedStorageControllers, platform, plan,
     hermes: plan.hermes, portable: plan.browser || plan.service || plan.tools || plan.foreground,
     reasons: [...routing.reasons,
+      ...(!admissionKnown ? ['fallback:admission-product-consumer'] : []),
       ...(engineBoundary ? ['fallback:engine-consumer-boundary'] : []),
-      ...(delta?.filter(change => !regularFileChange(change)).map(change =>
+      ...(delta?.filter(change => !regularFileChange(change) && !supportedAdmission(change)).map(change =>
         `fallback:unproven-input:${change.path}:${change.status}:${change.oldMode}->${change.newMode}`) ?? []),
       ...foregroundBoundaries.map(path => 'foreground:native-boundary:' + path), ...changedPolicyImports.map(path => 'fallback:onboarding-new-import:' + path), ...changedOnboardingBoundary.map(path => 'fallback:onboarding-boundary-change:' + path), ...mac.reasons]};
 }

@@ -1,286 +1,136 @@
-# Local verification reuse
+# Local verification
 
-Pre-push uses the shared TypeScript consumer map in `ci/routing/consumers.ts`.
-Native manifests, lockfiles, build helpers, embedded assets and Swift/Metal
-adapters retain native checks even without Rust source edits. Public/browser
-changes and ordinary owner prose avoid unrelated native suites. Unknown history,
-inputs and unsafe Git modes/types stay broad. Only proven concurrency-only
-workflow edits select tooling alone; execution-sensitive workflow changes retain
-integration coverage. Hosted and local execution call the same range selector and
-named suite plan; see [the CI contract](../docs/continuous-delivery.md).
+Pre-push verifies the exact checked-out HEAD with a clean worktree and no hidden
+index flags. Deletions send no candidate and return immediately. Other refs must
+point to HEAD. Selection uses the entire merge-base(origin/main)..HEAD range,
+including earlier commits, both rename sides and deleted paths. Unknown history
+retains broad coverage. A previous push is never a verification checkpoint.
 
-The always-run contracts discover `*.test.ts` recursively inside the audited
-`enablement/timing/` owner through `local-tests/contracts.ts`. Adding a timing
-test requires no edit to the shared executor and keeps tooling selection. The
-inventory rejects symlinks and empty roots. Adding an owner root or changing the
-loader/executor remains an execution-definition change with conservative
-verification; this is not a repository-wide test-file exemption.
+The shared range selector is `enablement/ci/select.ts`. It consumes owner facts,
+including `shared/enablement/ci/inputs.ts` for admission tooling and
+`connect/enablement/ci/local/service.ts` for the qualified service command.
+Admission tooling has tooling consumers. New product references to that tooling
+invalidate its independent qualification. Unknown paths and unsupported Git types
+retain conservative selection. The pre-commit admission guards remain commit-only.
 
-## Explain a candidate before pushing
+Local Cargo execution requires an actual `.rs` delta anywhere in the full range,
+including removed/renamed Rust files, or unknown history. Hosted CI still consumes
+native manifests, locks, assets and build inputs through its existing suite plan.
+This local rule does not establish native acceptance for non-Rust changes.
 
-After committing a slice, preview the full merge-base delta with the same
-selector and command inventory used by the hook and hosted workflows:
+Ordinary affected product checks execute their unit, type and integration commands.
+Hook/selector/timing self-tests run for tooling changes and uncertain inputs.
+They are omitted for known unrelated product edits. Local Desktop renderer source
+changes run the package's unit/type checks. Electron integration remains selected
+for native, Electron/CommonJS and test inputs, unknown inputs and hosted execution.
+Hosted browser/native/release gates retain their owning workflows.
+
+## Preview and execute
 
 ```sh
 node --experimental-strip-types enablement/local-tests/run.ts \
   --base "$(git merge-base HEAD origin/main)" --head HEAD --explain
 ```
 
-This prints paths, selection reasons and commands without running them. It reads
-commits; uncommitted edits are not included. Inspect broad fallback reasons before
-starting the push. An executable-file comment still changes an unproven executable
-input; `fallback:unproven-input` names the path, status and Git modes responsible.
-Omit `--explain` for the existing JSON output. `--run` retains normal admission
-and all required checks; the preview itself is not verification evidence.
+The preview reports committed paths, owners, reasons, commands and reuse policy.
+It cannot establish a receipt hit before fresh preparation and qualification.
+Add `--run` to execute the identical plan. Direct service verification can produce
+the same evidence consumed by pre-push, without requiring a push:
 
-The audited standalone regression files `local-tests/reuse.test.ts` and
-`prerequisites/native.test.ts` select tooling alone. Both remain in the always-run
-contract inventory. Execution sources, unknown test files and mixed changes keep
-their existing consumer coverage; this is not a blanket test-file exemption.
+```sh
+node --experimental-strip-types enablement/local-tests/run.ts --service-tests
+```
 
-Capture-tool Node tests share one serial `node --test` invocation with per-file
-worker isolation. Python tests retain separate interpreters, and the CLI test
-requiring `APPARENT_BIN` still follows the rebuilt native executable. The tracked
-file inventory and failure propagation remain required on both platforms.
+This entrypoint runs the locked service install and canonical `npm test`. Other
+service integration/browser commands remain in the affected push plan.
 
-Synthetic hook repositories share `fixtures/runner.ts`: it copies non-test
-TypeScript sources under `local-tests/` and `ci/`, excluding fixture, dependency
-and build directories. New nested runner imports within these owners require no
-per-constructor copy list. Imports outside these roots require explicit adoption;
-missing modules still fail. Finite Node test placeholders come from the runner's
-contract, tooling, onboarding and Hermes command plans, so added direct test
-inputs follow their owning inventory. Package/native mocks remain local to each
-fixture. These placeholders verify hook dispatch and failure propagation, not
-product behavior; the real downstream suites still run in their normal gates.
-The copy-only implementation is `support/sources.ts`, also used by the publisher
-CLI fixture. It imports no runner or finite test module, keeping those consumers
-separate while sharing the source inventory.
+Set `APPARENT_TIMING_FILE` to a file under a private `/tmp/apparent-dev-<job>-<run>/`
+directory to observe setup/build/test phases through `enablement/timing/command.ts`.
+Each row records elapsed command execution and terminal status. The surrounding
+source SHA and command inventory must accompany measurements. Runner admission
+and queue time remain unknown to that observer. A phase named test may contain
+its package's own build. Failed commands retain their failure status.
 
-Local selections that need Rust check the existing private temporary-root contract
-before other commands. When Desktop is selected, its locked install, unit tests
-and complete Electron suite run before Rust verification. This catches missing
-Electron downloads, display/sandbox setup and renderer failures before a cold
-native build. Source-first policy proof remains separate from canonical Desktop
-coverage. No sandbox permissions or host configuration are changed. Repair the reported prerequisite and rerun the
-normal command; this ordering does not turn renderer checks into native proof.
+## Qualified local reuse
 
-For native integration setup, install the locked frontend dependencies with
-`npm --prefix capture/desktop/ui/frontend ci --no-audit --no-fund`, then run
-`node --experimental-strip-types enablement/prerequisites/native.ts` from the
-repository root. CI uses the same preparation entrypoint. It checks the local
-Electron executable before compiling Storage, Connect, updater and Record artifacts,
-then validates the required files (and parses the Mac picker on macOS). Missing
-generated output is rebuilt; a runtime or generator failure stops preparation.
-Rerun after disposable outputs are cleaned. This prepares inputs without Cargo
-or a GUI launch; it does not establish app readiness or native acceptance.
+`service.ts` qualifies the complete current `.mjs` and `.ts` test inventory,
+service sources/scripts/configuration/fixtures, the TypeScript client contracts
+consumed by the Worker, Shared UI/assets, generated output and installed package
+bytes. Its audited committed closure is pinned in the Connect declaration. A
+changed closure runs fresh until reviewed and requalified. This is deliberately
+bounded to the supported canonical command, local Linux x64 glibc and supported
+npm/runtime configuration.
 
-## Desktop dependency installation
+Service `npm ci` and build execute fresh before receipt lookup. Only the serial
+Node test phase is reusable. Missing dependencies cannot resolve through global
+Node search paths. Optional live Miniflare geolocation fetch is disabled for this
+synthetic suite. Effective npm configuration, remaining environment, executable
+bytes, OS/kernel/boot and transitive ELF loaders contribute to identity. Unsupported
+loaders, npm shell/workspace/script policy, proxy overrides and external symlinks
+run the original npm command. Environment values remain private digests.
 
-On local macOS/Linux pushes, the Desktop block can reuse a successful
-`npm ci --no-audit --no-fund` installation in the same worktree. Both `npm test`
-and the complete `test:electron` build/suite execute on every push, including
-installation hits. CI, missing admission and unsupported command/environment or
-dependency lifecycle shapes retain the original clean install. Hosted workflows
-and native/release gates are unchanged.
+Every tracked file is checked against committed bytes and executable bits
+independently of Git's stat cache. Whole-source mutation detection is separate
+from the relevant-input key, permitting reuse across unrelated clean commits.
+Symlink targets and installation changes are bound. Reuse requires the exact
+checked-out candidate, no hidden flags and integration with current origin/main.
 
-`desktop-install.ts` binds the frontend manifest/lock, build/staging helpers and
-compiler/Vite configuration, npm configuration and config
-files, Node/npm bytes and versions, OS/architecture, install environment, and
-source inputs of the two supported local file packages (Shared UI and Record
-Storage). Other local packages, linked lock entries and new dependency install
-scripts fall back to fresh execution. Operational IDs are removed from the actual
-install as well as its fingerprint; loader/runtime overrides run fresh.
-Ordinary frontend source edits are not installation inputs.
-Package lifecycle hooks (`preinstall` through `postprepare`, plus `dependencies`)
-always retain fresh npm execution, so a source-only edit cannot suppress an
-install hook that reads application sources.
+Desktop dependency reuse qualifies `npm ci` through its real lock/install graph,
+reviewed lifecycle scripts, local packages, generators, runtime/configuration and
+installed bytes. Selected unit/Electron checks execute fresh even on an install
+hit. The complete block holds a worktree-private Git mutex because npm replaces
+node_modules. Interrupted locks require owner verification before removal.
 
-The installed tree's complete bytes, modes, inventory and internal symlink targets
-must match the saved output. Missing/modified dependencies trigger installation;
-timestamps and inode identity additionally detect changes during lookup.
-Within one lookup, unchanged file digests can be reused after checking device,
-inode, mode, size, ctime and mtime again. This memo never survives the invocation;
-each new push reads installed bytes afresh. Directory/link inventories are always
-walked, and committed-blob assertions never use memoized digests.
-Desktop's build restages Record's compiled exports in `node_modules`, so cold
-qualification saves output only after both fresh Desktop suites succeed, with
-unchanged install inputs. On a hit the same suites run again. Generated local
-package `dist` is rebuilt by those checks, not used as an install-input receipt.
-The logged cold qualification duration includes those checks; it is not the time
-saved by skipping installation.
+Receipts extend `receipt.ts`. Storage is automatically discovered in a private
+worktree-specific `/tmp/apparent-dev-local-reuse-<hash>-<random>/` job. Caller receipt
+paths are unsupported. One latest success expires after six hours and is sealed
+with a random local key. Ownership, modes, type, links, command inputs and seal are
+validated. Concurrent fallbacks invalidate prior and overlapping evidence. Failures
+never retain success. Input mutation, corrupt/expired receipts and storage errors
+run fresh. Cleanup simply loses reuse. This trusts the local OS account and cannot
+authenticate against that account replacing code and keys.
 
-Evidence uses the existing private six-hour receipt mechanism, in a separate
-namespace keyed by the frontend directory. Failed installs/checks cannot publish
-a new receipt. Cleanup, contention, expiry, invalid seals and uncertain inputs
-lose the optimization. No cross-worktree `node_modules` or persistent config is
-shared. This trusts the same local account as the hook. Roll back by removing
-the `desktopDependencies` call; the runner's canonical command plan stays intact.
+Local evidence cannot admit hosted publication. Hosted Mac installation-contract
+reuse remains separate in `enablement/ci/install-contracts/`: it requires a successful
+same-run/attempt job, actual fixture step and candidate/command/environment-bound
+artifact. Missing or incompatible hosted evidence executes the original suite.
+No local or hosted lookup waits for another producer to finish.
 
-A per-worktree runtime mutex under Git's administrative directory protects the
-whole install/check block, including hits and fresh fallbacks, from another
-invocation replacing `node_modules`. A busy/unavailable mutex fails the push
-before running Desktop commands. Normal completion and exceptions release it;
-an interrupted owner leaves a lock that requires verification before removal.
-This required runtime state is separate from disposable `/tmp` evidence.
+## Hooks and fixtures
 
-The installed-hook regression uses real Git pushes and npm file dependencies in
-a synthetic package: consecutive source-only pushes install once and execute
-both suites twice. It also checks dependency damage, mode/deletion changes,
-local-package changes, environment changes, fresh CI fallback and failed checks.
-This proves tooling behavior, not native Electron application acceptance.
-These new installer fixtures run only for tooling/unknown changes or dependency,
-installer-producer and configuration inputs. They are not added to every cheap
-contract pass: ordinary renderer/source pushes retain their actual existing
-suites without paying for synthetic npm reinstalls. Mac CI uses the same
-`run.ts --desktop-install-contracts` selection, with unknown history conservative.
+Prepare hooks with `enablement/hooks/prepare.ts --output /absolute/new/private/directory`.
+The optional `--retire-verified-line-guard` and `--retire-verified-cargo-push` flags
+retire only the exact fingerprinted obsolete hooks, retaining byte-for-byte backups
+and provenance. Unknown custom pre-push hooks are preserved and need review before
+tracked push policy can be activated. Installed maintained wrappers resolve the
+current worktree, so common hook configuration cannot pin another checkout.
+Preparation never changes live Git configuration. See
+[issue admission](../../shared/enablement/issues/README.md) for message hooks,
+binding, the rollout baseline and fresh pre-push issue lookup.
 
-## Connect service test reuse
+Synthetic runner repositories copy the real bounded TypeScript source closure.
+Finite downstream fixtures test dispatch/failure propagation without recursively
+executing hook tests. Those fixtures substitute the issue stage only in selector
+regressions. The issue suite independently exercises real commit/push hooks and a
+deterministic fake gh API, including failures before expensive verification.
 
-The local runner reuses successful Connect service serial Node tests on Linux x64/glibc by
-default when their qualified inputs match. The audited closure is pinned in
-`service.ts` to the service, shared UI and shared assets at `5d2931bb1`. Changing
-that closure runs the original `npm test`. Expanding qualification requires
-reviewing the command's transitive reads, subprocesses and environment again.
-The service's 102 tests use synthetic identities and in-memory Miniflare, including
-loopback OAuth endpoints. They do not consume Git ancestry or the native app.
+## Clanker resource admission
 
-Every selected command still runs through the existing owner plan. `npm ci` and
-the service build run fresh, producing the worker and recipient assets before
-receipt lookup. Only the serial Node test phase can be reused. Its full sorted
-test inventory is identical to the canonical package script. Global Node module
-search is disabled so missing local dependencies cannot resolve from the user's
-home. Miniflare's optional live geolocation fetch is disabled in this qualified
-phase, which never exercises `Request.cf`. Transport/lifecycle IDs are removed
-from that subprocess environment. Every remaining variable is hashed, including
-worker allocation, PATH, locale and temporary-directory settings. Environment
-values are never written into receipts. Effective npm configuration and its
-user/global/project files are fingerprinted before and after verification.
-Node options, custom script shells, workspace/global execution and script policy
-overrides use the original fresh npm command, including changes during the build.
-Runtime-loader and dependency-path overrides also use the original fresh command.
-
-Before root Rust verification, `enablement/verification.py --run` runs
-`npm ci --no-audit --no-fund` and `npm run build` in `connect/client/typescript`.
-The Rust Connect shares tests consume that package's policy, and a fresh checkout
-does not contain its ignored `dist/` output. The verifier checks for
-`dist/shares.js` before starting Cargo. A standalone client-only runner uses the
-same verifier prerequisite command before its package Cargo checks.
-
-Qualification also requires a clean checked-out exact HEAD, no hidden index
-flags and integration with the current `origin/main` checkpoint. The runner
-verifies every tracked file against its committed blob and executable bit
-independently of Git's stat cache. The reusable identity binds the audited
-service, shared UI and shared asset inputs rather than unrelated tracked files,
-so a clean unrelated commit can reuse tests. All tracked files retain mutation
-detection during qualification and execution. Consumed symlink targets remain
-part of the identity even outside the named input directories. It also binds all installed service
-dependencies, generated build output, modes and internal symlink targets. The
-Node executable, kernel/boot, OS configuration and transitive ELF loader libraries
-of Node and installed glibc native dependencies are included. npm's inactive musl
-variants are content-bound, with their incompatible loaders excluded. External source links,
-special files, ancestor `node_modules`, unknown history and unreadable inputs
-fall back to execution. Identical `npm ci` reinstalls can match by content. Inodes
-and change timestamps are checked separately before and after each lookup/run to
-reject installation races and input changes during execution.
-
-Evidence lives in an automatically discovered, private worktree-specific
-`/tmp/apparent-dev-local-reuse-<worktree-hash>-<random>/` job. No environment or CLI
-argument can supply a receipt. One latest success expires after six hours and is
-sealed with a random private local key. Ownership, modes, file types, links and
-the seal are verified. An exclusive lock prevents cooperating writers from
-sharing an in-flight receipt. Contention runs fresh, marks the concurrent command
-and changes the evidence generation both before and after it runs. Readers and
-publishers reject concurrent markers and changed generations, including a failure
-that overlaps an exclusive writer. Interrupted markers or locks run fresh until
-the disposable job is removed. A failed command invalidates prior evidence and
-never publishes success. Atomic replacement follows successful execution and unchanged inputs.
-Cleanup or storage failure loses only the optimization. Removing this job resets
-the evidence. This trusts the local OS account that can already edit the hook
-and its code. It does not authenticate evidence against a malicious same-account
-writer capable of replacing both code and keys.
-
-The hook's cheap contracts and its before/after clean-tree, hidden-index and
-exact-HEAD checks stay fresh. Owner selection, unknown-input coverage, Rust,
-Electron/browser tests, product native acceptance, hosted CI and release admission
-retain their existing procedures. Local receipts cannot admit any hosted or
-published artifact. Roll back reuse by removing the `serviceTests` call from the
-runner. No service data or persistent configuration is migrated.
-
-Run the regression suite with
-`node --experimental-strip-types --test --test-concurrency=1 enablement/local-tests/*.test.ts`
-through the normal build admission. It includes a real installed Git hook with a
-synthetic test phase, receipt corruption/expiry/concurrency, failed commands,
-environment and file/dependency invalidation, and mutation during verification.
-Real package timing evidence is recorded separately from these synthetic tests.
-
-Audited TypeScript sources/tests and package manifests, locks and tsconfig in
-`record/storage`, `record/completion` and `record/capture-request` select Desktop
-plus native capture.
-Storage's `build.ts` has the same consumers. Desktop's canonical `npm test`
-includes both Record test inventories; its Electron build generates the Storage
-adapters and Completion worker, which settings packaging stages for the native
-app. Root/platform integration and Mac admission remain selected. Isolated inputs
-omit unrelated Connect, Public and Hermes suites; mixed edits retain the union.
-Embedded instructions, unexpected files/native sources, unknown Record packages and
-unknown history keep the broad fallback. Rollback is reverting these consumer
-rules and their regression expectations; no elapsed-time savings are claimed.
-
-Hosted Mac native installation contracts opportunistically consume the named
-`Mac hook fixtures` job's successful same-run, same-attempt artifact. This is
-not a selector exemption or result cache: the receipt binds the complete candidate
-SHA/tree, canonical installation command/cwd, workflow, Node/npm and Mac
-architecture and hosted OS image/kernel. A completed successful job and its actual fixture step are checked
-through the authenticated Actions API before reading the receipt. Missing,
-in-flight, skipped, failed, stale, incompatible or unreadable proof runs the
-original suite. Local, manual and Linux execution remain unchanged. Both platform
-plans and all fixture/native/publication admission dependencies remain authoritative.
-The fixture lane always runs the canonical suite before publishing proof.
-
-No job waits for fixture completion: lookup occurs immediately before the native
-contract step, with bounded API requests and no retries. The artifact upload and
-lookup add small overhead; runner occupancy improves only when proof is already
-available. The observed 76-second duplicate step is a baseline observation, not
-a guaranteed latency saving; the skipped-fixture 114-second case retains full
-execution. Measure fixture upload, native lookup/execution, allocated job durations
-and dependency/queue time separately on hosted runs. Roll back by removing the
-`alreadyPassed` branch and fixture receipt upload; admission remains unchanged.
-
-## Clanker push budget and workspace
-
-From the repository root, prefer the admitted push entrypoint:
+Run heavy tests and hook-backed pushes once through `/home/simon/.local/bin/t3-build`.
+The push entrypoint preserves stdin, signals, exit status and the runner's deadline:
 
 ```sh
 node --experimental-strip-types enablement/local-tests/execution/push.ts --jobs 2 -- origin HEAD
 ```
 
-It replaces itself with the installed `t3-build -- git push`, preserving the normal
-hook, stdin, exit codes, signals and runner cleanup. It adds no timer. The live
-runner currently defaults to 7200 seconds **including admission plus execution**;
-read its help when planning work rather than deriving a universal duration from
-one run. A 900-second total cap has cut an unchanged broad gate off after native
-and service suites, forcing repetition. Do not substitute an agent-chosen short
-cap for the normal budget. Choose workers from the actual hook plan and capacity;
-this example does not reserve a minimum or change memory admission.
+It replaces itself with `t3-build -- git push` and adds no timer. Already admitted
+commands run Git directly. Read current runner help for its live budget. Supply
+`--total-budget SECONDS` only for an actual user limit or explicitly bounded
+diagnostic. Timeout is failure, never evidence of completed verification. Retain
+the foreground handle and consume the original terminal result before retrying.
 
-A genuine human time/spend limit wins: supply `--total-budget SECONDS` when it
-bounds this whole invocation, accounting for queue time as well as the complete
-selected gate. A deliberately short diagnostic may use the same explicit cap;
-it proves only that diagnostic, never acceptance. Exit 124 means runner timeout;
-command failures and cancellation retain the runner's statuses. Already inside
-an admitted driver, run `git push` directly instead of nesting this entrypoint.
-Do not wrap it in another shorter command deadline. Keep the foreground handle
-and follow the tool's completion contract. Report runner admission wait, command
-runtime and terminal-observation delay separately; a transport wait ending does
-not prove the command ended. Inspect the original handle before retrying.
-
-For genuinely independent future design and implementation threads, request T3
-workspace binding **before launch**: `workspaceStrategy: {type: "worktree",
-baseRef: "origin/main", startFromOrigin: true}`. Omitting the strategy uses the
-project root, not the caller's isolated checkout. When unpublished producer
-commits are required, pin the full local commit as `baseRef` with
-`startFromOrigin: false`; uncommitted work is not copied. Delegated work uses
-`isolation: "worktree"` from the parent's committed checkpoint. Only launch new
-threads/delegates when authorized. Never create shell worktrees, rebind active
-owners or branch-switch a frozen shared checkout to avoid a real dependency.
-Existing shared owners still wait for the producer's exact-head/release callback;
-isolation guidance does not release that hold or duplicate a live push.
+Create diagnostics/output in a private `/tmp/apparent-dev-<job>-<run>/` directory.
+Evidence there is disposable. Choose worker counts using actual capacity and the
+selected plan. For future independent T3 work, request workspace binding before
+launch with the default branch and startFromOrigin. Pin a local commit when an
+unpublished dependency is required. Existing reservations and holds remain active.

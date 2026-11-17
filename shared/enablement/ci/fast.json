@@ -1,0 +1,18 @@
+{
+  "projects": [
+    {
+      "root": "shared/enablement/dependency-policy",
+      "inputs": [
+        ".githooks/pre-commit",
+        "enablement/directory-width/check.py",
+        "shared/enablement/ci/fast.json"
+      ],
+      "tests": [
+        "test/budgets.test.ts",
+        "test/staged.test.ts",
+        "test/runtime.test.ts"
+      ],
+      "typecheck": false
+    }
+  ]
+}

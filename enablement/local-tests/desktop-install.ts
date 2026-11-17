@@ -88,7 +88,7 @@ export function desktopInstallSnapshot(cwd: string, env: NodeJS.ProcessEnv, admi
 export function desktopDependencies(block: Command[], cwd: string, inherited: NodeJS.ProcessEnv,
   admission: Admission | undefined, run: (command: Command, environment?: NodeJS.ProcessEnv) => void): boolean {
   const expected = [install, ['npm', 'test'], [...(process.platform === 'linux' ? ['xvfb-run', '-a'] : []), 'npm', 'run', 'test:electron']];
-  if (block.length !== 3 || block.some((c, i) => c.cwd !== desktopPackage || c.env || JSON.stringify(c.argv) !== JSON.stringify(expected[i]))) return false;
+  if (![2, 3].includes(block.length) || block.some((c, i) => c.cwd !== desktopPackage || c.env || JSON.stringify(c.argv) !== JSON.stringify(expected[i]))) return false;
   const env = installEnvironment(inherited);
   // npm ci removes node_modules. Protect the complete block, even on hits and
   // unqualified/fresh fallbacks. This runtime mutex is per-worktree Git metadata,
@@ -111,7 +111,7 @@ export function desktopDependencies(block: Command[], cwd: string, inherited: No
       return value ?? desktopInstallSnapshot(cwd, env, admission!, digests);
     };
     let checked = false;
-    const checks = () => { run(block[1]); run(block[2]); checked = true; };
+    const checks = () => { block.slice(1).forEach(command => run(command)); checked = true; };
     reuse(join(cwd, desktopPackage), snapshot, () => {
       run(block[0], env);
       checks();
