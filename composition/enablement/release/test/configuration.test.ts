@@ -34,7 +34,7 @@ test("distribution recovery cannot publish while stable publication retains prod
         {
           linux: { result },
           macos: { result },
-          publish: { result: "skipped" },
+          publish: { result },
         },
         { repository: "tryapparent/apparent", ref: "refs/heads/main" },
         () => cancelled,
@@ -50,6 +50,12 @@ test("distribution recovery cannot publish while stable publication retains prod
         retry || result === "success",
       );
       assert.equal(enabled("publish", "stable", retry, result, true), false);
+      assert.equal(
+        enabled("publish", "main", retry, result),
+        retry || result === "success",
+      );
+      assert.equal(enabled("feed", "main", retry, result), false);
+      assert.equal(enabled("cask", "main", retry, result), false);
       for (const job of ["feed", "cask"])
         assert.equal(enabled(job, "distribution", retry, result), retry);
     }
@@ -79,6 +85,7 @@ test("actual Linux readiness command rejects invalid signing configuration befor
     NOTARY_KEY: "synthetic",
     SPARKLE_KEY: "synthetic",
     TAP_KEY: "synthetic",
+    RELEASE_CHANNEL: "stable",
   };
   const run = (patch: Record<string, string>) =>
     spawnSync("bash", ["-eu", "-c", script], {
@@ -86,6 +93,7 @@ test("actual Linux readiness command rejects invalid signing configuration befor
       env: { ...process.env, ...configured, ...patch },
     });
   assert.equal(run({}).status, 0);
+  assert.equal(run({ RELEASE_CHANNEL: "main", TAP_KEY: "" }).status, 0);
   for (const patch of [
     { APPLE_ENABLED: "false" },
     { APPLE_TEAM: "wrong" },
@@ -97,4 +105,16 @@ test("actual Linux readiness command rejects invalid signing configuration befor
     { TAP_KEY: "" },
   ])
     assert.notEqual(run(patch).status, 0);
+});
+
+test("Main and stable run the same parallel pair and publish only after both platforms", () => {
+  const workflow = readFileSync(".github/workflows/verification.yml", "utf8");
+  for (const platform of ["linux", "macos"]) {
+    const job = workflow.split(`\n  ${platform}:\n`)[1].split(/\n  [a-z]+:/)[0];
+    assert.match(job, /^    needs: admit$/m);
+    assert.ok(job.includes("inputs.mode"));
+  }
+  assert.match(workflow, /publish:\n    needs: \[admit, linux, macos\]/);
+  assert.match(workflow, /name: Release\n/);
+  assert.match(workflow, /default: main/);
 });

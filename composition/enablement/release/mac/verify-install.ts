@@ -27,10 +27,11 @@ const tap = output("brew", ["--repository", "tryapparent/tap"]);
 const caskPath = join(tap, "Casks/apparent.rb");
 const previous = existsSync(caskPath) ? readFileSync(caskPath, "utf8") : null;
 const candidate = homebrewCask(version, checksum, "v" + version);
-assertCaskUpdate(previous, candidate);
+const upgrade = process.env.RELEASE_CHANNEL !== "main" && previous !== null;
+if (upgrade) assertCaskUpdate(previous, candidate);
 const token = "tryapparent/tap/apparent";
 try {
-  if (previous) run("brew", ["install", "--cask", token]);
+  if (upgrade) run("brew", ["install", "--cask", token]);
   writeFileSync(caskPath, candidate);
   run("brew", ["style", "--cask", token]);
   const local = candidate.replace(
@@ -39,7 +40,7 @@ try {
   );
   if (local === candidate) throw Error("Could not select the exact local DMG");
   writeFileSync(caskPath, local);
-  if (previous) run("brew", ["upgrade", "--cask", "--greedy", token]);
+  if (upgrade) run("brew", ["upgrade", "--cask", "--greedy", token]);
   else run("brew", ["install", "--cask", token]);
   const app = "/Applications/Apparent Preview.app";
   run("codesign", ["--verify", "--deep", "--strict", app]);

@@ -49,7 +49,11 @@ if (statePath) {
   if (args[0] === "api") {
     if (path === "releases?per_page=100&page=1")
       reply(state.release ? [state.release] : []);
-    if (path === "git/ref/tags/v1.2.3" && state.tag) reply(state.tag);
+    if (
+      path === `git/ref/tags/${process.env.FIXTURE_TAG ?? "v1.2.3"}` &&
+      state.tag
+    )
+      reply(state.tag);
     if (path === "git/refs" && method === "POST") {
       const body: { sha: string } = JSON.parse(readFileSync(0, "utf8"));
       state.tag = { object: { type: "commit", sha: body.sha } };

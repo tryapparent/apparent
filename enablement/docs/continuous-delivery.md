@@ -215,15 +215,12 @@ binaries. Packaging still builds the exact main SHA and its revision metadata.
 Fresh main `Linux verification` admission jobs require
 successful contracts/selection plus every affected suite to pass now or have
 validated identical-tree PR evidence. Missing selected coverage fails admission.
-The Linux gate never waits for Mac. Installer admission dispatches `release-linux.yml`
-separately with its verified SHA/run ID; CI finishes before Main packaging.
-Exact-SHA/attempt/repository admission,
-stale-main suppression, packaging checks and noncancelling publication lock remain
-required. A later main push cannot cancel an active publication. Mac publication
-remains separately operated; Connect uses its own automatic tested delivery.
-Regular Mac releases require exact-source Linux/shared admission plus the dedicated
-Mac release build, signing, notarization and smoke checks; separate full general
-Mac CI is not required. Mac diagnostics do not authorize publication.
+Installer admission dispatches the paired Release workflow with its exact SHA and
+verification run ID. Main CI finishes without waiting for either build. The
+release builds Linux and Mac in parallel and waits for all native packaging and
+signing gates before publication. Connect uses its own automatic tested delivery.
+See the [release coordinator](../../composition/enablement/release/README.md) for
+channel, provenance and retry rules.
 Historical full main CI and existing exact-main manual receipts remain valid.
 Native/product acceptance and current-base integration remain owner obligations.
 A successful draft or aggregate workflow conclusion alone supplies no release proof.

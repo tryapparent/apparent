@@ -93,11 +93,12 @@ if (command === "preview-admit") {
     `Apparent-Preview-${version}-arm64.zip`,
   ])
     cpSync(join("dist", file), join(directory, file));
-  run(process.execPath, [
-    "--experimental-strip-types",
-    join(tooling, "composition/enablement/release/mac/distribution.ts"),
-    directory,
-  ]);
+  if (process.env.RELEASE_CHANNEL === "stable")
+    run(process.execPath, [
+      "--experimental-strip-types",
+      join(tooling, "composition/enablement/release/mac/distribution.ts"),
+      directory,
+    ]);
   run(process.execPath, [
     "--experimental-strip-types",
     join(tooling, "composition/enablement/release/manifest.ts"),

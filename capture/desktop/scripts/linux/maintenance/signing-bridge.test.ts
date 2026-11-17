@@ -102,7 +102,7 @@ if(args[0]==='api'){
       try {
         execFileSync(process.execPath, ['--experimental-strip-types', script, 'publish', bridge.sha], {
           env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, BRIDGE_TEST_ROOT: root, BRIDGE_TEST_FAULT: fault,
-            GITHUB_ACTIONS: 'true', GITHUB_REF: 'refs/heads/main', GITHUB_WORKFLOW: 'Release (Linux)', GITHUB_REPOSITORY: 'tryapparent/apparent' },
+            GITHUB_ACTIONS: 'true', GITHUB_REF: 'refs/heads/main', GITHUB_WORKFLOW: 'Linux packaging', GITHUB_REPOSITORY: 'tryapparent/apparent' },
           stdio: 'pipe',
         });
       } catch { failed = true; }

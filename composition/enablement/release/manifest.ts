@@ -15,7 +15,7 @@ export type Manifest = {
   sourceSha: string;
   version: string;
   tag: string;
-  channel: "stable";
+  channel: "stable" | "main";
   platform: string;
   architecture: string;
   producer: {
@@ -31,6 +31,15 @@ export const workflow = ".github/workflows/verification.yml";
 export const repository = "tryapparent/apparent";
 export const sha = /^[a-f0-9]{40}$/;
 export const versionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+export function releaseTag(
+  channel: string,
+  version: string,
+  source: string,
+): string {
+  if (channel === "stable") return `v${version}`;
+  if (channel === "main") return `linux-main-v2-${source}`;
+  throw Error("Unsupported paired release channel");
+}
 export async function digest(file: string): Promise<string> {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(file)) hash.update(chunk);
@@ -42,8 +51,8 @@ export function identity(manifest: Manifest): void {
     manifest.repository !== repository ||
     !sha.test(manifest.sourceSha) ||
     !versionPattern.test(manifest.version) ||
-    manifest.tag !== `v${manifest.version}` ||
-    manifest.channel !== "stable" ||
+    manifest.tag !==
+      releaseTag(manifest.channel, manifest.version, manifest.sourceSha) ||
     !["linux/x86_64", "linux/aarch64", "macos/aarch64"].includes(
       `${manifest.platform}/${manifest.architecture}`,
     ) ||
@@ -56,7 +65,7 @@ export function identity(manifest: Manifest): void {
     (manifest.platform === "macos" &&
       (!manifest.evidence.signing || !manifest.evidence.notarization))
   )
-    throw Error("Invalid stable manifest identity/evidence");
+    throw Error("Invalid release manifest identity/evidence");
   const names = new Set<string>();
   for (const file of manifest.files) {
     if (
@@ -123,6 +132,7 @@ export function paired(manifests: Manifest[]): Manifest {
       m.sourceSha !== first.sourceSha ||
       m.version !== first.version ||
       m.tag !== first.tag ||
+      m.channel !== first.channel ||
       JSON.stringify(m.producer) !== JSON.stringify(first.producer)
     )
       throw Error("Candidate identity differs across platforms");
@@ -154,7 +164,7 @@ export async function create(
     sourceSha: env.CANDIDATE_SHA!,
     version: env.APPARENT_VERSION!,
     tag: env.RELEASE_TAG!,
-    channel: "stable",
+    channel: (env.RELEASE_CHANNEL || "stable") as Manifest["channel"],
     platform,
     architecture,
     producer: {
