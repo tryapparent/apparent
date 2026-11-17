@@ -19,16 +19,17 @@ test('qualified fixtures get a named real Mac lane behind cheap guards; Linux ad
     Function('needs', 'github', 'cancelled', `return (${job.if})`)(
       {select:{result:select,outputs:{fixtureMac}},contracts:{result:contracts}},
       {event_name:event,event:{pull_request:{draft}}}, () => cancelled);
-  assert.equal(admitted('success','success','true'), true);
+  assert.equal(admitted('success','success','true'), false);
   assert.equal(admitted('success','success','false'), false);
-  assert.equal(admitted('failure','success',''), true);
+  assert.equal(admitted('failure','success',''), false);
   assert.equal(admitted('success','failure','true'), false);
   assert.equal(admitted('success','success','true','pull_request',true), false);
-  assert.equal(admitted('success','success','true','push'), true);
+  assert.equal(admitted('success','success','true','push'), false);
   assert.equal(admitted('success','success','true','push',false,true), false);
+  assert.equal(admitted('success','success','true','workflow_dispatch'), true);
   for (const name of ['macos-admission']) {
     assert.ok(flow.jobs[name].needs.includes('fixture-mac'));
-    assert.equal(flow.jobs[name].steps.at(-1).env.FIXTURE_MAC, '${{ needs.select.outputs.fixtureMac }}');
+    assert.equal(flow.jobs[name].steps.at(-1).env.FIXTURE_MAC, 'true');
   }
   assert.ok(flow.jobs['tree-evidence'].needs.includes('fixture-mac'));
   assert.ok(!flow.jobs['linux-admission'].needs.includes('fixture-mac'));

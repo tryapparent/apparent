@@ -117,3 +117,23 @@ test('packed Mac evidence requires the real successful producer, not a claimed a
     assert.equal(authenticatedSuites(jobs.map(j=>j.name.includes('/ platform')?{...j,conclusion}:j),full,full).macos,false);
   assert.equal(authenticatedSuites(jobs.filter(j=>!j.name.includes('/ platform')),full,full).macos,false);
 });
+
+ test('Linux admission CLI accepts skipped Mac diagnostics and rejects actual Linux failures', async () => {
+  const {mkdtempSync, rmSync} = await import('node:fs');
+  const {spawnSync} = await import('node:child_process');
+  const dir = mkdtempSync('/tmp/apparent-dev-linux-admission-');
+  try {
+    for (const outcome of ['success','failure','cancelled','skipped']) {
+      const needs = Object.fromEntries(['select','contracts','portable','onboarding-policy','record-media'].map(name => [name,{result:'success'}]));
+      needs.linux = {result:outcome};
+      for (const name of ['macos','fixture-mac']) needs[name] = {result:'skipped'};
+      const result = spawnSync('node',['--experimental-strip-types','enablement/ci/routing/evidence.ts','--admit'], {
+        encoding:'utf8', env:{...process.env, VERIFY_PLATFORM:'linux', VERIFICATION_PLAN:JSON.stringify(full),
+          MAC_VERIFICATION_PLAN:JSON.stringify(full), FIXTURE_MAC:'true', CI_NEEDS:JSON.stringify(needs), CI_REUSE:'{}', RUNNER_TEMP:dir}});
+      assert.equal(result.status, outcome === 'success' ? 0 : 1, result.stderr);
+    }
+    const value = check({...record, results:{...record.results, macos:{result:'skipped'}, 'fixture-mac':{result:'skipped'}}});
+    assert.equal(value.linux,true);
+    assert.equal(value.macos,false);
+  } finally {rmSync(dir,{recursive:true,force:true});}
+});

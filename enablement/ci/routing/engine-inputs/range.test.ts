@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, chmodSync} from 'node:fs';
 import {join, dirname} from 'node:path';
-import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {YAML} from 'bun';
 import {selectRange} from '../../select.ts';
@@ -13,7 +12,7 @@ import {currentStream} from '../streams.ts';
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_')));
 function fixture() {
-  const cwd = mkdtempSync(join(tmpdir(), 'engine-inputs-'));
+  const cwd = mkdtempSync('/tmp/apparent-dev-engine-inputs-');
   const git = (...args: string[]) => execFileSync('git', args, {cwd, env, encoding:'utf8', stdio:['ignore','pipe','pipe']}).trim();
   const put = (path: string, text: string) => {mkdirSync(dirname(join(cwd,path)),{recursive:true}); writeFileSync(join(cwd,path),text);};
   git('init','-q'); git('config','user.email','fixture@example.invalid'); git('config','user.name','Fixture');
@@ -30,9 +29,9 @@ function fixture() {
 }
 function cli(cwd: string, base: string, head: string, engine = false) {
   const output = join(cwd, engine ? 'engine-output' : 'shared-output');
-  const text = execFileSync('bun', [join(root, engine ? 'engine/tools/select.ts' : 'enablement/ci/select.ts'), ...(!engine ? ['--admit'] : [])],
-    {cwd,env:{...env,BASE_SHA:base,GITHUB_SHA:head,GITHUB_OUTPUT:output,GITHUB_EVENT_NAME:'pull_request'},encoding:'utf8'});
-  return engine ? readFileSync(output,'utf8').trim() : JSON.parse(text);
+  const text = execFileSync('bun', [join(root, engine ? 'engine/enablement/ci/run.ts' : 'enablement/ci/select.ts'), ...(engine ? ['select'] : ['--admit'])],
+    {cwd,env:{...env,BASE_SHA:base,GITHUB_SHA:head,GITHUB_OUTPUT:output,GITHUB_EVENT_NAME:'push'},encoding:'utf8'});
+  return engine ? readFileSync(output,'utf8').trim().split('\n')[0] : JSON.parse(text);
 }
 test('real source commits and both CLIs remove only independent Engine fanout; workflow admission follows', () => {
   const f = fixture();
@@ -58,19 +57,19 @@ test('real source commits and both CLIs remove only independent Engine fanout; w
     }
   } finally {f.close();}
 });
-test('Engine source, SDK, qualifiers, shared routing, unknown and mixed inputs retain Engine', () => {
+test('only Engine source, SDK and qualifiers select native production', () => {
   for (const path of ['engine/native/src/main.rs','engine/sdk/src/index.ts','engine/tools/qualify.ts',
     'engine/tools/check.ts','.github/workflows/stream-engine.yml','.github/actions/ubuntu-apt/action.yml',
     'enablement/ci/select.ts','enablement/ci/routing/consumers.ts','enablement/ci/runner/new.test.ts']) {
     const f=fixture(); try {
       const base=f.commit(); f.put('enablement/ci/root.ts',readFileSync(join(root,'enablement/ci/root.ts'),'utf8')+'\n// observation\n');
       f.put(path,'// changed input\n'); const head=f.commit();
-      assert.equal(selectRange(base,head,f.cwd).plan.engineMedia,true,path);
-      assert.equal(cli(f.cwd,base,head,true),'selected=true',path);
+      assert.equal(selectRange(base,head,f.cwd).plan.engineMedia,path.startsWith('engine/'),path);
+      assert.equal(cli(f.cwd,base,head,true),`selected=${path.startsWith('engine/')}`,path);
     } finally {f.close();}
   }
 });
-test('new imports, inbound Engine callers, mode/status changes and missing history fail conservative', () => {
+test('only changes inside Engine select production despite other conservative fallback', () => {
   for (const kind of ['import','inbound','mode','delete','rename','history']) {
     const f=fixture();try {
       const base=f.commit(); const path='enablement/ci/root.ts';
@@ -81,22 +80,22 @@ test('new imports, inbound Engine callers, mode/status changes and missing histo
       if(kind==='delete') f.git('rm','-f',path);
       if(kind==='rename') f.git('mv',path,'enablement/ci/renamed.ts');
       const head=f.commit(); const decision=selectRange(kind==='history'?'missing':base,head,f.cwd);
-      assert.equal(decision.plan.engineMedia,true,kind);
-      if(kind!=='history') assert.equal(currentStream('engine',base,head,f.cwd),false,kind);
+      assert.equal(decision.plan.engineMedia,kind==='inbound',kind);
+      if(kind!=='history') assert.equal(currentStream('engine',base,head,f.cwd),kind!=='inbound',kind);
       if(kind==='inbound') assert.equal(engineIndependentRange(base,head,[path],f.cwd),false);
     } finally {f.close();}
   }
 });
 
-test('earlier main import expansion and extensionless/aliased inbound consumers revoke the exception', () => {
+test('earlier external imports do not expand Engine automatic triggers', () => {
   for (const edge of ["import '../../enablement/ci/root';","import '@ci/root';","import '../../enablement/ci/routing/native';"]) {
     const f=fixture();try {
       f.put('engine/tools/new.ts',edge); const base=f.commit();
       const path='enablement/ci/root.ts'; f.put(path,readFileSync(join(root,path),'utf8')+'\n// observation\n');
       const head=f.commit();
-      assert.equal(selectRange(base,head,f.cwd).plan.engineMedia,true,edge);
-      assert.equal(currentStream('engine',base,head,f.cwd),false,edge);
-      assert.equal(cli(f.cwd,base,head,true),'selected=true',edge);
+      assert.equal(selectRange(base,head,f.cwd).plan.engineMedia,false,edge);
+      assert.equal(currentStream('engine',base,head,f.cwd),true,edge);
+      assert.equal(cli(f.cwd,base,head,true),'selected=false',edge);
     } finally {f.close();}
   }
 });

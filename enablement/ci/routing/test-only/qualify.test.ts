@@ -46,7 +46,7 @@ test('real committed modification selects contracts only on PR and main, with gu
       const needs = {contracts:{result:'success'}, select:{result:'success', outputs:Object.fromEntries(Object.entries(result).map(([key,value])=>[key,String(value)]))}, reuse:{result:'success',outputs:{}}, portable:{result:'skipped'}, 'record-media':{result:'skipped'}};
       const enabled = () => Function('needs','github','cancelled',`return (${expression})`)(needs,{event_name:main?'push':'pull_request',event:{pull_request:{draft:false}}},()=>false);
       assert.equal(enabled(), false);
-      needs.select.result = 'failure'; assert.equal(enabled(), true, 'selector failure retains native fallback');
+      needs.select.result = 'failure'; assert.equal(enabled(), name === 'linux', 'selector failure retains Linux native fallback');
       needs.contracts.result = 'failure'; assert.equal(enabled(), false, 'contracts failure cannot bypass admission');
     }
   }
@@ -89,11 +89,11 @@ for (const kind of ['import','dynamic','export','invalid','consumer','alias','un
   if (kind === 'addition') {r.git('rm','-f',path); base=r.commit(); r.put(path,original);}
   const head = r.commit(), result = selectRange(base, head, r.cwd);
   if (kind !== 'unknown') assert.deepEqual(result.qualifiedCiTests, []);
-  assert.deepEqual(result.selected, [...owners]);
+  assert.deepEqual(result.selected, owners.filter(owner => owner !== 'engine-media'));
   assert.equal(result.macos,true); assert.equal(result.platform,true);
 });
 test('unknown history cannot qualify', t => {
-  const r=repository(t); assert.deepEqual(selectRange('absent',r.base,r.cwd).selected,[...owners]);
+  const r=repository(t); assert.deepEqual(selectRange('absent',r.base,r.cwd).selected,owners.filter(owner => owner !== 'engine-media'));
 });
 for (const kind of ['bytes', 'import', 'mode']) test('an earlier adjacent qualifier change revokes its reviewed mention: '+kind, t => {
   const r=repository(t), adjacent='enablement/ci/routing/engine-inputs/qualify.ts';
@@ -103,7 +103,7 @@ for (const kind of ['bytes', 'import', 'mode']) test('an earlier adjacent qualif
   r.put(path,original+'\n// regression\n');
   const result=selectRange(base,r.commit(),r.cwd);
   assert.deepEqual(result.qualifiedCiTests,[]);
-  assert.deepEqual(result.selected,[...owners]);
+  assert.deepEqual(result.selected,owners.filter(owner => owner !== 'engine-media'));
 });
 test('five-file Desktop platform split retains actual execution consumers', t => {
   const r=repository(t);

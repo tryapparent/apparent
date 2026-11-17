@@ -83,7 +83,7 @@ test('workflow caches downloads only and always performs fresh frozen install an
   for (const command of ['mktemp -d /tmp/apparent-dev-hermes-profile-XXXXXX', 'export HERMES_HOME="$job/profile"',
     'shasum -a 256 -c ./*.sha256', 'node "$job/extracted/install.cjs" --profile "$HERMES_HOME"',
     'hermes plugins validate "$HERMES_HOME/plugins/apparent" --install-deps', 'hermes plugins doctor "$HERMES_HOME/plugins/apparent" --ci']) assert.ok(validation.includes(command), command);
-  assert.match(workflow, /os: \[ubuntu-24.04, macos-15-intel\]/);
+  assert.match(workflow, /os: \[ubuntu-24.04\]/);
 });
 
 // Opt-in network proof uses uv's real producer-generated lock/index/archive format.

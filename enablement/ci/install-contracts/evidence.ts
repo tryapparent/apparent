@@ -21,7 +21,7 @@ export function identity(cwd: string): Identity {
 }
 export function trusted(value: Identity, env: NodeJS.ProcessEnv): boolean {
   return env.GITHUB_ACTIONS === 'true' && env.GITHUB_REPOSITORY === 'tryapparent/apparent' &&
-    ['push', 'pull_request'].includes(env.GITHUB_EVENT_NAME ?? '') && value.platform === 'darwin' && value.arch === 'x64' &&
+    ['push', 'pull_request', 'workflow_dispatch'].includes(env.GITHUB_EVENT_NAME ?? '') && value.platform === 'darwin' && value.arch === 'x64' &&
     /^macos[^:]+:[^:]+$/.test(value.image) && !!value.osRelease && value.sha === env.GITHUB_SHA && /^[a-f0-9]{40}$/.test(value.sha) && /^[a-f0-9]{40}$/.test(value.tree) &&
     /^[1-9][0-9]*$/.test(value.run) && /^[1-9][0-9]*$/.test(value.attempt) &&
     (value.workflow === 'tryapparent/apparent/.github/workflows/checks.yml@refs/heads/main' ||

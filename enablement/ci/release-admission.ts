@@ -15,19 +15,14 @@ export function admitsCD(run: Run, jobs: Job[], repo: string, sha: string, platf
       run.head_branch !== 'main' || run.event !== 'push') return false;
   if (!((run.status === 'completed' && ['success', 'failure'].includes(run.conclusion ?? '')) ||
         (['queued', 'in_progress'].includes(run.status) && run.conclusion === null))) return false;
-  // A failed Mac job must not prevent Linux publication. Require this platform's
-  // actual jobs, including shared admission guards, rather than aggregate success.
-  // GitHub can report the run as queued while unrelated platform jobs await a
-  // runner. Completed platform evidence below is still mandatory.
-  const runner = platform === 'linux' ? 'ubuntu-24.04' : 'macos-15-intel';
+  const runner = 'ubuntu-24.04';
   const required = ['contracts', 'select', 'Hermes inspection (ubuntu-24.04)',
-    `${platform} / select`, ...['desktop-ui', 'connect-client', 'rust'].map(name => `${platform} / ${name} (${runner})`)];
-  if (platform === 'macos') required.push('Hermes inspection (macos-15-intel)');
+    'linux / select', ...['desktop-ui', 'connect-client', 'rust'].map(name => `linux / ${name} (${runner})`)];
   const passed = new Set(jobs.filter(job => job.status === 'completed' && job.conclusion === 'success').map(job => job.name));
   // Fresh exact-main admission proves each affected suite ran or has authenticated
   // identical-tree PR evidence. Historical complete runs retain their contract.
   return passed.has('contracts') && passed.has('select') &&
-    (passed.has(platform === 'linux' ? 'Linux verification' : 'Mac verification') || required.every(name => passed.has(name)));
+    (passed.has('Linux verification') || required.every(name => passed.has(name)));
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { run, jobs, repo, sha, platform } = JSON.parse(readFileSync(0, 'utf8'));
