@@ -68,7 +68,7 @@ This port adds no root dependency, production caller, CI or hook-policy change.
   this mode-bit/cooperative boundary; callers must provision output roots without
   ACL grants to other writers. Validation never repairs unsafe modes or owners.
 - Manifests have a separate **64 MiB** byte budget, not the runtime receipt's
-  64 KiB budget. `capture/engine/runtime/mod.rs::write_bundle_artifacts` serializes the entire
+  64 KiB budget. `capture/engine/bundle/bundle_processing.rs::build_bundle_from_parts` serializes the entire
   `ApparentBundle` with pretty JSON, including unbounded event/stroke-point,
   transcript and context histories (`shared/model.rs`); 64 KiB is not realistic.
   The Engine rejects supplied bytes above 64 MiB before parsing/copying, reads

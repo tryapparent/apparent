@@ -2,7 +2,6 @@ use super::*;
 use crate::capture::engine::bundle::bundle_processing::{self, publication};
 use crate::shared::model::{RgbaFrame, TargetInfo, TranscriptData};
 use std::sync::{
-    Arc,
     atomic::{AtomicBool, Ordering},
     mpsc,
 };
@@ -80,34 +79,44 @@ fn pending_publication_waits_for_outer_final_mutation_before_transcribing() {
 
 #[test]
 fn record_text_allocation_publishes_with_transcription_and_rolls_back_as_one_bundle() {
-    let fixture = Fixture::new();
-    let (_, original, _) = fixture.build().unwrap();
-    let before_manifest = std::fs::read(fixture.0.join("apparent.json")).unwrap();
-    let before_summary = std::fs::read(fixture.0.join("summary.md")).unwrap();
-    let before_frame = std::fs::read(fixture.0.join(&original.keyframes[0].file)).unwrap();
-    let before_audio = std::fs::read(fixture.0.join("audio.wav")).unwrap();
-    let transcript = || TranscriptData {
-        source: "synthetic-local-transcriber".into(),
-        text: "Hello.".into(),
-        words: vec![crate::shared::model::WordTiming {t0:0,t1:1,text:"Hello.".into()}],
-        ..Default::default()
-    };
-    assert!(transcribe_again_with_publication(&fixture.0, |_| Ok(transcript()),
-        |_| anyhow::bail!("synthetic publication failure")).is_err());
-    assert_eq!(std::fs::read(fixture.0.join("apparent.json")).unwrap(), before_manifest);
-    assert_eq!(std::fs::read(fixture.0.join("summary.md")).unwrap(), before_summary);
-    assert!(fixture.0.join(PENDING).is_file());
-    assert!(transcribe_again_with(&fixture.0, |_| Ok(transcript())).unwrap());
-    let bundle: crate::shared::model::ApparentBundle = serde_json::from_str(
-        &publication::read_text(&fixture.0, "apparent.json").unwrap()).unwrap();
-    let summary = publication::read_text(&fixture.0, "summary.md").unwrap();
-    assert_eq!(bundle.keyframes[0].said.as_deref(), Some("Hello."));
-    assert_eq!(bundle.transcript, transcript());
-    assert!(summary.contains("Hello."));
-    publication::checked(&fixture.0, &bundle, &summary).unwrap();
-    assert!(!fixture.0.join(PENDING).exists());
-    assert_eq!(std::fs::read(fixture.0.join(&original.keyframes[0].file)).unwrap(), before_frame);
-    assert_eq!(std::fs::read(fixture.0.join("audio.wav")).unwrap(), before_audio);
+    for fail_at in [0, 1] {
+        let fixture = Fixture::new();
+        let (_, original, _) = fixture.build().unwrap();
+        let before_manifest = std::fs::read(fixture.0.join("apparent.json")).unwrap();
+        let before_summary = std::fs::read(fixture.0.join("summary.md")).unwrap();
+        let before_frame = std::fs::read(fixture.0.join(&original.keyframes[0].file)).unwrap();
+        let before_audio = std::fs::read(fixture.0.join("audio.wav")).unwrap();
+        let transcript = || TranscriptData {
+            source: "synthetic-local-transcriber".into(),
+            text: "Hello.".into(),
+            words: vec![crate::shared::model::WordTiming {t0:0,t1:1,text:"Hello.".into()}],
+            ..Default::default()
+        };
+        let error = transcribe_again_with_publication(
+            &fixture.0,
+            |_| Ok(transcript()),
+            |step| {
+                assert_ne!(std::fs::read(fixture.0.join("apparent.json")).unwrap(), before_manifest);
+                if step == fail_at { anyhow::bail!("injected publication step {step}") }
+                Ok(())
+            },
+        ).unwrap_err();
+        assert!(format!("{error:#}").contains("injected publication step"));
+        assert_eq!(std::fs::read(fixture.0.join("apparent.json")).unwrap(), before_manifest, "manifest must roll back at step {fail_at}");
+        assert_eq!(std::fs::read(fixture.0.join("summary.md")).unwrap(), before_summary, "summary must roll back at step {fail_at}");
+        assert!(fixture.0.join(PENDING).is_file());
+        assert!(transcribe_again_with(&fixture.0, |_| Ok(transcript())).unwrap());
+        let bundle: crate::shared::model::ApparentBundle = serde_json::from_str(
+            &publication::read_text(&fixture.0, "apparent.json").unwrap()).unwrap();
+        let summary = publication::read_text(&fixture.0, "summary.md").unwrap();
+        assert_eq!(bundle.keyframes[0].said.as_deref(), Some("Hello."));
+        assert_eq!(bundle.transcript, transcript());
+        assert!(summary.contains("Hello."));
+        publication::checked(&fixture.0, &bundle, &summary).unwrap();
+        assert!(!fixture.0.join(PENDING).exists());
+        assert_eq!(std::fs::read(fixture.0.join(&original.keyframes[0].file)).unwrap(), before_frame);
+        assert_eq!(std::fs::read(fixture.0.join("audio.wav")).unwrap(), before_audio);
+    }
 }
 
 #[test]
@@ -172,8 +181,8 @@ fn failed_initial_barrier_never_starts_pending_transcription() {
 }
 
 #[test]
-fn concurrent_pending_retry_revalidates_after_real_artifact_replacement() {
-    let fixture = Arc::new(Fixture::new());
+fn pending_retry_rejects_replaced_audio_before_transcription() {
+    let fixture = Fixture::new();
     fixture.build().unwrap();
     std::fs::remove_file(fixture.0.join("audio.wav")).unwrap();
     std::os::unix::fs::symlink("/dev/zero", fixture.0.join("audio.wav")).unwrap();
@@ -187,29 +196,4 @@ fn concurrent_pending_retry_revalidates_after_real_artifact_replacement() {
     );
     assert!(!called.load(Ordering::SeqCst));
     assert!(fixture.0.join(PENDING).is_file());
-}
-
-#[test]
-fn pending_publication_restores_both_text_artifacts_after_late_failure() {
-    for fail_at in [0, 1] {
-        let fixture = Fixture::new();
-        fixture.build().unwrap();
-        let manifest = std::fs::read(fixture.0.join("apparent.json")).unwrap();
-        let summary = std::fs::read(fixture.0.join("summary.md")).unwrap();
-        let error = transcribe_again_with_publication(
-            &fixture.0,
-            |_| Ok(TranscriptData::default()),
-            |step| {
-                assert_ne!(std::fs::read(fixture.0.join("apparent.json")).unwrap(), manifest);
-                if step == fail_at { anyhow::bail!("injected publication step {step}") }
-                Ok(())
-            },
-        ).unwrap_err();
-        assert!(format!("{error:#}").contains("injected publication step"));
-        assert_eq!(std::fs::read(fixture.0.join("apparent.json")).unwrap(), manifest);
-        assert_eq!(std::fs::read(fixture.0.join("summary.md")).unwrap(), summary);
-        assert!(fixture.0.join(PENDING).is_file());
-        assert!(transcribe_again_with(&fixture.0, |_| Ok(TranscriptData::default())).unwrap());
-        assert!(!fixture.0.join(PENDING).exists());
-    }
 }
