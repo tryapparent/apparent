@@ -14,7 +14,6 @@ const workflow = (name: string) => YAML.parse(readFileSync(new URL(`.github/work
 const ci = () => workflow('checks.yml');
 function admitted(expression: string, needs: any, event = 'pull_request', draft = false, cancelled = false,
   context: {repository?: string; ref?: string; ancestors?: string[]} = {}) {
-  // skipped transitive ancestors even when a direct admission job succeeded.
   if (!/\b(?:always|cancelled|success|failure)\s*\(/.test(expression) &&
       [...Object.values(needs).map((job: any) => job.result), ...(context.ancestors ?? [])].some(result => result !== 'success')) return false;
   return Function('github', 'needs', 'cancelled', 'always', `return (${expression});`)(
@@ -25,7 +24,7 @@ function parents(outputs: any = {}, reuse: any = {}) {
 }
 test('automatic stream orchestrators, manual diagnostics, PR integration checkout and read-only verification', () => {
   assert.deepEqual(readdirSync(new URL('.github/workflows/', root)).filter(name =>
-    Object.keys(workflow(name).on).some(event => !['workflow_dispatch', 'workflow_call'].includes(event))).sort(), ['checks.yml', 'hermes.yml', 'stream-connect.yml', 'stream-engine.yml', 'stream-public.yml']);
+    Object.keys(workflow(name).on).some(event => !['workflow_dispatch', 'workflow_call'].includes(event))).sort(), ['checks.yml', 'hermes.yml', 'stream-connect.yml', 'stream-engine.yml', 'stream-onboarding.yml', 'stream-public.yml']);
   assert.deepEqual(Object.keys(workflow('stream-connect.yml').on), ['pull_request', 'push', 'workflow_dispatch']);
   assert.equal(ci().jobs.connect, undefined);
   assert.equal(ci().jobs['native-evidence'], undefined);

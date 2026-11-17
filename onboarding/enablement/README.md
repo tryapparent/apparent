@@ -32,4 +32,3 @@ capture rejection, renderer forgery rejection, native-owned progress persistence
 the full Linux capture/draw/finish/paste/completion sequence, and the actual changed
 Electron build in both themes at normal/minimum sizes with keyboard recovery.
 The former x64 macOS proof under Rosetta is not ARM-native acceptance.
-
