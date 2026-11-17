@@ -7,7 +7,7 @@ native-proof exemption for the application or independently published Engine.
 
 Engine's producer copies `engine/native/` outside the checkout and builds with
 its own Cargo manifest/lockfile; its SDK is packed from `engine/sdk/`. The copied
-qualification programs are `engine/tools/qualify.ts` and `qualify-frames.ts`.
+qualification programs are `engine/enablement/ci/producer/qualify.ts` and `qualify-frames.ts`.
 `stream-engine.yml` supplies compiler, runner, FFmpeg/GStreamer and Ubuntu action
 inputs. None executes the audited Desktop executor family. Engine selection and
 publication do consume shared selector/admission code; those inputs stay broad.

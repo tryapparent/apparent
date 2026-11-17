@@ -50,9 +50,7 @@ jobs:
       - name: Prove packed SDK consumption without native tools or outputs
         run: |
           if command -v cargo || command -v rustc; then exit 1; fi
-          proof=$(mktemp -d /tmp/apparent-dev-engine-sdk-XXXXXX)
-          echo "ENGINE_OUTPUT=$proof" >> "$GITHUB_ENV"
-          node --experimental-strip-types engine/tools/check.ts "$proof" --sdk-only
+          node --experimental-strip-types engine/enablement/ci/producer/check.ts --sdk-only --github-env
       - name: Record the qualified SDK digest
         run: node --experimental-strip-types engine/enablement/ci/run.ts sdk-digest "$ENGINE_OUTPUT/artifacts"
       - uses: actions/upload-artifact@v4
@@ -93,10 +91,7 @@ jobs:
           fi
       - name: Build independent provider and qualify extracted packages
         shell: bash
-        run: |
-          proof=$(mktemp -d /tmp/apparent-dev-engine-native-XXXXXX)
-          echo "ENGINE_OUTPUT=$proof" >> "$GITHUB_ENV"
-          node --experimental-strip-types engine/tools/check.ts "$proof"
+        run: node --experimental-strip-types engine/enablement/ci/producer/check.ts --github-env
       - uses: actions/upload-artifact@v4
         with:
           name: engine-native-${{ matrix.runner }}

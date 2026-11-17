@@ -91,10 +91,7 @@ class PrePushGuardTests(unittest.TestCase):
         encryption_test.parent.mkdir()
         encryption_test.write_text("import {test} from 'node:test'; test('finite production CLI fixture', () => {});\n")
         (self.repo / "enablement/cli-version.test.ts").write_text(encryption_test.read_text())
-        # The independent Engine producer is a real selected command, but this
-        # finite hook fixture must not compile/package a native runtime. Observe
-        # its dispatch separately; Engine's owner check supplies real proof.
-        engine_check = self.repo / "engine/tools/check.ts"
+        engine_check = self.repo / "engine/enablement/ci/producer/check.ts"
         engine_check.parent.mkdir(parents=True)
         engine_check.write_text(
             "import {appendFileSync} from 'node:fs';\n"
