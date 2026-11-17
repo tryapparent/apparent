@@ -134,3 +134,17 @@ status/notification/replay and platform/source exclusion check. No production
 code is changed by the campaign. Refresh the duplicate-effect sensitivity and
 normal combined-tree hook/hosted checks; the prior head
 `d302cc07cef4af2c49994b174a4c8640f90632d7` passed its hosted checks before main moved.
+
+## Copied-native probe cache repair
+
+The reconciled push at `3bfb2b14b` was rejected: 1,061 native cases passed and five
+Connect guards failed. A copied-source context probe had incorrectly shared this
+worktree's Cargo target. The reused Connect dependency baked in that temporary
+`CARGO_MANIFEST_DIR`, hiding its TypeScript package; the same failed lookup also
+removed pointer/presentation results. The `.d` metadata identifies the wrong path.
+Invalidating only `apparent-connect-client`, rebuilding in the actual worktree
+and checking the corrected metadata restores all eight selected sharing/pointer/
+inspect cases. No Connect production code or assertion changed. Copied-source
+probe recipes now use a private target; never share path-baked local artifacts
+with the delivery checkout. Preserve the rejected-hook log at the existing private
+audit job and rerun the complete normal hook before publishing.
