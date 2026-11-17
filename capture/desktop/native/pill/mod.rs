@@ -1360,7 +1360,7 @@ fn emit_elem_prims(
                 ElemId::Record => "Record",
                 ElemId::Finish => "Finish",
                 ElemId::Paste => "Paste",
-                ElemId::CopyLink => "Copy link",
+                ElemId::CopyLink => "Public link",
                 _ => unreachable!(),
             };
             let tx = atlas.label(label);

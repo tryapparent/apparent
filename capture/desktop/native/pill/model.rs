@@ -440,7 +440,7 @@ impl ElemId {
             Self::Processing => "Processing",
             Self::DoneLead => "Completed",
             Self::Paste => "Paste",
-            Self::CopyLink => "Copy link",
+            Self::CopyLink => "Public link",
             Self::Inspect => "Inspect",
             Self::Route0 | Self::Route1 => "Send to session",
             Self::LiveWarning => "No words recognized yet",

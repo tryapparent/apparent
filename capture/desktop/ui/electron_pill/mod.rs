@@ -120,7 +120,7 @@ impl View {
                 }
                 view.control("paste", "Paste", true, false, !warning);
                 if let Some(enabled) = share {
-                    view.control("copy-link", "Copy link", *enabled, false, false);
+                    view.control("copy-link", "Public link", *enabled, false, false);
                 }
                 view.control("inspect", "Inspect", true, false, false);
                 view.control("dismiss", "Dismiss", true, false, false);

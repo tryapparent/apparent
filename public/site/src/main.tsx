@@ -16,7 +16,7 @@ const app = (
   </StrictMode>
 )
 
-// scripts/site-build/prerender.ts fills #root at build time; the dev server serves it empty.
+// ../enablement/site-build/prerender.ts fills #root at build time; the dev server serves it empty.
 if (root.firstElementChild) hydrateRoot(root, app)
 else createRoot(root).render(app)
 

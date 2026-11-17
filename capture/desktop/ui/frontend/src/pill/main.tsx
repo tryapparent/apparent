@@ -83,14 +83,19 @@ function Pill() {
   },[view,sharing]);
   if(!view)return <div role="status" className="pill connection">{error?'Recording controls unavailable':'Connecting…'}</div>;
   if(view.phase==='hidden')return null;
-  if(showingDestination && destination)return <main data-revision={view.revision} className="pill apparent-theme" data-phase={view.phase} data-reduced={view.reducedMotion}>
-    <DestinationPicker key={destination.capture} view={destination}/>
+  const confirmation=sharing===view.revision&&<section className="public-share-confirmation" aria-label="Confirm public sharing"><StatusCard tone="neutral" headline="Create a public link?" compact>
+    <p>Anyone with this link can view this capture. Shared captures are not end-to-end encrypted.</p>
+    <div className="public-share-actions"><Button variant="outline" disabled={pending} onClick={()=>void act('cancel-public-link')}>Cancel sharing</Button><Button disabled={pending} onClick={()=>void act('confirm-public-link')}>Create public link</Button></div>
+  </StatusCard></section>;
+  const shareAction=view.actions.find(action=>action.id==='copy-link');
+  if(showingDestination && destination)return <main data-revision={view.revision} className="pill apparent-theme pill-destination" data-phase={view.phase} data-reduced={view.reducedMotion}>
+    <DestinationPicker key={destination.capture} view={destination} disabled={pending||sharing!==null} shareAction={shareAction} onShare={()=>void act('copy-link')}/>
+    {shareAction&&/^(Uploading|Upload failed|Upload cancelled|Link copied|Copy failed|Sharing stopped)/.test(view.label)&&<div className="destination-notification destination-receipt" role="status">{view.label}</div>}
+    {error&&<div className="destination-notification"><StatusCard tone="failure" headline="Action not confirmed" compact><p>Try Public link again.</p></StatusCard></div>}
+    {confirmation}
   </main>;
   return <PillSurface view={view} pending={pending} controlsDisabled={sharing!==null} error={error} receivedAt={receivedAt} reduced={systemReduced} manualDrag={window.apparentPill?.manualDrag} onAction={(id,drop)=>void act(id,drop)} onBeginDrag={()=>window.apparentPill!.beginDrag(view.revision)} onBeginPaste={()=>window.apparentPill!.beginPaste(view.revision)} onCancelPaste={()=>void window.apparentPill?.cancelPaste()}>
-    {sharing===view.revision&&<section className="public-share-confirmation" aria-label="Confirm public sharing"><StatusCard tone="neutral" headline="Create a public link?" compact>
-      <p>Anyone with this link can view this capture. Shared captures are not end-to-end encrypted.</p>
-      <div className="public-share-actions"><Button variant="outline" disabled={pending} onClick={()=>void act('cancel-public-link')}>Cancel sharing</Button><Button disabled={pending} onClick={()=>void act('confirm-public-link')}>Create public link</Button></div>
-    </StatusCard></section>}
+    {confirmation}
   </PillSurface>;
 }
 

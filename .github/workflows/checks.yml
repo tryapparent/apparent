@@ -52,7 +52,7 @@ on:
       - ".github/workflows/release-linux.yml"
       - ".github/workflows/release-mac-preview.yml"
       - ".github/workflows/linux-updater-harness.yml"
-      - "public/site/**"
+      - "public/**"
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
   push:
     branches: [main]
@@ -105,7 +105,7 @@ on:
       - ".github/workflows/release-linux.yml"
       - ".github/workflows/release-mac-preview.yml"
       - ".github/workflows/linux-updater-harness.yml"
-      - "public/site/**"
+      - "public/**"
 
 permissions:
   contents: read

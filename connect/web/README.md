@@ -36,7 +36,7 @@ For a standalone checkout, copy only this package to a directory outside the
 repository and supply `CONNECT_ASSET_SOURCE=/absolute/approved-assets` containing
 the five files below in their canonical source groups (`hosted/`, `fonts/`, and
 `brand/`). Run the same frozen install, `npm run typecheck`, and
-`npm test` there. No `public/site/node_modules`, site source, root manifest, native helper
+`npm test` there. No `public/node_modules`, site source, root manifest, native helper
 or backend implementation is required. The default asset source is only a build
 convenience, not an implementation dependency.
 
