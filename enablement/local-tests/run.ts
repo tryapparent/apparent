@@ -178,7 +178,8 @@ export function contractTests(cwd = root): Command[] {
     { argv: ['node', '--experimental-strip-types', '--test', ...fixtureTests, 'enablement/local-tests/run.test.ts', 'enablement/local-tests/reuse.test.ts',
       'enablement/local-tests/preview/explain.test.ts',
       ...prerequisites, ...timingContracts(cwd)], cwd: '.' },
-    { argv: ['bun', 'test', 'enablement/ci/', 'connect/enablement/ci/'], cwd: '.' },
+    { argv: ['bun', 'test', 'enablement/ci/'], cwd: '.' },
+    { argv: ['bun', 'test', 'connect/enablement/ci/'], cwd: '.' },
   ];
 }
 

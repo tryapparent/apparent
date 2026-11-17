@@ -1,4 +1,4 @@
-import '../agents/bridge';
+import './agents/bridge';
 import type {PairingPreview} from '../../electron/settings/t3';
 import {useEffect, useRef, useState} from 'react';
 import {Button} from '@apparent/ui/button';
@@ -6,7 +6,7 @@ import {ErrorDialog} from '@apparent/ui/error-dialog';
 import frog from '../../../../assets/settings/frog-puzzled.png';
 import {Switch} from '@apparent/ui/switch';
 import {Input} from '@apparent/ui/input';
-import {t3PickerEnabled,type PreferenceFacts} from '../agents/policy';
+import {t3PickerEnabled,type PreferenceFacts} from './agents/policy';
 
 import {Help} from './help';
 export function T3Settings() {

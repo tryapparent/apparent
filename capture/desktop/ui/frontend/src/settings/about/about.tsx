@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, Check, CheckCircle2, Copy, ExternalLink, LoaderCircle, Star } from 'lucide-react';
-import availableFrog from '../../../../assets/settings/frog-jump.png';
-import currentFrog from '../../../../assets/settings/frog-lounge.png';
-import failedFrog from '../../../../assets/settings/frog-puzzled.png';
+import availableFrog from '../../../../../assets/settings/frog-jump.png';
+import currentFrog from '../../../../../assets/settings/frog-lounge.png';
+import failedFrog from '../../../../../assets/settings/frog-puzzled.png';
 import { Button } from '@apparent/ui/button';
 import { ErrorDialog } from '@apparent/ui/error-dialog';
 import { NativeSelect, NativeSelectOption } from '@apparent/ui/native-select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@apparent/ui/tooltip';
-import { channelUpdateHint } from './update-policy';
+import { channelUpdateHint } from '../update-policy';
 
 export interface AboutState {
   version: string;

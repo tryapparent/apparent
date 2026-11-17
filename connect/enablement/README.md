@@ -55,7 +55,8 @@ tooling, which cannot allocate native/portable product checks or publish.
 Run the selector, workflow and admission contracts with:
 
 ```sh
-bun test connect/enablement/ci/ enablement/ci/
+bun test enablement/ci/
+bun test connect/enablement/ci/
 ```
 
 Portable checks run before affected Linux/macOS native integration. Publication

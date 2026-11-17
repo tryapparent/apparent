@@ -8,7 +8,7 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
-import {skillCommand} from '../../../src/agents/policy.ts';
+import {skillCommand} from '../../../src/settings/agents/policy.ts';
 
 test('installed Agents uses acknowledged preferences, fixed clipboard text and bounded navigation', {timeout: 60000}, async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'agents-'));

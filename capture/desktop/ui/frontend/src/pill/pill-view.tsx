@@ -3,6 +3,7 @@ import {Button} from '@apparent/ui/button';
 import {StickyNote} from '@apparent/ui/icons';
 import type {PillView} from './bridge';
 import {InputMeter} from './input-meter';
+import {LiveCaption} from './caption/view';
 import {Check,Circle,CircleAlert,ClipboardPaste,Link,LoaderCircle,Monitor,PenLine,Scan,ScanEye,Smartphone,Square,X,type LucideIcon} from 'lucide-react';
 import './surface.css';
 const actionIcons:Record<string,LucideIcon>={
@@ -27,7 +28,7 @@ export function PillSurface({view,pending=false,controlsDisabled=false,children,
   const inspectIndex=controls.findIndex(action=>action.id==='inspect');
   if(pasteIndex>=0 && inspectIndex>pasteIndex)
     [controls[pasteIndex],controls[inspectIndex]]=[controls[inspectIndex],controls[pasteIndex]];
-  return <main data-revision={view.revision} className="pill apparent-theme" aria-label={view.phase==='selecting'?view.label:undefined} data-phase={view.phase} data-reduced={view.reducedMotion} data-warning={view.warning!==null}>
+  return <main data-revision={view.revision} className="pill apparent-theme" aria-label={view.phase==='selecting'?view.label:undefined} data-phase={view.phase} data-reduced={view.reducedMotion} data-warning={view.warning!==null} data-live={view.phase==='recording' && !!view.transcript}>
     <div className="pill-surface">
     <div className="pill-row">
     {(view.phase!=='selecting') && <div className={`lead ${view.draggable?'movable':''} ${manualDrag?'manual-drag':''}`} title={view.draggable?'Drag recording controls':undefined}
@@ -55,6 +56,7 @@ export function PillSurface({view,pending=false,controlsDisabled=false,children,
         onClick={event=>{if(action.id!=='paste' || event.detail===0)void onAction(action.id);}}>{Icon && <Icon aria-hidden="true"/>}{!iconOnly && <span>{action.label}</span>}</Button>;})}
     </div>}
     </div>
+    {view.phase==='recording' && view.transcript && <LiveCaption value={view.transcript} />}
     {view.phase==='recording' && view.noteCount>0 && <div className="pill-notes-layer"><Button className="pill-notes" variant="ghost"
       aria-label={`${view.noteCount} saved ${view.noteCount===1?'note':'notes'}. Open notes`} disabled={pending || !view.actions.some(a=>a.id==='notes' && a.enabled)}
       onClick={()=>void onAction('notes')}><StickyNote aria-hidden="true"/><span>{view.noteCount>99?'99+':view.noteCount}</span></Button></div>}

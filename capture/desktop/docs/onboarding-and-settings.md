@@ -1,6 +1,6 @@
 # Onboarding, permissions and Settings
 
-Settings → Labs offers **Auto paste**, off by default. It saves
+Settings → Labs offers **Auto paste** on Linux, off by default. It saves
 `experiments.autoPasteDraft` through the existing config transaction; changes
 apply at the next Finish without restart (including external file edits).
 Linux Hyprland with Lua dispatchers is the initial native adapter; other Linux
@@ -10,11 +10,7 @@ Auto paste now presses Enter after both pastes, with another focus and clipboard
 check before Enter. Manual Paste does not press Enter. Dispatch does not prove
 attachment acceptance or successful sending; check the receiving composer. Saved captures and the explicit Paste action remain
 available. Setup practice and agent/phone captures do not auto paste.
-Turning the experiment off restores ordinary copy. Labs is a separate Electron
-pane between Agents and About, with a flask icon in both sidebars. It shares the
-existing config transaction, with experiment-only read/write capabilities. If
-packaged Settings assets are unavailable, the retained native shell explains how
-to restore Labs; it does not add a second experiment editor.
+Turning the experiment off restores ordinary copy; no donor surface is removed.
 
 ## Shared onboarding visuals
 
@@ -363,6 +359,24 @@ the guided capture lesson. Permission-repair windows retain their existing behav
 
 ## Settings (`capture/desktop/settings/settings.rs`, `capture/desktop/native/Settings.swift`)
 
+### Labs
+
+Labs exposes **Live local transcription**, off by default. It saves
+`experiments.localStreamingTranscription` through the existing native config
+transaction and waits for acknowledgement. Errors require Refresh preference;
+the renderer cannot write arbitrary settings or read secrets. File edits are
+read by the Settings refresh and the next recording, without a restart.
+
+Enabling prepares the verified English Parakeet model in the background. The
+next recording uses a local stream once the model is ready, on Linux and macOS.
+Live text appears below the pill; Finish flushes the saved audio tail. Streaming
+failure preserves recording and retries the whole saved audio locally. This
+experiment overrides the ordinary Apple live/pause worker for that recording;
+disabling restores the existing path on the next recording. Missing Electron
+assets leave an explicit unavailable message in native Labs, with other Settings
+pages still reachable. Record's policy/bridge contract is in
+`record/transcription/README.md`; native inference remains in Engine.
+
 ### Agents
 
 Agents and About share one live Electron window. Parent-admitted navigation changes
@@ -375,7 +389,7 @@ Error actions are left aligned with recovery first and Close second. Unknown
 preference outcomes require Refresh preference; dismissing never proves a save.
 
 Installed Settings routes Agents to the shared Electron shell on macOS and Linux.
-Desktop's `ui/frontend/src/agents` owns preference defaults, save/readback
+Desktop's `ui/frontend/src/settings/agents` owns preference defaults, save/readback
 workflow, recovery and fixed skill command. The private parent pipe exposes only
 the saved `experiments.agentDemoVideo` and `experiments.t3DestinationPicker`
 booleans (or absence), connection-presence facts and bounded errors;

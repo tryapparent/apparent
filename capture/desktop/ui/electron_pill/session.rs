@@ -510,11 +510,15 @@ impl Session {
         let mut semantic = view.clone();
         semantic.clock.clear();
         semantic.input_waveform = None;
+        let transcript_visible = semantic.transcript.is_some();
+        semantic.transcript = None;
         let mut previous = self.view.clone();
         previous.clock.clear();
         previous.input_waveform = None;
+        let previous_transcript_visible = previous.transcript.is_some();
+        previous.transcript = None;
         let changed =
-            semantic != previous || self.generation != generation || self.selection != selection;
+            semantic != previous || transcript_visible != previous_transcript_visible || self.generation != generation || self.selection != selection;
         if changed {
             view.revision += 1;
         }
@@ -619,6 +623,7 @@ mod native_tests {
         let view = View {
             revision: 1, phase: "recording", clock: "00:01".into(), label: "Synthetic pin test".into(),
             warning: None, notice: None, reduced_motion: true,
+            transcript: None,
             draggable: false, input_waveform: None, note_count: 0, actions: vec![],
         };
         let mut session = Session::open(view.clone(), 1, Default::default()).unwrap();

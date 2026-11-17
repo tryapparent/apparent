@@ -1,5 +1,6 @@
 //! Rust-authoritative presentation contract for the shared recording pill.
-//! No paths, capture contents, credentials or renderer-selected capture IDs cross it.
+//! Only bounded, opted-in live text crosses the private presentation pipe. No
+//! paths, credentials or renderer-selected capture IDs cross it or diagnostics.
 use serde::{Deserialize, Serialize};
 mod coordinator;
 mod session;
@@ -27,6 +28,7 @@ pub(crate) fn capture_exclusion_ready(window: Option<u32>, applied: &[u32], scre
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct View {
+    pub transcript: Option<crate::capture::engine::runtime::audio::transcription::parakeet_stream::Preview>,
     pub revision: u64,
     pub phase: &'static str,
     pub clock: String,
@@ -57,6 +59,7 @@ impl View {
 
     pub fn new(snapshot: &PillSnapshot, revision: u64, draggable: bool) -> Self {
         let mut view = Self {
+            transcript: None,
             revision,
             phase: "hidden",
             clock: snapshot.clock.clone(),

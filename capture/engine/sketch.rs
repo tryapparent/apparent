@@ -2282,6 +2282,8 @@ mod tests {
             wav_bytes: empty_wav,
             saved_lease: None,
             live: Default::default(),
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            streaming: Default::default(),
             #[cfg(target_os = "linux")]
             pause: Default::default(),
         };
