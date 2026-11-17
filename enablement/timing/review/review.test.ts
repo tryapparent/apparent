@@ -253,3 +253,12 @@ test('report makes CI coverage gaps and unresolved action attribution explicit',
   assert.match(text,/CI coverage missing/);
   assert.match(text,/2 × 5s = 10s/);
 });
+
+test('queued workflows with zero job rows retain pre-job admission waits rather than disappearing',()=>{
+  const r=inspectJobs([{databaseId:99,attempt:2,headSha:'a'.repeat(40),name:'Queued workflow',status:'queued',createdAt:'2026-11-15T00:00:00Z',jobs:[]}],Date.parse('2026-11-15T02:00:00Z'),Date.parse('2026-11-15T06:00:00Z'));
+  assert.equal(r.analysis.preJobWaits[0].ageSeconds,21600);
+  assert.equal(r.analysis.preJobWaits[0].windowSeconds,14400);
+  assert.equal(r.analysis.coverage.runs,1);
+  assert.equal(r.analysis.queueByRunner.length,0,'no invented job/runner queue');
+  assert.match(r.analysis.preJobWaits[0].reason,/admission/);
+});
