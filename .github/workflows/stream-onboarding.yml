@@ -25,3 +25,32 @@ jobs:
         with:
           node-version: "22"
       - run: node onboarding/enablement/ci/run.ts
+      - run: node onboarding/enablement/ci/pack.ts "${{ runner.temp }}/onboarding-package"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: onboarding-package
+          path: ${{ runner.temp }}/onboarding-package
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'push' && github.repository == 'tryapparent/apparent'
+    needs: policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    concurrency:
+      group: onboarding-package-publication
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@v4
+        with:
+          name: onboarding-package
+          path: ${{ runner.temp }}/onboarding-package
+      - run: node onboarding/enablement/ci/publish.ts "${{ runner.temp }}/onboarding-package"
+        env:
+          GH_TOKEN: ${{ github.token }}
