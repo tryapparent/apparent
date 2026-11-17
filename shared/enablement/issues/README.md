@@ -64,3 +64,8 @@ The PR description should reference the same primary issue. Use `Closes` only
 when the entire issue outcome is complete. Ordinary commit `Issue` trailers do
 not close issues. A PR is unnecessary for the first branch push. This feature
 creates no issues, comments, labels, dashboards or project automation.
+
+For authentication diagnosis, use `gh auth status --hostname github.com` before
+retrying the binding command. The generated message hooks live in the prepared
+hook directory and delegate to the tracked TypeScript implementation. They add
+no tracked extensionless shell paths requiring a language-policy exception.
