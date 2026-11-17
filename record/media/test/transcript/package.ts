@@ -41,7 +41,6 @@ export function qualifyTranscript(options: {
     manifest.video='recording.mp4';manifest.audio='audio.wav';manifest.videoOffsetMs=0;manifest.strokes=[];manifest.events=[];manifest.cursor=[];
     manifest.marks=[1000,4000,7000,10000,13000,16000].map((t,i)=>({id:`f${i+1}`,shape:'flag',strokes:[],t0:t,t1:t,
       boxNorm:[0,0,1,1],description:'flagged this moment'}));
-    writeFileSync(join(input,'apparent.json'),JSON.stringify(manifest),{mode:0o600});
     if(route!=='phone')manifest.marks=[];
     writeFileSync(join(input,'apparent.json'),JSON.stringify(manifest),{mode:0o600});
     const before=[hash(join(input,'apparent.json')),hash(join(input,'recording.mp4')),hash(join(input,'audio.wav'))];
