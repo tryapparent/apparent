@@ -13,9 +13,14 @@ Run the selector, workflow and admission contracts with:
 bun test connect/enablement/ci/ enablement/ci/
 ```
 
-Portable checks run before affected Linux/macOS native integration. Publication
-requires successful same-run contracts, portable and required native checks,
-canonical main and `HOSTED_CD_ENABLED=true`. Existing production environment,
+Portable checks and affected Linux native integration run in parallel after
+selection and contracts. Optional macOS diagnostics follow portable checks.
+Publication requires successful same-run contracts, portable and required native
+checks, canonical main and `HOSTED_CD_ENABLED=true`. The full portable plan runs
+the Worker and standalone Connect browser suites once on the candidate.
+Publication verification builds the inputs for the composed browser and theme
+checks, then tests and seals the mounted production package. Public's standalone
+site checks run in its own workflow. Existing production environment,
 serialization, current-input guards and sealed-artifact verification still apply.
 
 Capture no longer calls this workflow or adds Connect's complete main plan.

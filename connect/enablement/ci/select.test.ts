@@ -86,7 +86,8 @@ test('the composed browser proof selects its Connect consumer and publication', 
   assert.equal(plan.browser, true);
   assert.equal(plan.root, false);
   assert.equal(plan.client, false);
-  assert.equal(routeDecision(['public/enablement/browser-proof/test-hosted-browser.mjs']).publicationStreams.connect, true);
+  for (const path of ['public/enablement/browser-proof/test-hosted-browser.mjs', 'connect/enablement/ci/verify-composition.ts'])
+    assert.equal(routeDecision([path]).publicationStreams.connect, true, path);
 });
 
 test('Connect publication requires successful stream-owned gates on canonical main', () => {
@@ -120,6 +121,8 @@ test('Connect publication requires successful stream-owned gates on canonical ma
 
 test('Connect allocates Mac only for explicitly requested manual diagnostics', () => {
   const {macos, linux} = workflow('stream-connect.yml').jobs;
+  assert.deepEqual(linux.needs, ['select', 'contracts']);
+  assert.doesNotMatch(linux.if, /needs\.portable/);
   assert.equal(workflow('stream-connect.yml').on.workflow_dispatch.inputs.macos_diagnostics.default, false);
   const needs = {select: {result: 'success', outputs: {native: 'true'}}, contracts: {result: 'success'},
     portable: {result: 'success'}};
