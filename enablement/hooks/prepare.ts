@@ -27,16 +27,17 @@ try {
   const backupName = (name: string) => ['pre-commit','prepare-commit-msg','commit-msg'].includes(name) || (name === 'pre-push' && retirePush) ? 'preserved-' + name : name;
   mkdirSync(output,{mode:0o700});
   for (const name of hooks) copyFileSync(path.join(active,name),path.join(output,backupName(name)));
+  const runnable = (name: string) => hooks.includes(name) && Boolean(lstatSync(path.join(active,name)).mode & 0o111);
   const quote=(s: string)=>"'"+s.replaceAll("'","'\\''")+"'";
   let wrapper='#!/bin/sh\nset -eu\n';
-  if (hooks.includes('pre-commit') && !retire) wrapper+=`${quote(path.join(output,'preserved-pre-commit'))} "$@"\n`;
+  if (runnable('pre-commit') && !retire) wrapper+=`${quote(path.join(output,'preserved-pre-commit'))} "$@"\n`;
   wrapper+='root=$(git rev-parse --show-toplevel)\nexec "$root/.githooks/pre-commit" "$@"\n';
   writeFileSync(path.join(output,'pre-commit'),wrapper,{mode:0o755});
   for (const name of hooks) chmodSync(path.join(output,backupName(name)),lstatSync(path.join(active,name)).mode & 0o777);
   if (retirePush || !hooks.includes('pre-push')) writeFileSync(path.join(output,'pre-push'), '#!/bin/sh\nset -eu\nroot=$(git rev-parse --show-toplevel)\nexec "$root/.githooks/pre-push" "$@"\n', {mode:0o755});
   for (const [name, command] of [['prepare-commit-msg','prepare-message'], ['commit-msg','validate-message']]) {
     let messageHook = '#!/bin/sh\nset -eu\n';
-    if (hooks.includes(name)) messageHook += quote(path.join(output, 'preserved-' + name)) + ' "$@"\n';
+    if (runnable(name)) messageHook += quote(path.join(output, 'preserved-' + name)) + ' "$@"\n';
     messageHook += 'root=$(git rev-parse --show-toplevel)\nexec node --experimental-strip-types "$root/shared/enablement/issues/run.ts" ' + command + ' "$1"\n';
     writeFileSync(path.join(output,name),messageHook,{mode:0o755});
   }

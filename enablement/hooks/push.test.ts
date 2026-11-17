@@ -44,6 +44,18 @@ test("exact legacy Cargo hook is backed up and retired into a worktree-relative 
     { mode: 0o755 },
   );
   git("config", "core.hooksPath", "old");
+  for (const name of ["pre-commit", "prepare-commit-msg", "commit-msg"])
+    writeFileSync(join(dir, "old", name), "#!/bin/sh\nexit 99\n", {
+      mode: 0o644,
+    });
+  writeFileSync(join(dir, ".githooks/pre-commit"), "#!/bin/sh\nexit 0\n", {
+    mode: 0o755,
+  });
+  mkdirSync(join(dir, "shared/enablement/issues"), { recursive: true });
+  writeFileSync(
+    join(dir, "shared/enablement/issues/run.ts"),
+    "process.exit(0);\n",
+  );
   const output = join(dir, "prepared");
   const result = spawnSync(
     process.execPath,
@@ -71,6 +83,11 @@ test("exact legacy Cargo hook is backed up and retired into a worktree-relative 
     encoding: "utf8",
   });
   assert.equal(hook.status, 7);
+  for (const name of ["pre-commit", "prepare-commit-msg", "commit-msg"])
+    assert.equal(
+      spawnSync(join(output, name), [".git/message"], { cwd: dir, env }).status,
+      0,
+    );
   assert.equal(readFileSync(join(dir, ".git/push-stdin"), "utf8"), "payload\n");
   assert.equal(
     readFileSync(join(dir, ".git/push-args"), "utf8"),
