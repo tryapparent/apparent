@@ -95,3 +95,9 @@ test('General preserves native function and named key codes through bounded admi
     assert.equal(generalNamedShortcut({...event,key:'F17'},platform),null);
   }
 });
+
+test('General admits standalone Option only for recording with zero modifiers',()=>{
+  const choice={action:'shortcut',kind:'record',keyCode:58,key:'Option',modifiers:0,reserved:false};
+  for(const keyCode of [58,61])assert.equal(validAction({...choice,keyCode}),true);
+  for(const invalid of [{kind:'paste'},{keyCode:63},{modifiers:2048},{reserved:true},{extra:true}])assert.equal(validAction({...choice,...invalid}),false);
+});

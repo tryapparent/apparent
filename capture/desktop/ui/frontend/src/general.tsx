@@ -3,7 +3,7 @@ import {NativeSelect} from '@apparent/ui/native-select';
 import {Button} from '@apparent/ui/button';
 import {generalNamedShortcut} from '../electron/settings/general';
 import {ConnectSettingsCard} from './connect/card';
-import {shortcutCapture, shortcutInput} from '../electron/onboarding/shortcut-editor';
+import {OptionShortcutGesture, shortcutCapture, shortcutInput} from '../electron/onboarding/shortcut-editor';
 
 type Shortcut = {kind:'record'|'paste';title:string;label:string;recording:boolean;externallyManaged:boolean;isDefault:boolean;clearable:boolean;error:string|null};
 type GeneralState = {platform:'linux'|'macos';login:{on:boolean;available:boolean;needsApproval:boolean};shortcuts:Shortcut[];errorReporting:boolean;lowerPlayback:boolean;playbackLevel:number;playbackAvailable:boolean};
@@ -22,9 +22,17 @@ export function General() {
   const recording=state?.shortcuts.find(s=>s.recording);
   useEffect(()=>{
     if(!recording||!state)return;
-    const blur=()=>void act({action:'cancel-shortcut'});
+    const gesture=new OptionShortcutGesture();
+    const blur=()=>{gesture.reset();void act({action:'cancel-shortcut'})};
+    const pointerDown=()=>gesture.pointer(true),pointerUp=()=>gesture.pointer(false);
+    const release=(event:KeyboardEvent)=>{
+      const captured=gesture.up(event);
+      if(captured&&recording.kind==='record')void act({action:'shortcut',kind:recording.kind,...captured,reserved:false});
+    };
     const key=(event:KeyboardEvent)=>{
       event.preventDefault();event.stopPropagation();
+      gesture.down(event,state.platform);
+      if(event.repeat){gesture.cancel();return}
       if(event.key==='Escape'){blur();return}
       if(recording.clearable&&!event.ctrlKey&&!event.altKey&&!event.metaKey&&!event.shiftKey&&['Backspace','Delete'].includes(event.key)){void act({action:'clear-shortcut',kind:recording.kind});return}
       if(shortcutInput(event,state.platform)!=='key')return;
@@ -32,8 +40,10 @@ export function General() {
       if(captured)void act({action:'shortcut',kind:recording.kind,...captured,reserved:false});
       else setError('Use a letter, number, function or named key, or choose Fn on macOS. Escape cancels.');
     };
-    window.addEventListener('keydown',key,true);window.addEventListener('blur',blur);
-    return()=>{window.removeEventListener('keydown',key,true);window.removeEventListener('blur',blur)};
+    window.addEventListener('keydown',key,true);window.addEventListener('keyup',release,true);window.addEventListener('blur',blur);
+    window.addEventListener('pointerdown',pointerDown,true);window.addEventListener('pointerup',pointerUp,true);window.addEventListener('pointercancel',pointerUp,true);
+    return()=>{window.removeEventListener('keydown',key,true);window.removeEventListener('keyup',release,true);window.removeEventListener('blur',blur);
+      window.removeEventListener('pointerdown',pointerDown,true);window.removeEventListener('pointerup',pointerUp,true);window.removeEventListener('pointercancel',pointerUp,true)};
   },[recording,state?.platform]);
   function toggle(label:string,key:string,on:boolean,available=true){return <label className="general-row"><span>{label}</span><input type="checkbox" checked={on} disabled={!available} onChange={e=>void act({action:'set',key,value:e.target.checked})}/></label>}
   return <div className="general-settings">
