@@ -10,6 +10,8 @@ export function validAction(value: unknown): boolean {
   if (v.action === 'cancel-shortcut') return keys === 'action';
   const kind = v.kind === 'record' || v.kind === 'paste';
   if (['record-shortcut','reset-shortcut','clear-shortcut'].includes(String(v.action))) return kind && keys === 'action,kind';
+  if(v.key === 'Option')return v.action === 'shortcut' && v.kind === 'record' && keys === 'action,key,keyCode,kind,modifiers,reserved'
+    && (v.keyCode === 58 || v.keyCode === 61) && v.modifiers === 0 && v.reserved === false;
   return v.action === 'shortcut' && kind && keys === 'action,key,keyCode,kind,modifiers,reserved'
     && Number.isInteger(v.keyCode) && Number(v.keyCode) >= 0 && Number(v.keyCode) <= 255
     && Number.isInteger(v.modifiers) && (Number(v.modifiers) & ~6912) === 0

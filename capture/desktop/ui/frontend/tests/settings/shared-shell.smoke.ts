@@ -72,6 +72,51 @@ test('Settings changes adopted panes in one live document and enforces the curre
     await expect(page.getByRole('alertdialog')).toHaveCount(0);
     assert.equal(await page.evaluate(()=>Reflect.get(window,'shellIdentity')),'same document');
     assert.equal(loads,0,'navigation never reloads Chromium');
+    // The General recorder is a separate consumer of the shared shortcut policy.
+    await page.getByRole('button',{name:'General',exact:true}).click();
+    await expect(page.getByRole('checkbox',{name:'Launch at login'})).toBeVisible();
+    const macShortcut=(recording:boolean,label='Fn')=>send({type:'general-state',platform:'macos',login:{on:false,available:true,needsApproval:false},
+      shortcuts:[{kind:'record',title:'Record',label,recording,externallyManaged:false,isDefault:label==='Fn',clearable:false,error:null}],
+      errorReporting:true,lowerPlayback:false,playbackLevel:35,playbackAvailable:true});
+    const optionCount=()=>actions.filter(a=>a.action==='shortcut'&&a.key==='Option').length;
+    for(const side of ['AltLeft','AltRight']){
+      macShortcut(true);
+      await expect(page.getByRole('button',{name:'Use Fn',exact:true})).toBeVisible();
+      await page.getByRole('button',{name:'Press shortcut… (Esc cancels)',exact:true}).focus();
+      assert.equal(await page.getByRole('button',{name:'Option',exact:true}).count(),0,'Option is not suggested');
+      const before=optionCount();
+      await page.keyboard.down(side);assert.equal(optionCount(),before);
+      await page.keyboard.up(side);await expect.poll(optionCount).toBe(before+1);
+      assert.deepEqual(actions.filter(a=>a.action==='shortcut'&&a.key==='Option').at(-1),{action:'shortcut',kind:'record',keyCode:58,modifiers:0,key:'Option',reserved:false});
+    }
+    const fnChoice=page.getByRole('button',{name:'Use Fn',exact:true});
+    await fnChoice.focus();const beforeControl=optionCount();
+    await page.keyboard.down('Alt');await page.keyboard.up('Alt');
+    await page.waitForTimeout(100);assert.equal(optionCount(),beforeControl,'Fn suggestion is not the shortcut recorder');
+    await fnChoice.press('Enter');
+    await expect.poll(()=>actions.some(a=>a.action==='shortcut'&&a.key==='Fn'&&a.keyCode===63)).toBe(true);
+    await page.getByRole('button',{name:'Press shortcut… (Esc cancels)',exact:true}).focus();
+    const cleanCount=optionCount();
+    await page.keyboard.down('Alt');await page.keyboard.press('r');await page.keyboard.up('Alt');
+    await expect.poll(()=>actions.some(a=>a.action==='shortcut'&&a.key==='r'&&a.modifiers===2048)).toBe(true);
+    await page.keyboard.down('Alt');await page.keyboard.down('Shift');await page.keyboard.up('Shift');await page.keyboard.up('Alt');
+    await page.keyboard.down('Alt');await page.mouse.wheel(0,120);await page.keyboard.up('Alt');
+    await page.locator('h1').scrollIntoViewIfNeeded();
+    const heading=await page.locator('h1').boundingBox();assert.ok(heading);
+    await page.mouse.move(heading.x+5,heading.y+5);await page.mouse.down();
+    await page.keyboard.down('Alt');await page.keyboard.up('Alt');await page.mouse.up();
+    await page.keyboard.down('Alt');await page.evaluate(()=>window.dispatchEvent(new Event('blur')));await page.keyboard.up('Alt');
+    await expect.poll(()=>actions.some(a=>a.action==='cancel-shortcut')).toBe(true);
+    assert.equal(optionCount(),cleanCount,'chords, mixed modifiers, clicks and blur do not select Option');
+    macShortcut(false,'Option');
+    const selected=page.getByRole('button',{name:'Option',exact:true});
+    await expect(selected).toBeVisible();await selected.focus();await expect(selected).toBeFocused();
+    for(const width of [720,640])for(const colorScheme of ['light','dark'] as const){
+      await session.send('Emulation.setDeviceMetricsOverride',{width,height:530,deviceScaleFactor:1,mobile:false});
+      await page.emulateMedia({colorScheme,reducedMotion:'reduce'});await selected.scrollIntoViewIfNeeded();
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+      if(process.env.APPARENT_SHELL_PROOF)await page.screenshot({path:path.join(process.env.APPARENT_SHELL_PROOF,`Option-${width}-${colorScheme}.png`)});
+    }
     await page.getByRole('button',{name:'Storage',exact:true}).click();
     await expect(page).toHaveTitle('Apparent Settings — Storage');
     assert.equal(await page.evaluate(()=>typeof window.apparent?.readCaptureLocation),'function');

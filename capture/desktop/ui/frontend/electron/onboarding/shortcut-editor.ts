@@ -4,6 +4,30 @@ export type ShortcutKeyEvent = {
 
 export type ShortcutCapture = { keyCode: number; modifiers: number; key: string };
 
+// A standalone modifier is selected on release, after an uninterrupted gesture.
+// Track physical keys so releasing another modifier cannot turn a chord into Option.
+export class OptionShortcutGesture {
+  private held = new Set<string>();
+  private candidate: string | null = null;
+  private pointerHeld = false;
+  reset() { this.held.clear(); this.candidate = null; this.pointerHeld = false; }
+  cancel() { this.candidate = null; }
+  pointer(down: boolean) { this.pointerHeld = down; this.cancel(); }
+  down(event: ShortcutKeyEvent, platform: 'macos'|'linux') {
+    const clean = this.held.size === 0;
+    this.held.add(event.code || event.key);
+    this.candidate = platform === 'macos' && clean && !this.pointerHeld && event.key === 'Alt' &&
+      !event.ctrlKey && !event.metaKey && !event.shiftKey ? event.code : null;
+  }
+  up(event: ShortcutKeyEvent): ShortcutCapture | null {
+    const select = this.candidate !== null && this.candidate === event.code &&
+      event.key === 'Alt' && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
+    this.held.delete(event.code || event.key);
+    this.candidate = null;
+    return select ? {keyCode:58,modifiers:0,key:'Option'} : null;
+  }
+}
+
 export function desktopShortcutSelection(state: {platform:string;step:string;shortcutEditor?:{recording:boolean}|null}|null, value: unknown) {
   if(state?.platform!=='linux'||state.step!=='shortcut'||!state.shortcutEditor?.recording)return null;
   if(!value||typeof value!=='object')return null;

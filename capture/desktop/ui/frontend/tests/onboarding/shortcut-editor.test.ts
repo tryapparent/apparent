@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { desktopShortcutSelection, fnSelectionActions, fnShortcut, shortcutCapture, shortcutInput } from '../../electron/onboarding/shortcut-editor.ts';
+import { OptionShortcutGesture, desktopShortcutSelection, fnSelectionActions, fnShortcut, shortcutCapture, shortcutInput } from '../../electron/onboarding/shortcut-editor.ts';
 
 const require = createRequire(import.meta.url);
 const { parseAction } = require('../../electron/onboarding-protocol.cjs') as { parseAction: (value: unknown) => unknown };
@@ -86,4 +86,26 @@ test('Fn selection enters the provider editor before choosing and keeps its guar
   assert.deepEqual(fnSelectionActions('macos',true), [selection]);
   assert.deepEqual(fnSelectionActions('linux',false), []);
   for(const action of fnSelectionActions('macos',false))assert.deepEqual(parseAction(action),typeof action==='string'?{action}:action);
+});
+
+test('Option is selected only after a clean Mac release, on either side', () => {
+  for(const code of ['AltLeft','AltRight']) {
+    const gesture=new OptionShortcutGesture();
+    const down=event({key:'Alt',code,altKey:true,metaKey:false,shiftKey:false});
+    const up={...down,altKey:false};
+    assert.equal(gesture.up(up),null);
+    gesture.down(down,'macos');
+    assert.deepEqual(gesture.up(up),{keyCode:58,modifiers:0,key:'Option'});
+    gesture.down(down,'linux');assert.equal(gesture.up(up),null);
+    for(const interrupt of ['key','modifier','click','blur','repeat']) {
+      gesture.reset();gesture.down(down,'macos');
+      if(interrupt==='click')gesture.cancel();
+      else if(interrupt==='blur')gesture.reset();
+      else gesture.down(interrupt==='repeat'?down:event({key:interrupt==='key'?'r':'Shift',code:interrupt==='key'?'KeyR':'ShiftLeft',metaKey:false,shiftKey:interrupt==='modifier',altKey:true}),'macos');
+      assert.equal(gesture.up(up),null,interrupt);
+    }
+    const action={action:'shortcut',kind:'record',keyCode:58,modifiers:0,key:'Option',reserved:false};
+    assert.deepEqual(parseAction(action),action);
+    assert.throws(()=>parseAction({...action,modifiers:2048}));
+  }
 });

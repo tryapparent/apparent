@@ -608,9 +608,11 @@ mod tests {
             include_str!("../../ui/macos.rs"),
             include_str!("../onboarding.rs"),
             include_str!("../settings.rs"),
+            include_str!("../shortcut/config.rs"),
             include_str!("../mod.rs"),
             include_str!("../../native/Onboarding.swift"),
             include_str!("../../native/Settings.swift"),
+            include_str!("../../native/ShortcutKeys.swift"),
             include_str!("../../native/PermissionPanel.swift"),
         ];
         let calls = [
