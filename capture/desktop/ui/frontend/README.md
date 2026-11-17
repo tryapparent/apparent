@@ -610,7 +610,7 @@ Disconnected devices use existing Connect Settings; signing in does not create a
 public link. No automatic-sharing preference or historical scan is introduced.
 
 Routing remains the existing Electron development window (`npm start`); installed
-native Copy link retains its refusal for encrypted captures. Close this window to
+native Public link retains its refusal for encrypted captures. Close this window to
 roll back. Do not remove the legacy donor or switch installed capsule routing
 until this workflow passes real macOS/isolated Linux acceptance and the routing
 switch is authorized. Socket/controller/browser fixtures are not native proof.

@@ -1,0 +1,15 @@
+{
+  "digest": "sha256:309b066df3c3173abba7fa41c045c262973474d2e6dbe13f028bb503d6d8d51a",
+  "expired": false,
+  "expires_at": "2026-11-18T18:12:14Z",
+  "id": 14255757735,
+  "name": "apparent-native-candidate-43920614168-1",
+  "size_in_bytes": 148641054,
+  "workflow_run": {
+    "head_branch": "enablement/ci-test-only-routing",
+    "head_repository_id": 1434650956,
+    "head_sha": "217e78208bc28b00e2e3809c6d1b64e106c11ee5",
+    "id": 43920614168,
+    "repository_id": 1434650956
+  }
+}

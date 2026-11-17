@@ -272,7 +272,7 @@ func buttonIdentity(_ element: AXUIElement, label: String, point: CGPoint, desce
         let role = rawRole as? String ?? ""
         let title = (rawTitle as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let description = (rawDescription as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let knownLabels = ["Finish", "Copy link", "Create public link", "Cancel upload", "Retry upload", "Paste", "Inspect"]
+        let knownLabels = ["Finish", "Public link", "Create public link", "Cancel upload", "Retry upload", "Paste", "Inspect"]
         clickTrace?.add(["stage":"receiverObserved", "depth":depth, "requestedLabel":label, "pid":Int(pid), "role":String(role.prefix(80)), "title":knownLabels.contains(title) ? title : "<other>", "description":knownLabels.contains(description) ? description : "<other>"])
         if role == (kAXButtonRole as String) && (title == label || description == label) {
             var rawPosition: CFTypeRef?, rawSize: CFTypeRef?
@@ -415,8 +415,8 @@ func main() throws {
     try need(rootPid > 1 && rootPid <= Int(Int32.max), "Invalid root PID")
     let op = req["operation"] as! String, out = URL(fileURLWithPath: req["output"] as! String).standardizedFileURL
     try need(["snapshot", "prepare", "click", "startup", "close-settings"].contains(op), "Unknown operation")
-    if op == "prepare" { try need(["Finish", "Copy link"].contains(req["label"] as? String ?? ""), "Unsupported accessibility bootstrap label") }
-    if op == "click" { try need(["Copy link", "Create public link", "Cancel upload", "Retry upload"].contains(req["label"] as? String ?? ""), "Unsupported click label") }
+    if op == "prepare" { try need(["Finish", "Public link"].contains(req["label"] as? String ?? ""), "Unsupported accessibility bootstrap label") }
+    if op == "click" { try need(["Public link", "Create public link", "Cancel upload", "Retry upload"].contains(req["label"] as? String ?? ""), "Unsupported click label") }
     try safeOwnedPath(out, root: runner)
     try need(!fm.fileExists(atPath: out.path), "Output must be fresh")
     let job = reqURL.deletingLastPathComponent(); jobDir = job
@@ -446,7 +446,7 @@ func main() throws {
     }
     if op == "snapshot" { print(String(data: try JSONSerialization.data(withJSONObject: before), encoding: .utf8)!); return }
     try need(op == "click" || op == "prepare", "Unknown operation")
-    let label = req["label"] as! String; try need((op == "prepare" ? ["Finish", "Copy link"] : ["Copy link", "Create public link", "Cancel upload", "Retry upload"]).contains(label), "Unsupported operation label")
+    let label = req["label"] as! String; try need((op == "prepare" ? ["Finish", "Public link"] : ["Public link", "Create public link", "Cancel upload", "Retry upload"]).contains(label), "Unsupported operation label")
     let matching = try words.compactMap { word -> CGRect? in guard let range = word.text.range(of: label) else { return nil }; return try word.candidate.boundingBox(for: range)?.boundingBox }
     try need(matching.count == 1, "Label OCR match is missing or ambiguous")
     let b = before["bounds"] as! [CGFloat], box = matching[0]

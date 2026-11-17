@@ -420,9 +420,9 @@ enum Command {
         /// End time (`0:05` or `5.0`).
         #[arg(long)]
         to: String,
-        /// Frames per second to extract when the bundle has a video.
-        #[arg(long, default_value_t = 4)]
-        fps: u32,
+        /// Frames per second to extract when the bundle has a video (default: 4).
+        #[arg(long)]
+        fps: Option<u32>,
     },
     /// Zoom into one moment: a dense contact sheet of frames around a time, a spoken phrase or a
     /// mark, with the bundle's ink and touches drawn in and each frame's time, plus what was said.
@@ -530,7 +530,7 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         port: u16,
     },
-    /// Build a bundle from a simulated Screen capture (`public/site/scripts/autocrop-corpus.mjs`).
+    /// Build a bundle from a simulated Screen capture (`public/enablement/browser-proof/motion/autocrop-corpus.mjs`).
     #[command(hide = true)]
     Fixture {
         /// The scenario's `scenario.json`.

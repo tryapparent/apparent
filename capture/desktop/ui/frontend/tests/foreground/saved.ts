@@ -25,12 +25,12 @@ export async function withRetainedEvidence<R>(work: () => Promise<R>, retain: ()
 export async function recopyForeground<R>(input: {
   readClipboard: () => Promise<string>;
   seedClipboard: () => Promise<void>;
-  click: (label: 'Copy link' | 'Create public link') => Promise<R>;
+  click: (label: 'Public link' | 'Create public link') => Promise<R>;
   verifyRestored: (copied: string) => Promise<void>;
 }) {
   const copied = await input.readClipboard();
   await input.seedClipboard();
-  const copy = await input.click('Copy link');
+  const copy = await input.click('Public link');
   const confirmation = await input.click('Create public link');
   await input.verifyRestored(copied);
   return {copied, copy, confirmation};

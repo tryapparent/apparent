@@ -13,14 +13,14 @@ function enabled(expression: string, inputs: any, outputs: any) {
   return Function('inputs','needs',`return (${expression});`)(inputs,{select:{outputs}});
 }
 test('native foreground proof drivers select and execute their installed Mac consumer', () => {
-  const foreground=jobs.rust.steps.find((s:any)=>s.id==='native_foreground');
+  const foreground=jobs['native-acceptance'].steps.find((s:any)=>s.id==='native_foreground');
   for(const path of ['capture/desktop/enablement/native/foreground/pill-input.swift',
     'capture/desktop/enablement/native/foreground/scene.swift']) {
     const plan=suitePlan([path]);
     const outputs=Object.fromEntries(Object.entries(plan).map(([key,value])=>[key,String(value)]));
     assert.equal(enabled(jobs.rust.if,{runner:'macos-15-intel',mac_rust:true,release_receipt:false},outputs),true,path);
     const selected=Function('needs','runner','steps','cancelled',`return (${foreground.if});`)(
-      {select:{outputs}},{os:'macOS'},{mac_candidate_build:{outcome:'success'}},()=>false);
+      {select:{outputs}},{os:'macOS'},{install:{outcome:'success'}},()=>false);
     assert.equal(selected,true,`${path} must exercise the actual native foreground driver`);
   }
 });
@@ -46,7 +46,7 @@ test('packed Mac preserves required native proof, renderer/client execution and 
     'Native Electron selected-reference control against the installed Rust App',
     'Installed Mac foreground capture and sharing',
     'Early Mac Electron to Rust Settings integration (not native GUI proof)'])
-    assert.ok(steps.some((s:any)=>s.name===name),name);
+    assert.ok([...steps,...jobs['native-acceptance'].steps].some((s:any)=>s.name===name),name);
   const renderer=steps.find((s:any)=>s.name==='Mac Electron platform checks');
   assert.equal(renderer.run,'npm run test:electron:mac');
   assert.match(renderer.if,/outputs.desktop == 'true'/);

@@ -158,14 +158,14 @@ jobs:
       - name: Install Public's locked dependencies and browsers
         working-directory: public/site
         run: |
-          bun install --frozen-lockfile
-          ./node_modules/.bin/playwright-core install --with-deps chromium firefox
+          bun install --cwd .. --frozen-lockfile
+          ../node_modules/.bin/playwright-core install --with-deps chromium firefox
           echo "CHROME_PATH=$(node --input-type=module -e 'import {chromium} from "playwright-core"; console.log(chromium.executablePath())')" >> "$GITHUB_ENV"
       - name: Verify Public source, browsers, shared inputs and prepared movie worker
         working-directory: public/site
         run: npm run verify
       - name: Seal the checked Public-only Pages artifact
-        run: node public/site/scripts/cd/publish-pages.ts seal "$GITHUB_SHA"
+        run: node public/enablement/cd/publish-pages.ts seal "$GITHUB_SHA"
       - uses: actions/upload-artifact@v4
         with:
           name: public-${{ github.sha }}
@@ -197,13 +197,13 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.3.10'
-      - run: bun install --frozen-lockfile
+      - run: bun install --cwd .. --frozen-lockfile
         working-directory: public/site
       - name: Publish sealed current main to Pages and read back both Public origins
         env:
           GH_TOKEN: ${{ github.token }}
           WEBSITE_PAGES_API_TOKEN: ${{ secrets.WEBSITE_PAGES_API_TOKEN }}
-        run: node public/site/scripts/cd/publish-pages.ts
+        run: node public/enablement/cd/publish-pages.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -1,0 +1,233 @@
+{
+  "source": {
+    "commit": "f9357cfe0958381d0b54d4af555f17e023191f75",
+    "tree": "c72f4d23f2438d0d053be0f0ae0ed5712805a571"
+  },
+  "run": {
+    "id": 43958374569,
+    "path": ".github/workflows/checks.yml",
+    "head_sha": "064a6d334c85688c1b446d7f2e03b75bbe7fb022",
+    "head_branch": "enablement/native-candidate-retry",
+    "event": "pull_request",
+    "run_attempt": 1,
+    "status": "completed",
+    "conclusion": "failure",
+    "repository": {
+      "full_name": "tryapparent/apparent"
+    },
+    "head_repository": {
+      "full_name": "tryapparent/apparent"
+    }
+  },
+  "artifact": {
+    "id": 14276086248,
+    "name": "apparent-native-candidate-43958374569-1",
+    "size_in_bytes": 148639854,
+    "digest": "sha256:fa8fb2667998e03428f2504891c0360efb7989cd5b5f0fb47589bf5a50c333e6",
+    "expired": false,
+    "expires_at": "2026-11-18T21:56:22Z",
+    "workflow_run": {
+      "id": 43958374569,
+      "repository_id": 1434650956,
+      "head_repository_id": 1434650956,
+      "head_branch": "enablement/native-candidate-retry",
+      "head_sha": "064a6d334c85688c1b446d7f2e03b75bbe7fb022"
+    }
+  },
+  "job": {
+    "name": "macos / platform (macos-15-intel)",
+    "status": "completed",
+    "conclusion": "success",
+    "run_attempt": 1,
+    "head_sha": "064a6d334c85688c1b446d7f2e03b75bbe7fb022",
+    "labels": [
+      "macos-15-intel"
+    ],
+    "steps": [
+      {
+        "name": "Set up job",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run actions/checkout@v4",
+        "conclusion": "success"
+      },
+      {
+        "name": "Prepare hosted Ubuntu package transport",
+        "conclusion": "skipped"
+      },
+      {
+        "name": "Linux application dependencies",
+        "conclusion": "skipped"
+      },
+      {
+        "name": "Select the macOS 26 SDK required by native helpers",
+        "conclusion": "success"
+      },
+      {
+        "name": "Pin selected Xcode for native builds",
+        "conclusion": "success"
+      },
+      {
+        "name": "Install CLI export speedup dependencies",
+        "conclusion": "success"
+      },
+      {
+        "name": "Install the Metal toolchain",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify Mac installer replacement transactions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run dtolnay/rust-toolchain@stable",
+        "conclusion": "success"
+      },
+      {
+        "name": "Normalize the disposable Intel Mac compiler inventory",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run Swatinem/rust-cache@v2",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run Swatinem/rust-cache@v2",
+        "conclusion": "skipped"
+      },
+      {
+        "name": "Run actions/setup-node@v4",
+        "conclusion": "success"
+      },
+      {
+        "name": "Reject an inconsistent Mac native exemption",
+        "conclusion": "skipped"
+      },
+      {
+        "name": "Timing helper contracts",
+        "conclusion": "success"
+      },
+      {
+        "name": "Agent setup policy and native metadata contracts (no Rust required)",
+        "conclusion": "success"
+      },
+      {
+        "name": "Local Desktop install reuse contracts",
+        "conclusion": "success"
+      },
+      {
+        "name": "Prepare private temporary root before first Cargo",
+        "conclusion": "success"
+      },
+      {
+        "name": "Cache Electron downloads (not installed modules or test receipts)",
+        "conclusion": "success"
+      },
+      {
+        "name": "Prepare locked native prerequisites before first Cargo",
+        "conclusion": "success"
+      },
+      {
+        "name": "Install Mac renderer dependencies when native preparation did not install them",
+        "conclusion": "skipped"
+      },
+      {
+        "name": "Prepare Mac Electron before timed renderer tests",
+        "conclusion": "success"
+      },
+      {
+        "name": "Mac Electron platform checks",
+        "conclusion": "success"
+      },
+      {
+        "name": "Qualify Record media through the published Engine provider",
+        "conclusion": "success"
+      },
+      {
+        "name": "Qualify Agent frames through the published Engine provider",
+        "conclusion": "success"
+      },
+      {
+        "name": "Mac Cargo source-identity freshness regression",
+        "conclusion": "success"
+      },
+      {
+        "name": "CI-sensitive fixtures before native checks",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build and package the exact Mac candidate for native checks",
+        "conclusion": "success"
+      },
+      {
+        "name": "Retain the installed Mac CI candidate for a separate native test run",
+        "conclusion": "success"
+      },
+      {
+        "name": "Upload the pending native test candidate",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run echo \"attempt=$GITHUB_RUN_ATTEMPT\" >> \"$GITHUB_OUTPUT\"",
+        "conclusion": "success"
+      },
+      {
+        "name": "Early Mac Electron to Rust Settings integration (not native GUI proof)",
+        "conclusion": "success"
+      },
+      {
+        "name": "Execute the same changed-tree checks (not GUI acceptance)",
+        "conclusion": "success"
+      },
+      {
+        "name": "Actual Electron to Rust Settings integration (not native GUI proof)",
+        "conclusion": "skipped"
+      },
+      {
+        "name": "Prepare the client-owned TypeScript policy for native consumers",
+        "conclusion": "success"
+      },
+      {
+        "name": "Independent Connect client build and tests",
+        "conclusion": "success"
+      },
+      {
+        "name": "Retain independent client timings",
+        "conclusion": "success"
+      },
+      {
+        "name": "Retain completed Mac dependency seeds after full verification",
+        "conclusion": "success"
+      },
+      {
+        "name": "Clean private prerequisite temporary root",
+        "conclusion": "success"
+      },
+      {
+        "name": "Retain observation-only timings, including failures",
+        "conclusion": "success"
+      },
+      {
+        "name": "Post Cache Electron downloads (not installed modules or test receipts)",
+        "conclusion": "success"
+      },
+      {
+        "name": "Post Run actions/setup-node@v4",
+        "conclusion": "success"
+      },
+      {
+        "name": "Post Run Swatinem/rust-cache@v2",
+        "conclusion": "success"
+      },
+      {
+        "name": "Post Run actions/checkout@v4",
+        "conclusion": "success"
+      },
+      {
+        "name": "Complete job",
+        "conclusion": "success"
+      }
+    ]
+  }
+}

@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 
 const workflow = readFileSync('.github/workflows/verification-platform.yml', 'utf8');
-const rust = workflow.split('\n  rust:\n')[1].split('\n  release-ready:\n')[0];
+const rust = workflow.split('\n  rust:\n')[1].split('\n  native-acceptance:\n')[0];
 const preflight = 'CI-sensitive fixtures before native checks';
 const packaging = 'Build and package the exact Mac candidate for native checks';
 const storage = 'Native Mac Storage and error-reporting controls against the installed Rust GUI';
@@ -15,7 +15,7 @@ const macBridge = 'Early Mac Electron to Rust Settings integration (not native G
 const full = 'Execute the same changed-tree checks (not GUI acceptance)';
 const cache = 'Retain completed Mac dependency seeds after full verification';
 const linuxBridge = 'Actual Electron to Rust Settings integration (not native GUI proof)';
-const relevant = [preflight, packaging, storage, copy, reference, macBridge, full, linuxBridge, cache];
+const relevant = [preflight, packaging, macBridge, full, linuxBridge, cache];
 const earlyFilters = [
   'capture::desktop::settings::settings::tests::the_command_line_row_',
   'capture::desktop::workflow::agent_capture::tests::competing_launches_cannot_remove_the_winning_control_socket',
@@ -87,9 +87,7 @@ test('security fixtures and required packaging precede serial native checks; ful
   assert.equal(early[0], preflight + '|test -j 3 --locked --timings -- --test-threads=2 ' + earlyFilters.join(' '));
   assert.match(result.trace, /routing\/native\.ts/);
   assert.match(result.env, /CACHE_ON_FAILURE=true/);
-  for (const name of [storage, copy, reference]) {
-    assert.equal(steps.find(step => step.name === name)!.body.includes('continue-on-error'), false);
-  }
+
 });
 test('early Cargo failure prevents packaging, native assertions and cache completion', t => {
   const result = execute(t, 'macOS', 'test -j 3');
@@ -103,10 +101,10 @@ test('packaging failure cannot enter GUI assertions, ordinary suites or publish 
   assert.deepEqual(result.executed, [preflight, packaging]);
   assert.doesNotMatch(result.env, /CACHE_ON_FAILURE=true/);
 });
-test('native failure arrives before full suites without arming incomplete dependency seeds', t => {
-  const result = execute(t, 'macOS', 'native-storage-assertions');
+test('failed full suites cannot arm dependency seeds or admit the dependent native job', t => {
+  const result = execute(t, 'macOS', 'routing/native.ts');
   assert.equal(result.status, 31);
-  assert.deepEqual(result.executed, [preflight, packaging, storage]);
+  assert.deepEqual(result.executed, [preflight, packaging, macBridge, full]);
   assert.doesNotMatch(result.env, /CACHE_ON_FAILURE=true/);
 });
 test('Linux retains its required full-build-before-bridge order and never admits Mac GUI operations', t => {
