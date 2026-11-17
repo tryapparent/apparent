@@ -3,6 +3,13 @@ import assert from 'node:assert/strict';
 import {coachPosition, coachDimensions} from '../../electron/onboarding/presentation.ts';
 import {borderCommand} from '../../electron/onboarding/hyprland.ts';
 
+test('whiteboard uses the compact coach; screen drawing keeps its paired helper',()=>{
+  for(const width of [1920,720,380,320]){
+    assert.equal(coachDimensions({x:0,y:0,width,height:900},'whiteboard').width,Math.min(width,380));
+    assert.equal(coachDimensions({x:0,y:0,width,height:900},'screen-ink').width,width>=720?720:width);
+  }
+});
+
 test('Omarchy walkthrough: coach clears the compositor-moved board and recording controls', () => {
   // Synthetic geometry reproducing the reported 1920x1200 arrangement; no private media.
   for (const scale of [1, 1.25, 2]) {

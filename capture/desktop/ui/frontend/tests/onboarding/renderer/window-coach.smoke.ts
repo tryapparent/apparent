@@ -129,7 +129,23 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.locator('.native-control')).toHaveCount(0);
   send({ step:'try-it', practice:'whiteboard', anchor:[300,30,320,50] });
   await expect(page.getByRole('heading', { name:'Open Whiteboard.', exact:true })).toBeVisible();
-  await expect.poll(() => page.evaluate(() => innerWidth)).toBe(720);
+  await expect.poll(() => page.evaluate(() => innerWidth)).toBe(380);
+  if(process.env.APPARENT_ONBOARDING_EVIDENCE){await fs.mkdir(process.env.APPARENT_ONBOARDING_EVIDENCE,{recursive:true});await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,'whiteboard-coach.png')});}
+  const coachMetrics=await context.newCDPSession(page);
+  try{
+    for(const width of [380,320])for(const scheme of schemes){
+      await coachMetrics.send('Emulation.setDeviceMetricsOverride',{width,height:440,deviceScaleFactor:1,mobile:false});
+      await page.emulateMedia({colorScheme:scheme,reducedMotion:'reduce'});
+      await expect.poll(()=>page.locator('.native-coach').evaluate(el=>Math.ceil(el.getBoundingClientRect().width))).toBeLessThanOrEqual(width-48);
+      assert.ok(await page.locator('.native-coach').evaluate(el=>el.getBoundingClientRect().height<200),'whiteboard coach stays compact');
+      await page.getByRole('button',{name:'Close guide',exact:true}).focus();
+      await expect(page.getByRole('button',{name:'Close guide',exact:true})).toBeFocused();
+      if(process.env.APPARENT_ONBOARDING_EVIDENCE)await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,`whiteboard-coach-${scheme}-${width}.png`)});
+    }
+  }finally{
+    await coachMetrics.send('Emulation.clearDeviceMetricsOverride');await coachMetrics.detach();
+    await page.emulateMedia({colorScheme:'light',reducedMotion:'no-preference'});
+  }
   assert.equal(await page.evaluate(() => {
     const main=document.querySelector<HTMLElement>('main');if(!main)throw new Error('Missing main');const rect=main.getBoundingClientRect();
     return rect.left>=0 && rect.right<=innerWidth && rect.bottom<=innerHeight;
