@@ -39,18 +39,18 @@ function fixture(action: (git: (...args: string[]) => string, dir: string, env: 
   } finally {rmSync(dir, {recursive: true, force: true});}
 }
 
-// Run both real producers, as checks.yml does. The shared projection can widen
-// a plan, so checking selectRange().macos alone is insufficient.
+// Run the real producer consumed by today's workflow. Assert the output wiring
+// too: checking selectRange().macos alone cannot prove runner admission.
 function outputs(dir: string, env: NodeJS.ProcessEnv, base: string, head: string, event: string, admit = true) {
   const output = join(dir, '.git', 'output'); writeFileSync(output, '');
   const common = {...env, BASE_SHA: base, GITHUB_SHA: head, GITHUB_EVENT_NAME: event,
     GITHUB_REF: event === 'push' ? 'refs/heads/main' : 'refs/pull/1/merge', GITHUB_OUTPUT: output};
-  const run = (path: string, args: string[], extra = {}) => execFileSync('bun', [join(root, path), ...args], {cwd: dir, env: {...common, ...extra}, stdio: ['ignore', 'pipe', 'pipe']});
-  run('enablement/ci/select.ts', admit ? ['--admit'] : []);
-  const parse = () => Object.fromEntries(readFileSync(output, 'utf8').trim().split('\n').map(line => {const i = line.indexOf('='); return [line.slice(0, i), line.slice(i + 1)];}));
-  const selected = parse(); writeFileSync(output, '');
-  run('enablement/ci/routing/native-sharing/run.ts', ['--plan'], {VERIFICATION_PLAN: selected.plan, MAC_VERIFICATION_PLAN: selected.mac_plan, MAC_RUST: selected.mac_rust});
-  return {...selected, ...parse()};
+  assert.equal(ci.jobs.select.steps.find((step: any) => step.id === 'paths').run, 'bun enablement/ci/select.ts --admit');
+  for (const name of ['macos', 'mac_rust', 'mac_plan', 'plan', 'platform'])
+    assert.equal(ci.jobs.select.outputs[name], '${{ steps.paths.outputs.' + name + ' }}', name);
+  execFileSync('bun', [join(root, 'enablement/ci/select.ts'), ...(admit ? ['--admit'] : [])],
+    {cwd: dir, env: common, stdio: ['ignore', 'pipe', 'pipe']});
+  return Object.fromEntries(readFileSync(output, 'utf8').trim().split('\n').map(line => {const i = line.indexOf('='); return [line.slice(0, i), line.slice(i + 1)];}));
 }
 
 for (const path of cards) test('finite card modification avoids Mac allocation but retains Linux: ' + path, () => fixture((git, dir, env) => {

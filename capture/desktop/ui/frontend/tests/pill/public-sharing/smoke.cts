@@ -14,7 +14,7 @@ test('public copy waits for disclosure and rejects cancel and stale recording',a
  t.after(async()=>{clearInterval(heartbeat);await app.close();await fs.rm(home,{recursive:true,force:true,maxRetries:3});});
  const page=await app.firstWindow(),sent=[];let stream='';
  app.process().stdout.on('data',data=>{stream+=data;let end;while((end=stream.indexOf('\n'))>=0){const line=stream.slice(0,end);stream=stream.slice(end+1);try{const message=JSON.parse(line);sent.push(message);if(message.ready)void app.evaluate((_e,id)=>process.stdin.emit('data',JSON.stringify({type:'activate',windowId:id})+'\n'),message.windowId).catch(()=>{});}catch{}}});
- const state={revision:1,phase:'completed',clock:'00:04',label:'Saved',warning:null,notice:null,reducedMotion:true,draggable:false,actions:[{id:'copy-link',label:'Copy link',enabled:true,selected:false,primary:false}]};
+ const state={revision:1,phase:'completed',clock:'00:04',label:'Saved',warning:null,notice:null,reducedMotion:true,draggable:false,actions:[{id:'copy-link',label:'Public link',enabled:true,selected:false,primary:false}]};
  let latest=state;
  const publish=async view=>{latest=view;await app.evaluate((_e,view)=>process.stdin.emit('data',JSON.stringify({type:'state',view})+'\n'),view);};
  const held=()=>sent.filter(x=>typeof x.sharingConfirmation==='boolean').at(-1);
@@ -24,11 +24,11 @@ test('public copy waits for disclosure and rejects cancel and stale recording',a
  heartbeat=setInterval(()=>void publish(latest).catch(()=>{}),100);
  await expect.poll(()=>app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible())).toBe(true);
  await assert.rejects(page.evaluate(()=>window.apparentPill.act(1,'confirm-public-link')));
- await page.getByRole('button',{name:'Copy link',exact:true}).click();
+ await page.getByRole('button',{name:'Public link',exact:true}).click();
  const confirm=page.getByRole('button',{name:'Create public link',exact:true});
  await expect(confirm).toBeVisible();
  await expect.poll(held).toEqual({revision:1,sharingConfirmation:true});
- await expect(page.getByRole('button',{name:'Copy link',exact:true})).toBeDisabled();
+ await expect(page.getByRole('button',{name:'Public link',exact:true})).toBeDisabled();
  await expect(page.getByText('Anyone with this link can view this capture. Shared captures are not end-to-end encrypted.')).toBeVisible();
  assert.equal(sent.filter(x=>x.action==='copy-public-link').length,0);
  for(const colorScheme of ['dark','light']){
@@ -44,16 +44,16 @@ test('public copy waits for disclosure and rejects cancel and stale recording',a
  await expect(confirm).toHaveCount(0);await expect(page.getByRole('alert')).toHaveCount(0);
  await expect.poll(held).toEqual({revision:1,sharingConfirmation:false});
  assert.equal(sent.filter(x=>x.action==='copy-public-link').length,0);
- await page.getByRole('button',{name:'Copy link',exact:true}).click();await expect(confirm).toBeVisible();
+ await page.getByRole('button',{name:'Public link',exact:true}).click();await expect(confirm).toBeVisible();
  await publish({...state,revision:2});await expect(confirm).toHaveCount(0);
  await expect.poll(held).toEqual({revision:1,sharingConfirmation:false});
  await assert.rejects(page.evaluate(()=>window.apparentPill.act(1,'confirm-public-link')));
  assert.equal(sent.filter(x=>x.action==='copy-public-link').length,0);
- await page.getByRole('button',{name:'Copy link',exact:true}).click();await expect(confirm).toBeVisible();
+ await page.getByRole('button',{name:'Public link',exact:true}).click();await expect(confirm).toBeVisible();
  await page.reload();await expect(confirm).toHaveCount(0);
  await expect.poll(held).toEqual({revision:2,sharingConfirmation:false});
  await assert.rejects(page.evaluate(()=>window.apparentPill.act(2,'confirm-public-link')));
- await page.getByRole('button',{name:'Copy link',exact:true}).click();await confirm.focus();await page.keyboard.press('Enter');
+ await page.getByRole('button',{name:'Public link',exact:true}).click();await confirm.focus();await page.keyboard.press('Enter');
  await expect.poll(()=>sent.filter(x=>x.action==='copy-public-link').length).toBe(1);
  await expect.poll(held).toEqual({revision:2,sharingConfirmation:false});
  assert.equal(sent.find(x=>x.action==='copy-public-link').revision,2);

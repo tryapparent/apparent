@@ -4,6 +4,13 @@ export function connection(value:unknown):Connection|null{
  if(!value||typeof value!=='object')return null;const c=value as Connection;
  try{const u=new URL(c.origin);if(u.origin!==c.origin||u.username||u.password||!(u.protocol==='https:'||u.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(u.hostname))||typeof c.token!=='string'||!c.token||c.token.length>8192||(!Number.isFinite(c.expiresAt)||c.expiresAt<=Date.now()))return null;return c;}catch{return null;}
 }
+// The first connection retains the legacy shape; additional computers are keyed
+// by their origin, never by a renderer-provided address or a thread ID alone.
+export function connections(value:unknown):Connection[]{
+ if(!value||typeof value!=='object')return [];
+ const root=value as Record<string,unknown>,extra=Array.isArray(root.connections)?root.connections:[];
+ const unique=new Map<string,Connection>();for(const item of [value,...extra.slice(0,31)]){const c=connection(item);if(c)unique.set(c.origin,c);}return [...unique.values()];
+}
 export class Transport{
  readonly config:Connection;
  constructor(config:Connection){this.config=config;}

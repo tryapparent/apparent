@@ -127,3 +127,16 @@ older checked-out release tags need not contain it. ARM packaging uses the
 existing Ubuntu ports path; the x86 archive mirror is not ARM transport proof.
 The workflow regression enumerates all package-install callers, including manual
 workflows, so a new caller cannot silently omit preparation.
+
+A finite committed-blob exception in `routing/test-only/qualify.ts` covers edits
+of the existing `runner/mac-platform.test.ts` contract. Both regular-file blobs
+must retain its reviewed imports; unknown loaders, new inbound module/filesystem
+references, additions, deletions, renames and mode/type changes retain conservative
+coverage. The mandatory CI contract command still executes it on PRs and main.
+Only its unrelated product consumers are removed; mixed execution inputs retain
+their own suites, native admission and publication policy. Unknown tests and the
+qualifier/selector implementations remain broad. Roll back by removing the
+`qualifiedCiTests` routing input; workflow triggers are unchanged.
+Adjacent ownership comments and explicit references to other named contracts
+are recognized only at four reviewed regular-file blobs; any byte or mode change
+revokes that recognition.

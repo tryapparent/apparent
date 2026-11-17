@@ -1,4 +1,7 @@
+import {engineIndependentRange} from './routing/engine-inputs/qualify.ts';
 import {fixtureCandidate, qualifyFixtures, fixtureMacRequired, fixturePlatformBoundary} from './routing/fixture-portability/qualify.ts';
+import {qualifyCiTests} from './routing/test-only/qualify.ts';
+import {storageControllers, storageReferences, nativeStorageGraph, portableStorageController} from './routing/record-storage/qualify.ts';
 import {execFileSync} from 'node:child_process';
 import {appendFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
@@ -138,7 +141,8 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
     ((change.status === 'D' && !supportedOnboardingDeletion(change)) ||
       (change.status === 'A' && !supportedOnboardingAddition(change) && !supportedToolingAddition(change)) ||
       (change.status !== 'D' && change.status !== 'A' && unsupported(change)))).map(change => change.path) ?? [];
-  const unsafe = changedOnboardingBoundary.length > 0 || (delta?.some(change => !regularFileChange(change)) ?? false) || changedPolicyImports.length > 0;
+  const engineBoundary = paths !== null && !engineIndependentRange(base, head, paths, cwd);
+  const unsafe = engineBoundary || changedOnboardingBoundary.length > 0 || (delta?.some(change => !regularFileChange(change)) ?? false) || changedPolicyImports.length > 0;
   const effective = unsafe ? null : paths;
   const workflowControls = !conservativeWorkflows && effective?.length ? workflowControlPaths(base, head, effective, cwd) : [];
   const foregroundBoundaries = delta?.filter(change => portableForegroundInputs.has(change.path)).filter(change => {
@@ -171,19 +175,37 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
         !fixturePlatformBoundary(change.status === 'A' ? '' : git(['show', base + ':' + path], cwd), files.get(path) ?? ''))));
     } catch { /* Unreadable candidate/consumer inventory retains every consumer. */ }
   }
-  const routing = routeDecision(effective, workflowControls, foregroundBoundaries.length > 0, qualifiedFixtures);
+  let qualifiedStorageControllers: string[] = [];
+  if (effective?.some(path => storageControllers.has(path)) && delta) {
+    try {
+      const references = git(['grep', '-I', '-l', '-E',
+        'LocationController|RetentionController|record-storage|record/storage|/location-controller|/retention-controller',
+        head, '--', ':!*.md'], cwd).trim().split('\n').map(line => line.slice(head.length + 1));
+      const graph = git(['ls-tree', '-r', head, '--', ...nativeStorageGraph.keys()], cwd).trim().split('\n').sort();
+      const expectedGraph = [...nativeStorageGraph].map(([path, blob]) => `100644 blob ${blob}\t${path}`).sort();
+      if (references.every(path => storageReferences.has(path)) && isDeepStrictEqual(graph, expectedGraph)) {
+        qualifiedStorageControllers = delta.filter(change => storageControllers.has(change.path) && !unsupported(change) &&
+          portableStorageController(change.path, git(['show', base + ':' + change.path], cwd), git(['show', head + ':' + change.path], cwd)))
+          .map(change => change.path);
+      }
+    } catch { /* Missing candidate/consumer proof keeps the ordinary native owners. */ }
+  }
+  const qualifiedCiTests = effective ? qualifyCiTests(base, head, effective, cwd) : [];
+  const qualifiedTooling = [...qualifiedFixtures, ...qualifiedCiTests];
+  const routing = routeDecision(effective, workflowControls, foregroundBoundaries.length > 0, qualifiedFixtures, qualifiedCiTests, qualifiedStorageControllers);
   const plan = routing.plan;
-  const mac = macDecision(effective?.filter(path => !qualifiedFixtures.includes(path)) ?? null, delta?.filter(change => unsupported(change) && !qualifiedFixtures.includes(change.path) && needsPlatform([change.path])).map(change => change.path) ?? null);
-  if (effective?.length && effective.every(path => qualifiedFixtures.includes(path))) {mac.macos = false; mac.reasons = [];}
+  const mac = macDecision(effective?.filter(path => !qualifiedTooling.includes(path)) ?? null, delta?.filter(change => unsupported(change) && !qualifiedTooling.includes(change.path) && needsPlatform([change.path])).map(change => change.path) ?? null);
+  if (effective?.length && effective.every(path => qualifiedTooling.includes(path))) {mac.macos = false; mac.reasons = [];}
   // Exercise this lane when its executor, selector or workflow definition changes
   // too; qualification never exempts those production verification inputs.
   const fixtureMac = fixtureMacRequired(qualifiedFixtures) || !!effective?.some(path =>
     ['enablement/local-tests/run.ts', 'enablement/ci/select.ts', '.github/workflows/checks.yml'].includes(path) ||
     path.startsWith('enablement/ci/routing/fixture-portability/') || path.startsWith('enablement/ci/install-contracts/'));
   const platform = plan.root || plan.engine || plan.desktop || plan.client;
-  return {...routing, paths: paths ?? [], historyKnown: paths !== null, inputProofKnown: paths !== null && !unsafe, workflowControls, ...mac, fixtureMac, qualifiedFixtures, platform, plan,
+  return {...routing, paths: paths ?? [], historyKnown: paths !== null, inputProofKnown: paths !== null && !unsafe, workflowControls, ...mac, fixtureMac, qualifiedFixtures, qualifiedCiTests, qualifiedStorageControllers, platform, plan,
     hermes: plan.hermes, portable: plan.browser || plan.service || plan.tools || plan.foreground,
     reasons: [...routing.reasons,
+      ...(engineBoundary ? ['fallback:engine-consumer-boundary'] : []),
       ...(delta?.filter(change => !regularFileChange(change)).map(change =>
         `fallback:unproven-input:${change.path}:${change.status}:${change.oldMode}->${change.newMode}`) ?? []),
       ...foregroundBoundaries.map(path => 'foreground:native-boundary:' + path), ...changedPolicyImports.map(path => 'fallback:onboarding-new-import:' + path), ...changedOnboardingBoundary.map(path => 'fallback:onboarding-boundary-change:' + path), ...mac.reasons]};
@@ -193,9 +215,10 @@ export function requiresMacRustRange(base: string, head: string): boolean {
   const decision = selectRange(base, head);
   if (!decision.inputProofKnown) return true;
   const delta = changes(base, head);
-  const nonModifications = delta?.filter(change => unsupported(change) && !decision.qualifiedFixtures.includes(change.path) &&
+  const qualifiedTooling = [...decision.qualifiedFixtures, ...decision.qualifiedCiTests];
+  const nonModifications = delta?.filter(change => unsupported(change) && !qualifiedTooling.includes(change.path) &&
     (suitePlan([change.path]).root || suitePlan([change.path]).engine || suitePlan([change.path]).client)).map(change => change.path) ?? null;
-  return requiresMacRust(decision.paths.filter(path => !decision.qualifiedFixtures.includes(path)), nonModifications) &&
+  return requiresMacRust(decision.paths.filter(path => !qualifiedTooling.includes(path)), nonModifications) &&
     (decision.plan.root || decision.plan.engine || decision.plan.client);
 }
 

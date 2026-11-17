@@ -47,15 +47,15 @@ integration/package consumers is required in the adoption slice. Until then,
 Engine-only inputs have no installed-app consumer. SDK/capability details and
 remaining adoption gates live in `engine/README.md`.
 
-`checks.yml` orchestrates Capture and Connect on PRs targeting main and main pushes.
-It verifies the union of their required Linux/Mac platform suites once, then calls
-`stream-connect.yml` with a receipt bound to the same SHA, tree, workflow, run and
-attempt. Connect retains its own contracts, portable checks and publication gates;
-manual dispatch retains independent platform execution when no valid shared
-receipt exists. Public keeps its direct `stream-public.yml` automatic entrypoint.
+`checks.yml` owns Capture verification on PRs targeting main and main pushes.
+Connect has its own automatic `stream-connect.yml` run, with stream-owned selection,
+checks and publication gates in `connect/enablement/`. Public keeps its direct
+`stream-public.yml` automatic entrypoint. Connect runs its selected Linux/Mac
+checks independently; no cross-workflow native receipt admits publication.
 Within each automatic Mac platform call, the selected native, Desktop and standalone client
-suites share one `platform (macos-15-intel)` allocation. Linux keeps independent
-parallel jobs. The shared Mac job retains selected signing/installed native proof,
+non-GUI suites share one `platform (macos-15-intel)` allocation; root Mac GUI
+acceptance consumes its retained candidate in a separate required job. Linux keeps independent
+parallel jobs. The shared Mac producer retains selected signing and packaging proof,
 focused Mac Electron checks and independent client builds/tests, with their existing private
 temporary roots and artifacts. Renderer-only plans do not install Rust or run
 native checks; an inconsistent native exemption fails instead of claiming proof.
@@ -73,11 +73,10 @@ Darwin-only assertions require real Mac execution. Installed-app, Rust bridge,
 native acceptance and publication gates remain separate and required. Local
 push hooks retain their full suites. This split is coverage policy, not proof
 of a measured speedup; compare successful hosted steps before claiming savings.
-The shared adapter adds only root/Engine, Desktop and client platform requirements
-from Connect. Capture keeps its original portable selection; Connect's own
-portable job remains required independently of the shared native receipt. A
-receipt's native substitution check therefore projects only those platform fields.
-Broad event filters do not add product consumers to a tooling-only plan.
+Capture uses its own selected plan without adding Connect main-publication suites.
+Connect retains independent portable and native checks; overlapping native
+consumers may therefore execute in both workflows. Broad event filters do not
+add product consumers to a tooling-only Capture plan.
 Automatic PR and main triggers follow directory ownership. The sole authority is
 `enablement/ci/routing/consumers.ts`: directory/consumer rules, named suites,
 workflow input inventory and admission explanations. `selectRange` reads the
@@ -276,10 +275,10 @@ failures. Dispatch current main to publish a replacement when appropriate.
 ## Website activation: Cloudflare Pages
 
 The Public deploy job publishes only the sealed `dist-apparent` to the isolated
-`apparent-capture` Pages project, using `public/site/scripts/cd/publish-pages.ts` and
+`apparent-capture` Pages project, using `public/enablement/cd/publish-pages.ts` and
 `public/site/wrangler.pages.jsonc`. It does not execute `public/site/wrangler.jsonc`, deploy the
 hosted Worker, or connect to Clanker. See
-[`../public/site/docs/pages-deploy.md`](../public/site/docs/pages-deploy.md) for the current build,
+[`../public/enablement/docs/pages-deploy.md`](../public/enablement/docs/pages-deploy.md) for the current build,
 source-built homepage preservation, video limits, exact hostname cutover and rollback.
 Set `WEBSITE_PAGES_API_TOKEN` in `website-production`; the existing
 `WEBSITE_CD_ENABLED=true` gate enables only Pages. Remove obsolete SSH settings
@@ -292,7 +291,7 @@ release symlink and historical release directories were removed. Do not restore
 the old DNS A record, configure website SSH credentials, recreate that release
 tree or run historical overlay activators. Production `publish_site.py` already
 rejects this root; its temporary-filesystem tests are not a deployment procedure.
-Use only the Pages rollback in `public/site/docs/pages-deploy.md`.
+Use only the Pages rollback in `public/enablement/docs/pages-deploy.md`.
 
 The proxy is shared. Its container, volumes, unrelated sites and separate
 document-product poller/deploy-control services remain in place. They must not
@@ -632,10 +631,10 @@ checks Connect's complete tree, including native consumers, rather than allowing
 unrelated follow-up commit to hide a failed delivery. This conservative main
 coverage is intentional and is not a measured build-time reduction.
 
-`stream-connect.yml` admits its publisher only after its own successful contracts
-and portable checks plus affected Linux/Mac suites, either authenticated from the
-automatic caller's dependencies or executed by the manual entrypoint, on canonical
-main with `HOSTED_CD_ENABLED`. A failed shared producer cannot admit publication.
+`stream-connect.yml` admits its publisher only after its own successful contracts,
+portable checks and required Linux/Mac suites on canonical main with
+`HOSTED_CD_ENABLED`. Failed native checks cannot admit publication. See
+[`Connect CI`](../../connect/enablement/README.md) for routing and rollback.
 Manual dispatch uses the same stream-owned checks and admission; the
 old `web-delivery.yml` entrypoint has been replaced. Worker publication retains its production environment,
 noncancelling lock, current-main check, approved bindings and version/CORS readback.
@@ -653,3 +652,35 @@ sides and mixed inputs are covered by routing contracts; diffs beyond GitHub's
 300-file filter window can be omitted upstream. The workflow cannot recover an
 event GitHub did not start. Very large cross-owner changes should be split or
 explicitly verified through the manual platform/stream entrypoints.
+
+## Same-source Mac native acceptance retry
+
+Root Mac plans build/package/retain the never-launched ad-hoc candidate in the
+existing platform job. That job still runs all selected non-GUI suites, bridge
+checks and client/renderer checks. A required `Native acceptance (macos-15-intel)`
+job then authenticates its dependency's artifact ID, upload digest and original
+attempt against GitHub, installs the identical source/tree candidate into a fresh
+app destination, and executes the existing Storage, Copy ID, selected-reference
+and selected foreground assertions with their original caps and cleanup. The
+artifact is pending native proof, never release admission. Both jobs must pass;
+exact-tree receipt authentication also requires the native job for root Mac plans.
+Linux, Engine-only and native-free plans do not acquire this GUI job.
+
+After a genuine GUI failure, use Actions' ordinary **Re-run failed jobs** (or the
+specific failed native job). Successful producer work remains complete; the
+consumer restores the same original attempt's artifact and reruns assertions in a
+fresh hosted Intel Mac environment. This is not automatic retry. Changed source
+requires a new cold producer. Missing/expired/mismatched provenance fails closed;
+**Re-run all jobs** is the supported cold recovery, rather than building silently
+inside the GUI consumer. Cancelled producers and partial suite results cannot be
+relabelled as proof. Signing, permissions, real native capture and normal
+publication prerequisites are unchanged.
+
+This trades later GUI feedback and extra cold-run allocation, checkout, npm and
+source test-driver renderer preparation, transfer and installation for a smaller
+failed-GUI retry boundary. GUI allocation now waits for all producer suites;
+there is no early GUI/full-suite overlap. Candidate acquisition and assertions
+have a separate timing artifact. Compare complete allocated/setup/transfer time
+and elapsed feedback on natural CI; no recurring speed benefit is established by
+the routing or provenance contracts alone. Rollback restores the original serial
+GUI steps and receipt inventory together, without admitting archives as proof.

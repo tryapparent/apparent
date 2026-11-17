@@ -52,7 +52,7 @@ on:
       - ".github/workflows/release-linux.yml"
       - ".github/workflows/release-mac-preview.yml"
       - ".github/workflows/linux-updater-harness.yml"
-      - "public/site/**"
+      - "public/**"
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
   push:
     branches: [main]
@@ -105,7 +105,7 @@ on:
       - ".github/workflows/release-linux.yml"
       - ".github/workflows/release-mac-preview.yml"
       - ".github/workflows/linux-updater-harness.yml"
-      - "public/site/**"
+      - "public/**"
 
 permissions:
   contents: read
@@ -233,18 +233,17 @@ jobs:
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-24.04
     outputs:
-      macos: ${{ steps.shared.outputs.macos }}
-      mac_rust: ${{ steps.shared.outputs.mac_rust }}
+      macos: ${{ steps.paths.outputs.macos }}
+      mac_rust: ${{ steps.paths.outputs.mac_rust }}
       fixtureMac: ${{ steps.paths.outputs.fixtureMac }}
       public: ${{ steps.paths.outputs.public }}
       updater: ${{ steps.paths.outputs.updater }}
-      platform: ${{ steps.shared.outputs.platform }}
+      platform: ${{ steps.paths.outputs.platform }}
       installer: ${{ steps.paths.outputs.installer }}
-      plan: ${{ steps.shared.outputs.plan }}
-      mac_plan: ${{ steps.shared.outputs.mac_plan }}
+      plan: ${{ steps.paths.outputs.plan }}
+      mac_plan: ${{ steps.paths.outputs.mac_plan }}
       hermes: ${{ steps.paths.outputs.hermes }}
       portable: ${{ steps.paths.outputs.portable }}
-      connect: ${{ steps.shared.outputs.connect }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -257,13 +256,6 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: bun enablement/ci/select.ts --admit
-      - id: shared
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          VERIFICATION_PLAN: ${{ steps.paths.outputs.plan }}
-          MAC_VERIFICATION_PLAN: ${{ steps.paths.outputs.mac_plan }}
-          MAC_RUST: ${{ steps.paths.outputs.mac_rust }}
-        run: bun enablement/ci/routing/native-sharing/run.ts --plan
 
   reuse:
     needs: select
@@ -467,39 +459,3 @@ jobs:
           VERIFY_PLATFORM: macos
           FIXTURE_MAC: ${{ needs.select.outputs.fixtureMac }}
         run: node --experimental-strip-types enablement/ci/routing/evidence.ts --admit
-
-  native-evidence:
-    needs: [select, contracts, reuse, linux, macos, fixture-mac]
-    if: >-
-      !cancelled() && needs.select.result == 'success' &&
-      (github.event_name == 'push' || github.event.pull_request.draft == false)
-    runs-on: ubuntu-24.04
-    outputs:
-      receipt: ${{ steps.native.outputs.receipt }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22.23.0'
-      - id: native
-        env:
-          CI_NEEDS: ${{ toJSON(needs) }}
-          VERIFICATION_PLAN: ${{ needs.select.outputs.plan }}
-          MAC_VERIFICATION_PLAN: ${{ needs.select.outputs.mac_plan }}
-          FIXTURE_MAC: ${{ needs.select.outputs.fixtureMac }}
-        run: node --experimental-strip-types enablement/ci/routing/native-sharing/run.ts --receipt
-
-  connect:
-    needs: [select, native-evidence]
-    if: >-
-      !cancelled() && needs.select.result == 'success' &&
-      needs.select.outputs.connect == 'true' && needs['native-evidence'].result == 'success'
-    permissions:
-      contents: read
-      actions: read
-    uses: ./.github/workflows/stream-connect.yml
-    with:
-      shared_native: ${{ needs['native-evidence'].outputs.receipt }}
-    secrets: inherit

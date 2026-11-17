@@ -69,7 +69,7 @@ test('real GitHub lookup authenticates the merged PR/run/artifact and falls back
       else if(path==='git/commits/'+'e'.repeat(40))value={tree:{sha:'base-tree'}};
       else if(path.startsWith('git/trees/'))value={truncated:mode==='truncated',tree:[{path:'enablement/ci/routing/evidence.ts',mode:'100644',type:'blob',sha:mode==='forged-producer'&&path.includes(tree)?'different':'same'}]};
       else if(path==='git/commits/'+record.sha)value={tree:{sha:mode==='false-commit'?'wrong':tree}};
-      else if(path.includes('/attempts/'))value={total_count:10,jobs:['contracts','select','tree-evidence','linux / select','linux / rust (ubuntu-24.04)','linux / desktop-ui (ubuntu-24.04)','linux / connect-client (ubuntu-24.04)','macos / select','macos / rust (macos-15-intel)','macos / desktop-ui (macos-15-intel)','macos / connect-client (macos-15-intel)','portable','Hermes inspection (ubuntu-24.04)','Hermes inspection (macos-15-intel)'].map(name=>({name,status:'completed',conclusion:mode==='forged-results'?'skipped':'success'}))};
+      else if(path.includes('/attempts/'))value={total_count:10,jobs:['contracts','select','tree-evidence','linux / select','linux / rust (ubuntu-24.04)','linux / desktop-ui (ubuntu-24.04)','linux / connect-client (ubuntu-24.04)','macos / select','macos / Native acceptance (macos-15-intel)','macos / rust (macos-15-intel)','macos / desktop-ui (macos-15-intel)','macos / connect-client (macos-15-intel)','portable','Hermes inspection (ubuntu-24.04)','Hermes inspection (macos-15-intel)'].map(name=>({name,status:'completed',conclusion:mode==='forged-results'?'skipped':'success'}))};
       else if(path.includes('/pulls?'))value=[{merged_at:'now',merge_commit_sha:process.env.GITHUB_SHA,number:1,base:{repo:{full_name:'test/repo'}},head:{sha:record.head,repo:{full_name:mode==='fork'?'other/repo':'test/repo'}}}];
       else if(path.includes('/runs?'))value={workflow_runs:[{id:42,run_attempt:2,path:'.github/workflows/checks.yml',event:'pull_request',head_sha:record.head,head_repository:{full_name:'test/repo'},repository:{full_name:'test/repo'},status:'completed',conclusion:mode==='cancelled'?'cancelled':'success'}]};
       else if(path.includes('/artifacts?'))value={artifacts:[{id:5,name:'ci-tree-evidence-2',expired:mode==='expired',size_in_bytes:1000}]};
@@ -109,7 +109,7 @@ test('GitHub job conclusions independently reject artifact claims for skipped or
 });
 
 test('packed Mac evidence requires the real successful producer, not a claimed artifact result', () => {
-  const jobs=['contracts','select','tree-evidence','macos / select','macos / platform (macos-15-intel)']
+  const jobs=['contracts','select','tree-evidence','macos / select','macos / platform (macos-15-intel)','macos / Native acceptance (macos-15-intel)']
     .map(name=>({name,status:'completed',conclusion:'success'}));
   assert.equal(authenticatedSuites(jobs,full,full).macos,true);
   assert.equal(authenticatedSuites(jobs,full,full).linux,false);

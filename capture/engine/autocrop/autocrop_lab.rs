@@ -328,7 +328,7 @@ pub fn serve(dir: &Path, bundle: &ApparentBundle, port: u16, open: bool) -> Resu
 // Simulated captures
 // ---------------------------------------------------------------------------------------------
 
-/// A simulated Screen capture, written by `public/site/scripts/autocrop-corpus.mjs`: what Apparent's input
+/// A simulated Screen capture, written by `public/enablement/browser-proof/motion/autocrop-corpus.mjs`: what Apparent's input
 /// monitors and window log would have recorded, plus a rendered frame for each screen state.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1229,7 +1229,7 @@ pub fn print_scores(label: &str, scores: &[CaseScore]) {
 mod tests {
     use super::*;
 
-    /// The simulated corpus (`public/site/scripts/autocrop-corpus.mjs`, built with `apparent fixture` and
+    /// The simulated corpus (`public/enablement/browser-proof/motion/autocrop-corpus.mjs`, built with `apparent fixture` and
     /// exported with `apparent autocrop-eval --export`), without images: no content maps, so edges
     /// don't snap to white space here.
     fn corpus() -> Vec<Case> {

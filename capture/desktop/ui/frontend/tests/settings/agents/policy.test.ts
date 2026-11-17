@@ -71,3 +71,15 @@ test('Sharing requests validate and return independent acknowledged preferences'
  bridge.receive({request:1,facts:{saved:false,sharingSaved:true,autoPasteSaved:false,t3Saved:false}});
  assert.deepEqual(await saving,{saved:false,sharingSaved:true,autoPasteSaved:false,t3Saved:false});
 });
+
+test('a cancelled queued connection and closed Settings never dispatch a native mutation; later requests recover',async()=>{
+ const {PreferenceQueue}=await import('../../../src/agents/policy.ts');
+ const queue=new PreferenceQueue(),abort=new AbortController();
+ let release!:()=>void,writes=0,active=true;
+ const reading=queue.run(()=>new Promise<void>(resolve=>release=resolve));
+ await Promise.resolve();
+ const saving=queue.run(async()=>{writes++;},()=>active,abort.signal);
+ abort.abort();release();await reading;await assert.rejects(saving);assert.equal(writes,0);
+ active=false;await assert.rejects(queue.run(async()=>{writes++;},()=>active));assert.equal(writes,0);
+ active=true;await queue.run(async()=>{writes++;},()=>active);assert.equal(writes,1);
+});

@@ -1284,7 +1284,7 @@ impl SettingsWindow {
             let available = account.server.is_some();
             if state.connect.is_none() {
             column = column.child(div().mt(px(20.0)).child("Hosted account"))
-                .child(caption(theme, if account.connected { "Connected. Captures stay private until you click Copy link." } else {
+                .child(caption(theme, if account.connected { "Connected. Captures stay private until you click Public link." } else {
                     "Connect to upload screen, voice, transcript and bundle media. New captures upload privately; only the selected capture is shared."
                 }, false))
                 .child(button(theme, "hosted-connect", "Connect and allow uploads", available && !account.connected)

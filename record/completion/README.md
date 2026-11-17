@@ -26,11 +26,13 @@ chooses the clipboard capability; Desktop rechecks the current generation on
 the GUI thread immediately before executing it against the retained native path.
 It acknowledges `copied`, `failed` or `revoked`. Only an actual successful write
 can produce `copied`. The default-off `autoPasteDraft` trial requests the Linux
-Hyprland image-then-text paste capability for local screen captures. Desktop pins
+Hyprland image-then-text-and-Enter capability for local screen captures. Desktop pins
 the focused window at Finish, rechecks it before each paste and leaves the saved
 capture available. Setup practice, agent captures, phone captures and macOS retain
 ordinary copy. A clipboard receipt does not prove attachment acceptance; the pill
-says to check the paste. The capability never sends Enter or submits a message.
+reports only that Enter was pressed, not that the app sent a message. Manual
+Paste still leaves the draft unsent. Focus or clipboard changes stop automatic
+Enter and retain the saved capture.
 
 The native adapter also supplies the saved bundle's immutable `imageQualityWarning`.
 Record preserves that exact warning in Linux completion notifications: an unsettled

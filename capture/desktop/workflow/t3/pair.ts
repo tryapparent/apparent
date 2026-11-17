@@ -12,19 +12,27 @@ function serverOrigin(server?:string) {
  if(url.username||url.password||url.hash||url.search||url.pathname!=='/')throw Error('Enter only the T3 server address, without a path or sign-in details.');
  return secureOrigin(url);
 }
-export function parsePairingLink(link:string,server?:string) {
+export function parsePairingLink(link:string,server?:string):{origin:string;token:string} {
  if(typeof link!=='string'||link.length>16384)throw Error('Copy a T3 pairing code or full link.');
  const input=link.trim();
  if(/^[A-Za-z0-9_-]{1,8192}$/.test(input))return {origin:serverOrigin(server),token:input};
  let url:URL;try{url=new URL(input);}catch{throw Error('Copy a T3 pairing code or full link.');}
+ if(url.username||url.password)throw Error('Copy a T3 pairing link.');
+ if(['t3code:','t3code-dev:','t3code-preview:'].includes(url.protocol)&&url.hostname==='pair'&&url.pathname===''){
+  const nested=url.searchParams.get('pairingUrl');if(!nested||nested.length>8192)throw Error('Copy a T3 pairing link.');
+  let target:URL;try{target=new URL(nested);}catch{throw Error('Copy a T3 pairing link.');}
+  if(!['http:','https:'].includes(target.protocol))throw Error('Copy a T3 pairing link.');
+  return parsePairingLink(nested,server);
+ }
  if(url.username||url.password||url.pathname!=='/pair')throw Error('Copy a T3 pairing code or full link.');
- const directOrigin=secureOrigin(url),fragment=new URLSearchParams(url.hash.slice(1)),fragmentToken=fragment.get('token')?.trim();
+ const appLink=['t3code:','t3code-dev:','t3code-preview:'].includes(url.protocol)&&url.hostname==='app';
+ const directOrigin=url.searchParams.has('host')?serverOrigin(url.searchParams.get('host')!):appLink?serverOrigin(server):secureOrigin(url),fragment=new URLSearchParams(url.hash.slice(1)),fragmentToken=fragment.get('token')?.trim();
  if(url.hash&&!fragment.has('token'))throw Error('Copy a T3 pairing code or full link.');
  // T3 puts new tokens in the fragment; retain its legacy query fallback and
  // resolve hosted app links to their embedded backend before confirmation.
  const token=fragmentToken||url.searchParams.get('token')?.trim();
  if(!token||token.length>8192)throw Error('Copy a T3 pairing code or full link.');
- return {origin:url.searchParams.has('host')?serverOrigin(url.searchParams.get('host')!):directOrigin,token};
+ return {origin:directOrigin,token};
 }
 export async function pair(link:string,signal?:AbortSignal,server?:string){
  const {origin,token}=parsePairingLink(link,server);

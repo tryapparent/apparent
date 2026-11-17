@@ -1,0 +1,224 @@
+{
+  "conclusion": "failure",
+  "head_sha": "217e78208bc28b00e2e3809c6d1b64e106c11ee5",
+  "name": "macos / platform (macos-15-intel)",
+  "run_attempt": 1,
+  "status": "completed",
+  "steps": [
+    {
+      "conclusion": "success",
+      "name": "Set up job"
+    },
+    {
+      "conclusion": "success",
+      "name": "Run actions/checkout@v4"
+    },
+    {
+      "conclusion": "skipped",
+      "name": "Prepare hosted Ubuntu package transport"
+    },
+    {
+      "conclusion": "skipped",
+      "name": "Linux application dependencies"
+    },
+    {
+      "conclusion": "success",
+      "name": "Select the macOS 26 SDK required by native helpers"
+    },
+    {
+      "conclusion": "success",
+      "name": "Pin selected Xcode for native builds"
+    },
+    {
+      "conclusion": "success",
+      "name": "Install CLI export speedup dependencies"
+    },
+    {
+      "conclusion": "success",
+      "name": "Install the Metal toolchain"
+    },
+    {
+      "conclusion": "success",
+      "name": "Verify Mac installer replacement transactions"
+    },
+    {
+      "conclusion": "success",
+      "name": "Run dtolnay/rust-toolchain@stable"
+    },
+    {
+      "conclusion": "success",
+      "name": "Normalize the disposable Intel Mac compiler inventory"
+    },
+    {
+      "conclusion": "success",
+      "name": "Run Swatinem/rust-cache@v2"
+    },
+    {
+      "conclusion": "skipped",
+      "name": "Run Swatinem/rust-cache@v2"
+    },
+    {
+      "conclusion": "success",
+      "name": "Run actions/setup-node@v4"
+    },
+    {
+      "conclusion": "skipped",
+      "name": "Reject an inconsistent Mac native exemption"
+    },
+    {
+      "conclusion": "success",
+      "name": "Timing helper contracts"
+    },
+    {
+      "conclusion": "success",
+      "name": "Agent setup policy and native metadata contracts (no Rust required)"
+    },
+    {
+      "conclusion": "success",
+      "name": "Local Desktop install reuse contracts"
+    },
+    {
+      "conclusion": "success",
+      "name": "Prepare private temporary root before first Cargo"
+    },
+    {
+      "conclusion": "success",
+      "name": "Cache Electron downloads (not installed modules or test receipts)"
+    },
+    {
+      "conclusion": "success",
+      "name": "Prepare locked native prerequisites before first Cargo"
+    },
+    {
+      "conclusion": "skipped",
+      "name": "Install Mac renderer dependencies when native preparation did not install them"
+    },
+    {
+      "conclusion": "success",
+      "name": "Prepare Mac Electron before timed renderer tests"
+    },
+    {
+      "conclusion": "success",
+      "name": "Mac Electron platform checks"
+    },
+    {
+      "conclusion": "success",
+      "name": "Qualify Record media through the published Engine provider"
+    },
+    {
+      "conclusion": "success",
+      "name": "Qualify Agent frames through the published Engine provider"
+    },
+    {
+      "conclusion": "success",
+      "name": "Mac Cargo source-identity freshness regression"
+    },
+    {
+      "conclusion": "success",
+      "name": "CI-sensitive fixtures before native checks"
+    },
+    {
+      "conclusion": "success",
+      "name": "Build and package the exact Mac candidate for native checks"
+    },
+    {
+      "conclusion": "success",
+      "name": "Retain the installed Mac CI candidate for a separate native test run"
+    },
+    {
+      "conclusion": "success",
+      "name": "Upload the pending native test candidate"
+    },
+    {
+      "conclusion": "success",
+      "name": "Native Mac Storage and error-reporting controls against the installed Rust GUI"
+    },
+    {
+      "conclusion": "success",
+      "name": "Native GPUI Copy capture ID against the same installed App"
+    },
+    {
+      "conclusion": "success",
+      "name": "Native Electron selected-reference control against the installed Rust App"
+    },
+    {
+      "conclusion": "failure",
+      "name": "Installed Mac foreground capture and sharing"
+    },
+    {
+      "conclusion": "success",
+      "name": "Retain installed Mac foreground evidence"
+    },
+    {
+      "conclusion": "skipped",
+      "name": "Early Mac Electron to Rust Settings integration (not native GUI proof)"
+    },
+    {
+      "conclusion": "skipped",
+      "name": "Execute the same changed-tree checks (not GUI acceptance)"
+    },
+    {
+      "conclusion": "skipped",
+      "name": "Actual Electron to Rust Settings integration (not native GUI proof)"
+    },
+    {
+      "conclusion": "success",
+      "name": "Retain synthetic Electron reference evidence, including failures"
+    },
+    {
+      "conclusion": "success",
+      "name": "Retain synthetic native Copy capture ID evidence, including failures"
+    },
+    {
+      "conclusion": "success",
+      "name": "Retain synthetic Mac Storage evidence, including failures"
+    },
+    {
+      "conclusion": "skipped",
+      "name": "Prepare the client-owned TypeScript policy for native consumers"
+    },
+    {
+      "conclusion": "skipped",
+      "name": "Independent Connect client build and tests"
+    },
+    {
+      "conclusion": "skipped",
+      "name": "Retain independent client timings"
+    },
+    {
+      "conclusion": "skipped",
+      "name": "Retain completed Mac dependency seeds after full verification"
+    },
+    {
+      "conclusion": "success",
+      "name": "Clean private prerequisite temporary root"
+    },
+    {
+      "conclusion": "success",
+      "name": "Retain observation-only timings, including failures"
+    },
+    {
+      "conclusion": "skipped",
+      "name": "Post Cache Electron downloads (not installed modules or test receipts)"
+    },
+    {
+      "conclusion": "skipped",
+      "name": "Post Run actions/setup-node@v4"
+    },
+    {
+      "conclusion": "skipped",
+      "name": "Post Run Swatinem/rust-cache@v2"
+    },
+    {
+      "conclusion": "success",
+      "name": "Post Run actions/checkout@v4"
+    },
+    {
+      "conclusion": "success",
+      "name": "Complete job"
+    }
+  ],
+  "labels": [
+    "macos-15-intel"
+  ]
+}

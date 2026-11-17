@@ -7,15 +7,16 @@ through `src/storage/transport.ts`. They do not implement Darwin window, permiss
 capture, packaging or persistence adapters. The obsolete `connect-settings.tsx`
 name cannot qualify as a regular modification: adding it retains Mac verification.
 
-The allocation bug crosses three boundaries:
+The allocation bug crosses the selector and runner admission boundaries:
 
 1. `select.ts` marks regular card modifications `macos=false`, `mac_rust=false`,
    but its CLI's `macEnabled = result.macos || !mac_rust` keeps Desktop in `mac_plan`.
-2. `native-sharing/run.ts --plan` reconstructs `macos=true` from that Desktop flag.
-   `checks.yml` additionally admits Mac whenever `mac_rust=false`.
+2. `checks.yml` admits Mac whenever `mac_rust=false`.
 3. `verification-platform.yml` packs selected Desktop into the Mac `rust` fallback.
    Simply clearing the caller condition also leaves `evidence.ts --admit` expecting
-   a successful Mac result for the stale plan.
+   a successful Mac result for the stale plan. The former shared-native planner
+   also reconstructed `macos=true` from that Desktop flag; current main has retired
+   that planner, and the workflow now consumes selector outputs directly.
 
 The bounded correction is to project with `macEnabled = result.macos` and remove
 the `mac_rust=false` alternative from the caller's Mac condition. The reusable
@@ -36,12 +37,12 @@ native guard and Linux's rendering/bridge proof. Changes to native providers and
 workflow definitions retain the installed Mac gates.
 
 `admission.test.ts` commits actual source blobs in isolated Git repositories and
-runs both real selector CLIs, evaluates the actual caller/reusable YAML conditions,
+runs the real selector CLI and checks its workflow output wiring, evaluates the actual caller/reusable YAML conditions,
 and executes final Mac admission. The normal `bun test enablement/ci/` contract
 discovers it. No renderer, bridge or native test command is removed.
 
 Expected allocation benefit is **one Mac job to zero per qualifying delta**.
-No qualifying hosted duration or occurrence rate has been measured. Current-main
+No qualifying hosted duration or occurrence rate has been measured. Baseline main
 run `43907593853`, attempt 1, commit `db51bba0`, succeeded: Mac job `133443597773`
 ran 16:41:44–17:11:03 UTC on 2026-11-16 (1 × 1,759 seconds allocated). That was a
 full native change, not this renderer-only case, so its duration is not a savings
