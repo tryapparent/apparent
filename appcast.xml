@@ -3,6 +3,15 @@
   <channel>
     <title>Apparent Preview</title>
     <item>
+      <title>0.22.7</title>
+      <pubDate>Tue, 17 Nov 2026 08:41:09 +0000</pubDate>
+      <sparkle:version>32.3</sparkle:version>
+      <sparkle:shortVersionString>0.22.7</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <enclosure url="https://github.com/tryapparent/apparent/releases/download/preview-mac-22-7/Apparent-Preview-0.22.7-arm64.zip" length="137535371" type="application/octet-stream" sparkle:edSignature="lMFptVKPY9aWr6X2Ckw3dQP1bhH9Ss3TDlwu60fJACN1jrg8SsgBU80knpgbhRDzvKJ1zF9sRzunsX/e3hCDDQ==" />
+    </item>
+    <item>
       <title>0.22.6</title>
       <pubDate>Mon, 16 Nov 2026 10:07:06 +0000</pubDate>
       <sparkle:version>31.1</sparkle:version>
