@@ -345,7 +345,7 @@ fn word_count(text: &str) -> usize {
         .max(1)
 }
 
-// Selection-mechanism fixtures use an explicit historical allocation.
+// Composition fixtures retain Record's real speech and text workers.
 #[cfg(test)]
 pub fn select_keyframes(
     frames: &[RgbaFrame],
@@ -355,22 +355,24 @@ pub fn select_keyframes(
     transcript: &TranscriptData,
     max_keyframes: usize,
 ) -> Vec<(Keyframe, RgbaFrame)> {
-    select_keyframes_with_video_ink(frames, strokes, marks, events, transcript, max_keyframes, None)
+    let speech = crate::composition::transcript::speech::plan(transcript).unwrap();
+    crate::composition::transcript::apply(select_keyframes_with_limits(frames, strokes, marks, events, &speech,
+        SelectionLimits {maximum:max_keyframes,ordinary:6}, None), transcript).unwrap()
 }
 
+// Image/event fixtures exercise native selection without a text-policy process.
 #[cfg(test)]
-fn select_keyframes_with_video_ink(
+fn select_visual_keyframes(
     frames: &[RgbaFrame],
     strokes: &[Stroke],
     marks: &mut [Mark],
     events: &[InteractionEvent],
-    transcript: &TranscriptData,
     max_keyframes: usize,
     video_ink: Option<VideoInk>,
 ) -> Vec<(Keyframe, RgbaFrame)> {
-    let speech = crate::composition::transcript::speech::plan(transcript).unwrap();
-    crate::composition::transcript::apply(select_keyframes_with_limits(frames, strokes, marks, events, &speech,
-        SelectionLimits {maximum:max_keyframes,ordinary:6}, video_ink), transcript).unwrap()
+    let transcript = TranscriptData::default();
+    select_keyframes_with_limits(frames, strokes, marks, events, &SpeechInput::empty(&transcript),
+        SelectionLimits {maximum:max_keyframes,ordinary:6}, video_ink).frames
 }
 
 pub(crate) fn select_keyframes_with_limits(
@@ -923,8 +925,8 @@ mod tests {
         // contained only its first dot; the later sample contained the line.
         let frames = vec![frame(48120, 0), frame(48224, 0), frame(48524, 255)];
         let mut marks = vec![mark("line", 48216)];
-        let selected = select_keyframes_with_video_ink(
-            &frames, &[], &mut marks, &[], &TranscriptData::default(), 1,
+        let selected = select_visual_keyframes(
+            &frames, &[], &mut marks, &[], 1,
             Some(VideoInk::Captured),
         );
         assert_eq!(selected[0].0.t, 48524);
@@ -937,7 +939,7 @@ mod tests {
         let frames = vec![frame(0, 0), frame(900, 0), frame(1100, 0), frame(1300, 255)];
         for (source, expected) in [(Some(VideoInk::Captured), 1300), (None, 900), (Some(VideoInk::CapturedVideo), 900)] {
             let mut marks = vec![mark("line", 1000)];
-            let selected = select_keyframes_with_video_ink(&frames, &[], &mut marks, &[], &TranscriptData::default(), 1, source);
+            let selected = select_visual_keyframes(&frames, &[], &mut marks, &[], 1, source);
             assert_eq!(selected[0].0.t, expected, "{source:?}");
         }
     }
@@ -946,7 +948,7 @@ mod tests {
     fn captured_freehand_reports_a_missing_settled_frame() {
         let frames = vec![frame(0, 0), frame(900, 0), frame(1008, 0)];
         let mut marks = vec![mark("line", 1000)];
-        let selected = select_keyframes_with_video_ink(&frames, &[], &mut marks, &[], &TranscriptData::default(), 1, Some(VideoInk::Captured));
+        let selected = select_visual_keyframes(&frames, &[], &mut marks, &[], 1, Some(VideoInk::Captured));
         assert_eq!(selected[0].0.t, 1008, "retain the latest available pixels");
         assert!(captured_ink_frame_warning(&selected, &marks, Some(VideoInk::Captured)).is_some());
         assert!(captured_ink_frame_warning(&selected, &marks, None).is_none());
@@ -961,10 +963,9 @@ mod tests {
         let mut marks = vec![pin];
         let notes = vec![InteractionEvent::Note { pin: 7, t: 1000, x: 0.5, y: 0.5, text: "Original target".into() }];
         for source in [None, Some(VideoInk::Captured), Some(VideoInk::CapturedVideo)] {
-            let selected = select_keyframes_with_video_ink(&frames, &[], &mut marks, &notes, &TranscriptData::default(), 1, source);
+            let selected = select_visual_keyframes(&frames, &[], &mut marks, &notes, 1, source);
             assert_eq!(selected[0].0.t, 900);
             assert_eq!(marks[0].frame.as_deref(), Some(selected[0].0.file.as_str()));
-            assert_eq!(notes[0].timestamp_ms(), 1000);
         }
     }
 
@@ -986,13 +987,13 @@ mod tests {
             frame(2200, 255),
         ];
         let mut marks = vec![mark("m1", 2000), mark("m2", 2200), mark("m3", 2200)];
-        let selected = select_keyframes(
+        let selected = select_visual_keyframes(
             &frames,
             &[],
             &mut marks,
             &[click(750)],
-            &TranscriptData::default(),
             2,
+            None,
         );
         assert_eq!(selected.len(), 2);
         assert_eq!(selected[0].0.reason, KeyframeReason::Click);
@@ -1019,7 +1020,7 @@ mod tests {
             .map(|i| mark(&format!("m{}", i + 1), i * 2_000 + 1_000))
             .collect();
         let selected =
-            select_keyframes(&frames, &[], &mut marks, &[], &TranscriptData::default(), 7);
+            select_visual_keyframes(&frames, &[], &mut marks, &[], 7, None);
         assert_eq!(selected.len(), 7);
         assert!(marks.iter().all(|m| m.frame.is_some()));
         // The two alike screens were merged, onto the later one.
@@ -1033,13 +1034,13 @@ mod tests {
             .enumerate()
             .map(|(i, &t)| mark(&format!("m{}", i + 1), t))
             .collect();
-        let selected = select_keyframes(
+        let selected = select_visual_keyframes(
             &frames,
             &[],
             &mut marks,
             &[],
-            &TranscriptData::default(),
             MAX_KEYFRAMES,
+            None,
         );
         let at: Vec<_> = selected.iter().map(|(k, _)| k.t).collect();
         assert_eq!(at, [20_000, 40_000]);
@@ -1055,13 +1056,13 @@ mod tests {
             frame(1500, 255),
             frame(1750, 255),
         ];
-        let selected = select_keyframes(
+        let selected = select_visual_keyframes(
             &frames,
             &[],
             &mut [],
             &[],
-            &TranscriptData::default(),
             MAX_KEYFRAMES,
+            None,
         );
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].0.reason, KeyframeReason::SceneChange);
@@ -1072,17 +1073,18 @@ mod tests {
     #[test]
     fn nearby_candidates_are_deduplicated_using_capture_times() {
         let frames: Vec<_> = (0..=12).map(|i| frame(i * 250, 128)).collect();
-        let events = vec![click(1000), click(1100), click(2300)];
-        let selected = select_keyframes(
+        let mut close_click = click(1100);
+        if let InteractionEvent::Click { x, .. } = &mut close_click { *x = 0.8; }
+        let events = vec![click(1000), close_click, click(2300)];
+        let selected = select_visual_keyframes(
             &frames,
             &[],
             &mut [],
             &events,
-            &TranscriptData::default(),
             MAX_KEYFRAMES,
+            None,
         );
-        assert_eq!(selected.len(), 2);
-        assert!(selected[1].0.t - selected[0].0.t >= FRAME_GAP_MS);
+        assert_eq!(selected.iter().map(|(key, _)| key.t).collect::<Vec<_>>(), [1250, 2500]);
         assert_eq!(selected[0].0.index, 1);
         assert_eq!(selected[1].0.file, "frames/frame-02.png");
     }
@@ -1119,6 +1121,17 @@ mod tests {
         let selected = select_keyframes(&frames, &[], &mut marks, &[], &transcript, MAX_KEYFRAMES);
         assert_eq!(selected[0].0.said.as_deref(), Some("Make this smaller,"));
         assert_eq!(selected[1].0.said.as_deref(), Some("and move that."));
+
+        // A punctuation token exactly at the next frame still ends the prior text.
+        let transcript = TranscriptData {
+            words: [(0, "Lots"), (500, "of"), (900, "glitches"), (5000, "."), (5200, "Yeah")]
+                .into_iter().map(|(t, text)| WordTiming {t0:t, t1:t + 100, text:text.into()}).collect(),
+            ..Default::default()
+        };
+        let selected = select_keyframes(&[frame(1000, 0), frame(5000, 255)], &[],
+            &mut [mark("m1", 1000), mark("m2", 5000)], &[], &transcript, 2);
+        assert_eq!(selected.iter().map(|(key, _)| key.said.as_deref()).collect::<Vec<_>>(),
+            [Some("Lots of glitches."), Some("Yeah")]);
     }
 
     #[test]
@@ -1388,13 +1401,13 @@ mod tests {
             shape: Shape::Flag,
             ..mark("f1", 1_500)
         }];
-        let selected = select_keyframes(
+        let selected = select_visual_keyframes(
             &frames,
             &[],
             &mut marks,
             &[click(1_600)],
-            &TranscriptData::default(),
             1,
+            None,
         );
         assert_eq!(selected[0].0.mark_id.as_deref(), Some("f1"));
         assert_eq!(selected[0].0.t, 1_500);
@@ -1450,7 +1463,7 @@ mod tests {
             _ => 210,
         };
         let frames: Vec<_> = (0..=300).map(|i| frame(i * 500, gray(i * 500))).collect();
-        let selected = select_keyframes(&frames, &[], &mut [], &[], &TranscriptData::default(), 2);
+        let selected = select_visual_keyframes(&frames, &[], &mut [], &[], 2, None);
         let at: Vec<_> = selected.iter().map(|(k, _)| k.t).collect();
         assert_eq!(at, [70_000, 138_000]);
     }
@@ -1459,13 +1472,13 @@ mod tests {
     fn groups_close_at_a_click_or_too_much_ink() {
         let frames: Vec<_> = (0..=40).map(|i| frame(i * 250, 128)).collect();
         let mut marks = vec![mark("m1", 2_000), mark("m2", 4_000)];
-        select_keyframes(
+        select_visual_keyframes(
             &frames,
             &[],
             &mut marks,
             &[click(3_000)],
-            &TranscriptData::default(),
             MAX_KEYFRAMES,
+            None,
         );
         assert_ne!(marks[0].frame, marks[1].frame);
 
@@ -1474,13 +1487,13 @@ mod tests {
             ..mark(id, t)
         };
         let mut marks = vec![heavy("m1", 2_000), heavy("m2", 4_000), heavy("m3", 6_000)];
-        select_keyframes(
+        select_visual_keyframes(
             &frames,
             &[],
             &mut marks,
             &[],
-            &TranscriptData::default(),
             MAX_KEYFRAMES,
+            None,
         );
         assert_eq!(marks[0].frame, marks[1].frame);
         assert_ne!(marks[1].frame, marks[2].frame);
@@ -1494,13 +1507,13 @@ mod tests {
             .map(|i| mark(&format!("m{}", i + 1), 1_000 + i * 2_000))
             .collect();
         let clicks: Vec<_> = (0..5).map(|i| click(2_000 + i * 2_000)).collect();
-        select_keyframes(
+        select_visual_keyframes(
             &frames,
             &[],
             &mut marks,
             &clicks,
-            &TranscriptData::default(),
             3,
+            None,
         );
         let frames_of: Vec<_> = marks.iter().map(|m| m.frame.clone().unwrap()).collect();
         assert_eq!(frames_of[0], frames_of[1]);
@@ -1520,13 +1533,13 @@ mod tests {
             y: 0.5,
             label: None,
         };
-        let selected = select_keyframes(
+        let selected = select_visual_keyframes(
             &frames,
             &[],
             &mut marks,
             &[point],
-            &TranscriptData::default(),
             MAX_KEYFRAMES,
+            None,
         );
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].0.reason, KeyframeReason::Mark);
@@ -1546,6 +1559,7 @@ mod tests {
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].0.reason, KeyframeReason::Initial);
         assert_eq!(selected[0].0.t, 1000);
+        assert_eq!(selected[0].0.said, None);
         assert!(
             select_keyframes(&frames, &[], &mut [], &[], &TranscriptData::default(), 0).is_empty()
         );
@@ -1562,28 +1576,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_punctuation_token_at_a_keyframes_start_ends_the_one_before() {
-        let transcript = TranscriptData {
-            words: [
-                (0, "Lots"),
-                (500, "of"),
-                (900, "glitches"),
-                (5_000, "."),
-                (5_200, "Yeah"),
-            ]
-            .into_iter()
-            .map(|(t, text)| WordTiming {
-                t0: t,
-                t1: t + 100,
-                text: text.into(),
-            })
-            .collect(),
-            ..Default::default()
-        };
-        assert_eq!(
-            crate::composition::transcript::assign(&[1_000, 5_000], &[], &transcript).unwrap(),
-            [Some("Lots of glitches.".into()), Some("Yeah".into())]
-        );
-    }
 }
