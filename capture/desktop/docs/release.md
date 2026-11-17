@@ -1,6 +1,8 @@
 # Releasing Apparent
 
-Numbered stable application releases now use the paired [application coordinator](../../../composition/enablement/release/README.md): both Linux AppImages and the signed Apple-silicon Mac artifacts share one source, numeric version and public `vX.Y.Z` release. The independent Main and Mac preview paths below remain separate channels. Stable GitHub visibility waits for both platforms; ordinary verification and Main publication do not wait for Mac.
+The [Release workflow](../../../composition/enablement/release/README.md)
+builds Linux and signed Apple-silicon Mac packages in parallel for Main and
+numbered stable releases. Standalone Mac previews remain available for recovery.
 
 ## PostHog release attribution
 

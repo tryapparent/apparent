@@ -52,16 +52,19 @@ function executionIdentity(job: any): string | null {
 
 export function inspectJobs(runs: any[], from: number, to: number) {
   const seen = new Set<string>(), jobs: any[] = []; let invalid = 0, unfinishedJobs = 0, unknownAllocationJobs = 0;
-  const preJobWaits:any[] = [];
+  const joblessSnapshots: {runId: number | string; attempt: number; headSha: string;
+    name: string; status: string; ageSeconds: number | null; windowAgeSeconds: number | null;
+    snapshotCoverage: unknown}[] = [];
   const entries: any[] = [];
   for (const run of runs) {
     const runId = run?.runId ?? run?.databaseId;
     if (!Array.isArray(run?.jobs) || !runId || !/^[a-f0-9]{40}$/.test(run?.headSha ?? '') || !Number.isInteger(run.attempt)) {invalid++; continue;}
     const requested = Date.parse(run.createdAt ?? run.created_at);
-    if (!run.jobs.length && ['queued','waiting','pending','in_progress'].includes(run.status) && requested <= to &&
-      !preJobWaits.some(r=>r.runId===runId && r.attempt===run.attempt)) preJobWaits.push({runId,attempt:run.attempt,headSha:run.headSha,
-        name:run.name,status:run.status,ageSeconds:(to-requested)/1000,windowSeconds:Math.max(0,to-Math.max(from,requested))/1000,
-        reason:'No job rows in snapshot: workflow admission/concurrency/provider wait, not observed runner queue; exact cause unavailable'});
+    if (!run.jobs.length && (!Number.isFinite(requested) || requested <= to) &&
+      !joblessSnapshots.some(r=>r.runId===runId && r.attempt===run.attempt)) joblessSnapshots.push({runId,attempt:run.attempt,headSha:run.headSha,
+        name:run.name,status:run.status,ageSeconds:Number.isFinite(requested) ? (to-requested)/1000 : null,
+        windowAgeSeconds:Number.isFinite(requested) ? Math.max(0,to-Math.max(from,requested))/1000 : null,
+        snapshotCoverage:run.snapshotCoverage ?? null});
     for (const job of run.jobs) {
       if (!(job?.id ?? job?.databaseId)) {invalid++; continue;}
       const id = `${runId}:${run.attempt}:${job.id ?? job.databaseId}`;
@@ -134,7 +137,7 @@ export function inspectJobs(runs: any[], from: number, to: number) {
   const executionByStep = [...stepGroups].map(([label,rows])=>{const totalSeconds=rows.reduce((n,s)=>n+s.seconds,0);return {label,count:rows.length,meanSeconds:totalSeconds/rows.length,totalSeconds,incompleteRows:rows.filter(s=>!s.complete).length};}).sort((a,b)=>b.totalSeconds-a.totalSeconds);
   return {jobs: jobs.sort((a, b) => (b.runnerSeconds ?? 0) - (a.runnerSeconds ?? 0)), unfinishedJobs, unknownAllocationJobs, invalidSnapshots: invalid,
     analysis:{
-      preJobWaits:preJobWaits.sort((a,b)=>b.ageSeconds-a.ageSeconds),
+      joblessSnapshots:joblessSnapshots.sort((a,b)=>(b.ageSeconds ?? -1)-(a.ageSeconds ?? -1)),
       queueByRunner:group('queueSeconds',j=>j.labels.length ? j.labels.join(', ') : 'runner label unavailable: '+j.name),
       executionByJob:group('runnerSeconds',j=>j.name ?? 'job name unavailable'),
       executionByStep,

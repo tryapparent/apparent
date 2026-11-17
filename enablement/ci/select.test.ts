@@ -89,8 +89,8 @@ test('main reuse requires passed evidence', () => {
     }
   }
 });
-test('only installer inputs publish Linux; unknown installer selection remains conservative',()=>{
- const expression=ci().jobs['release-linux'].if;
+test('only installer inputs queue Main release; unknown installer selection remains conservative',()=>{
+ const expression=ci().jobs['release'].if;
  const outputs=(paths:string[]|null)=>{
   const plan=suitePlan(paths);
   return {installer:String(routeDecision(paths).installer),hermes:String(plan.hermes),platform:String(needsPlatform(paths)),public:String(select(paths).public),portable:String(plan.browser||plan.service||plan.tools)};
@@ -104,8 +104,8 @@ test('only installer inputs publish Linux; unknown installer selection remains c
   const unknown:any=outputs(['hermes/plugin.yaml']);delete unknown[key];assert.equal(allowed(unknown),key==='installer',key);
  }
 });
-test('Linux publication survives intentional ancestor skips but requires successful exact-main admission', () => {
-  const expression = ci().jobs['release-linux'].if;
+test('Main release dispatch survives intentional ancestor skips but requires successful exact-main admission', () => {
+  const expression = ci().jobs['release'].if;
   for (const ancestors of [['success'], ['success', 'skipped'], ['skipped', 'skipped']]) {
     const needs = {...parents(), 'linux-admission': {result: 'success'}};
     assert.equal(admitted(expression, needs, 'push', false, false, {ancestors}), true);

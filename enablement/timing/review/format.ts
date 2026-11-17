@@ -8,10 +8,6 @@ export function markdown(data: any): string {
   const actionLines: string[] = [];
   const ci = data.jobs?.analysis;
   actionLines.push('## Largest measured costs', '');
-  if (ci?.preJobWaits?.length) {
-    const total=ci.preJobWaits.reduce((n:number,r:any)=>n+r.windowSeconds,0);
-    actionLines.push(`- CI pre-job admission (no captured jobs): ${ci.preJobWaits.length} × ${number(total/ci.preJobWaits.length)}s = ${number(total)}s in-window. Cause and current owner impact require original context.`);
-  }
   for (const [clock,row] of [
     ['CI queue',ci?.queueByRunner[0]],['CI execution',ci?.executionByJob[0]],
     ['CI step',ci?.executionByStep?.[0]],['Local observed process',data.census.actionRanking?.processes?.candidate]
@@ -45,9 +41,12 @@ export function markdown(data: any): string {
     actionLines.push('### Longest waits at cutoff', '');
     for (const j of ci.longestWaitingJobs.slice(0,10)) actionLines.push(`- ${j.id}, SHA ${j.headSha}, ${j.name}; labels ${j.labels.join(', ') || 'unavailable'}: queue age ${number(j.queueAgeSeconds)}s; window queue ${j.queueSeconds === null ? 'unknown' : number(j.queueSeconds)+'s'}. ${j.waitReason}.`);
     if (!ci.longestWaitingJobs.length) actionLines.push('No waiting jobs in the captured snapshots at this cutoff. This is not a repository-wide queue census.');
-    actionLines.push('', '### Workflows waiting before any captured job', '');
-    for (const r of ci.preJobWaits ?? []) actionLines.push(`- run ${r.runId}, attempt ${r.attempt}, SHA ${r.headSha}, ${r.name}: ${r.status}, age ${number(r.ageSeconds)}s, window ${number(r.windowSeconds)}s. ${r.reason}.`);
-    if (!ci.preJobWaits?.length) actionLines.push('No pre-job wait captured. Run/list caps can leave other workflows unexamined.');
+    actionLines.push('', '### Jobless workflow snapshots: age only, live state unknown', '',
+      'No job rows were captured for these records. Live admission wait, runner demand and critical-path delay are unknown. Snapshot age is time since workflow creation, not measured waiting occupancy or cost. Records remain in the bounded sample; run/list caps can leave other workflows unexamined.', '');
+    const jobless = ci.joblessSnapshots ?? ci.preJobWaits ?? [];
+    const age = (n: number | null | undefined) => n == null ? 'unknown' : number(n)+'s';
+    for (const r of jobless) actionLines.push(`- run ${r.runId}, attempt ${r.attempt}, SHA ${r.headSha}, ${r.name}: observed status ${r.status}, snapshot age ${age(r.ageSeconds)}, in-window age ${age(r.windowAgeSeconds ?? r.windowSeconds)}. Job-page coverage: ${r.snapshotCoverage ? JSON.stringify(r.snapshotCoverage) : 'unknown'}.`);
+    if (!jobless.length) actionLines.push('No jobless workflow snapshots captured. This is not a repository-wide census.');
     actionLines.push('', '### Longest executing steps (setup/build/test/native details)', '');
     for (const s of ci.longestSteps.slice(0,15)) actionLines.push(`- ${s.jobRef}, SHA ${s.headSha}, step ${s.number} ${s.name}: ${number(s.seconds)}s${s.complete ? '' : ' (incomplete at cutoff)'}.`);
     actionLines.push('', `Active execution rows: ${ci.runningJobs.map((j:any)=>j.id+' ('+number(j.executionAgeSeconds)+'s since allocation)').join(', ') || 'none captured'}. Jobs missing step detail: ${ci.missingStepJobs.join(', ') || 'none among retained known execution rows'}.`,

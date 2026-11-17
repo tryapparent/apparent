@@ -34,6 +34,15 @@ const cargo =
   '[package]\nname = "apparent"\nversion = "1.2.3"\n[dependencies]\n';
 test("accepts exactly the admitted checkout, Cargo version and stable tag", () => {
   validate(env, cargo, env.CANDIDATE_SHA);
+  validate(
+    {
+      ...env,
+      RELEASE_CHANNEL: "main",
+      RELEASE_TAG: `linux-main-v2-${env.CANDIDATE_SHA}`,
+    },
+    cargo,
+    env.CANDIDATE_SHA,
+  );
   for (const [key, value] of Object.entries({
     GITHUB_REPOSITORY: "kitlangton/apparent",
     CANDIDATE_SHA: "main",
@@ -98,8 +107,11 @@ test("reusable workflow has one Mac allocation after portable preparation, no pu
     stable,
     /contents: write|workflow_dispatch:|gh release|HOMEBREW_TAP_SSH_KEY/,
   );
-  assert.match(workflow, /if: inputs.channel != 'stable' && github.repository/);
-  assert.match(stable, /if: inputs.channel == 'stable' && github.repository/);
+  assert.match(workflow, /if: inputs.channel == '' && github.repository/);
+  assert.match(
+    stable,
+    /if: \(inputs.channel == 'stable' \|\| inputs.channel == 'main'\) && github.repository/,
+  );
   assert(
     workflow.indexOf("Validate candidate installation") <
       workflow.indexOf("Sign Sparkle bytes"),
@@ -108,6 +120,30 @@ test("reusable workflow has one Mac allocation after portable preparation, no pu
     workflow.indexOf("Sign Sparkle bytes") <
       workflow.indexOf("name: stable-macos-aarch64"),
   );
+});
+test("control checkout precedes nested source checkout on both candidate runners", () => {
+  const workflow = readFileSync(
+    ".github/workflows/release-mac-preview.yml",
+    "utf8",
+  );
+  for (const name of ["frontend", "candidate"]) {
+    const job = workflow.split(`\n  ${name}:\n`)[1].split(/\n  [a-z]+:/)[0];
+    const control = job.indexOf("ref: ${{ github.workflow_sha }}");
+    const source = job.indexOf("path: release-source");
+    assert.ok(control >= 0 && source > control, name);
+    assert.equal(
+      job.lastIndexOf("actions/checkout@"),
+      job.indexOf("actions/checkout@", control),
+    );
+  }
+});
+test("standalone preview fixtures resolve their own isolated source roots", () => {
+  const workflow = readFileSync(
+    ".github/workflows/release-mac-preview.yml",
+    "utf8",
+  );
+  const standalone = workflow.split("\n  frontend:\n")[0];
+  assert.doesNotMatch(standalone, /APPARENT_SOURCE_ROOT:/);
 });
 test("all Mac shell entrypoints parse without executing native commands", () => {
   execFileSync("bash", [

@@ -9,7 +9,7 @@ export function dispatchMain(
       "gh",
       [
         "api",
-        `repos/${repository}/actions/workflows/release-linux.yml/dispatches`,
+        `repos/${repository}/actions/workflows/verification.yml/dispatches`,
         "--method",
         "POST",
         "--input",
@@ -31,7 +31,7 @@ export function dispatchMain(
     !/^[1-9]\d*$/.test(env.GITHUB_RUN_ID ?? "")
   )
     throw Error(
-      "Linux Main dispatch requires an exact canonical main verification run",
+      "Main release dispatch requires an exact canonical main verification run",
     );
   send(
     JSON.stringify({
@@ -39,12 +39,12 @@ export function dispatchMain(
       inputs: {
         source_sha: env.GITHUB_SHA,
         verification_run_id: env.GITHUB_RUN_ID,
-        publish_main: "true",
+        mode: "main",
       },
     }),
   );
   console.log(
-    `Queued independent Linux Main publication for ${env.GITHUB_SHA}; verification run ${env.GITHUB_RUN_ID}`,
+    `Queued paired Main publication for ${env.GITHUB_SHA}; verification run ${env.GITHUB_RUN_ID}`,
   );
 }
 

@@ -49,6 +49,7 @@ mod tests {
         for bytes in [br#"{"version":2,"maximumFrames":9,"ordinaryFrames":3}"#.as_slice(),
             br#"{"version":1,"maximumFrames":13,"ordinaryFrames":3}"#,
             br#"{"version":1,"maximumFrames":9,"ordinaryFrames":10}"#,
+            br#"{"version":1,"maximumFrames":9,"ordinaryFrames":0}"#,
             br#"{"version":1,"maximumFrames":0,"ordinaryFrames":0}"#,
             br#"{"version":1,"maximumFrames":9,"ordinaryFrames":3,"extra":true}"#] {
             assert!(decode(bytes).is_err());

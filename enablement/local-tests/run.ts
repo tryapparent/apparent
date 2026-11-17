@@ -34,7 +34,7 @@ export function selection(base: string, head: string, cwd = root, _conservativeW
 
 export function captureToolTests(cwd = root): Command[] {
   const result = spawnSync('git', ['ls-files', '-z', '--', 'capture/desktop/scripts/', 'capture/desktop/enablement/', 'capture/agent/scripts/'], { cwd, encoding: 'utf8' });
-  if (result.error || result.status !== 0) throw Error('Cannot enumerate capture tooling tests');
+  if (result.error || result.status !== 0) throw Error('Capture tooling inventory failed');
   const paths = result.stdout.split('\0').filter(path => /\/(?:test[-_][^/]*\.py|[^/]+\.test\.ts)$/.test(path)).sort();
   const nodeTests = paths.filter(path => path.endsWith('.test.ts'));
   const nodeCommand = {argv: ['node', '--experimental-strip-types', '--test', '--test-concurrency=1', ...nodeTests], cwd: '.'};
@@ -123,7 +123,7 @@ export function commands(selected: Owner[], base: string, head: string, platform
     result.push(...agentMediaCommands());
   }
   if (selected.includes('client-foreground')) result.push(...foregroundCommands());
-  if (selected.includes('engine-media')) add(['node', '--experimental-strip-types', 'engine/tools/check.ts', ...(rustChanged ? [] : ['--sdk-only'])]);
+  if (selected.includes('engine-media')) add(['node', '--experimental-strip-types', 'engine/enablement/ci/producer/check.ts', ...(rustChanged ? [] : ['--sdk-only'])]);
   const tools = selected.includes('capture-tools') ? captureToolTests() : [];
   result.push(...tools.filter(command => !command.env?.APPARENT_BIN));
   if (selected.includes('hermes')) {
@@ -169,7 +169,7 @@ export function contractTests(cwd = root): Command[] {
   const prerequisites = readdirSync(resolve(cwd, 'enablement/prerequisites'))
     .filter(name => name.endsWith('.test.ts')).sort()
     .map(name => `enablement/prerequisites/${name}`);
-  if (!prerequisites.length) throw Error('Native prerequisite contract inventory is empty');
+  if (!prerequisites.length) throw Error('Prerequisite inventory is empty');
   const fixtureTests = (existsSync(resolve(cwd, 'enablement/local-tests/fixtures')) ? readdirSync(resolve(cwd, 'enablement/local-tests/fixtures')) : [])
     .filter(name => name.endsWith('.test.ts') && name !== 'runner.test.ts').sort()
     .map(name => `enablement/local-tests/fixtures/${name}`);
@@ -184,7 +184,7 @@ export function contractTests(cwd = root): Command[] {
 
 export function execute(plan: Command[], cwd = root, admission?: Admission, sourceOnly = false): void {
   const local = spawnSync('git', ['rev-parse', '--local-env-vars'], { cwd, encoding: 'utf8' });
-  if ((local.error || local.status !== 0) && !sourceOnly) throw Error('Cannot isolate hook Git environment');
+  if ((local.error || local.status !== 0) && !sourceOnly) throw Error('Git isolation failed');
   if (sourceOnly && ![onboardingCommands(), agentMediaCommands()].some(inventory => JSON.stringify(plan) === JSON.stringify(inventory)))
     throw Error('Source-only execution is limited to the reviewed policy inventories');
   const env = { ...process.env };
@@ -211,7 +211,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   if (args.length === 1 && args[0] === '--service-tests') {
     const read = (...args: string[]) => {
       const result = spawnSync('git', args, {cwd: root, encoding: 'utf8'});
-      if (result.status !== 0) throw Error('Cannot resolve verification candidate');
+      if (result.status !== 0) throw Error('Unknown candidate');
       return result.stdout.trim();
     };
     const head = read('rev-parse', 'HEAD'), base = read('merge-base', head, 'origin/main');

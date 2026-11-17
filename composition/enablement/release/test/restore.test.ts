@@ -14,10 +14,16 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { create, digest, repository, workflow } from "../manifest.ts";
+import {
+  create,
+  digest,
+  releaseTag,
+  repository,
+  workflow,
+} from "../manifest.ts";
 import { restore } from "../candidate.ts";
 
-test("restore authenticates real archive bytes and exact producer attempt; missing/expired/tampered inputs never publish or rebuild", async () => {
+async function exercisePublication(channel: "main" | "stable") {
   const directory = mkdtempSync(join(tmpdir(), "apparent-dev-restore-"));
   const saved = { ...process.env };
   let source = "1".repeat(40);
@@ -41,6 +47,10 @@ test("restore authenticates real archive bytes and exact producer attempt; missi
     git("add", "Cargo.toml");
     git("commit", "-qm", "candidate");
     source = git("rev-parse", "HEAD");
+    git("update-ref", "refs/remotes/origin/main", source);
+    const tag = releaseTag(channel, "1.2.3", source);
+    process.env.RELEASE_CHANNEL = channel;
+    process.env.FIXTURE_TAG = tag;
     symlinkSync(join(cwd, "enablement"), join(directory, "enablement"));
     const bin = join(directory, "bin");
     mkdirSync(bin);
@@ -107,7 +117,8 @@ test("restore authenticates real archive bytes and exact producer attempt; missi
         GITHUB_REPOSITORY: repository,
         CANDIDATE_SHA: source,
         APPARENT_VERSION: "1.2.3",
-        RELEASE_TAG: "v1.2.3",
+        RELEASE_TAG: tag,
+        RELEASE_CHANNEL: channel,
         GITHUB_RUN_ID: runId,
         GITHUB_RUN_ATTEMPT: "2",
         GITHUB_WORKFLOW_SHA: control,
@@ -248,6 +259,18 @@ test("restore authenticates real archive bytes and exact producer attempt; missi
     assert.equal(state().release.assets.length, 1);
     await publish(runId, attempt, join(directory, "publish-retry"));
     assert.equal(state().release.draft, false);
+    assert.equal(state().release.prerelease, channel === "main");
+    assert.equal(
+      state().release.make_latest,
+      channel === "main" ? "false" : "true",
+    );
+    assert.equal(state().release.tag_name, tag);
+    process.env.RELEASE_CHANNEL = channel === "stable" ? "main" : "stable";
+    await assert.rejects(
+      publish(runId, attempt, join(directory, "wrong-channel")),
+      /different release channel/,
+    );
+    process.env.RELEASE_CHANNEL = channel;
     const uploads = state().uploads;
     await publish(runId, attempt, join(directory, "publish-idempotent"));
     assert.equal(state().uploads, uploads);
@@ -259,7 +282,7 @@ test("restore authenticates real archive bytes and exact producer attempt; missi
       writeFileSync(process.env.FIXTURE_STATE, JSON.stringify(missingTag));
       await assert.rejects(
         publish(runId, attempt, join(directory, `missing-tag-${draft}`)),
-        /Existing stable release has no source tag/,
+        /Existing release has no source tag/,
       );
       assert.deepEqual(state(), missingTag);
     }
@@ -279,10 +302,16 @@ test("restore authenticates real archive bytes and exact producer attempt; missi
     );
     const newer = structuredClone(published);
     newer.release.tag_name = "v9.0.0";
+    if (channel === "main") {
+      git("commit", "--allow-empty", "-qm", "newer Main source");
+      const newerSource = git("rev-parse", "HEAD");
+      git("update-ref", "refs/remotes/origin/main", newerSource);
+      newer.release.tag_name = releaseTag("main", "1.2.3", newerSource);
+    }
     writeFileSync(process.env.FIXTURE_STATE, JSON.stringify(newer));
     await assert.rejects(
       publish(runId, attempt, join(directory, "out-of-order")),
-      /Newer stable/,
+      /Newer (stable|Main)/,
     );
     process.chdir(cwd);
     const calls = readFileSync(process.env.FIXTURE_LOG!, "utf8");
@@ -292,4 +321,7 @@ test("restore authenticates real archive bytes and exact producer attempt; missi
     process.env = saved;
     rmSync(directory, { recursive: true, force: true });
   }
-});
+}
+for (const channel of ["main", "stable"] as const)
+  test(`Exact ${channel} archives admit only a complete, immutable release`, () =>
+    exercisePublication(channel));

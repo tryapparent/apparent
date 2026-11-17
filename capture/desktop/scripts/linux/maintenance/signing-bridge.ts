@@ -123,7 +123,7 @@ export function checkAssets(directory: string, assets: any[]): string[] {
 }
 function publish(bridge: string): void {
   if (process.env.GITHUB_ACTIONS !== 'true' || process.env.GITHUB_REF !== 'refs/heads/main' ||
-      process.env.GITHUB_WORKFLOW !== 'Release (Linux)' || process.env.GITHUB_REPOSITORY !== REPO)
+      process.env.GITHUB_WORKFLOW !== 'Linux packaging' || process.env.GITHUB_REPOSITORY !== REPO)
     throw new Error('Publish only inside the serialized trusted-main Linux release workflow');
   const source = inspect(bridge);
   admit(source);
@@ -139,8 +139,8 @@ function publish(bridge: string): void {
   const directory = mkdtempSync(join(tmpdir(), 'apparent-bridge-'));
   let created = false;
   try {
-    gh('release', 'download', `linux-main-v2-${source}`, '--repo', REPO, '--dir', directory);
-    const names = checkAssets(directory, canonical.assets);
+    gh('release', 'download', `linux-main-v2-${source}`, '--repo', REPO, '--dir', directory, '--pattern', '*.AppImage', '--pattern', '*.AppImage.sha256');
+    const names = checkAssets(directory, canonical.assets.filter(asset => /\.AppImage(?:\.sha256)?$/.test(asset.name)));
     coversLegacy(bridge);
     created = true; // The remote may accept creation before gh loses its reply.
     gh('release', 'create', tag, ...names.map(n => join(directory, n)), '--repo', REPO,

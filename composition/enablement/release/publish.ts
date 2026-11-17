@@ -1,6 +1,6 @@
 import { compareVersions, cargoVersion } from "./version.ts";
 import type { Release, Asset, Ref } from "./github.ts";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +9,20 @@ import { restore } from "./candidate.ts";
 import { api, gh, optional, pages } from "./github.ts";
 import type { Manifest } from "./manifest.ts";
 import { paired, repository } from "./manifest.ts";
+
+function isAncestor(ancestor: string, descendant: string): boolean {
+  const result = spawnSync("git", [
+    "merge-base",
+    "--is-ancestor",
+    ancestor,
+    descendant,
+  ]);
+  if (result.status === 0) return true;
+  if (result.status === 1) return false;
+  throw Error(
+    `Could not compare Main source history: ${result.stderr?.toString()}`,
+  );
+}
 
 export function assertAssets(
   release: Pick<Release, "assets">,
@@ -36,6 +50,9 @@ export async function publish(
 ): Promise<void> {
   const manifests = await restore(runId, attempt, directory);
   const candidate = paired(manifests);
+  const main = candidate.channel === "main";
+  if (candidate.channel !== (process.env.RELEASE_CHANNEL || "stable"))
+    throw Error("Candidate belongs to a different release channel");
   execFileSync(
     "python3",
     [
@@ -55,35 +72,57 @@ export async function publish(
     (existingTag.object.type !== "commit" ||
       existingTag.object.sha !== candidate.sourceSha)
   )
-    throw Error("Stable tag/source mismatch");
+    throw Error("Release tag/source mismatch");
   const releases = pages<Release>("releases");
   let release = releases.find((r) => r.tag_name === candidate.tag);
   if (release && !existingTag)
-    throw Error("Existing stable release has no source tag");
-  for (const current of releases.filter(
-    (r) => !r.draft && !r.prerelease && /^v\d+\.\d+\.\d+$/.test(r.tag_name),
-  )) {
-    if (compareVersions(current.tag_name.slice(1), candidate.version) > 0)
-      throw Error("Newer stable release already public");
-    const prior = api<{ sha: string }>(`commits/${current.tag_name}`).sha;
-    execFileSync("git", [
-      "merge-base",
-      "--is-ancestor",
-      prior,
-      candidate.sourceSha,
-    ]);
+    throw Error("Existing release has no source tag");
+  if (main) {
+    for (const current of releases) {
+      const prior = /^linux-main-v2-([a-f0-9]{40})$/.exec(
+        current.tag_name,
+      )?.[1];
+      if (
+        !prior ||
+        prior === candidate.sourceSha ||
+        current.draft ||
+        !current.prerelease
+      )
+        continue;
+      if (
+        isAncestor(prior, "origin/main") &&
+        isAncestor(candidate.sourceSha, prior)
+      )
+        throw Error(`Newer Main release already public: ${current.tag_name}`);
+    }
+  } else {
+    for (const current of releases.filter(
+      (r) => !r.draft && !r.prerelease && /^v\d+\.\d+\.\d+$/.test(r.tag_name),
+    )) {
+      if (compareVersions(current.tag_name.slice(1), candidate.version) > 0)
+        throw Error("Newer stable release already public");
+      const prior = api<{ sha: string }>(`commits/${current.tag_name}`).sha;
+      execFileSync("git", [
+        "merge-base",
+        "--is-ancestor",
+        prior,
+        candidate.sourceSha,
+      ]);
+    }
   }
   if (!existingTag)
     api("git/refs", "POST", {
       ref: `refs/tags/${candidate.tag}`,
       sha: candidate.sourceSha,
     });
-  const notes = `Paired stable candidate ${candidate.sourceSha}\nProducer ${repository}/actions/runs/${runId}/attempts/${attempt}\nChannel stable; fork Mac Preview identity and preview Sparkle feed retained.\n\n${JSON.stringify(manifests)}`;
+  const notes = main
+    ? `Paired Main candidate ${candidate.sourceSha}\nProducer ${repository}/actions/runs/${runId}/attempts/${attempt}\n\n${JSON.stringify(manifests)}`
+    : `Paired stable candidate ${candidate.sourceSha}\nProducer ${repository}/actions/runs/${runId}/attempts/${attempt}\nChannel stable; fork Mac Preview identity and preview Sparkle feed retained.\n\n${JSON.stringify(manifests)}`;
   if (release) {
     if (
       release.target_commitish !== candidate.sourceSha ||
       release.body !== notes ||
-      release.prerelease
+      release.prerelease !== main
     )
       throw Error("Release belongs to another candidate");
     assertAssets(release, manifests, !release.draft);
@@ -92,10 +131,12 @@ export async function publish(
     release = api<Release>("releases", "POST", {
       tag_name: candidate.tag,
       target_commitish: candidate.sourceSha,
-      name: `Apparent ${candidate.version}`,
+      name: main
+        ? `Apparent Main ${candidate.version} (${candidate.sourceSha.slice(0, 12)})`
+        : `Apparent ${candidate.version}`,
       body: notes,
       draft: true,
-      prerelease: false,
+      prerelease: main,
       make_latest: "false",
     });
   }
@@ -119,10 +160,13 @@ export async function publish(
     tag.object.sha !== candidate.sourceSha
   )
     throw Error("Tag missing or moved during staging");
-  api(`releases/${release.id}`, "PATCH", { draft: false, make_latest: "true" });
+  api(`releases/${release.id}`, "PATCH", {
+    draft: false,
+    make_latest: main ? "false" : "true",
+  });
   const publicRelease = api<Release>(`releases/${release.id}`);
-  if (publicRelease.draft || publicRelease.prerelease)
-    throw Error("Stable release not public");
+  if (publicRelease.draft || publicRelease.prerelease !== main)
+    throw Error("Release visibility or channel mismatch");
   assertAssets(publicRelease, manifests, true);
   const finalTag = api<Ref>(`git/ref/tags/${candidate.tag}`);
   if (

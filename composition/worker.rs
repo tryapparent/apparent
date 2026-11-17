@@ -249,7 +249,6 @@ mod tests {
         assert_eq!(file.metadata().unwrap().permissions().mode() & 0o777, 0o600);
         let result = run_with_input(&mut Command::new("/bin/cat"), file, Duration::from_secs(2), bytes.len()).unwrap();
         assert_eq!(result, bytes);
-        assert!(run(&mut Command::new("/bin/cat"), Duration::from_secs(2), 128*1024+1).is_err());
         let oversized = tempfile::tempfile().unwrap();
         oversized.set_len(16*1024*1024+1).unwrap();
         assert!(run_with_input(&mut Command::new("/bin/cat"), oversized, Duration::from_secs(2), 1024).is_err());

@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { cargoVersion } from "../version.ts";
-import { dispatchMain } from "../linux/dispatch.ts";
+import { dispatchMain } from "../main/dispatch.ts";
 
-test("Main CI dispatches an independent release with exact source and verification identity", () => {
+test("Main CI dispatches a paired release with exact source and verification identity", () => {
   const env = {
     GITHUB_REPOSITORY: "tryapparent/apparent",
     GITHUB_REF: "refs/heads/main",
@@ -25,7 +25,7 @@ test("Main CI dispatches an independent release with exact source and verificati
         inputs: {
           source_sha: env.GITHUB_SHA,
           verification_run_id: "123",
-          publish_main: "true",
+          mode: "main",
         },
       },
     ],
@@ -55,26 +55,6 @@ test("Main CI dispatches an independent release with exact source and verificati
   );
 });
 
-test("independent publisher consumes the admitted source and exact verification run", () => {
-  const workflow = readFileSync(".github/workflows/release-linux.yml", "utf8");
-  const dispatch = workflow
-    .split("  workflow_dispatch:\n")[1]
-    .split("\npermissions:")[0];
-  assert.ok(dispatch.includes("      source_sha:"));
-  assert.ok(dispatch.includes("      verification_run_id:"));
-  assert.ok(
-    workflow.includes(
-      "REQUEST_SHA: ${{ inputs.source_sha || github.event.workflow_run.head_sha || github.sha }}",
-    ),
-  );
-  assert.ok(
-    workflow.includes(
-      "VERIFY_RUN_ID: ${{ inputs.verification_run_id || github.event.workflow_run.id }}",
-    ),
-  );
-  assert.ok(workflow.includes("ref: ${{ needs.admit.outputs.sha }}"));
-});
-
 test("actual Linux compilation command selects explicit stable versus preview reporting identity", () => {
   const workflow = readFileSync(".github/workflows/release-linux.yml", "utf8");
   const step = workflow
@@ -92,10 +72,10 @@ test("actual Linux compilation command selects explicit stable versus preview re
   const version = cargoVersion(
     execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
   );
-  for (const [stable, verify, expected] of [
-    ["true", "false", "stable\nproduction"],
-    ["false", "false", "preview\nproduction"],
-    ["false", "true", "preview\nsynthetic"],
+  for (const [channel, verify, expected] of [
+    ["stable", "false", "stable\nproduction"],
+    ["main", "false", "preview\nproduction"],
+    ["", "true", "preview\nsynthetic"],
   ]) {
     const result = spawnSync("bash", ["-eu", "-c", script], {
       encoding: "utf8",
@@ -103,7 +83,7 @@ test("actual Linux compilation command selects explicit stable versus preview re
         ...process.env,
         APPARENT_RELEASE_VERSION: version,
         REQUEST_VERSION: version,
-        STABLE_CANDIDATE: stable,
+        RELEASE_CHANNEL: channel,
         VERIFY_ONLY: verify,
         CANDIDATE_SHA: "1".repeat(40),
       },
@@ -117,34 +97,29 @@ test("actual Linux compilation command selects explicit stable versus preview re
       ...process.env,
       APPARENT_RELEASE_VERSION: version,
       REQUEST_VERSION: "999.0.0",
-      STABLE_CANDIDATE: "true",
+      RELEASE_CHANNEL: "stable",
       VERIFY_ONLY: "false",
     },
   });
   assert.notEqual(mismatch.status, 0);
 });
 
-test("retired independent Linux stable publication fails before any network call", () => {
+test("standalone Linux publication fails before any network call", () => {
   const result = spawnSync(
     "node",
-    [
-      "--experimental-strip-types",
-      "composition/enablement/release/linux.ts",
-      "admit",
-    ],
+    ["--experimental-strip-types", "composition/enablement/release/linux.ts"],
     {
       encoding: "utf8",
       env: {
         ...process.env,
-        TAG: "v1.2.3",
+        RELEASE_CHANNEL: "",
+        VERIFY_ONLY: "false",
+        BRIDGE_COMMIT: "",
         GH_TOKEN: "",
         PATH: process.env.PATH,
       },
     },
   );
   assert.notEqual(result.status, 0);
-  assert.match(
-    result.stderr,
-    /Independent Linux stable publication is retired/,
-  );
+  assert.match(result.stderr, /Use Release for Linux and Mac publication/);
 });

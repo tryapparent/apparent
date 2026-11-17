@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { paired } from "./manifest.ts";
 import { restore } from "./candidate.ts";
 
 const [command, output] = process.argv.slice(2);
@@ -14,7 +15,9 @@ const runId = process.env.PRODUCER_RUN!,
   attempt = Number(process.env.PRODUCER_ATTEMPT);
 const directory = mkdtempSync(join(tmpdir(), "apparent-dev-distribution-"));
 try {
-  await restore(runId, attempt, directory);
+  const candidate = paired(await restore(runId, attempt, directory));
+  if (candidate.channel !== "stable")
+    throw Error("Feed and cask distribution requires a stable candidate");
   const payload = join(directory, `stable-macos-aarch64-${attempt}`);
   execFileSync(
     process.execPath,

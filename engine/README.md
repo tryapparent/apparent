@@ -33,7 +33,7 @@ Linux frame decoding also requires GStreamer 1.24+ core/app/video development
 libraries and the base, good and libav runtime plugins:
 
 ```sh
-node --experimental-strip-types engine/tools/check.ts /tmp/apparent-dev-engine-JOB
+node --experimental-strip-types engine/enablement/ci/producer/check.ts /tmp/apparent-dev-engine-JOB
 ```
 
 Create a fresh private per-job directory first; each output path is single-use

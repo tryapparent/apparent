@@ -1,21 +1,21 @@
-name: Release (Linux)
-run-name: Linux publication · source ${{ inputs.source_sha || github.sha }}
+name: Linux packaging
+run-name: Linux packaging · source ${{ inputs.source_sha || github.sha }}
 
 on:
   workflow_call:
     inputs:
       source_sha:
+        required: true
         type: string
-        default: ''
-      stable_candidate:
-        type: boolean
-        default: false
+      release_channel:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
       version:
+        required: true
         type: string
-        default: ''
-      publish_main:
-        type: boolean
-        default: false
     secrets:
       POSTHOG_CLI_API_KEY:
         required: false
@@ -23,47 +23,26 @@ on:
         required: false
   workflow_dispatch:
     inputs:
-      source_sha:
-        description: Exact verified main source for Linux Main publication
-        type: string
-        default: ''
-      verification_run_id:
-        description: Main CI run that admitted this exact source
-        type: string
-        default: ''
       bridge_commit:
         description: Signed compatibility bridge; publish aliases of already verified v2 assets.
-        required: false
-        default: ""
-      tag:
-        description: Version tag to build and attach to its release. Leave empty only for a Main preview.
-        required: false
-        default: ""
-      publish_main:
-        description: Publish a checked main build as a Linux preview release.
-        type: boolean
-        required: false
-        default: false
+        type: string
+        default: ''
       verify_only:
-        description: Run both Linux packaging gates without publishing release assets. Requires empty tag and publish_main=false.
+        description: Run both Linux packaging gates without publishing release assets.
         type: boolean
-        required: false
-        default: false
+        default: true
 
 permissions:
   contents: read
 
 concurrency:
-  # Verification cannot replace the pending publisher behind a running Main build.
-  # Canonical publication writes only v2 tags. Compatibility publication alone
-  # writes legacy tags; its own serialized lane cannot be evicted by Main builds.
-  group: release-linux-${{ inputs.stable_candidate && 'stable-candidate' || inputs.bridge_commit != '' && 'compatibility' || 'canonical' }}-${{ github.ref }}-${{ inputs.tag }}-${{ inputs.verify_only == true && 'verify-only' || 'publish' }}
+  group: linux-packaging-${{ inputs.release_channel || (inputs.bridge_commit != '' && 'compatibility' || 'verify') }}-${{ github.ref }}
   # Finish the running build/publication; GitHub coalesces to the latest pending run.
   cancel-in-progress: false
 
 jobs:
   admit:
-    if: github.repository == 'tryapparent/apparent' && (inputs.stable_candidate || github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository))
+    if: github.repository == 'tryapparent/apparent'
     permissions:
       contents: read
       actions: read
@@ -85,44 +64,15 @@ jobs:
       - id: gate
         env:
           GH_TOKEN: ${{ github.token }}
-          REQUEST_SHA: ${{ inputs.source_sha || github.event.workflow_run.head_sha || github.sha }}
-          VERIFY_RUN_ID: ${{ inputs.verification_run_id || github.event.workflow_run.id }}
-          TAG: ${{ inputs.tag }}
-          VERIFY_ONLY: ${{ inputs.verify_only }}
+          REQUEST_SHA: ${{ inputs.source_sha || github.sha }}
+          RELEASE_CHANNEL: ${{ inputs.release_channel }}
+          VERIFY_ONLY: ${{ inputs.verify_only && inputs.bridge_commit == '' }}
           BRIDGE_COMMIT: ${{ inputs.bridge_commit }}
-          STABLE_CANDIDATE: ${{ inputs.stable_candidate }}
-          PUBLISH_MAIN: ${{ inputs.publish_main }}
-        run: node --experimental-strip-types composition/enablement/release/linux.ts admit
-
-  preview-needed:
-    needs: admit
-    if: needs.admit.outputs.sha != '' && inputs.bridge_commit == ''
-    permissions:
-      contents: read
-    runs-on: ubuntu-24.04
-    outputs:
-      build: ${{ steps.check.outputs.build }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.workflow_sha }}
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22.23.0'
-      - id: check
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CANDIDATE_SHA: ${{ needs.admit.outputs.sha }}
-          PUBLISH_MAIN: ${{ !inputs.stable_candidate && (github.event_name == 'workflow_run' || github.event_name == 'schedule' || inputs.publish_main) }}
-          TAG: ${{ inputs.tag }}
-          VERIFY_ONLY: ${{ inputs.verify_only }}
-          STABLE_CANDIDATE: ${{ inputs.stable_candidate }}
-        run: node --experimental-strip-types composition/enablement/release/linux.ts needed
+        run: node --experimental-strip-types composition/enablement/release/linux.ts
 
   linux:
-    needs: [admit, preview-needed]
-    if: needs.preview-needed.outputs.build == 'true'
+    needs: admit
+    if: needs.admit.outputs.sha != '' && inputs.bridge_commit == ''
     name: Linux ${{ matrix.arch }}
     strategy:
       fail-fast: false
@@ -138,33 +88,15 @@ jobs:
     timeout-minutes: 90
     env:
       CANDIDATE_SHA: ${{ needs.admit.outputs.sha }}
-      TAG: ${{ inputs.tag }}
-      STABLE_CANDIDATE: ${{ inputs.stable_candidate }}
+      RELEASE_CHANNEL: ${{ inputs.release_channel }}
       REQUEST_VERSION: ${{ inputs.version }}
-      PUBLISH_MAIN: ${{ !inputs.stable_candidate && (github.event_name == 'workflow_run' || github.event_name == 'schedule' || inputs.publish_main) }}
+      TAG: ${{ inputs.release_channel == 'stable' && inputs.tag || '' }}
       VERIFY_ONLY: ${{ inputs.verify_only }}
     steps:
-      - name: Validate release request
-        run: |
-          if [[ "${{ inputs.stable_candidate }}" == true ]]; then
-            test "$GITHUB_REF" = refs/heads/main
-            test -z "$TAG"
-            test "$PUBLISH_MAIN" != true
-            test "$CANDIDATE_SHA" = "${{ inputs.source_sha }}"
-          elif [[ "$VERIFY_ONLY" == "true" ]]; then
-            if [[ "$GITHUB_EVENT_NAME" != "workflow_dispatch" || -n "$TAG" || "$PUBLISH_MAIN" == "true" || "$GITHUB_REF" != refs/heads/* ]]; then
-              echo "Verify-only requires workflow_dispatch on a branch, with an empty tag and publish_main=false" >&2
-              exit 1
-            fi
-          elif [[ ( "$PUBLISH_MAIN" == "true" && ( -n "$TAG" || "$GITHUB_REF" != "refs/heads/main" ) ) || ( "$PUBLISH_MAIN" != "true" && -z "$TAG" ) ]]; then
-            echo "Select exactly one: a release tag, or a Main preview on main" >&2
-            exit 1
-          fi
       - uses: actions/checkout@v5
         with:
           ref: ${{ needs.admit.outputs.sha }}
       - name: Confirm build identity
-        if: env.TAG == ''
         run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
       - name: Prepare hosted Ubuntu package transport
         if: runner.os == 'Linux' && runner.arch == 'X64'
@@ -215,10 +147,10 @@ jobs:
           test -n "$APPARENT_RELEASE_VERSION"
           export APPARENT_RELEASE_CHANNEL=preview
           export APPARENT_REPORTING_ENVIRONMENT=production
-          if [[ "$STABLE_CANDIDATE" == true ]]; then
+          if [[ -n "$RELEASE_CHANNEL" ]]; then
             test "$APPARENT_RELEASE_VERSION" = "$REQUEST_VERSION"
-            export APPARENT_RELEASE_CHANNEL=stable
           fi
+          if [[ "$RELEASE_CHANNEL" == stable ]]; then export APPARENT_RELEASE_CHANNEL=stable; fi
           if [[ "$VERIFY_ONLY" == "true" ]]; then export APPARENT_REPORTING_ENVIRONMENT=synthetic; fi
           GITHUB_SHA="$CANDIDATE_SHA" cargo build --release --locked
       - name: Unit tests and model test executable
@@ -276,22 +208,22 @@ jobs:
           sudo sysctl -w kernel.yama.ptrace_scope=0
           bash capture/desktop/scripts/linux/appimage/smoke-cpu.sh "dist/${{ steps.package.outputs.name }}" "$SPEECH_TEST" "$sde" -icl
       - uses: actions/checkout@v5
-        if: inputs.stable_candidate
+        if: inputs.release_channel != ''
         with:
           ref: ${{ github.workflow_sha }}
           clean: false
           persist-credentials: false
-      - name: Seal stable Linux candidate
-        if: inputs.stable_candidate
+      - name: Seal checked Linux candidate
+        if: inputs.release_channel != ''
         env:
           APPARENT_VERSION: ${{ inputs.version }}
-          RELEASE_TAG: v${{ inputs.version }}
+          RELEASE_TAG: ${{ inputs.tag }}
           GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
           RELEASE_NATIVE_CHECKS: 'true'
         run: node --experimental-strip-types composition/enablement/release/manifest.ts create dist linux ${{ matrix.arch }}
       - uses: actions/upload-artifact@v5
         with:
-          name: ${{ inputs.stable_candidate && format('stable-linux-{0}-{1}', matrix.arch, github.run_attempt) || steps.package.outputs.name }}
+          name: ${{ inputs.release_channel != '' && format('stable-linux-{0}-{1}', matrix.arch, github.run_attempt) || steps.package.outputs.name }}
           path: dist/*
       - name: Clean private release test inputs
         if: always()
@@ -299,29 +231,6 @@ jobs:
           if [ -n "${APPARENT_RELEASE_TEST_TMP:-}" ]; then
             rm -rf -- "$APPARENT_RELEASE_TEST_TMP"
           fi
-
-  main-preview:
-    if: ${{ !inputs.stable_candidate && needs.linux.result == 'success' && (github.event_name == 'workflow_run' || github.event_name == 'schedule' || inputs.publish_main) && inputs.tag == '' && github.ref == 'refs/heads/main' && inputs.verify_only != true }}
-    needs: [admit, linux]
-    permissions:
-      contents: write
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ needs.admit.outputs.sha }}
-      - uses: actions/download-artifact@v5
-        with:
-          pattern: Apparent-*.AppImage
-          path: dist
-          merge-multiple: true
-      - name: Publish both checked AppImages
-        env:
-          CANDIDATE_SHA: ${{ needs.admit.outputs.sha }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          GITHUB_SHA="$CANDIDATE_SHA" APPARENT_VERSION="$version" python3 capture/desktop/scripts/linux/maintenance/publish-main-preview.py
 
   signing-bridge:
     needs: admit

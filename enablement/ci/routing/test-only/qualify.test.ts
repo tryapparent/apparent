@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync, spawnSync} from 'node:child_process';
-import {mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, chmodSync, renameSync, symlinkSync, unlinkSync} from 'node:fs';
+import {mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, chmodSync, renameSync, symlinkSync, unlinkSync, existsSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {YAML} from 'bun';
@@ -50,10 +50,6 @@ test('real committed modification selects contracts only on PR and main, with gu
       needs.contracts.result = 'failure'; assert.equal(enabled(), false, 'contracts failure cannot bypass admission');
     }
   }
-  // Owner contract directories may share the invocation; root contracts must
-  // still run without flags that could filter out the reviewed test.
-  assert.ok(contractTests().some(({argv}) => argv[0] === 'bun' && argv[1] === 'test'
-    && argv.slice(2).includes('enablement/ci/') && argv.slice(2).every(path => !path.startsWith('-'))));
   const cli = spawnSync('bun', [new URL('../../select.ts',import.meta.url).pathname, '--admit'], {
     cwd:r.cwd, encoding:'utf8', env:{...process.env, BASE_SHA:r.base, GITHUB_SHA:head,
       GITHUB_EVENT_NAME:'pull_request', GITHUB_OUTPUT:join(r.cwd,'output')}});
@@ -65,6 +61,20 @@ test('real committed modification selects contracts only on PR and main, with gu
     cwd:r.cwd, encoding:'utf8',env:{...process.env,BASE_SHA:r.base,GITHUB_SHA:r.commit(),
       GITHUB_EVENT_NAME:'pull_request',GITHUB_OUTPUT:join(r.cwd,'rejected-output')}});
   assert.notEqual(rejected.status,0); assert.match(rejected.stderr,/Declare directory ownership/);
+
+  const suites = join(r.cwd, 'suites');
+  for (const [directory, owner] of [['enablement/ci', 'root'], ['connect/enablement/ci', 'connect']]) {
+    r.put(`suites/${directory}/sentinel.test.ts`, `import {test} from 'bun:test'; import {writeFileSync} from 'node:fs';
+      test('${owner} contracts', () => writeFileSync('${owner}.ran', 'executed'));`);
+  }
+  r.put('suites/capture/sentinel.test.ts', "import {test} from 'bun:test'; test('product suite', () => { throw Error('unexpected product suite execution'); });");
+  for (const command of contractTests().filter(({argv}) => argv[0] === 'bun' && argv[1] === 'test')) {
+    assert.ok(command.argv.slice(2).every(path => !path.startsWith('-')), 'CI contracts must remain unfiltered');
+    const checked = spawnSync(command.argv[0], command.argv.slice(1), {cwd:join(suites, command.cwd), encoding:'utf8', timeout:10000});
+    assert.equal(checked.status, 0, checked.stderr);
+  }
+  for (const owner of ['root', 'connect'])
+    assert.ok(existsSync(join(suites, `${owner}.ran`)), `${owner} CI contracts were not executed`);
 });
 test('mixed actual execution inputs retain their own consumers', t => {
   const r = repository(t); r.put(path, original + '\n// regression\n');

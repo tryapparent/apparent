@@ -61,6 +61,12 @@ carried-job provenance needs reconciliation. A live snapshot is not a historical
 state reconstruction. Use existing immutable snapshots rather than refetching
 healthy watched PRs during one review.
 
+Zero-job records retain run/attempt/SHA, status, age and page coverage in
+`analysis.joblessSnapshots`. Missing clocks and coverage stay unknown. Creation
+age gives no evidence of live admission, runner demand or critical-path delay.
+Reports exclude these ages from costs, including older `preJobWaits` aggregates.
+The collector retains these records in its bounded sample.
+
 `format` leads with the largest observed operation and the largest identified
 action for each clock, count × mean = total, and whether mixed/unresolved time
 could overturn that ranking. Static inspection reads literal executable tool
@@ -157,16 +163,10 @@ Regression command:
 
 ```sh
 node --experimental-strip-types --test enablement/timing/census.test.ts \
-  enablement/timing/review/review.test.ts
+  enablement/timing/review/*.test.ts enablement/timing/review/tests/*.test.ts
 ```
 
-Rerun snapshots can give a carried completed job a new ID/creation time after its
-original execution. Completion status is independent of missing/inconsistent
-clocks. When both attempts contain a unique match within the same run/SHA by
-name, allocated runner, execution endpoints, conclusion and step identities,
-retain only the earlier original row and its queue attribution. Names alone
-never identify executions. Unmatched or ambiguous prior execution remains a row
-with `provenance: unknown-prior-execution` and null runner/queue seconds; it is
-not active work. Supply earlier attempts to recover attribution. Terminal rows
-with missing clocks remain unknown rather than unfinished; zero known spans
-outside the window are omitted. These rules do not measure a speed benefit.
+Carried rerun jobs can have a new ID and creation time after original execution.
+A unique earlier match by run/SHA, name, runner, clocks, conclusion and steps
+retains original attribution. Supply earlier attempts to resolve provenance.
+Unmatched prior execution is terminal with unknown queue and execution clocks.
