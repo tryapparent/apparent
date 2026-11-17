@@ -51,7 +51,9 @@ export function NativeOnboarding(){
   }),[]);
   const shortcutAdvance=useRef<string|null>(null);
   useEffect(()=>{
-    const ready=state?.step==='shortcut'&&state.shortcutChosen&&(state.shortcutTested||!state.firstCaptureRequired)&&!state.shortcutEditing&&!state.shortcutEditor?.recording;
+    // Back/cancel invalidates the renderer's earlier choice until a fresh
+    // recording acknowledgement arrives; native snapshots can still be tested.
+    const ready=!shortcutCancelled.current&&state?.step==='shortcut'&&state.shortcutChosen&&(state.shortcutTested||!state.firstCaptureRequired)&&!state.shortcutEditing&&!state.shortcutEditor?.recording;
     if(!ready){shortcutAdvance.current=null;return;}
     if(shortcutAdvance.current===state.shortcut)return;
     shortcutAdvance.current=state.shortcut;
@@ -107,7 +109,7 @@ export function NativeOnboarding(){
     if(state?.step!=='shortcut'){listeningStep.current=false;return;}
     if(wispr.visible||listeningStep.current)return;
     listeningStep.current=true;
-    if(!state.shortcutChosen&&!state.shortcutEditor?.recording)void action('change-shortcut');
+    if((!state.shortcutChosen||shortcutCancelled.current)&&!state.shortcutEditor?.recording)void action('change-shortcut');
   },[state?.step,wispr.visible]);
   const chooseFn=async()=>{for(const next of fnSelectionActions(state?.platform??'linux',Boolean(state?.shortcutEditor?.recording))){if(!await sendAction(next))break;}};
   useEffect(()=>{setHeldKeys([]);if(!wispr.visible&&state?.shortcutEditor?.recording)shortcutRecorder.current?.focus()},[state?.shortcutEditor?.recording,wispr.visible]);
@@ -145,7 +147,7 @@ export function NativeOnboarding(){
     {state.step==='welcome'&&!state.penPicker&&<AgentSetup onContinue={()=>action('continue')}/>}
     {penPage&&<div className="native-pen-picker" aria-busy={penBusy}><h1>Pick your pen.</h1>{(error||state.penError)&&<p role="alert">{error||'The colour could not be saved. Try choosing it again.'}</p>}<div className="native-pencils">{([['coral',[217,76,68]],['purple',[122,88,199]],['blue',[59,121,189]],['green',[57,123,97]]] as const).map(([name,rgb])=><Button variant="ghost" key={name} aria-label={`${name} pen`} disabled={penBusy} aria-pressed={state.penSelected&&state.penRgb.every((component,index)=>component===rgb[index])} style={{'--pencil':`var(--apparent-pen-${name})`} as React.CSSProperties} onClick={()=>void confirmPen(name)}><span aria-hidden="true"/></Button>)}</div><div className="native-pond" data-landing={penLanding} style={{'--pond-colour':state.penSelected?`rgb(${state.penRgb.join(',')})`:'var(--apparent-muted)'} as React.CSSProperties}><svg className="native-puddle" viewBox="0 0 300 100" role="img" aria-label="Puddle in your selected pen colour"><path d="M22 49C9 21 65 11 99 17C133 1 169 18 192 12C229 4 249 28 275 31C310 37 295 69 263 73C244 94 208 86 180 90C144 102 122 84 91 90C48 93 6 78 22 49Z"/><ellipse className="native-puddle-ring" cx="150" cy="49" rx="48" ry="15"/></svg><img ref={penFrog} className="native-pond-frog" src={frog} alt="Frog beside the puddle"/></div></div>}
     {state.step==='permissions'&&<><h1>{state.fix?'Allow access.':'We need three things.'}</h1><Permissions platform={state.platform} rows={state.rows} action={action}/></>}
-    {state.step==='shortcut'&&<><h1 className={state.shortcutChosen?'native-shortcut-prompt':undefined} key={state.shortcutChosen?'chosen':'choose'}>{!state.shortcutChosen?'Choose your shortcut.':'One more time.'}</h1><div className="native-shortcut" data-managed={state.shortcutEditor?.externallyManaged}>
+    {state.step==='shortcut'&&<><h1 className={state.shortcutChosen&&!state.shortcutEditor?.recording?'native-shortcut-prompt':undefined} key={state.shortcutChosen&&!state.shortcutEditor?.recording?'chosen':'choose'}>{!state.shortcutChosen||state.shortcutEditor?.recording?'Choose your shortcut.':'One more time.'}</h1><div className="native-shortcut" data-managed={state.shortcutEditor?.externallyManaged}>
       {state.shortcutEditor?.recording?<div ref={shortcutRecorder} tabIndex={0} role="group" aria-label="Shortcut recorder" onBlur={()=>setHeldKeys([])} onKeyUp={event=>setHeldKeys([event.ctrlKey?'Ctrl':'',event.altKey?'Alt':'',event.metaKey?(state.platform==='macos'?'⌘':'Super'):'',event.shiftKey?'Shift':''].filter(Boolean))} onKeyDown={event=>{
       if(event.key==='Tab'||event.target!==event.currentTarget)return;
       event.preventDefault();if(event.key==='Escape'){void action('cancel-shortcut');return;}

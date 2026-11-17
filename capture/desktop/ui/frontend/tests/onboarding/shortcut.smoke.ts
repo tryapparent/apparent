@@ -100,4 +100,39 @@ test('shortcut composition waits for modifiers and preserves Fn/cancel recovery'
   await page.keyboard.press('r');
   await expect.poll(()=>output).toContain('"keyCode":15,"modifiers":4608,"key":"r"');
   await page.keyboard.up('Shift');await page.keyboard.up('Control');
+  // Back retains the native choice/test facts until the editor acknowledges a
+  // new selection. Those facts must not immediately send Continue again.
+  const chosen={type:'state',step:'shortcut',platform:'macos',ready:true,rows:[],index:1,count:3,
+    firstCaptureRequired:true,shortcut:'Fn',shortcutChosen:true,shortcutTested:true,
+    shortcutSelectionReleased:true,shortcutEditor:{recording:false}};
+  child.stdin.write(JSON.stringify({...chosen,step:'try-it',practice:'start'})+'\n');
+  await expect(page.getByRole('heading',{name:'One more time.',exact:true})).toBeVisible();
+  output='';await page.getByRole('button',{name:'Back',exact:true}).click();
+  await expect.poll(()=>output).toContain('"action":"back"');
+  output='';child.stdin.write(JSON.stringify(chosen)+'\n');
+  const evidence=process.env.ANNOTATION_EVIDENCE;
+  if(evidence)await page.screenshot({path:path.join(evidence,'shortcut-returned.png')});
+  await expect.poll(()=>output).toContain('"action":"change-shortcut"');
+  assert.equal(output.includes('"action":"continue"'),false,'Back must wait for a fresh selection');
+  child.stdin.write(JSON.stringify({...chosen,shortcutEditing:true,shortcutEditor:{recording:true}})+'\n');
+  await expect(recorder).toBeFocused();
+  await expect(page.getByRole('heading',{name:'Choose your shortcut.',exact:true})).toBeVisible();
+  for(const theme of ['light','dark'] as const){
+    await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});
+    for(const width of [760,320]){
+      await page.setViewportSize({width,height:520});
+      assert.equal(await page.locator('.native-setup').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
+      await page.getByRole('button',{name:'Choose suggested Fn shortcut',exact:true}).focus();
+      await expect(page.getByRole('button',{name:'Choose suggested Fn shortcut',exact:true})).toBeFocused();
+      if(evidence)await page.screenshot({path:path.join(evidence,`shortcut-retry-${theme}-${width}.png`)});
+    }
+  }
+  await page.setViewportSize({width:760,height:520});
+  output='';await page.getByRole('button',{name:'Choose suggested Fn shortcut',exact:true}).click();
+  await expect.poll(()=>output).toContain('"keyCode":63,"modifiers":0,"key":"Fn"');
+  output='';child.stdin.write(JSON.stringify({...chosen,shortcutTested:false})+'\n');
+  await expect.poll(()=>output).toContain('"action":"accept-shortcut-choice:Fn"');
+  assert.equal(output.includes('"action":"continue"'),false,'selection needs the native test acknowledgement');
+  child.stdin.write(JSON.stringify(chosen)+'\n');
+  await expect.poll(()=>output).toContain('"action":"continue"');
 });
