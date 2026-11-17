@@ -1,5 +1,7 @@
 # Releasing Apparent
 
+Numbered stable application releases now use the paired [application coordinator](../../../composition/enablement/release/README.md): both Linux AppImages and the signed Apple-silicon Mac artifacts share one source, numeric version and public `vX.Y.Z` release. The independent Main and Mac preview paths below remain separate channels. Stable GitHub visibility waits for both platforms; ordinary verification and Main publication do not wait for Mac.
+
 ## PostHog release attribution
 
 Mac preview and Linux publication resolve a release before compiling via
@@ -29,27 +31,22 @@ do not delete provider records or rewrite historical events to simulate success.
 
 The fork's **Mac preview release** workflow
 (`.github/workflows/release-mac-preview.yml`) is the regular distribution path for Apple silicon.
-Mac publication first requires successful Linux/shared and Mac main verification
-of the exact commit. Linux publication requires its Linux/shared receipt and does
+Mac publication requires successful Linux/shared verification of the exact commit,
+then signing, notarization and focused native packaging/installation proof. Full Mac capture verification remains manual. Linux publication requires its Linux/shared receipt and does
 not wait for queued Mac runners.
 It is dispatched manually from `tryapparent/apparent`'s `main`: **Actions → Mac preview release →
 Run workflow → main**. It builds on `macos-latest`. The optional `source_sha` input selects an already verified
 full main commit when unrelated documentation has advanced the branch. Admission runs
 from the dispatch ref before checking out that source and still requires its exact
-Linux/shared and Mac receipts plus main ancestry. Version, PostHog build, tag target
+Linux/shared receipt plus main ancestry. Version, PostHog build, tag target
 and feed all refer to the selected source; the historical onboarding exception cannot
 select a different commit. With no input, current main is used. It reads the shared version
 from `Cargo.toml`, and creates a GitHub prerelease with the DMG, its SHA-256 and
-a Sparkle ZIP. Mac and Linux packages and PostHog records use exactly that version;
-0.22.1 advances Linux from 0.3.13 and Mac from 0.21.1. Bump the package version
-and its lockfile entry together for each subsequent numbered release. Mac tags
-retain `preview-mac-<minor>-<patch>` for 0.x versions; Linux Main tags retain their
-commit IDs for ancestry-based update ordering. Linux release titles include the
-shared version. The internal Mac Sparkle build number remains `<workflow run>.<attempt>`
-to preserve monotonic update ordering; it is separate from the displayed release version.
-Existing tags are never overwritten, and a published version requires a new version bump.
-The historical onboarding baseline remains fixed at 0.12.2. The
-first install uses the release DMG: drag `Apparent Preview.app` into `/Applications`
+a Sparkle ZIP. Both platforms use Cargo's numeric version; bump Cargo.toml and
+its lockfile together. Preview tags remain `preview-mac-<minor>-<patch>`; Linux
+Main uses source-SHA tags. Sparkle build numbers use run ID and attempt for
+ordering across workflows. Published versions and tags are immutable.
+For first installation, drag `Apparent Preview.app` into `/Applications`
 before launching it. Sparkle cannot update a copy running directly from the mounted DMG or
 Downloads; quit that copy, move it to Applications and relaunch it there. Installed previews
 then check their own signed Sparkle feed

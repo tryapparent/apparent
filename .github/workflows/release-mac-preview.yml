@@ -3,6 +3,36 @@ name: Mac preview release
 # The fork's Mac release path: optional Developer ID/notarization, always Sparkle EdDSA.
 # Keep its feed separate from Kit's Developer ID signed production appcast.
 on:
+  workflow_call:
+    inputs:
+      source_sha:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      channel:
+        required: false
+        default: stable
+        type: string
+      tag:
+        required: true
+        type: string
+    secrets:
+      HOMEBREW_TAP_SSH_KEY:
+        required: false
+      APPLE_DEVELOPER_ID_P12_BASE64:
+        required: true
+      APPLE_DEVELOPER_ID_P12_PASSWORD:
+        required: true
+      APPLE_NOTARY_PRIVATE_KEY:
+        required: true
+      SPARKLE_PREVIEW_PRIVATE_KEY:
+        required: true
+      APPARENT_POSTHOG_TOKEN:
+        required: false
+      POSTHOG_CLI_API_KEY:
+        required: true
   workflow_dispatch:
     inputs:
       source_sha:
@@ -20,12 +50,19 @@ permissions:
   actions: read
 
 concurrency:
-  group: mac-preview-release
+  group: mac-${{ inputs.channel == 'stable' && 'stable-candidate' || 'preview-release' }}
   cancel-in-progress: false
+
+env:
+  CANDIDATE_SHA: ${{ inputs.source_sha }}
+  APPARENT_VERSION: ${{ inputs.version }}
+  RELEASE_TAG: ${{ inputs.tag }}
+  RELEASE_CHANNEL: ${{ inputs.channel }}
+  APPARENT_SOURCE_ROOT: ${{ github.workspace }}
 
 jobs:
   preview:
-    if: github.repository == 'tryapparent/apparent' && inputs.homebrew_tag == '' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/t3/onboarding-mac-release-baseline')
+    if: inputs.channel != 'stable' && github.repository == 'tryapparent/apparent' && inputs.homebrew_tag == '' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/t3/onboarding-mac-release-baseline')
     runs-on: macos-latest
     timeout-minutes: 90
     outputs:
@@ -42,23 +79,11 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.23.0'
       - name: Require Linux/shared verification of this exact main commit
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          if [ "$GITHUB_REF" = refs/heads/t3/onboarding-mac-release-baseline ]; then
-            test "$RELEASE_SOURCE_SHA" = "$GITHUB_SHA"
-            test "$APPARENT_PREVIEW_NOTARIZE" = true
-            python3 enablement/release_gate.py --platform macos --sha "$GITHUB_SHA" --onboarding-candidate
-            echo 'APPARENT_PREVIEW_VERSION=0.12.2' >> "$GITHUB_ENV"
-            echo 'APPARENT_RELEASE_VERSION=0.12.2' >> "$GITHUB_ENV"
-            echo 'APPARENT_PREVIEW_BUILD_NUMBER=12.2' >> "$GITHUB_ENV"
-            echo 'APPARENT_PREVIEW_TAG=preview-mac-12-2' >> "$GITHUB_ENV"
-          else
-            python3 enablement/release_gate.py --platform macos --sha "$RELEASE_SOURCE_SHA"
-            echo "APPARENT_PREVIEW_BUILD_NUMBER=$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
-          fi
+        run: node --experimental-strip-types composition/enablement/release/mac/workflow.ts preview-admit
       # Admission runs from the dispatch ref before any selected source executes.
       - uses: actions/checkout@v5
         with:
@@ -88,6 +113,8 @@ jobs:
           APPLE_NOTARY_PRIVATE_KEY: ${{ secrets.APPLE_NOTARY_PRIVATE_KEY }}
         run: bash capture/desktop/scripts/release/prepare-mac-signing.sh
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
       - uses: Swatinem/rust-cache@v2
         with:
           key: mac-preview
@@ -242,7 +269,7 @@ jobs:
     name: Publish Homebrew cask
     needs: preview
     if: >-
-      !cancelled() && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
+      !cancelled() && inputs.channel != 'stable' && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
       (needs.preview.result == 'success' || (needs.preview.result == 'skipped' && inputs.homebrew_tag != ''))
     runs-on: macos-latest
     timeout-minutes: 20
@@ -260,12 +287,12 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '22.23.0'
       - name: Verify the published DMG and prepare the cask
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          node --experimental-strip-types --test capture/desktop/scripts/release/homebrew/publish.test.ts
+          node --experimental-strip-types --test composition/enablement/release/mac/publication/homebrew.test.ts
           node --experimental-strip-types capture/desktop/scripts/release/homebrew/publish.ts prepare \
             "$RELEASE_TAG" "$RELEASE_SHA" "$RUNNER_TEMP/apparent.rb"
       - name: Verify Homebrew installation on Apple silicon
@@ -308,3 +335,142 @@ jobs:
         run: |
           node --experimental-strip-types capture/desktop/scripts/release/homebrew/publish.ts publish \
             "$GITHUB_WORKSPACE/homebrew-publish" "$RUNNER_TEMP/apparent.rb"
+
+  frontend:
+    if: inputs.channel == 'stable' && github.repository == 'tryapparent/apparent'
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      artifact_name: ${{ steps.frontend-name.outputs.name }}
+    env:
+      APPARENT_SOURCE_ROOT: ${{ github.workspace }}/release-source
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_sha }}
+          path: release-source
+          persist-credentials: false
+      - name: Check out trusted control tooling
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.workflow_sha }}
+          clean: false
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - name: Validate candidate before allocating a Mac
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPARENT_PREVIEW_NOTARIZE: ${{ vars.MAC_APPLE_SIGNING_ENABLED }}
+        run: node --experimental-strip-types composition/enablement/release/mac/inputs.ts
+      - id: frontend-name
+        run: echo "name=stable-macos-frontend-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - name: Prepare portable frontend
+        run: |
+          node --experimental-strip-types composition/enablement/release/mac/frontend.ts prepare "$RUNNER_TEMP/mac-frontend"
+          tar -czf "$RUNNER_TEMP/mac-frontend.tar.gz" -C "$RUNNER_TEMP/mac-frontend" .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.frontend-name.outputs.name }}
+          path: ${{ runner.temp }}/mac-frontend.tar.gz
+          if-no-files-found: error
+          retention-days: 2
+  candidate:
+    name: Build signed Mac candidate
+    needs: frontend
+    permissions:
+      contents: read
+      actions: read
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      APPARENT_SOURCE_ROOT: ${{ github.workspace }}/release-source
+      APPARENT_PREVIEW_VERSION: ${{ inputs.version }}
+      APPARENT_RELEASE_VERSION: ${{ inputs.version }}
+      APPARENT_RELEASE_CHANNEL: stable
+      APPARENT_PREVIEW_BUILD_NUMBER: ${{ github.run_id }}.${{ github.run_attempt }}
+      APPARENT_PREVIEW_NOTARIZE: 'true'
+      APPARENT_APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+      APPARENT_APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      APPARENT_NOTARY_KEY_ID: ${{ vars.APPLE_NOTARY_KEY_ID }}
+      APPARENT_NOTARY_ISSUER: ${{ vars.APPLE_NOTARY_ISSUER }}
+      APPARENT_PREVIEW_PUBLIC_KEY: ${{ vars.SPARKLE_PREVIEW_PUBLIC_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_sha }}
+          path: release-source
+          persist-credentials: false
+      - name: Check out trusted control tooling
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.workflow_sha }}
+          clean: false
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - name: Require ARM hardware
+        run: node --experimental-strip-types composition/enablement/release/mac/workflow.ts arm
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.frontend.outputs.artifact_name }}
+          path: ${{ runner.temp }}/mac-input
+      - name: Restore prepared frontend
+        run: |
+          mkdir "$APPARENT_PREPARED_FRONTEND"
+          tar -xzf "$RUNNER_TEMP/mac-input/mac-frontend.tar.gz" -C "$APPARENT_PREPARED_FRONTEND"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.99.1'
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: mac-stable-candidate
+          workspaces: release-source -> target
+      - name: Install Metal toolchain
+        run: xcrun --sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
+      - name: Prepare signing
+        env:
+          APPLE_DEVELOPER_ID_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
+          APPLE_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_NOTARY_PRIVATE_KEY: ${{ secrets.APPLE_NOTARY_PRIVATE_KEY }}
+        run: bash capture/desktop/scripts/release/prepare-mac-signing.sh
+      - name: Register release attribution
+        working-directory: release-source
+        env:
+          POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
+        run: node --experimental-strip-types ../capture/desktop/scripts/release/posthog-release.ts macos
+      - name: Assemble signed notarized candidate
+        env:
+          APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
+        run: |
+          node --experimental-strip-types composition/enablement/release/mac/workflow.ts assemble
+      - name: Validate candidate installation with Homebrew
+        run: node --experimental-strip-types composition/enablement/release/mac/verify-install.ts
+      - name: Sign Sparkle bytes and seal candidate
+        env:
+          SPARKLE_PREVIEW_PRIVATE_KEY: ${{ secrets.SPARKLE_PREVIEW_PRIVATE_KEY }}
+          SPARKLE_PREVIEW_PUBLIC_KEY: ${{ vars.SPARKLE_PREVIEW_PUBLIC_KEY }}
+          RELEASE_NATIVE_CHECKS: 'true'
+          RELEASE_SIGNING: 'true'
+          RELEASE_NOTARIZATION: 'true'
+        run: node --experimental-strip-types composition/enablement/release/mac/workflow.ts seal
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stable-macos-aarch64-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/mac-candidate/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove signing credentials
+        if: always()
+        run: |
+          set -euo pipefail
+          directory="$APPARENT_APPLE_SIGNING_DIR"
+          trap 'rm -rf "$directory"' EXIT
+          if [[ -f "$directory/signing.keychain-db" ]]; then
+            security delete-keychain "$directory/signing.keychain-db"
+          fi

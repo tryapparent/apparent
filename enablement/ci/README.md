@@ -1,6 +1,6 @@
 Consumer selection, exact-tree PR evidence reuse and automatic Linux Main publication are documented in [continuous delivery](../docs/continuous-delivery.md). `routing/consumers.ts` owns directory triggers, named suites and shared consumer facts; local pushes and workflows both call `selectRange`. `routing/streams.ts` only compares publication inputs; native commands remain in the existing verifier adapter.
 
-`Manual Linux verification` runs only on manual dispatch. CI completion no longer
+`Release application` defaults to manual Linux `mode=verify`. CI completion no longer
 starts a separate notification workflow or posts failed-head completion comments.
 
 Publication admission uses completed platform receipts even when GitHub marks

@@ -1,20 +1,199 @@
-name: Manual Linux verification
+name: Release application
+run-name: Stable application · source ${{ inputs.source_sha || github.event.workflow_run.head_sha || github.sha }} · candidate run ${{ inputs.candidate_run_id || github.run_id }}
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Stable paired release or retained manual Linux verification
+        type: choice
+        options: [stable, verify, distribution]
+        default: verify
+      source_sha:
+        description: Exact verified main source (blank selects latest eligible pending version)
+        type: string
+        default: ''
+      candidate_run_id:
+        description: Publication-only retry from this workflow's immutable candidate run
+        type: string
+        default: ''
+      candidate_attempt:
+        description: Exact producer attempt for publication-only retry
+        type: string
+        default: ''
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: changed-tree-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: application-${{ inputs.mode == 'verify' && github.ref || 'stable' }}
+  cancel-in-progress: false
 
 jobs:
   verify:
     permissions:
       contents: read
       actions: read
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'verify'
     uses: ./.github/workflows/verification-platform.yml
     with:
       runner: ubuntu-24.04
+  admit:
+    if: github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' && inputs.candidate_run_id == '' && inputs.mode == 'stable'
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.candidate.outputs.sha }}
+      version: ${{ steps.candidate.outputs.version }}
+      tag: ${{ steps.candidate.outputs.tag }}
+      producer_attempt: ${{ steps.candidate.outputs.producer_attempt }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: node --experimental-strip-types composition/enablement/release/admit.ts "$SOURCE_SHA"
+      - name: Check signing configuration before scarce allocation
+        if: steps.candidate.outputs.sha != ''
+        env:
+          APPLE_ENABLED: ${{ vars.MAC_APPLE_SIGNING_ENABLED }}
+          APPLE_TEAM: ${{ vars.APPLE_TEAM_ID }}
+          SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          NOTARY_ID: ${{ vars.APPLE_NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ vars.APPLE_NOTARY_ISSUER }}
+          SIGNING_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          SPARKLE_PUBLIC: ${{ vars.SPARKLE_PREVIEW_PUBLIC_KEY }}
+          SIGNING_CERT: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
+          NOTARY_KEY: ${{ secrets.APPLE_NOTARY_PRIVATE_KEY }}
+          SPARKLE_KEY: ${{ secrets.SPARKLE_PREVIEW_PRIVATE_KEY }}
+          TAP_KEY: ${{ secrets.HOMEBREW_TAP_SSH_KEY }}
+        run: |
+          test "$APPLE_ENABLED" = true
+          test -n "$APPLE_TEAM"
+          test -n "$SPARKLE_PUBLIC"
+          test -n "$SIGNING_IDENTITY"
+          test -n "$NOTARY_ID"
+          test -n "$NOTARY_ISSUER"
+          test -n "$SIGNING_PASSWORD"
+          test -n "$SIGNING_CERT"
+          test -n "$NOTARY_KEY"
+          test -n "$SPARKLE_KEY"
+          test -n "$TAP_KEY"
+          [[ "$APPLE_TEAM" =~ ^[A-Z0-9]{10}$ ]]
+          [[ "$NOTARY_ID" =~ ^[A-Z0-9]{10}$ ]]
+          [[ "$NOTARY_ISSUER" =~ ^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$ ]]
+          [[ "$SIGNING_IDENTITY" == "Developer ID Application: "*" ($APPLE_TEAM)" ]]
+          node --experimental-strip-types composition/enablement/release/mac/metadata.ts key "$SPARKLE_PUBLIC"
+  linux:
+    needs: admit
+    if: needs.admit.outputs.sha != ''
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-linux.yml
+    with:
+      stable_candidate: true
+      source_sha: ${{ needs.admit.outputs.sha }}
+      version: ${{ needs.admit.outputs.version }}
+    secrets: inherit
+  macos:
+    needs: [admit, linux]
+    if: needs.admit.outputs.sha != ''
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-mac-preview.yml
+    with:
+      source_sha: ${{ needs.admit.outputs.sha }}
+      version: ${{ needs.admit.outputs.version }}
+      tag: ${{ needs.admit.outputs.tag }}
+      channel: stable
+    secrets: inherit
+  publish:
+    needs: [admit, linux, macos]
+    if: >-
+      !cancelled() && inputs.mode == 'stable' && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
+      ((needs.linux.result == 'success' && needs.macos.result == 'success') ||
+      (inputs.candidate_run_id != '' && inputs.source_sha == '' && inputs.candidate_attempt != ''))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - name: Verify immutable producers and expose complete paired release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCER_RUN: ${{ inputs.candidate_run_id || github.run_id }}
+          PRODUCER_ATTEMPT: ${{ inputs.candidate_attempt || needs.admit.outputs.producer_attempt }}
+        run: node --experimental-strip-types composition/enablement/release/publish.ts "$PRODUCER_RUN" "$PRODUCER_ATTEMPT"
+  feed:
+    needs: [admit, publish]
+    if: >-
+      !cancelled() && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
+      (needs.publish.result == 'success' || (inputs.mode == 'distribution' && inputs.candidate_run_id != '' && inputs.candidate_attempt != '' && inputs.source_sha == ''))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - name: Advance signed fork feed from verified public bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCER_RUN: ${{ inputs.candidate_run_id || github.run_id }}
+          PRODUCER_ATTEMPT: ${{ inputs.candidate_attempt || needs.admit.outputs.producer_attempt }}
+        run: node --experimental-strip-types composition/enablement/release/distribute.ts feed
+  cask:
+    needs: [admit, publish]
+    if: >-
+      !cancelled() && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
+      (needs.publish.result == 'success' || (inputs.mode == 'distribution' && inputs.candidate_run_id != '' && inputs.candidate_attempt != '' && inputs.source_sha == ''))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - name: Re-download verified public Mac bytes and prepare checked cask
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCER_RUN: ${{ inputs.candidate_run_id || github.run_id }}
+          PRODUCER_ATTEMPT: ${{ inputs.candidate_attempt || needs.admit.outputs.producer_attempt }}
+        run: node --experimental-strip-types composition/enablement/release/distribute.ts cask-prepare "$RUNNER_TEMP/apparent-stable.rb"
+      - uses: actions/checkout@v5
+        with:
+          repository: tryapparent/homebrew-tap
+          ref: main
+          path: homebrew-publish
+          ssh-key: ${{ secrets.HOMEBREW_TAP_SSH_KEY }}
+      - name: Advance fork tap and read back
+        run: node --experimental-strip-types composition/enablement/release/mac/publication/cli.ts cask-publish "$GITHUB_WORKSPACE/homebrew-publish" "$RUNNER_TEMP/apparent-stable.rb"

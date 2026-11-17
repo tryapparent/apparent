@@ -1,0 +1,8 @@
+{
+  "name": "@apparent/ci-contracts",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./release-admission": "./release-admission.ts"
+  }
+}

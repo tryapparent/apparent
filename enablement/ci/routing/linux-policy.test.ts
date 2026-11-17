@@ -53,7 +53,10 @@ test("automatic PR and main never allocate general Mac runners, including unknow
   const platform = workflow("verification-platform.yml");
   assert.equal(platform.jobs["native-acceptance"]["runs-on"], "macos-15-intel");
   const release = workflow("release-mac-preview.yml");
-  assert.deepEqual(Object.keys(release.on), ["workflow_dispatch"]);
+  assert.deepEqual(Object.keys(release.on), [
+    "workflow_call",
+    "workflow_dispatch",
+  ]);
   const names = release.jobs.preview.steps.map(
     (step: { name?: string }) => step.name,
   );
@@ -64,4 +67,41 @@ test("automatic PR and main never allocate general Mac runners, including unknow
   ]) {
     assert.ok(names.includes(name), name);
   }
+});
+
+test("Linux admission excludes Mac and queues publication independently", () => {
+  const ci = () => workflow("checks.yml");
+  const job = ci().jobs["release-linux"];
+  assert.deepEqual(job.needs, ["linux-admission", "select"]);
+  assert.equal(job.uses, undefined);
+  assert.equal(job["runs-on"], "ubuntu-24.04");
+  assert.equal(job.permissions.actions, "write");
+  assert.equal(job.permissions.contents, "read");
+  assert.ok(
+    job.steps.some((step: { run?: string }) =>
+      step.run?.includes("composition/enablement/release/linux/dispatch.ts"),
+    ),
+  );
+  assert.ok(
+    !Object.values(ci().jobs).some(
+      (job: { uses?: string }) =>
+        job.uses === "./.github/workflows/release-linux.yml",
+    ),
+  );
+  assert.match(ci().jobs["linux-admission"].if, /github.event_name == 'push'/);
+  assert.ok(
+    !ci().jobs["linux-admission"].needs.some((name: string) =>
+      name.startsWith("mac"),
+    ),
+  );
+  assert.equal(
+    workflow("release-linux.yml").concurrency["cancel-in-progress"],
+    false,
+  );
+  assert.match(
+    workflow("release-linux.yml").jobs.admit.steps.find(
+      (s: { id: string }) => s.id === "gate",
+    ).run,
+    /composition\/enablement\/release\/linux.ts admit/,
+  );
 });

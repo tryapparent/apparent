@@ -53,7 +53,7 @@ def verified_run(repo, sha, platform, run_id, fetch, *, onboarding_candidate=Fal
             if run['path'] != '.github/workflows/checks.yml':
                 continue
             jobs = pages(f'{prefix}/actions/runs/{run["id"]}/attempts/{run["run_attempt"]}/jobs', fetch)
-            policy = Path(__file__).resolve().parents[1] / 'enablement/ci/release-admission.ts'
+            policy = Path(__file__).resolve().parents[1] / 'shared/enablement/ci/release-admission.ts'
             accepted = subprocess.check_output(
                 ['node', '--experimental-strip-types', str(policy)], text=True,
                 input=json.dumps(dict(run=run, jobs=jobs, repo=repo, sha=sha, platform=platform)))

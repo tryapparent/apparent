@@ -7,7 +7,6 @@ import unittest
 ROOT = Path(__file__).resolve().parents[5]
 SCRIPTS = (
     "capture/desktop/scripts/packaging/install-app.sh",
-    "capture/desktop/scripts/packaging/build-mac-preview.sh",
     "capture/desktop/scripts/release/release-app.sh",
     "capture/desktop/scripts/release/setup-sparkle.sh",
     "capture/desktop/scripts/linux/appimage/appimage.sh",
