@@ -5,8 +5,7 @@ test('phone cadence preserves legacy thresholds and overflow rather than truncat
   for(const [duration,count,last] of [[1,1,0],[250,1,0],[251,2,250],[120000,480,119750],
     [120001,481,120000],[120479,482,120250],[239999,481,239520]]) {
     const plan=phoneCandidatePlan(duration); assert.equal(plan.maxEdge,320);
-    assert.equal(plan.times.length,count); assert.equal(plan.times.at(-1),last);
-    assert(plan.times.every((time,index)=>time<duration&&time===index*Math.max(250,Math.floor(duration/480))));
+    assert.deepEqual(plan.times,Array.from({length:count},(_,index)=>count===1?0:index*last/(count-1)));
   }
   for(const duration of [0,-1,NaN,Infinity,1.5,Number.MAX_SAFE_INTEGER+1])assert.throws(()=>phoneCandidatePlan(duration));
   assert(phoneCandidatePlan(Number.MAX_SAFE_INTEGER).times.every(Number.isSafeInteger));

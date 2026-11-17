@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { mkdtemp, mkdir, chmod, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { assertReportingRead, type ReportingReadObservation } from './reporting-read.ts';
 
@@ -13,16 +12,11 @@ const flush = async () => { for (let n = 0; n < 12; n++) await Promise.resolve()
 
 function fixture(t: TestContext, responses: unknown[] = [busy, off], timeoutMs = 5000, deadline = 95000) {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 });
-  const calls = { reads: 0, writes: 0, clicks: 0 };
-  const bridge = {
-    readErrorReporting: async () => responses[Math.min(calls.reads++, responses.length - 1)],
-    setErrorReporting: async () => { calls.writes++; throw Error('Mutation must not be replayed'); },
-    click: async () => { calls.clicks++; throw Error('Action must not be replayed'); },
-  };
+  const calls = { reads: 0 };
   const observations: ReportingReadObservation[] = [];
-  const options = { read: () => bridge.readErrorReporting(), enabled: false, label: 'Restarted reporting read',
+  const options = { read: async () => responses[Math.min(calls.reads++, responses.length - 1)], enabled: false, label: 'Restarted reporting read',
     timeoutMs, deadline, observations };
-  return { calls, bridge, observations, options };
+  return { calls, observations, options };
 }
 
 test('the CommonJS native driver loads the same TypeScript assertion', () => {
@@ -41,7 +35,7 @@ test('transient explicit app_busy is re-observed, retaining the failure before t
   await flush();
   assert.equal(await result, null);
   assert.deepEqual(f.observations.map(item => item.response), [busy, off]);
-  assert.deepEqual(f.calls, { reads: 2, writes: 0, clicks: 0 });
+  assert.deepEqual(f.calls, { reads: 2 });
 });
 
 test('persistent busy exhausts the original read deadline including every backoff', async t => {
@@ -57,7 +51,7 @@ test('persistent busy exhausts the original read deadline including every backof
   assert.ok(f.observations.every(item => item.response === busy));
   assert.equal(f.observations[0].elapsedMs, 0);
   t.mock.timers.tick(5000); await flush();
-  assert.deepEqual(f.calls, { reads: 34, writes: 0, clicks: 0 });
+  assert.deepEqual(f.calls, { reads: 34 });
 });
 
 test('the remaining overall budget caps the logical read, including its backoff', async t => {
@@ -66,7 +60,7 @@ test('the remaining overall budget caps the logical read, including its backoff'
   await flush(); t.mock.timers.tick(100); await flush();
   assert.match((await result).message, /timed out after 100ms/);
   assert.deepEqual(f.observations.map(item => item.response), [busy]);
-  assert.deepEqual(f.calls, { reads: 1, writes: 0, clicks: 0 });
+  assert.deepEqual(f.calls, { reads: 1 });
 });
 
 for (const response of [
@@ -86,7 +80,7 @@ for (const response of [
   });
   t.mock.timers.tick(5000); await flush();
   assert.deepEqual(f.observations.map(item => item.response), [response]);
-  assert.deepEqual(f.calls, { reads: 1, writes: 0, clicks: 0 });
+  assert.deepEqual(f.calls, { reads: 1 });
 });
 
 test('a thrown transport failure is preserved and never retried', async t => {
@@ -95,7 +89,7 @@ test('a thrown transport failure is preserved and never retried', async t => {
   f.options.read = async () => { f.calls.reads++; throw failure; };
   await assert.rejects(assertReportingRead(f.options), error => error === failure);
   assert.equal(f.observations[0].error, failure.message);
-  assert.deepEqual(f.calls, { reads: 1, writes: 0, clicks: 0 });
+  assert.deepEqual(f.calls, { reads: 1 });
 });
 
 test('a pending read times out; its later success cannot retry or alter the failure receipt', async t => {
@@ -108,7 +102,7 @@ test('a pending read times out; its later success cannot retry or alter the fail
   const receipt = structuredClone(f.observations);
   resolve(off); await flush(); t.mock.timers.tick(5000); await flush();
   assert.deepEqual(f.observations, receipt);
-  assert.deepEqual(f.calls, { reads: 1, writes: 0, clicks: 0 });
+  assert.deepEqual(f.calls, { reads: 1 });
 });
 
 test('late connected responses fail even before the timeout callback runs', async t => {
@@ -117,7 +111,7 @@ test('late connected responses fail even before the timeout callback runs', asyn
   await assert.rejects(assertReportingRead(f.options), /timed out after 5000ms/);
   assert.equal(f.observations[0].late, true);
   assert.deepEqual(f.observations[0].response, off);
-  assert.deepEqual(f.calls, { reads: 1, writes: 0, clicks: 0 });
+  assert.deepEqual(f.calls, { reads: 1 });
 });
 
 test('retry request time consumes the same deadline instead of receiving a fresh timeout', async t => {
@@ -136,17 +130,18 @@ test('retry request time consumes the same deadline instead of receiving a fresh
   assert.equal(f.observations[0].durationMs, 4800);
   assert.equal(f.observations[1].durationMs, 50);
   resolve(off); await flush();
-  assert.deepEqual(f.calls, { reads: 2, writes: 0, clicks: 0 });
+  assert.deepEqual(f.calls, { reads: 2 });
 });
 
 test('an expired overall deadline admits no read or action', async t => {
   const f = fixture(t, [off], 5000, 0);
   await assert.rejects(assertReportingRead(f.options), /timed out/);
-  assert.deepEqual(f.calls, { reads: 0, writes: 0, clicks: 0 });
+  assert.deepEqual(f.calls, { reads: 0 });
 });
 
 test('the shipped socket transport re-observes busy using only reporting read requests', async t => {
-  const home = await mkdtemp(join(tmpdir(), 'reporting-read-'));
+  // Keep the Darwin socket path short and independent of a long TMPDIR.
+  const home = await mkdtemp('/tmp/apparent-dev-reporting-read-');
   t.after(() => rm(home, { recursive: true, force: true }));
   const directory = join(home, '.config/apparent/agent-control');
   await mkdir(directory, { recursive: true, mode: 0o700 });
