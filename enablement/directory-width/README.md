@@ -7,10 +7,10 @@ Only dependency/cache trees (`target`, `node_modules`, `vendor`, `third_party`, 
 At root, `.cargo`, `.githooks` and `.github` are the three bounded tool-directory
 exceptions. Root permits ten ordinary directories plus
 those exact tool directories; all remain visible in the actual count. Their
-contents retain ordinary limits except `.github/workflows`: GitHub requires
-immediate workflow files, so regular `hermes.yml` gets one named extra slot
-(maximum 11 files, still 10 directories). Counts remain visible; a twelfth file
-or a symlink/gitlink substitute receives no additional allowance.
+contents retain ordinary limits except the immediate `.github/workflows` directory,
+which the width guard skips because GitHub requires workflow files there. Its
+children and other GitHub directories keep the ordinary limits. Workflow ownership
+and admission checks still apply.
 Other hidden directories and owner roots (including `record` and `onboarding`)
 count normally. A symlink remains a file; a gitlink remains an ordinary directory
 and grants no tool allowance. Counts come only from actual staged Git trees, and
