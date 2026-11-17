@@ -5,7 +5,7 @@ const path=require('node:path');
 const fs=require('node:fs/promises');
 const os=require('node:os');
 
-const actions=(copyLabel='Copy link',copyEnabled=false)=>[
+const actions=(copyLabel='Public link',copyEnabled=false)=>[
  {id:'paste',label:'Paste',enabled:true,selected:false,primary:true},
  {id:'copy-link',label:copyLabel,enabled:copyEnabled,selected:false,primary:false},
  {id:'inspect',label:'Inspect',enabled:true,selected:false,primary:false},
@@ -46,7 +46,7 @@ test('foreground upload states stay private, bounded, and use one authorized pil
 
  await publish(base);
  await application.evaluate(()=>process.stdin.emit('data',JSON.stringify({type:'activate'})+'\n'));
- await expect(page.getByRole('button',{name:'Copy link',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Public link',exact:true})).toBeVisible();
  if(process.platform==='darwin'){
   const native=await application.evaluate(({BrowserWindow},modulePath)=>{
    const window=BrowserWindow.getAllWindows()[0];
@@ -121,10 +121,10 @@ test('foreground upload states stay private, bounded, and use one authorized pil
  await assertPrivate();
  if(evidence)await page.screenshot({path:path.join(evidence,'foreground-cancelled.png'),fullPage:true});
 
- const copied={...base,revision:5,label:'Link copied',actions:actions('Copy link',true)};
+ const copied={...base,revision:5,label:'Link copied',actions:actions('Public link',true)};
  await publish(copied);
  await expect(page.getByText('Link copied',{exact:true})).toBeVisible();
- await expect(page.getByRole('button',{name:'Copy link',exact:true})).toBeEnabled();
+ await expect(page.getByRole('button',{name:'Public link',exact:true})).toBeEnabled();
  await assertNoOverflow('successful upload');
  await assertPrivate();
  if(evidence)await page.screenshot({path:path.join(evidence,'foreground-link-copied.png'),fullPage:true});

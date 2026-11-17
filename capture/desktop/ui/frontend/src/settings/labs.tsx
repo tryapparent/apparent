@@ -57,7 +57,7 @@ export function Labs(){
         <h2 className="settings-preference-label" id="public-sharing-label">Public sharing links</h2>
       <Switch id="public-sharing-toggle" className="agent-switch" checked={facts?.sharingSaved??false} aria-labelledby="public-sharing-label" aria-describedby="public-sharing-help public-sharing-limits" aria-busy={busy&&setting==='sharing'}
         disabled={busy||!facts||Boolean(facts.error)} onCheckedChange={value=>void request(value,'sharing')} /></div>
-      <p id="public-sharing-help">Show Copy link after recording. Off by default; applies to the next recording.</p>
+      <p id="public-sharing-help">Show Public link after recording. Off by default; applies to the next recording.</p>
       <p id="public-sharing-limits">Anyone with the link can view the shared capture. Shared captures are not end-to-end encrypted.</p>
     </section>
     <section className="agent-preference">
