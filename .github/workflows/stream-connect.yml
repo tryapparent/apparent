@@ -174,10 +174,10 @@ jobs:
         run: node --experimental-strip-types enablement/ci/routing/run.ts --portable
 
   linux:
-    needs: [select, contracts, portable]
+    needs: [select, contracts]
     if: >-
       !cancelled() && needs.select.result == 'success' && needs.contracts.result == 'success' &&
-      (needs.portable.result == 'success' || needs.portable.result == 'skipped') && needs.select.outputs.native == 'true' &&
+      needs.select.outputs.native == 'true' &&
       (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     uses: ./.github/workflows/verification-platform.yml
     with:
@@ -264,45 +264,14 @@ jobs:
           bun-version: '1.3.10'
       - name: Test publication contracts
         run: python3 -m unittest discover -s public/enablement/cd -p 'test_*.py'
-      - name: Verify Worker in local workerd with synthetic accounts
-        working-directory: connect/service
-        run: npm ci && npm test
       - name: Install locked website dependencies and browser
         working-directory: public/site
         run: |
           bun install --cwd .. --frozen-lockfile
           ../node_modules/.bin/playwright-core install --with-deps chromium firefox
           echo "CHROME_PATH=$(node --input-type=module -e 'import {chromium} from "playwright-core"; console.log(chromium.executablePath())')" >> "$GITHUB_ENV"
-      - name: Independently build and verify Connect browser package
-        working-directory: connect/web
-        env:
-          VITE_HOSTED_API_ORIGIN: https://hosted.tryapparent.com
-          CONNECT_EVIDENCE: ${{ runner.temp }}/connect-package-evidence
-        run: bun install --frozen-lockfile && npm test
-      - name: Build and test production website package
-        working-directory: public/site
-        env:
-          APPARENT_PUBLIC_SITE: '1'
-          VITE_HOSTED_API_ORIGIN: https://hosted.tryapparent.com
-        run: |
-          npm run build
-          node ../enablement/site-build/package-apparent.mjs
-          node --test ../enablement/brand/test-brand-favicon.mjs ../enablement/browser-proof/test-github-stars.mjs ../enablement/pages/test-latest-download.mjs ../enablement/pages/test-platform-os.mjs ../enablement/pages/test-public-homepage.ts ../enablement/browser-proof/test-video-demo.ts
-          node --test ../enablement/commerce/test-package-text.mjs ../enablement/commerce/test-feature-grid.mjs ../enablement/site-build/test-expected-canonical-packaging.mjs ../enablement/browser-proof/test-upstream-link-guard.mjs ../enablement/browser-proof/test-og-stage-redirect.mjs ../enablement/browser-proof/test-og-video-stage-browser.mjs ../../shared/analytics/config.test.ts
-          node ../enablement/cd/analytics-smoke.ts
-          cp -a dist-apparent "$RUNNER_TEMP/public-artifact"
-          node ../enablement/connect/compose-connect.mjs
-      - name: Preserve source-built homepage and prepare Pages-only artifact
-        working-directory: public/site
-        run: |
-          node --test ../enablement/connect/test-compose-connect.mjs ../enablement/pages/test-pages-package.ts ../enablement/pages/test-pages-video.mjs
-          node ../enablement/pages/prepare-pages.mjs
-          COMPOSE_PUBLIC_INPUT="$RUNNER_TEMP/public-artifact" node ../enablement/site-build/verify-composed.mjs
-          PUBLIC_THEME_ARTIFACT=public/site/dist-apparent THEME_SURFACES=public,connect,recipient node ../../shared/ui/test/appearance.mjs
-          npm run build:pages-worker
-          PAGES_WORKER=dist-apparent/_worker.js node --test ../enablement/pages/test-pages-video-runtime.ts
-          node ../enablement/pages/prepare-pages-video.mjs
-          SITE_ARTIFACT=dist-apparent node --test ../enablement/pages/test-public-homepage.ts
+      - name: Verify production browser composition
+        run: node --experimental-strip-types connect/enablement/ci/verify-composition.ts
       - name: Verify Connect browser behavior across credentialed origins
         working-directory: public/site
         env:

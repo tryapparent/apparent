@@ -110,14 +110,12 @@ function directConsumers(path: string): readonly Owner[] {
   if (independentInputs.has(path)) return owners.filter(owner => owner !== 'engine-media');
   if (path.startsWith('enablement/ci/') || path === 'enablement/local-tests/run.ts' || path.startsWith('.github/actions/ubuntu-apt/')) return owners;
   if (portableForegroundInputs.has(path)) return ['client-foreground'];
-  if (onboardingPureInputs.has(path)) return ['desktop', 'onboarding'];
-  if (onboardingRendererTestInputs.has(path)) return ['desktop', 'onboarding'];
+  if (onboardingPureInputs.has(path) || onboardingRendererTestInputs.has(path)) return ['desktop', 'onboarding'];
   if (path.startsWith('capture/desktop/ui/frontend/tests/onboarding/') &&
       (/\.test\.ts$/.test(path) || ['package.json','package-lock.json','tsconfig.json'].some(name => path.endsWith('/' + name)))) return ['onboarding'];
   if (path.startsWith('capture/desktop/ui/frontend/src/onboarding/') && /\.(tsx|css)$/.test(path) ||
       path === 'capture/desktop/ui/frontend/onboarding.html') return ['desktop', 'onboarding'];
 
-  if (documentationOnlyPath(path)) return [];
   if (publicMarkdown.has(path) && path !== 'capture/agent/skills/apparent/SKILL.md') return ['public'];
   if (path === 'hermes/skills/recordings/SKILL.md') return ['hermes'];
   if (path === 'capture/agent/skills/apparent/SKILL.md') return ['capture', 'engine', 'public'];
@@ -127,7 +125,7 @@ function directConsumers(path: string): readonly Owner[] {
       path === 'record/storage/build.ts') return ['desktop', 'capture'];
   if (path === hostedBrowserFixture) return ['public', 'web'];
   if (path.startsWith('public/')) return webAssets.has(path) ? ['public', 'web'] : ['public'];
-  if (!native && path.startsWith('connect/enablement/')) return ['tooling'];
+  if (!native && path.startsWith('connect/enablement/')) return [path === 'connect/enablement/ci/verify-composition.ts' ? 'web' : 'tooling'];
   if (!native && path.startsWith('connect/web/')) return ['web'];
   if (['connect/client/typescript/src/mcp-wire.ts','connect/client/typescript/src/transfer/contract.ts','connect/client/typescript/contracts.ts'].includes(path)) return ['client', 'capture', 'service'];
   if (path.startsWith('connect/client/')) return ['client', 'capture'];
@@ -145,7 +143,7 @@ function directConsumers(path: string): readonly Owner[] {
   if (path.startsWith('capture/desktop/scripts/') || path.startsWith('capture/agent/scripts/')) return ['capture', 'engine', 'capture-tools'];
   if (path.startsWith('capture/desktop/')) return ['desktop', 'capture', 'engine', 'capture-tools'];
   if (path.startsWith('capture/engine/tests/') || path.startsWith('capture/engine/src/') || ['capture/engine/Cargo.toml', 'capture/engine/Cargo.lock'].includes(path)) return ['engine'];
-  if (path.startsWith('capture/') || path.startsWith('composition/')) return ['capture', 'engine'];
+  if (/^(capture|composition)\//.test(path)) return ['capture', 'engine'];
   if (path.startsWith('shared/analytics/')) return ['public', 'web', 'service', 'desktop', 'capture'];
   if (path.startsWith('shared/ui/')) return ['public', 'web', 'desktop', 'service', 'capture'];
   if (path === 'shared/assets/brand/apparent-app-icon.svg') return ['public', 'web', 'desktop', 'service', 'capture', 'hermes'];
