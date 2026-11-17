@@ -1,6 +1,12 @@
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { appendFileSync, cpSync, mkdirSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  cpSync,
+  mkdirSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 function run(command: string, args: string[]) {
@@ -54,6 +60,24 @@ if (command === "preview-admit") {
     process.env.GITHUB_ENV!,
     `APPARENT_APPLE_SIGNING_DIR=${process.env.RUNNER_TEMP}/apparent-apple-signing\nAPPARENT_PREPARED_FRONTEND=${process.env.RUNNER_TEMP}/mac-frontend\n`,
   );
+} else if (command === "sdk") {
+  const developer = process.env.DEVELOPER_DIR;
+  if (
+    !developer ||
+    !statSync(developer, { throwIfNoEntry: false })?.isDirectory()
+  )
+    throw Error(
+      `Xcode developer directory is unavailable: ${developer ?? "(unset)"}`,
+    );
+  const sdk = execFileSync("xcrun", ["--sdk", "macosx", "--show-sdk-version"], {
+    encoding: "utf8",
+  }).trim();
+  if (!/^26(?:\.\d+)+$/.test(sdk))
+    throw Error(
+      `The ARM release requires macOS SDK 26.x, found ${sdk} at ${developer}`,
+    );
+  run("xcodebuild", ["-version"]);
+  console.log(`macOS SDK ${sdk}`);
 } else if (command === "assemble") {
   run(process.execPath, [
     "--experimental-strip-types",
@@ -107,4 +131,4 @@ if (command === "preview-admit") {
     "macos",
     "aarch64",
   ]);
-} else throw Error("Use arm, assemble or seal");
+} else throw Error("Use preview-admit, arm, sdk, assemble or seal");
