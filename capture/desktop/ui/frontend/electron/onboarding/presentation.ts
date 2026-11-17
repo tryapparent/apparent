@@ -3,7 +3,7 @@ export type Rect = readonly [number, number, number, number];
 export type Area = {x: number; y: number; width: number; height?: number};
 
 export function coachDimensions(area: Area, phase: string) {
-  return {width: Math.min(area.width, phase === 'whiteboard' || phase === 'screen-ink' && area.width >= 720 ? 720 : 380),
+  return {width: Math.min(area.width, phase === 'screen-ink' && area.width >= 720 ? 720 : 380),
     height: Math.min(area.height ?? 440, 440)};
 }
 
