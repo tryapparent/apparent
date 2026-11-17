@@ -15,16 +15,31 @@ export function viewerModel(input: ShareModel) {
     timestampMs: /^frames\/frame-\d+\.png$/.test(path) && Number.isSafeInteger(timestampMs) && timestampMs! >= 0 ? timestampMs : undefined,
   })) : []
   const passages = ready && Array.isArray(input.transcriptSegments) ? input.transcriptSegments.filter(p => Number.isSafeInteger(p.startMs) && Number.isSafeInteger(p.endMs) && p.startMs >= 0 && p.endMs >= p.startMs && typeof p.text === 'string') : []
+  const recordedAt = input.recordedAtMs
+  const recorded = typeof recordedAt === 'number' && Number.isSafeInteger(recordedAt) && recordedAt > 0 ? new Date(recordedAt) : null
+  const shared = new Date(input.createdAt)
+  const headingDate = ready && recorded && Number.isFinite(recorded.getTime()) ? recorded
+    : ready && (!input.title || input.title === 'Apparent recording') && Number.isFinite(shared.getTime()) ? shared : null
+  const headingPrefix = headingDate === shared ? 'Shared ' : ''
+  const expiry = new Date(input.expiresAt)
+  const videoOffset = input.videoOffsetMs
   return {
     url, status, ready, files, passages,
-    title: ready ? input.title || 'Shared recording' : '',
+    videoOffsetMs: ready && typeof videoOffset === 'number' && Number.isSafeInteger(videoOffset) && videoOffset >= 0 ? videoOffset : 0,
+    title: ready ? headingDate ? headingPrefix + formatDate(headingDate) : input.title || 'Shared recording' : '',
+    headingDate: headingDate?.toISOString().split('T')[0] || '',
     transcript: ready ? input.transcript || '' : '',
-    expiresAt: input.expiresAt || '',
+    expiresAt: Number.isFinite(expiry.getTime()) ? expiry.toISOString() : '',
+    expiryLabel: Number.isFinite(expiry.getTime()) ? formatDate(expiry, true) : '',
     uploadedBytes: Number.isSafeInteger(input.uploadedBytes) && input.uploadedBytes >= 0 && Number.isSafeInteger(input.totalBytes) && input.uploadedBytes <= input.totalBytes ? input.uploadedBytes : null,
     totalBytes: Number.isSafeInteger(input.totalBytes) && input.totalBytes >= 0 ? input.totalBytes : null,
     thumbnailUrl: ready && url && input.thumbnailUrl === `${url}/thumbnail.png` ? input.thumbnailUrl : '',
     manifest: url && ['ready', 'pending', 'paused', 'failed'].includes(status) ? `${url}/manifest.json` : '',
   }
+}
+function formatDate(date: Date, includeTime = false) {
+  const day = new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', day: 'numeric', month: includeTime ? 'short' : 'long', year: 'numeric' }).format(date)
+  return includeTime ? `${day}, ${date.toISOString().slice(11, 16)} UTC` : day
 }
 export function timestamp(milliseconds: number) {
   const seconds = Math.floor(milliseconds / 1000)
