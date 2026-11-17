@@ -26,20 +26,22 @@ no net test/support growth unless a distinct new contract justifies it.
 
 | Area | State | Next boundary |
 | --- | --- | --- |
-| Record capture-request | Audited; candidate below | Land and reconcile upstream |
-| Record completion | Audited; candidate below | Land and reconcile upstream |
-| Record storage | Audited; PR #1400 candidate | [Contracts/evidence](../../../record/storage/enablement/test-audit.md); hook/CI gates pending |
-| Record media | Audited; PR #1400 candidate | [Contracts/evidence](../../../record/media/enablement/test-audit.md); delivery gates pending |
-| Engine SDK | Pending | Published probe/frame contracts and real provider inputs |
-| Engine legacy/native | Pending | Capture, audio, cursor/ink, keyframes/text, exports, recovery |
+| Record capture-request | Audited; merged #1400 | Exact-landed Capture CI pending; see checkpoint below |
+| Record completion | Audited; merged #1400 | Exact-landed Capture CI pending |
+| Record storage | Audited; merged #1400 | [Contracts/evidence](../../../record/storage/enablement/test-audit.md); landed CI pending |
+| Record media | Audited; merged #1400; incoming cues retained | [Contracts/evidence](../../../record/media/enablement/test-audit.md); landed CI pending |
+| Record transcription | Two headless policy cases read/retained | Worker/native/Desktop consumer audit remains separate |
+| Engine SDK | Audited; [PR #1422](https://github.com/tryapparent/apparent/pull/1422) | 13 SDK cases and real Linux package qualification pass; hosted gates pending |
+| Engine staged capture-core | Audited; PR #1422 | 21 contract cases retained; worker entrypoints execute through parents; hosted gates pending |
+| Engine legacy/native | Export, retention, recovery/publication and selection audited; PRs open | Remaining capture, audio, cursor/ink, rendering and helpers remain pending |
 | Desktop | Pending | Settings/onboarding, capture/pill, native adapters, packaging/VM |
-| Agent | Pending | CLI/setup, extraction and media, bundle inspection/proof |
+| Agent | Narrator, media, setup, context and manual comparison audited; current candidate | [Contracts/evidence](../../../capture/agent/enablement/test-audit.md); preserve incoming range policy/package guards; current hook/delivery pending |
 | Connect | Pending | Service/auth/storage, clients/transfers, web, hosting tooling |
 | Public | Pending | Site behavior, assets/build/publication contracts |
 | Hermes | Pending | Desktop integration, installation/distribution |
-| Shared | Pending | UI/theme, analytics, native utilities/handoff |
-| Composition | Pending | Real consumer assembly and CLI wiring |
-| Repository Enablement | Reporting-read fixture audited; rest pending | [Contracts/evidence](reporting-read.md); selection/admission, runners, hooks, timing remain |
+| Shared | Hex and analytics read; repairs/owner routing pending | UI/theme, remaining native utilities/handoff still pending |
+| Composition | Selected media/Agent-range boundaries read; rest pending | Candidate-count fixture is masked by duplicate IDs; repair separately; preserve real consumers |
+| Repository Enablement | Reporting-read merged; CI qualification candidate #1411 | [Contracts/evidence](reporting-read.md); CI duplication follow-up, remaining admission/runners/hooks/timing pending |
 
 Platform/environment prerequisites are not yet assessed for pending areas. An
 unrun area is pending, not blocked or complete. No deletion target applies.
@@ -148,3 +150,51 @@ inspect cases. No Connect production code or assertion changed. Copied-source
 probe recipes now use a private target; never share path-baked local artifacts
 with the delivery checkout. Preserve the rejected-hook log at the existing private
 audit job and rerun the complete normal hook before publishing.
+
+## Delivery and upstream checkpoint: main `3a60e5bbe`
+
+[PR #1400](https://github.com/tryapparent/apparent/pull/1400) merged as
+`3a60e5bbe6231cb346e5d165f86d0f21e3eee707`. Its actual merge tree matches the
+preflight against main `7eb349abb`, and all 13 owned blobs match reviewed head
+`984226d209`. Record capture-request, completion, storage/media and reporting-read
+changes are merged; their exact-landed delivery is **not complete** yet.
+Connect, Hermes and Public workflows passed at that SHA. Capture run
+`44058510174` has a pre-test Ubuntu package-transport failure and pending platform
+work. GitHub declined its failed-job rerun while the run remained active. Retain
+the failure and complete that exact run/retry; a green PR is not landed CI proof.
+
+Open independently reviewed slices, each with its own ledger and mandatory hook:
+
+| PR | Audited boundary / retained proof | Remaining gate |
+|---|---|---|
+| [#1408](https://github.com/tryapparent/apparent/pull/1408) | Export; 40 retained cases, crop/layer/audio controls; -43 support lines | Hosted Mac/native and exact-landed CI |
+| [#1409](https://github.com/tryapparent/apparent/pull/1409) | Retention; all 19 declarations retained, owned fixtures and unmasked refusals; -19 support lines | Mac tests passed, artifact upload failed; accepted bounded job rerun and remaining gates |
+| [#1411](https://github.com/tryapparent/apparent/pull/1411) | CI qualification; +11 support lines buy actual discovery/missing-owner/product guards instead of a command-shape replay; independent no-flags guard retained | Hosted Mac and exact-landed CI |
+| [#1419](https://github.com/tryapparent/apparent/pull/1419) | Recovery/publication; 53→50 cases, real rollback/cleanup keepers; -68 support and -50 dead native/import lines | Hosted Mac/native and exact-landed CI |
+| [#1420](https://github.com/tryapparent/apparent/pull/1420) | Keyframes; 25→24 cases, native mechanics versus real text/cue composition; -10 support lines, actual worker execs 45→27 | Hosted Mac/native and exact-landed CI |
+| [#1422](https://github.com/tryapparent/apparent/pull/1422) | SDK/staged-core; 13 SDK +21 contract cases, two helpers explicitly launched; -16 support lines | Pre-test hosted Ubuntu transport failure, Mac and exact-landed CI |
+
+The Agent candidate ports only its owner changes onto this main: narrator/frame
+oracles, archive/setup keeper, context scene guard and the TypeScript manual
+comparison. It removes nine executable-test/support lines and 30 manual-tool
+lines, one declaration and one duplicate suite invocation. Its owner ledger
+records prior evidence; fresh current-main hook/composition and delivery remain.
+
+Incoming contracts are not campaign-added coverage. Record's three speech-cue
+cases and native validated-plan/schema/assembly/package boundaries remain;
+all 24 headless media cases passed current hooks. Agent's four new range-policy
+cases, exact-u64 worker/schema, default cadence, saved-frame margins and packaged
+FFmpeg/native fallbacks remain intact. Eight Agent headless cases passed the
+current baseline. Record transcription's two opt-in/Unicode policy cases were
+read and retained; native model/Metal and Desktop integration stay separate.
+The inventory adds these previously unlisted files without changing historical
+baseline counts or declaring their entire parent owners complete.
+
+Read-only follow-ups: Hex's permanent-refusal retry assertion and HTTP fixture
+thread lifetime need repair; its other contracts remain. Both analytics config
+cases are retained; move their execution from Public to the actual Connect
+consumer before removing the old invocation. Bare Bun CI paths execute six
+Connect cases twice; a real canary probe shows explicit `./` owner paths run
+each once. Preserve independent owner invocations, no-flags and product exclusion.
+Reconcile concurrent CI PR #1421 and qualification PR #1411 before editing that
+boundary. These are pending repairs, not delivered deletion claims.

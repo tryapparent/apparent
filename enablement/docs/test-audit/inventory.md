@@ -1,20 +1,20 @@
 | Owner | Path | Kind | Baseline lines | Status |
 | --- | --- | --- | ---: | --- |
-| Agent | capture/agent/context.rs | source candidate | 1333 | pending |
-| Agent | capture/agent/media/src/worker.ts | source candidate | 26 | pending |
-| Agent | capture/agent/media/stage.ts | source candidate | 93 | pending |
-| Agent | capture/agent/media/test/native.test.ts | source candidate | 71 | pending |
-| Agent | capture/agent/media/test/package.ts | source candidate | 124 | pending |
-| Agent | capture/agent/media/test/policy.test.ts | source candidate | 32 | pending |
-| Agent | capture/agent/narrator/src/lib.rs | source candidate | 76 | pending |
-| Agent | capture/agent/narrator/tests/protocol.rs | source candidate | 72 | pending |
-| Agent | capture/agent/scripts/tests/provision-narrator.test.ts | source candidate | 24 | pending |
-| Agent | capture/agent/scripts/tests/test_provision_narrator.py | source candidate | 143 | pending |
-| Agent | capture/agent/setup/hermes-receiver.test.ts | source candidate | 196 | pending |
-| Agent | capture/agent/setup/hermes.native.test.ts | source candidate | 127 | pending |
-| Agent | capture/agent/setup/hermes.test.ts | source candidate | 215 | pending |
-| Agent | capture/agent/setup/hermes.ts | source candidate | 274 | pending |
-| Agent | capture/agent/zoom.rs | source candidate | 416 | pending |
+| Agent | capture/agent/context.rs | source candidate | 1333 | audited; current Agent candidate; owner ledger records proof and platform/delivery limits |
+| Agent | capture/agent/media/src/worker.ts | source candidate | 26 | audited; current Agent candidate; owner ledger records proof and platform/delivery limits |
+| Agent | capture/agent/media/stage.ts | source candidate | 93 | audited; current Agent candidate; owner ledger records proof and platform/delivery limits |
+| Agent | capture/agent/media/test/native.test.ts | source candidate | 71 | audited; current Agent candidate; owner ledger records proof and platform/delivery limits |
+| Agent | capture/agent/media/test/package.ts | source candidate | 124 | audited; incoming range/package rows retained; current composed proof pending |
+| Agent | capture/agent/media/test/policy.test.ts | source candidate | 32 | audited; current Agent candidate; owner ledger records proof and platform/delivery limits |
+| Agent | capture/agent/narrator/src/lib.rs | source candidate | 76 | audited; current Agent candidate; owner ledger records proof and platform/delivery limits |
+| Agent | capture/agent/narrator/tests/protocol.rs | source candidate | 72 | audited; current Agent candidate; owner ledger records proof and platform/delivery limits |
+| Agent | capture/agent/scripts/tests/provision-narrator.test.ts | source candidate | 24 | audited; current Agent candidate; owner ledger records proof and platform/delivery limits |
+| Agent | capture/agent/scripts/tests/test_provision_narrator.py | source candidate | 143 | audited; current Agent candidate; owner ledger records proof and platform/delivery limits |
+| Agent | capture/agent/setup/hermes-receiver.test.ts | source candidate | 196 | audited; current Agent candidate; owner ledger records proof and platform/delivery limits |
+| Agent | capture/agent/setup/hermes.native.test.ts | source candidate | 127 | audited; current Agent candidate; owner ledger records proof and platform/delivery limits |
+| Agent | capture/agent/setup/hermes.test.ts | source candidate | 215 | audited; current Agent candidate; owner ledger records proof and platform/delivery limits |
+| Agent | capture/agent/setup/hermes.ts | source candidate | 274 | audited; current Agent candidate; owner ledger records proof and platform/delivery limits |
+| Agent | capture/agent/zoom.rs | source candidate | 416 | audited; current Agent candidate; owner ledger records proof and platform/delivery limits |
 | Desktop | capture/desktop/docs/linux/linux-updater-gui-test.md | support/scenario | 198 | pending |
 | Desktop | capture/desktop/helper.rs | source candidate | 369 | pending |
 | Desktop | capture/desktop/icons.rs | source candidate | 97 | pending |
@@ -191,7 +191,7 @@
 | Desktop | capture/desktop/ui/frontend/tests/settings/agents/smoke.ts | source candidate | 295 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/settings/agents/t3.test.ts | source candidate | 83 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/settings/agents/testing/provider.ts | support/scenario | 23 | pending |
-| Desktop | capture/desktop/ui/frontend/tests/settings/labs.smoke.ts | source candidate | 130 | pending |
+| Desktop | capture/desktop/ui/frontend/tests/settings/labs.smoke.ts | source candidate | 130 | retired upstream #1338; successor Labs tests still require Desktop audit |
 | Desktop | capture/desktop/ui/frontend/tests/settings/shared-shell.smoke.ts | source candidate | 77 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/settings/t3.smoke.ts | source candidate | 106 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/settings/update-policy.test.ts | source candidate | 34 | pending |
@@ -202,7 +202,7 @@
 | Desktop | capture/desktop/ui/macos.rs | source candidate | 1462 | pending |
 | Desktop | capture/desktop/ui/motion.rs | source candidate | 816 | pending |
 | Desktop | capture/desktop/ui/pill_theme.rs | source candidate | 166 | pending |
-| Desktop | capture/desktop/ui/recording_completion.rs | source candidate | 168 | pending |
+| Desktop | capture/desktop/ui/recording_completion.rs | source candidate | 168 | publication/completion wrapper read; four cases retained in PR #1419; broader Desktop audit pending |
 | Desktop | capture/desktop/ui/whiteboard.rs | source candidate | 994 | pending |
 | Desktop | capture/desktop/vendor/taffy/src/compute/grid/explicit_grid.rs | source candidate | 697 | pending |
 | Desktop | capture/desktop/vendor/taffy/src/compute/grid/implicit_grid.rs | source candidate | 236 | pending |
@@ -238,28 +238,28 @@
 | Engine (legacy) | capture/engine/accessibility/ax.rs | source candidate | 780 | pending |
 | Engine (legacy) | capture/engine/autocrop/autocrop.rs | source candidate | 2557 | pending |
 | Engine (legacy) | capture/engine/autocrop/autocrop_lab.rs | source candidate | 1337 | pending |
-| Engine (legacy) | capture/engine/bundle/bundle_processing.rs | source candidate | 1638 | pending |
-| Engine (legacy) | capture/engine/bundle/bundle_processing/publication/benchmark.rs | source candidate | 112 | pending |
-| Engine (legacy) | capture/engine/bundle/bundle_processing/publication/cleanup.rs | source candidate | 113 | pending |
+| Engine (legacy) | capture/engine/bundle/bundle_processing.rs | source candidate | 1638 | audited; PR #1419; 50 retained recovery/publication/completion cases; hosted/delivery pending |
+| Engine (legacy) | capture/engine/bundle/bundle_processing/publication/benchmark.rs | source candidate | 112 | audited; PR #1419; 50 retained recovery/publication/completion cases; hosted/delivery pending |
+| Engine (legacy) | capture/engine/bundle/bundle_processing/publication/cleanup.rs | source candidate | 113 | audited; PR #1419; 50 retained recovery/publication/completion cases; hosted/delivery pending |
 | Engine (legacy) | capture/engine/bundle/bundle_processing/publication/completion_tests.rs | source candidate | 211 | pending |
 | Engine (legacy) | capture/engine/bundle/bundle_processing/publication/fixtures/README.md | support/scenario | 61 | pending |
 | Engine (legacy) | capture/engine/bundle/bundle_processing/publication/fixtures/tiny.mov | support/scenario | 3 | pending |
 | Engine (legacy) | capture/engine/bundle/bundle_processing/publication/fixtures/tiny.mp4 | support/scenario | 3 | pending |
 | Engine (legacy) | capture/engine/bundle/bundle_processing/publication/mod.rs | source candidate | 274 | pending |
-| Engine (legacy) | capture/engine/bundle/bundle_processing/publication/tests.rs | source candidate | 327 | pending |
-| Engine (legacy) | capture/engine/bundle/bundle_processing/publication/transcription_tests.rs | source candidate | 215 | pending |
-| Engine (legacy) | capture/engine/bundle/bundle_processing/publication_tests.rs | source candidate | 324 | pending |
-| Engine (legacy) | capture/engine/bundle/recover.rs | source candidate | 920 | pending |
-| Engine (legacy) | capture/engine/bundle/retention.rs | source candidate | 1487 | pending |
-| Engine (legacy) | capture/engine/bundle/retention/video.rs | source candidate | 347 | pending |
-| Engine (legacy) | capture/engine/export/camera.rs | source candidate | 655 | pending |
-| Engine (legacy) | capture/engine/export/crop.rs | source candidate | 261 | pending |
-| Engine (legacy) | capture/engine/export/ink.rs | source candidate | 544 | pending |
-| Engine (legacy) | capture/engine/export/linux.rs | source candidate | 288 | pending |
-| Engine (legacy) | capture/engine/export/mod.rs | source candidate | 965 | pending |
-| Engine (legacy) | capture/engine/export/narration.rs | source candidate | 383 | pending |
-| Engine (legacy) | capture/engine/export/quiet.rs | source candidate | 460 | pending |
-| Engine (legacy) | capture/engine/keyframes.rs | source candidate | 1584 | pending |
+| Engine (legacy) | capture/engine/bundle/bundle_processing/publication/tests.rs | source candidate | 327 | audited; PR #1419; 50 retained recovery/publication/completion cases; hosted/delivery pending |
+| Engine (legacy) | capture/engine/bundle/bundle_processing/publication/transcription_tests.rs | source candidate | 215 | audited; PR #1419; 50 retained recovery/publication/completion cases; hosted/delivery pending |
+| Engine (legacy) | capture/engine/bundle/bundle_processing/publication_tests.rs | source candidate | 324 | audited; PR #1419; 50 retained recovery/publication/completion cases; hosted/delivery pending |
+| Engine (legacy) | capture/engine/bundle/recover.rs | source candidate | 920 | audited; PR #1419; 50 retained recovery/publication/completion cases; hosted/delivery pending |
+| Engine (legacy) | capture/engine/bundle/retention.rs | source candidate | 1487 | audited; PR #1409; all 19 declarations retained; Mac passed before artifact-upload failure; rerun/delivery pending |
+| Engine (legacy) | capture/engine/bundle/retention/video.rs | source candidate | 347 | audited; PR #1409; all 19 declarations retained; Mac passed before artifact-upload failure; rerun/delivery pending |
+| Engine (legacy) | capture/engine/export/camera.rs | source candidate | 655 | audited; PR #1408; retained 40-case export boundary; hosted/delivery pending |
+| Engine (legacy) | capture/engine/export/crop.rs | source candidate | 261 | audited; PR #1408; retained 40-case export boundary; hosted/delivery pending |
+| Engine (legacy) | capture/engine/export/ink.rs | source candidate | 544 | audited; PR #1408; retained 40-case export boundary; hosted/delivery pending |
+| Engine (legacy) | capture/engine/export/linux.rs | source candidate | 288 | audited; PR #1408; retained 40-case export boundary; hosted/delivery pending |
+| Engine (legacy) | capture/engine/export/mod.rs | source candidate | 965 | audited; PR #1408; retained 40-case export boundary; hosted/delivery pending |
+| Engine (legacy) | capture/engine/export/narration.rs | source candidate | 383 | audited; PR #1408; retained 40-case export boundary; hosted/delivery pending |
+| Engine (legacy) | capture/engine/export/quiet.rs | source candidate | 460 | audited; PR #1408; retained 40-case export boundary; hosted/delivery pending |
+| Engine (legacy) | capture/engine/keyframes.rs | source candidate | 1584 | audited; PR #1420; 24 retained selection cases, real text/cue boundary preserved; hosted/delivery pending |
 | Engine (legacy) | capture/engine/native/tests/live-transcribe.py | support/scenario | 22 | pending |
 | Engine (legacy) | capture/engine/native/tests/live-transcribe.swift | support/scenario | 167 | pending |
 | Engine (legacy) | capture/engine/render.rs | source candidate | 2579 | pending |
@@ -277,7 +277,7 @@
 | Engine (legacy) | capture/engine/runtime/audio/transcription/speech_model.rs | source candidate | 607 | pending |
 | Engine (legacy) | capture/engine/runtime/audio/transcription/transcribe.rs | source candidate | 390 | pending |
 | Engine (legacy) | capture/engine/runtime/audio/transcription/warm_recognizer.rs | source candidate | 689 | pending |
-| Engine (legacy) | capture/engine/runtime/mod.rs | source candidate | 2279 | pending |
+| Engine (legacy) | capture/engine/runtime/mod.rs | source candidate | 2279 | production read; unused test-only writer removed in PR #1419; runtime subowners pending |
 | Engine (legacy) | capture/engine/runtime/phone.rs | source candidate | 730 | pending |
 | Engine (legacy) | capture/engine/runtime/platform/legacy_windows/capture/helper.rs | source candidate | 113 | pending |
 | Engine (legacy) | capture/engine/runtime/platform/legacy_windows/capture/media.rs | source candidate | 1216 | pending |
@@ -293,16 +293,16 @@
 | Engine (legacy) | capture/engine/runtime/recording/recorder/tests.rs | source candidate | 328 | pending |
 | Engine (legacy) | capture/engine/runtime/screens.rs | source candidate | 530 | pending |
 | Engine (legacy) | capture/engine/sketch.rs | source candidate | 2524 | pending |
-| Engine (legacy) | capture/engine/tests/bootstrap.rs | source candidate | 149 | pending |
-| Engine (legacy) | capture/engine/tests/finalizer.rs | source candidate | 64 | pending |
-| Engine (legacy) | capture/engine/tests/process.rs | source candidate | 521 | pending |
-| Engine (legacy) | capture/engine/tests/review_regressions.rs | source candidate | 263 | pending |
+| Engine (staged) | capture/engine/tests/bootstrap.rs | source candidate | 149 | audited; PR #1422; 21 Linux contracts retained; hosted/delivery pending |
+| Engine (staged) | capture/engine/tests/finalizer.rs | source candidate | 64 | audited; PR #1422; 21 Linux contracts retained; hosted/delivery pending |
+| Engine (staged) | capture/engine/tests/process.rs | source candidate | 521 | audited; PR #1422; 21 Linux contracts retained; hosted/delivery pending |
+| Engine (staged) | capture/engine/tests/review_regressions.rs | source candidate | 263 | audited; PR #1422; 21 Linux contracts retained; hosted/delivery pending |
 | Repository Enablement | capture/ui_process.rs | source candidate | 79 | pending |
 | Composition | composition/assembly.rs | source candidate | 57 | pending |
 | Composition | composition/cli.rs | source candidate | 2168 | pending |
 | Composition | composition/command_line.rs | source candidate | 425 | pending |
 | Composition | composition/issues.rs | source candidate | 265 | pending |
-| Composition | composition/movie_frames.rs | source candidate | 581 | pending |
+| Composition | composition/movie_frames.rs | source candidate | 581 | read; candidate-count fixture repair pending (duplicate IDs mask cap); retain other readback/resource guards |
 | Composition | composition/retention/mod.rs | source candidate | 116 | pending |
 | Composition | composition/screen_frames.rs | source candidate | 180 | pending |
 | Composition | composition/transcript.rs | source candidate | 65 | pending |
@@ -491,9 +491,9 @@
 | Repository Enablement | enablement/timing/review/review.test.ts | source candidate | 222 | pending |
 | Repository Enablement | enablement/timing/review/snapshots.ts | source candidate | 105 | pending |
 | Engine | engine/sdk/scripts/test.ts | support/scenario | 16 | pending |
-| Engine | engine/sdk/src/index.ts | source candidate | 138 | pending |
-| Engine | engine/sdk/test/frames.test.ts | source candidate | 95 | pending |
-| Engine | engine/sdk/test/probe.test.ts | source candidate | 92 | pending |
+| Engine | engine/sdk/src/index.ts | source candidate | 138 | production read; PR #1422 preserves all public SDK tests |
+| Engine | engine/sdk/test/frames.test.ts | source candidate | 95 | audited; PR #1422; 13 SDK cases and Linux package qualification pass; hosted pending |
+| Engine | engine/sdk/test/probe.test.ts | source candidate | 92 | audited; PR #1422; 13 SDK cases and Linux package qualification pass; hosted pending |
 | Engine | engine/tools/check.ts | source candidate | 91 | pending |
 | Hermes | hermes/desktop/controller.test.ts | source candidate | 46 | pending |
 | Hermes | hermes/desktop/controller.ts | source candidate | 77 | pending |
@@ -581,14 +581,14 @@
 | Record | record/storage/test/retention-plan.test.ts | source candidate | 59 | audited; slice 2 delivery pending |
 | Record | record/storage/test/retention-workflow.test.ts | source candidate | 124 | audited; slice 2 delivery pending |
 | Shared | shared/analytics/browser.ts | source candidate | 151 | pending |
-| Shared | shared/analytics/config.test.ts | source candidate | 14 | pending |
-| Shared | shared/analytics/config.ts | source candidate | 12 | pending |
+| Shared | shared/analytics/config.test.ts | source candidate | 14 | both cases read/retained; execution ownership migration from Public to Connect pending |
+| Shared | shared/analytics/config.ts | source candidate | 12 | production read; Public no longer consumes analytics; retain actual config execution before removing old route |
 | Shared | shared/handoff/capture_location.rs | source candidate | 240 | pending |
 | Shared | shared/handoff/config_store.rs | source candidate | 276 | pending |
 | Shared | shared/handoff/mod.rs | source candidate | 1996 | pending |
 | Shared | shared/handoff/pen.rs | source candidate | 62 | pending |
 | Shared | shared/handoff/test_modules.rs | source candidate | 1350 | pending |
-| Shared | shared/hex.rs | source candidate | 964 | pending |
+| Shared | shared/hex.rs | source candidate | 964 | 13 cases read; retry assertion and fixture-lifetime repair pending; no Hex changes delivered |
 | Shared | shared/model.rs | source candidate | 811 | pending |
 | Shared | shared/routing.rs | source candidate | 132 | pending |
 | Shared | shared/ui/test/appearance.mjs | source candidate | 97 | pending |
@@ -596,3 +596,16 @@
 | Shared | shared/ui/test/native.cjs | support/scenario | 38 | pending |
 | Shared | shared/ui/test/test_guard.py | source candidate | 39 | pending |
 | Shared | shared/windows.rs | source candidate | 1015 | pending |
+| Agent | capture/agent/media/test/range-policy.test.ts | source candidate | 0 | upstream four cases read/retained; baseline Agent8 passed; current candidate hook pending |
+| Agent | capture/agent/scripts/agent-eval.sh | documented manual QA, found after initial inventory | 113 | retired in candidate; purpose preserved in owned TypeScript comparison |
+| Agent | capture/agent/enablement/context-comparison.ts | manual QA support | 0 | candidate replacement; real/protocol evidence in owner ledger; fresh current proof pending |
+| Engine (staged) | capture/engine/tests/support/mod.rs | shared fixture support | 0 | audited; PR #1422; 21 Linux contracts retained; hosted/delivery pending |
+| Engine (legacy) | capture/engine/runtime/audio/transcription/parakeet_stream/mod.rs | source candidate | 0 | upstream source/tests read; three non-model cases pass; model/Metal and broader audio audit remain separate |
+| Record | record/media/test/selection/cues.test.ts | source candidate | 0 | upstream three cases read/retained; all 24 media headless cases passed; schema/package boundaries separate |
+| Record | record/transcription/test/policy.test.ts | source candidate | 0 | upstream two policy cases read/retained and passed; worker/native/Desktop consumer audit pending |
+| Composition | composition/agent_range/mod.rs | source candidate | 0 | upstream schema read/retained; headless/native baseline passed; packaged caller gates separate |
+| Repository Enablement | enablement/ci/routing/test-only/qualify.test.ts | source candidate | 0 | audited; PR #1411; actual discovery and independent no-flags guard retained; delivery pending |
+| Desktop | capture/desktop/ui/frontend/tests/settings/labs/native.ts | upstream test/scenario | 0 | upstream #1338 addition; Desktop audit pending |
+| Desktop | capture/desktop/ui/frontend/tests/settings/labs/policy.test.ts | upstream test/scenario | 0 | upstream #1338 addition; Desktop audit pending |
+| Desktop | capture/desktop/ui/frontend/tests/settings/labs/smoke.ts | upstream test/scenario | 0 | upstream #1338 addition; Desktop audit pending |
+| Desktop | capture/desktop/ui/frontend/tests/pill/streaming/smoke.cts | upstream test/scenario | 0 | upstream #1338 addition; Desktop audit pending |

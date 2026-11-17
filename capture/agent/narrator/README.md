@@ -145,6 +145,7 @@ mitigation, not perceptual approval or integrated app proof.
 Tests (from repository root; target stays outside source):
 
 ```sh
+node --experimental-strip-types --test capture/agent/scripts/tests/provision-narrator.test.ts
 python3 -m unittest discover -s capture/agent/scripts/tests -p test_provision_narrator.py
 cargo test --manifest-path capture/agent/narrator/Cargo.toml --locked --offline \
   --target-dir "$TMPDIR/narrator-build" -j 3

@@ -230,7 +230,7 @@ The following exhaustive baseline ledger documents an earlier campaign proposal 
 | `perf/screen-guard.sh` | `capture/desktop/scripts/perf/screen-guard.sh` | MOVE | desktop |
 | `enablement/refactor.md` | `enablement/refactor.md` | RETAIN | shared-infrastructure |
 | `scripts/Apparent.entitlements` | `capture/desktop/scripts/packaging/Apparent.entitlements` | MOVE | desktop |
-| `scripts/agent-eval.sh` | `capture/agent/scripts/agent-eval.sh` | MOVE | capture-agent |
+| `scripts/agent-eval.sh` | `capture/agent/enablement/context-comparison.ts` | REPLACE | capture-agent |
 | `scripts/apparent-restore-clipboard.py` | `capture/desktop/scripts/support/apparent-restore-clipboard.py` | MOVE | desktop |
 | `scripts/autocrop-corpus.mjs` | `public/site/scripts/autocrop-corpus.mjs` | MOVE | public |
 | `scripts/autocrop-gallery.mjs` | `public/site/scripts/autocrop-gallery.mjs` | MOVE | public |

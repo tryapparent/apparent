@@ -34,12 +34,15 @@ impl Drop for Fixture {
 #[test]
 fn rejects_empty_and_invalid_utf8_before_loading_model() {
     let f = Fixture::new();
-    let result = f.run(b" \n\t");
-    assert!(!result.status.success());
-    assert!(String::from_utf8_lossy(&result.stderr).contains("cue text is empty"));
-    assert!(!f.0.join("out.wav").exists());
-    assert!(!f.run(&[0xff]).status.success());
-    assert!(!f.0.join("out.wav").exists());
+    for (input, reason) in [
+        (b" \n\t".as_slice(), "cue text is empty"),
+        (&[0xff], "valid UTF-8"),
+    ] {
+        let result = f.run(input);
+        assert!(!result.status.success());
+        assert!(String::from_utf8_lossy(&result.stderr).contains(reason));
+        assert!(!f.0.join("out.wav").exists());
+    }
 }
 #[test]
 fn preserves_existing_output_and_symlink_target() {
@@ -51,7 +54,9 @@ fn preserves_existing_output_and_symlink_target() {
     assert_eq!(fs::read(f.0.join("out.wav")).unwrap(), b"original");
     fs::remove_file(f.0.join("out.wav")).unwrap();
     std::os::unix::fs::symlink(f.0.join("cue.txt"), f.0.join("out.wav")).unwrap();
-    assert!(!f.run(b"A short cue.").status.success());
+    let result = f.run(b"A short cue.");
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("output already exists"));
     assert_eq!(fs::read(f.0.join("cue.txt")).unwrap(), b"A short cue.");
 }
 #[test]

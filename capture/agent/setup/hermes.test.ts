@@ -27,7 +27,7 @@ test('empty and partial installs stay distinct from unknown runtime state; check
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
-test('archive checksum is enforced before invoking writer; verified archive is snapshotted and cleaned', () => {
+test('verified archive gates setup writes, reports writer refusal, and cleans snapshots', () => {
   const home = mkdtempSync('/tmp/apparent-dev-hermes-archive-');
   try {
     const source = join(home, 'source');
@@ -36,27 +36,36 @@ test('archive checksum is enforced before invoking writer; verified archive is s
     writeFileSync(join(source, 'install.cjs'), '');
     const archive = join(home, 'package.tar.gz');
     assert(system.run('/usr/bin/tar', ['-czf', archive, '-C', source, 'apparent', 'install.cjs']).ok);
-    let writers = 0, snapshot: string | undefined;
+    let writers = 0, refuseWriter = false, snapshot: string | undefined;
     const p: Provider = { home, platform: 'darwin', env: {}, run(exe, args) {
+      if (exe === '/usr/bin/osascript') return { ok: false, output: '' };
       if (exe === 'tar') { snapshot = args[1]; return system.run('/usr/bin/tar', args); }
       assert.equal(exe, process.execPath);
       assert.equal(args[1], '--profile'); assert.equal(args[2], home);
       assert.equal(readFileSync(args[0], 'utf8'), '');
       writers++;
-      return { ok: true, output: '' };
+      return { ok: !refuseWriter, output: '' };
     } };
     assert.throws(() => installPackage(p, archive, '0'.repeat(64), home), /checksum mismatch/);
-    assert.equal(writers, 0);
     const digest = createHash('sha256').update(readFileSync(archive)).digest('hex');
+    assert.deepEqual(setup(p, '/missing/apparent', home, true, archive, digest).repairs, []);
+    const refused = setup(p, '/missing/apparent', home, false, archive, '0'.repeat(64));
+    assert.equal(refused.repairs[0].status, 'failed');
+    assert.equal(refused.ready, false);
+    assert.equal(writers, 0);
     assert(installPackage(p, archive, digest, home));
     assert.equal(writers, 1);
+    assert.throws(() => readFileSync(snapshot!), /ENOENT/);
+    refuseWriter = true;
+    assert.equal(setup(p, '/missing/apparent', home, false, archive, digest).repairs[0].status, 'failed');
+    assert.equal(writers, 2);
     assert.throws(() => readFileSync(snapshot!), /ENOENT/);
     // A symlink anywhere in the archive must fail before extraction or execution.
     symlinkSync('/outside', join(source, 'apparent/link'));
     assert(system.run('/usr/bin/tar', ['-czf', archive, '-C', source, 'apparent', 'install.cjs']).ok);
     const unsafeDigest = createHash('sha256').update(readFileSync(archive)).digest('hex');
     assert.throws(() => installPackage(p, archive, unsafeDigest, home), /contents/);
-    assert.equal(writers, 1);
+    assert.equal(writers, 2);
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
@@ -99,27 +108,6 @@ test('macOS and failed providers never claim absent or loaded from configuration
   assert.equal(report.checks.find(c => c.id === 'plugin-loaded')?.status, 'unknown');
   assert.equal(report.checks.find(c => c.id === 'plugin-agent')?.status, 'unknown');
   assert.deepEqual(report.repairs, []);
-});
-
-test('explicit package uses only the package writer; check ignores it and never installs', () => {
-  const home = mkdtempSync('/tmp/apparent-dev-hermes-setup-');
-  try {
-    const packageRoot = join(home, 'release');
-    mkdirSync(packageRoot); writeFileSync(join(packageRoot, 'install.cjs'), '');
-    let writes = 0;
-    const p: Provider = { home, platform: 'darwin', env: {}, run(exe, args) {
-      if (exe === '/usr/bin/osascript') return { ok: false, output: '' };
-      assert.equal(exe, process.execPath);
-      assert.deepEqual(args, [join(packageRoot, 'install.cjs'), '--profile', home]);
-      writes++; return { ok: false, output: '' };
-    } };
-    assert.deepEqual(setup(p, '/missing/apparent', home, true, packageRoot).repairs, []);
-    assert.equal(writes, 0);
-    const result = setup(p, '/missing/apparent', home, false, packageRoot);
-    assert.equal(writes, 0);
-    assert.equal(result.repairs[0].status, 'failed');
-    assert.equal(result.ready, false);
-  } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
 test('live build identity is compared on both platforms; old or malformed facts remain unknown', () => {
