@@ -228,6 +228,7 @@ async function main() {
       {env: {...hostEnv, TMPDIR: temporary, TMP: temporary, TEMP: temporary}, timeout: 60_000, ownedGroup: true});
       assert.match(report, /7 production Vision trace scenarios passed/);
       assert.match(report, /Real sanitized PNG Vision trace passed/);
+      assert.match(report, /Retained failure PNG Vision trace passed/);
       await evidence('vision-trace-regression', {report});
     } catch (error) {
       await evidence('vision-trace-regression-failure', {error: redact(error)});

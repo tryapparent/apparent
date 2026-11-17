@@ -11,7 +11,7 @@ const dependencies = ['node:test', 'node:assert/strict', 'node:fs', 'node:path',
 const reviewedMentions = new Map([
   ['enablement/ci/routing/engine-inputs/qualify.ts', '81e64db4b1e44d84ddec53c47908c06bedc40392'],
   ['enablement/ci/routing/engine-inputs/range.test.ts', 'eced31d7c5320a93a30c42dfb35dfd09bb4ced79'],
-  ['capture/desktop/ui/frontend/tests/foreground/mac.ts', '62663130736f1dc0ab76e683ca325ff1e79a6e68'],
+  ['capture/desktop/ui/frontend/tests/foreground/mac.ts', '495c8a9d2a8291cd2faa441294f3864116c49193'],
   ['enablement/ci/runner/mac-pill-bootstrap.test.ts', 'c885dfcbd9176d9da7f9f59a921ec80ea4bea258'],
 ]);
 
