@@ -24,6 +24,10 @@ test('real Git controller changes preserve Desktop renderer and main packaging, 
     git('init', '-q');
     for (const [path, source] of sources) write(path, source);
     for (const path of nativeStorageGraph.keys()) write(path, readFileSync(new URL('../../../../' + path, import.meta.url), 'utf8'));
+    // Include Connect's real routing consumer so moving its owner-local test
+    // cannot silently invalidate the controller reference audit.
+    const connectPlanTest = 'connect/enablement/ci/plan.test.ts';
+    write(connectPlanTest, readFileSync(new URL('../../../../' + connectPlanTest, import.meta.url), 'utf8'));
     const base = commit();
     for (const [path, source] of sources) {
       git('reset', '--hard', base);
