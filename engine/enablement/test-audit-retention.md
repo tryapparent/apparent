@@ -82,8 +82,11 @@ Disposable recipes/logs: `/tmp/apparent-dev-engine-audit-0H13BY/retention-probe.
 `retention-keeper.log`, `retention-*-mutant.log`, `retention-restored.log` and the
 baseline `export-evidence-push.log`. Regenerate them if cleaned.
 
-Independent preservation review and normal hook/hosted/exact-main delivery are
-pending. No local Mac/native encoder, live capture, GUI, sealed package or clean
+Independent code-only preservation review at `c7f774b34` found no blocking
+security/logic issue, lost contract or suggestion. It independently checked the
+frozen source diff and callers, without rerunning tests or validating probe logs.
+Normal hook/hosted/exact-main delivery remains pending. No local Mac/native
+encoder, live capture, GUI, sealed package or clean
 owner build independence is claimed. Existing in-process claims do not establish
 cross-process serialization; broader recovery/audio mutation lifetimes remain
 for those owners' audits. Existing automatic CI publication is authorized; no
