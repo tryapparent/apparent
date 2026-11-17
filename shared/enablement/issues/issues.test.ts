@@ -184,6 +184,48 @@ test("push validates all post-baseline commits across refs, deduplicates issue l
   );
 });
 
+test("accepted merge receipts validate exact identities without exempting other commits", (t) => {
+  const f = fixture(t);
+  const objects =
+    git(root, [
+      "rev-parse",
+      "--path-format=absolute",
+      "--git-common-dir",
+    ]).trim() + "/objects";
+  writeFileSync(join(f.repo, ".git/objects/info/alternates"), objects + "\n");
+  for (const [commit, number] of [
+    ["6c64c838fab1b70e05da112ffc25336e5c283ab1", "575"],
+    ["18c72f8302d54bab24d1729fb75796329a2a0a81", "171"],
+  ]) {
+    const parents = f.runGit("show", "-s", "--format=%P", commit).split(" ");
+    const tree = f.runGit("rev-parse", commit + "^{tree}");
+    const cutoff = f.runGit(
+      "commit-tree",
+      tree,
+      ...parents.flatMap((p) => ["-p", p]),
+      "-m",
+      "synthetic cutoff",
+    );
+    writeFileSync(process.env.ISSUE_TEST_LOG!, "");
+    validatePush(f.ref(commit), f.repo, cutoff);
+    assert.equal(
+      readFileSync(process.env.ISSUE_TEST_LOG!, "utf8"),
+      number + "\n",
+    );
+    process.env.ISSUE_TEST_FAILURE = "offline";
+    assert.throws(
+      () => validatePush(f.ref(commit), f.repo, cutoff),
+      /Cannot validate/,
+    );
+    delete process.env.ISSUE_TEST_FAILURE;
+    const copied = f.commit(f.runGit("show", "-s", "--format=%B", commit));
+    assert.throws(
+      () => validatePush(f.ref(copied), f.repo, f.baseline),
+      /needs a final Issue/,
+    );
+  }
+});
+
 test("API mismatch, PR and authentication/not-found/offline failures reject without exposing stderr", (t) => {
   const f = fixture(t),
     issue = { repository, number: 12 };

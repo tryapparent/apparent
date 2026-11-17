@@ -5,6 +5,13 @@ export const baseline = "d559dbbd2a3fbf9428593931b526e13b626c8ab9";
 export const referencePattern =
   /^Issue:[ \t]+([A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+)#([1-9][0-9]*)[ \t]*$/i;
 export type Issue = { repository: string; number: number };
+export function acceptedMergeIssue(commit: string): Issue | undefined {
+  const number = new Map([
+    ["6c64c838fab1b70e05da112ffc25336e5c283ab1", 575],
+    ["18c72f8302d54bab24d1729fb75796329a2a0a81", 171],
+  ]).get(commit);
+  return number === undefined ? undefined : { repository, number };
+}
 export const reference = (issue: Issue) =>
   `${issue.repository}#${issue.number}`;
 
