@@ -49,6 +49,6 @@ export interface ShareModel {
  url: string; status: ShareState; title: string; createdAt: string; expiresAt: string;
  uploadedBytes: number; totalBytes: number; files: SharedFile[]; thumbnailUrl: string | null;
  retryAfterSeconds: number | null; retryGuidance: string; evidenceNotice: string;
- summary?: string; transcript?: string;
+ recordedAtMs?: number; videoOffsetMs?: number; summary?: string; transcript?: string;
  transcriptSegments?: Array<{startMs:number;endMs:number;text:string}>;
 }

@@ -75,8 +75,9 @@ try {
       const [a,b]=selection.map(luminance);assert((Math.max(a,b)+.05)/(Math.min(a,b)+.05)>=4.5,`${owner} ${mode} selection contrast`)
      }
      states.push(state)
-     assert.equal(state.background,mode==='dark'?(owner==='public'?'rgb(2, 1, 2)':'rgb(32, 27, 36)'):'rgb(245, 240, 232)',`${name}/${owner}/${path} ${mode} background`)
-     assert.equal(state.foreground,mode==='dark'?'rgb(245, 240, 232)':owner==='public'?'rgb(2, 1, 2)':'rgb(25, 22, 29)',`${name}/${owner}/${path} ${mode} text`)
+     const paperAndCarbon = owner === 'public' || owner === 'recipient'
+     assert.equal(state.background,mode==='dark'?(paperAndCarbon?'rgb(2, 1, 2)':'rgb(32, 27, 36)'):'rgb(245, 240, 232)',`${name}/${owner}/${path} ${mode} background`)
+     assert.equal(state.foreground,mode==='dark'?'rgb(245, 240, 232)':paperAndCarbon?'rgb(2, 1, 2)':'rgb(25, 22, 29)',`${name}/${owner}/${path} ${mode} text`)
      if(owner==='public'&&process.env.PUBLIC_THEME_ARTIFACT){
       const patches=await page.evaluate(()=>{
        const statement=document.querySelector('.preview-statement'), hello=document.querySelector('.pond-hello'), bubble=document.querySelector('.rude-bubble')

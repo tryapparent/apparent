@@ -19,6 +19,14 @@ test('ready captures without a contact sheet never advertise a missing thumbnail
  assert.ok(!html.includes('poster="'+model.url+'/thumbnail.png'))
  assert.ok(!html.includes('/thumbnail.png'))
 })
+test('recording date takes precedence and invalid metadata falls back to the share date', () => {
+ const ready={...model,title:'Apparent recording',createdAt:'2026-11-18T00:30:00Z',expiresAt:'2026-11-24T09:00:00Z'}
+ const recorded=renderShare({...ready,recordedAtMs:Date.parse('2026-11-17T23:30:00Z')})
+ assert.ok(recorded.includes('<h1><time dateTime="2026-11-17">17 November 2026</time></h1>'))
+ assert.ok(recorded.includes('24 Nov 2026, 09:00 UTC'))
+ assert.ok(renderShare({...ready,recordedAtMs:Number.MAX_SAFE_INTEGER}).includes('Shared 18 November 2026'))
+ assert.ok(!renderShare({...ready,status:'revoked',recordedAtMs:Date.parse('2026-11-17T23:30:00Z')}).includes('2026-11-17'))
+})
 test('untrusted text and URLs cannot create markup or active schemes', () => {
  const html = renderShare({...model,title:'<script>alert(1)</script>',summary:'<img src=x onerror=evil()>',transcript:'</pre><script>evil()</script>',url:'javascript:evil()',thumbnailUrl:'data:text/html,evil',files:[{path:'" onerror="evil',url:'javascript:evil()',size:1,sha256:'<evil>'}]})
  assert.ok(html.includes('&lt;script&gt;')); assert.ok(!html.includes('<img src=x')); assert.ok(!html.includes('javascript:')); assert.ok(!html.includes('data:text/html')); assert.ok(!html.includes('onerror="evil'))

@@ -5,7 +5,13 @@ import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('../', import.meta.url))
 await mkdir(root + '.generated', { recursive: true })
 const client = await build({ entryPoints: [root + 'src/recipient/client.tsx'], bundle: true, format: 'iife', platform: 'browser', minify: true, write: false, define: { 'process.env.NODE_ENV': '"production"' } })
-execFileSync(root + 'node_modules/.bin/tailwindcss', ['-i', 'src/recipient/styles.css', '-o', '.generated/recipient.css', '--minify'], { cwd: root, stdio: 'inherit' })
+await writeFile(root + '.generated/recipient-input.css', `@import "tailwindcss" source(none);
+@import "@apparent/ui/theme.css";
+@import "../src/recipient/viewer.css";
+@source "../src/recipient/viewer.tsx";
+@source "../node_modules/@apparent/ui/src";
+`)
+execFileSync(root + 'node_modules/.bin/tailwindcss', ['-i', '.generated/recipient-input.css', '-o', '.generated/recipient.css', '--minify'], { cwd: root, stdio: 'inherit' })
 const [styles, wordmark, font] = await Promise.all([
   readFile(root + '.generated/recipient.css', 'utf8'),
   readFile(root + '../../shared/assets/brand/apparent-wordmark.svg', 'utf8'),

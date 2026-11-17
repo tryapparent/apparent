@@ -84,6 +84,8 @@ export async function shareRoutes(request: Request,env: Env,url: URL,render: (mo
    // Reuse the existing bounded metadata read; never infer time from frame numbers.
    try {
     const parsed: unknown=JSON.parse(metadata);
+    if(isRecord(parsed)&&typeof parsed.createdAtMs==='number')model.recordedAtMs=parsed.createdAtMs;
+    if(isRecord(parsed)&&typeof parsed.videoOffsetMs==='number')model.videoOffsetMs=parsed.videoOffsetMs;
     if(isRecord(parsed)&&Array.isArray(parsed.keyframes))for(const frame of parsed.keyframes) {
      if(!isRecord(frame)||typeof frame.file!=='string'||!/^frames\/frame-\d+\.png$/.test(frame.file)||!Number.isSafeInteger(frame.t)||(frame.t as number)<0)continue;
      const file=model.files.find(file=>file.path===frame.file);
