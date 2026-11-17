@@ -32,6 +32,17 @@ export function bundleProbe(info: MovieInfo): BundleProbe {
     fps: video.fps ?? 0, audioTracks: info.audio.length};
 }
 
+export interface PhonePreparation {
+  version: 1;
+  probe: BundleProbe;
+  audio: 'skip-absent' | 'extract';
+}
+
+export function phonePreparation(info: MovieInfo): PhonePreparation {
+  const probe = bundleProbe(info);
+  return {version: 1, probe, audio: probe.audioTracks === 0 ? 'skip-absent' : 'extract'};
+}
+
 /** Export follows the video clock, including when container audio has a tail.
  * Missing segment detail uses the track interval; an empty segment list means
  * the native provider found no actual audio edits. This policy is shared by both OSes.

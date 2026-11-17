@@ -19,8 +19,6 @@ use crate::shared::model::{
     ScreenSpan, Stroke, TargetFrame, TargetInfo,
 };
 
-/// Keyframes are decoded from the native video and fit to this long edge (736×1600 for a
-/// 1320×2868 phone): every UI point stays resolvable, and agents downsample anything larger.
 pub const PHONE_FRAME_EDGE: u32 = 1600;
 
 #[derive(Default)]
@@ -456,11 +454,25 @@ pub fn phone_target(
 /// native video.
 pub fn build_movie_bundle(
     bundle_dir: &Path,
-    mut capture: MovieCapture,
+    capture: MovieCapture,
 ) -> Result<(PathBuf, ApparentBundle, String)> {
+    build_movie_bundle_with_audio(bundle_dir, capture, helper::export_audio)
+}
+
+fn build_movie_bundle_with_audio(
+    bundle_dir: &Path,
+    mut capture: MovieCapture,
+    export_audio: impl FnOnce(&Path, &Path) -> Result<()>,
+) -> Result<(PathBuf, ApparentBundle, String)> {
+    use crate::capture::engine::{bundle::bundle_processing, keyframes, sketch};
+    use crate::composition::{assembly, media_probe, movie_frames};
+    use crate::shared::model::{KeyframeReason, Mark, Shape, TranscriptData};
+
     let started_at = Instant::now();
+    let preparation = media_probe::phone_preparation(&capture.movie)?;
+    let probe = preparation.probe;
     let wav = bundle_dir.join("audio.wav");
-    let mut mark_times: Vec<u64> = crate::capture::engine::sketch::marks_of(&capture.strokes)
+    let mut mark_times: Vec<u64> = sketch::marks_of(&capture.strokes)
         .into_iter()
         .map(|m| m.t1)
         .chain(capture.flags.iter().copied())
@@ -474,35 +486,33 @@ pub fn build_movie_bundle(
         let flags_ref = &capture.flags;
         let movie_ref = &capture.movie;
         let frames = scope.spawn(move || -> Result<_> {
-            let probe = crate::composition::media_probe::bundle_probe(movie_ref)?;
-            ensure!(probe.duration_ms > 0, "The recording is empty");
             let mut target = base_target;
             if probe.width > 0 && probe.height > 0 {
                 target.frame.width = f64::from(probe.width);
                 target.frame.height = f64::from(probe.height);
             }
             let t0 = Instant::now();
-            let assembly_plan = crate::composition::assembly::plan(probe.duration_ms)?;
+            let assembly_plan = assembly::plan(probe.duration_ms)?;
             let limits = assembly_plan.limits(probe.duration_ms)?;
             let budget = limits.maximum;
             // With a mark for every slot, only the frames under the marks are needed, unless
             // marks on one screen share a keyframe and leave slots for other moments.
             if mark_times.len() >= budget {
                 let direct =
-                    crate::composition::movie_frames::record(movie_ref, &mark_times, 0, PHONE_FRAME_EDGE);
+                    movie_frames::record(movie_ref, &mark_times, 0, PHONE_FRAME_EDGE);
                 let decode_ms = t0.elapsed().as_millis() as u64;
                 if let Ok(raw_frames) = direct
                     && !raw_frames.is_empty()
                 {
-                    let mut preview_marks = crate::capture::engine::sketch::marks_of(strokes_ref);
+                    let mut preview_marks = sketch::marks_of(strokes_ref);
                     for (i, &t) in flags_ref.iter().enumerate() {
-                        preview_marks.push(crate::shared::model::Mark {
+                        preview_marks.push(Mark {
                             id: format!("f{}", i + 1),
                             strokes: Vec::new(),
                             t0: t,
                             t1: t,
                             box_norm: [0.0, 0.0, 1.0, 1.0],
-                            shape: crate::shared::model::Shape::Flag,
+                            shape: Shape::Flag,
                             from: None,
                             to: None,
                             pin: None,
@@ -511,22 +521,22 @@ pub fn build_movie_bundle(
                             frame: None,
                         });
                     }
-                    let preview = crate::capture::engine::keyframes::select_keyframes_with_limits(
+                    let preview = keyframes::select_keyframes_with_limits(
                         &raw_frames,
                         strokes_ref,
                         &mut preview_marks,
                         events_ref,
-                        &crate::capture::engine::keyframes::SpeechInput::empty(&crate::shared::model::TranscriptData::default()),
+                        &keyframes::SpeechInput::empty(&TranscriptData::default()),
                         limits,
                         None,
                     ).frames;
                     if preview.len() == budget
                         && preview
                             .iter()
-                            .all(|(k, _)| k.reason == crate::shared::model::KeyframeReason::Mark)
+                            .all(|(k, _)| k.reason == KeyframeReason::Mark)
                     {
                         let prep =
-                            crate::capture::engine::bundle::bundle_processing::prepare_visuals(
+                            bundle_processing::prepare_visuals(
                                 preview,
                                 raw_frames.first(),
                                 None,
@@ -542,11 +552,14 @@ pub fn build_movie_bundle(
                     }
                 }
             }
-            let res = crate::composition::movie_frames::record_phone_candidates(movie_ref, probe.duration_ms)?;
+            let res = movie_frames::record_phone_candidates(movie_ref, probe.duration_ms)?;
             Ok((probe, res, t0.elapsed().as_millis() as u64, false, None, assembly_plan))
         });
         let audio_started = Instant::now();
         let exported = (|| {
+            if matches!(preparation.audio, media_probe::PhoneAudio::SkipAbsent) {
+                return Ok(None);
+            }
             // Both native writers overwrite this held private file. Validate the
             // WAV before publishing it; failures drop only the owned temporary.
             // Inheriting a group-writable umask must not invalidate the bundle.
@@ -554,7 +567,7 @@ pub fn build_movie_bundle(
                 .prefix(".audio-export-")
                 .suffix(".wav")
                 .tempfile_in(bundle_dir)?;
-            helper::export_audio(&capture.movie, staged.path())?;
+            export_audio(&capture.movie, staged.path())?;
             let mut bytes = Vec::new();
             staged.as_file_mut().read_to_end(&mut bytes)?;
             let audio =
@@ -562,11 +575,11 @@ pub fn build_movie_bundle(
             staged
                 .persist(&wav)
                 .context("Could not publish extracted audio")?;
-            Ok::<_, anyhow::Error>(audio)
+            Ok::<_, anyhow::Error>(Some(audio))
         })();
         let audio_ms = audio_started.elapsed().as_millis() as u64;
         let (audio, audio_err) = match exported {
-            Ok(a) => (Some(a), None),
+            Ok(a) => (a, None),
             Err(e) => (None, Some(e)),
         };
         let t0 = Instant::now();
@@ -583,9 +596,7 @@ pub fn build_movie_bundle(
     });
     let (probe, frames, candidates_ms, already_full, prepared, assembly_plan) =
         joined.map_err(|_| anyhow::anyhow!("Frame decoding panicked"))??;
-    if probe.audio_tracks > 0
-        && let Some(error) = audio_err
-    {
+    if let Some(error) = audio_err {
         apparent_log(format!("Phone audio export failed: {error:#}"));
     }
     if probe.width > 0 && probe.height > 0 {
@@ -596,7 +607,7 @@ pub fn build_movie_bundle(
     }
     ensure!(!frames.is_empty(), "No frames could be decoded");
     let movie = capture.movie.clone();
-    let extras = crate::capture::engine::bundle::bundle_processing::SourceExtras {
+    let extras = bundle_processing::SourceExtras {
         source: Some("iphone".into()),
         device: Some(capture.device),
         context: capture.context,
@@ -604,15 +615,15 @@ pub fn build_movie_bundle(
         screens: capture.screens,
         flags: capture.flags,
         full_frames: (!already_full).then(
-            || -> crate::capture::engine::bundle::bundle_processing::FullFrames {
+            || -> bundle_processing::FullFrames {
                 Box::new(move |times: &[u64]| -> Result<Vec<RgbaFrame>> {
-                    crate::composition::movie_frames::record(&movie, times, 0, PHONE_FRAME_EDGE)
+                    movie_frames::record(&movie, times, 0, PHONE_FRAME_EDGE)
                 })
             },
         ),
         prepared,
         assembly_plan: Some(assembly_plan),
-        timings: crate::capture::engine::bundle::bundle_processing::StageTimings {
+        timings: bundle_processing::StageTimings {
             started_at: Some(started_at),
             audio_ms: Some(audio_ms),
             candidates_ms: Some(candidates_ms),
@@ -621,7 +632,7 @@ pub fn build_movie_bundle(
         },
         ..Default::default()
     };
-    crate::capture::engine::bundle::bundle_processing::build_bundle_from_parts(
+    bundle_processing::build_bundle_from_parts(
         bundle_dir,
         capture.target,
         probe.duration_ms,
@@ -698,12 +709,12 @@ mod tests {
         let reference = Command::new("ffmpeg").args(["-v", "error", "-nostdin", "-i"]).arg(&movie)
             .args(["-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"]).output().unwrap();
         assert!(reference.status.success()); assert_eq!(reference.stdout.len(), 48 * 64 * 4);
-        let (_, bundle, text) = build_movie_bundle(root.path(), MovieCapture {
+        let (_, bundle, text) = build_movie_bundle_with_audio(root.path(), MovieCapture {
             movie: movie.clone(), target: phone_target("Synthetic file", None, None, 1, 1),
             device: serde_json::from_value(serde_json::json!({"name":"Synthetic file", "capture":"mirror", "width":1, "height":1})).unwrap(),
             events: Vec::new(), strokes: Vec::new(), flags: Vec::new(), note: None,
             context: BTreeMap::new(), context_changes: Vec::new(), screens: Vec::new(),
-        }).unwrap();
+        }, |_, _| panic!("Record must not invoke native audio extraction for a trackless movie")).unwrap();
         assert_eq!((bundle.target.frame.width, bundle.target.frame.height, bundle.duration_ms), (48.0, 64.0, 1000));
         assert!(!bundle.keyframes.is_empty()); assert!(!text.is_empty());
         assert_eq!(std::fs::read(movie).unwrap(), original);
