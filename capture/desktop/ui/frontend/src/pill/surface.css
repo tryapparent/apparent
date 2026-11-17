@@ -54,3 +54,34 @@
   .pill:not([data-reduced=true]) .indicator.processing { animation: pill-processing-spin 1s linear infinite!important; }
 }
 @keyframes pill-processing-spin { to { transform:rotate(360deg); } }
+/* Accepted live-text study: fixed controls, inset shallow layer, newest words. */
+.pill[data-live=true] {
+  --apparent-background:var(--apparent-paper);--apparent-foreground:var(--apparent-carbon);
+  --apparent-primary:var(--apparent-signal);--apparent-primary-foreground:var(--apparent-paper);
+  --color-foreground:var(--apparent-foreground);--color-primary:var(--apparent-primary);--color-primary-foreground:var(--apparent-primary-foreground);
+}
+@media(prefers-color-scheme:dark) {
+  .pill[data-live=true] {
+    --apparent-background:var(--apparent-carbon);--apparent-foreground:var(--apparent-paper);
+    --apparent-primary:var(--apparent-lilac);--apparent-primary-foreground:var(--apparent-carbon);
+  }
+}
+.pill[data-live=true] .pill-surface { padding-bottom:38px; }
+.pill[data-live=true] .pill-row { gap:8px;padding:5px 10px 5px 12px; }
+.pill[data-live=true] .lead { padding:0; }
+.pill[data-live=true] .indicator-slot { width:10px; }
+.pill[data-live=true] .clock { min-width:42px; }
+.pill[data-live=true] .meter { width:54px;min-width:54px; }
+.pill[data-live=true] .meter i { background:var(--apparent-foreground); }
+.pill[data-live=true] .controls { gap:8px; }
+.live-caption { box-sizing:border-box;position:absolute;bottom:0;left:10px;right:82px;height:58px;padding:23px 22px 9px;border-radius:26px;background:var(--apparent-transcript-background);color:var(--apparent-transcript-foreground); }
+.live-caption__viewport { width:100%;height:26px;overflow:hidden; }
+.live-caption__viewport[data-overflow=true] { mask-image:linear-gradient(to right,transparent 0,currentColor 36px,currentColor 100%); }
+.live-caption__line { display:inline-flex;align-items:center;white-space:pre;font-size:18px;line-height:26px;font-weight:400; }
+.live-caption__caret { display:inline-block;flex-shrink:0;width:2px;height:21px;margin-left:3px;background:currentColor; }
+@keyframes transcript-cursor { 0%,55%{opacity:1}56%,100%{opacity:0} }
+@media(prefers-reduced-motion:no-preference) {
+  .pill[data-live=true]:not([data-reduced=true]) .live-caption__line { transition:transform 140ms linear!important; }
+  .pill[data-live=true]:not([data-reduced=true]) .live-caption__caret { animation:transcript-cursor 1s steps(1,end) infinite; }
+}
+.pill[data-live=true] .pill-notes-layer { bottom:38px; }

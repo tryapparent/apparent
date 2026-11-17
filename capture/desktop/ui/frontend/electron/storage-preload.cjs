@@ -10,6 +10,16 @@ contextBridge.exposeInMainWorld('apparentSettingsRoute', callback => {
   return () => { live = false; ipcRenderer.removeListener('apparent:settings-route', listener); };
 });
 
+contextBridge.exposeInMainWorld('apparentLabs', Object.freeze({
+  read: () => ipcRenderer.invoke('apparent:labs-preference'),
+  save: (enabled, setting) => ipcRenderer.invoke('apparent:labs-preference', enabled, ...(setting === undefined ? [] : [setting])),
+  subscribe: callback => {
+    const listener = (_event, facts) => callback(facts);
+    ipcRenderer.on('apparent:labs-state', listener);
+    return () => ipcRenderer.removeListener('apparent:labs-state', listener);
+  },
+}));
+
 contextBridge.exposeInMainWorld('apparentSettingsMounted', async () => {
   // React has committed its DOM. Do not hold that fact behind hidden-page
   // animation scheduling: Chromium may already have supplied first paint.
@@ -81,10 +91,4 @@ contextBridge.exposeInMainWorld('apparentGeneral', Object.freeze({
     ipcRenderer.on('apparent:general-state', listener);
     return () => ipcRenderer.removeListener('apparent:general-state', listener);
   },
-}));
-
-contextBridge.exposeInMainWorld('apparentLabs',Object.freeze({
-  read:()=>ipcRenderer.invoke('apparent:labs-preference'),
-  save:(enabled,setting='autoPaste')=>ipcRenderer.invoke('apparent:labs-preference',enabled,setting),
-  subscribe:callback=>{const listener=(_event,facts)=>callback(facts);ipcRenderer.on('apparent:labs-state',listener);return()=>ipcRenderer.removeListener('apparent:labs-state',listener);},
 }));

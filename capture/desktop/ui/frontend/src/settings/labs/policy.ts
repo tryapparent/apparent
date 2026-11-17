@@ -1,0 +1,60 @@
+// Desktop owns which trials are exposed. Native persists only this allowlist.
+export type LabsSetting = 'streaming' | 'autoPaste' | 'sharing' | 'wisprFlow';
+type Preferences = {
+  saved: boolean | null;
+  sharingSaved?: boolean | null;
+  autoPasteSaved?: boolean | null;
+  autoPasteSupported?: boolean;
+  wisprSaved?: boolean | null;
+  wisprSupported?: boolean;
+  error?: never;
+};
+export type LabsFacts = Preferences | {
+  error: 'config_read_failed' | 'config_write_failed';
+  saved?: never; sharingSaved?: never; autoPasteSaved?: never; autoPasteSupported?: never; wisprSaved?: never; wisprSupported?: never;
+};
+const savedFlag = (value: unknown): value is boolean | null => value === null || typeof value === 'boolean';
+export function facts(value: unknown): LabsFacts {
+  if (!value || typeof value !== 'object') throw Error('Invalid Labs reply');
+  const input = value as Record<string, unknown>;
+  if (input.error === 'config_read_failed' || input.error === 'config_write_failed') return {error: input.error};
+  if (!savedFlag(input.saved)) throw Error('Invalid Labs preference');
+  const result: Preferences = {saved: input.saved};
+  for (const key of ['autoPasteSaved', 'sharingSaved', 'wisprSaved'] as const) {
+    if (input[key] === undefined) continue;
+    if (!savedFlag(input[key])) throw Error('Invalid Labs preference');
+    result[key] = input[key];
+  }
+  for (const key of ['autoPasteSupported', 'wisprSupported'] as const) {
+    if (input[key] === undefined) continue;
+    if (typeof input[key] !== 'boolean') throw Error('Invalid Labs capability');
+    result[key] = input[key];
+  }
+  return result;
+}
+export function enabled(value: LabsFacts): boolean | undefined {return value.error ? undefined : value.saved ?? false;}
+export function autoPasteEnabled(value: LabsFacts): boolean | undefined {return value.error ? undefined : value.autoPasteSaved ?? false;}
+export function sharingEnabled(value: LabsFacts): boolean | undefined {return value.error ? undefined : value.sharingSaved ?? false;}
+export function wisprEnabled(value: LabsFacts): boolean | undefined {return value.error ? undefined : value.wisprSaved ?? false;}
+export class LabsPreferences {
+  private next = 0;
+  private pending?: {id: number; resolve: (value: LabsFacts) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>};
+  private send: (value: object) => void;
+  constructor(send: (value: object) => void) {this.send = send;}
+  request(value?: unknown, setting: LabsSetting = 'streaming'): Promise<LabsFacts> {
+    if (value !== undefined && typeof value !== 'boolean' || !['streaming','autoPaste','sharing','wisprFlow'].includes(setting) || this.pending) return Promise.reject(Error('Invalid or pending Labs request'));
+    const request = ++this.next;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {this.pending = undefined; reject(Error('Labs acknowledgement timed out'));}, 3500);
+      this.pending = {id: request, resolve, reject, timer};
+      try {this.send({action: 'labs-preference', request, ...(value === undefined ? {} : {enabled: value}),...(setting === 'streaming' ? {} : {setting})});}
+      catch {this.close();}
+    });
+  }
+  receive(value: {request?: unknown; facts?: unknown}) {
+    if (!this.pending || value.request !== this.pending.id) return;
+    const pending = this.pending; this.pending = undefined; clearTimeout(pending.timer);
+    try {pending.resolve(facts(value.facts));} catch {pending.reject(Error('Invalid Labs reply'));}
+  }
+  close() {if (this.pending) {clearTimeout(this.pending.timer); this.pending.reject(Error('Settings closed')); this.pending = undefined;}}
+}

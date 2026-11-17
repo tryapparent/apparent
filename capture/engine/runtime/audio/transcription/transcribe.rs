@@ -140,6 +140,18 @@ pub fn transcribe(wav: Option<&Path>, audio: Option<&RecordedAudio>) -> Transcri
         };
     };
     let live = audio.live.take();
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    if let Some(stream) = audio.streaming.take() {
+        // An unhealthy preview is never a completed transcript. Retry the whole
+        // persisted recording through the ordinary on-device provider.
+        return match stream.finish(&audio.wav_bytes) {
+            Ok(transcript) => transcript,
+            Err(_) => {
+                crate::capture::engine::runtime::apparent_log("Local streaming unavailable; using the complete saved recording");
+                apple(wav)
+            }
+        };
+    }
     #[cfg(target_os = "linux")]
     let pause = audio.pause.take();
     let engine = Engine::preferred();
