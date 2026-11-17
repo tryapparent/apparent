@@ -7,7 +7,6 @@ const os = require('node:os');
 const path = require('node:path');
 
 test('Retention save/reset/readback, failure, usage loading/error and stale response isolation', { timeout: 45000 }, async t => {
-  // Shipped Electron main/preload/production renderer; synthetic backend, not native proof.
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'ui-r-'));
   const directory = path.join(home, '.config/apparent/agent-control');
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
@@ -94,7 +93,6 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   releaseUsage(); releaseUsage = undefined;
   await expect(page.getByText('12 MB')).toBeVisible();
   const card = page.getByRole('region', { name: 'Capture location', exact: true });
-  // The effective location is shown once; usage belongs to that same folder.
   await expect(card.getByText('/captures', { exact: true })).toHaveCount(1);
   await expect(card.locator(':scope > [role="status"]').getByText('/captures', { exact: true })).toBeVisible();
   const select = page.getByRole('combobox', { name: 'Keep recordings', exact: true });
@@ -195,7 +193,6 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   assert.ok(denied.includes('apparent:set-error-reporting'));
   assert.ok(denied.includes('apparent:copy-capture-reference'));
   assert.ok(denied.includes('apparent:read-runtime-state'));
-  // Lower controls remain reachable within the bounded scrolling pane.
   const content = page.locator('.settings-content');
   const refreshUsage = page.getByRole('button', { name: 'Refresh usage', exact: true });
   await refreshUsage.scrollIntoViewIfNeeded();
@@ -203,7 +200,6 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   const refreshBounds = await refreshUsage.boundingBox();
   assert.ok(refreshBounds && refreshBounds.y >= 0 && refreshBounds.y + refreshBounds.height <= await page.evaluate(() => innerHeight));
   assert.equal(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight), true);
-  // Real handler origin/arity gates, including the mutation channel.
   assert.equal(await app.evaluate(async ({ ipcMain, BrowserWindow }) => {
     const sender = BrowserWindow.getAllWindows()[0].webContents;
     for (const channel of ['read-retention', 'read-capture-usage', 'save-retention', 'reset-retention']) {
@@ -269,6 +265,8 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   }
   const emitted = [];
   app.process().stdout.on('data', data => emitted.push(data.toString()));
+  const compact = page.getByRole('button', { name: 'Settings pages, Storage', exact: true });
+  if (await compact.isVisible()) await compact.click();
   await page.getByRole('button', { name: 'General', exact: true }).click();
   await expect.poll(() => emitted.join('')).toContain('"action":"navigate","pane":"general"');
   t.diagnostic('Retention and installed Settings presentation assertions completed');

@@ -129,6 +129,8 @@ test('installed About projects parent state and bounds actions', async () => {
     await page.getByRole('button', { name: 'Copy version', exact: true }).click();
     await expect(page.getByText('Unable to copy. Try again.', { exact: true })).toBeVisible();
     await page.getByRole('button',{name:'Close',exact:true}).click();
+    const compact = page.getByRole('button', { name: 'Settings pages, About', exact: true });
+    if (await compact.isVisible()) await compact.click();
     await page.getByRole('button', { name: 'Storage', exact: true }).click();
     await expect.poll(() => output.includes('"pane":"storage"')).toBe(true);
   } finally { await application.close(); await fs.rm(home, { recursive: true, force: true }); }
