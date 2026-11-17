@@ -22,7 +22,7 @@ mod tests {
         }
     }
 
-    fn option_telemetry() -> (SharedCaptureTelemetry, flume::Receiver<LiveOverlayEvent>) {
+    fn option_telemetry() -> (Arc<SharedCaptureTelemetry>, flume::Receiver<LiveOverlayEvent>) {
         let (sender, receiver) = flume::unbounded();
         let telemetry = SharedCaptureTelemetry::new(sender);
         *telemetry.shortcut.lock().unwrap() = ShortcutConfig {
