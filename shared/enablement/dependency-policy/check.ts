@@ -1,6 +1,7 @@
 import {spawnSync} from 'node:child_process';
 import {analyze} from './policy.ts';
 import {Snapshot, git} from './snapshot.ts';
+import {checkComments} from './comments.ts';
 
 try {
   const cwd = git(['rev-parse', '--show-toplevel'], process.cwd()).trim();
@@ -13,12 +14,19 @@ try {
   const baseline = analyze(committed);
   const candidate = analyze(staged);
   for (const file of staged.modes.keys()) if (file.startsWith('capture/') && !committed.modes.has(file))
-    candidate.add(`${file}: capture/ is frozen; put new files and inbound relocations in desktop/, agent/ or engine/`);
+    candidate.add(`${file}: capture/ is frozen; put new files and inbound relocations in the canonical onboarding/, record/, handoff/, connect/, agent/, engine/ or shared/ owner`);
   const added = [...candidate].filter(edge => !baseline.has(edge));
   if (added.length) {
     console.error('Dependency policy: new forbidden or unsupported edges in the staged snapshot:\n' + added.sort().map(e => '  ' + e).join('\n'));
     console.error('Use the allowed owner’s public exports, or stage the missing source/config/dependency declaration. Existing committed debt is tolerated.');
     process.exitCode = 1;
+  }
+  if (!process.exitCode) {
+    const errors = await checkComments(cwd, head, tree);
+    if (errors.length) {
+      console.error('Staged comment policy:\n' + errors.map(e => '  ' + e).join('\n'));
+      process.exitCode = 1;
+    }
   }
 } catch (error) {
   console.error('Dependency policy failed:', error instanceof Error ? error.message : error);

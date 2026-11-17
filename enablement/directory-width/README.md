@@ -23,3 +23,41 @@ Run focused integration coverage with:
 ```sh
 python3 -m unittest discover -s enablement/directory-width/tests -v
 ```
+
+Canonical outcome roots require two additional, named root directory admissions:
+`agent` and `handoff`. Each grants one extra root directory slot only when it is
+an actual staged directory. `onboarding` uses an ordinary slot. No other name,
+symlink or gitlink grants these slots; root files and all nested limits remain
+unchanged. This admits the twelve current/planned ordinary roots alongside the
+three existing tool roots without permitting arbitrary further root growth.
+
+## Hook activation and preservation
+
+The tracked pre-commit runs width, the staged 2,000-physical-line guard, then
+owner dependencies and lexical comments. The LOC implementation in
+`enablement/hooks/lines.ts` preserves the discovered installed guard's contract:
+added/modified regular staged blobs, no rename detection, NUL within the first
+8,000 bytes means binary, and only exact root `Cargo.lock` is exempt. Newline
+termination, blank lines and comments count. This does not introduce a language
+matrix or Markdown token budgets.
+
+**Tracked hook tests are not activation proof.** The current configured hook may
+be an unrelated standalone guard. Do not replace it with `core.hooksPath=.githooks`
+and lose existing protection. `node --experimental-strip-types
+enablement/hooks/prepare.ts --output /absolute/new/private/hook-directory`
+prepares a candidate only, without changing configuration. It copies every active
+regular hook (including pre-push byte-for-byte), preserves modes, and wraps the
+old pre-commit before the tracked pre-commit. Any existing style/lint guards
+therefore run before the new guards; no such guards were found in the inspected
+installed hook, only LOC. Symlink/non-regular entries fail for manual review.
+
+Use a private per-job /tmp path for review/testing. Parent-coordinated activation
+must prepare a fresh durable candidate inside the repository's Git metadata,
+review the reported configuration origin and all preserved hooks, check the
+composed candidate with representative staged changes, then set the appropriate
+repository/worktree-local hooksPath to that absolute candidate. Keep the previous
+value and scope for rollback. Never activate a disposable /tmp path, overwrite a
+shared hook directory, change global configuration or activate during another
+writer's commit/push. The prepare command does none of these activation steps.
+It intentionally preserves the installed pre-push contract, not the different
+tracked pre-push selector. There is no new CI or pre-push checker invocation.

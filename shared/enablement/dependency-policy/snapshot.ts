@@ -9,12 +9,41 @@ export function git(args: string[], cwd: string, input?: string): string {
 }
 export function owner(file: string): string | undefined {
   for (const [prefix, name] of [
-    ['desktop/', 'Desktop'], ['agent/', 'Agent'],
-    ['capture/desktop/', 'Desktop'], ['capture/agent/', 'Agent'],
+    ['onboarding/', 'Onboarding'], ['handoff/', 'Handoff'], ['agent/', 'Agent'],
+    ['capture/agent/', 'Agent'],
+    ['capture/desktop/ui/frontend/src/onboarding/', 'Onboarding'],
+    ['capture/desktop/ui/frontend/electron/onboarding/', 'Onboarding'],
+    ['capture/desktop/settings/onboarding.rs', 'Onboarding'],
+    ['capture/desktop/settings/onboarding_window.rs', 'Onboarding'],
+    ['capture/desktop/settings/onboarding/', 'Onboarding'],
+    ['capture/desktop/settings/practice.rs', 'Onboarding'],
+    ['capture/desktop/ui/frontend/src/pill/destination-picker.tsx', 'Handoff'],
+    ['capture/desktop/ui/frontend/src/pill/destination-picker.css', 'Handoff'],
+    ['capture/desktop/ui/frontend/src/pill/destinations.ts', 'Handoff'],
+    ['capture/desktop/ui/frontend/electron/pill/t3/', 'Handoff'],
+    ['capture/desktop/linux/interaction/clipboard.rs', 'Handoff'],
+    ['capture/desktop/ui/frontend/src/pill/', 'Record'],
+    ['capture/desktop/ui/frontend/src/notes/', 'Record'],
+    ['capture/desktop/ui/frontend/src/storage/', 'Record'],
+    ['capture/desktop/ui/frontend/src/storage.tsx', 'Record'],
+    ['capture/desktop/ui/frontend/src/retention.tsx', 'Record'],
+    ['capture/desktop/ui/electron_pill/', 'Record'],
+    ['capture/desktop/ui/whiteboard.rs', 'Record'],
+    ['capture/desktop/native/pill/', 'Record'],
+    ['capture/desktop/workflow/notes/', 'Record'],
+    ['capture/desktop/workflow/local_transcription/', 'Record'],
+    ['capture/desktop/workflow/storage_preferences.rs', 'Record'],
+    ['capture/desktop/settings/storage.rs', 'Record'],
+    ['capture/desktop/ui/frontend/src/connect/', 'Connect'],
+    ['capture/desktop/settings/connect.rs', 'Connect'],
+    ['capture/desktop/settings/connect/', 'Connect'],
+    ['capture/desktop/workflow/connect_settings.rs', 'Connect'],
+    ['capture/desktop/workflow/connect_settings/', 'Connect'],
+    ['capture/desktop/', 'Legacy'],
     ['capture/engine/', 'Engine'], ['engine/', 'Engine'], ['record/', 'Record'],
     ['shared/', 'Shared'], ['connect/', 'Connect'], ['public/', 'Public'],
-    ['hermes/', 'Hermes'], ['composition/', 'Composition'],
-  ]) if (file.startsWith(prefix)) return name;
+    ['hermes/', 'Hermes'], ['composition/', 'Composition'], ['capture/', 'Legacy'],
+  ]) if (prefix.endsWith('/') ? file.startsWith(prefix) : file === prefix) return name;
 }
 export class Snapshot {
   files = new Map<string, string>();

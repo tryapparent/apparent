@@ -19,7 +19,9 @@ function fixture(t: any) {
   put('enablement/directory-width/check.py', readFileSync(path.join(repo, 'enablement/directory-width/check.py'), 'utf8'));
   mkdirSync(path.join(dir, 'shared/enablement'), {recursive: true});
   symlinkSync(tool, path.join(dir, 'shared/enablement/dependency-policy'), 'dir');
+  put('enablement/hooks/lines.ts',readFileSync(path.join(repo,'enablement/hooks/lines.ts'),'utf8'));
   git('config', 'core.hooksPath', '.githooks');
+  git('add', '-A'); git('-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'trusted tool fixture');
   const stage = () => git('add', '-A');
   const commit = () => git('-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'baseline');
   const hook = () => spawnSync('sh', ['.githooks/pre-commit'], {cwd: dir, encoding: 'utf8'});
@@ -27,17 +29,17 @@ function fixture(t: any) {
   const fail = (pattern: RegExp) => {const r = hook(); assert.notEqual(r.status, 0, r.stdout + r.stderr); assert.match(r.stderr + r.stdout, pattern);};
   return {dir, git, put, stage, commit, pass, fail};
 }
-test('unborn index, parser forms, owner policy and exact-edge debt ratchet', t => {
+test('parser forms, owner policy and exact-edge debt ratchet', t => {
   const f = fixture(t);
   f.put('engine/api.ts', 'export const x = 1');
-  f.put('desktop/a.ts', 'import type {x} from "../engine/api";');
-  f.stage(); f.fail(/Desktop to Engine/);
+  f.put('onboarding/a.ts', 'import type {x} from "../engine/api";');
+  f.stage(); f.fail(/Onboarding to Engine/);
   f.commit(); f.pass(); // committed debt
-  f.put('desktop/a.ts', 'export const clean = true;');
-  f.put('desktop/b.ts', 'export type {x} from "../engine/api";');
-  f.stage(); f.fail(/desktop\/b.ts -> engine\/api.ts/); // same count, different importer
-  f.put('desktop/b.ts', 'export const clean = true;'); f.stage(); f.pass(); f.commit();
-  f.put('desktop/a.ts', 'const x = require("../engine/api");'); f.stage(); f.fail(/Desktop to Engine/);
+  f.put('onboarding/a.ts', 'export const clean = true;');
+  f.put('onboarding/b.ts', 'export type {x} from "../engine/api";');
+  f.stage(); f.fail(/onboarding\/b.ts -> engine\/api.ts/); // same count, different importer
+  f.put('onboarding/b.ts', 'export const clean = true;'); f.stage(); f.pass(); f.commit();
+  f.put('onboarding/a.ts', 'const x = require("../engine/api");'); f.stage(); f.fail(/Onboarding to Engine/);
 });
 test('partial staging never reads candidate source from worktree; deletions allowed', t => {
   const f = fixture(t); f.put('engine/a.ts', 'export {}'); f.stage(); f.commit();
@@ -53,12 +55,13 @@ test('public exports allow Record layering, own internal code, Shared packages a
     f.put(dir + '/index.ts', 'export const x = 1');
   }
   f.put('record/a.ts', 'export {x} from "@app/engine"; import "../shared/lib/index";');
-  f.put('desktop/a.ts', 'import "@app/record"; import "../record/api/index"; import "./internal";');
-  f.put('desktop/internal.ts', 'export {}');
-  f.put('composition/a.ts', 'import "@app/record"; import "@app/engine";');
+  f.put('agent/a.ts', 'import "@app/record"; import "../record/api/index";');
+  f.put('onboarding/a.ts', 'import "./internal";');
+  f.put('onboarding/internal.ts', 'export {}');
+  f.put('composition/a.ts', 'import "@app/record"; import "@app/shared";');
   f.stage(); f.pass();
   f.put('record/api/private.ts', 'export {}');
-  f.put('desktop/a.ts', 'import "../record/api/private";'); f.stage(); f.fail(/non-public contract/);
+  f.put('onboarding/a.ts', 'import "../record/api/private";'); f.stage(); f.fail(/non-public contract/);
 });
 test('forbidden siblings, Engine reverse dependencies, Shared product edges', t => {
   const f = fixture(t);
@@ -66,9 +69,9 @@ test('forbidden siblings, Engine reverse dependencies, Shared product edges', t 
   f.put('public/a.js','export * from "../connect/a.js";');
   f.put('engine/a.ts','import "../record/a";');
   f.put('shared/a.ts','import("../record/a");');
-  f.put('desktop/a.cts','import x = require("../agent/a");');
+  f.put('onboarding/a.cts','import x = require("../agent/a");');
   f.put('agent/a.ts','export = 1');
-  f.stage(); f.fail(/Public to Connect/); f.fail(/Engine to Record/); f.fail(/Shared to Record/); f.fail(/Desktop to Agent/);
+  f.stage(); f.fail(/Public to Connect/); f.fail(/Engine to Record/); f.fail(/Shared to Record/); f.fail(/Onboarding to Agent/);
 });
 test('staged alias config changes reevaluate unchanged sources, not worktree config', t => {
   const f = fixture(t);
@@ -81,7 +84,7 @@ test('staged alias config changes reevaluate unchanged sources, not worktree con
 test('manifest exports change reevaluates unchanged consumers; dist needs no build', t => {
   const f = fixture(t);
   f.put('record/lib/package.json',JSON.stringify({name:'@app/record',exports:{'.':'./dist/index.js'}}));
-  f.put('desktop/a.ts','import "@app/record";'); f.stage(); f.commit(); f.pass();
+  f.put('agent/a.ts','import "@app/record";'); f.stage(); f.commit(); f.pass();
   f.put('record/lib/package.json',JSON.stringify({name:'@app/record',exports:{'./other':'./dist/other.js'}}));
   f.stage(); f.fail(/non-public contract/);
 });
@@ -131,25 +134,25 @@ test('declared external and builtins pass; JS runtime forms cannot hide cross-ow
 test('all capture paths are frozen: additions, inbound renames and copies fail', t => {
   const f = fixture(t);
   f.put('capture/mod.rs','// legacy'); f.put('capture/ui_process.rs','// legacy');
-  f.put('capture/desktop/a.ts','export {}'); f.put('capture/agent/a.ts','export {}');
-  f.put('capture/engine/a.ts','export {}'); f.put('desktop/a.ts','export {}');
+  f.put('capture/desktop/ui/frontend/src/onboarding/a.ts','export {}'); f.put('capture/agent/a.ts','export {}');
+  f.put('capture/engine/a.ts','export {}'); f.put('onboarding/a.ts','export {}');
   f.stage(); f.commit(); f.pass();
-  f.put('capture/mod.rs','// bounded repair'); f.put('capture/desktop/a.ts','export const fix = 1;'); f.stage(); f.pass();
-  f.put('capture/unknown/new.rs','// new'); f.stage(); f.fail(/capture\/unknown\/new.rs: capture\/ is frozen/);
+  f.put('capture/mod.rs','// legacy\nfn repair() {}'); f.put('capture/desktop/ui/frontend/src/onboarding/a.ts','export const fix = 1;'); f.stage(); f.pass();
+  f.put('capture/unknown/new.rs','fn new_file() {}'); f.stage(); f.fail(/capture\/unknown\/new.rs: capture\/ is frozen/);
   f.git('rm','-f','capture/unknown/new.rs');
-  f.git('mv','desktop/a.ts','capture/new.ts'); f.fail(/capture\/new.ts: capture\/ is frozen/);
-  f.git('mv','capture/new.ts','desktop/a.ts');
+  f.git('mv','onboarding/a.ts','capture/new.ts'); f.fail(/capture\/new.ts: capture\/ is frozen/);
+  f.git('mv','capture/new.ts','onboarding/a.ts');
   f.put('capture/copied.ts','export {}'); f.stage(); f.fail(/capture\/copied.ts: capture\/ is frozen/);
   f.git('rm','-f','capture/copied.ts');
-  f.git('mv','capture/desktop/a.ts','desktop/migrated.ts');
+  f.git('mv','capture/desktop/ui/frontend/src/onboarding/a.ts','onboarding/migrated.ts');
   f.git('rm','-f','capture/mod.rs','capture/ui_process.rs'); f.pass();
 });
 test('destination and legacy paths retain identical owners', t => {
   const f = fixture(t);
-  f.put('capture/desktop/a.ts','export {}'); f.put('capture/agent/a.ts','export {}'); f.stage(); f.commit();
-  f.put('desktop/a.ts','import "../capture/desktop/a";');
+  f.put('capture/desktop/ui/frontend/src/onboarding/a.ts','export {}'); f.put('capture/agent/a.ts','export {}'); f.stage(); f.commit();
+  f.put('onboarding/a.ts','import "../capture/desktop/ui/frontend/src/onboarding/a";');
   f.put('agent/a.ts','import "../capture/agent/a";'); f.stage(); f.pass();
-  f.put('desktop/a.ts','import "../agent/a";'); f.stage(); f.fail(/Desktop to Agent/);
+  f.put('onboarding/a.ts','import "../agent/a";'); f.stage(); f.fail(/Onboarding to Agent/);
 });
 test('exports patterns honor null private exclusions and aliases cannot publish private targets', t => {
   const f = fixture(t);
@@ -161,7 +164,24 @@ test('exports patterns honor null private exclusions and aliases cannot publish 
   f.put('record/a.ts','import "@app/engine/public";'); f.stage(); f.fail(/non-public contract/);
 });
 test('git commit itself invokes the executable pre-commit guard', t => {
-  const f = fixture(t); f.stage(); f.git('commit','-qm','initial hook');
+  const f = fixture(t); f.stage(); f.git('commit','--allow-empty','-qm','initial hook');
   f.put('capture/new.rs','// forbidden new legacy file'); f.stage();
   assert.throws(() => f.git('commit','-qm','must reject'), /capture\/ is frozen/);
+});
+test('public exports do not grant sibling or transitive capability permissions', t => {
+  const f=fixture(t);
+  for(const name of ['onboarding','record','handoff','connect','agent','engine','shared']) {
+    f.put(`${name}/api/package.json`,JSON.stringify({name:`@app/${name}`,exports:{'.':'./index.ts'}}));
+    f.put(`${name}/api/index.ts`,'export const x=1;');
+  }
+  f.stage();f.commit();
+  for(const [from,to] of [['onboarding','record'],['handoff','connect'],['handoff','record'],['agent','engine'],['record','connect'],['connect','handoff'],['engine','agent'],['composition','engine']]) {
+    f.put(`${from}/consumer.ts`,`import "@app/${to}";`);f.stage();f.fail(new RegExp(`${from[0].toUpperCase()+from.slice(1)} to ${to[0].toUpperCase()+to.slice(1)}`));
+    f.git('rm','-f',`${from}/consumer.ts`);
+  }
+  f.put('agent/a.ts','import "@app/record"; import "@app/shared";');
+  f.put('record/a.ts','import "@app/engine";');
+  f.put('engine/a.ts','import "@app/shared";');
+  f.put('composition/a.ts','import "@app/onboarding"; import "@app/handoff"; import "@app/connect";');
+  f.stage();f.pass();
 });

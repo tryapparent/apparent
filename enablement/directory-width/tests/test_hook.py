@@ -52,7 +52,7 @@ class DirectoryWidthHookTests(unittest.TestCase):
         self.git("-c", "core.hooksPath=/dev/null", "commit", "-qm", "fixture")
 
     def run_hook(self) -> subprocess.CompletedProcess[bytes]:
-        return subprocess.run([str(self.repo / ".githooks/pre-commit")], cwd=self.repo, env=self.env,
+        return subprocess.run(["python3", str(self.repo / "enablement/directory-width/check.py")], cwd=self.repo, env=self.env,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     def seed_code_files(self, count: int, directory: str = "src/shared") -> list[str]:
@@ -335,6 +335,22 @@ class DirectoryWidthHookTests(unittest.TestCase):
         self.git("update-index", "--add", "--cacheinfo", "160000," + oid + ",src/shared/module")
         result = self.run_hook()
         self.assertEqual(result.returncode, 0, result.stderr.decode())
+
+
+    def test_named_outcome_slots_are_bounded_to_actual_root_directories(self) -> None:
+        for name in [f"owner-{i}" for i in range(10)] + ["agent", "handoff"]:
+            self.put(f"{name}/entry")
+        self.stage("owner-*", "agent", "handoff")
+        self.assertEqual(self.run_hook().returncode, 0)
+        self.put("arbitrary/entry")
+        self.stage("arbitrary")
+        self.assertEqual(self.run_hook().returncode, 1)
+        self.git("rm", "-rf", "arbitrary", "agent")
+        (self.repo / "agent").symlink_to("owner-0", target_is_directory=True)
+        self.stage("agent")
+        self.put("another/entry")
+        self.stage("another")
+        self.assertEqual(self.run_hook().returncode, 1)
 
 
 if __name__ == "__main__":

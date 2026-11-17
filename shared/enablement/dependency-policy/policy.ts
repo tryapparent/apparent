@@ -4,10 +4,10 @@ import ts from 'typescript';
 import {Snapshot, owner, root, source} from './snapshot.ts';
 
 const allowed: Record<string, string[]> = {
-  Desktop: ['Record', 'Shared'], Agent: ['Record', 'Shared'],
+  Onboarding: ['Shared'], Handoff: ['Shared'], Legacy: [], Agent: ['Record', 'Shared'],
   Record: ['Engine', 'Shared'], Engine: ['Shared'], Shared: [],
   Connect: ['Shared'], Public: ['Shared'], Hermes: ['Shared'],
-  Composition: ['Desktop', 'Agent', 'Record', 'Engine', 'Shared', 'Connect', 'Public', 'Hermes'],
+  Composition: ['Onboarding', 'Handoff', 'Agent', 'Record', 'Shared', 'Connect', 'Public', 'Hermes'],
 };
 // Enumerate export targets (including condition alternatives); never run a package.
 function targets(value: unknown): string[] {

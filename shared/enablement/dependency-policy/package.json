@@ -2,7 +2,18 @@
   "name": "@apparent/dependency-policy",
   "private": true,
   "type": "module",
-  "engines": {"node": ">=22.18"},
-  "scripts": {"test": "node --experimental-strip-types --test test/*.test.ts", "check": "node --experimental-strip-types check.ts"},
-  "dependencies": {"typescript": "5.9.3"}
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "check": "node --experimental-strip-types check.ts"
+  },
+  "dependencies": {
+    "@repomix/tree-sitter-wasms": "0.1.17",
+    "tree-sitter-wasms": "0.1.13",
+    "typescript": "5.9.3",
+    "web-tree-sitter": "0.25.10",
+    "yaml": "2.9.0"
+  }
 }
