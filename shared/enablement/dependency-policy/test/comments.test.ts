@@ -12,7 +12,7 @@ import {
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { comments } from "../comments.ts";
+import { checkComments, comments } from "../comments.ts";
 const tool = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const root = path.resolve(tool, "../../..");
 function fixture(t: any) {
@@ -99,8 +99,33 @@ function fixture(t: any) {
       assert.match(r.stdout + r.stderr, pattern);
     } else assert.equal(r.status, 0, r.stdout + r.stderr);
   };
-  return { git, put, stage, baseline, check };
+  return { dir, git, put, stage, baseline, check };
 }
+test("Swift selectors and legacy comments survive repeated parsing", async (t) => {
+  const file = "capture/desktop/native/Settings.swift";
+  const source = "let callback = #selector(MenuPick.pick(_:))\n// legacy\n";
+  for (let i = 0; i < 3; i++) {
+    assert.deepEqual(await comments(file, source), ["// legacy"]);
+  }
+
+  const f = fixture(t);
+  const other = "capture/desktop/native/ShortcutKeys.swift";
+  f.put(file, source);
+  f.put(other, 'let label = "// literal"\n// removed\n');
+  f.baseline();
+  const head = f.git("rev-parse", "HEAD").trim();
+  const check = () => checkComments(f.dir, head, f.git("write-tree").trim());
+  const candidate = source.replace("callback", "action");
+  f.put(file, candidate);
+  f.put(other, 'let label = "// literal"\n');
+  f.stage();
+  assert.deepEqual(await check(), []);
+  f.put(file, candidate + "// new\n");
+  f.stage();
+  assert.deepEqual(await check(), [
+    `${file}: added/changed code comment "// new"`,
+  ]);
+});
 test("parser distinguishes literals, regex, JSX, template substitutions and directives", async () => {
   const text =
     'const url="https://x/*no*/"; const re=/https?:\\/\\//; const t=`// no ${1 /* yes */}`; const x=<p>https://x {/* jsx */}</p>; /** doc */\n// @ts-ignore\nconst y=1;';

@@ -1,8 +1,8 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parentPort, Worker, workerData } from "node:worker_threads";
 import { Parser, Language } from "web-tree-sitter";
 import { Parser as YamlParser, parseAllDocuments } from "yaml";
-import { git } from "./snapshot.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const languages: Record<string, string> = {
@@ -54,6 +54,30 @@ const noncode = new Set([
 ]);
 const cache = new Map<string, Language>();
 let initialized = false;
+const swiftCommentTask = "apparent-swift-comments";
+
+function swiftComments(file: string, text: string): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL(import.meta.url), {
+      workerData: { task: swiftCommentTask, file, text },
+    });
+    let result: string[] | undefined;
+    worker.once("message", (value: string[]) => {
+      result = value;
+    });
+    worker.once("error", reject);
+    worker.once("exit", (code) => {
+      if (code === 0 && result) resolve(result);
+      else
+        reject(
+          new Error(
+            `${file}: isolated Swift comment parser exited without a result (status ${code})`,
+          ),
+        );
+    });
+  });
+}
+
 export async function comments(file: string, text: string): Promise<string[]> {
   if (path.posix.basename(file) === ".gitignore") {
     if (text.includes("\0"))
@@ -98,6 +122,15 @@ export async function comments(file: string, text: string): Promise<string[]> {
     for (const token of new YamlParser().parse(text)) visit(token);
     return result;
   }
+  if (language === "swift") return swiftComments(file, text);
+  return treeSitterComments(file, text, language);
+}
+
+async function treeSitterComments(
+  file: string,
+  text: string,
+  language: string,
+): Promise<string[]> {
   if (!initialized) {
     await Parser.init();
     initialized = true;
@@ -141,6 +174,10 @@ export async function comments(file: string, text: string): Promise<string[]> {
         throw new Error(
           `${file}: embedded HTML code requires a dedicated parser; unsupported changed file`,
         );
+      if (language === "swift" && node.type === "raw_string_literal")
+        throw new Error(
+          `${file}: syntax parser cannot safely classify Swift raw strings`,
+        );
       for (const child of node.children) visit(child);
     }
     visit(tree.rootNode);
@@ -150,11 +187,19 @@ export async function comments(file: string, text: string): Promise<string[]> {
     parser.delete();
   }
 }
+
+if (parentPort && workerData?.task === swiftCommentTask) {
+  parentPort.postMessage(
+    await treeSitterComments(workerData.file, workerData.text, "swift"),
+  );
+}
+
 export async function checkComments(
   cwd: string,
   head: string | undefined,
   tree: string,
 ): Promise<string[]> {
+  const { git } = await import("./snapshot.ts");
   const before = new Map<string, string>();
   const after = new Map<string, string>();
   function entries(ref: string, output: Map<string, string>) {
