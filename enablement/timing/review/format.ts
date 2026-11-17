@@ -5,7 +5,49 @@ const number = (n: number) => {
 };
 const escape = (s: unknown) => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 export function markdown(data: any): string {
+  const actionLines: string[] = [];
+  const ci = data.jobs?.analysis;
+  actionLines.push('## Largest measured costs', '');
+  for (const [clock,row] of [
+    ['CI queue',ci?.queueByRunner[0]],['CI execution',ci?.executionByJob[0]],
+    ['CI step',ci?.executionByStep[0]],['Local observed process',data.census.actionRanking?.processes.candidate]
+  ] as const) if(row) actionLines.push(`- ${clock}: ${row.label}: ${number(row.count)} × ${number(row.meanSeconds)}s = ${number(row.totalSeconds)}s.`);
+  actionLines.push('', 'These clocks overlap and are not additive. Largest measured cost is not automatically avoidable delay or a proven critical path.', '');
+  for (const ranking of Object.values(data.census.actionRanking ?? {}) as any[]) {
+    const best = ranking.candidate;
+    actionLines.push(`## Most time-consuming identified action (${ranking.clock})`, '');
+    const observed = ranking.largestObserved;
+    if (observed) actionLines.push(`Largest observed operation group: ${observed.label}: ${number(observed.count)} × ${number(observed.meanSeconds)}s = ${number(observed.totalSeconds)}s.`, '');
+    actionLines.push(best ? `${best.label}: ${number(best.count)} × ${number(best.meanSeconds)}s = ${number(best.totalSeconds)}s.` : 'No identifiable action has complete timing evidence.');
+    actionLines.push(ranking.winnerEstablished ? 'Largest action established within this captured clock and coverage.' : '**Overall winner unresolved:** mixed/unresolved time could contain a larger action; do not claim the candidate is the overall bottleneck.');
+    actionLines.push(`Mixed/unresolved total: ${number(ranking.unresolvedSeconds)}s.`, '', ranking.limitation, '',
+      '| Operation(s) in the measured envelope | Calls/spans | Mean seconds | Total seconds | Attribution |', '|---|---:|---:|---:|---|');
+    for (const row of ranking.ranked) actionLines.push(`| ${row.label.replaceAll('|','/')} | ${row.count} | ${number(row.meanSeconds)} | ${number(row.totalSeconds)} | ${row.unresolved ? 'mixed/unresolved' : 'identified'} |`);
+    actionLines.push('', 'Largest unresolved source references (inspect original context):', '');
+    for (const row of ranking.ranked.filter((r:any)=>r.unresolved).slice(0,5)) for (const s of row.sources) actionLines.push(`- ${row.label}: ${s.sourceRef?.file ?? 'source unavailable'}:${s.sourceRef?.line ?? '?'} (call ${s.id})`);
+    actionLines.push('');
+    if (ranking.coverage) actionLines.push(`Unclassified command purposes: ${ranking.coverage.unclassifiedRows}/${ranking.coverage.completeRows} rows, ${number(ranking.coverage.unclassifiedSeconds)}s. This is separate from known mixed-operation envelopes and waits without a recovered origin.`, '');
+  }
+  actionLines.push('## CI queue, execution and current holds', '');
+  if (!ci) actionLines.push('**CI coverage missing:** supply exact run/attempt/SHA job snapshots with `--jobs`. An overall development bottleneck conclusion is incomplete without checking CI.', '');
+  else {
+    actionLines.push(`Captured ${ci.coverage.runs} run/attempt snapshots; ${ci.coverage.inputJobRows} input jobs, ${ci.coverage.retainedJobRows} relevant rows.`, '',ci.limitation,'');
+    if (data.jobs.collection) actionLines.push(`GitHub discovery coverage: ${JSON.stringify(data.jobs.collection)}`, '');
+    for (const [name,rows] of [['Queue by requested runner',ci.queueByRunner],['Execution by job',ci.executionByJob],['Step costs by total (includes observed incomplete spans)',ci.executionByStep]] as const) {
+      actionLines.push(`### ${name}`, '', '| Work | Count | Mean seconds | Total seconds |', '|---|---:|---:|---:|');
+      for (const row of rows) actionLines.push(`| ${String(row.label).replaceAll('|','/').replaceAll('\n',' ')} | ${row.count} | ${number(row.meanSeconds)} | ${number(row.totalSeconds)} |`);
+      actionLines.push('');
+    }
+    actionLines.push('### Longest waits at cutoff', '');
+    for (const j of ci.longestWaitingJobs.slice(0,10)) actionLines.push(`- ${j.id}, SHA ${j.headSha}, ${j.name}; labels ${j.labels.join(', ') || 'unavailable'}: queue age ${number(j.queueAgeSeconds)}s; window queue ${j.queueSeconds === null ? 'unknown' : number(j.queueSeconds)+'s'}. ${j.waitReason}.`);
+    if (!ci.longestWaitingJobs.length) actionLines.push('No waiting jobs in the captured snapshots at this cutoff. This is not a repository-wide queue census.');
+    actionLines.push('', '### Longest executing steps (setup/build/test/native details)', '');
+    for (const s of ci.longestSteps.slice(0,15)) actionLines.push(`- ${s.jobRef}, SHA ${s.headSha}, step ${s.number} ${s.name}: ${number(s.seconds)}s${s.complete ? '' : ' (incomplete at cutoff)'}.`);
+    actionLines.push('', `Active execution rows: ${ci.runningJobs.map((j:any)=>j.id+' ('+number(j.executionAgeSeconds)+'s since allocation)').join(', ') || 'none captured'}. Jobs missing step detail: ${ci.missingStepJobs.join(', ') || 'none among retained known execution rows'}.`,
+      `Unknown queue clocks: ${ci.unknownQueueJobs.join(', ') || 'none among retained rows'}. Unknown completed execution clocks: ${ci.unknownExecutionJobs.join(', ') || 'none among retained rows'}.`, '');
+  }
   const lines = [`# Enablement timing`, '', `${data.census.window.from} → ${data.census.window.to}`, '',
+    ...actionLines,
     'Measured tool-envelope totals (parallel calls overlap; not CPU time or avoidable delay).', '',
     '| Category | Complete calls | Mean seconds/call | Total seconds |', '|---|---:|---:|---:|'];
   for (const g of data.census.categories) {
@@ -25,7 +67,7 @@ export function markdown(data: any): string {
   return lines.join('\n');
 }
 export function chart(data: any): string {
-  const groups = data.processGroups.length ? data.processGroups : data.census.categories.map((g: any) => ({label: g.label, ...g.arithmetic}));
+  const groups = data.census.actionRanking?.processes.ranked?.length ? data.census.actionRanking.processes.ranked : data.processGroups.length ? data.processGroups : data.census.categories.map((g: any) => ({label: g.label, ...g.arithmetic}));
   const max = Math.max(1, ...groups.map((g: any) => g.totalSeconds));
   const rows = groups.slice(0, 8).map((g: any) => `<div class="row"><span>${escape(g.label)}</span><div class="track"><div class="bar" style="width:${number(100 * g.totalSeconds / max)}%"></div></div><span>${number(g.count)} × ${number(g.meanSeconds)}s = ${number(g.totalSeconds)}s</span></div>`).join('');
   return `<!doctype html><html><head><style>body{margin:0;font-family:var(--font-sans);color:var(--foreground)}p{font-size:13px;color:var(--muted-foreground)}.row{display:grid;grid-template-columns:140px 1fr 200px;gap:10px;align-items:center;margin:14px 0;font-size:12px}.track,.bar{height:16px;border-radius:4px}.track{background:var(--secondary)}.bar{background:var(--chart-1)}@media(max-width:500px){.row{grid-template-columns:100px 1fr}.row>span:last-child{grid-column:1/3}}</style></head><body><p>${escape(data.census.window.from)} → ${escape(data.census.window.to)}<br>${data.processGroups.length ? 'Recovered process spans' : 'Tool envelopes'}; cumulative across parallel sessions, not critical-path delay or proven waste. Counts × rounded means may differ slightly from displayed totals.</p>${rows}<p>Coverage is partial. Polling and hosted jobs overlap these measurements and must not be added.</p></body></html>`;
