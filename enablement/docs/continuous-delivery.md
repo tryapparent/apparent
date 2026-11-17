@@ -20,9 +20,8 @@ packaging, signing and runtime inputs under the existing release gates.
 
 Restoring source does not update installed apps, captures, user config, remote
 services, published installers or update feeds. Publication is a separate task:
-Linux release and website/Connect delivery have no automatic or scheduled trigger.
-Review compatibility with the currently deployed service before publishing this
-older client/server source.
+Current stable publication and retained manual verification use the
+[Composition coordinator](../../composition/enablement/release/README.md).
 
 ## Continuous delivery
 

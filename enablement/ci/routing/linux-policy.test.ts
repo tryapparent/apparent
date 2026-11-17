@@ -53,7 +53,10 @@ test("automatic PR and main never allocate general Mac runners, including unknow
   const platform = workflow("verification-platform.yml");
   assert.equal(platform.jobs["native-acceptance"]["runs-on"], "macos-15-intel");
   const release = workflow("release-mac-preview.yml");
-  assert.deepEqual(Object.keys(release.on), ["workflow_dispatch"]);
+  assert.deepEqual(Object.keys(release.on), [
+    "workflow_call",
+    "workflow_dispatch",
+  ]);
   const names = release.jobs.preview.steps.map(
     (step: { name?: string }) => step.name,
   );

@@ -16,7 +16,7 @@ class LaunchRegistration(unittest.TestCase):
                     'build-mac-preview.sh': 'packaging/build-mac-preview.sh',
                     'release-app.sh': 'release/release-app.sh',
                 }[name]
-                text = (ROOT / 'capture' / 'desktop' / 'scripts' / script).read_text()
+                text = ((ROOT / 'composition/enablement/release/mac/metadata.ts') if name == 'build-mac-preview.sh' else (ROOT / 'capture' / 'desktop' / 'scripts' / script)).read_text()
                 match = re.search(r'<\?xml.*?</plist>', text, re.S)
                 assert match is not None
                 xml = match.group()

@@ -1,10 +1,11 @@
-"""Contract checks for the isolated, manual Mac preview release path."""
+
 
 from pathlib import Path
 import base64
 import hashlib
 import os
 import plistlib
+import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -12,15 +13,16 @@ import unittest
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[4]
+PACKAGER = ROOT / "composition/enablement/release/mac"
 
 
 class PreviewReleaseTest(unittest.TestCase):
     def test_packager_layout_and_version_with_stubbed_mac_tools(self):
-        # A Linux layout test: the real signing, DMG and GUI still need a Mac run.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "capture/desktop/scripts/packaging").mkdir(parents=True)
             (root / "capture/desktop/scripts/release").mkdir(parents=True)
+            shutil.copytree(PACKAGER, root / "composition/enablement/release/mac")
             (root / "bin").mkdir()
             for asset in ("fonts/HostGrotesk-Variable.ttf", "brand/apparent-wordmark.png",
                           "Apparent.icns", "brand/apparent-a.png", "brand/connect-frogs.png"):
@@ -47,6 +49,7 @@ class PreviewReleaseTest(unittest.TestCase):
             )
             (root / "bin/node").write_text('#!/bin/sh\nset -eu\ncase "$1" in\n'
                 '*/package-notes.mjs) mkdir -p "$2/dist"; printf synthetic > "$2/dist/index.html" ;;\n'
+                '--experimental-strip-types) exec "$REAL_NODE" "$@" ;;\n'
                 '*) exit 1 ;;\nesac\n')
             (root / "bin/lipo").write_text('#!/bin/sh\nprintf "arm64\\n"\n')
             (root / "bin/xcrun").write_text('#!/bin/sh\nset -eu\nwhile [ "$#" -gt 0 ]; do if [ "$1" = -o ]; then shift; printf "fixture native launcher" > "$1"; chmod +x "$1"; fi; shift; done\n')
@@ -63,7 +66,7 @@ class PreviewReleaseTest(unittest.TestCase):
             )
             for tool in (root / "bin").iterdir():
                 tool.chmod(0o755)
-            env = dict(os.environ, PATH=f'{root / "bin"}:{os.environ["PATH"]}',
+            env = dict(os.environ, REAL_NODE=shutil.which("node"), PATH=f'{root / "bin"}:{os.environ["PATH"]}',
                        APPARENT_PREVIEW_VERSION="0.123.2", APPARENT_PREVIEW_BUILD_NUMBER="123.2",
                        APPARENT_PREVIEW_NOTARIZE="false",
                        APPARENT_PREVIEW_PUBLIC_KEY=base64.b64encode(bytes([1]) * 32).decode())
@@ -100,14 +103,14 @@ class PreviewReleaseTest(unittest.TestCase):
             self.assertEqual((payload / "Contents/MacOS/apparent").read_bytes(), b"test")
             self.assertTrue((installer / "Contents/Resources/installer-ui/electron/installer/main.cjs").is_file())
             self.assertIn("does not automatically run", (root / "dist/preview-staging/Start here.txt").read_text())
-            # The updater archive remains the regular app, never the installer container.
             archive = (root / "dist/Apparent-Preview-0.123.2-arm64.zip").read_text()
             self.assertEqual(archive, "fake zip:" + str(root / "dist/Apparent Preview.app"))
-            # Another build must not reuse a stuck older installer's identity.
             env["APPARENT_PREVIEW_BUILD_NUMBER"] = "123.3"
+            env["APPARENT_RELEASE_CHANNEL"] = "stable"
             newer = subprocess.run(["bash", str(root / "capture/desktop/scripts/packaging/build-mac-preview.sh")],
                                    env=env, capture_output=True, text=True, cwd=root)
             self.assertEqual(newer.returncode, 0, newer.stderr)
+            self.assertEqual((root / "target/reporting-identity").read_text().splitlines(), ["0.123.2", "stable", "production"])
             newer_info = plistlib.loads((installer / "Contents/Info.plist").read_bytes())
             self.assertEqual(newer_info["CFBundleIdentifier"], "dev.simonvanlaak.apparent.preview.installer.b123.3")
             self.assertNotEqual(newer_info["CFBundleIdentifier"], installer_info["CFBundleIdentifier"])
@@ -153,25 +156,21 @@ class PreviewReleaseTest(unittest.TestCase):
                          "4714f8ebbe8dd7816c7f7ab07ad98daa61fb4eee5fc3ed900af8f012b452dc07")
 
     def test_packager_requests_isolated_preview_helper_identity(self):
-        script = (ROOT / "capture/desktop/scripts/packaging/build-mac-preview.sh").read_text()
-        self.assertIn("APPARENT_HELPER_BUNDLE_ID=dev.simonvanlaak.apparent.preview.helper", script)
-        # Embedded plist bytes, switching identities and cache invalidation are
-        # exercised through the TypeScript build owner in native-build/build.test.ts.
+        script = (PACKAGER / "build.ts").read_text() + (PACKAGER / "metadata.ts").read_text()
+        self.assertIn("dev.simonvanlaak.apparent.preview.helper", script)
 
     def test_preview_cannot_replace_production_cli_or_login_item(self):
-        script = (ROOT / "capture/desktop/scripts/packaging/build-mac-preview.sh").read_text()
+        script = (PACKAGER / "build.ts").read_text() + (PACKAGER / "metadata.ts").read_text()
         cli = (ROOT / "composition/command_line.rs").read_text()
         settings = (ROOT / "capture/desktop/settings/settings.rs").read_text()
-        # Settings keeps its authoritative config/login implementation in this
-        # lexical include; preserve the preview guard across the extraction.
         self.assertIn('include!("shortcut/config.rs");', settings)
         settings_config = (ROOT / "capture/desktop/settings/shortcut/config.rs").read_text()
-        self.assertIn("APPARENT_PREVIEW_BUILD=1", script)
+        self.assertIn("APPARENT_PREVIEW_BUILD", script)
         self.assertIn('option_env!("APPARENT_PREVIEW_BUILD")', cli)
         self.assertIn('option_env!("APPARENT_PREVIEW_BUILD")', settings_config)
 
     def test_preview_bundle_has_its_own_sparkle_feed(self):
-        script = (ROOT / "capture/desktop/scripts/packaging/build-mac-preview.sh").read_text()
+        script = (PACKAGER / "build.ts").read_text() + (PACKAGER / "metadata.ts").read_text()
         self.assertIn("dev.simonvanlaak.apparent.preview", script)
         self.assertIn("Apparent Preview.app", script)
         self.assertNotIn("dev.kitlangton.apparent", script)
@@ -180,10 +179,10 @@ class PreviewReleaseTest(unittest.TestCase):
         self.assertIn("preview-mac-feed/appcast.xml", script)
         self.assertIn("APPARENT_PREVIEW_PUBLIC_KEY", script)
         self.assertNotIn("apparent.kitlangton.com/appcast.xml", script)
-        self.assertIn('APPARENT_PREVIEW_NOTARIZE:-false', script)
+        self.assertIn('APPARENT_PREVIEW_NOTARIZE', script)
         self.assertNotIn("site/public", script)
-        self.assertIn("codesign --verify", script)
-        self.assertIn("hdiutil verify", script)
+        self.assertIn("codesign", script)
+        self.assertIn("hdiutil", script)
 
     def test_manual_release_uses_unique_version_and_publishes_only_after_build(self):
         workflow = (ROOT / ".github/workflows/release-mac-preview.yml").read_text()
@@ -191,8 +190,8 @@ class PreviewReleaseTest(unittest.TestCase):
         self.assertNotIn("  push:", workflow)
         self.assertIn("github.ref == 'refs/heads/main'", workflow)
         self.assertIn("runs-on: macos-latest", workflow)
-        self.assertIn("GITHUB_RUN_NUMBER", workflow)
-        self.assertIn("GITHUB_RUN_ATTEMPT", workflow)
+        self.assertIn("github.run_id", workflow)
+        self.assertIn("github.run_attempt", workflow)
         self.assertIn("--prerelease", workflow)
         self.assertIn("--latest=false", workflow)
         self.assertIn("gh release create", workflow)

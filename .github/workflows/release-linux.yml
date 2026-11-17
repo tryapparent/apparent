@@ -3,6 +3,15 @@ name: Release (Linux)
 on:
   workflow_call:
     inputs:
+      source_sha:
+        type: string
+        default: ''
+      stable_candidate:
+        type: boolean
+        default: false
+      version:
+        type: string
+        default: ''
       publish_main:
         type: boolean
         default: false
@@ -39,13 +48,13 @@ concurrency:
   # Verification cannot replace the pending publisher behind a running Main build.
   # Canonical publication writes only v2 tags. Compatibility publication alone
   # writes legacy tags; its own serialized lane cannot be evicted by Main builds.
-  group: release-linux-${{ inputs.bridge_commit != '' && 'compatibility' || 'canonical' }}-${{ github.ref }}-${{ inputs.tag }}-${{ inputs.verify_only == true && 'verify-only' || 'publish' }}
+  group: release-linux-${{ inputs.stable_candidate && 'stable-candidate' || inputs.bridge_commit != '' && 'compatibility' || 'canonical' }}-${{ github.ref }}-${{ inputs.tag }}-${{ inputs.verify_only == true && 'verify-only' || 'publish' }}
   # Finish the running build/publication; GitHub coalesces to the latest pending run.
   cancel-in-progress: false
 
 jobs:
   admit:
-    if: github.repository == 'tryapparent/apparent' && (github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository))
+    if: github.repository == 'tryapparent/apparent' && (inputs.stable_candidate || github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository))
     permissions:
       contents: read
       actions: read
@@ -56,7 +65,7 @@ jobs:
       # Admission code comes from trusted main, never an unchecked event SHA.
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.workflow_sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -67,33 +76,14 @@ jobs:
       - id: gate
         env:
           GH_TOKEN: ${{ github.token }}
-          REQUEST_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          REQUEST_SHA: ${{ inputs.source_sha || github.event.workflow_run.head_sha || github.sha }}
           VERIFY_RUN_ID: ${{ github.event.workflow_run.id }}
           TAG: ${{ inputs.tag }}
           VERIFY_ONLY: ${{ inputs.verify_only }}
           BRIDGE_COMMIT: ${{ inputs.bridge_commit }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -n "$BRIDGE_COMMIT" ]]; then
-            [[ "$GITHUB_REF" == refs/heads/main && -z "$TAG" && "$VERIFY_ONLY" != true && "${{ inputs.publish_main }}" != true ]]
-            REQUEST_SHA=$(node --experimental-strip-types capture/desktop/scripts/linux/maintenance/signing-bridge.ts inspect "$BRIDGE_COMMIT")
-          fi
-          if [[ "$VERIFY_ONLY" == true ]]; then
-            echo "sha=$REQUEST_SHA" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if [[ -n "$TAG" ]]; then
-            REQUEST_SHA=$(git rev-parse --verify "refs/tags/$TAG^{commit}")
-          fi
-          # Superseded automatic candidates need no more runner time.
-          if [[ "$GITHUB_EVENT_NAME" == workflow_run || "$GITHUB_EVENT_NAME" == push ]] && ! node --experimental-strip-types enablement/ci/routing/streams.ts capture "$REQUEST_SHA"; then
-            echo 'Skipping superseded main candidate'
-            exit 0
-          fi
-          args=(--platform linux --sha "$REQUEST_SHA")
-          if [[ -n "$VERIFY_RUN_ID" ]]; then args+=(--run-id "$VERIFY_RUN_ID"); fi
-          python3 enablement/release_gate.py "${args[@]}"
+          STABLE_CANDIDATE: ${{ inputs.stable_candidate }}
+          PUBLISH_MAIN: ${{ inputs.publish_main }}
+        run: node --experimental-strip-types composition/enablement/release/linux.ts admit
 
   preview-needed:
     needs: admit
@@ -104,22 +94,23 @@ jobs:
     outputs:
       build: ${{ steps.check.outputs.build }}
     steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
       - id: check
         env:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_SHA: ${{ needs.admit.outputs.sha }}
-          PUBLISH_MAIN: ${{ github.event_name == 'workflow_run' || github.event_name == 'schedule' || inputs.publish_main }}
+          PUBLISH_MAIN: ${{ !inputs.stable_candidate && (github.event_name == 'workflow_run' || github.event_name == 'schedule' || inputs.publish_main) }}
           TAG: ${{ inputs.tag }}
           VERIFY_ONLY: ${{ inputs.verify_only }}
-        run: |
-          if [[ "$VERIFY_ONLY" == "true" ]]; then
-            echo "build=true" >> "$GITHUB_OUTPUT"
-          elif [[ "$PUBLISH_MAIN" == "true" && -z "$TAG" ]] && \
-             [[ "$(gh release view "linux-main-v2-$CANDIDATE_SHA" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || true)" == "false" ]]; then
-            echo "build=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "build=true" >> "$GITHUB_OUTPUT"
-          fi
+          STABLE_CANDIDATE: ${{ inputs.stable_candidate }}
+        run: node --experimental-strip-types composition/enablement/release/linux.ts needed
+
   linux:
     needs: [admit, preview-needed]
     if: needs.preview-needed.outputs.build == 'true'
@@ -139,12 +130,19 @@ jobs:
     env:
       CANDIDATE_SHA: ${{ needs.admit.outputs.sha }}
       TAG: ${{ inputs.tag }}
-      PUBLISH_MAIN: ${{ github.event_name == 'workflow_run' || github.event_name == 'schedule' || inputs.publish_main }}
+      STABLE_CANDIDATE: ${{ inputs.stable_candidate }}
+      REQUEST_VERSION: ${{ inputs.version }}
+      PUBLISH_MAIN: ${{ !inputs.stable_candidate && (github.event_name == 'workflow_run' || github.event_name == 'schedule' || inputs.publish_main) }}
       VERIFY_ONLY: ${{ inputs.verify_only }}
     steps:
       - name: Validate release request
         run: |
-          if [[ "$VERIFY_ONLY" == "true" ]]; then
+          if [[ "${{ inputs.stable_candidate }}" == true ]]; then
+            test "$GITHUB_REF" = refs/heads/main
+            test -z "$TAG"
+            test "$PUBLISH_MAIN" != true
+            test "$CANDIDATE_SHA" = "${{ inputs.source_sha }}"
+          elif [[ "$VERIFY_ONLY" == "true" ]]; then
             if [[ "$GITHUB_EVENT_NAME" != "workflow_dispatch" || -n "$TAG" || "$PUBLISH_MAIN" == "true" || "$GITHUB_REF" != refs/heads/* ]]; then
               echo "Verify-only requires workflow_dispatch on a branch, with an empty tag and publish_main=false" >&2
               exit 1
@@ -208,7 +206,10 @@ jobs:
           test -n "$APPARENT_RELEASE_VERSION"
           export APPARENT_RELEASE_CHANNEL=preview
           export APPARENT_REPORTING_ENVIRONMENT=production
-          if [[ -n "$TAG" ]]; then export APPARENT_RELEASE_CHANNEL=stable; fi
+          if [[ "$STABLE_CANDIDATE" == true ]]; then
+            test "$APPARENT_RELEASE_VERSION" = "$REQUEST_VERSION"
+            export APPARENT_RELEASE_CHANNEL=stable
+          fi
           if [[ "$VERIFY_ONLY" == "true" ]]; then export APPARENT_REPORTING_ENVIRONMENT=synthetic; fi
           GITHUB_SHA="$CANDIDATE_SHA" cargo build --release --locked
       - name: Unit tests and model test executable
@@ -265,9 +266,23 @@ jobs:
           # Pin needs this on Ubuntu 24.04 runners.
           sudo sysctl -w kernel.yama.ptrace_scope=0
           bash capture/desktop/scripts/linux/appimage/smoke-cpu.sh "dist/${{ steps.package.outputs.name }}" "$SPEECH_TEST" "$sde" -icl
+      - uses: actions/checkout@v5
+        if: inputs.stable_candidate
+        with:
+          ref: ${{ github.workflow_sha }}
+          clean: false
+          persist-credentials: false
+      - name: Seal stable Linux candidate
+        if: inputs.stable_candidate
+        env:
+          APPARENT_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: v${{ inputs.version }}
+          GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          RELEASE_NATIVE_CHECKS: 'true'
+        run: node --experimental-strip-types composition/enablement/release/manifest.ts create dist linux ${{ matrix.arch }}
       - uses: actions/upload-artifact@v5
         with:
-          name: ${{ steps.package.outputs.name }}
+          name: ${{ inputs.stable_candidate && format('stable-linux-{0}-{1}', matrix.arch, github.run_attempt) || steps.package.outputs.name }}
           path: dist/*
       - name: Clean private release test inputs
         if: always()
@@ -276,35 +291,8 @@ jobs:
             rm -rf -- "$APPARENT_RELEASE_TEST_TMP"
           fi
 
-  attach-release:
-    if: needs.linux.result == 'success' && inputs.tag != '' && inputs.verify_only != true
-    needs: [admit, linux]
-    permissions:
-      contents: write
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/download-artifact@v5
-        with:
-          pattern: Apparent-*.AppImage
-          path: dist
-          merge-multiple: true
-      - name: Attach to the release
-        env:
-          CANDIDATE_SHA: ${{ needs.admit.outputs.sha }}
-          TAG: ${{ inputs.tag }}
-          GH_REPO: ${{ github.repository }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # A moved tag must not label artifacts built from another commit.
-          test "$(gh api "repos/$GH_REPO/commits/$TAG" --jq .sha)" = "$CANDIDATE_SHA"
-          # Another publisher may create it concurrently. Re-read on a create conflict.
-          gh release view "$TAG" >/dev/null 2>&1 || \
-            gh release create "$TAG" --verify-tag --title "Apparent ${TAG#v}" --notes "Release notes to follow." || \
-            gh release view "$TAG" >/dev/null
-          gh release upload "$TAG" dist/* --clobber
-
   main-preview:
-    if: needs.linux.result == 'success' && (github.event_name == 'workflow_run' || github.event_name == 'schedule' || inputs.publish_main) && inputs.tag == '' && github.ref == 'refs/heads/main' && inputs.verify_only != true
+    if: ${{ !inputs.stable_candidate && needs.linux.result == 'success' && (github.event_name == 'workflow_run' || github.event_name == 'schedule' || inputs.publish_main) && inputs.tag == '' && github.ref == 'refs/heads/main' && inputs.verify_only != true }}
     needs: [admit, linux]
     permissions:
       contents: write
@@ -336,7 +324,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: main
+          ref: ${{ github.workflow_sha }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:

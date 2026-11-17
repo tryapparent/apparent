@@ -1,9 +1,9 @@
-import path from "node:path";
 import { createHash } from "node:crypto";
-import { analyze } from "../policy.ts";
-import type { Edge } from "./contexts.ts";
+import path from "node:path";
 import { parse } from "yaml";
-import { Snapshot, owner } from "../snapshot.ts";
+import { analyze } from "../policy.ts";
+import { owner, type Snapshot } from "../snapshot.ts";
+import type { Edge } from "./contexts.ts";
 
 const workflows: Record<string, string> = {
   "stream-public.yml": "Public",
@@ -187,7 +187,18 @@ export function ciPolicy(snapshot: Snapshot): Set<string> {
           ].find((file) => snapshot.files.has(file));
           if (!action)
             problems.add(file + ": unresolved local CI action/workflow");
-          else
+          else if (
+            !expected &&
+            coordinators.has(basename) &&
+            /^\.github\/workflows\/[^/]+\.yml$/.test(action) &&
+            coordinators.has(path.posix.basename(action)) &&
+            Object.hasOwn(
+              parse(snapshot.files.get(action)!).on ?? {},
+              "workflow_call",
+            )
+          ) {
+            walk(action);
+          } else
             problems.add(
               file +
                 " -> " +

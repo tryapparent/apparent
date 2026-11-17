@@ -16,47 +16,6 @@ spec.loader.exec_module(gate)
 
 
 class AdmissionTests(unittest.TestCase):
-    def test_linux_packaging_compiles_the_published_release_identity(self):
-        workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/release-linux.yml').read_text()
-        step = workflow.split('      - name: Build with PostHog error reporting\n', 1)[1].split('      - name:', 1)[0]
-        script = '\n'.join(line[10:] for line in step.split('        run: |\n', 1)[1].splitlines())
-        # Exercise the shipped selection shell, replacing only the heavy compiler.
-        script = script.replace('GITHUB_SHA="$CANDIDATE_SHA" cargo build --release --locked',
-                                'printf "%s\\n" "$APPARENT_RELEASE_VERSION" "$APPARENT_RELEASE_CHANNEL" "$APPARENT_REPORTING_ENVIRONMENT"')
-        sha = 'a' * 40
-        root = Path(__file__).resolve().parents[2]
-        with tempfile.TemporaryDirectory() as temporary:
-            environment_file = Path(temporary) / 'version-env'
-            subprocess.run(['node', '--experimental-strip-types', str(root / 'capture/desktop/scripts/release/desktop-version.ts')],
-                           check=True, env=dict(os.environ, GITHUB_ENV=str(environment_file), TAG=''))
-            shared = dict(line.split('=', 1) for line in environment_file.read_text().splitlines())
-        version = shared['APPARENT_RELEASE_VERSION']
-        for tag, verify, expected in [
-            ('v' + version, 'false', [version, 'stable', 'production']),
-            ('', 'false', [version, 'preview', 'production']),
-            ('', 'true', [version, 'preview', 'synthetic']),
-        ]:
-            result = subprocess.run(['bash', '-eu', '-c', script], capture_output=True, text=True,
-                                    env=dict(os.environ, **shared, TAG=tag, VERIFY_ONLY=verify, CANDIDATE_SHA=sha))
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(result.stdout.splitlines(), expected)
-
-    def test_baseline_restoration_does_not_publish_or_start_full_platform_runs(self):
-        root = Path(__file__).resolve().parents[2] / '.github/workflows'
-        for name in ('verification.yml',
-                     'release-linux.yml', 'release-mac-preview.yml'):
-            workflow = (root / name).read_text()
-            events = workflow.split('\non:\n', 1)[1].split('\npermissions:', 1)[0]
-            triggers = re.findall(r'^  ([a-z_]+):', events, re.M)
-            expected = (['workflow_call', 'workflow_dispatch'] if name == 'release-linux.yml' else
-                        ['workflow_dispatch'])
-            self.assertEqual(triggers, expected, name)
-        checks = (root / 'checks.yml').read_text()
-        self.assertIn('  pull_request:', checks)
-        self.assertIn('  push:', checks)
-        self.assertIn('enablement/verification.py --base "$BASE_SHA" --pr', checks)
-        self.assertIn('uses: ./.github/workflows/release-linux.yml', checks)
-
     def setUp(self):
         self.repo = 'example/project'
         self.sha = 'a' * 40
@@ -120,7 +79,7 @@ class AdmissionTests(unittest.TestCase):
 
     def test_cd_policy_contracts(self):
         result = subprocess.run(['node', '--experimental-strip-types', '--test',
-                                 str(Path(gate.__file__).parent / 'ci/release-admission.test.ts')],
+                                 Path(gate.__file__).parents[1] / 'shared/enablement/ci/release-admission.test.ts'],
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 

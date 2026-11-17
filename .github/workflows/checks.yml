@@ -338,6 +338,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22.23.0'
+      - name: Verify paired stable release contracts
+        run: node --experimental-strip-types --test composition/enablement/release/*.test.ts composition/enablement/release/test/*.test.ts composition/enablement/release/mac/test.ts composition/enablement/release/mac/publication/*.test.ts
       - name: Verify early native prerequisite contracts
         run: |
           node --experimental-strip-types --test enablement/prerequisites/*.test.ts

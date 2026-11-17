@@ -1,7 +1,7 @@
-import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Snapshot } from "../../snapshot.ts";
+import { test } from "node:test";
 import { ciPolicy } from "../../runtime/ci.ts";
+import { Snapshot } from "../../snapshot.ts";
 
 function problems(files: Record<string, string>): string {
   const snapshot = new Snapshot("");
@@ -100,5 +100,43 @@ test("new active streams need an owned workflow while prospective documentation 
         "jobs:\n  check:\n    steps:\n      - run: node onboarding/enablement/ci/check.ts\n",
     }),
     "",
+  );
+});
+
+test("admitted coordinators may compose declared reusable coordinators without admitting local actions or owner crossings", () => {
+  const reusable =
+    "on:\n  workflow_call:\njobs:\n  build:\n    steps:\n      - run: node composition/enablement/release/check.ts\n";
+  const files = {
+    ".github/workflows/verification.yml":
+      "jobs:\n  linux:\n    uses: ./.github/workflows/release-linux.yml\n",
+    ".github/workflows/release-linux.yml": reusable,
+    "composition/enablement/release/check.ts":
+      "export const check = () => true;",
+  };
+  assert.equal(problems(files), "");
+  assert.match(
+    problems({
+      ...files,
+      ".github/workflows/release-linux.yml": "on:\n  workflow_dispatch:\n",
+    }),
+    /local action execution is unsupported/,
+  );
+  assert.match(
+    problems({
+      ...files,
+      ".github/workflows/stream-record.yml":
+        "jobs:\n  release:\n    uses: ./.github/workflows/release-linux.yml\n",
+    }),
+    /local action execution is unsupported/,
+  );
+  assert.match(
+    problems({
+      ...files,
+      ".github/workflows/release-linux.yml": reusable.replace(
+        "node composition/enablement/release/check.ts",
+        "cd private && npm run build",
+      ),
+    }),
+    /unsupported dynamic CI command/,
   );
 });

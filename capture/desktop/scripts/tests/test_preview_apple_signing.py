@@ -22,6 +22,7 @@ class AppleSigningTest(unittest.TestCase):
             "p = Path(sys.argv[1]) / 'app/dist/settings.html'\np.parent.mkdir(parents=True)\np.write_text('synthetic Settings')\n"
             "r = Path(sys.argv[1]) / 'runtime/Electron.app/Contents/MacOS/Electron'\nr.parent.mkdir(parents=True)\nr.write_text('synthetic shared runtime')\n"
             "with Path(os.environ['TRACE']).open('a') as f: f.write('stage-settings ' + ' '.join(sys.argv[1:]) + '\\n')\n")
+        shutil.copytree(ROOT / "composition/enablement/release/mac", root / "composition/enablement/release/mac")
         (root / "bin").mkdir()
         (root / "sparkle/Sparkle.framework/Versions/B/XPCServices").mkdir(parents=True)
         setup = root / "capture/desktop/scripts/release/setup-sparkle.sh"
@@ -32,6 +33,7 @@ class AppleSigningTest(unittest.TestCase):
             "node": '''printf 'node %s\\n' "$*" >> "$TRACE"
 case "$1" in
   */package-notes.mjs) mkdir -p "$2/dist"; printf synthetic > "$2/dist/index.html" ;;
+  --experimental-strip-types) exec "$REAL_NODE" "$@" ;;
   *) exit 1 ;;
 esac''',
             "lipo": 'printf "arm64\\n"',
@@ -63,7 +65,7 @@ fi''',
         signing.mkdir()
         (signing / "notary.p8").write_text("synthetic test key")
         (signing / "signing.keychain-db").touch()
-        return dict(os.environ, PATH=f'{root / "bin"}:{os.environ["PATH"]}',
+        return dict(os.environ, REAL_NODE=shutil.which("node"), PATH=f'{root / "bin"}:{os.environ["PATH"]}',
                     TRACE=str(root / "trace"), APPARENT_PREVIEW_VERSION="0.123.2",
                     APPARENT_PREVIEW_BUILD_NUMBER="123.2",
                     APPARENT_PREVIEW_PUBLIC_KEY=base64.b64encode(bytes([1]) * 32).decode(),
