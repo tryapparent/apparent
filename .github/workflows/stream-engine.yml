@@ -4,78 +4,14 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - "**"
-      - "!capture/**"
-      - "!record/**"
-      - "!connect/**"
-      - "!public/**"
-      - "!hermes/**"
-      - "!enablement/**"
-      - "!shared/**"
-      - "!composition/**"
-      - "!.cargo/**"
-      - "!.github/**"
-      - "!.githooks/**"
-      - "!engine/**"
-      - "!AGENTS.md"
-      - "!README.md"
-      - "!Cargo.toml"
-      - "!Cargo.lock"
-      - "!build.rs"
-      - "!main.rs"
       - "engine/**"
-      - "enablement/ci/**"
-      - "enablement/local-tests/**"
-      - ".githooks/**"
-      - ".github/**"
-      - "!.github/workflows/checks.yml"
-      - "!.github/workflows/linux-updater-harness.yml"
-      - "!.github/workflows/release-linux.yml"
-      - "!.github/workflows/release-mac-preview.yml"
-      - "!.github/workflows/verification-platform.yml"
-      - "!.github/workflows/verification.yml"
-      - "!.github/workflows/hermes.yml"
-      - "!.github/workflows/stream-connect.yml"
-      - "!.github/workflows/stream-public.yml"
-      - ".github/workflows/stream-engine.yml"
+      - "!engine/**/*.md"
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
   push:
     branches: [main]
     paths:
-      - "**"
-      - "!capture/**"
-      - "!record/**"
-      - "!connect/**"
-      - "!public/**"
-      - "!hermes/**"
-      - "!enablement/**"
-      - "!shared/**"
-      - "!composition/**"
-      - "!.cargo/**"
-      - "!.github/**"
-      - "!.githooks/**"
-      - "!engine/**"
-      - "!AGENTS.md"
-      - "!README.md"
-      - "!Cargo.toml"
-      - "!Cargo.lock"
-      - "!build.rs"
-      - "!main.rs"
       - "engine/**"
-      - "enablement/ci/**"
-      - "enablement/local-tests/**"
-      - ".githooks/**"
-      - ".github/**"
-      - "!.github/workflows/checks.yml"
-      - "!.github/workflows/linux-updater-harness.yml"
-      - "!.github/workflows/release-linux.yml"
-      - "!.github/workflows/release-mac-preview.yml"
-      - "!.github/workflows/verification-platform.yml"
-      - "!.github/workflows/verification.yml"
-      - "!.github/workflows/hermes.yml"
-      - "!.github/workflows/stream-connect.yml"
-      - "!.github/workflows/stream-public.yml"
-      - ".github/workflows/stream-engine.yml"
+      - "!engine/**/*.md"
   workflow_dispatch:
 
 permissions:
@@ -90,16 +26,17 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       selected: ${{ steps.route.outputs.selected }}
+      runners: ${{ steps.route.outputs.runners }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
-      - name: Select through the shared consumer authority
+      - name: Select Engine inputs and event platforms
         id: route
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: bun engine/tools/select.ts
+        run: bun engine/enablement/ci/run.ts select
 
   sdk:
     needs: select
@@ -116,6 +53,8 @@ jobs:
           proof=$(mktemp -d /tmp/apparent-dev-engine-sdk-XXXXXX)
           echo "ENGINE_OUTPUT=$proof" >> "$GITHUB_ENV"
           node --experimental-strip-types engine/tools/check.ts "$proof" --sdk-only
+      - name: Record the qualified SDK digest
+        run: node --experimental-strip-types engine/enablement/ci/run.ts sdk-digest "$ENGINE_OUTPUT/artifacts"
       - uses: actions/upload-artifact@v4
         with:
           name: engine-sdk
@@ -130,7 +69,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, macos-15-intel]
+        runner: ${{ fromJSON(needs.select.outputs.runners) }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     steps:
@@ -178,12 +117,14 @@ jobs:
       - name: Verify that newer main has not changed Engine inputs
         run: |
           git fetch origin main
-          bun enablement/ci/routing/streams.ts engine "$GITHUB_SHA"
+          bun engine/enablement/ci/run.ts current "$GITHUB_SHA"
       - uses: actions/download-artifact@v4
         with:
           pattern: engine-*
           path: artifacts
           merge-multiple: true
+      - name: Require the complete qualified native package inventory
+        run: bun engine/enablement/ci/artifacts.ts artifacts "$GITHUB_SHA"
       - name: Publish immutable commit-addressed artifacts
         env:
           GH_TOKEN: ${{ github.token }}
