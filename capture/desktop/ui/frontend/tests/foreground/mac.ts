@@ -220,6 +220,19 @@ async function main() {
       APPARENT_CONFIG: configFile, APPARENT_CAPTURES_DIR: path.join(root, 'captures'), APPARENT_START_TIMINGS: '1', TMPDIR: temporary, TMP: temporary, TEMP: temporary};
     delete appEnv.ELECTRON_RUN_AS_NODE;
     for (const key of Object.keys(appEnv)) if (/^(OPENCODE|CODEX|CLAUDE)_.*SESSION/.test(key)) delete appEnv[key];
+    // Vision diagnostics qualify independently of live foreground acceptance.
+    // Use the existing overall deadline and owned Node/Swift process group.
+    try {
+      const report = await command(process.execPath, ['--experimental-strip-types', '--test',
+        path.join(repo, 'capture/desktop/enablement/foreground/vision-trace.test.ts')],
+      {env: {...hostEnv, TMPDIR: temporary, TMP: temporary, TEMP: temporary}, timeout: 60_000, ownedGroup: true});
+      assert.match(report, /7 production Vision trace scenarios passed/);
+      assert.match(report, /Real sanitized PNG Vision trace passed/);
+      await evidence('vision-trace-regression', {report});
+    } catch (error) {
+      await evidence('vision-trace-regression-failure', {error: redact(error)});
+      throw error;
+    }
     // Once per case, before app launch/capture/input. This consumes the same
     // overall deadline through command(); it does not grant another minute.
     try {

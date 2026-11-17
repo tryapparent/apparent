@@ -185,6 +185,27 @@ func pill(_ req: [String: Any]) throws -> (Pill, Set<pid_t>) {
     return (matches[0], owned.descendants)
 }
 struct Word { let text: String; let box: CGRect; let candidate: VNRecognizedText }
+// Completion means the named operation returned. A missing endpoint (including
+// external termination) is incomplete evidence, not attribution of a Vision fault.
+func recognizeWords(_ png: URL) throws -> [Word] {
+    clickTrace?.add(["stage":"textRecognitionStart"])
+    clickTrace?.add(["stage":"visionRequestCreationStart"])
+    let vr = VNRecognizeTextRequest()
+    clickTrace?.add(["stage":"visionRequestCreationComplete"])
+    clickTrace?.add(["stage":"visionRequestConfigurationStart"])
+    vr.recognitionLevel = .accurate; vr.usesLanguageCorrection = false
+    clickTrace?.add(["stage":"visionRequestConfigurationComplete"])
+    clickTrace?.add(["stage":"visionHandlerCreationStart"])
+    let handler = VNImageRequestHandler(url: png)
+    clickTrace?.add(["stage":"visionHandlerCreationComplete"])
+    clickTrace?.add(["stage":"visionPerformStart"])
+    try handler.perform([vr])
+    clickTrace?.add(["stage":"visionPerformComplete"])
+    try withinBudget()
+    let words = (vr.results ?? []).compactMap { o -> Word? in guard let c = o.topCandidates(1).first else { return nil }; return Word(text: c.string, box: o.boundingBox, candidate: c) }
+    clickTrace?.add(["stage":"textRecognitionComplete", "wordCount":words.count])
+    return words
+}
 enum ObservationError: Error, CustomStringConvertible {
     case changedWindow
     var description: String { "Pill window changed during screenshot" }
@@ -206,11 +227,7 @@ func observe(_ req: [String: Any], _ png: URL, recognizeText: Bool = true) throw
     }
     var words: [Word] = []
     if recognizeText {
-        clickTrace?.add(["stage":"textRecognitionStart"])
-        let vr = VNRecognizeTextRequest(); vr.recognitionLevel = .accurate; vr.usesLanguageCorrection = false
-        try VNImageRequestHandler(url: png).perform([vr]); try withinBudget()
-        words = (vr.results ?? []).compactMap { o -> Word? in guard let c = o.topCandidates(1).first else { return nil }; return Word(text: c.string, box: o.boundingBox, candidate: c) }
-        clickTrace?.add(["stage":"textRecognitionComplete", "wordCount":words.count])
+        words = try recognizeWords(png)
     }
     let front = frontPID()
     clickTrace?.add(["stage":"receiverAncestryStarted"])
