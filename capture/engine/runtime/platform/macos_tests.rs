@@ -3,6 +3,74 @@ mod tests {
     use super::*;
     use crate::shared::model::TargetFrame;
 
+    // Feed real CoreGraphics events to the production callback without posting
+    // input, installing an event tap, or capturing the machine's screen.
+    fn shortcut_event(telemetry: &SharedCaptureTelemetry, kind: u32, key: u16, flags: u64, repeat: bool) {
+        unsafe extern "C" {
+            fn CGEventSetIntegerValueField(event: EventRef, field: u32, value: i64);
+        }
+        let event = unsafe { CGEventCreateKeyboardEvent(ptr::null(), key, true) };
+        assert!(!event.is_null());
+        unsafe {
+            CGEventSetFlags(event, flags);
+            CGEventSetIntegerValueField(event, KEYBOARD_EVENT_AUTOREPEAT, i64::from(repeat));
+            assert_eq!(key_tap_callback(ptr::null_mut(), kind, event,
+                std::ptr::from_ref(telemetry).cast_mut().cast()), event);
+            CFRelease(event.cast());
+        }
+    }
+
+    fn option_telemetry() -> (SharedCaptureTelemetry, flume::Receiver<LiveOverlayEvent>) {
+        let (sender, receiver) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(sender);
+        *telemetry.shortcut.lock().unwrap() = ShortcutConfig {
+            key_code: 58, carbon_modifiers: 0, label: "Option".into(),
+        };
+        (telemetry, receiver)
+    }
+
+    #[test]
+    fn option_callback_triggers_on_either_release_and_can_finish_an_active_recording() {
+        for key in [58, 61] {
+            for active in [false, true] {
+                let (telemetry, events) = option_telemetry();
+                telemetry.active.store(active, Ordering::Release);
+                shortcut_event(&telemetry, EVENT_FLAGS_CHANGED, key, FLAG_ALTERNATE, false);
+                assert!(events.is_empty(), "press must wait for release");
+                shortcut_event(&telemetry, EVENT_FLAGS_CHANGED, key, 0, false);
+                assert!(matches!(events.try_recv(), Ok(LiveOverlayEvent::CaptureShortcut)));
+                shortcut_event(&telemetry, EVENT_FLAGS_CHANGED, key, 0, false);
+                assert!(events.is_empty(), "duplicate release must not toggle again");
+            }
+        }
+    }
+
+    #[test]
+    fn option_callback_cancels_chords_clicks_other_modifiers_and_paused_selection() {
+        for (kind, key, flags, repeat) in [
+            (EVENT_KEY_DOWN, 15, FLAG_ALTERNATE, false),
+            (EVENT_KEY_DOWN, 15, FLAG_ALTERNATE, true),
+            (EVENT_FLAGS_CHANGED, 56, FLAG_ALTERNATE | FLAG_SHIFT, false),
+            (EVENT_FLAGS_CHANGED, 57, FLAG_ALTERNATE, false),
+            (EVENT_LEFT_MOUSE_DOWN, 0, FLAG_ALTERNATE, false),
+            (EVENT_RIGHT_MOUSE_DOWN, 0, FLAG_ALTERNATE, false),
+            (25, 0, FLAG_ALTERNATE, false),
+        ] {
+            let (telemetry, events) = option_telemetry();
+            shortcut_event(&telemetry, EVENT_FLAGS_CHANGED, 58, FLAG_ALTERNATE, false);
+            shortcut_event(&telemetry, kind, key, flags, repeat);
+            shortcut_event(&telemetry, EVENT_FLAGS_CHANGED, 58, 0, false);
+            assert!(events.is_empty(), "interrupted gesture: {kind}/{key}/{flags}");
+        }
+        let (telemetry, events) = option_telemetry();
+        shortcut_event(&telemetry, EVENT_FLAGS_CHANGED, 58, FLAG_ALTERNATE, false);
+        pause_shortcuts(&telemetry, true);
+        shortcut_event(&telemetry, EVENT_FLAGS_CHANGED, 58, FLAG_ALTERNATE, false);
+        pause_shortcuts(&telemetry, false);
+        shortcut_event(&telemetry, EVENT_FLAGS_CHANGED, 58, 0, false);
+        assert!(events.is_empty(), "releasing the selected shortcut must not record");
+    }
+
     #[test]
     fn shortcut_keys_are_named_by_the_layout_not_their_qwerty_position() {
         // Dvorak puts B where QWERTY has N (45) and T where QWERTY has K (40).
