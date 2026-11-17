@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { mkdtemp, mkdir, chmod, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { assertReportingRead, type ReportingReadObservation } from './reporting-read.ts';
 
@@ -146,7 +145,9 @@ test('an expired overall deadline admits no read or action', async t => {
 });
 
 test('the shipped socket transport re-observes busy using only reporting read requests', async t => {
-  const home = await mkdtemp(join(tmpdir(), 'reporting-read-'));
+  // Keep the real Unix socket below platform path limits even when the parent
+  // job's TMPDIR is long. This private fixture is its own disposable /tmp job.
+  const home = await mkdtemp('/tmp/apparent-dev-reporting-read-');
   t.after(() => rm(home, { recursive: true, force: true }));
   const directory = join(home, '.config/apparent/agent-control');
   await mkdir(directory, { recursive: true, mode: 0o700 });

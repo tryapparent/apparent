@@ -1,5 +1,5 @@
 import {independentInputs} from './engine-inputs/qualify.ts';
-import {connectConsumers, connectStreamInputs, connectPublicAssets} from '../../../connect/enablement/ci/inputs.ts';
+import {connectConsumers, connectStreamInputs, connectStreamExclusions, connectPublicAssets} from '../../../connect/enablement/ci/inputs.ts';
 // Owner facts shared by hosted admission and local pushes. Unknown inputs stay broad.
 export const owners = ['capture', 'engine', 'desktop', 'capture-tools', 'client', 'client-foreground', 'web', 'service', 'public', 'hermes', 'tooling', 'onboarding', 'engine-media'] as const;
 export type Owner = typeof owners[number];
@@ -222,7 +222,7 @@ const directoryPaths = {
     '.github/workflows/linux-updater-harness.yml',
     // The app embeds this wordmark; the remaining Public tree is independent.
     'public/**'],
-  connect: [...common, ...independentEngine, ...native, ...desktopPackagingInputs, ...connectStreamInputs],
+  connect: [...common, ...independentEngine, ...connectStreamExclusions, ...native, ...desktopPackagingInputs, ...connectStreamInputs],
   public: [...common, ...independentEngine, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/hermes.yml', 'public/**', '.github/workflows/stream-public.yml', 'README.md',
     'capture/agent/skills/apparent/SKILL.md', 'capture/agent/docs/usage.md',
     'capture/desktop/docs/guides/recording.md', 'capture/engine/docs/guides/processing.md'],
@@ -246,17 +246,18 @@ export function affectsStream(stream: Stream, path: string): boolean {
 }
 
 // One decision feeds local commands, hosted suite gates and explainable output.
-export function routeDecision(paths: string[] | null, workflowControls: string[] = [], foregroundNative = false, qualifiedFixtures: string[] = [], _reservedCiTests: string[] = [], qualifiedStorageControllers: string[] = []) {
+export function routeDecision(paths: string[] | null, workflowControls: string[] = [], foregroundNative = false, qualifiedFixtures: string[] = [], qualifiedCiTests: string[] = [], qualifiedStorageControllers: string[] = []) {
   const remaining = paths?.filter(path => !workflowControls.includes(path)) ?? null;
   const controlOnly = !!paths?.length && !remaining?.length && workflowControls.length > 0;
-  const unqualified = remaining?.filter(path => !qualifiedFixtures.includes(path) && !qualifiedStorageControllers.includes(path)) ?? null;
+  const qualifiedTooling = [...qualifiedFixtures, ...qualifiedCiTests];
+  const unqualified = remaining?.filter(path => !qualifiedTooling.includes(path) && !qualifiedStorageControllers.includes(path)) ?? null;
   const selected = controlOnly || (remaining?.length && !unqualified?.length) ? [] : selectedOwners(unqualified);
-  if (qualifiedFixtures.length && !selected.includes('tooling')) selected.push('tooling');
+  if (qualifiedTooling.length && !selected.includes('tooling')) selected.push('tooling');
   if (qualifiedStorageControllers.length && !selected.includes('desktop')) selected.push('desktop');
   if (workflowControls.length && !selected.includes('tooling')) selected.push('tooling');
   if (foregroundNative) for (const owner of ['capture', 'client'] as const) if (!selected.includes(owner)) selected.push(owner);
   const plan = planFromOwners(selected);
-  const effective = remaining?.filter(path => !documentationOnlyPath(path));
+  const effective = remaining?.filter(path => !qualifiedCiTests.includes(path) && !documentationOnlyPath(path));
   const unknown = !paths?.length;
   const orchestration = effective?.some(path => path === '.github/workflows/checks.yml' || path.startsWith('enablement/ci/'));
   const publicSelected = selected.includes('public');
@@ -278,6 +279,7 @@ export function routeDecision(paths: string[] | null, workflowControls: string[]
     public: publicSelected, updater, streams,
     suites: plan,
     reasons: unknown ? ['fallback:unknown-or-empty-history'] : paths!.map(path =>
+      qualifiedCiTests.includes(path) ? 'tooling:qualified-ci-test:' + path :
       qualifiedStorageControllers.includes(path) ? 'desktop:qualified-storage-controller:' + path :
       qualifiedFixtures.includes(path) ? 'tooling:qualified-fixture:' + path :
       workflowControls.includes(path) ? 'control:verified-concurrency:' + path :

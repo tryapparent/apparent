@@ -60,6 +60,8 @@ export function checkNativeInputs(root: string, platform = process.platform): st
     'capture/desktop/ui/frontend/electron/record-media/native/manifest.json',
     'capture/desktop/ui/frontend/electron/agent-media/worker.js',
     'capture/desktop/ui/frontend/electron/agent-media/policy.js',
+    'capture/desktop/ui/frontend/electron/agent-media/range-worker.js',
+    'capture/desktop/ui/frontend/electron/agent-media/range-policy.js',
     'capture/desktop/ui/frontend/electron/agent-media/package.json',
     'capture/desktop/ui/frontend/electron/agent-media/node_modules/@apparent/engine-sdk/dist/index.js',
     'capture/desktop/ui/frontend/electron/agent-media/native/apparent-engine-frames',

@@ -87,7 +87,7 @@ export const storageReferences = new Set([
     'scripts/settings-native/inputs.test.ts', 'scripts/settings-native/provider.ts',
     'src/bridge.ts', 'src/storage.tsx', 'src/retention.tsx', 'src/storage/transport.ts']
     .map(path => 'capture/desktop/ui/frontend/' + path),
-  'connect/enablement/ci/plan.test.ts', 'enablement/ci/routing/consumers.ts',
+  'enablement/ci/routing/consumers.ts',
   'enablement/ci/select.ts', 'enablement/ci/select.test.ts',
   'enablement/ci/routing/record-storage/qualify.ts', 'enablement/ci/routing/record-storage/qualify.test.ts',
   'enablement/ci/routing/record-storage/range.test.ts',

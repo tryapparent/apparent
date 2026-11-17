@@ -1,10 +1,11 @@
 // Connect facts consumed by the single repository routing authority. No selector
 // runs here: shared/native inputs and unknown-path fallback remain central.
 import type {Owner} from '../../../enablement/ci/routing/consumers.ts';
-export const connectStreamInputs = ['!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml',
-  'connect/**', 'public/**', '.github/workflows/stream-connect.yml', 'enablement/release_gate.py'];
+export const connectStreamExclusions = ['!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml'];
+export const connectStreamInputs = ['connect/**', 'public/**', '.github/workflows/stream-connect.yml', 'enablement/release_gate.py'];
 export function connectConsumers(path: string, native: boolean): readonly Owner[] | null {
-  if (path === '.github/workflows/stream-connect.yml' || path.startsWith('connect/enablement/ci/'))
+  if (!native && path.startsWith('connect/enablement/ci/')) return ['tooling'];
+  if (path === '.github/workflows/stream-connect.yml')
     return ['capture', 'client', 'client-foreground', 'web', 'service'];
   if (!native && (path.startsWith('connect/web/') || path.startsWith('connect/enablement/web/') ||
       path.startsWith('connect/enablement/verification/web/'))) return ['web'];

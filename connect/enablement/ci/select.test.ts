@@ -1,16 +1,62 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync} from 'node:fs';
+import {execFileSync, spawnSync} from 'node:child_process';
+import {join} from 'node:path';
 import {YAML, Glob} from 'bun';
 import {suitePlan, routeDecision, streamPaths} from '../../../enablement/ci/routing/consumers.ts';
-import {connectPlan} from './plan.ts';
+import {connectPlan} from './select.ts';
 
 const workflow = (name: string) => YAML.parse(readFileSync(new URL(`../../../.github/workflows/${name}`, import.meta.url), 'utf8')) as any;
 const matches = (patterns: string[], path: string) => patterns.reduce((match, pattern) =>
   new Glob(pattern.replace(/^!/, '')).match(path) ? !pattern.startsWith('!') : match, false);
 
-test('automatic entry covers the union of Capture and standalone Connect triggers', () => {
-  const checks = workflow('checks.yml');
+test('real selector keeps PR web changes portable and main publication fully verified', () => {
+  const cwd = mkdtempSync('/tmp/apparent-dev-connect-selection-');
+  const git = (...args: string[]) => execFileSync('git', args, {cwd, encoding:'utf8'}).trim();
+  const cli = new URL('./select.ts', import.meta.url).pathname;
+  try {
+    git('init','-q'); git('config','user.name','Synthetic'); git('config','user.email','synthetic@example.invalid');
+    mkdirSync(join(cwd,'connect/web'), {recursive:true});
+    writeFileSync(join(cwd,'connect/web/input.ts'),'before'); git('add','.'); git('commit','-qm','base');
+    const base = git('rev-parse','HEAD');
+    writeFileSync(join(cwd,'connect/web/input.ts'),'after'); git('add','.'); git('commit','-qm','web');
+    const run = (event: string, range = base, admit = true) => {
+      const output = join(cwd,'output'); rmSync(output,{force:true});
+      const result = spawnSync('bun',[cli,...(admit ? ['--admit'] : [])], {cwd,encoding:'utf8',env:{...process.env,
+        BASE_SHA:range,GITHUB_SHA:git('rev-parse','HEAD'),GITHUB_EVENT_NAME:event,
+        GITHUB_REF:event === 'push' ? 'refs/heads/main' : 'refs/pull/1/merge',GITHUB_OUTPUT:output}});
+      assert.equal(result.status,0,result.stderr);
+      return Object.fromEntries(readFileSync(output,'utf8').trim().split('\n').map(line=>{
+        const i=line.indexOf('='); return [line.slice(0,i),line.slice(i+1)];
+      }));
+    };
+    const pr=run('pull_request'); assert.equal(pr.native,'false'); assert.equal(pr.portable,'true');
+    assert.equal(JSON.parse(pr.plan).browser,true); assert.equal(pr.publish,'true');
+    for(const event of ['push','workflow_dispatch']) {
+      const main=run(event); assert.equal(main.native,'true'); assert.equal(main.portable,'true');
+      assert.deepEqual(JSON.parse(main.plan),connectPlan(suitePlan(null)));
+    }
+    assert.throws(()=>run('pull_request','missing'), /Unknown history/);
+    const unknown=run('pull_request','missing',false); assert.equal(unknown.native,'true');
+    git('reset','--hard',base);
+    mkdirSync(join(cwd,'enablement/timing'),{recursive:true});
+    writeFileSync(join(cwd,'enablement/timing/command.ts'),'tooling');
+    git('add','enablement'); git('commit','-qm','unrelated tooling');
+    const tooling=run('push');
+    assert.equal(tooling.native,'false'); assert.equal(tooling.portable,'false'); assert.equal(tooling.publish,'false');
+    const checks=workflow('checks.yml');
+    assert.equal(checks.jobs.connect,undefined); assert.equal(checks.jobs['native-evidence'],undefined);
+    assert.equal(checks.jobs.select.outputs.plan,'${{ steps.paths.outputs.plan }}');
+    for(const name of ['linux','macos']) {
+      assert.match(workflow('stream-connect.yml').jobs[name].if,/outputs.native == 'true'/);
+      assert.doesNotMatch(workflow('stream-connect.yml').jobs[name].if,/shared/);
+    }
+  } finally {rmSync(cwd,{recursive:true,force:true});}
+});
+
+test('Connect automatic entry covers its web, service, native and composed browser inputs', () => {
+  const checks = workflow('stream-connect.yml');
   for (const event of ['push', 'pull_request']) {
     const patterns = checks.on[event].paths;
     for (const path of ['connect/web/src/main.tsx', 'public/site/src/App.tsx', 'public/package.json', 'public/bun.lock',
@@ -18,17 +64,26 @@ test('automatic entry covers the union of Capture and standalone Connect trigger
       assert.equal(matches(patterns, path), true, path);
       assert.equal(matches(streamPaths.connect, path), true, `Connect consumes ${path}`);
     }
-    for (const path of ['capture/engine/runtime/mod.rs', 'shared/ui/button.tsx', 'composition/main.rs',
-      'connect/client/src/lib.rs', 'connect/service/src/worker.ts', 'unknown/file.ts', 'connect/hosted.rs', 'record/storage/src/config.ts', 'Cargo.toml'])
+    for (const path of ['shared/ui/button.tsx', 'composition/main.rs',
+      'connect/client/src/lib.rs', 'connect/service/src/worker.ts', 'unknown/file.ts', 'connect/hosted.rs', 'Cargo.toml'])
       assert.equal(matches(patterns, path), true, path);
   }
   assert.equal(checks.jobs.public, undefined);
 });
 
 test('Connect retains real native client/service consumers and skips native for web-only edits', () => {
-  const web = connectPlan(suitePlan(['connect/web/src/main.tsx']));
-  assert.equal(web.browser, true); assert.equal(web.root, false); assert.equal(web.client, false);
-  for (const path of ['connect/service/src/worker.ts', 'connect/hosted.rs']) {
+  for (const path of ['connect/web/src/main.tsx', 'connect/enablement/web/assets.mjs',
+    'connect/enablement/verification/web/browser.mjs']) {
+    const web = connectPlan(suitePlan([path]));
+    assert.equal(web.browser, true, path); assert.equal(web.root, false, path); assert.equal(web.client, false, path);
+  }
+  const ci = connectPlan(suitePlan(['connect/enablement/ci/select.ts']));
+  assert.equal(ci.root, false); assert.equal(ci.browser, false); assert.equal(ci.client, false);
+  for (const path of ['connect/enablement/client/build.ts', 'connect/enablement/hosting/scripts/seal.ts']) {
+    const native = connectPlan(suitePlan([path]));
+    assert.equal(native.root, true, path); assert.equal(native.client, true, path);
+  }
+  for (const path of ['connect/service/src/worker.ts', 'connect/enablement/service/stage-migrations.ts', 'connect/hosted.rs']) {
     const plan = connectPlan(suitePlan([path]));
     assert.equal(plan.root, true, path); assert.equal(plan.client, true, path);
   }
@@ -48,7 +103,7 @@ test('the composed browser proof selects its Connect consumer and publication', 
 
 test('Connect publication requires successful stream-owned gates on canonical main', () => {
   const connect = workflow('stream-connect.yml');
-  assert.deepEqual(Object.keys(connect.on), ['workflow_dispatch', 'workflow_call']);
+  assert.deepEqual(Object.keys(connect.on), ['pull_request', 'push', 'workflow_dispatch']);
   const guard = connect.jobs.admit.if;
   const evaluate = (event: string, overrides: any = {}, repo = 'tryapparent/apparent', ref = 'refs/heads/main', enabled = 'true') => {
     const needs = {select: {result: 'success', outputs: {native: 'true'}}, contracts: {result: 'success'},
@@ -72,8 +127,7 @@ test('Connect publication requires successful stream-owned gates on canonical ma
 
 test('publication survives skipped native ancestors but refuses failed admission, verification and cancellation', () => {
   const {verify,hosted}=workflow('stream-connect.yml').jobs;
-  // GitHub otherwise adds success(), which propagates skipped ancestors even
-  // when admit succeeded using the caller's checked native receipt.
+  // Preserve explicit cancellation checks through transitive dependencies.
   for(const job of [verify,hosted])assert.match(job.if,/!cancelled\(\)/);
   const needs={admit:{result:'success',outputs:{sha:'a'.repeat(40)}},verify:{result:'success'},
     linux:{result:'skipped'},macos:{result:'skipped'}};
@@ -90,15 +144,4 @@ test('publication survives skipped native ancestors but refuses failed admission
   for(const context of [{...github,repository:'fork/apparent'},{...github,ref:'refs/heads/feature'},
     {...github,event_name:'pull_request'}])assert.equal(evaluate(hosted,needs,false,context),false);
   assert.equal(evaluate(hosted,needs,false,github,'false'),false);
-});
-
-test('owner-local tooling retains the same real consumers as its package entrypoints', () => {
-  for (const [tool, input] of [
-    ['connect/enablement/web/assets.mjs', 'connect/web/vite.config.ts'],
-    ['connect/enablement/verification/web/routes.test.mjs', 'connect/web/src/main.tsx'],
-    ['connect/enablement/service/build-recipient.mjs', 'connect/service/src/worker.ts'],
-    ['connect/enablement/verification/service/helpers.mjs', 'connect/service/src/worker.ts'],
-    ['connect/enablement/client/build.ts', 'connect/client/typescript/package.json'],
-    ['connect/enablement/verification/client/fixtures/rust-v1.json', 'connect/client/typescript/package.json'],
-  ]) assert.deepEqual(routeDecision([tool]).plan, routeDecision([input]).plan, tool);
 });

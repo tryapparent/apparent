@@ -47,12 +47,11 @@ integration/package consumers is required in the adoption slice. Until then,
 Engine-only inputs have no installed-app consumer. SDK/capability details and
 remaining adoption gates live in `engine/README.md`.
 
-`checks.yml` orchestrates Capture and Connect on PRs targeting main and main pushes.
-It verifies the union of their required Linux/Mac platform suites once, then calls
-`stream-connect.yml` with a receipt bound to the same SHA, tree, workflow, run and
-attempt. Connect retains its own contracts, portable checks and publication gates;
-manual dispatch retains independent platform execution when no valid shared
-receipt exists. Public keeps its direct `stream-public.yml` automatic entrypoint.
+`checks.yml` owns Capture verification on PRs targeting main and main pushes.
+Connect has its own automatic `stream-connect.yml` run, with stream-owned selection,
+checks and publication gates in `connect/enablement/`. Public keeps its direct
+`stream-public.yml` automatic entrypoint. Connect runs its selected Linux/Mac
+checks independently; no cross-workflow native receipt admits publication.
 Within each automatic Mac platform call, the selected native, Desktop and standalone client
 non-GUI suites share one `platform (macos-15-intel)` allocation; root Mac GUI
 acceptance consumes its retained candidate in a separate required job. Linux keeps independent
@@ -74,11 +73,10 @@ Darwin-only assertions require real Mac execution. Installed-app, Rust bridge,
 native acceptance and publication gates remain separate and required. Local
 push hooks retain their full suites. This split is coverage policy, not proof
 of a measured speedup; compare successful hosted steps before claiming savings.
-The shared adapter adds only root/Engine, Desktop and client platform requirements
-from Connect. Capture keeps its original portable selection; Connect's own
-portable job remains required independently of the shared native receipt. A
-receipt's native substitution check therefore projects only those platform fields.
-Broad event filters do not add product consumers to a tooling-only plan.
+Capture uses its own selected plan without adding Connect main-publication suites.
+Connect retains independent portable and native checks; overlapping native
+consumers may therefore execute in both workflows. Broad event filters do not
+add product consumers to a tooling-only Capture plan.
 Automatic PR and main triggers follow directory ownership. The sole authority is
 `enablement/ci/routing/consumers.ts`: directory/consumer rules, named suites,
 workflow input inventory and admission explanations. `selectRange` reads the
@@ -159,9 +157,10 @@ deploy or invalidate an unchanged Worker. Existing activation gates remain.
 
 Cross-directory dependencies are explicit: Public publishes the listed Capture
 guides/skill and README; Capture embeds the Public wordmark. Connect's existing
-browser composition verification still builds Public from source, so
-`public/site/**` remains an explicit Connect entry dependency until that fixture is
-independent; the named suite plan determines which consumer checks actually run. These filters do not claim full package independence or split the
+browser composition verification still builds Public from source with its owner
+tooling and root dependency package, so `public/**` remains an explicit Connect
+entry dependency until that fixture is independent; the named suite plan
+determines which consumer checks actually run. These filters do not claim full package independence or split the
 native application's current build into new workflows. Root native manifests
 and verification adapters retain their consumers. PR updates coalesce; main commits have distinct concurrency groups so
 later documentation cannot cancel earlier code verification. Drafts retain cheap
@@ -627,10 +626,10 @@ checks Connect's complete tree, including native consumers, rather than allowing
 unrelated follow-up commit to hide a failed delivery. This conservative main
 coverage is intentional and is not a measured build-time reduction.
 
-`stream-connect.yml` admits its publisher only after its own successful contracts
-and portable checks plus affected Linux/Mac suites, either authenticated from the
-automatic caller's dependencies or executed by the manual entrypoint, on canonical
-main with `HOSTED_CD_ENABLED`. A failed shared producer cannot admit publication.
+`stream-connect.yml` admits its publisher only after its own successful contracts,
+portable checks and required Linux/Mac suites on canonical main with
+`HOSTED_CD_ENABLED`. Failed native checks cannot admit publication. See
+[`Connect CI`](../../connect/enablement/README.md) for routing and rollback.
 Manual dispatch uses the same stream-owned checks and admission; the
 old `web-delivery.yml` entrypoint has been replaced. Worker publication retains its production environment,
 noncancelling lock, current-main check, approved bindings and version/CORS readback.

@@ -445,7 +445,7 @@ capture admission; it never restores scene focus to conceal a later failure.
 
 The case disables microphone capture, displays a generated scene, and uses the
 normal exact-ID capture lifecycle. It then observes and clicks the actual
-packaged Electron pill through progress, Cancel, Retry and Copy link. Input is
+packaged Electron pill through progress, Cancel, Retry and Public link. Input is
 limited to a fresh OCR target in a verified descendant of the installed app;
 the native adapter also requires the exact named accessibility button with the
 projected point inside its native bounds, verifies window geometry through
