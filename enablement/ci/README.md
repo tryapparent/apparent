@@ -7,6 +7,13 @@ status conditions so a skipped ancestor cannot suppress required work. Unknown
 selection still broadens coverage; cancellation and failed contracts still block
 allocation. Main evidence authentication and publication admission are unchanged.
 
+The hosted `contracts` job runs prerequisite, timing and CI tests through
+`verification.py --pr` and its canonical `run.ts --contracts` inventory once.
+Do not add separate copies of those commands before the verifier. Theme and
+Python hook checks still run first; failures in the retained contract pass block
+platform allocation. This removes duplicate successful work while allowing those
+contract failures to be reported later within the same admission job.
+
 `Manual Linux verification` runs only on manual dispatch. CI completion no longer
 starts a separate notification workflow or posts failed-head completion comments.
 
