@@ -162,9 +162,13 @@ class PreviewReleaseTest(unittest.TestCase):
         script = (ROOT / "capture/desktop/scripts/packaging/build-mac-preview.sh").read_text()
         cli = (ROOT / "composition/command_line.rs").read_text()
         settings = (ROOT / "capture/desktop/settings/settings.rs").read_text()
+        # Settings keeps its authoritative config/login implementation in this
+        # lexical include; preserve the preview guard across the extraction.
+        self.assertIn('include!("shortcut/config.rs");', settings)
+        settings_config = (ROOT / "capture/desktop/settings/shortcut/config.rs").read_text()
         self.assertIn("APPARENT_PREVIEW_BUILD=1", script)
         self.assertIn('option_env!("APPARENT_PREVIEW_BUILD")', cli)
-        self.assertIn('option_env!("APPARENT_PREVIEW_BUILD")', settings)
+        self.assertIn('option_env!("APPARENT_PREVIEW_BUILD")', settings_config)
 
     def test_preview_bundle_has_its_own_sparkle_feed(self):
         script = (ROOT / "capture/desktop/scripts/packaging/build-mac-preview.sh").read_text()
