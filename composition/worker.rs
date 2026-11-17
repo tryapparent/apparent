@@ -23,7 +23,7 @@ impl std::fmt::Display for WorkerExitError {
 }
 impl std::error::Error for WorkerExitError {}
 
-fn candidates(package: &str) -> Result<Vec<(PathBuf, PathBuf)>> {
+fn candidates() -> Result<Vec<(PathBuf, PathBuf)>> {
     let executable = std::env::current_exe()?;
     let parent = executable
         .parent()
@@ -52,14 +52,18 @@ fn candidates(package: &str) -> Result<Vec<(PathBuf, PathBuf)>> {
         let node = runtime.join("Electron.app/Contents/MacOS/Electron");
         #[cfg(target_os = "linux")]
         let node = runtime.join("electron");
-        let root = app.join("electron").join(package);
+        let root = app.join("electron");
         (node, root)
     }).collect())
 }
 
+pub(crate) fn bundled_node() -> Result<Option<PathBuf>> {
+    Ok(candidates()?.into_iter().map(|(node, _)| node).find(|node| node.is_file()))
+}
+
 pub(crate) fn policy_assets(label: &str, package: &str, worker_file: &str) -> Result<(PathBuf, PathBuf)> {
-    for (node, root) in candidates(package)? {
-        let worker = root.join(worker_file);
+    for (node, root) in candidates()? {
+        let worker = root.join(package).join(worker_file);
         if node.is_file() && worker.is_file() {
             return Ok((node, worker));
         }
@@ -73,7 +77,8 @@ pub(crate) fn assets(
     capability: &str,
     worker_file: &str,
 ) -> Result<(PathBuf, PathBuf, PathBuf)> {
-    for (node, root) in candidates(package)? {
+    for (node, root) in candidates()? {
+        let root = root.join(package);
         let worker = root.join(worker_file);
         let engine = root.join("native").join(capability);
         if node.is_file() && worker.is_file() && engine.is_file() {
