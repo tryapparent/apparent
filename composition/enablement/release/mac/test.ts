@@ -121,6 +121,22 @@ test("reusable workflow has one Mac allocation after portable preparation, no pu
       workflow.indexOf("name: stable-macos-aarch64"),
   );
 });
+test("control checkout precedes nested source checkout on both candidate runners", () => {
+  const workflow = readFileSync(
+    ".github/workflows/release-mac-preview.yml",
+    "utf8",
+  );
+  for (const name of ["frontend", "candidate"]) {
+    const job = workflow.split(`\n  ${name}:\n`)[1].split(/\n  [a-z]+:/)[0];
+    const control = job.indexOf("ref: ${{ github.workflow_sha }}");
+    const source = job.indexOf("path: release-source");
+    assert.ok(control >= 0 && source > control, name);
+    assert.equal(
+      job.lastIndexOf("actions/checkout@"),
+      job.indexOf("actions/checkout@", control),
+    );
+  }
+});
 test("all Mac shell entrypoints parse without executing native commands", () => {
   execFileSync("bash", [
     "-n",

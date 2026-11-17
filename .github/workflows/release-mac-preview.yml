@@ -348,16 +348,15 @@ jobs:
     env:
       APPARENT_SOURCE_ROOT: ${{ github.workspace }}/release-source
     steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.source_sha }}
-          path: release-source
-          persist-credentials: false
       - name: Check out trusted control tooling
         uses: actions/checkout@v5
         with:
           ref: ${{ github.workflow_sha }}
-          clean: false
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_sha }}
+          path: release-source
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -400,16 +399,15 @@ jobs:
       APPARENT_NOTARY_ISSUER: ${{ vars.APPLE_NOTARY_ISSUER }}
       APPARENT_PREVIEW_PUBLIC_KEY: ${{ vars.SPARKLE_PREVIEW_PUBLIC_KEY }}
     steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.source_sha }}
-          path: release-source
-          persist-credentials: false
       - name: Check out trusted control tooling
         uses: actions/checkout@v5
         with:
           ref: ${{ github.workflow_sha }}
-          clean: false
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_sha }}
+          path: release-source
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
