@@ -10,7 +10,7 @@ export function markdown(data: any): string {
   actionLines.push('## Largest measured costs', '');
   for (const [clock,row] of [
     ['CI queue',ci?.queueByRunner[0]],['CI execution',ci?.executionByJob[0]],
-    ['CI step',ci?.executionByStep[0]],['Local observed process',data.census.actionRanking?.processes.candidate]
+    ['CI step',ci?.executionByStep?.[0]],['Local observed process',data.census.actionRanking?.processes?.candidate]
   ] as const) if(row) actionLines.push(`- ${clock}: ${row.label}: ${number(row.count)} × ${number(row.meanSeconds)}s = ${number(row.totalSeconds)}s.`);
   actionLines.push('', 'These clocks overlap and are not additive. Largest measured cost is not automatically avoidable delay or a proven critical path.', '');
   for (const ranking of Object.values(data.census.actionRanking ?? {}) as any[]) {
@@ -33,7 +33,7 @@ export function markdown(data: any): string {
   else {
     actionLines.push(`Captured ${ci.coverage.runs} run/attempt snapshots; ${ci.coverage.inputJobRows} input jobs, ${ci.coverage.retainedJobRows} relevant rows.`, '',ci.limitation,'');
     if (data.jobs.collection) actionLines.push(`GitHub discovery coverage: ${JSON.stringify(data.jobs.collection)}`, '');
-    for (const [name,rows] of [['Queue by requested runner',ci.queueByRunner],['Execution by job',ci.executionByJob],['Step costs by total (includes observed incomplete spans)',ci.executionByStep]] as const) {
+    for (const [name,rows] of [['Queue by requested runner',ci.queueByRunner],['Execution by job',ci.executionByJob],['Step costs by total (includes observed incomplete spans)',ci.executionByStep ?? []]] as const) {
       actionLines.push(`### ${name}`, '', '| Work | Count | Mean seconds | Total seconds |', '|---|---:|---:|---:|');
       for (const row of rows) actionLines.push(`| ${String(row.label).replaceAll('|','/').replaceAll('\n',' ')} | ${row.count} | ${number(row.meanSeconds)} | ${number(row.totalSeconds)} |`);
       actionLines.push('');
@@ -67,7 +67,7 @@ export function markdown(data: any): string {
   return lines.join('\n');
 }
 export function chart(data: any): string {
-  const groups = data.census.actionRanking?.processes.ranked?.length ? data.census.actionRanking.processes.ranked : data.processGroups.length ? data.processGroups : data.census.categories.map((g: any) => ({label: g.label, ...g.arithmetic}));
+  const groups = data.census.actionRanking?.processes?.ranked?.length ? data.census.actionRanking.processes.ranked : data.processGroups.length ? data.processGroups : data.census.categories.map((g: any) => ({label: g.label, ...g.arithmetic}));
   const max = Math.max(1, ...groups.map((g: any) => g.totalSeconds));
   const rows = groups.slice(0, 8).map((g: any) => `<div class="row"><span>${escape(g.label)}</span><div class="track"><div class="bar" style="width:${number(100 * g.totalSeconds / max)}%"></div></div><span>${number(g.count)} × ${number(g.meanSeconds)}s = ${number(g.totalSeconds)}s</span></div>`).join('');
   return `<!doctype html><html><head><style>body{margin:0;font-family:var(--font-sans);color:var(--foreground)}p{font-size:13px;color:var(--muted-foreground)}.row{display:grid;grid-template-columns:140px 1fr 200px;gap:10px;align-items:center;margin:14px 0;font-size:12px}.track,.bar{height:16px;border-radius:4px}.track{background:var(--secondary)}.bar{background:var(--chart-1)}@media(max-width:500px){.row{grid-template-columns:100px 1fr}.row>span:last-child{grid-column:1/3}}</style></head><body><p>${escape(data.census.window.from)} → ${escape(data.census.window.to)}<br>${data.processGroups.length ? 'Recovered process spans' : 'Tool envelopes'}; cumulative across parallel sessions, not critical-path delay or proven waste. Counts × rounded means may differ slightly from displayed totals.</p>${rows}<p>Coverage is partial. Polling and hosted jobs overlap these measurements and must not be added.</p></body></html>`;

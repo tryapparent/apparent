@@ -38,6 +38,7 @@ export function collectGitHub(repo:string, from:string, to:string, limit=12, rea
   }
   return {runs,coverage:{repository:repo,eligibleRunsCaptured:candidates.size,selectedRuns:selected.length,
     runLimit:limit,listCaps:lists.map(l=>({status:l.status,captured:l.rows.length,possiblyTruncated:l.rows.length===100})),
+    jobPages:runs.map(r=>({runId:r.databaseId,attempt:r.attempt,...r.snapshotCoverage})),
     runLimitReached:candidates.size>selected.length,errors,
     limitation:'Live snapshots, not historical state reconstruction. Old queued/running/waiting runs included regardless of creation age; completed-run discovery is creation-window bounded and can miss older runs completing in the window. Sampling reserves half for oldest queues, a quarter for running work and a quarter for recent completions, filling unused slots from pending work. Listing and run caps are explicit; this sample does not establish a repository-wide critical path or majority of threads.'}};
 }

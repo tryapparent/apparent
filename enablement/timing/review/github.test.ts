@@ -19,6 +19,7 @@ test('read-only collector prioritizes old queues, pages jobs and reports run/lis
   assert.equal(r.runs[0].databaseId,1);
   assert.equal(r.runs[0].jobs.length,101);
   assert.equal(r.runs[0].snapshotCoverage.complete,true);
+  assert.equal(r.coverage.jobPages[0].capturedJobs,101);
   assert.equal(r.coverage.runLimitReached,true);
   assert.ok(calls.every(a=>a[0]==='api'||a.slice(0,2).join(' ')==='run list'));
   assert.ok(!calls.find(a=>a.includes('--status')&&a.includes('queued'))?.includes('--created'),'old queues survive window filtering');
