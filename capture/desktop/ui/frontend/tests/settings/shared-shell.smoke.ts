@@ -73,6 +73,8 @@ test('Settings changes adopted panes in one live document and enforces the curre
     assert.equal(await page.evaluate(()=>Reflect.get(window,'shellIdentity')),'same document');
     assert.equal(loads,0,'navigation never reloads Chromium');
     // The General recorder is a separate consumer of the shared shortcut policy.
+    await page.getByRole('button',{name:'General',exact:true}).click();
+    await expect(page.getByRole('checkbox',{name:'Launch at login'})).toBeVisible();
     const macShortcut=(recording:boolean,label='Fn')=>send({type:'general-state',platform:'macos',login:{on:false,available:true,needsApproval:false},
       shortcuts:[{kind:'record',title:'Record',label,recording,externallyManaged:false,isDefault:label==='Fn',clearable:false,error:null}],
       errorReporting:true,lowerPlayback:false,playbackLevel:35,playbackAvailable:true});
