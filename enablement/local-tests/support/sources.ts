@@ -5,7 +5,7 @@ import {dirname, isAbsolute, relative, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-const sourceOwners = ['enablement/local-tests', 'enablement/ci', 'public/enablement/cd/ci', 'connect/enablement/ci/local', 'shared/enablement/ci', 'shared/enablement/issues'];
+const sourceOwners = ['enablement/local-tests', 'enablement/ci', 'public/enablement/cd/ci', 'connect/enablement/ci/local', 'shared/enablement/ci', 'shared/enablement/issues', 'enablement/timing'];
 const excluded = new Set(['fixtures', 'node_modules', 'dist', 'target', '.git']);
 function within(parent: string, child: string): boolean {
   const path = relative(parent, child);

@@ -88,6 +88,10 @@ test('real npm install is reused across source-only commits; all checks rerun an
   check(); assert.equal(installs, 9, 'build/staging producer changes invalidate installed generated output');
   check({...env, INSTALL_SEMANTIC_INPUT: 'new'}); assert.equal(installs, 10, 'install environment is bound');
   assert.equal(readFileSync(checks, 'utf8').trim().split('\n').length, 22, 'both suites still run on every call');
+  desktopDependencies(block().slice(0, 2), dir, {...env, INSTALL_SEMANTIC_INPUT: 'new'},
+    {base: git('rev-parse', 'origin/main'), head: git('rev-parse', 'HEAD')}, run);
+  assert.equal(installs, 10);
+  assert.equal(readFileSync(checks, 'utf8').trim().split('\n').length, 23);
 }));
 
 test('CI and unsupported command/lifecycle modes stay fresh; failed checks never publish install evidence', () => fixture((dir, env, git) => {
@@ -100,7 +104,7 @@ test('CI and unsupported command/lifecycle modes stay fresh; failed checks never
     assert.deepEqual(invoked, block().map(command => command.argv), 'CI/overrides retain every original command');
     assert.equal(existsSync(saved), false);
   }
-  assert.equal(desktopDependencies(block().slice(0, 2), dir, env, admission, unexpected), false);
+  assert.equal(desktopDependencies(block().slice(0, 1), dir, env, admission, unexpected), false);
   const run = (command: {argv: string[]; cwd: string}, environment = {...env, FAIL_DESKTOP_CHECK: '1'}) =>
     execFileSync(command.argv[0], command.argv.slice(1), {cwd: join(dir, command.cwd), env: environment, stdio: 'pipe'});
   assert.throws(() => desktopDependencies(block(), dir, {...env, FAIL_DESKTOP_CHECK: '1'}, admission, run));
@@ -112,6 +116,7 @@ test('CI and unsupported command/lifecycle modes stay fresh; failed checks never
 
 test('actual installed pre-push hook and production runner perform one install across two source-only pushes', () => fixture((dir, env, git) => {
   copyRunnerSources(dir);
+  writeFileSync(join(dir, 'shared/enablement/issues/run.ts'), 'process.stdin.resume();\n');
   copyFileSync(join(dir, 'enablement/local-tests/run.ts'), join(dir, 'enablement/local-tests/runner.ts'));
   writeFileSync(join(dir, 'enablement/local-tests/run.ts'), `import {execFileSync} from 'node:child_process';
     import {execute} from './runner.ts';

@@ -46,7 +46,11 @@ fi
 # Feature pushes compare the entire candidate with the main integration
 # checkpoint, never just the latest commit or previously pushed feature tip.
 # Missing main/history deliberately selects broad verification.
-printf '%s\n' "$refs" | node --experimental-strip-types shared/enablement/issues/run.ts push
+if [ -n "${APPARENT_TIMING_FILE:-}" ]; then
+    printf '%s\n' "$refs" | GITHUB_SHA="$head" node --experimental-strip-types enablement/timing/command.ts push-admission node --experimental-strip-types shared/enablement/issues/run.ts push
+else
+    printf '%s\n' "$refs" | node --experimental-strip-types shared/enablement/issues/run.ts push
+fi
 
 base=$(git merge-base "$head" refs/remotes/origin/main 2>/dev/null || printf 'unknown')
 echo "pre-push: selecting verification for $base..$head" >&2

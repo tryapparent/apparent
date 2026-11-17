@@ -223,6 +223,12 @@ test("real Git push checks issues before verification and preserves HEAD and del
     join(f.repo, "enablement/local-tests/run.ts"),
     "import {appendFileSync} from 'node:fs'; appendFileSync('.git/verification','ran\\n');\n",
   );
+  mkdirSync(join(f.repo, "enablement/timing"), { recursive: true });
+  copyFileSync(
+    join(root, "enablement/timing/command.ts"),
+    join(f.repo, "enablement/timing/command.ts"),
+  );
+  process.env.APPARENT_TIMING_FILE = join(f.dir, "timing.jsonl");
   const objects =
     git(root, [
       "rev-parse",
@@ -271,9 +277,48 @@ test("real Git push checks issues before verification and preserves HEAD and del
   assert.equal(readFileSync(process.env.ISSUE_TEST_LOG!, "utf8"), "12\n12\n");
   assert.equal(push(":refs/heads/second").status, 0);
   assert.equal(readFileSync(process.env.ISSUE_TEST_LOG!, "utf8"), "12\n12\n");
+  const timings = readFileSync(process.env.APPARENT_TIMING_FILE!, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.ok(
+    timings.some(
+      (row) =>
+        row.label === "push-admission" &&
+        row.sha === head &&
+        row.state === "finished" &&
+        row.code === 0,
+    ),
+  );
+  assert.ok(timings.some((row) => row.state === "finished" && row.code === 1));
   f.commit("next\n\nIssue: tryapparent/apparent#12");
   assert.match(
     push(head + ":refs/heads/older").stderr,
     /not the checked-out HEAD/,
   );
+});
+
+test("binding stays in each worktree's private administrative metadata", (t) => {
+  const f = fixture(t);
+  const other = join(f.dir, "other");
+  f.runGit("worktree", "add", "-q", "-b", "t3/synthetic-other", other);
+  const config = readFileSync(join(f.repo, ".git/config"));
+  const index = readFileSync(join(f.repo, ".git/index"));
+  const branch = f.runGit("symbolic-ref", "HEAD");
+  bind({ repository, number: 12 }, f.repo);
+  bind({ repository, number: 13 }, other);
+  assert.equal(
+    JSON.parse(readFileSync(join(f.repo, ".git/apparent-issue.json"), "utf8"))
+      .number,
+    12,
+  );
+  const otherGit = git(other, ["rev-parse", "--absolute-git-dir"]).trim();
+  assert.equal(
+    JSON.parse(readFileSync(join(otherGit, "apparent-issue.json"), "utf8"))
+      .number,
+    13,
+  );
+  assert.deepEqual(readFileSync(join(f.repo, ".git/config")), config);
+  assert.deepEqual(readFileSync(join(f.repo, ".git/index")), index);
+  assert.equal(f.runGit("symbolic-ref", "HEAD"), branch);
 });

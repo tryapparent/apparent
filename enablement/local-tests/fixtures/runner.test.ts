@@ -30,6 +30,7 @@ test('fixture source closure follows a new nested import without copying real te
   put(source, 'enablement/ci/new/helper.ts', 'export const value = 42;\n');
   put(source, 'public/enablement/cd/ci/inputs.ts', 'export const publicInput = true;\n');
   put(source, 'connect/enablement/ci/local/service.ts', 'export const service = true;\n');
+  put(source, 'enablement/timing/command.ts', 'export const timing = true;\n');
   put(source, 'shared/enablement/issues/run.ts', 'export const issues = true;\n');
   put(source, 'shared/enablement/ci/inputs.ts', 'export const shared = true;\n');
   for (const path of ['enablement/local-tests/recursive.test.ts', 'enablement/ci/new/recursive.test.ts',

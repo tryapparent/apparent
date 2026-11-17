@@ -11,13 +11,11 @@ export { publicMarkdown };
 export function documentationOnlyPath(path: string): boolean {
   if (!path.endsWith('.md') || publicMarkdown.has(path)) return false;
   if (/(^|\/)(skills?|prompts?|instructions?|tests?|fixtures?|templates?)(\/|$)/i.test(path)) return false;
-  // Repository development guidance is not a product build input. Embedded
-  // skills/prompts/fixtures above still retain their actual consumers.
   if (/(^|\/)AGENTS\.md$/.test(path)) return true;
   if (/(^|\/)(SKILL|CLAUDE|GEMINI)\.md$/i.test(path)) return false;
   return ['CONTEXT.md', 'VERIFICATION.md', 'enablement/refactor.md', 'enablement/local-tests/README.md'].includes(path) ||
     ['capture/engine', 'capture/desktop', 'capture/agent', 'connect', 'connect/web', 'connect/client',
-      'connect/service', 'public/site', 'shared', 'enablement', 'record/storage', 'record/completion', 'record/transcription', 'record/media', 'engine', 'engine/sdk'].some(owner =>
+      'connect/service', 'public/site', 'shared', 'enablement', 'record/storage', 'record/completion', 'record/transcription', 'record/media', 'engine', 'engine/sdk', 'agent', 'handoff', 'onboarding'].some(owner =>
       path.startsWith(owner + '/docs/') || ['README', 'CHANGELOG', 'CONTRIBUTING', 'LICENSE'].some(name => path === `${owner}/${name}.md`));
 }
 export const linuxDrivers = new Set(['capture-smoke.py', 'gui-vm.py', 'gui-vm-reaper.py',
