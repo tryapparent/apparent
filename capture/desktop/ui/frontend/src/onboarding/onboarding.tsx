@@ -148,8 +148,9 @@ export function NativeOnboarding(){
     {state.step==='permissions'&&<><h1>{state.fix?'Allow access.':'We need three things.'}</h1><Permissions platform={state.platform} rows={state.rows} action={action}/></>}
     {state.step==='shortcut'&&<><h1 className={state.shortcutChosen?'native-shortcut-prompt':undefined} key={state.shortcutChosen?'chosen':'choose'}>{!state.shortcutChosen?'Choose your shortcut.':'One more time.'}</h1><div className="native-shortcut" data-managed={state.shortcutEditor?.externallyManaged}>
       {state.shortcutEditor?.recording?<div ref={shortcutRecorder} tabIndex={0} role="group" aria-label="Shortcut recorder" onPointerDown={()=>optionGesture.current.pointer(true)} onPointerUp={()=>optionGesture.current.pointer(false)} onPointerCancel={()=>optionGesture.current.pointer(false)} onBlur={()=>{optionGesture.current.reset();setHeldKeys([])}} onKeyUp={event=>{const pressed=optionGesture.current.up(event);if(pressed)void action({action:'shortcut',kind:'record',...pressed,reserved:false});setHeldKeys([event.ctrlKey?'Ctrl':'',event.altKey?(state.platform==='macos'?'Option':'Alt'):'',event.metaKey?(state.platform==='macos'?'⌘':'Super'):'',event.shiftKey?'Shift':''].filter(Boolean));}} onKeyDown={event=>{
+      if(event.target!==event.currentTarget){optionGesture.current.cancel();return;}
       optionGesture.current.down(event,state.platform);
-      if(event.key==='Tab'||event.target!==event.currentTarget)return;
+      if(event.key==='Tab')return;
       event.preventDefault();if(event.key==='Escape'){void action('cancel-shortcut');return;}
       if(event.repeat)return;
       const input=shortcutInput(event,state.platform);
