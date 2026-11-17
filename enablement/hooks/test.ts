@@ -8,10 +8,13 @@ const here=path.dirname(fileURLToPath(import.meta.url));
 function fixture(t: any) {
   const dir=mkdtempSync('/tmp/apparent-dev-hook-setup-');
   t.after(()=>rmSync(dir,{recursive:true,force:true}));
-  const git=(...args: string[])=>execFileSync('git',args,{cwd:dir,encoding:'utf8'}).trim();
+  const env = {...process.env};
+  for (const name of Object.keys(env)) if (name.startsWith('GIT_')) delete env[name];
+  env.GIT_CONFIG_GLOBAL='/dev/null'; env.GIT_CONFIG_NOSYSTEM='1';
+  const git=(...args: string[])=>execFileSync('git',args,{cwd:dir,env,encoding:'utf8'}).trim();
   const put=(name: string,text: string)=>{mkdirSync(path.dirname(path.join(dir,name)),{recursive:true});writeFileSync(path.join(dir,name),text);};
   git('init','-q');git('config','user.name','Synthetic');git('config','user.email','synthetic@example.invalid');
-  const run=(script: string,...args: string[])=>spawnSync(process.execPath,['--experimental-strip-types',path.join(here,script),...args],{cwd:dir,encoding:'utf8'});
+  const run=(script: string,...args: string[])=>spawnSync(process.execPath,['--experimental-strip-types',path.join(here,script),...args],{cwd:dir,env,encoding:'utf8'});
   return {dir,git,put,run};
 }
 test('prepared hooks preserve prior precommit, prepush bytes/mode and config; propagate failures',t=>{

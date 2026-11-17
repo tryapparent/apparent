@@ -1,9 +1,7 @@
+import {admissionTooling} from '../../../shared/enablement/ci/inputs.ts';
 import {independentInputs} from './engine-inputs/qualify.ts';
-// Owner facts shared by hosted admission and local pushes. Unknown inputs stay broad.
 export const owners = ['capture', 'engine', 'desktop', 'capture-tools', 'client', 'client-foreground', 'web', 'service', 'public', 'hermes', 'tooling', 'onboarding', 'engine-media'] as const;
 export type Owner = typeof owners[number];
-// These prepare the installed renderer/runtime and the app consumed by the
-// foreground client. They do not build the independently published Engine.
 export const desktopPackagingInputs = new Set([
   'capture/desktop/scripts/packaging/install-app.sh',
   'capture/desktop/scripts/packaging/frontend/stage.ts',
@@ -37,9 +35,6 @@ const toolingRegressionTests = new Set([
   'enablement/prerequisites/native.test.ts',
 ]);
 
-// Exact pure policy files have real renderer consumers, but no native build input.
-// Native adapters, shortcut validation and durable-save bridges are intentionally
-// absent from this exemption. New policy files/imports retain integration.
 export const onboardingPureInputs = new Set([
   'electron/onboarding/account.ts', 'electron/onboarding/presentation.ts', 'electron/onboarding/selection.ts',
   'src/onboarding/state.ts', 'src/onboarding/shortcut/keys.ts',
@@ -120,6 +115,7 @@ export function foregroundPortableChange(path: string, before: string, after: st
 
 function directConsumers(path: string): readonly Owner[] {
   if (documentationOnlyPath(path)) return [];
+  if (admissionTooling(path)) return ['tooling'];
   if (desktopPackagingInputs.has(path)) return ['capture', 'engine', 'desktop', 'capture-tools', 'client-foreground'];
   // Independently delivered producer; Record media consumes a pinned artifact,
   // never this implementation tree. Consumer pin/policy/package changes retain
@@ -297,7 +293,7 @@ export function routeDecision(paths: string[] | null, workflowControls: string[]
 
 export function unownedPaths(paths: string[]): string[] {
   const files = new Set([...knownFiles, '.gitignore', 'CONTRIBUTING.md', 'LICENSE']);
-  return paths.filter(path => path.includes('/') ? !knownDirectories.includes(path.split('/')[0]) : !files.has(path));
+  return paths.filter(path => path.includes('/') ? ![...knownDirectories, 'agent', 'handoff', 'onboarding'].includes(path.split('/')[0]) : !files.has(path));
 }
 export function routingProblems(decision: {paths: string[]; historyKnown: boolean; requiredStreams: Record<string, boolean>}): string[] {
   const problems = unownedPaths(decision.paths).map(path => 'Declare directory ownership for ' + path);

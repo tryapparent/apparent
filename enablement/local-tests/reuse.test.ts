@@ -243,8 +243,6 @@ test('npm lifecycle options from environment and each configuration file refuse 
   const user = join(dir, 'user.npmrc'), global = join(dir, 'global.npmrc'), project = join(dir, '.npmrc');
   Object.assign(env, {npm_config_userconfig: user, npm_config_globalconfig: global, npm_config_cache: join(dir, 'cache')});
   writeFileSync(user, ''); writeFileSync(global, ''); writeFileSync(project, '');
-  // Cheap contracts run before package installation/build. Keep the real loader
-  // reproduction independent of service dependencies and generated assets.
   const source = join(dir, 'loader.test.ts');
   writeFileSync(source, `import {test} from 'node:test';
     import assert from 'node:assert/strict';
@@ -293,9 +291,9 @@ test('installed Git hook keeps fresh guards around ancestry-only reuse and faile
   copyFileSync(join(root, '.githooks/pre-push'), join(hooks, 'pre-push'));
   mkdirSync(join(dir, 'enablement/local-tests'), {recursive: true});
   copyFileSync(join(root, 'enablement/local-tests/receipt.ts'), join(dir, 'enablement/local-tests/receipt.ts'));
+  mkdirSync(join(dir, 'shared/enablement/issues'), {recursive: true});
+  writeFileSync(join(dir, 'shared/enablement/issues/run.ts'), 'process.stdin.resume();\n');
   const input = join(dir, 'input'); writeFileSync(input, 'pass');
-  // Synthetic test phase behind the actual installed hook. The real package
-  // suite has a separate measured proof; this fixture exercises Git admission.
   writeFileSync(join(dir, 'enablement/local-tests/run.ts'), `
     import {execFileSync, spawnSync} from 'node:child_process';
     import {appendFileSync, readFileSync} from 'node:fs';

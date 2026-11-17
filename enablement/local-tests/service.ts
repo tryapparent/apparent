@@ -1,3 +1,4 @@
+import {serviceInputs as qualifiedPaths, serviceTree as qualifiedTree, serviceTest as canonicalTest} from '../../connect/enablement/ci/local/service.ts';
 // One reviewed command closure. Expansion requires a new closure audit and proof.
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
@@ -22,12 +23,6 @@ export function loaderPaths(output: string): string[] {
     throw Error('unrecognized or unresolved runtime loader input');
   });
 }
-const qualifiedPaths = ['connect/service', 'shared/ui', 'shared/assets'];
-// 5d2931bb1: complete service tests/helpers/scripts/lock and shared source/assets.
-// Test fixtures use in-memory Miniflare and synthetic loopback services. No Git
-// ancestry, production credentials, browser, remote service or native app proof.
-const qualifiedTree = '3e42becfa9034cc4643bd8c49fcb021fe775db14510df6b27e398d330c73b9c6';
-const canonicalTest = 'npm run build && node --test --test-concurrency=1 test/*/*.test.mjs';
 
 function git(cwd: string, env: NodeJS.ProcessEnv, args: string[]): string {
   return execFileSync('git', args, {cwd, env, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024});
@@ -134,7 +129,7 @@ export function serviceSnapshot(cwd: string, env: NodeJS.ProcessEnv, admission: 
   // The service test closure also includes the full shared UI and asset trees:
   // recipient build/Tailwind and generated render assets consume them.
   const source = files([...tracked, service], [cwd], committed, undefined,
-    [service, join(cwd, 'shared/ui'), join(cwd, 'shared/assets')]);
+    [...qualifiedPaths.map(path => join(cwd, path)), join(cwd, 'enablement/local-tests'), join(cwd, 'connect/enablement/ci/local')]);
   const node = realpathSync(process.execPath);
   const runtimePaths = new Set([node, '/usr/bin/ldd', '/etc/ld.so.cache', '/etc/os-release',
     '/etc/hosts', '/etc/resolv.conf', '/etc/nsswitch.conf', '/etc/localtime', '/proc/sys/kernel/random/boot_id',
@@ -189,10 +184,10 @@ export function serviceTests(command: Command, cwd: string, env: NodeJS.ProcessE
   const testRoot = join(cwd, command.cwd, 'test');
   const tests = readdirSync(testRoot).sort().flatMap(folder => {
     const path = join(testRoot, folder);
-    return lstatSync(path).isDirectory() ? readdirSync(path).sort().filter(name => name.endsWith('.test.mjs')).map(name => `test/${folder}/${name}`) : [];
+    return lstatSync(path).isDirectory() ? readdirSync(path).sort().filter(name => /\.test\.(mjs|ts)$/.test(name)).map(name => `test/${folder}/${name}`) : [];
   });
   if (!tests.length) throw Error('service test inventory empty');
-  const testCommand = {argv: [process.execPath, '--no-global-search-paths', '--test', '--test-concurrency=1', ...tests], cwd: command.cwd};
+  const testCommand = {argv: [process.execPath, '--no-global-search-paths', '--experimental-strip-types', '--test', '--test-concurrency=1', ...tests], cwd: command.cwd};
   const testEnv = serviceEnvironment(env);
   reuse(cwd, () => serviceSnapshot(cwd, testEnv, admission!, testCommand.argv), () => {
     // Config can change while the fresh build runs. In that case use npm's
