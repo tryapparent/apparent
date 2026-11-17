@@ -5,9 +5,12 @@ import { createInterface } from 'node:readline'
 import { createHash, randomBytes } from 'node:crypto'
 import { resolve, join, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import {operations, operationFamily, unresolvedOperation} from './operations.ts'
 
 type Row = { timestamp?: string; type?: string; payload?: Record<string, any> }
 export type Call = { id: string; session: string; workspace: string; tool: string; category: string;
+  operations?: string[];
+  waitedOperations?: string[];
   fingerprint: string; start: number; end?: number; asynchronous: boolean; batched: boolean;
   processObservedEnd?: number; sourceRef?: {file: string; line: number} }
 const salt = randomBytes(32)
@@ -17,17 +20,13 @@ export const acceptsWorkspace = (cwd: string, root: string, excluded?: string) =
   within(resolve(cwd), resolve(root)) && (!excluded || !within(resolve(cwd), resolve(excluded)))
 
 export function describe(tool: string, source: string) {
-  // Heuristics describe wrapper intent, never assert how many nested commands ran.
-  const category = /write_stdin|functions\.wait|clock\.sleep|t3_thread_wait|wait_agent/.test(tool + source) || ['wait', 'sleep'].includes(tool) ? 'poll/wait'
-    : /git push|pre-push|verification\.py.*--run/.test(source) ? 'push/verification'
-    : /cargo\s+(test|build|check|clippy)|t3-build/.test(source) ? 'rust/build'
-    : /(?:bun|npm|node|pnpm)\s+(?:run\s+)?(?:test|build|ci)|--test/.test(source) ? 'js/test-build-install'
-    : /gh\s+(?:run|pr)|pull_request/.test(source + tool) ? 'ci/pr'
-    : /exec_command|execute|shell/.test(tool + source) ? 'shell/other' : 'other-tool'
+  const inspected = operations(tool, source);
+  const aliases: Record<string,string> = {'process wait':'poll/wait','verification/push':'push/verification',
+    'Rust build/test':'rust/build','JavaScript/package build/test':'js/test-build-install'};
+  const category = inspected.operations.length === 1 ? aliases[inspected.operations[0]] ?? inspected.operations[0] : 'mixed operations';
   const normalized = source.replace(/\/tmp\/apparent-dev-[\w./-]+/g, '<job>')
     .replace(/\/home\/[^\s"'`]+\/worktrees\/scrawl\/t3-[\w-]+/g, '<worktree>')
-  return { category, fingerprint: hash(tool + '\n' + normalized),
-    batched: (source.match(/tools\.exec_command\s*\(/g) ?? []).length > 1 }
+  return { category, ...inspected, fingerprint: hash(tool + '\n' + normalized) }
 }
 
 function outputText(value: unknown): string {
@@ -39,6 +38,7 @@ function outputText(value: unknown): string {
 export async function readRollout(path: string, accept: (workspace: string) => boolean) {
   const calls = new Map<string, Call>()
   const processes = new Map<string, Call>()
+  const cells = new Map<string, Call>()
   const pollTargets = new Map<string, string>()
   let session = '', workspace = '', malformed = 0, orphanResults = 0, lineNumber = 0
   const lines = createInterface({ input: createReadStream(path), crlfDelay: Infinity })
@@ -63,10 +63,14 @@ export async function readRollout(path: string, accept: (workspace: string) => b
       if (typeof p.call_id !== 'string' || calls.has(p.call_id)) continue
       const tool = [p.namespace, p.name].filter(Boolean).join('.')
       const source = String(p.arguments ?? p.input ?? '')
-      const poll = /write_stdin/.test(tool + source) && source.match(/session_id["\s]*:\s*(\d+)/)
+      const inspected = describe(tool,source);
+      const poll = inspected.operations.includes('process wait') && /write_stdin/.test(tool + source) && source.match(/session_id["\s]*:\s*(\d+)/)
       if (poll) pollTargets.set(p.call_id, poll[1])
+      const cell = /(?:^|\.)wait$/.test(tool) && source.match(/cell_id["\s]*:\s*"([\w:.-]+)"/);
+      const owner = poll ? processes.get(poll[1]) : cell ? cells.get(cell[1]) : undefined;
+      const waitedOperations = owner?.waitedOperations ?? owner?.operations;
       calls.set(p.call_id, { id: p.call_id, session, workspace, tool, start: time,
-        ...describe(tool, source), asynchronous: false, sourceRef: {file: path, line: lineNumber} })
+        ...inspected, ...(waitedOperations ? {waitedOperations} : {}), asynchronous: false, sourceRef: {file: path, line: lineNumber} })
     } else if (p.type === 'function_call_output' || p.type === 'custom_tool_call_output') {
       const call = calls.get(p.call_id)
       if (!call) { orphanResults++; continue }
@@ -76,8 +80,10 @@ export async function readRollout(path: string, accept: (workspace: string) => b
       call.asynchronous = /session_id["\s]*[:=]\s*\d+|Session ID:|Script running with cell ID|Process running with session ID/.test(output)
       if (time >= call.start) call.end = time
       const processId = output.match(/session_id["\s]*[:=]\s*(\d+)|Process running with session ID\s*(\d+)/)
-      if (processId && call.category !== 'poll/wait' && !call.batched)
+      if (processId && !call.operations?.includes('process wait') && call.category !== 'poll/wait' && !call.batched)
         processes.set(processId[1] ?? processId[2], call)
+      const cellId = output.match(/Script running with cell ID\s+([\w:.-]+)/);
+      if (cellId) cells.set(cellId[1],call);
       const target = pollTargets.get(p.call_id)
       const launched = target && processes.get(target)
       if (launched && /exit_code["\s]*:\s*-?\d+|Process exited with code\s*-?\d+/.test(output))
@@ -98,12 +104,34 @@ export function summarize(calls: Call[], from: number, to: number) {
     const processEnds = [old.processObservedEnd, call.processObservedEnd].filter((t): t is number => t !== undefined && t >= earliest.start)
     merged.set(call.id, {...earliest, end: ends.length ? Math.min(...ends) : undefined,
       processObservedEnd: processEnds.length ? Math.min(...processEnds) : undefined,
+      waitedOperations: earliest.waitedOperations ?? old.waitedOperations ?? call.waitedOperations,
       asynchronous: old.asynchronous || call.asynchronous, batched: old.batched || call.batched})
   }
   const unique = [...merged.values()]
   // Old unmatched records do not establish a still-running operation in this window.
   const selected = unique.filter(c => c.start < to && (c.end ?? to) > from &&
     (c.end !== undefined || c.start >= from))
+  const attributableWait = (c:Call) => c.operations?.includes('process wait') && c.waitedOperations &&
+    !c.waitedOperations.some(unresolvedOperation) && operationFamily(c.waitedOperations).length === 1;
+  const operationLabel = (c: Call) => attributableWait(c) ? 'waiting/status for '+operationFamily(c.waitedOperations!).join(' + ') : c.operations ? operationFamily(c.operations).join(' + ') : c.category;
+  const unresolved = (c: Call) => !attributableWait(c) && (!c.operations || operationFamily(c.operations).length !== 1 || operationFamily(c.operations).some(unresolvedOperation));
+  const rank = (rows: Call[], process: boolean) => {
+    const groups = new Map<string,Call[]>();
+    for (const c of rows) {const label = operationLabel(c); groups.set(label,[...(groups.get(label) ?? []),c]);}
+    const duration = (c: Call) => Math.max(0,Math.min((process ? c.processObservedEnd : c.end) ?? to,to)-Math.max(c.start,from))/1000;
+    const ranked = [...groups].map(([label,rows]) => {
+      const totalSeconds = rows.reduce((n,c)=>n+duration(c),0);
+      return {label, unresolved:rows.some(unresolved), count:rows.length, meanSeconds:totalSeconds/rows.length,totalSeconds,
+        sources:rows.slice().sort((a,b)=>duration(b)-duration(a)).slice(0,3).map(c=>({id:c.id,sourceRef:c.sourceRef}))};
+    }).sort((a,b)=>b.totalSeconds-a.totalSeconds);
+    const candidate = ranked.find(g=>!g.unresolved) ?? null;
+    const unresolvedSeconds = ranked.filter(g=>g.unresolved).reduce((n,g)=>n+g.totalSeconds,0);
+    const unclassifiedRows = rows.filter(c=>!c.operations || c.operations.some(v=>v==='unknown' || v.includes('purpose unresolved')));
+    return {clock:process ? 'observed-process-span' : 'tool-envelope',ranked,largestObserved:ranked[0] ?? null,candidate,unresolvedSeconds,
+      coverage:{completeRows:rows.length,unclassifiedRows:unclassifiedRows.length,unclassifiedSeconds:unclassifiedRows.reduce((n,c)=>n+duration(c),0)},
+      winnerEstablished:!!candidate && candidate.totalSeconds > unresolvedSeconds,
+      limitation:'Mixed envelopes are not divided across nested operations. Unresolved time is an upper bound on a competing action; waits do not identify their underlying workload. Process endpoints include delayed observation. Clocks overlap; do not add.'};
+  };
   function group(key: (c: Call) => string) {
     const groups = new Map<string, Call[]>()
     for (const c of selected) groups.set(key(c), [...(groups.get(key(c)) ?? []), c])
@@ -132,6 +160,9 @@ export function summarize(calls: Call[], from: number, to: number) {
     unmatchedBeforeWindow: unique.filter(c => c.end === undefined && c.start < from).length,
     observedToolUnionSeconds: union / 1000,
     categories: group(c => c.category), tools: group(c => c.tool),
+    actionRanking: {
+      envelopes:rank(selected.filter(c=>c.end !== undefined),false),
+      processes:rank(unique.filter(c=>c.processObservedEnd !== undefined && c.start < to && c.processObservedEnd > from),true)},
     repeatedWrappers: group(c => c.category + ':' + c.fingerprint).filter(g => g.calls > 1),
     longest: selected.filter(c => c.end !== undefined).sort((a, b) => (b.end! - b.start) - (a.end! - a.start)).slice(0, 30)
       .map(c => ({id: c.id, tool: c.tool, category: c.category, sourceRef: c.sourceRef,

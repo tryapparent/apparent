@@ -44,9 +44,12 @@ test('storage preference schemas fail closed on malformed or unbounded values', 
   assert.equal(isStoredRetention({ mediaDays: { present: true, value: 0 }, bundleDays: { present: true, value: null } }), true);
   assert.equal(isStoredRetention({ mediaDays: { present: false, value: 7 }, bundleDays: { present: false, value: null } }), false);
   assert.equal(isStoredRetention({ mediaDays: { present: true, value: -1 }, bundleDays: { present: false, value: null } }), false);
-  assert.equal(isRetentionPolicy({ mediaDays: 7, bundleDays: 30 }), true);
-  assert.equal(isRetentionPolicy({ mediaDays: null, bundleDays: 90, other: true }), false);
-  assert.equal(isRetentionPolicy({ mediaDays: 0x1_0000_0000, bundleDays: 30 }), false);
+  for (const policy of [{mediaDays: 7, bundleDays: 30}, {mediaDays: 0, bundleDays: 0xffffffff},
+    {mediaDays: null, bundleDays: null}]) assert.equal(isRetentionPolicy(policy), true);
+  for (const policy of [null, [], {mediaDays: -1, bundleDays: 2}, {mediaDays: 1.2, bundleDays: 2},
+    {mediaDays: 0x100000000, bundleDays: 2}, {mediaDays: 1}, {mediaDays: 1, bundleDays: 2, extra: true},
+    {mediaDays: null, bundleDays: 90, other: true},
+    Object.assign(Object.create({mediaDays: 7, bundleDays: 30}), {one: true, two: true})]) assert.equal(isRetentionPolicy(policy), false);
 });
 
 test('capture-location readback preserves saved/effective distinction and source semantics', () => {

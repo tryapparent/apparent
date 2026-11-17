@@ -8,6 +8,7 @@ import {inspectThreads, inspectJobs} from './snapshots.ts';
 import {isoTime} from './policy.ts';
 import * as ledger from './state.ts';
 import {markdown, chart} from './format.ts';
+import {collectGitHub} from './github.ts';
 
 const json = (file: string) => JSON.parse(readFileSync(file, 'utf8'));
 const save = (file: string, value: unknown) => writeFileSync(file, JSON.stringify(value, null, 2) + '\n', {mode: 0o600, flag: 'wx'});
@@ -20,7 +21,7 @@ export async function main(args: string[]) {
     options.set(args[i], args[i + 1]);
   }
   const allowed: Record<string, string[]> = {
-    collect: ['input', 'workspace', 'exclude-workspace', 'from', 'to', 'out', 'threads', 'jobs'],
+    collect: ['input', 'workspace', 'exclude-workspace', 'from', 'to', 'out', 'threads', 'jobs', 'github-repo', 'ci-run-limit'],
     init: ['state', 'scope', 'since'], begin: ['state', 'run-id', 'end'], commit: ['state', 'run-id', 'decision'],
     abort: ['state', 'run-id'], plan: ['state'], prepare: ['state', 'key'], record: ['state', 'request-id', 'receipt'],
     delivered: ['state', 'request-id', 'receipt'], benefit: ['state', 'key', 'receipt'], show: ['state'], format: ['input', 'out'], chart: ['input', 'out'],
@@ -47,7 +48,10 @@ export async function main(args: string[]) {
         p50Seconds: durations[Math.floor((durations.length - 1) * .5)], p95Seconds: durations[Math.floor((durations.length - 1) * .95)]};
     }).sort((a, b) => b.totalSeconds - a.totalSeconds);
     const threads = options.has('--threads') ? inspectThreads(json(get('threads')), from, to) : null;
-    const jobs = options.has('--jobs') ? inspectJobs(json(get('jobs')), from, to) : null;
+    if (options.has('--jobs') && options.has('--github-repo')) fail('Use --jobs or --github-repo, not both');
+    if (options.has('--ci-run-limit') && !options.has('--github-repo')) fail('--ci-run-limit requires --github-repo');
+    const github = options.has('--github-repo') ? collectGitHub(get('github-repo'),get('from'),get('to'),Number(options.get('--ci-run-limit') ?? 12)) : null;
+    const jobs = options.has('--jobs') ? inspectJobs(json(get('jobs')), from, to) : github ? {...inspectJobs(github.runs,from,to),collection:github.coverage} : null;
     const result = {schema: 1, census, processGroups, threads, jobs, coverage: {scanned, malformed, orphanResults,
       threadsProvided: threads !== null, hostedJobsProvided: jobs !== null},
       requiredLenses: ['human-dependency', 'time-eater', 'confusion-maintainability', 'feedback-gap'],
