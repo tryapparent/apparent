@@ -193,3 +193,10 @@ legacy config and intercepts all external requests; none is sent to PostHog.
 
 Connect account analytics and desktop error reporting remain separate and
 unchanged. Existing PostHog records are not deleted by this website change.
+
+Public verification gives Miniflare and Wrangler disposable private cache defaults
+under the caller's `TMPDIR` (or OS temporary directory), shared for that invocation
+and removed on success or failure. This keeps the locked runtime's `Request.cf`
+cache out of the source cwd. Explicit `MINIFLARE_CACHE_DIR`, `WRANGLER_CACHE_DIR`
+and Cloudflare cf configuration remain authoritative; caller-owned paths are never
+removed. The real workerd/movie checks and verification failure status are retained.
