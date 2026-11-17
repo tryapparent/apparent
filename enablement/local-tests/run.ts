@@ -35,7 +35,7 @@ export function selection(base: string, head: string, cwd = root, _conservativeW
 export function captureToolTests(cwd = root): Command[] {
   // Load tracked files explicitly: discovery skips hyphenated module filenames
   // and does not recurse into these non-package test folders.
-  const result = spawnSync('git', ['ls-files', '-z', '--', 'capture/desktop/scripts/', 'capture/agent/scripts/'], { cwd, encoding: 'utf8' });
+  const result = spawnSync('git', ['ls-files', '-z', '--', 'capture/desktop/scripts/', 'capture/desktop/enablement/', 'capture/agent/scripts/'], { cwd, encoding: 'utf8' });
   if (result.error || result.status !== 0) throw Error('Cannot enumerate capture tooling tests');
   const paths = result.stdout.split('\0').filter(path => /\/(?:test[-_][^/]*\.py|[^/]+\.test\.ts)$/.test(path)).sort();
   const nodeTests = paths.filter(path => path.endsWith('.test.ts'));
