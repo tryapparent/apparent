@@ -19,6 +19,8 @@ test('failed and confirmation copy remains authoritative',()=>{
 test('General effects reject other pane settings, extra fields and malformed shortcuts',()=>{
   assert.equal(validAction({action:'set',key:'errorReporting',value:false}),true);
   assert.equal(validAction({action:'set',key:'cloud',value:true}),false);
+  assert.equal(validAction({action:'set',key:'lowerPlayback',value:true}),false);
+  assert.equal(validAction({action:'set',key:'playbackLevel',value:20}),false);
   assert.equal(validAction({action:'set',key:'playbackLevel',value:101}),false);
   assert.equal(validAction({action:'record-shortcut',kind:'record'}),true);
   assert.equal(validAction({action:'record-shortcut',kind:'record',url:'https://example.com'}),false);

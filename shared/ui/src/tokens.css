@@ -21,6 +21,10 @@
   --apparent-type-title: 3rem;
   --apparent-type-section: 1.5rem;
   --apparent-type-body: 1.125rem;
+  --apparent-desktop-settings-switch-off-track: #767676;
+  --apparent-desktop-settings-switch-on-track: var(--apparent-signal);
+  --apparent-desktop-settings-switch-light-thumb: #ffffff;
+  --apparent-desktop-settings-switch-dark-thumb: var(--apparent-desktop-settings-switch-light-thumb);
   --apparent-switch-off-track: var(--apparent-signal);
   --apparent-switch-on-track: var(--apparent-lilac);
   --apparent-switch-light-thumb: var(--apparent-carbon);

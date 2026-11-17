@@ -4,8 +4,7 @@ export function validAction(value: unknown): boolean {
   const v = value as Record<string, unknown>;
   const keys = Object.keys(v).sort().join(',');
   if (v.action === 'set' && keys === 'action,key,value') {
-    return ['launchAtLogin','errorReporting','lowerPlayback'].includes(String(v.key)) && typeof v.value === 'boolean'
-      || v.key === 'playbackLevel' && Number.isInteger(v.value) && Number(v.value) >= 0 && Number(v.value) <= 100;
+    return ['launchAtLogin','errorReporting'].includes(String(v.key)) && typeof v.value === 'boolean';
   }
   if (v.action === 'cancel-shortcut') return keys === 'action';
   const kind = v.kind === 'record' || v.kind === 'paste';

@@ -28,7 +28,7 @@ export function connectPresentation(view: ConnectView | undefined) {
     presentation.buttons=presentation.buttons.filter(b=>['cancel','open-browser'].includes(b.command));
     step=2;
   } else if (view?.phase === 'connected' && original.tone === 'success') {
-    presentation.headline='You’re connected.'; presentation.detail=mode; presentation.artwork=true;
+    presentation.headline='Connect ready'; presentation.detail=mode; presentation.artwork=true;
   } else if (commands.has('connect') && original.tone==='neutral') {
     const paused=commands.has('request-disconnect');
     presentation.headline='Send captures to your cloud agent.';
