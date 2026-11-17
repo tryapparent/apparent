@@ -43,6 +43,22 @@ export function fixture(t: any) {
   git("init", "-q");
   git("config", "user.name", "Synthetic");
   git("config", "user.email", "synthetic@example.invalid");
+  for (const owner of [
+    "onboarding",
+    "record",
+    "handoff",
+    "connect",
+    "agent",
+    "public",
+    "hermes",
+    "engine",
+  ]) {
+    put(
+      `.github/workflows/stream-${owner}.yml`,
+      `jobs:\n  check:\n    steps:\n      - run: node ${owner}/enablement/ci/check.ts\n`,
+    );
+    put(`${owner}/enablement/ci/check.ts`, "export const ready = true;\n");
+  }
   put(
     ".githooks/pre-commit",
     readFileSync(path.join(repo, ".githooks/pre-commit"), "utf8"),

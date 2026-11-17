@@ -16,6 +16,9 @@ function fixture(t: any) {
     if(formatted.status===0) text=formatted.stdout;
   } writeFileSync(path.join(dir,file),text);};
   git('init','-q');git('config','user.name','Synthetic');git('config','user.email','synthetic@example.invalid');
+  for (const owner of ['record', 'engine', 'hermes']) {
+    put(`.github/workflows/stream-${owner}.yml`, 'jobs:\n  check:\n    steps:\n      - run: "true"\n');
+  }
   put('.githooks/pre-commit',readFileSync(path.join(root,'.githooks/pre-commit'),'utf8'));
   chmodSync(path.join(dir,'.githooks/pre-commit'),0o755);
   put('enablement/directory-width/check.py',readFileSync(path.join(root,'enablement/directory-width/check.py'),'utf8'));

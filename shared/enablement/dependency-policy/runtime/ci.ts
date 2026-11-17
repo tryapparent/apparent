@@ -11,8 +11,26 @@ const workflows: Record<string, string> = {
   "stream-engine.yml": "Engine",
   "hermes.yml": "Hermes",
 };
+const coordinators = new Set([
+  "checks.yml",
+  "verification.yml",
+  "verification-platform.yml",
+  "linux-updater-harness.yml",
+  "release-linux.yml",
+  "release-mac-preview.yml",
+  "release-windows.yml",
+]);
 export function ciPolicy(snapshot: Snapshot): Set<string> {
   const problems = new Set<string>();
+  const active = new Set<string>();
+  const declared = new Set<string>();
+  for (const file of snapshot.modes.keys()) {
+    const match =
+      /^(onboarding|record|handoff|connect|agent|public|hermes|engine)\/(?!enablement\/).+\.(?:[cm]?[jt]sx?|rs|py|swift)$/.exec(
+        file,
+      );
+    if (match) active.add(match[1]);
+  }
   const visited = new Set<string>();
   const edges: Edge[] = [];
   analyze(snapshot, edges);
@@ -26,6 +44,13 @@ export function ciPolicy(snapshot: Snapshot): Set<string> {
     for (const edge of edges.filter((edge) => edge.from === file)) {
       if (!edge.target) continue;
       const actual = owner(edge.target);
+      if (expected && !actual)
+        problems.add(
+          file +
+            " -> " +
+            edge.target +
+            ": stream CI cannot forward policy to an unowned root module",
+        );
       if (expected && actual && actual !== expected && actual !== "Shared")
         problems.add(
           file +
@@ -56,7 +81,7 @@ export function ciPolicy(snapshot: Snapshot): Set<string> {
     const identity = `${origin} [${cwd}]: ${text}`;
     if (visited.has(identity)) return;
     visited.add(identity);
-    if (/\$\(|`|\beval\b/.test(text))
+    if (/\$\(|`|\beval\b|(?:^|[\n;&|])\s*cd\s/.test(text))
       problems.add(
         `${identity}: unsupported dynamic CI command; use an owner CI entrypoint`,
       );
@@ -80,6 +105,10 @@ export function ciPolicy(snapshot: Snapshot): Set<string> {
         continue;
       }
       const actual = owner(file);
+      if (expected && !actual)
+        problems.add(
+          `${origin} -> ${file}: stream CI cannot forward policy to an unowned root script`,
+        );
       walk(file, expected ?? actual);
       if (actual && !["Shared", "Composition", "Legacy"].includes(actual)) {
         if (
@@ -124,6 +153,12 @@ export function ciPolicy(snapshot: Snapshot): Set<string> {
       )?.[1];
     const expected =
       workflows[basename] ?? (named && named[0].toUpperCase() + named.slice(1));
+    if (expected) declared.add(expected.toLowerCase());
+    if (!expected && !coordinators.has(basename))
+      problems.add(
+        file +
+          ": workflow must name its owner as stream-<owner>.yml; shared coordinators require explicit admission",
+      );
     const visit = (value: unknown, cwd = ".") => {
       if (!value || typeof value !== "object") return;
       const object = value as Record<string, unknown>;
@@ -164,12 +199,14 @@ export function ciPolicy(snapshot: Snapshot): Set<string> {
                 "]: local action execution is unsupported; invoke an owner CI entrypoint",
             );
         } else if (key === "run" && typeof child === "string")
-          command(file, child, expected, cwd);
+          command(file, child, expected ?? owner(cwd + "/"), cwd);
         else if (
           key === "paths" &&
           Array.isArray(child) &&
           child.some(
-            (path) => path === ".github/**" || path === ".github/workflows/**",
+            (path) =>
+              typeof path === "string" &&
+              /^\.github\/(?:\*|workflows\/\*)/.test(path),
           )
         )
           problems.add(
@@ -180,5 +217,10 @@ export function ciPolicy(snapshot: Snapshot): Set<string> {
     };
     visit(workflow);
   }
+  for (const stream of active)
+    if (!declared.has(stream))
+      problems.add(
+        stream + ": active stream requires its own stream-<owner>.yml workflow",
+      );
   return problems;
 }

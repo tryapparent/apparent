@@ -45,6 +45,10 @@ commands and shell working-directory changes are not fully resolved. New/changed
 action execution rejects as unsupported; literal step working directories resolve statically.
 Placement alone does not establish correct workflow triggers or owner build independence.
 Existing workflow permissions, identities, gates and provider entrypoints are unchanged.
+New active canonical streams require an owned `stream-<owner>.yml` workflow; existing missing
+workflows remain ratcheted debt. README-only prospective owners need no placeholder jobs.
+Unknown workflow names, root-policy forwarding, broad workflow-directory globs and unresolved
+shell directory changes reject. Shared coordinator workflow names are explicitly inventoried.
 
 The hook batches Biome candidate/baseline blobs and validates the installed tool closure against
 the staged lock. The hook pins one staged tree, isolates width's Git index, and checks the caller's index again
