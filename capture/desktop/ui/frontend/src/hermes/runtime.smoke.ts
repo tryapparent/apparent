@@ -9,12 +9,42 @@ import { build } from 'esbuild';
 import { randomBytes } from 'node:crypto';
 import { availablePort } from './testing/port.ts';
 import { keyDirectory } from './key.ts';
+import { tokenValid } from './protocol.ts';
 import { mailboxId, sign, authenticatedState } from '../../../../../../hermes/desktop/controller.ts';
 const root = fileURLToPath(new URL('../..', import.meta.url));
 async function until(predicate: () => unknown, timeoutMs = 10000) {
   const deadline = Date.now() + timeoutMs;
   while (!(await predicate())) { if (Date.now() > deadline) throw new Error('Synthetic Hermes smoke timed out'); await new Promise(resolve => setTimeout(resolve, 20)); }
 }
+async function waitForKey(read: () => Promise<string>) {
+  let key = '';
+  await until(async () => {
+    // publishKey creates the final path before writing its complete 32-hex key.
+    try { key = await read(); return tokenValid(key); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      return false;
+    }
+  });
+  return key;
+}
+test('windowless key readiness waits for complete material and propagates read errors', async () => {
+  const key = randomBytes(16).toString('hex');
+  let reads = 0;
+  const ready = await waitForKey(async () => {
+    reads++;
+    if (reads === 1) throw Object.assign(new Error('Not published'), { code: 'ENOENT' });
+    if (reads === 2) return '';
+    if (reads === 3) return key.slice(0, 16);
+    return key;
+  });
+  assert.ok(ready === key, 'readiness must return the complete key');
+  assert.equal(reads, 4);
+  assert.ok((await sign(ready, 'state:synthetic')).length > 0);
+  await assert.rejects(waitForKey(async () => {
+    throw Object.assign(new Error('Denied'), { code: 'EACCES' });
+  }), { code: 'EACCES' });
+});
 for (const needsLaunch of [false, true]) test(`real Electron confirmation/preload and bounded native CLI flow (${needsLaunch ? 'closed' : 'running'} recorder), then acknowledgement closes the bridge`, { timeout: 45000 }, async () => {
   const token = randomBytes(16).toString('hex');
   const job = await mkdtemp(path.join(tmpdir(), 'apparent-dev-hermes-native-'));
@@ -140,16 +170,9 @@ test('trusted local autostart records through the signed mailbox without creatin
   try {
     application = await electron.launch({ args: [bootstrap, mainBundle, '--hermes-request', `${token}/${port}`, '--hermes-autostart', '--apparent-executable', path.join(root, 'src/hermes/testing/cli.ts')],
       env: { ...process.env, HOME: home, APPARENT_SYNTHETIC_APP_DATA: appData, XDG_RUNTIME_DIR: runtime, XDG_CONFIG_HOME: path.join(job, 'config'), APPARENT_SYNTHETIC_NEEDS_LAUNCH: '1', APPARENT_SYNTHETIC_STARTUP_DELAY_MS: '8000', APPARENT_SYNTHETIC_RECEIPT: path.join(job, 'receipt.json'), APPARENT_SYNTHETIC_TRACE: path.join(job, 'trace.jsonl') } });
-    // A windowless launch has no firstWindow() readiness barrier. The key is
+    // A windowless launch has no firstWindow() readiness barrier. The complete key is
     // published only after the bridge binds; launch() can resolve before that.
-    let key = '';
-    await until(async () => {
-      try { key = await readFile(keyFile, 'utf8'); return true; }
-      catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-        return false;
-      }
-    });
+    const key = await waitForKey(() => readFile(keyFile, 'utf8'));
     const stateURL = `http://127.0.0.1:${port}/${id}/state/${await sign(key, `state:${id}`)}`;
     const readState = async () => authenticatedState(key, await (await fetch(stateURL, { headers: { Origin: 'null' } })).json());
     await until(async () => (await readState() as any)?.phase === 'recording', 20000);
