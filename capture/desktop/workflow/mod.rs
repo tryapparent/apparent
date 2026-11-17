@@ -15,3 +15,4 @@ pub(in crate::capture::desktop) mod storage_preferences;
 pub(crate) mod notes;
 
 pub(crate) mod electron;
+pub(crate) mod local_transcription;

@@ -5,7 +5,7 @@ use gpui::Context;
 
 impl ApparentCoordinator {
     fn electron_pill_view(&self, revision: u64) -> View {
-        View::new(
+        let mut view = View::new(
             &self.pill_snapshot(),
             revision,
             crate::shared::handoff::experiment("movableRecordingControls"),
@@ -15,7 +15,13 @@ impl ApparentCoordinator {
         .with_foreground_upload(
             self.share_pending.is_some() && crate::connect::hosted::foreground_progress().is_some(),
             self.completed_note.as_deref().is_some_and(|note| note.starts_with("Upload failed") || note.starts_with("Upload cancelled")),
-        )
+        );
+        if view.phase == "recording" {
+            if let Some(crate::capture::desktop::CaptureSource::Screen {audio: Some(audio), ..}) = self.active_recording.as_ref().map(|recording| &recording.source) {
+                view.transcript = audio.streaming_preview();
+            }
+        }
+        view
     }
     fn electron_pill_selection(&self) -> super::session::Selection {
         (

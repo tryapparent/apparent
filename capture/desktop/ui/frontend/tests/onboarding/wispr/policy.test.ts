@@ -4,7 +4,7 @@ import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {WisprOnboarding,savedWisprExperiment,type WisprContext,type WisprResult} from '../../../electron/onboarding/wispr.ts';
-import {preferenceFacts} from '../../../src/agents/policy.ts';
+import {facts as preferenceFacts} from '../../../src/settings/labs/policy.ts';
 
 const ready:WisprContext={platform:'macos',step:'shortcut',fix:false,shortcutChosen:false,wisprFlowEnabled:true};
 test('no native discovery or quit outside the explicit macOS experiment and shortcut decision',async()=>{

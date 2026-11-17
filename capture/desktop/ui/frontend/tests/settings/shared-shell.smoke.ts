@@ -15,6 +15,7 @@ test('Settings changes adopted panes in one live document and enforces the curre
   const exited=new Promise<void>(resolve=>child.once('exit',()=>resolve()));
   const send=(message:object)=>child.stdin.write(JSON.stringify(message)+'\n');
   const actions:Record<string,unknown>[]=[];
+  let holdLabs=false,heldLabs:Record<string,unknown>|undefined;
   createInterface({input:child.stdout}).on('line',line=>{
     const action=JSON.parse(line);actions.push(action);
     if(action.action==='navigate') {
@@ -22,6 +23,7 @@ test('Settings changes adopted panes in one live document and enforces the curre
       if(action.pane==='general')send({type:'general-state',platform:'linux',login:{on:false,available:true,needsApproval:false},shortcuts:[{kind:'record',title:'Record',label:'F1',recording:false,externallyManaged:false,isDefault:true,clearable:false,error:null}],errorReporting:true,lowerPlayback:false,playbackLevel:35,playbackAvailable:false});
       if(action.pane==='about')send({type:'about-state',version:'shell-test',updates:false,linux:true,mainUpdates:false,updateChannel:'stable',updateCheck:{checking:false,result:null}});
     }
+    if(action.action==='labs-preference'){if(holdLabs)heldLabs=action;else send({type:'labs-result',request:action.request,facts:{saved:false,sharingSaved:false,autoPasteSaved:false,autoPasteSupported:process.platform==='linux',wisprSaved:false,wisprSupported:process.platform==='darwin'}});}
     if(action.action==='agents-preference')send({type:'agents-result',request:action.request,facts:{saved:true,sharingSaved:false,t3Saved:false,autoPasteSaved:false,autoPasteSupported:process.platform==='linux',wisprSaved:false,wisprSupported:process.platform==='darwin'}});
   });
   let browser:Awaited<ReturnType<typeof chromium.connectOverCDP>>|undefined;
@@ -59,6 +61,16 @@ test('Settings changes adopted panes in one live document and enforces the curre
         if(process.env.APPARENT_SHELL_PROOF){await fs.mkdir(process.env.APPARENT_SHELL_PROOF,{recursive:true});await page.screenshot({path:path.join(process.env.APPARENT_SHELL_PROOF,`${pane}-${width}-${colorScheme}.png`)});}
       }
     }
+    await page.getByRole('button',{name:'Labs',exact:true}).click();
+    const streaming=page.getByRole('switch',{name:'Live local transcription'});
+    await expect(streaming).toBeEnabled();holdLabs=true;await streaming.click();
+    await expect.poll(()=>heldLabs?.enabled).toBe(true);await expect(streaming).toBeDisabled();
+    await page.getByRole('button',{name:'General',exact:true}).click();await expect(page).toHaveTitle('Apparent Settings — General');
+    send({type:'labs-result',request:heldLabs!.request,facts:{saved:true}});holdLabs=false;
+    await page.getByRole('button',{name:'Labs',exact:true}).click();
+    await expect(streaming).toBeEnabled();await expect(streaming).toHaveAttribute('aria-checked','false');
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
+    assert.equal(await page.evaluate(()=>Reflect.get(window,'shellIdentity')),'same document');
     assert.equal(loads,0,'navigation never reloads Chromium');
     await page.getByRole('button',{name:'Storage',exact:true}).click();
     await expect(page).toHaveTitle('Apparent Settings — Storage');
