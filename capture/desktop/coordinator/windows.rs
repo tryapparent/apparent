@@ -494,8 +494,6 @@ pub fn run_app(
         }
         let has_initial = initial_bundle.is_some();
         let coordinator = cx.new(|_| ApparentCoordinator::new(telemetry, initial_bundle));
-        // Warm the hidden shared controls before the first capture. Capture
-        // admission and shortcuts do not wait for renderer startup.
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         coordinator.update(cx, |coord, _| coord.ensure_electron_pill());
         set_status_inbox_count(coordinator.read(cx).inbox.len());
@@ -588,8 +586,6 @@ pub fn run_app(
                             }
                         });
                     }
-                    // Explicit launch gets first choice of presentation; automatic
-                    // no-tray controls must observe the Settings session it opens.
                     #[cfg(target_os = "linux")]
                     platform::poll_controls(loop_coord.read(cx).is_recording() || loop_coord.read(cx).is_processing() || loop_coord.read(cx).is_selecting(), !onboarding_initialized || loop_coord.read(cx).onboarding.is_some(), loop_coord.read(cx).settings.is_some(), cx);
                     #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -656,7 +652,12 @@ pub fn run_app(
                                 }
                                 MenuAction::ExportVideo => start_video_export(),
                                 MenuAction::Settings => {
-                                    loop_coord.update(cx, |coord, _| coord.open_settings(None));
+                                    loop_coord.update(cx, |coord, _| {
+                                        coord.open_settings(None);
+                                        if coord.settings.is_some() && let Some(session)=coord.onboarding.as_mut().filter(|session| session.practice_active()) {
+                                            session.practice_settings_opened();
+                                        }
+                                    });
                                 }
                                 MenuAction::CheckForUpdates => {
                                     platform::check_for_updates();

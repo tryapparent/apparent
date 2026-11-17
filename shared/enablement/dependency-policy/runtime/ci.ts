@@ -18,7 +18,6 @@ const coordinators = new Set([
   "linux-updater-harness.yml",
   "release-linux.yml",
   "release-mac-preview.yml",
-  "release-windows.yml",
 ]);
 export function ciPolicy(snapshot: Snapshot): Set<string> {
   const problems = new Set<string>();

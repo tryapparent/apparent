@@ -1,23 +1,19 @@
-//! Installed Electron routing and native adapters. Page workflows live in TypeScript;
-//! persistence uses the existing shared config transaction.
 use std::{path::PathBuf, process::{Command, Stdio}, sync::Arc};
 use super::settings::{Action, Event, Transport, Pane};
 
 #[cfg(test)]
 pub(super) fn build_test_renderer() {
-    // All Settings bridge tests share Vite's output directory. Build it once
-    // before either renderer starts, including when Cargo runs tests in parallel.
     static BUILT: std::sync::OnceLock<()> = std::sync::OnceLock::new();
     BUILT.get_or_init(|| {
         let frontend = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("capture/desktop/ui/frontend");
+        assert!(Command::new("node").arg("--experimental-strip-types").arg(frontend.join("../../../../composition/onboarding/prepare.ts"))
+            .current_dir(&frontend).status().unwrap().success());
         assert!(Command::new("node").arg(frontend.join("node_modules/vite/bin/vite.js"))
             .arg("build").current_dir(&frontend).status().unwrap().success());
     });
 }
 
-/// Unique across Settings sessions too: late events from a closed session must
-/// never match the first window of a newly opened session.
 pub(super) fn generation() -> u64 {
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -80,15 +76,13 @@ fn check_onboarding_assets(
     if !app.join("dist/onboarding.html").is_file() {
         return Err(OnboardingAssetFailure::Html);
     }
-    if !app.join("electron/onboarding.cjs").is_file() {
+    if !app.join("dist/composition/onboarding/entry.cjs").is_file() {
         return Err(OnboardingAssetFailure::Entry);
     }
     Ok(())
 }
 
 pub(super) fn onboarding_assets() -> Result<(PathBuf, PathBuf), OnboardingAssetFailure> {
-    // Preserve the original candidate selection: choose a complete Settings
-    // bundle first, then require its onboarding entry points.
     let (app, runtime) = settings_assets()?;
     check_onboarding_assets(&app, &runtime)?;
     Ok((app, runtime))
@@ -126,7 +120,6 @@ fn settings_assets() -> Result<(PathBuf, PathBuf), OnboardingAssetFailure> {
     Err(failure)
 }
 
-/// The live Session also checks this after transport events are generation-bound.
 pub(super) fn admits(pane: Pane, action: &Action) -> bool {
     matches!(action, Action::Navigate { .. } | Action::Close)
         || pane == Pane::Storage && matches!(action, Action::ShowCaptures)
@@ -188,10 +181,7 @@ pub(super) fn open(pane: Pane, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyh
     std::thread::spawn(move || {
         if let Some(stdout) = stdout {
             for line in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
-                // Each page receives only its bounded native capabilities.
                 if let Ok(action) = serde_json::from_str::<Action>(&line)
-                    // The session checks the current pane after generation binding.
-                    // Launch-pane filtering would discard actions after live navigation.
                     && [Pane::General, Pane::Storage, Pane::Agents, Pane::Labs, Pane::About]
                         .into_iter().any(|pane| admits(pane, &action))
                 {
@@ -204,9 +194,6 @@ pub(super) fn open(pane: Pane, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyh
     Ok(Transport::Helper { child, stdin })
 }
 
-/// Electron selects its display backend before loading the application entry.
-/// GPUI hides WAYLAND_DISPLAY on Linux; every Electron surface must follow that
-/// XWayland choice, while preserving an explicitly retained Wayland display.
 fn renderer_command(runtime: PathBuf, app: PathBuf) -> Command {
     let mut command = Command::new(runtime);
     crate::capture::desktop::workflow::error_reporting::configure_child(&mut command);
@@ -224,8 +211,8 @@ fn command(runtime: PathBuf, app: PathBuf) -> Command {
 }
 
 pub(super) fn onboarding_command(runtime: PathBuf, app: PathBuf) -> Command {
-    let mut command = renderer_command(runtime, app);
-    command.arg("--onboarding");
+    let mut command = renderer_command(runtime, app.join("dist/composition/onboarding/entry.cjs"));
+    command.arg("--assets-root").arg(app);
     command
 }
 
@@ -235,8 +222,6 @@ mod tests {
 
     #[test]
     fn renderer_children_follow_the_parent_display_backend() {
-        // Child processes exercise the real environment policy without changing
-        // this multi-threaded test process's environment.
         for display in [None, Some("wayland-test")] {
             let mut child = Command::new(std::env::current_exe().unwrap());
             child.args(["--exact", "capture::desktop::settings::presentation::tests::renderer_child_arguments", "--nocapture"])
@@ -255,7 +240,7 @@ mod tests {
         if std::env::var_os("APPARENT_TEST_RENDERER_ARGS").is_none() { return; }
         for (child, mode) in [
             (command("/runtime/electron".into(), "/settings/app".into()), vec!["--settings-storage", "--settings-parent"]),
-            (onboarding_command("/runtime/electron".into(), "/settings/app".into()), vec!["--onboarding"]),
+            (onboarding_command("/runtime/electron".into(), "/settings/app".into()), vec!["--assets-root", "/settings/app"]),
         ] {
             assert_eq!(child.get_program(), "/runtime/electron");
             if cfg!(debug_assertions) {
@@ -267,7 +252,7 @@ mod tests {
             if cfg!(target_os = "linux") && std::env::var_os("WAYLAND_DISPLAY").is_none() {
                 expected.push("--ozone-platform=x11");
             }
-            expected.push("/settings/app");
+            expected.push(if mode.first() == Some(&"--assets-root") { "/settings/app/dist/composition/onboarding/entry.cjs" } else { "/settings/app" });
             expected.extend(mode);
             assert_eq!(args, expected);
         }
@@ -315,9 +300,9 @@ mod tests {
         );
         assert_eq!(OnboardingAssetFailure::Entry.stage(), "onboarding_entry_missing");
         std::fs::create_dir_all(app.join("electron")).unwrap();
-        std::fs::write(app.join("electron/onboarding.cjs"), "synthetic entry").unwrap();
+        std::fs::create_dir_all(app.join("dist/composition/onboarding")).unwrap();
+        std::fs::write(app.join("dist/composition/onboarding/entry.cjs"), "synthetic entry").unwrap();
         assert_eq!(check_onboarding_assets(&app, &runtime), Ok(()));
-        // Onboarding files alone must never bypass the original Settings gate.
         std::fs::remove_file(app.join("dist/settings.html")).unwrap();
         assert_eq!(check_onboarding_assets(&app, &runtime), Err(OnboardingAssetFailure::SettingsHtml));
         std::fs::write(app.join("dist/settings.html"), "synthetic settings").unwrap();
@@ -332,8 +317,6 @@ pub(super) fn retire(transport: Transport) {
         Transport::InProcess(sender) => drop(sender),
         Transport::Helper { mut child, stdin } => {
             drop(stdin);
-            // Reap without blocking capture or the UI thread. A closing child
-            // cannot hold Settings navigation or application shutdown hostage.
             std::thread::spawn(move || {
                 for _ in 0..20 {
                     if !matches!(child.try_wait(), Ok(None)) { return; }

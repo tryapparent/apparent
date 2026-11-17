@@ -1,0 +1,27 @@
+name: Onboarding
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "onboarding/**"
+      - ".github/workflows/stream-onboarding.yml"
+  push:
+    branches: [main]
+    paths:
+      - "onboarding/**"
+      - ".github/workflows/stream-onboarding.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node onboarding/enablement/ci/run.ts

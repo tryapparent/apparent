@@ -982,6 +982,7 @@ pub fn launch_plan(progress: &Progress, grants: &Grants) -> Option<Flow> {
 #[derive(Clone, Debug)]
 pub enum Event {
     Board(serde_json::Value),
+    Practice(serde_json::Value),
     /// Grants read at launch, to decide whether onboarding opens (`launch_plan`).
     Launch(Grants),
     Grants(Grants),
@@ -1103,8 +1104,6 @@ pub fn poll_grants(
     }
 }
 
-/// The open welcome window: the `Flow` and the window drawing it. On macOS the app
-/// supplies permission updates even while this window is closed; other platforms poll here.
 pub struct Session {
     source: u64,
     transport_generation: u64,

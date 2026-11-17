@@ -82,6 +82,7 @@ def main():
     if sys.platform != "darwin":
         # A previous Mac build output is never a Linux runtime dependency.
         (app / "electron/pill/native/window.node").unlink(missing_ok=True)
+    shutil.copytree(frontend / "dist/composition/onboarding", app / "dist/composition/onboarding")
     theme = app / "node_modules/@apparent/ui"
     (theme / "src").mkdir(parents=True)
     for name in ("window-theme.cjs", "tokens.css"):

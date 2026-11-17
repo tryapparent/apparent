@@ -1,0 +1,144 @@
+import { screen, type BrowserWindow } from "electron";
+import {
+  coachDimensions,
+  coachPosition,
+  setupDimensions,
+  type Rect,
+} from "@apparent/onboarding/presentation";
+import type { Projection } from "@apparent/onboarding/projection";
+import { removeCompositorBorder } from "./hyprland.ts";
+function nativeRectangle(rect: Rect | undefined): Rect | undefined {
+  if (!rect) return rect;
+  const start = screen.screenToDipPoint({
+    x: Math.round(rect[0]),
+    y: Math.round(rect[1]),
+  });
+  const end = screen.screenToDipPoint({
+    x: Math.round(rect[0] + rect[2]),
+    y: Math.round(rect[1] + rect[3]),
+  });
+  return [
+    start.x,
+    start.y,
+    Math.max(1, end.x - start.x),
+    Math.max(1, end.y - start.y),
+  ];
+}
+export class Placement {
+  private lastPlacement = "";
+  private lastMode = "";
+  private borderReady = false;
+  private borderPending = false;
+  private borderAttempts = 0;
+  constructor(private window: BrowserWindow) {}
+  present(value: Projection, activate = false) {
+    const window = this.window;
+    if (window.isDestroyed()) return;
+    if (value.step === "try-it" && value.practice === "preparing") {
+      window.hide();
+      return;
+    }
+    let v =
+      process.platform === "linux"
+        ? {
+            ...value,
+            anchor: nativeRectangle(value.anchor),
+            practiceBoard: nativeRectangle(value.practiceBoard),
+          }
+        : value;
+    const coach =
+      v.step === "try-it" && v.practice !== null && v.practice !== "start";
+    const board = !!v.boardView && !!v.practiceBoard;
+    const focal = v.practiceBoard || v.anchor;
+    const target = focal
+      ? screen.getDisplayMatching({
+          x: Math.round(focal[0]),
+          y: Math.round(focal[1]),
+          width: Math.max(1, Math.round(focal[2])),
+          height: Math.max(1, Math.round(focal[3])),
+        })
+      : screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const area = target.workArea;
+    const shortcut = v.step === "shortcut" || (v.step === "try-it" && !coach);
+    const { width, height } = board
+      ? { width: Math.min(area.width, 720), height: Math.min(area.height, 540) }
+      : coach
+        ? coachDimensions(area, v.practice!)
+        : setupDimensions(area, shortcut);
+    const mode = `${board}:${coach}:${width}:${height}`;
+    if (this.lastMode !== mode) {
+      window.setAlwaysOnTop(coach || board, "floating");
+      window.setHasShadow(!coach);
+      window.setMaximumSize(0, 0);
+      window.setMinimumSize(width, height);
+      window.setMaximumSize(width, height);
+      window.setSize(width, height, false);
+      window.setVisibleOnAllWorkspaces(coach || board, {
+        visibleOnFullScreen: coach || board,
+      });
+      this.lastMode = mode;
+      this.lastPlacement = "";
+    }
+    if (board && v.boardView && v.practiceBoard) {
+      if (this.lastPlacement !== v.boardView.id) {
+        window.setPosition(
+          Math.round(v.practiceBoard[0]),
+          Math.round(v.practiceBoard[1]),
+          false,
+        );
+        window.focus();
+        this.lastPlacement = v.boardView.id;
+      }
+    } else if (coach) {
+      const placement = coachPosition(
+        area,
+        v.anchor,
+        v.practiceBoard,
+        v.practice!,
+      );
+      const key = JSON.stringify([v.practice, v.anchor, v.practiceBoard, area]);
+      if (key !== this.lastPlacement) {
+        window.setPosition(placement.x, placement.y, false);
+        this.lastPlacement = key;
+      }
+      const actual = window.getBounds();
+      v = {
+        ...v,
+        coachArrow: placement.arrow,
+        coachPointsUp:
+          placement.pointsUp &&
+          actual.x === placement.x &&
+          actual.y === placement.y,
+      };
+    } else {
+      const key = JSON.stringify(["setup", height, area]);
+      if (key !== this.lastPlacement) {
+        window.setPosition(
+          area.x + Math.max(0, Math.round((area.width - width) / 2)),
+          area.y + Math.max(0, Math.round((area.height - height) / 2)),
+          false,
+        );
+        this.lastPlacement = key;
+      }
+    }
+    window.webContents.send("onboarding:state", v);
+    if (!window.isVisible() || activate) {
+      if (coach) window.showInactive();
+      else window.show();
+    }
+    if (!this.borderReady && !this.borderPending && this.borderAttempts < 8) {
+      this.borderPending = true;
+      this.borderAttempts++;
+      void removeCompositorBorder(process.pid, window.getTitle())
+        .then(
+          () => {
+            this.borderReady = true;
+          },
+          () => {},
+        )
+        .finally(() => {
+          this.borderPending = false;
+        });
+    }
+  }
+}

@@ -57,7 +57,6 @@ The following exhaustive baseline ledger documents an earlier campaign proposal 
 | `.github/workflows/linux-updater-harness.yml` | `.github/workflows/linux-updater-harness.yml` | RETAIN | shared-infrastructure |
 | `.github/workflows/release-linux.yml` | `.github/workflows/release-linux.yml` | RETAIN | shared-infrastructure |
 | `.github/workflows/release-mac-preview.yml` | `.github/workflows/release-mac-preview.yml` | RETAIN | shared-infrastructure |
-| `.github/workflows/release-windows.yml` | `.github/workflows/release-windows.yml` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
 | `.github/workflows/verification.yml` | `.github/workflows/verification.yml` | RETAIN | shared-infrastructure |
 | `.github/workflows/web-delivery.yml` | `.github/workflows/web-delivery.yml` | RETAIN | shared-infrastructure |
 | `.gitignore` | `.gitignore` | RETAIN | shared-infrastructure |

@@ -24,7 +24,7 @@ const penSchemes: Array<'light' | 'dark'> = ['light', 'dark', 'light'];
 for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coach and restores setup ${mode}`, { timeout: 90000 }, async (t) => {
   const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'onboarding-window-'));
   const electronExecutable: string = require('electron');
-  const child = spawn(electronExecutable, [path.join(__dirname, '..'), mode, '--remote-debugging-port=0', ...(process.platform === 'linux' ? ['--no-sandbox'] : [])], {
+  const child = spawn(electronExecutable, [path.join(__dirname, '../dist/composition/onboarding/entry.cjs'), '--assets-root', path.join(__dirname, '..'), '--remote-debugging-port=0', ...(process.platform === 'linux' ? ['--no-sandbox'] : [])], {
     env: { ...process.env, APPARENT_UI_PROFILE: profile }, stdio: ['pipe', 'pipe', 'pipe'],
   });
   let browser: Browser | undefined;
@@ -177,13 +177,12 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
     assert.equal(layout.scroll,false,phase+' needs scrolling at normal text size');
     for(const button of layout.buttons){assert.ok(button.font>=18&&button.width>=44&&button.height>=44,phase+' button violates brand minimum');assert.equal(button.radius,'6px');}
   }
-  // This visual-only release retains the native practice action contract.
-  for(const [stage,label,action] of [['copied','Show paste steps','practice-paste'],['paste','Confirm paste','practice-pasted'],['complete','Finish setup','practice-finish']]){
+  for(const [stage,label,action] of [['copied','Done','practice-review'],['paste','Done','practice-review'],['complete','Finish setup','practice-finish']]){
     send({step:'try-it',practice:stage});
     await page.getByRole('button',{name:label,exact:true}).click();
     await expect.poll(()=>output).toContain(JSON.stringify({action}));
   }
-  assert.equal(await page.evaluate(()=>window.nativeOnboarding.action('practice-review').then(()=>false,()=>true)),true);
+  assert.equal(await page.evaluate(()=>window.nativeOnboarding.action('practice-settings').then(()=>false,()=>true)),true);
   send({step:'try-it',practice:'stop',shortcut:'⌃⌥⇧9',firstCaptureRequired:true});
   await expect(page.getByRole('heading',{name:'Finish your capture.',exact:true})).toBeVisible();
   assert.deepEqual(await page.locator('.native-saved-keys kbd').allTextContents(),['⌃','⌥','⇧','9']);
