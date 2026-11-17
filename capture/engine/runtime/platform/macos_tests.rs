@@ -8,10 +8,12 @@ mod tests {
     fn shortcut_event(telemetry: &SharedCaptureTelemetry, kind: u32, key: u16, flags: u64, repeat: bool) {
         unsafe extern "C" {
             fn CGEventSetIntegerValueField(event: EventRef, field: u32, value: i64);
+            fn CGEventSetType(event: EventRef, kind: u32);
         }
         let event = unsafe { CGEventCreateKeyboardEvent(ptr::null(), key, true) };
         assert!(!event.is_null());
         unsafe {
+            CGEventSetType(event, kind);
             CGEventSetFlags(event, flags);
             CGEventSetIntegerValueField(event, KEYBOARD_EVENT_AUTOREPEAT, i64::from(repeat));
             assert_eq!(key_tap_callback(ptr::null_mut(), kind, event,
@@ -55,6 +57,8 @@ mod tests {
             (EVENT_LEFT_MOUSE_DOWN, 0, FLAG_ALTERNATE, false),
             (EVENT_RIGHT_MOUSE_DOWN, 0, FLAG_ALTERNATE, false),
             (25, 0, FLAG_ALTERNATE, false),
+            (EVENT_SCROLL_WHEEL, 0, FLAG_ALTERNATE, false),
+            (EVENT_SYSTEM_DEFINED, 0, FLAG_ALTERNATE, false),
         ] {
             let (telemetry, events) = option_telemetry();
             shortcut_event(&telemetry, EVENT_FLAGS_CHANGED, 58, FLAG_ALTERNATE, false);
@@ -69,6 +73,22 @@ mod tests {
         pause_shortcuts(&telemetry, false);
         shortcut_event(&telemetry, EVENT_FLAGS_CHANGED, 58, 0, false);
         assert!(events.is_empty(), "releasing the selected shortcut must not record");
+    }
+
+    #[test]
+    fn default_fn_does_not_enable_option_or_change_its_release_gesture() {
+        let (sender, events) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(sender);
+        assert!(telemetry.shortcuts().0.is_fn_only());
+        shortcut_event(&telemetry, EVENT_FLAGS_CHANGED, 58, FLAG_ALTERNATE, false);
+        shortcut_event(&telemetry, EVENT_FLAGS_CHANGED, 58, 0, false);
+        assert!(events.is_empty(), "Option is inactive until selected");
+        shortcut_event(&telemetry, EVENT_FLAGS_CHANGED, 63, FLAG_SECONDARY_FN, false);
+        for kind in [EVENT_LEFT_MOUSE_DOWN, EVENT_SCROLL_WHEEL, EVENT_SYSTEM_DEFINED] {
+            shortcut_event(&telemetry, kind, 0, FLAG_SECONDARY_FN, false);
+        }
+        shortcut_event(&telemetry, EVENT_FLAGS_CHANGED, 63, 0, false);
+        assert!(matches!(events.try_recv(), Ok(LiveOverlayEvent::CaptureShortcut)));
     }
 
     #[test]

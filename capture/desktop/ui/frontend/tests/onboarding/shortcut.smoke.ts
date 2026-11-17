@@ -117,6 +117,9 @@ test('shortcut composition waits for modifiers and preserves Fn/cancel recovery'
   assert.equal(output.includes('"key":"Option"'),false);
   output='';await page.keyboard.down('Alt');await page.keyboard.down('Shift');await page.keyboard.up('Shift');await page.keyboard.up('Alt');
   await page.waitForTimeout(100);assert.equal(output,'');
+  await recorder.focus();output='';
+  await page.keyboard.down('Alt');await page.mouse.wheel(0,120);await page.keyboard.up('Alt');
+  await page.waitForTimeout(100);assert.equal(output,'','Option-scroll is not Option alone');
   for(const theme of ['light','dark'] as const)for(const width of [760,320]){
     await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});
     await page.setViewportSize({width,height:520});await recorder.focus();

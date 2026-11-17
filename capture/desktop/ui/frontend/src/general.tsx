@@ -23,15 +23,18 @@ export function General() {
   useEffect(()=>{
     if(!recording||!state)return;
     const gesture=new OptionShortcutGesture();
+    const suggestion=(event:KeyboardEvent)=>event.target instanceof Element&&event.target.closest('[data-shortcut-suggestion]');
     const blur=()=>{gesture.reset();void act({action:'cancel-shortcut'})};
     const pointerDown=()=>gesture.pointer(true),pointerUp=()=>gesture.pointer(false);
+    const wheel=()=>gesture.cancel();
     const release=(event:KeyboardEvent)=>{
       const captured=gesture.up(event);
-      if(captured&&recording.kind==='record')void act({action:'shortcut',kind:recording.kind,...captured,reserved:false});
+      if(!suggestion(event)&&captured&&recording.kind==='record')void act({action:'shortcut',kind:recording.kind,...captured,reserved:false});
     };
     const key=(event:KeyboardEvent)=>{
-      event.preventDefault();event.stopPropagation();
       gesture.down(event,state.platform);
+      if(suggestion(event)&&event.key!=='Escape'){gesture.cancel();return}
+      event.preventDefault();event.stopPropagation();
       if(event.repeat){gesture.cancel();return}
       if(event.key==='Escape'){blur();return}
       if(recording.clearable&&!event.ctrlKey&&!event.altKey&&!event.metaKey&&!event.shiftKey&&['Backspace','Delete'].includes(event.key)){void act({action:'clear-shortcut',kind:recording.kind});return}
@@ -42,8 +45,9 @@ export function General() {
     };
     window.addEventListener('keydown',key,true);window.addEventListener('keyup',release,true);window.addEventListener('blur',blur);
     window.addEventListener('pointerdown',pointerDown,true);window.addEventListener('pointerup',pointerUp,true);window.addEventListener('pointercancel',pointerUp,true);
+    window.addEventListener('wheel',wheel,{capture:true,passive:true});
     return()=>{window.removeEventListener('keydown',key,true);window.removeEventListener('keyup',release,true);window.removeEventListener('blur',blur);
-      window.removeEventListener('pointerdown',pointerDown,true);window.removeEventListener('pointerup',pointerUp,true);window.removeEventListener('pointercancel',pointerUp,true)};
+      window.removeEventListener('pointerdown',pointerDown,true);window.removeEventListener('pointerup',pointerUp,true);window.removeEventListener('pointercancel',pointerUp,true);window.removeEventListener('wheel',wheel,true)};
   },[recording,state?.platform]);
   function toggle(label:string,key:string,on:boolean,available=true){return <label className="general-row"><span>{label}</span><input type="checkbox" checked={on} disabled={!available} onChange={e=>void act({action:'set',key,value:e.target.checked})}/></label>}
   return <div className="general-settings">
@@ -58,7 +62,7 @@ export function General() {
           <Button variant="outline" disabled={s.externallyManaged} onClick={()=>void act({action:s.recording?'cancel-shortcut':'record-shortcut',...(s.recording?{}:{kind:s.kind})})}>{s.recording?'Press shortcut… (Esc cancels)':s.label||'Set shortcut'}</Button>
           {!s.isDefault&&!s.recording&&!s.externallyManaged&&<Button variant="ghost" onClick={()=>void act({action:'reset-shortcut',kind:s.kind})}>Reset</Button>}
           {s.clearable&&s.label&&!s.recording&&!s.externallyManaged&&<Button variant="ghost" onClick={()=>void act({action:'clear-shortcut',kind:s.kind})}>Turn off</Button>}
-          {s.recording&&state.platform==='macos'&&<Button variant="outline" onClick={()=>void act({action:'shortcut',kind:s.kind,keyCode:63,modifiers:0,key:'Fn',reserved:false})}>Use Fn</Button>}
+          {s.recording&&state.platform==='macos'&&<Button data-shortcut-suggestion="fn" variant="outline" onClick={()=>void act({action:'shortcut',kind:s.kind,keyCode:63,modifiers:0,key:'Fn',reserved:false})}>Use Fn</Button>}
         </div>
         <p className="settings-metadata">{s.error|| (s.externallyManaged?'Managed by your desktop’s shortcut settings.':s.kind==='paste'?'Pastes the last capture into the app in front.':'Records the screen. Press again to finish.')}</p>
       </section>)}

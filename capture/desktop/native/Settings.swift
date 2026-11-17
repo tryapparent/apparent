@@ -1581,7 +1581,7 @@ final class SettingsWindow: NSObject, NSApplicationDelegate, NSWindowDelegate {
   private func listen(_ on: Bool) {
     if !on { fnCandidate = false; optionGesture.reset() }
     if on, monitor == nil {
-      monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+      monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel, .systemDefined]) { [weak self] event in
         guard let self else { return event }
         guard let kind = self.model.state.recording else {
           self.fnCandidate = false; self.optionGesture.reset()
@@ -1591,7 +1591,7 @@ final class SettingsWindow: NSObject, NSApplicationDelegate, NSWindowDelegate {
           self.model.act("shortcut", ["kind":kind, "keyCode":58, "modifiers":0, "key":"Option", "reserved":false])
           return event
         }
-        if [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event.type) { return event }
+        if [.leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel, .systemDefined].contains(event.type) { return event }
         if event.type == .flagsChanged {
           let modifiers = ShortcutKeys.carbon(event.modifierFlags)
           if event.keyCode == UInt16(kVK_Function) {

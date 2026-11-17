@@ -111,7 +111,14 @@ export function NativeOnboarding(){
     if(!state.shortcutChosen&&!state.shortcutEditor?.recording)void action('change-shortcut');
   },[state?.step,wispr.visible]);
   const chooseFn=async()=>{for(const next of fnSelectionActions(state?.platform??'linux',Boolean(state?.shortcutEditor?.recording))){if(!await sendAction(next))break;}};
-  useEffect(()=>{optionGesture.current.reset();setHeldKeys([]);if(!wispr.visible&&state?.shortcutEditor?.recording)shortcutRecorder.current?.focus()},[state?.shortcutEditor?.recording,wispr.visible]);
+  useEffect(()=>{
+    optionGesture.current.reset();setHeldKeys([]);
+    if(wispr.visible||!state?.shortcutEditor?.recording)return;
+    shortcutRecorder.current?.focus();
+    const wheel=()=>optionGesture.current.cancel();
+    window.addEventListener('wheel',wheel,{capture:true,passive:true});
+    return()=>window.removeEventListener('wheel',wheel,true);
+  },[state?.shortcutEditor?.recording,wispr.visible]);
   if(!state)return <main className="native-setup"><p>Connecting to apparent…</p></main>;
   const goAgain=state.step==='try-it'&&(!state.practice||state.practice==='start');
   const practice=state.step==='try-it'&&!goAgain,penPage=state.step==='welcome'&&state.penPicker;

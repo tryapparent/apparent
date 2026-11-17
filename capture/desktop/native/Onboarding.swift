@@ -1026,7 +1026,7 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
   private func listenForShortcut(_ on: Bool) {
     if !on { fnCandidate = false; optionGesture.reset() }
     if on, shortcutMonitor == nil {
-      shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+      shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel, .systemDefined]) { [weak self] event in
         guard let self else { return event }
         guard self.model.shortcutEditor?.recording == true else {
           self.fnCandidate = false; self.optionGesture.reset()
@@ -1036,7 +1036,7 @@ final class Onboarding: NSObject, NSApplicationDelegate, NSWindowDelegate {
           emit(["action":"shortcut", "kind":"record", "keyCode":58, "modifiers":0, "key":"Option", "reserved":false])
           return event
         }
-        if [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event.type) { return event }
+        if [.leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel, .systemDefined].contains(event.type) { return event }
         if event.type == .flagsChanged {
           let modifiers = ShortcutKeys.carbon(event.modifierFlags)
           if event.keyCode == UInt16(kVK_Function) {

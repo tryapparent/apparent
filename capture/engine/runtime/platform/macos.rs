@@ -90,6 +90,7 @@ const EVENT_RIGHT_MOUSE_DOWN: u32 = 3;
 const EVENT_RIGHT_MOUSE_UP: u32 = 4;
 const EVENT_KEY_DOWN: u32 = 10;
 const EVENT_FLAGS_CHANGED: u32 = 12;
+const EVENT_SYSTEM_DEFINED: u32 = 14; // AppKit auxiliary/media-key events.
 const EVENT_SCROLL_WHEEL: u32 = 22;
 const EVENT_TAP_DISABLED_BY_TIMEOUT: u32 = u32::MAX - 1;
 const EVENT_TAP_DISABLED_BY_USER_INPUT: u32 = u32::MAX;
@@ -1583,7 +1584,8 @@ fn spawn_key_tap(telemetry: Arc<SharedCaptureTelemetry>) {
         .name("apparent-key-tap".into())
         .spawn(move || {
             let mask = (1_u64 << EVENT_KEY_DOWN) | (1_u64 << EVENT_FLAGS_CHANGED)
-                | (1_u64 << EVENT_LEFT_MOUSE_DOWN) | (1_u64 << EVENT_RIGHT_MOUSE_DOWN) | (1_u64 << 25);
+                | (1_u64 << EVENT_LEFT_MOUSE_DOWN) | (1_u64 << EVENT_RIGHT_MOUSE_DOWN) | (1_u64 << 25)
+                | (1_u64 << EVENT_SCROLL_WHEEL) | (1_u64 << EVENT_SYSTEM_DEFINED);
             let user_info = Arc::into_raw(Arc::clone(&telemetry))
                 .cast_mut()
                 .cast::<c_void>();
@@ -1652,8 +1654,10 @@ unsafe extern "C" fn key_tap_callback(
         }
         return event;
     }
-    if matches!(event_type, EVENT_LEFT_MOUSE_DOWN | EVENT_RIGHT_MOUSE_DOWN | 25) {
-        telemetry.fn_candidate.store(false, Ordering::Release);
+    if matches!(event_type, EVENT_LEFT_MOUSE_DOWN | EVENT_RIGHT_MOUSE_DOWN | 25 | EVENT_SCROLL_WHEEL | EVENT_SYSTEM_DEFINED) {
+        if telemetry.shortcut.lock().unwrap_or_else(std::sync::PoisonError::into_inner).is_option_only() {
+            telemetry.fn_candidate.store(false, Ordering::Release);
+        }
         return event;
     }
     if event_type == EVENT_FLAGS_CHANGED {
@@ -1664,11 +1668,11 @@ unsafe extern "C" fn key_tap_callback(
         let gesture_key = if option { matches!(keycode, 58 | 61) } else { u32::from(keycode) == MACOS_FN_KEY_CODE };
         let gesture_flag = if option { FLAG_ALTERNATE } else { FLAG_SECONDARY_FN };
         let fn_down = flags & gesture_flag != 0;
-        let other_modifiers = !gesture_key || flags & ((FLAG_COMMAND | FLAG_CONTROL | FLAG_ALTERNATE | FLAG_SHIFT | FLAG_SECONDARY_FN) & !gesture_flag) != 0;
+        let other_modifiers = (option && !gesture_key) || flags & ((FLAG_COMMAND | FLAG_CONTROL | FLAG_ALTERNATE | FLAG_SHIFT | FLAG_SECONDARY_FN) & !gesture_flag) != 0;
         let fn_event = gesture_key && record.is_standalone_modifier();
         // A key held before Fn produces no new key-down for this gesture. Read both
         // session and hardware state, as the pointer poller does for virtual HID.
-        let other_key = fn_event && ((0_u32..5).any(|button| unsafe { CGEventSourceButtonState(0, button) || CGEventSourceButtonState(1, button) }) || (0_u16..128).any(|key| {
+        let other_key = fn_event && ((option && (0_u32..5).any(|button| unsafe { CGEventSourceButtonState(0, button) || CGEventSourceButtonState(1, button) })) || (0_u16..128).any(|key| {
             key != keycode
                 && unsafe { CGEventSourceKeyState(0, key) || CGEventSourceKeyState(1, key) }
         }));

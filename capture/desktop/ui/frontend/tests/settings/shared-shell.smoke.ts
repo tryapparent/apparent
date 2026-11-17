@@ -82,16 +82,25 @@ test('Settings changes adopted panes in one live document and enforces the curre
     for(const side of ['AltLeft','AltRight']){
       macShortcut(true);
       await expect(page.getByRole('button',{name:'Use Fn',exact:true})).toBeVisible();
+      await page.getByRole('button',{name:'Press shortcut… (Esc cancels)',exact:true}).focus();
       assert.equal(await page.getByRole('button',{name:'Option',exact:true}).count(),0,'Option is not suggested');
       const before=optionCount();
       await page.keyboard.down(side);assert.equal(optionCount(),before);
       await page.keyboard.up(side);await expect.poll(optionCount).toBe(before+1);
       assert.deepEqual(actions.filter(a=>a.action==='shortcut'&&a.key==='Option').at(-1),{action:'shortcut',kind:'record',keyCode:58,modifiers:0,key:'Option',reserved:false});
     }
+    const fnChoice=page.getByRole('button',{name:'Use Fn',exact:true});
+    await fnChoice.focus();const beforeControl=optionCount();
+    await page.keyboard.down('Alt');await page.keyboard.up('Alt');
+    await page.waitForTimeout(100);assert.equal(optionCount(),beforeControl,'Fn suggestion is not the shortcut recorder');
+    await fnChoice.press('Enter');
+    await expect.poll(()=>actions.some(a=>a.action==='shortcut'&&a.key==='Fn'&&a.keyCode===63)).toBe(true);
+    await page.getByRole('button',{name:'Press shortcut… (Esc cancels)',exact:true}).focus();
     const cleanCount=optionCount();
     await page.keyboard.down('Alt');await page.keyboard.press('r');await page.keyboard.up('Alt');
     await expect.poll(()=>actions.some(a=>a.action==='shortcut'&&a.key==='r'&&a.modifiers===2048)).toBe(true);
     await page.keyboard.down('Alt');await page.keyboard.down('Shift');await page.keyboard.up('Shift');await page.keyboard.up('Alt');
+    await page.keyboard.down('Alt');await page.mouse.wheel(0,120);await page.keyboard.up('Alt');
     await page.locator('h1').scrollIntoViewIfNeeded();
     const heading=await page.locator('h1').boundingBox();assert.ok(heading);
     await page.mouse.move(heading.x+5,heading.y+5);await page.mouse.down();
