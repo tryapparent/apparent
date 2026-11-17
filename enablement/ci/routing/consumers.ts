@@ -255,12 +255,13 @@ export function affectsStream(stream: Stream, path: string): boolean {
 }
 
 // One decision feeds local commands, hosted suite gates and explainable output.
-export function routeDecision(paths: string[] | null, workflowControls: string[] = [], foregroundNative = false, qualifiedFixtures: string[] = []) {
+export function routeDecision(paths: string[] | null, workflowControls: string[] = [], foregroundNative = false, qualifiedFixtures: string[] = [], _reservedCiTests: string[] = [], qualifiedStorageControllers: string[] = []) {
   const remaining = paths?.filter(path => !workflowControls.includes(path)) ?? null;
   const controlOnly = !!paths?.length && !remaining?.length && workflowControls.length > 0;
-  const unqualified = remaining?.filter(path => !qualifiedFixtures.includes(path)) ?? null;
+  const unqualified = remaining?.filter(path => !qualifiedFixtures.includes(path) && !qualifiedStorageControllers.includes(path)) ?? null;
   const selected = controlOnly || (remaining?.length && !unqualified?.length) ? [] : selectedOwners(unqualified);
   if (qualifiedFixtures.length && !selected.includes('tooling')) selected.push('tooling');
+  if (qualifiedStorageControllers.length && !selected.includes('desktop')) selected.push('desktop');
   if (workflowControls.length && !selected.includes('tooling')) selected.push('tooling');
   if (foregroundNative) for (const owner of ['capture', 'client'] as const) if (!selected.includes(owner)) selected.push(owner);
   const plan = planFromOwners(selected);
@@ -286,6 +287,7 @@ export function routeDecision(paths: string[] | null, workflowControls: string[]
     public: publicSelected, updater, streams,
     suites: plan,
     reasons: unknown ? ['fallback:unknown-or-empty-history'] : paths!.map(path =>
+      qualifiedStorageControllers.includes(path) ? 'desktop:qualified-storage-controller:' + path :
       qualifiedFixtures.includes(path) ? 'tooling:qualified-fixture:' + path :
       workflowControls.includes(path) ? 'control:verified-concurrency:' + path :
       documentationOnlyPath(path) ? 'docs:reviewed-prose:' + path :
