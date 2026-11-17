@@ -4,10 +4,13 @@
   "private": true,
   "type": "module",
   "engines": {"node": ">=22.18"},
+  "exports": {"./range-policy": {"types": "./dist/range-policy.d.ts", "import": "./dist/range-policy.js"}},
+  "files": ["dist"],
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.tools.json",
-    "test": "node --experimental-strip-types --test test/policy.test.ts",
+    "test": "node --experimental-strip-types --test test/policy.test.ts test/range-policy.test.ts",
+    "prepack": "npm run build",
     "test:native": "node --experimental-strip-types --test test/native.test.ts"
   },
   "dependencies": {

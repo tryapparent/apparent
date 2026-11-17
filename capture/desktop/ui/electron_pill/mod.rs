@@ -120,7 +120,7 @@ impl View {
                 }
                 view.control("paste", "Paste", true, false, !warning);
                 if let Some(enabled) = share {
-                    view.control("copy-link", "Copy link", *enabled, false, false);
+                    view.control("copy-link", "Public link", *enabled, false, false);
                 }
                 view.control("inspect", "Inspect", true, false, false);
                 view.control("dismiss", "Dismiss", true, false, false);
@@ -220,7 +220,7 @@ impl View {
     pub fn admit(&self, mut command: Command) -> Option<PillAction> {
         let public = command.action == "copy-public-link";
         if public { command.action = "copy-link".into(); }
-        if command.revision == self.revision && command.action == "settings-agents" && command.target.is_none()
+        if command.revision == self.revision && command.action == "settings-labs" && command.target.is_none()
             && matches!(self.phase, "processing" | "completed") {
             return Some(PillAction::SettingsAgents);
         }

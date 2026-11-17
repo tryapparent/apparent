@@ -114,17 +114,16 @@ macOS environments. Synthetic renderer checks do not establish that acceptance.
 
 ## T3 destinations
 
-Settings → Agents → **Send recordings to T3** is explicitly off by default.
+Settings → Labs → **Send recordings to T3** is explicitly off by default.
 When enabled and paired, processing/completion replaces Paste with the approved
 destination capsule. New thread is the default; the first Down opens the list
-and highlights the first existing thread. Up/Down, Home/End, wheel and touch
-navigate three visible rows. Escape closes without confirming; Enter or a row
-click confirms. Settled, archived, deleted and subagent threads are excluded.
+and highlights New thread, which remains selectable when there are no existing threads. Up/Down, Home/End, wheel and touch
+navigate three visible rows. Escape closes without confirming; Enter, Space or a row
+click confirms. All connected computers appear together with computer and project labels. Settled, archived, deleted and subagent threads are excluded.
 Server ordering preserves pins/manual positions, then active and snoozed shelves;
 client-only project ordering and visibility are unavailable through this API.
 New threads use the last confirmed project's defaults, or the first project
-before any confirmation. The selected project's name is available in the control's
-accessible label and tooltip. A configured `t3.projectId` overrides that fallback.
+before any confirmation. The selected computer and project are shown in the capsule, rows, accessible label and tooltip. A configured `t3.projectId` overrides that fallback.
 
 Desktop's TypeScript main-process controller owns selection, transport and durable
 receipts. The renderer receives only public thread titles, project labels and

@@ -420,9 +420,9 @@ enum Command {
         /// End time (`0:05` or `5.0`).
         #[arg(long)]
         to: String,
-        /// Frames per second to extract when the bundle has a video.
-        #[arg(long, default_value_t = 4)]
-        fps: u32,
+        /// Frames per second to extract when the bundle has a video (default: 4).
+        #[arg(long)]
+        fps: Option<u32>,
     },
     /// Zoom into one moment: a dense contact sheet of frames around a time, a spoken phrase or a
     /// mark, with the bundle's ink and touches drawn in and each frame's time, plus what was said.
@@ -530,7 +530,7 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         port: u16,
     },
-    /// Build a bundle from a simulated Screen capture (`public/site/scripts/autocrop-corpus.mjs`).
+    /// Build a bundle from a simulated Screen capture (`public/enablement/browser-proof/motion/autocrop-corpus.mjs`).
     #[command(hide = true)]
     Fixture {
         /// The scenario's `scenario.json`.
@@ -634,8 +634,8 @@ fn t3_command(command: T3Command) -> Result<()> {
             let output = child.wait_with_output()?;
             ensure!(output.status.success(), "T3 did not confirm pairing");
             let value: serde_json::Value = serde_json::from_slice(&output.stdout).context("Invalid pairing acknowledgement")?;
-            handoff::set_config_value_in(&config, "t3", value)?;
-            println!("T3 connection saved. Enable Send recordings to T3 in Settings > Agents.");
+            crate::capture::desktop::settings::persist_t3_connection(&config, Some(serde_json::from_value(value).context("Invalid T3 connection")?), None)?;
+            println!("T3 connection saved. Enable Send recordings to T3 in Settings > Labs.");
         }
         T3Command::Status => {
             let value: serde_json::Value = std::fs::read(&config).ok()
@@ -645,8 +645,8 @@ fn t3_command(command: T3Command) -> Result<()> {
             } else { println!("T3 is not connected. Run apparent t3 pair."); }
         }
         T3Command::Forget => {
-            handoff::set_config_value_in(&config, "t3", serde_json::Value::Null)?;
-            println!("T3 connection forgotten. Existing confirmed handoffs remain recorded locally.");
+            crate::capture::desktop::settings::persist_t3_connection(&config, None, None)?;
+            println!("All T3 connections forgotten. Existing confirmed handoffs remain recorded locally.");
         }
     }
     Ok(())

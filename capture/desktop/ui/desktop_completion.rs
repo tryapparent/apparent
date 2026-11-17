@@ -100,21 +100,21 @@ impl ApparentCoordinator {
                         let Ok((dir, _, _)) = &finalized else { return "revoked"; };
                         let result = match mode {
                             #[cfg(target_os = "linux")]
-                            CopyMode::AutoPaste => {
+                            CopyMode::AutoPasteAndSubmit => {
                                 // Establish manual recovery first. A paste dispatch is not
                                 // evidence that the receiving editor accepted an attachment.
                                 crate::shared::handoff::copy_bundle_text_to_clipboard(dir).and_then(|()| {
                                     let result = paste_target.as_ref().ok_or_else(|| anyhow::anyhow!("No focused target at Finish"))
-                                        .and_then(|target| crate::capture::desktop::linux::auto_paste::paste_bundle_into(dir, target));
-                                    if let Err(error) = result {
+                                        .and_then(|target| crate::capture::desktop::linux::auto_paste::paste_bundle_and_submit_into(dir, target));
+                                    if let Err(error) = &result {
                                         apparent_log(format!("Auto paste skipped: {error:#}"));
                                         crate::capture::desktop::linux::shell::notify("Auto paste stopped", "Keep your composer focused until processing finishes, or use Paste on the saved capture.");
                                     }
-                                    Ok(())
+                                    result
                                 })
                             }
                             #[cfg(not(target_os = "linux"))]
-                            CopyMode::AutoPaste => Err(anyhow::anyhow!("Auto paste is Linux-only")),
+                            CopyMode::AutoPasteAndSubmit => Err(anyhow::anyhow!("Auto paste is Linux-only")),
                             #[cfg(target_os = "linux")]
                             CopyMode::Text => crate::shared::handoff::copy_bundle_text_to_clipboard(dir),
                             #[cfg(not(target_os = "linux"))]

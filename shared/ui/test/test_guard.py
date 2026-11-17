@@ -19,6 +19,9 @@ class ThemeGuard(unittest.TestCase):
                     path = root / owner / 'src/new.css'
                     path.parent.mkdir(parents=True)
                     path.write_text('color:#abcdef;')
+                harness = root / 'public/enablement/proof.ts'
+                harness.parent.mkdir(parents=True)
+                harness.write_text('const color = "#123456";')
                 scoped = guard.inventory(root, owner='public')
                 self.assertEqual(set(scoped), {'public/src/new.css', 'shared/src/new.css'})
                 self.assertEqual(len(guard.violations(scoped, {})), 2)

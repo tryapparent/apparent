@@ -5,7 +5,7 @@ marks above the two photo cutouts. `src/components/home/PhotoStory.tsx` owns thi
 markup; the former hidden frog scene is not a visible production workflow.
 
 Build and package from TypeScript/React source, verify desktop/mobile appearance
-and interactions, and publish through main-branch Pages CD (`pages-deploy.md`).
+and interactions, and publish through main-branch Pages CD (`../../enablement/docs/pages-deploy.md`).
 The compiled-bundle overlay packager is retired. The superseded interactive frog scene and its obsolete tests are retired.
 
 The hero offers a secondary agent setup prompt beside the direct download (wrapping on phones).

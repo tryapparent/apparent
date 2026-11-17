@@ -29,16 +29,26 @@ Use TypeScript for web code, scripts, tests and tooling. Do not add Python or au
 
 These are ownership targets, not claims of completed migration. Engine's destination is top-level `engine/`; `capture/engine/` remains the legacy app runtime until capabilities are adopted through their public contracts with real callers, tests and package inputs.
 
-| Owner | Home | Start here |
-|---|---|---|
-| Engine | `engine/`; legacy `capture/engine/` | [Capability adoption](engine/README.md), [capture](capture/engine/docs/capture.md), [keyframes/text](capture/engine/docs/keyframes-and-text.md), [export/retention](capture/engine/docs/export-and-retention.md) |
-| Record | `record/` | [Storage](record/storage/README.md), [completion](record/completion/README.md) |
-| Desktop | `capture/desktop/` | [Settings/permissions](capture/desktop/docs/onboarding-and-settings.md), [Linux](capture/desktop/docs/linux/linux.md), [motion](capture/desktop/docs/motion.md), [iPhone/routing](capture/engine/docs/iphone-and-routing.md) |
-| Agent | `capture/agent/` | [Agent video workflow](capture/agent/docs/agent-video-workflow.md) |
-| Connect | `connect/` | [Hosted web](connect/docs/hosted-web.md), [client](connect/docs/hosted-client.md) |
-| Public | `public/` | [Website/deployment](public/site/docs/pages-deploy.md) |
-| Shared | `shared/` | Reusable UI, schemas, assets and utilities |
-| Enablement | `enablement/` | [Verification/CI](enablement/docs/continuous-delivery.md), [local checks](enablement/local-tests/README.md), [commit hook](enablement/directory-width/README.md) |
+| Owner | Home | Enablement and CI home | Start here |
+|---|---|---|---|
+| Engine | `engine/`; legacy `capture/engine/` | `engine/enablement/` | [Capability adoption](engine/README.md), [capture](capture/engine/docs/capture.md), [keyframes/text](capture/engine/docs/keyframes-and-text.md), [export/retention](capture/engine/docs/export-and-retention.md) |
+| Record | `record/` | `record/enablement/` | [Storage](record/storage/README.md), [completion](record/completion/README.md) |
+| Desktop | `capture/desktop/` | `capture/desktop/enablement/` | [Settings/permissions](capture/desktop/docs/onboarding-and-settings.md), [Linux](capture/desktop/docs/linux/linux.md), [motion](capture/desktop/docs/motion.md), [iPhone/routing](capture/engine/docs/iphone-and-routing.md) |
+| Agent | `capture/agent/` | `capture/agent/enablement/` | [Agent video workflow](capture/agent/docs/agent-video-workflow.md) |
+| Connect | `connect/` | `connect/enablement/` | [Hosted web](connect/docs/hosted-web.md), [client](connect/docs/hosted-client.md) |
+| Public | `public/` | `public/enablement/` | [Website/deployment](public/enablement/docs/pages-deploy.md) |
+| Hermes | `hermes/` | `hermes/enablement/` | [Integration and distribution](hermes/README.md) |
+| Shared | `shared/` | `shared/enablement/` for shared-package tooling | Reusable UI, schemas, assets and utilities |
+| Repository Enablement | `enablement/` | Shared engineering mechanisms and repository-wide coordination only | [Verification/CI](enablement/docs/continuous-delivery.md), [local checks](enablement/local-tests/README.md), [commit hook](enablement/directory-width/README.md) |
+| Composition | `composition/` | Cross-owner assembly and integration checks; invoke owner entrypoints | CLI/composition wiring and cross-owner acceptance |
+
+**Each value stream owns its enablement and CI end to end.** Put stream-specific build, verification, test harnesses/fixtures, packaging, release/deployment tooling, diagnostics and engineering runbooks under that stream's `enablement/` directory. Product implementation stays in its existing home; unit tests may remain beside the implementation they verify. A language, platform or the label “CI” does not transfer ownership to root Enablement. Existing `scripts/`, verification and root Enablement locations are migration sources, not exceptions for new stream-specific tooling.
+
+Root `enablement/` owns genuinely shared runner/bootstrap mechanisms, hooks, reusable verification infrastructure and repository-wide admission/coordination. Stream-owned entrypoints and dependency declarations define their checks and delivery inputs; root coordination consumes them and combines actual shared/composition consumers without duplicating stream policy or maintaining competing selectors. Shared mechanisms may be consumed by streams without moving their release or correctness decisions to the root.
+
+GitHub requires workflow entrypoints in `.github/workflows/`. Each stream owns its workflow's behavior and invokes its `enablement/` entrypoints there; keep provider-required YAML wiring thin. Cross-stream workflows coordinate owner entrypoints and shared execution rather than taking over stream-specific build, test or publication policy. Preserve required check identities, permissions, concurrency, candidate/artifact provenance and delivery gates during migration.
+
+Migrate tooling with its real callers, package/workflow inputs, tests, path routing and owner documentation. Remove obsolete donors after the replacement is accepted; a new directory, forwarding wrapper or duplicated implementation alone does not establish ownership. Keep bounded changes independently usable, record concrete remaining dependencies, and retain native/platform verification where affected.
 
 `composition/` contains CLI/composition wiring; capture-internal shared mechanisms stay in `capture/`. Read the relevant owner guidance before changing a subsystem. Keep documentation concise and beside its owner. The preserved migration branch is a source for bounded reviewed ports, not a branch to merge wholesale; [baseline details](enablement/docs/continuous-delivery.md#preview-baseline-restoration).
 
@@ -62,7 +72,7 @@ Use authenticated `gh` for GitHub operations. Watch workflow runs with `gh run w
 
 Before yielding, name the exact prerequisite and the event that will resume work. A registered PR watch is not proof that it covers workflow completion after an already-reported failure, another PR merging, deployment or runner-capacity recovery. Report an uncovered event explicitly; preserve ownership and harness rules without inventing a new monitor or claiming a callback exists.
 
-Keep CI aligned with owner directories and their actual shared/composition/build consumers; unrelated changes should not rebuild or deploy another product. Preserve required-check admission and pending deliveries across unrelated main pushes. Detailed selectors, commands and publication procedures belong in the [CI guide](enablement/docs/continuous-delivery.md); releases follow the [release guide](capture/desktop/docs/release.md).
+Keep CI aligned with owner directories and their actual shared/composition/build consumers; unrelated changes should not rebuild or deploy another product. Preserve required-check admission and pending deliveries across unrelated main pushes. Repository-wide coordination belongs in the [CI guide](enablement/docs/continuous-delivery.md); stream-specific commands, selectors and publication procedures belong beside their owning `enablement/` implementation. Desktop release requirements remain in the [release guide](capture/desktop/docs/release.md) until migrated with their callers.
 
 ## Safety and resources
 

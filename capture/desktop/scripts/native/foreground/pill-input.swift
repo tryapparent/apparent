@@ -272,7 +272,7 @@ func buttonIdentity(_ element: AXUIElement, label: String, point: CGPoint, desce
         let role = rawRole as? String ?? ""
         let title = (rawTitle as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let description = (rawDescription as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let knownLabels = ["Finish", "Copy link", "Create public link", "Cancel upload", "Retry upload", "Paste", "Inspect"]
+        let knownLabels = ["Finish", "Public link", "Create public link", "Cancel upload", "Retry upload", "Paste", "Inspect"]
         clickTrace?.add(["stage":"receiverObserved", "depth":depth, "requestedLabel":label, "pid":Int(pid), "role":String(role.prefix(80)), "title":knownLabels.contains(title) ? title : "<other>", "description":knownLabels.contains(description) ? description : "<other>"])
         if role == (kAXButtonRole as String) && (title == label || description == label) {
             var rawPosition: CFTypeRef?, rawSize: CFTypeRef?
@@ -357,12 +357,34 @@ func ownedAccessibilityButton(_ expected: Pill, label: String, point: CGPoint, d
     return matches.first
 }
 
+func observeForPreparation(_ req: [String: Any], _ png: URL) throws -> ([String: Any], [Word], Set<pid_t>) {
+    let (expected, _) = try pill(req)
+    let frontBefore = frontPID()
+    if let required = req["expectedFrontPid"] {
+        try need(required is Int && (required as! Int) > 1 && Int(frontBefore) == (required as! Int),
+            "Synthetic scene lost foreground before accessibility admission")
+    }
+    // This enables only the verified owned process's accessibility tree. It
+    // neither activates a window nor sends input. Start Electron's asynchronous
+    // publication before screenshot/OCR so its debounce can overlap that work.
+    try admitPillAccessibility(expected)
+    let observed = try observe(req, png)
+    _ = try currentPill(req, expected)
+    let before = observed.0
+    try need(before["pid"] as? Int == Int(expected.pid) && before["windowId"] as? Int == Int(expected.id) &&
+        before["bounds"] as? [CGFloat] == [expected.rect.minX,expected.rect.minY,expected.rect.width,expected.rect.height],
+        "Pill changed during accessibility bootstrap observation")
+    try need(before["frontPid"] as? Int == Int(frontBefore) && frontPID() == frontBefore,
+        "Foreground drift during accessibility bootstrap observation")
+    try withinBudget()
+    return observed
+}
+
 func preparePillAccessibility(_ req: [String: Any], _ expected: Pill, label: String, point: CGPoint, descendants: Set<pid_t>) throws -> [String: Any] {
     _ = try currentPill(req, expected)
     let frontBefore = frontPID()
-    try admitPillAccessibility(expected)
-    // Electron 45 debounces this request for two seconds. A read-only bootstrap
-    // uses the helper's existing eight-second budget; input keeps its 1.5s cap.
+    // Admission already started before observation. Do not restart Electron 45's
+    // two-second debounce here. Bootstrap keeps 8s; input keeps its 1.5s cap.
     while true {
         try withinBudget()
         // Before hover the native panel is intentionally click-through. Tree
@@ -393,8 +415,8 @@ func main() throws {
     try need(rootPid > 1 && rootPid <= Int(Int32.max), "Invalid root PID")
     let op = req["operation"] as! String, out = URL(fileURLWithPath: req["output"] as! String).standardizedFileURL
     try need(["snapshot", "prepare", "click", "startup", "close-settings"].contains(op), "Unknown operation")
-    if op == "prepare" { try need(["Finish", "Copy link"].contains(req["label"] as? String ?? ""), "Unsupported accessibility bootstrap label") }
-    if op == "click" { try need(["Copy link", "Create public link", "Cancel upload", "Retry upload"].contains(req["label"] as? String ?? ""), "Unsupported click label") }
+    if op == "prepare" { try need(["Finish", "Public link"].contains(req["label"] as? String ?? ""), "Unsupported accessibility bootstrap label") }
+    if op == "click" { try need(["Public link", "Create public link", "Cancel upload", "Retry upload"].contains(req["label"] as? String ?? ""), "Unsupported click label") }
     try safeOwnedPath(out, root: runner)
     try need(!fm.fileExists(atPath: out.path), "Output must be fresh")
     let job = reqURL.deletingLastPathComponent(); jobDir = job
@@ -416,14 +438,15 @@ func main() throws {
         clickTrace = try ClickTrace(traceURL)
         clickTraceName = traceURL.lastPathComponent
     }
-    let (before, words, pillDescendants) = try (op == "click" ? observeBeforeInput(req, out) : observe(req, out))
+    let (before, words, pillDescendants) = try (op == "prepare" ? observeForPreparation(req, out) :
+        (op == "click" ? observeBeforeInput(req, out) : observe(req, out)))
     if let expected = req["expectedFrontPid"] {
         try need(expected is Int && (expected as! Int) > 1 && before["frontPid"] as? Int == (expected as! Int),
             "Synthetic scene lost foreground before native operation")
     }
     if op == "snapshot" { print(String(data: try JSONSerialization.data(withJSONObject: before), encoding: .utf8)!); return }
     try need(op == "click" || op == "prepare", "Unknown operation")
-    let label = req["label"] as! String; try need((op == "prepare" ? ["Finish", "Copy link"] : ["Copy link", "Create public link", "Cancel upload", "Retry upload"]).contains(label), "Unsupported operation label")
+    let label = req["label"] as! String; try need((op == "prepare" ? ["Finish", "Public link"] : ["Public link", "Create public link", "Cancel upload", "Retry upload"]).contains(label), "Unsupported operation label")
     let matching = try words.compactMap { word -> CGRect? in guard let range = word.text.range(of: label) else { return nil }; return try word.candidate.boundingBox(for: range)?.boundingBox }
     try need(matching.count == 1, "Label OCR match is missing or ambiguous")
     let b = before["bounds"] as! [CGFloat], box = matching[0]

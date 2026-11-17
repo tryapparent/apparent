@@ -11,10 +11,10 @@ No JavaScript, video or font request is needed to display the image.
 Rebuild the checked-in image from `public/site/`:
 
 ```sh
-CHROME_PATH=/path/to/chrome node scripts/brand/generate-social-preview.mjs
+CHROME_PATH=/path/to/chrome node ../enablement/brand/generate-social-preview.mjs
 APPARENT_PUBLIC_SITE=1 npm run build
-node scripts/site-build/package-apparent.mjs
-node --test scripts/brand/test-social-preview.mjs
+node ../enablement/site-build/package-apparent.mjs
+node --test ../enablement/brand/test-social-preview.mjs
 ```
 
 The generator uses the existing `playwright-core` dependency and an installed
@@ -26,7 +26,7 @@ source and packaged head metadata, dimensions and byte preservation.
 
 ## Publication and receiver check
 
-Follow `pages-deploy.md` and the existing publication review hold. The public
+Follow `../../enablement/docs/pages-deploy.md` and the existing publication review hold. The public
 packager includes the exact image bytes; no Clanker/Caddy allowlist or provider
 change is needed. After an authorized Pages deployment, verify that crawler-style
 GETs return the checked homepage metadata and the image's exact PNG bytes. A

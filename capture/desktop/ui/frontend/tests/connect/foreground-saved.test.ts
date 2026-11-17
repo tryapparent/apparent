@@ -135,18 +135,18 @@ test('recopy uses each native click observation without extra transient-window s
     },
     verifyRestored: async copied => { assert.equal(copied, 'synthetic handoff'); events.push('restored'); },
   });
-  assert.deepEqual(events, ['clipboard', 'sentinel', 'Copy link', 'Create public link', 'restored']);
-  assert.deepEqual(result, {copied: 'synthetic handoff', copy: {label: 'Copy link', fresh: true}, confirmation: {label: 'Create public link', fresh: true}});
+  assert.deepEqual(events, ['clipboard', 'sentinel', 'Public link', 'Create public link', 'restored']);
+  assert.deepEqual(result, {copied: 'synthetic handoff', copy: {label: 'Public link', fresh: true}, confirmation: {label: 'Create public link', fresh: true}});
 });
 
 test('recopy propagates uncertain native input without replay or false clipboard success', async () => {
-  for (const failAt of ['Copy link', 'Create public link']) {
+  for (const failAt of ['Public link', 'Create public link']) {
     const clicks: string[] = [], failure = Error('input outcome unknown');
     await assert.rejects(recopyForeground({
       readClipboard: async () => 'synthetic handoff', seedClipboard: async () => {},
       click: async label => { clicks.push(label); if (label === failAt) throw failure; return label; },
       verifyRestored: async () => assert.fail('failed input cannot establish restoration'),
     }), error => error === failure);
-    assert.deepEqual(clicks, failAt === 'Copy link' ? ['Copy link'] : ['Copy link', 'Create public link']);
+    assert.deepEqual(clicks, failAt === 'Public link' ? ['Public link'] : ['Public link', 'Create public link']);
   }
 });
