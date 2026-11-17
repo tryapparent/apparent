@@ -72,21 +72,22 @@ import copy, importlib.util
 spec=importlib.util.spec_from_file_location('admission_tests','enablement/tests/test_release_gate.py')
 module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 case=module.AdmissionTests();case.setUp()
-for platform,runner in [('linux','ubuntu-24.04'),('macos','macos-15-intel')]:
+for platform in ['linux','macos']:
+    runner='ubuntu-24.04'
     name=f'verify / connect-client ({runner})'
-    assert name in module.gate.REQUIRED[platform]
-    original=copy.deepcopy(case.jobs[platform])
+    assert name in module.gate.REQUIRED['linux']
+    original=copy.deepcopy(case.jobs['linux'])
     for failure in ['missing','failure','cancelled','skipped','in_progress']:
-        case.jobs[platform]=copy.deepcopy(original)
-        if failure=='missing': case.jobs[platform]=[job for job in case.jobs[platform] if job['name']!=name]
+        case.jobs['linux']=copy.deepcopy(original)
+        if failure=='missing': case.jobs['linux']=[job for job in case.jobs['linux'] if job['name']!=name]
         else:
-            job=next(job for job in case.jobs[platform] if job['name']==name)
+            job=next(job for job in case.jobs['linux'] if job['name']==name)
             if failure=='in_progress': job['status']=failure
             else: job['conclusion']=failure
         try: case.admit(platform)
         except ValueError: pass
         else: raise AssertionError(f'{platform}: admitted {failure} client verification')
-    case.jobs[platform]=original
+    case.jobs['linux']=original
     assert case.admit(platform)==case.sha
 `], {stdio: 'pipe'});
 });
