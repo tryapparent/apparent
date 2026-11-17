@@ -11,6 +11,12 @@ import {contractTests} from '../../../local-tests/run.ts';
 
 const path = 'enablement/ci/runner/mac-platform.test.ts';
 const original = readFileSync(path, 'utf8');
+// Qualification deliberately rejects changed adjacent callers. Positive fixtures
+// must use its reviewed Git blobs, not whichever callers happen to be on main.
+const reviewed = [...readFileSync(new URL('./qualify.ts', import.meta.url), 'utf8')
+  .matchAll(/\['([^']+)', '([a-f0-9]{40})'\]/g)];
+assert.equal(reviewed.length, 4);
+const reviewedBytes = (blob: string) => execFileSync('git', ['show', blob], {encoding: 'utf8'});
 function repository(t: any) {
   const cwd = mkdtempSync(join(tmpdir(), 'apparent-dev-ci-test-routing-'));
   t.after(() => rmSync(cwd, {recursive: true, force: true}));
@@ -19,10 +25,7 @@ function repository(t: any) {
   git('init', '-q'); git('config', 'user.name', 'Synthetic'); git('config', 'user.email', 'synthetic@example.invalid');
   put(path, original); put('capture/engine/src/lib.rs', '// native');
   // Real adjacent caller bytes are part of the candidate reference inventory.
-  for (const adjacent of ['enablement/ci/routing/engine-inputs/qualify.ts',
-    'enablement/ci/routing/engine-inputs/range.test.ts',
-    'capture/desktop/ui/frontend/tests/foreground/mac.ts',
-    'enablement/ci/runner/mac-pill-bootstrap.test.ts']) put(adjacent, readFileSync(adjacent, 'utf8'));
+  for (const [, adjacent, blob] of reviewed) put(adjacent, reviewedBytes(blob));
   const commit = () => {git('add', '.'); git('-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'synthetic'); return git('rev-parse', 'HEAD');};
   return {cwd, git, put, commit, base: commit()};
 }
@@ -101,6 +104,16 @@ for (const kind of ['bytes', 'import', 'mode']) test('an earlier adjacent qualif
   const result=selectRange(base,r.commit(),r.cwd);
   assert.deepEqual(result.qualifiedCiTests,[]);
   assert.deepEqual(result.selected,[...owners]);
+});
+test('a changed foreground caller retains conservative coverage', t => {
+  const r = repository(t), adjacent = 'capture/desktop/ui/frontend/tests/foreground/mac.ts';
+  const blob = reviewed.find(([, name]) => name === adjacent)![2];
+  r.put(adjacent, reviewedBytes(blob) + '\n// foreground caller changed\n');
+  const base = r.commit();
+  r.put(path, original + '\n// regression\n');
+  const result = selectRange(base, r.commit(), r.cwd);
+  assert.deepEqual(result.qualifiedCiTests, []);
+  assert.deepEqual(result.selected, [...owners]);
 });
 test('five-file Desktop platform split retains actual execution consumers', t => {
   const r=repository(t);
