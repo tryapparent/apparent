@@ -40,15 +40,19 @@ export function verifyIssue(issue: Issue, cwd: string): number {
     throw Error(
       `Cannot validate ${reference(issue)} through authenticated gh API. Check gh authentication, network access and issue existence, then retry`,
     );
-  let data: any;
+  let data: Record<string, unknown>;
   try {
     data = JSON.parse(result.stdout);
   } catch {
     throw Error("GitHub returned an invalid issue response");
   }
   if (
+    !data ||
+    typeof data !== "object" ||
+    Array.isArray(data) ||
     data.pull_request ||
     data.number !== issue.number ||
+    typeof data.id !== "number" ||
     !Number.isSafeInteger(data.id) ||
     data.id <= 0 ||
     data.url !==

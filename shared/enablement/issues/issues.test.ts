@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import {
   mkdtempSync,
@@ -9,14 +9,14 @@ import {
   copyFileSync,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { primaryIssue, parseReference, git, repository } from "./reference.ts";
-import { prepareMessage, validatePush } from "./run.ts";
+import { validatePush } from "./run.ts";
 import { bind } from "./binding.ts";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
-function fixture(t: any) {
+function fixture(t: TestContext) {
   const dir = mkdtempSync("/tmp/apparent-dev-issues-"),
     repo = join(dir, "repo");
   mkdirSync(repo);

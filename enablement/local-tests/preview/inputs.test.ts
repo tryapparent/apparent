@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import {
   mkdirSync,
@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { selection, commands } from "../run.ts";
 
-function fixture(t: any) {
+function fixture(t: TestContext) {
   const dir = mkdtempSync("/tmp/apparent-dev-push-inputs-");
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const env = { ...process.env };
