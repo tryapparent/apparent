@@ -290,7 +290,7 @@ async function main() {
         return saved;
       },
       interact: async (_saved, prepared) => {
-        await ui('saved foreground pill', value => value.includes('copy link'), generated.pid);
+        await ui('saved foreground pill', value => value.includes('public link'), generated.pid);
         const before = await status(); assert.equal(before.captures.length, 0); assert.equal(before.uploadedBytes, 0); assert.deepEqual(await jobs(), []);
         await native('click', 'Public link', undefined, prepared.pid);
         await ui('public sharing disclosure', value => value.includes('anyone with this link') && value.includes('shared captures') && value.includes('encrypted') && value.includes('create public link'), generated.pid);
@@ -309,7 +309,7 @@ async function main() {
         assert.ok(text(retry).includes('cancelled') && text(retry).includes('retry upload'), 'Retry must come from the cancelled local recording');
         const confirmedRetry = await native('click', 'Create public link');
         assert.equal(confirmedRetry.frontPid, generated.pid, 'Synthetic scene lost foreground');
-        await ui('link copied', value => value.includes('link copied') && value.includes('copy link'), generated.pid, 30_000);
+        await ui('link copied', value => value.includes('link copied') && value.includes('public link'), generated.pid, 30_000);
         const completed = await status();
         const {copied, copy, confirmation} = await recopyForeground({
           readClipboard: () => command('/usr/bin/pbpaste', [], {env: hostEnv}),
@@ -330,7 +330,7 @@ async function main() {
           verifyRestored: async copied => { await poll(() => command('/usr/bin/pbpaste', [], {env: hostEnv}), value => value === copied, 'native clipboard restoration', 3000); },
         });
         assert.equal(copy.frontPid, generated.pid); assert.equal(confirmation.frontPid, generated.pid);
-        assert.ok(text(copy).includes('link copied') && text(copy).includes('copy link'), 'Fresh recopy target differs');
+        assert.ok(text(copy).includes('link copied') && text(copy).includes('public link'), 'Fresh recopy target differs');
         assert.ok(text(confirmation).includes('create public link'), 'Fresh native disclosure differs');
         assert.equal(completed.syntheticOnly, true); assert.equal(completed.shareCalls, 1);
         assert.ok(completed.putAttempts > cancelled.putAttempts, 'Retry did not start a fresh transfer');
