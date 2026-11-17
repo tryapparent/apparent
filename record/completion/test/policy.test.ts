@@ -89,7 +89,7 @@ test('disconnect/reconnect replays facts without repeating a potentially complet
 test('auto paste is opt-in and Linux Hyprland only; other paths keep bundle copy',()=>{
   const enabled = {...context,automaticTrialEnabled:true};
   const manual = reduce(begin(enabled,true),saved);
-  assert.equal(manual.effects[0]?.mode,'autoPasteAndSubmit');
+  assert.deepEqual(manual.effects,[{type:'copy',capture,mode:'autoPasteAndSubmit'}]);
   assert.equal(reduce(manual.state,copied).state.status,'Saved · Enter pressed');
   const stopped = reduce(manual.state,{...copied,result:'failed'});
   assert.equal(stopped.state.status,'Saved · auto paste stopped');
@@ -99,5 +99,4 @@ test('auto paste is opt-in and Linux Hyprland only; other paths keep bundle copy
   for(const change of [{agentRequested:true},{lab:true},{hyprland:false},{wayland:false},{source:'phone' as const},{platform:'macos' as const}]) {
     assert.equal(reduce(begin({...enabled,...change},true),saved).effects[0]?.mode,'bundle');
   }
-  assert.ok(manual.effects.every(e => e.type === 'copy'),'one admitted completion capability');
 });
