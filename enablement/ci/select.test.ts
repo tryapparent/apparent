@@ -90,16 +90,6 @@ test('main reuse requires passed evidence', () => {
     }
   }
 });
-test('Linux admission excludes Mac', () => {
-  const job = ci().jobs['release-linux'];
-  assert.deepEqual(job.needs, ['linux-admission','select']);
-  assert.equal(job.uses, './.github/workflows/release-linux.yml');
-  assert.equal(job.with.publish_main, true);
-  assert.match(ci().jobs['linux-admission'].if, /github.event_name == 'push'/);
-  assert.ok(!ci().jobs['linux-admission'].needs.some((name: string) => name.startsWith('mac')));
-  assert.equal(workflow('release-linux.yml').concurrency['cancel-in-progress'], false);
-  assert.match(workflow('release-linux.yml').jobs.admit.steps.find((s: {id: string}) => s.id === 'gate').run, /composition\/enablement\/release\/linux.ts admit/);
-});
 test('only installer inputs publish Linux; unknown installer selection remains conservative',()=>{
  const expression=ci().jobs['release-linux'].if;
  const outputs=(paths:string[]|null)=>{

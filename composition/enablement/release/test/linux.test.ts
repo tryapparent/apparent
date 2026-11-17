@@ -3,6 +3,77 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { cargoVersion } from "../version.ts";
+import { dispatchMain } from "../linux/dispatch.ts";
+
+test("Main CI dispatches an independent release with exact source and verification identity", () => {
+  const env = {
+    GITHUB_REPOSITORY: "tryapparent/apparent",
+    GITHUB_REF: "refs/heads/main",
+    GITHUB_EVENT_NAME: "push",
+    GITHUB_SHA: "a".repeat(40),
+    GITHUB_RUN_ID: "123",
+  };
+  const sent: string[] = [];
+  dispatchMain(env, (body) => {
+    sent.push(body);
+  });
+  assert.deepEqual(
+    sent.map((body) => JSON.parse(body)),
+    [
+      {
+        ref: "main",
+        inputs: {
+          source_sha: env.GITHUB_SHA,
+          verification_run_id: "123",
+          publish_main: "true",
+        },
+      },
+    ],
+  );
+  for (const patch of [
+    { GITHUB_REPOSITORY: "fork/apparent" },
+    { GITHUB_REF: "refs/heads/topic" },
+    { GITHUB_EVENT_NAME: "pull_request" },
+    { GITHUB_SHA: "main" },
+    { GITHUB_RUN_ID: "0" },
+    { GITHUB_RUN_ID: "" },
+  ])
+    assert.throws(
+      () =>
+        dispatchMain({ ...env, ...patch }, (body) => {
+          sent.push(body);
+        }),
+      /canonical main/,
+    );
+  assert.equal(sent.length, 1);
+  assert.throws(
+    () =>
+      dispatchMain(env, () => {
+        throw Error("dispatch rejected");
+      }),
+    /dispatch rejected/,
+  );
+});
+
+test("independent publisher consumes the admitted source and exact verification run", () => {
+  const workflow = readFileSync(".github/workflows/release-linux.yml", "utf8");
+  const dispatch = workflow
+    .split("  workflow_dispatch:\n")[1]
+    .split("\npermissions:")[0];
+  assert.ok(dispatch.includes("      source_sha:"));
+  assert.ok(dispatch.includes("      verification_run_id:"));
+  assert.ok(
+    workflow.includes(
+      "REQUEST_SHA: ${{ inputs.source_sha || github.event.workflow_run.head_sha || github.sha }}",
+    ),
+  );
+  assert.ok(
+    workflow.includes(
+      "VERIFY_RUN_ID: ${{ inputs.verification_run_id || github.event.workflow_run.id }}",
+    ),
+  );
+  assert.ok(workflow.includes("ref: ${{ needs.admit.outputs.sha }}"));
+});
 
 test("actual Linux compilation command selects explicit stable versus preview reporting identity", () => {
   const workflow = readFileSync(".github/workflows/release-linux.yml", "utf8");

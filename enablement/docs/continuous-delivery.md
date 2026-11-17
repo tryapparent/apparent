@@ -215,9 +215,9 @@ binaries. Packaging still builds the exact main SHA and its revision metadata.
 Fresh main `Linux verification` admission jobs require
 successful contracts/selection plus every affected suite to pass now or have
 validated identical-tree PR evidence. Missing selected coverage fails admission.
-The Linux gate never waits for Mac. After Linux admission succeeds,
-`release-linux.yml` automatically packages both AppImages and publishes the
-existing Linux latest-Main channel. Its exact-SHA/attempt/repository admission,
+The Linux gate never waits for Mac. Installer admission dispatches `release-linux.yml`
+separately with its verified SHA/run ID; CI finishes before Main packaging.
+Exact-SHA/attempt/repository admission,
 stale-main suppression, packaging checks and noncancelling publication lock remain
 required. A later main push cannot cancel an active publication. Mac publication
 remains separately operated; Connect uses its own automatic tested delivery.

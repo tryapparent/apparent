@@ -40,7 +40,8 @@ export function admitLinux(): void {
   }
   if (
     process.env.STABLE_CANDIDATE !== "true" &&
-    ["workflow_run", "push"].includes(process.env.GITHUB_EVENT_NAME!)
+    (["workflow_run", "push"].includes(process.env.GITHUB_EVENT_NAME!) ||
+      Boolean(process.env.VERIFY_RUN_ID))
   ) {
     try {
       node("enablement/ci/routing/streams.ts", ["capture", source]);

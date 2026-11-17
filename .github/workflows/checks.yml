@@ -191,6 +191,7 @@ jobs:
       plan: ${{ needs.select.outputs.plan }}
 
   release-linux:
+    name: Queue Linux Main publication
     needs: [linux-admission, select]
     # Reused/unselected suites intentionally skip ancestors. Override implicit
     # success(), while retaining the fresh exact-main Linux admission gate.
@@ -200,14 +201,20 @@ jobs:
       needs.select.outputs.installer != 'false' &&
       github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'tryapparent/apparent'
     permissions:
-      contents: write
-      actions: read
-    uses: ./.github/workflows/release-linux.yml
-    with:
-      publish_main: true
-    secrets:
-      POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
-      APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
+      contents: read
+      actions: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: node --experimental-strip-types composition/enablement/release/linux/dispatch.ts
 
   macos:
     needs: [contracts, select, reuse, portable, record-media]
