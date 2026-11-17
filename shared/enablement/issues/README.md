@@ -38,7 +38,7 @@ and changes no live configuration. Parent integration owns activation.
 
 Before expensive verification, pre-push enumerates the union of all commits
 reachable from every non-deletion pushed ref, excluding ancestry reachable from
-the fixed integration baseline `8836185bd712f48f522fcbd90fcf543e89d8834f`.
+the fixed integration baseline `d559dbbd2a3fbf9428593931b526e13b626c8ab9`.
 That baseline and all its ancestors are grandfathered. No last-push timestamp or
 remote-tip exclusion can hide an unvalidated feature commit. Merge commits,
 rebased commits and commits introduced from side branches receive the same rule.

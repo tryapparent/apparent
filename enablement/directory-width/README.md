@@ -35,7 +35,8 @@ three existing tool roots without permitting arbitrary further root growth.
 
 The tracked pre-commit runs width, owner dependencies, Markdown tokens, language,
 staged Biome style/lint and lexical comments. The old 2,000-line gate is retired.
-Source code now has a staged 4,000-token cap and inherited no-growth debt. Pre-push remains unchanged.
+Source code has a staged 4,000-token cap and inherited no-growth debt. Pre-push
+validates issue references before running affected verification.
 
 Run `node --experimental-strip-types enablement/hooks/prepare.ts --output
 /absolute/new/private/hook-directory` to prepare a candidate without changing
@@ -59,5 +60,12 @@ is enabled and safe; enabling it affects repository config interpretation and mu
 be coordinated. Do not silently fall back to shared local/global config. Preserve
 the previous value/scope (or absence) for rollback. Never activate a /tmp path,
 overwrite shared hooks or switch during another writer's commit/push. Preparation
-performs none of these activation steps. Its pre-push contract is the installed
-one, not a replacement with the tracked selector. Tests are not live activation proof.
+performs none of these activation steps. Tests are not live activation proof.
+
+Optional `--retire-verified-cargo-push` backs up and replaces only the exact
+obsolete unconditional Cargo hook (SHA-256
+`8ba11032d420497f232f1096b6b8e52356abf5be264e7c18610eba888f95e920`).
+Its replacement directly invokes the tracked pre-push selector; it never chains
+the obsolete hook. Custom pre-push hooks retain their bytes and modes. Preparation
+also composes issue autofill/validation message hooks; see
+[issue binding](../../shared/enablement/issues/README.md).

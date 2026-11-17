@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 export const repository = "tryapparent/apparent";
-export const baseline = "8836185bd712f48f522fcbd90fcf543e89d8834f";
+export const baseline = "d559dbbd2a3fbf9428593931b526e13b626c8ab9";
 export const referencePattern =
   /^Issue:[ \t]+([A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+)#([1-9][0-9]*)[ \t]*$/i;
 export type Issue = { repository: string; number: number };

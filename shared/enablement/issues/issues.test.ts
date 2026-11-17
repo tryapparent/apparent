@@ -242,7 +242,7 @@ test("real Git push checks issues before verification and preserves HEAD and del
     "commit-tree",
     tree,
     "-p",
-    "8836185bd712f48f522fcbd90fcf543e89d8834f",
+    "d559dbbd2a3fbf9428593931b526e13b626c8ab9",
     "-m",
     "fixture\n\nIssue: tryapparent/apparent#12",
   );
