@@ -106,7 +106,7 @@ function directConsumers(path: string): readonly Owner[] {
   if (admissionTooling(path)) return ['tooling'];
   if (desktopPackagingInputs.has(path)) return ['capture', 'engine', 'desktop', 'capture-tools', 'client-foreground'];
   if (path.startsWith('engine/')) return affectsEngine(path) ? ['engine-media'] : [];
-  if (path === '.github/workflows/stream-engine.yml') return ['tooling'];
+  if (independent.includes('!' + path)) return ['tooling'];
   if (independentInputs.has(path)) return owners.filter(owner => owner !== 'engine-media');
   if (path.startsWith('enablement/ci/') || path === 'enablement/local-tests/run.ts' || path.startsWith('.github/actions/ubuntu-apt/')) return owners;
   if (portableForegroundInputs.has(path)) return ['client-foreground'];
@@ -257,7 +257,7 @@ export function routeDecision(paths: string[] | null, workflowControls: string[]
 
 export function unownedPaths(paths: string[]): string[] {
   const files = new Set([...knownFiles, '.gitignore', 'CONTRIBUTING.md', 'LICENSE']);
-  return paths.filter(path => path.includes('/') ? ![...knownDirectories, 'agent', 'handoff', 'onboarding'].includes(path.split('/')[0]) : !files.has(path));
+  return paths.filter(path => path.includes('/') ? ![...knownDirectories, 'handoff', 'onboarding'].includes(path.split('/')[0]) : !files.has(path));
 }
 export function routingProblems(decision: {paths: string[]; historyKnown: boolean; requiredStreams: Record<string, boolean>}): string[] {
   const problems = unownedPaths(decision.paths).map(path => 'Declare directory ownership for ' + path);
