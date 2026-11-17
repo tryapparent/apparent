@@ -7,6 +7,7 @@ import {
   primaryIssue,
   parseReference,
   reference,
+  acceptedMergeIssue,
 } from "./reference.ts";
 import { bind, boundIssue, instructions, verifyIssue } from "./binding.ts";
 
@@ -68,10 +69,9 @@ export function validatePush(
   for (const commit of commits) {
     let issue;
     try {
-      issue = primaryIssue(
-        git(cwd, ["show", "-s", "--format=%B", commit]),
-        cwd,
-      );
+      issue =
+        primaryIssue(git(cwd, ["show", "-s", "--format=%B", commit]), cwd) ??
+        acceptedMergeIssue(commit);
     } catch (error) {
       throw Error(
         `Commit ${commit}: ${error instanceof Error ? error.message : error}`,
