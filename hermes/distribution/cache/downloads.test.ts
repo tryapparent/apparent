@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {cp, mkdir, mkdtemp, readFile, readdir, readlink, rm, stat, symlink, writeFile} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import path from 'node:path';
-import {cacheKey, snapshot} from './downloads.ts';
+import {cacheKey, restoreDownloads, snapshot} from './downloads.ts';
 
 async function job(run: (root: string) => Promise<void>) {
   const root = await mkdtemp(path.join(process.env.TMPDIR || '/tmp', 'apparent-dev-hermes-cache-'));
@@ -58,6 +58,26 @@ test('CLI key binds actual fetched dependency bytes and this workflow/helper', a
   await writeFile(path.join(root, 'pm/lock.json'), 'new tool pins'); key();
   const keys = (await readFile(output, 'utf8')).trim().split('\n');
   assert.equal(new Set(keys).size, 5);
+}));
+
+test('restore replaces a bootstrapped wheel link with the snapshot link', async () => job(async root => {
+  const cache = path.join(root, 'cache');
+  const downloaded = path.join(root, 'downloaded');
+  const contents = 'wheels-v7/pypi/packaging';
+  const filename = '26.2-py3-none-any';
+  for (const [dir, wheel] of [[cache, 'bootstrap-wheel'], [downloaded, 'restored-wheel']]) {
+    await mkdir(path.join(dir, contents), {recursive: true});
+    await mkdir(path.join(dir, 'archive-v0', wheel), {recursive: true});
+    await writeFile(path.join(dir, 'archive-v0', wheel, '__init__.py'), wheel);
+    await symlink('../../../archive-v0/' + wheel, path.join(dir, contents, filename));
+  }
+  const downloads = path.join(root, 'downloads');
+  await snapshot(downloaded, downloads);
+  await restoreDownloads(downloads, cache);
+  const link = path.join(cache, contents, filename);
+  assert.equal(await readlink(link), '../../../archive-v0/restored-wheel');
+  assert.equal(await readFile(path.join(link, '__init__.py'), 'utf8'), 'restored-wheel');
+  assert.equal(await readFile(path.join(cache, 'archive-v0/bootstrap-wheel/__init__.py'), 'utf8'), 'bootstrap-wheel');
 }));
 
 test('snapshot refuses unsupported layouts and links inside wheel payloads', async () => job(async root => {
