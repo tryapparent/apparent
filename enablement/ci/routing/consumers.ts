@@ -11,15 +11,19 @@ export const desktopPackagingInputs = new Set(['install-app.sh', 'frontend/stage
   .map(file => 'capture/desktop/scripts/packaging/' + file));
 import { publicMarkdown, hostedBrowserFixture } from '../../../public/enablement/cd/ci/inputs.ts';
 export { publicMarkdown };
+const proseRoots = ['capture', 'record', 'agent', 'connect', 'public', 'hermes', 'enablement', 'shared', 'composition', 'engine', 'handoff', 'onboarding'];
+const rootProse = new Set(['CONTRIBUTING.md', 'LICENSE', 'NOTICE', 'SECURITY.md', 'CODE_OF_CONDUCT.md', 'CONTEXT.md', 'VERIFICATION.md']);
+const productMarkdown = new Set(['hermes/README.md', 'connect/client/typescript/README.md']);
+const embeddedSegments = /(^|\/)(skills?|prompts?|instructions?|tests?|fixtures?|templates?)(\/|$)/i;
 export function documentationOnlyPath(path: string): boolean {
-  if (!path.endsWith('.md') || publicMarkdown.has(path)) return false;
-  if (/(^|\/)(skills?|prompts?|instructions?|tests?|fixtures?|templates?)(\/|$)/i.test(path)) return false;
-  if (/(^|\/)AGENTS\.md$/.test(path)) return true;
+  if (rootProse.has(path)) return true;
+  if (!path.endsWith('.md') || publicMarkdown.has(path) || productMarkdown.has(path)) return false;
+  if (/^public\/site\/(public|src|brand\/(src|shared))\//.test(path)) return false;
   if (/(^|\/)(SKILL|CLAUDE|GEMINI)\.md$/i.test(path)) return false;
-  return ['CONTEXT.md', 'VERIFICATION.md', 'enablement/refactor.md', 'enablement/local-tests/README.md'].includes(path) ||
-    ['capture/engine', 'capture/desktop', 'capture/agent', 'connect', 'connect/web', 'connect/client',
-      'connect/service', 'public/site', 'shared', 'enablement', 'record/storage', 'record/completion', 'record/transcription', 'record/media', 'engine', 'engine/sdk', 'agent', 'handoff', 'onboarding'].some(owner =>
-      path.startsWith(owner + '/docs/') || ['README', 'CHANGELOG', 'CONTRIBUTING', 'LICENSE'].some(name => path === `${owner}/${name}.md`));
+  if (embeddedSegments.test(path) && !/(^|\/)README\.md$/i.test(path)) return false;
+  if (/(^|\/)AGENTS\.md$/.test(path)) return true;
+  if (/(^|\/)(AGENTS|SKILL|CLAUDE|GEMINI)[^/]*\.md$/i.test(path)) return false;
+  return proseRoots.includes(path.split('/')[0]);
 }
 export const linuxDrivers = new Set(['capture-smoke.py', 'gui-vm.py', 'gui-vm-reaper.py',
   'test-capture-smoke.py', 'test-gui-vm.py'].map(name => 'capture/desktop/scripts/linux/gui/' + name));

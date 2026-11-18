@@ -177,14 +177,30 @@ isolated profile and still installs, validates and diagnoses the exact candidate
 Profiles, installed environments and test results are never cached. Audited
 Linux drivers run launch-free contracts. Within a triggered workflow, unknown inputs/history, empty deltas, unsafe
 modes/types, embedded instructions and execution-sensitive CI retain broad checks.
-Repository `AGENTS.md` guidance runs cheap contracts only in local pushes and
-hosted CI, including regular additions, deletions and renames between guidance
-paths. Guidance under skills, prompts, instructions, tests, fixtures or templates
-is not exempt. Mixed changes retain every other input's consumers; this does not
-admit an unverified release or exempt Markdown embedded in a product.
+Repository `AGENTS.md` guidance, root `CONTRIBUTING.md`/`LICENSE` and ordinary
+owner Markdown select no product suites in local pushes, hosted CI, Public,
+Connect or Hermes; only the cheap `contracts`/`select` classification jobs and
+main `reuse`/admission checks remain. That retains policy verification without
+allocating product runners or publishing. Product-consumed Markdown keeps its
+actual consumers: README and the four Public guides/skill, published
+`public/site/public/**` assets and brand-book instructions, Public site source
+(`public/site/src`, brand `src`/`shared`), packaged Hermes/Connect READMEs,
+plus Markdown under skills, prompts, instructions, tests, fixtures or templates. `AGENTS.md` guidance under those embedded directories is
+not exempt, and guidance-like names such as `AGENTS-old.md` stay conservative.
+Mixed changes retain every other input's consumers; this does not admit an
+unverified release or exempt Markdown embedded in a product. Unknown owner
+Markdown and unknown roots remain conservative.
 Regular additions/deletions and both rename sides retain their owner consumers.
 Native manifests, lockfiles, build helpers, Swift/Metal and embedded assets count
 as native inputs even when no Rust source changes.
+
+Pending delivery is decided against complete Git history, not the latest commit:
+a prose-only descendant leaves an earlier Public/Connect candidate current, so
+that candidate's own run finishes verification and publication while the newer
+prose push allocates no product jobs. Any product-consumed Markdown, website
+input or mixed change supersedes the earlier candidate and schedules its own
+checks. `enablement/ci/routing/streams.test.ts` and the Public workflow contract
+cover this ordering for both Website and Connect.
 
 The complete base-to-merge/push delta produces a suite plan. Platform callers
 consume that plan; they never replace it with an empty-tree comparison. Portable
