@@ -207,6 +207,7 @@ test("trusted practice host drives the real renderer without accepting renderer 
     ready: true,
     platform: "linux",
     shortcut: "Ctrl+R",
+    penRgb: [217, 76, 68],
     practice: "start",
   });
   let sequence = 0;
@@ -251,6 +252,10 @@ test("trusted practice host drives the real renderer without accepting renderer 
     { type: "whiteboard-visible", visible: false },
   ]);
   await stage("screen-ink");
+  await expect(page.locator(".native-gesture-ink")).toHaveCSS(
+    "stroke",
+    "rgb(217, 76, 68)",
+  );
   await batch([{ type: "ink", board: false, screen: 5 }]);
   await stage("screen-ink");
   await batch([{ type: "ink", board: false, screen: 6 }]);

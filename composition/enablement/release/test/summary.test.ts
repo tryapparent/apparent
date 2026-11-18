@@ -135,6 +135,23 @@ test("producer failure, missing retry artifacts and a stable no-op give distinct
   assert.doesNotMatch(superseded, /releases\/download/);
 });
 
+test("runner abandonment names the missing macOS runner and source", async () => {
+  const jobs = pending();
+  jobs.admit = job("success", { sha: source });
+  jobs.linux = job("success");
+  jobs.macos = job("abandoned");
+  const report = await releaseSummary(
+    jobs,
+    { RELEASE_CHANNEL: "main" },
+    noNetwork,
+  );
+  assert.match(report, /Failed/);
+  assert.ok(report.includes(source));
+  assert.match(report, /GitHub Actions could not allocate a runner for macOS/);
+  assert.match(report, /retry the release once runner capacity returns/);
+  assert.doesNotMatch(report, /releases\/download|publication-only retry/);
+});
+
 test("only successful publication with a publicly reachable asset produces download links", async () => {
   const jobs = pending();
   const tag = `linux-main-v2-${source}`;

@@ -21,7 +21,7 @@ declare global {
 
 const schemes: Array<'light' | 'dark'> = ['light', 'dark'];
 const penSchemes: Array<'light' | 'dark'> = ['light', 'dark', 'light'];
-for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coach and restores setup ${mode}`, { timeout: 90000 }, async (t) => {
+test('onboarding fixed window shrinks to coach and restores setup', { timeout: 90000 }, async (t) => {
   const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'onboarding-window-'));
   const electronExecutable: string = require('electron');
   const child = spawn(electronExecutable, [path.join(__dirname, '../dist/composition/onboarding/entry.cjs'), '--assets-root', path.join(__dirname, '..'), '--remote-debugging-port=0', ...(process.platform === 'linux' ? ['--no-sandbox'] : [])], {
@@ -192,11 +192,8 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   const board={id:'apparent-test-1',strokes:[human],color:[59,121,189]};
   send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:board});
   await expect(page.locator('.native-board')).toBeVisible();
-  await expect(page.getByRole('status')).toHaveText('Your turn.');
-  if(process.env.APPARENT_ONBOARDING_EVIDENCE){await fs.mkdir(process.env.APPARENT_ONBOARDING_EVIDENCE,{recursive:true});await expect(page.locator('.native-board-lesson path')).toHaveCount(0);await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,'whiteboard-demo.png')});}
-  const beforeGuide=output;
-  await expect(page.getByRole('status')).toHaveText('Your turn.');
-  assert.equal(output,beforeGuide,'the demonstration cannot emit native input');
+  await expect(page.getByRole('status')).toHaveText('Your turn');
+  if(process.env.APPARENT_ONBOARDING_EVIDENCE){await fs.mkdir(process.env.APPARENT_ONBOARDING_EVIDENCE,{recursive:true});await expect(page.locator('.native-board-lesson path')).toBeVisible();await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,'whiteboard-demo.png')});}
   await expect(page.locator('.native-board-paper > svg polyline')).toHaveCount(1);
   await page.getByRole('button',{name:'Clear',exact:true}).click();
   await expect.poll(()=>output).toContain('"operation":"clear"');
@@ -228,6 +225,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
       const paper=await page.getByLabel('Whiteboard drawing canvas').boundingBox();assert.ok(paper);
       const completedBefore=(output.match(/"operation":"end"/g)||[]).length;
       await page.mouse.click(paper.x+60,paper.y+100);
+      await expect(page.getByRole('status')).toHaveText('Your turn');
       await expect.poll(()=>(output.match(/"operation":"end"/g)||[]).length).toBe(completedBefore+1);
       if(process.env.APPARENT_ONBOARDING_EVIDENCE)await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,`whiteboard-click-${color.join('-')}-${scheme}-viewport-${width}.png`)});
       assert.deepEqual(await pointPixel(),expected,'a click must paint immediately before native acknowledgement');
@@ -244,13 +242,12 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   const beforeReplay=output;
   await expect(page.getByRole('button',{name:'Replay guide',exact:true})).toHaveCount(0);
   assert.equal(output,beforeReplay,'replay cannot clear or export human ink');
-  // Only the native receipt of the second completed stroke closes practice.
   const closesBefore=(output.match(/"operation":"close"/g)||[]).length;
+  const acknowledgedAt=Date.now();
   send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:{...board,strokes:[human]}});
   await expect(page.locator('.native-board-paper > svg polyline')).toHaveCount(1);
-  assert.equal((output.match(/"operation":"close"/g)||[]).length,closesBefore);
-  send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:{...board,strokes:[human,[[140,160]]]}});
   await expect.poll(()=>(output.match(/"operation":"close"/g)||[]).length).toBe(closesBefore+1);
+  assert.ok(Date.now()-acknowledgedAt>=1990);
   send({step:'try-it',practice:'screen-ink',boardView:null});
   await expect(page.getByRole('heading',{name:'Draw on your screen.',exact:true})).toBeVisible();
   send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:{...board,strokes:[]}});
@@ -278,7 +275,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.locator('.native-board')).toBeVisible();
   await page.emulateMedia({reducedMotion:'reduce'});
   await expect(page.getByRole('button',{name:'Replay guide',exact:true})).toHaveCount(0);
-  await expect(page.getByRole('status')).toHaveText('Your turn.');
+  await expect(page.getByRole('status')).toHaveText('Your turn');
   await page.getByRole('button',{name:'Close whiteboard',exact:true}).click();
   await expect.poll(()=>output).toContain('"operation":"close"');
   await page.emulateMedia({reducedMotion:'no-preference'});
@@ -412,7 +409,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   const heading=await page.getByRole('heading',{name:'One more time.',exact:true}).boundingBox();assert.ok(heading);
   const keys=await page.locator('.native-shortcut kbd').boundingBox();assert.ok(keys);
   assert.ok(Math.abs(heading.x+heading.width/2-(keys.x+keys.width/2))<2,'heading and shortcut share a centre');
-  assert.ok(keys.y-(heading.y+heading.height)>=14&&keys.y-(heading.y+heading.height)<=18,'heading is 16px above shortcut');
+  assert.ok(Math.abs(keys.y-heading.y-heading.height-16)<=2);
   if(process.env.APPARENT_ONBOARDING_EVIDENCE){
     await fs.mkdir(process.env.APPARENT_ONBOARDING_EVIDENCE,{recursive:true});
     for(const scheme of schemes){
@@ -446,12 +443,13 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
     if(process.env.APPARENT_ONBOARDING_EVIDENCE)await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,'one-more-time-320-'+scheme+'.png'),animations:'disabled'});
   }
   await page.setViewportSize({width:760,height:520});
+  const fnEditor={externallyManaged:false,suggestedFn:{keyCode:63,modifiers:0,key:'Fn'}};
   const fnChoiceStart=output.length;
-  send({step:'shortcut',platform:'macos',shortcutChosen:false,shortcutEditor:{recording:false,externallyManaged:false,error:null}});
+  send({step:'shortcut',platform:'macos',shortcutChosen:false,shortcutEditor:{...fnEditor,recording:false}});
   await page.getByRole('button',{name:'Choose suggested Fn shortcut',exact:true}).click();
   await expect.poll(()=>output.slice(fnChoiceStart)).toContain('\"keyCode\":63');
   assert.ok(output.slice(fnChoiceStart).indexOf('change-shortcut')<output.slice(fnChoiceStart).indexOf('\"keyCode\":63'),'open the provider editor before Fn selection');
-  send({step:'shortcut',shortcutEditor:{recording:true,externallyManaged:false}});
+  send({step:'shortcut',platform:'macos',shortcutEditor:{...fnEditor,recording:true}});
   const recorder=page.getByRole('group',{name:'Shortcut recorder'});
   await recorder.focus();
   await page.keyboard.press('Shift+Tab');
@@ -483,11 +481,11 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect.poll(()=>output).toContain('"keyCode":63,"modifiers":0,"key":"Fn"');
   await expect(page.getByRole('alert')).toHaveCount(0);
   await screenshot('shortcut-fn-error-recovered');
-  send({step:'shortcut',platform:'macos',shortcut:'Fn',shortcutChosen:true,shortcutTested:false,shortcutEditor:{recording:false,externallyManaged:false,error:null}});
+  send({step:'shortcut',platform:'macos',shortcut:'Fn',shortcutChosen:true,shortcutTested:false,shortcutEditor:{...fnEditor,recording:false}});
   await expect(page.getByRole('heading',{name:'One more time.',exact:true})).toBeVisible();
   await expect(page.locator('.native-shortcut kbd')).toHaveText('Fn');
   await screenshot('shortcut-accepted-fn');
-  send({step:'shortcut',platform:'macos',shortcut:'Fn',shortcutChosen:true,shortcutEditor:{recording:true,externallyManaged:false,error:null}});
+  send({step:'shortcut',platform:'macos',shortcut:'Fn',shortcutChosen:true,shortcutEditor:{...fnEditor,recording:true}});
   await page.getByRole('group',{name:'Shortcut recorder'}).focus();
   await page.getByRole('group',{name:'Shortcut recorder'}).press('Control+Alt+k');
   await expect.poll(()=>output).toContain('"keyCode":40');

@@ -91,6 +91,7 @@ export function project(value: unknown) {
       ? { id: b.id, strokes: b.strokes as [number, number][][], color: b.color }
       : null;
   const editor = v.shortcutEditor;
+  const suggestedFn = record(editor) ? editor.suggestedFn : null;
   return {
     tutorial:
       typeof v.tutorial === "string" &&
@@ -120,6 +121,17 @@ export function project(value: unknown) {
       ? {
           recording: editor.recording === true,
           externallyManaged: editor.externallyManaged === true,
+          suggestedFn:
+            v.platform === "macos" &&
+            record(suggestedFn) &&
+            typeof suggestedFn.keyCode === "number" &&
+            Number.isInteger(suggestedFn.keyCode) &&
+            suggestedFn.keyCode >= 0 &&
+            suggestedFn.keyCode <= 255 &&
+            suggestedFn.modifiers === 0 &&
+            suggestedFn.key === "Fn"
+              ? { keyCode: suggestedFn.keyCode, modifiers: 0, key: "Fn" }
+              : null,
           error:
             typeof editor.error === "string"
               ? editor.error.slice(0, 240)

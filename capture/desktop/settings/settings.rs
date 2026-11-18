@@ -1,17 +1,3 @@
-// The Settings window. It is SwiftUI in `apparent-helper settings` and, like onboarding, only
-// draws what this module sends it (`View`) and reports what was clicked or typed (`Action`).
-// Everything is decided and written here: `~/.config/apparent/config.json` keeps its other keys
-// and its `0600` mode.
-//
-// Panes: General (launch at login, the two shortcuts), Recording
-// (transcriber, video export), Storage (how long recordings are kept), Permissions (the
-// onboarding checklist, to fix things later), Agents (`apparent` on PATH, the skill's install
-// command) and About.
-//
-// Shortcuts live under `"shortcuts"` (`{"record": {"keyCode", "modifiers", "label"}}`, Carbon
-// modifier bits; absent means the default, and `"paste": null` turns paste off). While the window records one, Apparent's hotkeys are
-// paused (`crate::capture::engine::runtime::pause_shortcuts`) so the current combo reaches the recorder.
-
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -73,9 +59,7 @@ impl Shortcuts {
         if migrated && save_shortcut_in(&path, ShortcutKind::Record, &shortcuts.record).is_ok() {
             let _ = std::fs::remove_file(&legacy);
         }
-        #[cfg(target_os = "linux")]
-        if !prefers_app_shortcut(&read_json(&path))
-            && let Some(record) = crate::capture::desktop::linux::hyprland::external_record() {
+        if let Some(record) = desktop_record(&path) {
             return Self {
                 record,
                 ..shortcuts
@@ -312,6 +296,7 @@ pub struct ShortcutView {
     pub option: bool,
     pub command: bool,
     pub is_default: bool,
+    pub suggested_fn: Option<serde_json::Value>,
     /// A live system binding owns this chord; change it in the compositor instead.
     pub externally_managed: bool,
     /// It can be turned off (paste); `label` is empty while it is.
@@ -527,6 +512,10 @@ fn shortcut_view(
         option: mods & CARBON_OPTION_KEY != 0,
         command: mods & CARBON_CMD_KEY != 0,
         is_default: cfg.is_default_for(kind),
+        suggested_fn: cfg!(target_os = "macos").then(|| {
+            let default = ShortcutConfig::default_record();
+            serde_json::json!({"keyCode":default.key_code,"modifiers":default.carbon_modifiers,"key":default.label})
+        }),
         externally_managed: external_record_owned(kind),
         clearable: kind.can_unset(),
         recording,
@@ -534,17 +523,23 @@ fn shortcut_view(
     }
 }
 
-pub(crate) fn external_record_owned(kind: ShortcutKind) -> bool {
+fn desktop_record(path: &Path) -> Option<ShortcutConfig> {
     #[cfg(target_os = "linux")]
     {
-        kind == ShortcutKind::Record && !prefers_app_shortcut(&read_json(&crate::shared::handoff::default_config_path()))
-            && crate::capture::desktop::linux::hyprland::external_record().is_some()
+        let app_preferred = prefers_app_shortcut(&read_json(path));
+        crate::capture::engine::runtime::uses_desktop_record(app_preferred, true)
+            .then(crate::capture::desktop::linux::hyprland::external_record)
+            .flatten()
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = kind;
-        false
+        let _ = path;
+        None
     }
+}
+
+pub(crate) fn external_record_owned(kind: ShortcutKind) -> bool {
+    kind == ShortcutKind::Record && desktop_record(&crate::shared::handoff::default_config_path()).is_some()
 }
 
 // MARK: The window's logic
@@ -1291,9 +1286,7 @@ fn initial_settings_pane(pane: Option<Pane>) -> Option<Pane> {
 }
 
 fn electron_storage(pane: Option<Pane>, enabled: bool) -> bool {
-    // Linux panes share one GPUI frame. Replacing it for Storage loses the
-    // compositor's position/focus and visibly unmaps Settings during startup.
-    !cfg!(target_os = "linux") && enabled && pane == Some(Pane::Storage)
+    enabled && pane == Some(Pane::Storage)
 }
 
 impl Session {

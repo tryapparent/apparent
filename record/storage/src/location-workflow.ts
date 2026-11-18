@@ -51,7 +51,9 @@ export class LocationWorkflow {
       if (!current()) return {status: 'cancelled'};
       if (saved.status !== 'connected') return saved;
       const result = await this.#resolve(saved.location);
-      return current() ? this.#project(result) : {status: 'cancelled'};
+      if (!current()) return {status: 'cancelled'};
+      if (result.status !== 'connected') return {status: 'error', code: 'outcome_unknown'};
+      return this.#project(result);
     } catch {
       if (!current()) return {status: 'cancelled'};
       return {status: 'error', code: publicationAttempted ? 'outcome_unknown' : 'bridge_failed'};

@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 function generalState(platform:'linux'|'macos',recording=false,label='F1',on=false,error:string|null=null){
-  return {type:'general-state',platform,login:{on,available:true,needsApproval:false},shortcuts:[{kind:'record',title:'Record',label,recording,externallyManaged:false,isDefault:platform==='linux'||label==='Fn',clearable:false,error}],errorReporting:true};
+  return {type:'general-state',platform,login:{on,available:true,needsApproval:false},shortcuts:[{kind:'record',title:'Record',label,recording,externallyManaged:false,isDefault:platform==='linux'||label==='Fn',clearable:false,suggestedFn:platform==='macos'?{keyCode:63,modifiers:0,key:'Fn'}:null,error}],errorReporting:true};
 }
 
 test('Settings changes adopted panes in one live document and enforces the current capabilities', {timeout:120000}, async()=>{
@@ -51,7 +51,7 @@ test('Settings changes adopted panes in one live document and enforces the curre
     for(const width of [720,640,320])for(const colorScheme of ['light','dark'] as const){
       await session.send('Emulation.setDeviceMetricsOverride',{width,height:width===320?265:530,deviceScaleFactor:1,mobile:false});
       await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
-      for(const pane of ['Labs','Agents','About','General','Labs','About','Agents','General']){
+      for(const pane of ['Labs','Agents','Storage','About','Storage','General','Labs','About','Agents','General']){
         const nav=await openPane(pane);
         await expect(page).toHaveTitle(`Apparent Settings — ${pane}`);
         await expect(page.locator('.settings-navigation-wide').getByRole('button',{name:pane,exact:true,includeHidden:true})).toHaveAttribute('aria-current','page');
@@ -60,7 +60,7 @@ test('Settings changes adopted panes in one live document and enforces the curre
         assert.equal(await page.evaluate(()=>Reflect.get(window,'shellIdentity')),'same document');
         assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
         assert.equal(await page.evaluate(async(current)=>{
-          const calls:Record<string,()=>Promise<unknown>>={General:()=>window.apparentGeneral.act({action:'set',key:'errorReporting',value:false}),Labs:()=>window.apparentLabs.save(false,'sharing'),Agents:()=>window.apparentAgents.save(false),About:()=>window.apparentAbout.act({action:'tour'})};
+          const calls:Record<string,()=>Promise<unknown>>={General:()=>window.apparentGeneral.act({action:'set',key:'errorReporting',value:false}),Labs:()=>window.apparentLabs.save(false,'sharing'),Agents:()=>window.apparentAgents.save(false),About:()=>window.apparentAbout.act({action:'tour'}),Storage:()=>window.apparent!.resetCaptureLocation()};
           for(const [owner,call] of Object.entries(calls)){if(owner===current)continue;try{await call();return false;}catch{}}
           return true;
         },pane),true,'inactive pane mutations are rejected');
@@ -174,19 +174,19 @@ test('General waits for parent confirmation and keeps recovery keyboard input ou
   await shortcutFailure.getByRole('button',{name:'Try again',exact:true}).press('Enter');
   await expect.poll(()=>recoveryOutput.slice(retryStart).includes('"key":"F9"')).toBe(true);
   assert.equal(recoveryOutput.slice(retryStart).includes('"key":"Enter"'),false,'Enter retries the selected shortcut instead of binding Enter');
+  const recordShortcut=page.getByRole('button',{name:'Change Record shortcut, currently F9',exact:true});
   await projectGeneral(false,false,'F9');await expect(shortcutFailure).not.toBeVisible();
-  await expect(page.getByRole('button',{name:'Change Record shortcut, currently F9',exact:true})).toBeFocused();
+  await expect(recordShortcut).toBeFocused();
   await projectGeneral(false,true,'F9');await listening.focus();await page.keyboard.press('F9');
   await expect(listening).toHaveAttribute('aria-busy','true');
   await projectGeneral(false,false,'F9');
-  await expect(page.getByRole('button',{name:'Change Record shortcut, currently F9',exact:true})).not.toHaveAttribute('aria-busy','true');
+  await expect(recordShortcut).not.toHaveAttribute('aria-busy','true');
   for(const zoom of [1,2]){
     await application.evaluate(({BrowserWindow},zoom)=>{const w=BrowserWindow.getAllWindows()[0];w.setSize(640,530);w.webContents.setZoomFactor(zoom)},zoom);
     await projectGeneral(false,false,'F9');
-    const field=page.getByRole('button',{name:'Change Record shortcut, currently F9',exact:true});
-    await field.focus();await page.keyboard.press('Enter');await expect(field).toHaveAttribute('aria-busy','true');
+    await recordShortcut.focus();await page.keyboard.press('Enter');await expect(recordShortcut).toHaveAttribute('aria-busy','true');
     await projectGeneral(false,false,'F9','Shortcut unavailable. Choose another shortcut.');
-    await expect(field).toBeFocused();
+    await expect(recordShortcut).toBeFocused();
     assert.equal(await page.locator('.general-validation').evaluate(el=>{const r=el.closest('.general-shortcut').getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight}),true,'focused shortcut and new validation are visible together');
   }
   await projectGeneral();
