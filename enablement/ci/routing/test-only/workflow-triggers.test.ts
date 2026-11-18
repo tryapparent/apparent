@@ -33,7 +33,7 @@ test("stream triggers and PR checkout", () => {
         ),
       )
       .sort(),
-    "checks.yml hermes.yml stream-agent.yml stream-connect.yml stream-engine.yml stream-handoff.yml stream-onboarding.yml stream-public.yml stream-record.yml".split(
+    "branch-cleanup.yml checks.yml hermes.yml stream-agent.yml stream-connect.yml stream-engine.yml stream-handoff.yml stream-onboarding.yml stream-public.yml stream-record.yml".split(
       " ",
     ),
   );
@@ -68,6 +68,30 @@ test("stream triggers and PR checkout", () => {
         assert.equal(step.with?.["persist-credentials"], false);
       }
     }
+});
+test("closed PR cleanup runs its mutation only from the trusted repository checkout", () => {
+  const cleanup = workflow("branch-cleanup.yml");
+  assert.deepEqual(cleanup.on, { pull_request_target: { types: ["closed"] } });
+  assert.deepEqual(cleanup.permissions, {});
+  const checkout = cleanup.jobs.cleanup.steps?.[0];
+  assert.equal(checkout?.uses, "actions/checkout@v4");
+  assert.deepEqual(checkout?.with, {
+    ref: "refs/heads/${{ github.event.repository.default_branch }}",
+    "persist-credentials": false,
+  });
+  for (const path of [
+    ".github/workflows/branch-cleanup.yml",
+    "enablement/ci/branch-cleanup/closed-pr.ts",
+    "enablement/ci/branch-cleanup/closed-pr.test.ts",
+  ]) {
+    const decision = routeDecision([path]);
+    assert.deepEqual(decision.selected, ["tooling"], path);
+    assert.equal(decision.updater, false, path);
+    assert.ok(
+      Object.values(decision.publicationStreams).every((enabled) => !enabled),
+      path,
+    );
+  }
 });
 test("Record Bend runs on Linux and shares affected inputs with pre-push", () => {
   const record = workflow("stream-record.yml");
