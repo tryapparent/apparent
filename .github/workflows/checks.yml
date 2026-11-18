@@ -182,6 +182,9 @@ jobs:
   release:
     name: Queue Main release
     needs: [linux-admission, select]
+    concurrency:
+      group: linux-main-dispatch
+      cancel-in-progress: false
     # Reused/unselected suites intentionally skip ancestors. Override implicit
     # success(), while retaining the fresh exact-main Linux admission gate.
     if: >-
@@ -197,6 +200,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:

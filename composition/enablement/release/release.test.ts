@@ -4,7 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { producer } from "./candidate.ts";
-import { create, paired, repository, verify, workflow } from "./manifest.ts";
+import {
+  create,
+  macFallbackJob,
+  paired,
+  repository,
+  verify,
+  workflow,
+} from "./manifest.ts";
 import { assertAssets } from "./publish.ts";
 import { compareVersions } from "./version.ts";
 
@@ -59,7 +66,10 @@ test("paired final-byte manifests refuse incomplete, altered and mismatched cand
   try {
     assert.equal(paired(manifests).sourceSha, source);
     assert.notEqual(paired(manifests).producer.controlSha, source);
-    assert.throws(() => paired(manifests.slice(0, 2)), /Both Linux/);
+    assert.throws(
+      () => paired(manifests.slice(0, 2)),
+      /required platform artifacts/,
+    );
     for (const patch of [
       { sourceSha: control },
       { version: "1.2.4" },
@@ -105,6 +115,15 @@ test("producer requires exact trusted workflow, repository and successful native
     conclusion: "success",
   }));
   producer(run, jobs, "123", 2);
+  const fallback = { ...jobs[2], name: macFallbackJob };
+  producer(
+    run,
+    [...jobs.slice(0, 2), { ...jobs[2], conclusion: "cancelled" }, fallback],
+    "123",
+    2,
+  );
+  assert.throws(() => producer(run, [...jobs, fallback], "123", 2));
+  assert.throws(() => producer(run, [...jobs, jobs[2]], "123", 2));
   producer({ ...run, run_attempt: 3 }, jobs, "123", 2);
   for (const patch of [
     { path: ".github/workflows/release-linux.yml" },
