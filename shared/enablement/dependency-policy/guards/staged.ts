@@ -1,4 +1,5 @@
 import path from "node:path";
+import { bendPilotPath } from "../../bend/source.ts";
 import { tokens, sourceBudget, lockfiles } from "./budgets.ts";
 export { tokens } from "./budgets.ts";
 import { git } from "../snapshot.ts";
@@ -58,6 +59,13 @@ export async function checkStaged(
     errors.push(...sourceBudget(file, text, inherited));
     const ext = path.posix.extname(file).toLowerCase();
     const base = path.posix.basename(file);
+    if (
+      ext === ".bend" &&
+      (!bendPilotPath(file) || !meta.startsWith("100644 "))
+    )
+      errors.push(
+        `${file}: Bend requires a non-executable source file in the Record completion pilot`,
+      );
     if (ext === ".md") {
       const cap = (
         { "agents.md": 2000, "readme.md": 2000, "skill.md": 3000 } as Record<

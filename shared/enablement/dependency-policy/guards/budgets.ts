@@ -46,7 +46,7 @@ export function sourceBudget(
   )
     return [];
   if (
-    !/\.(?:[cm]?[jt]sx?|rs|py|swift|sh|bash|zsh|css|html?|c|h|cc|cpp|cxx|hpp|hh|m|mm|metal|lock|lockb)$/i.test(
+    !/\.(?:[cm]?[jt]sx?|bend|rs|py|swift|sh|bash|zsh|css|html?|c|h|cc|cpp|cxx|hpp|hh|m|mm|metal|lock|lockb)$/i.test(
       file,
     ) &&
     !text.startsWith("#!")
