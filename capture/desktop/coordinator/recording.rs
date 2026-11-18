@@ -1072,7 +1072,6 @@ impl ApparentCoordinator {
             "start_recording_with_target invoked: mode={:?} frame={:?}",
             target.mode, target.frame
         ));
-        // Without the picker the start needs its own cue: the overlay flashes an edge glow.
         let quick = !self.is_selecting();
         self.telemetry.start_glow.store(
             quick && target.mode == CaptureMode::Display,
@@ -1174,6 +1173,7 @@ impl ApparentCoordinator {
         let microphone_enabled = self.admitted_microphone.take().unwrap_or_else(crate::capture::engine::runtime::audio::mic::enabled);
         let stream_admission = crate::shared::handoff::experiment("localStreamingTranscription")
             .then(workflow::local_transcription::admission);
+        let allow_notes = cfg!(target_os = "linux") || prepared_source.is_none();
         use crate::capture::engine::runtime::recording::recorder::StartError;
         let (screen_session, audio_recorder, window_log) = match ScreenCaptureSession::start_tracks(
             &target, &bundle_dir, &self.telemetry, microphone_enabled, stream_admission,
@@ -1196,8 +1196,17 @@ impl ApparentCoordinator {
                 return;
             }
         };
+        let stage = Instant::now();
+        match allow_notes.then(|| workflow::notes::Session::start(&bundle_dir, Arc::clone(&self.telemetry), target.frame)) {
+            Some(Ok(session)) => self.note_ui = Some(session),
+            unavailable => {
+                if let Some(Err(error)) = unavailable { apparent_log(format!("Notes UI unavailable: {error:#}")); }
+                if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some("Typed notes unavailable · recording continues".into()); }
+            },
+        }
+        start_metric("notes_start_ms", stage);
         self.active_recording = Some(ActiveRecording {
-            started: Instant::now(),
+            started: stage,
             target,
             bundle_dir,
             source: CaptureSource::Screen {
@@ -1208,15 +1217,6 @@ impl ApparentCoordinator {
             _metal_overlay: metal_overlay,
             microphone_enabled,
         });
-        let stage = Instant::now();
-        match workflow::notes::Session::start(&self.active_recording.as_ref().unwrap().bundle_dir, Arc::clone(&self.telemetry), self.active_recording.as_ref().unwrap().target.frame) {
-            Ok(session) => self.note_ui = Some(session),
-            Err(error) => {
-                apparent_log(format!("Notes UI unavailable: {error:#}"));
-                if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some("Typed notes unavailable · recording continues".into()); }
-            },
-        }
-        start_metric("notes_start_ms", stage);
         self.present_recording_island(cx);
         start_metric("recording_start_ms", started);
     }

@@ -16,6 +16,10 @@ no restore token on this route. If selection is dismissed, source identity
 cannot be established, or the system rejects sharing, no other source is
 substituted. Microphone and input requirements still apply.
 
+Typed notes are unavailable with the macOS picker. Its fixed filter cannot add
+the notes editor to the window exclusions after capture starts. To use typed
+notes on macOS, select **Start screen recording right away**.
+
 Area capture, phone capture, and Agent capture retain their existing admission
 and source selection. Keep the immediate Screen route while it is the rollout
 default and while other callers still need it.
