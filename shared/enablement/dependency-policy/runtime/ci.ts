@@ -1,9 +1,25 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { parse } from "yaml";
 import { analyze } from "../policy.ts";
 import { owner, type Snapshot } from "../snapshot.ts";
 import type { Edge } from "./contexts.ts";
+
+const ubuntuAptAction = ".github/actions/ubuntu-apt/action.yml";
+const ubuntuAptRunner = "enablement/ci/runner/ubuntu-apt.ts";
+const ubuntuAptCommand = "node --experimental-strip-types " + ubuntuAptRunner;
+const ubuntuAptExecution = {
+  using: "composite",
+  steps: [
+    { uses: "actions/setup-node@v4", with: { "node-version": "22.23.0" } },
+    {
+      shell: "bash",
+      "working-directory": "${{ github.workspace }}",
+      run: ubuntuAptCommand,
+    },
+  ],
+};
 
 const workflows: Record<string, string> = {
   "stream-public.yml": "Public",
@@ -104,7 +120,11 @@ export function ciPolicy(snapshot: Snapshot): Set<string> {
         continue;
       }
       const actual = owner(file);
-      if (expected && !actual)
+      if (
+        expected &&
+        !actual &&
+        !(origin === ubuntuAptAction && file === ubuntuAptRunner)
+      )
         problems.add(
           `${origin} -> ${file}: stream CI cannot forward policy to an unowned root script`,
         );
@@ -187,6 +207,14 @@ export function ciPolicy(snapshot: Snapshot): Set<string> {
           if (!action)
             problems.add(file + ": unresolved local CI action/workflow");
           else if (
+            action === ubuntuAptAction &&
+            isDeepStrictEqual(
+              parse(snapshot.files.get(action)!)?.runs,
+              ubuntuAptExecution,
+            )
+          ) {
+            command(action, ubuntuAptCommand, "Shared");
+          } else if (
             !expected &&
             coordinators.has(basename) &&
             /^\.github\/workflows\/[^/]+\.yml$/.test(action) &&
