@@ -80,6 +80,14 @@ function swiftComments(file: string, text: string): Promise<string[]> {
 }
 
 export async function comments(file: string, text: string): Promise<string[]> {
+  if (path.posix.basename(file) === ".gitattributes") {
+    if (text.includes("\0"))
+      throw new Error(`${file}: invalid NUL in attribute patterns`);
+    return text
+      .replace(/^\uFEFF/, "")
+      .split(/\r?\n/)
+      .filter((line) => /^[ \t\r]*#/.test(line));
+  }
   if (path.posix.basename(file) === ".gitignore") {
     if (text.includes("\0"))
       throw new Error(`${file}: invalid NUL in ignore patterns`);
