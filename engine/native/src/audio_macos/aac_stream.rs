@@ -6,8 +6,7 @@ use std::{
 
 use objc2_audio_toolbox::{
     AudioConverterDispose, AudioConverterFillComplexBuffer, AudioConverterNew, AudioConverterRef,
-    AudioConverterSetProperty, kAudioConverterDecompressionMagicCookie, kAudioConverterPrimeMethod,
-    kConverterPrimeMethod_None,
+    AudioConverterSetProperty, kAudioConverterDecompressionMagicCookie,
 };
 use objc2_core_audio_types::{
     AudioBuffer, AudioBufferList, AudioStreamBasicDescription, AudioStreamPacketDescription,
@@ -59,18 +58,6 @@ impl Converter {
         } != 0
         {
             return Err("Apple AAC converter rejected cookie");
-        }
-        let mut prime = kConverterPrimeMethod_None;
-        if unsafe {
-            AudioConverterSetProperty(
-                raw,
-                kAudioConverterPrimeMethod,
-                4,
-                NonNull::from(&mut prime).cast(),
-            )
-        } != 0
-        {
-            return Err("Apple AAC converter rejected priming");
         }
         Ok(converter)
     }
