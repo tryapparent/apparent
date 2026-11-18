@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import {useId, type ReactNode} from 'react';
 import { cn } from './utils';
 export type StatusTone = 'neutral' | 'success' | 'progress' | 'warning' | 'failure';
 const paths: Record<Exclude<StatusTone, 'neutral'>, ReactNode> = {
@@ -10,11 +10,12 @@ const paths: Record<Exclude<StatusTone, 'neutral'>, ReactNode> = {
 export function StatusCard({ tone, headline, compact = false, artwork, leading, footer, children }: {
   tone: StatusTone; headline: string; compact?: boolean; artwork?: ReactNode; leading?: ReactNode; footer?: ReactNode; children: ReactNode;
 }) {
+  const headlineId=useId();
   return <section className={cn('apparent-status-card', compact && 'compact')} data-tone={tone}>
     {leading && <div className="status-leading">{leading}</div>}
     <div className="status-content">
-      <h2><span className="status-heading" role={tone === 'failure' ? 'alert' : 'status'} aria-live="polite">
-        {tone !== 'neutral' && <span className="status-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[tone]}</svg></span>}<span className="status-title">{headline}</span>
+      <h2 aria-labelledby={headlineId}><span className="status-heading" role={tone === 'failure' ? 'alert' : 'status'} aria-live="polite">
+        {tone !== 'neutral' && <span className="status-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[tone]}</svg></span>}<span id={headlineId} className="status-title">{headline}</span>
       </span></h2>
       {children}
     </div>

@@ -33,7 +33,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   });
   browser=await chromium.connectOverCDP(url);const page=browser.contexts()[0].pages()[0];
   await expect(page).toHaveTitle('Apparent Settings — Labs');
-  assert.deepEqual(await page.locator('nav button').allTextContents(),['General','Recording','Storage','Permissions','Agents','Labs','About']);
+  assert.deepEqual(await page.locator('.settings-navigation-wide button').allTextContents(),['General','Recording','Storage','Permissions','Agents','Labs','About']);
   const toggle=page.getByRole('switch',{name:'Live local transcription'});
   await expect(toggle).toBeDisabled();await expect.poll(()=>Boolean(held)).toBe(true);
   reply(held!);hold=false;await expect(toggle).toBeEnabled();await expect(toggle).toHaveAttribute('aria-checked','false');

@@ -1707,9 +1707,7 @@ impl Session {
                 let view = self.panel.view(host);
                 let message = serde_json::json!({"type":"general-state",
                     "platform": if cfg!(target_os="macos") {"macos"} else {"linux"},
-                    "login":view.login,"shortcuts":view.shortcuts,"errorReporting":view.error_reporting,
-                    "lowerPlayback":view.lower_playback,"playbackLevel":view.playback_level,
-                    "playbackAvailable":cfg!(target_os="macos") || crate::shared::handoff::experiment("linux-playback-ducking")});
+                    "login":view.login,"shortcuts":view.shortcuts,"errorReporting":view.error_reporting});
                 let text = message.to_string();
                 if text != self.last_view { self.send(&message); self.last_view = text; }
             }

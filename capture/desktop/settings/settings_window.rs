@@ -1,11 +1,3 @@
-//! The Settings window in GPUI, drawn from `settings::View` like the SwiftUI window in
-//! `capture/desktop/native/Settings.swift` (same panes, rows, copy, sizes and palette) and driven by the same
-//! messages: `state`, `show`, `request`, `open-settings` and `close`. What it reports are
-//! `settings::Action`s, as the helper's JSON lines parse into.
-//!
-//! Windows uses it in process (`settings::Session`); macOS still runs the SwiftUI window in
-//! `apparent-helper settings`.
-
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -183,15 +175,7 @@ fn playback_available() -> bool {
 }
 
 fn playback_note() -> String {
-    if cfg!(target_os = "linux") {
-        if playback_available() {
-            "Experimental · manual setup required. Mono/stereo, one capture. No live effectiveness check."
-        } else {
-            "Linux playback lowering is opt-in. Setup: capture/desktop/docs/linux/linux-playback.md."
-        }
-    } else {
-        "Temporarily lower other audio while recording."
-    }.into()
+    "On Linux, install audio support and enable the experiment first. Apparent doesn’t measure the resulting volume.".into()
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
@@ -1263,9 +1247,6 @@ impl SettingsWindow {
                 false,
             ));
         }
-        for shortcut in &state.shortcuts {
-            column = column.child(self.recorder(theme, shortcut, cx));
-        }
         let error_reporting = state.error_reporting;
         column = column
             .child(div().mt(px(14.0)).child(group(theme, vec![
@@ -1279,7 +1260,11 @@ impl SettingsWindow {
                         })),
                 ).into_any_element(),
             ])))
-            .child(caption(theme, "No recordings, screenshots, transcripts or clipboard contents are sent.", false));
+            .child(caption(theme, "Reports include failure details, app version and operating system. No recordings, screenshots, transcripts or clipboard contents are sent.", false));
+        column = column.child(header(theme, "Keyboard shortcuts"));
+        for shortcut in &state.shortcuts {
+            column = column.child(self.recorder(theme, shortcut, cx));
+        }
         if let Some(account) = state.hosted.as_ref().filter(|_| state.connect.is_none()) {
             let available = account.server.is_some();
             if state.connect.is_none() {
@@ -1297,42 +1282,7 @@ impl SettingsWindow {
                 column = column.child(caption(theme, "Set the API server first with apparent cloud login --server <API origin> --scope read.", false));
             }
         }
-        if !WINDOWS {
-            let on = state.lower_playback;
-            let available = state.playback_available;
-            let toggle_enabled = available || on;
-            let level_enabled = on && available;
-            let level = state.playback_level.to_string();
-            let options = [0, 10, 20, 35, 50, 75, 100]
-                .into_iter()
-                .map(|n| (n.to_string(), format!("{n}%"), true))
-                .collect::<Vec<_>>();
-            column = column
-                .child(header(theme, "Other audio"))
-                .child(group(theme, vec![
-                    row(
-                        theme,
-                        "Lower other audio while recording",
-                        toggle_enabled,
-                        switch(theme, "settings-lower-playback", on, toggle_enabled)
-                            .when(toggle_enabled, |d| d.on_click(cx.listener(move |view, _, _, _| {
-                                view.set("lowerPlayback", (!on).into());
-                            }))),
-                    ).into_any_element(),
-                    row(
-                        theme,
-                        "Lower to",
-                        level_enabled,
-                        popup(theme, "settings-playback-level", &format!("{}%", state.playback_level))
-                            .when(!level_enabled, |d| d.opacity(0.4))
-                            .when(level_enabled, |d| d.on_click(cx.listener(move |view, event: &ClickEvent, _, cx| {
-                                view.open_menu("playbackLevel", options.clone(), Some(level.clone()), event);
-                                cx.notify();
-                            }))),
-                    ).into_any_element(),
-                ]))
-                .child(caption(theme, &state.playback_note, false));
-        }
+
         column
     }
 
@@ -1653,6 +1603,47 @@ impl SettingsWindow {
             })
             .when_some(speech, |pane, (text, error)| {
                 pane.child(caption(theme, &text, error))
+            })
+            .when(!WINDOWS, |pane| {
+            let on = state.lower_playback;
+            let available = state.playback_available;
+            let toggle_enabled = available || on;
+            let level_enabled = on && available;
+            let level = state.playback_level.to_string();
+            let options = [0, 10, 20, 35, 50, 75, 100]
+                .into_iter()
+                .map(|n| (n.to_string(), format!("{n}%"), true))
+                .collect::<Vec<_>>();
+            pane
+                .child(header(theme, "Other-app volume"))
+                .child(caption(theme, "Temporarily lower other apps’ playback volume while recording.", false))
+                .when(LINUX, |pane| pane.child(caption(theme, &state.playback_note, false))
+                    .child(button(theme, "settings-playback-guide", "Set up and test volume lowering", true).on_click(|_, _, _| {
+                        let _ = crate::shared::handoff::open_path(std::path::Path::new("https://github.com/tryapparent/apparent/blob/main/capture/desktop/docs/linux/linux-playback.md#manual-setup"));
+                    })))
+                .child(group(theme, vec![
+                    row(
+                        theme,
+                        "Lower volume while recording",
+                        toggle_enabled,
+                        switch(theme, "settings-lower-playback", on, toggle_enabled)
+                            .when(toggle_enabled, |d| d.on_click(cx.listener(move |view, _, _, _| {
+                                view.set("lowerPlayback", (!on).into());
+                            }))),
+                    ).into_any_element(),
+                    row(
+                        theme,
+                        "Lower to",
+                        level_enabled,
+                        popup(theme, "settings-playback-level", &format!("{}%", state.playback_level))
+                            .when(!level_enabled, |d| d.opacity(0.4))
+                            .when(level_enabled, |d| d.on_click(cx.listener(move |view, event: &ClickEvent, _, cx| {
+                                view.open_menu("playbackLevel", options.clone(), Some(level.clone()), event);
+                                cx.notify();
+                            }))),
+                    ).into_any_element(),
+                ]))
+
             })
             .child(header(theme, "Experimental"))
             .child(group(

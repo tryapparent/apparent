@@ -126,8 +126,7 @@ pub(super) fn admits(pane: Pane, action: &Action) -> bool {
         || pane == Pane::General && (
             matches!(action, Action::RecordShortcut { .. } | Action::Shortcut { .. } | Action::CancelShortcut | Action::ResetShortcut { .. } | Action::ClearShortcut { .. })
             || matches!(action, Action::Set { key, value }
-                if matches!(key.as_str(), "launchAtLogin" | "errorReporting" | "lowerPlayback") && value.is_boolean()
-                    || key == "playbackLevel" && value.as_u64().is_some_and(|n| n <= 100)))
+                if matches!(key.as_str(), "launchAtLogin" | "errorReporting") && value.is_boolean()))
         || pane == Pane::Agents && matches!(action, Action::AgentsPreference { setting, .. } if matches!(setting.as_deref(), None | Some("video")))
         || pane == Pane::Labs && (matches!(action, Action::AgentsConnection { .. }) || matches!(action, Action::AgentsPreference { setting, enabled, .. } if setting.as_deref() == Some("t3") || setting.is_none() && enabled.is_none()) || matches!(action, Action::LabsPreference { setting, .. } if matches!(setting.as_deref(), None | Some("streaming" | "autoPaste" | "sharing" | "wisprFlow"))))
         || pane == Pane::About && (matches!(action, Action::CheckForUpdates | Action::DismissUpdateCheck | Action::UpdateNow | Action::UpdateLater | Action::Tour)

@@ -7,6 +7,9 @@ focus. Actions are left aligned: primary recovery first, Close second. Styling
 uses the canonical failure red, icon, Paper field and Signal recovery controls in
 both themes. Inline field validation remains local. Import from
 `@apparent/ui/error-dialog`; its stylesheet is included automatically.
+The optional `--apparent-error-dialog-inset` and
+`--apparent-error-dialog-action-gap` retain 24px defaults. General uses 16px
+in short viewports so recovery remains visible at enlarged text sizes.
 
 `@apparent/ui/switch` supplies optional binary preferences: a 48 × 24px
 Signal-off/Lilac-on track, 18px Carbon light-mode thumb and white dark-mode thumb with a Carbon edge and 44px interaction target, without
@@ -41,6 +44,11 @@ with violet primary, progress and focus, keeps red failure/destructive and
 gold/Carbon preventive caution, and retains legible theme-specific success cues.
 Selected Lilac navigation uses Carbon focus to retain non-text contrast.
 The native window background remains paired with the system canvas.
+
+Desktop's adopted neutral-Off/Signal-On switch palette is published as the
+additive `--apparent-desktop-settings-switch-*` roles. General opts its shared
+Switch controls into these roles; other consumers keep their existing mapping
+until their owning surface adopts and verifies the change.
 
 Input provides the native text/URL field with shared colors, a 44px minimum
 height and a visible keyboard focus outline. Supply a persistent label and

@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { build } from 'esbuild';
 
@@ -16,7 +17,18 @@ for (const file of ['button.tsx', 'keyboard/keycap.tsx', 'keyboard/keycap.css', 
 let reportingOutput: string;
 export default defineConfig({
   base: './',
-  plugins: [react(), tailwindcss(), {name: 'onboarding-host-policy', closeBundle() {
+  resolve: { dedupe: ['react', 'react-dom', '@apparent/ui', 'lucide-react'] },
+  plugins: [react(), {
+    name: 'settings-utility-sources',
+    enforce: 'pre',
+    transform(css, id) {
+      if (id !== fileURLToPath(new URL('../../../../composition/settings/renderer/base.css', import.meta.url))) return;
+      return css.concat(
+        "\n@source '../../../capture/desktop/ui/frontend/node_modules/@apparent/ui/src';",
+        "\n@source '.';",
+      );
+    },
+  }, tailwindcss(), {name: 'onboarding-host-policy', closeBundle() {
     mkdirSync('dist/composition/onboarding', { recursive: true });
     cpSync('../../../../composition/onboarding/dist/entry.cjs', 'dist/composition/onboarding/entry.cjs');
     for (const name of ['presentation', 'hyprland', 'selection', 'wispr']) {

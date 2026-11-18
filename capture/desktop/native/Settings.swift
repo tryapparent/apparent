@@ -5,28 +5,6 @@ import Combine
 import CoreText
 import SwiftUI
 
-// `apparent-helper settings [--pane P] [--icon PNG] [--render DIR]`: the Settings window.
-// Apparent decides everything (`src/settings.rs`) and sends what to show as JSON lines on stdin:
-//   {"type":"state","version":"0.3.2","login":{"on":false,"available":true,"needsApproval":false},
-//    "shortcuts":[{"kind":"record","title":"Record","label":"⌥⇧S","key":"S",
-//    "shift":true,"control":false,"option":true,"command":false,"isDefault":true,
-//    "recording":false,"error":null},…],"microphone":{"selected":"default","value":"System default",
-//    "options":[{"id":"default","title":"System default (…)","enabled":true},{"id":"-",…},…],
-//    "note":null,"meter":"BuiltInMicrophoneDevice"},"transcriber":{…},"videoExport":false,
-//    "retention":{"preset":"week","options":[{"id":"week","label":"…"}],"note":"…"},
-//    "capturesSize":"1.2 GB","capturesDir":{"path":"~/Captures","custom":true},"permissions":[{"permission":"microphone","status":"granted",…}],
-//    "updates":true}
-//   {"type":"show","pane":"permissions"}  {"type":"request"|"open-settings","permission":"…"}
-//   {"type":"close"}
-// Clicks and key presses go back on stdout, e.g. {"action":"set","key":"videoExport","value":false},
-// {"action":"record-shortcut","kind":"record"}, {"action":"shortcut","kind":"record",
-// "keyCode":15,"modifiers":6144,"key":"r","reserved":false}, {"action":"cancel-shortcut"},
-// {"action":"reset-shortcut","kind":"paste"}, {"action":"clear-shortcut","kind":"paste"},
-// {"action":"grant","permission":"camera"},
-// {"action":"reopen"}, {"action":"show-captures"}, {"action":"check-for-updates"},
-// {"action":"set","key":"capturesDir","value":"/Users/me/Captures"} ("" resets),
-// {"action":"tour"}, {"action":"install-cli"}, {"action":"uninstall-cli"}, {"action":"close"}.
-
 // MARK: State
 
 struct SettingsLogin: Decodable, Equatable {
@@ -1035,7 +1013,7 @@ struct SettingsView: View {
       Rectangle().fill(SettingsTheme(scheme).groupLine).frame(height: 1)
       switch pane {
       case .general: ScrollView { general }.id(state.connect?.presentation?.headline)
-      case .recording: recording
+      case .recording: ScrollView { recording }
       case .storage: storage
       case .permissions: permissions
       case .agents: agents
@@ -1056,23 +1034,12 @@ struct SettingsView: View {
         SettingsRow(title: "Launch at login", enabled: state.login.available) {
           SettingsSwitch(on: state.login.on, enabled: state.login.available) { model.set("launchAtLogin", $0) }
         }
-        SettingsSeparator()
-        SettingsRow(title: "Lower other audio while recording") {
-          SettingsSwitch(on: state.lowerPlayback) { model.set("lowerPlayback", $0) }
-        }
-        if state.lowerPlayback {
-          SettingsSeparator()
-          PlaybackLevelRow(model: model, level: state.playbackLevel)
-        }
+
       }
       if state.login.needsApproval {
         SettingsCaption(text: "Allow Apparent in System Settings › General › Login Items.")
       } else if !state.login.available {
         SettingsCaption(text: "Launch at login works in the installed Apparent.app.")
-      }
-      ForEach(state.shortcuts) { shortcut in
-        Color.clear.frame(height: 14)
-        ShortcutRecorder(model: model, clock: model.clock, shortcut: shortcut)
       }
       Color.clear.frame(height: 14)
       SettingsGroup {
@@ -1082,7 +1049,12 @@ struct SettingsView: View {
             .accessibilityValue(state.errorReporting ? "On" : "Off")
         }
       }
-      SettingsCaption(text: "No recordings, screenshots, transcripts or clipboard contents are sent.")
+      SettingsCaption(text: "Reports include failure details, app version and operating system. No recordings, screenshots, transcripts or clipboard contents are sent.")
+      SettingsHeader("Keyboard shortcuts")
+      ForEach(state.shortcuts) { shortcut in
+        Color.clear.frame(height: 14)
+        ShortcutRecorder(model: model, clock: model.clock, shortcut: shortcut)
+      }
       if let hosted = state.hosted, state.connect == nil {
         SettingsHeader(state.connect == nil ? "Hosted account" : "Shared links")
         if state.connect == nil {
@@ -1177,6 +1149,14 @@ struct SettingsView: View {
       }
       if t.engine == "apple", t.speech?.notReady == true, let line = t.speech?.line {
         SettingsCaption(text: line)
+      }
+      SettingsHeader("Other-app volume")
+      SettingsCaption(text: "Temporarily lower other apps’ playback volume while recording.")
+      SettingsGroup {
+        SettingsRow(title: "Lower volume while recording") {
+          SettingsSwitch(on: state.lowerPlayback) { model.set("lowerPlayback", $0) }
+        }
+        PlaybackLevelRow(model: model, level: state.playbackLevel).disabled(!state.lowerPlayback)
       }
       SettingsHeader("Experimental")
       SettingsGroup {
