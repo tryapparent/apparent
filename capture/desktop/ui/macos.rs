@@ -853,13 +853,6 @@ pub(in crate::capture::desktop) fn install_status_bar() -> Option<flume::Receive
             forKeyPath: &*NSString::from_str("effectiveAppearance"),
             options: 0usize, context: std::ptr::null_mut::<std::ffi::c_void>()];
     }
-    let app_bytes = include_bytes!("../../../capture/desktop/assets/app-icon.png");
-    let app_data = NSData::with_bytes(app_bytes);
-    if let Some(app_img) = NSImage::initWithData(NSImage::alloc(), &app_data) {
-        unsafe {
-            NSApplication::sharedApplication(mtm).setApplicationIconImage(Some(&app_img));
-        }
-    }
     item.setMenu(Some(&menu));
 
     STATUS_BAR.with(|slot| {
