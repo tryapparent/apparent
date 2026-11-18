@@ -1,26 +1,29 @@
 import "./board-lesson.css";
 
+export const boardLessonHoldMs = 2000;
+
 export function BoardLesson({
-  hasStroke,
-  drawing,
+  ready,
+  onExampleEnd,
 }: {
-  hasStroke: boolean;
-  drawing: boolean;
+  ready: boolean;
+  onExampleEnd: () => void;
 }) {
   return (
-    <div className="native-board-lesson" data-has-stroke={hasStroke}>
+    <div className="native-board-lesson" data-ready={ready}>
       <p role="status">
-        {hasStroke ? "Draw once more, or close the whiteboard." : "Your turn."}
+        {ready
+          ? "Your turn. Finish the heart."
+          : "Let me show you how to draw."}
       </p>
-      {!hasStroke && !drawing && (
-        <svg aria-hidden="true" viewBox="0 0 300 160">
-          <path
-            stroke="var(--board-pen)"
-            pathLength="1"
-            d="M34 105 C52 32 124 20 149 58 S102 142 82 101 S174 23 214 67 S240 144 184 116 Q139 93 252 44"
-          />
-        </svg>
-      )}
+      <svg aria-hidden="true" viewBox="0 0 720 470">
+        <path
+          stroke="var(--board-pen)"
+          pathLength="1"
+          d="M360 167 C307 110 243 137 243 189 C243 246 332 305 360 335"
+          onAnimationEnd={onExampleEnd}
+        />
+      </svg>
     </div>
   );
 }
