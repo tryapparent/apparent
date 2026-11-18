@@ -121,6 +121,41 @@ pub(crate) fn private_input(bytes: &[u8]) -> Result<std::fs::File> {
     Ok(input)
 }
 
+pub(crate) fn private_json(value: &impl serde::Serialize) -> Result<std::fs::File> {
+    struct Bounded {
+        file: std::io::BufWriter<std::fs::File>,
+        remaining: usize,
+    }
+    impl Write for Bounded {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            if bytes.len() > self.remaining {
+                return Err(std::io::Error::new(
+                    ErrorKind::InvalidData,
+                    "Private worker input exceeds its limit",
+                ));
+            }
+            let written = self.file.write(bytes)?;
+            self.remaining -= written;
+            Ok(written)
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            self.file.flush()
+        }
+    }
+    let mut input = Bounded {
+        file: std::io::BufWriter::new(private_input(&[])?),
+        remaining: 16 * 1024 * 1024,
+    };
+    serde_json::to_writer(&mut input, value).context("Could not prepare private worker input")?;
+    input.file.flush()?;
+    let mut file = input
+        .file
+        .into_inner()
+        .map_err(|error| error.into_error())?;
+    file.seek(SeekFrom::Start(0))?;
+    Ok(file)
+}
+
 /// A held finite file carries private text without argv, pipe-writer deadlocks,
 /// or a child reopening a mutable pathname. Existing small-reply callers keep
 /// their original budget; only this explicit entrypoint permits larger replies.
@@ -247,6 +282,39 @@ fn run_bounded(command: &mut Command, timeout: Duration, max_output: usize) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn serialized_input_is_private_and_stops_before_unbounded_serialization() {
+        let mut input = private_json(&serde_json::json!({"version": 1})).unwrap();
+        assert_eq!(
+            input.metadata().unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let mut bytes = Vec::new();
+        input.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, br#"{"version":1}"#);
+        struct Large(std::cell::Cell<usize>);
+        impl serde::Serialize for Large {
+            fn serialize<S: serde::Serializer>(
+                &self,
+                serializer: S,
+            ) -> std::result::Result<S::Ok, S::Error> {
+                use serde::ser::SerializeSeq;
+                let mut sequence = serializer.serialize_seq(Some(20000))?;
+                let block = "x".repeat(1024);
+                for i in 0..20000 {
+                    self.0.set(i + 1);
+                    sequence.serialize_element(&block)?;
+                }
+                sequence.end()
+            }
+        }
+        let large = Large(std::cell::Cell::new(0));
+        assert!(private_json(&large).is_err());
+        assert!(
+            large.0.get() < 20000,
+            "the held writer must stop the serializer at its byte limit"
+        );
+    }
     #[test]
     fn held_input_supports_bounded_text_replies_without_widening_small_worker_budgets() {
         let bytes = vec![b'x'; 256 * 1024];

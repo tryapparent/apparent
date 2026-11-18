@@ -355,8 +355,11 @@ pub fn select_keyframes(
     max_keyframes: usize,
 ) -> Vec<(Keyframe, RgbaFrame)> {
     let speech = crate::composition::transcript::speech::plan(transcript).unwrap();
-    crate::composition::transcript::apply(select_keyframes_with_limits(frames, strokes, marks, events, &speech,
-        SelectionLimits {maximum:max_keyframes,ordinary:6}, None), transcript).unwrap()
+    let selected = select_keyframes_with_limits(
+        frames, strokes, marks, events, &speech,
+        SelectionLimits { maximum: max_keyframes, ordinary: 6 }, None,
+    ).unwrap();
+    crate::composition::transcript::apply(selected, transcript).unwrap()
 }
 
 #[cfg(test)]
@@ -369,8 +372,15 @@ fn select_visual_keyframes(
     video_ink: Option<VideoInk>,
 ) -> Vec<(Keyframe, RgbaFrame)> {
     let transcript = TranscriptData::default();
-    select_keyframes_with_limits(frames, strokes, marks, events, &SpeechInput::empty(&transcript),
-        SelectionLimits {maximum:max_keyframes,ordinary:6}, video_ink).frames
+    select_keyframes_with_limits(
+        frames,
+        strokes,
+        marks,
+        events,
+        &SpeechInput::empty(&transcript),
+        SelectionLimits { maximum: max_keyframes, ordinary: 6 },
+        video_ink,
+    ).unwrap().frames
 }
 
 pub(crate) fn select_keyframes_with_limits(
@@ -381,14 +391,14 @@ pub(crate) fn select_keyframes_with_limits(
     speech: &SpeechInput<'_>,
     limits: SelectionLimits,
     video_ink: Option<VideoInk>,
-) -> SelectedFrames {
+) -> anyhow::Result<SelectedFrames> {
     let transcript = speech.transcript;
     let max_keyframes = limits.maximum;
     for mark in marks.iter_mut() {
         mark.frame = None;
     }
     if frames.is_empty() || max_keyframes == 0 {
-        return SelectedFrames { frames: Vec::new(), anchors: Vec::new() };
+        return Ok(SelectedFrames { frames: Vec::new(), anchors: Vec::new() });
     }
     let mut frames: Vec<_> = frames.iter().collect();
     frames.sort_by_key(|frame| frame.t_ms);
@@ -523,35 +533,23 @@ pub(crate) fn select_keyframes_with_limits(
             cursor,
         });
     }
-    // A run of changing frames is one transition. Its last changed frame is
-    // the settled view, avoiding several near-identical animation keyframes.
-    let mut transitions: Vec<(usize, (u64, u64), f32)> = Vec::new();
-    let mut transition: Option<(usize, u64, f32)> = None;
-    for (i, &delta) in deltas.iter().enumerate() {
-        if delta > 0.08 {
-            let start_t = transition.map_or(frames[i].t_ms, |(_, t0, _)| t0);
-            transition = Some((
-                i + 1,
-                start_t,
-                transition.map_or(delta, |(_, _, max)| max.max(delta)),
-            ));
-        } else if let Some((frame, start_t, diff)) = transition.take() {
-            transitions.push((frame, (start_t, frames[frame].t_ms), diff));
-        }
-    }
-    if let Some((frame, start_t, diff)) = transition {
-        transitions.push((frame, (start_t, frames[frame].t_ms), diff));
-    }
-    // A mark group's keyframe already shows the screen its marks were drawn on.
     let drawing: Vec<(u64, u64)> = candidates
         .iter()
         .filter(|c| !c.marks.is_empty())
         .map(|c| c.span)
         .collect();
-    for &(frame, span, diff) in &transitions {
-        let t = frames[frame].t_ms;
-        if !drawing.iter().any(|&(t0, t1)| t0 <= t && t <= t1) {
-            candidates.push(scene_candidate(frame, span, diff));
+    let transitions = crate::composition::assembly::scene::plan(&frames, &deltas, &drawing)?;
+    for transition in &transitions {
+        if transition.ordinary {
+            candidates.push(Candidate {
+                frame: transition.frame,
+                span: transition.span,
+                score: transition.score,
+                reason: KeyframeReason::SceneChange,
+                marks: Vec::new(),
+                event: transition.event.clone(),
+                cursor: None,
+            });
         }
     }
     // A pointing word is a deliberate cue ("if I say now, find the right image"). It looks for
@@ -563,14 +561,15 @@ pub(crate) fn select_keyframes_with_limits(
         let (score, strong) = (*score, *strong);
         let snapped = transitions
             .iter()
-            .filter(|(_, (start, _), _)| {
+            .filter(|transition| {
+                let start = &transition.span.0;
                 start.saturating_add(300) >= word.t0 && *start <= word.t0 + 1_200
             })
-            .min_by_key(|(_, (start, _), _)| start.abs_diff(word.t0));
+            .min_by_key(|transition| transition.span.0.abs_diff(word.t0));
         let (frame, score, event) = match snapped {
-            Some(&(frame, _, diff)) => (
-                frame,
-                score.max(40.0 + 40.0 * diff) + if strong { 6.0 } else { 1.0 },
+            Some(transition) => (
+                transition.frame,
+                score.max(transition.score) + if strong { 6.0 } else { 1.0 },
                 format!("said “{cue}” as the screen changed"),
             ),
             None => (
@@ -708,7 +707,7 @@ pub(crate) fn select_keyframes_with_limits(
             )
         })
         .collect();
-    SelectedFrames { frames: out, anchors }
+    Ok(SelectedFrames { frames: out, anchors })
 }
 
 /// Splits stretches a keyframe owns that hold more than `COVERAGE_WORDS` or `COVERAGE_MS`, with a
@@ -840,18 +839,6 @@ fn cover_long_stretches(
     }
 }
 
-fn scene_candidate(frame: usize, span: (u64, u64), diff: f32) -> Candidate {
-    Candidate {
-        frame,
-        span,
-        score: 40.0 + 40.0 * diff,
-        reason: KeyframeReason::SceneChange,
-        marks: Vec::new(),
-        event: "scene changed".into(),
-        cursor: None,
-    }
-}
-
 /// Settling is a sampling heuristic, not a compositor presentation receipt.
 pub fn captured_ink_frame_warning(
     selected: &[(Keyframe, RgbaFrame)],
@@ -884,7 +871,7 @@ mod tests {
         let events = vec![click(1000), click(5000)];
         for ordinary in [1, 2] {
             let selected = select_keyframes_with_limits(&frames, &[], &mut [], &events,
-                &SpeechInput::empty(&TranscriptData::default()), SelectionLimits {maximum:9, ordinary}, None);
+                &SpeechInput::empty(&TranscriptData::default()), SelectionLimits {maximum:9, ordinary}, None).unwrap();
             assert_eq!(selected.frames.len(), ordinary);
         }
     }

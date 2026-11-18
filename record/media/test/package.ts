@@ -9,6 +9,7 @@ import {fileURLToPath} from 'node:url';
 import {qualifyAudioIngestion} from './audio-package.ts';
 import {qualifyTranscript} from './transcript/package.ts';
 import {qualifySpeechCues} from '../../enablement/media/cues-package.ts';
+import {qualifyScenes} from '../../enablement/ci/media/scene-package.ts';
 import {qualifyPhonePreparation} from '../../enablement/ci/media/preparation-package.ts';
 
 import {qualifyAssembly} from './assembly-package.ts';
@@ -16,6 +17,7 @@ import {qualifyAssembly} from './assembly-package.ts';
 const args = process.argv.slice(2);
 assert([4, 6].includes(args.length)); assert.equal(args[0], '--binary'); assert.equal(args[2], '--settings');
 if (args.length === 6) assert.equal(args[4], '--proof-dir');
+const proofDirectory = args[5] ? resolve(args[5]) : undefined;
 const binary = resolve(args[1]), settings = resolve(args[3]);
 const runtime = join(settings, 'runtime', process.platform === 'darwin' ? 'Electron.app/Contents/MacOS/Electron' : 'electron');
 const app = join(settings, 'app/electron/record-media');
@@ -129,10 +131,12 @@ try {
     assert.equal(pixels.length,48*64*4); const center=(32*48+24)*4;
     assert(pixels[center+2]>pixels[center]+40,'decoded phone frame stays blue beneath annotations');
   }
-  const audioProof = qualifyAudioIngestion({binary, sourceBundle: markedOut, root, home, runtimeDirectory});
-  qualifyPhonePreparation({binary, sourceBundle: markedOut, root, home, runtimeDirectory, runtime, media: app, proofDir: args[5]});
-  const transcriptProof = qualifyTranscript({binary, sourceBundle: markedOut, root, home, runtimeDirectory});
-  const speechProof = qualifySpeechCues({binary, sourceBundle: markedOut, root, home, runtimeDirectory});
+  const qualification = {binary, sourceBundle: markedOut, root, home, runtimeDirectory};
+  const audioProof = qualifyAudioIngestion(qualification);
+  qualifyPhonePreparation({...qualification, runtime, media: app, proofDir: proofDirectory});
+  const transcriptProof = qualifyTranscript(qualification);
+  const speechProof = qualifySpeechCues(qualification);
+  qualifyScenes({...qualification, proofDirectory});
   // Screen recovery/reprocessing has a distinct explicit-frame provider from
   // phone ingestion. Exercise its real packaged caller and nonzero movie offset.
   const screen = join(root, 'screen.apparent'), recovered = join(root, 'screen-rebuilt.apparent');
@@ -180,23 +184,23 @@ try {
   assert(longBundle.keyframes.every((frame:{t:number})=>frame.t>=500&&frame.t<=120500));
   assert.equal(hash(longMovie),longHash);assert.equal(hash(join(longScreen,'apparent.json')),longMetadata);
   const assemblySheet=qualifyAssembly(binary,root,verificationEnv,ffmpeg);
-  if (args.length === 6) {
-    mkdirSync(resolve(args[5]),{recursive:true,mode:0o700});
-    copyFileSync(join(markedOut,markedResult.keyframes[0].file),join(resolve(args[5]),'record-phone-flag.png'));
-    copyFileSync(join(markedOut,'summary.md'),join(resolve(args[5]),'record-phone-summary.md'));
-    copyFileSync(join(recovered,resultBundle.contactSheet),join(resolve(args[5]),'record-screen-sheet.png'));
-    copyFileSync(join(recovered,resultBundle.keyframes[0].file),join(resolve(args[5]),'record-screen-frame.png'));
-    copyFileSync(join(recovered,'apparent.json'),join(resolve(args[5]),'record-screen.json'));
-    copyFileSync(join(recovered,'summary.md'),join(resolve(args[5]),'record-screen-summary.md'));
-    copyFileSync(join(longOutput,longBundle.contactSheet),join(resolve(args[5]),'record-full-page-sheet.png'));
-    writeFileSync(join(resolve(args[5]),'record-audio-proof.json'),JSON.stringify(audioProof,null,2),{mode:0o600});
-    copyFileSync(assemblySheet,join(resolve(args[5]),'record-assembly-limits-sheet.png'));
-    writeFileSync(join(resolve(args[5]),'record-transcript-proof.json'),JSON.stringify(transcriptProof,null,2),{mode:0o600});
+  if (proofDirectory) {
+    mkdirSync(proofDirectory,{recursive:true,mode:0o700});
+    copyFileSync(join(markedOut,markedResult.keyframes[0].file),join(proofDirectory,'record-phone-flag.png'));
+    copyFileSync(join(markedOut,'summary.md'),join(proofDirectory,'record-phone-summary.md'));
+    copyFileSync(join(recovered,resultBundle.contactSheet),join(proofDirectory,'record-screen-sheet.png'));
+    copyFileSync(join(recovered,resultBundle.keyframes[0].file),join(proofDirectory,'record-screen-frame.png'));
+    copyFileSync(join(recovered,'apparent.json'),join(proofDirectory,'record-screen.json'));
+    copyFileSync(join(recovered,'summary.md'),join(proofDirectory,'record-screen-summary.md'));
+    copyFileSync(join(longOutput,longBundle.contactSheet),join(proofDirectory,'record-full-page-sheet.png'));
+    writeFileSync(join(proofDirectory,'record-audio-proof.json'),JSON.stringify(audioProof,null,2),{mode:0o600});
+    copyFileSync(assemblySheet,join(proofDirectory,'record-assembly-limits-sheet.png'));
+    writeFileSync(join(proofDirectory,'record-transcript-proof.json'),JSON.stringify(transcriptProof,null,2),{mode:0o600});
     for (const proof of transcriptProof) copyFileSync(proof.sheet,
-      join(resolve(args[5]),`record-transcript-${proof.route}-sheet.png`));
-    writeFileSync(join(resolve(args[5]), 'record-speech-proof.json'), JSON.stringify(speechProof, null, 2), {mode: 0o600});
+      join(proofDirectory,`record-transcript-${proof.route}-sheet.png`));
+    writeFileSync(join(proofDirectory, 'record-speech-proof.json'), JSON.stringify(speechProof, null, 2), {mode: 0o600});
     for (const proof of speechProof) copyFileSync(proof.sheet,
-      join(resolve(args[5]), `record-speech-${proof.route}-${proof.estimated ? 'estimated' : 'measured'}-sheet.png`));
+      join(proofDirectory, `record-speech-${proof.route}-${proof.estimated ? 'estimated' : 'measured'}-sheet.png`));
   }
   console.log('Packaged Record/Engine worker and CLI exported and ingested rotated media; decoded keyframes and source preservation verified.');
 } finally { rmSync(root, {recursive: true, force: true}); }

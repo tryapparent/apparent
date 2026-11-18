@@ -8,6 +8,8 @@ import '../native-build/build.test.ts';
 import './source-identity/git-index.test.ts';
 import './targeted/run.test.ts';
 
+const recordMediaFiles = ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'assembly-worker.js', 'assembly-policy.js', 'transcript/worker.js', 'transcript/policy.js', 'selection/worker.js', 'selection/cues.js', 'selection/scene-worker.js', 'selection/scene.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/apparent-engine-frames', 'native/manifest.json'];
+
 function fixture(t: any) {
   const root = realpathSync(mkdtempSync('/tmp/apparent-dev-native-inputs-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -28,7 +30,7 @@ function fixture(t: any) {
   for (const name of ['worker.js', 'policy.js', 'package.json']) {
     put('capture/desktop/ui/frontend/electron/record-completion/' + name);
   }
-  for (const name of ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'assembly-worker.js', 'assembly-policy.js', 'transcript/worker.js', 'transcript/policy.js', 'selection/worker.js', 'selection/cues.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/apparent-engine-frames', 'native/manifest.json']) {
+  for (const name of recordMediaFiles) {
     put('capture/desktop/ui/frontend/electron/record-media/' + name);
   }
   for (const name of ['worker.js', 'policy.js', 'range-worker.js', 'range-policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json']) {
@@ -47,7 +49,7 @@ function generators(f: ReturnType<typeof fixture>, fail = '') {
     'connect-transport': ['electron/connect.cjs', 'electron/settings/agents.cjs'],
     'updates': ['electron/settings/update-worker.cjs'],
     'pill': ['worker.js', 'policy.js', 'package.json'].map(name => 'electron/record-completion/' + name),
-    'record-media': ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'assembly-worker.js', 'assembly-policy.js', 'transcript/worker.js', 'transcript/policy.js', 'selection/worker.js', 'selection/cues.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/apparent-engine-frames', 'native/manifest.json'].map(name => 'electron/record-media/' + name),
+    'record-media': recordMediaFiles.map(name => 'electron/record-media/' + name),
     'agent-media': ['worker.js', 'policy.js', 'range-worker.js', 'range-policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json'].map(name => 'electron/agent-media/' + name),
   };
   // This feature adds adapters alongside the baseline owner-generated inputs.
