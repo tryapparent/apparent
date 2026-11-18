@@ -81,6 +81,10 @@ function commandOperation(words: string[]): string {
 }
 
 export function shellOperations(source: string): string[] {
+  const observer = source.match(/^[ \t]*timeout [1-9]\d* bash -c '([^'\n]+)'(?: > \/tmp\/(?:[\w-][\w.-]*\/)*[\w-][\w.-]* 2>&1)?[ \t]*\n?$/);
+  if (observer && /^rc=0; for id in(?: [1-9]\d*)+; do gh run watch "\$id" -R [\w-]+\/[\w.-]+ --exit-status --compact --interval [1-9]\d* \|\| rc=1; done; exit "\$rc"$/.test(observer[1])) {
+    return ['CI observation'];
+  }
   // Quotes are words, not executable source. Shell operators delimit actual commands.
   const clean = withoutHeredocs(source), commands: {words:string[]; write:boolean}[] = [];
   let words: string[] = [], word = '', quote = '', write = false;
