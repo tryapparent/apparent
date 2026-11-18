@@ -1,7 +1,6 @@
 import { execFileSync } from "node:child_process";
 import {
   appendFileSync,
-  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -9,7 +8,10 @@ import {
   readdirSync,
 } from "node:fs";
 import path from "node:path";
-import { snapshot } from "../../distribution/cache/downloads.ts";
+import {
+  restoreDownloads,
+  snapshot,
+} from "../../distribution/cache/downloads.ts";
 import { check, install, prepare, revision } from "./validator.ts";
 
 const job = "/tmp/apparent-dev-hermes-validator-ci";
@@ -81,9 +83,8 @@ function prepareCandidate() {
   );
 }
 
-function installCandidate() {
-  if (existsSync(downloads))
-    cpSync(downloads, cache, { recursive: true, verbatimSymlinks: true });
+async function installCandidate() {
+  if (existsSync(downloads)) await restoreDownloads(downloads, cache);
   install(job);
   appendFileSync(
     required("GITHUB_PATH"),
@@ -129,7 +130,7 @@ switch (process.argv[2]) {
     prepareCandidate();
     break;
   case "install":
-    installCandidate();
+    await installCandidate();
     break;
   case "snapshot":
     await snapshot(cache, downloads);

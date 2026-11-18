@@ -14,6 +14,10 @@ export function cacheKey(inputs: Record<string, string | Buffer>): string {
   return `hermes-validator-downloads-v1-${hash.digest('hex')}`;
 }
 
+export async function restoreDownloads(source: string, cache: string): Promise<void> {
+  await cp(source, cache, {recursive: true, verbatimSymlinks: true});
+}
+
 async function plainTree(root: string): Promise<void> {
   for (const name of await readdir(root)) {
     const file = path.join(root, name);
