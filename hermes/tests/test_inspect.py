@@ -55,7 +55,7 @@ class SetupStatusTests(unittest.TestCase):
         with patch("apparent_plugin.shutil.which", return_value="/local/apparent"), patch(
             "apparent_plugin.execute", return_value='{"schema":1,"status":"setup_required","extra":"private"}'
         ) as run:
-            self.assertEqual(status({}, session_id=None), {"schema": 1, "status": "setup_required"})
+            self.assertEqual(status({"profile": "work"}, session_id=None), {"schema": 1, "status": "setup_required"})
             run.assert_called_once_with("/local/apparent", ["hermes", "status"], timeout=5, limit=4096)
             with self.assertRaises(ValueError):
                 status({"command": "/different/executable"}, session_id=None)

@@ -59,7 +59,7 @@ def register(ctx):
 
 
 def setup_status(params, **kwargs):
-    if params:
+    if set(params) - {"profile"} or ("profile" in params and not isinstance(params["profile"], str)):
         raise ValueError("Apparent setup status takes no parameters.")
     command = shutil.which("apparent")
     if not command:
