@@ -111,6 +111,10 @@ test("trusted practice host drives the real renderer without accepting renderer 
   await expect(
     page.getByRole("heading", { name: "Where’s ur agent at?", exact: true }),
   ).toBeVisible();
+  const later = page.getByRole("button", { name: "Later", exact: true });
+  await later.focus();
+  await page.keyboard.press("Enter");
+  await expect.poll(() => output).toContain('"action":"later"');
   await capture("welcome");
   setup({ penPicker: true });
   await expect(
@@ -120,9 +124,14 @@ test("trusted practice host drives the real renderer without accepting renderer 
   await back.focus();
   await page.keyboard.press("Enter");
   await expect.poll(() => output).toContain('"action":"back"');
+  const skipPen = page.getByRole("button", { name: "Keep current pen" });
+  await skipPen.focus();
+  await page.keyboard.press("Enter");
+  await expect.poll(() => output).toContain('"action":"skip-pen"');
   await capture("pen");
   setup({
     step: "permissions",
+    fix: true,
     ready: false,
     rows: [{ permission: "accessibility", status: "denied", required: true }],
   });
@@ -134,15 +143,16 @@ test("trusted practice host drives the real renderer without accepting renderer 
     .poll(() => output)
     .toContain('"action":"grant","permission":"accessibility"');
   await expect(
-    page.getByRole("button", { name: "Choose recording shortcut" }),
+    page.getByRole("button", { name: "Done", exact: true }),
   ).toBeDisabled();
   await capture("permissions-denied");
   setup({
     step: "permissions",
+    fix: true,
     rows: [{ permission: "accessibility", status: "granted", required: true }],
   });
   await expect(
-    page.getByRole("button", { name: "Choose recording shortcut" }),
+    page.getByRole("button", { name: "Done", exact: true }),
   ).toBeEnabled();
   const repair = (status: string, extra: Record<string, boolean> = {}) =>
     setup({
@@ -191,6 +201,7 @@ test("trusted practice host drives the real renderer without accepting renderer 
   await expect(
     page.getByRole("heading", { name: "Choose your shortcut.", exact: true }),
   ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Skip shortcut practice" })).toHaveCount(0);
   await capture("shortcut");
   setup({
     step: "shortcut",
@@ -200,6 +211,11 @@ test("trusted practice host drives the real renderer without accepting renderer 
     firstCaptureRequired: true,
   });
   await expect.poll(() => output).toContain("accept-shortcut-choice:Option");
+  const skipShortcut = page.getByRole("button", { name: "Skip shortcut practice" });
+  await skipShortcut.focus();
+  await page.keyboard.press("Enter");
+  await expect.poll(() => output).toContain('"action":"skip-shortcut-trial"');
+  await capture("shortcut-optional");
   send({
     type: "state",
     step: "try-it",

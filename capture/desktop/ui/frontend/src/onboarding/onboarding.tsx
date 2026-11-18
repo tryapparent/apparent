@@ -9,6 +9,7 @@ import frog from '../../../../assets/onboarding/frog.png';
 import './onboarding.css';
 import { savePen } from './pen/save';
 import { GestureGuide } from '../../../../../../onboarding/renderer/gesture-guide';
+import { TourAction } from '../../../../../../onboarding/renderer/tour-actions';
 import { ControlGuide } from './controls/control-guide';
 import { AgentSetup } from './agent-setup';
 import { subscribeOnboardingState } from './state';
@@ -162,7 +163,7 @@ export function NativeOnboarding(){
   }
   return <main className="native-setup" data-agent-setup={state.step==='welcome'&&!state.penPicker} data-wispr={wispr.visible} data-shortcut-state={state.step==='shortcut'||goAgain}><header><span>{state.testInstance?'apparent · onboarding preview 9':'apparent · setup'}</span><Button variant="ghost" size="icon" aria-label="Close setup" onClick={()=>void action('close')}>×</Button></header><section>
     {wispr.visible?<WisprStep flow={wispr}/>:<>
-    {state.step==='welcome'&&!state.penPicker&&<AgentSetup onContinue={()=>action('continue')}/>}
+    {state.step==='welcome'&&!state.penPicker&&<AgentSetup onContinue={()=>action('continue')} onLater={()=>action('later')}/>}
     {penPage&&<div className="native-pen-picker" aria-busy={penBusy}><h1>Pick your pen.</h1>{(error||state.penError)&&<p role="alert">{error||'The colour could not be saved. Try choosing it again.'}</p>}<div className="native-pencils">{([['coral',[217,76,68]],['purple',[122,88,199]],['blue',[59,121,189]],['green',[57,123,97]]] as const).map(([name,rgb])=><Button variant="ghost" key={name} aria-label={`${name} pen`} disabled={penBusy} aria-pressed={state.penSelected&&state.penRgb.every((component,index)=>component===rgb[index])} style={{'--pencil':`var(--apparent-pen-${name})`} as React.CSSProperties} onClick={()=>void confirmPen(name)}><span aria-hidden="true"/></Button>)}</div><div className="native-pond" data-landing={penLanding} style={{'--pond-colour':state.penSelected?`rgb(${state.penRgb.join(',')})`:'var(--apparent-muted)'} as React.CSSProperties}><svg className="native-puddle" viewBox="0 0 300 100" role="img" aria-label="Puddle in your selected pen colour"><path d="M22 49C9 21 65 11 99 17C133 1 169 18 192 12C229 4 249 28 275 31C310 37 295 69 263 73C244 94 208 86 180 90C144 102 122 84 91 90C48 93 6 78 22 49Z"/><ellipse className="native-puddle-ring" cx="150" cy="49" rx="48" ry="15"/></svg><img ref={penFrog} className="native-pond-frog" src={frog} alt="Frog beside the puddle"/></div></div>}
     {state.step==='permissions'&&<><Permissions platform={state.platform} rows={state.rows} repair={state.fix} action={action}/></>}
     {state.step==='shortcut'&&<><h1 className={state.shortcutChosen&&!state.shortcutEditor?.recording?'native-shortcut-prompt':undefined} key={state.shortcutChosen&&!state.shortcutEditor?.recording?'chosen':'choose'}>{!state.shortcutChosen||state.shortcutEditor?.recording?'Choose your shortcut.':'One more time.'}</h1><div className="native-shortcut" data-managed={state.shortcutEditor?.externallyManaged}>
@@ -181,14 +182,17 @@ export function NativeOnboarding(){
       setError('');
       void action({action:'shortcut',kind:'record',...pressed,reserved:false});
       }}><div className="native-held-keys" aria-live="polite">{heldKeys.length?heldKeys.map(key=><Keycap key={key} pressed>{key}</Keycap>):fnChoice?<Button variant="keycap" aria-label="Choose suggested Fn shortcut" onClick={chooseFn}>Fn</Button>:<span>Press a key</span>}</div><div className="native-shortcut-choices"><Button variant="outline" onClick={()=>void action('cancel-shortcut')}>Cancel</Button></div></div>:<>
-        {state.shortcutChosen?<Keycap className="native-shortcut-example">{state.shortcut}</Keycap>:state.shortcutEditor?.externallyManaged?null:<p>No shortcut selected.</p>}
+        {state.shortcut&&!state.shortcutEditor?.externallyManaged&&<Keycap className="native-shortcut-example">{state.shortcut}</Keycap>}
         <div className="native-shortcut-choices">{fnChoice&&!state.shortcutChosen&&<Button variant="keycap" aria-label="Choose suggested Fn shortcut" onClick={chooseFn}>Fn</Button>}{state.shortcutEditor?.externallyManaged&&<Button aria-label={`Choose ${state.shortcut}`} onClick={()=>void action('use-desktop-shortcut')}>{state.shortcut}</Button>}
         <Button variant="outline" onClick={()=>void action('change-shortcut')}>{state.shortcutEditor?.externallyManaged?'Choose another shortcut':state.shortcutChosen?'Change shortcut':'Choose shortcut'}</Button></div>
       </>}{state.shortcutEditor?.error&&<p role="alert">{state.shortcutEditor.error}</p>}
-      {(state.shortcutEditor?.recording||!state.shortcutChosen)&&<ShortcutSuggestions platform={state.platform} onChoose={shortcut=>void chooseSuggested(shortcut)}/>}</div></>}
+      {(state.shortcutEditor?.recording||!state.shortcutChosen)&&<ShortcutSuggestions platform={state.platform} onChoose={shortcut=>void chooseSuggested(shortcut)}/>}
+      {!state.shortcutEditor?.recording&&<TourAction action="skip-shortcut-trial" onAction={action}/>}</div></>}
     {goAgain&&<><h1 className="native-shortcut-prompt">One more time.</h1><div className="native-shortcut"><Keycap className="native-shortcut-example">{state.shortcut}</Keycap><ShortcutSuggestions platform={state.platform} onChoose={shortcut=>void chooseSuggested(shortcut)}/></div></>}
     {state.step==='done'&&<><h1>Ready for your next idea.</h1><div className="native-explain"><img src={frog} alt=""/></div><p>apparent stays in the menu bar, ready when you are.</p></>}
     {error&&!penPage&&<p role="alert">{error}</p>}
     </>}
-    </section>{!wispr.visible&&state.fix&&<PermissionRepairFooter ready={state.ready} action={action}/>}{!wispr.visible&&!state.fix&&<footer><Button variant="ghost" onClick={()=>void action('back')} disabled={(state.index===0&&!penPage)||penBusy}>Back</Button>{!penPage&&<progress className="native-setup-progress" aria-label="Setup progress" value={state.index+1} max={state.count}/>}{!goAgain&&!penPage&&state.step!=='shortcut'&&<Button onClick={()=>void action('continue')} disabled={state.step==='permissions'&&!state.ready}>{state.step==='welcome'?'Choose a pen':state.step==='done'?'Finish setup':state.step==='permissions'?'Choose recording shortcut':'Try a capture'}</Button>}</footer>}</main>;
+    </section>{!wispr.visible&&state.fix&&<PermissionRepairFooter ready={state.ready} action={action}/>}{!wispr.visible&&!state.fix&&<footer><Button variant="ghost" onClick={()=>void action('back')} disabled={(state.index===0&&!penPage)||penBusy}>Back</Button>{!penPage&&<progress className="native-setup-progress" aria-label="Setup progress" value={state.index+1} max={state.count}/>}{penPage&&<TourAction action="skip-pen" onAction={action} disabled={penBusy}/>}
+      {!penPage&&<TourAction action="later" onAction={action}/>}
+      {!goAgain&&!penPage&&state.step!=='shortcut'&&<Button onClick={()=>void action('continue')} disabled={state.step==='permissions'&&!state.ready}>{state.step==='welcome'?'Choose a pen':state.step==='done'?'Finish setup':state.step==='permissions'?'Choose recording shortcut':'Try a capture'}</Button>}</footer>}</main>;
 }

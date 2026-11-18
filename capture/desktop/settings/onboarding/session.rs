@@ -246,6 +246,12 @@ impl Session {
         progress.save();
     }
 
+    pub fn dismiss(&self) -> anyhow::Result<()> {
+        let mut progress = Progress::load();
+        progress.dismiss(&self.flow);
+        progress.save_to(&crate::shared::handoff::default_config_path())
+    }
+
     pub fn input(&mut self, input: Input) -> Effect {
         if matches!(&input, Input::ShortcutChosen) { self.shortcut_choice_down = true; }
         if self.practice.is_some() && self.flow.step()==Step::TryIt && !self.fallback_pending {
@@ -354,6 +360,7 @@ impl Session {
                 return Effect::None;
             }
             if action=="continue" && !self.pen_selected {return Effect::None;}
+            if action=="skip-pen" && self.pen_picker {return self.input(Input::Continue);}
         }
 
         if action.starts_with("practice-") {
@@ -368,6 +375,7 @@ impl Session {
             "close" => Input::Closed,
             "settings" => Input::Settings,
             "change-shortcut" => Input::ChangeShortcut,
+            "skip-shortcut-trial" if !self.editor.as_ref().is_some_and(|editor| editor.recording) => Input::SkipShortcutTrial,
             "skip" => Input::Skip,
             "watched" => Input::Watched,
             "practiced" => Input::Practiced,
@@ -439,11 +447,6 @@ impl Session {
     pub(crate) fn observe_shortcut_modifiers(&mut self, flags: u64) {
         self.shortcut_selection_released(flags == 0);
     }
-    pub(crate) fn allows_capture_start(&self) -> bool {
-        !self.flow.first_capture_required || self.flow.step == Step::Done
-            || (self.flow.step == Step::TryIt && self.flow.local_practice())
-    }
-
     pub(crate) fn choosing_shortcut(&self) -> bool {
         self.flow.step() == Step::Shortcut
     }
