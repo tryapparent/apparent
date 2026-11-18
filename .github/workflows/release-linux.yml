@@ -215,6 +215,11 @@ jobs:
           # Pin needs this on Ubuntu 24.04 runners.
           sudo sysctl -w kernel.yama.ptrace_scope=0
           bash capture/desktop/scripts/linux/appimage/smoke-cpu.sh "dist/${{ steps.package.outputs.name }}" "$SPEECH_TEST" "$sde" -icl
+      - name: Build and verify the Amazon Linux 2023 CLI
+        if: matrix.arch == 'x86_64' && hashFiles('composition/enablement/release/amazon-linux-cli/build.ts') != ''
+        env:
+          PRODUCER_APPIMAGE: dist/${{ steps.package.outputs.name }}
+        run: node --experimental-strip-types composition/enablement/release/amazon-linux-cli/build.ts dist "$PRODUCER_APPIMAGE"
       - uses: actions/checkout@v5
         if: inputs.release_channel != ''
         with:

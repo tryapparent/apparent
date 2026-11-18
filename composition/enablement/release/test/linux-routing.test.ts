@@ -67,6 +67,25 @@ test("independent stable attachment is retired and paired coordinator owns publi
   assert.ok(publish.includes("needs: [admit, linux, macos]"));
 });
 
+test("the Amazon Linux CLI is verified on the x86-64 candidate before sealing", () => {
+  const build = job("linux");
+  const verification = build.indexOf(
+    "Build and verify the Amazon Linux 2023 CLI",
+  );
+  const seal = build.indexOf("Seal checked Linux candidate");
+  assert.ok(verification >= 0 && verification < seal);
+  assert.match(build.slice(verification, seal), /matrix\.arch == 'x86_64'/);
+  assert.ok(
+    build
+      .slice(verification, seal)
+      .includes("PRODUCER_APPIMAGE: dist/${{ steps.package.outputs.name }}"),
+  );
+  assert.match(
+    build.slice(verification, seal),
+    /amazon-linux-cli\/build\.ts dist "\$PRODUCER_APPIMAGE"/,
+  );
+});
+
 test("Linux packaging stays read-only and publishes no standalone release", () => {
   const build = job("linux");
   assert.ok(build.includes("ref: ${{ needs.admit.outputs.sha }}"));

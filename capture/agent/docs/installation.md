@@ -1,14 +1,13 @@
 # Install the official CLI for a recipient agent
 
-The CLI can read a capture on a headless machine without launching the desktop app.
-Installing an agent skill installs instructions, **not** the `apparent` executable.
-Start here if a received capture asks you to run `apparent inspect <id>` or `apparent fetch`.
+Install the CLI to run `apparent inspect` or `apparent fetch` on a headless machine.
+Installing an agent skill does **not** install the CLI.
+For Amazon Linux 2023 x86-64, use the [headless ZIP](../../../composition/enablement/release/README.md#amazon-linux-cli).
 
-## Linux (Ubuntu 24.04+, x86_64 or aarch64)
+## Linux AppImage (Ubuntu 24.04+, x86_64 or aarch64)
 
 Use the official [GitHub releases](https://github.com/tryapparent/apparent/releases).
-Linux `linux-main-<commit>` releases are **preview** builds of main, not stable releases;
-Mac previews and Mac appcast availability do not describe Linux availability.
+Linux `linux-main-<commit>` releases are previews.
 The example below pins the official 0.3.13 preview. To update, choose one Linux
 release and replace **both** `tag` and `version` with its exact values. Confirm it
 contains the matching AppImage and `.sha256` asset; do not select an arbitrary glob
