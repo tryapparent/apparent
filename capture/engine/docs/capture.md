@@ -73,6 +73,14 @@ If `.unsafe-video` remains, `apparent recover <directory>` and next-launch recov
 **narration only**. They leave `audio.wav` and `narration-recovered.txt`, not a fabricated Screen
 bundle, transcript or keyframes. The raw video stays excluded. The receipt states the recovered
 sample count and that the lost tail is unknown. There is no clipboard copy or external delivery.
+
+On Linux with GStreamer's `fragment-mode` support, the recorder writes playable
+MP4 fragments to the private capture directory as recording progresses. This can
+leave a locally playable prefix after an abrupt exit. The first fragment must
+complete, and interruption while the muxer is rewriting its index at Finish can
+still damage the file. Apparent keeps the interrupted raw movie outside automatic
+recovery and handoff.
+
 Cancel syncs `.cancelled` before stopping the writers, then atomically renames the stopped
 directory to a sibling `.cancelled-*` outside the capture namespace before recursive deletion.
 Recovery refuses both names, even if deletion failed after removing the internal marker.
