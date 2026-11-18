@@ -339,8 +339,7 @@ impl ApparentCoordinator {
                 || self.is_selecting() || self.is_processing()
                 || self.iphone_preview.is_some() || self.agent_capture_id.is_some()
                 || self.recording_shortcut_key || workflow::shutdown::requested();
-            #[cfg(target_os = "linux")]
-            let occupied = occupied || linux::portal::selection::pending();
+            let occupied = occupied || display_selection::pending();
             if self.agent_captures.admit(id, occupied, request.expired()) {
                 self.agent_capture_id = Some(id.clone());
                 self.publish_capture_busy();
@@ -588,9 +587,10 @@ impl ApparentCoordinator {
         self.grants.as_ref().filter(|grants| grants.is_current())
     }
 
-    fn permissions_allow_recording(&mut self, microphone: bool) -> bool {
-        use crate::permission_admission::{Admission, check};
-        match check(self.current_grants(), microphone) {
+    fn permissions_allow_recording(&mut self, microphone: bool, session_selected: bool) -> bool {
+        use crate::permission_admission::{Admission, ScreenAuthorization, check_for};
+        let authorization = if session_selected { ScreenAuthorization::SessionSelection } else { ScreenAuthorization::CURRENT };
+        match check_for(self.current_grants(), microphone, authorization) {
             Admission::Ready => true,
             Admission::Checking => {
                 let message = "Checking recording permissions. Try recording again in a moment.";
@@ -607,13 +607,13 @@ impl ApparentCoordinator {
         }
     }
 
-    fn ready_to_record(&mut self) -> bool {
+    fn ready_to_record(&mut self, session_selected: bool) -> bool {
         if self.lab {
             return true;
         }
         let microphone = crate::capture::engine::runtime::audio::mic::enabled();
         self.admitted_microphone = None;
-        if !self.permissions_allow_recording(microphone) {
+        if !self.permissions_allow_recording(microphone, session_selected) {
             return false;
         }
         self.admitted_microphone = Some(microphone);
@@ -948,12 +948,8 @@ impl ApparentCoordinator {
                 }
                 ShortcutPolicy::Record => {}
             }
-            if !self.lab && !self.permissions_allow_recording(
-                crate::capture::engine::runtime::audio::mic::enabled(),
-            ) {
-                return;
-            }
-            self.begin_playback();
+            if !self.ready_to_record(display_selection::requested()) { return; }
+            if !display_selection::requested() { self.begin_playback(); }
             self.hold_mods = crate::capture::engine::runtime::modifier_flags();
             self.telemetry.take_escape();
         }
@@ -1019,15 +1015,13 @@ impl ApparentCoordinator {
     pub fn start_recording_with_target(&mut self, target: impl FnOnce(bool) -> TargetInfo, cx: &mut Context<Self>) {
         self.start_recording_from(
             target,
-            #[cfg(target_os = "linux")]
             None,
             cx,
         );
     }
 
     pub fn record_screen_now(&mut self, cx: &mut Context<Self>) {
-        #[cfg(target_os = "linux")]
-        if self.choose_wayland_display(cx) { return; }
+        if self.choose_system_display(cx) { return; }
         self.start_recording_with_target(|lab| {
             if lab { lab::target() } else { discover_target(None) }
         }, cx);

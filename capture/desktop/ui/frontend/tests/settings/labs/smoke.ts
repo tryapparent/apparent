@@ -18,10 +18,10 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
  const exited=new Promise<void>(resolve=>application.once('exit',()=>resolve()));
  let browser:Awaited<ReturnType<typeof chromium.connectOverCDP>>|undefined;
  const messages:Record<string,unknown>[]=[];
- let saved:boolean|null=null, autoPasteSaved:boolean|null=null, sharingSaved:boolean|null=null, wisprSaved:boolean|null=null, hold=true, fail=false, held:Record<string,unknown>|undefined;
+ let saved:boolean|null=null, autoPasteSaved:boolean|null=null, sharingSaved:boolean|null=null, wisprSaved:boolean|null=null, screenPickerSaved:boolean|null=null, hold=true, fail=false, held:Record<string,unknown>|undefined;
  const reply=(message:Record<string,unknown>)=>{
-  if(typeof message.enabled==='boolean' && !fail){if(message.setting==='autoPaste')autoPasteSaved=message.enabled;else if(message.setting==='sharing')sharingSaved=message.enabled;else if(message.setting==='wisprFlow')wisprSaved=message.enabled;else saved=message.enabled;}
-  application.stdin.write(JSON.stringify({type:'labs-result',request:message.request,facts:fail?{error:'config_write_failed'}:{saved,sharingSaved,autoPasteSaved,autoPasteSupported:process.platform==='linux',wisprSaved,wisprSupported:process.platform==='darwin'}})+'\n');
+  if(typeof message.enabled==='boolean' && !fail){if(message.setting==='autoPaste')autoPasteSaved=message.enabled;else if(message.setting==='sharing')sharingSaved=message.enabled;else if(message.setting==='wisprFlow')wisprSaved=message.enabled;else if(message.setting==='screenPicker')screenPickerSaved=message.enabled;else saved=message.enabled;}
+  application.stdin.write(JSON.stringify({type:'labs-result',request:message.request,facts:fail?{error:'config_write_failed'}:{saved,sharingSaved,autoPasteSaved,autoPasteSupported:process.platform==='linux',wisprSaved,wisprSupported:process.platform==='darwin',screenPickerSupported:true,screenPickerSaved}})+'\n');
  };
  createInterface({input:application.stdout}).on('line',line=>{
   try{const value=JSON.parse(line);messages.push(value);if(value.action==='agents-preference'){application.stdin.write(JSON.stringify({type:'agents-result',request:value.request,facts:{saved:null,t3Saved:false,t3Configured:false}})+'\n');}if(value.action==='labs-preference'){if(hold)held=value;else reply(value);}}catch{}
@@ -39,12 +39,15 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   const chooseScreen=recordingStart.getByRole("radio",{name:"Choose a screen each time"});
   await expect(startNow).toBeChecked();
   await expect(chooseScreen).toBeDisabled();
-  await expect(chooseScreen).toHaveAccessibleDescription("Coming later.");
-  await startNow.focus();await page.keyboard.press("ArrowDown");
-  await expect(startNow).toBeChecked();
+  await expect(chooseScreen).toHaveAccessibleDescription("Open the system picker before recording starts.");
   const toggle=page.getByRole('switch',{name:'Live local transcription'});
   await expect(toggle).toBeDisabled();await expect.poll(()=>Boolean(held)).toBe(true);
   reply(held!);hold=false;await expect(toggle).toBeEnabled();await expect(toggle).toHaveAttribute('aria-checked','false');
+  await expect(chooseScreen).toBeEnabled();
+  await startNow.focus();await page.keyboard.press("ArrowDown");
+  await expect(chooseScreen).toBeChecked();
+  await page.reload();await expect(chooseScreen).toBeChecked();
+  await startNow.check();await expect(startNow).toBeChecked();
   assert.deepEqual(await toggle.locator('.apparent-switch-track').evaluate(el=>({width:el.getBoundingClientRect().width,height:el.getBoundingClientRect().height})),{width:48,height:24});
   await expect(page.getByRole('button',{name:'Labs',exact:true})).toHaveAttribute('aria-current','page');
   assert.match(await page.getByRole('button',{name:'Labs',exact:true}).locator('svg').innerHTML(),/M9 3h6/);

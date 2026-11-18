@@ -265,8 +265,8 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('apparent:labs-preference', (event, ...args) => {
     validate(event, []);
-    if (!labs || args.length > 2 || args.length > 0 && typeof args[0] !== 'boolean' || args.length === 2 && !['streaming','autoPaste','sharing','wisprFlow'].includes(args[1]) || args[1] === 'autoPaste' && process.platform !== 'linux' || args[1] === 'wisprFlow' && process.platform !== 'darwin') throw new Error('Forbidden Labs preference');
-    return labsPreferences.request(...args);
+    if (!labs || args.length > 2 || args.length > 0 && typeof args[0] !== 'boolean' || args[1] === 'autoPaste' && process.platform !== 'linux' || args[1] === 'wisprFlow' && process.platform !== 'darwin') throw new Error('Forbidden Labs preference');
+    return args.length ? labsPreferences.request(...args) : labsPreferences.read();
   });
   ipcMain.handle('apparent:agents-t3-preference', (event, ...args) => {
     validate(event, []);

@@ -1,3 +1,5 @@
+use crate::capture::engine::runtime::recording::recorder::{PreparedSource, selection as display_selection};
+
 impl ApparentCoordinator {
     /// Moves the island to `phase`, triggering a `.blurReplace` cross-transition on the inner content
     /// while the outer shell springs its width smoothly (`stiffness: 400, damping: 30` equivalent).
@@ -605,6 +607,14 @@ impl ApparentCoordinator {
     /// Advance the UI without waiting on activity transport.
     pub fn island_tick(&mut self, cx: &mut Context<Self>) {
         self.observe_recording_activity();
+        #[cfg(target_os = "macos")]
+        if let Some(finish) = self.active_recording.as_ref().and_then(|recording| match &recording.source {
+            CaptureSource::Screen { session, .. } => session.system_completion(),
+            _ => None,
+        }) {
+            if finish { self.finish_recording(cx); } else { self.cancel_recording(cx); }
+            return;
+        }
         #[cfg(target_os = "linux")]
         if self.discard_failed_screen_start() {
             cx.defer(whiteboard::close);
@@ -839,8 +849,7 @@ impl ApparentCoordinator {
 
     /// Opens the picker on `mode`, else on the mode the last recording used.
     fn open_picker(&mut self, mode: Option<SelectionMode>, cx: &mut Context<Self>) {
-        #[cfg(target_os = "linux")]
-        if linux::portal::selection::pending() { return; }
+        if display_selection::pending() { return; }
         if mode == Some(SelectionMode::Window) {
             self.report_window_recording_disabled(cx);
             return;
@@ -848,7 +857,7 @@ impl ApparentCoordinator {
         if self.is_recording() || self.is_processing() {
             return;
         }
-        if !self.ready_to_record() {
+        if !self.ready_to_record(false) {
             return;
         }
         let started = Instant::now();
@@ -988,10 +997,9 @@ impl ApparentCoordinator {
         }, cx);
     }
 
-    #[cfg(target_os = "linux")]
-    fn choose_wayland_display(&mut self, cx: &mut Context<Self>) -> bool {
-        if self.lab || self.agent_capture_id.is_some() || !linux::wayland_session()
-            || !crate::shared::handoff::experiment("chooseScreenEachTime")
+    fn choose_system_display(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.lab || self.agent_capture_id.is_some()
+            || !display_selection::requested()
         {
             return false;
         }
@@ -1000,23 +1008,12 @@ impl ApparentCoordinator {
         {
             return true;
         }
-        let Some(stopping) = linux::portal::selection::reserve() else { return true; };
+        let Some(picker) = display_selection::DisplaySelection::begin() else { return true; };
         cx.spawn(async move |entity, cx| {
-            let worker_stop = Arc::clone(&stopping);
-            let selected = cx.background_executor()
-                .spawn(async move { linux::portal::choose_display(&worker_stop) })
-                .await;
-            let _ = entity.update(cx, |coord, cx| {
-                let cancelled = stopping.load(std::sync::atomic::Ordering::Acquire);
-                drop(stopping);
-                if cancelled { return; }
-                match selected {
-                    Ok((target, source)) => coord.start_recording_from(|_| target, Some(source), cx),
-                    Err(error) => {
-                        apparent_log(format!("No screen recording was started: {error:#}"));
-                        coord.cancel_recording(cx);
-                    }
-                }
+            let selected = picker.acquire(|| cx.background_executor().timer(Duration::from_millis(100))).await;
+            let _ = entity.update(cx, |coord, cx| match selected {
+                Some((target, source)) => coord.start_recording_from(|_| target, Some(source), cx),
+                None => coord.cancel_recording(cx),
             });
         }).detach();
         true
@@ -1025,19 +1022,17 @@ impl ApparentCoordinator {
     fn start_recording_from(
         &mut self,
         target: impl FnOnce(bool) -> TargetInfo,
-        #[cfg(target_os = "linux")]
-        prepared_source: Option<linux::media::Source>,
+        prepared_source: Option<PreparedSource>,
         cx: &mut Context<Self>,
     ) {
-        #[cfg(target_os = "linux")]
-        if linux::portal::selection::pending() { return; }
+        if display_selection::pending() { return; }
         #[cfg(any(target_os="macos",target_os="linux"))]
         self.reconcile_electron_pill();
         if crate::capture::desktop::workflow::shutdown::requested() { return; }
         if self.is_recording() || self.is_processing() {
             return;
         }
-        if !self.ready_to_record() {
+        if !self.ready_to_record(prepared_source.is_some()) {
             self.cancel_recording(cx);
             return;
         }
@@ -1182,27 +1177,22 @@ impl ApparentCoordinator {
         use crate::capture::engine::runtime::recording::recorder::StartError;
         let (screen_session, audio_recorder, window_log) = match ScreenCaptureSession::start_tracks(
             &target, &bundle_dir, &self.telemetry, microphone_enabled, stream_admission,
-            #[cfg(target_os = "linux")]
             prepared_source,
         ) {
             Ok(tracks) => tracks,
-            Err(StartError::MicrophoneIntent(error)) => {
-                apparent_log(format!("Could not preserve silent capture intent: {error}"));
-                self.cancel_recording(cx);
-                return;
-            }
-            Err(StartError::Audio(error)) => {
-                let message = format!("Capture refused: narration could not be saved: {error:#}");
-                workflow::error_reporting::report(workflow::error_reporting::Failure::AudioStart);
+            Err(error) => {
+                use workflow::error_reporting::Failure;
+                let (message, failure) = match error {
+                    StartError::MicrophoneIntent(error) => (format!("Could not preserve silent capture intent: {error}"), None),
+                    StartError::Audio(error) => (format!("Capture refused: narration could not be saved: {error:#}"), Some(Failure::AudioStart)),
+                    StartError::Screen(error) => (format!("Capture refused: {error:#}"), Some(Failure::ScreenStart)),
+                };
+                if let Some(failure) = failure { workflow::error_reporting::report(failure); }
                 apparent_log(&message);
                 self.cancel_recording(cx);
-                if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some(message); }
-                return;
-            }
-            Err(StartError::Screen(error)) => {
-                apparent_log(format!("Capture refused: {error:#}"));
-                workflow::error_reporting::report(workflow::error_reporting::Failure::ScreenStart);
-                self.cancel_recording(cx);
+                if matches!(failure, Some(Failure::AudioStart)) {
+                    if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some(message); }
+                }
                 return;
             }
         };
@@ -1278,8 +1268,7 @@ impl ApparentCoordinator {
     /// window's on-screen rect is the capture target, so the laser, ink, pins and clicks over it
     /// normalize straight into phone-screen coordinates (kept current as the window moves).
     pub fn start_recording_iphone(&mut self, cx: &mut Context<Self>) {
-        #[cfg(target_os = "linux")]
-        if linux::portal::selection::pending() { return; }
+        if display_selection::pending() { return; }
         if self.is_recording() || self.is_processing() {
             return;
         }
@@ -1432,8 +1421,7 @@ impl ApparentCoordinator {
 
     /// Cancellation must also work before a visible island or recording exists.
     fn cancel_capture_attempt(&mut self) {
-        #[cfg(target_os = "linux")]
-        linux::portal::selection::cancel();
+        display_selection::cancel();
         // dismiss_island is a no-op while Hidden: startup failure must revoke the
         // shortcut attempt here, not wait for a visible phase transition.
         if let Some(session) = self.onboarding.as_mut() {

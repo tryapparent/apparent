@@ -2,6 +2,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use super::PreparedSource;
 use super::ScreenCaptureSession;
 use crate::capture::desktop::start_metric;
 use crate::capture::engine::bundle::recover;
@@ -31,8 +33,8 @@ impl ScreenCaptureSession {
         telemetry: &SharedCaptureTelemetry,
         microphone: bool,
         stream_admission: Option<LocalStreamAdmission>,
-        #[cfg(target_os = "linux")] prepared_source: Option<
-            crate::capture::desktop::linux::media::Source,
+        #[cfg(any(target_os = "macos", target_os = "linux"))] prepared_source: Option<
+            PreparedSource,
         >,
     ) -> Result<ScreenTracks, StartError> {
         let stage = Instant::now();
@@ -54,7 +56,7 @@ impl ScreenCaptureSession {
             Arc::clone(&telemetry.excluded_window_ids),
             #[cfg(target_os = "macos")]
             Arc::clone(&telemetry.applied_excluded_window_ids),
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
             prepared_source,
         );
         let screen = match screen {

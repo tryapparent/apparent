@@ -154,8 +154,6 @@ pub(crate) fn choose_display(stopping: &AtomicBool) -> Result<(TargetInfo, Sourc
 
 #[path = "../../../../engine/wayland/display.rs"]
 mod display;
-#[path = "../../../../engine/wayland/selection.rs"]
-pub(crate) mod selection;
 pub(crate) use display::Crop;
 use display::{output_still_selected, picked_monitor, portal_output_verified, portal_request_supported, region_crop, screencast_key, selected_monitor, target_fits_output};
 

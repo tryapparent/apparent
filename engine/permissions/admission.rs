@@ -43,10 +43,15 @@ pub(crate) fn requires(permission: Permission, microphone: bool) -> bool {
 }
 
 pub(crate) fn check(grants: Option<&Grants>, microphone: bool) -> Admission {
-    check_required(
-        grants,
-        ScreenAuthorization::CURRENT.requirements(microphone),
-    )
+    check_for(grants, microphone, ScreenAuthorization::CURRENT)
+}
+
+pub(crate) fn check_for(
+    grants: Option<&Grants>,
+    microphone: bool,
+    authorization: ScreenAuthorization,
+) -> Admission {
+    check_required(grants, authorization.requirements(microphone))
 }
 
 fn check_required(grants: Option<&Grants>, required: &[Permission]) -> Admission {
