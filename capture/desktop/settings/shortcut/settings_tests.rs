@@ -24,14 +24,11 @@ mod tests {
     }
 
 
-    #[cfg(target_os = "linux")]
     #[test]
-    fn linux_storage_navigation_never_replaces_the_native_frame() {
-        for enabled in [true, false] {
-            for pane in [None, Some(Pane::General), Some(Pane::Storage), Some(Pane::Recording), Some(Pane::Storage), Some(Pane::Permissions)] {
-                assert!(!electron_storage(pane, enabled), "Linux must keep the existing Settings presentation for {pane:?}");
-            }
-        }
+    fn storage_electron_route_respects_the_opt_out() {
+        assert!(electron_storage(Some(Pane::Storage), true));
+        assert!(!electron_storage(Some(Pane::Storage), false));
+        assert!(!electron_storage(Some(Pane::General), true));
     }
 
     #[test]

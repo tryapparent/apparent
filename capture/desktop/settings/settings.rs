@@ -1290,9 +1290,7 @@ fn initial_settings_pane(pane: Option<Pane>) -> Option<Pane> {
 }
 
 fn electron_storage(pane: Option<Pane>, enabled: bool) -> bool {
-    // Linux panes share one GPUI frame. Replacing it for Storage loses the
-    // compositor's position/focus and visibly unmaps Settings during startup.
-    !cfg!(target_os = "linux") && enabled && pane == Some(Pane::Storage)
+    enabled && pane == Some(Pane::Storage)
 }
 
 impl Session {

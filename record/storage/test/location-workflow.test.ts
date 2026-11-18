@@ -81,3 +81,23 @@ test('a post-publication resolution failure is unknown and never replays the wri
   assert.deepEqual(await f.workflow.mutate('reset', () => true), {status: 'error', code: 'outcome_unknown'});
   assert.equal(calls, 1);
 });
+test('a failed post-save probe requires fresh readback without replaying the write', async () => {
+  const saved = {...facts, revision: 'fedcba9876543210', saved: {kind: 'string' as const, value: '/saved'}};
+  let currentFacts = facts, probeCount = 0, writeCount = 0;
+  const f = fixture({
+    facts: async () => ({status: 'connected', location: currentFacts}),
+    write: async () => {
+      writeCount++;
+      currentFacts = saved;
+      return {status: 'connected', location: saved};
+    },
+    probe: async () => ++probeCount === 1
+      ? {status: 'error', code: 'admission_expired'}
+      : {status: 'connected', available: true},
+  });
+  assert.deepEqual(await f.workflow.mutate('change', () => true), {status: 'error', code: 'outcome_unknown'});
+  const refreshed = await f.workflow.read();
+  assert.equal(refreshed.status, 'connected');
+  if (refreshed.status === 'connected') assert.equal(refreshed.storage.savedPath, '/saved');
+  assert.equal(writeCount, 1);
+});

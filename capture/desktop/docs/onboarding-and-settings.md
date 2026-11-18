@@ -551,22 +551,26 @@ Recording › Microphone (`capture/engine/runtime/audio/mic.rs`): `"microphone":
 
 Storage › Location (`CapturesDirView`): Change… opens the helper's folder picker and sends `set capturesDir` with an absolute path; Reset sends `""`, which removes the key. `handoff::default_captures_dir` reads it on every call (`APPARENT_CAPTURES_DIR` wins, then `"capturesDir"`, then `builtin_captures_dir`; `~` expands, a relative path is logged and skipped; tests never read the config). New captures and fresh CLI/size lookups use the new location; already-running retention/transcript workers keep their startup directory until the Rust app restarts. Captures already made aren't moved. The default Electron Storage route, native fallback and its proof limits are documented in `capture/desktop/ui/frontend/README.md`. A folder that can't be created or written falls back to the built-in one (logged once). State kept beside the captures (`inbox.json`, `last-mode`, legacy `config.json`) stays under `builtin_captures_dir`'s parent. The legacy config path stays under `builtin_captures_dir`.
 
-Storage now opens the branded Electron Settings page by default; other Settings pages keep their native presentation. Set `experiments.electronCaptureLocation=false` and reopen Settings to use native Storage. Missing packaged assets or an Electron crash also restore native Storage. Rust supplies the policy/options/note, saves through the existing config transaction and measures the effective folder; the renderer never reads files. Saving/resetting schedules the existing retention worker for about five seconds later (deferred while recording); file edits are read on the next pass, normally hourly. Running workers keep their startup folder until restart. The native Storage presentation remains the opt-out and failure fallback. Activation, rollback, failed/stale results, usage scan limits and the exact old-UI removal condition are in `capture/desktop/ui/frontend/README.md#storage-retention-and-usage-291`.
+Storage uses the Record workflows for folder and retention preferences. The
+native provider runs the chooser and usage scan and saves through the existing
+config transaction. Retention changes schedule the existing cleanup worker for
+about five seconds later, deferred while recording. File edits are read on the
+next pass, normally hourly. Set `experiments.electronCaptureLocation=false` and
+reopen Settings to use native Storage. Missing packaged assets or an Electron
+crash also restore native Storage. See the [Storage contract](../ui/frontend/README.md#storage-retention-and-usage-291).
 
 Recording › Language shows under Transcription while it's Apple Speech: Automatic, then the helper's supported `locales` by name. It writes `appleLocale` (Automatic removes the key) and returns `Effect::SpeechModel`, which restarts the model check for the new language (see `capture/engine/docs/keyframes-and-text.md`).
 
 The sidebar is the helper's alone: a row selects on mouse-down and its pane replaces the last on the next frame, with no transition (keep it that way; a fade read as lag; the level meter starts after the Recording pane has drawn). Rust's `state` never carries the pane (only `show` does, when Settings is opened again), so a reply can't move the selection.
 
-On Linux all Settings panes, including Storage, stay inside the same GPUI window.
-Navigation preserves its frame, position and focus. Storage has a native folder
-picker, Change/Reset, effective-location readback, retention presets/reset and
-Refresh Storage for folder usage. These use the existing Rust preference
-transactions; picker Cancel writes nothing and existing captures are never moved.
-An environment override or unusable saved folder is shown explicitly. Usage is a
-bounded background scan on open or refresh, not continuous scanning. A folder
-change affects new captures; an active capture keeps its original destination.
-Restart after changing folders so the existing cleanup worker follows that folder.
-macOS keeps its existing Electron Storage route and native fallback.
+On Linux, Storage shares the Electron window with General, Agents, Labs and
+About. Navigation among these panes keeps the window open. The Record workflows
+use the native folder picker, the existing preference transaction and bounded
+usage scans. Picker Cancel writes nothing. An environment override or unusable
+saved folder is shown explicitly. A folder change affects new captures. An
+active capture keeps its original destination, and cleanup keeps its startup
+directory until Apparent restarts. Linux and macOS retain native Storage for
+opt-out and presentation recovery.
 
 The Electron Settings shell waits for a committed React surface, initial paint
 readiness and a hidden compositor snapshot before showing its window. The
