@@ -8,10 +8,11 @@ import '../native-build/build.test.ts';
 import './source-identity/git-index.test.ts';
 import './targeted/run.test.ts';
 
-const mediaFiles = ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'assembly-worker.js', 'assembly-policy.js', 'transcript/worker.js', 'transcript/policy.js', 'selection/worker.js', 'selection/cues.js', 'selection/scene-worker.js', 'selection/scene.js', 'export/worker.js', 'export/policy.js', 'export/parameters.json', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/apparent-engine-frames', 'native/manifest.json'];
+const mediaFiles = ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'assembly-worker.js', 'assembly-policy.js', 'transcript/worker.js', 'transcript/policy.js', 'selection/worker.js', 'selection/cues.js', 'selection/scene-worker.js', 'selection/scene.js', 'export/worker.js', 'export/policy.js', 'export/quiet-export.mjs', 'export/parameters.json', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/apparent-engine-frames', 'native/manifest.json'];
 const completionFiles = ['worker.js', 'policy.js', 'session.js', 'copy-admission.mjs', 'package.json'];
 
 function fixture(t: any) {
+  const app = 'capture/desktop/ui/frontend/electron/';
   const root = realpathSync(mkdtempSync('/tmp/apparent-dev-native-inputs-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const put = (file: string, text = 'fixture') => {
@@ -29,16 +30,16 @@ function fixture(t: any) {
     put('capture/desktop/ui/frontend/' + file);
   }
   for (const name of completionFiles) {
-    put('capture/desktop/ui/frontend/electron/record-completion/' + name);
+    put(app + 'record-completion/' + name);
   }
   for (const name of mediaFiles) {
-    put('capture/desktop/ui/frontend/electron/record-media/' + name);
+    put(app + 'record-media/' + name);
   }
   for (const name of ['worker.js', 'policy.js', 'range-worker.js', 'range-policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json']) {
-    put('capture/desktop/ui/frontend/electron/agent-media/' + name);
+    put(app + 'agent-media/' + name);
   }
   for (const name of ['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json', 'cleanup-policy/package.json', 'cleanup-policy/policy.js', 'cleanup-policy/retention/policy.js', 'cleanup-policy/retention/worker.js']) {
-    put('capture/desktop/ui/frontend/electron/storage-owner/' + name);
+    put(app + 'storage-owner/' + name);
   }
   return { root, put, electron };
 }

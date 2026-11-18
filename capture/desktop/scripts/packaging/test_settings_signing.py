@@ -38,6 +38,7 @@ class SigningTests(unittest.TestCase):
                              "electron/record-media/selection/scene-worker.js", "electron/record-media/selection/scene.js",
                              "electron/record-media/export/worker.js",
                              "electron/record-media/export/policy.js",
+                             "electron/record-media/export/quiet-export.mjs",
                              "electron/record-media/export/parameters.json",
                              "electron/record-media/node_modules/@apparent/engine-sdk/dist/index.js",
                              "electron/record-media/native/apparent-engine-media",
@@ -105,6 +106,7 @@ class SigningTests(unittest.TestCase):
             self.assertTrue((destination / "app/electron/record-media/selection/scene.js").is_file())
             self.assertTrue((destination / "app/electron/record-media/export/worker.js").is_file())
             self.assertTrue((destination / "app/electron/record-media/export/policy.js").is_file())
+            self.assertTrue((destination / "app/electron/record-media/export/quiet-export.mjs").is_file())
             self.assertTrue((destination / "app/electron/record-media/export/parameters.json").is_file())
             self.assertTrue((destination / "app/electron/record-media/native/apparent-engine-media").is_file())
             self.assertFalse((destination / "app/electron/pill/native/window.node").exists())

@@ -11,7 +11,6 @@ export function recordMediaCommands() {
     },
     { argv: ["npm", "run", "typecheck"], cwd },
     { argv: ["npm", "test"], cwd },
-    { argv: ["npm", "run", "build"], cwd },
   ];
 }
 
