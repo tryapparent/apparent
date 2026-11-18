@@ -6,6 +6,8 @@ import {YAML} from 'bun';
 const root=new URL('../../../',import.meta.url);
 type Step = {if?: string; uses?: string; run?: string};
 const read=(p:string)=>YAML.parse(readFileSync(new URL(p,root),'utf8'));
+const runner='enablement/ci/runner/ubuntu-apt.ts';
+const localAction='./.github/actions/ubuntu-apt';
 const action=read('.github/actions/ubuntu-apt/action.yml');
 function probeFixture(job:string){
  writeFileSync(job+'/apt-helper',[
@@ -29,8 +31,23 @@ function probeFixture(job:string){
  ].join('\n'),{mode:0o700});
  return {PROBE_ARGS:job+'/args',TIMEOUT_ARGS:job+'/timeout-args',PROBE_STATUS:'0',PROBE_ALL_BAD:'false',PROBE_INDEX_BAD:'false'};
 }
-function redirectProbe(script:string,job:string){
- return script.replace('sudo timeout','timeout').replaceAll('/usr/lib/apt/apt-helper',job+'/apt-helper');
+function fixture(job:string, transport=job+'/transport') {
+ const paths={mirrors:job+'/mirrors',transport,osRelease:job+'/os-release',aptHelper:job+'/apt-helper',temporaryRoot:job};
+ const old='http://azure.archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://archive.ubuntu.com/ubuntu/\tpriority:2\nhttps://security.ubuntu.com/ubuntu/\tpriority:3\n';
+ writeFileSync(paths.mirrors,old);
+ writeFileSync(paths.osRelease,'ID=ubuntu\nVERSION_CODENAME=noble\n');
+ writeFileSync(job+'/sudo',[
+  '#!/bin/sh','set -eu',
+  'if [ "$1" = install ]; then shift 5; exec install "$@"; fi',
+  'exec "$@"','',
+ ].join('\n'),{mode:0o700});
+ const env={...process.env,...probeFixture(job),PATH:job+':'+process.env.PATH,
+  RUNNER_OS:'Linux',RUNNER_ARCH:'X64',GITHUB_ACTIONS:'true',RUNNER_ENVIRONMENT:'github-hosted'};
+ const run=(overrides:Record<string,string>={})=>execFileSync('node',[
+  '--experimental-strip-types','--input-type=module','-e',
+  `import {prepareHostedUbuntuApt} from ${JSON.stringify(new URL(runner,root).href)};prepareHostedUbuntuApt(${JSON.stringify(paths)});`,
+ ],{env:{...env,...overrides},encoding:'utf8',stdio:'pipe'});
+ return {old,paths,run};
 }
 test('effective acquisition limits survive hosted APT configuration precedence',{
  skip:spawnSync('apt-config',['--version'],{stdio:'ignore'}).status!==0,
@@ -43,36 +60,23 @@ test('effective acquisition limits survive hosted APT configuration precedence',
   writeFileSync(parts+'/80apparent-transport','Acquire::Retries "1";\nAcquire::http::Timeout "15";\nAcquire::https::Timeout "15";\n');
   writeFileSync(parts+'/99-hosted',overridden);
   writeFileSync(job+'/apt.conf',`Dir::Etc::parts "${parts}";\nDir::Etc::main "${job}/absent";\n`);
-  const env={...process.env,...probeFixture(job),APT_CONFIG:job+'/apt.conf',PATH:job+':'+process.env.PATH,RUNNER_OS:'Linux',RUNNER_ARCH:'X64',GITHUB_ACTIONS:'true',RUNNER_ENVIRONMENT:'github-hosted'};
-  const values=()=>execFileSync('apt-config',['shell','apparentRetries','Acquire::Retries','apparentHttp','Acquire::http::Timeout','apparentHttps','Acquire::https::Timeout'],{env,encoding:'utf8'});
+  const {paths,run:prepare}=fixture(job,parts+'/zzzz-apparent-transport');
+  const run=()=>prepare({APT_CONFIG:job+'/apt.conf'});
+  const values=()=>execFileSync('apt-config',['shell','apparentRetries','Acquire::Retries','apparentHttp','Acquire::http::Timeout','apparentHttps','Acquire::https::Timeout'],{env:{...process.env,APT_CONFIG:job+'/apt.conf'},encoding:'utf8'});
   assert.equal(values(),"apparentRetries='10'\napparentHttp='120'\napparentHttps='120'\n",'Old helper contents do not establish effective limits');
-  writeFileSync(job+'/mirrors','https://archive.ubuntu.com/ubuntu/\tpriority:2\n');
-  writeFileSync(job+'/os-release','ID=ubuntu\nVERSION_CODENAME=noble\n');
-  const source=action.runs.steps[0].run;
-  const nativeConfig=source.match(/transport_file=(\/etc\/apt\/apt\.conf\.d\/[^\s]+)/)?.[1];
-  assert.ok(nativeConfig);
-  const script=redirectProbe(source.replace('/etc/apt/apt-mirrors.txt',job+'/mirrors').replace(nativeConfig,parts+'/'+nativeConfig.split('/').at(-1)).replace('/etc/os-release',job+'/os-release').replaceAll('sudo install -o root -g root','install').replace('sudo apt-config','apt-config'),job);
-  const run=()=>execFileSync('bash',['-c',script],{env,stdio:'pipe'});
   run();assert.equal(values(),expected);run();assert.equal(values(),expected);
   // Unknown future fragments must fail closed, never silently discard limits.
   writeFileSync(parts+'/zzzzzz-hosted',overridden);
-  const mirrors=readFileSync(job+'/mirrors','utf8');
-  assert.throws(run);assert.equal(readFileSync(job+'/mirrors','utf8'),mirrors);
+  const mirrors=readFileSync(paths.mirrors,'utf8');
+  assert.throws(run);assert.equal(readFileSync(paths.mirrors,'utf8'),mirrors);
  }finally{rmSync(job,{recursive:true,force:true});}
 });
 test('runner mirror transport preserves sources and is idempotent; unsafe targets fail without writes',()=>{
  const job=mkdtempSync('/tmp/apparent-dev-apt-test-');
  try {
-  const file=job+'/mirrors';
-  const config=job+'/transport';
+  const {old,paths,run}=fixture(job);
+  const {mirrors:file,transport:config}=paths;
   writeFileSync(job+'/apt-config',"#!/bin/sh\nprintf \"apparentRetries='1'\\napparentHttp='15'\\napparentHttps='15'\\n\"\n",{mode:0o700});
-  const release=job+'/os-release';writeFileSync(release,'ID=ubuntu\nVERSION_CODENAME=noble\n');
-  const old='http://azure.archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://archive.ubuntu.com/ubuntu/\tpriority:2\nhttps://security.ubuntu.com/ubuntu/\tpriority:3\n';
-  writeFileSync(file,old);
-  // Exercise the shipped shell; isolate filesystem, privilege and APT transport.
-  const script=redirectProbe(action.runs.steps[0].run.replace('/etc/apt/apt-mirrors.txt',file).replace('/etc/apt/apt.conf.d/zzzz-apparent-transport',config).replace('/etc/os-release',release).replaceAll('sudo install -o root -g root','install').replace('sudo apt-config','apt-config'),job);
-  const probe=probeFixture(job);
-  const run=(overrides:Record<string,string>={})=>execFileSync('bash',['-c',script],{env:{...process.env,...probe,PATH:job+':'+process.env.PATH,RUNNER_OS:'Linux',RUNNER_ARCH:'X64',GITHUB_ACTIONS:'true',RUNNER_ENVIRONMENT:'github-hosted',...overrides},stdio:'pipe'});
   run();const expected='https://archive.ubuntu.com/ubuntu/\tpriority:0\n'+old;
   assert.equal(readFileSync(file,'utf8'),expected);run();assert.equal(readFileSync(file,'utf8'),expected);
   const settings=readFileSync(config,'utf8');
@@ -88,7 +92,10 @@ test('runner mirror transport preserves sources and is idempotent; unsafe target
   run({PROBE_STATUS:'100'});assert.equal(readFileSync(file,'utf8'),fallback);
   // Successful metadata alone must not promote a mirror whose index fails.
   run({PROBE_INDEX_BAD:'true'});assert.equal(readFileSync(file,'utf8'),fallback);
-  assert.throws(()=>run({PROBE_ALL_BAD:'true'}));assert.equal(readFileSync(file,'utf8'),fallback);
+  writeFileSync(file,old);
+  assert.match(run({PROBE_ALL_BAD:'true'}),/Continuing with the runner mirror list/);
+  assert.equal(readFileSync(file,'utf8'),old);
+  assert.equal(readFileSync(config,'utf8'),settings);
   run();assert.equal(readFileSync(file,'utf8'),expected);
   assert.throws(()=>run({GITHUB_ACTIONS:'false'}));assert.equal(readFileSync(file,'utf8'),expected);
   assert.throws(()=>run({RUNNER_OS:'macOS'}));assert.equal(readFileSync(file,'utf8'),expected);
@@ -99,7 +106,7 @@ test('runner mirror transport preserves sources and is idempotent; unsafe target
   assert.throws(()=>run());assert.equal(readFileSync(outside,'utf8'),'preserved');
   rmSync(file);writeFileSync(file,old);rmSync(config);symlinkSync(outside,config);
   assert.throws(()=>run());assert.equal(readFileSync(file,'utf8'),old);assert.equal(readFileSync(outside,'utf8'),'preserved');
-  assert.doesNotMatch(script,/trusted=yes|allow-unauthenticated|allow-insecure|Signed-By/);
+  assert.doesNotMatch(readFileSync(new URL(runner,root),'utf8'),/trusted=yes|allow-unauthenticated|allow-insecure|Signed-By/);
  }finally{rmSync(job,{recursive:true,force:true});}
 });
 // A plugin's --install-deps flag installs Python packages, not OS packages.
@@ -111,6 +118,8 @@ test('APT inventory distinguishes OS provisioning from plugin Python dependencie
  assert.equal(installsApt('hermes plugins validate "$PACKAGE" --install-deps'),false);
 });
 test('each affected hosted dependency consumer prepares transport before installation',()=>{
+ assert.equal(action.runs.steps[0].uses,'actions/setup-node@v4');
+ assert.equal(action.runs.steps[1].run,'node --experimental-strip-types '+runner);
  for(const workflow of readdirSync(new URL('.github/workflows/',root)).filter(name=>name.endsWith('.yml'))){
   const source=read(`.github/workflows/${workflow}`);
   for(const [name,job] of Object.entries(source.jobs) as [string,any][]){
@@ -124,7 +133,7 @@ test('each affected hosted dependency consumer prepares transport before install
     assert.ok(!steps.some((s:Step)=>(s.uses??'').includes('/ubuntu-apt')));
     continue;
    }
-   const transport=steps.findIndex((s:Step)=>s.uses==='./.github/actions/ubuntu-apt' || s.uses==='tryapparent/apparent/.github/actions/ubuntu-apt@22b91130f8b1e8ed98d505e5a64241d34848e6a8');
+   const transport=steps.findIndex((s:Step)=>s.uses===localAction || s.uses==='tryapparent/apparent/.github/actions/ubuntu-apt@22b91130f8b1e8ed98d505e5a64241d34848e6a8');
    assert.ok(transport>=0 && transport<install,`${workflow}/${name}`);
    // Both native delivery matrices include ARM, whose signed Ubuntu ports
    // use a different archive layout from the x64-only mirror helper.
