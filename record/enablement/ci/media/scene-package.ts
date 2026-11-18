@@ -131,6 +131,7 @@ export function qualifyScenes(options: {
         force: false,
         errorOnExist: true,
       });
+      chmodSync(input, 0o700);
       copyFileSync(movie, join(input, "recording.mp4"));
       chmodSync(join(input, "recording.mp4"), 0o600);
       const metadata = {
