@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node --experimental-strip-types ../enablement/ci/bend/build.ts dist",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test test/*.test.ts"
   },

@@ -106,7 +106,7 @@ export function commands(selected: Owner[], base: string, head: string, platform
     add(['python3', 'enablement/verification.py', '--base', base, '--preflight']);
   if (selected.includes('tooling') || installScope.paths === null)
     add(['python3', 'enablement/verification.py', '--base', base, '--head', head, '--pr']);
-  if (installScope.local && (installScope.paths === null || installScope.paths.some(path => bendToolingInput(path) || path === 'record/completion/src/policy.ts')))
+  if (installScope.local && (installScope.paths === null || installScope.paths.some(path => bendToolingInput(path) || path.startsWith('record/completion/'))))
     add(['node', 'record/enablement/ci/bend/check.ts']);
   if (selected.includes('tooling')) result.push(...toolingCommands());
   else if (selected.includes('desktop')) result.push(...installationContracts(installScope.paths, installScope.workflowControls));

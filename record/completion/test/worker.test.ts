@@ -5,12 +5,18 @@ import {createInterface} from 'node:readline';
 import {once} from 'node:events';
 import type {Decision} from '../src/policy.ts';
 
+const workerArgs = [
+  '--experimental-strip-types', '--input-type=module', '-e',
+  `import {runCompletion} from ${JSON.stringify(new URL('../src/session.ts', import.meta.url).href)};
+await runCompletion((saved, current, connected) => saved && current && connected);`,
+];
+
 const context = {capture:{generation:'7',captureId:'a',requestId:'request-a'},
   platform:'linux',source:'screen',agentRequested:false,automaticTrialEnabled:false,lab:false,hyprland:true,wayland:true};
 const input = {version:1,context,current:true,outcome:{kind:'saved',bundlePath:'/synthetic/a.apparent'}};
 for(const result of ['copied','failed','revoked']) {
   test(`real headless worker uses ${result} capability receipt without Electron`,async t=>{
-    const child=spawn(process.execPath,['--experimental-strip-types',new URL('../src/worker.ts',import.meta.url).pathname],{stdio:['pipe','pipe','pipe']});
+    const child=spawn(process.execPath,workerArgs,{stdio:['pipe','pipe','pipe']});
     t.after(()=>child.kill());
     const exit=once(child,'exit');
     const lines=createInterface({input:child.stdout})[Symbol.asyncIterator]();
@@ -27,7 +33,7 @@ for(const result of ['copied','failed','revoked']) {
   });
 }
 test('worker failure/EOF cannot return copied or discard the initial saved fact',async t=>{
-  const child=spawn(process.execPath,['--experimental-strip-types',new URL('../src/worker.ts',import.meta.url).pathname]);
+  const child=spawn(process.execPath,workerArgs);
   t.after(()=>child.kill());
   const exit=once(child,'exit');
   const lines=createInterface({input:child.stdout})[Symbol.asyncIterator]();
@@ -39,7 +45,7 @@ test('worker failure/EOF cannot return copied or discard the initial saved fact'
   assert.equal(saved.state.observation?.clipboard,'notRequested');
 });
 test('failed finalizer completes without requesting any capability',async t=>{
-  const child=spawn(process.execPath,['--experimental-strip-types',new URL('../src/worker.ts',import.meta.url).pathname]);
+  const child=spawn(process.execPath,workerArgs);
   t.after(()=>child.kill());
   const exit=once(child,'exit');
   const lines=createInterface({input:child.stdout})[Symbol.asyncIterator]();

@@ -42,6 +42,8 @@ export function checkNativeInputs(root: string, platform = process.platform): st
     'capture/desktop/ui/frontend/electron/storage-owner/cleanup-policy/retention/worker.js',
     'capture/desktop/ui/frontend/electron/record-completion/worker.js',
     'capture/desktop/ui/frontend/electron/record-completion/policy.js',
+    'capture/desktop/ui/frontend/electron/record-completion/session.js',
+    'capture/desktop/ui/frontend/electron/record-completion/copy-admission.mjs',
     'capture/desktop/ui/frontend/electron/record-completion/package.json',
     'capture/desktop/ui/frontend/electron/record-media/worker.js',
     'capture/desktop/ui/frontend/electron/record-media/policy.js',

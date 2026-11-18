@@ -64,3 +64,11 @@ export function bendToolingInput(file: string): boolean {
     file === ".github/workflows/stream-record.yml"
   );
 }
+
+export function bendProductInput(file: string): boolean {
+  return (
+    (file.startsWith("record/completion/src/") && bendSource.test(file)) ||
+    file === "record/enablement/ci/bend/build.ts" ||
+    file.startsWith("shared/enablement/bend/")
+  );
+}

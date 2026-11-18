@@ -84,10 +84,17 @@ export async function provisionLean(scratch: string): Promise<string> {
   return join(scratch, release, "bin");
 }
 
-export async function prepareBend(scratch: string, leanDirectory?: string) {
-  const version = run("bun", ["--version"], scratch).trim();
-  if (version !== "1.3.10")
-    throw new Error(`Bend tooling requires Bun 1.3.10, found ${version}`);
+export async function prepareBend(
+  scratch: string,
+  options: { runtime: "node" } | { runtime: "bun"; leanDirectory?: string },
+) {
+  const leanDirectory =
+    options.runtime === "bun" ? options.leanDirectory : undefined;
+  if (options.runtime === "bun") {
+    const version = run("bun", ["--version"], scratch).trim();
+    if (version !== "1.3.10")
+      throw new Error(`Bend tooling requires Bun 1.3.10, found ${version}`);
+  }
   const compiler = join(scratch, "bend2");
   mkdirSync(compiler);
   const verified = await Promise.all(
@@ -142,6 +149,31 @@ export async function prepareBend(scratch: string, leanDirectory?: string) {
       basename(input),
     );
     writeFileSync(stagedSource, source, { flag: "wx" });
+    if (options.runtime === "node") {
+      run(
+        process.execPath,
+        [
+          "--experimental-transform-types",
+          "--input-type=module",
+          "-e",
+          `
+import { load } from "./main.ts";
+import { pathToFileURL } from "node:url";
+import { writeFileSync } from "node:fs";
+const [input, output] = process.argv.slice(1);
+const { source } = await load(pathToFileURL(input).href, null, () => {
+  throw new Error("Expected Bend source");
+});
+writeFileSync(output, source);
+`,
+          stagedSource,
+          output,
+        ],
+        compiler,
+        env,
+      );
+      return;
+    }
     const command = (args: string[]) =>
       run(
         "bun",

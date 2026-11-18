@@ -4,16 +4,14 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - "record/completion/**/*.bend"
-      - "record/completion/src/policy.ts"
+      - "record/completion/**"
       - "record/enablement/ci/bend/**"
       - "shared/enablement/bend/**"
       - ".github/workflows/stream-record.yml"
   push:
     branches: [main]
     paths:
-      - "record/completion/**/*.bend"
-      - "record/completion/src/policy.ts"
+      - "record/completion/**"
       - "record/enablement/ci/bend/**"
       - "shared/enablement/bend/**"
       - ".github/workflows/stream-record.yml"
