@@ -13,21 +13,10 @@ import { git, repository, reference, type Issue } from "./reference.ts";
 export const instructions =
   "Bind this worktree to an existing issue with node --experimental-strip-types shared/enablement/issues/run.ts bind tryapparent/apparent#123";
 
-export function verifyIssue(issue: Issue, cwd: string): number {
-  if (
-    issue.repository !== repository ||
-    !Number.isSafeInteger(issue.number) ||
-    issue.number <= 0
-  )
-    throw Error("Invalid canonical issue identity");
-  const result = spawnSync(
+function githubLookup(cwd: string, endpoint: string) {
+  return spawnSync(
     "gh",
-    [
-      "api",
-      "--hostname",
-      "github.com",
-      `repos/${repository}/issues/${issue.number}`,
-    ],
+    ["api", "--hostname", "github.com", `repos/${repository}/${endpoint}`],
     {
       cwd,
       encoding: "utf8",
@@ -36,6 +25,50 @@ export function verifyIssue(issue: Issue, cwd: string): number {
       env: { ...process.env, GH_PROMPT_DISABLED: "1" },
     },
   );
+}
+
+export function isGitHubMerge(commit: string, cwd: string): boolean {
+  const [email, ...parents] = git(cwd, [
+    "show",
+    "-s",
+    "--format=%ce %P",
+    commit,
+  ])
+    .trim()
+    .split(" ");
+  if (email !== "noreply@github.com" || parents.length !== 2) return false;
+
+  const endpoint = `commits/${commit}`;
+  const result = githubLookup(cwd, endpoint);
+  if (result.error || result.status !== 0)
+    throw Error(
+      "Cannot verify GitHub merge provenance through authenticated gh API",
+    );
+  try {
+    const data = JSON.parse(result.stdout);
+    return (
+      data?.sha === commit &&
+      data?.url === `https://api.github.com/repos/${repository}/${endpoint}` &&
+      data.committer?.login === "web-flow" &&
+      data.commit?.verification?.verified === true &&
+      data.commit.verification.reason === "valid" &&
+      Array.isArray(data.parents) &&
+      data.parents.length === parents.length &&
+      parents.every((parent, index) => data.parents[index]?.sha === parent)
+    );
+  } catch {
+    throw Error("GitHub returned an invalid commit response");
+  }
+}
+
+export function verifyIssue(issue: Issue, cwd: string): number {
+  if (
+    issue.repository !== repository ||
+    !Number.isSafeInteger(issue.number) ||
+    issue.number <= 0
+  )
+    throw Error("Invalid canonical issue identity");
+  const result = githubLookup(cwd, `issues/${issue.number}`);
   if (result.error || result.status !== 0)
     throw Error(
       `Cannot validate ${reference(issue)} through authenticated gh API. Check gh authentication, network access and issue existence, then retry`,

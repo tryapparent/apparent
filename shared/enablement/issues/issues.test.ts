@@ -39,6 +39,10 @@ function fixture(t: TestContext) {
 const number = Number(process.argv.at(-1)!.split('/').at(-1));
 appendFileSync(process.env.ISSUE_TEST_LOG!, number + '\\n');
 if (process.env.ISSUE_TEST_FAILURE) { console.error('synthetic private token must never escape'); process.exit(1); }
+if (process.argv.at(-1)!.includes('/commits/')) {
+  console.log(process.env.ISSUE_TEST_COMMIT || '{}');
+  process.exit(0);
+}
 console.log(JSON.stringify({id: 1000 + number, number, repository_url: 'https://api.github.com/repos/tryapparent/apparent',
 url: 'https://api.github.com/repos/' + (process.env.ISSUE_TEST_REPO || 'tryapparent/apparent') + '/issues/' + number,
 ...(process.env.ISSUE_TEST_PR ? {pull_request: {}} : {})}));\n`,
@@ -186,47 +190,58 @@ test("push validates all post-baseline commits across refs, deduplicates issue l
   );
 });
 
-test("accepted merge receipts validate exact identities without exempting other commits", (t) => {
+test("GitHub merge exemption preserves parent checks", (t) => {
   const f = fixture(t);
-  const objects =
-    git(root, [
-      "rev-parse",
-      "--path-format=absolute",
-      "--git-common-dir",
-    ]).trim() + "/objects";
-  writeFileSync(join(f.repo, ".git/objects/info/alternates"), objects + "\n");
-  for (const [commit, number] of [
-    ["6c64c838fab1b70e05da112ffc25336e5c283ab1", "575"],
-    ["18c72f8302d54bab24d1729fb75796329a2a0a81", "171"],
-    ["f900c3f4677cca561f1336d4cd4b64184032958e", "837"],
-  ]) {
-    const parents = f.runGit("show", "-s", "--format=%P", commit).split(" ");
-    const tree = f.runGit("rev-parse", commit + "^{tree}");
-    const cutoff = f.runGit(
-      "commit-tree",
-      tree,
-      ...parents.flatMap((p) => ["-p", p]),
-      "-m",
-      "synthetic cutoff",
-    );
-    writeFileSync(process.env.ISSUE_TEST_LOG!, "");
-    validatePush(f.ref(commit), f.repo, cutoff);
-    assert.equal(
-      readFileSync(process.env.ISSUE_TEST_LOG!, "utf8"),
-      number + "\n",
-    );
-    process.env.ISSUE_TEST_FAILURE = "offline";
+  const left = f.commit("left\n\nIssue: tryapparent/apparent#12");
+  f.runGit("checkout", "-qb", "other", f.baseline);
+  const right = f.commit("right\n\nIssue: tryapparent/apparent#13");
+  const merge = (first: string, email: string) => {
+    process.env.GIT_COMMITTER_EMAIL = email;
+    try {
+      return f.runGit(
+        "commit-tree",
+        right + "^{tree}",
+        "-p",
+        first,
+        "-p",
+        right,
+        "-m",
+        "Merge pull request #42",
+      );
+    } finally {
+      delete process.env.GIT_COMMITTER_EMAIL;
+    }
+  };
+  const github = merge(left, "noreply@github.com");
+  const response = (sha: string, first = left, verified = true) =>
+    JSON.stringify({
+      sha,
+      url: `https://api.github.com/repos/${repository}/commits/${sha}`,
+      committer: { login: "web-flow" },
+      commit: { verification: { verified, reason: "valid" } },
+      parents: [{ sha: first }, { sha: right }],
+    });
+  process.env.ISSUE_TEST_COMMIT = response(github);
+  validatePush(f.ref(github), f.repo, f.baseline);
+  const local = merge(left, "synthetic@example.invalid");
+  assert.throws(
+    () => validatePush(f.ref(local), f.repo, f.baseline),
+    /needs a final Issue/,
+  );
+  for (const invalid of [response(local), response(github, left, false)]) {
+    process.env.ISSUE_TEST_COMMIT = invalid;
     assert.throws(
-      () => validatePush(f.ref(commit), f.repo, cutoff),
-      /Cannot validate/,
-    );
-    delete process.env.ISSUE_TEST_FAILURE;
-    const copied = f.commit(f.runGit("show", "-s", "--format=%B", commit));
-    assert.throws(
-      () => validatePush(f.ref(copied), f.repo, f.baseline),
+      () => validatePush(f.ref(github), f.repo, f.baseline),
       /needs a final Issue/,
     );
   }
+  const untracked = f.commit("missing trailer");
+  const invalidMerge = merge(untracked, "noreply@github.com");
+  process.env.ISSUE_TEST_COMMIT = response(invalidMerge, untracked);
+  assert.throws(
+    () => validatePush(f.ref(invalidMerge), f.repo, f.baseline),
+    new RegExp(untracked),
+  );
 });
 
 test("API mismatch, PR and authentication/not-found/offline failures reject without exposing stderr", (t) => {
