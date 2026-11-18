@@ -2,6 +2,9 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use super::{UpdateCheck, UpdateResult};
+#[cfg(target_os = "linux")]
+use super::{UpdateFailure, update_failure};
 
 use crate::capture::engine::runtime::{
     CARBON_CMD_KEY, CARBON_CONTROL_KEY, CARBON_OPTION_KEY, CARBON_SHIFT_KEY, MACOS_FN_KEY_CODE, ShortcutConfig,
@@ -167,31 +170,6 @@ pub struct View {
     pub main_updates: bool,
     pub command_line: CommandLineView,
     pub skill_command: &'static str,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateCheck {
-    pub checking: bool,
-    pub result: Option<UpdateResult>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum UpdateResult {
-    Available,
-    Current,
-    Failed,
-}
-
-impl UpdateResult {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Available => "Update available",
-            Self::Current => "No update available",
-            Self::Failed => "Update check failed",
-        }
-    }
 }
 
 /// The "Command-line tool" row.
@@ -713,27 +691,8 @@ impl Panel {
     }
 
     #[cfg(target_os = "linux")]
-    fn finish_update_check(&mut self, result: Result<&'static str, String>) {
-        self.update_check.checking = false;
-        self.update_check.result = Some(match result {
-            // The current Linux feed contract checks AND installs. "Available" includes
-            // a newer image already staged for the next launch; this is not discovery-only.
-            Ok("installed; restart Apparent to use it") | Ok("already installed; restart Apparent to use it") =>
-                UpdateResult::Available,
-            Ok("up to date") => UpdateResult::Current,
-            Ok(other) => {
-                crate::capture::engine::runtime::apparent_log(format!("Unexpected update check result: {other}"));
-                use crate::capture::desktop::workflow::error_reporting::{self, updates::{Stage, Trigger}};
-                let error = error_reporting::updates::failure(Stage::UnexpectedResult, anyhow::anyhow!("unexpected updater response"));
-                error_reporting::report_update(&error, Trigger::User);
-                UpdateResult::Failed
-            }
-            Err(error) => {
-                crate::capture::engine::runtime::apparent_log(format!("Could not check for updates: {error}"));
-                // check_cli reports the typed error before this UI string boundary.
-                UpdateResult::Failed
-            }
-        });
+    fn finish_update_check(&mut self, result: Result<&'static str, (String, Option<UpdateFailure>)>) {
+        self.update_check.finish(result);
     }
 
     pub fn on(&mut self, action: Action, host: &mut dyn Host) -> Effect {
@@ -820,12 +779,14 @@ impl Panel {
                     return Effect::None;
                 }
                 if cfg!(target_os = "linux") {
-                    self.update_check = UpdateCheck { checking: true, result: None };
+                    self.update_check = UpdateCheck { checking: true, ..Default::default() };
                 }
                 Effect::CheckForUpdates
             }
             Action::DismissUpdateCheck => {
                 self.update_check.result = None;
+                #[cfg(target_os = "linux")]
+                { self.update_check.failure = None; }
                 Effect::None
             }
             Action::UpdateLater => {
@@ -833,11 +794,13 @@ impl Panel {
                 Effect::None
             }
             Action::UpdateNow => {
-                if cfg!(target_os = "linux") && self.update_check.result == Some(UpdateResult::Available) {
-                    Effect::RelaunchUpdate
-                } else {
-                    Effect::None
+                #[cfg(target_os = "linux")]
+                if self.update_check.result == Some(UpdateResult::Available)
+                    || self.update_check.failure == Some(UpdateFailure::Restart)
+                {
+                    return Effect::RelaunchUpdate;
                 }
+                Effect::None
             }
             Action::Tour => Effect::Tour,
             Action::InstallCli => {
@@ -925,9 +888,12 @@ impl Panel {
                 write(key, (*on).into())
             }
             ("updateChannel", serde_json::Value::String(channel))
-                if matches!(channel.as_str(), "stable" | "main") =>
+                if !self.update_check.checking && matches!(channel.as_str(), "stable" | "main") =>
             {
-                write(key, value.clone());
+                match crate::shared::handoff::set_config_value_in(&path, key, value.clone()) {
+                    Ok(()) => self.update_check = UpdateCheck::default(),
+                    Err(error) => crate::capture::engine::runtime::apparent_log(format!("Saving {key} failed: {error:#}")),
+                }
             }
             ("playbackLevel", serde_json::Value::Number(level))
                 if level.as_u64().is_some_and(|n| n <= 100) =>
@@ -1229,7 +1195,9 @@ pub enum Event {
     CapturesSize(u64),
     Microphones(crate::capture::engine::runtime::audio::mic::Inputs),
     #[cfg(target_os = "linux")]
-    UpdateChecked(Result<&'static str, String>),
+    UpdateProgress(crate::capture::desktop::linux::update::UpdateProgress),
+    #[cfg(target_os = "linux")]
+    UpdateChecked(Result<&'static str, (String, Option<UpdateFailure>)>),
     /// Something outside the window may have changed (Hex, the login item): redraw.
     Tick,
     Exited,
@@ -1519,6 +1487,11 @@ impl Session {
                 Effect::None
             }
             #[cfg(target_os = "linux")]
+            Event::UpdateProgress(progress) => {
+                self.panel.update_check.progress = Some(progress);
+                Effect::None
+            }
+            #[cfg(target_os = "linux")]
             Event::UpdateChecked(result) => {
                 self.panel.finish_update_check(result);
                 Effect::None
@@ -1578,7 +1551,9 @@ impl Session {
                 {
                     let events = std::sync::Arc::clone(&self.events);
                     std::thread::spawn(move || {
-                        let result = crate::capture::desktop::linux::update::check_cli().map_err(|error| format!("{error:#}"));
+                        let result = crate::capture::desktop::linux::update::check_with_progress(
+                            &|progress| events(Event::UpdateProgress(progress)),
+                        ).map_err(|error| (format!("{error:#}"), update_failure(&error)));
                         events(Event::UpdateChecked(result));
                     });
                 }
@@ -1596,6 +1571,7 @@ impl Session {
                             use crate::capture::desktop::workflow::error_reporting::{self, updates::{Stage, Trigger}};
                             error_reporting::report_update(&error_reporting::updates::failure(Stage::Restart, error), Trigger::User);
                             self.panel.update_check.result = Some(UpdateResult::Failed);
+                            self.panel.update_check.failure = Some(UpdateFailure::Restart);
                         }
                     }
                 }

@@ -16,4 +16,4 @@ export function needsChannelRelease(facts: UpdateFacts): boolean {
   return !(candidate.channel === 'main' && !facts.modified && candidate.id === facts.revision);
 }
 
-export const channelUpdateHint = 'Checking for updates installs the latest release in this channel, even if it is an earlier version.';
+export const channelUpdateHint = 'Checking installs the latest release in this channel, even if it’s an earlier version. You choose when to restart.';

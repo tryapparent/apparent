@@ -1,6 +1,5 @@
 import { useCallback, useRef, useState } from "react";
 import {
-  AlertCircle,
   Check,
   CheckCircle2,
   Copy,
@@ -18,6 +17,35 @@ import {
   TooltipTrigger,
 } from "@apparent/ui/tooltip";
 import { channelUpdateHint } from "../update-policy";
+import "./about.css";
+
+type UpdateProgress =
+  | { phase: "downloading"; downloadedBytes: number; totalBytes: number }
+  | { phase: "verifying" | "installing" };
+
+const updateFailures = {
+  busy: [
+    "Update in progress",
+    "Another update is running. Try again in a moment.",
+  ],
+  rateLimited: [
+    "GitHub limited update checks",
+    "Wait a while, then try again.",
+  ],
+  download: [
+    "Download failed",
+    "Check your connection and available disk space, then try again.",
+  ],
+  verification: [
+    "Update check failed",
+    "The downloaded file couldn’t be verified. Try downloading it again.",
+  ],
+  installation: [
+    "Couldn’t install the update",
+    "Check that your AppImage folder is writable and has free space, then try again.",
+  ],
+  restart: ["Couldn’t restart Apparent", "Try restarting again."],
+} as const;
 
 export interface AboutState {
   version: string;
@@ -28,6 +56,8 @@ export interface AboutState {
   updateCheck: {
     checking: boolean;
     result: "available" | "current" | "failed" | null;
+    progress?: UpdateProgress;
+    failure?: keyof typeof updateFailures;
   };
 }
 type Action = { action: string; key?: string; value?: string };
@@ -116,7 +146,6 @@ export function About({
   async function changeChannel(channel: string) {
     setError("");
     try {
-      await bridge.act({ action: "dismiss-update-check" });
       await bridge.act({ action: "set", key: "updateChannel", value: channel });
     } catch {
       setError("Unable to change the update channel. Please try again.");
@@ -131,8 +160,26 @@ export function About({
   }
   const result = state?.updateCheck.result;
   const checking = state?.updateCheck.checking;
+  const progress = checking ? state?.updateCheck.progress : undefined;
+  const downloading = progress?.phase === "downloading";
+  const percent =
+    downloading &&
+    progress.totalBytes > 0 &&
+    progress.downloadedBytes <= progress.totalBytes
+      ? Math.floor((100 * progress.downloadedBytes) / progress.totalBytes)
+      : undefined;
+  const failure = state?.updateCheck.failure;
+  const [failureTitle, failureDescription] = failure
+    ? updateFailures[failure]
+    : ["Update check failed", "Your current version is still running."];
   const title = checking
-    ? "Checking for updates…"
+    ? downloading
+      ? "Downloading update…"
+      : progress?.phase === "verifying"
+        ? "Verifying download…"
+        : progress?.phase === "installing"
+          ? "Installing update…"
+          : null
     : !state?.updates
       ? "Updates unavailable"
       : result === "available"
@@ -197,109 +244,142 @@ export function About({
           <section
             ref={listenForDismissal}
             className="settings-updates"
-            aria-label="Update check"
+            aria-label="App updates"
             data-idle={!title || undefined}
+            data-busy={checking || undefined}
           >
-            <div className="settings-update-text">
-              <div className="settings-result" role="status">
-                {title && (
-                  <>
-                    {checking ? (
-                      <LoaderCircle
-                        className="settings-spin"
-                        aria-hidden="true"
-                      />
-                    ) : result === "failed" ? (
-                      <AlertCircle
-                        className="text-destructive"
-                        aria-hidden="true"
-                      />
-                    ) : (
-                      result && (
-                        <CheckCircle2
-                          className="text-success"
-                          aria-hidden="true"
-                        />
-                      )
-                    )}
-                    <h3>{title}</h3>
-                  </>
-                )}
-              </div>
-              {!state.updates && (
-                <p className="settings-metadata">
-                  {state.linux
-                    ? "Update checks work when Apparent runs from an AppImage."
-                    : "Updates work in the installed Apparent.app."}
-                </p>
-              )}
-              <div className="settings-actions">
-                {result === "available" && !checking ? (
-                  <>
-                    <Button onClick={() => void act({ action: "update-now" })}>
-                      Update now
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="settings-decision-alternative"
-                      onClick={() => void act({ action: "update-later" })}
-                    >
-                      Update later
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    disabled={!state.updates || checking}
-                    onClick={() => void act({ action: "check-for-updates" })}
+            {state.linux && state.mainUpdates && state.updates && (
+              <div className="settings-channel-group">
+                <div className="settings-channel">
+                  <label htmlFor="update-channel">Update channel</label>
+                  <NativeSelect
+                    id="update-channel"
+                    aria-describedby="update-channel-hint"
+                    value={state.updateChannel}
+                    disabled={checking}
+                    onChange={(event) => void changeChannel(event.target.value)}
                   >
-                    {checking
-                      ? "Checking…"
-                      : result === "failed"
-                        ? "Try again"
-                        : result
-                          ? "Check again"
-                          : "Check for updates"}
-                  </Button>
+                    <NativeSelectOption value="stable">
+                      Stable releases
+                    </NativeSelectOption>
+                    <NativeSelectOption value="main">
+                      Latest main
+                    </NativeSelectOption>
+                  </NativeSelect>
+                </div>
+                <p id="update-channel-hint" className="settings-metadata">
+                  {channelUpdateHint}
+                </p>
+              </div>
+            )}
+            <div className="settings-update-flow">
+              <div className="settings-update-text">
+                <div className="settings-update-phase">
+                  <div
+                    className="settings-result"
+                    role="status"
+                    aria-atomic="true"
+                  >
+                    {checking && !progress && (
+                      <span className="sr-only">Checking for updates…</span>
+                    )}
+                    {title && (
+                      <>
+                        {checking && !downloading ? (
+                          <LoaderCircle
+                            className="settings-spin"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          result && (
+                            <CheckCircle2
+                              className="text-success"
+                              aria-hidden="true"
+                            />
+                          )
+                        )}
+                        <h3>{title}</h3>
+                      </>
+                    )}
+                  </div>
+                  {percent !== undefined && (
+                    <span
+                      aria-hidden="true"
+                      className="settings-update-percent settings-metadata"
+                    >
+                      {percent}%
+                    </span>
+                  )}
+                </div>
+                {downloading && (
+                  <progress
+                    className="settings-update-progress"
+                    aria-label="Update download"
+                    max={100}
+                    value={percent}
+                  />
+                )}
+                {!state.updates && (
+                  <p className="settings-metadata">
+                    {state.linux
+                      ? "Update checks work when Apparent runs from an AppImage."
+                      : "Updates work in the installed Apparent.app."}
+                  </p>
+                )}
+                {result === "available" && (
+                  <p className="settings-metadata">
+                    Restart Apparent to finish updating.
+                  </p>
+                )}
+                {(!checking || !progress) && (
+                  <div className="settings-actions">
+                    {checking ? (
+                      <Button disabled variant="outline">
+                        Checking…
+                      </Button>
+                    ) : result === "available" ? (
+                      <>
+                        <Button
+                          onClick={() => void act({ action: "update-now" })}
+                        >
+                          Update now
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="settings-decision-alternative"
+                          onClick={() => void act({ action: "update-later" })}
+                        >
+                          Update later
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        disabled={!state.updates}
+                        onClick={() =>
+                          void act({ action: "check-for-updates" })
+                        }
+                      >
+                        {result === "failed"
+                          ? "Try again"
+                          : result
+                            ? "Check again"
+                            : "Check for updates"}
+                      </Button>
+                    )}
+                  </div>
                 )}
               </div>
+              {result && result !== "failed" && !checking && (
+                <img
+                  className="settings-frog"
+                  src={
+                    result === "available" ? artwork.available : artwork.current
+                  }
+                  alt=""
+                />
+              )}
             </div>
-            {result && result !== "failed" && !checking && (
-              <img
-                className="settings-frog"
-                src={
-                  result === "available" ? artwork.available : artwork.current
-                }
-                alt=""
-              />
-            )}
           </section>
-          {state.linux && state.mainUpdates && (
-            <>
-              <div className="settings-channel">
-                <label htmlFor="update-channel">Update channel</label>
-                <NativeSelect
-                  id="update-channel"
-                  aria-describedby="update-channel-hint"
-                  value={state.updateChannel}
-                  disabled={checking}
-                  onChange={(event) => void changeChannel(event.target.value)}
-                >
-                  <NativeSelectOption value="stable">
-                    Stable releases
-                  </NativeSelectOption>
-                  <NativeSelectOption value="main">
-                    Latest main
-                  </NativeSelectOption>
-                </NativeSelect>
-              </div>
-              <p
-                id="update-channel-hint"
-                className="settings-metadata settings-channel-hint"
-              >
-                {channelUpdateHint}
-              </p>
-            </>
-          )}
         </>
       )}
       <section className="settings-support" aria-label="Support apparent">
@@ -363,11 +443,15 @@ export function About({
       </Button>
       <ErrorDialog
         open={result === "failed" && !checking}
-        title="Update check failed"
-        description="Try checking again."
+        title={failureTitle}
+        description={failureDescription}
         artwork={<img src={artwork.failed} alt="" />}
         recoveryLabel="Try again"
-        onRecover={() => void act({ action: "check-for-updates" })}
+        onRecover={() =>
+          void act({
+            action: failure === "restart" ? "update-now" : "check-for-updates",
+          })
+        }
         restoreFocus={() =>
           document
             .querySelector<HTMLButtonElement>(

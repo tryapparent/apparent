@@ -596,39 +596,14 @@ parent version and update availability; routing and fallback remain unchanged.
 The Mac legacy fallback retains its existing presentation until packaged Electron
 About is accepted on both platforms.
 
-Settings › About keeps its existing **Check for Updates…** action when updates are available. On Linux, a manual check
-shows Checking… only in the disabled check button and ignores duplicate clicks until it completes. Its dismissible result has
-one line only: **Update available**, **No update available**, or **Update check failed**, with
-the same pixel frog jumping, lounging, or puzzled on its notched lily pad. Failures and
-unexpected worker responses are logged; they never become “No update available” or
-appear as raw diagnostics in the modal.
-The current Linux `check_cli` feed contract checks **and installs**: “Update available” also
-covers an image already installed for the next launch. It does not mean a discovery-only check.
-That result offers **Update now** (quit, launch the staged AppImage after exit,
-and reopen Settings on About) and
-**Update later** (dismiss, leaving it for the next launch). The primary Update now action
-uses brand Signal violet with Paper text; Update later uses the theme field and contrasting text and border.
-Both use the brand's square geometry, 18px control type, and 44px hit height rather than
-the compact pill buttons in Settings rows. The result panel has a square theme-colored field,
-contrasting rule, 18px native status, and 8px-based spacing; failure text uses the semantic
-failure color. Other results use a matching secondary OK action. Tab moves between
-the choices, and Enter or Space activates the focused choice; Enter without a
-focused choice chooses now. Escape defers. On other results Enter and Escape dismiss.
-The app checks that an update is still staged before quitting; a failed relaunch request
-shows the failure result instead of silently exiting. macOS continues to hand off to Sparkle's
-native updater; it does not synthesize a frog result from a Sparkle launch.
-Sparkle's committed update relaunch also reopens Settings on About. Its native
-one-shot relaunch receipt is consumed at startup; ordinary launches do not set it.
-About now uses the packaged Electron Settings shell with React/TypeScript and
-shared shadcn buttons. The private parent pipe projects only version, update availability,
-channel and check result; an allowlist accepts check, dismiss, now/later, tour and
-validated channel changes. TypeScript owns result presentation and keyboard choices.
-Native code remains the single updater/config owner and enforces capture-safe restart.
-Other panes retain their current routing. Missing assets, spawn failure or a child crash
-restore native About; Storage's existing opt-out is unchanged. Native About remains
-the failure fallback until packaged Linux and macOS navigation, update, restart and
-fallback acceptance passes and its build/consumer dependencies are verified removable.
-No installed-route activation outside this packaged presentation is required.
+Settings › About offers **Check for updates** when the installation supports
+updates. On Linux, Electron About displays the native phase and measured
+download progress. **Update available** means the selected channel’s
+AppImage has been installed on disk. **Update now** relaunches into it
+and reopens About. **Update later** or Escape dismisses the offer. An error dialog
+identifies the affected operation and gives a recovery action. The native
+fallback retains its compact result dialog. On macOS, Sparkle owns the
+update and its progress window.
 
 Restart admission uses the shared coordinator's `capture_busy()` decision, including admitted
 captures and detached finalizers whose capsule was dismissed. Settings/onboarding relaunches,

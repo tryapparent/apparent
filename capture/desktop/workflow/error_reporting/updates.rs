@@ -3,7 +3,6 @@ use std::{error::Error, fmt, panic::Location, process::ExitStatus};
 use std::os::unix::process::ExitStatusExt;
 
 /// Expected rejection by the native transaction guard, not an updater failure.
-/// Keep this typed: WouldBlock from any other operation still needs reporting.
 #[derive(Debug)]
 struct LockContention(std::io::Error);
 impl fmt::Display for LockContention {
@@ -19,6 +18,14 @@ pub(crate) fn lock_contention(source: std::io::Error) -> anyhow::Error {
 }
 pub(crate) fn is_lock_contention(error: &anyhow::Error) -> bool {
     error.chain().any(|cause| cause.is::<LockContention>())
+}
+
+pub(crate) fn is_rate_limited(error: &anyhow::Error) -> bool {
+    error.chain().filter_map(|cause| cause.downcast_ref::<CommandFailure>()).any(|failure| {
+        failure.http.status == Some(429)
+            || failure.http.status == Some(403)
+                && (failure.http.rate_limit_remaining == Some(0) || failure.http.retry_after_seconds.is_some())
+    })
 }
 
 #[cfg(test)]
@@ -57,7 +64,6 @@ pub(crate) enum TargetStep { Metadata, FileType, Ownership, HomeDiscovery, Image
 #[serde(rename_all = "snake_case")]
 pub(crate) enum PathClass { Root, Home, Temporary, Opt, Usr, Run, Other }
 
-/// Fixed categories and predicates only; never retain paths or environment values.
 #[derive(Clone, Debug, serde::Serialize)]
 pub(crate) struct Target {
     pub step: TargetStep,
@@ -104,6 +110,7 @@ impl Error for Boundary {
 pub(crate) fn failure(stage: Stage, source: anyhow::Error) -> anyhow::Error {
     anyhow::Error::new(Boundary {stage, location: Location::caller(), source})
 }
+
 pub(crate) trait Diagnose<T> {
     #[track_caller]
     fn stage(self, stage: Stage) -> anyhow::Result<T>;
@@ -187,13 +194,10 @@ impl Attempt {
         self.compiled_matches_target = Some(compiled == id);
     }
 }
-/// Discovery telemetry is bounded metadata, never release bodies or request URLs.
 #[derive(Clone, Copy, Debug, serde::Serialize)]
 pub(crate) struct ReleaseDiscovery {
     pub page: u8,
-    // Release-list requests only; excludes other processes and API consumers.
     pub requests_in_process: u32,
-    // Monotonic time since this process first requested release history.
     pub elapsed_seconds: u32,
 }
 #[derive(Debug)]
