@@ -1,0 +1,8 @@
+{
+  "name": "@apparent/handoff",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./controller": "./main/controller.ts"
+  }
+}

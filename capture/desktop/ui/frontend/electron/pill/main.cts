@@ -33,8 +33,7 @@ function focusPicker(focused){
   if(process.platform!=='linux')window.setFocusable(focused);
   if(focused)window.focus();else window.blur();
 }
-const {Controller}=require('./t3.cjs');
-const destinations=new Controller(()=>{if(loaded&&window&&!window.isDestroyed()){
+const destinations=require('./t3.cjs').createController(()=>{if(loaded&&window&&!window.isDestroyed()){
   const view=destinations.view();
   if(reconcileKeyboardWindow(view))return;
   if(!view&&pickerFocused)focusPicker(false);

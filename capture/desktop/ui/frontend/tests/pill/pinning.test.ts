@@ -11,8 +11,6 @@ const filename = fileURLToPath(new URL('../../electron/pill/main.cts', import.me
 const source = readFileSync(filename, 'utf8');
 const require = createRequire(filename);
 
-// Run the whole host and its real protocol/geometry owners. Only Electron and
-// process I/O are inert; no compiler, generated bundle or source-shape search.
 function host(platform = 'linux', nativeWindowAccepted = true) {
   const input = Object.assign(new EventEmitter(), {setEncoding() {}});
   const messages: Record<string, unknown>[] = [];
@@ -68,7 +66,7 @@ function host(platform = 'linux', nativeWindowAccepted = true) {
     require: (name: string) => name === 'electron' ? electron
       : name === './protocol.cjs' ? require('./protocol.cts')
       : name === './geometry.cjs' ? require('./geometry.cts')
-      : name === './t3.cjs' ? require('./t3/controller.ts')
+      : name === './t3.cjs' ? {createController: () => ({view: () => null})}
       : name === './native/window.node' ? {preventActivation: (id: number) => {
         nativeAdmissions.push(id);
         if (!nativeWindowAccepted) throw Error('Synthetic native window refusal');

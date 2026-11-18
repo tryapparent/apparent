@@ -8,7 +8,7 @@ const require=createRequire(import.meta.url);
 const {wsServer:WebSocketServer}=require(path.join(path.dirname(require.resolve('playwright-core/package.json')),'lib/utilsBundle.js'));
 export async function fixture(t:{after:(fn:()=>Promise<void>)=>void}){
  const home=await mkdtemp(path.join(os.tmpdir(),'t3-picker-')),config=path.join(home,'config.json');
- let reads=0,loseReply=false,envMode='root',many=false,empty=false,projectName='Project';const calls:{tag:string;payload:Record<string,unknown>}[]=[],accepted=new Set<string>();
+ let reads=0,loseReply=false,envMode='root',many=false,empty=false,projectName='Project',computerName:unknown=undefined;const calls:{tag:string;payload:Record<string,unknown>}[]=[],accepted=new Set<string>();
  const server=createServer((req,res)=>{
   if(req.url==='/oauth/token'){let body='';req.on('data',chunk=>body+=chunk);req.on('end',()=>{assert.equal(new URLSearchParams(body).get('subject_token'),'one-time');res.setHeader('content-type','application/json');res.end(JSON.stringify({access_token:'private-test-token',token_type:'Bearer',expires_in:3600}));});return;}
   assert.equal(req.headers.authorization,'Bearer private-test-token');res.setHeader('content-type','application/json');
@@ -16,7 +16,7 @@ export async function fixture(t:{after:(fn:()=>Promise<void>)=>void}){
   else if(req.url==='/api/auth/websocket-ticket')res.end(JSON.stringify({ticket:'one-use-ticket'}));else{res.statusCode=404;res.end('{}');}
  });
  const sockets=new WebSocketServer({server});sockets.on('connection',(socket:any,req:any)=>{assert.equal(new URL(req.url,'http://localhost').searchParams.get('orchestrationProtocol'),'2');socket.on('message',(bytes:Buffer)=>{const message=JSON.parse(bytes.toString());if(message._tag!=='Request')return;const {tag,payload}=message;let value:object={};
-  if(tag==='server.getConfig')value={settings:{defaultModelSelection:{instanceId:'fixture',model:'environment-default'},defaultRuntimeMode:'auto-accept-edits',defaultThreadEnvMode:envMode}};
+  if(tag==='server.getConfig')value={...computerName===undefined?{}:{environment:{environmentId:'fixture-environment',label:computerName,platform:'linux',serverVersion:'1.0.0',capabilities:{}}},settings:{defaultModelSelection:{instanceId:'fixture',model:'environment-default'},defaultRuntimeMode:'auto-accept-edits',defaultThreadEnvMode:envMode}};
   else if(tag==='vcs.listRefs')value={isRepo:true,hasPrimaryRemote:true,refs:[{name:'origin/main',isDefault:true,isRemote:true}]};
   else{calls.push({tag,payload});accepted.add(payload.commandId);if(loseReply){loseReply=false;socket.close();return;}value={threadId:payload.threadId};}
   socket.send(JSON.stringify({_tag:'Exit',requestId:message.id,exit:{_tag:'Success',value}}));
@@ -24,5 +24,5 @@ export async function fixture(t:{after:(fn:()=>Promise<void>)=>void}){
  server.listen(0,'127.0.0.1');await once(server,'listening');const origin=`http://127.0.0.1:${(server.address() as {port:number}).port}`;
  const save=async(enabled?:boolean)=>writeFile(config,JSON.stringify({secret:'unrelated',t3:{origin,token:'private-test-token',expiresAt:Date.now()+3600000},...(enabled===undefined?{}:{experiments:{t3DestinationPicker:enabled}})}),{mode:0o600});await save(true);
  t.after(async()=>{sockets.close();server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));await rm(home,{recursive:true,force:true});});
- return {config,home,origin,save,calls,accepted,get reads(){return reads;},lose:()=>loseReply=true,worktree:()=>envMode='worktree',many:()=>many=true,empty:()=>empty=true,label:(name:string)=>projectName=name};
+ return {config,home,origin,save,calls,accepted,get reads(){return reads;},lose:()=>loseReply=true,worktree:()=>envMode='worktree',many:()=>many=true,empty:()=>empty=true,label:(name:string)=>projectName=name,computer:(name:unknown)=>computerName=name};
 }

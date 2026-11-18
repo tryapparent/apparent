@@ -1,0 +1,27 @@
+name: Handoff
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "handoff/**"
+      - ".github/workflows/stream-handoff.yml"
+  push:
+    branches: [main]
+    paths:
+      - "handoff/**"
+      - ".github/workflows/stream-handoff.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.0"
+      - run: node --experimental-strip-types --test handoff/enablement/ci/chooser.test.ts handoff/enablement/ci/controller.test.ts handoff/enablement/ci/delivery.test.ts handoff/enablement/ci/destinations.test.ts

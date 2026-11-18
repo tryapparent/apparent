@@ -1,0 +1,320 @@
+.destination-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.destination-stack {
+  --picker-surface: var(--apparent-background);
+  --picker-tray: var(--apparent-muted);
+  --picker-ink: var(--apparent-foreground);
+  --picker-line: var(--apparent-border);
+  width: max-content;
+  max-width: min(390px, var(--pill-limit, 1200px));
+  color: var(--picker-ink);
+  font-size: 18px;
+  line-height: 24px;
+}
+.destination-assembly {
+  width: max-content;
+  max-width: 100%;
+  border: 1px solid var(--picker-line);
+  border-radius: 28px;
+  background: var(--picker-surface);
+  overflow: hidden;
+}
+.destination-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 6px;
+  min-height: 62px;
+  border-radius: 28px;
+  background: var(--picker-surface);
+}
+.destination-status,
+.destination-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+.destination-status {
+  color: var(--apparent-success);
+}
+.destination-status svg,
+.destination-close svg {
+  width: 20px;
+  height: 20px;
+}
+.destination-status:has(.destination-spinner) {
+  color: var(--picker-ink);
+}
+.destination-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 52px;
+  min-height: 52px;
+  min-width: 0;
+  max-width: 280px;
+  padding: 4px 16px;
+  gap: 8px;
+  border: 0;
+  border-radius: 22px;
+  background: var(--apparent-brand);
+  color: var(--apparent-brand-foreground);
+  font:
+    400 20px / 24px "Host Grotesk",
+    sans-serif;
+  box-shadow: none;
+}
+.destination-trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.destination-trigger > svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.destination-close {
+  padding: 0;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
+  color: var(--picker-ink);
+}
+.destination-trigger:focus-visible {
+  outline: 2px solid var(--apparent-brand-foreground);
+  outline-offset: -4px;
+}
+.destination-stack button:focus-visible {
+  outline-width: 2px;
+  outline-offset: -4px;
+}
+.destination-stack[data-open="true"] .destination-assembly {
+  position: relative;
+  isolation: isolate;
+  width: 342px;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+.destination-stack[data-open="true"] .destination-pill {
+  position: relative;
+  z-index: 1;
+  border: 1px solid var(--picker-line);
+  border-radius: 28px;
+}
+.destination-stack[data-open="true"] .destination-trigger {
+  flex: 1;
+  justify-content: space-between;
+}
+.destination-tray {
+  position: relative;
+  z-index: 0;
+  margin-top: -28px;
+  padding: 28px 0 0;
+  border: 1px solid var(--picker-line);
+  border-top: 0;
+  border-radius: 0 0 28px 28px;
+  background: var(--picker-tray);
+  overflow: hidden;
+}
+.destination-option {
+  width: 100%;
+  min-height: 44px;
+  height: auto;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--picker-ink);
+  font:
+    400 18px / 24px "Host Grotesk",
+    sans-serif;
+  white-space: normal;
+  text-align: start;
+  box-shadow: none;
+}
+.destination-option > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.destination-option svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  stroke-width: 1.5;
+}
+.destination-option[aria-selected="true"] {
+  background: var(--apparent-brand);
+  color: var(--apparent-brand-foreground);
+}
+.destination-option:hover:not([aria-selected="true"]) {
+  background: color-mix(in srgb, var(--picker-ink) 8%, transparent);
+}
+.destination-notification {
+  width: 340px;
+  max-width: 100%;
+  margin-top: 4px;
+  border-radius: 16px;
+}
+.destination-notification .apparent-status-card {
+  padding: 16px;
+  border-radius: 16px;
+  gap: 0;
+  text-align: start;
+  background: var(--picker-surface);
+  color: var(--picker-ink);
+}
+.destination-notification .apparent-status-card.compact .status-content {
+  flex-basis: 100%;
+}
+.destination-notification .apparent-status-card.compact h2 {
+  font-size: 18px;
+  line-height: 24px;
+  margin-bottom: 8px;
+}
+.destination-notification .status-heading {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+}
+.destination-notification .status-icon {
+  margin: 0;
+  display: flex;
+}
+.destination-notification p {
+  font-size: 18px;
+  line-height: 27px;
+  margin: 0;
+  text-align: start;
+}
+.destination-recovery {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+}
+.destination-recovery button,
+.destination-receipt button {
+  font-size: 18px;
+  line-height: 24px;
+  border: 1px solid var(--picker-line);
+  border-radius: 22px;
+  padding: 8px 12px;
+  min-height: 44px;
+}
+.destination-receipt {
+  padding: 8px 16px;
+  border: 1px solid var(--picker-line);
+  border-radius: 28px;
+  background: var(--picker-surface);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 16px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pill:not([data-reduced="true"]) .destination-spinner {
+    animation: pill-spin 1s linear infinite;
+  }
+}
+@media (max-width: 430px) {
+  .destination-stack {
+    max-width: var(--pill-limit, 100vw);
+  }
+  .destination-option {
+    padding-inline: 12px;
+  }
+}
+
+.destination-option small {
+  display: block;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 400;
+}
+.destination-option > span {
+  display: block;
+}
+
+.destination-label {
+  text-align: start;
+}
+.destination-label > span,
+.destination-label > small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.destination-label > small {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+}
+.destination-share {
+  flex-shrink: 0;
+  min-height: 44px;
+  border-radius: 22px;
+  padding: 10px 12px;
+  font:
+    400 18px / 24px "Host Grotesk",
+    sans-serif;
+  gap: 8px;
+}
+.destination-share svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.5;
+}
+.destination-pill:has(.destination-share) .destination-trigger {
+  flex: 1;
+}
+
+.pill-destination {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.destination-stack:has(.destination-share) {
+  max-width: min(540px, var(--pill-limit, 1200px));
+}
+.destination-stack[data-open="true"]:has(.destination-share)
+  .destination-assembly {
+  width: 482px;
+}
+
+.destination-browse {
+  display: flex;
+  justify-content: center;
+  padding: 0 8px 4px;
+}
+.destination-browse button {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  border-radius: 22px;
+  color: var(--picker-ink);
+}
+.destination-browse svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.5;
+}

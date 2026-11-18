@@ -426,11 +426,11 @@ the first in the legacy `t3` shape and additional computers in `t3.connections`.
 Removing the first promotes the next; unrelated preferences and connection metadata
 are preserved. Older readers see only the first computer. Rollback to an older
 writer can replace the list, so retain the new writer while using multiple computers; raw tokens never enter the page or logs.
-Labs lists each saved computer and its expiry. **Add computer** preserves existing
-connections; threads from every reachable computer appear together with computer
-and project labels. New thread is selectable even when no existing threads exist.
-A failed computer load leaves the other destinations available and names the
-unavailable host. Disconnect removes only that computer’s local credential without revoking existing server sessions. A confirmed handoff still
+Labs lists saved computers and their expiry. **Add computer** keeps existing
+connections. The picker shows projects from every reachable computer, with
+friendly names for multiple computers. **New thread** also works with empty
+projects. If a computer is unavailable, the others stay selectable. Disconnect
+removes its local credential and leaves server sessions active. A confirmed handoff still
 needs a matching local credential before dispatch. Unknown save outcomes require
 Refresh connection. An enabled picker without a usable connection shows
 **Connect T3** instead of silently reverting to Paste. It keeps the recording;

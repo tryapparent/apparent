@@ -105,3 +105,11 @@ test('switching panes cancels a queued T3 connection before the private native w
  await page.getByRole('dialog').getByRole('button',{name:'Connect',exact:true}).click();
  await expect(page.getByRole('dialog')).toHaveCount(0);assert.equal(writes,1);
 });
+
+test('T3 pairing permits loopback and rejects insecure remote addresses', async t => {
+ const {fixture}=await import('../pill/t3/testing/server.ts');
+ const {pair}=await import('../../../../workflow/t3/pair.ts');
+ const f=await fixture(t);
+ assert.equal((await pair(f.origin+'/pair?token=one-time')).origin,f.origin);
+ await assert.rejects(pair('http://remote.example/pair?token=one-time'),/HTTPS/);
+});

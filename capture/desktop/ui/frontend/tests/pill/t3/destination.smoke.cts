@@ -53,11 +53,11 @@ test('real pill keeps Paste by default, then selects during processing and dispa
  await expect(page.locator('.pill-row')).toBeVisible();await proof('destination-pending');
  await app.evaluate(({BrowserWindow},value)=>BrowserWindow.getAllWindows()[0].webContents.send('pill:destinations',value),destination);
  await expect(trigger).toBeEnabled();await trigger.focus();
- await page.keyboard.press('ArrowDown');await expect(trigger).toHaveAttribute('aria-expanded','true');await expect(page.getByRole('option')).toHaveCount(3);await expect(page.getByRole('option').first()).toHaveAttribute('aria-selected','true');await expect(page.getByRole('option').last()).toHaveAttribute('data-continuation','true');
+ await page.keyboard.press('ArrowDown');await expect(trigger).toHaveAttribute('aria-expanded','true');await expect(page.getByRole('option')).toHaveCount(3);await expect(page.getByRole('option').first()).toHaveAttribute('aria-selected','true');await expect(page.getByRole('button',{name:'More destinations',exact:true})).toBeVisible();
  for(const colorScheme of ['dark','light']){await page.emulateMedia({colorScheme,reducedMotion:'reduce'});await proof('processing-expanded-'+colorScheme);}
  assert.ok((await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].getBounds())).height>160,'native window must fit the expanded tray');
  await page.keyboard.press('Escape');await expect(trigger).toHaveAttribute('aria-expanded','false');await expect(trigger).toContainText('New thread');assert.equal(f.calls.length,0);
- await trigger.click();await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');await expect(page.getByRole('button',{name:'Cancel handoff',exact:true})).toBeVisible();assert.equal(f.calls.length,0);
+ await trigger.click();await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');await expect(page.getByRole('button',{name:'Cancel send',exact:true})).toBeVisible();assert.equal(f.calls.length,0);
  const handoff='PRIVATE exact recording handoff';await app.evaluate((_electron,args)=>process.stdin.emit('data',JSON.stringify({type:'handoff-ready',capture:'on',text:args})+'\n'),handoff);
  frame={...frame,view:{...frame.view,revision:3,phase:'completed',label:'Saved',actions:[{id:'paste',label:'Paste',enabled:true,selected:false,primary:true}]}};await publish();
  await expect.poll(()=>f.calls.length).toBe(1);await expect(trigger).toBeDisabled();assert.equal(f.calls[0].payload.threadId,'thread');assert.equal(f.calls[0].payload.text,handoff);assert.equal(await page.evaluate(()=>document.body.textContent.includes('PRIVATE')),false);
