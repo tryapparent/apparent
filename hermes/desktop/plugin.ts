@@ -1,4 +1,5 @@
 import { host, COMPOSER_AREAS, PALETTE_AREA, Button, Codicon, atom, useValue } from '@hermes/plugin-sdk';
+import { createRecorderSetup } from './setup.ts';
 import { jsx } from 'react/jsx-runtime';
 import { recordCommand, keyCommand, submission, validSource, validBundlePath, validRemoteSource, selectedSource, validToken, mailboxId, sign, authenticatedState, type Pending } from './controller.ts';
 
@@ -13,26 +14,11 @@ export default {
     const hasPending = atom(false);
     const save = () => { hasPending.set(Boolean(pending)); return ctx.storage.set('recording', pending); };
     const report = (message: string) => { if (!disposed) host.notify({ kind: 'error', message }); };
-    const unsupportedMethod = (error: unknown) => {
-      const value = error as { code?: unknown; data?: { reason?: unknown } } | null;
-      return value?.code === -32601 || value?.data?.reason === 'unknown_method';
-    };
-    async function shellContract(route: any): Promise<{ mode: 'canonical' | 'legacy'; hidden: boolean }> {
-      try {
-        const described = await host.requestProfile(route, 'runtime.describe', {});
-        const create = described?.session_create;
-        if (!Array.isArray(described?.capabilities) || !Array.isArray(create?.sources) ||
-            !Array.isArray(create?.parameters) || !create.sources.includes('gui') ||
-            !create.parameters.includes('request_id') || !create.parameters.includes('source')) throw new Error('Hermes returned an incomplete canonical runtime contract.');
-        return { mode: 'canonical', hidden: create.parameters.includes('hidden') };
-      } catch (error) {
-        if (unsupportedMethod(error)) return { mode: 'legacy', hidden: false };
-        throw error;
-      }
-    }
+    const checkingSetup = atom(false);
+    const setup = createRecorderSetup(host, checkingSetup, ctx, () => disposed);
     async function ensureShellTarget(operation: Pending, route: any) {
       if (operation.shellMode) return;
-      const contract = await shellContract(route);
+      const contract = await setup.shellContract(route);
       if (contract.mode === 'legacy') {
         operation.shellMode = 'legacy';
         await save();
@@ -268,6 +254,7 @@ export default {
         if (!destinationRoute.targetProfile || !destinationRoute.mode) throw new Error('Hermes does not expose a complete route for this conversation.');
         const localRoutes = routes.filter(route => route.mode === 'local');
         if (localRoutes.length !== 1 || !localRoutes[0].targetProfile) throw new Error('Hermes does not expose one unambiguous local recording route.');
+        if (!await setup.check(localRoutes[0], destinationRoute, initialSession, initialStored, owner)) return;
 
         let session = initialSession;
         let storedSession = initialStored;
@@ -345,7 +332,7 @@ export default {
         if (!disposed) watch();
       } catch (error) {
         if (launchMayHaveStarted && pending) { if (!disposed) watch(); }
-        else { pending = null; await save(); }
+        else if (pending) { pending = null; await save(); }
         report(error instanceof Error ? error.message : 'Unable to start Apparent');
       } finally { working = false; }
     }
@@ -398,8 +385,10 @@ export default {
 
     function RecordButton() {
       const waiting = useValue(hasPending);
-      const label = pending?.manual ? 'Retry saved Apparent handoff' : waiting ? 'Check Apparent recording handoff' : 'Record with Apparent';
+      const checking = useValue(checkingSetup);
+      const label = checking ? 'Checking Apparent setup…' : pending?.manual ? 'Retry saved Apparent handoff' : waiting ? 'Check Apparent recording handoff' : 'Record with Apparent';
       return jsx(Button, { type: 'button', variant: 'ghost', size: 'icon', title: label, 'aria-label': label,
+        'aria-busy': checking || undefined,
         onClick: () => void record(), children: jsx('img', { src: '__APPARENT_ICON__', width: 20, height: 20, alt: '' }) });
     }
     ctx.register({ id: 'record', area: COMPOSER_AREAS.actions, render: RecordButton });

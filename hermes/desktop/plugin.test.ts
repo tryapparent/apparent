@@ -1,41 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { registerHooks } from 'node:module';
 import { host, shared } from './testing/sdk.ts';
+import { fixture, packet, reset, until } from './testing/fixture.ts';
 import { sign } from './controller.ts';
-const hooks = registerHooks({ resolve(specifier, context, next) {
-  if (['@hermes/plugin-sdk', 'react/jsx-runtime'].includes(specifier)) return { url: new URL('./testing/sdk.ts', import.meta.url).href, shortCircuit: true };
-  return next(specifier, context);
-} });
-const plugin = (await import('./plugin.ts')).default;
-hooks.deregister();
-async function until(predicate: () => unknown) {
-  const deadline = Date.now() + 1500;
-  while (!predicate()) { if (Date.now() > deadline) throw new Error('Async test condition did not settle'); await new Promise(resolve => setTimeout(resolve, 2)); }
-}
-function fixture(stored: any = null, delayedWrite: number | ((value: unknown) => boolean) = 0) {
-  let contribution: any, discard: any, interval: (() => void) | undefined, saved: any;
-  const history: unknown[] = [];
-  let writes = 0;
-  let startDelayedWrite!: () => void; let releaseDelayedWrite!: () => void;
-  const delayedStarted = new Promise<void>(resolve => { startDelayedWrite = resolve; });
-  const delayedRelease = new Promise<void>(resolve => { releaseDelayedWrite = resolve; });
-  let dispose = () => {};
-  const ctx = {
-    onDispose: (fn: () => void) => { dispose = fn; },
-    setInterval: (fn: () => void) => { interval = fn; return () => { interval = undefined; }; },
-    storage: { get: () => stored, set: async (_key: string, value: unknown) => {
-      writes++;
-      if (typeof delayedWrite === 'number' ? writes === delayedWrite : delayedWrite(value)) { startDelayedWrite(); await delayedRelease; }
-      saved = structuredClone(value);
-      history.push(structuredClone(value));
-    } },
-    register: (item: any) => { if (item.id === 'record') contribution = item; else discard = item; },
-  };
-  plugin.register(ctx);
-  return { click: () => contribution.render().props.onClick(), surface: () => contribution.render(), discard: () => discard.data.run(), tick: () => interval?.(), saved: () => saved,
-    watching: () => Boolean(interval), waitDelayedWrite: () => delayedStarted, releaseDelayedWrite, writes: () => writes, history: () => history, dispose: () => dispose() };
-}
 
 test('composer keeps the accepted Apparent mark while recording state changes', async () => {
   reset(); const f = fixture();
@@ -49,25 +16,74 @@ test('composer keeps the accepted Apparent mark while recording state changes', 
     assert.deepEqual(icon(), before);
   } finally { f.dispose(); }
 });
-async function packet(phase: string, remoteSource: string | null = shared.source, bundlePath = shared.bundlePath) {
-  const payload = JSON.stringify({ phase, ...(phase === 'saved' ? { bundlePath, remoteSource } : {}) });
-  return Response.json({ payload, mac: await sign(shared.key, payload) });
-}
-function reset() {
-  shared.sessionCreateGate = undefined; shared.sessionCreateStart = undefined;
-  shared.owner = { connectionId: 'ssh-A', profile: 'work' };
-  shared.session = 'runtime-A'; shared.storedSession = 'stored-A';
-  shared.routes = [
-    { connectionId: 'ssh-A', profile: 'work', targetProfile: 'work', mode: 'remote' },
-    { connectionId: 'local-A', profile: 'default', targetProfile: 'default', mode: 'local' },
-  ];
-  shared.requests = []; shared.submissions = []; shared.errors = [];
-  shared.insertions = []; shared.draftReads = []; shared.opens = [];
-  shared.source = 'cccccccccccccccccccccccccccccccc'; shared.bundlePath = '/private/owned.apparent'; shared.draft = 'typed draft must remain unchanged'; shared.acceptSubmit = true; shared.acceptInsert = true;
-  shared.newDraft = 'typed draft must remain unchanged'; shared.draftReadGate = undefined; shared.draftReadStart = undefined;
-  shared.sessionCreate = { session_id: 'created-runtime', stored_session_id: 'created-stored' };
-  shared.legacyRuntimeDescribe = false; shared.runtimeDescribeError = undefined;
-}
+
+test('first-run setup offers an explicit app open without creating a conversation or sending the draft', async () => {
+  reset();
+  shared.owner = { connectionId: 'local-A', profile: 'default' };
+  shared.session = null; shared.storedSession = null;
+  shared.setupStatus = { schema: 1, status: 'setup_required' };
+  const originalFetch = globalThis.fetch;
+  const f = fixture();
+  globalThis.fetch = async () => packet('recording');
+  try {
+    const draft = shared.newDraft;
+    f.click(); await until(() => shared.notices.length === 1);
+    assert.deepEqual(shared.requests, [{ route: shared.routes[1], method: 'plugin.apparent.setup_status', params: {} }]);
+    assert.equal(shared.newDraft, draft);
+    assert.equal(shared.opens.length, 0);
+    assert.equal(f.writes(), 0);
+    assert.equal(shared.submissions.length, 0);
+    const notice = shared.notices[0];
+    assert.equal(notice.kind, 'info');
+    assert.equal(notice.action?.label, 'Open Apparent setup');
+    assert.deepEqual(f.externalUrls, []);
+    notice.action?.onClick();
+    assert.deepEqual(f.externalUrls, ['apparent://open']);
+    assert.equal(shared.requests.length, 1);
+    shared.setupStatus = { schema: 1, status: 'ready' };
+    f.click(); await until(() => shared.requests.some(item => item.params.command?.includes('hermes record')));
+    assert.equal(shared.opens.length, 1);
+    assert.equal(shared.submissions.length, 0);
+  } finally { globalThis.fetch = originalFetch; f.dispose(); }
+});
+
+test('legacy shell checks the local recorder for an SSH chat without creating a helper', async () => {
+  reset();
+  shared.setupRpcError = { code: -32601 };
+  shared.legacyRuntimeDescribe = true;
+  shared.shellSetupResult = { code: 127, stdout: '', stderr: 'apparent: not found' };
+  const f = fixture();
+  try {
+    f.click(); await until(() => shared.notices.length === 1);
+    assert.deepEqual(shared.requests.map(item => [item.route.mode, item.method, item.params]), [
+      ['local', 'plugin.apparent.setup_status', {}],
+      ['local', 'runtime.describe', {}],
+      ['local', 'shell.exec', { command: 'apparent hermes status' }],
+    ]);
+    assert.equal(shared.notices[0].action?.label, 'Install Apparent');
+    shared.notices[0].action?.onClick();
+    assert.deepEqual(f.externalUrls, ['https://app.tryapparent.com/']);
+    assert.equal(f.writes(), 0);
+  } finally { f.dispose(); }
+});
+
+test('a connection switch during setup preflight prevents navigation and capture', async () => {
+  reset();
+  shared.session = null; shared.storedSession = null;
+  let release!: () => void;
+  shared.setupGate = new Promise<void>(resolve => { release = resolve; });
+  const f = fixture();
+  try {
+    f.click(); await until(() => shared.requests.length === 1);
+    assert.equal(f.surface().props['aria-busy'], true);
+    shared.owner = { connectionId: 'local-A', profile: 'default' };
+    release();
+    await until(() => shared.errors.length === 1);
+    assert.match(shared.errors[0], /destination changed while checking setup/);
+    assert.equal(shared.requests.length, 1);
+    assert.equal(f.writes(), 0);
+  } finally { release(); f.dispose(); }
+});
 
 test('canonical remote recording uses an idempotent local helper shell session', async () => {
   reset(); const originalFetch = globalThis.fetch;
@@ -280,7 +296,7 @@ test('typing during the final fresh-route check aborts navigation with the lates
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
   host.profileRoutes = async () => {
-    if (++calls === 4) { checking = true; await gate; }
+    if (++calls === 5) { checking = true; await gate; }
     return originalRoutes();
   };
   const f = fixture();

@@ -4,6 +4,8 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, ensure};
 use clap::{Parser, Subcommand};
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use super::hermes::HermesCommand;
 
 use crate::capture::agent::context as agent_context;
 use crate::capture::agent::zoom;
@@ -690,13 +692,6 @@ enum CaptureCommand {
     Handoff { capture_id: String },
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-#[derive(Subcommand)]
-enum HermesCommand {
-    /// Start one token-bound local recording and return its signed result to Hermes.
-    Record { destination: String },
-}
-
 /// `capture/agent/skills/apparent/SKILL.md`, the same text served from app.tryapparent.com/skill.md.
 const SKILL: &str = include_str!("../capture/agent/skills/apparent/SKILL.md");
 
@@ -869,9 +864,7 @@ fn run_cli(cli: Cli) -> Result<()> {
             run_owned_app(false, false, background)
         }
         #[cfg(any(target_os = "macos", target_os = "linux"))]
-        Command::Hermes { command: HermesCommand::Record { destination } } => {
-            crate::capture::desktop::workflow::launch_url::open_hermes_trusted(&destination)
-        }
+        Command::Hermes { command } => super::hermes::run(command),
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         Command::Capture { command } => {
             use crate::capture::desktop::workflow::agent_capture::Action;

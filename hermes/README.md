@@ -1,6 +1,6 @@
 # Apparent for Hermes
 
-Version **0.4.0**. Paste an Apparent recording handoff into Hermes and press
+Version **0.4.1**. Paste an Apparent recording handoff into Hermes and press
 Send. `apparent_inspect` returns spoken instructions, timestamped interaction
 context and contact-sheet pixels. Pass `frame` to read a numbered keyframe.
 The bundled `apparent:recordings` skill guides inspection and work under Hermes's
@@ -9,9 +9,13 @@ existing approvals.
 ## Record from the composer
 
 The **Record with Apparent** control keeps the purple Apparent mark beside the
-composer. Clicking it starts the trusted local recording helper immediately;
-there is no Hermes confirmation or completion popup. Apparent's normal first-run
-onboarding and OS permission prompts still apply. Finish or cancel in Apparent.
+composer. It checks the recorder on this computer before binding a recording to
+the chat. If Apparent needs first-run setup, choose **Open Apparent setup**.
+Finish the native setup, then click **Record with Apparent** again. The original
+draft stays in place during setup. A missing recorder prompts **Install Apparent**.
+The check uses `apparent hermes status` when available. Older compatible
+recorders keep their existing recording flow. The app still owns OS permission
+prompts. Finish or cancel in Apparent.
 Untrusted external `apparent://hermes/...` activation keeps the existing native
 confirmation path.
 
@@ -46,7 +50,7 @@ received the backend request or that a model inspected the recording.
 
 ## Package and SDK requirements
 
-Install the complete `apparent-hermes-0.4.0.tar.gz` and matching `.sha256` from
+Install the complete `apparent-hermes-0.4.1.tar.gz` and matching `.sha256` from
 [Hermes releases](https://github.com/tryapparent/apparent/releases?q=hermes-v)
 once published. Verify the checksum, extract to a private directory, then use
 the normal Hermes plugin install, validate, doctor and enable flow. The installer

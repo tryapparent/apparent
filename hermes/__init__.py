@@ -2,9 +2,10 @@
 from pathlib import Path
 import json
 import re
+import shutil
 
 from .adapter import Adapter, executable
-from .process import AdapterError
+from .process import AdapterError, execute
 
 
 GUIDANCE = """This message includes an Apparent recording. Load apparent:recordings and
@@ -30,6 +31,9 @@ def recording_context(user_message="", **kwargs):
 
 
 def register(ctx):
+    if callable(getattr(ctx, "register_rpc", None)):
+        ctx.register_rpc("setup_status", setup_status)
+
     def inspect(args, **kwargs):
         try:
             if not isinstance(args, dict) or "source" not in args or set(args) - {"source", "frame"}:
@@ -52,3 +56,25 @@ def register(ctx):
     ctx.register_skill("recordings", Path(__file__).parent / "skills/recordings/SKILL.md",
                        description="Read Apparent screen/voice/ink evidence and act on the user's instructions.")
     ctx.register_hook("pre_llm_call", recording_context)
+
+
+def setup_status(params, **kwargs):
+    if params:
+        raise ValueError("Apparent setup status takes no parameters.")
+    command = shutil.which("apparent")
+    if not command:
+        return {"schema": 1, "status": "missing"}
+    try:
+        result = json.loads(execute(command, ["hermes", "status"], timeout=5, limit=4096))
+        if isinstance(result, dict) and result.get("schema") == 1 and result.get("status") in ("ready", "setup_required"):
+            return {"schema": 1, "status": result["status"]}
+    except AdapterError as error:
+        if error.code == "cli_failed":
+            if "unrecognized subcommand 'status'" in str(error):
+                return {"schema": 1, "status": "legacy"}
+            if "unrecognized subcommand 'hermes'" in str(error):
+                return {"schema": 1, "status": "update_required"}
+        return {"schema": 1, "status": "unavailable"}
+    except (ValueError, OSError):
+        pass
+    return {"schema": 1, "status": "unavailable"}

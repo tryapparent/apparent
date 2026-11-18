@@ -29,6 +29,7 @@ class Context:
         self.tools = {}
         self.hooks = {}
         self.skills = {}
+        self.rpc = {}
 
     def get_config(self, name, default=None):
         return self.command
@@ -41,6 +42,38 @@ class Context:
 
     def register_hook(self, name, callback):
         self.hooks[name] = callback
+
+    def register_rpc(self, name, callback):
+        self.rpc[name] = callback
+
+
+class SetupStatusTests(unittest.TestCase):
+    def test_status_calls_the_recorder_without_accepting_arguments_or_returning_extra_fields(self):
+        ctx = Context()
+        plugin.register(ctx)
+        status = ctx.rpc["setup_status"]
+        with patch("apparent_plugin.shutil.which", return_value="/local/apparent"), patch(
+            "apparent_plugin.execute", return_value='{"schema":1,"status":"setup_required","extra":"private"}'
+        ) as run:
+            self.assertEqual(status({}, session_id=None), {"schema": 1, "status": "setup_required"})
+            run.assert_called_once_with("/local/apparent", ["hermes", "status"], timeout=5, limit=4096)
+            with self.assertRaises(ValueError):
+                status({"command": "/different/executable"}, session_id=None)
+            self.assertEqual(run.call_count, 1)
+
+    def test_missing_and_older_recorders_are_distinguished_from_execution_failure(self):
+        with patch("apparent_plugin.shutil.which", return_value=None):
+            self.assertEqual(plugin.setup_status({})["status"], "missing")
+        with patch("apparent_plugin.shutil.which", return_value="/local/apparent"):
+            for message, expected in (
+                ("unrecognized subcommand 'status'", "legacy"),
+                ("unrecognized subcommand 'hermes'", "update_required"),
+                ("configuration could not be read", "unavailable"),
+            ):
+                with self.subTest(expected=expected), patch(
+                    "apparent_plugin.execute", side_effect=AdapterError("cli_failed", message)
+                ):
+                    self.assertEqual(plugin.setup_status({})["status"], expected)
 
 
 class InspectionTests(unittest.TestCase):

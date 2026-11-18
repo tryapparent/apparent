@@ -1,4 +1,40 @@
 pub(crate) mod cli;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+mod hermes {
+    use crate::capture::desktop::{
+        settings::onboarding::Progress, workflow::launch_url::open_hermes_trusted,
+    };
+    use crate::shared::handoff;
+    use anyhow::Result;
+    use clap::Subcommand;
+
+    #[derive(Subcommand)]
+    pub(super) enum HermesCommand {
+        #[command(about = "Read first-run setup status without opening Apparent")]
+        Status,
+        #[command(
+            about = "Start one token-bound local recording and return its signed result to Hermes"
+        )]
+        Record { destination: String },
+    }
+
+    pub(super) fn run(command: HermesCommand) -> Result<()> {
+        match command {
+            HermesCommand::Status => {
+                let mut progress = Progress::load();
+                progress.prepare_current_tour();
+                let status = if !progress.seen && handoff::experiment("onboardingFirstCapture") {
+                    "setup_required"
+                } else {
+                    "ready"
+                };
+                println!("{}", serde_json::json!({ "schema": 1, "status": status }));
+                Ok(())
+            }
+            HermesCommand::Record { destination } => open_hermes_trusted(&destination),
+        }
+    }
+}
 pub(crate) mod command_line;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub(crate) mod agent_range;
