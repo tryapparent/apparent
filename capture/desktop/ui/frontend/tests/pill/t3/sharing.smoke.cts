@@ -3,6 +3,16 @@ const assert=require('node:assert/strict');
 const {_electron:electron,expect}=require('@playwright/test');
 const path=require('node:path');const fs=require('node:fs/promises');
 
+async function pickerGeometry(app,page){
+ const pill=await page.locator('.destination-pill').boundingBox();
+ assert.ok(pill);
+ const host=await app.evaluate(({BrowserWindow})=>{
+  const {x,y,width}=BrowserWindow.getAllWindows()[0].getBounds();
+  return {x,y,width};
+ });
+ return {pill,host};
+}
+
 test('T3 destinations and public sharing coexist with explicit consent', {timeout:60000},async t=>{
  const {fixture}=await import('./testing/server.ts');const f=await fixture(t);
  const app=await electron.launch({args:[path.resolve(__dirname,'../host.cjs'),'--no-sandbox','--ozone-platform=x11'],env:{...process.env,APPARENT_CONFIG:f.config,HOME:f.home,XDG_CONFIG_HOME:path.join(f.home,'config')}});
@@ -23,10 +33,15 @@ test('T3 destinations and public sharing coexist with explicit consent', {timeou
  for(const width of [1200,320]){
   await app.evaluate(({screen},width)=>{const matching=screen.getDisplayMatching.bind(screen);screen.getDisplayMatching=bounds=>{const display=matching(bounds);return {...display,workArea:{...display.workArea,width}};};},width);
   await page.evaluate(()=>window.apparentPill.layout(1));
-  if(width===1200)await expect.poll(()=>trigger.locator('.destination-label>span').evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+  await expect.poll(()=>trigger.locator('.destination-label>span').evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
   for(const colorScheme of ['light','dark']){
    await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
+   await expect.poll(()=>pickerGeometry(app,page).then(({pill,host})=>Math.ceil(pill.width)===host.width)).toBe(true);
    if(process.env.APPARENT_T3_PROOF){await fs.mkdir(process.env.APPARENT_T3_PROOF,{recursive:true});await page.screenshot({path:path.join(process.env.APPARENT_T3_PROOF,`completed-${width}-${colorScheme}.png`)});}
+   const collapsed=await pickerGeometry(app,page);
+   await trigger.click();await expect(trigger).toHaveAttribute('aria-expanded','true');
+   await expect.poll(()=>pickerGeometry(app,page)).toEqual(collapsed);
+   await page.keyboard.press('Escape');await expect(trigger).toHaveAttribute('aria-expanded','false');
    await copy.focus();await page.keyboard.press('Enter');await expect(confirm).toBeVisible();await expect(trigger).toBeDisabled();
    await assert.rejects(page.evaluate(()=>window.apparentPill.destinationAction('sharing','choose','new')));
    assert.equal(f.calls.length,0);assert.equal(sent.filter(x=>x.action==='copy-public-link').length,0);
@@ -69,14 +84,19 @@ test('picker uses friendly computer names and keeps the shorter waiting state ac
  await send(frame);const heartbeat=setInterval(()=>void send(frame).catch(()=>{}),500);t.after(()=>clearInterval(heartbeat));if(next)page=await next;
  const trigger=page.getByRole('combobox');await expect(trigger).toBeEnabled();
  const proof=async name=>{await page.evaluate(()=>document.fonts.ready);await expect.poll(()=>page.evaluate(()=>{const r=document.querySelector('main').getBoundingClientRect();return innerWidth===Math.ceil(r.width)&&innerHeight===Math.max(58,Math.ceil(r.height));})).toBe(true);if(process.env.APPARENT_T3_PROOF)await page.screenshot({path:path.join(process.env.APPARENT_T3_PROOF,name+'.png')});};
- await trigger.click();await proof('friendly-selecting');await page.getByRole('button',{name:'More destinations',exact:true}).click();await expect(page.getByRole('option').last()).toContainText('Chosen threadApparent · Clanker');assert.equal(a.calls.length+b.calls.length,0);await expect(trigger).toBeFocused();await page.keyboard.press('Escape');await trigger.click();await page.getByRole('option').last().click();await expect(page.locator('.destination-receipt')).toContainText('Preparing recording');await expect(trigger).toContainText('Apparent · Clanker');
+ await trigger.click();await proof('friendly-selecting');await page.getByRole('button',{name:'More destinations',exact:true}).click();await expect(page.getByRole('option').last()).toContainText('Chosen threadClanker · Apparent');assert.equal(a.calls.length+b.calls.length,0);await expect(trigger).toBeFocused();await page.keyboard.press('Escape');await trigger.click();await page.getByRole('option').last().click();await expect(page.locator('.destination-receipt')).toContainText('Preparing recording');await expect(trigger).toContainText('Clanker · Apparent');
  for(const theme of ['light','dark'])for(const width of [1200,320]){await app.evaluate(({screen},width)=>{screen.__pickerDisplay??=screen.getDisplayMatching.bind(screen);screen.getDisplayMatching=b=>({...screen.__pickerDisplay(b),workArea:{x:0,y:0,width,height:800}});},width);++frame.view.revision;await send(frame);await page.evaluate(revision=>window.apparentPill.layout(revision),frame.view.revision);await page.emulateMedia({colorScheme:theme});await proof('friendly-waiting-'+theme+'-'+width);}
  await page.getByRole('button',{name:'Cancel send',exact:true}).focus();await page.keyboard.press('Enter');await expect(trigger).toBeEnabled();assert.equal(a.calls.length,0);assert.equal(b.calls.length,0);
  for(const theme of ['light','dark'])for(const width of [1200,320]){
   await app.evaluate(({screen},width)=>{screen.__pickerDisplay??=screen.getDisplayMatching.bind(screen);screen.getDisplayMatching=b=>({...screen.__pickerDisplay(b),workArea:{x:0,y:0,width,height:800}});},width);
-  ++frame.view.revision;await send(frame);await page.evaluate(revision=>window.apparentPill.layout(revision),frame.view.revision);await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});await trigger.click();await expect(trigger).toHaveAttribute('aria-expanded','true');await expect(page.getByRole('option')).toHaveCount(3);
-  await expect(page.getByRole('option').last()).toContainText('Apparent · Clanker');await expect(page.locator('main')).not.toContainText('127.0.0.1');await proof('friendly-expanded-'+theme+'-'+width);
-  await page.keyboard.press('Escape');await expect(trigger).toHaveAttribute('aria-expanded','false');await proof('friendly-collapsed-'+theme+'-'+width);
+  ++frame.view.revision;await send(frame);await page.evaluate(revision=>window.apparentPill.layout(revision),frame.view.revision);await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});
+  await proof('friendly-collapsed-'+theme+'-'+width);
+  const collapsed=await pickerGeometry(app,page);
+  await trigger.click();await expect(trigger).toHaveAttribute('aria-expanded','true');await expect(page.getByRole('option')).toHaveCount(3);
+  await expect(page.getByRole('option').last()).toContainText('Clanker · Apparent');await expect(page.locator('main')).not.toContainText('127.0.0.1');await proof('friendly-expanded-'+theme+'-'+width);
+  assert.deepEqual(await pickerGeometry(app,page),collapsed);
+  await page.keyboard.press('Escape');await expect(trigger).toHaveAttribute('aria-expanded','false');await proof('friendly-reclosed-'+theme+'-'+width);
+  assert.deepEqual(await pickerGeometry(app,page),collapsed);
  }
  await trigger.focus();await page.keyboard.press('ArrowDown');await page.keyboard.press('ArrowDown');await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');await expect(page.locator('.destination-receipt')).toContainText('Preparing recording');await send({type:'handoff-ready',capture:'names',text:'Synthetic name routing check'});
  await expect.poll(()=>b.calls.length).toBe(1);assert.equal(a.calls.length,0);
