@@ -124,11 +124,7 @@ struct CommandFailure {
     process: Process,
     exit_code: Option<i32>,
     signal: Option<i32>,
-    http_status: Option<u16>,
-    rate_limit_remaining: Option<u32>,
-    rate_limit_limit: Option<u32>,
-    rate_limit_reset_after_seconds: Option<u32>,
-    retry_after_seconds: Option<u32>,
+    http: Http,
     source: anyhow::Error,
 }
 impl fmt::Display for CommandFailure {
@@ -137,19 +133,19 @@ impl fmt::Display for CommandFailure {
 impl Error for CommandFailure {
     fn source(&self) -> Option<&(dyn Error + 'static)> { Some(self.source.as_ref()) }
 }
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub(crate) struct Http {
+    pub transfer_ms: Option<u32>,
+    pub downloaded_bytes: Option<u32>,
     pub status: Option<u16>,
     pub rate_limit_remaining: Option<u32>,
     pub rate_limit_limit: Option<u32>,
     pub rate_limit_reset_after_seconds: Option<u32>,
     pub retry_after_seconds: Option<u32>,
 }
-pub(crate) fn command_failure(process: Process, status: ExitStatus, http: Http, source: anyhow::Error) -> anyhow::Error {
-    anyhow::Error::new(CommandFailure {process, exit_code: status.code(), signal: status.signal(),
-        http_status: http.status.filter(|code| (100..=599).contains(code)),
-        rate_limit_remaining: http.rate_limit_remaining, rate_limit_limit: http.rate_limit_limit,
-        rate_limit_reset_after_seconds: http.rate_limit_reset_after_seconds, retry_after_seconds: http.retry_after_seconds, source})
+pub(crate) fn command_failure(process: Process, status: ExitStatus, mut http: Http, source: anyhow::Error) -> anyhow::Error {
+    http.status = http.status.filter(|code| (100..=599).contains(code));
+    anyhow::Error::new(CommandFailure {process, exit_code: status.code(), signal: status.signal(), http, source})
 }
 
 #[derive(Clone, Debug, Default, serde::Serialize)]
@@ -231,6 +227,8 @@ pub(super) struct Diagnostics {
     attempt: Attempt,
     target: Option<Target>,
     release_discovery: Option<ReleaseDiscovery>,
+    transfer_ms: Option<u32>,
+    downloaded_bytes: Option<u32>,
     process: Option<Process>,
     exit_code: Option<i32>,
     signal: Option<i32>,
@@ -250,7 +248,7 @@ struct Frame { stage: Stage, file: Option<String>, line: u32 }
 impl Diagnostics {
     pub(super) fn from_error(error: &anyhow::Error, trigger: Trigger) -> Self {
         let mut value = Self {trigger, stages: vec![], attempt: Attempt::default(), target: None, release_discovery: None, process: None,
-            exit_code: None, signal: None, http_status: None, rate_limit_remaining: None, rate_limit_limit: None, rate_limit_reset_after_seconds: None, retry_after_seconds: None, io_kind: None, os_error_code: None,
+            exit_code: None, signal: None, transfer_ms: None, downloaded_bytes: None, http_status: None, rate_limit_remaining: None, rate_limit_limit: None, rate_limit_reset_after_seconds: None, retry_after_seconds: None, io_kind: None, os_error_code: None,
             json_error_kind: None, sparkle_domain: None, sparkle_code: None};
         for cause in error.chain().take(64) {
             if let Some(boundary) = cause.downcast_ref::<Boundary>() {
@@ -264,11 +262,13 @@ impl Diagnostics {
                 value.process = Some(failure.process);
                 value.exit_code = failure.exit_code;
                 value.signal = failure.signal;
-                value.http_status = failure.http_status;
-                value.rate_limit_remaining = failure.rate_limit_remaining;
-                value.rate_limit_limit = failure.rate_limit_limit;
-                value.rate_limit_reset_after_seconds = failure.rate_limit_reset_after_seconds;
-                value.retry_after_seconds = failure.retry_after_seconds;
+                value.http_status = failure.http.status;
+                value.transfer_ms = failure.http.transfer_ms;
+                value.downloaded_bytes = failure.http.downloaded_bytes;
+                value.rate_limit_remaining = failure.http.rate_limit_remaining;
+                value.rate_limit_limit = failure.http.rate_limit_limit;
+                value.rate_limit_reset_after_seconds = failure.http.rate_limit_reset_after_seconds;
+                value.retry_after_seconds = failure.http.retry_after_seconds;
             }
             if let Some(error) = cause.downcast_ref::<std::io::Error>() {
                 use std::io::ErrorKind;

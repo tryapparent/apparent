@@ -227,7 +227,7 @@ impl Report {
                     Failure::ElectronChildGone => "electron-child",
                     _ => "rust",
                 },
-                "diagnostics_schema_version": 5,
+                "diagnostics_schema_version": 6,
                 "$os": std::env::consts::OS,
                 "architecture": std::env::consts::ARCH,
                 "operation": code,
