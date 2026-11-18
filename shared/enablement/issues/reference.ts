@@ -10,6 +10,8 @@ export function acceptedMergeIssue(commit: string): Issue | undefined {
     ["6c64c838fab1b70e05da112ffc25336e5c283ab1", 575],
     ["18c72f8302d54bab24d1729fb75796329a2a0a81", 171],
     ["f52fab25ee734cb60262387d0c74e8cdfba97d6a", 530],
+    ["f900c3f4677cca561f1336d4cd4b64184032958e", 837],
+    ["91fe2c80dd96cea8bb3285d2c6f1d1b4652bd76b", 1240],
   ]).get(commit);
   return number === undefined ? undefined : { repository, number };
 }

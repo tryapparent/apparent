@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { accountId, databaseId, bucketName, workerName, deploymentConfig, validateProfile, sameBindings, singleVersion, verifyActivationHistory, strictUpload } from '../scripts/profile.ts'
+import { accountId, databaseId, bucketName, workerName, deploymentConfig, validateProfile, sameBindings, singleVersion, requiresActivation, verifyActivationHistory, strictUpload } from '../scripts/profile.ts'
 import type { Settings } from '../scripts/profile.ts'
 
 function profile(): Settings {
@@ -43,6 +43,10 @@ test('unexpected resources, origins, secret profiles and paid/log settings fail 
     (p: Settings) => { p.logpush = true }, (p: Settings) => { p.observability = { enabled: true } },
     (p: Settings) => { p.limits = { cpu_ms: 30000 } },
   ]) { const p = profile(); mutate(p); assert.throws(() => validateProfile(p)) }
+})
+test('an identical tested candidate is already active and needs no second activation', () => {
+  assert.equal(requiresActivation('previous', 'candidate'), true)
+  assert.equal(requiresActivation('candidate', 'candidate'), false)
 })
 test('split or missing active versions cannot be replaced automatically', () => {
   assert.equal(singleVersion({ versions: [{ version_id: 'old', percentage: 100 }] }), 'old')
