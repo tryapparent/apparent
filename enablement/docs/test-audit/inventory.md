@@ -194,7 +194,7 @@
 | Desktop | capture/desktop/ui/frontend/tests/settings/labs.smoke.ts | source candidate | 130 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/settings/shared-shell.smoke.ts | source candidate | 77 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/settings/t3.smoke.ts | source candidate | 106 | pending |
-| Desktop | capture/desktop/ui/frontend/tests/settings/update-policy.test.ts | source candidate | 34 | pending |
+| Desktop | composition/settings/enablement/update-policy.test.ts | source candidate | 34 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/storage-smoke.cjs | source candidate | 199 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/storage/readiness.smoke.ts | source candidate | 166 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/storage/visibility.test.ts | source candidate | 321 | pending |

@@ -5,6 +5,10 @@ import {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
+import { About, type AboutBridge } from "./about";
+import availableFrog from "../../../capture/desktop/assets/settings/frog-jump.png";
+import currentFrog from "../../../capture/desktop/assets/settings/frog-lounge.png";
+import failedFrog from "../../../capture/desktop/assets/settings/frog-puzzled.png";
 import { General } from "./general";
 import "./base.css";
 import "./settings.css";
@@ -67,6 +71,18 @@ declare global {
     apparentSettingsRoute?: (callback: (pane: string) => void) => () => void;
   }
 }
+
+declare global {
+  interface Window {
+    apparentAbout: AboutBridge;
+  }
+}
+
+const aboutArtwork = {
+  available: availableFrog,
+  current: currentFrog,
+  failed: failedFrog,
+};
 
 function Settings() {
   const [current, setCurrent] = useState(
@@ -176,6 +192,8 @@ function Settings() {
         {error && <p role="alert">{error}</p>}
         {current === "General" ? (
           <General />
+        ) : current === "About" ? (
+          <About bridge={window.apparentAbout} artwork={aboutArtwork} />
         ) : (
           <apparent-settings-pane pane={current} />
         )}
