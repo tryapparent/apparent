@@ -50,3 +50,91 @@ pub(crate) fn apply_quit_login_preference(on: bool) -> anyhow::Result<()> {
     }
     Ok(())
 }
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateCheck {
+    pub checking: bool,
+    pub result: Option<UpdateResult>,
+    #[cfg(target_os = "linux")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) progress: Option<crate::capture::desktop::linux::update::UpdateProgress>,
+    #[cfg(target_os = "linux")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) failure: Option<UpdateFailure>,
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UpdateFailure {
+    Busy,
+    RateLimited,
+    Download,
+    Verification,
+    Installation,
+    Restart,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UpdateResult {
+    Available,
+    Current,
+    Failed,
+}
+
+impl UpdateResult {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Available => "Update available",
+            Self::Current => "No update available",
+            Self::Failed => "Update check failed",
+        }
+    }
+}
+
+impl UpdateCheck {
+    #[cfg(target_os = "linux")]
+    pub(super) fn finish(&mut self, result: Result<&'static str, (String, Option<UpdateFailure>)>) {
+        use crate::capture::desktop::linux::update::UpdateProgress;
+        self.checking = false;
+        let progress = self.progress.take();
+        self.result = Some(match result {
+            Ok("installed; restart Apparent to use it") | Ok("already installed; restart Apparent to use it") =>
+                UpdateResult::Available,
+            Ok("up to date") => UpdateResult::Current,
+            Ok(other) => {
+                crate::capture::engine::runtime::apparent_log(format!("Unexpected update check result: {other}"));
+                use crate::capture::desktop::workflow::error_reporting::{self, updates::{Stage, Trigger}};
+                let error = error_reporting::updates::failure(Stage::UnexpectedResult, anyhow::anyhow!("unexpected updater response"));
+                error_reporting::report_update(&error, Trigger::User);
+                UpdateResult::Failed
+            }
+            Err((error, failure)) => {
+                crate::capture::engine::runtime::apparent_log(format!("Could not check for updates: {error}"));
+                self.failure = failure.or(match progress {
+                    Some(UpdateProgress::Downloading { .. }) => Some(UpdateFailure::Download),
+                    Some(UpdateProgress::Verifying) => Some(UpdateFailure::Verification),
+                    Some(UpdateProgress::Installing) => Some(UpdateFailure::Installation),
+                    None => None,
+                });
+                UpdateResult::Failed
+            }
+        });
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn update_failure(error: &anyhow::Error) -> Option<UpdateFailure> {
+    use crate::capture::desktop::workflow::error_reporting::updates;
+    if updates::is_lock_contention(error) {
+        Some(UpdateFailure::Busy)
+    } else if updates::is_rate_limited(error) {
+        Some(UpdateFailure::RateLimited)
+    } else {
+        None
+    }
+}

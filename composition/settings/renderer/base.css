@@ -250,52 +250,6 @@
 .settings-version [role="status"] {
   font-size: 13px;
 }
-.settings-updates {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 112px;
-  margin-bottom: 18px;
-}
-.settings-updates[data-idle] {
-  min-height: 36px;
-}
-.settings-updates[data-idle] .settings-actions {
-  margin-top: 0;
-}
-.settings-update-text {
-  flex: 1;
-  min-width: 0;
-}
-.settings-result {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.settings-result > svg {
-  width: 26px;
-  height: 26px;
-  flex: none;
-}
-.settings-update-text > p {
-  margin-top: 5px;
-}
-.settings-frog {
-  width: 140px;
-  height: 105px;
-  flex: none;
-  object-fit: contain;
-}
-.settings-channel {
-  margin-bottom: 18px;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.settings-channel-hint {
-  margin-bottom: 24px;
-}
 .settings-support {
   margin-bottom: 18px;
 }
@@ -349,9 +303,6 @@
   }
   .settings-frog {
     width: 98px;
-  }
-  .settings-updates {
-    gap: 4px;
   }
 }
 .settings-agents button {

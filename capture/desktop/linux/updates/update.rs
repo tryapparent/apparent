@@ -7,7 +7,8 @@ use std::os::fd::AsRawFd;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{Mutex, TryLockError};
+use super::get;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -105,22 +106,44 @@ pub fn status() -> Result<serde_json::Value> {
 }
 
 pub fn check_cli() -> Result<&'static str> {
-    let result = check_cli_inner();
+    check_with_progress(&|_| {})
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
+#[serde(tag = "phase", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub(crate) enum UpdateProgress {
+    Downloading { downloaded_bytes: u64, total_bytes: u64 },
+    Verifying,
+    Installing,
+}
+
+pub(crate) fn check_with_progress(progress: &dyn Fn(UpdateProgress)) -> Result<&'static str> {
+    let result = check_cli_inner(progress);
     if let Err(error) = &result { error_reporting::report_update(error, Trigger::User); }
     result
 }
 
-fn check_cli_inner() -> Result<&'static str> {
+fn check_cli_inner(progress: &dyn Fn(UpdateProgress)) -> Result<&'static str> {
     target().stage(Stage::Target)?
         .context("Updates require an AppImage owned by you under your home directory").stage(Stage::Target)?;
-    let _guard = CHECK.lock().map_err(|_| anyhow::anyhow!("update check lock poisoned")).stage(Stage::Lock)?;
-    Ok(if check()? {
+    let _guard = CHECK.try_lock().map_err(|error| match error {
+        TryLockError::WouldBlock => updates::lock_contention(std::io::Error::from(std::io::ErrorKind::WouldBlock)),
+        TryLockError::Poisoned(_) => anyhow::anyhow!("update check lock poisoned"),
+    }).stage(Stage::Lock)?;
+    Ok(if check(progress)? {
         "installed; restart Apparent to use it"
-    } else if status().stage(Stage::Config)?["pendingRestart"] == true {
-        "already installed; restart Apparent to use it"
     } else {
-        "up to date"
+        let status = status().stage(Stage::Config)?;
+        if restart_matches_channel(&status) {
+            "already installed; restart Apparent to use it"
+        } else {
+            "up to date"
+        }
     })
+}
+
+fn restart_matches_channel(status: &serde_json::Value) -> bool {
+    status["pendingRestart"] == true && status["installed"]["channel"] == status["channel"]
 }
 
 /// Start the installed AppImage after this process exits, not the old running inode.
@@ -130,7 +153,7 @@ pub fn relaunch_staged() -> Result<()> {
     let backup = image.with_file_name(format!(".{name}.previous"));
     // Own the transaction from validation through post-exit readiness/recovery.
     let mut command = relaunch_command(&image, &backup, std::process::id())?;
-    ensure_update!(status()?["pendingRestart"] == true, "no installed update is waiting for a restart");
+    ensure_update!(restart_matches_channel(&status()?), "no installed update for the selected channel is waiting for a restart");
     ensure_update!(backup.is_file(), "previous AppImage is unavailable for recovery");
     ensure_update!(fs::metadata(&backup)?.permissions().mode() & 0o111 != 0, "previous AppImage is not executable");
     // A successful shell spawn proves nothing about the image it will execute later.
@@ -280,6 +303,8 @@ struct Release {
 struct ReleaseAsset {
     name: String,
     browser_download_url: String,
+    #[serde(default)]
+    size: u64,
 }
 
 struct Candidate {
@@ -287,6 +312,7 @@ struct Candidate {
     channel: &'static str,
     url: String,
     sha256: String,
+    size: u64,
 }
 
 fn arch() -> Option<&'static str> {
@@ -313,7 +339,7 @@ fn main_candidate(release: &Release, arch: &str, checksum: &str) -> Result<Candi
     let (hash, name) = checksum.trim().split_once(char::is_whitespace).context("invalid main preview checksum")?;
     ensure_update!(name.trim() == image.name, "checksum refers to another file");
     validate_hash(hash)?;
-    Ok(Candidate { id: sha.to_owned(), channel: "main", url: image.browser_download_url.clone(), sha256: hash.to_owned() })
+    Ok(Candidate { id: sha.to_owned(), channel: "main", url: image.browser_download_url.clone(), sha256: hash.to_owned(), size: image.size })
 }
 
 fn main_releases(releases: Vec<Release>, arch: &str) -> Vec<Release> {
@@ -342,18 +368,10 @@ fn candidate_from_release(release: &Release, arch: &str, fetch: &impl Fn(&str) -
     main_candidate(&release, arch, std::str::from_utf8(&text).stage(Stage::ChecksumParse)?).stage(Stage::ChecksumParse)
 }
 
-fn first_usable_main(releases: Vec<Release>, arch: &str, fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<Option<Candidate>> {
-    let mut last_error = None;
-    for release in main_releases(releases, arch) {
-        match candidate_from_release(&release, arch, fetch) {
-            Ok(candidate) => return Ok(Some(candidate)),
-            Err(error) => last_error = Some(error),
-        }
-    }
-    match last_error {
-        Some(error) => Err(error),
-        None => Ok(None),
-    }
+fn newest_main_candidate(releases: Vec<Release>, arch: &str, fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<Option<Candidate>> {
+    main_releases(releases, arch).first()
+        .map(|release| candidate_from_release(release, arch, fetch))
+        .transpose()
 }
 
 fn latest_main_candidate(arch: &str) -> Result<Candidate> {
@@ -363,57 +381,13 @@ fn latest_main_candidate(arch: &str) -> Result<Candidate> {
 fn latest_main_candidate_with(arch: &str, fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<Candidate> {
     // Release lists include Mac previews, old Scrawl assets and stable releases.
     // GitHub pages by creation date, not publication date: inspect all pages before choosing.
-    first_usable_main(release_history(fetch)?, arch, fetch)?
+    newest_main_candidate(release_history(fetch)?, arch, fetch)?
         .context("no published Linux main preview yet")
 }
 
 fn validate_hash(hash: &str) -> Result<()> {
     ensure_update!(hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()), "invalid SHA-256");
     Ok(())
-}
-
-const CURL_HTTP_STATUS: &str = "%{stderr}\nAPPARENT_RATE_REMAINING:%header{x-ratelimit-remaining}\nAPPARENT_RATE_LIMIT:%header{x-ratelimit-limit}\nAPPARENT_RATE_RESET:%header{x-ratelimit-reset}\nAPPARENT_RETRY_AFTER:%header{retry-after}\nAPPARENT_HTTP_STATUS:%{http_code}\n";
-
-fn get(url: &str, out: Option<&Path>) -> Result<Vec<u8>> {
-    ensure_update!(url.starts_with("https://"), "update URL must use HTTPS");
-    let mut cmd = Command::new("curl");
-    cmd.args(["--fail", "--silent", "--show-error", "--location", "--proto", "=https", "--proto-redir", "=https", "--connect-timeout", "10", "--max-time", "300", "--user-agent", "Apparent", "--url", url]);
-    if let Some(path) = out {
-        cmd.args(["--max-filesize", "1073741824"]);
-        cmd.arg("--output").arg(path);
-    } else {
-        // A page of 100 releases includes component assets and can exceed 256 KiB.
-        // Keep metadata bounded while avoiding dozens of anonymous API requests.
-        cmd.args(["--max-filesize", "4194304"]);
-    }
-    cmd.args(["--write-out", CURL_HTTP_STATUS]);
-    download_output(cmd.output().context("curl is required for updates")?)
-}
-
-fn download_output(result: std::process::Output) -> Result<Vec<u8>> {
-    if !result.status.success() {
-        let stderr = String::from_utf8_lossy(&result.stderr);
-        let http_status = stderr.lines().last().and_then(|line| line.strip_prefix("APPARENT_HTTP_STATUS:"))
-            .filter(|value| value.len() == 3 && value.bytes().all(|b| b.is_ascii_digit()))
-            .and_then(|value| value.parse::<u16>().ok());
-        let numeric = |prefix: &str| stderr.lines().rev().find_map(|line| line.strip_prefix(prefix))
-            .filter(|value| !value.is_empty() && value.len() <= 10 && value.bytes().all(|b| b.is_ascii_digit()))
-            .and_then(|value| value.parse::<u32>().ok());
-        let http = updates::Http {status: http_status, rate_limit_remaining: numeric("APPARENT_RATE_REMAINING:"),
-            rate_limit_limit: numeric("APPARENT_RATE_LIMIT:"),
-            // Publish only a bounded relative duration, never the server timestamp.
-            rate_limit_reset_after_seconds: numeric("APPARENT_RATE_RESET:").and_then(|reset| {
-                reset_after_seconds(reset, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_secs())
-            }),
-            retry_after_seconds: numeric("APPARENT_RETRY_AFTER:")};
-        return Err(updates::command_failure(updates::Process::Curl, result.status, http,
-            anyhow::anyhow!("download failed: {stderr}")));
-    }
-    Ok(result.stdout)
-}
-
-fn reset_after_seconds(reset: u32, now: u64) -> Option<u32> {
-    u64::from(reset).checked_sub(now).filter(|seconds| *seconds <= 86_400).map(|seconds| seconds as u32)
 }
 
 fn stable_candidate(arch: &str) -> Result<Option<Candidate>> {
@@ -470,7 +444,7 @@ fn stable_candidate_with(arch: &str, fetch: &impl Fn(&str) -> Result<Vec<u8>>) -
     let (hash, file) = text.trim().split_once(char::is_whitespace).context("invalid release checksum").stage(Stage::ChecksumParse)?;
     ensure_update!(file.trim() == name, "checksum refers to another file");
     validate_hash(hash)?;
-    Ok(Some(Candidate { id: release.tag_name, channel: "stable", url: image.browser_download_url.clone(), sha256: hash.to_owned() }))
+    Ok(Some(Candidate { id: release.tag_name, channel: "stable", url: image.browser_download_url.clone(), sha256: hash.to_owned(), size: image.size }))
 }
 
 fn installed_id(image: &Path) -> Option<(String, String)> {
@@ -629,7 +603,7 @@ fn exchange(stage: &Path, image: &Path) -> Result<()> {
     Ok(())
 }
 
-fn install(candidate: &Candidate, image: &Path) -> Result<()> {
+fn install(candidate: &Candidate, image: &Path, progress: &dyn Fn(UpdateProgress)) -> Result<()> {
     let parent = image.parent().context("AppImage has no parent")?;
     let name = image.file_name().context("AppImage has no name")?.to_string_lossy();
     let stage = parent.join(format!(".{name}.download-{}", std::process::id()));
@@ -641,8 +615,10 @@ fn install(candidate: &Candidate, image: &Path) -> Result<()> {
     let _reserved = OpenOptions::new().write(true).create_new(true).open(&stage).stage(Stage::ReserveStage)?;
     let mut swapped = false;
     let result = (|| -> Result<()> {
-        get(&candidate.url, Some(&stage)).stage(Stage::AssetDownload)?;
+        get(&candidate.url, Some((&stage, candidate.size, progress))).stage(Stage::AssetDownload)?;
+        progress(UpdateProgress::Verifying);
         verify_download(&stage, &candidate.sha256).stage(Stage::ChecksumVerify)?;
+        progress(UpdateProgress::Installing);
         // Fail closed if the launcher changed while the download was in flight.
         let current = fs::symlink_metadata(image).stage(Stage::InstallTarget)?;
         ensure_update!(current.is_file() && !current.file_type().is_symlink() && current.uid() == unsafe { libc::geteuid() }, "installed AppImage changed while downloading");
@@ -707,12 +683,12 @@ fn transaction_lock(image: &Path) -> Result<File> {
     Ok(lock)
 }
 
-fn check() -> Result<bool> {
+fn check(progress: &dyn Fn(UpdateProgress)) -> Result<bool> {
     let mut attempt = updates::Attempt::default();
-    check_attempt(&mut attempt).map_err(|error| updates::attempted(error, attempt))
+    check_attempt(&mut attempt, progress).map_err(|error| updates::attempted(error, attempt))
 }
 
-fn check_attempt(attempt: &mut updates::Attempt) -> Result<bool> {
+fn check_attempt(attempt: &mut updates::Attempt, progress: &dyn Fn(UpdateProgress)) -> Result<bool> {
     let Some(image) = target().stage(Stage::Target)? else { return Ok(false) };
     // CLI processes and the GUI's hourly/manual worker share this lock. Acquire
     // before reading identity or discovering a release; hold through the swap.
@@ -732,14 +708,15 @@ fn check_attempt(attempt: &mut updates::Attempt) -> Result<bool> {
     let failed = image.with_file_name(format!(".{name}.failed-update.json"));
     ensure_update!(!previously_failed(&failed, &candidate), "this update failed to start previously; waiting for a newer release");
     if !needs_channel_release(&candidate, installed).stage(Stage::Policy)? { return Ok(false) }
-    install(&candidate, &image).stage(Stage::Install)?;
+    progress(UpdateProgress::Downloading { downloaded_bytes: 0, total_bytes: candidate.size });
+    install(&candidate, &image, progress).stage(Stage::Install)?;
     super::super::integration::shell::notify("Apparent updated", "The new version will start the next time you open Apparent. Your previous AppImage is kept beside it.");
     Ok(true)
 }
 
 pub fn check_now() {
     if let Ok(_guard) = CHECK.try_lock()
-        && let Err(error) = check()
+        && let Err(error) = check(&|_| {})
     {
         crate::capture::engine::runtime::apparent_log(format!("Linux update: {error:#}"));
         error_reporting::report_update(&error, Trigger::Automatic);
@@ -757,6 +734,7 @@ pub fn start() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::{CURL_HTTP_STATUS, download_output, reset_after_seconds};
 
     #[test]
     fn target_location_categories_use_components_and_never_expose_private_suffixes() {
@@ -861,6 +839,7 @@ mod tests {
             let output = std::cell::RefCell::new(Some(output));
             let error = release_history(&|_| download_output(output.borrow_mut().take().unwrap())).err().unwrap()
                 .context(format!("private-local-context {endpoint}/?token=private-token-canary"));
+            assert_eq!(updates::is_rate_limited(&error), matches!(status, 403 | 429));
             if status == 503 { assert!(format!("{error:#}").contains("private-header-canary"), "redaction canary must reach the raw error"); }
             let installed = ("main".into(), "a".repeat(40));
             let mut attempt = updates::Attempt::default();
@@ -1031,7 +1010,7 @@ mod tests {
         let image = "Apparent-0.3.13-linux-x86_64.AppImage";
         let release = |tag: String, published: &str| Release {
             assets: [image.to_owned(), format!("{image}.sha256")].into_iter().map(|name| ReleaseAsset {
-                browser_download_url: format!("https://github.com/{REPO}/releases/download/{tag}/{name}"), name,
+                browser_download_url: format!("https://github.com/{REPO}/releases/download/{tag}/{name}"), name, size: 0,
             }).collect(),
             tag_name: tag, prerelease: true, draft: false, published_at: Some(published.into()),
         };
@@ -1039,7 +1018,7 @@ mod tests {
             release(format!("linux-main-{}", "a".repeat(40)), "2099-01-01T00:00:00Z"),
             release(format!("linux-main-v2-{}", "b".repeat(40)), "2026-11-04T00:00:00Z"),
         ];
-        let candidate = first_usable_main(releases, "x86_64", &|_| {
+        let candidate = newest_main_candidate(releases, "x86_64", &|_| {
             Ok(format!("{}  {image}", "c".repeat(64)).into_bytes())
         }).unwrap().unwrap();
         assert_eq!(candidate.id, "b".repeat(40));
@@ -1052,16 +1031,16 @@ mod tests {
         let release = || Release {
             tag_name: tag.clone(), prerelease: true, draft: false, published_at: Some("2026-11-01T01:00:00Z".into()),
             assets: [image.to_owned(), format!("{image}.sha256")].into_iter().map(|name| ReleaseAsset {
-                browser_download_url: format!("https://github.com/{REPO}/releases/download/{tag}/{name}"), name,
+                browser_download_url: format!("https://github.com/{REPO}/releases/download/{tag}/{name}"), name, size: 0,
             }).collect(),
         };
-        assert!(first_usable_main(vec![release()], "x86_64", &|_| panic!("foreign architecture must not fetch")).unwrap().is_none());
+        assert!(newest_main_candidate(vec![release()], "x86_64", &|_| panic!("foreign architecture must not fetch")).unwrap().is_none());
         let mut draft = release();
         draft.draft = true;
         let mut unpublished = release();
         unpublished.published_at = None;
-        assert!(first_usable_main(vec![draft, unpublished], "aarch64", &|_| panic!("private releases must not fetch")).unwrap().is_none());
-        let candidate = first_usable_main(vec![release()], "aarch64", &|_| Ok(format!("{}  {image}", "c".repeat(64)).into_bytes())).unwrap().unwrap();
+        assert!(newest_main_candidate(vec![draft, unpublished], "aarch64", &|_| panic!("private releases must not fetch")).unwrap().is_none());
+        let candidate = newest_main_candidate(vec![release()], "aarch64", &|_| Ok(format!("{}  {image}", "c".repeat(64)).into_bytes())).unwrap().unwrap();
         assert!(candidate.url.ends_with("-linux-aarch64.AppImage"));
     }
 
@@ -1143,7 +1122,7 @@ mod tests {
         let release = |tag: &str, date: &str, draft: bool, name: &str| Release {
             tag_name: tag.into(), prerelease: true, draft, published_at: Some(date.into()),
             assets: [name.to_owned(), format!("{name}.sha256")].into_iter().map(|name| ReleaseAsset {
-                browser_download_url: format!("https://example.org/{name}"), name,
+                browser_download_url: format!("https://example.org/{name}"), name, size: 0,
             }).collect(),
         };
         let apparent = "Apparent-0.3.13-linux-x86_64.AppImage";
@@ -1161,7 +1140,7 @@ mod tests {
     }
 
     #[test]
-    fn main_channel_falls_back_when_newest_preview_is_incomplete() {
+    fn main_channel_never_installs_an_older_release_when_the_target_checksum_fails() {
         let image = format!("Apparent-{}-linux-x86_64.AppImage", env!("CARGO_PKG_VERSION"));
         let release = |letter: &str, date: &str| {
             let tag = format!("linux-main-v2-{}", letter.repeat(40));
@@ -1169,7 +1148,7 @@ mod tests {
             Release {
                 tag_name: tag, prerelease: true, draft: false, published_at: Some(date.into()),
                 assets: [image.clone(), format!("{image}.sha256")].into_iter().map(|name| ReleaseAsset {
-                    browser_download_url: format!("{url}{name}"), name,
+                    browser_download_url: format!("{url}{name}"), name, size: 0,
                 }).collect(),
             }
         };
@@ -1177,14 +1156,11 @@ mod tests {
             release("a", "2026-10-28T01:00:00Z"),
             release("b", "2026-10-29T01:00:00Z"),
         ];
-        let candidate = first_usable_main(releases, "x86_64", &|url| {
-            if url.contains(&format!("linux-main-v2-{}", "b".repeat(40))) {
-                Ok(b"invalid checksum".to_vec())
-            } else {
-                Ok(format!("{}  {image}", "c".repeat(64)).into_bytes())
-            }
-        }).unwrap().unwrap();
-        assert_eq!(candidate.id, "a".repeat(40));
+        let result = newest_main_candidate(releases, "x86_64", &|url| {
+            assert!(url.contains(&format!("linux-main-v2-{}", "b".repeat(40))));
+            Ok(b"invalid checksum".to_vec())
+        });
+        assert!(result.is_err());
     }
 
     #[test]
@@ -1224,7 +1200,7 @@ mod tests {
             tag_name: format!("linux-main-v2-{}", "a".repeat(40)),
             prerelease: true, draft: false, published_at: Some("2026-10-28T01:00:00Z".into()),
             assets: [name.to_owned(), format!("{expected}.sha256")].iter().map(|name| ReleaseAsset {
-                name: name.clone(), browser_download_url: format!("{url}{name}"),
+                name: name.clone(), browser_download_url: format!("{url}{name}"), size: 0,
             }).collect(),
         };
         let checksum = format!("{}  {expected}", "b".repeat(64));
@@ -1415,8 +1391,8 @@ mod tests {
         assert_eq!(fs::read(&marker).unwrap(), b"recovered");
         assert_eq!(fs::read(&image).unwrap(), b"#!/bin/sh\nprintf recovered > \"$TEST_RECOVERY_MARKER\"\n");
         assert_eq!(installed_id(&image), Some(("stable".into(), "v1.0.0".into())), "rollback must restore the old version marker");
-        let bad = Candidate { id: "v99.0.0".into(), channel: "stable", url: String::new(), sha256: String::new() };
-        let next = Candidate { id: "v100.0.0".into(), channel: "stable", url: String::new(), sha256: String::new() };
+        let bad = Candidate { id: "v99.0.0".into(), channel: "stable", url: String::new(), sha256: String::new(), size: 0 };
+        let next = Candidate { id: "v100.0.0".into(), channel: "stable", url: String::new(), sha256: String::new(), size: 0 };
         assert!(previously_failed(&failed_sidecar, &bad), "the broken release must not be reinstalled on startup");
         assert!(!previously_failed(&failed_sidecar, &next), "a newer release must remain eligible");
         fs::remove_file(&marker).unwrap();
@@ -1501,7 +1477,7 @@ mod tests {
 
     #[test]
     fn stable_converges_even_from_a_newer_or_unmarked_build() {
-        let candidate = Candidate { id: "v0.3.13".into(), channel: "stable", url: String::new(), sha256: String::new() };
+        let candidate = Candidate { id: "v0.3.13".into(), channel: "stable", url: String::new(), sha256: String::new(), size: 0 };
         assert!(needs_channel_release(&candidate, Some(("stable".into(), "v0.3.14".into()))).unwrap());
         assert!(needs_channel_release(&candidate, None).unwrap());
         assert!(!needs_channel_release(&candidate, Some(("stable".into(), "v0.3.13".into()))).unwrap());

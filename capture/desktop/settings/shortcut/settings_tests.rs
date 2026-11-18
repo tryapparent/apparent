@@ -189,7 +189,7 @@ mod tests {
         assert_eq!(panel.on(Action::UpdateNow, &mut host), Effect::None);
         panel.finish_update_check(Ok("already installed; restart Apparent to use it"));
         assert_eq!(panel.on(serde_json::from_str("{\"action\":\"update-now\"}").unwrap(), &mut host), Effect::RelaunchUpdate);
-        panel.finish_update_check(Err("network failure".into()));
+        panel.finish_update_check(Err(("offline".into(), None)));
         assert_eq!(panel.on(Action::UpdateNow, &mut host), Effect::None);
     }
 
@@ -203,8 +203,8 @@ mod tests {
             (Ok("up to date"), "current"),
             (Ok("installed; restart Apparent to use it"), "available"),
             (Ok("already installed; restart Apparent to use it"), "available"),
-            (Err("feed unavailable: private diagnostic".into()), "failed"),
-            (Ok("unrecognized worker response"), "failed"),
+            (Err(("private diagnostic".into(), None)), "failed"),
+            (Ok("unknown response"), "failed"),
         ] {
             assert_eq!(panel.on(Action::CheckForUpdates, &mut host), Effect::CheckForUpdates);
             let progress = serde_json::to_value(panel.view(&host)).unwrap();

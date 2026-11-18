@@ -1,0 +1,105 @@
+.settings-updates {
+  max-width: 580px;
+  margin-bottom: 24px;
+}
+.settings-update-flow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.settings-updates[data-busy] .settings-update-flow {
+  min-height: 64px;
+  align-items: flex-start;
+}
+.settings-updates[data-busy] .settings-actions button {
+  opacity: 1;
+}
+.settings-updates[data-idle] .settings-actions {
+  margin-top: 0;
+}
+.settings-update-text {
+  flex: 1;
+  min-width: 0;
+}
+.settings-update-phase {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  column-gap: 12px;
+}
+.settings-update-percent {
+  font-size: var(--apparent-type-body);
+  font-variant-numeric: tabular-nums;
+}
+.settings-update-progress {
+  display: block;
+  appearance: none;
+  width: 100%;
+  height: 10px;
+  margin-top: 8px;
+  border: 1px solid currentColor;
+  padding: 1px;
+}
+.settings-update-progress::-webkit-progress-bar {
+  background: var(--color-background);
+}
+.settings-update-progress::-webkit-progress-value {
+  background: var(--color-primary);
+}
+.settings-update-progress:indeterminate::-webkit-progress-bar {
+  background: repeating-linear-gradient(
+    110deg,
+    var(--color-primary) 0 8px,
+    var(--color-background) 8px 16px
+  );
+}
+.settings-result {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.settings-result > svg {
+  width: 26px;
+  height: 26px;
+  flex: none;
+}
+.settings-update-text > p {
+  margin-top: 5px;
+}
+.settings-frog {
+  width: 140px;
+  height: 105px;
+  flex: none;
+  object-fit: contain;
+}
+.settings-channel {
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.settings-channel-group {
+  margin-bottom: 16px;
+}
+.settings-channel select {
+  transition: none;
+}
+.settings-channel select:disabled {
+  background: var(--color-background);
+  color: var(--color-foreground);
+}
+.settings-channel [data-slot="native-select-wrapper"]:has(select:disabled) {
+  opacity: 1;
+}
+.settings-channel
+  [data-slot="native-select-wrapper"]:has(select:disabled)
+  [data-slot="native-select-icon"] {
+  visibility: hidden;
+}
+@media (max-width: 700px) {
+  .settings-update-flow {
+    gap: 4px;
+  }
+}

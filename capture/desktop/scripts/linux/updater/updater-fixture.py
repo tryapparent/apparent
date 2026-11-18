@@ -32,7 +32,8 @@ def response(control, path, payload):
     prefix = f'/tryapparent/apparent/releases/download/{tag}/'
     release = {'tag_name': tag, 'draft': False, 'prerelease': main,
                'published_at': '2026-11-01T00:00:00Z',
-               'assets': [{'name': filename, 'browser_download_url': 'https://github.com' + prefix + filename}
+               'assets': [{'name': filename, 'browser_download_url': 'https://github.com' + prefix + filename,
+                           'size': len(payload) if filename == name else 0}
                           for filename in [name, name + '.sha256']]}
     if path == metadata_path(control):
         if mode == 'error':
