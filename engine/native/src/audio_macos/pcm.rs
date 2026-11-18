@@ -70,11 +70,11 @@ impl PcmReader {
             mix.setInputParameters(&NSArray::from_slice(&[base]));
             output.setAudioMix(Some(&mix));
             if !reader.canAddOutput(&output) {
-                return Err("decode_failed");
+                return Err("Apple PCM output unavailable");
             }
             reader.addOutput(&output);
             if !reader.startReading() {
-                return Err("decode_failed");
+                return Err("Apple PCM reader refused start");
             }
         }
         Ok(Self {
@@ -127,11 +127,11 @@ impl PcmReader {
                 || format.mFormatFlags & kAudioFormatFlagIsFloat == 0
                 || format.mFormatFlags & kAudioFormatFlagIsBigEndian != 0
             {
-                return Err("decode_failed");
+                return Err("Apple PCM output format mismatch");
             }
             let data = unsafe { buffer.data_buffer() }.ok_or("decode_failed")?;
             if unsafe { data.data_length() } != count as usize * 4 {
-                return Err("decode_failed");
+                return Err("Apple PCM output size mismatch");
             }
             let first = sample_time_at(unsafe { buffer.presentation_time_stamp() }, self.rate)?;
             let start = self.end.max(first.max(0) as u64);
@@ -143,7 +143,7 @@ impl PcmReader {
             let mut bytes = vec![0_u8; frames * 4];
             let destination = NonNull::new(bytes.as_mut_ptr().cast()).ok_or("decode_failed")?;
             if unsafe { data.copy_data_bytes(skip as usize * 4, bytes.len(), destination) } != 0 {
-                return Err("decode_failed");
+                return Err("Apple PCM copy failed");
             }
             let values = bytes
                 .chunks_exact(4)

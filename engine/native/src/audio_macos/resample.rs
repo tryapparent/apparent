@@ -46,7 +46,7 @@ impl Input {
                 || block.start < self.cursor
                 || block.start.checked_add(block.values.len() as u64).is_none()
             {
-                return Err("decode_failed");
+                return Err("Apple resampler input span is invalid");
             }
             if self.origin.is_none() {
                 self.origin = Some(block.start);
@@ -163,7 +163,7 @@ impl Resampler {
                 AudioConverterSetProperty(converter, key, 4, NonNull::from(&mut value).cast())
             } != 0
             {
-                return Err("decode_failed");
+                return Err("Apple resampler property refused");
             }
         }
         Ok(result)
@@ -198,7 +198,11 @@ impl Resampler {
                 || frames as usize > values.len()
                 || frames * 4 != output.mBuffers[0].mDataByteSize
             {
-                return Err("decode_failed");
+                eprintln!(
+                    "Apple resampler output status {status}, frames {frames}, bytes {}",
+                    output.mBuffers[0].mDataByteSize
+                );
+                return Err("Apple resampler returned invalid output");
             }
             if frames == 0 {
                 if self.input.ended {

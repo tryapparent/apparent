@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -10,8 +10,12 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
-import { decodeMovieAudio, probeMovie } from "@apparent/engine-sdk";
+import { basename, join } from "node:path";
+import {
+  decodeMovieAudio,
+  EngineAudioError,
+  probeMovie,
+} from "@apparent/engine-sdk";
 import { prepareMacFixtures } from "./mac-fixtures.ts";
 import { qualifyFloatAudio } from "./qualify-floats.ts";
 import { qualifyAudioClocks } from "./qualify-clocks.ts";
@@ -59,6 +63,34 @@ export async function qualifyAudio(
       assert.equal(bytes.length, result.sampleCount * 2);
       return { bytes, sampleCount: result.sampleCount };
     } catch (error) {
+      if (
+        process.platform === "darwin" &&
+        error instanceof EngineAudioError &&
+        error.code === "decode_failed"
+      ) {
+        const diagnosticDirectory = join(outputDirectory, "diagnostic");
+        mkdirSync(diagnosticDirectory, { mode: 0o700 });
+        const diagnostic = spawnSync(
+          executable,
+          [
+            "audio-v1",
+            movie,
+            diagnosticDirectory,
+            String(maxSamples),
+            streamIndexes.join(","),
+          ],
+          { encoding: "utf8", timeout: 15_000, maxBuffer: 8192 },
+        );
+        console.error(
+          JSON.stringify({
+            fixture: basename(movie),
+            streamIndexes,
+            status: diagnostic.status,
+            signal: diagnostic.signal,
+            stderr: diagnostic.stderr?.trim(),
+          }),
+        );
+      }
       const partial = join(outputDirectory, "audio.pcm");
       if (existsSync(partial))
         assert(

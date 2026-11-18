@@ -38,11 +38,11 @@ impl AacReader {
         };
         unsafe {
             if !reader.canAddOutput(&output) {
-                return Err("decode_failed");
+                return Err("Apple encoded output unavailable");
             }
             reader.addOutput(&output);
             if !reader.startReading() {
-                return Err("decode_failed");
+                return Err("Apple encoded reader refused start");
             }
         }
         Ok(Self {
@@ -90,12 +90,12 @@ impl AacReader {
             let cookie =
                 unsafe { CMAudioFormatDescriptionGetMagicCookie(&description, &mut cookie_size) };
             if cookie.is_null() || !(1..=8192).contains(&cookie_size) {
-                return Err("decode_failed");
+                return Err("Apple AAC cookie is invalid");
             }
             let cookie = unsafe { std::slice::from_raw_parts(cookie.cast::<u8>(), cookie_size) };
             if let Some((initial, initial_cookie)) = &self.description {
                 if initial != format || initial_cookie.as_slice() != cookie {
-                    return Err("decode_failed");
+                    return Err("Apple AAC format changed");
                 }
             } else {
                 self.description = Some((*format, cookie.to_vec()));
@@ -118,19 +118,19 @@ impl AacReader {
         let buffer = self.buffer.as_ref().ok_or("decode_failed")?;
         let length = unsafe { buffer.sample_size(self.packet_index) };
         if length == 0 || length > self.byte_length - self.byte_offset || length > 65_536 {
-            return Err("decode_failed");
+            return Err("Apple AAC packet size is invalid");
         }
         let block = unsafe { buffer.data_buffer() }.ok_or("decode_failed")?;
         let mut bytes = vec![0; length];
         let data = NonNull::new(bytes.as_mut_ptr().cast()).ok_or("decode_failed")?;
         if unsafe { block.copy_data_bytes(self.byte_offset, length, data) } != 0 {
-            return Err("decode_failed");
+            return Err("Apple AAC packet copy failed");
         }
         self.byte_offset += length;
         self.packet_index += 1;
         let clock = self.clock.pop_front().ok_or("decode_failed")?;
         if self.clock.is_empty() && self.byte_offset != self.byte_length {
-            return Err("decode_failed");
+            return Err("Apple AAC packet sizes do not span the data buffer");
         }
         Ok(Some(Encoded { clock, bytes }))
     }

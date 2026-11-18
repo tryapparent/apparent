@@ -58,7 +58,7 @@ impl Converter {
             )
         } != 0
         {
-            return Err("decode_failed");
+            return Err("Apple AAC converter rejected cookie");
         }
         let mut prime = kConverterPrimeMethod_None;
         if unsafe {
@@ -70,7 +70,7 @@ impl Converter {
             )
         } != 0
         {
-            return Err("decode_failed");
+            return Err("Apple AAC converter rejected priming");
         }
         Ok(converter)
     }
@@ -213,7 +213,11 @@ impl AacStream {
                 || count as usize > self.samples.len()
                 || output.mBuffers[0].mDataByteSize != count * 4
             {
-                return Err("decode_failed");
+                eprintln!(
+                    "Apple AAC output status {status}, frames {count}, bytes {}",
+                    output.mBuffers[0].mDataByteSize
+                );
+                return Err("Apple AAC converter returned invalid output");
             }
             if count > 0 {
                 self.offset = 0;
@@ -253,12 +257,12 @@ impl AacStream {
             let mut selected = Vec::new();
             while local < packet.decoded_frames {
                 if self.offset == self.frames && !self.refill()? {
-                    return Err("decode_failed");
+                    return Err("Apple AAC converter ended before a complete packet");
                 }
                 let count = (self.frames - self.offset).min(packet.decoded_frames - local);
                 let samples = &self.samples[self.offset..self.offset + count];
                 if samples.iter().any(|sample| !sample.is_finite()) {
-                    return Err("decode_failed");
+                    return Err("Apple AAC output was nonfinite");
                 }
                 if let Some(span) = &span {
                     let start = local.max(span.first);
