@@ -2,8 +2,6 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-}
-.destination-stack {
   --picker-surface: var(--apparent-background);
   --picker-tray: var(--apparent-muted);
   --picker-ink: var(--apparent-foreground);
@@ -97,7 +95,7 @@
   outline-width: 2px;
   outline-offset: -4px;
 }
-.destination-stack[data-open="true"] .destination-assembly {
+.destination-assembly:has(.destination-trigger[role="combobox"]) {
   position: relative;
   isolation: isolate;
   width: 342px;
@@ -105,13 +103,12 @@
   background: transparent;
   overflow: visible;
 }
-.destination-stack[data-open="true"] .destination-pill {
+.destination-pill:has(.destination-trigger[role="combobox"]) {
   position: relative;
   z-index: 1;
   border: 1px solid var(--picker-line);
-  border-radius: 28px;
 }
-.destination-stack[data-open="true"] .destination-trigger {
+.destination-trigger[role="combobox"] {
   flex: 1;
   justify-content: space-between;
 }
@@ -296,8 +293,9 @@
 .destination-stack:has(.destination-share) {
   max-width: min(540px, var(--pill-limit, 1200px));
 }
-.destination-stack[data-open="true"]:has(.destination-share)
-  .destination-assembly {
+.destination-assembly:has(.destination-trigger[role="combobox"]):has(
+  .destination-share
+) {
   width: 482px;
 }
 
