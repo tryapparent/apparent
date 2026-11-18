@@ -34,6 +34,14 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   browser=await chromium.connectOverCDP(url);const page=browser.contexts()[0].pages()[0];
   await expect(page).toHaveTitle('Apparent Settings — Labs');
   assert.deepEqual(await page.locator('.settings-navigation-wide button').allTextContents(),['General','Recording','Storage','Permissions','Agents','Labs','About']);
+  const recordingStart=page.getByRole("group",{name:"When you press Record"});
+  const startNow=recordingStart.getByRole("radio",{name:"Start screen recording right away"});
+  const chooseScreen=recordingStart.getByRole("radio",{name:"Choose a screen each time"});
+  await expect(startNow).toBeChecked();
+  await expect(chooseScreen).toBeDisabled();
+  await expect(chooseScreen).toHaveAccessibleDescription("Coming later.");
+  await startNow.focus();await page.keyboard.press("ArrowDown");
+  await expect(startNow).toBeChecked();
   const toggle=page.getByRole('switch',{name:'Live local transcription'});
   await expect(toggle).toBeDisabled();await expect.poll(()=>Boolean(held)).toBe(true);
   reply(held!);hold=false;await expect(toggle).toBeEnabled();await expect(toggle).toHaveAttribute('aria-checked','false');
