@@ -14,6 +14,9 @@
       "react": ["./node_modules/@types/react"],
       "react-dom/*": ["./node_modules/@types/react-dom/*"],
       "react/*": ["./node_modules/@types/react/*"],
+      "@apparent/ui/keycap": [
+        "./node_modules/@apparent/ui/src/keyboard/keycap.tsx"
+      ],
       "@apparent/ui/button": ["./node_modules/@apparent/ui/src/button.tsx"],
       "@apparent/ui/disclosure-menu": [
         "./node_modules/@apparent/ui/src/disclosure-menu.tsx"

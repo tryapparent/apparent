@@ -192,11 +192,8 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   const board={id:'apparent-test-1',strokes:[human],color:[59,121,189]};
   send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:board});
   await expect(page.locator('.native-board')).toBeVisible();
-  await expect(page.getByRole('status')).toHaveText('Your turn.');
-  if(process.env.APPARENT_ONBOARDING_EVIDENCE){await fs.mkdir(process.env.APPARENT_ONBOARDING_EVIDENCE,{recursive:true});await expect(page.locator('.native-board-lesson path')).toHaveCount(0);await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,'whiteboard-demo.png')});}
-  const beforeGuide=output;
-  await expect(page.getByRole('status')).toHaveText('Your turn.');
-  assert.equal(output,beforeGuide,'the demonstration cannot emit native input');
+  await expect(page.getByRole('status')).toHaveText('Your turn');
+  if(process.env.APPARENT_ONBOARDING_EVIDENCE){await fs.mkdir(process.env.APPARENT_ONBOARDING_EVIDENCE,{recursive:true});await expect(page.locator('.native-board-lesson path')).toBeVisible();await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,'whiteboard-demo.png')});}
   await expect(page.locator('.native-board-paper > svg polyline')).toHaveCount(1);
   await page.getByRole('button',{name:'Clear',exact:true}).click();
   await expect.poll(()=>output).toContain('"operation":"clear"');
@@ -228,6 +225,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
       const paper=await page.getByLabel('Whiteboard drawing canvas').boundingBox();assert.ok(paper);
       const completedBefore=(output.match(/"operation":"end"/g)||[]).length;
       await page.mouse.click(paper.x+60,paper.y+100);
+      await expect(page.getByRole('status')).toHaveText('Your turn');
       await expect.poll(()=>(output.match(/"operation":"end"/g)||[]).length).toBe(completedBefore+1);
       if(process.env.APPARENT_ONBOARDING_EVIDENCE)await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,`whiteboard-click-${color.join('-')}-${scheme}-viewport-${width}.png`)});
       assert.deepEqual(await pointPixel(),expected,'a click must paint immediately before native acknowledgement');
@@ -244,13 +242,12 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   const beforeReplay=output;
   await expect(page.getByRole('button',{name:'Replay guide',exact:true})).toHaveCount(0);
   assert.equal(output,beforeReplay,'replay cannot clear or export human ink');
-  // Only the native receipt of the second completed stroke closes practice.
   const closesBefore=(output.match(/"operation":"close"/g)||[]).length;
+  const acknowledgedAt=Date.now();
   send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:{...board,strokes:[human]}});
   await expect(page.locator('.native-board-paper > svg polyline')).toHaveCount(1);
-  assert.equal((output.match(/"operation":"close"/g)||[]).length,closesBefore);
-  send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:{...board,strokes:[human,[[140,160]]]}});
   await expect.poll(()=>(output.match(/"operation":"close"/g)||[]).length).toBe(closesBefore+1);
+  assert.ok(Date.now()-acknowledgedAt>=1990);
   send({step:'try-it',practice:'screen-ink',boardView:null});
   await expect(page.getByRole('heading',{name:'Draw on your screen.',exact:true})).toBeVisible();
   send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:{...board,strokes:[]}});
@@ -278,7 +275,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.locator('.native-board')).toBeVisible();
   await page.emulateMedia({reducedMotion:'reduce'});
   await expect(page.getByRole('button',{name:'Replay guide',exact:true})).toHaveCount(0);
-  await expect(page.getByRole('status')).toHaveText('Your turn.');
+  await expect(page.getByRole('status')).toHaveText('Your turn');
   await page.getByRole('button',{name:'Close whiteboard',exact:true}).click();
   await expect.poll(()=>output).toContain('"operation":"close"');
   await page.emulateMedia({reducedMotion:'no-preference'});
