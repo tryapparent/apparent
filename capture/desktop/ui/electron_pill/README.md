@@ -156,6 +156,5 @@ without erasing receipts or cancelling confirmed work. Removal requires accepted
 replacement of the controller, its private completion channel and both platform
 consumers together; there is no competing native selection policy.
 
-`tests/pill/t3/controller.test.ts` exercises isolated HTTP/WebSocket providers and receipts;
-`tests/pill/t3/destination.smoke.cts` drives the actual built Electron renderer, main and
-clipboard. These do not establish a real T3 mutation or native capture acceptance.
+[Handoff tests](../../../../handoff/README.md) cover chooser policy and receipts.
+The Electron smoke suite drives the built renderer and loopback transport.

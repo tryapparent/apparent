@@ -54,3 +54,30 @@ test('T3 destinations and public sharing coexist with explicit consent', {timeou
  await expect(trigger).toBeEnabled();await trigger.focus();await page.keyboard.press('Enter');
  await expect.poll(()=>f.calls.length).toBe(1);await expect(page.getByRole('img',{name:'Submitted',exact:true})).toBeVisible();
 });
+
+
+test('picker uses friendly computer names and keeps the shorter waiting state actionable',{timeout:60000},async t=>{
+ let app;t.after(async()=>{await app?.close().catch(()=>{});});
+ const {fixture}=await import('./testing/server.ts');const a=await fixture(t),b=await fixture(t);a.computer('X1');b.computer('Clanker');a.label('Apparent');b.label('Apparent');
+ const credentials=origin=>({origin,token:'private-test-token',expiresAt:Date.now()+3600000});
+ await fs.writeFile(a.config,JSON.stringify({t3:{...credentials(a.origin),connections:[credentials(b.origin)]},experiments:{t3DestinationPicker:true}}));
+ app=await electron.launch({args:[path.resolve(__dirname,'../host.cjs'),'--no-sandbox','--ozone-platform=x11'],env:{...process.env,APPARENT_CONFIG:a.config,HOME:a.home}});
+ let buffer='';app.process().stdout.on('data',chunk=>{buffer+=String(chunk);let end;while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end);buffer=buffer.slice(end+1);try{const m=JSON.parse(line);if(m.ready)void app.evaluate((_e,id)=>process.stdin.emit('data',JSON.stringify({type:'activate',windowId:id})+'\n'),m.windowId).catch(()=>{});}catch{}}});
+ let page=await app.firstWindow();const next=process.platform==='linux'?app.waitForEvent('window'):null;
+ const frame={type:'state',capture:'names',t3Eligible:true,view:{revision:1,phase:'processing',clock:'00:04',label:'Processing recording…',warning:null,notice:null,reducedMotion:true,draggable:false,inputWaveform:null,noteCount:0,actions:[]}};
+ const send=value=>app.evaluate((_e,value)=>process.stdin.emit('data',JSON.stringify(value)+'\n'),value);
+ await send(frame);const heartbeat=setInterval(()=>void send(frame).catch(()=>{}),500);t.after(()=>clearInterval(heartbeat));if(next)page=await next;
+ const trigger=page.getByRole('combobox');await expect(trigger).toBeEnabled();
+ const proof=async name=>{await page.evaluate(()=>document.fonts.ready);await expect.poll(()=>page.evaluate(()=>{const r=document.querySelector('main').getBoundingClientRect();return innerWidth===Math.ceil(r.width)&&innerHeight===Math.max(58,Math.ceil(r.height));})).toBe(true);if(process.env.APPARENT_T3_PROOF)await page.screenshot({path:path.join(process.env.APPARENT_T3_PROOF,name+'.png')});};
+ await trigger.click();await proof('friendly-selecting');await page.getByRole('button',{name:'More destinations',exact:true}).click();await expect(page.getByRole('option').last()).toContainText('Chosen threadApparent · Clanker');assert.equal(a.calls.length+b.calls.length,0);await expect(trigger).toBeFocused();await page.keyboard.press('Escape');await trigger.click();await page.getByRole('option').last().click();await expect(page.locator('.destination-receipt')).toContainText('Preparing recording');await expect(trigger).toContainText('Apparent · Clanker');
+ for(const theme of ['light','dark'])for(const width of [1200,320]){await app.evaluate(({screen},width)=>{screen.__pickerDisplay??=screen.getDisplayMatching.bind(screen);screen.getDisplayMatching=b=>({...screen.__pickerDisplay(b),workArea:{x:0,y:0,width,height:800}});},width);++frame.view.revision;await send(frame);await page.evaluate(revision=>window.apparentPill.layout(revision),frame.view.revision);await page.emulateMedia({colorScheme:theme});await proof('friendly-waiting-'+theme+'-'+width);}
+ await page.getByRole('button',{name:'Cancel send',exact:true}).focus();await page.keyboard.press('Enter');await expect(trigger).toBeEnabled();assert.equal(a.calls.length,0);assert.equal(b.calls.length,0);
+ for(const theme of ['light','dark'])for(const width of [1200,320]){
+  await app.evaluate(({screen},width)=>{screen.__pickerDisplay??=screen.getDisplayMatching.bind(screen);screen.getDisplayMatching=b=>({...screen.__pickerDisplay(b),workArea:{x:0,y:0,width,height:800}});},width);
+  ++frame.view.revision;await send(frame);await page.evaluate(revision=>window.apparentPill.layout(revision),frame.view.revision);await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});await trigger.click();await expect(trigger).toHaveAttribute('aria-expanded','true');await expect(page.getByRole('option')).toHaveCount(3);
+  await expect(page.getByRole('option').last()).toContainText('Apparent · Clanker');await expect(page.locator('main')).not.toContainText('127.0.0.1');await proof('friendly-expanded-'+theme+'-'+width);
+  await page.keyboard.press('Escape');await expect(trigger).toHaveAttribute('aria-expanded','false');await proof('friendly-collapsed-'+theme+'-'+width);
+ }
+ await trigger.focus();await page.keyboard.press('ArrowDown');await page.keyboard.press('ArrowDown');await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');await expect(page.locator('.destination-receipt')).toContainText('Preparing recording');await send({type:'handoff-ready',capture:'names',text:'Synthetic name routing check'});
+ await expect.poll(()=>b.calls.length).toBe(1);assert.equal(a.calls.length,0);
+});

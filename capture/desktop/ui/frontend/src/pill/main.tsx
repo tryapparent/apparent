@@ -4,9 +4,10 @@ import {Button} from '@apparent/ui/button';
 import {StatusCard} from '@apparent/ui/status-card';
 import type {PillView} from './bridge';
 import './style.css';
+import '@apparent/ui/status.css';
 import {DestinationPicker} from './destination-picker';
 import type {DestinationView} from './destinations';
-import './destination-picker.css';
+import '../../../../../../handoff/renderer/picker.css';
 import {PillSurface} from './pill-view';
 
 

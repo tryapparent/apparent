@@ -21,4 +21,3 @@ export function destinations(threads:Thread[],projects:Project[],projectId:strin
  });
  return [{id:'new',title:'New thread',project:names.get(projectId)??'',kind:'new'},...rows.map(t=>({id:t.id,title:t.title,project:names.get(t.projectId)!,kind:snoozed(t)?'snoozed' as const:t.pinnedAt?'pinned' as const:working.has(t.status??'')?'working' as const:'active' as const}))];
 }
-export function visibleDestinations(choices:Destination[],index:number){const start=Math.max(0,Math.min(index-1,choices.length-3));return {start,rows:choices.slice(start,start+3)};}
