@@ -123,13 +123,19 @@ export async function releaseSummary(
     ["Linux", linux],
     ["macOS", macos],
   ] as const;
+  const abandoned = producers.filter(([, job]) => job.result === "abandoned");
+  if (abandoned.length)
+    return report(
+      "Failed",
+      `GitHub Actions could not allocate a runner for ${abandoned.map(([name]) => name).join(" and ")}. Review the producer jobs and retry the release once runner capacity returns.`,
+    );
   const failed = producers.filter(
-    ([, job]) => job.result === "failure" || job.result === "cancelled",
+    ([, job]) => job.result !== "success" && job.result !== "skipped",
   );
   if (failed.length)
     return report(
       "Failed",
-      `Inspect the ${failed.map(([name]) => name).join(" and ")} producer jobs and repair the failed build or signing check before retrying.`,
+      `Inspect the ${failed.map(([name]) => name).join(" and ")} producer jobs for the failure or cancellation before retrying.`,
     );
   if (publish.result !== "skipped")
     return report(
