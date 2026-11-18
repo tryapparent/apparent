@@ -8,7 +8,7 @@ import '../native-build/build.test.ts';
 import './source-identity/git-index.test.ts';
 import './targeted/run.test.ts';
 
-const recordMediaFiles = ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'assembly-worker.js', 'assembly-policy.js', 'transcript/worker.js', 'transcript/policy.js', 'selection/worker.js', 'selection/cues.js', 'selection/scene-worker.js', 'selection/scene.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/apparent-engine-frames', 'native/manifest.json'];
+const mediaFiles = ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'assembly-worker.js', 'assembly-policy.js', 'transcript/worker.js', 'transcript/policy.js', 'selection/worker.js', 'selection/cues.js', 'selection/scene-worker.js', 'selection/scene.js', 'export/worker.js', 'export/policy.js', 'export/parameters.json', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/apparent-engine-frames', 'native/manifest.json'];
 const completionFiles = ['worker.js', 'policy.js', 'session.js', 'copy-admission.mjs', 'package.json'];
 
 function fixture(t: any) {
@@ -31,7 +31,7 @@ function fixture(t: any) {
   for (const name of completionFiles) {
     put('capture/desktop/ui/frontend/electron/record-completion/' + name);
   }
-  for (const name of recordMediaFiles) {
+  for (const name of mediaFiles) {
     put('capture/desktop/ui/frontend/electron/record-media/' + name);
   }
   for (const name of ['worker.js', 'policy.js', 'range-worker.js', 'range-policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json']) {
@@ -50,10 +50,9 @@ function generators(f: ReturnType<typeof fixture>, fail = '') {
     'connect-transport': ['electron/connect.cjs', 'electron/settings/agents.cjs'],
     'updates': ['electron/settings/update-worker.cjs'],
     'pill': completionFiles.map(name => 'electron/record-completion/' + name),
-    'record-media': recordMediaFiles.map(name => 'electron/record-media/' + name),
+    'record-media': mediaFiles.map(name => 'electron/record-media/' + name),
     'agent-media': ['worker.js', 'policy.js', 'range-worker.js', 'range-policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json'].map(name => 'electron/agent-media/' + name),
   };
-  // This feature adds adapters alongside the baseline owner-generated inputs.
   outputs['connect-transport'].push('electron/settings/labs.cjs');
   outputs.pill.push('electron/notes/record-transcription.cjs');
   for (const [name, files] of Object.entries(outputs)) {
@@ -250,8 +249,6 @@ fi
   assert.equal(prepared.status, 0, prepared.stderr);
   const env: Record<string, string | undefined> = { ...process.env, ELECTRON_SKIP_BINARY_DOWNLOAD: '1' };
   delete env.electron_config_cache;
-  // Model Actions applying the actual preparation step's environment-file writes
-  // to a later packaging step; do not leak the preparation-only process env.
   for (const line of readFileSync(githubEnv, 'utf8').split('\n')) {
     if (line.startsWith('electron_config_cache=')) env.electron_config_cache = line.slice('electron_config_cache='.length);
   }

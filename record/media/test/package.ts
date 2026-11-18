@@ -10,6 +10,7 @@ import {qualifyAudioIngestion} from './audio-package.ts';
 import {qualifyTranscript} from './transcript/package.ts';
 import {qualifySpeechCues} from '../../enablement/media/cues-package.ts';
 import {qualifyScenes} from '../../enablement/ci/media/scene-package.ts';
+import {qualifyQuietExport} from '../../enablement/ci/media/quiet-package.ts';
 import {qualifyPhonePreparation} from '../../enablement/ci/media/preparation-package.ts';
 
 import {qualifyAssembly} from './assembly-package.ts';
@@ -108,8 +109,6 @@ try {
   execFileSync(process.execPath, ['--experimental-strip-types',
     fileURLToPath(new URL('../../storage/test/package.ts', import.meta.url)),
     '--binary', binary, '--source-bundle', rebuilt], {stdio: 'inherit', timeout: 200_000});
-  // Six distinct flags fill the ordinary budget and exercise phone assembly's
-  // direct-mark path, independently of its periodic-candidate/full-frame path.
   const marked = join(root, 'marked.apparent'), markedOut = join(root, 'marked-rebuilt.apparent');
   mkdirSync(marked, {mode:0o700}); copyFileSync(silent, join(marked,'recording.mp4'));
   chmodSync(join(marked,'recording.mp4'),0o600);
@@ -137,8 +136,7 @@ try {
   const transcriptProof = qualifyTranscript(qualification);
   const speechProof = qualifySpeechCues(qualification);
   qualifyScenes({...qualification, proofDirectory});
-  // Screen recovery/reprocessing has a distinct explicit-frame provider from
-  // phone ingestion. Exercise its real packaged caller and nonzero movie offset.
+  qualifyQuietExport({...qualification, runtime, media: app, proofDirectory});
   const screen = join(root, 'screen.apparent'), recovered = join(root, 'screen-rebuilt.apparent');
   mkdirSync(screen, {mode:0o700}); copyFileSync(silent, join(screen,'recording.mp4'));
   chmodSync(join(screen,'recording.mp4'),0o600);

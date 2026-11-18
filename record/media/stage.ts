@@ -6,6 +6,7 @@ import {chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFi
 import {tmpdir} from 'node:os';
 import {basename, dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {quietParameters} from './src/export/policy.ts';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const pin = JSON.parse(readFileSync(join(root, 'engine.json'), 'utf8'));
@@ -26,7 +27,8 @@ for (const [file, expected] of Object.entries(pin.sdkFiles)) {
   assert(lstatSync(join(sdk, file)).isFile());
   assert.equal(checksum(join(sdk, file)), expected, `Pinned SDK differs: ${file}`);
 }
-for (const file of ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'assembly-worker.js', 'assembly-policy.js', 'transcript/worker.js', 'transcript/policy.js', 'selection/worker.js', 'selection/cues.js', 'selection/scene-worker.js', 'selection/scene.js']) assert(lstatSync(join(root, 'dist', file)).isFile());
+const workerFiles = ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'assembly-worker.js', 'assembly-policy.js', 'transcript/worker.js', 'transcript/policy.js', 'selection/worker.js', 'selection/cues.js', 'selection/scene-worker.js', 'selection/scene.js', 'export/worker.js', 'export/policy.js'];
+for (const file of workerFiles) assert(lstatSync(join(root, 'dist', file)).isFile());
 const temporary = mkdtempSync(join(tmpdir(), 'apparent-dev-record-media-'));
 try {
   const base = `engine-media-${key}`;
@@ -73,11 +75,12 @@ try {
   }
   const prepared = join(temporary, 'prepared'); mkdirSync(prepared, {mode: 0o700});
   cpSync(native, join(prepared, 'native'), {recursive: true});
-  for (const file of ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'assembly-worker.js', 'assembly-policy.js', 'transcript/worker.js', 'transcript/policy.js', 'selection/worker.js', 'selection/cues.js', 'selection/scene-worker.js', 'selection/scene.js']) {
+  for (const file of workerFiles) {
     const target = join(prepared, file);
     mkdirSync(dirname(target), {recursive: true, mode: 0o700});
     cpSync(join(root, 'dist', file), target);
   }
+  writeFileSync(join(prepared, 'export/parameters.json'), JSON.stringify({version: 1, parameters: quietParameters()}) + '\n', {mode: 0o644});
   mkdirSync(join(prepared, 'node_modules/@apparent'), {recursive: true});
   cpSync(sdk, join(prepared, 'node_modules/@apparent/engine-sdk'), {recursive: true});
   writeFileSync(join(prepared, 'package.json'), '{"type":"module"}\n');

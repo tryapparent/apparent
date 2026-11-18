@@ -17,7 +17,7 @@ pub mod camera;
 pub mod crop;
 pub mod ink;
 mod narration;
-mod quiet;
+pub(crate) mod quiet;
 #[cfg(target_os = "linux")]
 mod linux;
 
@@ -307,6 +307,8 @@ pub fn export(
         clicks: options.clicks,
     };
     let ink = ink::plan(bundle, video_px, layers);
+    let quiet_parameters = options.speedup
+        .then(crate::composition::media_probe::quiet::quiet_parameters).transpose()?;
 
     if let Some(parent) = out.parent() {
         std::fs::create_dir_all(parent)
@@ -379,12 +381,7 @@ pub fn export(
         let _ = std::fs::remove_file(&plan_path);
         result
     };
-    let result = result.and_then(|done| {
-        if !options.speedup { return Ok(done); }
-        let quiet = quiet::analyze(&video, audio.as_ref().map(|_| partial.as_path()), 0, probe.duration_ms, bundle)?;
-        if quiet.is_empty() { return Ok(done); }
-        quiet::retime(&partial, &quiet, probe.duration_ms, audio.is_some(), options.hevc, fps)
-    });
+    let result = result.and_then(|done| quiet::pace(&plan, bundle, quiet_parameters.as_ref(), done));
     let done = match result {
         Ok(done) => done,
         Err(error) => {
