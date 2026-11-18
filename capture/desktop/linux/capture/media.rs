@@ -7,7 +7,7 @@
 //! (gst-plugins-bad) and VA-API's. A missing encoder refuses to start a screen capture;
 //! a movie that fails after capture starts still retains the candidate frames.
 
-use std::os::unix::fs::DirBuilderExt;
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -22,6 +22,22 @@ use crate::capture::engine::runtime::{CANDIDATE_EDGE, CANDIDATE_EDGE_NO_VIDEO, S
 use crate::shared::model::{CaptureMode, RgbaFrame};
 
 const FPS: u32 = 30;
+const RECOVERABLE_MUX: &str =
+    "mp4mux fragment-duration=1000 fragment-mode=first-moov-then-finalise ! filesink buffer-mode=unbuffered";
+
+fn movie_output() -> &'static str {
+    static OUTPUT: OnceLock<&str> = OnceLock::new();
+    OUTPUT.get_or_init(|| {
+        if gst::ElementFactory::make("mp4mux")
+            .build()
+            .is_ok_and(|mux| mux.find_property("fragment-mode").is_some())
+        {
+            RECOVERABLE_MUX
+        } else {
+            "mp4mux faststart=true ! filesink"
+        }
+    })
+}
 
 fn init() -> Result<()> {
     static READY: OnceLock<bool> = OnceLock::new();
@@ -164,8 +180,9 @@ pub fn encode_check_movie(movie: &Path) -> Result<()> {
 }
 
 fn encode_synthetic(movie: &Path, selected: &str, diagnose: bool) -> Result<()> {
+    let output = movie_output();
     let launch = format!(
-        "videotestsrc num-buffers=12 ! video/x-raw,width=160,height=90,framerate=10/1 ! videoconvert ! video/x-raw,format=I420 ! {selected} ! h264parse ! mp4mux ! filesink name=encoder_output"
+        "videotestsrc num-buffers=12 ! video/x-raw,width=160,height=90,framerate=10/1 ! videoconvert ! video/x-raw,format=I420 ! {selected} ! h264parse ! {output} name=encoder_output"
     );
     let pipeline = gst::parse::launch(&launch)?
         .downcast::<gst::Pipeline>()
@@ -331,16 +348,29 @@ impl Recorder {
              t. ! queue max-size-buffers=2 leaky=downstream ! videoconvert ! videoscale ! video/x-raw,format=RGBA,width={cw},height={ch},pixel-aspect-ratio=1/1 ! appsink name=candidates max-buffers=1 drop=true sync=false emit-signals=false",
             source_launch(source)
         );
-        if let (Some(encoder), Some(movie)) = (encoder, movie) {
+        if let Some(encoder) = encoder {
+            let output = movie_output();
             launch.push_str(&format!(
-                " t. ! queue max-size-time=3000000000 max-size-buffers=0 max-size-bytes=0 ! videorate ! video/x-raw,framerate={FPS}/1 ! videoconvert ! video/x-raw,format=I420 ! {encoder} name=encoder ! h264parse ! mp4mux faststart=true ! filesink name=movie_sink location=\"{}\"",
-                movie.display().to_string().replace('"', "\\\"")
+                " t. ! queue max-size-time=3000000000 max-size-buffers=0 max-size-bytes=0 ! videorate ! video/x-raw,framerate={FPS}/1 ! videoconvert ! video/x-raw,format=I420 ! {encoder} name=encoder ! h264parse ! {output} name=movie_sink",
             ));
         }
         let pipeline = gst::parse::launch(&launch)
             .with_context(|| format!("Could not build the recording pipeline: {launch}"))?
             .downcast::<gst::Pipeline>()
             .map_err(|_| anyhow!("Not a pipeline"))?;
+        if let Some(movie) = movie.filter(|_| encoder.is_some()) {
+            let location = movie.to_str().context("Invalid recording file path")?;
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(movie)
+                .context("Could not create private recording file")?;
+            pipeline
+                .by_name("movie_sink")
+                .context("Recording pipeline has no movie sink")?
+                .set_property("location", location);
+        }
         // The candidate sink can hold back pipeline EOS after the movie sink has finished.
         // Forward child EOS so finish() can distinguish a completed MP4 from an unfinished one.
         pipeline.set_property("message-forward", true);
@@ -985,6 +1015,21 @@ mod tests {
             recorder.last.is_some(),
             "the synthetic pipeline never produced a frame"
         );
+        use std::os::unix::fs::PermissionsExt;
+
+        let mux = gst::ElementFactory::make("mp4mux").build().unwrap();
+        if mux.find_property("fragment-mode").is_some() {
+            let deadline = Instant::now() + Duration::from_secs(8);
+            loop {
+                let bytes = std::fs::read(&movie).unwrap();
+                if bytes.windows(4).any(|kind| kind == b"moov") {
+                    break;
+                }
+                assert!(Instant::now() < deadline, "no movie index before EOS");
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+        assert_eq!(std::fs::metadata(&movie).unwrap().permissions().mode() & 0o077, 0);
         let sink = recorder.candidates.static_pad("sink").unwrap();
         let _blocked = sink.add_probe(
             gst::PadProbeType::BLOCK | gst::PadProbeType::BUFFER,
