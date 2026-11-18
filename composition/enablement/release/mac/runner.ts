@@ -6,7 +6,17 @@ import { macFallbackJob, macPrimaryJob } from "../manifest.ts";
 
 export function alternateRunner(label: string): string {
   if (label === "macos-26") return "macos-15";
-  if (label === "macos-15") return "macos-26";
+  if (label === "macos-15" || label === "xcode-27") return "macos-26";
+  throw Error("Unsupported Mac release runner");
+}
+
+export function macToolchain(primary: string, job: string) {
+  const runner = job === "fallback" ? alternateRunner(primary) : primary;
+  if (job !== "candidate" && job !== "fallback")
+    throw Error("Unsupported Mac release job");
+  if (runner === "xcode-27") return { xcode: "27.2", sdkMajor: "27" };
+  if (runner === "macos-26" || runner === "macos-15")
+    return { xcode: "26.3", sdkMajor: "26" };
   throw Error("Unsupported Mac release runner");
 }
 
@@ -57,7 +67,8 @@ export function queueReport(jobs: Job[]): string {
     .flatMap((job) => {
       if (job.name !== macPrimaryJob && job.name !== macFallbackJob) return [];
       const label = job.labels?.[0];
-      if (label !== "macos-26" && label !== "macos-15") return [];
+      if (label !== "macos-26" && label !== "macos-15" && label !== "xcode-27")
+        return [];
       const setup = job.steps?.find(
         (step) => step.name === "Set up job",
       )?.started_at;

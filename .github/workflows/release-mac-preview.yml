@@ -397,7 +397,7 @@ jobs:
     outputs: &candidate-output
       sealed: ${{ steps.sealed.outputs.sealed }}
     env: &candidate-env
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      MAC_PRIMARY_RUNNER: ${{ inputs.mac_runner }}
       APPARENT_SOURCE_ROOT: ${{ github.workspace }}/release-source
       APPARENT_PREVIEW_VERSION: ${{ inputs.version }}
       APPARENT_RELEASE_VERSION: ${{ inputs.version }}
@@ -425,7 +425,7 @@ jobs:
           node-version: '22.23.0'
       - name: Require ARM hardware
         run: node --experimental-strip-types composition/enablement/release/mac/workflow.ts arm
-      - name: Require macOS 26 build SDK
+      - name: Require the pinned macOS build SDK
         run: node --experimental-strip-types composition/enablement/release/mac/workflow.ts sdk
       - uses: actions/download-artifact@v4
         with:
