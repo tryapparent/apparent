@@ -517,7 +517,7 @@ impl ApparentCoordinator {
 
     pub(crate) fn capture_busy(&self) -> bool {
         #[cfg(any(target_os = "macos", target_os = "linux"))]
-        if self.agent_capture_id.is_some() { return true; }
+        if self.agent_capture_id.is_some() || display_selection::pending() { return true; }
         self.pending_finalizers > 0 || self.lab || self.active_recording.is_some()
             || self.is_selecting() || self.is_processing() || self.iphone_preview.is_some()
             || self.recording_shortcut_key
@@ -589,8 +589,7 @@ impl ApparentCoordinator {
 
     fn permissions_allow_recording(&mut self, microphone: bool, session_selected: bool) -> bool {
         use crate::permission_admission::{Admission, ScreenAuthorization, check_for};
-        let authorization = if session_selected { ScreenAuthorization::SessionSelection } else { ScreenAuthorization::CURRENT };
-        match check_for(self.current_grants(), microphone, authorization) {
+        match check_for(self.current_grants(), microphone, ScreenAuthorization::for_screen_recording(session_selected)) {
             Admission::Ready => true,
             Admission::Checking => {
                 let message = "Checking recording permissions. Try recording again in a moment.";
@@ -690,7 +689,7 @@ impl ApparentCoordinator {
             Event::Session { .. } | Event::Transport { .. } => Effect::None,
             Event::Launch(grants) => {
                 let microphone = crate::capture::engine::runtime::audio::mic::enabled();
-                let missing = match crate::permission_admission::check(Some(&grants), microphone) {
+                let missing = match crate::permission_admission::check_recording_start(Some(&grants), microphone) {
                     crate::permission_admission::Admission::Blocked(missing) => missing,
                     _ => Vec::new(),
                 };
@@ -948,8 +947,9 @@ impl ApparentCoordinator {
                 }
                 ShortcutPolicy::Record => {}
             }
-            if !self.ready_to_record(display_selection::requested()) { return; }
-            if !display_selection::requested() { self.begin_playback(); }
+            let picker = display_selection::requested();
+            if !self.ready_to_record(picker) { return; }
+            if !picker { self.begin_playback(); }
             self.hold_mods = crate::capture::engine::runtime::modifier_flags();
             self.telemetry.take_escape();
         }

@@ -101,8 +101,8 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
     await page.screenshot({path:path.join(process.env.APPARENT_LIVE_PROOF,`labs-${theme}-${width}-bottom.png`)});
     await toggle.scrollIntoViewIfNeeded();
    }
-   for(const id of ['local-stream-ready','auto-paste-limits','public-sharing-limits','wispr-lab-help']){
-    const guidance=page.locator(`#${id}`);await guidance.scrollIntoViewIfNeeded();await expect(guidance).toBeInViewport();
+   for(const id of ['recording-picker-help','local-stream-ready','auto-paste-limits','public-sharing-limits','wispr-lab-help']){
+    const guidance=page.locator(`#${id}`);await guidance.evaluate(el=>el.scrollIntoView({block:'center'}));await expect(guidance).toBeInViewport();
    }
    await cdp.detach();
   }

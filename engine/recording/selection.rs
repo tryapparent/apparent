@@ -45,6 +45,10 @@ pub(crate) fn requested() -> bool {
     supported() && crate::shared::handoff::experiment(PREFERENCE)
 }
 
+pub(crate) fn enabled_in(config: &crate::shared::handoff::Config) -> bool {
+    supported() && crate::shared::handoff::experiment_enabled_in(config, PREFERENCE)
+}
+
 pub(crate) struct DisplaySelection {
     stop: Arc<AtomicBool>,
     #[cfg(target_os = "linux")]

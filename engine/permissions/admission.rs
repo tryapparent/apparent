@@ -1,3 +1,4 @@
+use crate::capture::engine::runtime::recording::recorder::selection;
 use crate::permission_facts::{Grants, Permission, Status};
 
 include!(concat!(env!("OUT_DIR"), "/recording_permissions.rs"));
@@ -14,6 +15,14 @@ impl ScreenAuthorization {
     } else {
         Self::SessionSelection
     };
+
+    pub(crate) fn for_screen_recording(use_picker: bool) -> Self {
+        if use_picker {
+            Self::SessionSelection
+        } else {
+            Self::CURRENT
+        }
+    }
 
     fn requirements(self, microphone: bool) -> &'static [Permission] {
         #[cfg(target_os = "macos")]
@@ -36,14 +45,31 @@ pub(crate) enum Admission {
     Blocked(Vec<Permission>),
 }
 
-pub(crate) fn requires(permission: Permission, microphone: bool) -> bool {
-    ScreenAuthorization::CURRENT
+pub(crate) fn check(grants: Option<&Grants>, microphone: bool) -> Admission {
+    check_for(grants, microphone, ScreenAuthorization::CURRENT)
+}
+
+pub(crate) fn check_recording_start(grants: Option<&Grants>, microphone: bool) -> Admission {
+    check_for(
+        grants,
+        microphone,
+        ScreenAuthorization::for_screen_recording(selection::requested()),
+    )
+}
+
+pub(crate) fn requires(
+    permission: Permission,
+    microphone: bool,
+    config: &crate::shared::handoff::Config,
+) -> bool {
+    ScreenAuthorization::for_screen_recording(selection::enabled_in(config))
         .requirements(microphone)
         .contains(&permission)
 }
 
-pub(crate) fn check(grants: Option<&Grants>, microphone: bool) -> Admission {
-    check_for(grants, microphone, ScreenAuthorization::CURRENT)
+pub(crate) fn screen_relaunch(grants: Option<&Grants>) -> bool {
+    grants.is_some_and(|g| g.granted(Permission::ScreenRecording) && g.screen_needs_relaunch)
+        && !selection::requested()
 }
 
 pub(crate) fn check_for(
