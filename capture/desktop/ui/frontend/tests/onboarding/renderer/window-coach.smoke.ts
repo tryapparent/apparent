@@ -192,11 +192,8 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   const board={id:'apparent-test-1',strokes:[human],color:[59,121,189]};
   send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540],boardView:board});
   await expect(page.locator('.native-board')).toBeVisible();
-  await expect(page.getByRole('status')).toHaveText('Your turn.');
+  await expect(page.getByRole('status')).toHaveText('Draw once more, or close the whiteboard.');
   if(process.env.APPARENT_ONBOARDING_EVIDENCE){await fs.mkdir(process.env.APPARENT_ONBOARDING_EVIDENCE,{recursive:true});await expect(page.locator('.native-board-lesson path')).toHaveCount(0);await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,'whiteboard-demo.png')});}
-  const beforeGuide=output;
-  await expect(page.getByRole('status')).toHaveText('Your turn.');
-  assert.equal(output,beforeGuide,'the demonstration cannot emit native input');
   await expect(page.locator('.native-board-paper > svg polyline')).toHaveCount(1);
   await page.getByRole('button',{name:'Clear',exact:true}).click();
   await expect.poll(()=>output).toContain('"operation":"clear"');
@@ -228,6 +225,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
       const paper=await page.getByLabel('Whiteboard drawing canvas').boundingBox();assert.ok(paper);
       const completedBefore=(output.match(/"operation":"end"/g)||[]).length;
       await page.mouse.click(paper.x+60,paper.y+100);
+      await expect(page.getByRole('status')).toHaveText('Draw once more, or close the whiteboard.');
       await expect.poll(()=>(output.match(/"operation":"end"/g)||[]).length).toBe(completedBefore+1);
       if(process.env.APPARENT_ONBOARDING_EVIDENCE)await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,`whiteboard-click-${color.join('-')}-${scheme}-viewport-${width}.png`)});
       assert.deepEqual(await pointPixel(),expected,'a click must paint immediately before native acknowledgement');
@@ -278,7 +276,7 @@ for(const mode of ['--onboarding'])test(`onboarding fixed window shrinks to coac
   await expect(page.locator('.native-board')).toBeVisible();
   await page.emulateMedia({reducedMotion:'reduce'});
   await expect(page.getByRole('button',{name:'Replay guide',exact:true})).toHaveCount(0);
-  await expect(page.getByRole('status')).toHaveText('Your turn.');
+  await expect(page.getByRole('status')).toHaveText('Draw once more, or close the whiteboard.');
   await page.getByRole('button',{name:'Close whiteboard',exact:true}).click();
   await expect.poll(()=>output).toContain('"operation":"close"');
   await page.emulateMedia({reducedMotion:'no-preference'});

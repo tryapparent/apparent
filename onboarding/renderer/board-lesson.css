@@ -1,0 +1,55 @@
+.native-board-lesson {
+  position: absolute;
+  inset: 12% 16px auto;
+  pointer-events: none;
+  text-align: center;
+  color: var(--apparent-carbon);
+}
+
+.native-board-lesson p {
+  max-width: 38ch;
+  margin-inline: auto;
+  font-size: 24px;
+}
+
+.native-board-lesson[data-has-stroke="true"] p {
+  font-size: 18px;
+  text-wrap: balance;
+}
+
+.native-board-lesson svg {
+  width: 60%;
+  max-height: 160px;
+}
+
+.native-board-lesson path {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  animation: board-example 4.2s linear infinite both;
+}
+
+@keyframes board-example {
+  0%,
+  10% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  65%,
+  80% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .native-board-lesson path {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}

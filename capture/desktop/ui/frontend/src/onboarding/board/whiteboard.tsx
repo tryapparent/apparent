@@ -1,5 +1,6 @@
 import {useEffect, useRef, useState, type CSSProperties} from 'react';
 import {Button} from '@apparent/ui/button';
+import {BoardLesson} from '../../../../../../../onboarding/renderer/board-lesson';
 import wordmark from '../../../../../../../shared/assets/brand/apparent-wordmark.svg';
 import './whiteboard.css';
 import { shouldClosePracticeBoard } from '../state';
@@ -20,6 +21,7 @@ export function Whiteboard({board,action}:{board:BoardView;action:(value:Action)
     }
   },[board.strokes,board.id,action]);
   const send=(operation:string,ink?:number[])=>action({action:'board',id:board.id,operation,...(ink?{point:ink}:{})});
+  const visiblePending=pending.filter(stroke=>stroke.index>=board.strokes.length);
   const penStyle=`#${board.color.map(channel=>channel.toString(16).padStart(2,'0')).join('')}`;
   const cancelDraft=(clearPending=false)=>{if(pointer.current!==null)void send('cancel');points.current=[];pointer.current=null;setDraft([]);if(clearPending)setPending([]);};
   const finish=()=>{if(points.current.length){void send('end');const ink=points.current;setPending(list=>[...list,{index:board.strokes.length+list.filter(s=>s.index>=board.strokes.length).length,points:ink}]);points.current=[];setDraft([]);}pointer.current=null;};
@@ -31,11 +33,11 @@ export function Whiteboard({board,action}:{board:BoardView;action:(value:Action)
         onPointerDown={event=>{if(event.button!==0||pointer.current!==null)return;pointer.current=event.pointerId;event.currentTarget.setPointerCapture(event.pointerId);const rect=event.currentTarget.getBoundingClientRect();points.current=[[event.clientX-rect.left,event.clientY-rect.top]];void send('begin',points.current[0]);setDraft([...points.current]);}}
         onPointerMove={event=>{if(pointer.current!==event.pointerId)return;const rect=event.currentTarget.getBoundingClientRect();points.current.push([Math.max(0,Math.min(1599,event.clientX-rect.left)),Math.max(0,Math.min(1099,event.clientY-rect.top))]);void send('move',points.current[points.current.length-1]);setDraft([...points.current]);}}
         onPointerUp={finish} onPointerCancel={()=>cancelDraft()} onLostPointerCapture={()=>{if(pointer.current!==null)cancelDraft();}}>
-        {[...board.strokes,...pending.filter(stroke=>stroke.index>=board.strokes.length).map(stroke=>stroke.points),...(draft.length?[draft]:[])].map((stroke,index)=>stroke.length===1
+        {[...board.strokes,...visiblePending.map(stroke=>stroke.points),...(draft.length?[draft]:[])].map((stroke,index)=>stroke.length===1
           ? <circle key={index} cx={stroke[0][0]} cy={stroke[0][1]} r="1.5" fill="var(--board-pen)"/>
           : <polyline key={index} points={stroke.map(p=>p.join(',')).join(' ')} fill="none" stroke="var(--board-pen)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>)}
       </svg>
-      <div className="native-board-lesson"><p role="status">Your turn.</p>{board.strokes.length===0&&pending.length===0&&draft.length===0&&<svg aria-hidden="true" viewBox="0 0 300 160"><path stroke="var(--board-pen)" pathLength="1" d="M34 105 C52 32 124 20 149 58 S102 142 82 101 S174 23 214 67 S240 144 184 116 Q139 93 252 44"/></svg>}</div>
+      <BoardLesson hasStroke={board.strokes.length>0||visiblePending.length>0} drawing={draft.length>0}/>
     </div>
   </main>;
 }
