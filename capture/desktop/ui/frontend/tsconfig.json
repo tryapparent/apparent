@@ -30,6 +30,9 @@
       "@apparent/ui/error-dialog": [
         "./node_modules/@apparent/ui/src/forms/error-dialog.tsx"
       ],
+      "@apparent/ui/native-select": [
+        "./node_modules/@apparent/ui/src/forms/native-select.tsx"
+      ],
       "lucide-react": ["./node_modules/lucide-react"]
     }
   },

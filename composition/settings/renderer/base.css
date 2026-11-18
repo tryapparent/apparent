@@ -104,6 +104,9 @@
 .settings-content > * {
   max-width: 580px;
 }
+.settings-content > .settings-about {
+  max-width: none;
+}
 .settings-content header {
   margin-bottom: 22px;
 }
