@@ -79,6 +79,7 @@ export class Store {
         j.version !== 1 ||
         typeof j.capture !== "string" ||
         !Number.isFinite(j.createdAt) ||
+        (j.sentAt !== undefined && !Number.isFinite(j.sentAt)) ||
         typeof j.commandId !== "string" ||
         typeof j.messageId !== "string" ||
         !j.target ||

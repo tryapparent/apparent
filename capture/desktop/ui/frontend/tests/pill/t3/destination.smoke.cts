@@ -68,13 +68,14 @@ test('real pill keeps Paste by default, then selects during processing and dispa
  await page.getByRole('button',{name:'Copy instead',exact:true}).click();await expect(page.getByText('Copied',{exact:true})).toBeVisible();assert.equal(await app.evaluate(({clipboard})=>clipboard.readText()),'COPY THIS EXACT HANDOFF');
  for(const colorScheme of ['dark','light']){await page.emulateMedia({colorScheme,reducedMotion:'reduce'});if(process.env.APPARENT_T3_PROOF){await fs.mkdir(process.env.APPARENT_T3_PROOF,{recursive:true});await page.screenshot({path:path.join(process.env.APPARENT_T3_PROOF,`error-${colorScheme}.png`)});}}
  await page.getByRole('button',{name:'Retry',exact:true}).click();await expect(page.getByRole('img',{name:'Submitted',exact:true})).toBeVisible();await expect(page.getByRole('alert')).toHaveCount(0);await expect.poll(()=>f.calls.length).toBe(3);assert.equal(f.accepted.size,2);assert.deepEqual(f.calls[1],f.calls[2]);
- // The actual renderer and host must fit a narrow work area, including the
- // final highlighted row reaching the rounded bottom edge.
  await app.evaluate(({screen})=>{const matching=screen.getDisplayMatching.bind(screen);screen.getDisplayMatching=(bounds)=>{const display=matching(bounds);return {...display,workArea:{...display.workArea,width:320}};};});
- frame={...frame,capture:'narrow',view:{...frame.view,revision:5}};await publish();await expect(trigger).toBeEnabled();await trigger.focus();await page.keyboard.press('ArrowDown');await page.keyboard.press('End');await expect(page.getByRole('option').last()).toHaveAttribute('aria-selected','true');
+ frame={...frame,capture:'narrow',view:{...frame.view,revision:5}};await publish();await expect(trigger).toBeEnabled();await trigger.focus();await page.keyboard.press('ArrowDown');await proof('narrow-first');
+ const firstTray=await page.locator('.destination-tray').boundingBox();
+ await page.keyboard.press('End');await expect(page.getByRole('option').last()).toHaveAttribute('aria-selected','true');
  for(const colorScheme of ['dark','light']){await page.emulateMedia({colorScheme,reducedMotion:'reduce'});await proof('narrow-expanded-'+colorScheme);}
- const narrow=await page.evaluate(()=>{const tray=document.querySelector('.destination-tray')!.getBoundingClientRect(),rows=document.querySelectorAll('.destination-option'),last=rows[rows.length-1].getBoundingClientRect();return {width:document.querySelector('main')!.getBoundingClientRect().width,gap:tray.bottom-last.bottom};});
- assert.ok(narrow.width<=320);assert.ok(narrow.gap<=1.1,'selected last row reaches the tray border');
+ assert.ok(firstTray.width<=320);
+ assert.deepEqual(await page.locator('.destination-tray').boundingBox(),firstTray);
+ await expect(page.getByRole('button',{name:'More destinations'})).toBeDisabled();
  if(process.platform==='linux'){
   // Opening/closing the tray changes geometry without changing the capture's
   // parent revision. A stale paint completion must not clip the newer list.

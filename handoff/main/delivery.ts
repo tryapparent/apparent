@@ -16,6 +16,7 @@ export type Job = {
   version: 1;
   capture: string;
   createdAt: number;
+  sentAt?: number;
   target: Target;
   commandId: string;
   messageId: string;
@@ -93,7 +94,9 @@ export class Delivery {
           : "orchestration.dispatchCommand",
         payload,
       );
-      await this.store.save({ ...job, phase: "sent", text: null });
+      const sentAt = Date.now();
+      await this.store.save({ ...job, phase: "sent", text: null, sentAt });
+      job.sentAt = sentAt;
       job.phase = "sent";
       job.text = null;
     } catch {
