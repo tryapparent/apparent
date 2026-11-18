@@ -253,11 +253,37 @@ async function exercisePublication(channel: "main" | "stable") {
     await assert.rejects(
       publish(runId, attempt, join(directory, "publish-interrupted")),
     );
+    assert.doesNotMatch(
+      readFileSync(process.env.GITHUB_OUTPUT, "utf8"),
+      /^tag=|^downloads=/m,
+    );
+    assert.match(
+      readFileSync(process.env.GITHUB_OUTPUT, "utf8"),
+      new RegExp(`^source_sha=${source}$`, "m"),
+    );
     const state = () =>
       JSON.parse(readFileSync(process.env.FIXTURE_STATE!, "utf8"));
     assert.equal(state().release.draft, true);
     assert.equal(state().release.assets.length, 1);
     await publish(runId, attempt, join(directory, "publish-retry"));
+    const publication = readFileSync(process.env.GITHUB_OUTPUT, "utf8").split(
+      "\n",
+    );
+    assert.ok(publication.includes(`tag=${tag}`));
+    const downloads = JSON.parse(
+      publication.find((line) => line.startsWith("downloads="))!.slice(10),
+    );
+    assert.deepEqual(
+      downloads,
+      state()
+        .release.assets.filter(({ name }: { name: string }) =>
+          /\.(AppImage|dmg|zip)$/.test(name),
+        )
+        .map(({ name, size }: { name: string; size: number }) => ({
+          name,
+          size,
+        })),
+    );
     assert.equal(state().release.draft, false);
     assert.equal(state().release.prerelease, channel === "main");
     assert.equal(
@@ -272,8 +298,16 @@ async function exercisePublication(channel: "main" | "stable") {
     );
     process.env.RELEASE_CHANNEL = channel;
     const uploads = state().uploads;
+    writeFileSync(process.env.GITHUB_OUTPUT, "");
     await publish(runId, attempt, join(directory, "publish-idempotent"));
     assert.equal(state().uploads, uploads);
+    const idempotent = readFileSync(process.env.GITHUB_OUTPUT, "utf8");
+    assert.ok(idempotent.includes(`source_sha=${source}\n`));
+    assert.ok(
+      idempotent.includes(
+        `tag=${tag}\ndownloads=${JSON.stringify(downloads)}\n`,
+      ),
+    );
     const published = state();
     for (const draft of [true, false]) {
       const missingTag = structuredClone(published);
@@ -309,10 +343,16 @@ async function exercisePublication(channel: "main" | "stable") {
       newer.release.tag_name = releaseTag("main", "1.2.3", newerSource);
     }
     writeFileSync(process.env.FIXTURE_STATE, JSON.stringify(newer));
+    writeFileSync(process.env.GITHUB_OUTPUT, "");
     await assert.rejects(
       publish(runId, attempt, join(directory, "out-of-order")),
       /Newer (stable|Main)/,
     );
+    const superseded = readFileSync(process.env.GITHUB_OUTPUT, "utf8");
+    assert.ok(
+      superseded.includes(`superseded_tag=${newer.release.tag_name}\n`),
+    );
+    assert.doesNotMatch(superseded, /^tag=|^downloads=/m);
     process.chdir(cwd);
     const calls = readFileSync(process.env.FIXTURE_LOG!, "utf8");
     assert.doesNotMatch(calls, /cargo|--clobber/);
