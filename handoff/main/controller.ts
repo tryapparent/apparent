@@ -32,6 +32,7 @@ export class Controller {
   private jobs = new Map<string, Job>();
   private results = new Map<string, string | null>();
   private error = "";
+  private catalogueError = "";
   private storageAvailable = true;
   private version = 0;
   private initializing: Promise<void>;
@@ -137,11 +138,15 @@ export class Controller {
                 : job.phase === "sent"
                   ? "sent"
                   : "armed"
-          : this.error
+          : this.error || this.catalogueError
             ? "error"
             : "choosing",
       processing: this.processing,
-      error: this.error || undefined,
+      error:
+        this.error ||
+        (job && job.phase !== "cancelled"
+          ? undefined
+          : this.catalogueError || undefined),
     };
   }
   text(capture: string) {
@@ -185,93 +190,148 @@ export class Controller {
     this.computerNames.clear();
     this.choices = [];
     if (this.storageAvailable) this.error = "";
+    this.catalogueError = "";
     this.changed();
     if (!this.config) return;
     const multiple = configured.length > 1;
-    const results = await Promise.allSettled(
-      configured.map(async (config) => {
-        const transport = new Transport(config);
-        const [raw, configuration] = await Promise.all([
-          transport.get(
-            "/api/orchestration/shell?omitIdleSubagents=true&omitOlderSettled=true",
-          ) as Promise<{ threads: Thread[]; projects: Project[] }>,
-          transport.rpc("server.getConfig", {}) as Promise<{
-            settings: Record<string, unknown>;
-            environment?: { label?: unknown };
-          }>,
-        ]);
-        if (
-          !Array.isArray(raw.threads) ||
-          !Array.isArray(raw.projects) ||
-          !configuration.settings
-        )
-          throw Error("Invalid T3 catalogue");
-        const projects = raw.projects.filter((p) => !p.archivedAt),
-          last = [...this.jobs.values()]
-            .reverse()
-            .find((j) => j.target.origin === config.origin)?.target.projectId;
-        const projectId = [config.projectId, last, projects[0]?.id].find((id) =>
-          projects.some((p) => p.id === id),
+    const recent = [...this.jobs.values()]
+      .filter((job) => job.phase === "sent")
+      .sort((a, b) => (b.sentAt ?? b.createdAt) - (a.sentAt ?? a.createdAt));
+    const loadComputer = async (config: Connection) => {
+      const transport = new Transport(config);
+      const [raw, configuration] = await Promise.all([
+        transport.get(
+          "/api/orchestration/shell?omitIdleSubagents=true&omitOlderSettled=true",
+        ) as Promise<{ threads: Thread[]; projects: Project[] }>,
+        transport.rpc("server.getConfig", {}) as Promise<{
+          settings: Record<string, unknown>;
+          environment?: { label?: unknown };
+        }>,
+      ]);
+      if (
+        !Array.isArray(raw.threads) ||
+        !Array.isArray(raw.projects) ||
+        !configuration.settings
+      )
+        throw Error("Invalid T3 catalogue");
+      const projects = raw.projects.filter((p) => !p.archivedAt);
+      const last = recent.find(
+        ({ target }) =>
+          target.origin === config.origin &&
+          projects.some((project) => project.id === target.projectId),
+      );
+      const projectId = [
+        last?.target.projectId,
+        config.projectId,
+        projects[0]?.id,
+      ].find((id) => projects.some((p) => p.id === id));
+      if (!projectId) throw Error("No T3 project");
+      const label = configuration.environment?.label;
+      return {
+        config,
+        raw,
+        projects,
+        projectId,
+        last,
+        settings: configuration.settings,
+        label: typeof label === "string" ? label.trim() : "",
+      };
+    };
+    const results: (
+      | Awaited<ReturnType<typeof loadComputer>>
+      | null
+      | undefined
+    )[] = Array.from(configured, () => undefined);
+    const publish = () => {
+      if (version !== this.version) return;
+      this.choices = [];
+      this.catalogue.clear();
+      this.catalogueError = "";
+      const newThreads: {
+        choice: DestinationView["choices"][number];
+        last: Job | undefined;
+      }[] = [];
+      const threads: Thread[] = [];
+      const scopedProjects: Project[] = [];
+      const labels = computerLabels(results.map((result) => result?.label));
+      labels.forEach((label, i) =>
+        this.computerNames.set(configured[i].origin, label),
+      );
+      results.forEach((result, i) => {
+        if (result === undefined) return;
+        if (result === null) {
+          this.catalogueError = [
+            this.catalogueError,
+            `Couldn’t load ${this.computerNames.get(configured[i].origin)}. Retry or copy the recording.`,
+          ]
+            .filter(Boolean)
+            .join(" ");
+          return;
+        }
+        const { config, raw, projects, projectId, settings, last } = result;
+        const scoped = (id: string) =>
+          multiple ? JSON.stringify([config.origin, id]) : id;
+        scopedProjects.push(
+          ...projects.map((project) => ({
+            ...project,
+            id: scoped(project.id),
+          })),
         );
-        if (!projectId) throw Error("No T3 project");
-        const label = configuration.environment?.label;
-        return {
-          config,
-          raw,
-          projects,
-          projectId,
-          settings: configuration.settings,
-          label: typeof label === "string" ? label.trim() : "",
-        };
+        threads.push(
+          ...raw.threads.map((thread) => ({
+            ...thread,
+            id: scoped(thread.id),
+            projectId: scoped(thread.projectId),
+          })),
+        );
+        for (const original of destinations(raw.threads, projects, projectId)) {
+          const thread = raw.threads.find((t) => t.id === original.id),
+            project = projects.find(
+              (p) => p.id === (thread?.projectId ?? projectId),
+            );
+          if (!project) continue;
+          const id = scoped(original.id);
+          const choice = {
+            ...original,
+            id,
+            ...(multiple
+              ? { computer: this.computerNames.get(config.origin) }
+              : {}),
+          };
+          if (original.kind === "new") newThreads.push({ choice, last });
+          this.catalogue.set(id, {
+            config,
+            threads: raw.threads as (Thread & Record<string, unknown>)[],
+            project: project as Project & Record<string, unknown>,
+            settings,
+            choice: original,
+          });
+        }
+      });
+      newThreads.sort(
+        (a, b) =>
+          (b.last?.sentAt ?? b.last?.createdAt ?? 0) -
+          (a.last?.sentAt ?? a.last?.createdAt ?? 0),
+      );
+      this.choices = newThreads.map((item) => item.choice);
+      for (const thread of destinations(threads, scopedProjects, "").slice(1)) {
+        const entry = this.catalogue.get(thread.id);
+        if (entry)
+          this.choices.push({
+            ...thread,
+            ...(multiple
+              ? { computer: this.computerNames.get(entry.config.origin) }
+              : {}),
+          });
+      }
+      this.changed();
+    };
+    await Promise.all(
+      configured.map(async (config, index) => {
+        results[index] = await loadComputer(config).catch(() => null);
+        publish();
       }),
     );
-    if (version !== this.version) return;
-    const labels = computerLabels(
-      results.map((result) =>
-        result.status === "fulfilled" ? result.value.label : undefined,
-      ),
-    );
-    labels.forEach((label, i) =>
-      this.computerNames.set(configured[i].origin, label),
-    );
-    results.forEach((result, i) => {
-      if (result.status === "rejected") {
-        this.error = [
-          this.error,
-          `Couldn’t load ${this.computerNames.get(configured[i].origin)}. Retry or copy the recording.`,
-        ]
-          .filter(Boolean)
-          .join(" ");
-        return;
-      }
-      const { config, raw, projects, projectId, settings } = result.value;
-      for (const original of destinations(raw.threads, projects, projectId)) {
-        const thread = raw.threads.find((t) => t.id === original.id),
-          project = projects.find(
-            (p) => p.id === (thread?.projectId ?? projectId),
-          );
-        if (!project) continue;
-        const id = multiple
-          ? JSON.stringify([config.origin, original.id])
-          : original.id;
-        const choice = {
-          ...original,
-          id,
-          ...(multiple
-            ? { computer: this.computerNames.get(config.origin) }
-            : {}),
-        };
-        this.choices.push(choice);
-        this.catalogue.set(id, {
-          config,
-          threads: raw.threads as (Thread & Record<string, unknown>)[],
-          project: project as Project & Record<string, unknown>,
-          settings,
-          choice: original,
-        });
-      }
-    });
-    this.changed();
   }
 
   private async doConfirm(capture: string, id: string) {

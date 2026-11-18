@@ -139,7 +139,13 @@
 .destination-option > span {
   flex: 1;
   min-width: 0;
-  overflow-wrap: anywhere;
+}
+.destination-option-title,
+.destination-option small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .destination-option svg {
   width: 18px;

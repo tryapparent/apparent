@@ -196,6 +196,10 @@ test("all connected computers are combined without collisions and dispatch to th
   await c.update("combined", "completed");
   const choices = c.view()!.choices;
   assert.equal(choices.length, 4);
+  assert.deepEqual(
+    choices.map((choice) => choice.kind === "new"),
+    [true, true, false, false],
+  );
   assert.equal(new Set(choices.map((c) => c.id)).size, 4);
   assert.equal(JSON.stringify(choices).includes("private-test-token"), false);
   const target = choices.find(
@@ -214,6 +218,11 @@ test("all connected computers are combined without collisions and dispatch to th
   assert.equal(a.calls.length, 0);
   assert.equal(b.accepted.size, 1);
   assert.deepEqual(b.calls[0], b.calls[1]);
+  const reopened = new Controller(() => {}, a.config);
+  await reopened.update("next", "processing");
+  assert.equal(reopened.view()!.choices[0].computer, "Clanker");
+  assert.equal(reopened.view()!.choices[0].project, "Build project");
+  assert.equal(reopened.view()!.selected, reopened.view()!.choices[0].id);
 });
 
 test("one unreachable computer leaves the other computer selectable and reports the missing host", async (t) => {
