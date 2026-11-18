@@ -18,3 +18,13 @@ export function timingContracts(cwd: string): string[] {
   if (!tests.length) throw Error('Timing contract inventory is empty');
   return tests.sort();
 }
+
+export function foregroundCommands() {
+  const cwd = 'connect/client/typescript';
+  return [
+    {argv: ['npm', 'ci', '--no-audit', '--no-fund'], cwd},
+    {argv: ['npm', 'test'], cwd},
+    {argv: ['npm', 'run', 'typecheck'], cwd},
+    {argv: ['npm', 'run', 'build'], cwd},
+  ];
+}

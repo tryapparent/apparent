@@ -1,4 +1,5 @@
 import path from "node:path";
+import { bendComments } from "../bend/source.ts";
 import { fileURLToPath } from "node:url";
 import { parentPort, Worker, workerData } from "node:worker_threads";
 import { Parser, Language } from "web-tree-sitter";
@@ -88,6 +89,7 @@ export async function comments(file: string, text: string): Promise<string[]> {
       .filter((line) => line.startsWith("#"));
   }
   const ext = path.posix.extname(file).slice(1).toLowerCase();
+  if (ext === "bend") return bendComments(file, text);
   if (
     noncode.has(ext) ||
     ["LICENSE", "NOTICE"].includes(path.posix.basename(file))

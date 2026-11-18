@@ -1,4 +1,5 @@
 import {readFileSync} from 'node:fs';
+import {bendToolingInput} from '../../../shared/enablement/bend/source.ts';
 const rule = JSON.parse(readFileSync(new URL('../../../engine/enablement/ci/inputs.json', import.meta.url), 'utf8')) as {root: string; excludedSuffixes: string[]};
 const automaticPaths = [rule.root + '/**', ...rule.excludedSuffixes.map(suffix => '!' + rule.root + '/**/*' + suffix)];
 const affectsEngine = (path: string) => path.startsWith(rule.root + '/') && !rule.excludedSuffixes.some(suffix => path.endsWith(suffix));
@@ -6,10 +7,8 @@ import {admissionTooling} from '../../../shared/enablement/ci/inputs.ts';
 import {independentInputs} from './engine-inputs/qualify.ts';
 export const owners = ['capture', 'engine', 'desktop', 'capture-tools', 'client', 'client-foreground', 'web', 'service', 'public', 'hermes', 'tooling', 'onboarding', 'engine-media'] as const;
 export type Owner = typeof owners[number];
-export const desktopPackagingInputs = new Set([
-  'capture/desktop/scripts/packaging/install-app.sh',
-  'capture/desktop/scripts/packaging/frontend/stage.ts',
-]);
+export const desktopPackagingInputs = new Set(['install-app.sh', 'frontend/stage.ts']
+  .map(file => 'capture/desktop/scripts/packaging/' + file));
 import { publicMarkdown, hostedBrowserFixture } from '../../../public/enablement/cd/ci/inputs.ts';
 export { publicMarkdown };
 export function documentationOnlyPath(path: string): boolean {
@@ -43,14 +42,11 @@ export const onboardingWisprInputs = new Set([
 ].map(path => 'capture/desktop/ui/frontend/' + path));
 export const retiredOnboardingInputs = new Set([
   'capture/desktop/settings/onboarding/account.rs',
-  'capture/desktop/ui/frontend/electron/onboarding/account.ts',
-  'capture/desktop/ui/frontend/src/onboarding/account.tsx',
-  'capture/desktop/ui/frontend/tests/onboarding/account.test.ts',
-  'capture/desktop/ui/frontend/src/onboarding/control-guide.tsx',
-  'capture/desktop/ui/frontend/src/onboarding/control-guide.css',
+  ...['electron/onboarding/account.ts', 'src/onboarding/account.tsx', 'tests/onboarding/account.test.ts',
+    'src/onboarding/control-guide.tsx', 'src/onboarding/control-guide.css']
+    .map(file => 'capture/desktop/ui/frontend/' + file),
 ]);
-export const onboardingRoots = ['capture/desktop/ui/frontend/src/onboarding/',
-  'capture/desktop/ui/frontend/electron/onboarding/', 'capture/desktop/ui/frontend/tests/onboarding/'];
+export const onboardingRoots = ['src', 'electron', 'tests'].map(dir => `capture/desktop/ui/frontend/${dir}/onboarding/`);
 const onboardingRendererTestInputs = new Set([
   'capture/desktop/ui/frontend/tests/onboarding/renderer/window-coach.smoke.ts',
   'capture/desktop/ui/frontend/tests/onboarding/renderer/tsconfig.json',
@@ -68,7 +64,8 @@ export function onboardingInput(path: string): boolean {
     path.startsWith('capture/desktop/settings/onboarding') || path.endsWith('/practice.rs') ||
     path.startsWith('shared/ui/') || path.startsWith('record/');
 }
-const nativeWorkflowPaths = [".github/workflows/checks.yml",".github/workflows/linux-updater-harness.yml",".github/workflows/release-linux.yml",".github/workflows/release-mac-preview.yml",".github/workflows/verification-platform.yml",".github/workflows/verification.yml"];
+const nativeWorkflowPaths = ['checks', 'linux-updater-harness', 'release-linux', 'release-mac-preview', 'verification-platform', 'verification']
+  .map(name => `.github/workflows/${name}.yml`);
 
 export const portableForegroundInputs = new Set([
   'connect/client/typescript/src/foreground.ts', 'connect/client/typescript/test/foreground.test.ts',
@@ -163,6 +160,7 @@ function directConsumers(path: string): readonly Owner[] {
     ? owners.filter(owner => owner !== 'engine-media') : owners;
 }
 export function consumers(path: string): readonly Owner[] {
+  if (bendToolingInput(path)) return [];
   const selected = [...directConsumers(path)];
   if (onboardingInput(path) && !documentationOnlyPath(path) && !selected.includes('onboarding')) selected.push('onboarding');
   return owners.filter(owner => selected.includes(owner) && (owner !== 'engine-media' || affectsEngine(path)));

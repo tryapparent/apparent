@@ -1,3 +1,4 @@
+import {bendToolingInput} from "../../shared/enablement/bend/source.ts";
 import {serviceCommands} from '../../connect/enablement/ci/local/service.ts';
 import { verification as publicVerification } from '../../public/enablement/cd/ci/inputs.ts';
 import { spawnSync } from 'node:child_process';
@@ -11,7 +12,7 @@ import {desktopDependencies, desktopPackage} from './desktop-install.ts';
 import {owners, selectedOwners, routeDecision, routingProblems, desktopPackagingInputs} from '../ci/routing/consumers.ts';
 import {selectRange} from '../ci/select.ts';
 import {explainSelection} from './preview/explain.ts';
-import {timingContracts} from './contracts.ts';
+import {foregroundCommands, timingContracts} from './contracts.ts';
 export {owners} from '../ci/routing/consumers.ts';
 import type {Admission} from './service.ts';
 
@@ -77,16 +78,6 @@ export function toolingCommands(): Command[] {
   ];
 }
 
-export function foregroundCommands(): Command[] {
-  const cwd = 'connect/client/typescript';
-  return [
-    {argv: ['npm', 'ci', '--no-audit', '--no-fund'], cwd},
-    {argv: ['npm', 'test'], cwd},
-    {argv: ['npm', 'run', 'typecheck'], cwd},
-    {argv: ['npm', 'run', 'build'], cwd},
-  ];
-}
-
 export function onboardingCommands(): Command[] {
   const cwd = 'capture/desktop/ui/frontend';
   return [
@@ -115,6 +106,8 @@ export function commands(selected: Owner[], base: string, head: string, platform
     add(['python3', 'enablement/verification.py', '--base', base, '--preflight']);
   if (selected.includes('tooling') || installScope.paths === null)
     add(['python3', 'enablement/verification.py', '--base', base, '--head', head, '--pr']);
+  if (installScope.local && (installScope.paths === null || installScope.paths.some(path => bendToolingInput(path) || path === 'record/completion/src/policy.ts')))
+    add(['node', 'record/enablement/ci/bend/check.ts']);
   if (selected.includes('tooling')) result.push(...toolingCommands());
   else if (selected.includes('desktop')) result.push(...installationContracts(installScope.paths, installScope.workflowControls));
   if (selected.includes('onboarding')) result.push(...onboardingCommands());
