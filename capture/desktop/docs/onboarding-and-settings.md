@@ -306,16 +306,16 @@ continues; Finish remains in the recording controls. Closing never fabricates le
 completion. Native fallback remains available if the Electron transport fails;
 its legacy account presentation remains local-only.
 
-Rust decides what shows (`Flow`, `launch_plan`, `Gate`, tested) and stores progress under `"onboarding"` in `~/.config/apparent/config.json`, including the tour's current step (`resume`), so any quit (macOS's "Quit & Reopen" too) picks up there; the SwiftUI window in `apparent-helper onboarding` only renders the state it's sent and reports buttons (`grant:<permission>` for a row).
+The [Onboarding owner](../../../onboarding/README.md) defines when the optional tour opens and how to resume it. The native adapter saves progress under `"onboarding"` in `~/.config/apparent/config.json`, and the renderer reports user actions.
 Progress saves on both platforms update only the current schema's leaves through
 the shared durable config transaction. Unknown nested onboarding fields and other
 settings survive; omitted optional schema fields are removed. A non-object
 `onboarding` value rejects the save without replacing the existing file. This
 native durability boundary remains the sole writer while practice policy is migrated.
 
-Tour: agent choice → pen → required permissions → shortcut choice → guided capture → Done. Permissions share one checklist: Screen Recording, Microphone and Accessibility, in any order. Electron counts the accepted shortcut choice as practice one and shows **One more time.**; the next real shortcut starts capture. See [Two-use shortcut setup](#two-use-shortcut-setup) and [First-capture drawing sequence](#first-capture-drawing-sequence). The separate demonstration page is removed. An explicit replay from Settings clears tour milestones; ordinary quit/relaunch preserves completed shortcut setup. The native fallback retains its legacy trial and Continue action. Leaving unfinished shortcut recording cancels it and resumes hotkeys. Camera (iPhone) is outside the tour: its first use opens `Flow::fix(vec![Camera])` with one permission row.
+The tour covers agent choice, pen, shortcut practice and guided capture. The effective shortcut works without confirming it in the tour. Pen choice and shortcut practice can be skipped. Recording entry points open repair for the actual blockers, and iPhone capture asks for Camera when needed.
 
-The legacy `how-it-works` value remains readable in saved config, but routes past the removed page in both Electron and native fallback. Back navigation and step counts exclude it.
+Legacy `how-it-works` and `permissions` tour steps remain readable in saved config and advance to the next coaching step.
 
 Input Monitoring is never asked for or read (macOS wants a relaunch after it; the enum variant stays only so 0.3.x configs load, and `input_monitoring_is_never_requested` greps the sources): clicks come from an `NSEvent` global mouse monitor (no permission), ⇧ and held modifiers from `CGEventSourceFlagsState` (no permission), keys from an active `kCGEventTapOptionDefault` tap (Accessibility), which the HID poller makes or stops every 500 ms as `AXIsProcessTrusted` changes (`check_key_tap`; live, no relaunch). Never poll key codes (`CGEventSourceKeyState`) or make a listen-only tap.
 
@@ -337,14 +337,13 @@ Rows for draggable lists (`Permission::draggable`: Screen Recording, Accessibili
 
 ### First-capture onboarding
 
-First-capture onboarding is enabled by default. Set
-`"experiments": {"onboardingFirstCapture": false}` to opt out, then restart the app
-or reopen the tour. The opt-out restores optional shortcut choice and practice.
-Existing users who already finished setup are not forced through it again.
+The welcome tour is offered by default. The `experiments.onboardingFirstCapture`
+setting can suppress the automatic offer. Later and Close preserve unfinished
+progress. A successful recording keeps subsequent launches quiet even when
+coaching remains unfinished.
 
-In the native fallback, choose a valid combination in the inline recorder and
-complete its separate trial before continuing. There is no preselected default or accept-current action.
-Invalid or cancelled choices and an untested saved combination cannot advance.
+The native fallback can try a chosen shortcut or skip to guided capture
+with the effective binding. The standalone shortcut test never starts recording.
 A verified desktop-owned Linux binding instead offers **Use desktop shortcut**;
 Apparent cannot rewrite that compositor setting. The next page asks the user to
 try giving feedback on onboarding: start with the chosen shortcut, talk and point,

@@ -1,10 +1,7 @@
 pub(crate) mod cli;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 mod hermes {
-    use crate::capture::desktop::{
-        settings::onboarding::Progress, workflow::launch_url::open_hermes_trusted,
-    };
-    use crate::shared::handoff;
+    use crate::capture::desktop::workflow::launch_url::open_hermes_trusted;
     use anyhow::Result;
     use clap::Subcommand;
 
@@ -21,14 +18,7 @@ mod hermes {
     pub(super) fn run(command: HermesCommand) -> Result<()> {
         match command {
             HermesCommand::Status => {
-                let mut progress = Progress::load();
-                progress.prepare_current_tour();
-                let status = if !progress.seen && handoff::experiment("onboardingFirstCapture") {
-                    "setup_required"
-                } else {
-                    "ready"
-                };
-                println!("{}", serde_json::json!({ "schema": 1, "status": status }));
+                println!("{}", serde_json::json!({ "schema": 1, "status": "ready" }));
                 Ok(())
             }
             HermesCommand::Record { destination } => open_hermes_trusted(&destination),

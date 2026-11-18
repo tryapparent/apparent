@@ -3,6 +3,10 @@ export const recordingPermissions = {
     silent: ["ScreenRecording", "Accessibility"],
     narrated: ["ScreenRecording", "Microphone", "Accessibility"],
   },
+  macosPicker: {
+    silent: ["Accessibility"],
+    narrated: ["Microphone", "Accessibility"],
+  },
   linux: {
     silent: [],
     narrated: [],

@@ -653,7 +653,8 @@ impl Panel {
             "type": "about-state", "version": env!("APPARENT_VERSION_LABEL"),
             "updates": updates_available(), "updateCheck": self.update_check,
             "updateChannel": if config.update_channel.as_deref() == Some("main") { "main" } else { "stable" },
-            "mainUpdates": cfg!(target_os = "linux"), "linux": cfg!(target_os = "linux")
+            "mainUpdates": cfg!(target_os = "linux"), "linux": cfg!(target_os = "linux"),
+            "resumeTour": super::onboarding::Progress::load_from(config_path).resume.is_some()
         })
     }
 
@@ -970,9 +971,7 @@ impl Panel {
     }
 
     fn screen_relaunch(&self) -> bool {
-        self.grants
-            .as_ref()
-            .is_some_and(|g| g.granted(Permission::ScreenRecording) && g.screen_needs_relaunch)
+        crate::permission_admission::screen_relaunch(self.grants.as_ref())
     }
 
     /// Like onboarding: the first press asks macOS, later ones (or a denied one) open the
@@ -1089,7 +1088,7 @@ impl Panel {
                 .map(|&permission| PermissionView {
                     permission,
                     status: self.status(permission),
-                    required: crate::permission_admission::requires(permission, microphone),
+                    required: crate::permission_admission::requires(permission, microphone, &config),
                     requested: self.requested.contains(&permission),
                     relaunch: permission == Permission::ScreenRecording && self.screen_relaunch(),
                 })

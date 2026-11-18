@@ -168,6 +168,7 @@ app.whenReady().then(() => {
         // A rejected snapshot can precede render-process-gone. Let that native
         // event admit its crash report before exiting; otherwise the existing
         // startup deadline restores the fallback. Never reveal a failed frame.
+        settingsFrame = undefined;
       });
       return settingsFrame;
     }
@@ -265,7 +266,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('apparent:labs-preference', (event, ...args) => {
     validate(event, []);
-    if (!labs || args.length > 2 || args.length > 0 && typeof args[0] !== 'boolean' || args.length === 2 && !['streaming','autoPaste','sharing','wisprFlow'].includes(args[1]) || args[1] === 'autoPaste' && process.platform !== 'linux' || args[1] === 'wisprFlow' && process.platform !== 'darwin') throw new Error('Forbidden Labs preference');
+    if (!labs || args.length > 2 || args.length > 0 && typeof args[0] !== 'boolean' || args[1] === 'autoPaste' && process.platform !== 'linux' || args[1] === 'wisprFlow' && process.platform !== 'darwin') throw new Error('Forbidden Labs preference');
     return labsPreferences.request(...args);
   });
   ipcMain.handle('apparent:agents-t3-preference', (event, ...args) => {

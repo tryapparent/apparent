@@ -339,6 +339,7 @@ impl ApparentCoordinator {
                 || self.is_selecting() || self.is_processing()
                 || self.iphone_preview.is_some() || self.agent_capture_id.is_some()
                 || self.recording_shortcut_key || workflow::shutdown::requested();
+            let occupied = occupied || display_selection::pending();
             if self.agent_captures.admit(id, occupied, request.expired()) {
                 self.agent_capture_id = Some(id.clone());
                 self.publish_capture_busy();
@@ -485,14 +486,17 @@ impl ApparentCoordinator {
                     return;
                 }
                 let mut progress = Progress::load();
-                progress.reset_for_replay();
-                if let Err(error) = progress.save_to(&crate::shared::handoff::default_config_path()) {
-                    let message = format!("Could not save welcome tour progress: {error:#}");
-                    apparent_log(&message);
-                    if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some(message); }
-                    return;
+                let step = progress.resume.unwrap_or(Step::Welcome);
+                if progress.resume.is_none() {
+                    progress.reset_for_replay();
+                    if let Err(error) = progress.save_to(&crate::shared::handoff::default_config_path()) {
+                        let message = format!("Could not save welcome tour progress: {error:#}");
+                        apparent_log(&message);
+                        if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some(message); }
+                        return;
+                    }
                 }
-                self.open_onboarding(Flow::tour(Step::Welcome, self.grants.clone()));
+                self.open_onboarding(Flow::coaching(step, self.grants.clone()));
             }
             Effect::Relaunch => {
                 if self.refuse_capture_restart() { return; }
@@ -516,7 +520,7 @@ impl ApparentCoordinator {
 
     pub(crate) fn capture_busy(&self) -> bool {
         #[cfg(any(target_os = "macos", target_os = "linux"))]
-        if self.agent_capture_id.is_some() { return true; }
+        if self.agent_capture_id.is_some() || display_selection::pending() { return true; }
         self.pending_finalizers > 0 || self.lab || self.active_recording.is_some()
             || self.is_selecting() || self.is_processing() || self.iphone_preview.is_some()
             || self.recording_shortcut_key
@@ -586,9 +590,9 @@ impl ApparentCoordinator {
         self.grants.as_ref().filter(|grants| grants.is_current())
     }
 
-    fn permissions_allow_recording(&mut self, microphone: bool) -> bool {
-        use crate::permission_admission::{Admission, check};
-        match check(self.current_grants(), microphone) {
+    fn permissions_allow_recording(&mut self, microphone: bool, session_selected: bool) -> bool {
+        use crate::permission_admission::{Admission, ScreenAuthorization, check_for};
+        match check_for(self.current_grants(), microphone, ScreenAuthorization::for_screen_recording(session_selected)) {
             Admission::Ready => true,
             Admission::Checking => {
                 let message = "Checking recording permissions. Try recording again in a moment.";
@@ -605,13 +609,13 @@ impl ApparentCoordinator {
         }
     }
 
-    fn ready_to_record(&mut self) -> bool {
+    fn ready_to_record(&mut self, session_selected: bool) -> bool {
         if self.lab {
             return true;
         }
         let microphone = crate::capture::engine::runtime::audio::mic::enabled();
         self.admitted_microphone = None;
-        if !self.permissions_allow_recording(microphone) {
+        if !self.permissions_allow_recording(microphone, session_selected) {
             return false;
         }
         self.admitted_microphone = Some(microphone);
@@ -665,19 +669,18 @@ impl ApparentCoordinator {
     }
 
     pub fn tick_gate(&mut self) {
-        use crate::capture::desktop::settings::onboarding::{Flow, Input, Mode, Permission};
+        use crate::capture::desktop::settings::onboarding::Flow;
         let Some(asks) = self.gate.tick(crate::capture::engine::runtime::modifier_flags() != 0) else {
             return;
         };
-        let required = asks.iter().any(|p| p.required());
-        match self.onboarding.as_mut() {
-            Some(session) if session.mode() == Mode::Tour && required => {
-                session.input(Input::Blocked);
-            }
-            _ => {
-                self.open_onboarding(Flow::fix(asks, self.grants.clone()));
+        if let Some(session) = &self.onboarding
+            && session.mode() == crate::capture::desktop::settings::onboarding::Mode::Tour
+        {
+            if let Err(error) = session.dismiss() {
+                apparent_log(format!("Could not save paused tour before repairing permissions: {error:#}"));
             }
         }
+        self.open_onboarding(Flow::fix(asks, self.grants.clone()));
     }
 
     fn onboarding_event(&mut self, event: crate::capture::desktop::settings::onboarding::Event, cx: &mut Context<Self>) {
@@ -688,7 +691,7 @@ impl ApparentCoordinator {
             Event::Session { .. } | Event::Transport { .. } => Effect::None,
             Event::Launch(grants) => {
                 let microphone = crate::capture::engine::runtime::audio::mic::enabled();
-                let missing = match crate::permission_admission::check(Some(&grants), microphone) {
+                let missing = match crate::permission_admission::check_recording_start(Some(&grants), microphone) {
                     crate::permission_admission::Admission::Blocked(missing) => missing,
                     _ => Vec::new(),
                 };
@@ -817,6 +820,16 @@ impl ApparentCoordinator {
                 }
                 self.onboarding = None;
             }
+            Effect::Defer => {
+                if let Some(session) = self.onboarding.as_ref()
+                    && let Err(error) = session.dismiss()
+                {
+                    apparent_log(format!("Could not save deferred onboarding: {error:#}"));
+                    return;
+                }
+                self.cancel_onboarding_editor();
+                self.onboarding = None;
+            }
             Effect::Relaunch { resume } => {
                 if self.refuse_capture_restart() { return; }
                 self.cancel_onboarding_editor();
@@ -881,31 +894,10 @@ impl ApparentCoordinator {
         }
     }
 
-    fn onboarding_shortcut_policy(&mut self) -> crate::capture::desktop::settings::onboarding::ShortcutPolicy {
-        use crate::capture::desktop::settings::onboarding::{Flow, Progress, ShortcutPolicy, Step};
-        if self.lab { return ShortcutPolicy::Record; }
-        if let Some(session) = self.onboarding.as_ref() { return session.shortcut_policy(); }
-        if !crate::shared::handoff::experiment("onboardingFirstCapture") { return ShortcutPolicy::Record; }
-        if self.onboarding.is_none() {
-            let mut progress = Progress::load();
-            if progress.prepare_current_tour() { progress.save(); }
-            if !progress.seen {
-                self.open_onboarding(Flow::tour(progress.resume.unwrap_or(Step::Welcome), self.grants.clone()));
-                return ShortcutPolicy::Block;
-            }
-        }
-        self.onboarding.as_ref().map_or(ShortcutPolicy::Record, |s| s.shortcut_policy())
-    }
-
-    fn setup_blocks_capture(&mut self) -> bool {
+    fn onboarding_shortcut_policy(&self) -> crate::capture::desktop::settings::onboarding::ShortcutPolicy {
         use crate::capture::desktop::settings::onboarding::ShortcutPolicy;
-        if self.lab { return false; }
-        let blocked = self.onboarding_shortcut_policy() != ShortcutPolicy::Record
-            || self.onboarding.as_ref().is_some_and(|s| !s.allows_capture_start());
-        if blocked {
-            if let Some(session) = self.onboarding.as_mut() { session.show(); }
-        }
-        blocked
+        if self.lab { return ShortcutPolicy::Record; }
+        self.onboarding.as_ref().map_or(ShortcutPolicy::Record, |s| s.shortcut_policy())
     }
 
     fn consume_setup_shortcut(&mut self) -> bool {
@@ -946,12 +938,9 @@ impl ApparentCoordinator {
                 }
                 ShortcutPolicy::Record => {}
             }
-            if !self.lab && !self.permissions_allow_recording(
-                crate::capture::engine::runtime::audio::mic::enabled(),
-            ) {
-                return;
-            }
-            self.begin_playback();
+            let picker = display_selection::requested();
+            if !self.ready_to_record(picker) { return; }
+            if !picker { self.begin_playback(); }
             self.hold_mods = crate::capture::engine::runtime::modifier_flags();
             self.telemetry.take_escape();
         }
@@ -1014,32 +1003,22 @@ impl ApparentCoordinator {
         }
     }
 
+    pub fn start_recording_with_target(&mut self, target: impl FnOnce(bool) -> TargetInfo, cx: &mut Context<Self>) {
+        self.start_recording_from(
+            target,
+            None,
+            cx,
+        );
+    }
+
     pub fn record_screen_now(&mut self, cx: &mut Context<Self>) {
+        if self.choose_system_display(cx) { return; }
         self.start_recording_with_target(|lab| {
             if lab { lab::target() } else { discover_target(None) }
         }, cx);
         if self.is_recording() {
             self.show_reveal(cx);
         }
-    }
-
-    fn reveal_activity(&self) -> usize {
-        use std::sync::PoisonError;
-        let t = &self.telemetry;
-        t.events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .len()
-            + t.strokes
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .len()
-            + usize::from(
-                t.live_ink
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .is_some(),
-            )
     }
 
     fn show_reveal(&mut self, cx: &mut Context<Self>) {
@@ -1051,7 +1030,7 @@ impl ApparentCoordinator {
             self.refresh_iphone(cx);
         }
         self.reduced_motion = reduce_motion();
-        let activity = self.reveal_activity();
+        let activity = self.telemetry.reveal_activity();
         self.reveal.show(reveal_clock_ms(), activity);
         self.reveal_since = motion::now();
         self.reveal_outgoing = None;

@@ -1109,7 +1109,10 @@ impl OnboardingWindow {
                 "continue",
                 state.ready,
             )),
-            Step::Shortcut => Some(("Continue", "continue", !state.first_capture_required || (state.shortcut_chosen && state.shortcut_tested && !state.shortcut_editing))),
+            Step::Shortcut if state.first_capture_required && !state.shortcut_tested => {
+                Some(("Skip shortcut practice", "skip-shortcut-trial", !state.shortcut_editing))
+            }
+            Step::Shortcut => Some(("Continue", "continue", !state.shortcut_editing)),
             Step::Done => Some(("Done", "continue", true)),
             Step::TryIt => None,
         };

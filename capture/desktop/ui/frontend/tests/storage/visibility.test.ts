@@ -113,6 +113,20 @@ test('a composited frame arriving after parent retirement cannot revive Settings
   assert.equal(window.focuses, 0);
 });
 
+test('a subsequent committed frame can recover from a transient empty snapshot', async () => {
+  let snapshots = 0;
+  const { window, mounted, frameReady, expire, exits } = host('--settings-storage', async () => ({
+    isEmpty: () => ++snapshots === 1,
+  }));
+  window.emit('ready-to-show');
+  await mounted();
+  assert.equal(window.visible, false);
+  await frameReady();
+  assert.equal(window.visible, true);
+  expire();
+  assert.deepEqual(exits, []);
+});
+
 test('empty and failed snapshots stay hidden until the native failure event or startup deadline', async () => {
   for (const capture of [() => Promise.resolve({ isEmpty: () => true }), () => Promise.reject(new Error('unavailable'))]) {
     const { window, mounted, exits, written, expire } = host('--settings-storage', capture);

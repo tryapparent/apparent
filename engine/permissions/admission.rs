@@ -1,11 +1,42 @@
+use crate::capture::engine::runtime::recording::recorder::selection;
 use crate::permission_facts::{Grants, Permission, Status};
 
 include!(concat!(env!("OUT_DIR"), "/recording_permissions.rs"));
 
-#[cfg(target_os = "macos")]
-const REQUIREMENTS: [&[Permission]; 2] = MACOS;
-#[cfg(not(target_os = "macos"))]
-const REQUIREMENTS: [&[Permission]; 2] = LINUX;
+#[derive(Clone, Copy)]
+pub(crate) enum ScreenAuthorization {
+    ExistingGrant,
+    SessionSelection,
+}
+
+impl ScreenAuthorization {
+    pub(crate) const CURRENT: Self = if cfg!(target_os = "macos") {
+        Self::ExistingGrant
+    } else {
+        Self::SessionSelection
+    };
+
+    pub(crate) fn for_screen_recording(use_picker: bool) -> Self {
+        if use_picker {
+            Self::SessionSelection
+        } else {
+            Self::CURRENT
+        }
+    }
+
+    fn requirements(self, microphone: bool) -> &'static [Permission] {
+        #[cfg(target_os = "macos")]
+        let modes = match self {
+            Self::ExistingGrant => MACOS,
+            Self::SessionSelection => MACOS_PICKER,
+        };
+        #[cfg(not(target_os = "macos"))]
+        let modes = match self {
+            Self::ExistingGrant | Self::SessionSelection => LINUX,
+        };
+        modes[usize::from(microphone)]
+    }
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Admission {
@@ -14,12 +45,39 @@ pub(crate) enum Admission {
     Blocked(Vec<Permission>),
 }
 
-pub(crate) fn requires(permission: Permission, microphone: bool) -> bool {
-    REQUIREMENTS[usize::from(microphone)].contains(&permission)
+pub(crate) fn check(grants: Option<&Grants>, microphone: bool) -> Admission {
+    check_for(grants, microphone, ScreenAuthorization::CURRENT)
 }
 
-pub(crate) fn check(grants: Option<&Grants>, microphone: bool) -> Admission {
-    check_required(grants, REQUIREMENTS[usize::from(microphone)])
+pub(crate) fn check_recording_start(grants: Option<&Grants>, microphone: bool) -> Admission {
+    check_for(
+        grants,
+        microphone,
+        ScreenAuthorization::for_screen_recording(selection::requested()),
+    )
+}
+
+pub(crate) fn requires(
+    permission: Permission,
+    microphone: bool,
+    config: &crate::shared::handoff::Config,
+) -> bool {
+    ScreenAuthorization::for_screen_recording(selection::enabled_in(config))
+        .requirements(microphone)
+        .contains(&permission)
+}
+
+pub(crate) fn screen_relaunch(grants: Option<&Grants>) -> bool {
+    grants.is_some_and(|g| g.granted(Permission::ScreenRecording) && g.screen_needs_relaunch)
+        && !selection::requested()
+}
+
+pub(crate) fn check_for(
+    grants: Option<&Grants>,
+    microphone: bool,
+    authorization: ScreenAuthorization,
+) -> Admission {
+    check_required(grants, authorization.requirements(microphone))
 }
 
 fn check_required(grants: Option<&Grants>, required: &[Permission]) -> Admission {
@@ -88,6 +146,37 @@ mod tests {
             .statuses
             .insert(Permission::ScreenRecording, Status::Granted);
         assert_eq!(check_required(Some(&grants), silent), Admission::Ready);
+    }
+
+    #[test]
+    fn macos_picker_admission_requires_accessibility_and_any_requested_microphone() {
+        let [silent, narrated] = MACOS_PICKER;
+        let mut grants = Grants::unavailable();
+        grants
+            .statuses
+            .insert(Permission::ScreenRecording, Status::Denied);
+        grants
+            .statuses
+            .insert(Permission::Accessibility, Status::Denied);
+        grants
+            .statuses
+            .insert(Permission::Microphone, Status::Denied);
+        assert_eq!(
+            check_required(Some(&grants), silent),
+            Admission::Blocked(vec![Permission::Accessibility])
+        );
+        grants
+            .statuses
+            .insert(Permission::Accessibility, Status::Granted);
+        assert_eq!(check_required(Some(&grants), silent), Admission::Ready);
+        assert_eq!(
+            check_required(Some(&grants), narrated),
+            Admission::Blocked(vec![Permission::Microphone])
+        );
+        grants
+            .statuses
+            .insert(Permission::Microphone, Status::Granted);
+        assert_eq!(check_required(Some(&grants), narrated), Admission::Ready);
     }
 
     #[test]
