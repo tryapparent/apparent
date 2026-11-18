@@ -7,9 +7,14 @@ import {
   primaryIssue,
   parseReference,
   reference,
-  acceptedMergeIssue,
 } from "./reference.ts";
-import { bind, boundIssue, instructions, verifyIssue } from "./binding.ts";
+import {
+  bind,
+  boundIssue,
+  instructions,
+  verifyIssue,
+  isGitHubMerge,
+} from "./binding.ts";
 
 export function prepareMessage(file: string, cwd: string): void {
   const message = readFileSync(file, "utf8");
@@ -69,9 +74,11 @@ export function validatePush(
   for (const commit of commits) {
     let issue;
     try {
-      issue =
-        primaryIssue(git(cwd, ["show", "-s", "--format=%B", commit]), cwd) ??
-        acceptedMergeIssue(commit);
+      issue = primaryIssue(
+        git(cwd, ["show", "-s", "--format=%B", commit]),
+        cwd,
+      );
+      if (!issue && isGitHubMerge(commit, cwd)) continue;
     } catch (error) {
       throw Error(
         `Commit ${commit}: ${error instanceof Error ? error.message : error}`,
@@ -85,7 +92,7 @@ export function validatePush(
   }
   for (const issue of issues.values()) verifyIssue(issue, cwd);
   console.error(
-    `issue-traceability: validated ${commits.length} new commits and ${issues.size} distinct GitHub issues`,
+    `issue-traceability: checked ${commits.length} new commits and validated ${issues.size} distinct GitHub issues`,
   );
 }
 

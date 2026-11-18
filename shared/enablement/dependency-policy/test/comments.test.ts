@@ -298,6 +298,24 @@ test("extensionless executable syntax selects real grammar and ignores only sheb
     /unsupported comment syntax/,
   );
 });
+test("gitattributes comments allow indentation while quoted hashes are patterns", async (t) => {
+  const file = "record/.gitattributes";
+  const pattern = '"#literal" export-ignore\r\n';
+  const text = "\uFEFF# legacy\r\n \t# indented\r\n" + pattern;
+  assert.deepEqual(await comments(file, text), ["# legacy", " \t# indented"]);
+  await assert.rejects(comments(file, pattern + "\0"), /invalid NUL/);
+  const f = fixture(t);
+  f.put(file, pattern);
+  f.stage();
+  f.check();
+  assert.match(
+    f.git("check-attr", "export-ignore", "--", "record/#literal"),
+    /: set/,
+  );
+  f.put(file, text);
+  f.stage();
+  f.check(/added\/changed code comment/);
+});
 test("gitignore syntax recognizes only leading hashes, including BOM and CRLF", async (t) => {
   const text =
     "\uFEFF# legacy\r\nnode_modules/\r\ndist/\r\n\\#literal\r\n #indented\r\npart#hash\r\n";

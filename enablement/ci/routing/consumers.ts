@@ -16,7 +16,7 @@ const rootProse = new Set(['CONTRIBUTING.md', 'LICENSE', 'NOTICE', 'SECURITY.md'
 const productMarkdown = new Set(['hermes/README.md', 'connect/client/typescript/README.md']);
 const embeddedSegments = /(^|\/)(skills?|prompts?|instructions?|tests?|fixtures?|templates?)(\/|$)/i;
 export function documentationOnlyPath(path: string): boolean {
-  if (rootProse.has(path)) return true;
+  if (rootProse.has(path) || /^agent\/skills\/(?:\.gitattributes|pitch-deck\/.*\.md)$/.test(path)) return true;
   if (!path.endsWith('.md') || publicMarkdown.has(path) || productMarkdown.has(path)) return false;
   if (/^public\/site\/(public|src|brand\/(src|shared))\//.test(path)) return false;
   if (/(^|\/)(SKILL|CLAUDE|GEMINI)\.md$/i.test(path)) return false;
