@@ -339,6 +339,8 @@ impl ApparentCoordinator {
                 || self.is_selecting() || self.is_processing()
                 || self.iphone_preview.is_some() || self.agent_capture_id.is_some()
                 || self.recording_shortcut_key || workflow::shutdown::requested();
+            #[cfg(target_os = "linux")]
+            let occupied = occupied || linux::portal::selection::pending();
             if self.agent_captures.admit(id, occupied, request.expired()) {
                 self.agent_capture_id = Some(id.clone());
                 self.publish_capture_busy();
@@ -1014,32 +1016,24 @@ impl ApparentCoordinator {
         }
     }
 
+    pub fn start_recording_with_target(&mut self, target: impl FnOnce(bool) -> TargetInfo, cx: &mut Context<Self>) {
+        self.start_recording_from(
+            target,
+            #[cfg(target_os = "linux")]
+            None,
+            cx,
+        );
+    }
+
     pub fn record_screen_now(&mut self, cx: &mut Context<Self>) {
+        #[cfg(target_os = "linux")]
+        if self.choose_wayland_display(cx) { return; }
         self.start_recording_with_target(|lab| {
             if lab { lab::target() } else { discover_target(None) }
         }, cx);
         if self.is_recording() {
             self.show_reveal(cx);
         }
-    }
-
-    fn reveal_activity(&self) -> usize {
-        use std::sync::PoisonError;
-        let t = &self.telemetry;
-        t.events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .len()
-            + t.strokes
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .len()
-            + usize::from(
-                t.live_ink
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .is_some(),
-            )
     }
 
     fn show_reveal(&mut self, cx: &mut Context<Self>) {
@@ -1051,7 +1045,7 @@ impl ApparentCoordinator {
             self.refresh_iphone(cx);
         }
         self.reduced_motion = reduce_motion();
-        let activity = self.reveal_activity();
+        let activity = self.telemetry.reveal_activity();
         self.reveal.show(reveal_clock_ms(), activity);
         self.reveal_since = motion::now();
         self.reveal_outgoing = None;

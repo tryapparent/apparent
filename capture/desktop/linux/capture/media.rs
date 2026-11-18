@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+use super::portal::Crop;
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use gstreamer as gst;
 use gstreamer::prelude::*;
@@ -50,14 +51,6 @@ fn init() -> Result<()> {
     });
     ensure!(ready, "GStreamer is not available");
     Ok(())
-}
-
-/// The pixels to retain from a verified PipeWire source.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Crop {
-    pub rect: [u32; 4],
-    /// A guarded fallback must receive these exact pixels before cropping.
-    pub source_size: Option<[u32; 2]>,
 }
 
 /// Where a recording's pixels come from.
@@ -609,6 +602,7 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
     let Sampler {
         target,
         video_output_path,
+        prepared_source,
         started_at,
         stopping,
         urgent,
@@ -631,7 +625,8 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
         CANDIDATE_EDGE_NO_VIDEO
     };
     let candidate = crate::capture::engine::runtime::capture_size(&target, edge);
-    let recorder = super::portal::source_for(&target, &stopping).and_then(|source| {
+    let source = prepared_source.map_or_else(|| super::portal::source_for(&target, &stopping), Ok);
+    let recorder = source.and_then(|source| {
         Recorder::new(&source, out, candidate, movie, started_at)
             .map_err(|error| anyhow!("{error:#}"))
             // The source (a portal session) lives as long as the recording.

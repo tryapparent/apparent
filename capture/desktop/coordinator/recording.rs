@@ -753,7 +753,7 @@ impl ApparentCoordinator {
         };
 
         if self.reveal.is_open() {
-            let activity = self.reveal_activity();
+            let activity = self.telemetry.reveal_activity();
             let on_pill = self
                 .native_pill
                 .as_ref()
@@ -839,6 +839,8 @@ impl ApparentCoordinator {
 
     /// Opens the picker on `mode`, else on the mode the last recording used.
     fn open_picker(&mut self, mode: Option<SelectionMode>, cx: &mut Context<Self>) {
+        #[cfg(target_os = "linux")]
+        if linux::portal::selection::pending() { return; }
         if mode == Some(SelectionMode::Window) {
             self.report_window_recording_disabled(cx);
             return;
@@ -986,7 +988,49 @@ impl ApparentCoordinator {
         }, cx);
     }
 
-    pub fn start_recording_with_target(&mut self, target: impl FnOnce(bool) -> TargetInfo, cx: &mut Context<Self>) {
+    #[cfg(target_os = "linux")]
+    fn choose_wayland_display(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.lab || self.agent_capture_id.is_some() || !linux::wayland_session()
+            || !crate::shared::handoff::experiment("chooseScreenEachTime")
+        {
+            return false;
+        }
+        if crate::capture::desktop::workflow::shutdown::requested()
+            || self.is_recording() || self.is_processing()
+        {
+            return true;
+        }
+        let Some(stopping) = linux::portal::selection::reserve() else { return true; };
+        cx.spawn(async move |entity, cx| {
+            let worker_stop = Arc::clone(&stopping);
+            let selected = cx.background_executor()
+                .spawn(async move { linux::portal::choose_display(&worker_stop) })
+                .await;
+            let _ = entity.update(cx, |coord, cx| {
+                let cancelled = stopping.load(std::sync::atomic::Ordering::Acquire);
+                drop(stopping);
+                if cancelled { return; }
+                match selected {
+                    Ok((target, source)) => coord.start_recording_from(|_| target, Some(source), cx),
+                    Err(error) => {
+                        apparent_log(format!("No screen recording was started: {error:#}"));
+                        coord.cancel_recording(cx);
+                    }
+                }
+            });
+        }).detach();
+        true
+    }
+
+    fn start_recording_from(
+        &mut self,
+        target: impl FnOnce(bool) -> TargetInfo,
+        #[cfg(target_os = "linux")]
+        prepared_source: Option<linux::media::Source>,
+        cx: &mut Context<Self>,
+    ) {
+        #[cfg(target_os = "linux")]
+        if linux::portal::selection::pending() { return; }
         #[cfg(any(target_os="macos",target_os="linux"))]
         self.reconcile_electron_pill();
         if crate::capture::desktop::workflow::shutdown::requested() { return; }
@@ -1061,8 +1105,6 @@ impl ApparentCoordinator {
             }
             return;
         }
-        let video_path = bundle_dir.join("recording.mp4");
-
         self.telemetry.set_capture_mode(target.mode);
         self.telemetry.reset_for_session(target.frame);
         #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -1087,27 +1129,17 @@ impl ApparentCoordinator {
         // Reuse the continuous 120Hz Metal overlay opened in `begin_target_selection` so the
         // cutout and border never swap windows or jump a single pixel when recording starts.
         // It moves to the target's display if that's another one (a window picked there).
-        let f = target.frame;
-        let target_rect = [f.x, f.y, f.width, f.height];
-        let screens = crate::capture::engine::runtime::screens::current();
-        self.display_rect =
-            crate::capture::engine::runtime::screens::index_at(&screens, [f.x + f.width / 2.0, f.y + f.height / 2.0])
-                .map_or(target_rect, |i| screens[i].frame)
-                .map(|v| v as f32);
-        if let Some(ref pill) = self.native_pill {
-            pill.place_on([f.x + f.width / 2.0, f.y + f.height / 2.0]);
+        let (target_rect, display_rect, centre) = ScreenCaptureSession::placement(target.frame);
+        self.display_rect = display_rect;
+        if let Some(pill) = &self.native_pill {
+            pill.place_on(centre);
         }
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             platform::cancel_pill_drag();
-            if self.native_pill.is_none() {
-                platform::place_hud_pill([f.x + f.width / 2.0, f.y + f.height / 2.0]);
+            if cfg!(target_os = "linux") || self.native_pill.is_none() {
+                platform::place_hud_pill(centre);
             }
-        }
-        #[cfg(target_os = "linux")]
-        {
-            platform::cancel_pill_drag();
-            platform::place_hud_pill([f.x + f.width / 2.0, f.y + f.height / 2.0]);
         }
         let metal_overlay = self.picker_metal_overlay.take().map(|mut overlay| {
             overlay.move_to(target_rect);
@@ -1143,21 +1175,23 @@ impl ApparentCoordinator {
             } else { None }
         );
         start_metric("metal_open_ms", stage);
-        let stage = Instant::now();
         self.publish_capture_busy();
         let microphone_enabled = self.admitted_microphone.take().unwrap_or_else(crate::capture::engine::runtime::audio::mic::enabled);
-        if !microphone_enabled {
-            // Durable admission intent survives orphan recovery; it is not inferred from an empty WAV.
-            if let Err(error) = std::fs::write(bundle_dir.join("microphone-off"), b"") {
-                apparent_log(format!("Could not preserve silent capture intent: {error}"));
-                self.cancel_recording(cx); return;
-            }
-        }
         let stream_admission = crate::shared::handoff::experiment("localStreamingTranscription")
             .then(workflow::local_transcription::admission);
-        let audio_recorder = if !microphone_enabled { None } else { match AudioRecorder::start_with_local_stream(&bundle_dir, stream_admission) {
-            Ok(recorder) => Some(recorder),
-            Err(error) => {
+        use crate::capture::engine::runtime::recording::recorder::StartError;
+        let (screen_session, audio_recorder, window_log) = match ScreenCaptureSession::start_tracks(
+            &target, &bundle_dir, &self.telemetry, microphone_enabled, stream_admission,
+            #[cfg(target_os = "linux")]
+            prepared_source,
+        ) {
+            Ok(tracks) => tracks,
+            Err(StartError::MicrophoneIntent(error)) => {
+                apparent_log(format!("Could not preserve silent capture intent: {error}"));
+                self.cancel_recording(cx);
+                return;
+            }
+            Err(StartError::Audio(error)) => {
                 let message = format!("Capture refused: narration could not be saved: {error:#}");
                 workflow::error_reporting::report(workflow::error_reporting::Failure::AudioStart);
                 apparent_log(&message);
@@ -1165,40 +1199,13 @@ impl ApparentCoordinator {
                 if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some(message); }
                 return;
             }
-        }};
-        start_metric("audio_start_ms", stage);
-        let stage = Instant::now();
-        let screen_session = match ScreenCaptureSession::start_with_exclusion_receipt(
-            target.clone(),
-            Some(video_path),
-            Arc::clone(&self.telemetry.excluded_window_ids),
-            #[cfg(target_os = "macos")]
-            Arc::clone(&self.telemetry.applied_excluded_window_ids),
-        ) {
-            Ok(session) => session,
-            Err(error) => {
+            Err(StartError::Screen(error)) => {
                 apparent_log(format!("Capture refused: {error:#}"));
                 workflow::error_reporting::report(workflow::error_reporting::Failure::ScreenStart);
-                if let Err(cleanup) = crate::capture::engine::bundle::recover::abandon_start(&bundle_dir, || drop(audio_recorder)) {
-                    apparent_log(format!("Failed capture startup cleanup at {}: {cleanup:#}", bundle_dir.display()));
-                }
                 self.cancel_recording(cx);
                 return;
             }
         };
-        start_metric("sck_start_ms", stage);
-        let window_log = (target.mode == CaptureMode::Display).then(|| {
-            let started_at = *self
-                .telemetry
-                .started_at
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            crate::shared::windows::WindowLogger::start(
-                target.frame,
-                started_at,
-                Arc::clone(&self.telemetry.window_log_request),
-            )
-        });
         self.active_recording = Some(ActiveRecording {
             started: Instant::now(),
             target,
@@ -1271,6 +1278,8 @@ impl ApparentCoordinator {
     /// window's on-screen rect is the capture target, so the laser, ink, pins and clicks over it
     /// normalize straight into phone-screen coordinates (kept current as the window moves).
     pub fn start_recording_iphone(&mut self, cx: &mut Context<Self>) {
+        #[cfg(target_os = "linux")]
+        if linux::portal::selection::pending() { return; }
         if self.is_recording() || self.is_processing() {
             return;
         }
@@ -1423,6 +1432,8 @@ impl ApparentCoordinator {
 
     /// Cancellation must also work before a visible island or recording exists.
     fn cancel_capture_attempt(&mut self) {
+        #[cfg(target_os = "linux")]
+        linux::portal::selection::cancel();
         // dismiss_island is a no-op while Hidden: startup failure must revoke the
         // shortcut attempt here, not wait for a visible phase transition.
         if let Some(session) = self.onboarding.as_mut() {

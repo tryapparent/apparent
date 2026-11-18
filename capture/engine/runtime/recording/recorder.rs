@@ -9,6 +9,10 @@ use std::time::{Duration, Instant};
 use super::super::{MAX_CAPTURE_SCALE, platform};
 use crate::shared::model::{RgbaFrame, TargetInfo};
 
+#[path = "../../../../engine/recording/start.rs"]
+mod start;
+pub(crate) use start::StartError;
+
 pub const FRAME_SAMPLE_INTERVAL: Duration = Duration::from_millis(220);
 
 /// Missing native windows can become enumerable without changing the request.
@@ -137,6 +141,8 @@ pub fn capture_size(target: &TargetInfo, long_edge: f64) -> (u32, u32) {
 pub(crate) struct Sampler {
     pub target: TargetInfo,
     pub video_output_path: Option<PathBuf>,
+    #[cfg(target_os = "linux")]
+    pub prepared_source: Option<crate::capture::desktop::linux::media::Source>,
     /// Apparent's own windows to leave out of the recording.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub excluded_window_ids: Arc<Mutex<Vec<u32>>>,
@@ -212,6 +218,8 @@ impl ScreenCaptureSession {
         Self::start_with_exclusion_receipt(target, video_output_path, excluded_window_ids,
             #[cfg(target_os = "macos")]
             Arc::new(Mutex::new(Vec::new())),
+            #[cfg(target_os = "linux")]
+            None,
         )
     }
 
@@ -221,6 +229,8 @@ impl ScreenCaptureSession {
         excluded_window_ids: Arc<Mutex<Vec<u32>>>,
         #[cfg(target_os = "macos")]
         applied_excluded_window_ids: Arc<Mutex<Vec<u32>>>,
+        #[cfg(target_os = "linux")]
+        prepared_source: Option<crate::capture::desktop::linux::media::Source>,
     ) -> anyhow::Result<Self> {
         super::super::ensure_recording_mode(target.mode)?;
         if let Some(directory) = video_output_path.as_deref().and_then(std::path::Path::parent) {
@@ -248,6 +258,8 @@ impl ScreenCaptureSession {
                 platform::run_sampler(Sampler {
                     target: sampler_target,
                     video_output_path,
+                    #[cfg(target_os = "linux")]
+                    prepared_source,
                     excluded_window_ids,
                     #[cfg(target_os = "macos")]
                     applied_excluded_window_ids,
