@@ -653,7 +653,8 @@ impl Panel {
             "type": "about-state", "version": env!("APPARENT_VERSION_LABEL"),
             "updates": updates_available(), "updateCheck": self.update_check,
             "updateChannel": if config.update_channel.as_deref() == Some("main") { "main" } else { "stable" },
-            "mainUpdates": cfg!(target_os = "linux"), "linux": cfg!(target_os = "linux")
+            "mainUpdates": cfg!(target_os = "linux"), "linux": cfg!(target_os = "linux"),
+            "resumeTour": super::onboarding::Progress::load_from(config_path).resume.is_some()
         })
     }
 

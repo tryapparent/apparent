@@ -35,12 +35,13 @@ mod tests {
     fn about_projection_reads_channel_without_exposing_other_panes_or_writing_config() {
         let dir = TempDir::new("about-projection");
         let path = dir.0.join("config.json");
-        let original = r#"{"updateChannel":"main","ingestToken":"synthetic-private","microphone":"synthetic-device","retention":{"future":42}}"#;
+        let original = r#"{"updateChannel":"main","ingestToken":"synthetic-private","microphone":"synthetic-device","retention":{"future":42},"onboarding":{"deferred":true,"resume":"shortcut"}}"#;
         std::fs::write(&path, original).unwrap();
         let panel = Panel::default();
         let state = panel.about_state(&path);
         assert_eq!(state["updateChannel"], "main");
-        assert_eq!(state.as_object().unwrap().len(), 7, "Only the About wire contract is projected");
+        assert_eq!(state["resumeTour"], true);
+        assert_eq!(state.as_object().unwrap().len(), 8, "Only the About wire contract is projected");
         for key in ["login", "shortcuts", "microphone", "permissions", "commandLine", "ingestToken"] {
             assert!(state.get(key).is_none(), "unrelated Settings field: {key}");
         }

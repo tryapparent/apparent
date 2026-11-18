@@ -53,6 +53,7 @@ export interface AboutState {
   linux: boolean;
   mainUpdates: boolean;
   updateChannel: string;
+  resumeTour?: boolean;
   updateCheck: {
     checking: boolean;
     result: "available" | "current" | "failed" | null;
@@ -439,7 +440,7 @@ export function About({
         className="settings-tour"
         onClick={() => void act({ action: "tour" })}
       >
-        Show welcome tour
+        {state?.resumeTour ? "Resume setup" : "Show welcome tour"}
       </Button>
       <ErrorDialog
         open={result === "failed" && !checking}

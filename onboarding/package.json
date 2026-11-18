@@ -1,6 +1,6 @@
 {
   "name": "@apparent/onboarding",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "exports": {
     "./practice": {
@@ -32,9 +32,11 @@
       "import": "./dist/host/actions.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "test": "node --experimental-strip-types --test practice/*.test.ts",
+    "test": "node --experimental-strip-types --test practice/*.test.ts host/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "tsc -p tsconfig.build.json",
     "check": "node --experimental-strip-types enablement/ci/check.ts"
