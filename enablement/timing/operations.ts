@@ -45,15 +45,18 @@ function toolOperation(name: string): string {
   return 'unknown';
 }
 
-/** Remove heredoc bodies before inspecting command words, including quoted delimiters. */
-function withoutHeredocs(source: string): string {
-  const lines = source.split('\n'), result: string[] = [], pending: string[] = [];
-  for (const line of lines) {
-    if (pending.length) {if (line.replace(/^\t+/, '') === pending[0]) pending.shift(); continue;}
-    result.push(line);
-    for (const match of line.matchAll(/<<-?\s*(['"]?)([\w-]+)\1/g)) pending.push(match[2]);
+type Heredoc = {delimiter: string; quoted: boolean; stripTabs: boolean};
+
+function heredocEnd(source: string, start: number, {delimiter, quoted, stripTabs}: Heredoc): number {
+  for (let i = start; i < source.length;) {
+    const newline = source.indexOf('\n', i);
+    const end = newline === -1 ? source.length : newline;
+    const line = source.slice(i, end);
+    if ((stripTabs ? line.replace(/^\t+/, '') : line) === delimiter) return end;
+    if (!quoted && /\$\(|`|\\$/.test(line)) return -1;
+    i = end + 1;
   }
-  return result.join('\n');
+  return -1;
 }
 
 function commandOperation(words: string[]): string {
@@ -86,29 +89,62 @@ export function shellOperations(source: string): string[] {
     return ['CI observation'];
   }
   // Quotes are words, not executable source. Shell operators delimit actual commands.
-  const clean = withoutHeredocs(source), commands: {words:string[]; write:boolean}[] = [];
+  const pending: Heredoc[] = [];
+  const commands: {words:string[]; write:boolean}[] = [];
+  const prelude = /[ \t]*(?:[A-Za-z_]\w*=\$\((mktemp) -d \/tmp\/apparent-dev-[A-Za-z0-9][\w-]*-XXXXXX\)|test "\$\(git rev-parse origin\/main\)" = "\$\(git rev-parse HEAD\^\)"|test -z "\$\(git status --porcelain\)")[ \t]*(?=\n|$)/y;
   let words: string[] = [], word = '', quote = '', write = false;
   const flushWord = () => {if (word) {words.push(word); word = '';}};
   const flush = () => {flushWord(); if (words.length) commands.push({words,write}); words = []; write = false;};
-  for (let i = 0; i < clean.length; i++) {
-    const c = clean[i];
-    if (c === '\\' && quote !== "'") {word += clean[++i] ?? ''; continue;}
-    if ((c === '`' || clean.startsWith('$(',i)) && quote !== "'") return ['unknown'];
+  for (let i = 0; i < source.length; i++) {
+    if (!quote && !word && !words.length && (i === 0 || source[i - 1] === '\n')) {
+      prelude.lastIndex = i;
+      const match = prelude.exec(source);
+      if (match) {
+        commands.push({words: [match[1] ?? 'git'], write: false});
+        i = prelude.lastIndex - 1;
+        continue;
+      }
+    }
+    const c = source[i];
+    if (c === '\\' && quote !== "'") {word += source[++i] ?? ''; continue;}
+    if (quote !== "'" && (c === '`' || (c === '$' && /^\$(?:\\\n)*\(/.test(source.slice(i))))) return ['unknown'];
     if (quote) {if (c === quote) quote = ''; else word += c; continue;}
     if (c === '"' || c === "'") {quote = c; continue;}
-    if (c === '#' && !word) {while (i < clean.length && clean[i] !== '\n') i++; flush(); continue;}
+    if (c === '#' && !word) {while (i + 1 < source.length && source[i + 1] !== '\n') i++; continue;}
+    if (c === '\n' && pending.length) {
+      flush();
+      for (const heredoc of pending) {
+        i = heredocEnd(source, i + 1, heredoc);
+        if (i < 0) return ['unknown'];
+      }
+      pending.length = 0;
+      continue;
+    }
     if (c === '>' || c === '<') {
       if (c === '>') write = true;
       if (/^\d+$/.test(word)) word = ''; else flushWord();
+      if (source.startsWith('<<', i) && !source.startsWith('<<<', i)) {
+        const header = source.slice(i).match(/^<<(-?)[ \t]*(['"]?)([\w-]+)\2(?=[ \t\n;|&<>]|$)/);
+        if (!header) return ['unknown'];
+        pending.push({delimiter: header[3], quoted: !!header[2], stripTabs: !!header[1]});
+        i += header[0].length - 1;
+        continue;
+      }
       // Redirection destinations and descriptor duplication are not commands.
-      const redirection = clean.slice(i).match(/^[<>]+-?\s*(?:&\d+|"[^"\n]*"|'[^'\n]*'|[^\s;&|]+)?/);
-      if (redirection) {i += redirection[0].length - 1; continue;}
+      const redirection = source.slice(i).match(/^[<>]+-?[ \t]*(&\d+|"(?:\\[^\n]|[^"\\\n])*"|'[^'\n]*'|[^\s;&|'"]+)?/);
+      if (redirection) {
+        const target = redirection[1] ?? '';
+        if (source[i + 1] === '(' || /['"]/.test(source[i + redirection[0].length] ?? '') ||
+            (!/^'[^']*'$/.test(target) && /\$\(|`|[<>]\(|\\$/.test(target))) return ['unknown'];
+        i += redirection[0].length - 1;
+        continue;
+      }
     }
     if (';|&\n'.includes(c)) {flush(); continue;}
     if (/\s/.test(c)) flushWord(); else word += c;
   }
   flush();
-  if (quote) return ['unknown'];
+  if (quote || pending.length) return ['unknown'];
   return commands.map(({words,write}) => write && /^(cat|printf|echo)$/.test(words[0]) ? 'file/artifact management' : commandOperation(words));
 }
 

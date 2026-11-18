@@ -67,38 +67,35 @@ age gives no evidence of live admission, runner demand or critical-path delay.
 Reports exclude these ages from costs, including older `preJobWaits` aggregates.
 The collector retains these records in its bounded sample.
 
-`format` leads with the largest observed operation and the largest identified
-action for each clock, count × mean = total, and whether mixed/unresolved time
-could overturn that ranking. Static inspection reads literal executable tool
-arguments without evaluating them; patch text, review prose and heredoc bodies
-are not commands. Dynamic scripts stay unknown. Workflow envelopes can combine
-preparation with execution; nested phase durations are never invented. Process
-waits inherit the known launch intent only through exact local session/cell IDs.
-Classified command purpose, identified mixtures and attributed timing are
-different coverage measures. Raw commands/arguments are not emitted in reports.
+`format` ranks observed operations and identified actions by **total** per
+clock, showing whether mixed/unresolved time could overturn the ranking.
+Exact `arithmetic` uses clipped spans: count × mean = total. Inspect longest
+source references and frequent short calls. Rounded fields serve legacy readers.
 
-CI reports rank queue totals by requested runner, execution by job and step
-totals (including frequent short setup), plus exact run/attempt/SHA/job/step
-references, longest full-age queues and running steps. Full queue age is distinct
-from window-clipped queue occupancy. Missing allocation/step clocks stay unknown;
-runner labels alone do not prove capacity, concurrency, dependency or approval
-causes. Read provider evidence before assigning those causes. Missing CI input
-is an explicit report gap, never evidence that local work dominates. These
-overlapping clocks cannot establish critical-path delay or how many human
-threads were blocked without original owner/dependency context.
+The scanner reads literal commands without executing them or reporting raw
+arguments. It ignores prose, patch text and inert heredoc content. Three whole
+preparation lines are recognized: an assignment from
+`$(mktemp -d /tmp/apparent-dev-<job>-XXXXXX)`, a quoted `test` comparing
+`$(git rev-parse origin/main)` with `$(git rev-parse HEAD^)`, and
+`test -z "$(git status --porcelain)"`. Dynamic and unsupported substitutions
+stay unknown. A test-and-push workflow stays mixed. Waits inherit launch intent
+through exact session/cell IDs. Mixed envelopes have no per-phase durations.
 
-Tool-envelope categories and repeated wrapper patterns expose exact unrounded
-`arithmetic`: complete/known clipped spans × mean seconds = summed seconds.
-Rank descending by **total**, including frequent short calls. Inspect longest
-source references and repeated patterns to find the actual expensive operation.
-The retained rounded legacy fields are presentation compatibility only.
-Process groups separately summarize recovered async spans, with p50/p95. They
-end at terminal observation, can include admission/reading delay, and are not
-an execution-time measurement. Polling, process spans, tool envelopes and hosted
-runner seconds overlap: do not add them or call them avoidable critical-path time.
-Missing endpoints, incomplete calls and unsupported providers stay unknown.
-Provider-original timestamps and stable call IDs prevent copied rollover items
-from becoming new incidents. Review overhead is excluded and reported separately.
+Compare eligible push waits using count × mean = total with matching clocks,
+windows and call mixes. Track classification coverage and any measured analyst
+effort separately. Identical-record replay verifies attribution; wait, build
+and delivery savings require separate evidence.
+
+CI ranks queue totals by requested runner and execution by job and step, with
+exact run/attempt/SHA/job/step references. Distinguish full queue age from
+clipped occupancy. Missing CI input or clocks stay unknown. Use provider
+evidence to assign capacity, concurrency, dependency or approval causes.
+
+Async spans include p50/p95 and end at terminal observation. Missing endpoints,
+incomplete calls and unsupported providers stay unknown. Original timestamps
+and stable IDs deduplicate rollover items. Review overhead is separate.
+Polls, tool envelopes, process spans and hosted runner time overlap and cannot
+be added. Critical path and blocked threads require original dependency context.
 
 ## Four lenses, one shortlist
 
@@ -162,7 +159,7 @@ or frequency from a controlled improvement. The tool checks arithmetic, not caus
 Regression command:
 
 ```sh
-node --experimental-strip-types --test enablement/timing/census.test.ts \
+node --experimental-strip-types --test enablement/timing/census.test.ts enablement/timing/operations.test.ts \
   enablement/timing/review/*.test.ts enablement/timing/review/tests/*.test.ts
 ```
 

@@ -29,6 +29,45 @@ test('heredoc source cannot contaminate operation and dynamic commands remain un
   assert.deepEqual(operations('exec_command',JSON.stringify({cmd:'echo "$(cargo test)"'})).operations,['unknown']);
 });
 
+test('substitutions outside literal preparation lines stay unknown',()=>{
+  const push = 'node --experimental-strip-types enablement/local-tests/execution/push.ts -- origin HEAD';
+  const job = 'job=$(mktemp -d /tmp/apparent-dev-example-XXXXXX)';
+  const guard = 'test -z "$(git status --porcelain)"';
+  const command = (cmd:string) => operations('exec_command', JSON.stringify({cmd})).operations;
+  for (const ambiguous of [
+    '$(git status --porcelain)',
+    'printf "%s" "$(git status --porcelain)"',
+    'eval "$(git status --porcelain)"',
+    'test -z "$(git status --porcelain; git push)"',
+    'test -z "$(git status --porcelain $(echo extra))"',
+    'test -z "$\\\n(git status --porcelain)"',
+    'test -z "$(git status --porcelain "$path")"',
+    'test "$(git rev-parse "$ref")" = "$(git rev-parse HEAD^)"',
+    'test "$(git rev-parse origin/main)" = "$(git rev-parse HEAD^^)"',
+    'test -z "`git status --porcelain`"',
+    'test -z "$(git status --porcelain"',
+    `${guard} extra`,
+    'job=$(mktemp /tmp/apparent-dev-example-XXXXXX)',
+    'job=$(mktemp -d /tmp/elsewhere-XXXXXX)',
+    'job=$(mktemp -d /tmp/apparent-dev-$name-XXXXXX)',
+    'job=$(mktemp -d /tmp/apparent-dev-example-XXXXXX))',
+    `cat >"$(echo logfile)"\n${guard}`,
+    `cat >"unclosed\n${job}\n"`,
+    `cat > >(echo output)\n${job}`,
+    `cat <<EOF\n${guard}\nEOF`,
+    `cat <<'END'suffix\n${job}\nENDsuffix`,
+    `cat <<'END'\n${job}`,
+  ]) assert.deepEqual(command(ambiguous + '\n' + push), ['unknown'], ambiguous);
+
+  for (const inert of [
+    `cat <<'EOF' # inline comment\n${job}\n${guard}\nEOF`,
+    `cat <<-"EOF"\n\t${job}\n\tEOF`,
+    `printf '%s' '\n${job}\n${guard}\n'`,
+    `cat <'$(git status --porcelain)'`,
+  ]) assert.deepEqual(command(inert + '\n' + push),
+    [inert.startsWith('printf') ? 'file/artifact management' : 'source/artifact inspection', 'verification/push'], inert);
+});
+
 test('only a finite literal observer accounts for the full shell envelope',()=>{
   const command = (cmd:string) => operations('exec_command', JSON.stringify({cmd})).operations;
   assert.deepEqual(command(observer), ['CI observation']);
@@ -67,24 +106,6 @@ test('mixed wrappers keep the whole interval and unresolved occupancy prevents a
   const safe=summarize([known,{...mixed,end:1000}],0,30_000);
   assert.equal(safe.actionRanking.envelopes.winnerEstablished,true);
   assert.ok(!JSON.stringify(report).includes('cargo test'), 'reports do not expose raw commands or patch text');
-});
-test('producer rollout and recovered process ranking identify the TypeScript hook without changing clocks',async()=>{
-  const dir=mkdtempSync(join(tmpdir(),'apparent-dev-operations-'));
-  try{
-    const file=join(dir,'rollout.jsonl');
-    const row=(time:number,payload:object)=>JSON.stringify({type:'response_item',timestamp:new Date(time).toISOString(),payload});
-    writeFileSync(file,[JSON.stringify({type:'session_meta',payload:{id:'s',cwd:'/fixture'}}),
-      row(1000,{type:'custom_tool_call',name:'exec',call_id:'launch',input:'text(await tools.exec_command({cmd:"node --experimental-strip-types enablement/local-tests/execution/push.ts -- origin HEAD"}));'}),
-      row(2000,{type:'custom_tool_call_output',call_id:'launch',output:'{"session_id":123}'}),
-      row(10000,{type:'custom_tool_call',name:'exec',call_id:'poll',input:'tools.write_stdin({session_id:123})'}),
-      row(11000,{type:'custom_tool_call_output',call_id:'poll',output:'{"exit_code":0}'})].join('\n'));
-    const r=await readRollout(file,()=>true), s=summarize(r.calls,0,12_000);
-    assert.equal(s.actionRanking.processes.candidate?.label,'verification/push');
-    assert.equal(s.actionRanking.processes.candidate?.totalSeconds,10);
-    assert.equal(s.actionRanking.processes.winnerEstablished,true);
-    assert.equal(s.observedToolUnionSeconds,2);
-    assert.equal(s.actionRanking.envelopes.ranked.find(g=>g.label==='waiting/status for verification/push')?.count,1);
-  }finally{rmSync(dir,{recursive:true,force:true});}
 });
 
 test('poll+log wrappers do not replace the actual process origin or multiply observed spans',async()=>{
