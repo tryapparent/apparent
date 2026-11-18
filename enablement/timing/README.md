@@ -60,3 +60,36 @@ Summed tool-seconds include concurrency;
 Run admission/queue time is unavailable and never inferred. Unsupported provider
 schemas require an explicit adapter, not guessed timestamps. Use existing
 `command.ts` timing receipts when command-phase runtime is required.
+
+## Opt-in test diff report
+
+Compare two committed trees from the repository root:
+
+```sh
+node --experimental-strip-types enablement/timing/test-diff.ts \
+  --base "$(git merge-base origin/main HEAD)" --head HEAD
+```
+
+The JSON report lists added, removed, renamed and modified candidate suite
+files using JS/TS test and spec names, Python `test_*.py` and Rust `tests/*.rs`.
+It also surfaces other changed paths from the [audit inventory](../docs/test-audit/inventory.md),
+which can include inline tests, support files and false positives. An added
+file is a review lead. Changes to cases inside existing files, runner
+registration and independent regression coverage need review at the owning
+test boundary.
+
+Fixture footprint is the before/after size of changed Git blobs and their net
+byte delta. It covers regular files in fixture, mock and testdata directories
+and files with fixture names, excluding Markdown and candidate suite files.
+Git-detected renames show both paths. Inline data, generated or downloaded
+fixtures, and runtime storage use are outside this estimate.
+
+Optionally pass `--timing /absolute/path/to/timing.jsonl` with existing
+`APPARENT_TIMING_FILE` observations. Use exact base/head SHAs in the receipts
+and keep the invocation and environment details with the source file. For a
+direct run under `command.ts`, set `GITHUB_SHA` on the wrapper to the commit
+actually tested. Start rows, invalid rows and rows without a matching revision
+are counted separately. Absent observations mean timing is unavailable.
+Durations cover the recorded commands, which can include setup, parallel work
+or retries. Compare like commands under like conditions before drawing cost
+conclusions. This command is for review and runs outside CI and admission.
