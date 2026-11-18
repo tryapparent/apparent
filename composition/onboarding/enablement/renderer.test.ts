@@ -144,6 +144,45 @@ test("trusted practice host drives the real renderer without accepting renderer 
   await expect(
     page.getByRole("button", { name: "Choose recording shortcut" }),
   ).toBeEnabled();
+  const repair = (status: string, extra: Record<string, boolean> = {}) =>
+    setup({
+      step: "permissions",
+      platform: "macos",
+      fix: true,
+      ready: status === "granted" && !extra.relaunch && !extra.reopening,
+      rows: [
+        { permission: "screen-recording", status, required: true, ...extra },
+      ],
+    });
+  repair("unavailable");
+  await expect(page.getByText("Checking access…")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Done" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Open Settings" })).toHaveCount(
+    0,
+  );
+  await capture("repair-checking");
+  repair("denied");
+  const openSettings = page.getByRole("button", { name: "Open Settings" });
+  await expect(openSettings).toBeVisible();
+  await openSettings.focus();
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(() => output)
+    .toContain('"action":"grant","permission":"screen-recording"');
+  await expect(page.getByRole("progressbar")).toHaveCount(0);
+  await capture("repair-denied");
+  repair("granted", { reopening: true });
+  await expect(page.getByText("Reopening apparent…")).toBeVisible();
+  await capture("repair-reopening");
+  repair("granted", { relaunch: true });
+  await expect(
+    page.getByRole("button", { name: "Reopen apparent" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Done" })).toBeDisabled();
+  await capture("repair-relaunch");
+  repair("granted");
+  await expect(page.getByRole("button", { name: "Done" })).toBeEnabled();
+  await capture("repair-restored");
   setup({
     step: "shortcut",
     shortcutEditing: true,

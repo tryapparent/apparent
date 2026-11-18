@@ -1,7 +1,7 @@
 import {readFileSync} from 'node:fs';
-const rule = JSON.parse(readFileSync(new URL('../../../engine/enablement/ci/inputs.json', import.meta.url), 'utf8')) as {root: string; excludedSuffixes: string[]};
-const automaticPaths = [rule.root + '/**', ...rule.excludedSuffixes.map(suffix => '!' + rule.root + '/**/*' + suffix)];
-const affectsEngine = (path: string) => path.startsWith(rule.root + '/') && !rule.excludedSuffixes.some(suffix => path.endsWith(suffix));
+const rule = JSON.parse(readFileSync(new URL('../../../engine/enablement/ci/inputs.json', import.meta.url), 'utf8')) as {root: string; excludedSuffixes: string[]; desktopPermissions: string};
+const automaticPaths = [rule.root + '/**', '!' + rule.desktopPermissions + '**', ...rule.excludedSuffixes.map(suffix => '!' + rule.root + '/**/*' + suffix)];
+const affectsEngine = (path: string) => path.startsWith(rule.root + '/') && !path.startsWith(rule.desktopPermissions) && !rule.excludedSuffixes.some(suffix => path.endsWith(suffix));
 import {admissionTooling} from '../../../shared/enablement/ci/inputs.ts';
 import {independentInputs} from './engine-inputs/qualify.ts';
 export const owners = ['capture', 'engine', 'desktop', 'capture-tools', 'client', 'client-foreground', 'web', 'service', 'public', 'hermes', 'tooling', 'onboarding', 'engine-media'] as const;
@@ -18,9 +18,7 @@ export function documentationOnlyPath(path: string): boolean {
   if (/(^|\/)AGENTS\.md$/.test(path)) return true;
   if (/(^|\/)(SKILL|CLAUDE|GEMINI)\.md$/i.test(path)) return false;
   return ['CONTEXT.md', 'VERIFICATION.md', 'enablement/refactor.md', 'enablement/local-tests/README.md'].includes(path) ||
-    ['capture/engine', 'capture/desktop', 'capture/agent', 'connect', 'connect/web', 'connect/client',
-      'connect/service', 'public/site', 'shared', 'enablement', 'record/storage', 'record/completion', 'record/transcription', 'record/media', 'engine', 'engine/sdk', 'agent', 'handoff', 'onboarding'].some(owner =>
-      path.startsWith(owner + '/docs/') || ['README', 'CHANGELOG', 'CONTRIBUTING', 'LICENSE'].some(name => path === `${owner}/${name}.md`));
+    /^(capture\/(engine|desktop|agent)|connect(\/(web|client|service))?|public\/site|shared|enablement|record\/(storage|completion|transcription|media)|engine(\/sdk)?|agent|handoff|onboarding)\/(docs\/|(README|CHANGELOG|CONTRIBUTING|LICENSE)\.md$)/.test(path);
 }
 export const linuxDrivers = new Set(['capture-smoke.py', 'gui-vm.py', 'gui-vm-reaper.py',
   'test-capture-smoke.py', 'test-gui-vm.py'].map(name => 'capture/desktop/scripts/linux/gui/' + name));
@@ -32,39 +30,39 @@ const toolingRegressionTests = new Set([
   'enablement/prerequisites/native.test.ts',
 ]);
 
+const frontend = 'capture/desktop/ui/frontend/';
 export const onboardingPureInputs = new Set([
   'electron/onboarding/account.ts', 'electron/onboarding/presentation.ts', 'electron/onboarding/selection.ts',
   'src/onboarding/state.ts', 'src/onboarding/shortcut/keys.ts',
-].map(path => 'capture/desktop/ui/frontend/' + path));
+].map(path => frontend + path));
 export const onboardingWisprInputs = new Set([
   'electron/onboarding/wispr.ts', 'src/onboarding/wispr/motion.ts',
   'src/onboarding/wispr/use-wispr.ts', 'src/onboarding/wispr/frog-sprites.png',
   'tests/onboarding/wispr/smoke.ts',
-].map(path => 'capture/desktop/ui/frontend/' + path));
+].map(path => frontend + path));
 export const retiredOnboardingInputs = new Set([
   'capture/desktop/settings/onboarding/account.rs',
-  'capture/desktop/ui/frontend/electron/onboarding/account.ts',
-  'capture/desktop/ui/frontend/src/onboarding/account.tsx',
-  'capture/desktop/ui/frontend/tests/onboarding/account.test.ts',
-  'capture/desktop/ui/frontend/src/onboarding/control-guide.tsx',
-  'capture/desktop/ui/frontend/src/onboarding/control-guide.css',
+  ...['electron/onboarding/account.ts', 'tests/onboarding/account.test.ts',
+    ...['account.tsx', 'control-guide.tsx', 'control-guide.css', 'permissions.tsx']
+      .map(file => 'src/onboarding/' + file),
+  ].map(file => frontend + file),
 ]);
-export const onboardingRoots = ['capture/desktop/ui/frontend/src/onboarding/',
-  'capture/desktop/ui/frontend/electron/onboarding/', 'capture/desktop/ui/frontend/tests/onboarding/'];
+export const onboardingRoots = [frontend + 'src/onboarding/',
+  frontend + 'electron/onboarding/', frontend + 'tests/onboarding/'];
 const onboardingRendererTestInputs = new Set([
-  'capture/desktop/ui/frontend/tests/onboarding/renderer/window-coach.smoke.ts',
-  'capture/desktop/ui/frontend/tests/onboarding/renderer/tsconfig.json',
-  'capture/desktop/ui/frontend/tests/onboarding/wispr/smoke.ts',
+  frontend + 'tests/onboarding/renderer/window-coach.smoke.ts',
+  frontend + 'tests/onboarding/renderer/tsconfig.json',
+  frontend + 'tests/onboarding/wispr/smoke.ts',
 ]);
 const onboardingConnectInputs = new Set([
   'src/connect/consent.ts', 'src/connect/protocol.ts', 'src/connect/session.ts',
   'src/connect/flow.ts', 'src/bridge.ts', 'tests/connect/flow.test.ts',
   'tests/connect/session.test.ts', 'tests/connect/flow-hook.test.ts',
-].map(path => 'capture/desktop/ui/frontend/' + path));
+].map(path => frontend + path));
 export function onboardingInput(path: string): boolean {
   return onboardingConnectInputs.has(path) || onboardingRoots.some(root => path.startsWith(root)) ||
     ['onboarding.html', 'electron/onboarding.cjs', 'electron/onboarding-preload.cjs', 'electron/onboarding-protocol.cjs']
-      .some(file => path === 'capture/desktop/ui/frontend/' + file) ||
+      .some(file => path === frontend + file) ||
     path.startsWith('capture/desktop/settings/onboarding') || path.endsWith('/practice.rs') ||
     path.startsWith('shared/ui/') || path.startsWith('record/');
 }
@@ -105,7 +103,10 @@ function directConsumers(path: string): readonly Owner[] {
   if (documentationOnlyPath(path)) return [];
   if (admissionTooling(path)) return ['tooling'];
   if (desktopPackagingInputs.has(path)) return ['capture', 'engine', 'desktop', 'capture-tools', 'client-foreground'];
-  if (path.startsWith('engine/')) return affectsEngine(path) ? ['engine-media'] : [];
+  if (path.startsWith('engine/')) {
+    if (path.startsWith(rule.desktopPermissions)) return ['capture', 'engine', 'desktop'];
+    return affectsEngine(path) ? ['engine-media'] : [];
+  }
   if (independent.includes('!' + path)) return ['tooling'];
   if (independentInputs.has(path)) return owners.filter(owner => owner !== 'engine-media');
   if (path.startsWith('enablement/ci/') || path === 'enablement/local-tests/run.ts' || path.startsWith('.github/actions/ubuntu-apt/')) return owners;
@@ -113,7 +114,7 @@ function directConsumers(path: string): readonly Owner[] {
   if (onboardingPureInputs.has(path) || onboardingRendererTestInputs.has(path)) return ['desktop', 'onboarding'];
   if (path.startsWith('capture/desktop/ui/frontend/tests/onboarding/') &&
       (/\.test\.ts$/.test(path) || ['package.json','package-lock.json','tsconfig.json'].some(name => path.endsWith('/' + name)))) return ['onboarding'];
-  if (path.startsWith('capture/desktop/ui/frontend/src/onboarding/') && /\.(tsx|css)$/.test(path) ||
+  if (/^(capture\/desktop\/ui\/frontend\/src\/onboarding|onboarding\/renderer)\/.*\.(tsx|css)$/.test(path) ||
       path === 'capture/desktop/ui/frontend/onboarding.html') return ['desktop', 'onboarding'];
 
   if (publicMarkdown.has(path) && path !== 'capture/agent/skills/apparent/SKILL.md') return ['public'];
@@ -190,7 +191,7 @@ const native = ['Cargo.toml', 'Cargo.lock', 'build.rs', 'main.rs', '.cargo/**',
 const nativeOnlyTriggers = [...nativeWorkflowPaths.map(path => '!' + path),
   '!enablement/prerequisites/**', '!enablement/native-build/**', '!enablement/verification.py', '!enablement/build_version.rs'];
 const directoryPaths = {
-  capture: [...common, ...independent, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, 'capture/**', 'record/**', 'connect/**',
+  capture: [...common, ...independent, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, rule.desktopPermissions + '**', 'capture/**', 'record/**', 'connect/**',
     'agent/**', 'AGENTS.md', 'public/**'],
   connect: [...common, ...independent, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, ...desktopPackagingInputs, 'connect/**', 'public/**',
     '.github/workflows/stream-connect.yml', 'enablement/release_gate.py'],

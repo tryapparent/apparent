@@ -25,20 +25,7 @@ use serde::{Deserialize, Serialize};
 #[path = "onboarding/pipe.rs"]
 mod pipe;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Permission {
-    ScreenRecording,
-    Microphone,
-    /// No longer asked for, shown or read (macOS wants a relaunch after granting it). Kept so
-    /// a config written by 0.3.x, which lists it under `granted`, still loads.
-    InputMonitoring,
-    Accessibility,
-    Camera,
-    /// SFSpeechRecognizer's own permission, for transcripts on macOS 15. Optional, and only on
-    /// the screen when the helper reports it (SpeechAnalyzer on macOS 26 needs none).
-    SpeechRecognition,
-}
+pub(crate) use crate::permission_facts::{Grants, Permission, Status};
 
 impl Permission {
     /// What a capture needs, in the order the checklist shows them. Screen Recording comes first
@@ -60,13 +47,6 @@ impl Permission {
 
     pub fn required(self) -> bool {
         Self::REQUIRED.contains(&self) && (self != Self::Microphone || crate::capture::engine::runtime::audio::mic::enabled())
-    }
-
-    /// Whether this Mac asks for it at all: Speech Recognition only when the helper reports it
-    /// (macOS before 26).
-    pub fn asked(self, grants: Option<&Grants>) -> bool {
-        self != Permission::SpeechRecognition
-            || grants.is_some_and(|g| g.statuses.contains_key(&self))
     }
 
     /// Privacy lists the app can be dragged into: Grant flies the drag panel to System
@@ -134,41 +114,6 @@ pub enum Tutorial {
     Watched,
     /// The user drew a mark of their own on the demo.
     Practiced,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Status {
-    #[default]
-    NotDetermined,
-    Denied,
-    Granted,
-}
-
-/// Permission statuses shown to the user. macOS screen permission comes from a fresh
-/// recording executable, Accessibility from this process, and devices from the Swift helper.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Grants {
-    pub statuses: BTreeMap<Permission, Status>,
-    /// Screen recording is granted, but this running copy of Apparent can't use it until it
-    /// relaunches.
-    pub screen_needs_relaunch: bool,
-}
-
-impl Grants {
-    pub fn status(&self, permission: Permission) -> Status {
-        self.statuses.get(&permission).copied().unwrap_or_default()
-    }
-
-    pub fn granted(&self, permission: Permission) -> bool {
-        self.status(permission) == Status::Granted
-    }
-
-    /// Granted and usable now (screen recording may need a relaunch first).
-    fn usable(&self, permission: Permission) -> bool {
-        self.granted(permission)
-            && !(permission == Permission::ScreenRecording && self.screen_needs_relaunch)
-    }
 }
 
 /// Once everything a fix asks for is on, its window shows the checks this long, then closes.
@@ -656,7 +601,9 @@ impl Flow {
     }
 
     fn grant(&mut self, permission: Permission) -> Effect {
-        if self.step != Step::Permissions || !self.asks.contains(&permission) {
+        if self.step != Step::Permissions || !self.asks.contains(&permission)
+            || self.status(permission) == Status::Unavailable
+        {
             return Effect::None;
         }
         // The fallback after a relaunch that didn't take: the row's button is Reopen.
@@ -729,30 +676,6 @@ impl Flow {
             Effect::None
         }
     }
-}
-
-/// Required permissions that keep ⌥⇧S from recording now. Screen Recording and Accessibility
-/// are read in this process (a Screen Recording grant it can't use yet still blocks;
-/// Accessibility is live); Microphone comes from the last fresh read. On macOS a fresh
-/// Screen Recording denial also blocks: this process can retain a successful preflight/probe
-/// after revocation until it quits.
-pub fn missing_to_record(
-    grants: Option<&Grants>,
-    screen_usable: bool,
-    accessibility: bool,
-) -> Vec<Permission> {
-    Permission::REQUIRED
-        .into_iter()
-        .filter(|p| match p {
-            Permission::ScreenRecording => {
-                !screen_usable
-                    || (cfg!(target_os = "macos")
-                        && grants.is_some_and(|g| !g.usable(Permission::ScreenRecording)))
-            }
-            Permission::Accessibility => !accessibility,
-            p => grants.is_some_and(|g| !g.granted(*p)),
-        })
-        .collect()
 }
 
 /// Holds a request to show the permissions window until the shortcut's modifiers are up, so
@@ -963,22 +886,41 @@ pub fn unix_ms() -> u64 {
         .as_millis() as u64
 }
 
+pub(crate) fn note_grants(grants: &Grants) {
+    let mut progress = Progress::load();
+    if progress.note(grants) {
+        progress.save();
+    }
+}
+
+pub(crate) fn prepare_launch(grants: &Grants, missing: &[Permission]) -> Option<Flow> {
+    let mut progress = Progress::load();
+    let changed = progress.note(grants) | progress.prepare_current_tour();
+    let plan = launch_plan(&progress, grants, missing);
+    if std::mem::take(&mut progress.reopen_fix) || changed {
+        progress.save();
+    }
+    plan
+}
+
 /// What opens at launch: the tour until it's been seen (resuming where it was left), else a fix
 /// that was open when Apparent relaunched itself, else the permissions screen when a required
 /// permission that was granted once is gone, else nothing.
-pub fn launch_plan(progress: &Progress, grants: &Grants) -> Option<Flow> {
+pub fn launch_plan(progress: &Progress, grants: &Grants, recording_blockers: &[Permission]) -> Option<Flow> {
     if !progress.seen {
         let start = progress.resume.unwrap_or(Step::Welcome);
         return Some(Flow::tour(start, Some(grants.clone())));
     }
-    let lost = Permission::REQUIRED
-        .into_iter()
-        .any(|p| progress.granted.contains(&p) && !grants.granted(p));
-    (progress.reopen_fix || lost)
-        .then(|| Flow::fix(Permission::REQUIRED.to_vec(), Some(grants.clone())))
+
+    let mut asks: Vec<_> = recording_blockers.iter().copied()
+        .filter(|permission| progress.granted.contains(permission) || progress.reopen_fix)
+        .collect();
+    if progress.reopen_fix && !asks.contains(&Permission::ScreenRecording) {
+        asks.insert(0, Permission::ScreenRecording);
+    }
+    (!asks.is_empty()).then(|| Flow::fix(asks, Some(grants.clone())))
 }
 
-/// From the welcome window's helper process and the permission poller.
 #[derive(Clone, Debug)]
 pub enum Event {
     Board(serde_json::Value),
@@ -1025,51 +967,6 @@ fn next_session_source() -> u64 {
     NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
-/// Read screen permission from a fresh recording executable and Accessibility from
-/// this process. The separately signed Swift helper supplies the remaining grants.
-/// Only a fresh screen grant permits a real ScreenCaptureKit usability check.
-pub fn read_grants() -> Option<Grants> {
-    let statuses = crate::capture::desktop::helper::permissions()
-        .inspect_err(|error| crate::capture::engine::runtime::apparent_log(format!("permissions: {error:#}")))
-        .ok()?;
-    #[cfg(target_os = "macos")]
-    let statuses = reconcile_native_grants(
-        statuses,
-        crate::capture::desktop::helper::screen_permission()
-            .inspect_err(|error| crate::capture::engine::runtime::apparent_log(format!("screen permission: {error:#}")))
-            .unwrap_or(false),
-        crate::capture::engine::runtime::accessibility_granted(),
-    );
-    let screen = statuses.get(&Permission::ScreenRecording) == Some(&Status::Granted);
-    let grants = Grants {
-        statuses,
-        screen_needs_relaunch: screen && !crate::capture::engine::runtime::screen_capture_usable(true),
-    };
-    crate::capture::engine::runtime::audio::transcription::speech_model::note_grants(&grants);
-    Some(grants)
-}
-
-#[cfg(any(target_os = "macos", test))]
-fn reconcile_native_grants(
-    mut statuses: BTreeMap<Permission, Status>,
-    screen: bool,
-    accessibility: bool,
-) -> BTreeMap<Permission, Status> {
-    statuses.insert(
-        Permission::ScreenRecording,
-        if screen { Status::Granted } else { Status::NotDetermined },
-    );
-    statuses.insert(
-        Permission::Accessibility,
-        if accessibility {
-            Status::Granted
-        } else {
-            Status::NotDetermined
-        },
-    );
-    statuses
-}
-
 /// What draws the welcome window: the SwiftUI `apparent-helper onboarding` process on macOS, an
 /// in-process GPUI window (`crate::onboarding_window`) on Windows. Both take the same JSON
 /// messages and report the same button actions.
@@ -1083,25 +980,6 @@ enum Transport {
         stdin: Option<std::process::ChildStdin>,
     },
     InProcess(Option<flume::Sender<serde_json::Value>>),
-}
-
-/// Re-read permissions for the app's lifetime, not a permission window's lifetime. The
-/// caller owns delivery; a closed receiver stops the worker. Injection keeps the refresh
-/// path testable without asking the OS for permissions.
-#[cfg(any(target_os = "macos", test))]
-pub fn poll_grants(
-    mut read: impl FnMut() -> Option<Grants>,
-    mut deliver: impl FnMut(Grants) -> bool,
-    mut pause: impl FnMut(),
-) {
-    loop {
-        if let Some(grants) = read()
-            && !deliver(grants)
-        {
-            break;
-        }
-        pause();
-    }
 }
 
 pub struct Session {

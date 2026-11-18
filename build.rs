@@ -5,6 +5,7 @@ mod build_version { include!("enablement/build_version.rs"); }
 
 fn main() {
     build_version::emit();
+    emit_recording_permissions();
     println!("cargo:rerun-if-env-changed=APPARENT_POSTHOG_TOKEN");
     println!("cargo:rerun-if-env-changed=APPARENT_POSTHOG_RELEASE_ID");
     let release_id = std::env::var("APPARENT_POSTHOG_RELEASE_ID").unwrap_or_default();
@@ -42,6 +43,24 @@ fn main() {
             println!("cargo:rustc-link-arg=-Wl,-rpath,{swift_runtime}");
         }
     }
+}
+
+fn emit_recording_permissions() {
+    let generator = "record/enablement/permissions/native.ts";
+    println!("cargo:rerun-if-changed={generator}");
+    println!("cargo:rerun-if-changed=record/capture-request/src/permission-requirements.ts");
+    let output = Command::new("node")
+        .args(["--experimental-strip-types", generator])
+        .output()
+        .expect("Node is required to compile recording permission requirements");
+    assert!(
+        output.status.success(),
+        "compile recording permission requirements: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let out = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+    std::fs::write(out.join("recording_permissions.rs"), output.stdout)
+        .expect("write recording permission requirements");
 }
 
 /// Keep runtime libraries AND dlopen-only CPU modules together: transcribe.cpp's
