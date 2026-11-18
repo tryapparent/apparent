@@ -3,6 +3,21 @@ import { spawnSync } from "node:child_process";
 export const repository = "tryapparent/apparent";
 export const baseline = "d559dbbd2a3fbf9428593931b526e13b626c8ab9";
 export const acceptedMain = "8bd1c2669a62c41014791a6dd3e85da809f4d446";
+const acceptedReleaseCommit = "c2a3b6043389a4e825eaae06e2d1c0b732faf0b5";
+const acceptedReleaseMerge = "6c2aadf6cd9fb99c8354f0f7e70fc94607da0866";
+
+export function isAcceptedReleaseCommit(
+  commit: string,
+  main: string,
+  cwd: string,
+): boolean {
+  return (
+    commit === acceptedReleaseCommit &&
+    runGit(cwd, ["merge-base", "--is-ancestor", acceptedReleaseMerge, main])
+      .status === 0
+  );
+}
+
 export const referencePattern =
   /^Issue:[ \t]+([A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+)#([1-9][0-9]*)[ \t]*$/i;
 export type Issue = { repository: string; number: number };

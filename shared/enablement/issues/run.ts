@@ -10,6 +10,7 @@ import {
   parseReference,
   reference,
   acceptedMergeIssue,
+  isAcceptedReleaseCommit,
 } from "./reference.ts";
 import {
   bind,
@@ -131,7 +132,12 @@ export function validatePush(
       issue =
         primaryIssue(git(cwd, ["show", "-s", "--format=%B", commit]), cwd) ??
         acceptedMergeIssue(commit);
-      if (!issue && isGitHubMerge(commit, cwd)) continue;
+      if (
+        !issue &&
+        (isAcceptedReleaseCommit(commit, main, cwd) ||
+          isGitHubMerge(commit, cwd))
+      )
+        continue;
     } catch (error) {
       throw Error(
         `Commit ${commit}: ${error instanceof Error ? error.message : error}`,

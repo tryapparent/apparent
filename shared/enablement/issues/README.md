@@ -60,6 +60,14 @@ authenticated verification of the exact commit, its parents and GitHub's valid
 web-flow signature. The hook checks the commits on both sides of the merge.
 Squash commits have one parent and still need a trailer.
 
+[PR #1515](https://github.com/tryapparent/apparent/pull/1515) landed the exact
+release commit `c2a3b6043389a4e825eaae06e2d1c0b732faf0b5` without an issue
+trailer. No issue was linked. Admission recognizes these historical bytes only
+while the authenticated canonical main contains the exact merge
+`6c2aadf6cd9fb99c8354f0f7e70fc94607da0866`; copied commits still require a
+trailer. The association records the actual merged PR instead of inventing an
+issue reference or advancing the audit checkpoint.
+
 Every selected commit's trailer or exact merge association is validated. Push
 admission authenticates the live `refs/heads/main` of `tryapparent/apparent`
 and requires its local Git history to contain the fixed, audited issue checkpoint
