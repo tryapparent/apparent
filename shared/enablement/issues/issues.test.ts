@@ -198,6 +198,7 @@ test("accepted merge receipts validate exact identities without exempting other 
   for (const [commit, number] of [
     ["6c64c838fab1b70e05da112ffc25336e5c283ab1", "575"],
     ["18c72f8302d54bab24d1729fb75796329a2a0a81", "171"],
+    ["f52fab25ee734cb60262387d0c74e8cdfba97d6a", "530"],
   ]) {
     const parents = f.runGit("show", "-s", "--format=%P", commit).split(" ");
     const tree = f.runGit("rev-parse", commit + "^{tree}");
