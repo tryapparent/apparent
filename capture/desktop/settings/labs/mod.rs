@@ -1,5 +1,6 @@
 //! Persistence mechanism only. The Labs catalogue/defaults belong to Desktop TS.
 use std::path::Path;
+use crate::capture::engine::runtime::recording::recorder::selection;
 const KEY: &str = "localStreamingTranscription";
 pub(super) fn facts(path: &Path) -> serde_json::Value {
     let value = match std::fs::read(path) {
@@ -11,15 +12,21 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
         Err(_) => return serde_json::json!({"error":"config_read_failed"}),
     };
     let saved = |key| value.get("experiments").and_then(|flags|flags.get(key)).and_then(|flag|flag.as_bool());
-    serde_json::json!({"saved":saved(KEY),"sharingSaved":saved("hostedSharing"),"autoPasteSaved":saved("autoPasteDraft"),"autoPasteSupported":cfg!(target_os = "linux"),"wisprSaved":saved("onboardingWisprFlow"),"wisprSupported":cfg!(target_os = "macos")})
+    serde_json::json!({"saved":saved(KEY),"sharingSaved":saved("hostedSharing"),"autoPasteSaved":saved("autoPasteDraft"),"autoPasteSupported":cfg!(target_os = "linux"),"wisprSaved":saved("onboardingWisprFlow"),"wisprSupported":cfg!(target_os = "macos"),"screenPickerSaved":saved(selection::PREFERENCE),"screenPickerSupported":selection::supported()})
+}
+pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
+    match setting {
+        None | Some("streaming") => Some((KEY, true)),
+        Some("sharing") => Some(("hostedSharing", true)),
+        Some("autoPaste") => Some(("autoPasteDraft", cfg!(target_os = "linux"))),
+        Some("wisprFlow") => Some(("onboardingWisprFlow", cfg!(target_os = "macos"))),
+        Some("screenPicker") => Some((selection::PREFERENCE, selection::supported())),
+        _ => None,
+    }
 }
 pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>, setting: Option<&str>) -> serde_json::Value {
-    let key = match setting {
-        None | Some("streaming") => KEY,
-        Some("sharing") => "hostedSharing",
-        Some("autoPaste") if cfg!(target_os = "linux") => "autoPasteDraft",
-        Some("wisprFlow") if cfg!(target_os = "macos") => "onboardingWisprFlow",
-        _ => return serde_json::json!({"type":"labs-result","request":request,"facts":{"error":"config_write_failed"}}),
+    let Some((key, true)) = key(setting) else {
+        return serde_json::json!({"type":"labs-result","request":request,"facts":{"error":"config_write_failed"}});
     };
     let result = if let Some(on) = enabled {
         match crate::shared::handoff::set_experiment_in(path, key, on) {

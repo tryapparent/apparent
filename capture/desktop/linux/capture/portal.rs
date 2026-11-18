@@ -14,7 +14,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, anyhow, bail};
 use futures_lite::StreamExt as _;
 
-use super::media::{Crop, Source};
+use super::media::Source;
 use crate::capture::engine::runtime::apparent_log;
 use crate::shared::model::{CaptureMode, TargetInfo};
 
@@ -100,7 +100,7 @@ pub fn source_for(target: &TargetInfo, stopping: &AtomicBool) -> Result<Source> 
         super::super::shell::notify("Capture not started", MESSAGE);
         bail!(MESSAGE);
     }
-    let (session, token) = portal_screencast(window, &key, stopping)?;
+    let (session, token) = portal_screencast(window, Some(&key), stopping)?;
     if let Some(output) = output
         && !output_still_selected(output, &super::super::monitors(), monitors.len())
     {
@@ -128,289 +128,34 @@ pub fn source_for(target: &TargetInfo, stopping: &AtomicBool) -> Result<Source> 
     Ok(Source::PipeWire { session, crop })
 }
 
-fn screencast_key(output: Option<&str>, count: usize) -> String {
-    match output {
-        None => "screencast-window".into(),
-        Some(name) if count > 1 => format!("screencast:{name}"),
-        Some(_) => "screencast".into(),
-    }
+pub(crate) fn choose_display(stopping: &AtomicBool) -> Result<(TargetInfo, Source)> {
+    anyhow::ensure!(super::super::wayland_session(), "The system screen picker requires Wayland");
+    let monitors = super::super::monitors();
+    let (session, _) = portal_screencast(false, None, stopping)?;
+    anyhow::ensure!(session.portal_monitor, "Choose a display in the system screen picker");
+    let output = picked_monitor(&monitors, session.mapping_id.as_deref(), super::super::hyprland())
+        .context("The sharing portal did not identify the selected display")?;
+    anyhow::ensure!(
+        output_still_selected(output, &super::super::monitors(), monitors.len()),
+        "The display layout changed while screen sharing was chosen; try again"
+    );
+    let [x, y, width, height] = output.rect;
+    let target = TargetInfo {
+        mode: CaptureMode::Display,
+        app: None,
+        bundle_id: None,
+        window_title: None,
+        window_id: None,
+        display_id: super::super::monitor_id(output),
+        frame: crate::shared::model::TargetFrame { x, y, width, height, scale: output.scale },
+    };
+    Ok((target, Source::PipeWire { session, crop: None }))
 }
 
-fn selected_output_matches(name: &str, mapping_id: Option<&str>) -> bool {
-    mapping_id == Some(name)
-}
-
-fn portal_request_supported(mode: CaptureMode, count: usize, hyprland: bool) -> bool {
-    // Hyprland's mapping ID is an output connector name. Other backends have no
-    // validated equivalent here: KDE 5.27 returns only size/source_type. Neither
-    // equal-sized outputs nor compositor-coordinate rectangles establish which
-    // RandR output was shared. Reject rather than assign another output's pixels
-    // to the selected target. GNOME's direct Mutter path does not use this gate.
-    !matches!(mode, CaptureMode::Display | CaptureMode::Region) || count <= 1 || hyprland
-}
-
-fn portal_output_verified(mode: CaptureMode, count: usize, hyprland: bool, name: &str, mapping_id: Option<&str>) -> bool {
-    portal_request_supported(mode, count, hyprland)
-        && (!matches!(mode, CaptureMode::Display | CaptureMode::Region)
-            || count <= 1 || selected_output_matches(name, mapping_id))
-}
-
-fn selected_monitor(monitors: &[super::super::Monitor], id: u32) -> Option<&super::super::Monitor> {
-    monitors.iter().find(|m| super::super::monitor_id(m) == id)
-}
-
-fn output_still_selected(selected: &super::super::Monitor, now: &[super::super::Monitor], count: usize) -> bool {
-    now.len() == count
-        && selected_monitor(now, super::super::monitor_id(selected)).is_some_and(|current| {
-            current.name == selected.name
-                && current.outputs == selected.outputs
-                && current.rect.iter().zip(selected.rect).all(|(a, b)| (a - b).abs() <= 1.0)
-        })
-}
-
-fn target_fits_output(mode: CaptureMode, target: [f64; 4], output: [f64; 4]) -> bool {
-    const EPSILON: f64 = 1.0;
-    match mode {
-        CaptureMode::Display => target.iter().zip(output).all(|(a, b)| (a - b).abs() <= EPSILON),
-        CaptureMode::Region => {
-            target[0] >= output[0] - EPSILON
-                && target[1] >= output[1] - EPSILON
-                && target[0] + target[2] <= output[0] + output[2] + EPSILON
-                && target[1] + target[3] <= output[1] + output[3] + EPSILON
-        }
-        CaptureMode::Window => true,
-        CaptureMode::Device => false,
-    }
-}
-
-fn portal_crop(mode: CaptureMode, rect: [f64; 4], stream: Option<[f64; 4]>) -> Option<[u32; 4]> {
-    match (mode, stream) {
-        (CaptureMode::Region, Some([sx, sy, sw, sh])) if sw > 0.0 && sh > 0.0 => {
-            let left = rect[0].max(sx);
-            let top = rect[1].max(sy);
-            let right = (rect[0] + rect[2]).min(sx + sw);
-            let bottom = (rect[1] + rect[3]).min(sy + sh);
-            (right > left && bottom > top).then_some([
-                (left - sx) as u32,
-                (top - sy) as u32,
-                (right - left) as u32,
-                (bottom - top) as u32,
-            ])
-        }
-        _ => None,
-    }
-}
-
-fn region_crop(
-    rect: [f64; 4], output: Option<&super::super::Monitor>, count: usize,
-    hyprland: bool, stream: Option<[f64; 4]>, portal_monitor: bool,
-) -> Option<Crop> {
-    let bounds = if hyprland { output.map(|m| m.rect) } else { stream };
-    if let Some(bounds) = bounds {
-        return portal_crop(CaptureMode::Region, rect, Some(bounds))
-            .map(|rect| Crop { rect, source_size: None });
-    }
-    let output = output?;
-    // Only a sole, real output can identify a positionless Monitor stream.
-    // Synthetic roots, virtual monitor groups and mirrors are not that evidence.
-    // The caller has already revalidated this snapshot after portal consent.
-    if count != 1 || !portal_monitor || output.handle <= 0 || output.name.is_empty()
-        || output.outputs != 1 || !target_fits_output(CaptureMode::Region, rect, output.rect)
-        || !output.rect.iter().chain(rect.iter()).all(|v| v.is_finite())
-    {
-        return None;
-    }
-    let [width, height] = [output.rect[2], output.rect[3]];
-    if [width, height].iter().any(|v| *v < 1.0 || *v > f64::from(i32::MAX) || v.fract() != 0.0) {
-        return None;
-    }
-    let crop = portal_crop(CaptureMode::Region, rect, Some(output.rect))?;
-    if crop[2] == 0 || crop[3] == 0 {
-        return None;
-    }
-    Some(Crop {
-        rect: crop,
-        source_size: Some([width as u32, height as u32]),
-    })
-}
-
-#[cfg(test)]
-mod display_tests {
-    use super::*;
-
-    #[test]
-    fn portal_source_must_match_the_requested_capture_scope() {
-        use ashpd::desktop::screencast::SourceType;
-        assert!(validate_source_type(false, Some(SourceType::Monitor)).is_ok());
-        assert!(validate_source_type(false, Some(SourceType::Window)).is_err());
-        assert!(validate_source_type(true, Some(SourceType::Monitor)).is_err());
-        assert!(validate_source_type(true, Some(SourceType::Window)).is_ok());
-        assert!(validate_source_type(false, Some(SourceType::Virtual)).is_err());
-        // Older portals omit this optional property; keep their existing path.
-        assert!(validate_source_type(false, None).is_ok());
-    }
-
-    #[test]
-    fn restore_tokens_are_scoped_to_the_selected_output() {
-        assert_eq!(screencast_key(Some("Virtual-1"), 2), "screencast:Virtual-1");
-        assert_eq!(screencast_key(Some("HEADLESS-1"), 2), "screencast:HEADLESS-1");
-        assert_eq!(screencast_key(Some("Virtual-1"), 1), "screencast");
-        assert_eq!(screencast_key(None, 2), "screencast-window");
-    }
-
-    #[test]
-    fn portal_output_is_checked_by_name_even_when_positions_overlap() {
-        assert!(selected_output_matches("HEADLESS-1", Some("HEADLESS-1")));
-        assert!(!selected_output_matches("HEADLESS-1", Some("Virtual-1")));
-        assert!(!selected_output_matches("HEADLESS-1", None));
-    }
-
-    #[test]
-    fn multi_output_portal_admission_requires_a_validated_identity_contract() {
-        for mode in [CaptureMode::Display, CaptureMode::Region] {
-            // Known unsupported backends are refused before asking for consent;
-            // capable backends still need to verify the actual returned stream.
-            assert!(!portal_request_supported(mode, 2, false));
-            assert!(portal_request_supported(mode, 1, false));
-            assert!(portal_request_supported(mode, 2, true));
-            // KDE 5.27's observed response has size and source_type only. Both
-            // outputs are 1280x800, so neither dimensions nor the token identify it.
-            assert!(!portal_output_verified(mode, 2, false, "Virtual-1", None));
-            // An opaque generic mapping ID is not Hyprland's connector contract.
-            assert!(!portal_output_verified(mode, 2, false, "Virtual-1", Some("Virtual-1")));
-            assert!(portal_output_verified(mode, 2, true, "Virtual-1", Some("Virtual-1")));
-            assert!(!portal_output_verified(mode, 2, true, "Virtual-1", Some("Virtual-2")));
-            assert!(!portal_output_verified(mode, 2, true, "Virtual-1", None));
-            assert!(portal_output_verified(mode, 1, false, "Virtual-1", None));
-        }
-    }
-
-    #[test]
-    fn a_reordered_display_id_cannot_capture_a_different_output() {
-        let chosen = [1280.0, 0.0, 1920.0, 1080.0];
-        assert!(target_fits_output(CaptureMode::Display, chosen, chosen));
-        assert!(!target_fits_output(CaptureMode::Display, chosen, [0.0, 0.0, 1280.0, 800.0]));
-        assert!(target_fits_output(CaptureMode::Region, [1480.0, 120.0, 300.0, 240.0], chosen));
-        assert!(!target_fits_output(CaptureMode::Region, [1480.0, 120.0, 300.0, 240.0], [0.0, 0.0, 1280.0, 800.0]));
-    }
-
-    #[test]
-    fn region_selection_keeps_its_output_after_monitors_reorder_or_overlap() {
-        let monitor = |handle, name: &str| super::super::super::Monitor {
-            handle,
-            name: name.into(),
-            outputs: 1,
-            rect: [0.0, 0.0, 1920.0, 1080.0],
-            work: [0.0, 0.0, 1920.0, 1080.0],
-            scale: 1.0,
-            primary: false,
-        };
-        let selected = monitor(100, "HEADLESS-1");
-        let other = monitor(101, "Virtual-1");
-        let id = super::super::super::monitor_id(&selected);
-        let reordered = [other, selected];
-        assert_eq!(selected_monitor(&reordered, id).unwrap().name, "HEADLESS-1");
-        assert!(selected_monitor(&reordered, 102).is_none());
-        // Both rectangles contain this Region; geometry alone cannot identify its output.
-        assert!(target_fits_output(CaptureMode::Region, [20.0, 20.0, 100.0, 100.0], reordered[0].rect));
-    }
-
-    #[test]
-    fn portal_rejects_a_layout_change_while_the_sharing_dialog_is_open() {
-        let selected = super::super::super::Monitor {
-            handle: 100,
-            name: "Virtual-1".into(),
-            outputs: 1,
-            rect: [0.0, 0.0, 1280.0, 800.0],
-            work: [0.0, 0.0, 1280.0, 800.0],
-            scale: 1.0,
-            primary: true,
-        };
-        let mut moved = selected.clone();
-        moved.rect[0] = 1280.0;
-        let mut replaced = selected.clone();
-        replaced.handle = 101;
-        let mut mirrored = selected.clone();
-        mirrored.outputs = 2;
-        assert!(output_still_selected(&selected, &[selected.clone()], 1));
-        assert!(!output_still_selected(&selected, &[selected.clone(), moved.clone()], 1));
-        assert!(!output_still_selected(&selected, &[selected.clone()], 2));
-        assert!(!output_still_selected(&selected, &[moved], 1));
-        assert!(!output_still_selected(&selected, &[replaced], 1));
-        assert!(!output_still_selected(&selected, &[mirrored], 1));
-    }
-
-    #[test]
-    fn a_region_on_another_output_cannot_crop_outside_the_portal_stream() {
-        assert_eq!(
-            portal_crop(CaptureMode::Region, [2040.0, 80.0, 420.0, 320.0], Some([0.0, 0.0, 1920.0, 1080.0])),
-            None,
-            "an off-stream crop yields an empty frame and a PipeWire not-negotiated error"
-        );
-    }
-
-    #[test]
-    fn a_region_is_trimmed_to_the_selected_stream_in_both_axes() {
-        assert_eq!(
-            portal_crop(CaptureMode::Region, [2080.0, 600.0, 400.0, 300.0], Some([1920.0, 0.0, 320.0, 720.0])),
-            Some([160, 600, 160, 120])
-        );
-    }
-
-    #[test]
-    fn second_display_region_uses_the_selected_streams_origin() {
-        assert_eq!(
-            portal_crop(CaptureMode::Region, [2070.0, 110.0, 400.0, 250.0], Some([1920.0, 0.0, 1280.0, 720.0])),
-            Some([150, 110, 400, 250])
-        );
-        assert_eq!(
-            portal_crop(CaptureMode::Region, [2070.0, 110.0, 400.0, 250.0], None),
-            None,
-            "unknown stream position must not silently record a whole display"
-        );
-    }
-
-    #[test]
-    fn single_output_region_without_portal_position_requires_guarded_pixels() {
-        let output = super::super::super::Monitor {
-            handle: 100, name: "Virtual-1".into(), outputs: 1,
-            rect: [0.0, 0.0, 1280.0, 800.0], work: [0.0, 0.0, 1280.0, 800.0],
-            scale: 1.0, primary: true,
-        };
-        assert_eq!(
-            region_crop([410.0, 240.0, 420.0, 260.0], Some(&output), 1, false, None, true),
-            Some(Crop { rect: [410, 240, 420, 260], source_size: Some([1280, 800]) }),
-            "KDE's explicitly shared sole monitor can crop only with exact incoming pixel bounds"
-        );
-    }
-
-    #[test]
-    fn missing_position_never_guesses_an_ambiguous_or_unvalidated_output() {
-        let output = super::super::super::Monitor {
-            handle: 100, name: "Virtual-1".into(), outputs: 1,
-            rect: [0.0, 0.0, 1280.0, 800.0], work: [0.0, 0.0, 1280.0, 800.0],
-            scale: 1.0, primary: true,
-        };
-        let rect = [410.0, 240.0, 420.0, 260.0];
-        assert_eq!(region_crop(rect, Some(&output), 2, false, None, true), None);
-        assert_eq!(region_crop(rect, Some(&output), 1, false, None, false), None);
-        assert_eq!(region_crop(rect, None, 1, false, None, true), None);
-        for (handle, name, outputs) in [(0, "", 0), (100, "", 1), (100, "Virtual", 0), (100, "Mirrored", 2)] {
-            let mut unknown = output.clone();
-            unknown.handle = handle; unknown.name = name.into(); unknown.outputs = outputs;
-            assert_eq!(region_crop(rect, Some(&unknown), 1, false, None, true), None);
-        }
-        for invalid in [[1400.0, 0.0, 10.0, 10.0], [0.0, 0.0, f64::NAN, 10.0], [1.0, 1.0, 0.5, 0.5]] {
-            assert_eq!(region_crop(invalid, Some(&output), 1, false, None, true), None);
-        }
-        // A contradictory reported rectangle is not permission to use the fallback.
-        assert_eq!(region_crop(rect, Some(&output), 1, false, Some([1920.0, 0.0, 1280.0, 800.0]), true), None);
-        // Existing known-position and Hyprland paths retain their pixel contract.
-        let pixels = Some(Crop { rect: [410, 240, 420, 260], source_size: None });
-        assert_eq!(region_crop(rect, Some(&output), 1, false, Some(output.rect), false), pixels);
-        assert_eq!(region_crop(rect, Some(&output), 2, true, Some([1920.0, 0.0, 1280.0, 800.0]), true), pixels);
-    }
-}
+#[path = "../../../../engine/wayland/display.rs"]
+mod display;
+pub(crate) use display::Crop;
+use display::{output_still_selected, picked_monitor, portal_output_verified, portal_request_supported, region_crop, screencast_key, selected_monitor, target_fits_output};
 
 // MARK: GNOME's screencast
 
@@ -532,13 +277,13 @@ fn validate_source_type(window: bool, actual: Option<ashpd::desktop::screencast:
 /// A display (or a window, `window`) through the ScreenCast portal. The first time, the
 /// desktop asks which; the answer is remembered (a restore token), so later recordings start
 /// without asking.
-fn portal_screencast(window: bool, key: &str, stopping: &AtomicBool) -> Result<(Stream, Option<String>)> {
+fn portal_screencast(window: bool, restore_key: Option<&str>, stopping: &AtomicBool) -> Result<(Stream, Option<String>)> {
     use ashpd::desktop::PersistMode;
     use ashpd::desktop::screencast::{CursorMode, Screencast, SourceType};
 
     let (ready_tx, ready_rx) = flume::bounded::<Result<(u32, OwnedFd, Option<[f64; 4]>, Option<String>, Option<String>, bool)>>(1);
     let (stop_tx, stop_rx) = flume::bounded::<()>(1);
-    let request_key = key.to_owned();
+    let request_key = restore_key.map(str::to_owned);
     std::thread::Builder::new()
         .name("apparent-portal-screencast".into())
         .spawn(move || {
@@ -547,7 +292,7 @@ fn portal_screencast(window: bool, key: &str, stopping: &AtomicBool) -> Result<(
                     let proxy = Screencast::new().await?;
                     let session = proxy.create_session().await?;
                     let request = async {
-                        let token = saved_token(&request_key);
+                        let token = request_key.as_deref().and_then(saved_token);
                         let kind = if window {
                             SourceType::Window
                         } else {
@@ -561,10 +306,10 @@ fn portal_screencast(window: bool, key: &str, stopping: &AtomicBool) -> Result<(
                                 false,
                                 token.as_deref(),
                                 // Windows come and go: ask each time for one.
-                                if window {
-                                    PersistMode::DoNot
-                                } else {
+                                if !window && request_key.is_some() {
                                     PersistMode::ExplicitlyRevoked
+                                } else {
+                                    PersistMode::DoNot
                                 },
                             )
                             .await?;
@@ -621,7 +366,9 @@ fn portal_screencast(window: bool, key: &str, stopping: &AtomicBool) -> Result<(
         match ready_rx.recv_timeout(Duration::from_millis(100)) {
             Ok(Ok(stream)) => break stream,
             Ok(Err(error)) => {
-                save_token(key, None);
+                if let Some(key) = restore_key {
+                    save_token(key, None);
+                }
                 return Err(error);
             }
             Err(flume::RecvTimeoutError::Timeout) => {}

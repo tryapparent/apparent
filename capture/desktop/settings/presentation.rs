@@ -128,7 +128,7 @@ pub(super) fn admits(pane: Pane, action: &Action) -> bool {
             || matches!(action, Action::Set { key, value }
                 if matches!(key.as_str(), "launchAtLogin" | "errorReporting") && value.is_boolean()))
         || pane == Pane::Agents && matches!(action, Action::AgentsPreference { setting, .. } if matches!(setting.as_deref(), None | Some("video")))
-        || pane == Pane::Labs && (matches!(action, Action::AgentsConnection { .. }) || matches!(action, Action::AgentsPreference { setting, enabled, .. } if setting.as_deref() == Some("t3") || setting.is_none() && enabled.is_none()) || matches!(action, Action::LabsPreference { setting, .. } if matches!(setting.as_deref(), None | Some("streaming" | "autoPaste" | "sharing" | "wisprFlow"))))
+        || pane == Pane::Labs && (matches!(action, Action::AgentsConnection { .. }) || matches!(action, Action::AgentsPreference { setting, enabled, .. } if setting.as_deref() == Some("t3") || setting.is_none() && enabled.is_none()) || matches!(action, Action::LabsPreference { setting, .. } if super::labs::key(setting.as_deref()).is_some()))
         || pane == Pane::About && (matches!(action, Action::CheckForUpdates | Action::DismissUpdateCheck | Action::UpdateNow | Action::UpdateLater | Action::Tour)
             || matches!(action, Action::Set { key, value } if key == "updateChannel" && matches!(value.as_str(), Some("stable" | "main"))))
 }
