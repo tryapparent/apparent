@@ -47,8 +47,9 @@ HEAD. Deletion-only pushes perform no issue lookup. Unknown/missing baseline or
 shallow history fails with an actionable prerequisite instead of silently skipping.
 Old history outside the baseline's ancestry receives validation too.
 
-Two immutable accepted main merges omitted their trailers: `6c64c838fab1b70e05da112ffc25336e5c283ab1`
-(PR #1437, issue #575) and `18c72f8302d54bab24d1729fb75796329a2a0a81` (PR #1436, issue #171).
+Three immutable accepted main merges omitted their trailers: `6c64c838fab1b70e05da112ffc25336e5c283ab1`
+(PR #1437, issue #575), `18c72f8302d54bab24d1729fb75796329a2a0a81` (PR #1436, issue #171),
+and `f52fab25ee734cb60262387d0c74e8cdfba97d6a` (PR #1451, issue #530).
 `acceptedMergeIssue` records only those exact commit-to-issue associations, recovered from their product commits.
 Their issues still receive fresh API validation. This does not advance the baseline, exempt their ancestors,
 accept copied merge messages, or infer issues for future merges. Include the Issue trailer when merging future PRs.

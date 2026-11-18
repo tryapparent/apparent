@@ -33,11 +33,18 @@ test('Labs pairs multiple computers without exposing credentials, changing sendi
  for(const p of [a,b]){
   await page.getByRole('button',{name:computers.length?'Add computer':'Connect T3',exact:true}).click();
   const dialog=page.getByRole('dialog');await expect(dialog).toContainText('all connected computers');
-  await expect(dialog.getByRole('textbox',{name:'T3 server address'})).not.toBeVisible();
+  const address=dialog.getByRole('textbox',{name:'MCP URL or server address'});
+  await expect(address).not.toBeVisible();
   await app.evaluate(({clipboard})=>clipboard.writeText('not a pairing link'));
-  await dialog.getByRole('button',{name:'Paste T3 link',exact:true}).click();await expect(dialog.getByRole('alert')).toBeVisible();await shot('invalid-link');
-  await app.evaluate(({clipboard},link)=>clipboard.writeText(link),p.link);
-  await dialog.getByRole('button',{name:'Paste T3 link',exact:true}).click();
+  await dialog.getByRole('button',{name:'Paste link or code',exact:true}).click();await expect(dialog.getByRole('alert')).toBeVisible();await shot('invalid-link');
+  if(p===b){
+   await dialog.getByText('Use a code instead',{exact:true}).click();
+   await expect(address).toHaveValue('');
+   await address.fill(p.origin+'/mcp');
+   await shot('copied-mcp-url');
+  }
+  await app.evaluate(({clipboard},value)=>clipboard.writeText(value),p===b?p.code:p.link);
+  await dialog.getByRole('button',{name:'Paste link or code',exact:true}).click();
   await expect(dialog.locator('.settings-t3-preview')).toContainText(p.origin);assert.equal(p.exchanged,0);
   assert.equal(await page.evaluate(code=>document.body.innerText.includes(code),p.code),false);
   for(const width of [920,640,320])for(const colorScheme of ['light','dark'] as const){
@@ -58,7 +65,7 @@ test('Labs pairs multiple computers without exposing credentials, changing sendi
  await resize(920);await page.getByRole('button',{name:`Disconnect ${new URL(a.origin).host}`,exact:true}).click();await expect(page.locator('.settings-t3-computer')).toHaveCount(1);assert.equal(computers[0].origin,b.origin);
  assert.equal(await page.evaluate(()=>document.body.innerText.includes('private-fixture-token')),false);
  await page.getByRole('button',{name:'Add computer',exact:true}).click();await page.getByRole('dialog').getByText('Use a code instead',{exact:true}).click();
- await expect(page.getByRole('textbox',{name:'T3 server address'})).toBeVisible();await expect(page.getByRole('textbox',{name:'T3 server address'})).toHaveValue('http://127.0.0.1:3773');await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.getByRole('button',{name:'Add computer',exact:true})).toBeFocused();
+ await expect(page.getByRole('textbox',{name:'MCP URL or server address'})).toBeVisible();await expect(page.getByRole('textbox',{name:'MCP URL or server address'})).toHaveValue('');await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.getByRole('button',{name:'Add computer',exact:true})).toBeFocused();
  await session.detach();
 });
 
@@ -101,7 +108,7 @@ test('switching panes cancels a queued T3 connection before the private native w
  await expect(page.getByRole('switch',{name:'Send recordings to T3'})).toBeEnabled();await expect(page.getByRole('alertdialog')).toHaveCount(0);
  p.renew();await page.getByRole('button',{name:'Connect T3',exact:true}).click();
  await app.evaluate(({clipboard},link)=>clipboard.writeText(link),p.link);
- await page.getByRole('dialog').getByRole('button',{name:'Paste T3 link',exact:true}).click();
+ await page.getByRole('dialog').getByRole('button',{name:'Paste link or code',exact:true}).click();
  await page.getByRole('dialog').getByRole('button',{name:'Connect',exact:true}).click();
  await expect(page.getByRole('dialog')).toHaveCount(0);assert.equal(writes,1);
 });

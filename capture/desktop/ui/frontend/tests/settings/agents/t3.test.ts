@@ -14,7 +14,7 @@ test('preview exposes only the origin and binds confirmation to the exact copied
 test('a copied code uses the selected server, remains private and exchanges only after confirmation',async context=>{
  const p=await provider(context),links=new PairingLinks();
  assert.deepEqual(parsePairingLink('  '+p.code+'\n',p.origin),{origin:p.origin,token:p.code});
- const preview=links.preview(p.code,p.origin);
+ const preview=links.preview(p.code,p.origin+'/mcp');
  assert.deepEqual(Object.keys(preview).sort(),['id','origin']);assert.equal(preview.origin,p.origin);
  assert(!JSON.stringify(preview).includes(p.code));assert.equal(p.exchanged,0);
  const value=await links.connect(preview.id,new AbortController().signal);
@@ -47,6 +47,14 @@ test('code-only pairing requires a safe explicit server and never interprets a m
   assert.throws(()=>parsePairingLink(code,origin),error=>error instanceof Error&&!error.message.includes('SECRET')&&!error.message.includes(code));
  }
  for(const value of ['https://t3.example/not-pair?token=SECRET','bad code','x'.repeat(8193)])assert.throws(()=>parsePairingLink(value,'http://localhost:3773'));
+});
+test('copied T3 Connect MCP URLs resolve to the HTTPS origin without accepting credentials or arbitrary paths',()=>{
+ const code='23456789ABCD';
+ const origin='https://clanker.example';
+ for(const path of ['/mcp','/mcp/'])assert.deepEqual(parsePairingLink(code,origin+path),{origin,token:code});
+ for(const address of [origin+'/other/mcp',origin+'/mcp?token=SECRET',origin+'/mcp#SECRET','http://clanker.example/mcp','https://user:SECRET@clanker.example/mcp']){
+  assert.throws(()=>parsePairingLink(code,address),error=>error instanceof Error&&!error.message.includes('SECRET')&&!error.message.includes(code));
+ }
 });
 test('cancel, replacement, mismatched confirmation and cancellation never exchange a credential',async context=>{
  const p=await provider(context),links=new PairingLinks();

@@ -20,7 +20,7 @@ export function T3Settings() {
   const dialog=useRef<HTMLDialogElement>(null),previewRevision=useRef(0);
   useEffect(()=>{if(setup)dialog.current?.showModal();},[setup]);
   function closeSetup(){if(connecting)return;++previewRevision.current;dialog.current?.close();setSetup(false);setPreview(undefined);void window.apparentAgents.cancelT3().catch(()=>{});}
-  function openSetup(){setConnectionError('');setServer('http://127.0.0.1:3773');setSetup(true);}
+  function openSetup(){setConnectionError('');setServer(facts?.t3Configured?'':'http://127.0.0.1:3773');setSetup(true);}
   function changeServer(value:string){++previewRevision.current;setServer(value);setPreview(undefined);setConnectionError('');void window.apparentAgents.cancelT3().catch(()=>{});}
   async function pasteLink(){const revision=++previewRevision.current;setConnectionError('');setPreview(undefined);try{const result=await window.apparentAgents.previewT3(server);if(!live.current||revision!==previewRevision.current)return;if(result.error)setConnectionError(result.error);else setPreview(result.preview);}catch{if(live.current&&revision===previewRevision.current)setConnectionError('Unable to read the pairing code or link. Copy it in T3, then try again.');}}
   const live=useRef(true),pending=useRef(false),revision=useRef(0);
@@ -85,20 +85,16 @@ export function T3Settings() {
     </section>
     {setup&&<dialog ref={dialog} className="settings-t3-dialog" aria-labelledby="t3-setup-title" onCancel={event=>{event.preventDefault();closeSetup();}}>
       <h2 id="t3-setup-title">Connect T3</h2>
-      <p>Connect each computer once. Threads from all connected computers appear together.</p>
-      <ol>
-        <li>In T3, open <strong>Settings → Sharing &amp; access</strong>.</li>
-        <li>Under <strong>Authorized clients</strong>, choose <strong>Create link</strong>. Select View environment and Operate tasks, then create the link.</li>
-        <li>Choose Copy link, then return here. For another computer, copy its network link.</li>
-      </ol>
-      <details className="settings-t3-server"><summary>Use a code instead</summary><label htmlFor="t3-server">T3 server address</label>
+      <p>Threads from all connected computers appear together.</p>
+      <p className="settings-metadata">In T3, go to <strong>Settings → Sharing &amp; access → Authorized clients</strong>. Create a link with <strong>View environment</strong> and <strong>Operate tasks</strong>, then copy it.</p>
+      <details className="settings-t3-server"><summary>Use a code instead</summary><label htmlFor="t3-server">MCP URL or server address</label>
         <Input id="t3-server" type="url" value={server} maxLength={2048} autoComplete="url" spellCheck={false} aria-describedby="t3-server-help" disabled={connecting} onChange={event=>changeServer(event.target.value)} />
-        <p id="t3-server-help" className="settings-metadata">Network links include the address. Codes and local T3 app links use this address.</p>
+        <p id="t3-server-help" className="settings-metadata">In T3 <strong>Settings → Environments</strong>, choose <strong>Copy MCP URL</strong> from the computer’s menu. Paste it above, then copy the computer’s pairing code and choose <strong>Paste link or code</strong>.</p>
       </details>
       {preview&&<div className="settings-t3-preview"><p>Connect to</p><strong>{preview.origin}</strong><p>Apparent can read threads and send recordings you select.</p></div>}
       {connecting&&<p role="status">Connecting…</p>}
       {connectionError&&<p role="alert">{connectionError}</p>}
-      <div className="settings-t3-dialog-actions">{preview&&<Button disabled={connecting} onClick={()=>void connect()}>Connect</Button>}<Button variant={preview?'outline':'default'} className={preview?'settings-decision-alternative':undefined} disabled={connecting} onClick={()=>void pasteLink()}>{preview?'Paste another':'Paste T3 link'}</Button><Button variant="outline" className="settings-decision-alternative" disabled={connecting} onClick={closeSetup}>Cancel</Button></div>
+      <div className="settings-t3-dialog-actions">{preview&&<Button disabled={connecting} onClick={()=>void connect()}>Connect</Button>}<Button variant={preview?'outline':'default'} className={preview?'settings-decision-alternative':undefined} disabled={connecting} onClick={()=>void pasteLink()}>{preview?'Paste another':'Paste link or code'}</Button><Button variant="outline" className="settings-decision-alternative" disabled={connecting} onClick={closeSetup}>Cancel</Button></div>
     </dialog>}
 
     <span role="status" className="sr-only">{busy?(operation==='save'?'Saving preference':'Reading saved preference'):''}</span>
