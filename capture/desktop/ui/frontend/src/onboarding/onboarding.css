@@ -72,15 +72,6 @@ html.native-onboarding-shell body { background: transparent !important; margin: 
 .native-welcome p { text-align: center; max-width: 36ch; }
 .native-explain { min-height: 240px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 24px; }
 .native-explain img { width: 176px; }
-.native-permissions { margin-top: 32px; border: 1px solid var(--apparent-border); background: var(--apparent-surface); }
-.native-permissions > div { padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid var(--apparent-border); }
-.native-permissions > div:last-child { border: 0; }
-.native-permissions strong { font-size: 1.125rem; font-weight: 500; }
-.native-permissions small { display: block; font-size: 1rem; margin-top: 8px; }
-.native-permission-description { min-width: 0; }
-.native-permission-description code { display: block; margin-top: 8px; font-size: 1rem; overflow-wrap: anywhere; user-select: text; }
-.native-permissions button, .native-permissions .native-granted { flex-shrink: 0; }
-.native-permissions > div > span { max-width: 100%; }
 .native-granted { font-size: 1.125rem; color: var(--apparent-success); background: var(--apparent-paper); padding: 8px; }
 .native-shortcut { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 24px; margin: 48px 0; }
 .native-setup[data-shortcut-state=true] section { display: flex; flex-direction: column; }
@@ -131,7 +122,6 @@ html.native-onboarding-shell body { background: transparent !important; margin: 
   .native-pencils { gap: 8px; }
   .native-pencils button { padding-inline: 12px; }
   .native-setup footer { flex-wrap: wrap; }
-  .native-permissions > div { align-items: flex-start; flex-direction: column; gap: 16px; }
 }
 @keyframes native-guide-hop { 0% { transform: translate(-32px,12px) rotate(-10deg); opacity: .3; } 55% { transform: translate(-10px,-18px) rotate(6deg); opacity: 1; } 100% { transform: none; } }
 @keyframes native-pen-hop { 0% { transform: translate(0,0) scale(1); } 15% { transform: translate(0,5px) scale(1.08,.85); } 45% { transform: translate(85px,-72px) rotate(9deg); } 70% { transform: translate(165px,50px) scale(1.14,.75); } 84% { transform: translate(165px,28px) scale(.95,1.05); } 100% { transform: translate(165px,50px) scale(1); } }

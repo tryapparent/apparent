@@ -129,7 +129,7 @@ mod tests {
         coordinator.onboarding=Some(Session::for_test(Flow::tour(Step::Shortcut,None)
             .with_first_capture(true,false,false,false)));
         assert!(coordinator.consume_setup_shortcut(),"an unchosen default cannot record");
-        assert!(coordinator.setup_blocks_capture(),"menu and picker starts cannot bypass setup");
+        assert!(coordinator.setup_blocks_capture(),"guided capture is still locked");
         let session=coordinator.onboarding.as_mut().unwrap();
         session.input(Input::ShortcutChosen);
         assert_eq!(session.shortcut_policy(),ShortcutPolicy::Block,"selection keys must be released before the trial");
@@ -150,7 +150,7 @@ mod tests {
         assert_eq!(session.shortcut_policy(),ShortcutPolicy::Record);
         assert!(!session.local_practice(),"the first recording still requires another press");
         assert!(!coordinator.consume_setup_shortcut());
-        assert!(coordinator.setup_blocks_capture(),"a menu start cannot replace guided shortcut practice");
+        assert!(coordinator.setup_blocks_capture(),"guided capture still requires its own shortcut");
         coordinator.onboarding.as_mut().unwrap().input(Input::ShortcutTriggered);
         assert!(!coordinator.setup_blocks_capture(),"the next guided press admits the real capture");
     }
