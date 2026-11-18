@@ -6,6 +6,7 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 import { General } from "./general";
+import { RecordingStartPreference } from "../../../record/settings/recording-start";
 import "./base.css";
 import "./settings.css";
 import wordmark from "../../../shared/assets/brand/apparent-wordmark.svg";
@@ -174,6 +175,7 @@ function Settings() {
           <div id="settings-account" />
         </header>
         {error && <p role="alert">{error}</p>}
+        {current === "Labs" && <RecordingStartPreference />}
         {current === "General" ? (
           <General />
         ) : (
