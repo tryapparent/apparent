@@ -36,17 +36,47 @@ export async function forgetProductActivity(env:Env,account:string) {
  const subjects=await Promise.all((['desktop','connect'] as const).map(product=>activitySubject(env,account,product)));
  await env.DB.batch([stmt(env,'DELETE FROM product_activity WHERE subject IN (?,?)',...subjects),refreshTotals(env)]);
 }
+const snapshotActivity = (env: Env, pairs: [string, string][]) => stmt(env, `
+ WITH account_activity AS (
+   SELECT desktop.last_day AS desktop_day, connect.last_day AS connect_day
+   FROM json_each(?) AS pair
+   LEFT JOIN product_activity AS desktop ON desktop.subject=json_extract(pair.value,'$[0]')
+   LEFT JOIN product_activity AS connect ON connect.subject=json_extract(pair.value,'$[1]')
+ )
+ INSERT INTO product_activity_history
+   (day_utc, desktop_daily, connect_daily, desktop_weekly, connect_weekly, as_of_ms)
+ SELECT date('now'),
+   NULLIF(count(*) FILTER (WHERE desktop_day=date('now') OR connect_day=date('now')),0),
+   NULLIF(count(*) FILTER (WHERE connect_day=date('now')),0),
+   NULLIF(count(*) FILTER (WHERE desktop_day BETWEEN date('now','-6 days') AND date('now')
+                          OR connect_day BETWEEN date('now','-6 days') AND date('now')),0),
+   NULLIF(count(*) FILTER (WHERE connect_day BETWEEN date('now','-6 days') AND date('now')),0),
+   CAST(unixepoch('subsec') * 1000 AS INTEGER)
+ FROM account_activity
+ WHERE true
+ ON CONFLICT(day_utc) DO UPDATE SET
+   desktop_daily=excluded.desktop_daily, connect_daily=excluded.connect_daily,
+   desktop_weekly=excluded.desktop_weekly, connect_weekly=excluded.connect_weekly,
+   as_of_ms=excluded.as_of_ms
+ WHERE excluded.as_of_ms>=product_activity_history.as_of_ms
+`, JSON.stringify(pairs));
+
 export async function cleanupProductActivity(env:Env) {
  try {
   // Reconcile deletion/refusal/exclusion without retaining an account-to-subject
   // lookup. Derive the eligible set transiently; never log it or export it.
   const {results}=await stmt(env,`SELECT a.id FROM accounts a WHERE ${eligible} LIMIT 10001`).all<{id:string}>();
   if(results.length>10000)return;
-  const allowed=(await Promise.all(results.filter(a=>!excluded(env,a.id)).flatMap(a=>(['desktop','connect'] as const).map(p=>activitySubject(env,a.id,p)))));
+  const pairs = await Promise.all(results.filter(a=>!excluded(env,a.id)).map(({id}) =>
+    Promise.all([activitySubject(env,id,'desktop'), activitySubject(env,id,'connect')] as const)));
   await env.DB.batch([
-   stmt(env,`DELETE FROM product_activity WHERE last_day<date('now','-6 days') OR last_day>date('now') OR subject NOT IN (SELECT value FROM json_each(?))`,JSON.stringify(allowed)),
+   stmt(env,`DELETE FROM product_activity WHERE last_day<date('now','-6 days') OR last_day>date('now') OR subject NOT IN (SELECT value FROM json_each(?))`,JSON.stringify(pairs.flat())),
    refreshTotals(env),
    stmt(env,"UPDATE product_activity_state SET as_of_ms=CAST(unixepoch('subsec')/900 AS INTEGER)*900000 WHERE id=1 AND as_of_ms<CAST(unixepoch('subsec')/900 AS INTEGER)*900000")
+  ]);
+  await env.DB.batch([
+    snapshotActivity(env, pairs),
+    stmt(env, "DELETE FROM product_activity_history WHERE day_utc<date('now','-29 days')")
   ]);
  }catch{/* Failed reconciliation leaves the maintenance watermark stale. */}
 }
