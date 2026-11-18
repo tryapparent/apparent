@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
 spec = importlib.util.spec_from_file_location('release_gate', Path(__file__).resolve().parents[1] / 'release_gate.py')
@@ -33,6 +34,9 @@ class AdmissionTests(unittest.TestCase):
         }
         self.status = 'identical'
         self.calls = []
+        ancestry = patch.object(gate, 'require_main_ancestry')
+        self.check_ancestry = ancestry.start()
+        self.addCleanup(ancestry.stop)
 
     def test_public_uses_its_own_checks_and_only_publishes_checked_main(self):
         root = Path(__file__).resolve().parents[2] / '.github/workflows'
@@ -74,7 +78,10 @@ class AdmissionTests(unittest.TestCase):
 
     def test_exact_successful_main_commit_is_admitted(self):
         for platform, number in [('linux', '42'), ('macos', '42')]:
+            self.calls.clear()
             self.assertEqual(self.admit(platform, number), self.sha)
+            self.assertEqual(len(self.calls), 2)
+            self.check_ancestry.assert_called_with(self.repo, self.sha)
             self.assertEqual(self.admit(platform), self.sha)
 
     def test_cd_policy_contracts(self):
@@ -106,6 +113,9 @@ class AdmissionTests(unittest.TestCase):
         self.runs['macos']['conclusion'] = 'failure'
         self.assertEqual(gate.admit(self.repo, self.sha, fetch=fetch, platform='macos'), self.sha)
         self.assertEqual(gate.admit(self.repo, self.sha, fetch=fetch), self.sha)
+        self.assertEqual(gate.admit(self.repo, self.sha, '42', fetch, run_attempt='2'), self.sha)
+        with self.assertRaisesRegex(ValueError, 'run or attempt changed'):
+            gate.admit(self.repo, self.sha, '42', fetch, run_attempt='1')
 
     def test_manual_feature_checks_preserve_publication_boundary(self):
         root = Path(__file__).resolve().parents[2]
@@ -226,11 +236,6 @@ class AdmissionTests(unittest.TestCase):
         self.jobs['linux'] = [dict(name=name, status='completed', conclusion='success') for name in
                               ['select', 'desktop-ui (ubuntu-24.04)', 'rust (ubuntu-24.04)', 'Release verification']]
         with self.assertRaises(ValueError): self.admit()
-
-    def test_diverged_or_removed_commit_is_refused(self):
-        for status in ('behind', 'diverged', 'unknown'):
-            self.status = status
-            with self.assertRaises(ValueError): self.admit()
 
     def test_empty_history_and_api_failure_fail_closed(self):
         with self.assertRaises(ValueError):

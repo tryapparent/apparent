@@ -1,4 +1,5 @@
 {
   "root": "engine",
-  "excludedSuffixes": [".md"]
+  "excludedSuffixes": [".md"],
+  "desktopPermissions": "engine/permissions/"
 }

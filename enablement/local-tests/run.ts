@@ -169,6 +169,7 @@ export function contractTests(cwd = root): Command[] {
   return [
     { argv: ['node', '--experimental-strip-types', '--test', ...fixtureTests, 'enablement/local-tests/run.test.ts', 'enablement/local-tests/reuse.test.ts',
       'enablement/local-tests/preview/explain.test.ts', 'enablement/local-tests/preview/inputs.test.ts', 'shared/enablement/issues/issues.test.ts',
+      'shared/enablement/issues/checkpoint.test.ts',
       ...prerequisites, ...timingContracts(cwd)], cwd: '.' },
     { argv: ['bun', 'test', 'enablement/ci/'], cwd: '.' },
     { argv: ['bun', 'test', 'connect/enablement/ci/'], cwd: '.' },

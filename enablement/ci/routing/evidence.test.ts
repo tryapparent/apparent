@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {accepted, covers, reusable, trustedProducer, authenticatedSuites} from './evidence.ts';
+import {accepted, covers, reusable, authenticatedSuites} from './evidence.ts';
 import type {Evidence} from './evidence.ts';
 import {parsePlan} from './run.ts';
 import {suitePlan} from './consumers.ts';
@@ -51,13 +51,30 @@ test('main admission rejects failed contracts, unknown selection and missing sel
 
 test('real GitHub lookup authenticates the merged PR/run/artifact and falls back on stale or unavailable evidence', async () => {
   const {execFileSync} = await import('node:child_process');
-  const {mkdtempSync,writeFileSync,readFileSync,rmSync} = await import('node:fs');
+  const {mkdirSync,mkdtempSync,writeFileSync,readFileSync,rmSync,symlinkSync} = await import('node:fs');
   const {reuse} = await import('./evidence.ts');
   const dir=mkdtempSync('/tmp/apparent-dev-ci-evidence-test-');
-  const env={...process.env}, originalFetch=globalThis.fetch;
-  const tree=execFileSync('git',['rev-parse','HEAD^{tree}'],{encoding:'utf8'}).trim();
+  const env={...process.env}, originalFetch=globalThis.fetch, cwd=process.cwd();
   try {
-    Object.assign(process.env,{GITHUB_EVENT_NAME:'push',GITHUB_REF:'refs/heads/main',GITHUB_REPOSITORY:'test/repo',GITHUB_SHA:'d'.repeat(40),GH_TOKEN:'synthetic',VERIFICATION_PLAN:JSON.stringify(full),MAC_VERIFICATION_PLAN:JSON.stringify(full)});
+    for (const key of Object.keys(process.env)) if (key.startsWith('GIT_')) delete process.env[key];
+    Object.assign(process.env,{GIT_CONFIG_GLOBAL:'/dev/null',GIT_CONFIG_NOSYSTEM:'1',TMPDIR:dir});
+    const repo=dir+'/repo';
+    mkdirSync(repo);
+    process.chdir(repo);
+    const git=(...args:string[])=>execFileSync('git',args,{encoding:'utf8'}).trim();
+    git('init','-qb','main');
+    git('config','user.name','Fixture');
+    git('config','user.email','fixture@example.invalid');
+    mkdirSync('enablement');
+    writeFileSync('enablement/producer', 'trusted');
+    git('add','.');
+    git('commit','-qm','producer');
+    const parent=git('rev-parse','HEAD');
+    writeFileSync('product','change');
+    git('add','product');
+    git('commit','-qm','product');
+    const main=git('rev-parse','HEAD'), tree=git('rev-parse','HEAD^{tree}');
+    Object.assign(process.env,{GITHUB_EVENT_NAME:'push',GITHUB_REF:'refs/heads/main',GITHUB_REPOSITORY:'test/repo',GITHUB_SHA:main,GH_TOKEN:'synthetic',VERIFICATION_PLAN:JSON.stringify(full),MAC_VERIFICATION_PLAN:JSON.stringify(full)});
     let mode='valid', calls=0;
     globalThis.fetch=(async (url: any, options: any) => {
       calls++;
@@ -65,10 +82,7 @@ test('real GitHub lookup authenticates the merged PR/run/artifact and falls back
       const path=String(url).replace('https://api.github.com/repos/test/repo/','');
       if(mode==='denied')return new Response('{}',{status:403});
       let value: any;
-      if(path==='git/commits/'+process.env.GITHUB_SHA)value={tree:{sha:tree},parents:[{sha:'e'.repeat(40)}]};
-      else if(path==='git/commits/'+'e'.repeat(40))value={tree:{sha:'base-tree'}};
-      else if(path.startsWith('git/trees/'))value={truncated:mode==='truncated',tree:[{path:'enablement/ci/routing/evidence.ts',mode:'100644',type:'blob',sha:mode==='forged-producer'&&path.includes(tree)?'different':'same'}]};
-      else if(path==='git/commits/'+record.sha)value={tree:{sha:mode==='false-commit'?'wrong':tree}};
+      if(path==='git/commits/'+record.sha)value={tree:{sha:mode==='false-commit'?'wrong':tree}};
       else if(path.includes('/attempts/'))value={total_count:10,jobs:['contracts','select','tree-evidence','linux / select','linux / rust (ubuntu-24.04)','linux / desktop-ui (ubuntu-24.04)','linux / connect-client (ubuntu-24.04)','macos / select','macos / Native acceptance (macos-15-intel)','macos / rust (macos-15-intel)','macos / desktop-ui (macos-15-intel)','macos / connect-client (macos-15-intel)','portable','Hermes inspection (ubuntu-24.04)','Hermes inspection (macos-15-intel)'].map(name=>({name,status:'completed',conclusion:mode==='forged-results'?'skipped':'success'}))};
       else if(path.includes('/pulls?'))value=[{merged_at:'now',merge_commit_sha:process.env.GITHUB_SHA,number:1,base:{repo:{full_name:'test/repo'}},head:{sha:record.head,repo:{full_name:mode==='fork'?'other/repo':'test/repo'}}}];
       else if(path.includes('/runs?'))value={workflow_runs:[{id:42,run_attempt:2,path:'.github/workflows/checks.yml',event:'pull_request',head_sha:record.head,head_repository:{full_name:'test/repo'},repository:{full_name:'test/repo'},status:'completed',conclusion:mode==='cancelled'?'cancelled':'success'}]};
@@ -82,10 +96,36 @@ test('real GitHub lookup authenticates the merged PR/run/artifact and falls back
       return new Response(JSON.stringify(value));
     }) as typeof fetch;
     assert.ok(Object.values(await reuse()).every(Boolean));
-    for(mode of ['denied','fork','cancelled','expired','tree-changed','forged-producer','forged-results','truncated','false-commit'])assert.ok(!Object.values(await reuse()).some(Boolean),mode);
+    assert.equal(calls,6,'only mutable evidence and the remote-only PR merge commit are looked up');
+    for(mode of ['denied','fork','cancelled','expired','tree-changed','forged-results','false-commit'])assert.ok(!Object.values(await reuse()).some(Boolean),mode);
+    for (const change of ['blob','mode','removal','package.json']) {
+      git('reset','--hard',main);
+      if(change==='blob') writeFileSync('enablement/producer','different');
+      if(change==='mode') {
+        rmSync('enablement/producer');
+        symlinkSync('elsewhere','enablement/producer');
+      }
+      if(change==='removal') rmSync('enablement/producer');
+      if(change==='package.json') writeFileSync(change,'{}');
+      git('add','.');
+      git('commit','-qm',change);
+      process.env.GITHUB_SHA=git('rev-parse','HEAD');
+      calls=0;
+      assert.ok(!Object.values(await reuse()).some(Boolean),change);
+      assert.equal(calls,0);
+    }
+    git('reset','--hard',main);
+    process.env.GITHUB_SHA=parent;
+    assert.ok(!Object.values(await reuse()).some(Boolean),'wrong checkout');
+    process.env.GITHUB_SHA=main;
+    writeFileSync('.git/shallow',main+'\n');
+    assert.ok(!Object.values(await reuse()).some(Boolean),'shallow checkout');
+    assert.equal(calls,0);
+    rmSync('.git/shallow');
     process.env.GITHUB_EVENT_NAME='pull_request';calls=0;
     assert.ok(!Object.values(await reuse()).some(Boolean));assert.equal(calls,0,'PRs never look up main reuse evidence');
   } finally {
+    process.chdir(cwd);
     globalThis.fetch=originalFetch;
     for(const key of Object.keys(process.env))if(!(key in env))delete process.env[key];
     Object.assign(process.env,env);rmSync(dir,{recursive:true,force:true});
@@ -93,13 +133,6 @@ test('real GitHub lookup authenticates the merged PR/run/artifact and falls back
 });
 
 
-test('verification code cannot authenticate its own modification, removal, mode change or unbounded tree', () => {
-  const entry={path:'enablement/ci/routing/evidence.ts',mode:'100644',type:'blob',sha:'trusted'};
-  const base={tree:[entry]};
-  assert.equal(trustedProducer(base,base),true);
-  assert.equal(trustedProducer(base,{tree:[entry,{path:'capture/engine/runtime/new.rs',mode:'100644',type:'blob',sha:'product-change'}]}),true);
-  for(const candidate of [{tree:[]},{truncated:true,tree:[entry]},{tree:[{...entry,sha:'changed'}]},{tree:[{...entry,mode:'120000'}]},{tree:[entry,{...entry,path:'public/site/package.json'}]}])assert.equal(trustedProducer(base,candidate),false);
-});
 test('GitHub job conclusions independently reject artifact claims for skipped or failed native suites', () => {
   const names=['contracts','select','tree-evidence','linux / select','linux / rust (ubuntu-24.04)','linux / desktop-ui (ubuntu-24.04)','linux / connect-client (ubuntu-24.04)'];
   const jobs=names.map(name=>({name,status:'completed',conclusion:'success'}));

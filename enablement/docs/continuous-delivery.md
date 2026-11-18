@@ -219,8 +219,8 @@ checkout tree, head, run/attempt, plans and job results in the 14-day
 merged same-repository PR's completed trusted workflow run, with an identical
 complete Git tree, matching head/run/attempt and sufficient successful suite
 coverage, authenticated against GitHub's actual current-attempt job conclusions.
-The workflow, selector/producer/runner code and package scripts must match the
-trusted main parent; verification-definition changes always run fresh on main.
+Workflow, selector/producer/runner code and package scripts must match the
+trusted first parent in the full-history main checkout.
 The recorded checkout SHA must independently resolve to the identical tree.
 Failed, cancelled, skipped, expired, malformed, missing or inaccessible
 proof is not reusable. A changed merge tree or direct push runs affected suites.

@@ -26,7 +26,7 @@ pub struct PhoneDevice {
 
 /// What the session lets Apparent use: the microphone, the screen and the input devices.
 pub fn permissions()
--> Result<std::collections::BTreeMap<crate::capture::desktop::settings::onboarding::Permission, crate::capture::desktop::settings::onboarding::Status>> {
+-> Result<std::collections::BTreeMap<crate::permission_facts::Permission, crate::permission_facts::Status>> {
     Ok(crate::capture::desktop::linux::privacy::permissions())
 }
 

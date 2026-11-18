@@ -1,0 +1,53 @@
+.native-permissions {
+  margin-top: 32px;
+  border: 1px solid var(--apparent-border);
+  background: var(--apparent-surface);
+}
+.native-permissions > div {
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 1px solid var(--apparent-border);
+}
+.native-permissions > div:last-child {
+  border: 0;
+}
+.native-permissions strong {
+  font-size: 1.125rem;
+  font-weight: 500;
+}
+.native-permissions small {
+  display: block;
+  font-size: 1rem;
+  margin-top: 8px;
+}
+.native-permission-description {
+  min-width: 0;
+}
+.native-permission-description code {
+  display: block;
+  margin-top: 8px;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.native-permissions button,
+.native-permissions .native-granted {
+  flex-shrink: 0;
+}
+.native-permissions > div > span {
+  max-width: 100%;
+}
+.native-setup footer[data-permission-repair] {
+  justify-content: flex-end;
+}
+
+@media (max-width: 560px) {
+  .native-permissions > div {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+  }
+}

@@ -44,6 +44,7 @@ on:
       - "enablement/prerequisites/**"
       - "enablement/local-tests/**"
       - "enablement/native-build/**"
+      - "engine/permissions/**"
       - "capture/**"
       - "record/**"
       - "connect/**"
@@ -93,6 +94,7 @@ on:
       - "enablement/prerequisites/**"
       - "enablement/local-tests/**"
       - "enablement/native-build/**"
+      - "engine/permissions/**"
       - "capture/**"
       - "record/**"
       - "connect/**"
@@ -266,6 +268,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
