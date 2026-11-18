@@ -517,7 +517,7 @@ jobs:
   fallback:
     name: Build signed Mac candidate fallback
     needs: [frontend, capacity]
-    if: needs.capacity.outputs.runner != ''
+    if: ${{ !cancelled() && needs.frontend.result == 'success' && needs.capacity.result == 'success' && needs.capacity.outputs.runner != '' }}
     permissions: *candidate-permissions
     runs-on: ${{ needs.capacity.outputs.runner }}
     timeout-minutes: 120
