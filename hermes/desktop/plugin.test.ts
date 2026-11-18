@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { host, shared } from './testing/sdk.ts';
 import { fixture, packet, reset, until } from './testing/fixture.ts';
 import { sign } from './controller.ts';
+import './testing/setup-cases.ts';
 
 test('composer keeps the accepted Apparent mark while recording state changes', async () => {
   reset(); const f = fixture();
@@ -15,74 +16,6 @@ test('composer keeps the accepted Apparent mark while recording state changes', 
     await until(() => shared.requests.some((item: any) => item.method === 'shell.exec'));
     assert.deepEqual(icon(), before);
   } finally { f.dispose(); }
-});
-
-test('first-run setup offers an explicit app open without creating a conversation or sending the draft', async () => {
-  reset();
-  shared.owner = { connectionId: 'local-A', profile: 'default' };
-  shared.session = null; shared.storedSession = null;
-  shared.setupStatus = { schema: 1, status: 'setup_required' };
-  const originalFetch = globalThis.fetch;
-  const f = fixture();
-  globalThis.fetch = async () => packet('recording');
-  try {
-    const draft = shared.newDraft;
-    f.click(); await until(() => shared.notices.length === 1);
-    assert.deepEqual(shared.requests, [{ route: shared.routes[1], method: 'plugin.apparent.setup_status', params: {} }]);
-    assert.equal(shared.newDraft, draft);
-    assert.equal(shared.opens.length, 0);
-    assert.equal(f.writes(), 0);
-    assert.equal(shared.submissions.length, 0);
-    const notice = shared.notices[0];
-    assert.equal(notice.kind, 'info');
-    assert.equal(notice.action?.label, 'Open Apparent setup');
-    assert.deepEqual(f.externalUrls, []);
-    notice.action?.onClick();
-    assert.deepEqual(f.externalUrls, ['apparent://open']);
-    assert.equal(shared.requests.length, 1);
-    shared.setupStatus = { schema: 1, status: 'ready' };
-    f.click(); await until(() => shared.requests.some(item => item.params.command?.includes('hermes record')));
-    assert.equal(shared.opens.length, 1);
-    assert.equal(shared.submissions.length, 0);
-  } finally { globalThis.fetch = originalFetch; f.dispose(); }
-});
-
-test('legacy shell checks the local recorder for an SSH chat without creating a helper', async () => {
-  reset();
-  shared.setupRpcError = { code: -32601 };
-  shared.legacyRuntimeDescribe = true;
-  shared.shellSetupResult = { code: 127, stdout: '', stderr: 'apparent: not found' };
-  const f = fixture();
-  try {
-    f.click(); await until(() => shared.notices.length === 1);
-    assert.deepEqual(shared.requests.map(item => [item.route.mode, item.method, item.params]), [
-      ['local', 'plugin.apparent.setup_status', {}],
-      ['local', 'runtime.describe', {}],
-      ['local', 'shell.exec', { command: 'apparent hermes status' }],
-    ]);
-    assert.equal(shared.notices[0].action?.label, 'Install Apparent');
-    shared.notices[0].action?.onClick();
-    assert.deepEqual(f.externalUrls, ['https://app.tryapparent.com/']);
-    assert.equal(f.writes(), 0);
-  } finally { f.dispose(); }
-});
-
-test('a connection switch during setup preflight prevents navigation and capture', async () => {
-  reset();
-  shared.session = null; shared.storedSession = null;
-  let release!: () => void;
-  shared.setupGate = new Promise<void>(resolve => { release = resolve; });
-  const f = fixture();
-  try {
-    f.click(); await until(() => shared.requests.length === 1);
-    assert.equal(f.surface().props['aria-busy'], true);
-    shared.owner = { connectionId: 'local-A', profile: 'default' };
-    release();
-    await until(() => shared.errors.length === 1);
-    assert.match(shared.errors[0], /destination changed while checking setup/);
-    assert.equal(shared.requests.length, 1);
-    assert.equal(f.writes(), 0);
-  } finally { release(); f.dispose(); }
 });
 
 test('canonical remote recording uses an idempotent local helper shell session', async () => {

@@ -31,30 +31,37 @@ type SetupHost = {
 };
 type ShellContract = { mode: "canonical" | "legacy"; hidden: boolean };
 
+function sameRoute(candidate: Route, route: Route) {
+  return (
+    candidate.connectionId === route.connectionId &&
+    candidate.profile === route.profile &&
+    candidate.targetProfile === route.targetProfile &&
+    candidate.mode === route.mode
+  );
+}
+
 const setupActions = {
   setup_required: {
     label: "Open Apparent setup",
     message:
       "Finish setting up Apparent, then click Record with Apparent again.",
-    url: "apparent://open",
   },
   missing: {
     label: "Install Apparent",
     message: "Install the Apparent app on this computer to record from Hermes.",
-    url: "https://app.tryapparent.com/",
   },
   update_required: {
     label: "Update Apparent",
     message: "Update the Apparent app on this computer to record from Hermes.",
-    url: "https://app.tryapparent.com/",
   },
   unavailable: {
     label: "Open Apparent",
     message:
       "Hermes could not check Apparent setup. Open the app, then try again.",
-    url: "apparent://open",
   },
 };
+
+const setupOpenCommand = `case "$(uname -s)" in Darwin) /usr/bin/open 'apparent://open';; Linux) apparent launch apparent://open </dev/null >/dev/null 2>&1 & ;; *) exit 64;; esac`;
 
 const unsupportedMethod = (error: unknown) => {
   const value = error as { code?: unknown; data?: { reason?: unknown } } | null;
@@ -126,7 +133,11 @@ export function createRecorderSetup(
   ctx: { os?: { openExternal: (url: string) => Promise<boolean> } },
   disposed: () => boolean,
 ) {
-  function offerSetup(status: keyof typeof setupActions) {
+  function offerSetup(
+    status: keyof typeof setupActions,
+    route: Route,
+    localSession: string | null,
+  ) {
     const action = setupActions[status];
     host.notify({
       id: "apparent-recorder-setup",
@@ -136,23 +147,61 @@ export function createRecorderSetup(
       action: {
         label: action.label,
         onClick: () => {
-          if (!disposed()) void openSetup(action.url);
+          if (disposed()) return;
+          if (status === "missing" || status === "update_required")
+            void openDownload();
+          else void openSetup(route, localSession);
         },
       },
     });
   }
 
-  async function openSetup(url: string) {
+  async function openDownload() {
     try {
-      if (await ctx.os?.openExternal(url)) return;
+      if (await ctx.os?.openExternal("https://app.tryapparent.com/")) return;
     } catch {}
     if (!disposed())
       host.notify({
         kind: "error",
+        message: "Open app.tryapparent.com to get Apparent, then try again.",
+      });
+  }
+
+  async function openSetup(route: Route, localSession: string | null) {
+    try {
+      const contract = await shellContract(host, route);
+      const routes = await host.profileRoutes();
+      if (disposed()) return;
+      const session = host.state.focusedSessionId?.get();
+      const owner = host.state.focusedSessionOwner?.get();
+      if (
+        routes.some((candidate) => sameRoute(candidate, route)) &&
+        (contract.mode === "legacy" ||
+          (localSession &&
+            session === localSession &&
+            owner?.connectionId === route.connectionId &&
+            owner.profile === route.profile))
+      ) {
+        const params =
+          contract.mode === "canonical"
+            ? { session_id: localSession, command: setupOpenCommand }
+            : { command: setupOpenCommand };
+        const result = await host.requestProfile<{ code?: number }>(
+          route,
+          "shell.exec",
+          params,
+          7000,
+        );
+        if (result?.code === 0) return;
+      }
+    } catch {}
+    if (!disposed())
+      host.notify({
+        id: "apparent-recorder-setup-instructions",
+        kind: "info",
+        durationMs: 0,
         message:
-          url === "apparent://open"
-            ? "Open Apparent from your app launcher to finish setup, then try again."
-            : "Open app.tryapparent.com to get Apparent, then try again.",
+          "Open Apparent from your app launcher to finish setup, then click Record with Apparent again.",
       });
   }
 
@@ -173,13 +222,7 @@ export function createRecorderSetup(
     const routes = await host.profileRoutes();
     const focused = host.state.focusedSessionOwner?.get();
     const stillAvailable = (route: Route) =>
-      routes.some(
-        (candidate) =>
-          candidate.connectionId === route.connectionId &&
-          candidate.profile === route.profile &&
-          candidate.targetProfile === route.targetProfile &&
-          candidate.mode === route.mode,
-      );
+      routes.some((candidate) => sameRoute(candidate, route));
     if (
       disposed() ||
       (host.state.focusedSessionId?.get() || null) !== session ||
@@ -194,7 +237,7 @@ export function createRecorderSetup(
       );
     }
     if (status === "ready" || status === "legacy") return true;
-    offerSetup(status);
+    offerSetup(status, localRoute, localRoute === destination ? session : null);
     return false;
   }
 
