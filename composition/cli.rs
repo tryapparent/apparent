@@ -704,6 +704,10 @@ enum LaunchHandlerCommand {
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn run_owned_app(record: bool, iphone: bool, background: bool) -> Result<()> {
+    #[cfg(target_os = "linux")]
+    if let Some(result) = crate::capture::desktop::workflow::shutdown::supervise() {
+        return result;
+    }
     let Some(owner) = launch_instance::acquire()? else {
         if background { return Ok(()); }
         #[cfg(target_os = "linux")]
@@ -720,7 +724,6 @@ fn run_owned_app(record: bool, iphone: bool, background: bool) -> Result<()> {
         }
         return launch_instance::forward_open();
     };
-    // Older releases do not own the new lock. Never start beside their GUI.
     #[cfg(target_os = "linux")]
     ensure!(
         !linux::ipc::running(),
@@ -731,8 +734,6 @@ fn run_owned_app(record: bool, iphone: bool, background: bool) -> Result<()> {
         "another Apparent GUI is running; update and restart it first"
     );
     owner.listen()?;
-    // Ordinary application launches reveal Settings after setup has initialized.
-    // Explicit capture launches retain their existing behavior.
     if !record && !iphone && !background {
         launch_instance::request_open();
     }
@@ -742,6 +743,8 @@ fn run_owned_app(record: bool, iphone: bool, background: bool) -> Result<()> {
         eprintln!("Apparent could not record its running version in config: {error:#}");
     }
     ui::run_app(None, record, iphone, None);
+    #[cfg(target_os = "linux")]
+    crate::capture::desktop::workflow::shutdown::check_app_exit()?;
     Ok(())
 }
 
@@ -929,8 +932,6 @@ fn run_cli(cli: Cli) -> Result<()> {
                 win::shell::release_own_console();
                 win::shell::wait_for_relauncher();
             }
-            // Launching Apparent again (from the app grid) opens the running one's Settings: GNOME
-            // shows no tray icon without the AppIndicator extension.
             #[cfg(target_os = "linux")]
             if linux::ipc::running() {
                 linux::ipc::send(if record { "shortcut record" } else { "open" })?;

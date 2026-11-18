@@ -142,8 +142,8 @@ Read this before changing `capture/desktop/settings/onboarding.rs`, `capture/des
 
 ## Technical error reporting
 
-General has one small **Send technical error reports** switch, on by default.
-The default Electron General surface mirrors its readback and toggle through the
+General’s **Send technical error reports** defaults on.
+Electron General mirrors readback and toggles through the
 native parent bridge; Rust remains authoritative. Native Settings remains the
 missing-assets/startup/crash fallback.
 `errorReporting: false` in `~/.config/apparent/config.json` disables it without a
@@ -152,7 +152,7 @@ writer preserves unrelated keys and rotates private `errorReportingGeneration`
 on every toggle, invalidating queued reports across off/on cycles. That generation
 is never sent. Direct file edits apply at the next report admission; edit the
 generation too when disabling/re-enabling between admissions. An already admitted
-HTTP request can finish after opt-out. No disk spool or retries exist.
+HTTP request can finish after opt-out. Only native exit diagnostics have a disk retry queue.
 
 Desktop startup installs reporting only when packaging supplies the publishable
 `APPARENT_POSTHOG_TOKEN` (`phc_…`) for the intended EU project. Without it, builds
@@ -238,15 +238,16 @@ events are not retroactively linked by this change.
 
 Coverage: desktop recording storage/audio/screen/phone startup, capture finalization,
 video export, Linux/macOS update-check errors, and Rust panics after startup. This is a synthetic call-site frame,
-**not a full unwound stack or native crash dump**. Segfaults, forced exits,
-Swift/Objective-C crashes and failures before startup are not captured. The queue
+**not a full unwound stack or native crash dump**. Swift/Objective-C crashes and
+failures before supervision starts are not captured. The in-process queue
 holds at most 16 events, with 20 attempts/minute and a two-second HTTP timeout.
 Ordinary failures only enqueue; a panic waits at most two seconds for best-effort
 flush before chaining the previous hook. Full queues, exhausted rate allowance
 or slow earlier reports can drop a panic report too; this is not complete crash
-coverage. The narrow direct-HTTP adapter avoids
-SDK autocapture/raw messages and independent retry queues; its exception schema
-follows PostHog's Rust wire contract. Connect logging is unchanged.
+coverage. The direct-HTTP adapter excludes SDK autocapture and raw messages. Connect logging is unchanged.
+
+Linux exit supervision and its consent-bound retry queue are documented
+in [Engine diagnostics](../../../engine/diagnostics/README.md).
 
 Installed release Electron hosts also report main-process uncaught exceptions and
 unhandled rejections, plus abnormal renderer/utility-process exits. TypeScript
