@@ -50,7 +50,9 @@ const before = await snapshot(), previous = singleVersion(before.deployment)
 validateProfile(before.settings)
 const baselineVersion = await readBaselineVersion(previous, id => api(worker + '/versions/' + id))
 const pending = before.versions[0]
-assertStagingOwner(previous, pending.id, pending.annotations?.['workers/tag'])
+assertStagingOwner(previous, pending.id, pending.annotations?.['workers/tag'], tag =>
+  !!tag && /^[a-f0-9]{40}$/.test(tag) &&
+  spawnSync('git', ['merge-base', '--is-ancestor', tag, sha], { cwd: repo, stdio: 'ignore' }).status === 0)
 if (pending.id !== previous) {
   // Recovery never activates the old stage: verify its immutable configuration
   // before allowing the current tested main artifact to supersede it.

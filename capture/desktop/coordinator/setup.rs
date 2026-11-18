@@ -1,3 +1,5 @@
+use crate::permission_facts::{Grants, Permission};
+
 impl ApparentCoordinator {
     fn new(
         telemetry: Arc<SharedCaptureTelemetry>,
@@ -137,7 +139,7 @@ impl ApparentCoordinator {
         if !crate::capture::engine::runtime::accessibility_granted() {
             apparent_log("⌥⇧V without Accessibility; asking for it");
             self.gate
-                .defer(vec![crate::capture::desktop::settings::onboarding::Permission::Accessibility]);
+                .defer(vec![Permission::Accessibility]);
             return;
         }
         let dir = self.take_paste_target();
@@ -410,7 +412,8 @@ impl ApparentCoordinator {
         let events = move |event| {
             let _ = sender.send(LiveOverlayEvent::Settings(event));
         };
-        match crate::capture::desktop::settings::Session::open(pane, self.grants.clone(), events) {
+        let grants = self.current_grants().cloned().unwrap_or_else(Grants::unavailable);
+        match crate::capture::desktop::settings::Session::open(pane, Some(grants), events) {
             Ok(mut session) => {
                 session.sync(&crate::capture::desktop::settings::AppHost {
                     telemetry: &self.telemetry,
@@ -431,9 +434,6 @@ impl ApparentCoordinator {
             apparent_log("Update restart deferred until capture is idle");
             crate::capture::desktop::linux::shell::notify("Update ready", "Finish or cancel the capture before restarting Apparent.");
             return;
-        }
-        if let Event::Grants(grants) = &event {
-            self.note_grants(grants);
         }
         let Some(session) = self.settings.as_mut() else {
             return;
@@ -545,62 +545,91 @@ impl ApparentCoordinator {
         succeeded && active.load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    fn note_grants(&mut self, grants: &crate::capture::desktop::settings::onboarding::Grants) {
-        use crate::capture::desktop::settings::onboarding::Progress;
-        let mut progress = Progress::load();
-        if progress.note(grants) {
-            progress.save();
+    fn permission_facts(
+        &mut self,
+        grants: Option<Grants>,
+        launch: bool,
+        cx: &mut Context<Self>,
+    ) {
+        use crate::capture::desktop::settings::{self, onboarding};
+        let grants = grants.filter(Grants::is_current);
+        let changed = match (&self.grants, &grants) {
+            (Some(before), Some(now)) => !before.same_permissions(now),
+            (None, None) => false,
+            _ => true,
+        };
+        self.grants = grants;
+        if changed && let Some(session) = self.settings.as_mut() {
+            session.event(
+                settings::Event::Grants(self.grants.clone().unwrap_or_else(Grants::unavailable)),
+                &mut settings::AppHost { telemetry: &self.telemetry },
+            );
         }
-        self.grants = Some(grants.clone());
+        if let Some(grants) = self.grants.clone() {
+            if launch {
+                self.onboarding_event(onboarding::Event::Launch(grants), cx);
+            } else if self.onboarding.is_some() {
+                self.onboarding_event(onboarding::Event::Grants(grants), cx);
+            } else if changed {
+                crate::capture::desktop::settings::onboarding::note_grants(&grants);
+            }
+        } else if changed && self.onboarding.is_some() {
+            self.onboarding_event(onboarding::Event::Grants(Grants::unavailable()), cx);
+        }
     }
 
-    fn missing_to_record(&mut self, microphone: bool) -> Vec<crate::capture::desktop::settings::onboarding::Permission> {
-        use crate::capture::desktop::settings::onboarding::{Permission, missing_to_record};
-        let screen = crate::capture::engine::runtime::screen_capture_usable(false);
-        let accessibility = crate::capture::engine::runtime::accessibility_granted();
-        let mut missing = missing_to_record(self.grants.as_ref(), screen, accessibility);
-        if !microphone { missing.retain(|p| *p != Permission::Microphone); }
-        if missing.contains(&Permission::Microphone)
-            && let Some(fresh) = crate::capture::desktop::settings::onboarding::read_grants()
-        {
-            self.note_grants(&fresh);
-            return missing_to_record(self.grants.as_ref(), screen, accessibility);
+    fn permission_facts_expired(&self) -> bool {
+        self.grants.is_some() && self.current_grants().is_none()
+    }
+
+    fn current_grants(&self) -> Option<&Grants> {
+        self.grants.as_ref().filter(|grants| grants.is_current())
+    }
+
+    fn permissions_allow_recording(&mut self, microphone: bool) -> bool {
+        use crate::permission_admission::{Admission, check};
+        match check(self.current_grants(), microphone) {
+            Admission::Ready => true,
+            Admission::Checking => {
+                let message = "Checking recording permissions. Try recording again in a moment.";
+                apparent_log(message);
+                if let Ok(mut status) = CAPTURE_STATUS.lock() {
+                    *status = Some(message.into());
+                }
+                false
+            }
+            Admission::Blocked(missing) => {
+                self.gate.defer(missing);
+                false
+            }
         }
-        missing
     }
 
     fn ready_to_record(&mut self) -> bool {
         if self.lab {
             return true;
         }
-        if self.setup_blocks_capture() { return false; }
         let microphone = crate::capture::engine::runtime::audio::mic::enabled();
-        let missing = self.missing_to_record(microphone);
-        if missing.is_empty() {
-            self.admitted_microphone = Some(microphone);
-            return true;
+        self.admitted_microphone = None;
+        if !self.permissions_allow_recording(microphone) {
+            return false;
         }
-        apparent_log(format!(
-            "Not recording: {missing:?} off; opening onboarding"
-        ));
-        self.gate.defer(missing);
-        false
+        self.admitted_microphone = Some(microphone);
+        true
     }
 
-    fn ready_for(&mut self, permission: crate::capture::desktop::settings::onboarding::Permission) -> bool {
-        let granted = |g: &crate::capture::desktop::settings::onboarding::Grants| g.granted(permission);
-        if self.lab || self.grants.as_ref().is_none_or(granted) {
+    fn ready_for(&mut self, permission: Permission) -> bool {
+        if self.lab {
             return true;
         }
-        if let Some(fresh) = crate::capture::desktop::settings::onboarding::read_grants() {
-            self.note_grants(&fresh);
-            if granted(&fresh) {
-                return true;
+        match self.current_grants() {
+            Some(grants) if grants.granted(permission) => true,
+            Some(_) => {
+                self.gate.defer(vec![permission]);
+                false
             }
+            None => false,
         }
-        apparent_log(format!("{permission:?} is off; asking for it"));
-        self.gate.defer(vec![permission]);
-        false
     }
 
     pub(in crate::capture::desktop) fn tick_onboarding_practice(&mut self,cx:&mut Context<Self>) {
@@ -646,30 +675,24 @@ impl ApparentCoordinator {
                 session.input(Input::Blocked);
             }
             _ => {
-                let asks = if required {
-                    Permission::REQUIRED.to_vec()
-                } else {
-                    asks
-                };
                 self.open_onboarding(Flow::fix(asks, self.grants.clone()));
             }
         }
     }
 
     fn onboarding_event(&mut self, event: crate::capture::desktop::settings::onboarding::Event, cx: &mut Context<Self>) {
-        use crate::capture::desktop::settings::onboarding::{Effect, Event, Progress};
+        use crate::capture::desktop::settings::onboarding::{Effect, Event, Progress, note_grants, prepare_launch};
         let Some(event) = event.for_current_session(self.onboarding.as_ref().map(|s|s.source())) else {return;};
         let Some(event) = event.for_current_transport(self.onboarding.as_ref().map(|s|s.transport_generation())) else {return;};
         let effect = match event {
             Event::Session { .. } | Event::Transport { .. } => Effect::None,
             Event::Launch(grants) => {
-                self.note_grants(&grants);
-                let mut progress = Progress::load();
-                if progress.prepare_current_tour() { progress.save(); }
-                let plan = crate::capture::desktop::settings::onboarding::launch_plan(&progress, &grants);
-                if std::mem::take(&mut progress.reopen_fix) {
-                    progress.save();
-                }
+                let microphone = crate::capture::engine::runtime::audio::mic::enabled();
+                let missing = match crate::permission_admission::check(Some(&grants), microphone) {
+                    crate::permission_admission::Admission::Blocked(missing) => missing,
+                    _ => Vec::new(),
+                };
+                let plan = prepare_launch(&grants, &missing);
                 if self.onboarding.is_none()
                     && let Some(flow) = plan
                 {
@@ -678,16 +701,7 @@ impl ApparentCoordinator {
                 Effect::None
             }
             Event::Grants(grants) => {
-                self.note_grants(&grants);
-                #[cfg(target_os = "macos")]
-                if let Some(session) = self.settings.as_mut() {
-                    session.event(
-                        crate::capture::desktop::settings::Event::Grants(grants.clone()),
-                        &mut crate::capture::desktop::settings::AppHost {
-                            telemetry: &self.telemetry,
-                        },
-                    );
-                }
+                note_grants(&grants);
                 self.onboarding
                     .as_mut()
                     .map_or(Effect::None, |session| session.grants(grants))
@@ -932,9 +946,9 @@ impl ApparentCoordinator {
                 }
                 ShortcutPolicy::Record => {}
             }
-            let missing = self.missing_to_record(crate::capture::engine::runtime::audio::mic::enabled());
-            if !self.gate.press(missing) {
-                apparent_log("Shortcut held back: a required permission is off");
+            if !self.lab && !self.permissions_allow_recording(
+                crate::capture::engine::runtime::audio::mic::enabled(),
+            ) {
                 return;
             }
             self.begin_playback();
@@ -1001,12 +1015,9 @@ impl ApparentCoordinator {
     }
 
     pub fn record_screen_now(&mut self, cx: &mut Context<Self>) {
-        let target = if self.lab {
-            lab::target()
-        } else {
-            discover_target(None)
-        };
-        self.start_recording_with_target(target, cx);
+        self.start_recording_with_target(|lab| {
+            if lab { lab::target() } else { discover_target(None) }
+        }, cx);
         if self.is_recording() {
             self.show_reveal(cx);
         }
@@ -1255,7 +1266,7 @@ impl ApparentCoordinator {
             return;
         }
         apparent_log("preview_iphone invoked");
-        if !self.ready_for(crate::capture::desktop::settings::onboarding::Permission::Camera) {
+        if !self.ready_for(Permission::Camera) {
             self.cancel_recording(cx);
             return;
         }
