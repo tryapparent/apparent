@@ -4,6 +4,7 @@ import {mkdtempSync,mkdirSync,readFileSync,readdirSync,writeFileSync,rmSync,syml
 import {execFileSync,spawnSync} from 'node:child_process';
 import {YAML} from 'bun';
 const root=new URL('../../../',import.meta.url);
+type Step = {if?: string; uses?: string; run?: string};
 const read=(p:string)=>YAML.parse(readFileSync(new URL(p,root),'utf8'));
 const action=read('.github/actions/ubuntu-apt/action.yml');
 function probeFixture(job:string){
@@ -114,16 +115,16 @@ test('each affected hosted dependency consumer prepares transport before install
   const source=read(`.github/workflows/${workflow}`);
   for(const [name,job] of Object.entries(source.jobs) as [string,any][]){
    const steps=job.steps??[];
-   const install=steps.findIndex((s:any)=>installsApt(s.run??''));
+   const install=steps.findIndex((s:Step)=>installsApt(s.run??''));
    if(install<0)continue;
    if(workflow==='hermes.yml' && name==='clean'){
     // Audited Rust-free package proof uses Debian's sources/keyring, not
     // the hosted Ubuntu mirror list. A different image requires re-audit.
     assert.equal(job.container,'node:22.23.0-bookworm-slim');
-    assert.ok(!steps.some((s:any)=>(s.uses??'').includes('/ubuntu-apt')));
+    assert.ok(!steps.some((s:Step)=>(s.uses??'').includes('/ubuntu-apt')));
     continue;
    }
-   const transport=steps.findIndex((s:any)=>s.uses==='./.github/actions/ubuntu-apt' || s.uses==='tryapparent/apparent/.github/actions/ubuntu-apt@22b91130f8b1e8ed98d505e5a64241d34848e6a8');
+   const transport=steps.findIndex((s:Step)=>s.uses==='./.github/actions/ubuntu-apt' || s.uses==='tryapparent/apparent/.github/actions/ubuntu-apt@22b91130f8b1e8ed98d505e5a64241d34848e6a8');
    assert.ok(transport>=0 && transport<install,`${workflow}/${name}`);
    // Both native delivery matrices include ARM, whose signed Ubuntu ports
    // use a different archive layout from the x64-only mirror helper.
@@ -132,10 +133,38 @@ test('each affected hosted dependency consumer prepares transport before install
   }
  }
 });
+test('cold plan output needs only Node and preserves complete and fallback inventories',()=>{
+ const job=mkdtempSync('/tmp/apparent-dev-plan-output-');
+ try {
+  const node=execFileSync('node',['-p','process.execPath'],{encoding:'utf8'}).trim();
+  const output=job+'/output';
+  const emit=(raw:string)=>{
+   writeFileSync(output,'');
+   execFileSync(node,['--experimental-strip-types','enablement/ci/routing/run.ts','--outputs'],{
+    cwd:root,env:{PATH:job,TMPDIR:job,VERIFICATION_PLAN:raw,GITHUB_OUTPUT:output},stdio:'pipe',
+   });
+   return readFileSync(output,'utf8');
+  };
+  const full=Object.fromEntries(emit('').trim().split('\n').map(line=>{
+   const [key,value]=line.split('=');
+   assert.equal(value, key === 'engineMedia' ? 'false' : 'true');
+   return [key,value === 'true'];
+  }));
+  assert.ok(Object.keys(full).length>0);
+  const empty=Object.fromEntries(Object.keys(full).map(key=>[key,false]));
+  const plans=[full,empty,...Object.keys(full).map(key=>({...empty,[key]:true}))];
+  const cases=[...plans.map(plan=>({raw:JSON.stringify(plan),expected:plan})),
+   ...['','{','null','{}',JSON.stringify({...full,root:'false'}),JSON.stringify({...full,extra:true})]
+    .map(raw=>({raw,expected:full}))];
+  for(const {raw,expected} of cases) {
+   assert.equal(emit(raw),Object.entries(expected).map(([key,value])=>`${key}=${value}\n`).join(''));
+  }
+ }finally{rmSync(job,{recursive:true,force:true});}
+});
 test('Linux desktop smoke provisions the native window visibility observer',()=>{
  const steps=read('.github/workflows/verification-platform.yml').jobs['desktop-ui'].steps;
- const setup=steps.findIndex((s:any)=>/apt-get install[^\n]*\bx11-utils\b/.test(s.run??''));
- const smoke=steps.findIndex((s:any)=>/npm run test:electron/.test(s.run??''));
+ const setup=steps.findIndex((s:Step)=>/apt-get install[^\n]*\bx11-utils\b/.test(s.run??''));
+ const smoke=steps.findIndex((s:Step)=>/npm run test:electron/.test(s.run??''));
  assert.ok(setup>=0 && setup<smoke);
  assert.equal(steps[setup].if,"runner.os == 'Linux'");
  const notes=readFileSync(new URL('capture/desktop/ui/frontend/tests/notes/smoke.cjs',root),'utf8');

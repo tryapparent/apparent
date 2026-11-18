@@ -3,22 +3,21 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { select, selection, owners, changedPaths, captureToolTests, commands, contractTests, installationContracts, execute, root, recordMediaCommands, agentMediaCommands } from './run.ts';
+import { select, selection, owners, changedPaths, captureToolTests, commands, contractTests, installationContracts, execute, root, agentMediaCommands } from './run.ts';
 import {runnerFixture} from './fixtures/runner.ts';
 import './fixtures/runner.test.ts';
 
 const routineOwners = owners.filter(owner => owner !== 'engine-media');
 
-test('Record metadata adoption keeps its real app consumers and one headless inventory', () => {
+test('Record media verifies its real consumers', () => {
   const selected = select(['record/media/engine.json']);
   assert.ok(selected.includes('capture') && selected.includes('desktop'));
   assert.ok(!selected.includes('engine-media'), 'a pinned consumer never builds producer source');
-  const inventory = recordMediaCommands();
   const local = commands(selected, 'base', 'head');
-  assert.deepEqual(local.filter(command => command.cwd === 'record/media'), inventory);
+  assert.ok(local.some(c => c.argv.includes('record/enablement/ci/media.ts')));
   assert.ok(local.some(command => command.argv.includes('--run')), 'native export integration remains required');
   const independent = commands(select(['engine/sdk/src/index.ts']), 'base', 'head');
-  assert.ok(!independent.some(command => command.cwd === 'record/media'), 'producer publication does not activate consumers');
+  assert.ok(!independent.some(c => c.argv.includes('record/enablement/ci/media.ts')));
 });
 
 test('Agent published frames retain native integration without compiling the Engine producer', () => {
@@ -159,6 +158,7 @@ test('native temporary environment and Desktop gates fail before expensive Rust 
 });
 
 test('real command execution stops at temporary-root or Electron failure without reaching Rust', () => fixture((dir, env) => {
+  runnerFixture(dir);
   mkdirSync(join(dir, 'record/media'), {recursive: true});
   mkdirSync(join(dir, 'capture/agent/media'), {recursive: true});
   assert.equal(spawnSync('git', ['init', '-q'], {cwd: dir, env}).status, 0);

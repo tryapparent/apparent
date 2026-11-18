@@ -134,8 +134,7 @@ function directConsumers(path: string): readonly Owner[] {
   if (path === '.github/workflows/stream-public.yml') return ['public'];
   if (path === '.github/workflows/stream-connect.yml') return ['capture', 'client', 'client-foreground', 'web', 'service'];
   if (path === '.github/workflows/checks.yml') return ['capture', 'engine', 'desktop', 'client', 'client-foreground', 'web', 'service', 'capture-tools', 'tooling', 'onboarding'];
-  if (path === '.github/workflows/hermes.yml') return ['hermes'];
-  if (path.startsWith('hermes/')) return ['hermes'];
+  if (path.startsWith('hermes/') || path === '.github/workflows/hermes.yml') return ['hermes'];
   if (linuxDrivers.has(path)) return ['capture-tools'];
   if (path.startsWith('capture/desktop/ui/frontend/src/hermes/')) return ['desktop', 'capture', 'hermes'];
   if (path.startsWith('capture/desktop/ui/frontend/')) return ['desktop', 'capture'];
@@ -143,12 +142,11 @@ function directConsumers(path: string): readonly Owner[] {
   if (path.startsWith('capture/desktop/scripts/') || path.startsWith('capture/agent/scripts/')) return ['capture', 'engine', 'capture-tools'];
   if (path.startsWith('capture/desktop/')) return ['desktop', 'capture', 'engine', 'capture-tools'];
   if (path.startsWith('capture/engine/tests/') || path.startsWith('capture/engine/src/') || ['capture/engine/Cargo.toml', 'capture/engine/Cargo.lock'].includes(path)) return ['engine'];
-  if (/^(capture|composition)\//.test(path)) return ['capture', 'engine'];
+  if (/^(capture|composition)\//.test(path) || path === 'agent/enablement/context-comparison.ts') return ['capture', 'engine'];
   if (path.startsWith('agent/')) return ['capture'];
-  if (path.startsWith('shared/analytics/')) return ['public', 'web', 'service', 'desktop', 'capture'];
   if (path.startsWith('shared/ui/')) return ['public', 'web', 'desktop', 'service', 'capture'];
   if (path === 'shared/assets/brand/apparent-app-icon.svg') return ['public', 'web', 'desktop', 'service', 'capture', 'hermes'];
-  if (path.startsWith('shared/assets/')) return ['public', 'web', 'desktop', 'service', 'capture'];
+  if (/^shared\/(analytics|assets)\//.test(path)) return ['public', 'web', 'desktop', 'service', 'capture'];
   if (['Cargo.toml', 'Cargo.lock', 'build.rs', 'main.rs'].includes(path) || path.startsWith('.cargo/') ||
       path.startsWith('enablement/native-build/') || path === 'enablement/build_version.rs' || path === 'enablement/verification.py')
     return ['capture', 'engine', 'desktop', 'client', 'capture-tools'];

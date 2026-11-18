@@ -36,3 +36,10 @@ export function workflowControlPaths(base: string, head: string, paths: string[]
       {...options(cwd), input: JSON.stringify(snapshots)}));
   } catch { return []; }
 }
+
+export function matchesRegularBlob(head: string, path: string, oid: string, cwd = root): boolean {
+  try {
+    return execFileSync('git', ['ls-tree', head, '--', path], options(cwd)).trim() ===
+      `100644 blob ${oid}\t${path}`;
+  } catch { return false; }
+}

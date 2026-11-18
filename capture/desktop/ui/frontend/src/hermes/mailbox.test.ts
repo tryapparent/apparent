@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { availablePort } from './testing/port.ts';
+import { availablePort, waitForKey } from './testing/port.ts';
 import { chmodSync, lstatSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -66,4 +66,21 @@ test('bridge keys require private owned directories, are exclusive, and clean up
     chmodSync(root, 0o755);
     assert.throws(() => publishKey(root, token, key), /private user runtime/);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('windowless key readiness waits for complete material and propagates read errors', async () => {
+  let reads = 0;
+  const ready = await waitForKey(async () => {
+    reads++;
+    if (reads === 1) throw Object.assign(new Error('Not published'), { code: 'ENOENT' });
+    if (reads === 2) return '';
+    if (reads === 3) return key.slice(0, 16);
+    return key;
+  });
+  assert.ok(ready === key, 'readiness must return the complete key');
+  assert.equal(reads, 4);
+  assert.ok((await sign(ready, 'state:synthetic')).length > 0);
+  await assert.rejects(waitForKey(async () => {
+    throw Object.assign(new Error('Denied'), { code: 'EACCES' });
+  }), { code: 'EACCES' });
 });

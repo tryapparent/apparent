@@ -11,7 +11,7 @@ test('offset-clamped movie requests retain their distinct bundle identities', ()
 
 test('backwards requests and duplicates retain caller order', () => {
   const bundle = [2500, 550, 550, 1550];
-  const frames = movieTimes(bundle, 350).map((requestedMs, requestIndex) => ({requestIndex, requestedMs}));
+  const frames = [2150, 200, 200, 1200].map((requestedMs, requestIndex) => ({requestIndex, requestedMs}));
   assert.deepEqual(bundleTimesForFrames(frames, bundle, 350), bundle);
   assert.deepEqual(movieTimes([0], 0), [0]);
 });

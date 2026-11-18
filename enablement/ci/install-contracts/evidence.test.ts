@@ -111,3 +111,45 @@ test('real dirty candidate declines reuse before any API request; evidence edits
     assert.equal(selectRange(base,git('rev-parse','HEAD'),directory).fixtureMac,true);
   } finally {rmSync(directory,{recursive:true,force:true});}
 });
+
+for (const stalled of ['request', 'json', 'archive', 'absent']) {
+  test(`hosted evidence ${stalled} returns to fallback without abandoning top-level await`, {timeout: 15_000}, () => {
+    const directory = mkdtempSync('/tmp/apparent-dev-install-deadline-');
+    const childEnv = {...process.env};
+    for (const key of execFileSync('git', ['rev-parse', '--local-env-vars'], {encoding: 'utf8'}).trim().split('\n')) delete childEnv[key];
+    const git = (...args: string[]) => execFileSync('git', args, {cwd: directory, env: childEnv, encoding: 'utf8'}).trim();
+    try {
+      git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
+      writeFileSync(join(directory, 'source'), 'candidate'); git('add', '.');
+      git('-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'candidate');
+      const module = pathToFileURL(join(process.cwd(), 'enablement/ci/install-contracts/evidence.ts')).href;
+      const script = `import assert from 'node:assert/strict';
+        Object.defineProperty(process, 'platform', {value:'darwin'});
+        Object.defineProperty(process, 'arch', {value:'x64'});
+        const pending = () => new Promise(() => {});
+        let requests = 0, aborts = 0;
+        globalThis.fetch = async (url, {signal}) => {
+          requests++; signal.addEventListener('abort', () => aborts++);
+          if (${JSON.stringify(stalled)} === 'request') return pending();
+          if (url.includes('/jobs?')) return {ok:true, json: () =>
+            ${JSON.stringify(stalled)} === 'json' ? pending() : Promise.resolve({total_count:1, jobs:[${JSON.stringify(job())}]})};
+          if (url.includes('/artifacts?')) return {ok:true, json: async () => ({total_count:1, artifacts:[${JSON.stringify(artifact())}]})};
+          return {ok:true, arrayBuffer: pending};
+        };
+        if (${JSON.stringify(stalled)} === 'absent') globalThis.fetch = async () => {
+          requests++; return {ok:true, json:async () => ({total_count:0,jobs:[]})};
+        };
+        const {alreadyPassed} = await import(${JSON.stringify(module)});
+        assert.equal(await alreadyPassed(${JSON.stringify(directory)}), false);
+        assert.equal(requests, ${stalled === 'archive' ? 3 : 1});
+        assert.equal(aborts, ${stalled === 'absent' ? 0 : stalled === 'archive' ? 3 : 1});
+        assert.ok(!process.getActiveResourcesInfo().includes('Timeout'), 'Evidence deadline leaked');
+        console.log('required-suite-fallback');`;
+      const output = execFileSync('node', ['--experimental-strip-types', '--input-type=module', '-e', script], {
+        encoding: 'utf8', timeout: 12_000, env: {...childEnv, ...env, GH_TOKEN: 'synthetic', ImageOS: 'macos15',
+          ImageVersion: '20261108.0031', GITHUB_SHA: git('rev-parse', 'HEAD'), GITHUB_RUN_ID: '123',
+          GITHUB_RUN_ATTEMPT: '2', GITHUB_WORKFLOW_REF: identity.workflow}});
+      assert.match(output, /required-suite-fallback/);
+    } finally {rmSync(directory, {recursive: true, force: true});}
+  });
+}

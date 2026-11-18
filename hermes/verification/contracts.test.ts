@@ -66,3 +66,22 @@ test('PR and main allocate only Linux and publication accepts Linux without Mac'
   expect(publish.steps[1].run).toContain('sha256sum -c *.sha256');
   expect(publish.steps[1].run).toContain('--target "$SHA"');
 });
+
+test('validator phases use the Hermes owner entrypoint in the original order', () => {
+  const names = [
+    ['Prepare pinned Hermes validator and download identity', 'prepare'],
+    ['Install supported Hermes validator', 'install'],
+    ['Snapshot downloaded PyPI wheels only', 'snapshot'],
+    ['Validate installed package in an isolated profile', 'validate'],
+  ];
+  let last = -1;
+  for (const [name, mode] of names) {
+    const current = step(name);
+    expect(current.run).toBe('node --experimental-strip-types hermes/enablement/ci/validator-job.ts ' + mode);
+    const index = verify.steps.indexOf(current);
+    expect(index).toBeGreaterThan(last);
+    last = index;
+  }
+  expect(step(names[2][0]).if).toBe("steps.validator-downloads.outputs.cache-hit != 'true'");
+  expect(step(names[3][0]).if).toBeUndefined();
+});

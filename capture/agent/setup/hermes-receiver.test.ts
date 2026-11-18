@@ -133,6 +133,7 @@ test('receiver requires explicit profile and supported platform even through the
   try {
     assert.throws(() => setup(f.p, '/test/apparent', undefined, true, undefined, undefined, { receiver: true }), /requires --profile/);
     assert.throws(() => setup(f.p, '/test/apparent', 'relative', true, undefined, undefined, { receiver: true }), /ABSOLUTE/);
+    assert.throws(() => setup({ ...f.p, platform: 'freebsd' }, '/test/apparent', f.profile, true, undefined, undefined, { receiver: true }), /supports macOS and Linux only/);
     assert.throws(() => main(['--receiver', '--check', '--enable', '--profile', f.profile], f.p), /--check/);
   } finally { f.close(); }
 });

@@ -1,3 +1,6 @@
+#[path = "../../../engine/enablement/fixtures/legacy-support.rs"]
+mod support;
+use support::Fixture;
 use apparent_capture_engine::{
     Admission, FinalizerSuccess, LeaseKind, Runtime, Status, new_id, new_owner_token,
 };
@@ -7,20 +10,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-struct Fixture(PathBuf);
-impl Fixture {
-    fn new() -> Self {
-        let root = std::env::temp_dir().join(format!("engine-review-{}", new_id().unwrap()));
-        fs::create_dir(&root).unwrap();
-        mode(&root, 0o700);
-        Self(root)
-    }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 fn mode(path: &Path, value: u32) {
     fs::set_permissions(path, fs::Permissions::from_mode(value)).unwrap();
 }

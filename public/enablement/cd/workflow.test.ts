@@ -46,7 +46,7 @@ test('Public owns direct main/PR/dispatch entrypoints and full-delta selection',
   assert.equal(checkout.with['fetch-depth'], 0)
   assert.equal(checkout.with.ref, undefined, 'PRs verify GitHub’s proposed merge')
   const select = jobs.select.steps.find((s: any) => s.id === 'paths')
-  assert.equal(select.env.BASE_SHA, '${{ github.event.pull_request.base.sha || github.event.before }}')
+  assert.equal(select.env.BASE_SHA, "${{ github.event_name == 'pull_request' && format('{0}^1', github.sha) || github.event.before }}")
   assert.equal(select.run, 'node --experimental-strip-types enablement/ci/select.ts --admit')
   assert.equal(jobs.select.outputs.public, '${{ steps.paths.outputs.public }}')
   assert.equal(jobs.verify.needs, 'select')

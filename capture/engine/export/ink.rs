@@ -375,6 +375,10 @@ mod tests {
         let layers = Layers { ink: true, clicks: true };
         let legacy = plan(&b, (1280, 720), layers);
         assert!(!legacy.strokes.is_empty() && !legacy.pins.is_empty() && !legacy.lasers.is_empty());
+        assert!(plan(&b, (1280, 720), Layers { ink: false, clicks: false }).is_empty());
+        let clicks = plan(&b, (1280, 720), Layers { ink: false, clicks: true });
+        assert_eq!(clicks.ripples, vec![Ripple { x: 0.3, y: 0.4, t: 4_900 }]);
+        assert!(clicks.strokes.is_empty() && clicks.pins.is_empty() && clicks.lasers.is_empty());
         assert!(serde_json::to_value(&b).unwrap().get("videoInk").is_none());
         b.video_ink = Some(VideoInk::Captured);
         let encoded = serde_json::to_value(&b).unwrap();
@@ -433,42 +437,6 @@ mod tests {
                 .all(|v| (-0.1..=1.1).contains(v))
         );
         assert!(plan.ripples.is_empty());
-    }
-
-    #[test]
-    fn layers_can_be_turned_off() {
-        let mut b = bundle();
-        b.strokes = vec![stroke(2_000, &drawn())];
-        b.events = vec![InteractionEvent::Click {
-            t: 5_000,
-            x: 0.3,
-            y: 0.4,
-            button: None,
-            label: None,
-            role: None,
-        }];
-        let off = Layers {
-            ink: false,
-            clicks: false,
-        };
-        assert!(plan(&b, (2560, 1440), off).is_empty());
-        let clicks = plan(
-            &b,
-            (2560, 1440),
-            Layers {
-                ink: false,
-                clicks: true,
-            },
-        );
-        assert_eq!(
-            clicks.ripples,
-            vec![Ripple {
-                x: 0.3,
-                y: 0.4,
-                t: 4_900
-            }]
-        );
-        assert!(clicks.strokes.is_empty());
     }
 
     #[test]

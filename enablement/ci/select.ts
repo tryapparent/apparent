@@ -7,7 +7,7 @@ import {execFileSync} from 'node:child_process';
 import {appendFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {isDeepStrictEqual} from 'node:util';
-import {changedPaths as inputPaths, workflowControlPaths} from './inputs.ts';
+import {changedPaths as inputPaths, matchesRegularBlob, workflowControlPaths} from './inputs.ts';
 
 import {portableForegroundInputs, foregroundPortableChange, routingProblems, onboardingInput, onboardingPureInputs, onboardingWisprInputs, retiredOnboardingInputs, routeDecision, documentationOnlyPath, linuxDrivers, suitePlan} from './routing/consumers.ts';
 export {documentationOnlyPath} from './routing/consumers.ts';
@@ -67,13 +67,14 @@ type Change = {path: string; status: string; oldMode: string; newMode: string};
 const git = (args: string[], cwd = process.cwd()) => execFileSync('git', args,
   {cwd, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe']});
 
+const resolveCommit = (value: string, cwd?: string) => git(['rev-parse', '--verify', '--end-of-options', value + '^{commit}'], cwd).trim();
+
 function changes(base: string, head: string, cwd = process.cwd()): Change[] | null {
   if (!/^[a-f0-9]{40}$/.test(base) || /^0+$/.test(base) || !/^[a-f0-9]{40}$/.test(head)) return null;
   try {
     if (git(['rev-parse', '--is-shallow-repository'], cwd).trim() !== 'false') return null;
     git(['merge-base', '--is-ancestor', base, head], cwd);
     const sharedPaths = inputPaths(base, head, cwd);
-    // No rename folding: both owner sides remain verification inputs.
     const raw = git(['diff', '--no-renames', '--no-ext-diff', '--no-textconv', '--ignore-submodules=none',
       '--raw', '--no-abbrev', '-z', base, head, '--'], cwd);
     if (!raw) return sharedPaths.length ? null : [];
@@ -86,7 +87,6 @@ function changes(base: string, head: string, cwd = process.cwd()): Change[] | nu
       const [, oldMode, newMode, status] = match;
       result.push({path: parts[i + 1], status, oldMode, newMode});
     }
-    // Shared path facts must agree with the additional raw status/mode proof.
     return isDeepStrictEqual(sharedPaths, result.map(change => change.path)) ? result : null;
   } catch {
     return null;
@@ -95,10 +95,10 @@ function changes(base: string, head: string, cwd = process.cwd()): Change[] | nu
 
 const unsupported = (change: Change) => change.status !== 'M' || change.oldMode !== '100644' || change.newMode !== '100644';
 
-const regularFileChange = (change: Change) =>
-  (change.status === 'M' && change.oldMode === '100644' && change.newMode === '100644') ||
-  (change.status === 'A' && change.oldMode === '000000' && change.newMode === '100644') ||
-  (change.status === 'D' && change.oldMode === '100644' && change.newMode === '000000');
+const regularFileChange = ({status, oldMode, newMode}: Change) =>
+  (status === 'M' && oldMode === '100644' && newMode === '100644') ||
+  (status === 'A' && oldMode === '000000' && newMode === '100644') ||
+  (status === 'D' && oldMode === '100644' && newMode === '000000');
 
 export function changedPaths(base: string, head: string, nonModificationsOnly = false): string[] | null {
   return changes(base, head)?.filter(change => !nonModificationsOnly || unsupported(change)).map(change => change.path) ?? null;
@@ -106,26 +106,27 @@ export function changedPaths(base: string, head: string, nonModificationsOnly = 
 
 export function selectRange(base: string, head: string, cwd = process.cwd(), conservativeWorkflows = process.env.GITHUB_EVENT_NAME === 'push' && process.env.GITHUB_REF === 'refs/heads/main') {
   try {
-    base = git(['rev-parse', '--verify', '--end-of-options', base + '^{commit}'], cwd).trim();
-    head = git(['rev-parse', '--verify', '--end-of-options', head + '^{commit}'], cwd).trim();
-  } catch { /* Unknown revisions retain conservative selection. */ }
+    base = resolveCommit(base, cwd);
+    head = resolveCommit(head, cwd);
+  } catch { }
   const delta = changes(base, head, cwd);
   const paths = delta?.map(change => change.path) ?? null;
+  const retired = (c: Change) => {
+    if (c.path !== 'capture/agent/scripts/agent-eval.sh' || c.status !== 'D' || c.oldMode !== '100755' || c.newMode !== '000000') return false;
+    return matchesRegularBlob(head, 'agent/enablement/context-comparison.ts', '26bf7678dd59e7e782a7dcc394dae75ea9c0163d', cwd);
+  };
+  const provenFileChange = (change: Change) => regularFileChange(change) || retired(change);
   const changedPolicyImports = delta?.filter(change => change.status !== 'D' && onboardingPureInputs.has(change.path)).filter(change => {
     const path = change.path;
     try {return /\b(?:import|require)\b|\bexport\s+[^;]*\bfrom\s*['"]/.test(git(['show', head + ':' + path], cwd));}
     catch {return true;}
   }).map(change => change.path) ?? [];
   const toolingManifests = new Set(['package.json', 'package-lock.json', 'renderer/window-coach.smoke.ts', 'renderer/tsconfig.json'].map(name => 'capture/desktop/ui/frontend/tests/onboarding/' + name));
-  // Move the expanded shortcut smoke into the owning renderer directory without
-  // treating arbitrary onboarding additions/deletions as portable policy.
   const shortcutSmoke = 'capture/desktop/ui/frontend/tests/onboarding/';
   const shortcutSmokeMove = delta?.some(change => change.path === shortcutSmoke + 'shortcut.smoke.ts' && change.status === 'D' && regularFileChange(change)) &&
     delta?.some(change => change.path === shortcutSmoke + 'renderer/shortcut.smoke.ts' && change.status === 'A' && regularFileChange(change));
   const supportedToolingAddition = (change: Change) => (toolingManifests.has(change.path) || (shortcutSmokeMove && change.path === shortcutSmoke + 'renderer/shortcut.smoke.ts')) && change.status === 'A' && regularFileChange(change);
   const supportedOnboardingAddition = (change: Change) => change.status === 'A' && regularFileChange(change) && (
-    // Audited native transport and extracted session/test items retain native consumers;
-    // it does not grant the pure-policy or portable renderer exemption.
     ['pipe.rs','session.rs','tests.rs'].some(name => change.path === 'capture/desktop/settings/onboarding/' + name) ||
     onboardingWisprInputs.has(change.path) ||
     onboardingPureInputs.has(change.path) ||
@@ -143,7 +144,7 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
   const admissionKnown = !admissionChanges.length || admissionConsumersKnown(cwd, head);
   const supportedAdmission = (change: Change) => admissionKnown && admissionTooling(change.path) &&
     ['M','A','D'].includes(change.status) && [change.oldMode,change.newMode].every(mode => ['000000','100644','100755'].includes(mode));
-  const unsafe = !admissionKnown || engineBoundary || changedOnboardingBoundary.length > 0 || (delta?.some(change => !regularFileChange(change) && !supportedAdmission(change)) ?? false) || changedPolicyImports.length > 0;
+  const unsafe = !admissionKnown || engineBoundary || changedOnboardingBoundary.length > 0 || (delta?.some(change => !provenFileChange(change) && !supportedAdmission(change)) ?? false) || changedPolicyImports.length > 0;
   const effective = unsafe ? null : paths;
   const workflowControls = !conservativeWorkflows && effective?.length ? workflowControlPaths(base, head, effective, cwd) : [];
   const foregroundBoundaries = delta?.filter(change => portableForegroundInputs.has(change.path)).filter(change => {
@@ -151,8 +152,6 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
     try {return !foregroundPortableChange(change.path, git(['show', base + ':' + change.path], cwd), git(['show', head + ':' + change.path], cwd));}
     catch {return true;}
   }).map(change => change.path) ?? [];
-  // Read exact candidate blobs and all textual references to their module names.
-  // New helpers qualify only when reachable from the finite audited test roots.
   let qualifiedFixtures: string[] = [];
   if (effective?.some(fixtureCandidate) && delta) {
     try {
@@ -174,7 +173,7 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
       qualifiedFixtures = qualifyFixtures(files, effective.filter(path => delta.some(change => change.path === path &&
         (change.status === 'M' || change.status === 'A') && regularFileChange(change) &&
         !fixturePlatformBoundary(change.status === 'A' ? '' : git(['show', base + ':' + path], cwd), files.get(path) ?? ''))));
-    } catch { /* Unreadable candidate/consumer inventory retains every consumer. */ }
+    } catch { }
   }
   let qualifiedStorageControllers: string[] = [];
   if (effective?.some(path => storageControllers.has(path)) && delta) {
@@ -189,7 +188,7 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
           portableStorageController(change.path, git(['show', base + ':' + change.path], cwd), git(['show', head + ':' + change.path], cwd)))
           .map(change => change.path);
       }
-    } catch { /* Missing candidate/consumer proof keeps the ordinary native owners. */ }
+    } catch { }
   }
   const qualifiedCiTests = effective ? qualifyCiTests(base, head, effective, cwd) : [];
   const qualifiedTooling = [...qualifiedFixtures, ...qualifiedCiTests];
@@ -206,7 +205,7 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
     reasons: [...routing.reasons,
       ...(!admissionKnown ? ['fallback:admission-product-consumer'] : []),
       ...(engineBoundary ? ['fallback:engine-consumer-boundary'] : []),
-      ...(delta?.filter(change => !regularFileChange(change) && !supportedAdmission(change)).map(change =>
+      ...(delta?.filter(change => !provenFileChange(change) && !supportedAdmission(change)).map(change =>
         `fallback:unproven-input:${change.path}:${change.status}:${change.oldMode}->${change.newMode}`) ?? []),
       ...foregroundBoundaries.map(path => 'foreground:native-boundary:' + path), ...changedPolicyImports.map(path => 'fallback:onboarding-new-import:' + path), ...changedOnboardingBoundary.map(path => 'fallback:onboarding-boundary-change:' + path), ...mac.reasons]};
 }
@@ -214,7 +213,10 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
 export function requiresMacRustRange(base: string, head: string): boolean {
   const decision = selectRange(base, head);
   if (!decision.inputProofKnown) return true;
-  const delta = changes(base, head);
+  let delta: Change[] | null = null;
+  try {
+    delta = changes(resolveCommit(base), resolveCommit(head));
+  } catch {}
   const qualifiedTooling = [...decision.qualifiedFixtures, ...decision.qualifiedCiTests];
   const nonModifications = delta?.filter(change => unsupported(change) && !qualifiedTooling.includes(change.path) &&
     (suitePlan([change.path]).root || suitePlan([change.path]).engine || suitePlan([change.path]).client)).map(change => change.path) ?? null;

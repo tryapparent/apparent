@@ -1202,26 +1202,6 @@ mod tests {
         assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 2);
     }
 
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new(tag: &str) -> Self {
-            let dir = std::env::temp_dir().join(format!(
-                "apparent-retention-{tag}-{}-{}",
-                std::process::id(),
-                crate::shared::ids::make_bundle_id()
-            ));
-            std::fs::create_dir_all(&dir).unwrap();
-            Self(dir)
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
     /// Plans run a little over a day ahead of the real clock, so folders made by the test
     /// count as unchanged for a day (their change time can't be backdated).
     fn later() -> SystemTime {
@@ -1258,11 +1238,10 @@ mod tests {
         std::fs::write(dir.join("contact-sheet.png"), "png").unwrap();
         std::fs::write(dir.join("frames/frame-01.png"), "png").unwrap();
         // 10 s at 20 Mbps, like a native iPhone mirror recording.
-        std::fs::write(
-            dir.join(video),
-            vec![0u8; if iphone { 25_000_000 } else { 1000 }],
-        )
-        .unwrap();
+        std::fs::File::create(dir.join(video))
+            .unwrap()
+            .set_len(if iphone { 25_000_000 } else { 1000 })
+            .unwrap();
         std::fs::write(dir.join("audio.wav"), vec![0u8; 100]).unwrap();
         dir
     }
@@ -1279,8 +1258,8 @@ mod tests {
 
     #[test]
     fn policy_reads_defaults_and_explicit_nulls() {
-        let tmp = TempDir::new("config");
-        let path = tmp.0.join("config.json");
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("config.json");
         assert_eq!(Policy::load_from(&path), Preset::Week.policy());
         std::fs::write(
             &path,
@@ -1312,15 +1291,15 @@ mod tests {
 
     #[test]
     fn old_media_and_older_bundles_are_planned_for_the_trash() {
-        let tmp = TempDir::new("plan");
-        bundle(&tmp.0, "apparent-fresh", 0.5, false);
-        bundle(&tmp.0, "apparent-week", 3.0, false);
-        let old = bundle(&tmp.0, "apparent-old", 8.0, false);
+        let tmp = tempfile::tempdir().unwrap();
+        bundle(tmp.path(), "apparent-fresh", 0.5, false);
+        bundle(tmp.path(), "apparent-week", 3.0, false);
+        let old = bundle(tmp.path(), "apparent-old", 8.0, false);
         std::fs::create_dir_all(old.join("frames-full")).unwrap();
         std::fs::create_dir_all(old.join("zoom")).unwrap();
-        let ancient = bundle(&tmp.0, "apparent-ancient", 31.0, false);
+        let ancient = bundle(tmp.path(), "apparent-ancient", 31.0, false);
         assert_eq!(
-            planned(&tmp.0, &Policy::default()),
+            planned(tmp.path(), &Policy::default()),
             vec![
                 Action::TrashBundle(ancient),
                 Action::TrashMedia {
@@ -1334,35 +1313,35 @@ mod tests {
                 },
             ]
         );
-        assert!(planned(&tmp.0, &Preset::Forever.policy()).is_empty());
+        assert!(planned(tmp.path(), &Preset::Forever.policy()).is_empty());
         // However short the policy, a day-old bundle is kept.
         let short = Policy {
             media_days: Some(0),
             bundle_days: None,
         };
-        assert_eq!(planned(&tmp.0, &short).len(), 3);
+        assert_eq!(planned(tmp.path(), &short).len(), 3);
     }
 
     #[test]
     fn pinned_syncing_and_busy_bundles_are_left_alone() {
-        let tmp = TempDir::new("guards");
-        let pinned = bundle(&tmp.0, "apparent-pinned", 40.0, false);
+        let tmp = tempfile::tempdir().unwrap();
+        let pinned = bundle(tmp.path(), "apparent-pinned", 40.0, false);
         std::fs::write(pinned.join(PINNED), "").unwrap();
-        let pending = bundle(&tmp.0, "apparent-pending", 40.0, false);
+        let pending = bundle(tmp.path(), "apparent-pending", 40.0, false);
         marker(
             &pending,
             crate::shared::handoff::MEDIA_PENDING,
             later() - Duration::from_secs(3600),
         );
-        let sending = bundle(&tmp.0, "apparent-sending", 40.0, false);
+        let sending = bundle(tmp.path(), "apparent-sending", 40.0, false);
         marker(&sending, MEDIA_SENDING, later() - Duration::from_secs(3600));
-        let busy = bundle(&tmp.0, "apparent-busy", 40.0, false);
+        let busy = bundle(tmp.path(), "apparent-busy", 40.0, false);
         let held = claim(&busy).unwrap();
         assert!(claim(&busy).is_none(), "one claim at a time");
-        assert!(planned(&tmp.0, &Policy::default()).is_empty());
+        assert!(planned(tmp.path(), &Policy::default()).is_empty());
         drop(held);
         assert_eq!(
-            planned(&tmp.0, &Policy::default()),
+            planned(tmp.path(), &Policy::default()),
             vec![Action::TrashBundle(busy)]
         );
         // A marker left by a copy that died over a day ago no longer holds a bundle.
@@ -1371,27 +1350,27 @@ mod tests {
             crate::shared::handoff::MEDIA_PENDING,
             later() - STALE_MARKER - Duration::from_secs(60),
         );
-        assert!(planned(&tmp.0, &Policy::default()).contains(&Action::TrashBundle(pending)));
+        assert!(planned(tmp.path(), &Policy::default()).contains(&Action::TrashBundle(pending)));
     }
 
     #[test]
     fn recently_changed_folders_wait_a_day() {
-        let tmp = TempDir::new("changed");
+        let tmp = tempfile::tempdir().unwrap();
         // Just copied from another Mac: made long ago, but the folder changed now.
-        let arrived = bundle(&tmp.0, "apparent-arrived", 40.0, false);
+        let arrived = bundle(tmp.path(), "apparent-arrived", 40.0, false);
         let today = later() - Duration::from_secs(24 * 3600);
-        assert!(plan(&tmp.0, &Policy::default(), today).unwrap().is_empty());
+        assert!(plan(tmp.path(), &Policy::default(), today).unwrap().is_empty());
         assert_eq!(
-            planned(&tmp.0, &Policy::default()),
+            planned(tmp.path(), &Policy::default()),
             vec![Action::TrashBundle(arrived)]
         );
     }
 
     #[test]
     fn applying_moves_media_as_one_folder_and_keeps_the_prompt() {
-        let tmp = TempDir::new("apply");
-        let captures = tmp.0.join("captures");
-        let trash_dir = tmp.0.join("Trash");
+        let tmp = tempfile::tempdir().unwrap();
+        let captures = tmp.path().join("captures");
+        let trash_dir = tmp.path().join("Trash");
         std::fs::create_dir_all(&trash_dir).unwrap();
         let old = bundle(&captures, "apparent-old", 8.0, true);
         let ancient = bundle(&captures, "apparent-ancient", 31.0, false);
@@ -1444,22 +1423,22 @@ mod tests {
 
     #[test]
     fn only_native_iphone_video_is_shrunk() {
-        let tmp = TempDir::new("shrink");
-        let phone = bundle(&tmp.0, "apparent-phone", 2.0, true);
-        bundle(&tmp.0, "apparent-mac", 2.0, false);
-        let small = bundle(&tmp.0, "apparent-small", 2.0, true);
+        let tmp = tempfile::tempdir().unwrap();
+        let phone = bundle(tmp.path(), "apparent-phone", 2.0, true);
+        bundle(tmp.path(), "apparent-mac", 2.0, false);
+        let small = bundle(tmp.path(), "apparent-small", 2.0, true);
         std::fs::write(small.join("recording.mov"), vec![0u8; 2_500_000]).unwrap();
         assert_eq!(
-            planned(&tmp.0, &Policy::default()),
+            planned(tmp.path(), &Policy::default()),
             vec![Action::Shrink {
                 bundle: phone.clone(),
                 video: phone.join("recording.mov")
             }]
         );
         // Hours old is enough to shrink; minutes old is left to the capture's own shrink.
-        let hours = bundle(&tmp.0, "apparent-hours", 0.1, true);
-        bundle(&tmp.0, "apparent-minutes", 0.003, true);
-        let shrinks: Vec<PathBuf> = planned(&tmp.0, &Policy::default())
+        let hours = bundle(tmp.path(), "apparent-hours", 0.1, true);
+        bundle(tmp.path(), "apparent-minutes", 0.003, true);
+        let shrinks: Vec<PathBuf> = planned(tmp.path(), &Policy::default())
             .into_iter()
             .filter_map(|a| match a {
                 Action::Shrink { bundle, .. } => Some(bundle),
@@ -1473,7 +1452,7 @@ mod tests {
             bundle_days: None,
         };
         assert!(
-            planned(&tmp.0, &short)
+            planned(tmp.path(), &short)
                 .iter()
                 .all(|a| !matches!(a, Action::Shrink { bundle, .. } if *bundle == phone))
         );
