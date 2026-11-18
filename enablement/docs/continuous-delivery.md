@@ -556,8 +556,10 @@ native evidence, cleanup, 60-minute Rust timeout and release gates are unchanged
 
 ## Portable verification routing
 
-Automatic CI runs affected portable checks once, through `routing/run.ts`, before
-selected native suites. Manual platform callers run the full portable inventory.
+Automatic CI runs affected portable checks once through `routing/run.ts`.
+Selected Linux suites can run concurrently. Main admission requires a pass or
+authenticated exact-tree evidence for each applicable suite. Manual platform
+callers run the full portable inventory.
 The Python adapter retains root/Engine command execution, resource and temporary
 filesystem safety. TypeScript supplies its owner decisions. Routing tests exercise
 command omission and failure propagation; they do not establish native acceptance

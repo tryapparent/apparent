@@ -49,7 +49,9 @@ test('PR updates coalesce but main commits cannot cancel earlier code verificati
 test('Linux suites run on ready PRs and main; unknown selection broadens', () => {
   for (const name of ['linux', 'macos']) {
     const job = ci().jobs[name];
-    assert.deepEqual(job.needs, ['contracts', 'select', 'reuse', 'portable', 'record-media']);
+    assert.deepEqual(job.needs, name === 'linux'
+      ? ['contracts', 'select', 'reuse', 'record-media']
+      : ['contracts', 'select', 'reuse', 'portable', 'record-media']);
     for (const result of ['success', 'failure', 'skipped', 'cancelled']) {
       const needs = parents({platform: 'true', macos: 'true', mac_rust: 'true', hermes: 'true'});
       needs.select.result = result;
@@ -61,6 +63,17 @@ test('Linux suites run on ready PRs and main; unknown selection broadens', () =>
       assert.equal(admitted(job.if, needs), false);
     }
   }
+});
+test('Linux and portable allocate independently and both feed admission and tree evidence', () => {
+  const jobs = ci().jobs;
+  const {contracts, select, reuse, 'record-media': recordMedia} = parents({platform: 'true', portable: 'true'});
+  const needs = {contracts, select, reuse, 'record-media': recordMedia};
+  assert.equal(admitted(jobs.linux.if, needs, 'push'), true);
+  assert.ok(!jobs.portable.needs.includes('linux'));
+  assert.equal(admitted(jobs.portable.if, needs, 'push'), true);
+  for (const name of ['linux-admission', 'tree-evidence'])
+    for (const suite of ['linux', 'portable'])
+      assert.ok(jobs[name].needs.includes(suite), `${name}: ${suite}`);
 });
 test('Record policy guards native allocation', () => {
   for (const name of ['linux', 'macos']) for (const result of ['success', 'skipped', 'failure', 'cancelled']) {

@@ -118,19 +118,21 @@ test('packed Mac evidence requires the real successful producer, not a claimed a
   assert.equal(authenticatedSuites(jobs.filter(j=>!j.name.includes('/ platform')),full,full).macos,false);
 });
 
- test('Linux admission CLI accepts skipped Mac diagnostics and rejects actual Linux failures', async () => {
+test('Linux admission CLI requires both applicable suites independently of Mac diagnostics', async () => {
   const {mkdtempSync, rmSync} = await import('node:fs');
   const {spawnSync} = await import('node:child_process');
   const dir = mkdtempSync('/tmp/apparent-dev-linux-admission-');
   try {
-    for (const outcome of ['success','failure','cancelled','skipped']) {
-      const needs = Object.fromEntries(['select','contracts','portable','onboarding-policy','record-media'].map(name => [name,{result:'success'}]));
-      needs.linux = {result:outcome};
-      for (const name of ['macos','fixture-mac']) needs[name] = {result:'skipped'};
-      const result = spawnSync('node',['--experimental-strip-types','enablement/ci/routing/evidence.ts','--admit'], {
-        encoding:'utf8', env:{...process.env, VERIFY_PLATFORM:'linux', VERIFICATION_PLAN:JSON.stringify(full),
-          MAC_VERIFICATION_PLAN:JSON.stringify(full), FIXTURE_MAC:'true', CI_NEEDS:JSON.stringify(needs), CI_REUSE:'{}', RUNNER_TEMP:dir}});
-      assert.equal(result.status, outcome === 'success' ? 0 : 1, result.stderr);
+    for (const suite of ['linux','portable']) {
+      for (const outcome of ['success','failure','cancelled','skipped']) {
+        const needs = Object.fromEntries(['select','contracts','linux','portable','onboarding-policy','record-media'].map(name => [name,{result:'success'}]));
+        needs[suite] = {result:outcome};
+        for (const name of ['macos','fixture-mac']) needs[name] = {result:'skipped'};
+        const result = spawnSync('node',['--experimental-strip-types','enablement/ci/routing/evidence.ts','--admit'], {
+          encoding:'utf8', env:{...process.env, VERIFY_PLATFORM:'linux', VERIFICATION_PLAN:JSON.stringify(full),
+            MAC_VERIFICATION_PLAN:JSON.stringify(full), FIXTURE_MAC:'true', CI_NEEDS:JSON.stringify(needs), CI_REUSE:'{}', RUNNER_TEMP:dir}});
+        assert.equal(result.status, outcome === 'success' ? 0 : 1, `${suite}: ${outcome}: ${result.stderr}`);
+      }
     }
     const value = check({...record, results:{...record.results, macos:{result:'skipped'}, 'fixture-mac':{result:'skipped'}}});
     assert.equal(value.linux,true);
