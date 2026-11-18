@@ -372,20 +372,14 @@ fn validate_hash(hash: &str) -> Result<()> {
     Ok(())
 }
 
-const CURL_HTTP_STATUS: &str = "%{stderr}\nAPPARENT_RATE_REMAINING:%header{x-ratelimit-remaining}\nAPPARENT_RATE_LIMIT:%header{x-ratelimit-limit}\nAPPARENT_RATE_RESET:%header{x-ratelimit-reset}\nAPPARENT_RETRY_AFTER:%header{retry-after}\nAPPARENT_HTTP_STATUS:%{http_code}\n";
+const CURL_HTTP_STATUS: &str = "%{stderr}\nAPPARENT_RATE_REMAINING:%header{x-ratelimit-remaining}\nAPPARENT_RATE_LIMIT:%header{x-ratelimit-limit}\nAPPARENT_RATE_RESET:%header{x-ratelimit-reset}\nAPPARENT_RETRY_AFTER:%header{retry-after}\nAPPARENT_TRANSFER_SECONDS:%{time_total}\nAPPARENT_DOWNLOADED_BYTES:%{size_download}\nAPPARENT_HTTP_STATUS:%{http_code}\n";
 
 fn get(url: &str, out: Option<&Path>) -> Result<Vec<u8>> {
     ensure_update!(url.starts_with("https://"), "update URL must use HTTPS");
     let mut cmd = Command::new("curl");
     cmd.args(["--fail", "--silent", "--show-error", "--location", "--proto", "=https", "--proto-redir", "=https", "--connect-timeout", "10", "--max-time", "300", "--user-agent", "Apparent", "--url", url]);
-    if let Some(path) = out {
-        cmd.args(["--max-filesize", "1073741824"]);
-        cmd.arg("--output").arg(path);
-    } else {
-        // A page of 100 releases includes component assets and can exceed 256 KiB.
-        // Keep metadata bounded while avoiding dozens of anonymous API requests.
-        cmd.args(["--max-filesize", "4194304"]);
-    }
+    cmd.args(["--max-filesize", if out.is_some() { "1073741824" } else { "4194304" }]);
+    if let Some(path) = out { cmd.arg("--output").arg(path); }
     cmd.args(["--write-out", CURL_HTTP_STATUS]);
     download_output(cmd.output().context("curl is required for updates")?)
 }
@@ -393,15 +387,15 @@ fn get(url: &str, out: Option<&Path>) -> Result<Vec<u8>> {
 fn download_output(result: std::process::Output) -> Result<Vec<u8>> {
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
-        let http_status = stderr.lines().last().and_then(|line| line.strip_prefix("APPARENT_HTTP_STATUS:"))
-            .filter(|value| value.len() == 3 && value.bytes().all(|b| b.is_ascii_digit()))
-            .and_then(|value| value.parse::<u16>().ok());
         let numeric = |prefix: &str| stderr.lines().rev().find_map(|line| line.strip_prefix(prefix))
-            .filter(|value| !value.is_empty() && value.len() <= 10 && value.bytes().all(|b| b.is_ascii_digit()))
+            .filter(|value| value.len() <= 10)
             .and_then(|value| value.parse::<u32>().ok());
-        let http = updates::Http {status: http_status, rate_limit_remaining: numeric("APPARENT_RATE_REMAINING:"),
+        let transfer_ms = stderr.lines().find_map(|line| line.strip_prefix("APPARENT_TRANSFER_SECONDS:"))
+            .and_then(|raw| raw.parse::<f64>().ok())
+            .filter(|seconds| (0.0..=600.0).contains(seconds))
+            .map(|seconds| (seconds * 1000.0).round() as u32);
+        let http = updates::Http {transfer_ms, downloaded_bytes: numeric("APPARENT_DOWNLOADED_BYTES:").filter(|bytes| *bytes <= 1_073_741_824), status: numeric("APPARENT_HTTP_STATUS:").and_then(|code| u16::try_from(code).ok()), rate_limit_remaining: numeric("APPARENT_RATE_REMAINING:"),
             rate_limit_limit: numeric("APPARENT_RATE_LIMIT:"),
-            // Publish only a bounded relative duration, never the server timestamp.
             rate_limit_reset_after_seconds: numeric("APPARENT_RATE_RESET:").and_then(|reset| {
                 reset_after_seconds(reset, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_secs())
             }),
@@ -850,18 +844,16 @@ mod tests {
                 };
                 write!(stream, "HTTP/1.1 {status} Fixture\r\nX-RateLimit-Remaining: {remaining}\r\nX-RateLimit-Limit: {limit}\r\nX-RateLimit-Reset: {reset}\r\nRetry-After: {retry}\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]").unwrap();
             });
-            // Real curl supplies the exit status and write-out fields. No
-            // production endpoint override, PostHog ingestion or injected event.
             let output = Command::new("curl").args(["--silent", "--show-error", "--fail", "--noproxy", "*", "--max-time", "3", "--write-out", CURL_HTTP_STATUS, "--url", &endpoint]).output().unwrap();
             server.join().unwrap();
             if status == 200 {
-                assert_eq!(download_output(output).unwrap(), b"[]", "write-out diagnostics must never corrupt release JSON");
+                assert_eq!(download_output(output).unwrap(), b"[]");
                 continue;
             }
             let output = std::cell::RefCell::new(Some(output));
             let error = release_history(&|_| download_output(output.borrow_mut().take().unwrap())).err().unwrap()
                 .context(format!("private-local-context {endpoint}/?token=private-token-canary"));
-            if status == 503 { assert!(format!("{error:#}").contains("private-header-canary"), "redaction canary must reach the raw error"); }
+            if status == 503 { assert!(format!("{error:#}").contains("private-header-canary")); }
             let installed = ("main".into(), "a".repeat(40));
             let mut attempt = updates::Attempt::default();
             attempt.selected("main", Some(&installed));
@@ -879,6 +871,8 @@ mod tests {
             }
             assert_eq!(diagnostics["process"], "curl");
             assert_eq!(diagnostics["exit_code"], 22);
+            assert_eq!(diagnostics["downloaded_bytes"], 0);
+            assert!(diagnostics["transfer_ms"].as_u64().unwrap() <= 600_000);
             assert_eq!(diagnostics["trigger"], "automatic");
             assert_eq!(diagnostics["attempt"]["selected_channel"], "main");
             assert_eq!(diagnostics["attempt"]["installed_identity_kind"], "revision");
@@ -893,7 +887,7 @@ mod tests {
             assert_eq!(frame["filename"], "capture/desktop/linux/updates/update.rs");
             assert!(frame["lineno"].as_u64().unwrap() > 0);
             for private in ["private-", &endpoint, &"a".repeat(40)] {
-                assert!(!payload.to_string().contains(private), "leaked {private}");
+                assert!(!payload.to_string().contains(private));
             }
             fingerprints.push(payload["properties"]["$exception_fingerprint"].clone());
         }
