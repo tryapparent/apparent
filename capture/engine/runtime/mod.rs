@@ -156,11 +156,9 @@ impl Default for ShortcutConfig {
     }
 }
 
-/// Apparent's two global shortcuts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ShortcutKind {
-    /// Start, switch or finish a recording (Fn on macOS; ⌥⇧S on Linux).
     Record,
     /// Paste the latest capture into the app in front (⌥⇧V).
     Paste,
@@ -204,18 +202,18 @@ impl ShortcutKind {
     }
 }
 
+include!(concat!(env!("OUT_DIR"), "/record_shortcut_policy.rs"));
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn uses_desktop_record(app_preferred: bool, desktop_available: bool) -> bool {
+    DESKTOP_RECORD_PRECEDENCE[usize::from(app_preferred) * 2 + usize::from(desktop_available)]
+}
+
 impl ShortcutConfig {
     pub fn default_record() -> Self {
-        #[cfg(target_os = "macos")]
-        {
-            return Self { key_code: MACOS_FN_KEY_CODE, carbon_modifiers: 0, label: "Fn".to_owned() };
-        }
-        #[cfg(not(target_os = "macos"))]
-        Self {
-            key_code: u32::from(layout_s_keycode()),
-            carbon_modifiers: CARBON_OPTION_KEY | CARBON_SHIFT_KEY,
-            label: shortcut_label(CARBON_OPTION_KEY | CARBON_SHIFT_KEY, "S"),
-        }
+        let key_code = RECORD_DEFAULT_CODE.unwrap_or_else(|| u32::from(layout_s_keycode()));
+        let label = shortcut_label(RECORD_DEFAULT_MODIFIERS, RECORD_DEFAULT_KEY);
+        Self { key_code, carbon_modifiers: RECORD_DEFAULT_MODIFIERS, label }
     }
 
     pub fn default_paste() -> Self {
@@ -250,16 +248,11 @@ impl ShortcutConfig {
 
     pub fn is_standalone_modifier(&self) -> bool { self.is_fn_only() || self.is_option_only() }
 
-    /// Whether this is `kind`'s default, which also answers to its aliases (⌃⌥⇧, ⌘⌥⇧, ⌃⌥⌘
-    /// and the ANSI key).
     pub fn is_default_for(&self, kind: ShortcutKind) -> bool {
-        #[cfg(target_os = "macos")]
-        if kind == ShortcutKind::Record && self.is_fn_only() {
-            return true;
-        }
-        #[cfg(target_os = "macos")]
         if kind == ShortcutKind::Record {
-            return false;
+            return self.carbon_modifiers == RECORD_DEFAULT_MODIFIERS
+                && self.key_label() == RECORD_DEFAULT_KEY
+                && RECORD_DEFAULT_CODE.is_none_or(|code| self.key_code == code && self.label == RECORD_DEFAULT_KEY);
         }
         self.carbon_modifiers == CARBON_OPTION_KEY | CARBON_SHIFT_KEY
             && shortcut_parts(&self.label).1 == kind.default_char().to_ascii_uppercase().to_string()

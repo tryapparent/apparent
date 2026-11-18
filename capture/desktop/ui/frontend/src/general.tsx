@@ -1,5 +1,5 @@
 import {generalNamedShortcut} from '../electron/settings/general';
-import {OptionShortcutGesture, fnShortcut, shortcutCapture, shortcutInput} from '../electron/onboarding/shortcut-editor';
+import {OptionShortcutGesture, shortcutCapture, shortcutInput} from '../electron/onboarding/shortcut-editor';
 
 type InputState = {platform: 'linux' | 'macos'; shortcuts: {kind: 'record' | 'paste'; recording: boolean; clearable: boolean}[]};
 
@@ -39,6 +39,6 @@ function bindShortcutInput(root: HTMLDivElement, read: () => InputState | undefi
       window.removeEventListener('pointerdown',pointerDown,true);window.removeEventListener('pointerup',pointerUp,true);window.removeEventListener('pointercancel',pointerUp,true);window.removeEventListener('wheel',wheel,true)};
   }
 
-Object.defineProperty(window, 'apparentSettingsShortcutInput', {value: Object.freeze({bindShortcutInput, fnShortcut})});
+Object.defineProperty(window, 'apparentSettingsShortcutInput', {value: Object.freeze({bindShortcutInput})});
 
 export { ConnectSettingsCard } from "./connect/card";

@@ -14,7 +14,7 @@ test('shortcut composition waits for modifiers and preserves Fn/cancel recovery'
   const require = createRequire(import.meta.url);
   const root = fileURLToPath(new URL('../../../', import.meta.url));
   const profile = await mkdtemp(path.join(os.tmpdir(), 'shortcut-'));
-  const child = spawn(require('electron'), [root, '--onboarding', '--remote-debugging-port=0',
+  const child = spawn(require('electron'), [path.join(root, 'dist/composition/onboarding/entry.cjs'), '--assets-root', root, '--remote-debugging-port=0',
     ...(process.platform === 'linux' ? ['--no-sandbox'] : [])], {
     env: {...process.env, APPARENT_UI_PROFILE: profile}, stdio: ['pipe', 'pipe', 'pipe'],
   });
@@ -45,9 +45,10 @@ test('shortcut composition waits for modifiers and preserves Fn/cancel recovery'
   const page = context.pages()[0] || await context.waitForEvent('page');
   let output = '';
   child.stdout.on('data', bytes => output += bytes);
+  const suggestedFn = {keyCode:63,modifiers:0,key:'Fn'};
   const send = (platform: string) => child.stdin.write(JSON.stringify({
     type:'state', step:'shortcut', platform, ready:true, rows:[], index:1, count:3,
-    firstCaptureRequired:true, shortcutChosen:false, shortcutEditor:{recording:true},
+    firstCaptureRequired:true, shortcutChosen:false, shortcutEditor:{recording:true,suggestedFn:platform==='macos'?suggestedFn:null},
   })+'\n');
   const recorder=page.getByRole('group',{name:'Shortcut recorder'});
   send('linux');
@@ -142,7 +143,7 @@ test('shortcut composition waits for modifiers and preserves Fn/cancel recovery'
   // new selection. Those facts must not immediately send Continue again.
   const chosen={type:'state',step:'shortcut',platform:'macos',ready:true,rows:[],index:1,count:3,
     firstCaptureRequired:true,shortcut:'Fn',shortcutChosen:true,shortcutTested:true,
-    shortcutSelectionReleased:true,shortcutEditor:{recording:false}};
+    shortcutSelectionReleased:true,shortcutEditor:{recording:false,suggestedFn}};
   child.stdin.write(JSON.stringify({...chosen,step:'try-it',practice:'start'})+'\n');
   await expect(page.getByRole('heading',{name:'One more time.',exact:true})).toBeVisible();
   output='';await page.getByRole('button',{name:'Back',exact:true}).click();
@@ -152,7 +153,7 @@ test('shortcut composition waits for modifiers and preserves Fn/cancel recovery'
   if(evidence)await page.screenshot({path:path.join(evidence,'shortcut-returned.png')});
   await expect.poll(()=>output).toContain('"action":"change-shortcut"');
   assert.equal(output.includes('"action":"continue"'),false,'Back must wait for a fresh selection');
-  child.stdin.write(JSON.stringify({...chosen,shortcutEditing:true,shortcutEditor:{recording:true}})+'\n');
+  child.stdin.write(JSON.stringify({...chosen,shortcutEditing:true,shortcutEditor:{recording:true,suggestedFn}})+'\n');
   await expect(recorder).toBeFocused();
   await expect(page.getByRole('heading',{name:'Choose your shortcut.',exact:true})).toBeVisible();
   for(const theme of ['light','dark'] as const){
