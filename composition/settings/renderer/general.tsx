@@ -24,9 +24,6 @@ import {
 declare global {
   interface Window {
     apparentSettingsShortcutInput?: {
-      fnShortcut(
-        platform: GeneralState["platform"],
-      ): { keyCode: number; modifiers: number; key: string } | null;
       bindShortcutInput(
         root: HTMLDivElement,
         read: () => GeneralState | undefined,
@@ -257,8 +254,6 @@ export function General() {
         });
     }
   }
-  const fn =
-    state && window.apparentSettingsShortcutInput?.fnShortcut(state.platform);
   const mount = useCallback((root: HTMLDivElement | null) => {
     if (!root) return;
     generalRoot.current = root;
@@ -433,6 +428,7 @@ export function General() {
           >
             <h2 id="general-shortcuts">Keyboard shortcuts</h2>
             {state.shortcuts.map((s) => {
+              const fn = s.suggestedFn;
               const message = s.error || (s.recording ? validation : "");
               return (
                 <div

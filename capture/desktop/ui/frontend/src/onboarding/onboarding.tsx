@@ -12,14 +12,14 @@ import { GestureGuide } from '../../../../../../onboarding/renderer/gesture-guid
 import { ControlGuide } from './controls/control-guide';
 import { AgentSetup } from './agent-setup';
 import { subscribeOnboardingState } from './state';
-import { OptionShortcutGesture, desktopShortcutSelection, fnSelectionActions, shortcutCapture, shortcutInput } from '../../electron/onboarding/shortcut-editor.ts';
+import { OptionShortcutGesture, desktopShortcutSelection, fnSelectionActions, suggestedFnChoice, shortcutCapture, shortcutInput, type ShortcutCapture } from '../../electron/onboarding/shortcut-editor.ts';
 import {useWisprFlow} from './wispr/use-wispr';
 import {WisprStep} from './wispr/step';
 import type {WisprResult} from '../../electron/onboarding/wispr';
 import { Permissions, type PermissionRow as Row } from './permissions';
 import type { ConnectAction, ConnectSettings } from '../bridge';
-type Action=string|{action:'board';id:string;operation:string;point?:number[]}|{action:'shortcut';kind:'record';keyCode:number;modifiers:number;key:string;reserved:false};
-type Editor={recording:boolean;externallyManaged:boolean;error:string|null};
+type Action=string|{action:'board';id:string;operation:string;point?:number[]}|({action:'shortcut';kind:'record';reserved:false}&ShortcutCapture);
+type Editor={recording:boolean;externallyManaged:boolean;suggestedFn?:ShortcutCapture|null;error:string|null};
 type State={wisprFlowEnabled?:boolean;boardView?:BoardView|null;tutorial:'skipped'|'watched'|'practiced'|null;platform:'macos'|'linux';shortcutEditor:Editor|null;step:string;ready:boolean;fix:boolean;rows:Row[];index:number;count:number;shortcut:string;shortcutEditing:boolean;shortcutChosen:boolean;shortcutTested:boolean;practice:string|null;firstCaptureRequired:boolean;penSaveId?:string;penPicker:boolean;penSelected:boolean;penError:boolean;penRgb:number[];testInstance:boolean;coachArrow?:number;coachPointsUp?:boolean};
 declare global {interface Window {nativeOnboarding?:{readState:()=>Promise<State|null>;wispr?:(operation:'read'|'quit')=>Promise<WisprResult>;readConnect:()=>Promise<ConnectSettings>;connect:(action:ConnectAction)=>Promise<ConnectSettings>;closeConnect:()=>void;action:(action:Action)=>Promise<boolean>;onState:(listener:(state:State)=>void)=>()=>void;onDesktopShortcut?:(listener:(key:unknown)=>void)=>()=>void}}}
 export function NativeOnboarding(){
@@ -114,12 +114,11 @@ export function NativeOnboarding(){
     listeningStep.current=true;
     if((!state.shortcutChosen||shortcutCancelled.current)&&!state.shortcutEditor?.recording)void action('change-shortcut');
   },[state?.step,wispr.visible]);
-  const chooseFn=async()=>{for(const next of fnSelectionActions(state?.platform??'linux',Boolean(state?.shortcutEditor?.recording))){if(!await sendAction(next))break;}};
+  const fnChoice = suggestedFnChoice(state?.platform,state?.shortcutEditor?.suggestedFn);
+  const chooseFn=async()=>{for(const next of fnSelectionActions(fnChoice,Boolean(state?.shortcutEditor?.recording))){if(!await sendAction(next))break;}};
   async function chooseSuggested(shortcut:ReturnType<typeof shortcutCapture>){
     if(!shortcut)return;
     if(state?.step==='try-it'){
-      // This explicit sequence owns reopening; a Back snapshot must not also
-      // start the automatic listener after the new choice has been submitted.
       listeningStep.current=true;
       if(!await sendAction('back')){listeningStep.current=false;return;}
     }
@@ -181,9 +180,9 @@ export function NativeOnboarding(){
       if(!pressed){setError(state.platform==='linux'?'Apparent cannot use that key. Try Copilot, a letter or a number.':'Apparent cannot use that key. Choose Fn alone, a letter or a number.');return;}
       setError('');
       void action({action:'shortcut',kind:'record',...pressed,reserved:false});
-      }}><div className="native-held-keys" aria-live="polite">{heldKeys.length?heldKeys.map(key=><Keycap key={key} pressed>{key}</Keycap>):state.platform==='macos'?<Button variant="keycap" aria-label="Choose suggested Fn shortcut" onClick={chooseFn}>Fn</Button>:<span>Press a key</span>}</div><div className="native-shortcut-choices"><Button variant="outline" onClick={()=>void action('cancel-shortcut')}>Cancel</Button></div></div>:<>
+      }}><div className="native-held-keys" aria-live="polite">{heldKeys.length?heldKeys.map(key=><Keycap key={key} pressed>{key}</Keycap>):fnChoice?<Button variant="keycap" aria-label="Choose suggested Fn shortcut" onClick={chooseFn}>Fn</Button>:<span>Press a key</span>}</div><div className="native-shortcut-choices"><Button variant="outline" onClick={()=>void action('cancel-shortcut')}>Cancel</Button></div></div>:<>
         {state.shortcutChosen?<Keycap className="native-shortcut-example">{state.shortcut}</Keycap>:state.shortcutEditor?.externallyManaged?null:<p>No shortcut selected.</p>}
-        <div className="native-shortcut-choices">{state.platform==='macos'&&!state.shortcutChosen&&<Button variant="keycap" aria-label="Choose suggested Fn shortcut" onClick={chooseFn}>Fn</Button>}{state.shortcutEditor?.externallyManaged&&<Button aria-label={`Choose ${state.shortcut}`} onClick={()=>void action('use-desktop-shortcut')}>{state.shortcut}</Button>}
+        <div className="native-shortcut-choices">{fnChoice&&!state.shortcutChosen&&<Button variant="keycap" aria-label="Choose suggested Fn shortcut" onClick={chooseFn}>Fn</Button>}{state.shortcutEditor?.externallyManaged&&<Button aria-label={`Choose ${state.shortcut}`} onClick={()=>void action('use-desktop-shortcut')}>{state.shortcut}</Button>}
         <Button variant="outline" onClick={()=>void action('change-shortcut')}>{state.shortcutEditor?.externallyManaged?'Choose another shortcut':state.shortcutChosen?'Change shortcut':'Choose shortcut'}</Button></div>
       </>}{state.shortcutEditor?.error&&<p role="alert">{state.shortcutEditor.error}</p>}
       {(state.shortcutEditor?.recording||!state.shortcutChosen)&&<ShortcutSuggestions platform={state.platform} onChoose={shortcut=>void chooseSuggested(shortcut)}/>}</div></>}

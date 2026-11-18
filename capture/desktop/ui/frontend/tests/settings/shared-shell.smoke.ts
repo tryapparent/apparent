@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 function generalState(platform:'linux'|'macos',recording=false,label='F1',on=false,error:string|null=null){
-  return {type:'general-state',platform,login:{on,available:true,needsApproval:false},shortcuts:[{kind:'record',title:'Record',label,recording,externallyManaged:false,isDefault:platform==='linux'||label==='Fn',clearable:false,error}],errorReporting:true};
+  return {type:'general-state',platform,login:{on,available:true,needsApproval:false},shortcuts:[{kind:'record',title:'Record',label,recording,externallyManaged:false,isDefault:platform==='linux'||label==='Fn',clearable:false,suggestedFn:platform==='macos'?{keyCode:63,modifiers:0,key:'Fn'}:null,error}],errorReporting:true};
 }
 
 test('Settings changes adopted panes in one live document and enforces the current capabilities', {timeout:120000}, async()=>{

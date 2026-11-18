@@ -6,6 +6,7 @@ export type Shortcut = {
   externallyManaged: boolean;
   isDefault: boolean;
   clearable: boolean;
+  suggestedFn?: { keyCode: number; modifiers: number; key: string } | null;
   error: string | null;
 };
 export type GeneralState = {

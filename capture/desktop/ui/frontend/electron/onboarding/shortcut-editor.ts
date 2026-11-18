@@ -47,13 +47,15 @@ export function shortcutInput(event: ShortcutKeyEvent, platform: 'macos'|'linux'
   return 'key';
 }
 
-// Fn flags changes do not reliably reach the renderer as keyboard events.
-export function fnShortcut(platform: 'macos'|'linux'): ShortcutCapture | null {
-  return platform === 'macos' ? { keyCode: 63, modifiers: 0, key: 'Fn' } : null;
+function macFnKey(): ShortcutCapture {
+  return { keyCode: 63, modifiers: 0, key: 'Fn' };
 }
 
-export function fnSelectionActions(platform: 'macos'|'linux', recording: boolean): Array<'change-shortcut' | ({action:'shortcut';kind:'record';reserved:false} & ShortcutCapture)> {
-  const choice=fnShortcut(platform);
+export function suggestedFnChoice(platform: 'macos'|'linux'|undefined, projected: ShortcutCapture | null | undefined) {
+  return platform === 'macos' && projected === undefined ? macFnKey() : projected;
+}
+
+export function fnSelectionActions(choice: ShortcutCapture | null | undefined, recording: boolean): Array<'change-shortcut' | ({action:'shortcut';kind:'record';reserved:false} & ShortcutCapture)> {
   if(!choice)return [];
   const select={action:'shortcut' as const,kind:'record' as const,...choice,reserved:false as const};
   return recording ? [select] : ['change-shortcut',select];
@@ -70,7 +72,7 @@ export function shortcutCapture(event: ShortcutKeyEvent, platform: 'macos'|'linu
   }
   if (platform === 'macos' && (event.key === 'Fn' || event.code === 'Fn') &&
       !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey) {
-    return fnShortcut(platform);
+    return macFnKey();
   }
   // On the supported Linux image, evdev KEY_F23 (193) becomes XKB keycode 201,
   // whose keymap symbols include F23 and XF86Assistant. Electron may report the

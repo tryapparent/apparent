@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { OptionShortcutGesture, desktopShortcutSelection, fnSelectionActions, fnShortcut, shortcutCapture, shortcutInput } from '../../electron/onboarding/shortcut-editor.ts';
+import { OptionShortcutGesture, desktopShortcutSelection, fnSelectionActions, shortcutCapture, shortcutInput } from '../../electron/onboarding/shortcut-editor.ts';
 
 const require = createRequire(import.meta.url);
 const { parseAction } = require('../../electron/onboarding-protocol.cjs') as { parseAction: (value: unknown) => unknown };
 
+const suggestedFn = {keyCode:63,modifiers:0,key:'Fn'};
 const event = (overrides: Partial<Parameters<typeof shortcutCapture>[0]> = {}) => ({key:'Unidentified',code:'LaunchAssistant',ctrlKey:false,altKey:false,metaKey:true,shiftKey:true,...overrides});
 test('recognizes Copilot with Super+Shift on Linux', () => assert.deepEqual(shortcutCapture(event(), 'linux'), {keyCode:201,modifiers:768,key:'Copilot'}));
 test('recognizes the unmodified Copilot key', () => assert.deepEqual(shortcutCapture(event({key:'LaunchAssistant',metaKey:false,shiftKey:false}), 'linux'), {keyCode:201,modifiers:0,key:'Copilot'}));
@@ -59,7 +60,7 @@ test('a compositor-consumed Copilot callback selects only in a current Linux rec
   for(const invalid of [null,{...value,modifiers:1},{...value,keyCode:63},{...value,key:'Fn'}])assert.equal(desktopShortcutSelection(state,invalid),null);
 });
 test('accepts standalone Fn on Mac and rejects Fn with other modifiers', () => {
-  assert.deepEqual(shortcutCapture(event({key:'Fn',code:'Fn',metaKey:false,shiftKey:false}), 'macos'), {keyCode:63,modifiers:0,key:'Fn'});
+  assert.deepEqual(shortcutCapture(event({key:'Fn',code:'Fn',metaKey:false,shiftKey:false}), 'macos'), suggestedFn);
   assert.equal(shortcutCapture(event({key:'Fn',code:'Fn',metaKey:true,shiftKey:false}), 'macos'), null);
   assert.equal(shortcutCapture(event({key:'Fn',code:'Fn',metaKey:false,shiftKey:false}), 'linux'), null);
 });
@@ -72,20 +73,12 @@ test('the Electron parent accepts supported keys and rejects malformed modifier 
   assert.throws(() => parseAction({action:'shortcut',kind:'record',keyCode:65,modifiers:0,key:'A',reserved:false}));
 });
 
-test('explicit Fn selection is Mac-only and uses the accepted provider contract', () => {
-  assert.equal(fnShortcut('linux'), null);
-  const choice=fnShortcut('macos');
-  assert.deepEqual(choice, {keyCode:63,modifiers:0,key:'Fn'});
-  const action={action:'shortcut',kind:'record',...choice,reserved:false};
-  assert.deepEqual(parseAction(action), action);
-});
-
 test('Fn selection enters the provider editor before choosing and keeps its guard', () => {
   const selection={action:'shortcut',kind:'record',keyCode:63,modifiers:0,key:'Fn',reserved:false};
-  assert.deepEqual(fnSelectionActions('macos',false), ['change-shortcut',selection]);
-  assert.deepEqual(fnSelectionActions('macos',true), [selection]);
-  assert.deepEqual(fnSelectionActions('linux',false), []);
-  for(const action of fnSelectionActions('macos',false))assert.deepEqual(parseAction(action),typeof action==='string'?{action}:action);
+  assert.deepEqual(fnSelectionActions(suggestedFn,false), ['change-shortcut',selection]);
+  assert.deepEqual(fnSelectionActions(suggestedFn,true), [selection]);
+  assert.deepEqual(fnSelectionActions(null,false), []);
+  for(const action of fnSelectionActions(suggestedFn,false))assert.deepEqual(parseAction(action),typeof action==='string'?{action}:action);
 });
 
 test('Option is selected only after a clean Mac release, on either side', () => {
