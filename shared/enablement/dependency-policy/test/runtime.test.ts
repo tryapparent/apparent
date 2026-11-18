@@ -5,7 +5,7 @@ import { analyze } from "../policy.ts";
 import { effects } from "../runtime/effects.ts";
 import { secretCheck } from "../runtime/secrets.ts";
 import { ciPolicy } from "../runtime/ci.ts";
-import { plan, fastChecks } from "../fast/run.ts";
+import { plan, fastChecks, lintPromises } from "../fast/run.ts";
 import { fixture } from "./fixture.ts";
 function snapshot(files: Record<string, string>) {
   const snapshot = new Snapshot("");
@@ -179,7 +179,7 @@ test("new references cannot hide effects in arguments or CommonJS aliases", () =
   ])
     assert.ok(effects(snapshot({ "record/app.ts": text })).size);
 });
-test("typed promise lint propagates a real project-type failure after successful tsc", async (t) => {
+test("typed promise lint propagates a real project-type failure with the project configuration", async (t) => {
   const f = fixture(t);
   f.put(
     "record/enablement/ci/fast.json",
@@ -213,15 +213,8 @@ test("typed promise lint propagates a real project-type failure after successful
     "export async function work() { return 1; } work();",
   );
   f.put("record/typed/test.ts", "export const pass = true;");
-  f.stage();
-  const tree = f.git("write-tree").trim();
   await assert.rejects(
-    fastChecks(
-      f.dir,
-      f.git("rev-parse", "HEAD").trim(),
-      tree,
-      new Snapshot(f.dir, tree),
-    ),
+    lintPromises(f.dir + "/record/typed", "record/typed"),
     /Typed promise lint failed/,
   );
 });

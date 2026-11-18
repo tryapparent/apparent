@@ -1,10 +1,13 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { git } from "../snapshot.ts";
 
 export function materialize(cwd: string, tree: string, output: string): void {
-  const entries = git(["ls-tree", "-rz", tree], cwd)
+  const entries = execFileSync("git", ["ls-tree", "-rz", tree], {
+    cwd,
+    encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024,
+  })
     .split("\0")
     .filter(Boolean)
     .map((entry) => {

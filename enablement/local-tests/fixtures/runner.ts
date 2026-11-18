@@ -47,6 +47,7 @@ export function runnerFixture(destination: string): void {
     mkdirSync(dirname(bend), {recursive: true});
     writeFileSync(bend, "console.log('Finite Bend fixture');\n");
   }
+  writeFileSync(resolve(destination, 'enablement/local-tests/rust/check.ts'), 'process.exit(0);\n');
   const issue = resolve(destination, 'shared/enablement/issues/run.ts');
   mkdirSync(dirname(issue), {recursive: true});
   writeFileSync(issue, "process.stdin.resume();\n");

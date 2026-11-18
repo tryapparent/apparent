@@ -1,0 +1,39 @@
+[
+  {
+    "config": "capture/desktop/ui/frontend/tsconfig.json",
+    "inputs": [
+      "composition/settings/renderer/",
+      "composition/quit/view.tsx",
+      "shared/ui/",
+      "record/capture-request/",
+      "record/storage/"
+    ],
+    "declarations": [
+      {
+        "config": "record/capture-request/tsconfig.build.json",
+        "package": "@apparent/record-capture-request"
+      },
+      {
+        "config": "record/storage/tsconfig.json",
+        "package": "@apparent/record-storage"
+      }
+    ]
+  },
+  {
+    "config": "composition/onboarding/tsconfig.json",
+    "inputs": ["onboarding/", "connect/native-adapter/"],
+    "declarations": [
+      {
+        "config": "onboarding/tsconfig.build.json"
+      }
+    ]
+  },
+  {
+    "config": "capture/desktop/ui/frontend/tests/onboarding/tsconfig.json",
+    "dependencies": ["capture/desktop/ui/frontend/tsconfig.json"]
+  },
+  {
+    "config": "capture/desktop/ui/frontend/tests/onboarding/renderer/tsconfig.json",
+    "dependencies": ["capture/desktop/ui/frontend/tsconfig.json"]
+  }
+]

@@ -1,24 +1,37 @@
-# Owner fast checks
+# Staged TypeScript and focused tests
 
-Owner declarations live at `<owner>/enablement/ci/fast.json`:
-`projects: [{root, inputs, tests, typecheck}]`. Roots and additional inputs are repository-relative;
-test paths are project-relative. Declarations cannot assign another owner's project. Changes
-under a project select it; explicit inputs include manifests and dynamic data. Changed tests
-remain eligible. Reverse import consumers are included. Unknown inputs conservatively select every declared project.
-This is a bounded local executor, not a replacement for the existing CI/push selector.
+The hook discovers tracked `tsconfig*.json` files and selects the nearest
+ancestor with a tracked npm or Bun lock. It checks changed project sources,
+configurations and lock inputs, and follows reverse imports in both Git trees.
+Owner declarations in `<owner>/enablement/ci/typecheck.json` add producer
+inputs or preparation that import analysis cannot see. Composition declares
+its Desktop dependencies and generated declaration producers. Connect declares
+its existing recipient build. Compilation happens on Git blobs, including
+local package sources. The report names changed TS files that no selected
+compiler read. Repo tooling, standalone runtime tests and other files outside
+project configs still receive the existing admission guards and applicable
+focused tests.
 
-Record completion and capture-request are provisioned for typechecking, typed promise lint and
-focused tests. Shared guard tests are provisioned without a whole-package typecheck. Other owners
-have no fast typecheck claim; existing native/browser/delivery gates remain necessary. A repository
-without declarations reports that only staged syntax/graph checks apply. README-only prospective
-streams acquire no invented passing test job.
+Install the shared lint/admission tools, stage the intended files, then prepare
+missing project dependencies outside the commit:
 
-The executor materializes raw Git blobs from the immutable staged tree into a private temporary directory and uses the
-installed guard toolchain, including Node types. It never edits source or the caller index. Git
-variables and nested Node test-runner state are removed from child environments. Missing tools,
-empty typed lint results, errors, signals and 120-second child timeouts reject. Owner tests must
-remain cheap, offline and service-free; declarations are trusted reviewed executable policy.
-No installation, browser or native build is part of this executor. Installed package versions and
-lock integrity metadata must match the staged tool lock. Symlinks/gitlinks are not materialized;
-selected tests must be regular staged files. Unknown inputs use the conservative all-declared-project
-fallback. Transitive static imports are followed; runtime-generated dependencies need explicit inputs.
+```sh
+npm ci --ignore-scripts --prefix shared/enablement/dependency-policy
+node shared/enablement/dependency-policy/fast/setup.ts --staged
+```
+
+Add `--all` to warm all project installations. Setup uses npm ci or frozen Bun
+with lifecycle scripts disabled. A private disposable worktree cache under
+`/tmp` keys each installation by package manager and Node versions, platform,
+lock, manifest, package configuration and the Git trees of local packages.
+Stage the intended lock and local package changes before preparing. Cache
+eviction or an input change prompts setup again. The commit hook never installs
+dependencies. A missing cache is a setup error. A compiler error such as
+TS2688 after setup must be fixed in the staged project's configuration or
+locked dependencies. The guard tools' Node types are isolated from compilation.
+
+`<owner>/enablement/ci/fast.json` still declares focused owner tests and the
+Record typed promise-lint contract. Those tests use staged files and must stay
+cheap, offline and service-free. The two legacy capture projects continue to
+use their checked-in configs and lockfiles. No Electron browser, UI interaction
+or native build is required for these TypeScript checks.

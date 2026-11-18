@@ -13,10 +13,28 @@ Admission tooling has tooling consumers. New product references to that tooling
 invalidate its independent qualification. Unknown paths and unsupported Git types
 retain conservative selection. The pre-commit admission guards remain commit-only.
 
-Local Cargo execution requires an actual `.rs` delta anywhere in the full range,
-including removed/renamed Rust files, or unknown history. Hosted CI still consumes
-native manifests, locks, assets and build inputs through its existing suite plan.
-This local rule does not establish native acceptance for non-Rust changes.
+Local Rust diagnostics consider full-range Rust source changes, Cargo manifests
+and locks, toolchain/config changes and declared native code-generation inputs.
+The pre-push hook uses the same integration range for locked offline Cargo checks on
+affected production targets. When rustc emits `dead_code` warnings, the same
+Cargo check on the main merge-base supplies the baseline. Warnings are compared
+by package, target, source and diagnostic identity with occurrence counts.
+Existing warnings survive line shifts. Missing history, unavailable tooling,
+Cargo errors and an unusable comparison fail the push. No warning verdicts are
+stored. Cargo can reuse compatible build artifacts in the normal target directory.
+
+| Native project | Host diagnostic scope |
+| --- | --- |
+| Root Apparent and Connect client | Default-feature production bin and library |
+| Legacy Capture Engine | Default-feature library |
+| Engine Media | Release bins with the owner `frames` feature |
+| Agent Narrator | Release binary |
+| Site video demo | Separate Metal/media build with no tracked Cargo lock, outside hook scope |
+
+A Linux run covers Linux cfg branches. macOS-only code requires a macOS run.
+Test-only cfg branches and nondefault variants outside the table remain with
+the existing build/test/release commands. The diagnostic step adds a metadata
+check, without linking the production binaries a second time.
 
 Ordinary affected product checks execute their unit, type and integration commands.
 Hook/selector/timing self-tests run for tooling changes and uncertain inputs.

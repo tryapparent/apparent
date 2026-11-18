@@ -71,7 +71,7 @@ try {
     }
   }
   phase("comments");
-  if (!process.exitCode) await fastChecks(cwd, head, tree, staged);
+  if (!process.exitCode) await fastChecks(cwd, head, tree, staged, committed);
   phase("affected checks");
   if (head && git(["rev-parse", "--verify", "--quiet", "HEAD"], cwd).trim() !== head) throw new Error("HEAD changed during checks; retry the complete snapshot");
   if (git(["write-tree"], cwd).trim() !== tree) throw new Error("Index changed during checks; retry the complete staged snapshot");
