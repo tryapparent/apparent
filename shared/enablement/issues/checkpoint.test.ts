@@ -7,6 +7,34 @@ import { pathToFileURL } from "node:url";
 import { fixture } from "./fixture.ts";
 import { validatePush } from "./run.ts";
 
+test("the original trailerless AL2023 commit is accepted only when inherited from canonical main", (t) => {
+  const f = fixture(t);
+  const commit = "c2a3b6043389a4e825eaae06e2d1c0b732faf0b5";
+  const merge = "6c2aadf6cd9fb99c8354f0f7e70fc94607da0866";
+  const parent = "1c30a3455536f5b4bc7aa11d546367fbc46d0eb4";
+  const source = new URL("../../../", import.meta.url);
+  const common = execFileSync(
+    "git",
+    ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    { cwd: source, encoding: "utf8" },
+  ).trim();
+  writeFileSync(
+    join(f.repo, ".git/objects/info/alternates"),
+    join(common, "objects") + "\n",
+  );
+  process.env.ISSUE_TEST_MAIN = parent;
+  assert.throws(
+    () => validatePush(f.ref(commit), f.repo),
+    new RegExp(commit + ".*needs a final Issue"),
+  );
+  process.env.ISSUE_TEST_MAIN = merge;
+  validatePush(f.ref(commit), f.repo);
+  assert.equal(
+    readFileSync(process.env.ISSUE_TEST_LOG!, "utf8"),
+    "main\nmain\n",
+  );
+});
+
 test("push looks up each issue outside canonical main once across branches", (t) => {
   const f = fixture(t);
   const checkpoint = f.commit(

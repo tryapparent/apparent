@@ -78,6 +78,9 @@ Previously verified historical associations are recorded here for reference.
 | `f900c3f4677cca561f1336d4cd4b64184032958e` | #1489 | #837 |
 | `91fe2c80dd96cea8bb3285d2c6f1d1b4652bd76b` | #1494 | #1240 |
 
+[PR #1515](https://github.com/tryapparent/apparent/pull/1515) landed the release
+commit `c2a3b6043389a4e825eaae06e2d1c0b732faf0b5` without a trailer or a linked issue.
+
 The PR description should reference the same primary issue. Use `Closes` only
 when the entire issue outcome is complete. Ordinary commit `Issue` trailers do
 not close issues. A PR is unnecessary for the first branch push. This feature

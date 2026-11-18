@@ -1,5 +1,18 @@
 import { spawnSync } from "node:child_process";
 
+export const nativeWorkflowPaths = [
+  "checks",
+  "linux-updater-harness",
+  "release-linux",
+  "release-mac-preview",
+  "verification-platform",
+  "verification",
+].map((name) => `.github/workflows/${name}.yml`);
+
+export const branchCleanupInput = (path: string) =>
+  path === ".github/workflows/branch-cleanup.yml" ||
+  path.startsWith("enablement/ci/branch-cleanup/");
+
 export function admissionTooling(path: string): boolean {
   return (
     path === ".githooks/pre-commit" ||

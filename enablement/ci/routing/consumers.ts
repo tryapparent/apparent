@@ -3,7 +3,7 @@ import {bendConsumers} from '../../../shared/enablement/bend/consumers.ts';
 const rule = JSON.parse(readFileSync(new URL('../../../engine/enablement/ci/inputs.json', import.meta.url), 'utf8')) as {root: string; excludedSuffixes: string[]; desktopPermissions: string};
 const automaticPaths = [rule.root + '/**', '!' + rule.desktopPermissions + '**', ...rule.excludedSuffixes.map(suffix => '!' + rule.root + '/**/*' + suffix)];
 const affectsEngine = (path: string) => path.startsWith(rule.root + '/') && !path.startsWith(rule.desktopPermissions) && !rule.excludedSuffixes.some(suffix => path.endsWith(suffix));
-import {admissionTooling} from '../../../shared/enablement/ci/inputs.ts';
+import {admissionTooling, branchCleanupInput, nativeWorkflowPaths} from '../../../shared/enablement/ci/inputs.ts';
 import {independentInputs} from './engine-inputs/qualify.ts';
 export const owners = ['capture', 'engine', 'desktop', 'capture-tools', 'client', 'client-foreground', 'web', 'service', 'public', 'hermes', 'tooling', 'onboarding', 'engine-media'] as const;
 export type Owner = typeof owners[number];
@@ -62,9 +62,6 @@ export function onboardingInput(path: string): boolean {
     path.startsWith('capture/desktop/settings/onboarding') || path.endsWith('/practice.rs') ||
     path.startsWith('shared/ui/') || path.startsWith('record/');
 }
-const nativeWorkflowPaths = ['checks', 'linux-updater-harness', 'release-linux', 'release-mac-preview', 'verification-platform', 'verification']
-  .map(name => `.github/workflows/${name}.yml`);
-
 export const portableForegroundInputs = new Set([
   'connect/client/typescript/src/foreground.ts', 'connect/client/typescript/test/foreground.test.ts',
 ]);
@@ -98,6 +95,7 @@ export function foregroundPortableChange(path: string, before: string, after: st
 
 function directConsumers(path: string): readonly Owner[] {
   if (documentationOnlyPath(path)) return [];
+  if (branchCleanupInput(path)) return ['tooling'];
   if (admissionTooling(path)) return ['tooling'];
   if (desktopPackagingInputs.has(path)) return ['capture', 'engine', 'desktop', 'capture-tools', 'client-foreground'];
   if (path.startsWith(rule.desktopPermissions)) return ['capture', 'engine', 'desktop'];
@@ -224,7 +222,8 @@ export function routeDecision(paths: string[] | null, workflowControls: string[]
   const plan = planFromOwners(selected);
   const effective = remaining?.filter(path => !qualifiedCiTests.includes(path) && !documentationOnlyPath(path));
   const unknown = !paths?.length;
-  const orchestration = effective?.some(path => path === '.github/workflows/checks.yml' || path.startsWith('enablement/ci/'));
+  const orchestration = effective?.some(path => path === '.github/workflows/checks.yml' ||
+    (path.startsWith('enablement/ci/') && !branchCleanupInput(path)));
   const publicSelected = selected.includes('public');
   const updater = unknown || !!orchestration || !!effective?.some(path =>
     ['capture/desktop/scripts/linux/gui/', 'capture/desktop/scripts/linux/updater/'].some(prefix => path.startsWith(prefix)) ||
