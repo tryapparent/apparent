@@ -10,11 +10,18 @@ import { connections, Transport, type Connection } from "./transport.ts";
 import { choiceTarget, Delivery, type Job } from "./delivery.ts";
 import { Store } from "./store.ts";
 import { computerLabels } from "../pure/chooser.ts";
+import {
+  readPickerPreferences,
+  type PickerPreferences,
+} from "./preferences.ts";
+
 export class Controller {
   private config: Connection | null = null;
   private enabled = false;
   private capture = "";
-  private processing = false;
+  private phase: "" | "recording" | "processing" | "completed" = "";
+  private pickerVisible = false;
+  private preferences?: Promise<PickerPreferences>;
   private choices: DestinationView["choices"] = [];
   private catalogue = new Map<
     string,
@@ -87,14 +94,14 @@ export class Controller {
     return this.exclusive(capture, () => this.doRetry(capture));
   }
   view(): DestinationView | null {
-    if (!this.enabled || !this.capture) return null;
+    if (!this.enabled || !this.capture || !this.pickerVisible) return null;
     if (!this.config)
       return {
         capture: this.capture,
         choices: [],
         selected: "",
         phase: "setup",
-        processing: this.processing,
+        processing: this.phase === "processing",
       };
     const job = this.jobs.get(this.capture);
     return {
@@ -141,7 +148,7 @@ export class Controller {
           : this.error || this.catalogueError
             ? "error"
             : "choosing",
-      processing: this.processing,
+      processing: this.phase === "processing",
       error:
         this.error ||
         (job && job.phase !== "cancelled"
@@ -151,38 +158,71 @@ export class Controller {
   }
   text(capture: string) {
     const text = this.results.get(capture) ?? this.jobs.get(capture)?.text;
-    if (capture !== this.capture || typeof text !== "string")
+    if (
+      !this.pickerVisible ||
+      capture !== this.capture ||
+      typeof text !== "string"
+    )
       throw Error("Recording is not ready");
     return text;
   }
   async update(capture: string, phase: string, eligible = true) {
-    if (!["processing", "completed"].includes(phase) || !eligible) {
+    if (
+      !capture ||
+      !eligible ||
+      (phase !== "recording" && phase !== "processing" && phase !== "completed")
+    ) {
       if (this.capture) {
         this.capture = "";
+        this.phase = "";
+        this.pickerVisible = false;
+        this.preferences = undefined;
         ++this.version;
         this.changed();
       }
       return;
     }
-    if (this.capture === capture) {
-      const processing = phase === "processing";
-      if (this.processing !== processing) {
-        this.processing = processing;
-        this.changed();
-      }
-      return;
+    const previousPhase = this.phase;
+    this.phase = phase;
+    if (this.capture !== capture || !this.preferences) {
+      return this.loadCatalogue(
+        capture,
+        readPickerPreferences(this.configFile),
+      );
     }
+    if (previousPhase === "recording" && phase !== "recording") {
+      const version = this.version;
+      const [warmed, current] = await Promise.all([
+        this.preferences,
+        readPickerPreferences(this.configFile),
+      ]);
+      if (version !== this.version) return;
+      if (JSON.stringify(warmed) !== JSON.stringify(current)) {
+        return this.loadCatalogue(capture, Promise.resolve(current));
+      }
+      this.pickerVisible = true;
+      this.changed();
+    } else if (previousPhase !== phase) {
+      this.changed();
+    }
+  }
+
+  private async loadCatalogue(
+    capture: string,
+    preferences: Promise<PickerPreferences>,
+  ) {
+    const wasVisible = this.pickerVisible && this.enabled;
     this.capture = capture;
-    this.processing = phase === "processing";
+    this.preferences = preferences;
+    this.enabled = false;
+    this.config = null;
+    this.pickerVisible = this.phase !== "recording";
     const version = ++this.version;
-    await this.initializing;
-    let configured: Connection[] = [],
-      enabled = false;
-    try {
-      const saved = JSON.parse(await readFile(this.configFile, "utf8"));
-      enabled = saved.experiments?.t3DestinationPicker === true;
-      configured = enabled ? connections(saved.t3) : [];
-    } catch {}
+    if (wasVisible && !this.pickerVisible) this.changed();
+    const [{ enabled, configured }] = await Promise.all([
+      preferences,
+      this.initializing,
+    ]);
     if (version !== this.version) return;
     this.enabled = enabled;
     this.config = configured[0] ?? null;
@@ -191,7 +231,7 @@ export class Controller {
     this.choices = [];
     if (this.storageAvailable) this.error = "";
     this.catalogueError = "";
-    this.changed();
+    if (this.pickerVisible) this.changed();
     if (!this.config) return;
     const multiple = configured.length > 1;
     const recent = [...this.jobs.values()]
@@ -324,7 +364,7 @@ export class Controller {
               : {}),
           });
       }
-      this.changed();
+      if (this.pickerVisible) this.changed();
     };
     await Promise.all(
       configured.map(async (config, index) => {
@@ -335,7 +375,7 @@ export class Controller {
   }
 
   private async doConfirm(capture: string, id: string) {
-    if (capture !== this.capture || !this.config)
+    if (!this.pickerVisible || capture !== this.capture || !this.config)
       throw Error("Recording changed");
     if (!this.storageAvailable)
       throw Error("Handoff receipts unavailable; copy the recording instead");
@@ -460,18 +500,19 @@ export class Controller {
     this.changed();
   }
   private async doRetry(capture: string) {
-    if (capture !== this.capture) throw Error("Recording changed");
+    if (!this.pickerVisible || capture !== this.capture)
+      throw Error("Recording changed");
     const job = this.jobs.get(capture);
     if (job && ["uncertain", "error"].includes(job.phase)) {
       if (job.text === null) throw Error("Recording unavailable");
       await this.send(job);
     } else {
-      this.capture = "";
-      await this.update(capture, this.processing ? "processing" : "completed");
+      await this.loadCatalogue(capture, readPickerPreferences(this.configFile));
     }
   }
   private async doCancel(capture: string) {
-    if (capture !== this.capture) throw Error("Recording changed");
+    if (!this.pickerVisible || capture !== this.capture)
+      throw Error("Recording changed");
     const job = this.jobs.get(capture);
     if (job) await this.delivery.cancel(job);
     this.error = "";
