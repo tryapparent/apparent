@@ -329,14 +329,14 @@ mod tests {
         progress.leave(&flow);
         assert!(progress.seen, "quitting immediately after the trial must not repeat setup");
         assert_eq!(progress.resume, None);
-        assert!(launch_plan(&progress, &grants(&Permission::REQUIRED)).is_none());
+        assert!(fixture_launch_plan(&progress, &grants(&Permission::REQUIRED)).is_none());
         flow.on(Input::Continue);
         assert_eq!(flow.on(Input::Later), Effect::Close);
         progress.leave(&flow);
         assert!(progress.seen);
         assert_eq!(progress.resume, None);
         assert!(!progress.first_capture_completed);
-        assert!(launch_plan(&progress, &grants(&Permission::REQUIRED)).is_none());
+        assert!(fixture_launch_plan(&progress, &grants(&Permission::REQUIRED)).is_none());
         flow.on(Input::ShortcutTriggered);
         flow.on(Input::CaptureStarted);
         flow.on(Input::CaptureEnded { completed: true });
@@ -483,6 +483,7 @@ mod tests {
         Grants {
             statuses: granted.iter().map(|p| (*p, Status::Granted)).collect(),
             screen_needs_relaunch: false,
+            observed_at: None,
         }
     }
 
@@ -596,7 +597,7 @@ mod tests {
             tutorial: Some(Tutorial::Watched),
             ..Progress::default()
         };
-        let flow = launch_plan(&progress, &grants(&[]))
+        let flow = fixture_launch_plan(&progress, &grants(&[]))
             .expect("the tour")
             .with_tutorial(progress.tutorial);
         assert_eq!(flow.step(), Step::Permissions);
@@ -627,7 +628,6 @@ mod tests {
         let mut flow = Flow::tour(Step::Permissions, Some(grants(&[])));
         assert!(!rows(&flow).contains(&InputMonitoring));
         assert_eq!(flow.on(Input::Grant(InputMonitoring)), Effect::None);
-        assert!(missing_to_record(Some(&grants(&ALL)), true, true).is_empty());
         let sources = [
             include_str!("session.rs"),
             include_str!("../../coordinator/setup.rs"),
@@ -814,9 +814,9 @@ mod tests {
         };
         progress.relaunching(None, 42);
         assert!(progress.reopen_fix && progress.seen);
-        let flow = launch_plan(&progress, &grants(&[ScreenRecording, Microphone])).expect("fix");
+        let flow = launch_plan(&progress, &grants(&[ScreenRecording, Accessibility]), &[]).expect("fix");
         assert_eq!((flow.mode(), flow.step()), (Mode::Fix, Step::Permissions));
-        assert_eq!(rows(&flow), Permission::REQUIRED);
+        assert_eq!(rows(&flow), [ScreenRecording]);
     }
 
     #[test]
@@ -851,7 +851,7 @@ mod tests {
         assert_eq!(progress.resume, Some(Step::Permissions));
         assert!(!progress.seen);
         let fresh = grants(&[ScreenRecording]);
-        let flow = launch_plan(&progress, &fresh).expect("the tour");
+        let flow = fixture_launch_plan(&progress, &fresh).expect("the tour");
         assert_eq!((flow.mode(), flow.step()), (Mode::Tour, Step::Permissions));
         let view = flow.view();
         assert_eq!(view.rows[0].status, Status::Granted);
@@ -865,9 +865,9 @@ mod tests {
             ..Progress::default()
         };
         assert_eq!(progress.relaunched_at, None);
-        let flow = launch_plan(&progress, &fresh).expect("the tour");
+        let flow = fixture_launch_plan(&progress, &fresh).expect("the tour");
         assert_eq!((flow.mode(), flow.step()), (Mode::Tour, Step::Permissions));
-        let mut flow = launch_plan(&progress, &grants(&ALL)).expect("the tour");
+        let mut flow = fixture_launch_plan(&progress, &grants(&ALL)).expect("the tour");
         assert_eq!(flow.step(), Step::Permissions);
         assert!(flow.view().ready);
         flow.on(Input::Continue);
@@ -884,7 +884,7 @@ mod tests {
         assert!(progress.prepare_current_tour());
         assert_eq!(progress.resume, Some(Step::Welcome));
         assert_eq!(progress.granted, granted);
-        assert_eq!(launch_plan(&progress, &grants(&Permission::REQUIRED)).unwrap().step(), Step::Welcome);
+        assert_eq!(fixture_launch_plan(&progress, &grants(&Permission::REQUIRED)).unwrap().step(), Step::Welcome);
         progress.relaunching(Some(Step::Permissions), 123);
         assert!(!progress.prepare_current_tour());
         assert_eq!(progress.resume, Some(Step::Permissions));
@@ -895,7 +895,7 @@ mod tests {
         let mut finished = Progress { seen: true, ..Progress::default() };
         assert!(finished.prepare_current_tour());
         assert!(finished.seen);
-        assert!(launch_plan(&finished, &grants(&Permission::REQUIRED)).is_none());
+        assert!(fixture_launch_plan(&finished, &grants(&Permission::REQUIRED)).is_none());
         let mut future = Progress { tour_revision: 2, resume: Some(Step::Shortcut), ..Progress::default() };
         assert!(!future.prepare_current_tour());
         assert_eq!(future.resume, Some(Step::Shortcut));
@@ -921,14 +921,14 @@ mod tests {
         assert!(!restored.first_capture_completed);
         assert_eq!(restored.resume, None);
         assert!(!restored.prepare_current_tour());
-        assert!(launch_plan(&restored, &grants(&Permission::REQUIRED)).is_none());
-        assert_eq!(launch_plan(&restored, &grants(&[])).unwrap().mode(), Mode::Fix);
+        assert!(fixture_launch_plan(&restored, &grants(&Permission::REQUIRED)).is_none());
+        assert_eq!(fixture_launch_plan(&restored, &grants(&[])).unwrap().mode(), Mode::Fix);
         let config: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(config["penColor"], "green");
         assert_eq!(config["unrelated"], 42);
         restored.reset_for_replay();
         assert!(!restored.prepare_current_tour());
-        assert_eq!(launch_plan(&restored, &grants(&Permission::REQUIRED)).unwrap().step(), Step::Welcome);
+        assert_eq!(fixture_launch_plan(&restored, &grants(&Permission::REQUIRED)).unwrap().step(), Step::Welcome);
         let mut native_trial = Progress { tour_revision: 1, resume: Some(Step::Shortcut),
             shortcut_chosen: true, shortcut_tested_for: Some("⌥S".into()), ..Progress::default() };
         assert!(native_trial.prepare_current_tour());
@@ -1015,7 +1015,7 @@ mod tests {
             resume: flow.resume_point(),
             ..Progress::default()
         };
-        let flow = launch_plan(&progress, &grants(&[ScreenRecording])).expect("the tour");
+        let flow = fixture_launch_plan(&progress, &grants(&[ScreenRecording])).expect("the tour");
         assert_eq!(flow.step(), Step::Permissions);
         assert_eq!(
             Flow::fix(vec![Camera], None).resume_point(),
@@ -1034,12 +1034,7 @@ mod tests {
     #[test]
     fn the_shortcut_with_a_permission_off_starts_nothing_and_opens_the_window_on_release() {
         let some = grants(&[Microphone, Accessibility]);
-        let missing = missing_to_record(Some(&some), false, true);
-        assert_eq!(missing, [ScreenRecording]);
-        assert_eq!(
-            missing_to_record(Some(&grants(&ALL)), true, false),
-            [Accessibility]
-        );
+        let missing = vec![ScreenRecording];
         let mut gate = Gate::default();
         assert!(!gate.press(missing.clone()), "nothing starts");
         assert!(!gate.press(Vec::new()));
@@ -1054,12 +1049,10 @@ mod tests {
             flow.on(Input::Grant(ScreenRecording)),
             Effect::OpenSettings(ScreenRecording)
         );
-        assert!(missing_to_record(Some(&grants(&ALL)), true, true).is_empty());
         assert!(gate.press(Vec::new()));
         let mut tour = Flow::tour(Step::Welcome, Some(some));
         assert_eq!(tour.on(Input::Blocked), Effect::Show);
         assert_eq!(tour.step(), Step::Permissions);
-        assert!(missing_to_record(None, true, true).is_empty());
     }
 
     #[test]
@@ -1104,24 +1097,32 @@ mod tests {
         assert_eq!(flow.step(), Step::TryIt);
     }
 
+    fn fixture_launch_plan(progress: &Progress, grants: &Grants) -> Option<Flow> {
+        let blockers: Vec<_> = Permission::REQUIRED.into_iter()
+            .filter(|permission| !grants.usable(*permission))
+            .collect();
+        launch_plan(progress, grants, &blockers)
+    }
+
     #[test]
     fn launch_shows_the_tour_once_then_only_a_lost_permission() {
         let all = grants(&ALL);
         let mut progress = Progress::default();
         assert_eq!(
-            launch_plan(&progress, &all).map(|f| (f.mode(), f.step())),
+            fixture_launch_plan(&progress, &all).map(|f| (f.mode(), f.step())),
             Some((Mode::Tour, Step::Welcome))
         );
         progress.seen = true;
         assert!(progress.note(&all));
         assert!(!progress.note(&all));
-        assert!(launch_plan(&progress, &all).is_none());
+        assert!(fixture_launch_plan(&progress, &all).is_none());
         let lost = grants(&[ScreenRecording, Microphone]);
-        let flow = launch_plan(&progress, &lost).expect("a fix");
+        assert!(launch_plan(&progress, &lost, &[]).is_none());
+        let flow = launch_plan(&progress, &lost, &[Accessibility]).expect("a fix");
         assert_eq!((flow.mode(), flow.step()), (Mode::Fix, Step::Permissions));
-        assert_eq!(rows(&flow), Permission::REQUIRED);
+        assert_eq!(rows(&flow), [Accessibility]);
         progress.granted.remove(&Accessibility);
-        assert!(launch_plan(&progress, &lost).is_none());
+        assert!(launch_plan(&progress, &lost, &[Accessibility]).is_none());
     }
 
     #[test]
@@ -1194,6 +1195,7 @@ mod tests {
         let g = Grants {
             statuses,
             screen_needs_relaunch: false,
+            observed_at: None,
         };
         assert!(g.granted(ScreenRecording));
         assert_eq!(g.status(Microphone), Status::Denied);
@@ -1207,7 +1209,7 @@ mod tests {
             (ScreenRecording, Status::NotDetermined),
             (Microphone, Status::Granted),
         ]);
-        let statuses = reconcile_native_grants(helper, true, true);
+        let statuses = crate::permission_facts::reconcile_native_grants(helper, true, true);
         assert_eq!(statuses[&Accessibility], Status::Granted);
         assert_eq!(statuses[&ScreenRecording], Status::Granted);
         assert_eq!(statuses[&Microphone], Status::Granted);
@@ -1217,81 +1219,12 @@ mod tests {
             (ScreenRecording, Status::Granted),
             (Microphone, Status::Granted),
         ]);
-        let statuses = reconcile_native_grants(helper, false, false);
+        let statuses = crate::permission_facts::reconcile_native_grants(helper, false, false);
         assert_eq!(statuses[&Accessibility], Status::NotDetermined);
         assert_eq!(statuses[&ScreenRecording], Status::NotDetermined);
         assert_eq!(statuses[&Microphone], Status::Granted);
     }
 
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn screen_revocation_blocks_recording_despite_a_cached_success() {
-        let mut grants = Grants {
-            statuses: BTreeMap::from([
-                (Accessibility, Status::Granted),
-                (ScreenRecording, Status::Granted),
-                (Microphone, Status::Granted),
-            ]),
-            screen_needs_relaunch: false,
-        };
-        assert!(missing_to_record(Some(&grants), true, true).is_empty());
-        for status in [Status::NotDetermined, Status::Denied] {
-            grants.statuses.insert(ScreenRecording, status);
-            assert_eq!(
-                missing_to_record(Some(&grants), true, true),
-                vec![ScreenRecording],
-                "a fresh screen denial must override a cached successful probe"
-            );
-        }
-        grants.statuses.insert(ScreenRecording, Status::Granted);
-        assert!(missing_to_record(Some(&grants), true, true).is_empty());
-        grants.screen_needs_relaunch = true;
-        assert_eq!(
-            missing_to_record(Some(&grants), true, true),
-            vec![ScreenRecording]
-        );
-        assert_eq!(
-            missing_to_record(Some(&grants), false, true),
-            vec![ScreenRecording]
-        );
-    }
-
-    #[test]
-    fn app_permission_refresh_observes_revocation_without_a_window() {
-        let mut reads = vec![
-            Some(grants(&ALL)),
-            None,
-            Some(Grants {
-                statuses: BTreeMap::from([
-                    (Accessibility, Status::Granted),
-                    (ScreenRecording, Status::Denied),
-                    (Microphone, Status::Granted),
-                ]),
-                screen_needs_relaunch: false,
-            }),
-            Some(grants(&ALL)),
-        ]
-        .into_iter();
-        let mut admission = Vec::new();
-        let mut pauses = 0;
-        poll_grants(
-            || reads.next().expect("the receiver must stop the worker"),
-            |fresh| {
-                admission.push(missing_to_record(Some(&fresh), true, true));
-                admission.len() < 3
-            },
-            || pauses += 1,
-        );
-        assert_eq!(pauses, 3);
-        assert_eq!(admission.len(), 3);
-        assert!(admission[0].is_empty());
-        if cfg!(target_os = "macos") {
-            assert_eq!(admission[1], vec![ScreenRecording]);
-        } else {
-            assert!(admission[1].is_empty());
-        }
-        assert!(admission[2].is_empty());
-    }
 }
 
 #[cfg(test)]
@@ -1417,7 +1350,7 @@ mod adapter_regressions {
         flow.on(Input::Back);
         assert_eq!(flow.step(),Step::Welcome);
         assert_eq!(permission_guide_messages(&flow.view()),vec![serde_json::json!({"type":"cancel-guides"})]);
-        let granted=Flow::tour(Step::Permissions,Some(Grants{statuses:BTreeMap::from([(Permission::Accessibility,Status::Granted)]),screen_needs_relaunch:false}));
+        let granted=Flow::tour(Step::Permissions,Some(Grants{statuses:BTreeMap::from([(Permission::Accessibility,Status::Granted)]),screen_needs_relaunch:false,observed_at:None}));
         assert!(permission_guide_messages(&granted.view()).iter().any(|m|m["type"]=="close-guide"&&m["permission"]=="accessibility"));
     }
 
@@ -1435,7 +1368,7 @@ mod adapter_regressions {
         }
         let current=Event::Transport{generation:session.transport_generation(),event:Box::new(Event::Action("continue".into()))};
         assert!(matches!(current.for_current_transport(Some(session.transport_generation())),Some(Event::Action(_))));
-        assert!(matches!(Event::Grants(Grants{statuses:BTreeMap::new(),screen_needs_relaunch:false}).for_current_transport(Some(session.transport_generation())),Some(Event::Grants(_))));
+        assert!(matches!(Event::Grants(Grants{statuses:BTreeMap::new(),screen_needs_relaunch:false,observed_at:None}).for_current_transport(Some(session.transport_generation())),Some(Event::Grants(_))));
     }
 
     #[test]

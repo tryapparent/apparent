@@ -22,3 +22,17 @@ the host contract for applications with their own native capture capabilities.
 
 To check without publishing, run `node onboarding/enablement/ci/run.ts` followed
 by `node onboarding/enablement/ci/pack.ts /path/to/new-output-directory`.
+
+## Recording permission repair
+
+The installed Electron setup window renders the permissions checklist and
+the focused repair view from `renderer/permissions.tsx` using Shared
+controls. Composition supplies current native observations and the blockers
+identified by Record. The tour and the native fallback still use the
+existing progress and request adapters, including the guarded screen
+permission relaunch. The existing config writer owns progress and resume state.
+
+The native fallback remains available when the Electron presentation cannot
+open. An app rollback restores the earlier Electron renderer and native
+permission routing together. Retiring the fallback or moving the rest
+of the tour requires installed acceptance on macOS and Linux.

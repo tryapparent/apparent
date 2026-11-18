@@ -279,3 +279,12 @@ mod cli_contracts {
         assert!(help.contains("app's recording shortcut"), "{help}");
     }
 }
+
+pub(crate) fn observe_permissions() -> Option<crate::permission_facts::Grants> {
+    use crate::capture::desktop::helper;
+    crate::permission_facts::observe(
+        helper::permissions,
+        #[cfg(target_os = "macos")]
+        helper::screen_permission,
+    )
+}

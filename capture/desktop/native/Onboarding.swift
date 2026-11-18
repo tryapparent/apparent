@@ -537,7 +537,9 @@ struct PermissionRowView: View {
 
   @ViewBuilder private var trailing: some View {
     ZStack(alignment: .trailing) {
-      if row.granted && row.reopening {
+      if row.status == "unavailable" {
+        Text("Checking access…")
+      } else if row.granted && row.reopening {
         HStack(spacing: 6) {
           Spinner()
           Text("Reopening apparent")
@@ -553,8 +555,6 @@ struct PermissionRowView: View {
         }
         .transition(Motion.swap)
       } else {
-        // A list Apparent can be dragged into gets the drag card either way, so it says Allow
-        // until it has been pressed, even when macOS already lists Apparent as switched off.
         let draggable = PermissionPanel.Kind(rawValue: row.permission) != nil
         let settings = row.requested || (row.status == "denied" && !draggable)
         HStack(spacing: 8) {
