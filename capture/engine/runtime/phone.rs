@@ -529,11 +529,9 @@ fn build_movie_bundle_with_audio(
                         &keyframes::SpeechInput::empty(&TranscriptData::default()),
                         limits,
                         None,
-                    ).frames;
+                    )?.frames;
                     if preview.len() == budget
-                        && preview
-                            .iter()
-                            .all(|(k, _)| k.reason == KeyframeReason::Mark)
+                        && preview.iter().all(|(k, _)| k.reason == KeyframeReason::Mark)
                     {
                         let prep =
                             bundle_processing::prepare_visuals(

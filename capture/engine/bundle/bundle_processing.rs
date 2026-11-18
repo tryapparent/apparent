@@ -361,7 +361,7 @@ pub fn finalize_capture_bundle(
             .flatten();
         let assembly_plan = crate::composition::assembly::plan(duration_ms)?;
         let limits = assembly_plan.limits(duration_ms)?;
-        let ((transcript, transcribe_ms), (predecoded, prepared)) = std::thread::scope(|scope| {
+        let ((transcript, transcribe_ms), (predecoded, prepared)) = std::thread::scope(|scope| -> Result<_> {
             let transcribe_handle = scope.spawn(|| {
                 let t0 = std::time::Instant::now();
                 let tr = transcribe::transcribe(
@@ -383,8 +383,7 @@ pub fn finalize_capture_bundle(
                     &crate::capture::engine::keyframes::SpeechInput::empty(&TranscriptData::default()),
                     limits,
                     video_ink,
-                ).frames;
-                // Marks alone filled the budget, so speech can't change the selection.
+                )?.frames;
                 let marks_fill = preview.len() == budget
                     && preview
                         .iter()
@@ -422,8 +421,8 @@ pub fn finalize_capture_bundle(
             } else {
                 (Vec::new(), None)
             };
-            (transcribe_handle.join().unwrap(), pre)
-        });
+            Ok((transcribe_handle.join().unwrap(), pre))
+        })?;
 
         let built = build_bundle_from_parts(
             bundle_dir,
@@ -625,7 +624,7 @@ pub fn build_bundle_from_parts(
             &speech,
             limits,
             extras.video_ink,
-        ), &transcript)?;
+        )?, &transcript)?;
         let select_only_at = std::time::Instant::now();
         let completion_warning = captured_ink_frame_warning(&selected, &marks, extras.video_ink);
         let matches_prepared = completion_warning.is_none() && extras.prepared.as_ref().is_some_and(|prep| {
