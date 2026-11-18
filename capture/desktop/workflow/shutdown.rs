@@ -22,6 +22,15 @@ pub fn busy() -> bool {
     PHASE_BUSY.load(Ordering::Acquire)
 }
 
+#[cfg(target_os = "linux")]
+pub(crate) fn check_app_exit() -> anyhow::Result<()> {
+    if busy() {
+        eprintln!("[{}] native_event_loop_ended_during_capture", crate::shared::clock::now_epoch_ms());
+        anyhow::bail!("Native event loop ended during capture");
+    }
+    Ok(())
+}
+
 extern "C" fn signal(_signal: libc::c_int) {
     request();
 }
@@ -58,4 +67,19 @@ impl Drop for Signals {
             }
         }
     }
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn supervise() -> Option<anyhow::Result<()>> {
+    if super::error_reporting::native_supervisor::is_child() { return None; }
+    Some((|| {
+        let _signals = Signals::install()?;
+        let config = crate::shared::handoff::default_config_path();
+        super::error_reporting::native_supervisor::run(super::error_reporting::native_supervisor::Hooks {
+            directory: config.with_file_name("native-errors"),
+            consent: super::error_reporting::native_consent,
+            deliver: super::error_reporting::deliver_native,
+            requested,
+        })
+    })())
 }

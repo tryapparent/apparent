@@ -1,5 +1,4 @@
 //! Desktop-only, content-free PostHog errors. Never forward log/error/panic text.
-//! No SDK, persistent identity, disk spool, retries, or Engine -> Desktop dependency.
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -11,8 +10,15 @@ use serde_json::{Value, json};
 const ENDPOINT: &str = "https://eu.i.posthog.com/i/v0/e/";
 const QUEUE_SIZE: usize = 16;
 static REPORTER: OnceLock<Reporter> = OnceLock::new();
+#[path = "../../../engine/diagnostics/transport.rs"]
+mod transport;
+use transport::send;
 mod finalization;
 pub(crate) mod updates;
+
+#[cfg(target_os = "linux")]
+#[path = "../../../engine/diagnostics/supervisor.rs"]
+pub(super) mod native_supervisor;
 
 /// Only installed release children inherit production reporting admission.
 pub(crate) fn configure_child(command: &mut Command) {
@@ -34,6 +40,7 @@ pub(crate) enum Failure {
     ElectronMainRejection,
     ElectronRendererGone,
     ElectronChildGone,
+    NativeProcessExit,
 }
 
 impl Failure {
@@ -51,6 +58,7 @@ impl Failure {
             Self::ElectronMainRejection => "electron_main_rejection",
             Self::ElectronRendererGone => "electron_renderer_gone",
             Self::ElectronChildGone => "electron_child_gone",
+            Self::NativeProcessExit => "native_process_exit",
         }
     }
 }
@@ -376,17 +384,33 @@ impl Limiter {
 
 /// Called only by the desktop lifecycle, never ordinary CLI invocations/tests.
 /// The publishable project token is supplied by packaging, not user credentials.
+fn compiled_token() -> Option<&'static str> {
+    option_env!("APPARENT_POSTHOG_TOKEN").filter(|token| {
+        token.starts_with("phc_") && (20..=200).contains(&token.len())
+            && token.bytes().all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
+    })
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn native_consent() -> Option<String> {
+    compiled_token()?;
+    consent_in(&crate::shared::handoff::default_config_path()).map(|consent| consent.generation)
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn deliver_native(generation: &str, diagnostics: Value, id: &str, metadata: Value) -> bool {
+    if native_consent().as_deref() != Some(generation) { return false; }
+    let Some(token) = compiled_token() else { return false; };
+    let report = Report::new(Failure::NativeProcessExit, std::panic::Location::caller(), Consent { generation: generation.into() });
+    let Ok(payload) = report.payload(token) else { return false; };
+    send(ENDPOINT, &transport::native_payload(payload, diagnostics, id, metadata)).unwrap_or(false)
+}
+
 pub(crate) fn install() {
     if cfg!(test) || REPORTER.get().is_some() {
         return;
     }
-    let Some(token) = option_env!("APPARENT_POSTHOG_TOKEN").filter(|token| {
-        token.starts_with("phc_")
-            && (20..=200).contains(&token.len())
-            && token
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
-    }) else {
+    let Some(token) = compiled_token() else {
         return;
     };
     let Ok(reporter) = Reporter::start(
@@ -454,51 +478,6 @@ pub(crate) fn report_sparkle_update(domain: &str, code: isize) {
             report
         });
     }
-}
-
-/// The only HTTP boundary. Token/body stay off argv and disk; curl config,
-/// redirects and proxy environment cannot change the fixed EU destination.
-/// No retry. Errors are local-only and must never recursively report themselves.
-fn send(endpoint: &str, body: &Value) -> std::io::Result<bool> {
-    let mut child = Command::new("curl")
-        .args([
-            "--disable",
-            "--silent",
-            "--fail",
-            "--noproxy",
-            "*",
-            "--max-time",
-            "2",
-            "--connect-timeout",
-            "1",
-            "--max-redirs",
-            "0",
-            "--request",
-            "POST",
-            "--header",
-            "Content-Type: application/json",
-            "--data-binary",
-            "@-",
-            "--output",
-            "/dev/null",
-            "--url",
-            endpoint,
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()?;
-    let result = child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(&serde_json::to_vec(body)?);
-    if result.is_err() {
-        let _ = child.kill();
-    }
-    let status = child.wait()?;
-    result?;
-    Ok(status.success())
 }
 
 #[cfg(test)]
