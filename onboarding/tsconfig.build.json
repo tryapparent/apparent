@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": { "declaration": true },
-  "exclude": ["practice/*.test.ts"]
+  "exclude": ["practice/*.test.ts", "host/*.test.ts"]
 }

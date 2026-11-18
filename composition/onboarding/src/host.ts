@@ -203,17 +203,19 @@ export function start(capabilities: Capabilities) {
     window.webContents.on("render-process-gone", () => shutdown(1));
     window.webContents.on("did-finish-load", () => present());
     window.on("close", (event) => {
-      if (!closing && state?.boardView) {
-        event.preventDefault();
+      if (closing) return;
+      event.preventDefault();
+      if (state?.boardView) {
         channel.send({
           action: "board",
           id: state.boardView.id,
           operation: "close",
         });
+      } else {
+        channel.send("close");
       }
     });
     window.on("closed", () => {
-      if (!closing) channel.send("close");
       shutdown();
     });
     void window.loadURL(page);

@@ -849,6 +849,7 @@ impl ApparentCoordinator {
         if !self.ready_to_record() {
             return;
         }
+        apparent_log(format!("open_picker invoked (mode: {mode:?})"));
         let started = Instant::now();
         self.recording_shortcut_key = false;
         self.selectable_windows.clear();
@@ -1235,6 +1236,16 @@ impl ApparentCoordinator {
             self.island_y = -6.0;
             self.island_y_velocity = 0.0;
         }
+        if !self.lab {
+            crate::capture::desktop::settings::onboarding::Progress::recording_started();
+            if self.onboarding.as_ref().is_some_and(|session| {
+                session.mode() == crate::capture::desktop::settings::onboarding::Mode::Tour
+                    && !session.local_practice()
+            }) {
+                self.cancel_onboarding_editor();
+                self.onboarding = None;
+            }
+        }
         self.set_island_phase(IslandPhase::Recording);
         let entity = cx.entity().clone();
         cx.defer(move |cx| {
@@ -1282,7 +1293,6 @@ impl ApparentCoordinator {
             self.start_lab_recording(crate::capture::engine::runtime::phone::phone_target("iPhone", None, None, 0, 0), cx);
             return;
         }
-        if self.setup_blocks_capture() { return; }
         if !self.ready_for(crate::permission_facts::Permission::Camera) {
             self.cancel_recording(cx);
             return;
