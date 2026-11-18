@@ -24,6 +24,48 @@ test("saved connection alone leaves picker off; explicit sending flag enables it
   assert.equal(JSON.stringify(c.view()).includes("private-test-token"), false);
 });
 
+test("recording warms the picker once and makes choices available at Finish", async (t) => {
+  const f = await fixture(t);
+  const c = new Controller(() => {}, f.config);
+  await c.update("capture", "recording");
+  assert.equal(f.reads, 1);
+  assert.equal(c.view(), null);
+  await assert.rejects(c.confirm("capture", "thread"), /changed/);
+
+  await c.update("capture", "recording");
+  await c.update("capture", "processing");
+  assert.equal(f.reads, 1);
+  assert.equal(c.view()?.processing, true);
+  assert.deepEqual(
+    c.view()?.choices.map((choice) => choice.id),
+    ["new", "thread"],
+  );
+  await c.confirm("capture", "thread");
+  assert.equal(f.calls.length, 0);
+  await c.ready("capture", "Synthetic recording");
+  assert.equal(f.calls.length, 1);
+});
+
+test("prefetch skips practice and off recordings and checks settings again at Finish", async (t) => {
+  const f = await fixture(t);
+  const c = new Controller(() => {}, f.config);
+  await c.update("practice", "recording", false);
+  assert.equal(f.reads, 0);
+  await f.save(false);
+  await c.update("off", "recording");
+  assert.equal(f.reads, 0);
+
+  await f.save(true);
+  await c.update("revoked", "recording");
+  assert.equal(f.reads, 1);
+  await f.save(false);
+  await c.update("revoked", "processing");
+  assert.equal(c.view(), null);
+  await assert.rejects(c.confirm("revoked", "thread"), /changed/);
+  assert.equal(f.reads, 1);
+  assert.equal(f.calls.length, 0);
+});
+
 test("confirmed processing handoff survives dismissal/reload and is dispatched once to exact thread", async (t) => {
   const f = await fixture(t),
     c = new Controller(() => {}, f.config);

@@ -71,17 +71,26 @@ test('T3 destinations and public sharing coexist with explicit consent', {timeou
 });
 
 
-test('picker uses friendly computer names and keeps the shorter waiting state actionable',{timeout:60000},async t=>{
+test('picker warms both computers during recording and keeps the waiting state actionable',{timeout:60000},async t=>{
  let app;t.after(async()=>{await app?.close().catch(()=>{});});
  const {fixture}=await import('./testing/server.ts');const a=await fixture(t),b=await fixture(t);a.computer('X1');b.computer('Clanker');a.label('Apparent');b.label('Apparent');const resumeClanker=b.delayConfig();
  const credentials=origin=>({origin,token:'private-test-token',expiresAt:Date.now()+3600000});
  await fs.writeFile(a.config,JSON.stringify({t3:{...credentials(a.origin),connections:[credentials(b.origin)]},experiments:{t3DestinationPicker:true}}));
  app=await electron.launch({args:[path.resolve(__dirname,'../host.cjs'),'--no-sandbox','--ozone-platform=x11'],env:{...process.env,APPARENT_CONFIG:a.config,HOME:a.home}});
- let buffer='';app.process().stdout.on('data',chunk=>{buffer+=String(chunk);let end;while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end);buffer=buffer.slice(end+1);try{const m=JSON.parse(line);if(m.ready)void app.evaluate((_e,id)=>process.stdin.emit('data',JSON.stringify({type:'activate',windowId:id})+'\n'),m.windowId).catch(()=>{});}catch{}}});
- let page=await app.firstWindow();const next=process.platform==='linux'?app.waitForEvent('window'):null;
- const frame={type:'state',capture:'names',t3Eligible:true,view:{revision:1,phase:'processing',clock:'00:04',label:'Processing recording…',warning:null,notice:null,reducedMotion:true,draggable:false,inputWaveform:null,noteCount:0,actions:[]}};
+ let buffer='',finished=false;app.process().stdout.on('data',chunk=>{buffer+=String(chunk);let end;while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end);buffer=buffer.slice(end+1);try{const m=JSON.parse(line);if(m.ready)void app.evaluate((_e,id)=>process.stdin.emit('data',JSON.stringify({type:'activate',windowId:id})+'\n'),m.windowId).catch(()=>{});if(m.action==='finish')finished=true;}catch{}}});
+ let page=await app.firstWindow();
+ const frame={type:'state',capture:'names',t3Eligible:true,view:{revision:1,phase:'recording',clock:'00:04',label:'Recording',warning:null,notice:null,reducedMotion:true,draggable:false,inputWaveform:null,noteCount:0,actions:[{id:'finish',label:'Finish',enabled:true,selected:false,primary:true}]}};
  const send=value=>app.evaluate((_e,value)=>process.stdin.emit('data',JSON.stringify(value)+'\n'),value);
- await send(frame);const heartbeat=setInterval(()=>void send(frame).catch(()=>{}),500);t.after(()=>clearInterval(heartbeat));if(next)page=await next;
+ await send(frame);const heartbeat=setInterval(()=>void send(frame).catch(()=>{}),500);t.after(()=>clearInterval(heartbeat));
+ const finish=page.getByRole('button',{name:'Finish',exact:true});
+ await expect(finish).toBeEnabled();
+ await expect.poll(()=>[a.reads,b.reads]).toEqual([1,1]);
+ assert.equal(await page.evaluate(()=>window.apparentPill.destinations()),null);
+ assert.equal(a.calls.length+b.calls.length,0);
+ const next=process.platform==='linux'?app.waitForEvent('window'):null;
+ await finish.click();await expect.poll(()=>finished).toBe(true);
+ frame.view={...frame.view,revision:2,phase:'processing',label:'Processing recording…',actions:[]};
+ await send(frame);if(next)page=await next;
  const trigger=page.getByRole('combobox');await expect(trigger).toBeEnabled();
  const proof=async name=>{await page.evaluate(()=>document.fonts.ready);await expect.poll(()=>page.evaluate(()=>{const r=document.querySelector('main').getBoundingClientRect();return innerWidth===Math.ceil(r.width)&&innerHeight===Math.max(58,Math.ceil(r.height));})).toBe(true);if(process.env.APPARENT_T3_PROOF)await page.screenshot({path:path.join(process.env.APPARENT_T3_PROOF,name+'.png')});};
  await trigger.click();await expect(page.getByRole('option')).toHaveCount(2);
@@ -89,6 +98,7 @@ test('picker uses friendly computer names and keeps the shorter waiting state ac
  await expect(page.getByRole('button',{name:'Cancel send'})).toBeVisible();assert.equal(a.calls.length+b.calls.length,0);
  await page.getByRole('button',{name:'Cancel send'}).click();
  resumeClanker();await expect.poll(()=>page.evaluate(async()=>(await window.apparentPill.destinations()).choices.length)).toBe(4);
+ assert.deepEqual([a.reads,b.reads],[1,1]);
  await trigger.click();await proof('friendly-selecting');await page.getByRole('button',{name:'More destinations',exact:true}).click();await expect(page.getByRole('option',{name:/Chosen thread, Clanker/})).toBeVisible();assert.equal(a.calls.length+b.calls.length,0);await expect(trigger).toBeFocused();await page.keyboard.press('Escape');await trigger.click();await page.getByRole('option',{name:/New thread, Clanker/}).click();await expect(page.locator('.destination-receipt')).toContainText('Preparing recording');await expect(trigger).toContainText('Clanker · Apparent');
  for(const theme of ['light','dark'])for(const width of [1200,320]){await app.evaluate(({screen},width)=>{screen.__pickerDisplay??=screen.getDisplayMatching.bind(screen);screen.getDisplayMatching=b=>({...screen.__pickerDisplay(b),workArea:{x:0,y:0,width,height:800}});},width);++frame.view.revision;await send(frame);await page.evaluate(revision=>window.apparentPill.layout(revision),frame.view.revision);await page.emulateMedia({colorScheme:theme});await proof('friendly-waiting-'+theme+'-'+width);}
  await page.getByRole('button',{name:'Cancel send',exact:true}).focus();await page.keyboard.press('Enter');await expect(trigger).toBeEnabled();assert.equal(a.calls.length,0);assert.equal(b.calls.length,0);
