@@ -9,13 +9,14 @@ import {
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+export type Channel = "main" | "mac-main" | "stable";
 export type Manifest = {
   schemaVersion: 1;
   repository: string;
   sourceSha: string;
   version: string;
   tag: string;
-  channel: "stable" | "main";
+  channel: Channel;
   platform: string;
   architecture: string;
   producer: {
@@ -38,7 +39,25 @@ export function releaseTag(
 ): string {
   if (channel === "stable") return `v${version}`;
   if (channel === "main") return `linux-main-v2-${source}`;
-  throw Error("Unsupported paired release channel");
+  if (channel === "mac-main") return `mac-main-v2-${source}`;
+  throw Error("Unsupported release channel");
+}
+export const linuxTargets = [
+  { platform: "linux", architecture: "x86_64", job: "linux / Linux x86_64" },
+  { platform: "linux", architecture: "aarch64", job: "linux / Linux aarch64" },
+] as const;
+export const macPrimaryJob = "macos / Build signed Mac candidate";
+export const macFallbackJob = "macos / Build signed Mac candidate fallback";
+const macTarget = {
+  platform: "macos",
+  architecture: "aarch64",
+  job: macPrimaryJob,
+} as const;
+
+export function targets(channel: Channel, pairedMain = false) {
+  if (channel === "stable" || (channel === "main" && pairedMain))
+    return [...linuxTargets, macTarget];
+  return channel === "main" ? linuxTargets : [macTarget];
 }
 export async function digest(file: string): Promise<string> {
   const hash = createHash("sha256");
@@ -119,12 +138,23 @@ export async function verify(
     }
   }
 }
-export function paired(manifests: Manifest[]): Manifest {
+export function candidateIdentity(
+  manifests: Manifest[],
+  channel: Channel,
+  pairedMain = false,
+): Manifest {
+  const expected = targets(channel, pairedMain);
   if (
-    manifests.length !== 3 ||
-    new Set(manifests.map((m) => `${m.platform}/${m.architecture}`)).size !== 3
+    manifests.length !== expected.length ||
+    !expected.every(({ platform, architecture }) =>
+      manifests.some(
+        (m) => m.platform === platform && m.architecture === architecture,
+      ),
+    )
   )
-    throw Error("Both Linux architectures and Mac required before publication");
+    throw Error(
+      "Release candidate is missing one or more required platform artifacts",
+    );
   const first = manifests[0];
   for (const m of manifests) {
     identity(m);
@@ -132,12 +162,15 @@ export function paired(manifests: Manifest[]): Manifest {
       m.sourceSha !== first.sourceSha ||
       m.version !== first.version ||
       m.tag !== first.tag ||
-      m.channel !== first.channel ||
+      m.channel !== channel ||
       JSON.stringify(m.producer) !== JSON.stringify(first.producer)
     )
       throw Error("Candidate identity differs across platforms");
   }
   return first;
+}
+export function paired(manifests: Manifest[]): Manifest {
+  return candidateIdentity(manifests, "stable");
 }
 export async function create(
   directory: string,

@@ -1,16 +1,16 @@
 name: Release
-run-name: ${{ inputs.mode }} · source ${{ inputs.source_sha || github.event.workflow_run.head_sha || github.sha }} · candidate run ${{ inputs.candidate_run_id || github.run_id }}
+run-name: ${{ inputs.mode }} · source ${{ inputs.source_sha || github.event.workflow_run.head_sha || github.sha }} · candidate run ${{ inputs.candidate_run_id || github.run_id }} · Main CI ${{ inputs.verification_run_id || 'manual' }}
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Paired Main or stable release, verification, or distribution retry
+        description: Linux Main, on-demand Mac Main, paired Stable, verification, or retry
         type: choice
-        options: [main, stable, verify, distribution]
+        options: [main, mac-main, stable, verify, distribution, paired-main]
         default: main
       source_sha:
-        description: Exact verified main source (blank uses current main or latest eligible stable source)
+        description: Exact verified main source (required for Mac Main)
         type: string
         default: ''
       verification_run_id:
@@ -25,13 +25,18 @@ on:
         description: Exact producer attempt for publication-only retry
         type: string
         default: ''
+      mac_runner:
+        description: First Apple Silicon image for Mac Main or Stable
+        type: choice
+        options: [macos-26, macos-15]
+        default: macos-26
 
 permissions:
   contents: read
   actions: read
 
 concurrency:
-  group: application-${{ inputs.mode == 'verify' && github.ref || (inputs.mode == 'main' && 'main' || 'stable') }}
+  group: application-${{ inputs.mode == 'verify' && github.ref || ((inputs.mode == 'main' || inputs.mode == 'paired-main') && 'main' || (inputs.mode == 'mac-main' && 'mac-main' || 'stable')) }}
   cancel-in-progress: false
 
 jobs:
@@ -44,7 +49,7 @@ jobs:
     with:
       runner: ubuntu-24.04
   admit:
-    if: github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' && inputs.candidate_run_id == '' && (inputs.mode == 'stable' || inputs.mode == 'main')
+    if: github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' && inputs.candidate_run_id == '' && (inputs.mode == 'stable' || inputs.mode == 'main' || inputs.mode == 'mac-main')
     runs-on: ubuntu-24.04
     outputs:
       sha: ${{ steps.candidate.outputs.sha }}
@@ -62,11 +67,12 @@ jobs:
         with:
           node-version: '22.23.0'
       - id: current
-        name: Check whether newer installer inputs superseded this source
+        name: Check for a newer queued Linux Main candidate
         if: inputs.mode == 'main' && inputs.verification_run_id != '' && inputs.source_sha != ''
         env:
+          GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ inputs.source_sha }}
-        run: node --experimental-strip-types enablement/ci/routing/streams.ts capture "$SOURCE_SHA" --report-superseded
+        run: node --experimental-strip-types composition/enablement/release/main/dispatch.ts admission "$SOURCE_SHA"
       - id: candidate
         if: steps.current.outputs.superseded_by == ''
         env:
@@ -77,7 +83,7 @@ jobs:
           GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: node --experimental-strip-types composition/enablement/release/admit.ts "$SOURCE_SHA"
       - name: Check signing configuration before scarce allocation
-        if: steps.candidate.outputs.sha != ''
+        if: steps.candidate.outputs.sha != '' && inputs.mode != 'main'
         env:
           RELEASE_CHANNEL: ${{ inputs.mode }}
           APPLE_ENABLED: ${{ vars.MAC_APPLE_SIGNING_ENABLED }}
@@ -110,7 +116,7 @@ jobs:
           node --experimental-strip-types composition/enablement/release/mac/metadata.ts key "$SPARKLE_PUBLIC"
   linux:
     needs: admit
-    if: needs.admit.outputs.sha != ''
+    if: needs.admit.outputs.sha != '' && (inputs.mode == 'main' || inputs.mode == 'stable')
     permissions:
       contents: write
       actions: read
@@ -123,23 +129,29 @@ jobs:
     secrets: inherit
   macos:
     needs: admit
-    if: needs.admit.outputs.sha != ''
+    if: needs.admit.outputs.sha != '' && (inputs.mode == 'mac-main' || inputs.mode == 'stable')
     permissions:
       contents: write
       actions: read
+      checks: read
     uses: ./.github/workflows/release-mac-preview.yml
     with:
       source_sha: ${{ needs.admit.outputs.sha }}
       version: ${{ needs.admit.outputs.version }}
       tag: ${{ needs.admit.outputs.tag }}
       channel: ${{ inputs.mode }}
+      mac_runner: ${{ inputs.mac_runner }}
     secrets: inherit
   publish:
     needs: [admit, linux, macos]
     if: >-
-      !cancelled() && (inputs.mode == 'stable' || inputs.mode == 'main') && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
-      ((needs.linux.result == 'success' && needs.macos.result == 'success') ||
-      (inputs.candidate_run_id != '' && inputs.source_sha == '' && inputs.candidate_attempt != ''))
+      !cancelled() && (inputs.mode == 'stable' || inputs.mode == 'main' || inputs.mode == 'mac-main' || inputs.mode == 'paired-main') &&
+      github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
+      ((needs.admit.result == 'success' &&
+        (inputs.mode == 'main' && needs.linux.result == 'success' ||
+         inputs.mode == 'mac-main' && needs.macos.outputs.ready == 'true' ||
+         inputs.mode == 'stable' && needs.linux.result == 'success' && needs.macos.outputs.ready == 'true')) ||
+       (inputs.candidate_run_id != '' && inputs.source_sha == '' && inputs.candidate_attempt != ''))
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -221,11 +233,11 @@ jobs:
       - name: Advance fork tap and read back
         run: node --experimental-strip-types composition/enablement/release/mac/publication/cli.ts cask-publish "$GITHUB_WORKSPACE/homebrew-publish" "$RUNNER_TEMP/apparent-stable.rb"
   summary:
-    name: Paired release outcome
+    name: Desktop release outcome
     needs: [admit, linux, macos, publish, feed, cask]
     if: >-
       always() && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
-      (inputs.mode == 'main' || inputs.mode == 'stable')
+      (inputs.mode == 'main' || inputs.mode == 'mac-main' || inputs.mode == 'stable' || inputs.mode == 'paired-main')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:

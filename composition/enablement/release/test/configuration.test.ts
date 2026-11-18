@@ -9,7 +9,9 @@ test("distribution recovery cannot publish while stable publication retains prod
     job: string,
     mode: string,
     retry: boolean,
-    result: string,
+    linux: string,
+    mac: boolean,
+    admit = "success",
     cancelled = false,
   ) => {
     const expression = workflow
@@ -32,9 +34,10 @@ test("distribution recovery cannot publish while stable publication retains prod
           candidate_attempt: retry ? "1" : "",
         },
         {
-          linux: { result },
-          macos: { result },
-          publish: { result },
+          admit: { result: admit },
+          linux: { result: linux },
+          macos: { outputs: { ready: mac ? "true" : "" } },
+          publish: { result: linux },
         },
         { repository: "tryapparent/apparent", ref: "refs/heads/main" },
         () => cancelled,
@@ -43,21 +46,43 @@ test("distribution recovery cannot publish while stable publication retains prod
   };
   for (const result of ["success", "failure", "skipped", "cancelled"])
     for (const retry of [false, true]) {
-      assert.equal(enabled("publish", "distribution", retry, result), false);
-      assert.equal(enabled("publish", "verify", retry, result), false);
-      assert.equal(
-        enabled("publish", "stable", retry, result),
-        retry || result === "success",
-      );
-      assert.equal(enabled("publish", "stable", retry, result, true), false);
-      assert.equal(
-        enabled("publish", "main", retry, result),
-        retry || result === "success",
-      );
-      assert.equal(enabled("feed", "main", retry, result), false);
-      assert.equal(enabled("cask", "main", retry, result), false);
+      for (const mac of [false, true]) {
+        assert.equal(
+          enabled("publish", "distribution", retry, result, mac),
+          false,
+        );
+        assert.equal(enabled("publish", "verify", retry, result, mac), false);
+        assert.equal(
+          enabled("publish", "stable", retry, result, mac),
+          retry || (mac && result === "success"),
+        );
+        assert.equal(
+          enabled("publish", "stable", retry, result, mac, "success", true),
+          false,
+        );
+        assert.equal(
+          enabled("publish", "main", retry, result, mac),
+          retry || result === "success",
+        );
+        assert.equal(
+          enabled("publish", "mac-main", retry, result, mac),
+          retry || mac,
+        );
+        assert.equal(
+          enabled("publish", "paired-main", retry, result, mac),
+          retry,
+        );
+        assert.equal(
+          enabled("publish", "stable", retry, result, mac, "failure"),
+          retry,
+        );
+      }
       for (const job of ["feed", "cask"])
-        assert.equal(enabled(job, "distribution", retry, result), retry);
+        for (const mode of ["main", "mac-main", "paired-main", "distribution"])
+          assert.equal(
+            enabled(job, mode, retry, result, true),
+            mode === "distribution" && retry,
+          );
     }
 });
 
@@ -93,7 +118,7 @@ test("actual Linux readiness command rejects invalid signing configuration befor
       env: { ...process.env, ...configured, ...patch },
     });
   assert.equal(run({}).status, 0);
-  assert.equal(run({ RELEASE_CHANNEL: "main", TAP_KEY: "" }).status, 0);
+  assert.equal(run({ RELEASE_CHANNEL: "mac-main", TAP_KEY: "" }).status, 0);
   for (const patch of [
     { APPLE_ENABLED: "false" },
     { APPLE_TEAM: "wrong" },
@@ -107,14 +132,25 @@ test("actual Linux readiness command rejects invalid signing configuration befor
     assert.notEqual(run(patch).status, 0);
 });
 
-test("Main and stable run the same parallel pair and publish only after both platforms", () => {
+test("each release channel admits only its platform jobs and Stable stays paired", () => {
   const workflow = readFileSync(".github/workflows/verification.yml", "utf8");
   for (const platform of ["linux", "macos"]) {
     const job = workflow.split(`\n  ${platform}:\n`)[1].split(/\n  [a-z]+:/)[0];
     assert.match(job, /^    needs: admit$/m);
-    assert.ok(job.includes("inputs.mode"));
+    assert.ok(
+      job.includes(
+        platform === "linux"
+          ? "(inputs.mode == 'main' || inputs.mode == 'stable')"
+          : "(inputs.mode == 'mac-main' || inputs.mode == 'stable')",
+      ),
+    );
   }
   assert.match(workflow, /publish:\n    needs: \[admit, linux, macos\]/);
   assert.match(workflow, /name: Release\n/);
   assert.match(workflow, /default: main/);
+  assert.match(
+    workflow,
+    /if: steps.candidate.outputs.sha != '' && inputs.mode != 'main'/,
+  );
+  assert.match(workflow, /cancel-in-progress: false/);
 });

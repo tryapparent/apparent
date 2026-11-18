@@ -20,6 +20,7 @@ import { dirname, join } from "node:path";
 import { stagePortable } from "./frontend.ts";
 import { distribution } from "./distribution.ts";
 import { test } from "node:test";
+import { alternateRunner, capacityCancelled, queueReport } from "./runner.ts";
 import { validate } from "./inputs.ts";
 
 const env = {
@@ -82,13 +83,16 @@ test("checks Sparkle public-key bytes and rejects noncanonical encoding", () => 
       ),
     );
 });
-test("reusable workflow has one Mac allocation after portable preparation, no publishing authority", () => {
+test("reusable Mac workflow shares native gates across the primary and capacity fallback", () => {
   const workflow = readFileSync(
     ".github/workflows/release-mac-preview.yml",
     "utf8",
   );
   const stable = workflow.slice(workflow.indexOf("  frontend:\n"));
-  assert.equal((stable.match(/runs-on: macos-/g) ?? []).length, 1);
+  assert.match(stable, /runs-on: \$\{\{ inputs.mac_runner \}\}/);
+  assert.match(stable, /runs-on: \$\{\{ needs.capacity.outputs.runner \}\}/);
+  assert.match(stable, /steps: &candidate-steps/);
+  assert.match(stable, /steps: \*candidate-steps/);
   assert.match(
     workflow,
     /candidate:\n    name: Build signed Mac candidate\n    needs: frontend/,
@@ -110,7 +114,7 @@ test("reusable workflow has one Mac allocation after portable preparation, no pu
   assert.match(workflow, /if: inputs.channel == '' && github.repository/);
   assert.match(
     stable,
-    /if: \(inputs.channel == 'stable' \|\| inputs.channel == 'main'\) && github.repository/,
+    /if: \(inputs.channel == 'stable' \|\| inputs.channel == 'mac-main'\) && github.repository/,
   );
   assert(
     workflow.indexOf("Validate candidate installation") <
@@ -119,6 +123,57 @@ test("reusable workflow has one Mac allocation after portable preparation, no pu
   assert(
     workflow.indexOf("Sign Sparkle bytes") <
       workflow.indexOf("name: stable-macos-aarch64"),
+  );
+});
+test("the alternate Apple Silicon image is used only for verified unassigned jobs", () => {
+  const job = {
+    name: "macos / Build signed Mac candidate",
+    id: 123,
+    run_attempt: 1,
+    status: "completed",
+    conclusion: "cancelled",
+    runner_id: 0,
+    labels: ["macos-26"],
+    steps: [],
+  };
+  const annotations = [
+    {
+      message:
+        "The job was not acquired by Runner of type hosted even after multiple attempts",
+    },
+  ];
+  assert.equal(alternateRunner("macos-26"), "macos-15");
+  assert.equal(alternateRunner("macos-15"), "macos-26");
+  assert.throws(() => alternateRunner("macos-26-intel"));
+  assert.equal(capacityCancelled(job, "macos-26", annotations), true);
+  assert.equal(capacityCancelled(job, "macos-26", []), false);
+  assert.equal(capacityCancelled(job, "macos-15", annotations), false);
+  for (const patch of [
+    { runner_id: 456 },
+    { runner_id: null },
+    { steps: [{ name: "Set up job" }] },
+    { status: "queued" },
+    { conclusion: "failure" },
+    { conclusion: "success" },
+  ])
+    assert.equal(
+      capacityCancelled({ ...job, ...patch }, "macos-26", annotations),
+      false,
+    );
+  const created_at = "2026-11-18T14:24:31Z";
+  assert.equal(
+    queueReport([
+      { ...job, created_at, completed_at: "2026-11-18T14:39:32Z" },
+      {
+        ...job,
+        name: "macos / Build signed Mac candidate fallback",
+        labels: ["macos-15"],
+        created_at,
+        runner_id: 456,
+        steps: [{ name: "Set up job", started_at: "2026-11-18T14:25:14Z" }],
+      },
+    ]),
+    "- macos-26: 901s before cancellation without a runner\n- macos-15: 43s to runner setup",
   );
 });
 test("control checkout precedes nested source checkout on both candidate runners", () => {

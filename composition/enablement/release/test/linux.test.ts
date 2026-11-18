@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { cargoVersion } from "../version.ts";
-import { dispatchMain } from "../main/dispatch.ts";
+import { competingMain, dispatchMain } from "../main/dispatch.ts";
+import { repository, workflow } from "../manifest.ts";
 
-test("Main CI dispatches a paired release with exact source and verification identity", () => {
+test("Main CI dispatches Linux Main with exact source and verification identity", () => {
   const env = {
     GITHUB_REPOSITORY: "tryapparent/apparent",
     GITHUB_REF: "refs/heads/main",
@@ -14,9 +15,13 @@ test("Main CI dispatches a paired release with exact source and verification ide
     GITHUB_RUN_ID: "123",
   };
   const sent: string[] = [];
-  dispatchMain(env, (body) => {
-    sent.push(body);
-  });
+  dispatchMain(
+    env,
+    (body) => {
+      sent.push(body);
+    },
+    () => [],
+  );
   assert.deepEqual(
     sent.map((body) => JSON.parse(body)),
     [
@@ -40,18 +45,74 @@ test("Main CI dispatches a paired release with exact source and verification ide
   ])
     assert.throws(
       () =>
-        dispatchMain({ ...env, ...patch }, (body) => {
-          sent.push(body);
-        }),
+        dispatchMain(
+          { ...env, ...patch },
+          (body) => {
+            sent.push(body);
+          },
+          () => [],
+        ),
       /canonical main/,
     );
   assert.equal(sent.length, 1);
   assert.throws(
     () =>
-      dispatchMain(env, () => {
-        throw Error("dispatch rejected");
-      }),
+      dispatchMain(
+        env,
+        () => {
+          throw Error("dispatch rejected");
+        },
+        () => [],
+      ),
     /dispatch rejected/,
+  );
+});
+
+test("Main coalesces duplicate or older requests and ignores other channels and completed runs", () => {
+  const source = "1".repeat(40);
+  const newer = "2".repeat(40);
+  const run = {
+    id: 123,
+    repository: { full_name: repository },
+    head_repository: { full_name: repository },
+    head_branch: "main",
+    head_sha: newer,
+    path: workflow,
+    actor: { login: "github-actions[bot]" },
+    event: "workflow_dispatch",
+    run_attempt: 1,
+    status: "pending",
+    conclusion: null,
+    display_title: `main · source ${newer} · candidate run 123 · Main CI 456`,
+  };
+  const compare = (current: string, queued: string) =>
+    current === source && queued === newer;
+  assert.equal(competingMain(newer, [run], undefined, compare), newer);
+  assert.equal(competingMain(source, [run], undefined, compare), newer);
+  assert.equal(competingMain(source, [run], "123", compare), undefined);
+  assert.equal(competingMain(newer, [run], "999", compare), undefined);
+  assert.equal(
+    competingMain(
+      source,
+      [
+        { ...run, status: "completed" },
+        { ...run, actor: { login: "human" } },
+        {
+          ...run,
+          display_title: run.display_title.replace("main ·", "stable ·"),
+        },
+        {
+          ...run,
+          display_title: run.display_title.replace(
+            "Main CI 456",
+            "Main CI manual",
+          ),
+        },
+      ],
+      undefined,
+      compare,
+    ),
+    undefined,
   );
 });
 

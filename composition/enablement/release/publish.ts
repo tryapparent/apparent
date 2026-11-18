@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 import { restore } from "./candidate.ts";
 import { api, gh, optional, pages } from "./github.ts";
 import type { Manifest } from "./manifest.ts";
-import { paired, repository } from "./manifest.ts";
+import { candidateIdentity, repository } from "./manifest.ts";
 
 function isAncestor(ancestor: string, descendant: string): boolean {
   const result = spawnSync("git", [
@@ -64,11 +64,20 @@ export async function publish(
   attempt: number,
   directory: string,
 ): Promise<void> {
-  const manifests = await restore(runId, attempt, directory);
-  const candidate = paired(manifests);
-  const main = candidate.channel === "main";
-  if (candidate.channel !== (process.env.RELEASE_CHANNEL || "stable"))
-    throw Error("Candidate belongs to a different release channel");
+  const mode = process.env.RELEASE_CHANNEL || "stable";
+  const pairedMain = mode === "paired-main";
+  const channel = pairedMain ? "main" : mode;
+  if (channel !== "main" && channel !== "mac-main" && channel !== "stable")
+    throw Error("Invalid publication channel");
+  const manifests = await restore(
+    runId,
+    attempt,
+    directory,
+    channel,
+    pairedMain,
+  );
+  const candidate = candidateIdentity(manifests, channel, pairedMain);
+  const prerelease = channel !== "stable";
   recordOutput(`source_sha=${candidate.sourceSha}\n`);
   execFileSync(
     "python3",
@@ -94,7 +103,7 @@ export async function publish(
   let release = releases.find((r) => r.tag_name === candidate.tag);
   if (release && !existingTag)
     throw Error("Existing release has no source tag");
-  if (main) {
+  if (channel === "main") {
     for (const current of releases) {
       const prior = /^linux-main-v2-([a-f0-9]{40})$/.exec(
         current.tag_name,
@@ -114,7 +123,7 @@ export async function publish(
         throw Error(`Newer Main release already public: ${current.tag_name}`);
       }
     }
-  } else {
+  } else if (channel === "stable") {
     for (const current of releases.filter(
       (r) => !r.draft && !r.prerelease && /^v\d+\.\d+\.\d+$/.test(r.tag_name),
     )) {
@@ -136,14 +145,19 @@ export async function publish(
       ref: `refs/tags/${candidate.tag}`,
       sha: candidate.sourceSha,
     });
-  const notes = main
-    ? `Paired Main candidate ${candidate.sourceSha}\nProducer ${repository}/actions/runs/${runId}/attempts/${attempt}\n\n${JSON.stringify(manifests)}`
+  const previewName = pairedMain
+    ? "Paired Main"
+    : channel === "main"
+      ? "Linux Main"
+      : "Mac Main";
+  const notes = prerelease
+    ? `${previewName} candidate ${candidate.sourceSha}\nProducer ${repository}/actions/runs/${runId}/attempts/${attempt}\n\n${JSON.stringify(manifests)}`
     : `Paired stable candidate ${candidate.sourceSha}\nProducer ${repository}/actions/runs/${runId}/attempts/${attempt}\nChannel stable; fork Mac Preview identity and preview Sparkle feed retained.\n\n${JSON.stringify(manifests)}`;
   if (release) {
     if (
       release.target_commitish !== candidate.sourceSha ||
       release.body !== notes ||
-      release.prerelease !== main
+      release.prerelease !== prerelease
     )
       throw Error("Release belongs to another candidate");
     assertAssets(release, manifests, !release.draft);
@@ -155,12 +169,12 @@ export async function publish(
     release = api<Release>("releases", "POST", {
       tag_name: candidate.tag,
       target_commitish: candidate.sourceSha,
-      name: main
-        ? `Apparent Main ${candidate.version} (${candidate.sourceSha.slice(0, 12)})`
+      name: prerelease
+        ? `Apparent ${channel === "mac-main" ? "Mac Main" : "Main"} ${candidate.version} (${candidate.sourceSha.slice(0, 12)})`
         : `Apparent ${candidate.version}`,
       body: notes,
       draft: true,
-      prerelease: main,
+      prerelease,
       make_latest: "false",
     });
   }
@@ -186,10 +200,10 @@ export async function publish(
     throw Error("Tag missing or moved during staging");
   api(`releases/${release.id}`, "PATCH", {
     draft: false,
-    make_latest: main ? "false" : "true",
+    make_latest: prerelease ? "false" : "true",
   });
   const publicRelease = api<Release>(`releases/${release.id}`);
-  if (publicRelease.draft || publicRelease.prerelease !== main)
+  if (publicRelease.draft || publicRelease.prerelease !== prerelease)
     throw Error("Release visibility or channel mismatch");
   assertAssets(publicRelease, manifests, true);
   const finalTag = api<Ref>(`git/ref/tags/${candidate.tag}`);

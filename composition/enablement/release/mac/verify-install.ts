@@ -27,7 +27,7 @@ const tap = output("brew", ["--repository", "tryapparent/tap"]);
 const caskPath = join(tap, "Casks/apparent.rb");
 const previous = existsSync(caskPath) ? readFileSync(caskPath, "utf8") : null;
 const candidate = homebrewCask(version, checksum, "v" + version);
-const upgrade = process.env.RELEASE_CHANNEL !== "main" && previous !== null;
+const upgrade = process.env.RELEASE_CHANNEL === "stable" && previous !== null;
 if (upgrade) assertCaskUpdate(previous, candidate);
 const token = "tryapparent/tap/apparent";
 try {

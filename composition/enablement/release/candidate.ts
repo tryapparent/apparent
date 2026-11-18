@@ -3,12 +3,15 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { api, download, pages } from "./github.ts";
-import type { Manifest } from "./manifest.ts";
+import type { Channel, Manifest } from "./manifest.ts";
 import {
+  candidateIdentity,
   digest,
-  paired,
+  macFallbackJob,
+  macPrimaryJob,
   repository,
   sha,
+  targets,
   verify,
   workflow,
 } from "./manifest.ts";
@@ -18,6 +21,8 @@ export function producer(
   jobs: Job[],
   runId: string,
   attempt: number,
+  channel: Channel = "stable",
+  pairedMain = false,
 ): void {
   if (
     String(run.id) !== runId ||
@@ -30,18 +35,18 @@ export function producer(
     run.run_attempt < attempt
   )
     throw Error("Untrusted candidate producer");
-  for (const name of [
-    "linux / Linux x86_64",
-    "linux / Linux aarch64",
-    "macos / Build signed Mac candidate",
-  ]) {
-    const job = jobs.filter(
-      (job) => job.name === name && job.run_attempt === attempt,
+  for (const { job: name } of targets(channel, pairedMain)) {
+    const matching = jobs.filter(
+      (job) =>
+        (job.name === name ||
+          (name === macPrimaryJob && job.name === macFallbackJob)) &&
+        job.run_attempt === attempt,
     );
     if (
-      job.length !== 1 ||
-      job[0].conclusion !== "success" ||
-      job[0].status !== "completed"
+      new Set(matching.map((job) => job.name)).size !== matching.length ||
+      matching.filter(
+        (job) => job.conclusion === "success" && job.status === "completed",
+      ).length !== 1
     )
       throw Error(`Producer job not successful: ${name}`);
   }
@@ -50,6 +55,8 @@ export async function restore(
   runId: string,
   attempt: number,
   directory: string,
+  channel: Channel = "stable",
+  pairedMain = false,
 ): Promise<Manifest[]> {
   if (!/^\d+$/.test(runId) || !Number.isSafeInteger(attempt) || attempt < 1)
     throw Error("Exact producer run/attempt required");
@@ -59,6 +66,8 @@ export async function restore(
     pages<Job>(`actions/runs/${runId}/attempts/${attempt}/jobs`, "jobs"),
     runId,
     attempt,
+    channel,
+    pairedMain,
   );
   const artifacts = pages<Artifact>(
     `actions/runs/${runId}/artifacts`,
@@ -66,11 +75,7 @@ export async function restore(
   );
   const manifests: Manifest[] = [];
   mkdirSync(directory, { recursive: true });
-  for (const [platform, architecture] of [
-    ["linux", "x86_64"],
-    ["linux", "aarch64"],
-    ["macos", "aarch64"],
-  ]) {
+  for (const { platform, architecture } of targets(channel, pairedMain)) {
     const name = `stable-${platform}-${architecture}-${attempt}`;
     const matches = artifacts.filter((a) => a.name === name);
     if (
@@ -120,6 +125,6 @@ export async function restore(
       throw Error("Unmanifested candidate files");
     manifests.push(manifest);
   }
-  paired(manifests);
+  candidateIdentity(manifests, channel, pairedMain);
   return manifests;
 }

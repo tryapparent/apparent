@@ -1,10 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
 import { releaseSummary } from "../report/summary.ts";
 
 const source = "1".repeat(40);
@@ -24,70 +19,16 @@ const pending = () => ({
 const noNetwork: typeof fetch = async () =>
   assert.fail("No download should be attempted");
 
-test("a superseded source is distinct from an unsuccessful freshness check", async (t) => {
-  const directory = mkdtempSync(join(tmpdir(), "apparent-dev-summary-"));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const git = (...args: string[]) =>
-    execFileSync(
-      "git",
-      [
-        "-c",
-        "user.name=Fixture",
-        "-c",
-        "user.email=fixture@example.invalid",
-        "-c",
-        "commit.gpgsign=false",
-        ...args,
-      ],
-      { cwd: directory, encoding: "utf8" },
-    ).trim();
-  git("init", "-q");
-  writeFileSync(join(directory, "main.rs"), "fn main() {}\n");
-  git("add", "main.rs");
-  git("commit", "-qm", "source");
-  const previous = git("rev-parse", "HEAD");
-  writeFileSync(join(directory, "main.rs"), 'fn main() { println!("new"); }\n');
-  git("commit", "-qam", "installer input change");
-  const latest = git("rev-parse", "HEAD");
-  const output = join(directory, "outputs");
-  writeFileSync(output, "");
-  git("update-ref", "refs/remotes/origin/main", latest);
-  const check = (candidate: string, ...options: string[]) =>
-    spawnSync(
-      process.execPath,
-      [
-        "--experimental-strip-types",
-        fileURLToPath(
-          new URL(
-            "../../../../enablement/ci/routing/streams.ts",
-            import.meta.url,
-          ),
-        ),
-        "capture",
-        candidate,
-        ...options,
-      ],
-      { cwd: directory, env: { ...process.env, GITHUB_OUTPUT: output } },
-    );
-  const report = "--report-superseded";
-  assert.equal(check(latest, report).status, 0);
-  assert.equal(readFileSync(output, "utf8"), "");
-  assert.notEqual(check("invalid", report).status, 0);
-  assert.notEqual(check(source, report).status, 0);
-  assert.equal(check(previous).status, 1);
-  assert.equal(readFileSync(output, "utf8"), "");
-  assert.equal(check(previous, report).status, 0);
-  assert.equal(readFileSync(output, "utf8"), `superseded_by=${latest}\n`);
-
+test("a superseded source is distinct from an unsuccessful admission", async () => {
   const jobs = pending();
-  jobs.admit = job("success", { superseded_by: latest });
-  const env = { REQUESTED_SOURCE: previous, RELEASE_CHANNEL: "main" };
+  jobs.admit = job("success", { superseded_by: newer });
+  const env = { REQUESTED_SOURCE: source, RELEASE_CHANNEL: "main" };
   const superseded = await releaseSummary(jobs, env, noNetwork);
   assert.match(superseded, /Superseded/);
-  assert.ok(superseded.includes(previous) && superseded.includes(latest));
+  assert.ok(superseded.includes(source) && superseded.includes(newer));
   jobs.admit.result = "failure";
   const failed = await releaseSummary(jobs, env, noNetwork);
-  assert.match(failed, /Failed.*[\s\S]*Inspect the admit job/);
+  assert.match(failed, /Failed.*[\s\S]*Inspect admission/);
   assert.doesNotMatch(failed, /Superseded|releases\/download/);
 });
 
