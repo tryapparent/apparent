@@ -1,5 +1,6 @@
 // Aggregate-only activity; no individual identifiers leave this service.
 import type {Env} from '../types.ts';
+import preference from '#bend/activity-preference';
 import {hex,stmt} from '../common.ts';
 export type Product='desktop'|'connect';
 const eligible=`a.beta='active' AND lower(a.email) NOT LIKE '%.invalid'
@@ -26,7 +27,7 @@ export async function admitProductActivity(env:Env,account:string,product:Produc
  }catch{/* Missing schema or metric failure never blocks primary work. */}
 }
 export function queueProductActivity(env:Env,context:ExecutionContext|undefined,request:Request,account:string,product:Product) {
- if(!context||request.headers.get('Sec-GPC')==='1'||request.headers.get('DNT')==='1')return;
+ if(!context||!preference.may_queue(request.headers.get('Sec-GPC')==='1',request.headers.get('DNT')==='1'))return;
  try{context.waitUntil(admitProductActivity(env,account,product));}catch{/* fail open */}
 }
 const refreshTotals=(env:Env)=>stmt(env,`UPDATE product_activity_totals SET day_utc=date('now'),

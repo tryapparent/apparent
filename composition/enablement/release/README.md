@@ -27,3 +27,11 @@ Linux Stable discovers non-prerelease semver tags. Older Linux-only Main release
 Run `node --experimental-strip-types --test composition/enablement/release/*.test.ts composition/enablement/release/test/*.test.ts`. Tests exercise actual ZIP restore commands with authenticated-response fixtures, producer/job/attempt trust, final byte corruption, incomplete pairs and immutable release asset rules. They do not prove hosted signing, installation, publication permissions or live update behavior. Activation and native hosted proof remain release-owner actions.
 
 The existing manual Mac preview workflow remains a recovery path. The frozen packaging donors remain authoritative for their existing adapters and platform consumers.
+
+## Amazon Linux CLI
+
+Linux Main and Stable also publish an `Apparent-CLI-VERSION-amazon-linux-2023-x86_64.zip` and checksum from the x86-64 candidate. It builds the same `apparent` command against glibc 2.34 and inspects an annotated bundle from the candidate AppImage in a clean Amazon Linux 2023 container before sealing. The ZIP is for headless reading. Use the AppImage for desktop capture and bundled media plugins. Sources predating the CLI builder retain their historical payloads.
+
+Download the ZIP and its `.sha256` from the same release. Run `sha256sum -c <archive>.sha256`, then `unzip <archive>` in a fresh directory. Run `./apparent-cli/apparent inspect ./capture.apparent`, and keep the binary beside its `lib/` directory. Fetching a hosted capture still requires outbound HTTPS and read approval.
+
+On an x86-64 Linux machine with Docker, reproduce the build from the repository root with `node --experimental-strip-types composition/enablement/release/amazon-linux-cli/build.ts /path/to/output /path/to/producer.AppImage`.
