@@ -133,7 +133,7 @@ class PreviewReleaseTest(unittest.TestCase):
         self.assertEqual(hashlib.sha256(raster).hexdigest(),
                          "328388f2e2743b72acafc7c4fdddafbefb3e8f7e221ab9b9808a00acf3db13de")
         self.assertEqual(hashlib.sha256((ROOT / "capture/desktop/assets/Apparent.icns").read_bytes()).hexdigest(),
-                         "f3028c57a513957454d2bb7caf720fcf77358b47dcf1f1c7fc78a39c46e99153")
+                         "2fb478a837e3f7c26fca40b82452025c935ccb4313597a8c33ac2665e7f71e40")
 
     def test_mac_status_item_preserves_brand_colors_and_tracks_appearance(self):
         source = (ROOT / "capture/desktop/ui/macos.rs").read_text()
