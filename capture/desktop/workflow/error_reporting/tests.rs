@@ -24,7 +24,7 @@ fn updater_target_facts_cross_consented_queue_and_http_without_private_paths() {
     let reporter = Reporter::start(scratch.config(), "phc_synthetic".into(), endpoint).unwrap();
     reporter.enqueue(|consent| Report::update(&error, Trigger::Automatic, std::panic::Location::caller(), consent));
     let payload = server.join().unwrap();
-    assert_eq!(payload["properties"]["diagnostics_schema_version"], 5);
+    assert_eq!(payload["properties"]["diagnostics_schema_version"], 6);
     assert_eq!(payload["properties"]["updater"]["trigger"], "automatic");
     let facts = &payload["properties"]["updater"]["target"];
     assert_eq!(facts["step"], "home_boundary");
@@ -56,7 +56,7 @@ fn updater_report_crosses_real_queue_and_http_transport_without_private_error_da
     assert!(format!("{error:#}").contains("private-path-and-token-canary"));
     reporter.enqueue(|consent| Report::update(&error, Trigger::User, std::panic::Location::caller(), consent));
     let payload = server.join().unwrap();
-    assert_eq!(payload["properties"]["diagnostics_schema_version"], 5);
+    assert_eq!(payload["properties"]["diagnostics_schema_version"], 6);
     assert_eq!(payload["properties"]["updater"]["io_kind"], "storage_full");
     assert_eq!(payload["properties"]["updater"]["os_error_code"], libc::ENOSPC);
     assert_eq!(payload["properties"]["$exception_list"][0]["type"], "update_marker_write_failed");
@@ -111,7 +111,7 @@ fn finalization_audio_report_identifies_expired_writer_history_and_retains_saved
     assert_eq!(std::fs::read(scratch.0.join("audio.wav")).unwrap(), saved);
     assert!(Lease::acquire(&scratch.0).is_err(), "failed Stop must retain narration ownership");
     let payload = Report::finalization(&error, std::panic::Location::caller(), Consent { generation: "private-audio-consent".into() }).payload("phc_synthetic").unwrap();
-    assert_eq!(payload["properties"]["diagnostics_schema_version"], 5);
+    assert_eq!(payload["properties"]["diagnostics_schema_version"], 6);
     let stages = payload["properties"]["finalization"]["stages"].as_array().unwrap();
     assert_eq!(stages.last().unwrap()["stage"], "audio_writer_history");
     assert!(payload["properties"]["$exception_fingerprint"].as_str().unwrap().contains("AudioWriterHistory"));

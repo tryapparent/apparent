@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use crate::capture::desktop::workflow::error_reporting::updates::{self, Stage};
 use update::UpdateProgress;
 
-pub(super) const CURL_HTTP_STATUS: &str = "%{stderr}\nAPPARENT_RATE_REMAINING:%header{x-ratelimit-remaining}\nAPPARENT_RATE_LIMIT:%header{x-ratelimit-limit}\nAPPARENT_RATE_RESET:%header{x-ratelimit-reset}\nAPPARENT_RETRY_AFTER:%header{retry-after}\nAPPARENT_HTTP_STATUS:%{http_code}\n";
+pub(super) const CURL_HTTP_STATUS: &str = "%{stderr}\nAPPARENT_RATE_REMAINING:%header{x-ratelimit-remaining}\nAPPARENT_RATE_LIMIT:%header{x-ratelimit-limit}\nAPPARENT_RATE_RESET:%header{x-ratelimit-reset}\nAPPARENT_RETRY_AFTER:%header{retry-after}\nAPPARENT_TRANSFER_SECONDS:%{time_total}\nAPPARENT_DOWNLOADED_BYTES:%{size_download}\nAPPARENT_HTTP_STATUS:%{http_code}\n";
 
 pub(super) fn get(url: &str, download: Option<(&Path, u64, &dyn Fn(UpdateProgress))>) -> Result<Vec<u8>> {
     if !url.starts_with("https://") {
@@ -58,7 +58,15 @@ pub(super) fn download_output(result: std::process::Output) -> Result<Vec<u8>> {
         let numeric = |prefix: &str| stderr.lines().rev().find_map(|line| line.strip_prefix(prefix))
             .filter(|value| !value.is_empty() && value.len() <= 10 && value.bytes().all(|b| b.is_ascii_digit()))
             .and_then(|value| value.parse::<u32>().ok());
-        let http = updates::Http {status: http_status, rate_limit_remaining: numeric("APPARENT_RATE_REMAINING:"),
+        let transfer_ms = stderr.lines().rev().find_map(|line| line.strip_prefix("APPARENT_TRANSFER_SECONDS:"))
+            .and_then(|raw| raw.parse::<f64>().ok())
+            .filter(|seconds| (0.0..=600.0).contains(seconds))
+            .map(|seconds| (seconds * 1000.0).round() as u32);
+        let http = updates::Http {
+            status: http_status,
+            transfer_ms,
+            downloaded_bytes: numeric("APPARENT_DOWNLOADED_BYTES:").filter(|bytes| *bytes <= 1_073_741_824),
+            rate_limit_remaining: numeric("APPARENT_RATE_REMAINING:"),
             rate_limit_limit: numeric("APPARENT_RATE_LIMIT:"),
             rate_limit_reset_after_seconds: numeric("APPARENT_RATE_RESET:").and_then(|reset| {
                 reset_after_seconds(reset, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_secs())

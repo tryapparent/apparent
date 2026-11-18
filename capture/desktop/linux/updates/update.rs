@@ -828,19 +828,17 @@ mod tests {
                 };
                 write!(stream, "HTTP/1.1 {status} Fixture\r\nX-RateLimit-Remaining: {remaining}\r\nX-RateLimit-Limit: {limit}\r\nX-RateLimit-Reset: {reset}\r\nRetry-After: {retry}\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]").unwrap();
             });
-            // Real curl supplies the exit status and write-out fields. No
-            // production endpoint override, PostHog ingestion or injected event.
             let output = Command::new("curl").args(["--silent", "--show-error", "--fail", "--noproxy", "*", "--max-time", "3", "--write-out", CURL_HTTP_STATUS, "--url", &endpoint]).output().unwrap();
             server.join().unwrap();
             if status == 200 {
-                assert_eq!(download_output(output).unwrap(), b"[]", "write-out diagnostics must never corrupt release JSON");
+                assert_eq!(download_output(output).unwrap(), b"[]");
                 continue;
             }
             let output = std::cell::RefCell::new(Some(output));
             let error = release_history(&|_| download_output(output.borrow_mut().take().unwrap())).err().unwrap()
                 .context(format!("private-local-context {endpoint}/?token=private-token-canary"));
             assert_eq!(updates::is_rate_limited(&error), matches!(status, 403 | 429));
-            if status == 503 { assert!(format!("{error:#}").contains("private-header-canary"), "redaction canary must reach the raw error"); }
+            if status == 503 { assert!(format!("{error:#}").contains("private-header-canary")); }
             let installed = ("main".into(), "a".repeat(40));
             let mut attempt = updates::Attempt::default();
             attempt.selected("main", Some(&installed));
@@ -858,6 +856,8 @@ mod tests {
             }
             assert_eq!(diagnostics["process"], "curl");
             assert_eq!(diagnostics["exit_code"], 22);
+            assert_eq!(diagnostics["downloaded_bytes"], 0);
+            assert!(diagnostics["transfer_ms"].as_u64().unwrap() <= 600_000);
             assert_eq!(diagnostics["trigger"], "automatic");
             assert_eq!(diagnostics["attempt"]["selected_channel"], "main");
             assert_eq!(diagnostics["attempt"]["installed_identity_kind"], "revision");
@@ -872,7 +872,7 @@ mod tests {
             assert_eq!(frame["filename"], "capture/desktop/linux/updates/update.rs");
             assert!(frame["lineno"].as_u64().unwrap() > 0);
             for private in ["private-", &endpoint, &"a".repeat(40)] {
-                assert!(!payload.to_string().contains(private), "leaked {private}");
+                assert!(!payload.to_string().contains(private));
             }
             fingerprints.push(payload["properties"]["$exception_fingerprint"].clone());
         }
