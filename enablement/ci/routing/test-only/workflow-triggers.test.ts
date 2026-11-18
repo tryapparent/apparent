@@ -86,11 +86,11 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
       (step) => step.run === "node " + command + " --proof",
     ),
   );
-  const check = (path: string, local = true) =>
+  const check = (path: string, local = true, entry = command) =>
     localCommands(selectedOwners([path]), "base", "head", "linux", false, {
       paths: [path],
       local,
-    }).some(({ argv }) => argv.includes(command));
+    }).some(({ argv }) => argv.includes(entry));
   for (const path of [
     "record/completion/src/copy-admission.bend",
     "record/completion/src/policy.ts",
@@ -110,7 +110,9 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
     assert.equal(route.installer, true, path);
     assert.deepEqual(
       route.selected,
-      ["capture", "desktop", "onboarding"],
+      path.startsWith("shared/")
+        ? ["capture", "desktop", "service", "onboarding"]
+        : ["capture", "desktop", "onboarding"],
       path,
     );
   }
@@ -120,9 +122,25 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
   );
   assert.equal(check("connect/service/src/example.ts"), false);
   assert.equal(check(".github/workflows/stream-agent.yml"), false);
+  const connect = "connect/enablement/ci/bend/check.ts";
+  for (const path of [
+    "connect/service/src/reporting/activity-preference.bend",
+    "connect/service/src/reporting/product-activity.ts",
+    "connect/tooling/hosting/package.json",
+    "connect/enablement/ci/bend/modules.json",
+    "shared/enablement/bend/toolchain.ts",
+  ])
+    assert.equal(check(path, true, connect), true, path);
+  assert.equal(
+    check("record/completion/src/copy-admission.bend", true, connect),
+    false,
+  );
+  assert.equal(check("connect/web/package.json", true, connect), false);
+  assert.equal(check("public/site/package.json", true, connect), false);
   assert.equal(
     routeDecision(["shared/enablement/bend/toolchain.ts"]).publicationStreams
       .connect,
-    false,
+    true,
   );
+  assert.equal(routeDecision([connect]).publicationStreams.connect, false);
 });

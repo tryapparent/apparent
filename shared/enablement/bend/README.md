@@ -1,7 +1,7 @@
 # Bend2 owner builds
 
-Record completion builds typed Bend2 policy into a standalone ES module.
-Use Bend2 for suitable pure decisions and state transformations that
+Record completion and the Connect service build typed Bend2 policy into standalone
+ES modules. Use Bend2 for suitable pure decisions and state transformations that
 benefit from types and laws. Keep integrations, UI, effects and build tooling in
 TypeScript, and keep OS and capture execution in native code.
 
@@ -37,5 +37,6 @@ neither Bun nor Lean. Owners without modules have no Bend toolchain setup.
 | Owner or runtime | Integration |
 | --- | --- |
 | Record | Node completion package and installed Desktop completion worker |
+| Connect | Standalone service and bundled Cloudflare gateway |
 | Other canonical owners, Shared, Composition and Enablement | Can add a manifest and wire the same contract to an existing JavaScript build and runtime |
 | Native Rust or Swift and Hermes Python | Require a supported host integration before adopting Bend. The emitted module is JavaScript. |
