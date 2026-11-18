@@ -1324,7 +1324,6 @@ impl Render for TargetPickerWindow {
         .on_key_down(move |event: &KeyDownEvent, _, cx| {
             // Unhandled, gpui hands the key back to AppKit, which offers it again (as a key
             // equivalent, keyDown, or input method command) and this runs up to three times:
-            // Space and the arrows then toggle or cycle back to where they started.
             if c_key.update(cx, |coord, cx| {
                 coord.handle_selection_key(&event.keystroke, event.is_held, cx)
             }) {
@@ -1374,7 +1373,7 @@ impl Render for TargetPickerWindow {
                             )
                             .cloned()
                             {
-                                coord.start_recording_with_target(target, cx);
+                                coord.start_recording_with_target(|_| target, cx);
                             } else {
                                 coord.start_recording_full_screen(cx);
                             }

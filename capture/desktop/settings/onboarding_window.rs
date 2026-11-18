@@ -875,7 +875,9 @@ impl OnboardingWindow {
         let denied = row.status == Status::Denied;
         let state = self.state.as_ref();
         let optional = !row.required && !state.is_some_and(|s| s.fix);
-        let trailing: AnyElement = if granted && row.relaunch {
+        let trailing: AnyElement = if row.status == Status::Unavailable {
+            div().child("Checking access…").into_any_element()
+        } else if granted && row.relaunch {
             div()
                 .flex()
                 .items_center()
@@ -900,8 +902,6 @@ impl OnboardingWindow {
                     .and_then(|v| v.as_str().map(str::to_owned))
                     .unwrap_or_default()
             );
-            // Windows and Linux have no prompt for desktop apps: the button always opens
-            // Settings (on Linux, the guide to the input group).
             let title = if cfg!(target_os = "linux") && row.permission == Permission::Accessibility {
                 "Copy command"
             } else if row.requested || denied || cfg!(not(target_os = "macos")) {
@@ -1450,6 +1450,7 @@ mod tests {
                 .map(|permission| (permission, Status::Granted))
                 .collect(),
             screen_needs_relaunch: false,
+            observed_at: None,
         };
         for (step, ready, input) in [
             (Step::Welcome, false, Input::Continue),
