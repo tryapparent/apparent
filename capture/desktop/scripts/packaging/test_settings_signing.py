@@ -35,6 +35,7 @@ class SigningTests(unittest.TestCase):
                              "electron/record-media/assembly-worker.js", "electron/record-media/assembly-policy.js",
                              "electron/record-media/transcript/worker.js", "electron/record-media/transcript/policy.js",
                              "electron/record-media/selection/worker.js", "electron/record-media/selection/cues.js",
+                             "electron/record-media/selection/scene-worker.js", "electron/record-media/selection/scene.js",
                              "electron/record-media/node_modules/@apparent/engine-sdk/dist/index.js",
                              "electron/record-media/native/apparent-engine-media",
                              "electron/record-media/native/apparent-engine-probe",
@@ -97,6 +98,8 @@ class SigningTests(unittest.TestCase):
             self.assertTrue((destination / "app/electron/record-media/transcript/worker.js").is_file())
             self.assertTrue((destination / "app/electron/record-media/selection/worker.js").is_file())
             self.assertTrue((destination / "app/electron/record-media/selection/cues.js").is_file())
+            self.assertTrue((destination / "app/electron/record-media/selection/scene-worker.js").is_file())
+            self.assertTrue((destination / "app/electron/record-media/selection/scene.js").is_file())
             self.assertTrue((destination / "app/electron/record-media/native/apparent-engine-media").is_file())
             self.assertFalse((destination / "app/electron/pill/native/window.node").exists())
             for identity in ("-", "Developer ID Application: Synthetic"):

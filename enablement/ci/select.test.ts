@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync, readdirSync, mkdtempSync, rmSync, mkdirSync, writeFileSync, symlinkSync, unlinkSync, chmodSync} from 'node:fs';
+import {readFileSync, mkdtempSync, rmSync, mkdirSync, writeFileSync, symlinkSync, unlinkSync, chmodSync} from 'node:fs';
 import {execFileSync, spawnSync} from 'node:child_process';
 import {YAML} from 'bun';
 import {join} from 'node:path';
@@ -22,24 +22,6 @@ function admitted(expression: string, needs: any, event = 'pull_request', draft 
 function parents(outputs: any = {}, reuse: any = {}) {
   return {contracts: {result: 'success'}, hermes: {result: 'success'}, select: {result: 'success', outputs}, reuse: {result: 'success', outputs: reuse}, portable: {result: 'success'}, 'record-media': {result: 'success'}};
 }
-test('stream triggers and PR checkout', () => {
-  assert.deepEqual(readdirSync(new URL('.github/workflows/', root)).filter(name =>
-    Object.keys(workflow(name).on).some(event => !/^workflow_(dispatch|call)$/.test(event))).sort(), 'checks.yml hermes.yml stream-agent.yml stream-connect.yml stream-engine.yml stream-handoff.yml stream-onboarding.yml stream-public.yml'.split(' '));
-  assert.deepEqual(Object.keys(workflow('stream-connect.yml').on), ['pull_request', 'push', 'workflow_dispatch']);
-  const {jobs,on,permissions}=ci();
-  assert.equal(jobs.connect, undefined);
-  assert.equal(jobs['native-evidence'], undefined);
-  assert.deepEqual(Object.keys(on), ['workflow_dispatch', 'pull_request', 'push']);
-  assert.deepEqual(on.pull_request.types, ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft']);
-  assert.equal(permissions.contents, 'read');
-  assert.deepEqual(Object.keys(workflow('verification.yml').on), ['workflow_dispatch']);
-  for (const job of Object.values(ci().jobs) as any[]) for (const step of job.steps ?? []) {
-    if (step.uses === 'actions/checkout@v4') {
-      assert.equal(step.with.ref, undefined);
-      assert.equal(step.with['persist-credentials'], false);
-    }
-  }
-});
 test('PR updates coalesce but main commits cannot cancel earlier code verification', () => {
   const c = ci().concurrency;
   assert.match(c.group, /github.sha/);

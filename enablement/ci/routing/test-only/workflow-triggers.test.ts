@@ -1,0 +1,115 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync, readdirSync } from "node:fs";
+import { YAML } from "bun";
+import { routeDecision, selectedOwners } from "../consumers.ts";
+import { commands as localCommands } from "../../../local-tests/run.ts";
+
+type Workflow = {
+  on: Record<string, { paths?: string[]; types?: string[] }>;
+  permissions: { contents?: string };
+  jobs: Record<
+    string,
+    {
+      "runs-on"?: string;
+      steps?: { uses?: string; run?: string; with?: Record<string, unknown> }[];
+    }
+  >;
+};
+
+const root = new URL("../../../../", import.meta.url);
+const workflow = (name: string) =>
+  YAML.parse(
+    readFileSync(new URL(`.github/workflows/${name}`, root), "utf8"),
+  ) as Workflow;
+const ci = () => workflow("checks.yml");
+
+test("stream triggers and PR checkout", () => {
+  assert.deepEqual(
+    readdirSync(new URL(".github/workflows/", root))
+      .filter((name) =>
+        Object.keys(workflow(name).on).some(
+          (event) => !/^workflow_(dispatch|call)$/.test(event),
+        ),
+      )
+      .sort(),
+    "checks.yml hermes.yml stream-agent.yml stream-connect.yml stream-engine.yml stream-handoff.yml stream-onboarding.yml stream-public.yml stream-record.yml".split(
+      " ",
+    ),
+  );
+  assert.deepEqual(Object.keys(workflow("stream-connect.yml").on), [
+    "pull_request",
+    "push",
+    "workflow_dispatch",
+  ]);
+  const { jobs, on, permissions } = ci();
+  assert.equal(jobs.connect, undefined);
+  assert.equal(jobs["native-evidence"], undefined);
+  assert.deepEqual(Object.keys(on), [
+    "workflow_dispatch",
+    "pull_request",
+    "push",
+  ]);
+  assert.deepEqual(on.pull_request.types, [
+    "opened",
+    "reopened",
+    "synchronize",
+    "ready_for_review",
+    "converted_to_draft",
+  ]);
+  assert.equal(permissions.contents, "read");
+  assert.deepEqual(Object.keys(workflow("verification.yml").on), [
+    "workflow_dispatch",
+  ]);
+  for (const job of Object.values(ci().jobs))
+    for (const step of job.steps ?? []) {
+      if (step.uses === "actions/checkout@v4") {
+        assert.equal(step.with?.ref, undefined);
+        assert.equal(step.with?.["persist-credentials"], false);
+      }
+    }
+});
+test("Record Bend runs on Linux and shares affected inputs with pre-push", () => {
+  const record = workflow("stream-record.yml");
+  const paths = [
+    "record/completion/**/*.bend",
+    "record/completion/src/policy.ts",
+    "record/enablement/ci/bend/**",
+    "shared/enablement/bend/**",
+    ".github/workflows/stream-record.yml",
+  ];
+  assert.deepEqual(record.on.pull_request.paths, paths);
+  assert.deepEqual(record.on.push.paths, paths);
+  const command = "record/enablement/ci/bend/check.ts";
+  assert.equal(record.jobs.bend["runs-on"], "ubuntu-24.04");
+  assert.ok(
+    record.jobs.bend.steps?.some(
+      (step) => step.run === "node " + command + " --proof",
+    ),
+  );
+  const check = (path: string, local = true) =>
+    localCommands(selectedOwners([path]), "base", "head", "linux", false, {
+      paths: [path],
+      local,
+    }).some(({ argv }) => argv.includes(command));
+  for (const path of [
+    "record/completion/src/admission.bend",
+    "record/completion/src/policy.ts",
+    "record/enablement/ci/bend/completion.bend",
+    "shared/enablement/bend/toolchain.ts",
+    ".github/workflows/stream-record.yml",
+  ]) {
+    assert.equal(check(path), true, path);
+    assert.equal(check(path, false), false, path);
+  }
+  assert.deepEqual(
+    routeDecision(["record/completion/src/admission.bend"]).selected,
+    [],
+  );
+  assert.equal(
+    routeDecision(["record/enablement/ci/bend/completion.bend"]).installer,
+    false,
+  );
+  assert.equal(check("connect/service/src/example.ts"), false);
+  assert.equal(check(".github/workflows/stream-agent.yml"), false);
+});

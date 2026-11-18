@@ -1,4 +1,5 @@
 import {readFileSync} from 'node:fs';
+import {bendToolingInput} from '../../../shared/enablement/bend/source.ts';
 const rule = JSON.parse(readFileSync(new URL('../../../engine/enablement/ci/inputs.json', import.meta.url), 'utf8')) as {root: string; excludedSuffixes: string[]; desktopPermissions: string};
 const automaticPaths = [rule.root + '/**', '!' + rule.desktopPermissions + '**', ...rule.excludedSuffixes.map(suffix => '!' + rule.root + '/**/*' + suffix)];
 const affectsEngine = (path: string) => path.startsWith(rule.root + '/') && !path.startsWith(rule.desktopPermissions) && !rule.excludedSuffixes.some(suffix => path.endsWith(suffix));
@@ -6,10 +7,8 @@ import {admissionTooling} from '../../../shared/enablement/ci/inputs.ts';
 import {independentInputs} from './engine-inputs/qualify.ts';
 export const owners = ['capture', 'engine', 'desktop', 'capture-tools', 'client', 'client-foreground', 'web', 'service', 'public', 'hermes', 'tooling', 'onboarding', 'engine-media'] as const;
 export type Owner = typeof owners[number];
-export const desktopPackagingInputs = new Set([
-  'capture/desktop/scripts/packaging/install-app.sh',
-  'capture/desktop/scripts/packaging/frontend/stage.ts',
-]);
+export const desktopPackagingInputs = new Set(['install-app.sh', 'frontend/stage.ts']
+  .map(file => 'capture/desktop/scripts/packaging/' + file));
 import { publicMarkdown, hostedBrowserFixture } from '../../../public/enablement/cd/ci/inputs.ts';
 export { publicMarkdown };
 export function documentationOnlyPath(path: string): boolean {
@@ -47,13 +46,10 @@ export const retiredOnboardingInputs = new Set([
       .map(file => 'src/onboarding/' + file),
   ].map(file => frontend + file),
 ]);
-export const onboardingRoots = [frontend + 'src/onboarding/',
-  frontend + 'electron/onboarding/', frontend + 'tests/onboarding/'];
+export const onboardingRoots = ['src', 'electron', 'tests'].map(dir => frontend + dir + '/onboarding/');
 const onboardingRendererTestInputs = new Set([
-  frontend + 'tests/onboarding/renderer/window-coach.smoke.ts',
-  frontend + 'tests/onboarding/renderer/tsconfig.json',
-  frontend + 'tests/onboarding/wispr/smoke.ts',
-]);
+  'renderer/window-coach.smoke.ts', 'renderer/tsconfig.json', 'wispr/smoke.ts',
+].map(file => frontend + 'tests/onboarding/' + file));
 const onboardingConnectInputs = new Set([
   'src/connect/consent.ts', 'src/connect/protocol.ts', 'src/connect/session.ts',
   'src/connect/flow.ts', 'src/bridge.ts', 'tests/connect/flow.test.ts',
@@ -66,7 +62,8 @@ export function onboardingInput(path: string): boolean {
     path.startsWith('capture/desktop/settings/onboarding') || path.endsWith('/practice.rs') ||
     path.startsWith('shared/ui/') || path.startsWith('record/');
 }
-const nativeWorkflowPaths = [".github/workflows/checks.yml",".github/workflows/linux-updater-harness.yml",".github/workflows/release-linux.yml",".github/workflows/release-mac-preview.yml",".github/workflows/verification-platform.yml",".github/workflows/verification.yml"];
+const nativeWorkflowPaths = ['checks', 'linux-updater-harness', 'release-linux', 'release-mac-preview', 'verification-platform', 'verification']
+  .map(name => `.github/workflows/${name}.yml`);
 
 export const portableForegroundInputs = new Set([
   'connect/client/typescript/src/foreground.ts', 'connect/client/typescript/test/foreground.test.ts',
@@ -103,10 +100,8 @@ function directConsumers(path: string): readonly Owner[] {
   if (documentationOnlyPath(path)) return [];
   if (admissionTooling(path)) return ['tooling'];
   if (desktopPackagingInputs.has(path)) return ['capture', 'engine', 'desktop', 'capture-tools', 'client-foreground'];
-  if (path.startsWith('engine/')) {
-    if (path.startsWith(rule.desktopPermissions)) return ['capture', 'engine', 'desktop'];
-    return affectsEngine(path) ? ['engine-media'] : [];
-  }
+  if (path.startsWith(rule.desktopPermissions)) return ['capture', 'engine', 'desktop'];
+  if (path.startsWith('engine/')) return affectsEngine(path) ? ['engine-media'] : [];
   if (independent.includes('!' + path)) return ['tooling'];
   if (independentInputs.has(path)) return owners.filter(owner => owner !== 'engine-media');
   if (path.startsWith('enablement/ci/') || path === 'enablement/local-tests/run.ts' || path.startsWith('.github/actions/ubuntu-apt/')) return owners;
@@ -115,7 +110,7 @@ function directConsumers(path: string): readonly Owner[] {
   if (path.startsWith('capture/desktop/ui/frontend/tests/onboarding/') &&
       (/\.test\.ts$/.test(path) || ['package.json','package-lock.json','tsconfig.json'].some(name => path.endsWith('/' + name)))) return ['onboarding'];
   if (/^(capture\/desktop\/ui\/frontend\/src\/onboarding|onboarding\/renderer)\/.*\.(tsx|css)$/.test(path) ||
-      path === 'capture/desktop/ui/frontend/onboarding.html') return ['desktop', 'onboarding'];
+      path === frontend + 'onboarding.html') return ['desktop', 'onboarding'];
 
   if (publicMarkdown.has(path) && path !== 'capture/agent/skills/apparent/SKILL.md') return ['public'];
   if (path === 'hermes/skills/recordings/SKILL.md') return ['hermes'];
@@ -164,6 +159,7 @@ function directConsumers(path: string): readonly Owner[] {
     ? owners.filter(owner => owner !== 'engine-media') : owners;
 }
 export function consumers(path: string): readonly Owner[] {
+  if (bendToolingInput(path)) return [];
   const selected = [...directConsumers(path)];
   if (onboardingInput(path) && !documentationOnlyPath(path) && !selected.includes('onboarding')) selected.push('onboarding');
   return owners.filter(owner => selected.includes(owner) && (owner !== 'engine-media' || affectsEngine(path)));

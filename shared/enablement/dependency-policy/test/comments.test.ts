@@ -345,3 +345,43 @@ test("gitignore patterns admit while added, changed and duplicated comments reje
   f.stage();
   f.check();
 });
+test("Bend comment and import rules examine staged source and accept quoted hashes", async (t) => {
+  const file = "record/completion/src/label.bend";
+  const valid =
+    "import Base\ndef label() -> String:\n  \"# quoted\"\ndef marker() -> Char:\n  '#'\n";
+  assert.deepEqual(await comments(file, valid + "# comment"), ["# comment"]);
+  assert.deepEqual(
+    await comments(
+      file,
+      'def label() -> String:\n  "\\"# value\nimport Other.bend as Other"\n',
+    ),
+    [],
+  );
+  await assert.rejects(
+    comments(file, 'def label() -> String:\n  "# unterminated'),
+    /malformed Bend literal/,
+  );
+  const f = fixture(t);
+  f.put(file, valid);
+  f.stage();
+  f.put(file, valid + "# unstaged\n");
+  f.check();
+  f.stage();
+  f.check(/added\/changed code comment/);
+  for (const dependency of [
+    "../other.bend",
+    "/other.bend",
+    "example@1.0.0.0/other.bend",
+  ]) {
+    f.put(file, valid.replace("import Base", `import ${dependency} as Other`));
+    f.stage();
+    f.check(/only the bundled Bend import Base/);
+  }
+  f.put(file, 'def label() -> String:\n  "' + " a".repeat(4100) + '"\n');
+  f.stage();
+  f.check(/source tokens exceed/);
+  f.git("rm", "-f", file);
+  f.put("handoff/label.bend", valid);
+  f.stage();
+  f.check(/Record completion pilot/);
+});

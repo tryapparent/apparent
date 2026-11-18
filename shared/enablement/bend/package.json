@@ -1,0 +1,9 @@
+{
+  "name": "@apparent/bend-toolchain",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./source": "./source.ts",
+    "./toolchain": "./toolchain.ts"
+  }
+}
