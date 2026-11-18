@@ -131,14 +131,14 @@ function directConsumers(path: string): readonly Owner[] {
   if (path === '.github/workflows/stream-public.yml') return ['public'];
   if (path === '.github/workflows/stream-connect.yml') return ['capture', 'client', 'client-foreground', 'web', 'service'];
   if (path === '.github/workflows/checks.yml') return ['capture', 'engine', 'desktop', 'client', 'client-foreground', 'web', 'service', 'capture-tools', 'tooling', 'onboarding'];
-  if (path.startsWith('hermes/') || path === '.github/workflows/hermes.yml') return ['hermes'];
+  if (/^(hermes\/|\.github\/workflows\/hermes\.yml$)/.test(path)) return ['hermes'];
   if (linuxDrivers.has(path)) return ['capture-tools'];
   if (path.startsWith('capture/desktop/ui/frontend/src/hermes/')) return ['desktop', 'capture', 'hermes'];
-  if (path.startsWith('capture/desktop/ui/frontend/')) return ['desktop', 'capture'];
+  if (/^(capture\/desktop\/ui\/frontend|composition\/quit)\//.test(path)) return ['desktop', 'capture'];
   if (path.startsWith('capture/desktop/scripts/native/foreground/')) return ['capture', 'engine', 'desktop', 'capture-tools'];
-  if (path.startsWith('capture/desktop/scripts/') || path.startsWith('capture/agent/scripts/')) return ['capture', 'engine', 'capture-tools'];
+  if (/^capture\/(desktop|agent)\/scripts\//.test(path)) return ['capture', 'engine', 'capture-tools'];
   if (path.startsWith('capture/desktop/')) return ['desktop', 'capture', 'engine', 'capture-tools'];
-  if (path.startsWith('capture/engine/tests/') || path.startsWith('capture/engine/src/') || ['capture/engine/Cargo.toml', 'capture/engine/Cargo.lock'].includes(path)) return ['engine'];
+  if (/^capture\/engine\/(tests\/|src\/|Cargo\.(toml|lock)$)/.test(path)) return ['engine'];
   if (/^(capture|composition)\//.test(path) || path === 'agent/enablement/context-comparison.ts') return ['capture', 'engine'];
   if (path.startsWith('agent/')) return ['capture'];
   if (path.startsWith('shared/ui/')) return ['public', 'web', 'desktop', 'service', 'capture'];

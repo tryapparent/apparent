@@ -18,7 +18,7 @@ impl ApparentCoordinator {
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             agent_capture_id: None,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
-            agent_captures: crate::capture::desktop::workflow::agent_capture::Registry::default(),
+            agent_captures: workflow::agent_capture::Registry::default(),
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             public_share: crate::capture::desktop::workflow::public_sharing::Controller::default(),
             #[cfg(target_os = "linux")]
@@ -209,7 +209,11 @@ impl ApparentCoordinator {
     }
 
     fn request_quit(&mut self, cx: &mut Context<Self>) {
-        crate::capture::desktop::workflow::shutdown::request();
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        if !workflow::shutdown::requested() && workflow::electron::confirm_quit(cx) {
+            return;
+        }
+        workflow::shutdown::request();
         self.lab = false;
         self.recording_shortcut_key = false;
         self.iphone_preview.take();
@@ -225,7 +229,7 @@ impl ApparentCoordinator {
     }
 
     fn publish_capture_busy(&self) {
-        crate::capture::desktop::workflow::shutdown::set_phase_busy(self.capture_busy());
+        workflow::shutdown::set_phase_busy(self.capture_busy());
     }
 
     pub fn is_selecting(&self) -> bool {
@@ -233,8 +237,8 @@ impl ApparentCoordinator {
     }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    fn agent_state(&self) -> crate::capture::desktop::workflow::agent_capture::State {
-        use crate::capture::desktop::workflow::agent_capture::{Phase, State};
+    fn agent_state(&self) -> workflow::agent_capture::State {
+        use workflow::agent_capture::{Phase, State};
         if matches!(
             self.active_recording.as_ref().map(|recording| &recording.source),
             Some(CaptureSource::Lab)
@@ -265,8 +269,8 @@ impl ApparentCoordinator {
     }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    fn agent_request(&mut self, request: crate::capture::desktop::workflow::agent_capture::Request, cx: &mut Context<Self>) {
-        use crate::capture::desktop::workflow::agent_capture::{Action, Outcome};
+    fn agent_request(&mut self, request: workflow::agent_capture::Request, cx: &mut Context<Self>) {
+        use workflow::agent_capture::{Action, Outcome};
         if let Some((action @ (Action::PublicShareStart | Action::PublicShareRead | Action::PublicShareDeliver | Action::PublicShareCancel), value)) = &request.action {
             let selected = self.review_bundle.as_ref().and_then(|(path, _)| {
                 path.file_name().and_then(|name| name.to_str()).map(|name| (path, name.to_owned()))
@@ -332,7 +336,7 @@ impl ApparentCoordinator {
             let occupied = self.lab || self.active_recording.is_some()
                 || self.is_selecting() || self.is_processing()
                 || self.iphone_preview.is_some() || self.agent_capture_id.is_some()
-                || self.recording_shortcut_key || crate::capture::desktop::workflow::shutdown::requested();
+                || self.recording_shortcut_key || workflow::shutdown::requested();
             if self.agent_captures.admit(id, occupied, request.expired()) {
                 self.agent_capture_id = Some(id.clone());
                 self.publish_capture_busy();

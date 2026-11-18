@@ -401,16 +401,16 @@ pub fn run_app(
     start_iphone_immediately: bool,
     screenshot_out: Option<PathBuf>,
 ) {
-    let _signals = crate::capture::desktop::workflow::shutdown::Signals::install()
+    let _signals = workflow::shutdown::Signals::install()
         .inspect_err(|error| apparent_log(format!("Graceful signal handling unavailable: {error:#}"))).ok();
     workflow::error_reporting::install();
     let app = Application::new().with_assets(crate::capture::desktop::icons::Assets);
     #[cfg(target_os = "macos")]
-    app.on_reopen(|_| crate::capture::desktop::workflow::launch_instance::request_open());
+    app.on_reopen(|_| workflow::launch_instance::request_open());
     #[cfg(target_os = "macos")]
     app.on_open_urls(|urls| {
         for url in urls {
-            if crate::capture::desktop::workflow::launch_instance::request_url(&url).is_err() {
+            if workflow::launch_instance::request_url(&url).is_err() {
                 apparent_log("Rejected unsupported or disabled Apparent launch URL");
             }
         }
@@ -566,10 +566,13 @@ pub fn run_app(
                     }
                     loop_coord.read(cx).publish_capture_busy();
                     platform::poll_status_bar();
-                    crate::capture::desktop::settings::onboarding_window::poll(cx);
-                    crate::capture::desktop::settings::settings_window::poll(cx);
+                    settings::onboarding_window::poll(cx);
                     #[cfg(any(target_os = "macos", target_os = "linux"))]
-                    if crate::capture::desktop::workflow::launch_instance::take_open(onboarding_initialized) {
+                    workflow::electron::poll_windows(cx);
+                    #[cfg(target_os = "windows")]
+                    settings::settings_window::poll(cx);
+                    #[cfg(any(target_os = "macos", target_os = "linux"))]
+                    if workflow::launch_instance::take_open(onboarding_initialized) {
                         loop_coord.update(cx, |coord, cx| {
                             if !crate::capture::desktop::workflow::launch_url::can_present(
                                 coord.is_recording(),
@@ -713,7 +716,7 @@ pub fn run_app(
                     }
 
                     motion::poll_tune();
-                    if crate::capture::desktop::workflow::shutdown::requested() {
+                    if workflow::shutdown::requested() {
                         loop_coord.update(cx, |coord, cx| coord.request_quit(cx));
                     }
                     if loop_coord.read(cx).shortcut.is_pending() {

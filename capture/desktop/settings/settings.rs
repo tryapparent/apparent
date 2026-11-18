@@ -117,6 +117,13 @@ impl Shortcuts {
 
 include!("shortcut/config.rs");
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+pub(super) fn open_startup_settings_for_quit() {
+    open_login_items_settings();
+}
+
+
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Pane {
@@ -905,20 +912,8 @@ impl Panel {
                 }
             }
             ("launchAtLogin", serde_json::Value::Bool(on)) => {
-                let previous = std::fs::read(&path)
-                    .ok()
-                    .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-                    .and_then(|config| config.get(key).cloned())
-                    .unwrap_or(serde_json::Value::Null);
-                if let Err(error) = crate::shared::handoff::set_config_value_in(&path, key, (*on).into()) {
-                    crate::capture::engine::runtime::apparent_log(format!("Saving {key} failed: {error:#}"));
-                    return Effect::None;
-                }
-                if let Err(error) = host.set_login_item(*on) {
+                if let Err(error) = super::save_launch_at_login(&path, *on, |wanted| host.set_login_item(wanted)) {
                     crate::capture::engine::runtime::apparent_log(format!("Launch at login: {error:#}"));
-                    if let Err(rollback) = crate::shared::handoff::set_config_value_in(&path, key, previous) {
-                        crate::capture::engine::runtime::apparent_log(format!("Restoring {key} failed: {rollback:#}"));
-                    }
                     return Effect::None;
                 }
                 if *on && login_item() == LoginItem::NeedsApproval {
