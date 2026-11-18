@@ -57,6 +57,42 @@ export function canonicalMain(cwd: string): string {
   return object.sha;
 }
 
+export function fetchCanonicalMain(
+  cwd: string,
+  main: string,
+  refetch: boolean,
+): void {
+  const url = `https://github.com/${repository}.git`;
+  const timeout = 60_000;
+  if (
+    git(cwd, ["ls-remote", "--get-url", url], undefined, timeout).trim() !== url
+  )
+    throw Error("Canonical GitHub URL is rewritten");
+  git(
+    cwd,
+    [
+      "-c",
+      `http.${url}.followRedirects=false`,
+      "-c",
+      `http.${url}.sslVerify=true`,
+      "fetch",
+      "--no-tags",
+      "--no-prune",
+      "--no-prune-tags",
+      "--refmap=",
+      "--no-recurse-submodules",
+      "--no-write-fetch-head",
+      "--no-auto-maintenance",
+      "--no-write-commit-graph",
+      ...(refetch ? ["--refetch"] : []),
+      url,
+      main,
+    ],
+    undefined,
+    timeout,
+  );
+}
+
 export function isGitHubMerge(commit: string, cwd: string): boolean {
   const [email, ...parents] = git(cwd, [
     "show",

@@ -64,12 +64,16 @@ Every selected commit's trailer or exact merge association is validated. Push
 admission authenticates the live `refs/heads/main` of `tryapparent/apparent`
 and requires its local Git history to contain the fixed, audited issue checkpoint
 `8bd1c2669a62c41014791a6dd3e85da809f4d446`. Git replace refs and grafts are
-ignored. A stale checkout missing the live tip needs a fetch. A main rewrite
-that removes the checkpoint blocks admission and requires a reviewed replacement.
+ignored. If local objects prevent that proof, the hook tries one fetch of the
+authenticated SHA from canonical GitHub with a 60-second timeout and repeats the
+proof against the same SHA. The fetch leaves the checkout, index, refs and
+`FETCH_HEAD` untouched. Shallow history and inaccessible required objects block
+admission. A main rewrite that removes the checkpoint requires a reviewed replacement.
 
 Each distinct issue referenced by a commit outside the checkpoint's ancestry
 gets one fresh API read per push, including commits on main after the checkpoint
-and commits on unrelated branches. Advance the checkpoint only after a fresh audit
+and commits on unrelated branches. Lookups can grow as new issues accumulate
+after the fixed checkpoint. Advance the checkpoint only after a fresh audit
 of the added ancestry and issue identities. The push uses no local validation
 cache. Each read has a 20-second process timeout and a bounded response.
 Authentication, network, not-found, identity and PR-number failures reject the

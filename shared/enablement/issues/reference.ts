@@ -30,14 +30,37 @@ export function parseReference(line: string): Issue {
   return { repository, number: Number(match[2]) };
 }
 
-export function git(cwd: string, args: string[], input?: string): string {
-  const result = spawnSync("git", args, {
+export function runGit(
+  cwd: string,
+  args: string[],
+  input?: string,
+  timeout?: number,
+) {
+  const env = { ...process.env };
+  delete env.GIT_SSL_NO_VERIFY;
+  return spawnSync("git", args, {
     cwd,
     input,
+    timeout,
     encoding: "utf8",
     maxBuffer: 32 * 1024 * 1024,
-    env: { ...process.env, GIT_NO_REPLACE_OBJECTS: "1", GIT_GRAFT_FILE: "" },
+    env: {
+      ...env,
+      GIT_NO_REPLACE_OBJECTS: "1",
+      GIT_GRAFT_FILE: "",
+      GIT_NO_LAZY_FETCH: "1",
+      GIT_TERMINAL_PROMPT: "0",
+    },
   });
+}
+
+export function git(
+  cwd: string,
+  args: string[],
+  input?: string,
+  timeout?: number,
+): string {
+  const result = runGit(cwd, args, input, timeout);
   if (result.error || result.status !== 0)
     throw Error(`Issue traceability cannot read Git metadata (${args[0]})`);
   return result.stdout;

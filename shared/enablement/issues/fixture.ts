@@ -14,6 +14,7 @@ export function fixture(t: TestContext) {
       delete process.env[name];
   process.env.GIT_CONFIG_GLOBAL = "/dev/null";
   process.env.GIT_CONFIG_NOSYSTEM = "1";
+  process.env.GIT_ALLOW_PROTOCOL = "file";
   process.env.PATH = join(dir, "bin") + ":" + process.env.PATH;
   process.env.ISSUE_TEST_LOG = join(dir, "gh.log");
   t.after(() => {

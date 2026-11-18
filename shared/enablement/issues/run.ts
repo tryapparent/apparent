@@ -5,6 +5,7 @@ import {
   baseline,
   acceptedMain,
   git,
+  runGit,
   primaryIssue,
   parseReference,
   reference,
@@ -14,6 +15,7 @@ import {
   bind,
   boundIssue,
   canonicalMain,
+  fetchCanonicalMain,
   instructions,
   isGitHubMerge,
   verifyIssue,
@@ -39,6 +41,32 @@ export function validateMessage(file: string, cwd: string): void {
     throw Error(
       `Issue trailer differs from API-validated worktree binding ${reference(bound)}. ${instructions}`,
     );
+}
+
+function checkpointStatus(
+  cwd: string,
+  grandfather: string,
+  checkpoint: string,
+  main: string,
+) {
+  for (const sha of [checkpoint, main]) {
+    const result = runGit(cwd, ["cat-file", "-t", sha]);
+    if (result.status !== 0) return result.status;
+    if (result.stdout.trim() !== "commit") return 1;
+  }
+  for (const [ancestor, descendant] of [
+    [grandfather, checkpoint],
+    [checkpoint, main],
+  ]) {
+    const { status, stderr } = runGit(cwd, [
+      "merge-base",
+      "--is-ancestor",
+      ancestor,
+      descendant,
+    ]);
+    if (status !== 0) return status === 1 && stderr ? 128 : status;
+  }
+  return 0;
 }
 
 export function validatePush(
@@ -76,15 +104,19 @@ export function validatePush(
     .filter(Boolean);
   const main = canonicalMain(cwd);
   try {
-    for (const sha of [checkpoint, main]) {
-      if (git(cwd, ["cat-file", "-t", sha]).trim() !== "commit")
-        throw Error("Expected a commit");
+    let status = checkpointStatus(cwd, grandfather, checkpoint, main);
+    if (status === 128) {
+      fetchCanonicalMain(
+        cwd,
+        main,
+        runGit(cwd, ["cat-file", "-t", main]).status === 0,
+      );
+      status = checkpointStatus(cwd, grandfather, checkpoint, main);
     }
-    git(cwd, ["merge-base", "--is-ancestor", grandfather, checkpoint]);
-    git(cwd, ["merge-base", "--is-ancestor", checkpoint, main]);
-  } catch {
+    if (status !== 0) throw Error("Expected exact commit ancestry");
+  } catch (error) {
     throw Error(
-      "Cannot establish the accepted issue checkpoint on canonical main. Fetch complete origin main history and check for a main rewrite before pushing",
+      `Cannot establish the accepted issue checkpoint on canonical main. Check canonical GitHub access, local history and whether main was rewritten. ${error instanceof Error ? error.message : ""}`,
     );
   }
   const introduced = new Set(

@@ -72,8 +72,9 @@ case "$1 \${2-}" in
     test "$3" = "$url"
     printf '%s\\n' "$url"
     ;;
-  '-c http.followRedirects=false')
-    shift 2
+  "-c http.$url.followRedirects=false")
+    test "$3 $4" = "-c http.$url.sslVerify=true"
+    shift 4
     test "$1 $2" = "ls-remote --exit-code"
     test "$3 $4 $5" = "--refs $url refs/heads/main"
     printf '%s\\trefs/heads/main\\n' '${source}'
@@ -93,6 +94,7 @@ esac
     );
     chmodSync(gh, 0o700);
     process.env.PATH = `${bin}:${process.env.PATH}`;
+    process.env.GIT_ALLOW_PROTOCOL = "file";
     process.env.FIXTURE_LOG = join(directory, "calls.jsonl");
     process.env.FIXTURE_ROUTES = join(directory, "routes.json");
     const run = {

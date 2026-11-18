@@ -23,6 +23,9 @@ REQUIRED = {
                'verify / Release verification'}
     for platform, runner in [('linux', 'ubuntu-24.04'), ('macos', 'macos-15-intel')]
 }
+CANONICAL_URL = 'https://github.com/tryapparent/apparent.git'
+CANONICAL_HTTP = ('-c', f'http.{CANONICAL_URL}.followRedirects=false',
+                  '-c', f'http.{CANONICAL_URL}.sslVerify=true')
 
 
 def api(path):
@@ -90,22 +93,33 @@ def verified_run(repo, sha, platform, run_id, fetch, *, run_attempt=None, onboar
 
 
 def git(*args):
+    env = {**os.environ, 'GIT_NO_REPLACE_OBJECTS': '1', 'GIT_GRAFT_FILE': '',
+           'GIT_NO_LAZY_FETCH': '1', 'GIT_TERMINAL_PROMPT': '0'}
+    env.pop('GIT_SSL_NO_VERIFY', None)
     return subprocess.check_output(
-        ['git', *args], text=True, timeout=60,
-        env={**os.environ, 'GIT_NO_REPLACE_OBJECTS': '1', 'GIT_GRAFT_FILE': '',
-             'GIT_TERMINAL_PROMPT': '0'},
+        ['git', *args], text=True, timeout=60, stderr=subprocess.PIPE,
+        env=env,
     ).strip()
 
 
-def canonical_main():
-    url = 'https://github.com/tryapparent/apparent.git'
-    if git('ls-remote', '--get-url', url) != url:
+def canonical_url():
+    if git('ls-remote', '--get-url', CANONICAL_URL) != CANONICAL_URL:
         raise ValueError('Canonical GitHub URL is rewritten')
-    ref = git('-c', 'http.followRedirects=false', 'ls-remote', '--exit-code', '--refs', url, 'refs/heads/main')
+    return CANONICAL_URL
+
+
+def canonical_main():
+    ref = git(*CANONICAL_HTTP, 'ls-remote', '--exit-code', '--refs', canonical_url(), 'refs/heads/main')
     match = re.fullmatch(r'([0-9a-f]{40})\trefs/heads/main', ref)
     if not match:
         raise ValueError('Expected the exact canonical main ref')
     return match[1]
+
+
+def check_main_ancestry(sha, main):
+    if any(git('cat-file', '-t', oid) != 'commit' for oid in (main, sha)):
+        raise ValueError('Expected exact commit objects for candidate and canonical main')
+    git('merge-base', '--is-ancestor', sha, main)
 
 
 def require_main_ancestry(repo, sha):
@@ -115,11 +129,18 @@ def require_main_ancestry(repo, sha):
         if git('rev-parse', '--is-shallow-repository') != 'false':
             raise ValueError('Release requires a full-history checkout')
         main = canonical_main()
-        if any(git('cat-file', '-t', oid) != 'commit' for oid in (sha, main)):
-            raise ValueError('Expected exact commit objects for candidate and canonical main')
-        git('merge-base', '--is-ancestor', sha, main)
+        try:
+            check_main_ancestry(sha, main)
+        except subprocess.CalledProcessError as error:
+            if error.returncode != 128 and not (error.returncode == 1 and error.stderr):
+                raise
+            refetch = () if error.cmd[1:] == ['cat-file', '-t', main] else ('--refetch',)
+            git(*CANONICAL_HTTP, 'fetch', '--no-tags', '--no-prune', '--no-prune-tags', '--refmap=',
+                '--no-recurse-submodules', '--no-write-fetch-head', '--no-auto-maintenance',
+                '--no-write-commit-graph', *refetch, canonical_url(), main)
+            check_main_ancestry(sha, main)
     except (OSError, subprocess.SubprocessError) as error:
-        raise ValueError('Cannot prove verified commit is on canonical main; check local history and the live ref') from error
+        raise ValueError('Cannot prove verified commit is on canonical main; check local history and canonical GitHub access') from error
 
 
 def admit(repo, sha, run_id=None, fetch=api, platform='linux', *, run_attempt=None, onboarding_candidate=False):
