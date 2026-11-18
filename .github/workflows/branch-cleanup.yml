@@ -1,0 +1,35 @@
+name: Repository · Clean up closed PR branches
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  cleanup:
+    if: >-
+      github.repository == 'tryapparent/apparent' &&
+      github.event.pull_request.merged == false &&
+      github.event.pull_request.head.repo.id == github.event.repository.id
+    permissions:
+      contents: write
+      pull-requests: read
+    concurrency:
+      group: closed-pr-branch-${{ github.event.pull_request.head.ref }}
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/heads/${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Delete the closed PR head branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GIT_TERMINAL_PROMPT: '0'
+        run: node --experimental-strip-types enablement/ci/branch-cleanup/closed-pr.ts
