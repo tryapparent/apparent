@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { accountId, workerName, deploymentConfig, validateProfile, sameBindings, singleVersion, verifyActivationHistory, strictUpload } from './profile.ts'
+import { setTimeout as pause } from 'node:timers/promises'
+import { accountId, workerName, deploymentConfig, validateProfile, sameBindings, singleVersion, requiresActivation, verifyActivationHistory, strictUpload } from './profile.ts'
 import type { Settings } from './profile.ts'
 import { digest, verifySeal } from './seal.ts'
 import { assertStagingOwner, readBaselineVersion, readVerifiedVersion } from './publication.ts'
@@ -83,34 +84,46 @@ assert.equal(upload.status, 0, 'Worker version upload failed; traffic was not ch
 const staged = await snapshot(), candidate = staged.versions[0].id
 assert.equal(singleVersion(staged.deployment), previous, 'Active deployment changed while staging')
 preserve(before, staged)
-assert.notEqual(candidate, previous)
-await readVerifiedVersion(candidate, sha, baselineVersion, id => api(worker + '/versions/' + id))
-await record('staged', { version: candidate })
+const alreadyActive = !requiresActivation(previous, candidate)
+if (!alreadyActive) {
+  await readVerifiedVersion(candidate, sha, baselineVersion, id => api(worker + '/versions/' + id))
+  await record('staged', { version: candidate })
+}
 await verifySeal(artifact, sha)
 admission()
 const fresh = await snapshot()
 preserve(before, fresh)
 assert.equal(singleVersion(fresh.deployment), previous, 'Another deploy owns traffic')
 assert.equal(fresh.versions[0].id, candidate, 'Another owner staged a version')
-// Cloudflare's deployment API has no documented conditional-update parameter:
-// https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/deployments/methods/create/
-// Narrow the final read/write window and audit the immediate predecessor after
-// activation. Detect a competing publisher in either ordering; never race it
-// with an automatic rollback. Manual publication must first drain this job.
-const latest = (await api(worker + '/deployments')).deployments[0]
-assert.equal(latest.id, before.deployment.id, 'Another publisher changed deployment ownership')
-assert.equal(singleVersion(latest), previous)
-const deployed = await api(worker + '/deployments', {
-  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-    strategy: 'percentage', versions: [{ version_id: candidate, percentage: 100 }],
-    annotations: { 'workers/message': 'Automatic tested main ' + sha + '; previous version ' + previous },
-  }),
-})
-await record('active-unverified', { version: candidate, deployment: deployed.id })
-const after = await snapshot()
-verifyActivationHistory(latest.id, deployed.id, after.history)
-assert.equal(singleVersion(after.deployment), candidate, 'Exact candidate is not active')
-preserve(before, after)
+let deployment = before.deployment.id
+if (!alreadyActive) {
+  // Cloudflare's deployment API has no documented conditional-update parameter:
+  // https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/deployments/methods/create/
+  // Narrow the final read/write window and audit the immediate predecessor after
+  // activation. Detect a competing publisher in either ordering; never race it
+  // with an automatic rollback. Manual publication must first drain this job.
+  const latest = (await api(worker + '/deployments')).deployments[0]
+  assert.equal(latest.id, before.deployment.id, 'Another publisher changed deployment ownership')
+  assert.equal(singleVersion(latest), previous)
+  const deployed = await api(worker + '/deployments', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      strategy: 'percentage', versions: [{ version_id: candidate, percentage: 100 }],
+      annotations: { 'workers/message': 'Automatic tested main ' + sha + '; previous version ' + previous },
+    }),
+  })
+  deployment = deployed.id
+  await record('active-unverified', { version: candidate, deployment })
+  let after = await snapshot()
+  for (let attempt = 0; attempt < 5 && after.history[0]?.id !== deployed.id; attempt++) {
+    await pause(500 * 2 ** attempt)
+    after = await snapshot()
+  }
+  verifyActivationHistory(latest.id, deployed.id, after.history)
+  assert.equal(singleVersion(after.deployment), candidate, 'Exact candidate is not active')
+  preserve(before, after)
+} else {
+  await record('already-active', { version: candidate, deployment })
+}
 for (const file of receipt.files.filter(file => file.path.startsWith('dist/'))) {
   const path = '/' + file.path.slice('dist/'.length).replace(/\/index\.html$/, '')
   const response = await fetch('https://app.tryapparent.com' + path, { redirect: 'manual', headers: { 'Accept-Encoding': 'identity' }, signal: AbortSignal.timeout(30000) })
@@ -125,6 +138,6 @@ for (const url of ['https://app.tryapparent.com/connect/v1/session', 'https://ho
   assert.equal(response.headers.get('Access-Control-Allow-Origin'), 'https://app.tryapparent.com')
   assert.equal(response.headers.get('Access-Control-Allow-Credentials'), 'true')
 }
-const result = { sha, worker: workerName, deployment: deployed.id, version: candidate, previousVersion: previous, phase: 'verified', assets: receipt.files.filter(file => file.path.startsWith('dist/')).length, configurationPreserved: true }
+const result = { sha, worker: workerName, deployment, version: candidate, previousVersion: previous, phase: 'verified', assets: receipt.files.filter(file => file.path.startsWith('dist/')).length, configurationPreserved: true }
 await writeFile(receiptPath, JSON.stringify(result) + '\n')
 console.log(JSON.stringify(result))

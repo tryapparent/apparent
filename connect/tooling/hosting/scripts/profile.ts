@@ -70,6 +70,10 @@ export function singleVersion(deployment: { versions: { version_id: string; perc
   return deployment.versions[0].version_id
 }
 
+export function requiresActivation(previous: string, candidate: string): boolean {
+  return candidate !== previous
+}
+
 export function verifyActivationHistory(previous: string, deployed: string, history: { id: string }[]) {
   assert.equal(history[0]?.id, deployed, 'Another publisher owns the active deployment')
   assert.equal(history[1]?.id, previous, 'A competing deployment intervened during activation; operator reconciliation required')
