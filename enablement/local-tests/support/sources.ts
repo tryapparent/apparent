@@ -1,6 +1,6 @@
 // Shared source materialization for synthetic hook and publisher repositories.
 // This module copies files only; it never imports or executes the test runner.
-import {copyFileSync, mkdirSync, readdirSync, realpathSync} from 'node:fs';
+import {copyFileSync, existsSync, mkdirSync, readdirSync, realpathSync} from 'node:fs';
 import {dirname, isAbsolute, relative, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
@@ -30,7 +30,11 @@ export function copyRunnerSources(destination: string, source = root): void {
     }
   }
   for (const owner of sourceOwners) copy(owner);
-  const declaration = 'engine/enablement/ci/inputs.json';
-  mkdirSync(dirname(resolve(target, declaration)), {recursive: true});
-  copyFileSync(resolve(origin, declaration), resolve(target, declaration));
+  const declarations = ['engine/enablement/ci/inputs.json',
+    'record/enablement/ci/bend/modules.json', 'connect/enablement/ci/bend/modules.json'];
+  for (const declaration of declarations) {
+    if (declaration !== declarations[0] && !existsSync(resolve(origin, declaration))) continue;
+    mkdirSync(dirname(resolve(target, declaration)), {recursive: true});
+    copyFileSync(resolve(origin, declaration), resolve(target, declaration));
+  }
 }

@@ -42,8 +42,11 @@ export function writeFiniteChecks(destination: string, plan = finiteCheckPlan())
 export function runnerFixture(destination: string): void {
   copyRunnerSources(destination);
   writeFiniteChecks(destination);
-  const bend = resolve(destination, 'record/enablement/ci/bend/check.ts');
-  writeFileSync(bend, "console.log('Finite Bend fixture');\n");
+  for (const owner of ['record', 'connect']) {
+    const bend = resolve(destination, owner, 'enablement/ci/bend/check.ts');
+    mkdirSync(dirname(bend), {recursive: true});
+    writeFileSync(bend, "console.log('Finite Bend fixture');\n");
+  }
   const issue = resolve(destination, 'shared/enablement/issues/run.ts');
   mkdirSync(dirname(issue), {recursive: true});
   writeFileSync(issue, "process.stdin.resume();\n");

@@ -1,4 +1,5 @@
-import {bendToolingInput} from "../../shared/enablement/bend/source.ts";
+import {affectedBendOwners} from "../../shared/enablement/bend/owners.ts";
+import {bendDirectory} from "../../shared/enablement/bend/manifest.ts";
 import {serviceCommands} from '../../connect/enablement/ci/local/service.ts';
 import { verification as publicVerification } from '../../public/enablement/cd/ci/inputs.ts';
 import { spawnSync } from 'node:child_process';
@@ -106,8 +107,9 @@ export function commands(selected: Owner[], base: string, head: string, platform
     add(['python3', 'enablement/verification.py', '--base', base, '--preflight']);
   if (selected.includes('tooling') || installScope.paths === null)
     add(['python3', 'enablement/verification.py', '--base', base, '--head', head, '--pr']);
-  if (installScope.local && (installScope.paths === null || installScope.paths.some(path => bendToolingInput(path) || path.startsWith('record/completion/'))))
-    add(['node', 'record/enablement/ci/bend/check.ts']);
+  if (installScope.local)
+    for (const owner of affectedBendOwners(root, installScope.paths))
+      add(['node', bendDirectory(owner) + '/check.ts']);
   if (selected.includes('tooling')) result.push(...toolingCommands());
   else if (selected.includes('desktop')) result.push(...installationContracts(installScope.paths, installScope.workflowControls));
   if (selected.includes('onboarding')) result.push(...onboardingCommands());

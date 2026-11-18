@@ -1,5 +1,10 @@
 import path from "node:path";
-import { bendPilotPath } from "../../bend/source.ts";
+import {
+  bendDirectory,
+  bendOwners,
+  parseManifest,
+} from "../../bend/manifest.ts";
+import { bendSource } from "../../bend/source.ts";
 import { tokens, sourceBudget, lockfiles } from "./budgets.ts";
 export { tokens } from "./budgets.ts";
 import { git } from "../snapshot.ts";
@@ -46,6 +51,46 @@ export async function checkStaged(
     }
   }
   const errors: string[] = [];
+  const bendModules = new Set<string>();
+  for (const owner of bendOwners) {
+    const directory = bendDirectory(owner);
+    const manifest = `${directory}/modules.json`;
+    if (!after.has(manifest)) continue;
+    try {
+      if (!after.get(manifest)?.startsWith("100644 "))
+        throw new Error(
+          `${manifest}: expected a regular non-executable Bend manifest`,
+        );
+      const { modules } = parseManifest(
+        owner,
+        git(["show", `${tree}:${manifest}`], cwd),
+      );
+      for (const entry of ["build.ts", "check.ts"]) {
+        if (
+          modules.length &&
+          !after.get(`${directory}/${entry}`)?.startsWith("100644 ")
+        )
+          errors.push(
+            `${directory}/${entry}: missing regular owner Bend entrypoint`,
+          );
+      }
+      for (const file of modules) {
+        bendModules.add(file);
+        if (!after.get(file)?.startsWith("100644 "))
+          errors.push(
+            `${file}: Bend requires a tracked non-executable source file`,
+          );
+      }
+    } catch (error) {
+      errors.push(`${manifest}: ${String(error)}`);
+    }
+  }
+  for (const file of after.keys()) {
+    if (bendSource.test(file) && !bendModules.has(file))
+      errors.push(
+        `${file}: Bend requires a declaration in its owner's modules.json`,
+      );
+  }
   const style: { file: string; text: string; old?: string }[] = [];
   for (const [file, meta] of after) {
     if (meta === before.get(file) || !meta.startsWith("100")) continue;
@@ -59,13 +104,6 @@ export async function checkStaged(
     errors.push(...sourceBudget(file, text, inherited));
     const ext = path.posix.extname(file).toLowerCase();
     const base = path.posix.basename(file);
-    if (
-      ext === ".bend" &&
-      (!bendPilotPath(file) || !meta.startsWith("100644 "))
-    )
-      errors.push(
-        `${file}: Bend requires a non-executable source file in the Record completion pilot`,
-      );
     if (ext === ".md") {
       const cap = (
         { "agents.md": 2000, "readme.md": 2000, "skill.md": 3000 } as Record<

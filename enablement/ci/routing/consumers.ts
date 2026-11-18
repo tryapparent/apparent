@@ -1,5 +1,5 @@
 import {readFileSync} from 'node:fs';
-import {bendProductInput, bendToolingInput} from '../../../shared/enablement/bend/source.ts';
+import {bendConsumers} from '../../../shared/enablement/bend/consumers.ts';
 const rule = JSON.parse(readFileSync(new URL('../../../engine/enablement/ci/inputs.json', import.meta.url), 'utf8')) as {root: string; excludedSuffixes: string[]};
 const automaticPaths = [rule.root + '/**', ...rule.excludedSuffixes.map(suffix => '!' + rule.root + '/**/*' + suffix)];
 const affectsEngine = (path: string) => path.startsWith(rule.root + '/') && !rule.excludedSuffixes.some(suffix => path.endsWith(suffix));
@@ -157,7 +157,8 @@ function directConsumers(path: string): readonly Owner[] {
     ? owners.filter(owner => owner !== 'engine-media') : owners;
 }
 export function consumers(path: string): readonly Owner[] {
-  if (bendToolingInput(path)) return bendProductInput(path) ? ['capture', 'desktop', 'onboarding'] : [];
+  const bend = bendConsumers(path);
+  if (bend) return bend;
   const selected = [...directConsumers(path)];
   if (onboardingInput(path) && !documentationOnlyPath(path) && !selected.includes('onboarding')) selected.push('onboarding');
   return owners.filter(owner => selected.includes(owner) && (owner !== 'engine-media' || affectsEngine(path)));

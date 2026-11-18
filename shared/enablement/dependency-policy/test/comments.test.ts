@@ -380,6 +380,17 @@ test("Bend comment and import rules examine staged source and accept quoted hash
     /malformed Bend literal/,
   );
   const f = fixture(t);
+  const manifest = (owner: string, source: string) => {
+    const directory = owner + "/enablement/ci/bend/";
+    f.put(
+      directory + "modules.json",
+      JSON.stringify({ modules: [source], inputs: [] }),
+    );
+    for (const entry of ["build.ts", "check.ts"])
+      f.put(directory + entry, "export {};\n");
+    return directory + "modules.json";
+  };
+  const record = manifest("record", "completion/src/label.bend");
   f.put(file, valid);
   f.stage();
   f.put(file, valid + "# unstaged\n");
@@ -398,8 +409,26 @@ test("Bend comment and import rules examine staged source and accept quoted hash
   f.put(file, 'def label() -> String:\n  "' + " a".repeat(4100) + '"\n');
   f.stage();
   f.check(/source tokens exceed/);
-  f.git("rm", "-f", file);
-  f.put("handoff/label.bend", valid);
+  chmodSync(path.join(f.dir, file), 0o755);
   f.stage();
-  f.check(/Record completion pilot/);
+  f.check(/tracked non-executable source/);
+  rmSync(path.join(f.dir, file));
+  symlinkSync("policy.ts", path.join(f.dir, file));
+  f.stage();
+  f.check(/tracked non-executable source/);
+  rmSync(path.join(f.dir, file));
+  f.put(file, valid);
+  manifest("record", "../handoff/label.bend");
+  f.stage();
+  f.check(/invalid Bend source path/);
+  rmSync(path.join(f.dir, record));
+  f.put("capture/label.bend", valid);
+  f.stage();
+  f.check(/capture\/label\.bend: Bend requires a declaration/);
+  rmSync(path.join(f.dir, file));
+  rmSync(path.join(f.dir, "capture/label.bend"));
+  f.put("handoff/label.bend", valid);
+  manifest("handoff", "label.bend");
+  f.stage();
+  f.check();
 });

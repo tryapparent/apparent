@@ -1,0 +1,8 @@
+{
+  "modules": ["service/src/reporting/activity-preference.bend"],
+  "inputs": [
+    "service/",
+    "tooling/hosting/package.json",
+    "tooling/hosting/scripts/bundle.ts"
+  ]
+}
