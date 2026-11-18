@@ -106,3 +106,71 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
+
+#[derive(Default)]
+struct QuitPrompt(Option<crate::composition::worker::quit::Session>);
+
+impl gpui::Global for QuitPrompt {}
+
+pub(crate) fn confirm_quit(cx: &mut gpui::App) -> bool {
+    let prompt = cx.default_global::<QuitPrompt>();
+    if prompt.0.is_some() {
+        return true;
+    }
+    let open = || {
+        use crate::capture::desktop::settings::{LoginItem, login_item};
+        let login = login_item();
+        let state = crate::composition::worker::quit::State {
+            checked: matches!(login, LoginItem::On | LoginItem::NeedsApproval),
+            available: option_env!("APPARENT_PREVIEW_BUILD").is_none() && login != LoginItem::Unavailable,
+            needs_approval: login == LoginItem::NeedsApproval,
+            desktop_shortcut_possible: cfg!(target_os = "linux"),
+        };
+        let resources = resolve()?;
+        let mut command = std::process::Command::new(&resources.executable);
+        configure_sandbox(&mut command, &resources.executable)?;
+        #[cfg(target_os = "linux")]
+        if std::env::var_os("WAYLAND_DISPLAY").is_none() {
+            command.arg("--ozone-platform=x11");
+        }
+        let entry = resources.root.join("dist/quit/main.cjs");
+        ensure!(entry.is_file(), "Quit dialog bundle unavailable");
+        command.arg(entry);
+        crate::composition::worker::quit::Session::open(command, state)
+    };
+    match open() {
+        Ok(dialog) => prompt.0 = Some(dialog),
+        Err(error) => crate::capture::engine::runtime::apparent_log(format!("Quit dialog unavailable: {error:#}")),
+    }
+    prompt.0.is_some()
+}
+
+pub(crate) fn poll_windows(cx: &mut gpui::App) {
+    crate::capture::desktop::settings::settings_window::poll(cx);
+    let prompt = cx.default_global::<QuitPrompt>();
+    let Some(dialog) = prompt.0.as_mut() else { return };
+    use crate::composition::worker::quit::Event;
+    let decision = match dialog.event() {
+        Some(Event::Decided(decision)) => decision,
+        Some(Event::Closed { before_display_failure }) => {
+            prompt.0.take();
+            if before_display_failure {
+                crate::capture::engine::runtime::apparent_log("Quit dialog failed before display; using native shutdown");
+                super::shutdown::request();
+            }
+            return;
+        }
+        Some(Event::Ready) | None => return,
+    };
+    let saved = decision.checked.map_or(Ok(()), crate::capture::desktop::settings::apply_quit_login_preference);
+    if let Err(error) = &saved {
+        crate::capture::engine::runtime::apparent_log(format!("Quit dialog startup setting: {error:#}"));
+    }
+    let replied = dialog.reply(saved.is_ok()).is_ok();
+    if !replied || saved.is_ok() {
+        prompt.0.take();
+    }
+    if saved.is_ok() && decision.quit {
+        super::shutdown::request();
+    }
+}

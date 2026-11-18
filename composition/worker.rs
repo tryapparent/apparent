@@ -419,3 +419,103 @@ mod tests {
         }
     }
 }
+
+pub(crate) mod quit {
+    use std::{
+        io::{BufRead, BufReader, Write},
+        process::{Child, ChildStdin, Command, Stdio},
+        sync::mpsc::{Receiver, TryRecvError},
+    };
+
+    use anyhow::{Context, Result};
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Clone, Copy, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub(crate) struct State {
+        pub(crate) checked: bool,
+        pub(crate) available: bool,
+        pub(crate) needs_approval: bool,
+        pub(crate) desktop_shortcut_possible: bool,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    pub(crate) struct Decision {
+        pub(crate) quit: bool,
+        pub(crate) checked: Option<bool>,
+    }
+
+    pub(crate) enum Event {
+        Ready,
+        Decided(Decision),
+        Closed { before_display_failure: bool },
+    }
+
+    pub(crate) struct Session {
+        child: Child,
+        input: ChildStdin,
+        events: Receiver<Event>,
+        shown: bool,
+    }
+
+    impl Session {
+        pub(crate) fn open(mut command: Command, state: State) -> Result<Self> {
+            let mut child = command
+                .arg(serde_json::to_string(&state)?)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+                .context("Open the Quit dialog")?;
+            let input = child.stdin.take().expect("piped stdin");
+            let output = child.stdout.take().expect("piped stdout");
+            let (send, events) = std::sync::mpsc::sync_channel(1);
+            let session = Self { child, input, events, shown: false };
+            std::thread::Builder::new()
+                .name("apparent-quit".into())
+                .spawn(move || {
+                    for line in BufReader::new(output).lines().map_while(|line| line.ok()) {
+                        let event = if line == "ready" {
+                            Event::Ready
+                        } else {
+                            let Ok(decision) = serde_json::from_str(&line) else { break };
+                            Event::Decided(decision)
+                        };
+                        if send.send(event).is_err() {
+                            break;
+                        }
+                    }
+                })?;
+            Ok(session)
+        }
+
+        pub(crate) fn event(&mut self) -> Option<Event> {
+            match self.events.try_recv() {
+                Ok(Event::Ready) => {
+                    self.shown = true;
+                    None
+                }
+                Ok(event) => Some(event),
+                Err(TryRecvError::Empty) => None,
+                Err(TryRecvError::Disconnected) => match self.child.try_wait() {
+                    Ok(None) => None,
+                    Ok(Some(status)) => Some(Event::Closed { before_display_failure: !self.shown && !status.success() }),
+                    Err(_) => Some(Event::Closed { before_display_failure: !self.shown }),
+                },
+            }
+        }
+
+        pub(crate) fn reply(&mut self, saved: bool) -> Result<()> {
+            writeln!(self.input, "{}", if saved { "saved" } else { "failed" })?;
+            Ok(())
+        }
+    }
+
+    impl Drop for Session {
+        fn drop(&mut self) {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
+    }
+}

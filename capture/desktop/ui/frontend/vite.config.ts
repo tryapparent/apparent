@@ -54,6 +54,15 @@ export default defineConfig({
   }, { name: 'hermes-native-bridge', async closeBundle() {
     await build({ entryPoints: { 'hermes-main': 'src/hermes/main.ts', 'hermes-preload': 'src/hermes/preload.ts' },
       bundle: true, platform: 'node', format: 'cjs', external: ['electron'], outdir: 'dist', outExtension: { '.js': '.cjs' } });
+  } }, { name: 'quit-window', async closeBundle() {
+    const source = '../../../../composition/quit';
+    const outdir = 'dist/quit';
+    const nodePaths = [path.resolve('node_modules')];
+    await Promise.all([
+      build({ entryPoints: [`${source}/main.ts`, `${source}/preload.ts`], bundle: true, platform: 'node', format: 'cjs', external: ['electron'], outdir, outExtension: { '.js': '.cjs' } }),
+      build({ entryPoints: [`${source}/view.tsx`], bundle: true, jsx: 'automatic', nodePaths, outdir, minify: true, loader: { '.ttf': 'file' }, define: { 'process.env.NODE_ENV': '"production"' } }),
+    ]);
+    cpSync(`${source}/index.html`, `${outdir}/index.html`);
   } }],
   build: { rollupOptions: { input: { foundation: 'index.html', settings: 'settings.html', onboarding: 'onboarding.html', installer: 'src/installer/index.html', pill: 'pill/index.html', controls: 'src/controls/index.html' } } },
 });
