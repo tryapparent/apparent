@@ -93,6 +93,11 @@ test("reusable Mac workflow shares native gates across the primary and capacity 
   assert.match(stable, /runs-on: \$\{\{ needs.capacity.outputs.runner \}\}/);
   assert.match(stable, /steps: &candidate-steps/);
   assert.match(stable, /steps: \*candidate-steps/);
+  const fallback = stable.split("\n  fallback:\n")[1].split("\n  confirm:")[0];
+  assert.match(
+    fallback,
+    /if: \$\{\{ !cancelled\(\) && needs\.frontend\.result == 'success' && needs\.capacity\.result == 'success' && needs\.capacity\.outputs\.runner != '' \}\}/,
+  );
   assert.match(
     workflow,
     /candidate:\n    name: Build signed Mac candidate\n    needs: frontend/,
