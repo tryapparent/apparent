@@ -31,6 +31,45 @@ test("canonical CI wrappers cannot move policy into root scripts or imported roo
   }
 });
 
+test("the Ubuntu bootstrap validates its CI command and dependency graph", () => {
+  const action = ".github/actions/ubuntu-apt/action.yml";
+  const runner = "enablement/ci/runner/ubuntu-apt.ts";
+  const workflow =
+    "jobs:\n  checks:\n    steps:\n      - uses: ./.github/actions/ubuntu-apt\n";
+  const files = {
+    ".github/workflows/checks.yml": workflow,
+    ".github/workflows/stream-record.yml": workflow,
+    [action]: [
+      "runs:",
+      "  using: composite",
+      "  steps:",
+      "    - uses: actions/setup-node@v4",
+      "      with:",
+      "        node-version: '22.23.0'",
+      "    - shell: bash",
+      "      working-directory: ${{ github.workspace }}",
+      "      run: node --experimental-strip-types " + runner,
+    ].join("\n"),
+    [runner]: 'import { execFileSync } from "node:child_process";',
+  };
+  assert.equal(problems(files), "");
+  assert.match(
+    problems({
+      ...files,
+      [action]: files[action] + "\n    - run: bash other.sh",
+    }),
+    /local action execution is unsupported/,
+  );
+  assert.match(
+    problems({
+      ...files,
+      [runner]: 'import "./other.ts";',
+      "enablement/ci/runner/other.ts": "export const other = 1;",
+    }),
+    /stream CI cannot forward policy to an unowned root module/,
+  );
+});
+
 test("new workflow names cannot hide inline product build policy", () => {
   assert.match(
     problems({
