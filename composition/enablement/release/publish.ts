@@ -1,7 +1,7 @@
 import { compareVersions, cargoVersion } from "./version.ts";
 import type { Release, Asset, Ref } from "./github.ts";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { appendFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -43,6 +43,22 @@ export function assertAssets(
   if (complete && release.assets.length !== expected.length)
     throw Error("Release assets incomplete");
 }
+
+function recordOutput(lines: string): void {
+  if (!process.env.GITHUB_OUTPUT) return;
+  appendFileSync(process.env.GITHUB_OUTPUT, lines);
+}
+
+function recordPublicAssets(candidate: Manifest, manifests: Manifest[]): void {
+  const downloads = manifests
+    .flatMap((manifest) => manifest.files)
+    .filter(({ name }) => /\.(AppImage|dmg|zip)$/.test(name))
+    .map(({ name, size }) => ({ name, size }));
+  recordOutput(
+    `tag=${candidate.tag}\ndownloads=${JSON.stringify(downloads)}\n`,
+  );
+}
+
 export async function publish(
   runId: string,
   attempt: number,
@@ -53,6 +69,7 @@ export async function publish(
   const main = candidate.channel === "main";
   if (candidate.channel !== (process.env.RELEASE_CHANNEL || "stable"))
     throw Error("Candidate belongs to a different release channel");
+  recordOutput(`source_sha=${candidate.sourceSha}\n`);
   execFileSync(
     "python3",
     [
@@ -92,15 +109,19 @@ export async function publish(
       if (
         isAncestor(prior, "origin/main") &&
         isAncestor(candidate.sourceSha, prior)
-      )
+      ) {
+        recordOutput(`superseded_tag=${current.tag_name}\n`);
         throw Error(`Newer Main release already public: ${current.tag_name}`);
+      }
     }
   } else {
     for (const current of releases.filter(
       (r) => !r.draft && !r.prerelease && /^v\d+\.\d+\.\d+$/.test(r.tag_name),
     )) {
-      if (compareVersions(current.tag_name.slice(1), candidate.version) > 0)
+      if (compareVersions(current.tag_name.slice(1), candidate.version) > 0) {
+        recordOutput(`superseded_tag=${current.tag_name}\n`);
         throw Error("Newer stable release already public");
+      }
       const prior = api<{ sha: string }>(`commits/${current.tag_name}`).sha;
       execFileSync("git", [
         "merge-base",
@@ -126,7 +147,10 @@ export async function publish(
     )
       throw Error("Release belongs to another candidate");
     assertAssets(release, manifests, !release.draft);
-    if (!release.draft) return;
+    if (!release.draft) {
+      recordPublicAssets(candidate, manifests);
+      return;
+    }
   } else {
     release = api<Release>("releases", "POST", {
       tag_name: candidate.tag,
@@ -174,6 +198,7 @@ export async function publish(
     finalTag.object.sha !== candidate.sourceSha
   )
     throw Error("Published tag mismatch");
+  recordPublicAssets(candidate, manifests);
 }
 if (
   process.argv[1] &&
