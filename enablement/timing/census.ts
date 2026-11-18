@@ -6,6 +6,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { resolve, join, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {operations, operationFamily, unresolvedOperation} from './operations.ts'
+import {YieldedPolls} from './yielded-polls/index.ts'
 
 type Row = { timestamp?: string; type?: string; payload?: Record<string, any> }
 export type Call = { id: string; session: string; workspace: string; tool: string; category: string;
@@ -40,6 +41,7 @@ export async function readRollout(path: string, accept: (workspace: string) => b
   const processes = new Map<string, Call>()
   const cells = new Map<string, Call>()
   const pollTargets = new Map<string, string>()
+  const yieldedPolls = new YieldedPolls()
   let session = '', workspace = '', malformed = 0, orphanResults = 0, lineNumber = 0
   const lines = createInterface({ input: createReadStream(path), crlfDelay: Infinity })
   for await (const line of lines) {
@@ -69,8 +71,10 @@ export async function readRollout(path: string, accept: (workspace: string) => b
       const cell = /(?:^|\.)wait$/.test(tool) && source.match(/cell_id["\s]*:\s*"([\w:.-]+)"/);
       const owner = poll ? processes.get(poll[1]) : cell ? cells.get(cell[1]) : undefined;
       const waitedOperations = owner?.waitedOperations ?? owner?.operations;
-      calls.set(p.call_id, { id: p.call_id, session, workspace, tool, start: time,
-        ...inspected, ...(waitedOperations ? {waitedOperations} : {}), asynchronous: false, sourceRef: {file: path, line: lineNumber} })
+      const call = { id: p.call_id, session, workspace, tool, start: time,
+        ...inspected, ...(waitedOperations ? {waitedOperations} : {}), asynchronous: false, sourceRef: {file: path, line: lineNumber} }
+      calls.set(call.id, call)
+      yieldedPolls.start(call, source, p.type, processes)
     } else if (p.type === 'function_call_output' || p.type === 'custom_tool_call_output') {
       const call = calls.get(p.call_id)
       if (!call) { orphanResults++; continue }
@@ -80,9 +84,13 @@ export async function readRollout(path: string, accept: (workspace: string) => b
       call.asynchronous = /session_id["\s]*[:=]\s*\d+|Session ID:|Script running with cell ID|Process running with session ID/.test(output)
       if (time >= call.start) call.end = time
       const processId = output.match(/session_id["\s]*[:=]\s*(\d+)|Process running with session ID\s*(\d+)/)
-      if (processId && !call.operations?.includes('process wait') && call.category !== 'poll/wait' && !call.batched)
-        processes.set(processId[1] ?? processId[2], call)
+      if (processId && !call.operations?.includes('process wait') && call.category !== 'poll/wait' && !call.batched) {
+        const sessionId = processId[1] ?? processId[2]
+        yieldedPolls.launch(call, sessionId, p.output, processes.get(sessionId))
+        processes.set(sessionId, call)
+      }
       const cellId = output.match(/Script running with cell ID\s+([\w:.-]+)/);
+      yieldedPolls.finish(call, p.type, p.output, cellId?.[1], !!cellId && cells.has(cellId[1]))
       if (cellId) cells.set(cellId[1],call);
       const target = pollTargets.get(p.call_id)
       const launched = target && processes.get(target)

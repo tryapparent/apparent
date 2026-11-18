@@ -161,22 +161,25 @@ for (const [name, prelude, expected, mixed] of [
       JSON.stringify({ type: 'response_item', timestamp: new Date(ms).toISOString(), payload: { type, call_id, ...fields } })
     const cmd = prelude + (name === 'private job' ? 'exec ' : '') +
       'node --experimental-strip-types enablement/local-tests/execution/push.ts --jobs 2 -- origin HEAD > "/tmp/example/log" 2>&1'
+    const receipt = (status: object) => ['Script completed\nWall time 1.0 seconds\nOutput:\n',
+      JSON.stringify({chunk_id: 'fixture', wall_time_seconds: 1, original_token_count: 0, output: '', ...status})]
+      .map(text => ({type: 'input_text', text}))
     try {
       await writeFile(file, [
         JSON.stringify({ type: 'session_meta', payload: { id: 's', cwd: '/fixture' } }),
         row(1000, 'custom_tool_call', 'push', { name: 'exec', input: 'text(await tools.exec_command({cmd:`' + cmd + '`,yield_time_ms:1000}));' }),
-        row(2000, 'custom_tool_call_output', 'push', { output: 'Process running with session ID 123' }),
+        row(2000, 'custom_tool_call_output', 'push', { output: receipt({session_id: 123}) }),
         row(3000, 'custom_tool_call', 'poll', { name: 'exec', input: 'text(await tools.write_stdin({session_id:123}));' }),
-        row(4000, 'custom_tool_call_output', 'poll', { output: 'Script running with cell ID cell:1' }),
+        row(4000, 'custom_tool_call_output', 'poll', { output: 'Script running with cell ID cell:1\nWall time 1.0 seconds\nOutput:\n' }),
         row(4000, 'function_call', 'cell', { namespace: 'functions', name: 'wait', arguments: '{"cell_id":"cell:1"}' }),
-        row(6000, 'function_call_output', 'cell', { output: 'Process running with session ID 123' }),
+        row(6000, 'function_call_output', 'cell', { output: receipt({exit_code: 0}) }),
         row(8000, 'custom_tool_call', 'terminal', { name: 'exec', input: 'text(await tools.write_stdin({session_id:123}));' }),
         row(11000, 'custom_tool_call_output', 'terminal', { output: 'Process exited with code 0' }),
       ].join('\n'))
       const { calls } = await readRollout(file, () => true)
       const report = summarize(calls, 0, 12000)
       assert.deepEqual(calls.map(c => [c.id, c.start, c.end, c.processObservedEnd]), [
-        ['push', 1000, 2000, 11000], ['poll', 3000, 4000, undefined], ['cell', 4000, 6000, undefined],
+        ['push', 1000, 2000, 6000], ['poll', 3000, 4000, undefined], ['cell', 4000, 6000, undefined],
         ['terminal', 8000, 11000, undefined],
       ])
       assert.equal(report.calls, 4)
@@ -191,7 +194,7 @@ for (const [name, prelude, expected, mixed] of [
       assert.equal(processes.ranked.length, 1)
       const process = processes.ranked[0]
       assert.equal(process.label, mixed ? expected.join(' + ') : label)
-      assert.deepEqual([process.count, process.meanSeconds, process.totalSeconds, process.unresolved], [1, 10, 10, mixed])
+      assert.deepEqual([process.count, process.meanSeconds, process.totalSeconds, process.unresolved], [1, 5, 5, mixed])
       assert.equal(processes.winnerEstablished, !mixed)
     } finally { await rm(dir, { recursive: true, force: true }) }
   })
