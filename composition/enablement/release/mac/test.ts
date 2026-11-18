@@ -20,7 +20,12 @@ import { dirname, join } from "node:path";
 import { stagePortable } from "./frontend.ts";
 import { distribution } from "./distribution.ts";
 import { test } from "node:test";
-import { alternateRunner, capacityCancelled, queueReport } from "./runner.ts";
+import {
+  alternateRunner,
+  capacityCancelled,
+  macToolchain,
+  queueReport,
+} from "./runner.ts";
 import { validate } from "./inputs.ts";
 
 const env = {
@@ -149,6 +154,7 @@ test("the alternate Apple Silicon image is used only for verified unassigned job
   ];
   assert.equal(alternateRunner("macos-26"), "macos-15");
   assert.equal(alternateRunner("macos-15"), "macos-26");
+  assert.equal(alternateRunner("xcode-27"), "macos-26");
   assert.throws(() => alternateRunner("macos-26-intel"));
   assert.equal(capacityCancelled(job, "macos-26", annotations), true);
   assert.equal(capacityCancelled(job, "macos-26", []), false);
@@ -180,6 +186,25 @@ test("the alternate Apple Silicon image is used only for verified unassigned job
     ]),
     "- macos-26: 901s before cancellation without a runner\n- macos-15: 43s to runner setup",
   );
+});
+test("opting into xcode-27 retains the pinned SDK on the standard fallback", () => {
+  assert.deepEqual(macToolchain("xcode-27", "candidate"), {
+    xcode: "27.2",
+    sdkMajor: "27",
+  });
+  for (const [runner, job] of [
+    ["xcode-27", "fallback"],
+    ["macos-26", "candidate"],
+    ["macos-15", "candidate"],
+    ["macos-26", "fallback"],
+    ["macos-15", "fallback"],
+  ])
+    assert.deepEqual(macToolchain(runner, job), {
+      xcode: "26.3",
+      sdkMajor: "26",
+    });
+  assert.throws(() => macToolchain("macos-26-intel", "candidate"));
+  assert.throws(() => macToolchain("xcode-27", "preview"));
 });
 test("control checkout precedes nested source checkout on both candidate runners", () => {
   const workflow = readFileSync(
