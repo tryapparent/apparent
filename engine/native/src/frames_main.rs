@@ -5,6 +5,7 @@ compile_error!("Engine supports Linux and macOS only");
 #[cfg(target_os = "linux")]
 mod frame_linux;
 mod frame_output;
+mod output;
 
 use frame_output::{MAX_EDGE, MAX_FRAMES, MAX_TIME, Output, Result};
 use std::io::Read;

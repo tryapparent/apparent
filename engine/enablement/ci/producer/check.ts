@@ -89,10 +89,11 @@ run(
     "--input-type=module",
     "-e",
     `
-  import {parseMovieInfo, decodeMovieFrames} from '@apparent/engine-sdk';
+  import {parseMovieInfo, decodeMovieFrames, decodeMovieAudio} from '@apparent/engine-sdk';
   import assert from 'node:assert/strict';
   assert.deepEqual(parseMovieInfo('{"format":{},"streams":[]}'), {durationMs:null,video:null,audio:[]});
   assert.equal(typeof decodeMovieFrames, 'function');
+  assert.equal(typeof decodeMovieAudio, 'function');
 `,
   ],
   consumer,
@@ -116,7 +117,22 @@ run(
     "--release",
     "--locked",
     "--features",
-    "frames",
+    "frames,audio",
+    "-j",
+    process.env.T3_BUILD_JOBS ?? "3",
+    "--target-dir",
+    target,
+  ],
+  nativeSource,
+);
+run(
+  "cargo",
+  [
+    "test",
+    "--release",
+    "--locked",
+    "--features",
+    "frames,audio",
     "-j",
     process.env.T3_BUILD_JOBS ?? "3",
     "--target-dir",
@@ -127,7 +143,11 @@ run(
 const name = `engine-media-${process.platform}-${process.arch}`;
 const runtime = join(output, name);
 mkdirSync(runtime, { recursive: true, mode: 0o700 });
-const files = ["apparent-engine-media", "apparent-engine-frames"];
+const files = [
+  "apparent-engine-media",
+  "apparent-engine-frames",
+  "apparent-engine-audio",
+];
 if (process.platform === "darwin")
   files.push("apparent-engine-probe", "apparent-engine-frames-native");
 for (const file of files) {
@@ -147,6 +167,13 @@ if (
   "apparent-engine-frames " + nativeVersion.split(" ")[1]
 )
   throw Error("Mismatched frame provider");
+if (
+  execFileSync(join(runtime, "apparent-engine-audio"), ["--version"], {
+    encoding: "utf8",
+  }).trim() !==
+  "apparent-engine-audio " + nativeVersion.split(" ")[1]
+)
+  throw Error("Mismatched audio provider");
 const sourceCommit = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: root,
   encoding: "utf8",
@@ -162,16 +189,16 @@ const manifest = {
   version: nativeVersion.split(" ")[1],
   sdkVersion: source.version,
   sourceCommit,
-  capabilities: ["movie-probe/1", "movie-frames/1"],
+  capabilities: ["movie-probe/1", "movie-frames/1", "movie-audio/1"],
   sourceDirty,
   platform: process.platform,
   arch: process.arch,
   prerequisites:
     process.platform === "linux"
       ? [
-          "ffprobe on PATH (FFmpeg)",
+          "ffprobe and ffmpeg on PATH (FFmpeg)",
           "glibc",
-          "GStreamer 1.24+ core/app/video, base/good/libav runtime plugins for frames",
+          "GStreamer 1.24+ core/app/video, base/good/libav runtime plugins for frames and audio",
         ]
       : ["macOS 15 or later"],
   files: [...files, "LICENSE"].map((path) => ({
@@ -210,6 +237,11 @@ cpSync(
 cpSync(
   join(root, "engine/enablement/ci/producer/qualify-frames.ts"),
   join(consumer, "qualify-frames.ts"),
+);
+cpSync(
+  join(root, "engine/enablement/ci/producer/audio"),
+  join(consumer, "audio"),
+  { recursive: true },
 );
 run(
   process.execPath,

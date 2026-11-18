@@ -34,6 +34,7 @@ function fixture(t: TestContext) {
     const files = [
       "apparent-engine-media",
       "apparent-engine-frames",
+      "apparent-engine-audio",
       "LICENSE",
     ];
     if (platform === "darwin")
@@ -50,8 +51,8 @@ function fixture(t: TestContext) {
       sourceDirty: false,
       platform,
       arch,
-      sdkVersion: "0.3.0",
-      capabilities: ["movie-probe/1", "movie-frames/1"],
+      sdkVersion: "0.4.0",
+      capabilities: ["movie-probe/1", "movie-frames/1", "movie-audio/1"],
       files: files.map((path) => ({
         path,
         mode: path === "LICENSE" ? 0o644 : 0o755,
@@ -70,7 +71,7 @@ function fixture(t: TestContext) {
     checksum(name + ".tar.gz");
   }
   writeFileSync(
-    join(directory, "apparent-engine-sdk-0.3.0.tgz"),
+    join(directory, "apparent-engine-sdk-0.4.0.tgz"),
     "synthetic SDK contract fixture",
   );
   sdkDigest(directory);
@@ -100,6 +101,7 @@ test("complete inventory still rejects wrong identity, architecture, dirty sourc
     { arch: "arm64" },
     { sdkVersion: "0.2.0" },
     { files: [] },
+    { capabilities: ["movie-probe/1", "movie-frames/1"] },
   ]) {
     f.native("linux-x64", override);
     assert.throws(
@@ -108,6 +110,6 @@ test("complete inventory still rejects wrong identity, architecture, dirty sourc
     );
   }
   rmSync(join(f.cwd, "engine-media-linux-x64"), { recursive: true });
-  f.native("linux-x64", {}, "apparent-engine-frames");
+  f.native("linux-x64", {}, "apparent-engine-audio");
   assert.throws(() => validateArtifacts(f.directory, candidate));
 });

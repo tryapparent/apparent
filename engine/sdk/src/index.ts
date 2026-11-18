@@ -3,6 +3,8 @@ import {isAbsolute} from 'node:path';
 
 export {decodeMovieFrames, EngineFrameError} from './frames.js';
 export type {MovieFrame} from './frames.js';
+export {decodeMovieAudio, EngineAudioError, MAX_MOVIE_AUDIO_SAMPLES} from './audio.js';
+export type {MovieAudio} from './audio.js';
 
 export interface TrackTiming {startMs: number | null; durationMs: number | null}
 export interface MovieInfo {
