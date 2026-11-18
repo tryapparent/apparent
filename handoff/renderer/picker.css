@@ -2,8 +2,6 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-}
-.destination-stack {
   --picker-surface: var(--apparent-background);
   --picker-tray: var(--apparent-muted);
   --picker-ink: var(--apparent-foreground);
@@ -15,19 +13,24 @@
   line-height: 24px;
 }
 .destination-assembly {
+  position: relative;
+  isolation: isolate;
   width: max-content;
   max-width: 100%;
-  border: 1px solid var(--picker-line);
   border-radius: 28px;
-  background: var(--picker-surface);
-  overflow: hidden;
+}
+.destination-assembly:has(.destination-trigger[role="combobox"]) {
+  width: 342px;
 }
 .destination-pill {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 5px 6px;
   min-height: 62px;
+  border: 1px solid var(--picker-line);
   border-radius: 28px;
   background: var(--picker-surface);
 }
@@ -67,9 +70,14 @@
   background: var(--apparent-brand);
   color: var(--apparent-brand-foreground);
   font:
-    400 20px / 24px "Host Grotesk",
+    500 18px / 24px "Host Grotesk",
     sans-serif;
   box-shadow: none;
+}
+.destination-trigger[role="combobox"] {
+  flex: 1;
+  max-width: none;
+  justify-content: space-between;
 }
 .destination-trigger > span {
   overflow: hidden;
@@ -97,24 +105,6 @@
   outline-width: 2px;
   outline-offset: -4px;
 }
-.destination-stack[data-open="true"] .destination-assembly {
-  position: relative;
-  isolation: isolate;
-  width: 342px;
-  border: 0;
-  background: transparent;
-  overflow: visible;
-}
-.destination-stack[data-open="true"] .destination-pill {
-  position: relative;
-  z-index: 1;
-  border: 1px solid var(--picker-line);
-  border-radius: 28px;
-}
-.destination-stack[data-open="true"] .destination-trigger {
-  flex: 1;
-  justify-content: space-between;
-}
 .destination-tray {
   position: relative;
   z-index: 0;
@@ -140,7 +130,7 @@
   background: transparent;
   color: var(--picker-ink);
   font:
-    400 18px / 24px "Host Grotesk",
+    500 18px / 24px "Host Grotesk",
     sans-serif;
   white-space: normal;
   text-align: start;
@@ -160,6 +150,7 @@
 .destination-option[aria-selected="true"] {
   background: var(--apparent-brand);
   color: var(--apparent-brand-foreground);
+  box-shadow: inset 3px 0 var(--apparent-ring);
 }
 .destination-option:hover:not([aria-selected="true"]) {
   background: color-mix(in srgb, var(--picker-ink) 8%, transparent);
@@ -171,7 +162,7 @@
   border-radius: 16px;
 }
 .destination-notification .apparent-status-card {
-  padding: 16px;
+  padding: 12px 16px;
   border-radius: 16px;
   gap: 0;
   text-align: start;
@@ -184,7 +175,7 @@
 .destination-notification .apparent-status-card.compact h2 {
   font-size: 18px;
   line-height: 24px;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 .destination-notification .status-heading {
   display: flex;
@@ -197,8 +188,8 @@
   display: flex;
 }
 .destination-notification p {
-  font-size: 18px;
-  line-height: 27px;
+  font-size: 16px;
+  line-height: 24px;
   margin: 0;
   text-align: start;
 }
@@ -219,12 +210,13 @@
   min-height: 44px;
 }
 .destination-receipt {
-  padding: 8px 16px;
+  padding: 4px 8px 4px 16px;
   border: 1px solid var(--picker-line);
   border-radius: 28px;
   background: var(--picker-surface);
   display: flex;
   align-items: center;
+  justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
   font-size: 16px;
@@ -243,14 +235,13 @@
   }
 }
 
-.destination-option small {
+.destination-option small,
+.destination-label > small {
   display: block;
   font-size: 16px;
-  line-height: 22px;
+  line-height: 20px;
   font-weight: 400;
-}
-.destination-option > span {
-  display: block;
+  color: var(--apparent-muted-foreground);
 }
 
 .destination-label {
@@ -263,28 +254,14 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.destination-label > small {
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 400;
-}
 .destination-share {
   flex-shrink: 0;
   min-height: 44px;
   border-radius: 22px;
-  padding: 10px 12px;
+  padding: 10px 8px;
   font:
-    400 18px / 24px "Host Grotesk",
+    500 16px / 24px "Host Grotesk",
     sans-serif;
-  gap: 8px;
-}
-.destination-share svg {
-  width: 18px;
-  height: 18px;
-  stroke-width: 1.5;
-}
-.destination-pill:has(.destination-share) .destination-trigger {
-  flex: 1;
 }
 
 .pill-destination {
@@ -296,8 +273,9 @@
 .destination-stack:has(.destination-share) {
   max-width: min(540px, var(--pill-limit, 1200px));
 }
-.destination-stack[data-open="true"]:has(.destination-share)
-  .destination-assembly {
+.destination-assembly:has(.destination-share):has(
+  .destination-trigger[role="combobox"]
+) {
   width: 482px;
 }
 
@@ -305,16 +283,76 @@
   display: flex;
   justify-content: center;
   padding: 0 8px 4px;
+  border-top: 1px solid var(--picker-line);
 }
 .destination-browse button {
-  width: 44px;
   height: 44px;
   min-height: 44px;
   border-radius: 22px;
   color: var(--picker-ink);
+  gap: 8px;
+  padding-inline: 12px;
+  font-size: 16px;
+  font-weight: 500;
 }
 .destination-browse svg {
   width: 18px;
   height: 18px;
   stroke-width: 1.5;
+}
+
+.destination-stack[data-open="true"] .destination-trigger {
+  background: var(--picker-tray);
+  color: var(--picker-ink);
+}
+
+.destination-stack[data-open="true"] .destination-trigger:focus-visible {
+  outline-color: var(--apparent-ring);
+}
+
+.destination-stack[data-open="true"] .destination-trigger > svg {
+  transform: rotate(180deg);
+}
+
+.destination-trigger[aria-expanded="false"]:not(:disabled)
+  .destination-label
+  > small,
+.destination-option[aria-selected="true"] small {
+  color: inherit;
+}
+
+.destination-trigger:disabled {
+  background: var(--picker-tray);
+  color: var(--apparent-muted-foreground);
+  opacity: 1;
+}
+
+.destination-trigger[role="combobox"]:disabled > svg {
+  visibility: hidden;
+}
+
+.destination-receipt button {
+  font-size: 16px;
+}
+
+.destination-recovery button:first-child {
+  background: var(--apparent-primary);
+  color: var(--apparent-primary-foreground);
+  border-color: transparent;
+}
+
+.destination-pill:has(.destination-share) .destination-status {
+  width: 28px;
+  min-width: 28px;
+}
+
+.destination-pill:has(.destination-share)
+  .destination-trigger[role="combobox"] {
+  padding-inline: 8px;
+  gap: 4px;
+}
+
+.destination-close,
+.destination-browse button {
+  outline-color: var(--apparent-ring);
 }
