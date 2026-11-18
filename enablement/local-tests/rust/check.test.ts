@@ -81,7 +81,9 @@ test("real Cargo diagnostics compare complete pinned trees and tolerate line shi
       let profile = out.ancestors().nth(3).unwrap();
       let source = fs::read_to_string("main.rs").unwrap();
       fs::write(profile.join("apparent-helper"), source).unwrap();
-      assert_eq!(env::var("FIXTURE_NATIVE_CONFIG").unwrap(), "preserved");
+      let native = env::var("FIXTURE_NATIVE_CONFIG").unwrap();
+      assert!(["preserved", "changed"].contains(&native.as_str()));
+      println!("cargo:warning=fixture output {}", profile.display());
     }
   `,
   );
@@ -94,7 +96,7 @@ test("real Cargo diagnostics compare complete pinned trees and tolerate line shi
   install("cargo-home/config.toml", `[build]\ntarget = "${cross}"\n`);
   git("add", "enablement", "shared", ".gitignore", ".cargo", "build.rs");
   const commit = () => {
-    git("add", "main.rs", "Cargo.toml", "Cargo.lock");
+    git("add", "main.rs", "Cargo.toml", "Cargo.lock", ".cargo");
     git(
       "-c",
       "user.name=Compiler Fixture",
@@ -147,6 +149,7 @@ test("real Cargo diagnostics compare complete pinned trees and tolerate line shi
     struct Same;
 }\nfn main() {}\n`,
   );
+  install(".cargo/config.toml", '[env]\nFIXTURE_NATIVE_CONFIG = "changed"\n');
   const head = commit();
   put("main.rs", "fn main() {}\n");
   await assert.rejects(
@@ -163,6 +166,10 @@ test("real Cargo diagnostics compare complete pinned trees and tolerate line shi
     CARGO_BUILD_BUILD_DIR: normalTarget,
   });
   assert.equal(rejected.status, 1, rejected.stderr);
+  const outputs = [...rejected.stderr.matchAll(/fixture output (\S+)/g)].map(
+    (match) => match[1],
+  );
+  assert.equal(new Set(outputs).size, 2, rejected.stderr);
   assert.match(rejected.stderr, /New Rust dead_code diagnostics:[\s\S]*Same/);
   assert.equal(
     readFileSync(path.join(normalTarget, "debug/apparent-helper"), "utf8"),

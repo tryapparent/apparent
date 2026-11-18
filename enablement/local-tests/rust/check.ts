@@ -1,5 +1,7 @@
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
@@ -32,6 +34,32 @@ function version(cwd: string, env: Environment): string {
       "Install the repository's supported Rust toolchain (cargo and rustc) before pushing",
     );
   }
+}
+
+function outputDirectory(
+  scratch: string,
+  work: string,
+  target: Target,
+  env: Environment,
+  toolchain: string,
+): string {
+  const configs = [env.CARGO_HOME || path.join(homedir(), ".cargo")];
+  for (let dir = work; dir !== path.dirname(dir); dir = path.dirname(dir))
+    configs.push(path.join(dir, ".cargo"));
+  const config = configs.map((dir) =>
+    ["config", "config.toml"].map((name) => {
+      try {
+        return readFileSync(path.join(dir, name), "utf8");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        return null;
+      }
+    }),
+  );
+  const key = createHash("sha256")
+    .update(JSON.stringify([toolchain, config]))
+    .digest("hex");
+  return path.join(scratch, "target", target.package, key.slice(0, 24));
 }
 
 async function cargoCheck(
@@ -181,48 +209,51 @@ export async function checkRust(
   try {
     materialize(cwd, head, candidate);
     for (const target of selected) {
-      const output = path.join(scratch, "target", target.package);
-      const env = {
-        ...sharedEnv,
-        CARGO_TARGET_DIR: output,
-        CARGO_BUILD_TARGET_DIR: output,
-        CARGO_BUILD_BUILD_DIR: output,
-        CARGO_BUILD_TARGET: host,
-      };
-      if (
-        version(path.join(candidate, path.dirname(target.manifest)), env) !==
-        toolchain
-      )
-        throw Error(
-          `${target.manifest}: candidate snapshot selects a different Rust toolchain; activate the supported toolchain explicitly`,
+      const environment = (root: string, revision: string) => {
+        const work = path.join(root, path.dirname(target.manifest));
+        if (version(work, sharedEnv) !== toolchain)
+          throw Error(
+            `${target.manifest}: snapshot ${revision.slice(0, 12)} selects a different Rust toolchain; activate the same supported toolchain for both revisions`,
+          );
+        const output = outputDirectory(
+          scratch,
+          work,
+          target,
+          sharedEnv,
+          toolchain,
         );
+        const env = {
+          ...sharedEnv,
+          GITHUB_SHA: revision,
+          CARGO_TARGET_DIR: output,
+          CARGO_BUILD_TARGET_DIR: output,
+          CARGO_BUILD_BUILD_DIR: output,
+          CARGO_BUILD_TARGET: host,
+        };
+        return { env, output };
+      };
+      const current = environment(candidate, head);
       const warnings = await cargoCheck(
         candidate,
         target,
-        { ...env, GITHUB_SHA: head },
+        current.env,
         "candidate",
         host,
-        output,
+        current.output,
       );
       if (!warnings.length) continue;
       if (!haveBaseline) {
         materialize(cwd, base, baseline);
         haveBaseline = true;
       }
-      if (
-        version(path.join(baseline, path.dirname(target.manifest)), env) !==
-        toolchain
-      )
-        throw Error(
-          `${target.manifest}: main snapshot selects a different Rust toolchain; activate the same supported toolchain for both revisions`,
-        );
+      const main = environment(baseline, base);
       const accepted = await cargoCheck(
         baseline,
         target,
-        { ...env, GITHUB_SHA: base },
+        main.env,
         `main ${base.slice(0, 12)}`,
         host,
-        output,
+        main.output,
       );
       const added = newWarnings(accepted, warnings);
       if (added.length)

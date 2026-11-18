@@ -42,6 +42,9 @@ export function writeFiniteChecks(destination: string, plan = finiteCheckPlan())
 export function runnerFixture(destination: string): void {
   copyRunnerSources(destination);
   writeFiniteChecks(destination);
+  const admission = resolve(destination, 'shared/enablement/dependency-policy');
+  mkdirSync(admission, {recursive: true});
+  writeFileSync(resolve(admission, 'package.json'), '{"private":true}\n');
   for (const directory of fixtureBendDirectories(destination)) {
     const bend = resolve(destination, directory, 'check.ts');
     mkdirSync(dirname(bend), {recursive: true});

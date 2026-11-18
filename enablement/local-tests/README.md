@@ -25,8 +25,8 @@ Cargo errors and an unusable comparison fail the push. No warning verdicts are
 stored. Both revisions explicitly target the verified native Cargo and rustc
 host. Cargo honors snapshot and Cargo home configuration for native builds.
 The check selects the verified rustc directly and clears compiler wrappers.
-Candidate and baseline share a diagnostics-private target/build directory
-per manifest for Cargo-compatible reuse during one invocation. Later
+Candidate and baseline reuse a diagnostics-private target/build directory
+per manifest when their toolchain and Cargo configuration match. Later
 invocations start cold. The directory is discarded on completion, keeping
 build scripts and their runtime companions separate from developer artifacts.
 Install the shared locked admission tools for Rust warning scope parsing.
