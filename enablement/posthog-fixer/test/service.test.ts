@@ -115,9 +115,9 @@ test('configuration supports full-access Codex reasoning and rejects invalid set
     WEBHOOK_TOKEN_FILE:f.c.webhookTokenFile,STATE_DIRECTORY:f.c.stateDirectory,POSTHOG_COMMAND:'/synthetic/posthog',
     T3_PROVIDER_INSTANCE:'codex',T3_MODEL:'synthetic'};
   assert.equal(config(env).dailyLimit,10);
-  const configured=config({...env,T3_MODEL:'gpt-6.1-sol'});
+  const configured=config({...env,T3_MODEL:'gpt-6.2-sol'});
   assert.equal(configured.runtimeMode,'full-access');
-  assert.deepEqual(configured.modelSelection,{instanceId:'codex',model:'gpt-6.1-sol',options:[{id:'reasoningEffort',value:'high'}]});
+  assert.deepEqual(configured.modelSelection,{instanceId:'codex',model:'gpt-6.2-sol',options:[{id:'reasoningEffort',value:'high'}]});
   f.store.enqueue(issue,2);
   const payload=launchPayload(configured,f.store.jobs()[0],'untrusted synthetic context');
   assert.deepEqual(payload.modelSelection,configured.modelSelection);
@@ -125,6 +125,12 @@ test('configuration supports full-access Codex reasoning and rejects invalid set
   assert.match(payload.initialMessage.text,/authorized to change application instrumentation/);
   assert.match(payload.initialMessage.text,/preserve consent\/privacy boundaries/);
   assert.match(payload.initialMessage.text,/Do not guess a repair/);
+  assert.match(payload.initialMessage.text,/error-tracking-external-references-create/);
+  assert.match(payload.initialMessage.text,/never create duplicates/);
+  assert.match(payload.initialMessage.text,/PostHog has no native in-progress status/);
+  assert.match(payload.initialMessage.text,/delivered to the affected environment and verified/);
+  assert.match(payload.initialMessage.text,/Diagnostics-only work.*remain active/);
+  assert.match(payload.initialMessage.text,/missing write scopes are not permission to broaden access/);
   assert.equal(config({...env,T3_RUNTIME_MODE:'auto-accept-edits'}).runtimeMode,'auto-accept-edits');
   assert.deepEqual(config({...env,T3_REASONING_EFFORT:'medium'}).modelSelection.options,[{id:'reasoningEffort',value:'medium'}]);
   for(const origin of ['http://remote.invalid','https://user:pass@host.invalid','https://host.invalid/path'])
