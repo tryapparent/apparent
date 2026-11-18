@@ -1,10 +1,16 @@
+type Request = {
+  route: { connectionId: string; profile: string; targetProfile: string; mode: string };
+  method: string;
+  params: { command?: string; session_id?: string; request_id?: string; source?: string; hidden?: boolean };
+};
+
 export const shared = {
-  owner: { connectionId: 'ssh-A', profile: 'work' }, session: 'runtime-A', storedSession: 'stored-A',
+  owner: { connectionId: 'ssh-A', profile: 'work' }, session: 'runtime-A' as string | null, storedSession: 'stored-A' as string | null,
   routes: [
     { connectionId: 'ssh-A', profile: 'work', targetProfile: 'work', mode: 'remote' },
     { connectionId: 'local-A', profile: 'default', targetProfile: 'default', mode: 'local' },
   ],
-  requests: [] as unknown[], submissions: [] as Array<{ session: string; text: string }>, insertions: [] as Array<{ session: string; text: string; mode?: string }>, draftReads: [] as string[], opens: [] as unknown[], errors: [] as string[],
+  requests: [] as Request[], submissions: [] as Array<{ session: string; text: string }>, insertions: [] as Array<{ session: string; text: string; mode?: string }>, draftReads: [] as string[], opens: [] as unknown[], errors: [] as string[],
   key: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', source: 'cccccccccccccccccccccccccccccccc', bundlePath: '/private/owned.apparent',
   draft: 'typed draft must remain unchanged', newDraft: 'typed draft must remain unchanged', acceptSubmit: true, acceptInsert: true,
   draftReadGate: undefined as Promise<void> | undefined,
@@ -14,6 +20,11 @@ export const shared = {
   sessionCreateStart: undefined as (() => void) | undefined,
   legacyRuntimeDescribe: false,
   runtimeDescribeError: undefined as unknown,
+  setupStatus: { schema: 1, status: 'ready' } as unknown,
+  setupRpcError: undefined as unknown,
+  setupGate: undefined as Promise<void> | undefined,
+  shellSetupResult: { code: 0, stdout: '{"schema":1,"status":"ready"}', stderr: '' },
+  notices: [] as Array<{ kind?: string; message: string; action?: { label: string; onClick: () => void } }>,
 };
 export const host = {
   state: {
@@ -23,11 +34,17 @@ export const host = {
   },
   profileRoutes: async () => shared.routes,
   requestProfile: async (route: any, method: string, params: any) => {
-    if (!['shell.exec', 'session.create', 'runtime.describe'].includes(method)) throw new Error(`Unsupported stock profile contract method: ${method}`);
+    if (!['shell.exec', 'session.create', 'runtime.describe', 'plugin.apparent.setup_status'].includes(method)) throw new Error(`Unsupported stock profile contract method: ${method}`);
     if (!route?.mode || !route?.connectionId || !route?.profile) throw new Error('Expected a profile route descriptor');
     if (method === 'shell.exec' && (!params || typeof params.command !== 'string' || Object.keys(params).some(key => !['command', 'profile', 'session_id'].includes(key)) || ('session_id' in params && (typeof params.session_id !== 'string' || !params.session_id)))) throw new Error('Unexpected shell.exec parameters');
     if (method === 'session.create' && (!params || typeof params.request_id !== 'string' || params.source !== 'gui' || Object.keys(params).some(key => !['request_id', 'source', 'hidden'].includes(key)))) throw new Error('Unexpected session.create parameters');
     shared.requests.push({ route: { ...route }, method, params: { ...params } });
+    if (method === 'plugin.apparent.setup_status') {
+      if (route.mode !== 'local' || Object.keys(params).length) throw new Error('Unexpected setup status route or parameters');
+      if (shared.setupRpcError) throw shared.setupRpcError;
+      await shared.setupGate;
+      return shared.setupStatus;
+    }
     if (method === 'runtime.describe') {
       if (shared.runtimeDescribeError) throw shared.runtimeDescribeError;
       if (shared.legacyRuntimeDescribe) throw { code: -32601, data: { reason: 'unknown_method' } };
@@ -40,6 +57,7 @@ export const host = {
         ? { session_id: 'helper-runtime', stored_session_id: 'helper-stored' }
         : { ...shared.sessionCreate };
     }
+    if (params.command === 'apparent hermes status') return shared.shellSetupResult;
     if (params.command.includes('/apparent-hermes/')) return { code: 0, stdout: shared.key, stderr: '' };
     return { code: 0, stdout: '', stderr: '' };
   },
@@ -69,7 +87,10 @@ export const host = {
       return true;
     },
   },
-  notify: (notice: { message: string }) => { shared.errors.push(notice.message); },
+  notify: (notice: (typeof shared.notices)[number]) => {
+    shared.notices.push(notice);
+    if (notice.kind === 'error') shared.errors.push(notice.message);
+  },
 };
 export const COMPOSER_AREAS = { actions: 'composer.actions' };
 export const PALETTE_AREA = 'palette';

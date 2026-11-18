@@ -50,6 +50,25 @@ export function recordCommand(token: string, port: number) {
   if (!validToken(token) || !Number.isInteger(port) || port < 32768 || port > 60999) throw new Error('Invalid recording request');
   return `apparent hermes record '${token}/${port}'`;
 }
+export const setupStatusCommand = 'apparent hermes status';
+const setupStatuses = ['ready', 'setup_required', 'legacy', 'missing', 'update_required', 'unavailable'] as const;
+export type SetupStatus = typeof setupStatuses[number];
+
+export function readSetupStatus(value: unknown): SetupStatus {
+  const result = value as { schema?: unknown; status?: unknown } | null;
+  return result?.schema === 1 ? setupStatuses.find(status => status === result.status) ?? 'unavailable' : 'unavailable';
+}
+
+export function readShellSetupStatus(result: { code?: number; stdout?: string; stderr?: string } | null): SetupStatus {
+  if (result?.code === 127) return 'missing';
+  if (result?.code === 2) {
+    if (result.stderr?.includes("unrecognized subcommand 'status'")) return 'legacy';
+    if (result.stderr?.includes("unrecognized subcommand 'hermes'")) return 'update_required';
+  }
+  if (result?.code !== 0 || typeof result.stdout !== 'string') return 'unavailable';
+  try { return readSetupStatus(JSON.parse(result.stdout)); }
+  catch { return 'unavailable'; }
+}
 export function keyCommand(token: string) {
   if (!validToken(token)) throw new Error('Invalid recording request');
   return `case "$(uname -s)" in Darwin) apparent_bridge_dir="$(getconf DARWIN_USER_TEMP_DIR)";; Linux) apparent_bridge_dir="\${XDG_RUNTIME_DIR:-/run/user/$(id -u)}";; *) exit 64;; esac\ncat "$apparent_bridge_dir/apparent-hermes/${token}.key"`;
