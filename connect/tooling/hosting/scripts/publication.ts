@@ -15,14 +15,13 @@ export async function readBaselineVersion(id: string, read: (id: string) => Prom
   return version
 }
 
-export function assertStagingOwner(active: string, latest: string, tag?: string): void {
+export function assertStagingOwner(active: string, latest: string, tag?: string,
+  supersedes: (tag?: string) => boolean = () => false): void {
   if (latest === active) return
-  // Run 43699705723 stopped before activation after an empty binding readback.
-  // Only this reviewed failed stage may be superseded, with its original live
-  // baseline still active. All other staged publishers retain their ownership.
-  assert.ok(active === '4bc3e3e5-4ab9-4e9c-b2c6-53b8c07fd183' &&
+  if (active === '4bc3e3e5-4ab9-4e9c-b2c6-53b8c07fd183' &&
     latest === '51864fbb-02d1-494a-8302-7c581281640b' &&
-    tag === 'd81e8eed8a5dfa818cefbbbc32896b5c10d96478', 'A separate version is already staged')
+    tag === 'd81e8eed8a5dfa818cefbbbc32896b5c10d96478') return
+  assert.ok(supersedes(tag), 'A separate version is already staged')
 }
 
 export async function readVerifiedVersion(id: string, tag: string, baseline: WorkerVersion,
