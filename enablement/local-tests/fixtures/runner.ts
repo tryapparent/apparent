@@ -44,7 +44,11 @@ export function runnerFixture(destination: string): void {
   writeFiniteChecks(destination);
   const admission = resolve(destination, 'shared/enablement/dependency-policy');
   mkdirSync(admission, {recursive: true});
-  writeFileSync(resolve(admission, 'package.json'), '{"private":true}\n');
+  const manifest = {name: 'finite-admission', private: true, scripts: {test: 'node -e ""'}};
+  writeFileSync(resolve(admission, 'package.json'), JSON.stringify(manifest));
+  writeFileSync(resolve(admission, 'package-lock.json'), JSON.stringify({
+    name: manifest.name, lockfileVersion: 3, packages: {'': {name: manifest.name}},
+  }));
   for (const directory of fixtureBendDirectories(destination)) {
     const bend = resolve(destination, directory, 'check.ts');
     mkdirSync(dirname(bend), {recursive: true});
