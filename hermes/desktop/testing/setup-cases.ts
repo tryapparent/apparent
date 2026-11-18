@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { shared } from "./sdk.ts";
 import { fixture, packet, reset, until } from "./fixture.ts";
 
-test("first-run setup offers an explicit app open without creating a conversation or sending the draft", async () => {
+test("fresh canonical chat gets setup instructions without creating a conversation or sending the draft", async () => {
   reset();
   shared.owner = { connectionId: "local-A", profile: "default" };
   shared.session = null;
@@ -16,28 +16,26 @@ test("first-run setup offers an explicit app open without creating a conversatio
     const draft = shared.newDraft;
     f.click();
     await until(() => shared.notices.length === 1);
-    assert.deepEqual(shared.requests, [
-      {
-        route: shared.routes[1],
-        method: "plugin.apparent.setup_status",
-        params: {},
-      },
-    ]);
+    assert.deepEqual(
+      shared.requests.map(({ route, method, params }) => [
+        route,
+        method,
+        params,
+      ]),
+      [
+        [shared.routes[1], "plugin.apparent.setup_status", {}],
+        [shared.routes[1], "runtime.describe", {}],
+      ],
+    );
     assert.equal(shared.newDraft, draft);
     assert.equal(shared.opens.length, 0);
     assert.equal(f.writes(), 0);
     assert.equal(shared.submissions.length, 0);
     const notice = shared.notices[0];
     assert.equal(notice.kind, "info");
-    assert.equal(notice.action?.label, "Open Apparent setup");
+    assert.equal(notice.action, undefined);
+    assert.match(notice.message, /app launcher/);
     assert.deepEqual(f.externalUrls, []);
-    notice.action?.onClick();
-    await until(() => shared.notices.length === 2);
-    assert.match(shared.notices[1].message, /app launcher/);
-    assert.deepEqual(
-      shared.requests.map((item) => item.method),
-      ["plugin.apparent.setup_status", "runtime.describe"],
-    );
     shared.setupStatus = { schema: 1, status: "ready" };
     f.click();
     await until(() =>

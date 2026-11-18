@@ -21,6 +21,7 @@ type SetupHost = {
     kind: "info" | "error";
     message: string;
     durationMs?: number;
+    placement?: "default";
     action?: { label: string; onClick: () => void };
   }): void;
   state: {
@@ -167,6 +168,17 @@ export function createRecorderSetup(
       });
   }
 
+  function showSetupInstructions() {
+    host.notify({
+      id: "apparent-recorder-setup",
+      kind: "info",
+      durationMs: 0,
+      placement: "default",
+      message:
+        "Open Apparent from your app launcher to finish setup, then click Record with Apparent again.",
+    });
+  }
+
   async function openSetup(route: Route, localSession: string | null) {
     try {
       const contract = await shellContract(host, route);
@@ -195,14 +207,7 @@ export function createRecorderSetup(
         if (result?.code === 0) return;
       }
     } catch {}
-    if (!disposed())
-      host.notify({
-        id: "apparent-recorder-setup-instructions",
-        kind: "info",
-        durationMs: 0,
-        message:
-          "Open Apparent from your app launcher to finish setup, then click Record with Apparent again.",
-      });
+    if (!disposed()) showSetupInstructions();
   }
 
   async function check(
@@ -213,11 +218,13 @@ export function createRecorderSetup(
     owner: Owner,
   ) {
     checking.set(true);
-    const status = await recorderStatus(
-      host,
-      localRoute,
-      localRoute === destination ? session : null,
-    );
+    const localSession = localRoute === destination ? session : null;
+    const status = await recorderStatus(host, localRoute, localSession);
+    const manualOpen =
+      (status === "setup_required" || status === "unavailable") &&
+      !localSession &&
+      (await shellContract(host, localRoute).catch(() => null))?.mode !==
+        "legacy";
     checking.set(false);
     const routes = await host.profileRoutes();
     const focused = host.state.focusedSessionOwner?.get();
@@ -237,7 +244,8 @@ export function createRecorderSetup(
       );
     }
     if (status === "ready" || status === "legacy") return true;
-    offerSetup(status, localRoute, localRoute === destination ? session : null);
+    if (manualOpen) showSetupInstructions();
+    else offerSetup(status, localRoute, localSession);
     return false;
   }
 

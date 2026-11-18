@@ -13,8 +13,8 @@ composer. It checks the recorder on this computer before binding a recording to
 the chat. If Apparent needs first-run setup, choose **Open Apparent setup**.
 Finish the native setup, then click **Record with Apparent** again. The original
 draft stays in place during setup. A missing recorder prompts **Install Apparent**.
-If the local gateway needs a chat to run the app opener, Hermes shows how to
-open Apparent from the system launcher.
+When the local gateway needs a chat to run the app opener, Hermes immediately
+shows how to open Apparent from the system launcher.
 The check uses `apparent hermes status` when available. Older compatible
 recorders keep their existing recording flow. The app still owns OS permission
 prompts. Finish or cancel in Apparent.
