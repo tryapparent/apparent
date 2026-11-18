@@ -2,14 +2,15 @@
 
 This is the headless post-publication workflow. It does not record, finalize,
 format bundles, manage settings, choose a Connect destination or send messages.
-`src/policy.ts` owns saved/failed/copied/manual-handoff decisions. No Electron,
+`src/copy-admission.bend` decides whether a finalized result can request copy.
+`src/policy.ts` assembles the completion state and remaining decisions. No Electron,
 DOM, native source or other owner implementation is imported.
 
 Run `npm ci`, `npm run typecheck`, `npm run build`, `npm test` in this directory
-with Node 22.18+ and npm. Only TypeScript and Node types are development
-dependencies. Tests separate pure decisions from the real Node worker protocol.
-The ordinary owner loop needs neither Rust nor a compiled native provider.
-This does not exempt composition, native provider changes or main/release checks.
+with Node 22.23 and npm. The owner build downloads and verifies the Bend compiler
+sources before emitting the JavaScript admission module. The isolated protocol
+tests can run offline. Record CI checks both the production module and its law.
+See [Bend build and verification](../enablement/ci/bend/README.md).
 
 ## Production boundary
 
@@ -63,7 +64,7 @@ Desktop's existing `scripts/build-pill.ts` typechecks these sources and emits
 the worker into ignored `electron/record-completion/`. Existing settings staging
 copies that directory with the locked runtime. No Cargo build input embeds the
 policy. Native CI prerequisite preparation also runs that generator and requires
-all three worker outputs before Cargo, including in jobs without a renderer build.
+the complete worker package before Cargo, including in jobs without a renderer build.
 A policy-only owner build is independent; an installed composition still
 requires Desktop packaging and native acceptance. No CI savings are claimed.
 

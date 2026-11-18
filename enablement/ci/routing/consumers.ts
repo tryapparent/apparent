@@ -1,5 +1,5 @@
 import {readFileSync} from 'node:fs';
-import {bendToolingInput} from '../../../shared/enablement/bend/source.ts';
+import {bendProductInput, bendToolingInput} from '../../../shared/enablement/bend/source.ts';
 const rule = JSON.parse(readFileSync(new URL('../../../engine/enablement/ci/inputs.json', import.meta.url), 'utf8')) as {root: string; excludedSuffixes: string[]};
 const automaticPaths = [rule.root + '/**', ...rule.excludedSuffixes.map(suffix => '!' + rule.root + '/**/*' + suffix)];
 const affectsEngine = (path: string) => path.startsWith(rule.root + '/') && !rule.excludedSuffixes.some(suffix => path.endsWith(suffix));
@@ -26,11 +26,6 @@ export const linuxDrivers = new Set(['capture-smoke.py', 'gui-vm.py', 'gui-vm-re
 const webAssets = new Set(['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.png',
   'hosted/agent-reading-v4.png', 'fonts/HostGrotesk-Variable.ttf', 'brand/apparent-wordmark.svg']
   .map(path => 'public/site/public/assets/' + path));
-const toolingRegressionTests = new Set([
-  'enablement/local-tests/reuse.test.ts',
-  'enablement/prerequisites/native.test.ts',
-]);
-
 export const onboardingPureInputs = new Set([
   'electron/onboarding/account.ts', 'electron/onboarding/presentation.ts', 'electron/onboarding/selection.ts',
   'src/onboarding/state.ts', 'src/onboarding/shortcut/keys.ts',
@@ -48,10 +43,8 @@ export const retiredOnboardingInputs = new Set([
 ]);
 export const onboardingRoots = ['src', 'electron', 'tests'].map(dir => `capture/desktop/ui/frontend/${dir}/onboarding/`);
 const onboardingRendererTestInputs = new Set([
-  'capture/desktop/ui/frontend/tests/onboarding/renderer/window-coach.smoke.ts',
-  'capture/desktop/ui/frontend/tests/onboarding/renderer/tsconfig.json',
-  'capture/desktop/ui/frontend/tests/onboarding/wispr/smoke.ts',
-]);
+  'renderer/window-coach.smoke.ts', 'renderer/tsconfig.json', 'wispr/smoke.ts',
+].map(file => 'capture/desktop/ui/frontend/tests/onboarding/' + file));
 const onboardingConnectInputs = new Set([
   'src/connect/consent.ts', 'src/connect/protocol.ts', 'src/connect/session.ts',
   'src/connect/flow.ts', 'src/bridge.ts', 'tests/connect/flow.test.ts',
@@ -151,7 +144,7 @@ function directConsumers(path: string): readonly Owner[] {
   if (path.startsWith('record/')) return ['capture', 'engine', 'desktop'];
   if (nativeWorkflowPaths.includes(path)) return ['capture', 'engine', 'desktop', 'client', 'capture-tools'];
   if (path.startsWith('enablement/prerequisites/')) return path.endsWith('.test.ts') ? ['tooling'] : ['capture', 'engine', 'desktop', 'client'];
-  if (toolingRegressionTests.has(path)) return ['tooling'];
+  if (path === 'enablement/local-tests/reuse.test.ts') return ['tooling'];
   if (path.startsWith('enablement/posthog-fixer/') && !native) return ['tooling'];
   if (path.startsWith('enablement/timing/') && !native) return ['tooling'];
   if (path.startsWith('enablement/directory-width/') && !native) return ['tooling'];
@@ -160,7 +153,7 @@ function directConsumers(path: string): readonly Owner[] {
     ? owners.filter(owner => owner !== 'engine-media') : owners;
 }
 export function consumers(path: string): readonly Owner[] {
-  if (bendToolingInput(path)) return [];
+  if (bendToolingInput(path)) return bendProductInput(path) ? ['capture', 'desktop', 'onboarding'] : [];
   const selected = [...directConsumers(path)];
   if (onboardingInput(path) && !documentationOnlyPath(path) && !selected.includes('onboarding')) selected.push('onboarding');
   return owners.filter(owner => selected.includes(owner) && (owner !== 'engine-media' || affectsEngine(path)));

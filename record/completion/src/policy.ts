@@ -41,7 +41,9 @@ function autoPasteTrial(context: Context): boolean {
   return context.platform === 'linux' && context.source === 'screen' && !context.agentRequested
     && context.automaticTrialEnabled && !context.lab && context.hyprland && context.wayland;
 }
-export function reduce(previous: State, event: Event): Decision {
+export type MayCopy = (saved: boolean, current: boolean, connected: boolean) => boolean;
+
+export function reduce(previous: State, event: Event, mayCopy: MayCopy): Decision {
   let state = previous;
   const effects: Effect[] = [];
   if (event.type === 'dismiss' || event.type === 'cancel' || event.type === 'revoke') {
@@ -54,11 +56,11 @@ export function reduce(previous: State, event: Event): Decision {
     state = {...state, connected: true};
   } else if ('capture' in event && sameCapture(state.context.capture, event.capture)) {
     if (event.type === 'finalized' && !state.observation) {
-      const saved = event.outcome.kind === 'saved';
+      const copyPending = mayCopy(event.outcome.kind === 'saved', state.current, state.connected);
       state = {...state, observation: {capture: state.context.capture, outcome: event.outcome,
         clipboard: 'notRequested', current: state.current},
-        copyPending: saved && state.current && state.connected,
-        notifications: saved && state.current && state.connected && state.context.platform === 'linux'
+        copyPending,
+        notifications: copyPending && state.context.platform === 'linux'
           && state.context.imageQualityWarning
           ? [{title: 'Capture image quality warning', body: state.context.imageQualityWarning}] : [],
         status: event.outcome.kind === 'saved' ? 'Saved' : event.outcome.message.startsWith('No screen frames were captured')

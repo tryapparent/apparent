@@ -1,3 +1,4 @@
+import {execFileSync} from 'node:child_process';
 import {readFile,writeFile} from 'node:fs/promises';
 import ts from 'typescript';
 import {build} from 'esbuild';
@@ -17,7 +18,10 @@ const program = ts.createProgram([...recordSources,fileURLToPath(new URL('../ele
 const diagnostics=ts.getPreEmitDiagnostics(program);
 if(diagnostics.length)throw Error(ts.formatDiagnosticsWithColorAndContext(diagnostics,{getCanonicalFileName:f=>f,getCurrentDirectory:()=>process.cwd(),getNewLine:()=> '\n'}));
 await mkdir(completion, {recursive: true});
-for (const name of ['policy', 'worker']) {
+execFileSync(process.execPath, ['--experimental-strip-types',
+ fileURLToPath(new URL('../../../../../record/enablement/ci/bend/build.ts', import.meta.url)),
+ fileURLToPath(completion)], {stdio:'inherit'});
+for (const name of ['policy', 'session', 'worker']) {
  const source=await readFile(new URL(`../../../../../record/completion/src/${name}.ts`,import.meta.url),'utf8');
  const output=ts.transpileModule(source,{fileName:`${name}.ts`,compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext,rewriteRelativeImportExtensions:true}});
  await writeFile(new URL(`${name}.js`,completion),output.outputText);

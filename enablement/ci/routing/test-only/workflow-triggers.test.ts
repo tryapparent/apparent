@@ -72,8 +72,7 @@ test("stream triggers and PR checkout", () => {
 test("Record Bend runs on Linux and shares affected inputs with pre-push", () => {
   const record = workflow("stream-record.yml");
   const paths = [
-    "record/completion/**/*.bend",
-    "record/completion/src/policy.ts",
+    "record/completion/**",
     "record/enablement/ci/bend/**",
     "shared/enablement/bend/**",
     ".github/workflows/stream-record.yml",
@@ -95,19 +94,28 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
   for (const path of [
     "record/completion/src/admission.bend",
     "record/completion/src/policy.ts",
-    "record/enablement/ci/bend/completion.bend",
+    "record/enablement/ci/bend/build.ts",
     "shared/enablement/bend/toolchain.ts",
     ".github/workflows/stream-record.yml",
   ]) {
     assert.equal(check(path), true, path);
     assert.equal(check(path, false), false, path);
   }
-  assert.deepEqual(
-    routeDecision(["record/completion/src/admission.bend"]).selected,
-    [],
-  );
+  for (const path of [
+    "record/completion/src/copy-admission.bend",
+    "record/enablement/ci/bend/build.ts",
+    "shared/enablement/bend/toolchain.ts",
+  ]) {
+    const route = routeDecision([path]);
+    assert.equal(route.installer, true, path);
+    assert.deepEqual(
+      route.selected,
+      ["capture", "desktop", "onboarding"],
+      path,
+    );
+  }
   assert.equal(
-    routeDecision(["record/enablement/ci/bend/completion.bend"]).installer,
+    routeDecision(["record/enablement/ci/bend/check.ts"]).installer,
     false,
   );
   assert.equal(check("connect/service/src/example.ts"), false);

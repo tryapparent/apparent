@@ -1,7 +1,9 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {begin, reduce} from '../src/policy.ts';
-import type {Context, Event} from '../src/policy.ts';
+import {begin, reduce as reduceWithAdmission} from '../src/policy.ts';
+import type {Context, Event, State} from '../src/policy.ts';
+const reduce = (state: State, event: Event) =>
+  reduceWithAdmission(state, event, (saved, current, connected) => saved && current && connected);
 const capture = {generation: '9007199254740993', captureId: 'capture-a', requestId: 'request-a'};
 const context: Context = {capture, platform:'linux', source:'screen', agentRequested:false,
   automaticTrialEnabled:false, lab:false, hyprland:true, wayland:true};

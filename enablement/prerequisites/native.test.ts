@@ -9,6 +9,7 @@ import './source-identity/git-index.test.ts';
 import './targeted/run.test.ts';
 
 const recordMediaFiles = ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'assembly-worker.js', 'assembly-policy.js', 'transcript/worker.js', 'transcript/policy.js', 'selection/worker.js', 'selection/cues.js', 'selection/scene-worker.js', 'selection/scene.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/apparent-engine-frames', 'native/manifest.json'];
+const completionFiles = ['worker.js', 'policy.js', 'session.js', 'copy-admission.mjs', 'package.json'];
 
 function fixture(t: any) {
   const root = realpathSync(mkdtempSync('/tmp/apparent-dev-native-inputs-'));
@@ -27,7 +28,7 @@ function fixture(t: any) {
   for (const file of ['tests/reference-native.cjs', 'electron/main.cjs', 'electron/preload.cjs', 'electron/runtime.cjs', 'electron/connect.cjs', 'electron/settings/agents.cjs', 'electron/settings/update-worker.cjs', 'electron/settings/labs.cjs', 'electron/notes/record-transcription.cjs', 'electron/storage-policy.cjs']) {
     put('capture/desktop/ui/frontend/' + file);
   }
-  for (const name of ['worker.js', 'policy.js', 'package.json']) {
+  for (const name of completionFiles) {
     put('capture/desktop/ui/frontend/electron/record-completion/' + name);
   }
   for (const name of recordMediaFiles) {
@@ -48,7 +49,7 @@ function generators(f: ReturnType<typeof fixture>, fail = '') {
     'storage-policy': ['electron/storage-policy.cjs', ...['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json', 'cleanup-policy/package.json', 'cleanup-policy/policy.js', 'cleanup-policy/retention/policy.js', 'cleanup-policy/retention/worker.js'].map(name => 'electron/storage-owner/' + name)],
     'connect-transport': ['electron/connect.cjs', 'electron/settings/agents.cjs'],
     'updates': ['electron/settings/update-worker.cjs'],
-    'pill': ['worker.js', 'policy.js', 'package.json'].map(name => 'electron/record-completion/' + name),
+    'pill': completionFiles.map(name => 'electron/record-completion/' + name),
     'record-media': recordMediaFiles.map(name => 'electron/record-media/' + name),
     'agent-media': ['worker.js', 'policy.js', 'range-worker.js', 'range-policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json'].map(name => 'electron/agent-media/' + name),
   };
@@ -144,7 +145,7 @@ test('missing generated Connect transport fails before Cargo', t => {
   rmSync(resolve(f.root, 'capture/desktop/ui/frontend/electron/connect.cjs'));
   assert.throws(() => checkNativeInputs(f.root, 'linux'), /ENOENT/);
 });
-for (const name of ['worker.js', 'policy.js', 'package.json']) {
+for (const name of completionFiles) {
   test(`missing generated Record ${name} fails before Cargo`, t => {
     const f = fixture(t);
     rmSync(resolve(f.root, 'capture/desktop/ui/frontend/electron/record-completion/' + name));

@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { lstatSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  copyFileSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+} from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -11,10 +18,10 @@ import {
   provisionLean,
   run,
 } from "../../../../shared/enablement/bend/toolchain.ts";
-import { begin, reduce, type Context } from "../../../completion/src/policy.ts";
+import { admissionSource, buildAdmission } from "./build.ts";
 
 const root = fileURLToPath(new URL("../../../../", import.meta.url));
-const fixture = "record/enablement/ci/bend/completion.bend";
+const admission = "record/completion/src/copy-admission.bend";
 const args = process.argv.slice(2);
 const provision = args.length === 1 && args[0] === "--proof";
 const leanBin =
@@ -29,13 +36,13 @@ if (args.length && !provision && !leanBin)
 const files = run("git", ["ls-files", "-z", "--", "record/"], root)
   .split("\0")
   .filter((file) => bendSource.test(file));
-assert.ok(files.includes(fixture), "Record Bend fixture is missing");
+assert.ok(files.includes(admission), "Record copy admission source is missing");
 const scratch = mkdtempSync(
   join(process.env.RUNNER_TEMP ?? "/tmp", "apparent-dev-bend-"),
 );
 try {
   const leanDirectory = provision ? await provisionLean(scratch) : leanBin;
-  const compile = await prepareBend(scratch, leanDirectory);
+  const compile = await prepareBend(scratch, { runtime: "bun", leanDirectory });
   for (const file of files) {
     const input = join(root, file);
     assert.ok(
@@ -50,26 +57,37 @@ try {
       `Bend ${leanDirectory ? "kernel verdict" : "type and law check"} and module build passed for ${file}`,
     );
   }
-  const staged = dirname(join(scratch, "stage", fixture));
-  const decisions = JSON.parse(
-    run(
-      process.execPath,
-      [
-        "--input-type=module",
-        "-e",
-        `
-    import bend from "./completion.mjs";
-    const bool = [true, false];
-    console.log(JSON.stringify(bool.flatMap(saved => bool.flatMap(current =>
-      bool.map(connected => bend.may_copy(saved, current, connected))))));
-  `,
-      ],
-      staged,
-    ),
+  const proofOutput = dirname(join(scratch, "stage", admission));
+  const production = join(scratch, "production");
+  await buildAdmission(production);
+  const decisions = (directory: string) =>
+    JSON.parse(
+      run(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `
+      import bend from "./copy-admission.mjs";
+      const bool = [true, false];
+      console.log(JSON.stringify(bool.flatMap(saved => bool.flatMap(current =>
+        bool.map(connected => bend.may_copy(saved, current, connected))))));
+    `,
+        ],
+        directory,
+      ),
+    );
+  const expected = [true, false, false, false, false, false, false, false];
+  assert.deepEqual(decisions(proofOutput), expected);
+  assert.deepEqual(decisions(production), expected);
+  console.log(
+    "The build and proof paths agree on all eight copy-admission decisions",
   );
-  const capture = { generation: "1", captureId: "synthetic", requestId: null };
-  const context: Context = {
-    capture,
+
+  for (const name of ["worker.ts", "session.ts", "policy.ts"])
+    copyFileSync(join(dirname(admissionSource), name), join(production, name));
+  const context = {
+    capture: { generation: "1", captureId: "synthetic", requestId: null },
     platform: "linux",
     source: "screen",
     agentRequested: false,
@@ -78,27 +96,49 @@ try {
     hyprland: true,
     wayland: true,
   };
-  const expected: boolean[] = [];
-  for (const saved of [true, false]) {
-    for (const current of [true, false]) {
-      for (const connected of [true, false]) {
-        const decision = reduce(
-          { ...begin(context, current), connected },
-          {
-            type: "finalized",
-            capture,
-            outcome: saved
-              ? { kind: "saved", bundlePath: "/synthetic/record.apparent" }
-              : { kind: "failed", message: "synthetic finalizer failure" },
-          },
-        );
-        expected.push(decision.effects.length === 1);
-      }
-    }
+  for (const current of [true, false]) {
+    const invocation = spawnSync(
+      process.execPath,
+      ["--experimental-strip-types", "worker.ts"],
+      {
+        cwd: production,
+        encoding: "utf8",
+        timeout: 15_000,
+        input:
+          JSON.stringify({
+            version: 1,
+            context,
+            current,
+            outcome: {
+              kind: "saved",
+              bundlePath: "/synthetic/record.apparent",
+            },
+          }) + '\n{"result":"copied"}\n',
+      },
+    );
+    assert.equal(
+      invocation.status,
+      0,
+      invocation.error?.message ?? invocation.stderr,
+    );
+    const replies = invocation.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.deepEqual(
+      replies[0].effects,
+      current
+        ? [{ type: "copy", capture: context.capture, mode: "bundle" }]
+        : [],
+    );
+    assert.equal(replies.length, current ? 2 : 1);
+    assert.equal(
+      replies.at(-1).state.observation.clipboard,
+      current ? "copied" : "notRequested",
+    );
   }
-  assert.deepEqual(decisions, expected);
   console.log(
-    "Node loaded the staged Bend module and matched all eight Record copy-admission decisions",
+    "The real Record worker loaded the production Bend module and handled current and stale captures",
   );
 } finally {
   rmSync(scratch, { recursive: true, force: true });
