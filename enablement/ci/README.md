@@ -132,3 +132,5 @@ qualifier/selector implementations remain broad. Roll back by removing the
 Adjacent ownership comments and explicit references to other named contracts
 are recognized only at four reviewed regular-file blobs; any byte or mode change
 revokes that recognition.
+
+[Merge-parent range evidence and batch integration](routing/merge-range/README.md).

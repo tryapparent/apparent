@@ -63,7 +63,7 @@ test('a real executable receives literal arguments and errors never expose its p
       error.code === 'probe_failed' && !String(error).includes('private-path'));
   } finally { rmSync(directory, {recursive: true, force: true}); }
 });
-test('missing runtime, deadline and cancellation have different results and settle after exit', async () => {
+test('missing runtime, deadline and cancellation report distinct errors', async () => {
   const directory = mkdtempSync('/tmp/apparent-dev-engine-sdk-');
   try {
     const executable = join(directory, 'provider');

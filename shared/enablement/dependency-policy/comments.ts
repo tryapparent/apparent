@@ -157,8 +157,24 @@ async function treeSitterComments(
     );
   const parser = new Parser();
   parser.setLanguage(cache.get(language)!);
-  const tree = parser.parse(text);
+  let tree = parser.parse(text);
   try {
+    if (language === "rust" && (!tree || tree.rootNode.hasError)) {
+      if (!cache.has("rust-compat"))
+        cache.set(
+          "rust-compat",
+          await Language.load(
+            path.join(
+              here,
+              "node_modules/tree-sitter-wasms/out/tree-sitter-rust.wasm",
+            ),
+          ),
+        );
+      parser.setLanguage(cache.get("rust-compat")!);
+      tree?.delete();
+      tree = null;
+      tree = parser.parse(text);
+    }
     if (!tree || tree.rootNode.hasError)
       throw new Error(
         `${file}: syntax parser cannot safely classify comments; repair syntax or add supported grammar`,

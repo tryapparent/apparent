@@ -106,7 +106,7 @@ function directConsumers(path: string): readonly Owner[] {
   if (admissionTooling(path)) return ['tooling'];
   if (desktopPackagingInputs.has(path)) return ['capture', 'engine', 'desktop', 'capture-tools', 'client-foreground'];
   if (path.startsWith('engine/')) return affectsEngine(path) ? ['engine-media'] : [];
-  if (path === '.github/workflows/stream-engine.yml') return ['tooling'];
+  if (independent.includes('!' + path)) return ['tooling'];
   if (independentInputs.has(path)) return owners.filter(owner => owner !== 'engine-media');
   if (path.startsWith('enablement/ci/') || path === 'enablement/local-tests/run.ts' || path.startsWith('.github/actions/ubuntu-apt/')) return owners;
   if (portableForegroundInputs.has(path)) return ['client-foreground'];
@@ -134,8 +134,7 @@ function directConsumers(path: string): readonly Owner[] {
   if (path === '.github/workflows/stream-public.yml') return ['public'];
   if (path === '.github/workflows/stream-connect.yml') return ['capture', 'client', 'client-foreground', 'web', 'service'];
   if (path === '.github/workflows/checks.yml') return ['capture', 'engine', 'desktop', 'client', 'client-foreground', 'web', 'service', 'capture-tools', 'tooling', 'onboarding'];
-  if (path === '.github/workflows/hermes.yml') return ['hermes'];
-  if (path.startsWith('hermes/')) return ['hermes'];
+  if (path.startsWith('hermes/') || path === '.github/workflows/hermes.yml') return ['hermes'];
   if (linuxDrivers.has(path)) return ['capture-tools'];
   if (path.startsWith('capture/desktop/ui/frontend/src/hermes/')) return ['desktop', 'capture', 'hermes'];
   if (path.startsWith('capture/desktop/ui/frontend/')) return ['desktop', 'capture'];
@@ -143,11 +142,11 @@ function directConsumers(path: string): readonly Owner[] {
   if (path.startsWith('capture/desktop/scripts/') || path.startsWith('capture/agent/scripts/')) return ['capture', 'engine', 'capture-tools'];
   if (path.startsWith('capture/desktop/')) return ['desktop', 'capture', 'engine', 'capture-tools'];
   if (path.startsWith('capture/engine/tests/') || path.startsWith('capture/engine/src/') || ['capture/engine/Cargo.toml', 'capture/engine/Cargo.lock'].includes(path)) return ['engine'];
-  if (/^(capture|composition)\//.test(path)) return ['capture', 'engine'];
-  if (path.startsWith('shared/analytics/')) return ['public', 'web', 'service', 'desktop', 'capture'];
+  if (/^(capture|composition)\//.test(path) || path === 'agent/enablement/context-comparison.ts') return ['capture', 'engine'];
+  if (path.startsWith('agent/')) return ['capture'];
   if (path.startsWith('shared/ui/')) return ['public', 'web', 'desktop', 'service', 'capture'];
   if (path === 'shared/assets/brand/apparent-app-icon.svg') return ['public', 'web', 'desktop', 'service', 'capture', 'hermes'];
-  if (path.startsWith('shared/assets/')) return ['public', 'web', 'desktop', 'service', 'capture'];
+  if (/^shared\/(analytics|assets)\//.test(path)) return ['public', 'web', 'desktop', 'service', 'capture'];
   if (['Cargo.toml', 'Cargo.lock', 'build.rs', 'main.rs'].includes(path) || path.startsWith('.cargo/') ||
       path.startsWith('enablement/native-build/') || path === 'enablement/build_version.rs' || path === 'enablement/verification.py')
     return ['capture', 'engine', 'desktop', 'client', 'capture-tools'];
@@ -184,30 +183,26 @@ export function planFromOwners(selected: readonly Owner[]) {
 export function suitePlan(paths: string[] | null) {return planFromOwners(selectedOwners(paths));}
 
 const common = ['shared/**', 'composition/**', 'enablement/**', '.github/**', '.githooks/**'];
-const independentEngine = ['!.github/workflows/stream-engine.yml'];
+const independent = ['!.github/workflows/stream-engine.yml', '!.github/workflows/stream-agent.yml'];
 const native = ['Cargo.toml', 'Cargo.lock', 'build.rs', 'main.rs', '.cargo/**',
   '.github/workflows/verification-platform.yml', 'enablement/verification.py',
   'enablement/prerequisites/**', 'enablement/local-tests/**', 'enablement/native-build/**'];
 const nativeOnlyTriggers = [...nativeWorkflowPaths.map(path => '!' + path),
   '!enablement/prerequisites/**', '!enablement/native-build/**', '!enablement/verification.py', '!enablement/build_version.rs'];
 const directoryPaths = {
-  capture: [...common, ...independentEngine, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, 'capture/**', 'record/**', 'connect/**',
-    'enablement/**', '.githooks/**', 'AGENTS.md', '.github/workflows/checks.yml',
-    '.github/workflows/verification.yml',
-    '.github/workflows/release-linux.yml', '.github/workflows/release-mac-preview.yml',
-    '.github/workflows/linux-updater-harness.yml',
-    'public/**'],
-  connect: [...common, ...independentEngine, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, ...desktopPackagingInputs, 'connect/**', 'public/**',
+  capture: [...common, ...independent, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, 'capture/**', 'record/**', 'connect/**',
+    'agent/**', 'AGENTS.md', 'public/**'],
+  connect: [...common, ...independent, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, ...desktopPackagingInputs, 'connect/**', 'public/**',
     '.github/workflows/stream-connect.yml', 'enablement/release_gate.py'],
-  public: [...common, ...independentEngine, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/hermes.yml', 'public/**', '.github/workflows/stream-public.yml', 'README.md',
+  public: [...common, ...independent, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/hermes.yml', 'public/**', '.github/workflows/stream-public.yml', 'README.md',
     'capture/agent/skills/apparent/SKILL.md', 'capture/agent/docs/usage.md',
     'capture/desktop/docs/guides/recording.md', 'capture/engine/docs/guides/processing.md'],
-  hermes: [...common, ...independentEngine, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/stream-public.yml', 'hermes/**', 'capture/agent/setup/**',
+  hermes: [...common, ...independent, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/stream-public.yml', 'hermes/**', 'capture/agent/setup/**',
     'capture/desktop/ui/frontend/src/hermes/**', '.github/workflows/hermes.yml'],
   engine: automaticPaths,
 } as const;
 export type Stream = keyof typeof directoryPaths;
-const knownDirectories = ['capture', 'record', 'connect', 'public', 'hermes', 'enablement', 'shared', 'composition', '.cargo', '.github', '.githooks', 'engine'];
+const knownDirectories = ['capture', 'record', 'agent', 'connect', 'public', 'hermes', 'enablement', 'shared', 'composition', '.cargo', '.github', '.githooks', 'engine'];
 const knownFiles = ['AGENTS.md', 'README.md', 'Cargo.toml', 'Cargo.lock', 'build.rs', 'main.rs'];
 export const streamPaths = Object.fromEntries(Object.entries(directoryPaths).map(([stream, paths]) =>
   [stream, stream === 'engine' ? automaticPaths : ['**', ...knownDirectories.map(root => '!' + root + '/**'), ...knownFiles.map(path => '!' + path), ...paths]])) as Record<Stream, string[]>;
@@ -260,7 +255,7 @@ export function routeDecision(paths: string[] | null, workflowControls: string[]
 
 export function unownedPaths(paths: string[]): string[] {
   const files = new Set([...knownFiles, '.gitignore', 'CONTRIBUTING.md', 'LICENSE']);
-  return paths.filter(path => path.includes('/') ? ![...knownDirectories, 'agent', 'handoff', 'onboarding'].includes(path.split('/')[0]) : !files.has(path));
+  return paths.filter(path => path.includes('/') ? ![...knownDirectories, 'handoff', 'onboarding'].includes(path.split('/')[0]) : !files.has(path));
 }
 export function routingProblems(decision: {paths: string[]; historyKnown: boolean; requiredStreams: Record<string, boolean>}): string[] {
   const problems = unownedPaths(decision.paths).map(path => 'Declare directory ownership for ' + path);

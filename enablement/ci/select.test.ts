@@ -24,7 +24,7 @@ function parents(outputs: any = {}, reuse: any = {}) {
 }
 test('stream triggers and PR checkout', () => {
   assert.deepEqual(readdirSync(new URL('.github/workflows/', root)).filter(name =>
-    Object.keys(workflow(name).on).some(event => !['workflow_dispatch', 'workflow_call'].includes(event))).sort(), ['checks.yml', 'hermes.yml', 'stream-connect.yml', 'stream-engine.yml', 'stream-onboarding.yml', 'stream-public.yml']);
+    Object.keys(workflow(name).on).some(event => !['workflow_dispatch', 'workflow_call'].includes(event))).sort(), ['checks.yml', 'hermes.yml', 'stream-agent.yml', 'stream-connect.yml', 'stream-engine.yml', 'stream-onboarding.yml', 'stream-public.yml']);
   assert.deepEqual(Object.keys(workflow('stream-connect.yml').on), ['pull_request', 'push', 'workflow_dispatch']);
   assert.equal(ci().jobs.connect, undefined);
   assert.equal(ci().jobs['native-evidence'], undefined);
@@ -34,7 +34,7 @@ test('stream triggers and PR checkout', () => {
   assert.deepEqual(Object.keys(workflow('verification.yml').on), ['workflow_dispatch']);
   for (const job of Object.values(ci().jobs) as any[]) for (const step of job.steps ?? []) {
     if (step.uses === 'actions/checkout@v4') {
-      assert.equal(step.with.ref, undefined, 'verify the proposed merge, not only the branch head');
+      assert.equal(step.with.ref, undefined);
       assert.equal(step.with['persist-credentials'], false);
     }
   }
@@ -539,9 +539,7 @@ test('Hermes owns independent package verification and publication; native admis
  assert.equal(h.name,'continuous delivery hermes');
  assert.equal(h.jobs.verify.strategy['fail-fast'],false);
  const validator=h.jobs.verify.steps.find((s:any)=>s.name==='Install supported Hermes validator').run;
- const validatorSource=h.jobs.verify.steps.find((s:any)=>s.name==='Prepare pinned Hermes validator and download identity').run;
- assert.match(validator,/uv sync.*--frozen --no-dev/);
- assert.match(validatorSource,/fetch --depth 1 origin [a-f0-9]{40}/);
+ assert.match(validator,/validator-job\.ts install$/);
  assert.doesNotMatch(validator,/HERMES_NIX_BUILD/);
  assert.deepEqual(h.jobs.publish.needs,['contracts','clean','verify']);
  assert.match(h.jobs.publish.if,/github.event_name == 'push'/);

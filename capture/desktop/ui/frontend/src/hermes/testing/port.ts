@@ -1,3 +1,4 @@
+import { tokenValid } from '../protocol.ts';
 import { createServer } from 'node:net';
 export async function availablePort() {
   for (let attempt = 0; attempt < 16; attempt++) {
@@ -10,4 +11,20 @@ export async function availablePort() {
     } catch { server.close(); }
   }
   throw new Error('No available test port');
+}
+
+export async function until(predicate: () => unknown, timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await predicate())) { if (Date.now() > deadline) throw new Error('Synthetic Hermes smoke timed out'); await new Promise(resolve => setTimeout(resolve, 20)); }
+}
+export async function waitForKey(read: () => Promise<string>) {
+  let key = '';
+  await until(async () => {
+    try { key = await read(); return tokenValid(key); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      return false;
+    }
+  });
+  return key;
 }

@@ -7,6 +7,7 @@ on:
       - "**"
       - "!capture/**"
       - "!record/**"
+      - "!agent/**"
       - "!connect/**"
       - "!public/**"
       - "!hermes/**"
@@ -29,6 +30,7 @@ on:
       - ".github/**"
       - ".githooks/**"
       - "!.github/workflows/stream-engine.yml"
+      - "!.github/workflows/stream-agent.yml"
       - "!.github/workflows/hermes.yml"
       - "!.github/workflows/stream-public.yml"
       - "Cargo.toml"
@@ -54,6 +56,7 @@ on:
       - "**"
       - "!capture/**"
       - "!record/**"
+      - "!agent/**"
       - "!connect/**"
       - "!public/**"
       - "!hermes/**"
@@ -76,6 +79,7 @@ on:
       - ".github/**"
       - ".githooks/**"
       - "!.github/workflows/stream-engine.yml"
+      - "!.github/workflows/stream-agent.yml"
       - "!.github/workflows/hermes.yml"
       - "!.github/workflows/stream-public.yml"
       - "Cargo.toml"
@@ -129,7 +133,7 @@ jobs:
         env:
           # Every affected main candidate verifies the complete Connect tree;
           # irrelevant main advances do not supersede its pending delivery.
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_SHA: ${{ github.event_name == 'pull_request' && format('{0}^1', github.sha) || github.event.before }}
         run: bun connect/enablement/ci/select.ts --admit
 
   contracts:

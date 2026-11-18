@@ -160,18 +160,15 @@ It prints the path of a PNG sheet of frames around that moment, the time of each
 
 ### Report an Apparent bug or improvement
 
-Use `apparent issue --title 'Short title' --body 'Description'` without an experiment flag.
-This prints a JSON preview without contacting GitHub. `--body-file feedback.md` reads
-the exact Markdown description instead. Show the user the repository
-`tryapparent/apparent`, title and full body and obtain explicit approval before
-rerunning with `--submit`. Submission is public and uses `gh`'s github.com login;
-it returns JSON with the verified issue URL. Never include private capture content,
-transcripts, paths, credentials or personal details without approval. Nothing is
-attached automatically. Search existing issues with `gh issue list --repo
-tryapparent/apparent --state all --search '<symptom>'` first to avoid duplicates.
-On timeout or failed readback, inspect the repository before retrying: an issue
-may already exist. This files feedback only; it never starts implementation.
-See `capture/desktop/docs/issue-reporting.md` for requirements and usage.
+Preview with `apparent feedback --kind bug --title 'Short title' --body 'Description'`.
+Use `--kind feedback` for suggestions. Show the exact text to the user and obtain
+approval before adding `--submit`. Omit credentials, personal data and private capture
+content. Apparent receives the report in PostHog Error Tracking. New groups enter its
+automated fix queue.
+
+For a public GitHub issue, search existing issues, then preview with `apparent issue
+--title 'Short title' --body 'Description'`. Get approval for the exact repository and
+text before adding `--submit`. See `capture/desktop/docs/issue-reporting.md`.
 
 ### Capture control
 

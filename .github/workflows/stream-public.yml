@@ -7,6 +7,7 @@ on:
       - "**"
       - "!capture/**"
       - "!record/**"
+      - "!agent/**"
       - "!connect/**"
       - "!public/**"
       - "!hermes/**"
@@ -29,6 +30,7 @@ on:
       - ".github/**"
       - ".githooks/**"
       - "!.github/workflows/stream-engine.yml"
+      - "!.github/workflows/stream-agent.yml"
       - "!.github/workflows/checks.yml"
       - "!.github/workflows/linux-updater-harness.yml"
       - "!.github/workflows/release-linux.yml"
@@ -55,6 +57,7 @@ on:
       - "**"
       - "!capture/**"
       - "!record/**"
+      - "!agent/**"
       - "!connect/**"
       - "!public/**"
       - "!hermes/**"
@@ -77,6 +80,7 @@ on:
       - ".github/**"
       - ".githooks/**"
       - "!.github/workflows/stream-engine.yml"
+      - "!.github/workflows/stream-agent.yml"
       - "!.github/workflows/checks.yml"
       - "!.github/workflows/linux-updater-harness.yml"
       - "!.github/workflows/release-linux.yml"
@@ -125,7 +129,7 @@ jobs:
           bun-version: '1.3.10'
       - id: paths
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_SHA: ${{ github.event_name == 'pull_request' && format('{0}^1', github.sha) || github.event.before }}
         run: node --experimental-strip-types enablement/ci/select.ts --admit
 
   verify:

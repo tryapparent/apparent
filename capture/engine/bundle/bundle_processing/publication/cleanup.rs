@@ -58,10 +58,11 @@ pub(super) fn finish(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
     #[test]
     fn durability_failure_restores_journal_and_in_progress_marker() {
-        let path =
-            std::env::temp_dir().join(format!("{}.apparent", crate::shared::ids::make_bundle_id()));
+        let fixture = tempfile::Builder::new().permissions(std::fs::Permissions::from_mode(0o700)).tempdir().unwrap();
+        let path = fixture.path().join("bundle.apparent");
         let root = Directory::open(&path, true).unwrap();
         root.write(
             crate::capture::engine::bundle::recover::UNFINISHED,
@@ -96,18 +97,20 @@ mod tests {
             .unwrap(),
             b"saved audio recipe"
         );
-        std::fs::remove_dir_all(moved).unwrap();
     }
     #[test]
-    fn successful_barrier_cleans_audio_recovery_journal() {
-        let path =
-            std::env::temp_dir().join(format!("{}.apparent", crate::shared::ids::make_bundle_id()));
-        let root = Directory::open(&path, true).unwrap();
-        let marker = crate::capture::engine::runtime::audio::persistence::RECORDING;
-        root.write(marker, b"saved audio recipe").unwrap();
-        let parent = Directory::open_sync_parent(path.parent().unwrap()).unwrap();
-        finish(&root, &parent, || Ok(())).unwrap();
-        assert!(!path.join(marker).exists());
-        std::fs::remove_dir_all(path).unwrap();
+    fn successful_barrier_cleans_recovery_journals() {
+        for marker in [
+            crate::capture::engine::runtime::audio::persistence::RECORDING,
+            crate::capture::engine::bundle::recover::UNSAFE_VIDEO,
+        ] {
+            let fixture = tempfile::Builder::new().permissions(std::fs::Permissions::from_mode(0o700)).tempdir().unwrap();
+            let path = fixture.path().join("bundle.apparent");
+            let root = Directory::open(&path, true).unwrap();
+            root.write(marker, b"saved recovery state").unwrap();
+            let parent = Directory::open_sync_parent(path.parent().unwrap()).unwrap();
+            finish(&root, &parent, || Ok(())).unwrap();
+            assert!(!path.join(marker).exists(), "retained {marker}");
+        }
     }
 }

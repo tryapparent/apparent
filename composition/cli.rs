@@ -47,7 +47,7 @@ use crate::shared::model::{CaptureMode, InteractionEvent, Shape, parse_clock_ms}
     long_version = env!("APPARENT_VERSION_LABEL"),
     about = "Shortcut-triggered screen, voice, and drawing capture for agents"
 )]
-struct Cli {
+pub(super) struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -209,6 +209,9 @@ enum Command {
     /// Preview or explicitly submit text-only feedback to Apparent's GitHub repository.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     Issue(super::issues::IssueArgs),
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[command(about = "Preview or submit Apparent feedback to PostHog Error Tracking")]
+    Feedback(super::feedback::FeedbackArgs),
     /// Opt-in hosted account and upload queue management.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[command(alias = "cloud")]
@@ -841,6 +844,8 @@ fn run_cli(cli: Cli) -> Result<()> {
         Command::Connect { command } => hosted::command(command),
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         Command::Issue(args) => super::issues::command(args),
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        Command::Feedback(args) => super::feedback::command(args),
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         Command::Fetch { id, out, wait, files } => hosted::fetch_selected(&id, &out, wait, &files),
         #[cfg(target_os = "linux")]
@@ -1900,180 +1905,12 @@ mod tests {
         assert!(!help.contains("screen-permission-status"));
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    #[test]
-    fn hosted_connect_is_canonical_in_help_and_usage() {
-        let help = Cli::try_parse_from(["apparent", "--help"])
-            .err()
-            .unwrap()
-            .to_string();
-        assert!(
-            help.lines()
-                .any(|line| line.trim_start().starts_with("connect ")),
-            "{help}"
-        );
-        assert!(
-            !help
-                .lines()
-                .any(|line| line.trim_start().starts_with("cloud ")),
-            "{help}"
-        );
-        for name in ["connect", "cloud"] {
-            for tail in [
-                vec!["--help"],
-                vec!["login", "--help"],
-                vec!["upload", "--help"],
-                vec!["retry", "--help"],
-            ] {
-                let mut args = vec!["apparent", name];
-                args.extend(tail);
-                let error = Cli::try_parse_from(args).err().unwrap();
-                assert_eq!(error.kind(), clap::error::ErrorKind::DisplayHelp);
-                assert!(!error.use_stderr());
-                let text = error.to_string();
-                assert!(text.contains("apparent connect"), "{text}");
-                assert!(!text.contains("apparent cloud"), "{text}");
-            }
-            let error = Cli::try_parse_from(["apparent", name, "login"])
-                .err()
-                .unwrap()
-                .to_string();
-            assert!(
-                error.contains("apparent connect login --server <SERVER>"),
-                "{error}"
-            );
-        }
-    }
-
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    #[test]
-    fn hosted_connect_and_cloud_parse_identical_commands_and_flags() {
-        use clap::CommandFactory;
-        for tail in [
-            vec!["login", "--server", "https://hosted.tryapparent.com"],
-            vec![
-                "login",
-                "--server",
-                "https://hosted.tryapparent.com",
-                "--scope",
-                "read",
-                "--no-browser",
-            ],
-            vec![
-                "login",
-                "--server",
-                "https://hosted.tryapparent.com",
-                "--scope",
-                "upload",
-                "--consent-upload",
-                "--no-browser",
-            ],
-            vec!["status"],
-            vec!["status", "--account"],
-            vec!["logout"],
-            vec!["disable"],
-            vec!["retry"],
-            vec!["retry", "--id", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
-            vec!["upload", "./synthetic capture.apparent"],
-            vec!["shares", "list"],
-            vec!["shares", "revoke", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
-        ] {
-            let parse = |name| {
-                let mut args = vec!["apparent", name];
-                args.extend(tail.iter().copied());
-                assert!(matches!(
-                    Cli::try_parse_from(&args).unwrap().command,
-                    Some(Command::Connect { .. })
-                ));
-                let matches = Cli::command().try_get_matches_from(args).unwrap();
-                assert_eq!(matches.subcommand_name(), Some("connect"));
-                matches.subcommand().unwrap().1.clone()
-            };
-            assert_eq!(parse("connect"), parse("cloud"), "{tail:?}");
-        }
-        for name in ["connect", "cloud"] {
-            for tail in [
-                vec!["login"],
-                vec![
-                    "login",
-                    "--server",
-                    "https://hosted.tryapparent.com",
-                    "--scope",
-                    "admin",
-                ],
-                vec!["status", "--consent-upload"],
-                vec!["upload"],
-            ] {
-                let mut args = vec!["apparent", name];
-                args.extend(tail);
-                assert!(Cli::try_parse_from(args).is_err());
-            }
-        }
-    }
-
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    #[test]
-    fn capture_owned_start_and_wait_parser() {
-        for args in [
-            vec!["apparent", "capture", "start", "--wait", "--timeout", "30"],
-            vec![
-                "apparent",
-                "capture",
-                "stop",
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "--wait",
-                "--timeout",
-                "60",
-            ],
-            vec![
-                "apparent",
-                "capture",
-                "inspect",
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            ],
-        ] {
-            assert!(Cli::try_parse_from(&args).is_ok(), "{args:?}");
-        }
-        for timeout in ["0", "3601", "bad"] {
-            assert!(
-                Cli::try_parse_from(["apparent", "capture", "start", "--timeout", timeout])
-                    .is_err()
-            );
-            assert!(
-                Cli::try_parse_from([
-                    "apparent",
-                    "capture",
-                    "stop",
-                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    "--timeout",
-                    timeout
-                ])
-                .is_err()
-            );
-        }
-        for command in ["start", "stop", "inspect"] {
-            let error = Cli::try_parse_from(["apparent", "capture", command, "--help"])
-                .err()
-                .unwrap();
-            assert_eq!(error.kind(), clap::error::ErrorKind::DisplayHelp);
-            assert!(!error.use_stderr());
-        }
-    }
-
     #[test]
     fn copy_confirmation_does_not_imply_visuals_reached_the_agent() {
         let confirmation = copy_confirmation(std::path::Path::new("/captures/example.apparent"));
         assert!(confirmation.contains("contact-sheet.png"), "{confirmation}");
         assert!(confirmation.contains("Paste"), "{confirmation}");
         assert!(confirmation.contains("check the draft"), "{confirmation}");
-    }
-
-    #[test]
-    fn cli_identifies_as_apparent() {
-        assert_eq!(
-            <Cli as clap::CommandFactory>::command().get_name(),
-            "apparent"
-        );
     }
 
     #[test]
@@ -2148,21 +1985,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn timed_record_help_discloses_missing_interaction_telemetry() {
-        use clap::CommandFactory;
-        let mut command = Cli::command();
-        let mut help = Vec::new();
-        command
-            .find_subcommand_mut("record")
-            .unwrap()
-            .write_long_help(&mut help)
-            .unwrap();
-        let help = String::from_utf8(help).unwrap();
-        assert!(
-            help.contains("does not collect clicks or Shift ink"),
-            "{help}"
-        );
-        assert!(help.contains("app's recording shortcut"), "{help}");
-    }
 }

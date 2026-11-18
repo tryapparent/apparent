@@ -1,3 +1,6 @@
+#[path = "../../../engine/enablement/fixtures/legacy-support.rs"]
+mod support;
+use support::Fixture;
 use apparent_capture_engine::{
     Admission, FinalizerSuccess, Runtime, Status, new_id, new_owner_token,
 };
@@ -8,9 +11,8 @@ use std::{
 
 #[test]
 fn finalizer_rechecks_exact_bytes_directory_and_completion_markers() {
-    let root = std::env::temp_dir().join(format!("engine-finalizer-{}", new_id().unwrap()));
-    fs::create_dir(&root).unwrap();
-    fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
+    let fixture = Fixture::new();
+    let root = &fixture.0;
     let runtime = Runtime::open(&root).unwrap();
     for mutation in [
         "bytes",
@@ -60,5 +62,4 @@ fn finalizer_rechecks_exact_bytes_directory_and_completion_markers() {
         assert!(receipt.bundle_path.is_none());
         assert_eq!(runtime.inspect(&request).unwrap().unwrap(), receipt);
     }
-    fs::remove_dir_all(root).unwrap();
 }

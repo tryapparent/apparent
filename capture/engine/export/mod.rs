@@ -559,9 +559,8 @@ mod tests {
             }
             other => panic!("FFmpeg is installed but cannot start: {other:?}"),
         }
-        let root =
-            std::env::temp_dir().join(format!("apparent-export-test-{}", crate::shared::ids::make_bundle_id()));
-        std::fs::create_dir_all(&root).unwrap();
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path();
         let movie = root.join("recording.mp4");
         let made = Command::new("ffmpeg")
             .args([
@@ -769,7 +768,6 @@ mod tests {
         std::fs::remove_file(&movie).unwrap();
         assert!(export(&root, &b, &options, &mut |_| {}).is_err());
         assert!(!options.out.as_ref().unwrap().exists());
-        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[cfg(target_os = "linux")]
@@ -785,9 +783,8 @@ mod tests {
         {
             return;
         }
-        let root =
-            std::env::temp_dir().join(format!("apparent-export-tail-{}", crate::shared::ids::make_bundle_id()));
-        std::fs::create_dir_all(&root).unwrap();
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path();
         let movie = root.join("recording.mp4");
         let encoded = Command::new("ffmpeg")
             .args([
@@ -862,13 +859,12 @@ mod tests {
         }, &mut |_| {}).unwrap_err();
         assert!(format!("{error:#}").contains("[AUDIO_MISSING]"), "{error:#}");
         assert!(!root.join("disjoint").exists());
-        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
     fn quiet_speedup_is_a_copy_and_preserves_explicit_realtime_and_marked_evidence() {
-        let root = std::env::temp_dir().join(format!("apparent-paced-{}",crate::shared::ids::make_bundle_id()));
-        std::fs::create_dir_all(&root).unwrap();
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path();
         let movie = root.join("recording.mp4");
         let status = Command::new("ffmpeg").args(["-v","error","-f","lavfi","-i",
             "color=c=blue:s=160x90:r=10:d=40","-c:v","libx264","-y"]).arg(&movie).status().unwrap();
@@ -907,7 +903,6 @@ mod tests {
         let marked = export(&root,&b,&Options {out:Some(root.join("marked.mp4")),..options},&mut |_|{}).unwrap();
         assert!((marked.duration_ms as i64-40000).abs()<250);
         assert_eq!(std::fs::read(movie).unwrap(),source);
-        std::fs::remove_dir_all(root).unwrap();
     }
 
     fn bundle() -> ApparentBundle {
