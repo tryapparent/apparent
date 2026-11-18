@@ -57,3 +57,30 @@ caller and endpoint together; leaving the additive schema in place preserves the
 legacy daily collector. Remove subjects on rollback; removal of legacy DAU is
 not part of this change. Dashboard integration requires deployment of the notice,
 migration, endpoint, packaged Desktop caller and a successful aggregate import.
+
+## Combined daily and weekly activity
+
+Migration `0013.sql` adds a 30-day aggregate history. The existing Worker cron
+takes each day's latest successful UTC snapshot. The Desktop total counts the
+union of eligible accounts with a confirmed Desktop recording start or a
+successful Connect upload/share. Connect counts the second group alone. The
+same union and subset apply independently to the trailing seven UTC dates.
+The Worker pairs existing product subjects transiently for the aggregate query.
+The view exposes only four counts, the UTC date and the snapshot timestamp. A
+missed collection or the period after the day's final snapshot can undercount.
+History starts at rollout and has no backfill.
+
+Apply the additive migration through the authorized D1 migration procedure and
+verify the deployed Worker's next scheduled snapshot. In the existing PostHog D1
+source, discover and enable only the `reporting_product_activity_history` view as
+a full refresh. This propagates the 30-day retention and replaces updated counts
+for the current day. Validate the imported columns and timestamp before changing
+the dashboard.
+
+Run `node connect/enablement/activity-dashboard.ts` from the repository root for
+the five PostHog insight payloads. Put the four current numbers in a compact row,
+with the full-width chart immediately below in the activity group. Clear
+the previous activity table, daily chart and explanatory tile from the dashboard
+after verifying the replacement tiles. To roll back the presentation, restore
+the previous tile references from the dashboard backup and disable the new view
+sync if the aggregate feed is being rolled back.

@@ -6,7 +6,7 @@ import {activitySubject,admitProductActivity,cleanupProductActivity} from '../..
 import {setAnalyticsChoice} from '../../src/analytics.ts';
 import type {Env} from '../../src/types.ts';
 const secret='synthetic-better-auth-secret-only-for-tests-32bytes';
-async function setup(){const f=await fixture({SHARING_ENABLED:'true',POSTHOG_ENABLED:'false'});for(const n of ['0003','0006','0007','0008','0009','0010','0012'])await f.db.exec((await readFile('.generated/migrations/'+n+'.sql','utf8')).replaceAll('\n',' '));return {...f,env:{DB:f.db,BETTER_AUTH_SECRET:secret} as Env};}
+async function setup(){const f=await fixture({SHARING_ENABLED:'true',POSTHOG_ENABLED:'false'});for(const n of ['0003','0006','0007','0008','0009','0010','0012','0013'])await f.db.exec((await readFile('.generated/migrations/'+n+'.sql','utf8')).replaceAll('\n',' '));return {...f,env:{DB:f.db,BETTER_AUTH_SECRET:secret} as Env};}
 const rows=async f=>(await f.db.prepare('SELECT * FROM product_activity').all()).results;
 async function settled(f,n){for(let i=0;i<100;i++){if((await rows(f)).length===n)return;await new Promise(r=>setTimeout(r,10));}assert.fail('Worker activity did not settle');}
 test('real Worker authenticates recording starts; accounts deduplicate across devices and metrics expose aggregates only',async()=>{
@@ -62,4 +62,41 @@ test('privacy signals, synthetic exclusions, kill switch and missing metric sche
   await f.db.exec('UPDATE analytics_control SET enabled=0');await admitProductActivity(f.env,a.id,'desktop');assert.deepEqual(await rows(f),[]);
   await f.db.exec('DROP TABLE product_activity');assert.equal((await f.call('/v1/activity/recording-started',{token:a.token,method:'POST',body:{}})).status,200);
  }finally{await f.close();}
+});
+test('reporting history deduplicates the Desktop total and preserves earlier aggregate snapshots', async () => {
+ const f = await setup();
+ try {
+  const both = await f.identity('history-both');
+  const connectOnly = await f.identity('history-connect');
+  const desktopOnly = await f.identity('history-desktop');
+  const expired = await f.identity('history-expired');
+  await admitProductActivity(f.env, both.id, 'desktop');
+  await admitProductActivity(f.env, both.id, 'connect');
+  await admitProductActivity(f.env, connectOnly.id, 'connect');
+  await admitProductActivity(f.env, desktopOnly.id, 'desktop');
+  await admitProductActivity(f.env, expired.id, 'connect');
+  const setDay = async (account: string, product: 'connect' | 'desktop', offset: string) =>
+   f.db.prepare("UPDATE product_activity SET last_day=date('now',?) WHERE subject=?")
+    .bind(offset, await activitySubject(f.env, account, product)).run();
+  await setDay(both.id, 'desktop', '-6 days');
+  await setDay(connectOnly.id, 'connect', '-6 days');
+  await setDay(expired.id, 'connect', '-7 days');
+  await f.db.exec("INSERT INTO product_activity_history(day_utc,desktop_daily,as_of_ms) VALUES(date('now','-1 day'),1,0),(date('now','-30 days'),1,0)");
+  await cleanupProductActivity(f.env);
+  const history = async () => (await f.db.prepare(`
+   SELECT desktop_daily,connect_daily,desktop_weekly,connect_weekly
+   FROM reporting_product_activity_history ORDER BY day_utc
+  `).all()).results;
+  assert.deepEqual(await history(), [
+   {desktop_daily:1,connect_daily:null,desktop_weekly:null,connect_weekly:null},
+   {desktop_daily:2,connect_daily:1,desktop_weekly:3,connect_weekly:2},
+  ]);
+  await f.db.prepare('INSERT INTO aggregate_dau_exclusions(account_id) VALUES(?)').bind(both.id).run();
+  await cleanupProductActivity(f.env);
+  assert.deepEqual((await history()).at(-1), {
+   desktop_daily:1,connect_daily:null,desktop_weekly:2,connect_weekly:1,
+  });
+ } finally {
+  await f.close();
+ }
 });
