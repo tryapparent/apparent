@@ -44,7 +44,7 @@ export function runnerFixture(destination: string): void {
   writeFiniteChecks(destination);
   const admission = resolve(destination, 'shared/enablement/dependency-policy');
   mkdirSync(admission, {recursive: true});
-  const manifest = {name: 'finite-admission', private: true, scripts: {test: 'node -e ""'}};
+  const manifest = {name: 'finite-admission', private: true};
   writeFileSync(resolve(admission, 'package.json'), JSON.stringify(manifest));
   writeFileSync(resolve(admission, 'package-lock.json'), JSON.stringify({
     name: manifest.name, lockfileVersion: 3, packages: {'': {name: manifest.name}},

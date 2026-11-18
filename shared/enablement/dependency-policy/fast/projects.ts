@@ -79,6 +79,7 @@ export function selectProjects(
   changed: string[],
   required: string[] = [],
 ): Project[] {
+  if (!changed.length && !required.length) return [];
   const affected = new Set(changed);
   const consumers = new Map<string, Set<string>>();
   const prefixes: [string, string][] = [];
