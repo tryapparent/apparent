@@ -224,11 +224,10 @@ the owned generated-fixture windows and stay outside git.
 
 ## Storage retention and usage (#291)
 
-On macOS, installed Storage uses the existing React presentation by default;
-`experiments.electronCaptureLocation=false` restores native Storage on its next
-open. Linux retains its continuous native GPUI Settings frame. This bounded #530
-slice re-adopts the Electron policy removed by the Preview 0.12.2 baseline restore
-(#1030); it does not restore the broader migration branch or change pane routing.
+Installed Storage uses the shared Electron Settings window by default on Linux
+and macOS. Set `experiments.electronCaptureLocation=false` and reopen Settings
+to use native Storage. This also provides a rollback without changing saved
+preferences.
 
 The headless `record/storage` TypeScript package owns Electron location precedence,
 normalization, fallback presentation, retention defaults, labels, validation,
@@ -252,12 +251,10 @@ nested fields remain on disk. The renderer receives no revision, raw config,
 filesystem capability or arbitrary IPC operation.
 
 Rust remains the sole durable transaction executor and supplies native path
-facts, filesystem availability, usage scans and cleanup execution. The retained
-Linux/native fallback preset menu is still Rust policy/presentation debt. Thus
-this slice does not establish whole-Settings or installed Linux TypeScript
-adoption. Record's policy/controller package can be installed, built, typechecked
-and tested independently; Electron's dialog/revision coordinator, native fallback
-and actual capture/cleanup compatibility remain migration debt. See
+facts, filesystem availability, usage scans and cleanup execution. The native
+fallback preset menu is still Rust policy/presentation debt. Record's
+policy/controller package can be installed, built, typechecked and tested
+independently. See
 `record/storage/README.md` for the owner commands and exact boundary.
 
 The existing bounded socket worker admits `retention`, `saveretention`,
@@ -292,18 +289,16 @@ effective path. Loading/error states hide old totals, and Retry never starts
 Rust. A slow filesystem syscall can outlive client expiry; the existing single
 Storage worker stays busy rather than spawning unbounded scans.
 
-On macOS the Rust Settings session owns navigation and the Electron child. The installed
-page contains Storage only, with the existing Settings sidebar and system-following
-light/dark Paper/Carbon/Signal palette. Other sidebar pages return to their native
-presentation. Retired windows cannot send commands or close the current page.
-Closing Settings cancels the session; an Electron crash restores native Storage.
-Missing packaged assets also fall back to native Storage. Reopen Settings after
-editing the opt-out. Saved preferences remain readable by both presentations.
+The Rust Settings session owns navigation and the Electron child on Linux and
+macOS. Storage, General, Agents, Labs and About share the Electron window when
+Storage is enabled. Recording and Permissions use their native presentation.
+Retired windows cannot send commands or close the current page. Closing
+Settings cancels the session. An Electron startup failure or crash on Storage
+restores native Storage. Saved preferences are readable in both presentations.
 
-Electron Storage uses the native Mac Settings' 720×530 frame and 210px black
-sidebar. macOS centers after applying its inset titlebar and accepts the first
-inactive click; content scrolls inside the frame to keep lower controls reachable.
-The other Settings pages keep their native routing.
+The shared Settings window supports a 640×530 minimum and follows the system
+theme. macOS centers after applying its inset titlebar and accepts the first
+inactive click. Content scrolls inside the frame.
 The Linux parent supplies the X11 backend option before Electron starts when it
 has selected XWayland; a live native-Wayland opt-in keeps its existing selection.
 
@@ -327,13 +322,11 @@ The broader intermittent blanking reported in #562 remains unconfirmed.
 installer/release packages. Installed packages contain no development dashboard or
 synthetic examples. Node/npm are build prerequisites, not runtime dependencies.
 macOS stages and signs nested Electron code before the enclosing app is signed.
-Linux keeps every installed Settings pane inside one native GPUI frame, including
-the folder picker, retention and usage controls. Switching to Storage does not
-replace the window. The Electron development harness and Rust bridge remain
-available on Linux; the installed macOS route retains its explicit opt-out and
-startup/crash fallback. Remove a native presentation only after applicable native
-acceptance and a deliberate retirement of its fallback contract. Functional
-transport tests and synthetic backend fixtures remain verification tooling.
+Both platforms stage the same Storage renderer and compiled Record workflows.
+Remove the native fallback only after applicable native acceptance and a
+deliberate retirement of its recovery contract. The
+[installed Linux Storage checks](../../../../record/storage/enablement/README.md)
+cover the real route, window continuity and provider behavior.
 
 `tests/retention-smoke.cjs` exercises production Electron with a **synthetic**
 socket (save/reset/readback/write error/loading/usage error/stale results,
@@ -407,14 +400,13 @@ fixture, not a failed recording. The guest and queue ticket were cleaned up.
 These are shell/bridge checks, not capture, overlay, permission, updater,
 physical-device or performance acceptance.
 
-## Experimental Storage card
+## Storage routing opt-out
 
 The Electron Storage bridge is on unless `experiments.electronCaptureLocation`
-is explicitly false in the Rust app's `~/.config/apparent/config.json`. File edits
-apply at the next request; on macOS reopen Settings to change presentation routing. Linux
-installed Settings always uses its continuous native frame. The
-separate `npm start` window remains a developer harness; it is not installed or
-used by the Settings route. Browser preview has no Storage bridge.
+is explicitly false in the app's `~/.config/apparent/config.json`. File edits
+apply to the bridge at the next request. Reopen Settings to apply the routing
+opt-out on either platform. Native Storage uses the same persisted preferences.
+The separate `npm start` window is a developer harness.
 
 `readCaptureLocation()`, `changeCaptureLocation()` and `resetCaptureLocation()`
 accept no path, revision, dialog options or other arguments. Main reads the

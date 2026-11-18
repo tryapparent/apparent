@@ -18,7 +18,7 @@ export const nativeStorageGraph = new Map([
   ['record/storage/src/index.ts', 'b0dc2a13ba4e6f5d7c3465c40babe98f16373608'],
   ['record/storage/src/location-contract.ts', '7ca220e3d9530dea8931473387a9704d329e10d0'],
   ['record/storage/src/location-policy.ts', 'bf45096ee826e7fc398fd0f93fada5ed7c194d7a'],
-  ['record/storage/src/location-workflow.ts', '20d244390df51bef6d420e8c75a7e0b2c98cd686'],
+  ['record/storage/src/location-workflow.ts', 'd564377cd884dda1b0f4e9578d9afeaa0672f9c2'],
   ['record/storage/src/policy.ts', '612cf025d8dc71003c8633f65ce5a6e9c9f04a74'],
   ['record/storage/src/retention-workflow.ts', '75493c3259cd8bffa1d307a4857b1a7a5dd3d1dd'],
   ['record/storage/src/retention/policy.ts', 'e1d14cba2899eced97ec5336cac662940049fdbf'],
