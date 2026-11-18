@@ -46,6 +46,9 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   await expect(chooseScreen).toBeEnabled();
   await startNow.focus();await page.keyboard.press("ArrowDown");
   await expect(chooseScreen).toBeChecked();
+  await page.screenshot();
+  application.stdin.write(JSON.stringify({type:'show',pane:'labs'})+'\n');
+  await expect.poll(()=>page.evaluate(()=>document.hasFocus())).toBe(true);
   await page.reload();await expect(chooseScreen).toBeChecked();
   await startNow.check();await expect(startNow).toBeChecked();
   assert.deepEqual(await toggle.locator('.apparent-switch-track').evaluate(el=>({width:el.getBoundingClientRect().width,height:el.getBoundingClientRect().height})),{width:48,height:24});

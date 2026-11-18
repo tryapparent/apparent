@@ -44,10 +44,12 @@ export class LabsPreferences {
   private pending?: {id: number; resolve: (value: LabsFacts) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>};
   private send: (value: object) => void;
   constructor(send: (value: object) => void) {this.send = send;}
-  read(): Promise<LabsFacts> {
-    return this.reading ??= this.request().finally(() => {this.reading = undefined;});
-  }
   request(value?: unknown, setting: LabsSetting = 'streaming'): Promise<LabsFacts> {
+    if (value === undefined && setting === 'streaming')
+      return this.reading ??= this.sendRequest(value, setting).finally(() => {this.reading = undefined;});
+    return this.sendRequest(value, setting);
+  }
+  private sendRequest(value: unknown, setting: LabsSetting): Promise<LabsFacts> {
     if (value !== undefined && typeof value !== 'boolean' || !['streaming','autoPaste','sharing','wisprFlow','screenPicker'].includes(setting) || this.pending) return Promise.reject(Error('Invalid or pending Labs request'));
     const request = ++this.next;
     return new Promise((resolve, reject) => {
