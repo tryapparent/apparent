@@ -40,22 +40,20 @@ Before expensive verification, pre-push enumerates the union of all commits
 reachable from every non-deletion pushed ref, excluding ancestry reachable from
 the fixed integration baseline `d559dbbd2a3fbf9428593931b526e13b626c8ab9`.
 That baseline and all its ancestors are grandfathered. No last-push timestamp or
-remote-tip exclusion can hide an unvalidated feature commit. Merge commits,
+remote-tip exclusion can hide an unvalidated feature commit. Locally created merges,
 rebased commits and commits introduced from side branches receive the same rule.
 The existing hook still requires every non-deletion pushed ref to equal checked-out
 HEAD. Deletion-only pushes perform no issue lookup. Unknown/missing baseline or
 shallow history fails with an actionable prerequisite instead of silently skipping.
 Old history outside the baseline's ancestry receives validation too.
 
-The following immutable accepted main merges omitted their trailers: `6c64c838fab1b70e05da112ffc25336e5c283ab1`
-(PR #1437, issue #575), `18c72f8302d54bab24d1729fb75796329a2a0a81` (PR #1436, issue #171),
-`f52fab25ee734cb60262387d0c74e8cdfba97d6a` (PR #1451, issue #530),
-and `f900c3f4677cca561f1336d4cd4b64184032958e` (PR #1489, issue #837).
-`acceptedMergeIssue` records only those exact commit-to-issue associations, recovered from their product commits.
-Their issues still receive fresh API validation. This does not advance the baseline, exempt their ancestors,
-accept copied merge messages, or infer issues for future merges. Include the Issue trailer when merging future PRs.
+A two-parent GitHub-generated merge may omit its trailer. The hook queries the
+canonical repository for the exact commit and verifies its parents and GitHub's
+valid `web-flow` signature. A local merge, copied merge message, or unverified
+signature cannot qualify. The hook still checks the commits on both sides of the
+merge. Squash commits have one parent and still need a trailer.
 
-Every selected commit's trailer is validated, then each distinct referenced issue
+Every required trailer is validated, then each distinct referenced issue
 is fetched once per push invocation. Each read has a 20-second process timeout
 and a bounded response, with no retries or stale-cache fallback. Authentication,
 network, not-found, identity and PR-number failures reject the push. Issue state
