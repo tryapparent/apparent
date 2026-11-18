@@ -9,11 +9,7 @@ timeline. Native nonempty edit segments take precedence over padded track ranges
 The SDK supplies display dimensions and provider-local stream IDs. Missing audio
 duration does not establish usable audio. Empty video fails before encoding.
 
-The `bundle-v1` operation serves phone/file ingestion, orphan recovery and
-retention's size observation. It preserves the container timeline (including
-audio tails), using the video clock only when container timing is absent. Its
-audio count reports native track presence, not successful audio decoding. Export
-keeps its separate video-clock/overlap policy through `export-v1` (the default).
+[Metadata and phone preparation](phone-preparation/README.md) documents container clocks, native execution, package checks and rollback.
 
 Run `npm ci`, `npm run typecheck`, `npm test`, and `npm run build` here with Node
 22.18+. These policy/build commands need no Rust, Electron, native outputs or

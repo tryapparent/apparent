@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {parseMovieInfo} from '@apparent/engine-sdk';
-import {bundleProbe, exportProbe} from '../src/policy.ts';
+import {bundleProbe, exportProbe, phonePreparation} from '../src/policy.ts';
 
 // Native FFprobe wire shape, through the actual published SDK parser. Provider
 // execution and packaged caller acceptance are separate integration checks.
@@ -29,6 +29,16 @@ test('bundle metadata falls back only for a missing clock and preserves SDK disp
   });
   assert.throws(() => bundleProbe({...facts, durationMs: 0}), /no video/);
   assert.throws(() => bundleProbe({...facts, video: null}), /no video/);
+});
+test('phone preparation skips only actual track absence and retains the container clock', () => {
+  for (const audio of [[], [{index: 7, codec_type: 'audio'}],
+    [{index: 7, codec_type: 'audio', start_time: '5', duration: '1', segments: []}],
+    [{index: 7, codec_type: 'audio'}, {index: 9, codec_type: 'audio'}]]) {
+    const facts = movie(audio, {displayTransform: [0, 1, -1, 0]});
+    assert.deepEqual(phonePreparation(facts), {version: 1, probe: bundleProbe(facts),
+      audio: audio.length === 0 ? 'skip-absent' : 'extract'});
+  }
+  assert.throws(() => phonePreparation(movie([], {duration: '0', width: 0})), /no video/);
 });
 test('only actual overlapping audio can be selected; provider stream IDs survive filtering', () => {
   const result = exportProbe(movie([

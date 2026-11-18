@@ -9,6 +9,7 @@ import {fileURLToPath} from 'node:url';
 import {qualifyAudioIngestion} from './audio-package.ts';
 import {qualifyTranscript} from './transcript/package.ts';
 import {qualifySpeechCues} from '../../enablement/media/cues-package.ts';
+import {qualifyPhonePreparation} from '../../enablement/ci/media/preparation-package.ts';
 
 import {qualifyAssembly} from './assembly-package.ts';
 
@@ -129,6 +130,7 @@ try {
     assert(pixels[center+2]>pixels[center]+40,'decoded phone frame stays blue beneath annotations');
   }
   const audioProof = qualifyAudioIngestion({binary, sourceBundle: markedOut, root, home, runtimeDirectory});
+  qualifyPhonePreparation({binary, sourceBundle: markedOut, root, home, runtimeDirectory, runtime, media: app, proofDir: args[5]});
   const transcriptProof = qualifyTranscript({binary, sourceBundle: markedOut, root, home, runtimeDirectory});
   const speechProof = qualifySpeechCues({binary, sourceBundle: markedOut, root, home, runtimeDirectory});
   // Screen recovery/reprocessing has a distinct explicit-frame provider from
@@ -153,10 +155,11 @@ try {
     ffmpeg(['-xerror','-i',file,'-f','null','-']);
   }
   assert.equal(hash(join(screen,'recording.mp4')),screenHash); assert.equal(hash(join(screen,'apparent.json')),screenMetadata);
-  const benchmark=join(root,'screen-benchmark.apparent');
-  run(binary,['reprocess',screen,'--out',benchmark,'--bench','1'],{...process.env,HOME:home,CFFIXED_USER_HOME:home,
+  const verificationEnv = {...process.env,HOME:home,CFFIXED_USER_HOME:home,
     XDG_CONFIG_HOME:join(home,'config'),XDG_DATA_HOME:join(home,'data'),XDG_RUNTIME_DIR:runtimeDirectory,
-    DISPLAY:'',WAYLAND_DISPLAY:'',DBUS_SESSION_BUS_ADDRESS:'',APPIMAGE_EXTRACT_AND_RUN:'1'});
+    DISPLAY:'',WAYLAND_DISPLAY:'',DBUS_SESSION_BUS_ADDRESS:'',APPIMAGE_EXTRACT_AND_RUN:'1'};
+  const benchmark=join(root,'screen-benchmark.apparent');
+  run(binary,['reprocess',screen,'--out',benchmark,'--bench','1'],verificationEnv);
   const benchmarkBundle=JSON.parse(readFileSync(join(benchmark,'apparent.json'),'utf8'));
   assert.equal(benchmarkBundle.videoOffsetMs,500);assert(benchmarkBundle.keyframes.length>0);
   assert(benchmarkBundle.keyframes.every((frame:{t:number})=>frame.t>=500&&frame.t<=1500));
@@ -171,16 +174,12 @@ try {
   writeFileSync(join(longScreen,'apparent.json'),JSON.stringify({...screenInfo,durationMs:120500,
     target:{...screenInfo.target,frame:{...screenInfo.target.frame,width:96,height:64}}}),{mode:0o600});
   const longHash=hash(longMovie),longMetadata=hash(join(longScreen,'apparent.json'));
-  run(binary,['reprocess',longScreen,'--out',longOutput,'--bench','1'],{...process.env,HOME:home,CFFIXED_USER_HOME:home,
-    XDG_CONFIG_HOME:join(home,'config'),XDG_DATA_HOME:join(home,'data'),XDG_RUNTIME_DIR:runtimeDirectory,
-    DISPLAY:'',WAYLAND_DISPLAY:'',DBUS_SESSION_BUS_ADDRESS:'',APPIMAGE_EXTRACT_AND_RUN:'1'});
+  run(binary,['reprocess',longScreen,'--out',longOutput,'--bench','1'],verificationEnv);
   const longBundle=JSON.parse(readFileSync(join(longOutput,'apparent.json'),'utf8'));
   assert.equal(longBundle.videoOffsetMs,500);assert(longBundle.keyframes.length>0);
   assert(longBundle.keyframes.every((frame:{t:number})=>frame.t>=500&&frame.t<=120500));
   assert.equal(hash(longMovie),longHash);assert.equal(hash(join(longScreen,'apparent.json')),longMetadata);
-  const assemblySheet=qualifyAssembly(binary,root,{...process.env,HOME:home,CFFIXED_USER_HOME:home,
-    XDG_CONFIG_HOME:join(home,'config'),XDG_DATA_HOME:join(home,'data'),XDG_RUNTIME_DIR:runtimeDirectory,
-    DISPLAY:'',WAYLAND_DISPLAY:'',DBUS_SESSION_BUS_ADDRESS:'',APPIMAGE_EXTRACT_AND_RUN:'1'},ffmpeg);
+  const assemblySheet=qualifyAssembly(binary,root,verificationEnv,ffmpeg);
   if (args.length === 6) {
     mkdirSync(resolve(args[5]),{recursive:true,mode:0o700});
     copyFileSync(join(markedOut,markedResult.keyframes[0].file),join(resolve(args[5]),'record-phone-flag.png'));

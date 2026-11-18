@@ -27,6 +27,21 @@ pub(crate) struct BundleProbe {
     pub audio_tracks: u32,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum PhoneAudio {
+    SkipAbsent,
+    Extract,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PhonePreparation {
+    version: u32,
+    pub probe: BundleProbe,
+    pub audio: PhoneAudio,
+}
+
 fn request(movie: &Path, operation: &str) -> Result<Vec<u8>> {
     let (node, worker, engine) = super::worker::assets(
         "Record media",
@@ -62,6 +77,11 @@ pub(crate) fn bundle_probe(movie: &Path) -> Result<BundleProbe> {
     let bytes = request(movie, "bundle-v1")?;
     let result: BundleProbe =
         serde_json::from_slice(&bytes).context("Invalid Record bundle metadata")?;
+    validate_bundle_probe(&result)?;
+    Ok(result)
+}
+
+fn validate_bundle_probe(result: &BundleProbe) -> Result<()> {
     ensure!(
         result.version == 1
             && result.duration_ms > 0
@@ -72,6 +92,15 @@ pub(crate) fn bundle_probe(movie: &Path) -> Result<BundleProbe> {
             && result.audio_tracks <= 1024,
         "Invalid Record bundle metadata"
     );
+    Ok(())
+}
+
+pub(crate) fn phone_preparation(movie: &Path) -> Result<PhonePreparation> {
+    let bytes = request(movie, "phone-v1")?;
+    let result: PhonePreparation =
+        serde_json::from_slice(&bytes).context("Invalid Record phone preparation")?;
+    ensure!(result.version == 1, "Invalid Record phone preparation");
+    validate_bundle_probe(&result.probe)?;
     Ok(result)
 }
 
