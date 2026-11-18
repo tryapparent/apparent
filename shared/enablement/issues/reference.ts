@@ -7,6 +7,7 @@ export const referencePattern =
 export type Issue = { repository: string; number: number };
 export function acceptedMergeIssue(commit: string): Issue | undefined {
   const number = new Map([
+    ["91fe2c80dd96cea8bb3285d2c6f1d1b4652bd76b", 1240],
     ["6c64c838fab1b70e05da112ffc25336e5c283ab1", 575],
     ["18c72f8302d54bab24d1729fb75796329a2a0a81", 171],
     ["f52fab25ee734cb60262387d0c74e8cdfba97d6a", 530],

@@ -34,9 +34,6 @@ impl Session {
         events: impl Fn(Event) + Send + Sync + Clone + 'static,
     ) -> anyhow::Result<Self> {
         use std::sync::atomic::AtomicBool;
-        #[cfg(not(target_os = "macos"))]
-        use std::sync::atomic::Ordering;
-
         let source = next_session_source();
         let transport_generation = next_session_source();
         let events = Self::scope_events(source, events);
@@ -90,20 +87,6 @@ impl Session {
             Some(transport) => (transport, Some(Box::new(native) as Box<dyn Fn(u64) -> anyhow::Result<Transport>>)),
             None => (native(transport_generation)?, None),
         };
-
-        #[cfg(not(target_os = "macos"))]
-        let alive = std::sync::Arc::clone(&polling);
-        #[cfg(not(target_os = "macos"))]
-        std::thread::spawn(move || {
-            while alive.load(Ordering::Acquire) {
-                if let Some(grants) = read_grants()
-                    && alive.load(Ordering::Acquire)
-                {
-                    events(Event::Grants(grants));
-                }
-                std::thread::sleep(std::time::Duration::from_millis(500));
-            }
-        });
 
         let progress = Progress::load();
         let allowed = relaunch_allowed(&progress, unix_ms());

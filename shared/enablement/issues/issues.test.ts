@@ -196,6 +196,7 @@ test("accepted merge receipts validate exact identities without exempting other 
     ]).trim() + "/objects";
   writeFileSync(join(f.repo, ".git/objects/info/alternates"), objects + "\n");
   for (const [commit, number] of [
+    ["91fe2c80dd96cea8bb3285d2c6f1d1b4652bd76b", "1240"],
     ["6c64c838fab1b70e05da112ffc25336e5c283ab1", "575"],
     ["18c72f8302d54bab24d1729fb75796329a2a0a81", "171"],
     ["f900c3f4677cca561f1336d4cd4b64184032958e", "837"],

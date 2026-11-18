@@ -55,6 +55,9 @@ and `f900c3f4677cca561f1336d4cd4b64184032958e` (PR #1489, issue #837).
 Their issues still receive fresh API validation. This does not advance the baseline, exempt their ancestors,
 accept copied merge messages, or infer issues for future merges. Include the Issue trailer when merging future PRs.
 
+The documentation routing merge also has an exact receipt for
+`91fe2c80dd96cea8bb3285d2c6f1d1b4652bd76b` (PR #1494, issue #1240).
+
 Every selected commit's trailer is validated, then each distinct referenced issue
 is fetched once per push invocation. Each read has a 20-second process timeout
 and a bounded response, with no retries or stale-cache fallback. Authentication,

@@ -66,7 +66,7 @@ export function project(value: unknown) {
       typeof r.permission !== "string" ||
       !permissions.has(r.permission) ||
       typeof r.status !== "string" ||
-      !["granted", "denied", "not-determined"].includes(r.status)
+      !["granted", "denied", "not-determined", "unavailable"].includes(r.status)
     )
       return null;
     rows.push({

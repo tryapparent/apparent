@@ -106,3 +106,13 @@ the authoritative legacy runtime. Producer changes do not
 automatically update an installed consumer: pin/contract adoption needs its own
 tests and package verification. Revert the consumer slice and pin together for
 rollback. Preserve historical migration branches and unrelated writers.
+
+### Desktop permission observations
+
+`permissions/facts.rs` defines current-process permission observations for the
+root app. Composition wires the existing macOS grant readers and screen
+usability probe or the existing Linux provider. Record selects the
+requirements for the requested capture. Settings and the repair surface
+consume the same observations. The root app refreshes them off the UI
+thread and expires older observations. On Wayland, ScreenCast authorization
+is still part of starting the native capture session.
