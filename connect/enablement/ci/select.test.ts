@@ -200,3 +200,17 @@ test('publication survives skipped native ancestors but refuses failed admission
     {...github,event_name:'pull_request'}])assert.equal(evaluate(hosted,needs,false,context),false);
   assert.equal(evaluate(hosted,needs,false,github,'false'),false);
 });
+
+test('Connect Bend proof runs on Linux when selected', () => {
+  const entry = 'connect/enablement/ci/bend/check.ts';
+  const compiler = 'shared/enablement/bend/toolchain.ts';
+  const {on, jobs} = workflow('stream-connect.yml');
+  for (const event of ['pull_request', 'push']) {
+    assert.equal(matches(on[event].paths, compiler), true);
+    assert.equal(matches(on[event].paths, entry), true);
+  }
+  assert.equal(jobs.select.outputs.bend, '${{ steps.paths.outputs.bend }}');
+  assert.equal(jobs.portable['runs-on'], 'ubuntu-24.04');
+  const proof = jobs.portable.steps.find((step: {run?: string}) => step.run === 'node ' + entry + ' --proof');
+  assert.equal(proof?.if, "needs.select.outputs.bend == 'true'");
+});

@@ -1,4 +1,5 @@
 // Connect owns its automatic and manual verification plan.
+import {affectedBendOwners} from '../../../shared/enablement/bend/owners.ts';
 import {appendFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {suitePlan, planFromOwners, routingProblems} from '../../../enablement/ci/routing/consumers.ts';
@@ -21,5 +22,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const event = process.env.GITHUB_EVENT_NAME;
   const plan = connectPlan(event === 'workflow_dispatch' ? suitePlan(null) : !range.requiredStreams.connect ? planFromOwners([]) :
     event === 'pull_request' ? range.plan : suitePlan(null));
-  appendFileSync(process.env.GITHUB_OUTPUT!, `publish=${range.publicationStreams.connect}\nplan=${JSON.stringify(plan)}\nnative=${plan.root || plan.client}\nportable=${plan.browser || plan.service || plan.foreground}\n`);
+  const bend = affectedBendOwners(process.cwd(),
+    event === 'workflow_dispatch' || !range.historyKnown ? null : range.paths).includes('connect');
+  appendFileSync(process.env.GITHUB_OUTPUT!, `publish=${range.publicationStreams.connect}\nplan=${JSON.stringify(plan)}\nnative=${plan.root || plan.client}\nportable=${bend || plan.browser || plan.service || plan.foreground}\nbend=${bend}\n`);
 }
