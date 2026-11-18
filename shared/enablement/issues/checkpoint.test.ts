@@ -6,6 +6,27 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fixture } from "./fixture.ts";
 import { validatePush } from "./run.ts";
+import { isAcceptedReleaseCommit } from "./reference.ts";
+
+test("the untrailed release commit requires the exact accepted merge on canonical main", (t) => {
+  const f = fixture(t);
+  const commit = "c2a3b6043389a4e825eaae06e2d1c0b732faf0b5";
+  const merge = "6c2aadf6cd9fb99c8354f0f7e70fc94607da0866";
+  const parent = "1c30a3455536f5b4bc7aa11d546367fbc46d0eb4";
+  const source = new URL("../../../", import.meta.url);
+  const common = execFileSync(
+    "git",
+    ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    { cwd: source, encoding: "utf8" },
+  ).trim();
+  writeFileSync(
+    join(f.repo, ".git/objects/info/alternates"),
+    join(common, "objects") + "\n",
+  );
+  assert.equal(isAcceptedReleaseCommit(commit, merge, f.repo), true);
+  assert.equal(isAcceptedReleaseCommit(commit, parent, f.repo), false);
+  assert.equal(isAcceptedReleaseCommit(merge, merge, f.repo), false);
+});
 
 test("push checks all trailers and validates newly introduced issue identities across branches once", (t) => {
   const f = fixture(t);
