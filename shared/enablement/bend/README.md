@@ -1,9 +1,23 @@
 # Bend2 owner builds
 
 Record completion and the Connect service build typed Bend2 policy into standalone
-ES modules. Use Bend2 for suitable pure decisions and state transformations that
-benefit from types and laws. Keep integrations, UI, effects and build tooling in
-TypeScript, and keep OS and capture execution in native code.
+ES modules. The [migration rule](../../../AGENTS.md#architecture-and-migration)
+requires new or changed decisions, validation, transformations and state
+transitions to move to Bend2 with their callers, tests and production build
+integration in the same PR.
+
+Move Rust policy directly into Bend2 and wire the production caller through a
+supported host. Move touched pure TypeScript policy into Bend2 and call the
+generated module from the existing TypeScript host. For a pure-policy repair,
+migrate the smallest affected function or module and replace its old decision path.
+
+Keep React rendering, TypeScript host and effect glue, and build tooling in the
+existing stack. Keep capture execution, native resource handling, durability and
+safety in native adapters. Repair host or native mechanics in the language those
+mechanics require. If a runtime, platform or integration requirement blocks a
+migration, identify the production caller, the specific constraint and the
+behavior it prevents moving. Add missing build and host wiring in the same PR
+when the runtime supports it.
 
 1. Add the source within its canonical owner. In
    `<owner>/enablement/ci/bend/modules.json`, list its owner-relative path in
@@ -39,4 +53,4 @@ neither Bun nor Lean. Owners without modules have no Bend toolchain setup.
 | Record | Node completion package and installed Desktop completion worker |
 | Connect | Standalone service and bundled Cloudflare gateway |
 | Other canonical owners, Shared, Composition and Enablement | Can add a manifest and wire the same contract to an existing JavaScript build and runtime |
-| Native Rust or Swift and Hermes Python | Require a supported host integration before adopting Bend. The emitted module is JavaScript. |
+| Native Rust or Swift and Hermes Python | Route the decision through a supported host that can execute the emitted JavaScript. Verify the real caller and packaged runtime. |
