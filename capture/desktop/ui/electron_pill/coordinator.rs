@@ -4,6 +4,24 @@ use crate::capture::desktop::{ApparentCoordinator, HudPillWindow, IslandPhase, a
 use gpui::Context;
 
 impl ApparentCoordinator {
+    pub(crate) fn begin_system_display_picker(&self) -> Option<crate::capture::engine::runtime::recording::recorder::selection::DisplaySelection> {
+        use crate::capture::engine::runtime::recording::recorder::selection::DisplaySelection;
+        #[cfg(target_os = "macos")]
+        let excluded = {
+            let mut ids = self.electron_pill_exclusions.clone();
+            super::restore_capture_exclusion(
+                &mut ids,
+                self.electron_pill.as_ref().and_then(Session::window_number),
+                !crate::shared::handoff::experiment("movableRecordingControls"),
+            );
+            ids
+        };
+        DisplaySelection::begin(
+            #[cfg(target_os = "macos")]
+            &excluded,
+        )
+    }
+
     fn electron_pill_view(&self, revision: u64) -> View {
         let mut view = View::new(
             &self.pill_snapshot(),

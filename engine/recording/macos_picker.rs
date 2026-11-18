@@ -36,7 +36,7 @@ pub(crate) struct PendingDisplay {
 }
 
 impl PendingDisplay {
-    pub(crate) fn present() -> Result<Self> {
+    pub(crate) fn present(excluded_windows: &[u32]) -> Result<Self> {
         let app = NSRunningApplication::currentApplication();
         let bundle = app
             .bundleIdentifier()
@@ -46,6 +46,7 @@ impl PendingDisplay {
         config.set_allowed_picker_modes(&[SCContentSharingPickerMode::SingleDisplay]);
         config.set_allows_changing_selected_content(false);
         config.set_excluded_bundle_ids(&[&bundle])?;
+        config.set_excluded_window_ids(excluded_windows);
         SCContentSharingPicker::set_default_configuration(&config)?;
 
         let (sender, receiver) = flume::bounded(1);

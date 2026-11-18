@@ -1008,7 +1008,7 @@ impl ApparentCoordinator {
         {
             return true;
         }
-        let Some(picker) = display_selection::DisplaySelection::begin() else { return true; };
+        let Some(picker) = self.begin_system_display_picker() else { return true; };
         cx.spawn(async move |entity, cx| {
             let selected = picker.acquire(|| cx.background_executor().timer(Duration::from_millis(100))).await;
             let _ = entity.update(cx, |coord, cx| match selected {

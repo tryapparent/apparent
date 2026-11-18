@@ -60,8 +60,12 @@ pub(crate) struct DisplaySelection {
 type Display = (crate::shared::model::TargetInfo, super::PreparedSource);
 
 impl DisplaySelection {
-    pub(crate) fn begin() -> Option<Self> {
-        Self::start().unwrap_or_else(|error| {
+    pub(crate) fn begin(#[cfg(target_os = "macos")] excluded_windows: &[u32]) -> Option<Self> {
+        Self::start(
+            #[cfg(target_os = "macos")]
+            excluded_windows,
+        )
+        .unwrap_or_else(|error| {
             crate::capture::engine::runtime::apparent_log(format!(
                 "Could not open the screen picker: {error:#}"
             ));
@@ -69,7 +73,7 @@ impl DisplaySelection {
         })
     }
 
-    fn start() -> anyhow::Result<Option<Self>> {
+    fn start(#[cfg(target_os = "macos")] excluded_windows: &[u32]) -> anyhow::Result<Option<Self>> {
         let Some(stop) = reserve() else {
             return Ok(None);
         };
@@ -87,7 +91,7 @@ impl DisplaySelection {
             receiver
         };
         #[cfg(target_os = "macos")]
-        let picker = super::macos_picker::PendingDisplay::present()?;
+        let picker = super::macos_picker::PendingDisplay::present(excluded_windows)?;
         Ok(Some(Self {
             stop,
             #[cfg(target_os = "linux")]
