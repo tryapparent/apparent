@@ -166,9 +166,9 @@ jobs:
   # PR checkout is GitHub's proposed merge, so these checks cover integration.
   # Draft updates retain cheap feedback without allocating full platform suites.
   linux:
-    needs: [contracts, select, reuse, portable, record-media]
+    needs: [contracts, select, reuse, record-media]
     if: >-
-      !cancelled() && needs.contracts.result == 'success' && (needs['record-media'].result == 'success' || needs['record-media'].result == 'skipped') && (needs.portable.result == 'success' || needs.portable.result == 'skipped') &&
+      !cancelled() && needs.contracts.result == 'success' && (needs['record-media'].result == 'success' || needs['record-media'].result == 'skipped') &&
       (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))
       && (needs.select.result != 'success' || needs.select.outputs.platform != 'false')
       && needs.reuse.outputs.linux != 'true'
