@@ -17,13 +17,17 @@ import { fileURLToPath } from "node:url";
 import {
   create,
   digest,
+  macFallbackJob,
+  macPrimaryJob,
   releaseTag,
   repository,
+  targets,
   workflow,
 } from "../manifest.ts";
+import type { Channel } from "../manifest.ts";
 import { restore } from "../candidate.ts";
 
-async function exercisePublication(channel: "main" | "stable") {
+async function exercisePublication(channel: Channel, historical = false) {
   const directory = mkdtempSync(join(tmpdir(), "apparent-dev-restore-"));
   const saved = { ...process.env };
   let source = "1".repeat(40);
@@ -49,7 +53,8 @@ async function exercisePublication(channel: "main" | "stable") {
     source = git("rev-parse", "HEAD");
     git("update-ref", "refs/remotes/origin/main", source);
     const tag = releaseTag(channel, "1.2.3", source);
-    process.env.RELEASE_CHANNEL = channel;
+    const mode = historical ? "paired-main" : channel;
+    process.env.RELEASE_CHANNEL = mode;
     process.env.FIXTURE_TAG = tag;
     symlinkSync(join(cwd, "enablement"), join(directory, "enablement"));
     const bin = join(directory, "bin");
@@ -79,23 +84,15 @@ async function exercisePublication(channel: "main" | "stable") {
     routes[`${prefix}actions/runs/123`] = { json: run };
     routes[`${prefix}actions/runs/123/attempts/2/jobs?per_page=100&page=1`] = {
       json: {
-        jobs: [
-          "linux / Linux x86_64",
-          "linux / Linux aarch64",
-          "macos / Build signed Mac candidate",
-        ].map((name) => ({
-          name,
+        jobs: targets(channel, historical).map(({ job }) => ({
+          name: !historical && job === macPrimaryJob ? macFallbackJob : job,
           run_attempt: attempt,
           status: "completed",
           conclusion: "success",
         })),
       },
     };
-    for (const [platform, architecture] of [
-      ["linux", "x86_64"],
-      ["linux", "aarch64"],
-      ["macos", "aarch64"],
-    ]) {
+    for (const { platform, architecture } of targets(channel, historical)) {
       const name = `stable-${platform}-${architecture}-2`,
         path = join(directory, name);
       mkdirSync(path);
@@ -151,16 +148,28 @@ async function exercisePublication(channel: "main" | "stable") {
       writeFileSync(process.env.FIXTURE_ROUTES!, JSON.stringify(routes));
     routes[artifactRoute] = { json: { artifacts } };
     save();
-    const first = await restore(runId, attempt, join(directory, "good"));
-    assert.equal(first.length, 3);
+    const first = await restore(
+      runId,
+      attempt,
+      join(directory, "good"),
+      channel,
+      historical,
+    );
+    assert.equal(first.length, targets(channel, historical).length);
     assert.deepEqual(
-      await restore(runId, attempt, join(directory, "retry")),
+      await restore(
+        runId,
+        attempt,
+        join(directory, "retry"),
+        channel,
+        historical,
+      ),
       first,
     );
-    routes[artifactRoute] = { json: { artifacts: artifacts.slice(0, 2) } };
+    routes[artifactRoute] = { json: { artifacts: artifacts.slice(1) } };
     save();
     await assert.rejects(
-      restore(runId, attempt, join(directory, "missing")),
+      restore(runId, attempt, join(directory, "missing"), channel, historical),
       /Missing/,
     );
     await assert.rejects(
@@ -174,7 +183,7 @@ async function exercisePublication(channel: "main" | "stable") {
     };
     save();
     await assert.rejects(
-      restore(runId, attempt, join(directory, "expired")),
+      restore(runId, attempt, join(directory, "expired"), channel, historical),
       /Missing/,
     );
     routes[artifactRoute] = {
@@ -187,7 +196,7 @@ async function exercisePublication(channel: "main" | "stable") {
     };
     save();
     await assert.rejects(
-      restore(runId, attempt, join(directory, "altered")),
+      restore(runId, attempt, join(directory, "altered"), channel, historical),
       /archive digest mismatch/,
     );
 
@@ -285,18 +294,18 @@ async function exercisePublication(channel: "main" | "stable") {
         })),
     );
     assert.equal(state().release.draft, false);
-    assert.equal(state().release.prerelease, channel === "main");
+    assert.equal(state().release.prerelease, channel !== "stable");
     assert.equal(
       state().release.make_latest,
-      channel === "main" ? "false" : "true",
+      channel === "stable" ? "true" : "false",
     );
     assert.equal(state().release.tag_name, tag);
     process.env.RELEASE_CHANNEL = channel === "stable" ? "main" : "stable";
     await assert.rejects(
       publish(runId, attempt, join(directory, "wrong-channel")),
-      /different release channel/,
+      /Producer job not successful|Candidate identity differs/,
     );
-    process.env.RELEASE_CHANNEL = channel;
+    process.env.RELEASE_CHANNEL = mode;
     const uploads = state().uploads;
     writeFileSync(process.env.GITHUB_OUTPUT, "");
     await publish(runId, attempt, join(directory, "publish-idempotent"));
@@ -342,17 +351,19 @@ async function exercisePublication(channel: "main" | "stable") {
       git("update-ref", "refs/remotes/origin/main", newerSource);
       newer.release.tag_name = releaseTag("main", "1.2.3", newerSource);
     }
-    writeFileSync(process.env.FIXTURE_STATE, JSON.stringify(newer));
-    writeFileSync(process.env.GITHUB_OUTPUT, "");
-    await assert.rejects(
-      publish(runId, attempt, join(directory, "out-of-order")),
-      /Newer (stable|Main)/,
-    );
-    const superseded = readFileSync(process.env.GITHUB_OUTPUT, "utf8");
-    assert.ok(
-      superseded.includes(`superseded_tag=${newer.release.tag_name}\n`),
-    );
-    assert.doesNotMatch(superseded, /^tag=|^downloads=/m);
+    if (channel !== "mac-main") {
+      writeFileSync(process.env.FIXTURE_STATE, JSON.stringify(newer));
+      writeFileSync(process.env.GITHUB_OUTPUT, "");
+      await assert.rejects(
+        publish(runId, attempt, join(directory, "out-of-order")),
+        /Newer (stable|Main)/,
+      );
+      const superseded = readFileSync(process.env.GITHUB_OUTPUT, "utf8");
+      assert.ok(
+        superseded.includes(`superseded_tag=${newer.release.tag_name}\n`),
+      );
+      assert.doesNotMatch(superseded, /^tag=|^downloads=/m);
+    }
     process.chdir(cwd);
     const calls = readFileSync(process.env.FIXTURE_LOG!, "utf8");
     assert.doesNotMatch(calls, /cargo|--clobber/);
@@ -362,6 +373,8 @@ async function exercisePublication(channel: "main" | "stable") {
     rmSync(directory, { recursive: true, force: true });
   }
 }
-for (const channel of ["main", "stable"] as const)
+for (const channel of ["main", "mac-main", "stable"] as const)
   test(`Exact ${channel} archives admit only a complete, immutable release`, () =>
     exercisePublication(channel));
+test("a historical paired Main publication can resume only its exact artifacts", () =>
+  exercisePublication("main", true));

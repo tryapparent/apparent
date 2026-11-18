@@ -84,6 +84,8 @@ export type Run = {
   path: string;
   head_branch: string;
   head_sha: string;
+  display_title?: string;
+  actor?: { login: string };
   event: string;
   run_attempt: number;
   status: string;
@@ -94,6 +96,12 @@ export type Job = {
   run_attempt: number;
   status: string;
   conclusion: string | null;
+  id?: number;
+  runner_id?: number | null;
+  created_at?: string;
+  completed_at?: string;
+  steps?: { name: string; started_at?: string }[];
+  labels?: string[];
 };
 export type Artifact = {
   id: number;

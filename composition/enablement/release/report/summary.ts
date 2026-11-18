@@ -48,6 +48,7 @@ export async function releaseSummary(
   request = fetch,
 ): Promise<string> {
   const { admit, linux, macos, publish, feed, cask } = jobs;
+  const channel = env.RELEASE_CHANNEL;
   const source = [
     publish.outputs.sha,
     admit.outputs.sha,
@@ -60,12 +61,12 @@ export async function releaseSummary(
       ? `\nProducer [run ${run}, attempt ${attempt}](https://github.com/${repository}/actions/runs/${run}/attempts/${attempt})\n`
       : "";
   const report = (status: string, detail: string) =>
-    `## Paired desktop release — ${status}\n\nSource SHA: ${source ? `\`${source}\`` : "Unavailable"}\n${producer}\n${detail}\n`;
+    `## Desktop release — ${status}\n\nSource SHA: ${source ? `\`${source}\`` : "Unavailable"}\n${producer}\n${detail}\n`;
 
   if (admit.result === "success" && sha.test(admit.outputs.superseded_by ?? ""))
     return report(
       "Superseded",
-      `Installer inputs changed through \`${admit.outputs.superseded_by}\`. Follow Main CI for the newer source to its paired release.`,
+      `A newer Linux Main candidate was queued at \`${admit.outputs.superseded_by}\`.`,
     );
 
   const supersededTag = publish.outputs.superseded_tag ?? "";
@@ -81,15 +82,16 @@ export async function releaseSummary(
   if (publish.result === "success") {
     const { tag, downloads } = publish.outputs;
     const validTag =
-      env.RELEASE_CHANNEL === "main"
-        ? tag === `linux-main-v2-${source}`
-        : tag?.startsWith("v") && versionPattern.test(tag.slice(1));
+      channel === "stable"
+        ? tag?.startsWith("v") && versionPattern.test(tag.slice(1))
+        : tag ===
+          `${channel === "mac-main" ? "mac" : "linux"}-main-v2-${source}`;
     try {
       if (publish.outputs.sha !== source || !source || !validTag)
         throw Error("Missing verified publication identity");
       const links = await verifyLinks(tag, JSON.parse(downloads), request);
       const distribution =
-        env.RELEASE_CHANNEL === "stable" &&
+        channel === "stable" &&
         (feed.result !== "success" || cask.result !== "success")
           ? `\n\nStable distribution needs attention (feed: ${feed.result}, cask: ${cask.result}). Inspect those jobs and retry distribution for the exact producer attempt.`
           : "";
@@ -107,7 +109,7 @@ export async function releaseSummary(
     admit.result === "success" &&
     !source &&
     !env.REQUESTED_SOURCE &&
-    env.RELEASE_CHANNEL === "stable" &&
+    channel === "stable" &&
     publish.result === "skipped"
   )
     return report(
@@ -117,7 +119,7 @@ export async function releaseSummary(
   if (admit.result !== "success" && admit.result !== "skipped")
     return report(
       "Failed",
-      "Inspect the admit job for the source freshness check, exact-source verification receipt, or signing configuration.",
+      "Inspect admission for a newer queued source, exact-source verification, or signing configuration.",
     );
   const producers = [
     ["Linux", linux],

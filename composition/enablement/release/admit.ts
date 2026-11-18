@@ -12,8 +12,11 @@ const git = (...args: string[]) =>
 export async function admit(request = ""): Promise<void> {
   const channel = process.env.RELEASE_CHANNEL || "stable";
   const verificationRun = process.env.VERIFY_RUN_ID;
-  if (channel !== "stable" && (channel !== "main" || !request))
-    throw Error("Main release requires an exact source SHA");
+  if (
+    channel !== "stable" &&
+    (!["main", "mac-main"].includes(channel) || !request)
+  )
+    throw Error("Main releases require an exact source SHA");
   if (verificationRun && (!request || !/^[1-9]\d*$/.test(verificationRun)))
     throw Error("Invalid verification run ID");
   if (
@@ -65,7 +68,7 @@ export async function admit(request = ""): Promise<void> {
     }
     const tag = releaseTag(channel, version, candidate);
     if (
-      channel === "main" &&
+      channel !== "stable" &&
       optional<Release>(`releases/tags/${tag}`)?.draft === false
     )
       throw Error(

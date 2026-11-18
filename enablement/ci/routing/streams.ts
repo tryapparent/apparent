@@ -2,7 +2,6 @@
 // This module supplies Git ancestry/input proof, not another selector.
 import {selectRange} from '../select.ts';
 import {execFileSync} from 'node:child_process';
-import {appendFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 
 export {streamPaths, affectsStream} from './consumers.ts';
@@ -25,13 +24,7 @@ export function currentStream(stream: Stream, candidate: string, main = 'origin/
   return !decision.publicationStreams[stream];
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const [stream, candidate, mode] = process.argv.slice(2);
+  const [stream, candidate] = process.argv.slice(2);
   if (!Object.hasOwn(streamPaths, stream)) throw Error('Unknown value stream');
-  if (mode === '--report-superseded') {
-    const main = execFileSync('git', ['rev-parse', '--verify', 'origin/main'], {encoding: 'utf8'}).trim();
-    if (!currentStream(stream as Stream, candidate, main))
-      appendFileSync(process.env.GITHUB_OUTPUT!, `superseded_by=${main}\n`);
-  } else {
-    process.exitCode = currentStream(stream as Stream, candidate) ? 0 : 1;
-  }
+  process.exitCode = currentStream(stream as Stream, candidate) ? 0 : 1;
 }
