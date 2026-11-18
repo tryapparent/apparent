@@ -1,0 +1,4 @@
+{
+  "modules": ["completion/src/copy-admission.bend"],
+  "inputs": ["completion/"]
+}

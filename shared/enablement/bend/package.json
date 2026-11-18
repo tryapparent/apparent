@@ -4,6 +4,9 @@
   "type": "module",
   "exports": {
     "./source": "./source.ts",
-    "./toolchain": "./toolchain.ts"
+    "./toolchain": "./toolchain.ts",
+    "./build": "./build.ts",
+    "./consumers": "./consumers.ts",
+    "./owners": "./owners.ts"
   }
 }

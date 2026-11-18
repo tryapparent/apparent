@@ -5,7 +5,7 @@ import {dirname, isAbsolute, relative, resolve, sep} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {commands, contractTests, root} from '../run.ts';
 import type {Command} from '../run.ts';
-import {copyRunnerSources} from '../support/sources.ts';
+import {copyRunnerSources, fixtureBendDirectories} from '../support/sources.ts';
 export {copyRunnerSources} from '../support/sources.ts';
 
 const finiteTest = "import {test} from 'node:test'; test('finite hook fixture', () => {});\n";
@@ -42,8 +42,11 @@ export function writeFiniteChecks(destination: string, plan = finiteCheckPlan())
 export function runnerFixture(destination: string): void {
   copyRunnerSources(destination);
   writeFiniteChecks(destination);
-  const bend = resolve(destination, 'record/enablement/ci/bend/check.ts');
-  writeFileSync(bend, "console.log('Finite Bend fixture');\n");
+  for (const directory of fixtureBendDirectories(destination)) {
+    const bend = resolve(destination, directory, 'check.ts');
+    mkdirSync(dirname(bend), {recursive: true});
+    writeFileSync(bend, "console.log('Finite Bend fixture');\n");
+  }
   const issue = resolve(destination, 'shared/enablement/issues/run.ts');
   mkdirSync(dirname(issue), {recursive: true});
   writeFileSync(issue, "process.stdin.resume();\n");
