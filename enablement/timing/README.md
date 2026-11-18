@@ -42,6 +42,14 @@ observer when its only work is `gh run watch` with a literal repository and
 polling interval and the loop aggregates the exit status. The matcher accepts
 the observed flag order and optional literal `/tmp` log redirection. Dynamic
 arguments and mixed or arbitrary nested shell bodies are outside this rule.
+The census also recognizes the six-line guarded PR checks observer as one
+envelope. It starts with `set -e`, assigns a literal `/tmp/apparent-dev-…` job
+directory and a 40-hex `expected` value, then brackets the watcher with identical
+quoted `gh pr view` head tests against `"$expected"`. The watcher uses the same
+literal PR number and repository, positive decimal timeout and interval values
+of up to nine digits, and the observed `--watch --interval … --fail-fast` flag
+order. Its only redirection is `> "$job/pr-<number>-checks.log" 2>&1` with the
+same PR number. The guarded form identifies the observed purpose of the launch.
 Attribution uses the existing exact process and cell links. Individual jobs and
 nested shell phases have no separate timing rows. Asynchronous launches are
 excluded from the short-call subtotal because a quick return does not establish
