@@ -1385,8 +1385,10 @@ struct PermissionLine: View {
       }
       .lineLimit(1)
       Spacer(minLength: 8)
-      ZStack(alignment: .trailing) {
-        if row.granted && row.relaunch {
+      Group {
+        if row.status == "unavailable" {
+          Text("Checking access…").foregroundStyle(theme.secondary)
+        } else if row.relaunch {
           SettingsButton(title: "Reopen Apparent") { model.act("reopen") }
         } else if row.granted {
           HStack(spacing: 5) {
@@ -1406,7 +1408,6 @@ struct PermissionLine: View {
     .frame(height: 52)
   }
 
-  /// Shorter than onboarding's, to fit one line beside the button.
   private var name: String {
     switch row.permission {
     case "screen-recording": "Screen Recording"

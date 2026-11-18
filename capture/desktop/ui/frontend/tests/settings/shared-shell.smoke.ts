@@ -174,19 +174,19 @@ test('General waits for parent confirmation and keeps recovery keyboard input ou
   await shortcutFailure.getByRole('button',{name:'Try again',exact:true}).press('Enter');
   await expect.poll(()=>recoveryOutput.slice(retryStart).includes('"key":"F9"')).toBe(true);
   assert.equal(recoveryOutput.slice(retryStart).includes('"key":"Enter"'),false,'Enter retries the selected shortcut instead of binding Enter');
+  const recordShortcut=page.getByRole('button',{name:'Change Record shortcut, currently F9',exact:true});
   await projectGeneral(false,false,'F9');await expect(shortcutFailure).not.toBeVisible();
-  await expect(page.getByRole('button',{name:'Change Record shortcut, currently F9',exact:true})).toBeFocused();
+  await expect(recordShortcut).toBeFocused();
   await projectGeneral(false,true,'F9');await listening.focus();await page.keyboard.press('F9');
   await expect(listening).toHaveAttribute('aria-busy','true');
   await projectGeneral(false,false,'F9');
-  await expect(page.getByRole('button',{name:'Change Record shortcut, currently F9',exact:true})).not.toHaveAttribute('aria-busy','true');
+  await expect(recordShortcut).not.toHaveAttribute('aria-busy','true');
   for(const zoom of [1,2]){
     await application.evaluate(({BrowserWindow},zoom)=>{const w=BrowserWindow.getAllWindows()[0];w.setSize(640,530);w.webContents.setZoomFactor(zoom)},zoom);
     await projectGeneral(false,false,'F9');
-    const field=page.getByRole('button',{name:'Change Record shortcut, currently F9',exact:true});
-    await field.focus();await page.keyboard.press('Enter');await expect(field).toHaveAttribute('aria-busy','true');
+    await recordShortcut.focus();await page.keyboard.press('Enter');await expect(recordShortcut).toHaveAttribute('aria-busy','true');
     await projectGeneral(false,false,'F9','Shortcut unavailable. Choose another shortcut.');
-    await expect(field).toBeFocused();
+    await expect(recordShortcut).toBeFocused();
     assert.equal(await page.locator('.general-validation').evaluate(el=>{const r=el.closest('.general-shortcut').getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight}),true,'focused shortcut and new validation are visible together');
   }
   await projectGeneral();

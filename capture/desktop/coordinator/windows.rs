@@ -346,9 +346,7 @@ pub fn run_start_benchmark() {
                 // This explicit diagnostic still measures the legacy picker;
                 // the ordinary Linux GUI entry is intentionally unavailable.
                 coordinator.update(cx, |coord, cx| {
-                    if coord.ready_to_record() {
-                        coord.open_picker(None, cx);
-                    }
+                    coord.open_picker(None, cx);
                 }).unwrap();
                 // Allow deferred picker creation and async discovery to settle.
                 cx.background_executor().timer(Duration::from_millis(600)).await;
@@ -357,7 +355,7 @@ pub fn run_start_benchmark() {
                     assert!(!coord.windows_loading, "Picker discovery did not finish");
                     let target = region_target(100.0, 100.0, 480.0, 320.0, &coord.selectable_windows);
                     start_metric("target_discovery_ms", stage);
-                    coord.start_recording_with_target(target, cx);
+                    coord.start_recording_with_target(|_| target, cx);
                 }).unwrap();
                 if !quick_stop {
                     cx.background_executor().timer(Duration::from_millis(1_500)).await;
@@ -449,47 +447,18 @@ pub fn run_app(
 
         let mut onboarding_initialized = screenshot_out.is_some()
             || std::env::var_os("APPARENT_NO_ONBOARDING").is_some();
-        // Keep the Mac gate fresh even with Settings/onboarding closed. Helper processes
-        // run off the UI thread; only the first successful read may open onboarding.
-        #[cfg(target_os = "macos")]
         if screenshot_out.is_none() {
             let sender = telemetry.ui_sender.clone();
-            let initialized_sender = sender.clone();
-            let mut first_poll = true;
-            let mut launch = std::env::var_os("APPARENT_NO_ONBOARDING").is_none();
+            let mut launch = !onboarding_initialized;
             std::thread::spawn(move || {
-                crate::capture::desktop::settings::onboarding::poll_grants(
-                    crate::capture::desktop::settings::onboarding::read_grants,
-                    move |grants| {
-                        let event = if std::mem::take(&mut launch) {
-                            crate::capture::desktop::settings::onboarding::Event::Launch(grants)
-                        } else {
-                            crate::capture::desktop::settings::onboarding::Event::Grants(grants)
-                        };
-                        sender.send(LiveOverlayEvent::Onboarding(event)).is_ok()
-                    },
-                    move || {
-                        // Preserve native URL launch's startup barrier, even if the
-                        // first helper read fails. Successful Launch goes first.
-                        if std::mem::take(&mut first_poll) {
-                            let _ =
-                                initialized_sender.send(LiveOverlayEvent::OnboardingInitialized);
-                        }
-                        std::thread::sleep(Duration::from_millis(500));
-                    },
-                );
-            });
-        }
-        // Onboarding opens on first launch, or for a permission that went away.
-        #[cfg(not(target_os = "macos"))]
-        if !onboarding_initialized {
-            let sender = telemetry.ui_sender.clone();
-            std::thread::spawn(move || {
-                if let Some(grants) = crate::capture::desktop::settings::onboarding::read_grants() {
-                    let event = crate::capture::desktop::settings::onboarding::Event::Launch(grants);
-                    let _ = sender.send(LiveOverlayEvent::Onboarding(event));
+                loop {
+                    let grants = crate::composition::observe_permissions();
+                    let launch = grants.is_some() && std::mem::take(&mut launch);
+                    if sender.send(LiveOverlayEvent::PermissionFacts(grants, launch)).is_err() {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(500));
                 }
-                let _ = sender.send(LiveOverlayEvent::OnboardingInitialized);
             });
         }
         let has_initial = initial_bundle.is_some();
@@ -708,13 +677,17 @@ pub fn run_app(
                             LiveOverlayEvent::Onboarding(event) => {
                                 coord.onboarding_event(event, cx)
                             }
-                            LiveOverlayEvent::OnboardingInitialized => {
+                            LiveOverlayEvent::PermissionFacts(grants, launch) => {
+                                coord.permission_facts(grants, launch, cx);
                                 onboarding_initialized = true;
                             }
                             LiveOverlayEvent::Settings(event) => coord.settings_event(event, cx),
                         });
                     }
 
+                    if loop_coord.read(cx).permission_facts_expired() {
+                        loop_coord.update(cx, |coord, cx| coord.permission_facts(None, false, cx));
+                    }
                     motion::poll_tune();
                     if workflow::shutdown::requested() {
                         loop_coord.update(cx, |coord, cx| coord.request_quit(cx));

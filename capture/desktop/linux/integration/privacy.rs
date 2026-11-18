@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::capture::desktop::settings::onboarding::{Permission, Status};
+use crate::permission_facts::{Permission, Status};
 
 pub const INPUT_COMMAND: &str = "sudo usermod -aG input \"$USER\"";
 
