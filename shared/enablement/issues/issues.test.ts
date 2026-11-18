@@ -201,7 +201,11 @@ test("real Git push checks issues before verification and preserves HEAD and del
       join(f.repo, "shared/enablement/issues", name),
     );
   }
-  mkdirSync(join(f.repo, "enablement/local-tests"), { recursive: true });
+  mkdirSync(join(f.repo, "enablement/local-tests/rust"), { recursive: true });
+  writeFileSync(
+    join(f.repo, "enablement/local-tests/rust/check.ts"),
+    "process.exit(0);\n",
+  );
   writeFileSync(
     join(f.repo, "enablement/local-tests/run.ts"),
     "import {appendFileSync} from 'node:fs'; appendFileSync('.git/verification','ran\\n');\n",

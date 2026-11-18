@@ -2,18 +2,13 @@ import { analyze } from "../policy.ts";
 import type { Edge } from "../runtime/contexts.ts";
 import { materialize } from "./materialize.ts";
 import { spawnSync } from "node:child_process";
-import {
-  mkdtempSync,
-  mkdirSync,
-  symlinkSync,
-  rmSync,
-  readFileSync,
-} from "node:fs";
+import { mkdtempSync, mkdirSync, symlinkSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ESLint } from "eslint";
 import tseslint from "typescript-eslint";
 import { Snapshot, git } from "../snapshot.ts";
+import { typechecks } from "./typecheck.ts";
 
 const tool = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 type Project = {
@@ -102,11 +97,18 @@ export function plan(snapshot: Snapshot, changed: string[]): Project[] {
   }
   return selected;
 }
+export function lintConfigs(projects: Project[]): string[] {
+  return projects
+    .filter(({ typecheck }) => typecheck)
+    .map(({ root }) => root + "/tsconfig.json");
+}
+
 export async function fastChecks(
   cwd: string,
   head: string | undefined,
   tree: string,
   snapshot: Snapshot,
+  committed = new Snapshot(cwd, head),
 ): Promise<void> {
   const changed = git(
     head
@@ -117,10 +119,19 @@ export async function fastChecks(
     .split("\0")
     .filter(Boolean);
   const projects = plan(snapshot, changed);
+  const linted = lintConfigs(projects);
+  await typechecks(
+    { cwd, tree, staged: snapshot, committed, changed },
+    {
+      lintConfigs: linted,
+      lint: async (project, work) => {
+        if (linted.includes(project.config))
+          await lintPromises(work, project.root);
+      },
+    },
+  );
   if (!projects.length) {
-    console.error(
-      "Fast checks: no declared project selected; staged syntax/graph checks still apply (no project typecheck claim)",
-    );
+    console.error("Fast checks: no focused test declaration selected");
     return;
   }
   const scratch = mkdtempSync("/tmp/apparent-dev-fast-");
@@ -138,29 +149,15 @@ export async function fastChecks(
   );
   try {
     materialize(cwd, tree, scratch);
-    symlinkSync(
-      path.join(tool, "node_modules"),
-      path.join(scratch, "node_modules"),
-      "dir",
-    );
-    const installed = JSON.parse(
-      readFileSync(
-        path.join(tool, "node_modules/typescript/package.json"),
-        "utf8",
-      ),
-    );
-    if (installed.version !== "5.9.3")
-      throw Error(
-        "Install pinned staged tools with npm ci --ignore-scripts --prefix shared/enablement/dependency-policy",
-      );
     for (const project of projects) {
       const work = path.join(scratch, project.root);
       mkdirSync(work, { recursive: true });
-      symlinkSync(
-        path.join(tool, "node_modules"),
-        path.join(work, "node_modules"),
-        "dir",
-      );
+      if (project.root === "shared/enablement/dependency-policy")
+        symlinkSync(
+          path.join(tool, "node_modules"),
+          path.join(work, "node_modules"),
+          "dir",
+        );
       const run = (args: string[]) => {
         const child = spawnSync(process.execPath, args, {
           cwd: work,
@@ -174,49 +171,45 @@ export async function fastChecks(
             `Fast checks failed for ${project.root}: ${child.error?.message ?? child.stdout + child.stderr}`,
           );
       };
-      if (project.typecheck) {
-        run([
-          path.join(tool, "node_modules/typescript/bin/tsc"),
-          "--noEmit",
-          "--incremental",
-          "false",
-        ]);
-        const lint = new ESLint({
-          cwd: work,
-          overrideConfigFile: true,
-          overrideConfig: [
-            {
-              files: ["**/*.ts"],
-              languageOptions: {
-                parser: tseslint.parser,
-                parserOptions: {
-                  project: "./tsconfig.json",
-                  tsconfigRootDir: work,
-                },
-              },
-              plugins: { "@typescript-eslint": tseslint.plugin },
-              rules: {
-                "@typescript-eslint/no-floating-promises": "error",
-                "@typescript-eslint/no-misused-promises": "error",
-              },
-            },
-          ],
-        });
-        const results = await lint.lintFiles(["src/**/*.ts"]);
-        if (
-          !results.length ||
-          results.some((result) => result.errorCount || result.fatalErrorCount)
-        )
-          throw Error(
-            `Typed promise lint failed for ${project.root}; run the owner typecheck and inspect unhandled/misused promises`,
-          );
-      }
+
       run(["--experimental-strip-types", "--test", ...project.tests]);
       console.error(
-        `Fast checks: ${project.root}: ${project.typecheck ? "typecheck, typed promise lint, " : ""}${project.tests.length} focused test files passed`,
+        `Fast checks: ${project.root}: ${project.tests.length} focused test files passed`,
       );
     }
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
+}
+
+export async function lintPromises(work: string, label: string): Promise<void> {
+  const lint = new ESLint({
+    cwd: work,
+    overrideConfigFile: true,
+    overrideConfig: [
+      {
+        files: ["**/*.ts"],
+        languageOptions: {
+          parser: tseslint.parser,
+          parserOptions: {
+            project: "./tsconfig.json",
+            tsconfigRootDir: work,
+          },
+        },
+        plugins: { "@typescript-eslint": tseslint.plugin },
+        rules: {
+          "@typescript-eslint/no-floating-promises": "error",
+          "@typescript-eslint/no-misused-promises": "error",
+        },
+      },
+    ],
+  });
+  const results = await lint.lintFiles(["src/**/*.ts"]);
+  if (
+    !results.length ||
+    results.some((result) => result.errorCount || result.fatalErrorCount)
+  )
+    throw Error(
+      `Typed promise lint failed for ${label}; run the owner typecheck and inspect unhandled/misused promises`,
+    );
 }

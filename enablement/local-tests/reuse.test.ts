@@ -287,14 +287,15 @@ test('every runtime loader line is understood, including library paths with spac
 test('installed Git hook keeps fresh guards around ancestry-only reuse and failed changed inputs', () => fixture((dir, env) => {
   const git = (...args: string[]) => execFileSync('git', args, {cwd: dir, env, encoding: 'utf8'}).trim();
   git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.invalid');
-  const hooks = join(dir, '.git/hooks'); git('config', 'core.hooksPath', hooks);
-  copyFileSync(join(root, '.githooks/pre-push'), join(hooks, 'pre-push'));
-  mkdirSync(join(dir, 'enablement/local-tests'), {recursive: true});
-  copyFileSync(join(root, 'enablement/local-tests/receipt.ts'), join(dir, 'enablement/local-tests/receipt.ts'));
+  copyFileSync(join(root, '.githooks/pre-push'), join(dir, '.git/hooks/pre-push'));
+  const local = join(dir, 'enablement/local-tests');
+  mkdirSync(join(local, 'rust'), {recursive: true});
+  writeFileSync(join(local, 'rust/check.ts'), 'export {};');
+  copyFileSync(join(root, 'enablement/local-tests/receipt.ts'), join(local, 'receipt.ts'));
   mkdirSync(join(dir, 'shared/enablement/issues'), {recursive: true});
   writeFileSync(join(dir, 'shared/enablement/issues/run.ts'), 'process.stdin.resume();\n');
   const input = join(dir, 'input'); writeFileSync(input, 'pass');
-  writeFileSync(join(dir, 'enablement/local-tests/run.ts'), `
+  writeFileSync(join(local, 'run.ts'), `
     import {execFileSync, spawnSync} from 'node:child_process';
     import {appendFileSync, readFileSync} from 'node:fs';
     import {digest, reuse} from './receipt.ts';

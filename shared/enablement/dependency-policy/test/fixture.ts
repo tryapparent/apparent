@@ -17,9 +17,13 @@ const repo = path.resolve(tool, "../../..");
 export function fixture(t: any) {
   const dir = mkdtempSync(path.join(tmpdir(), "apparent-dev-deps-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
+  );
   const git = (...args: string[]) =>
     execFileSync("git", args, {
       cwd: dir,
+      env,
       encoding: "utf8",
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -41,6 +45,7 @@ export function fixture(t: any) {
     writeFileSync(path.join(dir, file), text);
   };
   git("init", "-q");
+  git("config", "commit.gpgsign", "false");
   git("config", "user.name", "Synthetic");
   git("config", "user.email", "synthetic@example.invalid");
   for (const owner of [
@@ -90,7 +95,11 @@ export function fixture(t: any) {
   const commit = () =>
     git("-c", "core.hooksPath=/dev/null", "commit", "-qm", "baseline");
   const hook = () =>
-    spawnSync("sh", [".githooks/pre-commit"], { cwd: dir, encoding: "utf8" });
+    spawnSync("sh", [".githooks/pre-commit"], {
+      cwd: dir,
+      env,
+      encoding: "utf8",
+    });
   const pass = () => {
     const r = hook();
     assert.equal(r.status, 0, r.stdout + r.stderr);

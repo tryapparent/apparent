@@ -42,11 +42,19 @@ export function writeFiniteChecks(destination: string, plan = finiteCheckPlan())
 export function runnerFixture(destination: string): void {
   copyRunnerSources(destination);
   writeFiniteChecks(destination);
+  const admission = resolve(destination, 'shared/enablement/dependency-policy');
+  mkdirSync(admission, {recursive: true});
+  const manifest = {name: 'finite-admission', private: true};
+  writeFileSync(resolve(admission, 'package.json'), JSON.stringify(manifest));
+  writeFileSync(resolve(admission, 'package-lock.json'), JSON.stringify({
+    name: manifest.name, lockfileVersion: 3, packages: {'': {name: manifest.name}},
+  }));
   for (const directory of fixtureBendDirectories(destination)) {
     const bend = resolve(destination, directory, 'check.ts');
     mkdirSync(dirname(bend), {recursive: true});
     writeFileSync(bend, "console.log('Finite Bend fixture');\n");
   }
+  writeFileSync(resolve(destination, 'enablement/local-tests/rust/check.ts'), 'process.exit(0);\n');
   const issue = resolve(destination, 'shared/enablement/issues/run.ts');
   mkdirSync(dirname(issue), {recursive: true});
   writeFileSync(issue, "process.stdin.resume();\n");

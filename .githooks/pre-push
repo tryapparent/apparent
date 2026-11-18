@@ -54,6 +54,10 @@ fi
 
 base=$(git merge-base "$head" refs/remotes/origin/main 2>/dev/null || printf 'unknown')
 echo "pre-push: selecting verification for $base..$head" >&2
+if ! node --experimental-strip-types enablement/local-tests/rust/check.ts "$base" "$head"; then
+    echo "pre-push: Rust diagnostics failed; push rejected" >&2
+    exit 1
+fi
 if ! node --experimental-strip-types enablement/local-tests/run.ts --base "$base" --head "$head" $conservative_workflows --run; then
     echo "pre-push: verification failed; push rejected" >&2
     exit 1

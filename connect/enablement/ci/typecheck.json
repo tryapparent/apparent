@@ -1,0 +1,16 @@
+[
+  {
+    "config": "connect/service/tsconfig.json",
+    "inputs": [
+      "connect/service/scripts/build-recipient.mjs",
+      "shared/ui/",
+      "shared/assets/"
+    ],
+    "prepare": "build:recipient"
+  },
+  {
+    "config": "connect/tooling/hosting/tsconfig.json",
+    "inputs": ["connect/service/"],
+    "dependencies": ["connect/service/tsconfig.json"]
+  }
+]
