@@ -230,7 +230,7 @@ impl ApparentCoordinator {
         if let Some((start, _)) = self.selection_drag.take() {
             if let Some([x, y, w, h]) = area_rect(start, [sx, sy], self.display_rect) {
                 let target = region_target(x, y, w, h, &self.selectable_windows);
-                self.start_recording_with_target(target, cx);
+                self.start_recording_with_target(|_| target, cx);
             } else {
                 self.sync_picker_overlay();
                 cx.notify();
@@ -570,7 +570,7 @@ impl ApparentCoordinator {
         if !crate::capture::engine::runtime::accessibility_granted() {
             apparent_log("Paste chip without Accessibility; asking for it");
             self.gate
-                .defer(vec![crate::capture::desktop::settings::onboarding::Permission::Accessibility]);
+                .defer(vec![crate::permission_facts::Permission::Accessibility]);
             return;
         }
         self.mark_handled(&dir);
@@ -834,9 +834,7 @@ impl ApparentCoordinator {
     /// The menu bar's picker on platforms that still expose target selection.
     #[cfg(not(target_os = "linux"))]
     pub fn begin_target_selection(&mut self, cx: &mut Context<Self>) {
-        if self.ready_to_record() {
-            self.open_picker(None, cx);
-        }
+        self.open_picker(None, cx);
     }
 
     /// Opens the picker on `mode`, else on the mode the last recording used.
@@ -848,8 +846,9 @@ impl ApparentCoordinator {
         if self.is_recording() || self.is_processing() {
             return;
         }
-        if self.setup_blocks_capture() { return; }
-        apparent_log(format!("open_picker invoked (mode: {mode:?})"));
+        if !self.ready_to_record() {
+            return;
+        }
         let started = Instant::now();
         self.recording_shortcut_key = false;
         self.selectable_windows.clear();
@@ -982,32 +981,29 @@ impl ApparentCoordinator {
     pub fn start_recording_full_screen(&mut self, cx: &mut Context<Self>) {
         let [x, y, w, h] = self.display_rect;
         let centre = [f64::from(x + w / 2.0), f64::from(y + h / 2.0)];
-        let target = if self.lab {
-            lab::target()
-        } else {
-            crate::capture::engine::runtime::discover_target_at(None, Some(centre))
-        };
-        self.start_recording_with_target(target, cx);
+        self.start_recording_with_target(|lab| {
+            if lab { lab::target() } else { crate::capture::engine::runtime::discover_target_at(None, Some(centre)) }
+        }, cx);
     }
 
-    pub fn start_recording_with_target(&mut self, target: TargetInfo, cx: &mut Context<Self>) {
+    pub fn start_recording_with_target(&mut self, target: impl FnOnce(bool) -> TargetInfo, cx: &mut Context<Self>) {
         #[cfg(any(target_os="macos",target_os="linux"))]
         self.reconcile_electron_pill();
         if crate::capture::desktop::workflow::shutdown::requested() { return; }
+        if self.is_recording() || self.is_processing() {
+            return;
+        }
+        if !self.ready_to_record() {
+            self.cancel_recording(cx);
+            return;
+        }
+        let target = target(self.lab);
         if crate::capture::engine::runtime::ensure_recording_mode(target.mode).is_err() {
             self.report_window_recording_disabled(cx);
             return;
         }
-        if self.is_recording() || self.is_processing() {
-            return;
-        }
         if self.lab {
             self.start_lab_recording(target, cx);
-            return;
-        }
-        // No surprise prompt mid-capture: the permissions are granted in onboarding.
-        if !self.ready_to_record() {
-            self.cancel_recording(cx);
             return;
         }
         #[cfg(target_os = "linux")]
@@ -1287,7 +1283,7 @@ impl ApparentCoordinator {
             return;
         }
         if self.setup_blocks_capture() { return; }
-        if !self.ready_for(crate::capture::desktop::settings::onboarding::Permission::Camera) {
+        if !self.ready_for(crate::permission_facts::Permission::Camera) {
             self.cancel_recording(cx);
             return;
         }

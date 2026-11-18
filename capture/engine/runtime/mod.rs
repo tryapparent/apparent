@@ -126,10 +126,8 @@ pub enum LiveOverlayEvent {
     NotesUnavailable,
     /// The iPhone mirror ended on its own (unplugged, never found, or access denied).
     PhoneEnded,
-    /// The welcome window: a button, fresh permission states, or the helper exiting.
     Onboarding(crate::capture::desktop::settings::onboarding::Event),
-    /// The initial permission check is finished, including when grants are unavailable.
-    OnboardingInitialized,
+    PermissionFacts(Option<crate::permission_facts::Grants>, bool),
     /// The Settings window: an action, fresh permission states, or the helper exiting.
     Settings(crate::capture::desktop::settings::Event),
 

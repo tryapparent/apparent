@@ -14,7 +14,7 @@ use serde::Deserialize;
 use crate::capture::engine::runtime::{
     CARBON_CMD_KEY, CARBON_CONTROL_KEY, CARBON_OPTION_KEY, CARBON_SHIFT_KEY, ShortcutKind,
 };
-use crate::capture::desktop::settings::onboarding::{Permission, Status};
+use crate::permission_facts::{Permission, Status};
 use crate::capture::desktop::settings::{Action, Event, Pane, Pressed, UpdateResult};
 
 const WIDTH: f32 = 720.0;
@@ -1940,24 +1940,24 @@ impl SettingsWindow {
             ),
             Permission::SpeechRecognition => (
                 "Speech Recognition",
-                "To write down what you say".to_owned(),
+                "Transcribe your voice".to_owned(),
                 crate::capture::desktop::icons::MIC,
                 ORANGE,
             ),
         };
-        let granted = row.status == Status::Granted;
         let id = SharedString::from(format!("settings-grant-{permission:?}"));
-        let trailing: AnyElement = if granted && row.relaunch {
+        let trailing: AnyElement = if row.status == Status::Unavailable {
+            div().child("Checking access…").into_any_element()
+        } else if row.relaunch {
             button(theme, id, "Reopen Apparent", true)
                 .on_click(cx.listener(|view, _, _, _| view.act(Action::Reopen)))
                 .into_any_element()
-        } else if granted {
+        } else if row.status == Status::Granted {
             div()
                 .flex()
                 .items_center()
                 .gap(px(5.0))
                 .text_size(px(12.0))
-                .font_weight(FontWeight::MEDIUM)
                 .text_color(theme.secondary())
                 .child(icon(crate::capture::desktop::icons::CHECK_CIRCLE, 14.0, theme.positive()))
                 .child("Allowed")

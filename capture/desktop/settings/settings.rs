@@ -10,7 +10,7 @@ use crate::capture::engine::runtime::{
     CARBON_CMD_KEY, CARBON_CONTROL_KEY, CARBON_OPTION_KEY, CARBON_SHIFT_KEY, MACOS_FN_KEY_CODE, ShortcutConfig,
     ShortcutKind, modifier_symbols,
 };
-use crate::capture::desktop::settings::onboarding::{Grants, Permission, Status};
+use crate::permission_facts::{Grants, Permission, Status};
 
 // MARK: Shortcuts in the config
 
@@ -979,7 +979,7 @@ impl Panel {
     /// System Settings pane.
     fn grant(&mut self, permission: Permission) -> Effect {
         let status = self.status(permission);
-        if status == Status::Granted {
+        if matches!(status, Status::Granted | Status::Unavailable) {
             return Effect::None;
         }
         if self.requested.insert(permission) && status != Status::Denied {
@@ -1004,6 +1004,7 @@ impl Panel {
             .map(|program| program.name());
         let policy = crate::capture::engine::bundle::retention::Policy::load_from(&host.config_path());
         let login = login_item();
+        let microphone = config.microphone_enabled.unwrap_or(true);
         // Windows asks for no screen or accessibility grant, and has no cabled iPhone. Linux
         // asks for the input devices on Wayland only (the Accessibility row).
         let order: &[Permission] = if cfg!(target_os = "windows") {
@@ -1088,7 +1089,7 @@ impl Panel {
                 .map(|&permission| PermissionView {
                     permission,
                     status: self.status(permission),
-                    required: permission.required(),
+                    required: crate::permission_admission::requires(permission, microphone),
                     requested: self.requested.contains(&permission),
                     relaunch: permission == Permission::ScreenRecording && self.screen_relaunch(),
                 })
@@ -1292,17 +1293,6 @@ impl Session {
                         || alive.load(Ordering::Acquire) && scan.load(Ordering::Acquire) == 0);
                     poll(Event::Presentation { generation, event: Box::new(Event::StorageUsage { version: 0, result }) });
                 }
-                // macOS receives the app-wide permission refresh, including with this
-                // window closed. Keep the existing local polling on other platforms.
-                #[cfg(not(target_os = "macos"))]
-                if let Some(grants) = crate::capture::desktop::settings::onboarding::read_grants()
-                    && alive.load(Ordering::Acquire)
-                {
-                    poll(Event::Grants(grants));
-                } else {
-                    poll(Event::Tick);
-                }
-                #[cfg(target_os = "macos")]
                 poll(Event::Tick);
                 n += 1;
                 std::thread::sleep(std::time::Duration::from_secs(1));

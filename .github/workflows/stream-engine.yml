@@ -5,12 +5,14 @@ on:
     branches: [main]
     paths:
       - "engine/**"
+      - "!engine/permissions/**"
       - "!engine/**/*.md"
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
   push:
     branches: [main]
     paths:
       - "engine/**"
+      - "!engine/permissions/**"
       - "!engine/**/*.md"
   workflow_dispatch:
 

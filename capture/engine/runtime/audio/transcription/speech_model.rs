@@ -276,10 +276,9 @@ fn work(generation: u64) {
 }
 
 /// Speech Recognition was just allowed (macOS 15): check the model again now.
-pub fn note_grants(grants: &crate::capture::desktop::settings::onboarding::Grants) {
+pub fn note_speech_permission(granted: bool) {
     if current().state == State::NeedsPermission
-        && grants
-            .granted(crate::capture::desktop::settings::onboarding::Permission::SpeechRecognition)
+        && granted
     {
         ensure();
     }
