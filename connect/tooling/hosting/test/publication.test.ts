@@ -24,6 +24,8 @@ test('the active baseline read must return the exact version serving traffic', a
 test('only the reviewed failed staging tuple may coexist with the unchanged active version', () => {
   assertStagingOwner(active, active)
   assertStagingOwner(active, abandoned, abandonedTag)
+  assertStagingOwner(active, 'stale-stage', 'ancestor-tag', tag => tag === 'ancestor-tag')
+  assert.throws(() => assertStagingOwner(active, 'stale-stage', 'other-tag', () => false), /separate version/)
   for (const [live, staged, tag] of [
     ['another-active', abandoned, abandonedTag], [active, 'another-stage', abandonedTag],
     [active, abandoned, 'another-tag'], [active, abandoned, undefined],
