@@ -36,55 +36,47 @@ claim at commit time. Custom message hooks run first with their original argumen
 our validation then sees their final message. Preparation backs up custom hooks
 and changes no live configuration. Parent integration owns activation.
 
-Before expensive verification, pre-push enumerates the union of all commits
+Before expensive verification, pre-push authenticates the live
+`refs/heads/main` of `tryapparent/apparent` once. It checks the union of commits
 reachable from every non-deletion pushed ref, excluding ancestry reachable from
-the fixed integration baseline `d559dbbd2a3fbf9428593931b526e13b626c8ab9`.
-That baseline and all its ancestors are grandfathered. No last-push timestamp or
-remote-tip exclusion can hide an unvalidated feature commit. Locally created merges,
-rebased commits and commits introduced from side branches receive the same rule.
-The existing hook still requires every non-deletion pushed ref to equal checked-out
-HEAD. Deletion-only pushes perform no issue lookup. Unknown/missing baseline or
-shallow history fails with an actionable prerequisite instead of silently skipping.
-Old history outside the baseline's ancestry receives validation too.
+that exact main SHA. An inherited commit cannot block an unrelated push because
+its trailer is missing or invalid. Every commit outside canonical main is
+checked, even if it was previously pushed to a feature branch or introduced
+through a merge. The hook requires every non-deletion pushed ref to equal
+checked-out HEAD. Deletion-only pushes perform no GitHub requests.
 
-The following immutable accepted main merges omitted their trailers: `6c64c838fab1b70e05da112ffc25336e5c283ab1`
-(PR #1437, issue #575), `18c72f8302d54bab24d1729fb75796329a2a0a81` (PR #1436, issue #171),
-`f52fab25ee734cb60262387d0c74e8cdfba97d6a` (PR #1451, issue #530),
-`f900c3f4677cca561f1336d4cd4b64184032958e` (PR #1489, issue #837), and
-`91fe2c80dd96cea8bb3285d2c6f1d1b4652bd76b` (PR #1494, issue #1240).
-`acceptedMergeIssue` records only those exact commit-to-issue associations, recovered from their product commits.
-Include the Issue trailer when merging future PRs. A copied merge message has no association.
-
-Other two-parent GitHub-generated merges may omit their trailer only after
-authenticated verification of the exact commit, its parents and GitHub's valid
-web-flow signature. The hook checks the commits on both sides of the merge.
-Squash commits have one parent and still need a trailer.
-
-Every selected commit's trailer or exact merge association is validated. Push
-admission authenticates the live `refs/heads/main` of `tryapparent/apparent`
-and requires its local Git history to contain the fixed, audited issue checkpoint
-`8bd1c2669a62c41014791a6dd3e85da809f4d446`. Git replace refs and grafts are
-ignored. If local objects prevent that proof, the hook tries one fetch of the
+Canonical main must descend from the fixed issue checkpoint
+`8bd1c2669a62c41014791a6dd3e85da809f4d446`, which descends from the integration
+baseline `d559dbbd2a3fbf9428593931b526e13b626c8ab9`. Git replace refs and grafts
+are ignored. If local objects prevent that proof, the hook tries one fetch of the
 authenticated SHA from canonical GitHub with a 60-second timeout and repeats the
 proof against the same SHA. The fetch leaves the checkout, index, refs and
 `FETCH_HEAD` untouched. Shallow history and inaccessible required objects block
 admission. A main rewrite that removes the checkpoint requires a reviewed replacement.
 
-Each distinct issue referenced by a commit outside the checkpoint's ancestry
-gets one fresh API read per push, including commits on main after the checkpoint
-and commits on unrelated branches. Lookups can grow as new issues accumulate
-after the fixed checkpoint. Advance the checkpoint only after a fresh audit
-of the added ancestry and issue identities. The push uses no local validation
-cache. Each read has a 20-second process timeout and a bounded response.
+Each distinct issue referenced by the checked commits gets one fresh API read per
+push. Commits inherited from main trigger no issue reads. The push uses no local
+validation cache. Each read has a 20-second process timeout and a bounded response.
 Authentication, network, not-found, identity and PR-number failures reject the
 push. Issue state may be open or closed. Successful lookup does not authorize
 closing an issue. API stderr and response bodies are omitted from hook diagnostics.
 
-Rollout is prepared until parent integration binds an issue and activates the
-reviewed hooks. Existing post-baseline commits without trailers need a deliberate
-integration decision before activation. This tool never rewrites others' commits
-or expands grandfathered history automatically. Review merge/squash commit messages
-for the same trailer when integrating.
+A two-parent GitHub-generated merge outside main may omit its own trailer after
+authenticated verification of the exact commit, its parents and GitHub's valid
+web-flow signature. The hook still checks both sides for commits outside main.
+Squash commits have one parent and need a trailer. Review the commit messages
+that will land when integrating, and record verified historical associations
+separately from push admission.
+
+Previously verified historical associations are recorded here for reference.
+
+| Landed commit | PR | Issue |
+| --- | --- | --- |
+| `6c64c838fab1b70e05da112ffc25336e5c283ab1` | #1437 | #575 |
+| `18c72f8302d54bab24d1729fb75796329a2a0a81` | #1436 | #171 |
+| `f52fab25ee734cb60262387d0c74e8cdfba97d6a` | #1451 | #530 |
+| `f900c3f4677cca561f1336d4cd4b64184032958e` | #1489 | #837 |
+| `91fe2c80dd96cea8bb3285d2c6f1d1b4652bd76b` | #1494 | #1240 |
 
 The PR description should reference the same primary issue. Use `Closes` only
 when the entire issue outcome is complete. Ordinary commit `Issue` trailers do
