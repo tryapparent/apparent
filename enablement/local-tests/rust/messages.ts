@@ -1,4 +1,5 @@
 import path from "node:path";
+import { rustScopes } from "./scopes.ts";
 
 export type Warning = { key: string; location: string; message: string };
 
@@ -6,6 +7,7 @@ type Span = {
   is_primary: boolean;
   file_name: string;
   line_start: number;
+  byte_start: number;
   text: { text: string }[];
 };
 
@@ -29,12 +31,16 @@ export function compilerMessages(
 ) {
   const warnings: Warning[] = [];
   let finished = false;
+  let contexts: Awaited<ReturnType<typeof rustScopes>> | undefined;
   return {
     warnings,
     get finished() {
       return finished;
     },
-    read(line: string) {
+    dispose() {
+      contexts?.dispose();
+    },
+    async read(line: string) {
       const event = JSON.parse(line) as CargoEvent;
       if (event.reason === "build-finished") finished = event.success === true;
       const diagnostic = event.message;
@@ -62,6 +68,8 @@ export function compilerMessages(
         ),
       );
       const message = diagnostic.message.replaceAll(root + "/", "");
+      if (files.some((file) => file.endsWith(".rs")))
+        contexts ??= await rustScopes(root);
       warnings.push({
         key: JSON.stringify([
           manifest,
@@ -71,6 +79,9 @@ export function compilerMessages(
           message,
           spans.map((span, index) => [
             files[index],
+            files[index].endsWith(".rs")
+              ? contexts?.scope(files[index], span.byte_start)
+              : [],
             span.text.map((part) => part.text.trim()),
           ]),
         ]),

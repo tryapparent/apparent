@@ -4,7 +4,10 @@ import {
   copyFileSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
+  readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
@@ -44,11 +47,16 @@ test("native manifests, shared inputs and producer feature builds select their r
 test("real Cargo diagnostics compare complete pinned trees and tolerate line shifts", async (t) => {
   const cwd = mkdtempSync("/tmp/apparent-dev-rust-hook-test-");
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
+  );
+  delete env.CARGO_BUILD_TARGET;
   const git = (...args: string[]) =>
-    execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+    execFileSync("git", args, { cwd, env, encoding: "utf8" }).trim();
   const put = (file: string, data: string) =>
     writeFileSync(path.join(cwd, file), data);
   git("init", "-q");
+  git("config", "core.hooksPath", ".git/hooks");
   const repo = fileURLToPath(new URL("../../../", import.meta.url));
   const install = (file: string, body?: string) => {
     mkdirSync(path.dirname(path.join(cwd, file)), { recursive: true });
@@ -56,13 +64,35 @@ test("real Cargo diagnostics compare complete pinned trees and tolerate line shi
       copyFileSync(path.join(repo, file), path.join(cwd, file));
     else put(file, body);
   };
-  for (const file of ["check", "messages", "targets"])
+  for (const file of ["check", "messages", "scopes", "targets"])
     install(`enablement/local-tests/rust/${file}.ts`);
   install("shared/enablement/dependency-policy/fast/materialize.ts");
+  const tools = "shared/enablement/dependency-policy/node_modules";
+  symlinkSync(path.join(repo, tools), path.join(cwd, tools), "dir");
   install("shared/enablement/issues/run.ts", "process.stdin.resume();\n");
   install("enablement/local-tests/run.ts", "process.exit(0);\n");
-  put(".gitignore", "/target/\n");
-  git("add", "enablement", "shared", ".gitignore");
+  put(".gitignore", "/target/\n/cargo-home/\n");
+  install(
+    "build.rs",
+    `
+    use std::{env, fs, path::PathBuf};
+    fn main() {
+      let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+      let profile = out.ancestors().nth(3).unwrap();
+      let source = fs::read_to_string("main.rs").unwrap();
+      fs::write(profile.join("apparent-helper"), source).unwrap();
+      assert_eq!(env::var("FIXTURE_NATIVE_CONFIG").unwrap(), "preserved");
+    }
+  `,
+  );
+  install(".cargo/config.toml", '[env]\nFIXTURE_NATIVE_CONFIG = "preserved"\n');
+  const cargoHome = path.join(cwd, "cargo-home");
+  const cross =
+    process.platform === "linux"
+      ? "aarch64-apple-darwin"
+      : "x86_64-unknown-linux-gnu";
+  install("cargo-home/config.toml", `[build]\ntarget = "${cross}"\n`);
+  git("add", "enablement", "shared", ".gitignore", ".cargo", "build.rs");
   const commit = () => {
     git("add", "main.rs", "Cargo.toml", "Cargo.lock");
     git(
@@ -85,36 +115,65 @@ test("real Cargo diagnostics compare complete pinned trees and tolerate line shi
     "Cargo.lock",
     'version = 4\n[[package]]\nname = "apparent"\nversion = "0.1.0"\n',
   );
-  put("main.rs", "struct Existing;\nfn main() {}\n");
+  put(
+    "main.rs",
+    "mod previously_unused {\n    struct Same;\n}\nfn main() {}\n",
+  );
   const base = commit();
   git("update-ref", "refs/remotes/origin/main", base);
-  const push = (head: string) =>
+  const push = (head: string, cargoEnv = {}) =>
     spawnSync(
       "sh",
       [path.join(repo, ".githooks/pre-push"), "origin", "example.invalid"],
       {
         cwd,
+        env: { ...env, ...cargoEnv },
         encoding: "utf8",
         input: `refs/heads/test ${head} refs/heads/test ${"0".repeat(40)}\n`,
       },
     );
-  put("main.rs", "\nstruct Existing;\nfn main() {}\n");
+  put(
+    "main.rs",
+    "\nmod previously_unused {\n    struct Same;\n}\nfn main() {}\n",
+  );
   const accepted = push(commit());
   assert.equal(accepted.status, 0, accepted.stderr);
   assert.match(accepted.stderr, /main .*apparent, 1 dead_code warning/);
-  put("main.rs", "\nstruct Existing;\nstruct NewWarning;\nfn main() {}\n");
+  const hostOS = process.platform === "linux" ? "linux" : "macos";
+  put(
+    "main.rs",
+    `mod newly_unused {
+    #[cfg(target_os = "${hostOS}")]
+    struct Same;
+}\nfn main() {}\n`,
+  );
   const head = commit();
   put("main.rs", "fn main() {}\n");
   await assert.rejects(
     checkRust(cwd, base, head),
-    /New Rust dead_code diagnostics:[\s\S]*NewWarning/,
+    /New Rust dead_code diagnostics:[\s\S]*Same/,
   );
   git("restore", "main.rs");
-  const rejected = push(head);
+  const normalTarget = path.join(cwd, "target");
+  const original = "developer companion";
+  install("target/debug/apparent-helper", original);
+  const rejected = push(head, {
+    CARGO_HOME: cargoHome,
+    CARGO_TARGET_DIR: normalTarget,
+    CARGO_BUILD_BUILD_DIR: normalTarget,
+  });
   assert.equal(rejected.status, 1, rejected.stderr);
+  assert.match(rejected.stderr, /New Rust dead_code diagnostics:[\s\S]*Same/);
+  assert.equal(
+    readFileSync(path.join(normalTarget, "debug/apparent-helper"), "utf8"),
+    original,
+  );
+  assert.deepEqual(readdirSync(normalTarget), ["debug"]);
   assert.match(
     rejected.stderr,
-    /New Rust dead_code diagnostics:[\s\S]*NewWarning/,
+    new RegExp(
+      `Rust diagnostics: .*-${process.platform === "linux" ? "linux" : "apple-darwin"}`,
+    ),
   );
   await assert.rejects(checkRust(cwd, "missing", head), /Fetch origin\/main/);
   put("main.rs", "fn main() { missing(); }\n");

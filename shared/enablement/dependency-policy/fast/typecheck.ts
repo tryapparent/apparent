@@ -30,13 +30,14 @@ export async function typechecks(
   options: {
     setup?: boolean;
     all?: boolean;
+    lintConfigs?: string[];
     lint?: (project: Project, work: string) => Promise<void>;
   } = {},
 ): Promise<void> {
   const { cwd, tree, staged, committed, changed } = input;
   const projects = options.all
     ? inventory(staged)
-    : selectProjects(staged, committed, changed);
+    : selectProjects(staged, committed, changed, options.lintConfigs);
   const uncovered = new Set(
     changed.filter((file) => tsSource.test(file) && staged.modes.has(file)),
   );
@@ -86,54 +87,63 @@ export async function typechecks(
         };
         try {
           const tsc = compiler(project);
-          for (const dependency of declared.get(project.config)?.dependencies ??
-            []) {
-            const item = byConfig.get(dependency);
+          const prepared = new Set<string>();
+          const preparing = new Set<string>();
+          const lookup = (config: string) => {
+            const item = byConfig.get(config);
             if (!item)
               throw Error(
-                `${dependency}: missing declared dependency configuration`,
+                `${config}: missing declared dependency configuration`,
               );
+            return item;
+          };
+          const prepare = (item: Project) => {
+            if (prepared.has(item.config)) return;
+            if (preparing.has(item.config))
+              throw Error(`${item.config}: cyclic typecheck preparation`);
+            preparing.add(item.config);
+            const dir = path.join(scratch, item.root);
+            const rule = declared.get(item.config);
             compiler(item);
-          }
-          for (const producer of declared.get(project.config)?.declarations ??
-            []) {
-            const dependency = byConfig.get(producer.config);
-            if (!dependency)
-              throw Error(
-                `${producer.config}: missing declaration producer config`,
+            for (const config of rule?.dependencies ?? [])
+              prepare(lookup(config));
+            for (const producer of rule?.declarations ?? []) {
+              const dependency = lookup(producer.config);
+              prepare(dependency);
+              if (options.setup) continue;
+              const source = path.join(scratch, dependency.root, "dist");
+              const destination = producer.package
+                ? path.join(dir, "node_modules", producer.package, "dist")
+                : source;
+              const packageRoot =
+                producer.package &&
+                localPackages(staged, item.root).get(producer.package);
+              if (producer.package && packageRoot !== dependency.root)
+                throw Error(
+                  `${item.config}: ${producer.package} must be a local dependency from ${dependency.root}`,
+                );
+              outputs.add(destination);
+              command(
+                compiler(dependency),
+                [
+                  "--project",
+                  path.join(scratch, producer.config),
+                  "--outDir",
+                  destination,
+                  "--emitDeclarationOnly",
+                  "--pretty",
+                  "false",
+                ],
+                path.join(scratch, dependency.root),
               );
-            const build = compiler(dependency);
-            if (options.setup) continue;
-            const source = path.join(scratch, dependency.root, "dist");
-            const destination = producer.package
-              ? path.join(work, "node_modules", producer.package, "dist")
-              : source;
-            const packageRoot =
-              producer.package &&
-              localPackages(staged, project.root).get(producer.package);
-            if (producer.package && packageRoot !== dependency.root)
-              throw Error(
-                `${project.config}: ${producer.package} must be a local dependency from ${dependency.root}`,
-              );
-            outputs.add(destination);
-            command(
-              build,
-              [
-                "--project",
-                path.join(scratch, producer.config),
-                "--outDir",
-                destination,
-                "--emitDeclarationOnly",
-                "--pretty",
-                "false",
-              ],
-              path.join(scratch, dependency.root),
-            );
-          }
+            }
+            if (rule?.prepare && !options.setup)
+              command("npm", ["run", "--ignore-scripts", rule.prepare], dir);
+            preparing.delete(item.config);
+            prepared.add(item.config);
+          };
+          prepare(project);
           if (options.setup) continue;
-          const prepare = declared.get(project.config)?.prepare;
-          if (prepare)
-            command("npm", ["run", "--ignore-scripts", prepare], work);
           const files = command(
             tsc,
             [

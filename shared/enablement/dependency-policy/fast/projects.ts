@@ -1,7 +1,7 @@
 import path from "node:path";
-import { analyze } from "../policy.ts";
-import type { Edge } from "../runtime/contexts.ts";
-import type { Snapshot } from "../snapshot.ts";
+import { root as virtualRoot, type Snapshot } from "../snapshot.ts";
+import { localPackages } from "./dependencies.ts";
+import { compilerInputs } from "./inputs.ts";
 
 export const configName = /(?:^|\/)tsconfig(?:\.[^/]+)?\.json$/;
 export const tsSource = /\.[cm]?tsx?$/;
@@ -26,6 +26,8 @@ function owns(file: string, owner: string): boolean {
     (owner === "composition" && within(file, "capture/desktop/ui/frontend"))
   );
 }
+
+const ruleFile = (owner: string) => owner + "/enablement/ci/typecheck.json";
 
 export function rules(snapshot: Snapshot): Map<string, Rule> {
   const result = new Map<string, Rule>();
@@ -71,57 +73,85 @@ export function inventory(snapshot: Snapshot): Project[] {
     });
 }
 
-export function affectedFiles(
-  changed: string[],
-  ...snapshots: Snapshot[]
-): Set<string> {
-  const consumers = new Map<string, Set<string>>();
-  for (const snapshot of snapshots) {
-    const edges: Edge[] = [];
-    analyze(snapshot, edges);
-    for (const { from, target } of edges) {
-      if (!target) continue;
-      if (!consumers.has(target)) consumers.set(target, new Set());
-      consumers.get(target)!.add(from);
-    }
-  }
-  const affected = new Set(changed);
-  for (const file of affected)
-    for (const consumer of consumers.get(file) ?? []) affected.add(consumer);
-  return affected;
-}
-
 export function selectProjects(
   staged: Snapshot,
   committed: Snapshot,
   changed: string[],
+  required: string[] = [],
 ): Project[] {
-  const candidates = inventory(staged);
-  const declared = rules(staged);
-  const affected = affectedFiles(changed, committed, staged);
-  const routingChanged = changed.some((file) =>
-    /^[^/]+\/enablement\/ci\/typecheck\.json$/.test(file),
-  );
-  return candidates.filter((project) => {
-    const { config, root } = project;
-    const rule = declared.get(config);
-    const inputs = [
-      config,
-      project.lock,
-      `${root}/package.json`,
-      `${root}/.npmrc`,
-      ...(rule?.inputs ?? []),
-    ];
-    return (
-      routingChanged ||
-      [...affected].some(
-        (file) =>
-          inputs.some((input) =>
-            input.endsWith("/") ? file.startsWith(input) : file === input,
-          ) ||
-          ((tsSource.test(file) || configName.test(file)) &&
-            within(file, path.posix.dirname(config))),
-      )
+  const affected = new Set(changed);
+  const consumers = new Map<string, Set<string>>();
+  const prefixes: [string, string][] = [];
+  for (const snapshot of [committed, staged]) {
+    const declared = rules(snapshot);
+    const projects = inventory(snapshot);
+    const packages = new Map(
+      projects.map(({ root }) => [root, localPackages(snapshot, root)]),
     );
-  });
+    for (const project of projects) {
+      const { config, root, lock } = project;
+      const rule = declared.get(config);
+      const owner = config.startsWith("capture/desktop/")
+        ? "composition"
+        : config.startsWith("capture/agent/")
+          ? "agent"
+          : config.split("/")[0];
+      const dependencies = [
+        ...(rule?.dependencies ?? []),
+        ...(rule?.declarations ?? []).map(({ config }) => config),
+      ];
+      const attached = [
+        root,
+        ...dependencies
+          .map(
+            (config) =>
+              projects.find((project) => project.config === config)?.root,
+          )
+          .filter((root) => root !== undefined),
+      ];
+      const inputs = [
+        ruleFile(owner),
+        lock,
+        ...[root, ...packages.get(root)!.values()].flatMap((dir) =>
+          [
+            "package.json",
+            "package-lock.json",
+            "bun.lock",
+            ".npmrc",
+            "bunfig.toml",
+          ].map((file) => path.posix.join(dir, file)),
+        ),
+        ...(rule?.inputs ?? []),
+        ...dependencies,
+        ...compilerInputs(
+          snapshot,
+          virtualRoot,
+          config,
+          attached.map((dir) => ({
+            dir,
+            packages: packages.get(dir)!,
+          })),
+        ),
+      ];
+      for (const input of inputs) {
+        if (input.endsWith("/")) prefixes.push([input, config]);
+        else {
+          if (!consumers.has(input)) consumers.set(input, new Set());
+          consumers.get(input)!.add(config);
+        }
+      }
+    }
+  }
+  for (const file of affected) {
+    for (const config of consumers.get(file) ?? []) affected.add(config);
+    for (const [prefix, config] of prefixes)
+      if (file.startsWith(prefix)) affected.add(config);
+  }
+  const candidates = inventory(staged);
+  for (const config of required)
+    if (!candidates.some((project) => project.config === config))
+      throw Error(`Missing configured typed promise lint project: ${config}`);
+  return candidates.filter(
+    ({ config }) => affected.has(config) || required.includes(config),
+  );
 }

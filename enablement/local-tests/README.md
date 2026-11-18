@@ -18,10 +18,20 @@ and locks, toolchain/config changes and declared native code-generation inputs.
 The pre-push hook uses the same integration range for locked offline Cargo checks on
 affected production targets. When rustc emits `dead_code` warnings, the same
 Cargo check on the main merge-base supplies the baseline. Warnings are compared
-by package, target, source and diagnostic identity with occurrence counts.
+by package, target, source, enclosing Rust items and diagnostic identity with
+occurrence counts.
 Existing warnings survive line shifts. Missing history, unavailable tooling,
 Cargo errors and an unusable comparison fail the push. No warning verdicts are
-stored. Cargo can reuse compatible build artifacts in the normal target directory.
+stored. Both revisions explicitly target the verified native Cargo and rustc
+host. Cargo honors snapshot and Cargo home configuration for native builds.
+The check selects the verified rustc directly and clears compiler wrappers.
+Candidate and baseline share a diagnostics-private target/build directory
+per manifest for Cargo-compatible reuse during one invocation. Later
+invocations start cold. The directory is discarded on completion, keeping
+build scripts and their runtime companions separate from developer artifacts.
+Install the shared locked admission tools for Rust warning scope parsing.
+The standard contracts command installs these tools and exercises both the
+TypeScript and Cargo hook fixtures.
 
 | Native project | Host diagnostic scope |
 | --- | --- |

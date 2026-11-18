@@ -97,6 +97,12 @@ export function plan(snapshot: Snapshot, changed: string[]): Project[] {
   }
   return selected;
 }
+export function lintConfigs(projects: Project[]): string[] {
+  return projects
+    .filter(({ typecheck }) => typecheck)
+    .map(({ root }) => root + "/tsconfig.json");
+}
+
 export async function fastChecks(
   cwd: string,
   head: string | undefined,
@@ -113,14 +119,13 @@ export async function fastChecks(
     .split("\0")
     .filter(Boolean);
   const projects = plan(snapshot, changed);
+  const linted = lintConfigs(projects);
   await typechecks(
     { cwd, tree, staged: snapshot, committed, changed },
     {
+      lintConfigs: linted,
       lint: async (project, work) => {
-        if (
-          project.config === project.root + "/tsconfig.json" &&
-          projects.some((fast) => fast.root === project.root && fast.typecheck)
-        )
+        if (linted.includes(project.config))
           await lintPromises(work, project.root);
       },
     },

@@ -39,6 +39,8 @@ async function cargoCheck(
   target: Target,
   env: Environment,
   stage: string,
+  host: string,
+  output: string,
 ): Promise<Warning[]> {
   const work = path.join(root, path.dirname(target.manifest));
   const args = [
@@ -46,6 +48,16 @@ async function cargoCheck(
     "--locked",
     "--offline",
     "--message-format=json",
+    "--target",
+    host,
+    "--target-dir",
+    output,
+    "--config",
+    `build.build-dir=${JSON.stringify(output)}`,
+    "--config",
+    'build.rustc-wrapper=""',
+    "--config",
+    'build.rustc-workspace-wrapper=""',
     "--manifest-path",
     path.basename(target.manifest),
     "--package",
@@ -64,15 +76,19 @@ async function cargoCheck(
   const completion = new Promise<number | null>((resolve) =>
     child.once("error", () => resolve(null)).once("close", resolve),
   );
-  let malformed = false;
+  let diagnosticError: unknown;
   for await (const line of createInterface({ input: child.stdout })) {
     try {
-      compiler.read(line);
-    } catch {
-      malformed = true;
+      await compiler.read(line);
+    } catch (error) {
+      diagnosticError ??= error;
     }
   }
-  if ((await completion) !== 0 || !compiler.finished || malformed)
+  const status = await completion;
+  compiler.dispose();
+  if (diagnosticError)
+    throw Error(`${stage}: cannot read Rust diagnostics: ${diagnosticError}`);
+  if (status !== 0 || !compiler.finished)
     throw Error(
       `${stage} Rust diagnostic check failed for ${target.manifest}. Check the Cargo output above, install its native prerequisites and provision the locked graph with cargo fetch --locked --manifest-path ${target.manifest} for the failing revision, then retry.`,
     );
@@ -129,14 +145,31 @@ export async function checkRust(
   const sharedEnv = { ...process.env };
   for (const name of Object.keys(sharedEnv))
     if (name.startsWith("GIT_")) delete sharedEnv[name];
+  for (const name of ["CARGO_HOME", "RUSTUP_HOME"])
+    if (sharedEnv[name]) sharedEnv[name] = path.resolve(cwd, sharedEnv[name]);
+  const configuredCompiler = sharedEnv.RUSTC || "rustc";
+  sharedEnv.RUSTC = configuredCompiler.includes("/")
+    ? path.resolve(cwd, configuredCompiler)
+    : configuredCompiler;
+  sharedEnv.RUSTC_WRAPPER = "";
+  sharedEnv.RUSTC_WORKSPACE_WRAPPER = "";
   const toolchain = version(cwd, sharedEnv);
-  const host = toolchain.match(/^host: (.+)$/m)?.[1];
+  const hosts = [...toolchain.matchAll(/^host: (.+)$/gm)].map(
+    (match) => match[1],
+  );
+  const host = hosts[0];
+  const architecture = { x64: "x86_64", arm64: "aarch64" }[process.arch];
   if (
-    !host ||
-    (sharedEnv.CARGO_BUILD_TARGET && sharedEnv.CARGO_BUILD_TARGET !== host)
+    !architecture ||
+    hosts.length !== 2 ||
+    hosts[1] !== host ||
+    !host.startsWith(architecture + "-") ||
+    !(process.platform === "darwin"
+      ? host.endsWith("-apple-darwin")
+      : host.includes("-linux-"))
   )
     throw Error(
-      "Rust diagnostics require the native Cargo target; remove the cross-target override and retry on the affected OS",
+      "Rust diagnostics require matching native Cargo and rustc toolchains for this Linux or macOS host",
     );
   console.error(
     `Rust diagnostics: ${host}; platform-specific cfg on other hosts is outside this check`,
@@ -148,13 +181,13 @@ export async function checkRust(
   try {
     materialize(cwd, head, candidate);
     for (const target of selected) {
+      const output = path.join(scratch, "target", target.package);
       const env = {
         ...sharedEnv,
-        CARGO_TARGET_DIR: path.resolve(
-          cwd,
-          sharedEnv.CARGO_TARGET_DIR ||
-            path.join(path.dirname(target.manifest), "target"),
-        ),
+        CARGO_TARGET_DIR: output,
+        CARGO_BUILD_TARGET_DIR: output,
+        CARGO_BUILD_BUILD_DIR: output,
+        CARGO_BUILD_TARGET: host,
       };
       if (
         version(path.join(candidate, path.dirname(target.manifest)), env) !==
@@ -168,6 +201,8 @@ export async function checkRust(
         target,
         { ...env, GITHUB_SHA: head },
         "candidate",
+        host,
+        output,
       );
       if (!warnings.length) continue;
       if (!haveBaseline) {
@@ -186,6 +221,8 @@ export async function checkRust(
         target,
         { ...env, GITHUB_SHA: base },
         `main ${base.slice(0, 12)}`,
+        host,
+        output,
       );
       const added = newWarnings(accepted, warnings);
       if (added.length)

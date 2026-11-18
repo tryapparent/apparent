@@ -2,11 +2,15 @@
 
 The hook discovers tracked `tsconfig*.json` files and selects the nearest
 ancestor with a tracked npm or Bun lock. It checks changed project sources,
-configurations and lock inputs, and follows reverse imports in both Git trees.
+configurations and lock inputs. Routing follows parsed config root files,
+resolution of tracked imports, extended and referenced configs, package
+manifests and declared project dependencies in both Git trees.
 Owner declarations in `<owner>/enablement/ci/typecheck.json` add producer
 inputs or preparation that import analysis cannot see. Composition declares
 its Desktop dependencies and generated declaration producers. Connect declares
-its existing recipient build. Compilation happens on Git blobs, including
+its existing recipient build. Preparation follows declared dependencies and runs
+their generators in dependency order, including when only the consumer is
+selected. Compilation happens on Git blobs, including
 local package sources. The report names changed TS files that no selected
 compiler read. Repo tooling, standalone runtime tests and other files outside
 project configs still receive the existing admission guards and applicable
