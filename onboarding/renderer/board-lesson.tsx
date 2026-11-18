@@ -12,9 +12,7 @@ export function BoardLesson({
   return (
     <div className="native-board-lesson" data-ready={ready}>
       <p role="status">
-        {ready
-          ? "Your turn. Finish the heart."
-          : "Let me show you how to draw."}
+        {ready ? "Your turn" : "Let me show you how to draw."}
       </p>
       <svg aria-hidden="true" viewBox="0 0 720 470">
         <path
