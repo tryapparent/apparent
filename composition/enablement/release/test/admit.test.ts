@@ -110,6 +110,10 @@ test("a later unrelated failed main receipt cannot discard a pending version; pu
       readFileSync(process.env.GITHUB_OUTPUT, "utf8"),
       /producer_attempt=2/,
     );
+    assert.match(
+      readFileSync(process.env.GITHUB_OUTPUT, "utf8"),
+      /verification_run_id=9\nverification_run_attempt=1\n/,
+    );
     rmSync(process.env.GITHUB_OUTPUT);
     routes[`${base}releases${suffix}`] = {
       json: [{ tag_name: "v1.2.3", draft: false, prerelease: false }],

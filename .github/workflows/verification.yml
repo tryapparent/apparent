@@ -56,6 +56,8 @@ jobs:
       version: ${{ steps.candidate.outputs.version }}
       tag: ${{ steps.candidate.outputs.tag }}
       producer_attempt: ${{ steps.candidate.outputs.producer_attempt }}
+      verification_run_id: ${{ steps.candidate.outputs.verification_run_id }}
+      verification_run_attempt: ${{ steps.candidate.outputs.verification_run_attempt }}
       superseded_by: ${{ steps.current.outputs.superseded_by }}
     steps:
       - uses: actions/checkout@v5
@@ -123,6 +125,8 @@ jobs:
     uses: ./.github/workflows/release-linux.yml
     with:
       release_channel: ${{ inputs.mode }}
+      verification_run_id: ${{ needs.admit.outputs.verification_run_id }}
+      verification_run_attempt: ${{ needs.admit.outputs.verification_run_attempt }}
       tag: ${{ needs.admit.outputs.tag }}
       source_sha: ${{ needs.admit.outputs.sha }}
       version: ${{ needs.admit.outputs.version }}

@@ -3,17 +3,22 @@ import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import {
   baseline,
+  acceptedMain,
   git,
+  runGit,
   primaryIssue,
   parseReference,
   reference,
+  acceptedMergeIssue,
 } from "./reference.ts";
 import {
   bind,
   boundIssue,
+  canonicalMain,
+  fetchCanonicalMain,
   instructions,
-  verifyIssue,
   isGitHubMerge,
+  verifyIssue,
 } from "./binding.ts";
 
 export function prepareMessage(file: string, cwd: string): void {
@@ -38,10 +43,37 @@ export function validateMessage(file: string, cwd: string): void {
     );
 }
 
+function checkpointStatus(
+  cwd: string,
+  grandfather: string,
+  checkpoint: string,
+  main: string,
+) {
+  for (const sha of [checkpoint, main]) {
+    const result = runGit(cwd, ["cat-file", "-t", sha]);
+    if (result.status !== 0) return result.status;
+    if (result.stdout.trim() !== "commit") return 1;
+  }
+  for (const [ancestor, descendant] of [
+    [grandfather, checkpoint],
+    [checkpoint, main],
+  ]) {
+    const { status, stderr } = runGit(cwd, [
+      "merge-base",
+      "--is-ancestor",
+      ancestor,
+      descendant,
+    ]);
+    if (status !== 0) return status === 1 && stderr ? 128 : status;
+  }
+  return 0;
+}
+
 export function validatePush(
   input: string,
   cwd: string,
   grandfather = baseline,
+  checkpoint = acceptedMain,
 ): void {
   const rows = input
     .trim()
@@ -70,14 +102,35 @@ export function validatePush(
     .trim()
     .split("\n")
     .filter(Boolean);
+  const main = canonicalMain(cwd);
+  try {
+    let status = checkpointStatus(cwd, grandfather, checkpoint, main);
+    if (status === 128) {
+      fetchCanonicalMain(
+        cwd,
+        main,
+        runGit(cwd, ["cat-file", "-t", main]).status === 0,
+      );
+      status = checkpointStatus(cwd, grandfather, checkpoint, main);
+    }
+    if (status !== 0) throw Error("Expected exact commit ancestry");
+  } catch (error) {
+    throw Error(
+      `Cannot establish the accepted issue checkpoint on canonical main. Check canonical GitHub access, local history and whether main was rewritten. ${error instanceof Error ? error.message : ""}`,
+    );
+  }
+  const introduced = new Set(
+    git(cwd, ["rev-list", ...heads, "--not", checkpoint, "--"])
+      .trim()
+      .split("\n"),
+  );
   const issues = new Map<string, ReturnType<typeof parseReference>>();
   for (const commit of commits) {
     let issue;
     try {
-      issue = primaryIssue(
-        git(cwd, ["show", "-s", "--format=%B", commit]),
-        cwd,
-      );
+      issue =
+        primaryIssue(git(cwd, ["show", "-s", "--format=%B", commit]), cwd) ??
+        acceptedMergeIssue(commit);
       if (!issue && isGitHubMerge(commit, cwd)) continue;
     } catch (error) {
       throw Error(
@@ -88,11 +141,11 @@ export function validatePush(
       throw Error(
         `Commit ${commit} needs a final Issue: tryapparent/apparent#123 trailer. Existing ancestry through ${grandfather} is grandfathered`,
       );
-    issues.set(reference(issue), issue);
+    if (introduced.has(commit)) issues.set(reference(issue), issue);
   }
   for (const issue of issues.values()) verifyIssue(issue, cwd);
   console.error(
-    `issue-traceability: checked ${commits.length} new commits and validated ${issues.size} distinct GitHub issues`,
+    `issue-traceability: validated ${commits.length} commit trailers and ${issues.size} distinct GitHub issues beyond ${checkpoint}`,
   );
 }
 

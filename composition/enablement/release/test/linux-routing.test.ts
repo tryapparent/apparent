@@ -5,6 +5,30 @@ import { readFileSync } from "node:fs";
 const workflow = readFileSync(".github/workflows/release-linux.yml", "utf8");
 const job = (name: string) =>
   workflow.split(`\n  ${name}:\n`)[1].split(/\n  [\w-]+:\n/)[0];
+
+test("Linux packaging receives the coordinator's exact CI run and attempt", () => {
+  const coordinator = readFileSync(
+    ".github/workflows/verification.yml",
+    "utf8",
+  );
+  const admission = coordinator
+    .split("\n  admit:\n")[1]
+    .split("\n  linux:\n")[0];
+  const caller = coordinator.split("\n  linux:\n")[1].split("\n  macos:\n")[0];
+  for (const [key, env] of [
+    ["verification_run_id", "VERIFY_RUN_ID"],
+    ["verification_run_attempt", "VERIFY_RUN_ATTEMPT"],
+  ]) {
+    assert.ok(
+      admission.includes(key + ": ${{ steps.candidate.outputs." + key + " }}"),
+    );
+    assert.ok(
+      caller.includes(key + ": ${{ needs.admit.outputs." + key + " }}"),
+    );
+    assert.ok(job("admit").includes(env + ": ${{ inputs." + key + " }}"));
+  }
+  assert.ok(job("admit").includes("fetch-depth: 0"));
+});
 test("Linux verify-only retains both architectures and native packaging gates", () => {
   const build = job("linux");
   assert.ok(workflow.includes("verify_only:"));
