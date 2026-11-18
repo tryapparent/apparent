@@ -63,15 +63,15 @@ Migrate tooling with its real callers, package/workflow inputs, tests, path rout
 
 ## Work and verification
 
-Use judgment to choose the smallest coherent change and proportionate testing and review. Read-only subagent review is allowed when useful. Respect other writers and explicit holds, keep reservations narrow, and release them with the exact contract/commit and remaining gates. Repair necessary prerequisites within scope rather than stopping at a failed diagnostic; a retry cap limits repetition, not independent investigation.
+Choose the smallest coherent change and proportionate checks. Read-only subagent review is allowed. Respect explicit holds and narrow writer reservations. Release them with the exact contract, commit and remaining gates. Repair in-scope prerequisites. Retry caps still allow independent investigation.
 
-Process discretion does not relax the product and migration requirements above. When changing a boundary, read its actual producer and consumers and use representative producer-generated inputs; a fixture that mirrors a new implementation is not compatibility evidence. Keep detailed procedures beside the owning implementation.
+For boundary changes, inspect real producers and consumers and verify with representative producer outputs. Implementation-mirroring fixtures do not establish compatibility. Keep procedures with their owners.
 
-**Shared Electron/React UI and platform-independent TypeScript behavior can be verified on Linux.** Test changed OS-specific behavior on the affected OS, using NoMac for macOS when needed. Native capture, permissions, window integration and packaging require relevant platform checks; shared renderer proof alone does not establish those effects. For Linux native GUI work use the isolated VM procedure in the Linux guide, not a host app or another worker's VM. Physical-device behavior needs suitable hardware. Existing required CI and branch protections still apply.
+**Linux can verify shared Electron/React UI and portable TypeScript.** Before booking a Mac for legacy UI work, compare it with moving the smallest usable slice to Electron and testing on Linux. Prefer migration when cheaper overall and behavior is preserved, including real routing and persistence. If Mac proof remains necessary, name the changed native behavior or migration blocker.
 
-Choose checks by changed behavior, not commit IDs. Reuse evidence only for unchanged relevant inputs and identify its source. Inspect the actual changed renderer for UI work and relevant real bundle text/images for output changes; documentation/tooling-only work needs no capture. Distinguish tests, GUI/native proof, permission state and publication, and report unrun checks or gaps honestly. Never turn a build, CLI help or bundle path into proof of downstream behavior.
+Test changed OS-specific behavior on the affected OS, using NoMac when needed. Verify native capture, permissions, window integration and packaging on their relevant platforms. Use the Linux guide's isolated VM for native GUI work, never the host or another worker's VM. Physical-device behavior needs suitable hardware. Honor CI and branch protections.
 
-On Clanker run heavy builds/tests and hook-backed pushes once through `/home/simon/.local/bin/t3-build`, honoring its job allocation and temporary-output rules. See [verification commands and prerequisites](enablement/docs/continuous-delivery.md#local-verification). Rebuild the executable after Rust changes before running it; `cargo test` does not rebuild `target/debug/apparent`.
+Select checks by changed behavior. Reuse proof only for unchanged relevant inputs and cite its source. Inspect the actual renderer for UI changes and real bundle outputs for output changes. Docs and tooling need no capture. Report test, GUI, permission and publication evidence separately, including gaps. A build, CLI help or bundle path alone proves no downstream behavior.
 
 ## Delivery
 
