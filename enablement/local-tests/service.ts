@@ -23,6 +23,23 @@ export function loaderPaths(output: string): string[] {
     throw Error('unrecognized or unresolved runtime loader input');
   });
 }
+export function serviceInventory(service: string): string[] {
+  const root = join(service, 'test');
+  const folders = readdirSync(root).filter(name => !name.startsWith('.')).sort();
+  return ['mjs', 'ts'].flatMap(extension => {
+    const tests = folders.flatMap(folder => {
+      const path = join(root, folder), entry = lstatSync(path);
+      if (entry.isSymbolicLink()) throw Error('unqualified test directory');
+      if (!entry.isDirectory()) return [];
+      return readdirSync(path).filter(name => !name.startsWith('.') && name.endsWith(`.test.${extension}`)).sort().map(name => {
+        if (!lstatSync(join(path, name)).isFile()) throw Error('unqualified test file');
+        return `test/${folder}/${name}`;
+      });
+    });
+    if (!tests.length) throw Error('service test inventory incomplete');
+    return tests;
+  });
+}
 
 function git(cwd: string, env: NodeJS.ProcessEnv, args: string[]): string {
   return execFileSync('git', args, {cwd, env, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024});
@@ -181,12 +198,7 @@ export function serviceTests(command: Command, cwd: string, env: NodeJS.ProcessE
   // Preserve the canonical build and generate every output required by subsequent
   // recipient checks even on a hit. Only the serial Node test phase is reusable.
   run({argv: ['npm', 'run', 'build'], cwd: command.cwd, env: command.env});
-  const testRoot = join(cwd, command.cwd, 'test');
-  const tests = readdirSync(testRoot).sort().flatMap(folder => {
-    const path = join(testRoot, folder);
-    return lstatSync(path).isDirectory() ? readdirSync(path).sort().filter(name => /\.test\.(mjs|ts)$/.test(name)).map(name => `test/${folder}/${name}`) : [];
-  });
-  if (!tests.length) throw Error('service test inventory empty');
+  const tests = serviceInventory(join(cwd, command.cwd));
   const testCommand = {argv: [process.execPath, '--no-global-search-paths', '--experimental-strip-types', '--test', '--test-concurrency=1', ...tests], cwd: command.cwd};
   const testEnv = serviceEnvironment(env);
   reuse(cwd, () => serviceSnapshot(cwd, testEnv, admission!, testCommand.argv), () => {

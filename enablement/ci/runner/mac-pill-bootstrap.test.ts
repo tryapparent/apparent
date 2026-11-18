@@ -139,8 +139,7 @@ test('actual foreground consumer requires one successful Darwin regression befor
 
 test('actual foreground command caps remaining time before spawn and kills its owned Node/Swift process group', () => {
   const consumer = readFileSync(new URL('../../../capture/desktop/ui/frontend/tests/foreground/mac.ts', import.meta.url), 'utf8');
-  const start = consumer.indexOf('async function command('), end = consumer.indexOf('\nasync function cli(', start);
-  assert.ok(start > 0 && end > start);
+  assert.match(consumer, /const command = commandRunner\(\{budget, environment: \(\) => appEnv, redact\}\)/);
   const job = mkdtempSync(join(tmpdir(), 'pill-command-'));
   try {
     const fixture = join(job, 'command.ts');
@@ -148,10 +147,11 @@ test('actual foreground command caps remaining time before spawn and kills its o
 import path from 'node:path';
 import {spawn, spawnSync} from 'node:child_process';
 import {writeFileSync, readFileSync} from 'node:fs';
+import {commandRunner} from ${JSON.stringify(new URL('../../../composition/enablement/native-foreground/command-fixture.ts', import.meta.url).href)};
 let appEnv = process.env, remaining = 2000;
 const budget = (cap: number) => { assert.ok(remaining > 0); return Math.min(cap, remaining); };
 const redact = String;
-${consumer.slice(start, end)}
+const command = commandRunner({budget, environment: () => appEnv, redact});
 assert.equal(await command(process.execPath, ['-e', 'console.log("ok")'], {ownedGroup: true}), 'ok\\n');
 await assert.rejects(command(process.execPath, ['-e', 'console.log("compiler scenario diagnostic"); process.exit(3)'], {ownedGroup: true}), /compiler scenario diagnostic/);
 remaining = 0;

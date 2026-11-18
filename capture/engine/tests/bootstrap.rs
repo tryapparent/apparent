@@ -1,27 +1,14 @@
-use apparent_capture_engine::{LeaseKind, Runtime, new_id};
+#[path = "../../../engine/enablement/fixtures/legacy-support.rs"]
+mod support;
+use support::Fixture;
+use apparent_capture_engine::{LeaseKind, Runtime};
 use std::{
-    fs,
     io::{BufRead, BufReader, Write},
-    os::unix::fs::PermissionsExt,
-    path::{Path, PathBuf},
+    path::Path,
     process::{Child, Command, Stdio},
     sync::mpsc::{self, Receiver},
     time::Duration,
 };
-struct Fixture(PathBuf);
-impl Fixture {
-    fn new() -> Self {
-        let path = std::env::temp_dir().join(format!("engine-bootstrap-{}", new_id().unwrap()));
-        fs::create_dir(&path).unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
-        Self(path)
-    }
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 struct Worker {
     child: Child,
     lines: Receiver<String>,
@@ -29,7 +16,7 @@ struct Worker {
 impl Worker {
     fn spawn(root: &Path, bundle: &str) -> Self {
         let mut child = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "bootstrap_worker", "--nocapture"])
+            .args(["--ignored", "--exact", "bootstrap_worker", "--nocapture"])
             .env("ENGINE_BOOTSTRAP_ROOT", root)
             .env("ENGINE_BOOTSTRAP_BUNDLE", bundle)
             .stdin(Stdio::piped())
@@ -69,6 +56,7 @@ impl Drop for Worker {
     }
 }
 #[test]
+#[ignore = "subprocess fixture entrypoint"]
 fn bootstrap_worker() {
     let Ok(root) = std::env::var("ENGINE_BOOTSTRAP_ROOT") else {
         return;

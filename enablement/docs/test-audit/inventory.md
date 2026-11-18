@@ -588,7 +588,7 @@
 | Shared | shared/handoff/mod.rs | source candidate | 1996 | pending |
 | Shared | shared/handoff/pen.rs | source candidate | 62 | pending |
 | Shared | shared/handoff/test_modules.rs | source candidate | 1350 | pending |
-| Shared | shared/hex.rs | source candidate | 964 | pending |
+| Shared | shared/hex.rs | audit | 964 | staged |
 | Shared | shared/model.rs | source candidate | 811 | pending |
 | Shared | shared/routing.rs | source candidate | 132 | pending |
 | Shared | shared/ui/test/appearance.mjs | source candidate | 97 | pending |

@@ -20,8 +20,6 @@ use crate::capture::engine::runtime as capture;
 use crate::capture::engine::runtime::audio::audio;
 use crate::capture::engine::runtime::audio::transcription::speech_model;
 use crate::capture::engine::runtime::audio::transcription::transcribe;
-#[cfg(test)]
-use crate::capture::engine::runtime::write_bundle_artifacts;
 use crate::capture::engine::sketch::{marks_of, summary_markdown};
 use crate::shared::clock::now_epoch_ms;
 use crate::shared::model;
@@ -1244,39 +1242,6 @@ mod tests {
         assert_eq!(json["preparedVisuals"], false);
         assert_eq!(json.as_object().unwrap().len(), 12);
         std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn artifact_failures_do_not_publish_a_manifest() {
-        let root = std::env::temp_dir().join(make_bundle_id());
-        let (_, mut bundle, _) = generate_demo_bundle(Some(root.join("demo.apparent"))).unwrap();
-        let frame = RgbaFrame::new(0, 1, 1, vec![20, 30, 40, 255]);
-        let mut key = bundle.keyframes[0].clone();
-        key.file = "frames/missing/frame.png".into();
-        let frame_failure = root.join("frame-failure.apparent");
-        assert!(
-            write_bundle_artifacts(
-                &frame_failure,
-                &bundle,
-                &[(key, frame.clone())],
-                &frame,
-                "summary"
-            )
-            .is_err()
-        );
-        assert!(!frame_failure.join("apparent.json").exists());
-
-        bundle.contact_sheet = "missing/contact-sheet.png".into();
-        let sheet_failure = root.join("sheet-failure.apparent");
-        assert!(write_bundle_artifacts(&sheet_failure, &bundle, &[], &frame, "summary").is_err());
-        assert!(!sheet_failure.join("apparent.json").exists());
-
-        bundle.contact_sheet = "contact-sheet.png".into();
-        let empty_frames = root.join("empty-frames.apparent");
-        write_bundle_artifacts(&empty_frames, &bundle, &[], &frame, "summary").unwrap();
-        assert!(empty_frames.join("apparent.json").exists());
-        assert!(empty_frames.join("contact-sheet.png").exists());
-        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

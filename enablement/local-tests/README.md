@@ -61,6 +61,12 @@ changed closure runs fresh until reviewed and requalified. This is deliberately
 bounded to the supported canonical command, local Linux x64 glibc and supported
 npm/runtime configuration.
 
+The test inventory follows the canonical command’s two globs: sorted `.mjs` files
+first, then sorted `.ts` files. Missing glob matches, symlinks and non-file inputs
+fail instead of becoming an empty success. Both inventory groups remain required.
+The owner declaration conservatively binds the complete TypeScript client tree;
+this includes the Worker’s three source-only wire contract inputs.
+
 Service `npm ci` and build execute fresh before receipt lookup. Only the serial
 Node test phase is reusable. Missing dependencies cannot resolve through global
 Node search paths. Optional live Miniflare geolocation fetch is disabled for this

@@ -1,4 +1,3 @@
-// uv 0.12.13 stores downloaded PyPI wheels in wheels-v6, with relative links
 // into archive-v0. Snapshot only those objects, never sdists/builds, Git trees,
 // interpreters, environments or profiles. Run after uv exits, not concurrently.
 import {createHash} from 'node:crypto';
@@ -27,7 +26,7 @@ async function plainTree(root: string): Promise<void> {
 export async function snapshot(cache: string, destination: string): Promise<void> {
   // Destination must be new: never merge an older snapshot or another run's data.
   await mkdir(destination, {mode: 0o700});
-  const index = path.join(cache, 'wheels-v6/pypi');
+  const index = path.join(cache, 'wheels-v7/pypi');
   const archives = new Set<string>();
   async function visit(directory: string): Promise<void> {
     for (const name of await readdir(directory)) {
@@ -48,7 +47,7 @@ export async function snapshot(cache: string, destination: string): Promise<void
     await plainTree(archive);
     await cp(archive, path.join(destination, 'archive-v0', path.basename(archive)), {recursive: true});
   }
-  await cp(index, path.join(destination, 'wheels-v6/pypi'), {recursive: true, verbatimSymlinks: true});
+  await cp(index, path.join(destination, 'wheels-v7/pypi'), {recursive: true, verbatimSymlinks: true});
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
@@ -59,8 +58,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     const identity = process.env.VALIDATOR_IDENTITY;
     if (!identity) throw new Error('Missing validator identity');
     const inputs: Record<string, string | Buffer> = {identity};
-    for (const name of ['uv.lock', 'pyproject.toml']) inputs[name] = await readFile(path.join(runtime, name));
+    for (const name of ['uv.lock', 'pyproject.toml', 'pm/lock.json']) inputs[name] = await readFile(path.join(runtime, name));
     inputs.workflow = await readFile(workflow);
+    inputs.validator = await readFile(new URL('../../enablement/ci/validator.ts', import.meta.url));
+    inputs.job = await readFile(new URL('../../enablement/ci/validator-job.ts', import.meta.url));
     inputs.policy = await readFile(new URL('./downloads.ts', import.meta.url));
     await writeFile(output, `key=${cacheKey(inputs)}\n`, {flag: 'a'});
   } else throw new Error('Expected key RUNTIME WORKFLOW OUTPUT or snapshot CACHE DESTINATION');

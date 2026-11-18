@@ -7,7 +7,7 @@ import {spawn, execFileSync, type ChildProcess} from 'node:child_process';
 import {constants} from 'node:fs';
 import {prepareForegroundScene, type LaunchObservation, type LaunchWindow} from './startup.ts';
 import {recopyForeground, savedForeground, withRetainedEvidence, withObservedFailure} from './saved.ts';
-import {auditedControl, type ControlOperation, type ControlReceipt} from './control.ts';
+import {auditedControl, commandRunner, type ControlOperation, type ControlReceipt} from './control.ts';
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const hostEnv = {...process.env};
@@ -20,35 +20,7 @@ const cleanupErrors: string[] = [];
 const ended = (child: ChildProcess) => child.exitCode !== null || child.signalCode !== null;
 function budget(cap = 8000) { const left = finishing ? cap : Math.min(cap, until - Date.now()); assert.ok(left > 0, 'Foreground acceptance deadline exceeded'); return left; }
 const redact = (value: unknown) => String(value).replace(/https?:\/\/[^\s"']+/g, '[redacted-url]').replace(/\b[a-f0-9]{64}\b/g, '[redacted-capability]');
-async function command(executable: string, args: string[], options: {env?: NodeJS.ProcessEnv; timeout?: number; input?: string; ownedGroup?: boolean} = {}) {
-  const cap = budget(options.timeout ?? 8000);
-  const child = spawn(executable, args, {env: options.env ?? appEnv, detached: options.ownedGroup === true, stdio: ['pipe', 'pipe', 'pipe']});
-  const killOwned = () => {
-    if (!options.ownedGroup) { child.kill('SIGKILL'); return; }
-    // The regression's Node runner owns a Swift child. Retire both on timeout
-    // or output overflow, without changing other native command lifecycles.
-    try { process.kill(-child.pid!, 'SIGKILL'); } catch (error: any) { if (error.code !== 'ESRCH') throw error; }
-  };
-  let stdout = '', stderr = '', failure: Error | undefined;
-  let expire: () => void = () => {};
-  const timer = setTimeout(() => { failure = Error(`${path.basename(executable)} exceeded command deadline`); killOwned(); child.stdout.destroy(); child.stderr.destroy(); expire(); }, cap);
-  child.stdout.on('data', b => { stdout += b; if (stdout.length + stderr.length > 1_000_000) { failure = Error('Command output exceeded bound'); killOwned(); } });
-  child.stderr.on('data', b => { stderr += b; if (stdout.length + stderr.length > 1_000_000) { failure = Error('Command output exceeded bound'); killOwned(); } });
-  child.stdin.end(options.input ?? '');
-  try {
-    await new Promise<void>((resolve, reject) => { expire = () => reject(failure); child.once('error', reject); child.once('close', () => resolve()); }).finally(() => clearTimeout(timer));
-    if (failure) throw failure;
-    assert.equal(child.exitCode, 0, `${path.basename(executable)} failed: ${redact(stderr.slice(-1200))}`);
-    return stdout;
-  } catch (error) {
-    // Node's test runner writes Swift compiler/assertion failures to TAP stdout.
-    // Retain bounded diagnostics in the caller's private failure receipt, also
-    // on deadline/output failures, before failing the installed native case.
-    if (options.ownedGroup) throw Error(redact(JSON.stringify({error: String(error),
-      exitCode: child.exitCode, signal: child.signalCode, stdout: stdout.slice(-16_384), stderr: stderr.slice(-16_384)})));
-    throw error;
-  }
-}
+const command = commandRunner({budget, environment: () => appEnv, redact});
 async function cli(args: string[], timeout = 8000) { return command(binary, args, {timeout}); }
 async function startOwnedCapture(id: string) {
   const deadline = Date.now() + 20_000;
@@ -220,6 +192,18 @@ async function main() {
       APPARENT_CONFIG: configFile, APPARENT_CAPTURES_DIR: path.join(root, 'captures'), APPARENT_START_TIMINGS: '1', TMPDIR: temporary, TMP: temporary, TEMP: temporary};
     delete appEnv.ELECTRON_RUN_AS_NODE;
     for (const key of Object.keys(appEnv)) if (/^(OPENCODE|CODEX|CLAUDE)_.*SESSION/.test(key)) delete appEnv[key];
+    try {
+      const report = await command(process.execPath, ['--experimental-strip-types', '--test',
+        path.join(repo, 'composition/enablement/native-foreground/vision-trace.test.ts')],
+      {env: {...hostEnv, TMPDIR: temporary, TMP: temporary, TEMP: temporary}, timeout: 60_000, ownedGroup: true});
+      assert.match(report, /7 production Vision trace scenarios passed/);
+      assert.match(report, /Real sanitized PNG Vision trace passed/);
+      assert.match(report, /Retained failure PNG Vision trace passed/);
+      await evidence('vision-trace-regression', {report});
+    } catch (error) {
+      await evidence('vision-trace-regression-failure', {error: redact(error)});
+      throw error;
+    }
     // Once per case, before app launch/capture/input. This consumes the same
     // overall deadline through command(); it does not grant another minute.
     try {

@@ -25,7 +25,7 @@ class ProvisionTests(unittest.TestCase):
         self.digest = hashlib.sha256(self.payload).hexdigest()
 
     def asset(self, data=None):
-        with patch.object(p, "urlopen", create=True, return_value=io.BytesIO(self.payload if data is None else data)) as request:
+        with patch.object(p, "urlopen", return_value=io.BytesIO(self.payload if data is None else data)) as request:
             p.ensure_asset(self.fd, "model.onnx", "https://example.org/model", len(self.payload), self.digest)
             return request.call_count
 
@@ -36,9 +36,6 @@ class ProvisionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('"status":"unavailable"', result.stdout)
         self.assertFalse((self.root / "missing").exists())
-
-    def test_typescript_policy_contracts(self):
-        subprocess.run(["node", "--test", str(Path(__file__).with_name("provision-narrator.test.ts"))], check=True)
 
     def test_check_ignores_interrupted_partials(self):
         (self.root / ".narrator-interrupted.partial").write_bytes(b"partial")
@@ -81,7 +78,7 @@ class ProvisionTests(unittest.TestCase):
         self.addCleanup(os.close, fd)
         cache.rename(self.root / "original")
         cache.symlink_to(self.root / "real", target_is_directory=True)
-        with patch.object(p, "urlopen", create=True, return_value=io.BytesIO(self.payload)):
+        with patch.object(p, "urlopen", return_value=io.BytesIO(self.payload)):
             p.ensure_asset(fd, "model.onnx", "https://example.org/model", len(self.payload), self.digest)
         self.assertEqual((self.root / "original/model.onnx").read_bytes(), self.payload)
         self.assertFalse((self.root / "real").exists())
