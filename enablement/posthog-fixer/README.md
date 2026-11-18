@@ -3,21 +3,17 @@
 A Node 22.23+ TypeScript service receives new Error Tracking issue notifications,
 records their IDs in private SQLite state, and launches a T3 fix thread in an
 isolated `origin/main` worktree. No Rust, Electron, npm install or hosted service
-is required. This directory is Enablement-owned; it is not an application or
-Connect dependency. Tests run in the local/hosted tooling suite.
+is required. Tests run in the tooling suite.
 
 The initial scope is **issue created**, not every `$exception`, reopened issues,
 spikes or backfilling existing errors. Duplicate deliveries remain deduplicated
-by project/issue, including after restart and completion. The service never marks
-PostHog issues resolved: a merged fix alone does not establish production recovery.
+by project/issue, including after restart and completion. The queue itself never marks PostHog issues resolved. Fix threads maintain status
+and GitHub links through the instructions below; settlement is not proof of recovery.
 
 ## Configure and run
 
-The committed unit is a template, not an installed or enabled service. Select the
-actual T3 environment and Apparent project before activation. Use the executable
-matching that environment's data home; the generic `t3` command may be a different
-version. The adapter targets the installed Nightly V2 Effect RPC contract verified
-with `0.1.8-nightly.20261106.4262`. Requalify it after T3 upgrades.
+The unit is an installation template. Verify the owning T3 environment, project
+and CLI before activation; requalify the RPC adapter after T3 upgrades.
 
 Create a private configuration directory and a private persistent state directory
 (e.g. `~/.config/apparent-posthog-fixer` and `~/.local/state/apparent-posthog-fixer`).
@@ -48,7 +44,7 @@ replacing the file. Both credentials are read on each request; other environment
 changes require a service restart. The service does not mint tokens or change
 T3 provider settings. New fix threads use the configured permission mode; this
 does not relax the task's spending, access, consent or privacy limits. The deployed
-Apparent configuration uses `codex`, `gpt-6.1-sol`, `high`, and `full-access`.
+Apparent configuration uses `codex`, `gpt-6.2-sol`, `high`, and `full-access`.
 
 The PostHog CLI must already be authenticated for read access to this project.
 The bridge uses explicit host/project flags; it fetches compact issue details
@@ -153,3 +149,16 @@ for ticket authentication, idle launch, same-command replay and projection readb
 that proves the adapter protocol, not a production fix or inference run. Activation
 still needs an isolated end-to-end notification with the intended environment and
 credentials. Follow PostHog synthetic-validation guidance before any ingestion test.
+
+## Issue lifecycle
+
+Fix threads reuse matching GitHub issues or create one through PostHog's existing
+GitHub integration, which creates and links in one operation. It cannot attach
+existing GitHub issues; those use reciprocal description/body links. Reconcile
+uncertain creates before retrying. Keep public issue text sanitized.
+
+PostHog has no in-progress status: use active with an In progress description
+note and GitHub URL, preserving human decisions. Resolve only delivered, verified
+repairs. Diagnostics-only work stays active. Report missing error_tracking:write
+access without broadening credentials. Creation happens on fix admission;
+immediate creation for every queued issue would need separate durable handling.
