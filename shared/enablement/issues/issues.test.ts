@@ -1,78 +1,21 @@
-import { test, type TestContext } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  mkdtempSync,
-  mkdirSync,
-  writeFileSync,
-  readFileSync,
-  rmSync,
-  copyFileSync,
-} from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, copyFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { primaryIssue, parseReference, git, repository } from "./reference.ts";
+import {
+  acceptedMain,
+  primaryIssue,
+  parseReference,
+  git,
+  repository,
+} from "./reference.ts";
 import { validatePush } from "./run.ts";
 import { bind } from "./binding.ts";
+import { fixture } from "./fixture.ts";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
-function fixture(t: TestContext) {
-  const dir = mkdtempSync("/tmp/apparent-dev-issues-"),
-    repo = join(dir, "repo");
-  mkdirSync(repo);
-  mkdirSync(join(dir, "bin"));
-  const old = { ...process.env };
-  for (const name of Object.keys(process.env))
-    if (name.startsWith("GIT_") || name === "NODE_TEST_CONTEXT")
-      delete process.env[name];
-  process.env.GIT_CONFIG_GLOBAL = "/dev/null";
-  process.env.GIT_CONFIG_NOSYSTEM = "1";
-  process.env.PATH = join(dir, "bin") + ":" + process.env.PATH;
-  process.env.ISSUE_TEST_LOG = join(dir, "gh.log");
-  t.after(() => {
-    process.env = old;
-    rmSync(dir, { recursive: true, force: true });
-  });
-  writeFileSync(
-    join(dir, "gh.ts"),
-    `import {appendFileSync} from 'node:fs';
-const number = Number(process.argv.at(-1)!.split('/').at(-1));
-appendFileSync(process.env.ISSUE_TEST_LOG!, number + '\\n');
-if (process.env.ISSUE_TEST_FAILURE) { console.error('synthetic private token must never escape'); process.exit(1); }
-if (process.argv.at(-1)!.includes('/commits/')) {
-  console.log(process.env.ISSUE_TEST_COMMIT || '{}');
-  process.exit(0);
-}
-console.log(JSON.stringify({id: 1000 + number, number, repository_url: 'https://api.github.com/repos/tryapparent/apparent',
-url: 'https://api.github.com/repos/' + (process.env.ISSUE_TEST_REPO || 'tryapparent/apparent') + '/issues/' + number,
-...(process.env.ISSUE_TEST_PR ? {pull_request: {}} : {})}));\n`,
-  );
-  writeFileSync(
-    join(dir, "bin/gh"),
-    `#!/bin/sh\nexec '${process.execPath}' --experimental-strip-types '${join(dir, "gh.ts")}' "$@"\n`,
-    { mode: 0o755 },
-  );
-  const runGit = (...args: string[]) => git(repo, args).trim();
-  runGit("init", "-q");
-  runGit("config", "gc.auto", "0");
-  runGit("config", "maintenance.auto", "false");
-  runGit("config", "user.name", "Synthetic");
-  runGit("config", "user.email", "synthetic@example.invalid");
-  writeFileSync(join(repo, "file"), "base");
-  runGit("add", ".");
-  runGit("commit", "-qm", "prepolicy base");
-  const baseline = runGit("rev-parse", "HEAD");
-  const commit = (message: string) => {
-    writeFileSync(join(repo, "file"), message);
-    runGit("add", ".");
-    runGit("commit", "-qm", message);
-    return runGit("rev-parse", "HEAD");
-  };
-  const ref = (head: string, remote = "feature") =>
-    `refs/heads/feature ${head} refs/heads/${remote} ${"0".repeat(40)}\n`;
-  return { repo, dir, runGit, baseline, commit, ref };
-}
-
 test("anchored syntax and final trailer block reject invalid IDs, prose, duplicates and quotes", (t) => {
   const f = fixture(t);
   assert.deepEqual(
@@ -166,28 +109,51 @@ test("prepared hooks autofill actual commits, preserve explicit trailer and cust
   assert.equal(readFileSync(process.env.ISSUE_TEST_LOG!, "utf8"), "123\n");
 });
 
-test("push validates all post-baseline commits across refs, deduplicates issue lookups and ignores deletion refs", (t) => {
+test("accepted merge receipts validate exact identities without exempting other commits", (t) => {
   const f = fixture(t);
-  const one = f.commit("first\n\nIssue: tryapparent/apparent#12");
-  const two = f.commit("second\n\nIssue: tryapparent/apparent#12");
-  const three = f.commit("third\n\nIssue: tryapparent/apparent#13");
-  validatePush(
-    f.ref(one) + f.ref(three, "other") + f.ref("0".repeat(40), "delete"),
-    f.repo,
-    f.baseline,
-  );
-  assert.equal(readFileSync(process.env.ISSUE_TEST_LOG!, "utf8"), "12\n13\n");
-  f.runGit("checkout", "-q", "-b", "bad", two);
-  const missing = f.commit("missing trailer");
-  assert.throws(
-    () => validatePush(f.ref(missing), f.repo, f.baseline),
-    /needs a final Issue/,
-  );
-  validatePush(f.ref("0".repeat(40)), f.repo, "missing");
-  assert.throws(
-    () => validatePush(f.ref(three), f.repo, "missing"),
-    /Git metadata/,
-  );
+  const objects =
+    git(root, [
+      "rev-parse",
+      "--path-format=absolute",
+      "--git-common-dir",
+    ]).trim() + "/objects";
+  writeFileSync(join(f.repo, ".git/objects/info/alternates"), objects + "\n");
+  for (const [commit, number] of [
+    ["6c64c838fab1b70e05da112ffc25336e5c283ab1", "575"],
+    ["18c72f8302d54bab24d1729fb75796329a2a0a81", "171"],
+    ["f52fab25ee734cb60262387d0c74e8cdfba97d6a", "530"],
+    ["f900c3f4677cca561f1336d4cd4b64184032958e", "837"],
+    ["91fe2c80dd96cea8bb3285d2c6f1d1b4652bd76b", "1240"],
+  ]) {
+    const parents = f.runGit("show", "-s", "--format=%P", commit).split(" ");
+    const tree = f.runGit("rev-parse", commit + "^{tree}");
+    const cutoff = f.runGit(
+      "commit-tree",
+      tree,
+      ...parents.flatMap((p) => ["-p", p]),
+      "-m",
+      "synthetic cutoff",
+    );
+    writeFileSync(process.env.ISSUE_TEST_LOG!, "");
+    process.env.ISSUE_TEST_MAIN = cutoff;
+    validatePush(f.ref(commit), f.repo, cutoff, cutoff);
+    assert.equal(
+      readFileSync(process.env.ISSUE_TEST_LOG!, "utf8"),
+      "main\n" + number + "\n",
+    );
+    process.env.ISSUE_TEST_ISSUE_FAILURE = "offline";
+    assert.throws(
+      () => validatePush(f.ref(commit), f.repo, cutoff, cutoff),
+      new RegExp("Cannot validate tryapparent/apparent#" + number),
+    );
+    delete process.env.ISSUE_TEST_ISSUE_FAILURE;
+    const copied = f.commit(f.runGit("show", "-s", "--format=%B", commit));
+    process.env.ISSUE_TEST_MAIN = f.baseline;
+    assert.throws(
+      () => validatePush(f.ref(copied), f.repo, f.baseline, f.baseline),
+      /needs a final Issue/,
+    );
+  }
 });
 
 test("GitHub merge exemption preserves parent checks", (t) => {
@@ -222,16 +188,20 @@ test("GitHub merge exemption preserves parent checks", (t) => {
       parents: [{ sha: first }, { sha: right }],
     });
   process.env.ISSUE_TEST_COMMIT = response(github);
-  validatePush(f.ref(github), f.repo, f.baseline);
+  validatePush(f.ref(github), f.repo, f.baseline, f.baseline);
+  assert.equal(
+    readFileSync(process.env.ISSUE_TEST_LOG!, "utf8").split("\n")[1],
+    "commit",
+  );
   const local = merge(left, "synthetic@example.invalid");
   assert.throws(
-    () => validatePush(f.ref(local), f.repo, f.baseline),
+    () => validatePush(f.ref(local), f.repo, f.baseline, f.baseline),
     /needs a final Issue/,
   );
   for (const invalid of [response(local), response(github, left, false)]) {
     process.env.ISSUE_TEST_COMMIT = invalid;
     assert.throws(
-      () => validatePush(f.ref(github), f.repo, f.baseline),
+      () => validatePush(f.ref(github), f.repo, f.baseline, f.baseline),
       /needs a final Issue/,
     );
   }
@@ -239,7 +209,7 @@ test("GitHub merge exemption preserves parent checks", (t) => {
   const invalidMerge = merge(untracked, "noreply@github.com");
   process.env.ISSUE_TEST_COMMIT = response(invalidMerge, untracked);
   assert.throws(
-    () => validatePush(f.ref(invalidMerge), f.repo, f.baseline),
+    () => validatePush(f.ref(invalidMerge), f.repo, f.baseline, f.baseline),
     new RegExp(untracked),
   );
 });
@@ -264,7 +234,7 @@ test("API mismatch, PR and authentication/not-found/offline failures reject with
   const commit = f.commit("valid syntax\n\nIssue: tryapparent/apparent#12");
   process.env.ISSUE_TEST_PR = "yes";
   assert.throws(
-    () => validatePush(f.ref(commit), f.repo, f.baseline),
+    () => validatePush(f.ref(commit), f.repo, f.baseline, f.baseline),
     /pull requests/,
   );
 });
@@ -296,6 +266,7 @@ test("real Git push checks issues before verification and preserves HEAD and del
       "--git-common-dir",
     ]).trim() + "/objects";
   writeFileSync(join(f.repo, ".git/objects/info/alternates"), objects + "\n");
+  process.env.ISSUE_TEST_MAIN = acceptedMain;
   f.runGit("add", ".");
   const tree = f.runGit("write-tree");
   const head = f.runGit(
@@ -337,9 +308,15 @@ test("real Git push checks issues before verification and preserves HEAD and del
     readFileSync(join(f.repo, ".git/verification"), "utf8"),
     "ran\n",
   );
-  assert.equal(readFileSync(process.env.ISSUE_TEST_LOG!, "utf8"), "12\n12\n");
+  assert.equal(
+    readFileSync(process.env.ISSUE_TEST_LOG!, "utf8"),
+    "main\nmain\n12\n",
+  );
   assert.equal(push(":refs/heads/second").status, 0);
-  assert.equal(readFileSync(process.env.ISSUE_TEST_LOG!, "utf8"), "12\n12\n");
+  assert.equal(
+    readFileSync(process.env.ISSUE_TEST_LOG!, "utf8"),
+    "main\nmain\n12\n",
+  );
   const timings = readFileSync(process.env.APPARENT_TIMING_FILE!, "utf8")
     .trim()
     .split("\n")

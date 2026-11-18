@@ -3,17 +3,20 @@ import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import {
   baseline,
+  acceptedMain,
   git,
   primaryIssue,
   parseReference,
   reference,
+  acceptedMergeIssue,
 } from "./reference.ts";
 import {
   bind,
   boundIssue,
+  canonicalMain,
   instructions,
-  verifyIssue,
   isGitHubMerge,
+  verifyIssue,
 } from "./binding.ts";
 
 export function prepareMessage(file: string, cwd: string): void {
@@ -42,6 +45,7 @@ export function validatePush(
   input: string,
   cwd: string,
   grandfather = baseline,
+  checkpoint = acceptedMain,
 ): void {
   const rows = input
     .trim()
@@ -70,14 +74,31 @@ export function validatePush(
     .trim()
     .split("\n")
     .filter(Boolean);
+  const main = canonicalMain(cwd);
+  try {
+    for (const sha of [checkpoint, main]) {
+      if (git(cwd, ["cat-file", "-t", sha]).trim() !== "commit")
+        throw Error("Expected a commit");
+    }
+    git(cwd, ["merge-base", "--is-ancestor", grandfather, checkpoint]);
+    git(cwd, ["merge-base", "--is-ancestor", checkpoint, main]);
+  } catch {
+    throw Error(
+      "Cannot establish the accepted issue checkpoint on canonical main. Fetch complete origin main history and check for a main rewrite before pushing",
+    );
+  }
+  const introduced = new Set(
+    git(cwd, ["rev-list", ...heads, "--not", checkpoint, "--"])
+      .trim()
+      .split("\n"),
+  );
   const issues = new Map<string, ReturnType<typeof parseReference>>();
   for (const commit of commits) {
     let issue;
     try {
-      issue = primaryIssue(
-        git(cwd, ["show", "-s", "--format=%B", commit]),
-        cwd,
-      );
+      issue =
+        primaryIssue(git(cwd, ["show", "-s", "--format=%B", commit]), cwd) ??
+        acceptedMergeIssue(commit);
       if (!issue && isGitHubMerge(commit, cwd)) continue;
     } catch (error) {
       throw Error(
@@ -88,11 +109,11 @@ export function validatePush(
       throw Error(
         `Commit ${commit} needs a final Issue: tryapparent/apparent#123 trailer. Existing ancestry through ${grandfather} is grandfathered`,
       );
-    issues.set(reference(issue), issue);
+    if (introduced.has(commit)) issues.set(reference(issue), issue);
   }
   for (const issue of issues.values()) verifyIssue(issue, cwd);
   console.error(
-    `issue-traceability: checked ${commits.length} new commits and validated ${issues.size} distinct GitHub issues`,
+    `issue-traceability: validated ${commits.length} commit trailers and ${issues.size} distinct GitHub issues beyond ${checkpoint}`,
   );
 }
 

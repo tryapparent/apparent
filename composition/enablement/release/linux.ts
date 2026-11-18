@@ -28,9 +28,27 @@ export function admitLinux(): void {
   }
   if (!["main", "stable"].includes(channel ?? ""))
     throw Error("Use Release for Linux and Mac publication");
+  const { VERIFY_RUN_ID, VERIFY_RUN_ATTEMPT } = process.env;
+  if (
+    !/^[1-9]\d*$/.test(VERIFY_RUN_ID ?? "") ||
+    !/^[1-9]\d*$/.test(VERIFY_RUN_ATTEMPT ?? "")
+  )
+    throw Error(
+      "Linux publication needs the exact verification run and attempt admitted by Release",
+    );
   execFileSync(
     "python3",
-    ["enablement/release_gate.py", "--platform", "linux", "--sha", source],
+    [
+      "enablement/release_gate.py",
+      "--platform",
+      "linux",
+      "--sha",
+      source,
+      "--run-id",
+      VERIFY_RUN_ID!,
+      "--run-attempt",
+      VERIFY_RUN_ATTEMPT!,
+    ],
     { stdio: "inherit" },
   );
 }

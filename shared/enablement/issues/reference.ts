@@ -2,9 +2,20 @@ import { spawnSync } from "node:child_process";
 
 export const repository = "tryapparent/apparent";
 export const baseline = "d559dbbd2a3fbf9428593931b526e13b626c8ab9";
+export const acceptedMain = "8bd1c2669a62c41014791a6dd3e85da809f4d446";
 export const referencePattern =
   /^Issue:[ \t]+([A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+)#([1-9][0-9]*)[ \t]*$/i;
 export type Issue = { repository: string; number: number };
+export function acceptedMergeIssue(commit: string): Issue | undefined {
+  const number = new Map([
+    ["6c64c838fab1b70e05da112ffc25336e5c283ab1", 575],
+    ["18c72f8302d54bab24d1729fb75796329a2a0a81", 171],
+    ["f52fab25ee734cb60262387d0c74e8cdfba97d6a", 530],
+    ["f900c3f4677cca561f1336d4cd4b64184032958e", 837],
+    ["91fe2c80dd96cea8bb3285d2c6f1d1b4652bd76b", 1240],
+  ]).get(commit);
+  return number === undefined ? undefined : { repository, number };
+}
 export const reference = (issue: Issue) =>
   `${issue.repository}#${issue.number}`;
 
@@ -25,6 +36,7 @@ export function git(cwd: string, args: string[], input?: string): string {
     input,
     encoding: "utf8",
     maxBuffer: 32 * 1024 * 1024,
+    env: { ...process.env, GIT_NO_REPLACE_OBJECTS: "1", GIT_GRAFT_FILE: "" },
   });
   if (result.error || result.status !== 0)
     throw Error(`Issue traceability cannot read Git metadata (${args[0]})`);

@@ -10,6 +10,12 @@ on:
       release_channel:
         required: true
         type: string
+      verification_run_id:
+        required: true
+        type: string
+      verification_run_attempt:
+        required: true
+        type: string
       tag:
         required: true
         type: string
@@ -66,6 +72,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REQUEST_SHA: ${{ inputs.source_sha || github.sha }}
           RELEASE_CHANNEL: ${{ inputs.release_channel }}
+          VERIFY_RUN_ID: ${{ inputs.verification_run_id }}
+          VERIFY_RUN_ATTEMPT: ${{ inputs.verification_run_attempt }}
           VERIFY_ONLY: ${{ inputs.verify_only && inputs.bridge_commit == '' }}
           BRIDGE_COMMIT: ${{ inputs.bridge_commit }}
         run: node --experimental-strip-types composition/enablement/release/linux.ts
@@ -243,6 +251,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:

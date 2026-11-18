@@ -8,6 +8,8 @@ Stable admission requires an exact main ancestor with the existing Linux/shared 
 
 All Stable artifacts share one `vX.Y.Z` release and source SHA. Both Linux architectures and the Mac lane build in parallel after shared admission. The fork's Mac Preview bundle identity, signing credentials and preview Sparkle channel remain in use. Full native capture suites remain manual.
 
+The Linux packaging workflow receives the coordinator's admitted CI run ID and attempt. It rechecks that exact receipt and current attempt without listing runs. Regular release admission resolves live canonical `refs/heads/main` over Git and proves ancestry in the full-history checkout. Missing objects or a moved verification attempt stop admission. Publication keeps its separate receipt and ancestry checks.
+
 Main dispatch and packaging each serialize with one replaceable pending run. Automatic dispatch coalesces duplicates and older sources against queued and active verified Main requests. Admission can retire an older candidate before allocation when a newer verified request is already queued. Started Linux builds can finish. Stable admission pins its source and version independently of the Main queue.
 
 Mac Main and Stable both prepare frontend output on Linux, then run the same ARM, SDK, signing, notarization and install gates on the selected Mac image. `macos-26` is the default and `macos-15` can be selected as the primary image. The other image runs once when GitHub confirms the primary job was cancelled without a runner. The fallback reuses prepared frontend output and the same producer attempt, so Stable Linux artifacts remain available. The Mac summary reports the wait for both labels when GitHub provides timing metadata.

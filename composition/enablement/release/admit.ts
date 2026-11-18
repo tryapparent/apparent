@@ -80,7 +80,7 @@ export async function admit(request = ""): Promise<void> {
           `actions/workflows/checks.yml/runs?head_sha=${candidate}&branch=main&event=push`,
           "workflow_runs",
         );
-    let accepted = false;
+    let accepted: Run | undefined;
     for (const run of runs) {
       if (verificationRun && String(run.id) !== verificationRun)
         throw Error("Verification run identity mismatch");
@@ -89,7 +89,7 @@ export async function admit(request = ""): Promise<void> {
         "jobs",
       );
       if (admitsCD(run, jobs, repository, candidate, "linux")) {
-        accepted = true;
+        accepted = run;
         break;
       }
     }
@@ -99,7 +99,8 @@ export async function admit(request = ""): Promise<void> {
     }
     appendFileSync(
       process.env.GITHUB_OUTPUT!,
-      `sha=${candidate}\nversion=${version}\ntag=${tag}\nproducer_attempt=${process.env.GITHUB_RUN_ATTEMPT}\n`,
+      `sha=${candidate}\nversion=${version}\ntag=${tag}\nproducer_attempt=${process.env.GITHUB_RUN_ATTEMPT}\n` +
+        `verification_run_id=${accepted.id}\nverification_run_attempt=${accepted.run_attempt}\n`,
     );
     console.log(
       `${channel} candidate ${candidate}, version ${version}; control ${process.env.GITHUB_WORKFLOW_SHA}`,

@@ -23,16 +23,16 @@ export function reusable(evidence: Evidence, tree: string, head: string, run: st
     portable: passed('portable') && covers(evidence.plan, plan), hermes: passed('hermes') && covers(evidence.plan, plan),
     hermes_macos: passed('hermes-macos') && covers(evidence.plan, plan)};
 }
-type Tree = {truncated?: boolean; tree: {path: string; mode: string; type: string; sha: string}[]};
-export function trustedProducer(before: Tree, after: Tree): boolean {
-  if (before.truncated || after.truncated || !Array.isArray(before.tree) || !Array.isArray(after.tree)) return false;
+function trustedProducer(before: string, after: string): boolean {
   // Bind workflow admission, producer/selector/runner code and package scripts.
   // Product source may change; verification definitions may not authenticate themselves.
   const policy = (path: string) => ['.github/', 'enablement/', '.githooks/'].some(prefix => path.startsWith(prefix)) ||
     /(^|\/)(package(?:-lock)?\.json|bun\.lock)$/.test(path);
-  const entries = (tree: Tree) => tree.tree.filter(entry => policy(entry.path))
-    .map(entry => JSON.stringify([entry.path, entry.mode, entry.type, entry.sha])).sort();
-  return JSON.stringify(entries(before)) === JSON.stringify(entries(after)) && entries(before).length > 0;
+  const entries = (commit: string) => git('ls-tree', '-rtz', commit)
+    .split('\0').filter(entry => policy(entry.slice(entry.indexOf('\t') + 1))).sort();
+  const original = entries(before), candidate = entries(after);
+  return original.length > 0 && original.length === candidate.length &&
+    original.every((entry, index) => entry === candidate[index]);
 }
 export function authenticatedSuites(jobs: {name: string; status: string; conclusion: string | null}[], plan: Plan, macPlan: Plan) {
   const passed = new Set(jobs.filter(job => job.status === 'completed' && job.conclusion === 'success').map(job => job.name));
@@ -56,7 +56,10 @@ export function accepted(needs: Needs, required: Record<string, boolean>, reuse:
   return needs.contracts?.result === 'success' && needs.select?.result === 'success' &&
     Object.entries(required).every(([name, needed]) => !needed || reuse[name] === true || needs[name]?.result === 'success');
 }
-const git = (ref: string) => execFileSync('git', ['rev-parse', ref], {encoding: 'utf8'}).trim();
+const git = (...args: string[]) => execFileSync('git', args, {
+  encoding: 'latin1', maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+  env: {...process.env, GIT_NO_REPLACE_OBJECTS: '1', GIT_GRAFT_FILE: ''},
+});
 export async function reuse() {
   const none = {linux: false, macos: false, portable: false, hermes: false, hermes_macos: false};
   if (process.env.GITHUB_EVENT_NAME !== 'push' || process.env.GITHUB_REF !== 'refs/heads/main') return none;
@@ -68,12 +71,10 @@ export async function reuse() {
     return response;
   };
   try {
-    const mainCommit = await (await api('git/commits/'+sha)).json() as any;
-    if (mainCommit.tree?.sha !== git('HEAD^{tree}') || !mainCommit.parents?.[0]?.sha) return none;
-    const baseCommit = await (await api('git/commits/'+mainCommit.parents[0].sha)).json() as any;
-    const before = await (await api('git/trees/'+baseCommit.tree.sha+'?recursive=1')).json() as Tree;
-    const after = await (await api('git/trees/'+mainCommit.tree.sha+'?recursive=1')).json() as Tree;
-    if (!trustedProducer(before,after)) {console.log('Verification definitions changed; fresh main suites required.');return none;}
+    if (!/^[a-f0-9]{40}$/.test(sha) || git('rev-parse', 'HEAD').trim() !== sha ||
+        git('rev-parse', '--is-shallow-repository').trim() !== 'false') return none;
+    const before = git('rev-parse', '--verify', sha+'^1').trim(), tree = git('rev-parse', '--verify', sha+'^{tree}').trim();
+    if (!trustedProducer(before,sha)) {console.log('Verification definitions changed; fresh main suites required.');return none;}
     const prs = await (await api(`commits/${sha}/pulls?per_page=100`)).json() as any[];
     for (const pr of prs.filter(pr => pr.merged_at && pr.merge_commit_sha === sha && pr.base?.repo?.full_name === repo && pr.head?.repo?.full_name === repo)) {
       const runs = await (await api(`actions/workflows/checks.yml/runs?event=pull_request&head_sha=${pr.head.sha}&per_page=20`)).json() as any;
@@ -89,7 +90,7 @@ export async function reuse() {
           const archive = join(directory, 'evidence.zip');
           writeFileSync(archive, Buffer.from(await (await api(`actions/artifacts/${artifact.id}/zip`)).arrayBuffer()));
           const evidence = JSON.parse(execFileSync('unzip', ['-p', archive, 'verified-tree.json'], {encoding: 'utf8', maxBuffer: 1024 * 1024}));
-          const result = reusable(evidence, git('HEAD^{tree}'), pr.head.sha, String(run.id), String(run.run_attempt),
+          const result = reusable(evidence, tree, pr.head.sha, String(run.id), String(run.run_attempt),
             parsePlan(process.env.VERIFICATION_PLAN), parsePlan(process.env.MAC_VERIFICATION_PLAN));
           if (!Object.values(result).some(Boolean)) continue;
           const sourceCommit = await (await api('git/commits/'+evidence.sha)).json() as any;
@@ -114,7 +115,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     appendFileSync(process.env.GITHUB_OUTPUT!, Object.entries(result).map(([key,value]) => `${key}=${value}\n`).join(''));
   } else if (process.argv.includes('--write')) {
     const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH!, 'utf8'));
-    const evidence: Evidence = {schema: 1, tree: git('HEAD^{tree}'), sha: git('HEAD'), head: event.pull_request.head.sha,
+    const evidence: Evidence = {schema: 1, tree: git('rev-parse', 'HEAD^{tree}').trim(), sha: git('rev-parse', 'HEAD').trim(), head: event.pull_request.head.sha,
       run: process.env.GITHUB_RUN_ID!, attempt: process.env.GITHUB_RUN_ATTEMPT!,
       plan: parsePlan(process.env.VERIFICATION_PLAN), macPlan: parsePlan(process.env.MAC_VERIFICATION_PLAN), results: JSON.parse(process.env.CI_NEEDS!)};
     writeFileSync(join(process.env.RUNNER_TEMP!, 'verified-tree.json'), JSON.stringify(evidence));

@@ -47,18 +47,34 @@ HEAD. Deletion-only pushes perform no issue lookup. Unknown/missing baseline or
 shallow history fails with an actionable prerequisite instead of silently skipping.
 Old history outside the baseline's ancestry receives validation too.
 
-A two-parent GitHub-generated merge may omit its trailer. The hook queries the
-canonical repository for the exact commit and verifies its parents and GitHub's
-valid `web-flow` signature. A local merge, copied merge message, or unverified
-signature cannot qualify. The hook still checks the commits on both sides of the
-merge. Squash commits have one parent and still need a trailer.
+The following immutable accepted main merges omitted their trailers: `6c64c838fab1b70e05da112ffc25336e5c283ab1`
+(PR #1437, issue #575), `18c72f8302d54bab24d1729fb75796329a2a0a81` (PR #1436, issue #171),
+`f52fab25ee734cb60262387d0c74e8cdfba97d6a` (PR #1451, issue #530),
+`f900c3f4677cca561f1336d4cd4b64184032958e` (PR #1489, issue #837), and
+`91fe2c80dd96cea8bb3285d2c6f1d1b4652bd76b` (PR #1494, issue #1240).
+`acceptedMergeIssue` records only those exact commit-to-issue associations, recovered from their product commits.
+Include the Issue trailer when merging future PRs. A copied merge message has no association.
 
-Every required trailer is validated, then each distinct referenced issue
-is fetched once per push invocation. Each read has a 20-second process timeout
-and a bounded response, with no retries or stale-cache fallback. Authentication,
-network, not-found, identity and PR-number failures reject the push. Issue state
-may be open or closed. Successful lookup does not authorize closing an issue.
-API stderr and response bodies are omitted from hook diagnostics.
+Other two-parent GitHub-generated merges may omit their trailer only after
+authenticated verification of the exact commit, its parents and GitHub's valid
+web-flow signature. The hook checks the commits on both sides of the merge.
+Squash commits have one parent and still need a trailer.
+
+Every selected commit's trailer or exact merge association is validated. Push
+admission authenticates the live `refs/heads/main` of `tryapparent/apparent`
+and requires its local Git history to contain the fixed, audited issue checkpoint
+`8bd1c2669a62c41014791a6dd3e85da809f4d446`. Git replace refs and grafts are
+ignored. A stale checkout missing the live tip needs a fetch. A main rewrite
+that removes the checkpoint blocks admission and requires a reviewed replacement.
+
+Each distinct issue referenced by a commit outside the checkpoint's ancestry
+gets one fresh API read per push, including commits on main after the checkpoint
+and commits on unrelated branches. Advance the checkpoint only after a fresh audit
+of the added ancestry and issue identities. The push uses no local validation
+cache. Each read has a 20-second process timeout and a bounded response.
+Authentication, network, not-found, identity and PR-number failures reject the
+push. Issue state may be open or closed. Successful lookup does not authorize
+closing an issue. API stderr and response bodies are omitted from hook diagnostics.
 
 Rollout is prepared until parent integration binds an issue and activates the
 reviewed hooks. Existing post-baseline commits without trailers need a deliberate
