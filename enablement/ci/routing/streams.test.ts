@@ -121,12 +121,17 @@ test('pending exact-candidate delivery survives unrelated main changes, but not 
     assert.equal(currentStream('public', candidate, 'HEAD', cwd), true);
     put('capture/desktop/change.ts'); git('add', '.'); git('commit', '-qm', 'unrelated');
     assert.equal(currentStream('public', candidate, 'HEAD', cwd), true);
-    put('AGENTS.md'); put('capture/desktop/docs/new.md'); git('add', '.'); git('commit', '-qm', 'ordinary guidance');
+    put('AGENTS.md'); put('capture/desktop/docs/new.md'); put('public/enablement/docs/notes.md');
+    put('public/site/docs/notes.md'); put('connect/docs/notes.md'); put('CONTRIBUTING.md');
+    git('add', '.'); git('commit', '-qm', 'ordinary guidance');
     // Capture source already changed since candidate; compare with that checkpoint.
     const docsParent = git('rev-parse', 'HEAD^');
     assert.equal(currentStream('capture', docsParent, 'HEAD', cwd), true);
+    assert.equal(currentStream('public', candidate, 'HEAD', cwd), true, 'prose must not supersede pending Public delivery');
+    assert.equal(currentStream('connect', candidate, 'HEAD', cwd), true, 'prose must not supersede pending Connect delivery');
     put('capture/agent/skills/apparent/SKILL.md'); git('add', '.'); git('commit', '-qm', 'embedded instructions');
     assert.equal(currentStream('capture', docsParent, 'HEAD', cwd), false);
+    assert.equal(currentStream('public', candidate, 'HEAD', cwd), false, 'embedded instructions are a Public input');
     git('mv', 'public/site/page.ts', 'capture/desktop/moved.ts'); git('commit', '-qm', 'rename');
     assert.equal(currentStream('public', candidate, 'HEAD', cwd), false);
     git('reset', '--hard', candidate); put('shared/change.ts'); git('add', '.'); git('commit', '-qm', 'shared');

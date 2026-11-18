@@ -55,6 +55,43 @@ test('real selector keeps PR web changes portable and main publication fully ver
   } finally {rmSync(cwd,{recursive:true,force:true});}
 });
 
+test('documentation-only main pushes skip Connect verification and delivery', () => {
+  const cwd = mkdtempSync('/tmp/apparent-dev-connect-docs-');
+  const git = (...args: string[]) => execFileSync('git', args, {cwd, encoding: 'utf8'}).trim();
+  const put = (path: string, text = 'ordinary prose') => {mkdirSync(join(cwd, path, '..'), {recursive: true}); writeFileSync(join(cwd, path), text);};
+  const cli = new URL('./select.ts', import.meta.url).pathname;
+  try {
+    git('init','-q'); git('config','user.name','Synthetic'); git('config','user.email','synthetic@example.invalid');
+    put('connect/web/input.ts', 'export const value = 1;');
+    git('add','.'); git('commit','-qm','base'); const base = git('rev-parse','HEAD');
+    for (const path of ['CONTRIBUTING.md', 'connect/docs/notes.md', 'public/enablement/docs/pages-deploy.md',
+      'record/media/README.md', 'hermes/docs/notes.md', 'shared/ui/actions.md', 'capture/desktop/scripts/mac/README.md'])
+      put(path);
+    git('add','.'); git('commit','-qm','documentation');
+    const run = (range = base) => {
+      const output = join(cwd,'.git','selection'); rmSync(output,{force:true});
+      const result = spawnSync('bun',[cli,'--admit'], {cwd, encoding:'utf8', env:{...process.env,
+        BASE_SHA:range, GITHUB_SHA:git('rev-parse','HEAD'), GITHUB_EVENT_NAME:'push',
+        GITHUB_REF:'refs/heads/main', GITHUB_OUTPUT:output}});
+      assert.equal(result.status,0,result.stderr);
+      return Object.fromEntries(readFileSync(output,'utf8').trim().split('\n').map(line => {
+        const i = line.indexOf('='); return [line.slice(0,i), line.slice(i+1)];
+      }));
+    };
+    const docs = run();
+    assert.equal(docs.native,'false'); assert.equal(docs.portable,'false'); assert.equal(docs.publish,'false');
+    assert.ok(Object.values(JSON.parse(docs.plan)).every(value => value === false));
+    put('connect/web/input.ts', 'export const value = 2;'); git('add','.'); git('commit','-qm','web');
+    const mixed = run();
+    assert.equal(mixed.portable,'true'); assert.equal(mixed.publish,'true');
+    assert.equal(JSON.parse(mixed.plan).browser, true);
+    const web = git('rev-parse','HEAD');
+    put('public/site/public/assets/brand-book/brand-guidelines.md', 'published guidance');
+    git('add','.'); git('commit','-qm','published');
+    assert.equal(run(web).portable,'false', 'a published website input is not a Connect consumer');
+  } finally {rmSync(cwd,{recursive:true,force:true});}
+});
+
 test('Connect automatic entry covers its web, service, native and composed browser inputs', () => {
   const checks = workflow('stream-connect.yml');
   for (const event of ['push', 'pull_request']) {

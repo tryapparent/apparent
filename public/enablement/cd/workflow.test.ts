@@ -5,7 +5,7 @@ import {mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, chmodSync, 
 import {dirname, join} from 'node:path'
 import {tmpdir} from 'node:os'
 import {YAML} from 'bun'
-import {streamPaths} from '../../../enablement/ci/routing/streams.ts'
+import {currentStream, streamPaths} from '../../../enablement/ci/routing/streams.ts'
 import {selectRange} from '../../../enablement/ci/select.ts'
 
 const root = new URL('../../../', import.meta.url)
@@ -97,6 +97,36 @@ test('automatic main and manual deployment share a lock; PR cancellation cannot 
     const expression = workflow.concurrency['cancel-in-progress'].slice(3, -2)
     assert.equal(Function('github', `return (${expression})`)(context({event}).github), event === 'pull_request')
   }
+})
+
+test('ordinary prose skips Public checks while pending website delivery stays current', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'public-docs-'))
+  const git = (...args: string[]) => execFileSync('git', args, {cwd: directory, encoding: 'utf8'}).trim()
+  const put = (path: string, text: string) => {mkdirSync(dirname(join(directory, path)), {recursive: true}); writeFileSync(join(directory, path), text)}
+  try {
+    git('init', '-q'); git('config', 'user.name', 'Synthetic'); git('config', 'user.email', 'synthetic@example.invalid')
+    put('public/site/src/page.tsx', 'before'); git('add', '.'); git('commit', '-qm', 'base')
+    put('public/site/src/page.tsx', 'candidate'); git('add', '.'); git('commit', '-qm', 'candidate')
+    const candidate = git('rev-parse', 'HEAD')
+    for (const path of ['CONTRIBUTING.md', 'AGENTS.md', 'public/site/docs/feature-grid.md',
+      'public/enablement/docs/pages-deploy.md', 'connect/docs/hosted-web.md', 'record/media/README.md',
+      'capture/desktop/scripts/mac/README.md', 'shared/ui/actions.md']) put(path, 'ordinary prose')
+    git('add', '.'); git('commit', '-qm', 'documentation')
+    const docs = git('rev-parse', 'HEAD')
+    assert.equal(selectRange(candidate, docs, directory).public, false, 'prose must not run Public checks')
+    assert.equal(currentStream('public', candidate, docs, directory), true, 'prose must not strand pending delivery')
+    put('public/site/public/assets/brand-book/brand-guidelines.md', 'changed'); git('add', '.'); git('commit', '-qm', 'published')
+    assert.equal(selectRange(docs, git('rev-parse', 'HEAD'), directory).public, true)
+    assert.equal(currentStream('public', candidate, git('rev-parse', 'HEAD'), directory), false)
+    git('reset', '--hard', docs)
+    put('capture/agent/skills/apparent/SKILL.md', 'changed'); git('add', '.'); git('commit', '-qm', 'skill')
+    assert.equal(selectRange(docs, git('rev-parse', 'HEAD'), directory).public, true)
+    assert.equal(currentStream('public', candidate, git('rev-parse', 'HEAD'), directory), false)
+    git('reset', '--hard', docs)
+    put('public/site/src/other.ts', 'changed'); git('add', '.'); git('commit', '-qm', 'website input')
+    assert.equal(selectRange(docs, git('rev-parse', 'HEAD'), directory).public, true)
+    assert.equal(currentStream('public', candidate, git('rev-parse', 'HEAD'), directory), false)
+  } finally {rmSync(directory, {recursive: true, force: true})}
 })
 
 test('Public selection covers shared/mixed/unknown, full history, additions, deletions and both rename sides', () => {

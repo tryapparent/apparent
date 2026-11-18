@@ -165,6 +165,48 @@ test('ordinary prose composes with Linux-only exemptions; shipped instructions a
   }
   for (const paths of [null, []]) assert.equal(needsPlatform(paths), true);
 });
+test('owner prose and repository guidance select no product suites while embedded Markdown does', () => {
+  const prose = ['AGENTS.md', 'CONTRIBUTING.md', 'LICENSE', 'CONTEXT.md', 'capture/AGENTS.md',
+    'capture/desktop/scripts/mac/README.md', 'capture/desktop/scripts/mac/cache.md',
+    'capture/agent/setup/README.md', 'capture/agent/media/README.md', 'agent/enablement/README.md',
+    'record/media/README.md', 'record/storage/enablement/test-audit.md',
+    'connect/tooling/hosting/README.md', 'connect/docs/hosted-web.md',
+    'public/enablement/docs/pages-deploy.md', 'public/site/docs/feature-grid.md',
+    'public/site/brand/README.md', 'hermes/docs/notes.md',
+    'engine/docs/migration.md', 'enablement/ci/README.md', 'enablement/native-build/README.md',
+    'shared/ui/actions.md', 'composition/enablement/release/README.md',
+    'onboarding/enablement/README.md', 'handoff/README.md'];
+  const empty = {root: false, engine: false, desktop: false, client: false, foreground: false,
+    browser: false, service: false, tools: false, hermes: false, public: false, tooling: false, onboarding: false, engineMedia: false};
+  for (const path of prose) {
+    assert.equal(documentationOnlyPath(path), true, path);
+    assert.deepEqual(selectedOwners([path]), [], path);
+    assert.deepEqual(suitePlan([path]), empty, path);
+    assert.deepEqual(select([path]), {public: false, updater: false}, path);
+    assert.equal(needsPlatform([path]), false, path);
+    assert.equal(macDecision([path]).macos, false, path);
+  }
+  const decision = routeDecision(prose);
+  assert.deepEqual(decision.selected, []);
+  assert.ok(Object.values(decision.requiredStreams).every(value => !value));
+  assert.ok(Object.values(decision.publicationStreams).every(value => !value));
+  for (const path of [...publicMarkdown, 'public/site/public/assets/brand-book/brand-guidelines.md',
+    'public/site/public/assets/brand-book/design-system/instructions/design-work.md',
+    'public/site/src/copy.md', 'capture/agent/skills/apparent/SKILL.md',
+    'hermes/README.md', 'connect/client/typescript/README.md',
+    'capture/agent/skills/make-it-apparent/references/solution-survey.md',
+    'hermes/skills/recordings/SKILL.md', 'record/storage/instructions/AGENTS.md'])
+    assert.equal(documentationOnlyPath(path), false, path);
+  // Mixed changes keep the non-documentation input; unknown prose still fails closed.
+  assert.equal(routeDecision(['AGENTS.md', 'capture/desktop/native/Settings.swift']).plan.desktop, true);
+  assert.equal(routeDecision(['CONTRIBUTING.md', 'connect/service/src/worker.ts']).requiredStreams.connect, true);
+  for (const path of ['unknown.md', 'unknown/docs/test.md', 'capture/AGENTS-old.md'])
+    assert.equal(documentationOnlyPath(path), false, path);
+  assert.equal(needsPlatform(['unknown/docs/test.md']), true);
+  for (const name of ['clean', 'verify'])
+    assert.match(workflow('hermes.yml').jobs[name].if, /outputs\.affected != 'false'/, name);
+});
+
 test('Linux drivers select launch-free contracts and Hermes changes select inspection', () => {
   for (const path of linuxDrivers) assert.deepEqual(selectedOwners([path]), ['capture-tools']);
   assert.deepEqual(selectedOwners(['hermes/desktop/controller.ts']), ['hermes']);
