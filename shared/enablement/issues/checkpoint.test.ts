@@ -6,9 +6,8 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fixture } from "./fixture.ts";
 import { validatePush } from "./run.ts";
-import { isAcceptedReleaseCommit } from "./reference.ts";
 
-test("the untrailed release commit requires the exact accepted merge on canonical main", (t) => {
+test("the original trailerless AL2023 commit is accepted only when inherited from canonical main", (t) => {
   const f = fixture(t);
   const commit = "c2a3b6043389a4e825eaae06e2d1c0b732faf0b5";
   const merge = "6c2aadf6cd9fb99c8354f0f7e70fc94607da0866";
@@ -23,12 +22,20 @@ test("the untrailed release commit requires the exact accepted merge on canonica
     join(f.repo, ".git/objects/info/alternates"),
     join(common, "objects") + "\n",
   );
-  assert.equal(isAcceptedReleaseCommit(commit, merge, f.repo), true);
-  assert.equal(isAcceptedReleaseCommit(commit, parent, f.repo), false);
-  assert.equal(isAcceptedReleaseCommit(merge, merge, f.repo), false);
+  process.env.ISSUE_TEST_MAIN = parent;
+  assert.throws(
+    () => validatePush(f.ref(commit), f.repo),
+    new RegExp(commit + ".*needs a final Issue"),
+  );
+  process.env.ISSUE_TEST_MAIN = merge;
+  validatePush(f.ref(commit), f.repo);
+  assert.equal(
+    readFileSync(process.env.ISSUE_TEST_LOG!, "utf8"),
+    "main\nmain\n",
+  );
 });
 
-test("push checks all trailers and validates newly introduced issue identities across branches once", (t) => {
+test("push looks up each issue outside canonical main once across branches", (t) => {
   const f = fixture(t);
   const checkpoint = f.commit(
     "accepted main\n\nIssue: tryapparent/apparent#11",
@@ -55,7 +62,7 @@ test("push checks all trailers and validates newly introduced issue identities a
     .trim()
     .split("\n");
   assert.equal(requests.shift(), "main");
-  assert.deepEqual(requests.sort(), ["12", "13", "14"]);
+  assert.deepEqual(requests.sort(), ["12", "13"]);
   f.runGit("checkout", "-q", "-b", "bad", two);
   const missing = f.commit("missing trailer");
   assert.throws(
@@ -108,9 +115,15 @@ test("main authentication fails closed and divergent history cannot borrow a loc
     delete process.env[name];
   }
   const bad = f.commit("no trailer");
-  process.env.ISSUE_TEST_MAIN = bad;
+  f.runGit("update-ref", "refs/remotes/origin/main", bad);
   assert.throws(
-    () => validatePush(f.ref(bad), f.repo, f.baseline, bad),
+    () =>
+      validatePush(
+        f.ref(bad).replace(/0{40}/, bad),
+        f.repo,
+        f.baseline,
+        checkpoint,
+      ),
     /needs a final Issue/,
   );
 });

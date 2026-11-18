@@ -9,8 +9,6 @@ import {
   primaryIssue,
   parseReference,
   reference,
-  acceptedMergeIssue,
-  isAcceptedReleaseCommit,
 } from "./reference.ts";
 import {
   bind,
@@ -99,10 +97,6 @@ export function validatePush(
     throw Error(
       "Issue traceability needs complete history through the fixed integration baseline; fetch full history before pushing",
     );
-  const commits = git(cwd, ["rev-list", ...heads, "--not", grandfather, "--"])
-    .trim()
-    .split("\n")
-    .filter(Boolean);
   const main = canonicalMain(cwd);
   try {
     let status = checkpointStatus(cwd, grandfather, checkpoint, main);
@@ -120,24 +114,19 @@ export function validatePush(
       `Cannot establish the accepted issue checkpoint on canonical main. Check canonical GitHub access, local history and whether main was rewritten. ${error instanceof Error ? error.message : ""}`,
     );
   }
-  const introduced = new Set(
-    git(cwd, ["rev-list", ...heads, "--not", checkpoint, "--"])
-      .trim()
-      .split("\n"),
-  );
+  const commits = git(cwd, ["rev-list", ...heads, "--not", main, "--"])
+    .trim()
+    .split("\n")
+    .filter(Boolean);
   const issues = new Map<string, ReturnType<typeof parseReference>>();
   for (const commit of commits) {
     let issue;
     try {
-      issue =
-        primaryIssue(git(cwd, ["show", "-s", "--format=%B", commit]), cwd) ??
-        acceptedMergeIssue(commit);
-      if (
-        !issue &&
-        (isAcceptedReleaseCommit(commit, main, cwd) ||
-          isGitHubMerge(commit, cwd))
-      )
-        continue;
+      issue = primaryIssue(
+        git(cwd, ["show", "-s", "--format=%B", commit]),
+        cwd,
+      );
+      if (!issue && isGitHubMerge(commit, cwd)) continue;
     } catch (error) {
       throw Error(
         `Commit ${commit}: ${error instanceof Error ? error.message : error}`,
@@ -145,13 +134,13 @@ export function validatePush(
     }
     if (!issue)
       throw Error(
-        `Commit ${commit} needs a final Issue: tryapparent/apparent#123 trailer. Existing ancestry through ${grandfather} is grandfathered`,
+        `Commit ${commit} is outside canonical main and needs a final Issue: tryapparent/apparent#123 trailer`,
       );
-    if (introduced.has(commit)) issues.set(reference(issue), issue);
+    issues.set(reference(issue), issue);
   }
   for (const issue of issues.values()) verifyIssue(issue, cwd);
   console.error(
-    `issue-traceability: validated ${commits.length} commit trailers and ${issues.size} distinct GitHub issues beyond ${checkpoint}`,
+    `issue-traceability: checked ${commits.length} commits and validated ${issues.size} distinct GitHub issues outside canonical main ${main}`,
   );
 }
 
