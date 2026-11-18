@@ -36,9 +36,16 @@ Rank categories by cumulative tool time and inspect `shortToolSeconds` and
 `shortCompletedCalls` for frequent calls below five minutes. Fingerprints identify
 repeat wrapper intent, **not redundant work**: inspect the owning thread's changed
 inputs, results and acceptance before recommending omitted verification. Batches
-count once; category matching is heuristic. Nested shell scripts and subprocesses
-are not inventoried. Asynchronous launches are excluded from the short-call
-subtotal because a quick return does not establish a quick build. Poll/wait time
+count once; category matching is heuristic. A standalone `timeout` launch of a
+single-quoted `bash -c` loop over literal numeric IDs is classified as one CI
+observer when its only work is `gh run watch` with a literal repository and
+polling interval and the loop aggregates the exit status. The matcher accepts
+the observed flag order and optional literal `/tmp` log redirection. Dynamic
+arguments and mixed or arbitrary nested shell bodies are outside this rule.
+Attribution uses the existing exact process and cell links. Individual jobs and
+nested shell phases have no separate timing rows. Asynchronous launches are
+excluded from the short-call subtotal because a quick return does not establish
+a quick build. Poll/wait time
 is separate; it can overlap the same build and is not additive CPU work.
 `correlatedProcesses` joins unbatched launches to terminal polls when a numeric
 session ID survives in both records. Its observed span is an upper bound that
