@@ -1,6 +1,6 @@
 {
   "name": "@apparent/onboarding",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "exports": {
     "./practice": {
@@ -34,7 +34,7 @@
   },
   "files": ["dist"],
   "scripts": {
-    "test": "node --experimental-strip-types --test practice/*.test.ts",
+    "test": "node --experimental-strip-types --test practice/*.test.ts host/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "tsc -p tsconfig.build.json",
     "check": "node --experimental-strip-types enablement/ci/check.ts"

@@ -6,6 +6,7 @@ mod build_version { include!("enablement/build_version.rs"); }
 fn main() {
     build_version::emit();
     compile_record_shortcut_policy();
+    compile_onboarding_entry_policy();
     println!("cargo:rerun-if-env-changed=APPARENT_POSTHOG_TOKEN");
     println!("cargo:rerun-if-env-changed=APPARENT_POSTHOG_RELEASE_ID");
     let release_id = std::env::var("APPARENT_POSTHOG_RELEASE_ID").unwrap_or_default();
@@ -62,6 +63,24 @@ fn compile_record_shortcut_policy() {
     let output = PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo output directory"));
     std::fs::write(output.join("record_shortcut_policy.rs"), generated.stdout)
         .expect("write generated Record shortcut policy");
+}
+
+fn compile_onboarding_entry_policy() {
+    let generator = "onboarding/enablement/ci/entry-policy.ts";
+    println!("cargo:rerun-if-changed={generator}");
+    println!("cargo:rerun-if-changed=onboarding/host/entry-policy.ts");
+    let generated = Command::new("node")
+        .args(["--experimental-strip-types", generator])
+        .output()
+        .expect("Node 22 is required to compile Onboarding entry policy");
+    assert!(
+        generated.status.success(),
+        "Unable to compile Onboarding entry policy: {}",
+        String::from_utf8_lossy(&generated.stderr),
+    );
+    let output = PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo output directory"));
+    std::fs::write(output.join("onboarding_entry_policy.rs"), generated.stdout)
+        .expect("write generated Onboarding entry policy");
 }
 
 /// Keep runtime libraries AND dlopen-only CPU modules together: transcribe.cpp's

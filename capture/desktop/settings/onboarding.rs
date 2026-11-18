@@ -51,6 +51,7 @@ impl Permission {
     ];
 
     /// The tour's checklist: the required ones, then Speech Recognition where it's asked for.
+    #[cfg(test)]
     pub const TOUR: [Permission; 4] = [
         Permission::ScreenRecording,
         Permission::Microphone,
@@ -205,6 +206,7 @@ pub enum Input {
     ShortcutChosen,
     /// A trial press began; confirmation waits for the normal key-release path.
     ShortcutTrialStarted,
+    SkipShortcutTrial,
     /// The global shortcut requested a capture (not the menu or a timed CLI recording).
     ShortcutTriggered,
     /// The window was closed.
@@ -222,7 +224,6 @@ pub enum Input {
         now_ms: u64,
     },
     /// ⌥⇧S was pressed while a required permission is off.
-    Blocked,
     CaptureSelecting,
     CaptureStarted,
     CaptureEnded {
@@ -245,6 +246,7 @@ pub enum Effect {
     Hide,
     Show,
     Close,
+    Defer,
     /// Close the tour and open the Settings window.
     Settings,
     /// Open the existing recorder without dismissing the tour.
@@ -332,8 +334,10 @@ impl Flow {
             ShortcutPolicy::Record
         } else if self.step == Step::Shortcut && self.shortcut_chosen && !self.shortcut_editing {
             ShortcutPolicy::Trial
-        } else {
+        } else if self.shortcut_editing {
             ShortcutPolicy::Block
+        } else {
+            ShortcutPolicy::Record
         }
     }
     /// Opt into the first-capture onboarding experiment, restoring durable milestones.
@@ -341,11 +345,9 @@ impl Flow {
         self.first_capture_required = required && self.mode == Mode::Tour;
         self.shortcut_chosen = chosen;
         self.shortcut_tested = chosen && (tested || completed);
-        self.first_capture_completed = chosen && completed;
+        self.first_capture_completed = completed;
         if self.first_capture_required && self.step.position() >= Step::Shortcut.position() {
-            self.step = if !chosen || !self.shortcut_tested {
-                Step::Shortcut
-            } else if self.first_capture_completed {
+            self.step = if self.first_capture_completed {
                 Step::Done
             } else if self.step == Step::Done {
                 Step::TryIt
@@ -358,6 +360,7 @@ impl Flow {
     /// The tour from `start`. Walking forward passes the permissions screen when everything on
     /// it works, and a later step never shows before it's done. A tour resumed on the
     /// permissions screen (after a relaunch) stays there, so the window comes back where it was.
+    #[cfg(test)]
     pub fn tour(start: Step, grants: Option<Grants>) -> Self {
         let mut flow = Self::new(Mode::Tour, start, Permission::TOUR.to_vec(), grants);
         flow.step = if start.position() > Step::Permissions.position()
@@ -370,6 +373,12 @@ impl Flow {
         } else {
             flow.forward_from(start)
         };
+        flow
+    }
+
+    pub fn coaching(start: Step, grants: Option<Grants>) -> Self {
+        let mut flow = Self::new(Mode::Tour, start, Vec::new(), grants);
+        flow.step = flow.forward_from(start);
         flow
     }
 
@@ -456,12 +465,14 @@ impl Flow {
                 }
                 Effect::None
             }
+            Input::SkipShortcutTrial if self.mode == Mode::Tour && self.step == Step::Shortcut
+                && !self.shortcut_editing => self.advance(),
+            Input::SkipShortcutTrial => Effect::None,
             Input::ShortcutTriggered => {
                 if self.shortcut_policy() == ShortcutPolicy::Trial {
                     self.shortcut_tested = true;
                 }
-                self.shortcut_pending = self.step == Step::TryIt
-                    && (!self.first_capture_required || (self.shortcut_chosen && self.shortcut_tested));
+                self.shortcut_pending = self.step == Step::TryIt;
                 Effect::None
             }
             Input::Continue => self.primary(),
@@ -470,6 +481,7 @@ impl Flow {
                 self.shortcut_editing = false;
                 Effect::None
             }
+            Input::Later | Input::Closed if self.mode == Mode::Tour => Effect::Defer,
             Input::Later | Input::Closed => Effect::Close,
             Input::Settings if self.step == Step::Done => Effect::Settings,
             Input::Settings => Effect::None,
@@ -499,12 +511,6 @@ impl Flow {
             Input::Grants { grants, now_ms } => {
                 self.grants = Some(grants);
                 self.tick(now_ms)
-            }
-            Input::Blocked => {
-                if self.mode == Mode::Tour && self.step.position() < Step::Permissions.position() {
-                    self.step = Step::Permissions;
-                }
-                Effect::Show
             }
             Input::CaptureSelecting => Effect::None,
             Input::CaptureStarted if !self.hidden => {
@@ -805,6 +811,8 @@ pub struct Progress {
     /// The tour finished (or was dismissed in the legacy flow); it won't open by itself again.
     #[serde(default)]
     pub seen: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub deferred: bool,
     /// Where the tour picks up at the next launch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resume: Option<Step>,
@@ -843,7 +851,7 @@ impl Progress {
         // Earlier previews tied setup completion to every guided-capture lesson.
         // A saved successful shortcut trial already completed setup; do not
         // re-enrol that user merely because they closed the optional coaching.
-        if self.tour_revision <= CURRENT_TOUR && !self.seen
+        if self.tour_revision <= CURRENT_TOUR && !self.seen && !self.deferred
             && matches!(self.resume, Some(Step::Shortcut | Step::TryIt))
             && self.shortcut_chosen && self.shortcut_tested_for.is_some()
         {
@@ -854,7 +862,7 @@ impl Progress {
         }
         if self.tour_revision >= CURRENT_TOUR { return false; }
         self.tour_revision = CURRENT_TOUR;
-        if !self.seen {
+        if !self.seen && !self.deferred {
             self.resume = Some(Step::Welcome);
             self.tutorial = None;
             self.shortcut_chosen = false;
@@ -867,7 +875,7 @@ impl Progress {
     /// Start the Settings replay from the beginning while retaining permission history,
     /// relaunch throttling and the user's actual shortcut/pen/configuration choices.
     pub fn reset_for_replay(&mut self) {
-        self.seen = false;
+        self.deferred = true;
         self.resume = Some(Step::Welcome);
         self.tutorial = None;
         self.shortcut_chosen = false;
@@ -880,10 +888,25 @@ impl Progress {
         if flow.mode == Mode::Fix {
             return;
         }
-        self.seen = self.seen || !flow.first_capture_required || flow.first_capture_completed
-            || (flow.shortcut_chosen && flow.shortcut_tested && !flow.shortcut_editing
-                && matches!(flow.step, Step::Shortcut | Step::TryIt | Step::Done));
-        self.resume = if self.seen { None } else { flow.resume_point() };
+        if flow.step == Step::Done {
+            self.seen = true;
+            self.resume = None;
+        } else {
+            self.resume = flow.resume_point();
+        }
+    }
+
+    pub fn dismiss(&mut self, flow: &Flow) {
+        self.leave(flow);
+        self.deferred = true;
+    }
+
+    pub(crate) fn recording_started() {
+        let mut progress = Self::load();
+        if !progress.seen {
+            progress.seen = true;
+            progress.save();
+        }
     }
     pub fn load() -> Self {
         Self::load_from(&crate::shared::handoff::default_config_path())
@@ -905,7 +928,7 @@ impl Progress {
     /// Replace only this schema's leaves through the shared durable writer.
     /// Future onboarding fields and unrelated config retain their exact values.
     pub fn save_to(&self, path: &Path) -> anyhow::Result<()> {
-        const KEYS: [&str; 10] = ["tourRevision", "seen", "resume", "granted", "relaunchedAt",
+        const KEYS: [&str; 11] = ["tourRevision", "seen", "deferred", "resume", "granted", "relaunchedAt",
             "reopenFix", "tutorial", "shortcutChosen", "shortcutTestedFor", "firstCaptureCompleted"];
         let value = serde_json::to_value(self)?;
         crate::shared::handoff::update_config_in(path, |config| {
@@ -941,7 +964,6 @@ impl Progress {
         self.relaunched_at = Some(now_ms);
         match resume {
             Some(step) => {
-                self.seen = false;
                 self.resume = Some(step);
             }
             None => self.reopen_fix = true,
@@ -966,16 +988,16 @@ pub fn unix_ms() -> u64 {
 /// What opens at launch: the tour until it's been seen (resuming where it was left), else a fix
 /// that was open when Apparent relaunched itself, else the permissions screen when a required
 /// permission that was granted once is gone, else nothing.
-pub fn launch_plan(progress: &Progress, grants: &Grants) -> Option<Flow> {
-    if !progress.seen {
-        let start = progress.resume.unwrap_or(Step::Welcome);
-        return Some(Flow::tour(start, Some(grants.clone())));
+enum Launch { Quiet, Tour, Repair }
+
+include!(concat!(env!("OUT_DIR"), "/onboarding_entry_policy.rs"));
+
+pub fn launch_plan(progress: &Progress, grants: &Grants, offer_tour: bool) -> Option<Flow> {
+    match launch_intent(progress.seen, progress.deferred, progress.reopen_fix, offer_tour) {
+        Launch::Quiet => None,
+        Launch::Tour => Some(Flow::coaching(progress.resume.unwrap_or(Step::Welcome), Some(grants.clone()))),
+        Launch::Repair => Some(Flow::fix(vec![Permission::ScreenRecording], Some(grants.clone()))),
     }
-    let lost = Permission::REQUIRED
-        .into_iter()
-        .any(|p| progress.granted.contains(&p) && !grants.granted(p));
-    (progress.reopen_fix || lost)
-        .then(|| Flow::fix(Permission::REQUIRED.to_vec(), Some(grants.clone())))
 }
 
 /// From the welcome window's helper process and the permission poller.

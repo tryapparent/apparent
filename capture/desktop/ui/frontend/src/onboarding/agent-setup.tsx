@@ -3,6 +3,7 @@ import {Button} from '@apparent/ui/button';
 import agentArt from '../../../../assets/onboarding/agents-transparent.png';
 function AgentArt({cloud=false}:{cloud?:boolean}) {return <span aria-hidden="true" className={`native-agent-art ${cloud?'cloud':'local'}`} style={{backgroundImage:`url(${agentArt})`}}/>;}
 import {useConnectFlow, type ConnectBridge} from '../connect/flow';
+import { TourAction } from '../../../../../../onboarding/renderer/tour-actions';
 
 const bridge: ConnectBridge = {
   read: () => window.nativeOnboarding?.readConnect() ?? Promise.resolve({status:'disconnected'}),
@@ -10,7 +11,7 @@ const bridge: ConnectBridge = {
   close: () => window.nativeOnboarding?.closeConnect(),
 };
 
-export function AgentSetup({onContinue}:{onContinue:()=>Promise<void>}) {
+export function AgentSetup({onContinue,onLater}:{onContinue:()=>Promise<void>;onLater:()=>Promise<void>}) {
   const [page,setPage]=useState<'agent'|'help'|'connect'>('agent');
   const content=useRef<HTMLDivElement>(null);
   useEffect(()=>{const heading=content.current?.querySelector('h1');if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true});}},[page]);
@@ -24,6 +25,7 @@ export function AgentSetup({onContinue}:{onContinue:()=>Promise<void>}) {
       <div className="native-agent-explanation"><h2>No, I send it files or links</h2><p>Connect <strong className="native-brand-name">apparent</strong> for an agent in a browser or on another computer.</p><Button variant="outline" onClick={()=>setPage('connect')}>Up in the cloud →</Button></div>
       <Button variant="ghost" onClick={()=>setPage('agent')}>Back</Button></>}
     {page==='connect'&&<ConnectSetup onContinue={onContinue}/>}
+    <TourAction action="later" onAction={onLater}/>
   </div>;
 }
 

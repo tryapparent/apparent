@@ -618,7 +618,7 @@ struct OnboardingView: View {
     case "shortcut": ("Choose your shortcut", state.firstCaptureRequired
       ? (state.shortcutChosen
           ? (state.shortcutTested ? "Your shortcut works. Continue to start your first capture." : "Press your shortcut once, then release the keys. This check will not record.")
-          : "Choose a key combination and press it here. You will use it to start and finish recordings.")
+          : "Use \(s) to start and finish recordings. You can also choose a different shortcut.")
       : state.shortcutEditing
       ? (model.shortcutEditor?.recording == true
           ? "Press the new shortcut now. Esc cancels; Continue keeps the current one."
@@ -632,8 +632,7 @@ struct OnboardingView: View {
         switch state.step {
         case "try-it": TryArt(shortcut: s)
         case "shortcut":
-          if !state.firstCaptureRequired || state.shortcutChosen { Keycaps(shortcut: s, litMods: true, size: 52) }
-          else { Text("No shortcut selected").font(OnboardingBrand.font(18)) }
+          Keycaps(shortcut: s, litMods: true, size: 52)
         case "done": DoneArt()
         default: brandWordmark
         }
@@ -679,6 +678,7 @@ struct OnboardingView: View {
             model.send(model.shortcutEditor?.externallyManaged == true ? "use-desktop-shortcut" : "change-shortcut")
           }
             .padding(.top, 18)
+          QuietButton(title: "Skip shortcut practice") { model.send("skip-shortcut-trial") }
         }
       }
       if state.step == "try-it" {

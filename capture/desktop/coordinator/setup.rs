@@ -485,14 +485,17 @@ impl ApparentCoordinator {
                     return;
                 }
                 let mut progress = Progress::load();
-                progress.reset_for_replay();
-                if let Err(error) = progress.save_to(&crate::shared::handoff::default_config_path()) {
-                    let message = format!("Could not save welcome tour progress: {error:#}");
-                    apparent_log(&message);
-                    if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some(message); }
-                    return;
+                let step = progress.resume.unwrap_or(Step::Welcome);
+                if progress.resume.is_none() {
+                    progress.reset_for_replay();
+                    if let Err(error) = progress.save_to(&crate::shared::handoff::default_config_path()) {
+                        let message = format!("Could not save welcome tour progress: {error:#}");
+                        apparent_log(&message);
+                        if let Ok(mut status) = CAPTURE_STATUS.lock() { *status = Some(message); }
+                        return;
+                    }
                 }
-                self.open_onboarding(Flow::tour(Step::Welcome, self.grants.clone()));
+                self.open_onboarding(Flow::coaching(step, self.grants.clone()));
             }
             Effect::Relaunch => {
                 if self.refuse_capture_restart() { return; }
@@ -573,7 +576,6 @@ impl ApparentCoordinator {
         if self.lab {
             return true;
         }
-        if self.setup_blocks_capture() { return false; }
         let microphone = crate::capture::engine::runtime::audio::mic::enabled();
         let missing = self.missing_to_record(microphone);
         if missing.is_empty() {
@@ -636,24 +638,18 @@ impl ApparentCoordinator {
     }
 
     pub fn tick_gate(&mut self) {
-        use crate::capture::desktop::settings::onboarding::{Flow, Input, Mode, Permission};
+        use crate::capture::desktop::settings::onboarding::Flow;
         let Some(asks) = self.gate.tick(crate::capture::engine::runtime::modifier_flags() != 0) else {
             return;
         };
-        let required = asks.iter().any(|p| p.required());
-        match self.onboarding.as_mut() {
-            Some(session) if session.mode() == Mode::Tour && required => {
-                session.input(Input::Blocked);
-            }
-            _ => {
-                let asks = if required {
-                    Permission::REQUIRED.to_vec()
-                } else {
-                    asks
-                };
-                self.open_onboarding(Flow::fix(asks, self.grants.clone()));
+        if let Some(session) = &self.onboarding
+            && session.mode() == crate::capture::desktop::settings::onboarding::Mode::Tour
+        {
+            if let Err(error) = session.dismiss() {
+                apparent_log(format!("Could not save paused tour before repairing permissions: {error:#}"));
             }
         }
+        self.open_onboarding(Flow::fix(asks, self.grants.clone()));
     }
 
     fn onboarding_event(&mut self, event: crate::capture::desktop::settings::onboarding::Event, cx: &mut Context<Self>) {
@@ -666,7 +662,9 @@ impl ApparentCoordinator {
                 self.note_grants(&grants);
                 let mut progress = Progress::load();
                 if progress.prepare_current_tour() { progress.save(); }
-                let plan = crate::capture::desktop::settings::onboarding::launch_plan(&progress, &grants);
+                let plan = crate::capture::desktop::settings::onboarding::launch_plan(
+                    &progress, &grants, crate::shared::handoff::experiment("onboardingFirstCapture"),
+                );
                 if std::mem::take(&mut progress.reopen_fix) {
                     progress.save();
                 }
@@ -803,6 +801,16 @@ impl ApparentCoordinator {
                 }
                 self.onboarding = None;
             }
+            Effect::Defer => {
+                if let Some(session) = self.onboarding.as_ref()
+                    && let Err(error) = session.dismiss()
+                {
+                    apparent_log(format!("Could not save deferred onboarding: {error:#}"));
+                    return;
+                }
+                self.cancel_onboarding_editor();
+                self.onboarding = None;
+            }
             Effect::Relaunch { resume } => {
                 if self.refuse_capture_restart() { return; }
                 self.cancel_onboarding_editor();
@@ -867,31 +875,10 @@ impl ApparentCoordinator {
         }
     }
 
-    fn onboarding_shortcut_policy(&mut self) -> crate::capture::desktop::settings::onboarding::ShortcutPolicy {
-        use crate::capture::desktop::settings::onboarding::{Flow, Progress, ShortcutPolicy, Step};
-        if self.lab { return ShortcutPolicy::Record; }
-        if let Some(session) = self.onboarding.as_ref() { return session.shortcut_policy(); }
-        if !crate::shared::handoff::experiment("onboardingFirstCapture") { return ShortcutPolicy::Record; }
-        if self.onboarding.is_none() {
-            let mut progress = Progress::load();
-            if progress.prepare_current_tour() { progress.save(); }
-            if !progress.seen {
-                self.open_onboarding(Flow::tour(progress.resume.unwrap_or(Step::Welcome), self.grants.clone()));
-                return ShortcutPolicy::Block;
-            }
-        }
-        self.onboarding.as_ref().map_or(ShortcutPolicy::Record, |s| s.shortcut_policy())
-    }
-
-    fn setup_blocks_capture(&mut self) -> bool {
+    fn onboarding_shortcut_policy(&self) -> crate::capture::desktop::settings::onboarding::ShortcutPolicy {
         use crate::capture::desktop::settings::onboarding::ShortcutPolicy;
-        if self.lab { return false; }
-        let blocked = self.onboarding_shortcut_policy() != ShortcutPolicy::Record
-            || self.onboarding.as_ref().is_some_and(|s| !s.allows_capture_start());
-        if blocked {
-            if let Some(session) = self.onboarding.as_mut() { session.show(); }
-        }
-        blocked
+        if self.lab { return ShortcutPolicy::Record; }
+        self.onboarding.as_ref().map_or(ShortcutPolicy::Record, |s| s.shortcut_policy())
     }
 
     fn consume_setup_shortcut(&mut self) -> bool {

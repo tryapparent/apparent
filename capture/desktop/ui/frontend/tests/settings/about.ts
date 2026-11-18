@@ -59,7 +59,7 @@ test('installed About projects parent state and bounds actions', async () => {
       'the old channel offer is dismissed before changing the persisted preference');
     await page.keyboard.press('Escape');
     await application.evaluate(({ BrowserWindow }, value) => BrowserWindow.getAllWindows()[0].webContents.send('apparent:about-state', value),
-      {...state, updateChannel: 'stable', updateCheck: {checking: false, result: null}});
+      {...state, resumeTour: true, updateChannel: 'stable', updateCheck: {checking: false, result: null}});
     await expect(channel).toHaveValue('stable');
     for (const width of [720, 640]) {
       await application.evaluate(({BrowserWindow}, width) => { const window = BrowserWindow.getAllWindows()[0]; window.setResizable(true); window.setSize(width, 530); }, width);
@@ -74,6 +74,12 @@ test('installed About projects parent state and bounds actions', async () => {
         if (process.env.APPARENT_SETTINGS_PROOF) {
           await fs.mkdir(process.env.APPARENT_SETTINGS_PROOF, {recursive: true});
           await page.screenshot({animations: 'disabled', path: path.join(process.env.APPARENT_SETTINGS_PROOF, `channel-${width}-${colorScheme}.png`)});
+        }
+        const resume = page.getByRole('button', { name: 'Resume setup', exact: true });
+        await resume.focus();
+        await expect(resume).toBeFocused();
+        if (process.env.APPARENT_SETTINGS_PROOF) {
+          await page.screenshot({animations: 'disabled', path: path.join(process.env.APPARENT_SETTINGS_PROOF, `resume-${width}-${colorScheme}.png`)});
         }
       }
     }

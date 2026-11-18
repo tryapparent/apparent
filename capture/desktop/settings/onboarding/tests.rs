@@ -314,29 +314,19 @@ mod tests {
         assert_eq!(s.action("practice-finish"),Effect::None);assert!(!s.flow.first_capture_completed);
     }
     #[test]
-    fn completed_shortcut_setup_does_not_reopen_for_an_unfinished_capture_lesson() {
+    fn deferring_shortcut_setup_keeps_the_step_and_stops_startup() {
         let mut progress = Progress::default();
         let mut flow = Flow::tour(Step::Shortcut, Some(grants(&Permission::REQUIRED)))
             .with_first_capture(true, false, false, false);
-        assert_eq!(flow.on(Input::Closed), Effect::Close);
-        progress.leave(&flow);
+        assert_eq!(flow.on(Input::Closed), Effect::Defer);
+        progress.dismiss(&flow);
         assert!(!progress.seen);
+        assert!(progress.deferred);
         assert_eq!(progress.resume, Some(Step::Shortcut));
-        flow.on(Input::ShortcutChosen);
-        flow.on(Input::ShortcutTrialStarted);
+        assert!(launch_plan(&progress, &grants(&Permission::REQUIRED), true).is_none());
+        assert_eq!(flow.on(Input::SkipShortcutTrial), Effect::None);
+        assert_eq!(flow.step(), Step::TryIt);
         assert!(!flow.view().shortcut_tested);
-        flow.on(Input::ShortcutTriggered);
-        progress.leave(&flow);
-        assert!(progress.seen, "quitting immediately after the trial must not repeat setup");
-        assert_eq!(progress.resume, None);
-        assert!(launch_plan(&progress, &grants(&Permission::REQUIRED)).is_none());
-        flow.on(Input::Continue);
-        assert_eq!(flow.on(Input::Later), Effect::Close);
-        progress.leave(&flow);
-        assert!(progress.seen);
-        assert_eq!(progress.resume, None);
-        assert!(!progress.first_capture_completed);
-        assert!(launch_plan(&progress, &grants(&Permission::REQUIRED)).is_none());
         flow.on(Input::ShortcutTriggered);
         flow.on(Input::CaptureStarted);
         flow.on(Input::CaptureEnded { completed: true });
@@ -349,15 +339,16 @@ mod tests {
     fn first_capture_resume_rechecks_milestones_and_preserves_legacy_and_repairs() {
         let ready = Some(grants(&Permission::REQUIRED));
         let missing = Flow::tour(Step::TryIt, ready.clone()).with_first_capture(true, false, false, false);
-        assert_eq!(missing.step(), Step::Shortcut);
+        assert_eq!(missing.step(), Step::TryIt);
         let unfinished = Flow::tour(Step::Done, ready.clone()).with_first_capture(true, true, true, false);
         assert_eq!(unfinished.step(), Step::TryIt);
         let completed = Flow::tour(Step::TryIt, ready.clone()).with_first_capture(true, true, true, true);
         assert_eq!(completed.step(), Step::Done);
         let legacy = Flow::tour(Step::Shortcut, ready.clone()).with_first_capture(false, false, false, false);
         let mut progress = Progress::default();
-        progress.leave(&legacy);
-        assert!(progress.seen, "the default flow still allows dismissal");
+        progress.dismiss(&legacy);
+        assert!(progress.deferred);
+        assert!(!progress.seen);
         let repair = Flow::fix(Permission::REQUIRED.to_vec(), ready).with_first_capture(true, false, false, false);
         assert!(!repair.view().first_capture_required);
         let before = progress.clone();
@@ -386,7 +377,7 @@ mod tests {
     fn shortcut_trial_is_not_a_capture_and_changing_keys_requires_a_new_trial() {
         let mut flow=Flow::tour(Step::Shortcut,Some(grants(&Permission::REQUIRED)))
             .with_first_capture(true,false,false,false);
-        assert_eq!(flow.shortcut_policy(),ShortcutPolicy::Block);
+        assert_eq!(flow.shortcut_policy(),ShortcutPolicy::Record);
         flow.on(Input::ShortcutTriggered);
         assert!(!flow.view().shortcut_tested);
         flow.on(Input::ShortcutChosen);
@@ -413,13 +404,13 @@ mod tests {
     }
 
     #[test]
-    fn resumed_untried_shortcut_returns_to_its_trial_and_early_pages_block_capture() {
+    fn resumed_optional_practice_keeps_its_step_and_early_pages_allow_capture() {
         for step in [Step::Welcome,Step::HowItWorks,Step::Permissions] {
             let flow=Flow::tour(step,None).with_first_capture(true,false,false,false);
-            assert_eq!(flow.shortcut_policy(),ShortcutPolicy::Block);
+            assert_eq!(flow.shortcut_policy(),ShortcutPolicy::Record);
         }
         let untried=Flow::tour(Step::TryIt,None).with_first_capture(true,true,false,false);
-        assert_eq!(untried.step(),Step::Shortcut);
+        assert_eq!(untried.step(),Step::TryIt);
         let tested=Flow::tour(Step::TryIt,None).with_first_capture(true,true,true,false);
         assert_eq!(tested.step(),Step::TryIt);
         let completed=Flow::tour(Step::TryIt,None).with_first_capture(true,true,false,true);
@@ -596,10 +587,10 @@ mod tests {
             tutorial: Some(Tutorial::Watched),
             ..Progress::default()
         };
-        let flow = launch_plan(&progress, &grants(&[]))
+        let flow = launch_plan(&progress, &grants(&[]), true)
             .expect("the tour")
             .with_tutorial(progress.tutorial);
-        assert_eq!(flow.step(), Step::Permissions);
+        assert_eq!(flow.step(), Step::Shortcut);
         assert_eq!(flow.view().tutorial, Some(Tutorial::Watched));
         let json = serde_json::to_value(flow.view()).unwrap();
         assert_eq!(json["tutorial"], "watched");
@@ -814,9 +805,9 @@ mod tests {
         };
         progress.relaunching(None, 42);
         assert!(progress.reopen_fix && progress.seen);
-        let flow = launch_plan(&progress, &grants(&[ScreenRecording, Microphone])).expect("fix");
+        let flow = launch_plan(&progress, &grants(&[ScreenRecording, Microphone]), true).expect("fix");
         assert_eq!((flow.mode(), flow.step()), (Mode::Fix, Step::Permissions));
-        assert_eq!(rows(&flow), Permission::REQUIRED);
+        assert_eq!(rows(&flow), [ScreenRecording]);
     }
 
     #[test]
@@ -845,35 +836,17 @@ mod tests {
     }
 
     #[test]
-    fn after_either_kind_of_relaunch_the_tour_resumes_on_the_permissions_screen() {
+    fn legacy_permission_resume_enters_coaching_without_requesting_permissions() {
         let mut progress = Progress::default();
         progress.relaunching(Some(Step::Permissions), 7);
-        assert_eq!(progress.resume, Some(Step::Permissions));
-        assert!(!progress.seen);
-        let fresh = grants(&[ScreenRecording]);
-        let flow = launch_plan(&progress, &fresh).expect("the tour");
-        assert_eq!((flow.mode(), flow.step()), (Mode::Tour, Step::Permissions));
-        let view = flow.view();
-        assert_eq!(view.rows[0].status, Status::Granted);
-        assert!(!view.rows[0].reopening && !view.rows[0].relaunch);
-        assert_eq!(
-            view.rows.iter().find(|r| r.status != Status::Granted).map(|r| r.permission),
-            Some(Microphone)
-        );
-        let progress = Progress {
-            resume: Flow::tour(Step::Permissions, Some(grants(&[]))).resume_point(),
-            ..Progress::default()
-        };
-        assert_eq!(progress.relaunched_at, None);
-        let flow = launch_plan(&progress, &fresh).expect("the tour");
-        assert_eq!((flow.mode(), flow.step()), (Mode::Tour, Step::Permissions));
-        let mut flow = launch_plan(&progress, &grants(&ALL)).expect("the tour");
-        assert_eq!(flow.step(), Step::Permissions);
-        assert!(flow.view().ready);
-        flow.on(Input::Continue);
-        assert_eq!(flow.step(), Step::Shortcut);
-        flow.on(Input::Continue);
-        assert_eq!(flow.step(), Step::TryIt);
+        let flow = launch_plan(&progress, &grants(&[]), true).expect("the tour");
+        assert_eq!((flow.mode(), flow.step()), (Mode::Tour, Step::Shortcut));
+        assert!(flow.view().rows.is_empty());
+        progress.dismiss(&flow);
+        progress.relaunching(None, 8);
+        let repair = launch_plan(&progress, &stale(&[ScreenRecording]), true).expect("repair");
+        assert_eq!(repair.mode(), Mode::Fix);
+        assert_eq!(rows(&repair), [ScreenRecording]);
     }
 
     #[test]
@@ -884,7 +857,7 @@ mod tests {
         assert!(progress.prepare_current_tour());
         assert_eq!(progress.resume, Some(Step::Welcome));
         assert_eq!(progress.granted, granted);
-        assert_eq!(launch_plan(&progress, &grants(&Permission::REQUIRED)).unwrap().step(), Step::Welcome);
+        assert_eq!(launch_plan(&progress, &grants(&Permission::REQUIRED), true).unwrap().step(), Step::Welcome);
         progress.relaunching(Some(Step::Permissions), 123);
         assert!(!progress.prepare_current_tour());
         assert_eq!(progress.resume, Some(Step::Permissions));
@@ -895,7 +868,7 @@ mod tests {
         let mut finished = Progress { seen: true, ..Progress::default() };
         assert!(finished.prepare_current_tour());
         assert!(finished.seen);
-        assert!(launch_plan(&finished, &grants(&Permission::REQUIRED)).is_none());
+        assert!(launch_plan(&finished, &grants(&Permission::REQUIRED), true).is_none());
         let mut future = Progress { tour_revision: 2, resume: Some(Step::Shortcut), ..Progress::default() };
         assert!(!future.prepare_current_tour());
         assert_eq!(future.resume, Some(Step::Shortcut));
@@ -921,14 +894,14 @@ mod tests {
         assert!(!restored.first_capture_completed);
         assert_eq!(restored.resume, None);
         assert!(!restored.prepare_current_tour());
-        assert!(launch_plan(&restored, &grants(&Permission::REQUIRED)).is_none());
-        assert_eq!(launch_plan(&restored, &grants(&[])).unwrap().mode(), Mode::Fix);
+        assert!(launch_plan(&restored, &grants(&Permission::REQUIRED), true).is_none());
+        assert!(launch_plan(&restored, &grants(&[]), true).is_none());
         let config: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(config["penColor"], "green");
         assert_eq!(config["unrelated"], 42);
         restored.reset_for_replay();
         assert!(!restored.prepare_current_tour());
-        assert_eq!(launch_plan(&restored, &grants(&Permission::REQUIRED)).unwrap().step(), Step::Welcome);
+        assert!(launch_plan(&restored, &grants(&Permission::REQUIRED), true).is_none());
         let mut native_trial = Progress { tour_revision: 1, resume: Some(Step::Shortcut),
             shortcut_chosen: true, shortcut_tested_for: Some("⌥S".into()), ..Progress::default() };
         assert!(native_trial.prepare_current_tour());
@@ -944,6 +917,7 @@ mod tests {
         let mut progress = Progress {
             tour_revision: 1,
             seen: true,
+            deferred: true,
             resume: None,
             granted: BTreeSet::from([Permission::ScreenRecording, Permission::Accessibility]),
             relaunched_at: Some(123),
@@ -954,7 +928,8 @@ mod tests {
             first_capture_completed: true,
         };
         progress.reset_for_replay();
-        assert!(!progress.seen);
+        assert!(progress.seen);
+        assert!(progress.deferred);
         assert_eq!(progress.resume, Some(Step::Welcome));
         assert_eq!(progress.tutorial, None);
         assert!(!progress.shortcut_chosen);
@@ -1006,17 +981,16 @@ mod tests {
 
     #[test]
     fn a_tour_quit_midway_resumes_where_it_was() {
-        let mut flow = Flow::tour(Step::Welcome, Some(grants(&[])));
+        let mut flow = Flow::coaching(Step::Welcome, Some(grants(&[])));
         assert_eq!(flow.resume_point(), Some(Step::Welcome));
         flow.on(Input::Continue);
-        flow.on(Input::Continue);
-        assert_eq!(flow.resume_point(), Some(Step::Permissions));
+        assert_eq!(flow.resume_point(), Some(Step::Shortcut));
         let progress = Progress {
             resume: flow.resume_point(),
             ..Progress::default()
         };
-        let flow = launch_plan(&progress, &grants(&[ScreenRecording])).expect("the tour");
-        assert_eq!(flow.step(), Step::Permissions);
+        let flow = launch_plan(&progress, &grants(&[ScreenRecording]), true).expect("the tour");
+        assert_eq!(flow.step(), Step::Shortcut);
         assert_eq!(
             Flow::fix(vec![Camera], None).resume_point(),
             None,
@@ -1027,8 +1001,8 @@ mod tests {
     #[test]
     fn set_up_later_and_closing_end_the_tour() {
         let mut flow = Flow::tour(Step::Permissions, Some(grants(&[])));
-        assert_eq!(flow.on(Input::Later), Effect::Close);
-        assert_eq!(flow.on(Input::Closed), Effect::Close);
+        assert_eq!(flow.on(Input::Later), Effect::Defer);
+        assert_eq!(flow.on(Input::Closed), Effect::Defer);
     }
 
     #[test]
@@ -1056,9 +1030,6 @@ mod tests {
         );
         assert!(missing_to_record(Some(&grants(&ALL)), true, true).is_empty());
         assert!(gate.press(Vec::new()));
-        let mut tour = Flow::tour(Step::Welcome, Some(some));
-        assert_eq!(tour.on(Input::Blocked), Effect::Show);
-        assert_eq!(tour.step(), Step::Permissions);
         assert!(missing_to_record(None, true, true).is_empty());
     }
 
@@ -1105,23 +1076,19 @@ mod tests {
     }
 
     #[test]
-    fn launch_shows_the_tour_once_then_only_a_lost_permission() {
+    fn completed_setup_stays_quiet_even_after_a_permission_is_lost() {
         let all = grants(&ALL);
         let mut progress = Progress::default();
         assert_eq!(
-            launch_plan(&progress, &all).map(|f| (f.mode(), f.step())),
+            launch_plan(&progress, &all, true).map(|f| (f.mode(), f.step())),
             Some((Mode::Tour, Step::Welcome))
         );
         progress.seen = true;
         assert!(progress.note(&all));
         assert!(!progress.note(&all));
-        assert!(launch_plan(&progress, &all).is_none());
+        assert!(launch_plan(&progress, &all, true).is_none());
         let lost = grants(&[ScreenRecording, Microphone]);
-        let flow = launch_plan(&progress, &lost).expect("a fix");
-        assert_eq!((flow.mode(), flow.step()), (Mode::Fix, Step::Permissions));
-        assert_eq!(rows(&flow), Permission::REQUIRED);
-        progress.granted.remove(&Accessibility);
-        assert!(launch_plan(&progress, &lost).is_none());
+        assert!(launch_plan(&progress, &lost, true).is_none());
     }
 
     #[test]
@@ -1139,6 +1106,7 @@ mod tests {
         let progress = Progress {
             tour_revision: 0,
             seen: true,
+            deferred: true,
             resume: Some(Step::Permissions),
             granted: [Microphone].into_iter().collect(),
             relaunched_at: Some(1_792_000_000_000),
