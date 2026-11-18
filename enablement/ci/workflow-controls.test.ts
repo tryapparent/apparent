@@ -96,7 +96,7 @@ test('Git modes/status/blobs bind proof to the full committed delta, never worki
   assert.deepEqual(workflowControlPaths('missing', 'HEAD', [path], dir), []);
 }));
 
-test('renames, unknown workflows and unavailable YAML tools do not qualify', () => repository((git, dir) => {
+test('renames and unknown workflows do not qualify', () => repository((git, dir) => {
   const path = controlWorkflows[0];
   mkdirSync(join(dir, '.github/workflows'), {recursive: true});
   writeFileSync(join(dir, path), original);
@@ -104,9 +104,16 @@ test('renames, unknown workflows and unavailable YAML tools do not qualify', () 
   git('mv', path, controlWorkflows[1]); git('commit', '-qm', 'rename');
   assert.deepEqual(workflowControlPaths(base, 'HEAD', changedPaths(base, 'HEAD', dir), dir), []);
   assert.deepEqual(workflowControlPaths(base, 'HEAD', ['.github/workflows/verification-platform.yml'], dir), []);
-  git('mv', controlWorkflows[1], path);
+}));
+
+test('a missing YAML tool retains workflow verification', {timeout: 10_000}, () => repository((git, dir) => {
+  const path = controlWorkflows[0];
+  mkdirSync(join(dir, '.github/workflows'), {recursive: true});
+  writeFileSync(join(dir, path), original);
+  git('add', '.'); git('commit', '-qm', 'base'); const base = git('rev-parse', 'HEAD');
   writeFileSync(join(dir, path), original.replace(/  cancel-in-progress: .*/, '  cancel-in-progress: false'));
   git('add', '.'); git('commit', '-qm', 'control');
+  assert.deepEqual(workflowControlPaths(base, 'HEAD', [path], dir), [path]);
   const bin = join(dir, 'bin'); mkdirSync(bin);
   symlinkSync(execFileSync('which', ['git'], {encoding: 'utf8'}).trim(), join(bin, 'git'));
   // Exercise the actual Node consumer with Bun absent, avoiding Bun's own cached
@@ -115,7 +122,7 @@ test('renames, unknown workflows and unavailable YAML tools do not qualify', () 
   const script = `import {workflowControlPaths} from ${JSON.stringify(new URL('./inputs.ts', import.meta.url).href)};
     console.log(JSON.stringify(workflowControlPaths(${JSON.stringify(base)}, 'HEAD', [${JSON.stringify(path)}], ${JSON.stringify(dir)})));`;
   assert.equal(execFileSync(node, ['--experimental-strip-types', '--input-type=module', '-e', script],
-    {cwd: dir, env: {...process.env, PATH: bin}, encoding: 'utf8'}).trim(), '[]');
+    {cwd: dir, env: {...process.env, PATH: bin}, encoding: 'utf8', timeout: 8_000}).trim(), '[]');
 }));
 
 test('invalid UTF-8 cannot turn different execution bytes into equal replacement characters', () => repository((git, dir) => {
