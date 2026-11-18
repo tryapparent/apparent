@@ -92,7 +92,7 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
       local,
     }).some(({ argv }) => argv.includes(command));
   for (const path of [
-    "record/completion/src/admission.bend",
+    "record/completion/src/copy-admission.bend",
     "record/completion/src/policy.ts",
     "record/enablement/ci/bend/build.ts",
     "shared/enablement/bend/toolchain.ts",
@@ -120,4 +120,9 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
   );
   assert.equal(check("connect/service/src/example.ts"), false);
   assert.equal(check(".github/workflows/stream-agent.yml"), false);
+  assert.equal(
+    routeDecision(["shared/enablement/bend/toolchain.ts"]).publicationStreams
+      .connect,
+    false,
+  );
 });

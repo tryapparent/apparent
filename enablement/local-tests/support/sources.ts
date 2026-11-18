@@ -3,10 +3,13 @@
 import {copyFileSync, mkdirSync, readdirSync, realpathSync} from 'node:fs';
 import {dirname, isAbsolute, relative, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {bendDirectory, bendOwners} from '../../../shared/enablement/bend/manifest.ts';
+import {affectedBendOwners, regularFile} from '../../../shared/enablement/bend/owners.ts';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const sourceOwners = ['enablement/local-tests', 'enablement/ci', 'public/enablement/cd/ci', 'connect/enablement/ci/local', 'shared/enablement/ci', 'shared/enablement/bend', 'shared/enablement/issues', 'enablement/timing', 'record/enablement/ci'];
 const excluded = new Set(['fixtures', 'node_modules', 'dist', 'target', '.git']);
+export const fixtureBendDirectories = (path: string) => affectedBendOwners(path, null).map(bendDirectory);
 function within(parent: string, child: string): boolean {
   const path = relative(parent, child);
   return path === '' || (!isAbsolute(path) && path !== '..' && !path.startsWith('..' + sep));
@@ -30,7 +33,11 @@ export function copyRunnerSources(destination: string, source = root): void {
     }
   }
   for (const owner of sourceOwners) copy(owner);
-  const declaration = 'engine/enablement/ci/inputs.json';
-  mkdirSync(dirname(resolve(target, declaration)), {recursive: true});
-  copyFileSync(resolve(origin, declaration), resolve(target, declaration));
+  const bendDeclarations = bendOwners.map(owner => bendDirectory(owner) + '/modules.json')
+    .filter(path => regularFile(origin, path));
+  const declarations = ['engine/enablement/ci/inputs.json', ...bendDeclarations];
+  for (const declaration of declarations) {
+    mkdirSync(dirname(resolve(target, declaration)), {recursive: true});
+    copyFileSync(resolve(origin, declaration), resolve(target, declaration));
+  }
 }

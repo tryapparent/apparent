@@ -1,14 +1,5 @@
 export const bendSource = /\.bend$/i;
 
-export function bendPilotPath(file: string): boolean {
-  return (
-    /^record\/(?:completion|enablement\/ci\/bend)\/(?:[\w-]+\/)*[\w-]+\.bend$/.test(
-      file,
-    ) &&
-    !file.split("/").some((part) => part === "node_modules" || part === "dist")
-  );
-}
-
 export function bendComments(file: string, source: string): string[] {
   if (source.includes("\0")) throw new Error(`${file}: NUL in Bend source`);
   const comments: string[] = [];
@@ -54,21 +45,4 @@ export function bendComments(file: string, source: string): string[] {
       throw new Error(`${file}: only the bundled Bend import Base is admitted`);
   }
   return comments;
-}
-
-export function bendToolingInput(file: string): boolean {
-  return (
-    bendPilotPath(file) ||
-    file.startsWith("record/enablement/ci/bend/") ||
-    file.startsWith("shared/enablement/bend/") ||
-    file === ".github/workflows/stream-record.yml"
-  );
-}
-
-export function bendProductInput(file: string): boolean {
-  return (
-    (file.startsWith("record/completion/src/") && bendSource.test(file)) ||
-    file === "record/enablement/ci/bend/build.ts" ||
-    file.startsWith("shared/enablement/bend/")
-  );
 }
