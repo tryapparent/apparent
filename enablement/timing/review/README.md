@@ -49,17 +49,14 @@ Cancellation before allocation ends the queue at completion; unknown allocation
 in incomplete CLI snapshots stays explicitly unknown. Zero-date completion
 placeholders do not make an unfinished job complete.
 
-For a live review, replace `--jobs` with `--github-repo tryapparent/apparent`
-and optionally `--ci-run-limit 12` (1–40). This uses authenticated, read-only
-`gh` once per selected run/attempt, pages its jobs, and never watches, reruns or
-cancels anything. Discovery includes old queued/running/waiting runs regardless
-of creation age; it reserves sample slots for oldest queues, executing work and
-recent completions. Listing caps, run caps, job-page coverage and access failures
-remain explicit. Completed runs created before the window can be missed; supply
-their exact snapshots with `--jobs` when they matter. Fetch earlier attempts when
-carried-job provenance needs reconciliation. A live snapshot is not a historical
-state reconstruction. Use existing immutable snapshots rather than refetching
-healthy watched PRs during one review.
+For authenticated read-only collection, replace `--jobs` with
+`--github-repo tryapparent/apparent` and optional `--ci-run-limit 12` (1–40).
+Discovery samples old queues, executing work and recent completions.
+`--ci-exact-attempt RUN_ID/ATTEMPT/FULL_HEAD_SHA` reserves one slot, even on
+failure, and verifies metadata before paging jobs. Discovery skips that route.
+Coverage reports list and job caps, identity mismatch, cutoff and access gaps.
+The window clips measured time. Replay immutable snapshots and earlier attempts
+with `--jobs` for historical review or carried-job provenance.
 
 Zero-job records retain run/attempt/SHA, status, age and page coverage in
 `analysis.joblessSnapshots`. Missing clocks and coverage stay unknown. Creation
