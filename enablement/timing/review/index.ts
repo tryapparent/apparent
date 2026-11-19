@@ -8,12 +8,12 @@ import {inspectThreads, inspectJobs} from './snapshots.ts';
 import {isoTime} from './policy.ts';
 import * as ledger from './state.ts';
 import {markdown, chart} from './format.ts';
-import {collectGitHub} from './github.ts';
+import {collectGitHub, type ReadGitHub} from './github.ts';
 
 const json = (file: string) => JSON.parse(readFileSync(file, 'utf8'));
 const save = (file: string, value: unknown) => writeFileSync(file, JSON.stringify(value, null, 2) + '\n', {mode: 0o600, flag: 'wx'});
 const fail = (message: string): never => {throw Error(message);};
-export async function main(args: string[]) {
+export async function main(args: string[], readGitHub?: ReadGitHub) {
   const command = args[0];
   const options = new Map<string, string>();
   for (let i = 1; i < args.length; i += 2) {
@@ -21,7 +21,7 @@ export async function main(args: string[]) {
     options.set(args[i], args[i + 1]);
   }
   const allowed: Record<string, string[]> = {
-    collect: ['input', 'workspace', 'exclude-workspace', 'from', 'to', 'out', 'threads', 'jobs', 'github-repo', 'ci-run-limit'],
+    collect: ['input', 'workspace', 'exclude-workspace', 'from', 'to', 'out', 'threads', 'jobs', 'github-repo', 'ci-run-limit', 'ci-exact-attempt'],
     init: ['state', 'scope', 'since'], begin: ['state', 'run-id', 'end'], commit: ['state', 'run-id', 'decision'],
     abort: ['state', 'run-id'], plan: ['state'], prepare: ['state', 'key'], record: ['state', 'request-id', 'receipt'],
     delivered: ['state', 'request-id', 'receipt'], benefit: ['state', 'key', 'receipt'], show: ['state'], format: ['input', 'out'], chart: ['input', 'out'],
@@ -32,6 +32,9 @@ export async function main(args: string[]) {
   if (command === 'collect') {
     const from = isoTime(get('from')), to = isoTime(get('to'));
     if (from >= to) fail('Invalid review window');
+    if (options.has('--jobs') && options.has('--github-repo')) fail('Use --jobs or --github-repo, not both');
+    if (options.has('--ci-run-limit') && !options.has('--github-repo')) fail('--ci-run-limit requires --github-repo');
+    if (options.has('--ci-exact-attempt') && !options.has('--github-repo')) fail('--ci-exact-attempt requires --github-repo');
     const calls: Call[] = []; let scanned = 0, malformed = 0, orphanResults = 0;
     const root = resolve(get('workspace')), exclude = options.get('--exclude-workspace');
     for await (const file of files(resolve(get('input')))) {
@@ -48,9 +51,8 @@ export async function main(args: string[]) {
         p50Seconds: durations[Math.floor((durations.length - 1) * .5)], p95Seconds: durations[Math.floor((durations.length - 1) * .95)]};
     }).sort((a, b) => b.totalSeconds - a.totalSeconds);
     const threads = options.has('--threads') ? inspectThreads(json(get('threads')), from, to) : null;
-    if (options.has('--jobs') && options.has('--github-repo')) fail('Use --jobs or --github-repo, not both');
-    if (options.has('--ci-run-limit') && !options.has('--github-repo')) fail('--ci-run-limit requires --github-repo');
-    const github = options.has('--github-repo') ? collectGitHub(get('github-repo'),get('from'),get('to'),Number(options.get('--ci-run-limit') ?? 12)) : null;
+    const github = options.has('--github-repo') ? collectGitHub(get('github-repo'),get('from'),get('to'),
+      Number(options.get('--ci-run-limit') ?? 12),readGitHub,options.get('--ci-exact-attempt')) : null;
     const jobs = options.has('--jobs') ? inspectJobs(json(get('jobs')), from, to) : github ? {...inspectJobs(github.runs,from,to),collection:github.coverage} : null;
     const result = {schema: 1, census, processGroups, threads, jobs, coverage: {scanned, malformed, orphanResults,
       threadsProvided: threads !== null, hostedJobsProvided: jobs !== null},
