@@ -28,8 +28,8 @@ const evaluate = (source: string, github: object) =>
   )(github, (pattern: string, value: string) => pattern.replace("{0}", value));
 
 test("the selected hosted range callers compares the checked PR merge with its first parent; pushes retain the complete delta", () => {
-  let callers = 0;
   for (const name of workflows) {
+    let callers = 0;
     const workflow = YAML.parse(
       readFileSync(join(root, `.github/workflows/${name}.yml`), "utf8"),
     );
@@ -61,8 +61,8 @@ test("the selected hosted range callers compares the checked PR merge with its f
           "before",
         );
       }
+    assert.equal(callers, 1, name);
   }
-  assert.equal(callers, 7);
 });
 
 test("real selector CLIs exclude intervening main routing edits but retain PR mixed, unknown, deleted, renamed and typechanged inputs", () => {

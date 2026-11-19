@@ -225,7 +225,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     process.exit(0);
   }
   if (args.length === 1 && args[0] === '--tooling') {
-    if (selectRange(process.env.BASE_SHA ?? '', process.env.GITHUB_SHA ?? 'HEAD').plan.tooling) execute(toolingCommands());
+    execute(toolingCommands());
     process.exit(0);
   }
   if (args.length === 1 && args[0] === '--onboarding') {

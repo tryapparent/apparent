@@ -163,8 +163,7 @@ later documentation cannot cancel earlier code verification. Drafts retain cheap
 contracts and relevant Public checks; ready PRs verify the proposed merge tree.
 
 `enablement/ci/routing/consumers.ts` owns consumer facts for hosted selection,
-local pushes and the Python native execution adapter. Ordinary owner prose needs
-contracts only. README and guides read by Public run Public verification; the
+local pushes and the Python native execution adapter. Ordinary owner prose skips product suites. README and guides read by Public run Public verification; the
 agent skill embedded in the CLI retains native coverage. Public and Connect web
 source do not select Rust or Electron. Shared UI/assets retain their real web,
 service, Desktop and native consumers. Service changes retain client/root API
@@ -179,9 +178,7 @@ Linux drivers run launch-free contracts. Within a triggered workflow, unknown in
 modes/types, embedded instructions and execution-sensitive CI retain broad checks.
 Repository `AGENTS.md` guidance, root `CONTRIBUTING.md`/`LICENSE` and ordinary
 owner Markdown select no product suites in local pushes, hosted CI, Public,
-Connect or Hermes; only the cheap `contracts`/`select` classification jobs and
-main `reuse`/admission checks remain. That retains policy verification without
-allocating product runners or publishing. Product-consumed Markdown keeps its
+Connect or Hermes. The selection and admission jobs still record coverage. Policy changes retain their contracts. Product-consumed Markdown keeps its
 actual consumers: README and the four Public guides/skill, published
 `public/site/public/**` assets and brand-book instructions, Public site source
 (`public/site/src`, brand `src`/`shared`), packaged Hermes/Connect READMEs,
@@ -211,10 +208,12 @@ exemption retains Mac Electron. Ordinary prose cannot undo a Linux exemption.
 The manual Linux workflow defaults to all suites and retains full-tree diagnostics.
 The standalone manual Mac workflow is retired; dispatch `checks.yml` for Mac
 diagnostics. Ordinary PR/main events allocate no general Mac runners.
-The advisory owner report does not control admission.
 
-Main first runs fresh cheap contracts and selection. Ready PRs record their actual
-checkout tree, head, run/attempt, plans and job results in the 14-day
+The diff selects contracts. Unknown inputs and manual
+verification run all groups. Linux starts independently. The existing
+`contracts` result still gates exact-main admission and PR tree evidence.
+
+Ready PRs record their actual checkout tree, head, run/attempt, plans and job results in the 14-day
 `ci-tree-evidence-<attempt>` Actions artifact. Main can reuse a suite only from the
 merged same-repository PR's completed trusted workflow run, with an identical
 complete Git tree, matching head/run/attempt and sufficient successful suite

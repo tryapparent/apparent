@@ -97,6 +97,6 @@ test("main-only evidence lookup skips PR allocation without skipping fresh verif
     assert.equal(admitted(jobs.macos.if, needs, "pull_request"), false);
     needs.contracts.result = "failure";
     for (const name of ["linux", "macos", "portable"])
-      assert.equal(admitted(jobs[name].if, needs), false, name);
+      assert.equal(admitted(jobs[name].if, needs), name === "linux", name);
   }
 });
