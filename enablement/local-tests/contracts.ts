@@ -29,14 +29,11 @@ export function foregroundCommands() {
   ];
 }
 
-export function workspaceContracts() {
+export function diagnosticContracts() {
   const cwd = 'shared/enablement/dependency-policy';
   return [
     {argv: ['npm', 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], cwd},
     {argv: ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/rust/check.test.ts',
       'shared/enablement/dependency-policy/fast/typecheck.test.ts'], cwd: '.'},
-    {argv: ['node', 'handoff/enablement/ci/bend/build.ts'], cwd: '.'},
-    {argv: ['bun', 'test', 'enablement/ci/'], cwd: '.'},
-    {argv: ['bun', 'test', 'connect/enablement/ci/'], cwd: '.'},
   ];
 }

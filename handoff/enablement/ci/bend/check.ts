@@ -24,7 +24,7 @@ console.log(
       "--experimental-strip-types",
       "--test",
       ...["chooser", "controller", "delivery", "destinations"].map(
-        (name) => `handoff/enablement/ci/${name}.test.ts`,
+        (name) => `handoff/enablement/tests/${name}.test.ts`,
       ),
     ],
     root,

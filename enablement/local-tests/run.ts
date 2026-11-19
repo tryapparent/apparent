@@ -13,7 +13,7 @@ import {desktopDependencies, desktopPackage} from './desktop-install.ts';
 import {owners, selectedOwners, routeDecision, routingProblems, desktopPackagingInputs} from '../ci/routing/consumers.ts';
 import {selectRange} from '../ci/select.ts';
 import {explainSelection} from './preview/explain.ts';
-import {foregroundCommands, timingContracts, workspaceContracts} from './contracts.ts';
+import {diagnosticContracts, foregroundCommands, timingContracts} from './contracts.ts';
 export {owners} from '../ci/routing/consumers.ts';
 import type {Admission} from './service.ts';
 
@@ -173,7 +173,9 @@ export function contractTests(cwd = root): Command[] {
       'enablement/local-tests/preview/explain.test.ts', 'enablement/local-tests/preview/inputs.test.ts', 'shared/enablement/issues/issues.test.ts',
       'shared/enablement/issues/checkpoint.test.ts',
       ...prerequisites, ...timingContracts(cwd)], cwd: '.' },
-    ...workspaceContracts(),
+    ...diagnosticContracts(),
+    { argv: ['bun', 'test', 'enablement/ci/'], cwd: '.' },
+    { argv: ['bun', 'test', 'connect/enablement/ci/'], cwd: '.' },
   ];
 }
 
