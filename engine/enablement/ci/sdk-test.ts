@@ -1,21 +1,12 @@
 import { execFileSync } from "node:child_process";
-import {
-  cpSync,
-  mkdtempSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { cpSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../../sdk/", import.meta.url));
 const output = mkdtempSync("/tmp/apparent-dev-engine-sdk-test-");
 try {
-  writeFileSync(
-    join(output, "package.json"),
-    '{"private":true,"type":"module"}',
-  );
+  cpSync(join(root, "package.json"), join(output, "package.json"));
   execFileSync(
     process.execPath,
     [

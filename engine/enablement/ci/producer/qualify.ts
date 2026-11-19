@@ -5,6 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { probeMovie } from "@apparent/engine-sdk";
 import { qualifyFrames } from "./qualify-frames.ts";
+import { qualifyAudio } from "./audio/qualify.ts";
 
 const [executable, directory] = process.argv.slice(2).map((p) => resolve(p));
 if (!executable || !directory)
@@ -99,6 +100,11 @@ console.log(
       "read-only",
     ],
   }),
+);
+await qualifyAudio(
+  join(dirname(executable), "apparent-engine-audio"),
+  executable,
+  directory,
 );
 const frames = join(dirname(executable), "apparent-engine-frames");
 const previous = process.env.APPARENT_ENGINE_QUALIFY_SEQUENTIAL;

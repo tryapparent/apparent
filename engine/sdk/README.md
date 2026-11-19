@@ -56,3 +56,39 @@ returned. `EngineFrameError.code` distinguishes invalid requests, unsafe output,
 unavailable runtime, cancellation, timeout, resource limits, decode failure and
 invalid responses; diagnostics and private paths are redacted. Direct native CLI
 callers must provide their own deadline and the same cleanup.
+
+## Selected movie audio
+
+SDK/native 0.4 adds
+`decodeMovieAudio({executable, movie, outputDirectory, streamIndexes, maxSamples, timeoutMs?, signal?})`
+using the matching `apparent-engine-audio` artifact. The absolute local movie and
+fresh owned empty `0700` output directory have the same trust and cleanup rules
+as frames. Supply explicit audio indices from `probeMovie` in the **same native
+generation**; those indices are provider-local, not identifiers for another decoder.
+The caller chooses the tracks and output budget. There is no implicit first/all
+selection, workflow, transcription, configuration or WAV assembly.
+
+Selected tracks mix at unity, downmix/resample to 16 kHz mono signed little-endian
+PCM16, and preserve movie-clock silence before/between samples. Time before movie
+zero is trimmed; output ends with the selected audio, not a longer video tail.
+Native resamplers may differ in rounding and decoded sample values; short codec
+tail padding can remain in the decoded extent. The result
+has `sampleRate`, `channels`, `sampleFormat`, `sampleCount` and an absolute private
+`file` path. This is raw PCM, with no WAV header. Record owns ordinary WAV assembly.
+
+`maxSamples` is required, positive, and at most `MAX_MOVIE_AUDIO_SAMPLES` (2³¹,
+four GiB of output). Exceeding it fails rather than returning a clipped success.
+Linux bounds the descriptor's writes with a process file-size limit; Mac checks
+each streaming write. Codec-internal allocations are not a memory sandbox.
+The native operation retains the output directory lease and writes one exclusive
+`0600` inode. Failures can leave partial output, which the caller must remove.
+
+The default/maximum deadline is five minutes. `EngineAudioError.code` distinguishes
+invalid requests, unsafe output, unavailable runtime, cancellation, timeout,
+resource limits, decode failure and invalid output. Cancellation waits for the
+owned native reader to exit. Errors exclude codec diagnostics/private paths.
+Linux uses GStreamer (the same runtime prerequisite as frames), while metadata
+still requires FFprobe on PATH. Native MOV track-ID binding preserves the probe's
+stream indices independently of decoder pad order; segment mapping preserves
+explicit edits as well as packet holes before mixing. Mac uses the packaged AVFoundation
+helper. No runtime installation or source build occurs in the SDK.

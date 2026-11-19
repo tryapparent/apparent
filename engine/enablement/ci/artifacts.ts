@@ -66,13 +66,15 @@ export function validateArtifacts(directory: string, candidate: string): void {
       manifest.arch !== arch ||
       `apparent-engine-sdk-${manifest.sdkVersion}.tgz` !== sdk[0] ||
       !manifest.capabilities?.includes("movie-probe/1") ||
-      !manifest.capabilities?.includes("movie-frames/1")
+      !manifest.capabilities?.includes("movie-frames/1") ||
+      !manifest.capabilities?.includes("movie-audio/1")
     ) {
       throw Error(`Unqualified Engine manifest: ${target}`);
     }
     const files = [
       "apparent-engine-media",
       "apparent-engine-frames",
+      "apparent-engine-audio",
       "LICENSE",
     ];
     if (platform === "darwin")
