@@ -77,9 +77,6 @@ export function FeatureGrid() {
   return <section className="feature-grid-section" aria-labelledby="feature-grid-title">
     <div className="feature-grid-heading">
       <h2 id="feature-grid-title">Make your feedback <img src="/apparent-wordmark.svg" alt="apparent" width={250} height={59} /></h2>
-      <button type="button" className="feature-grid-toggle" onClick={() => setPaused(value => !value)} aria-pressed={paused}>
-        {paused ? "Play animations" : "Pause animations"}
-      </button>
     </div>
     <div className="feature-grid-cards">
       {FEATURES.map(feature => <article className="feature-grid-card" key={feature.path}>

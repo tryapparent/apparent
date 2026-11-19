@@ -5,8 +5,6 @@ import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright-core"
 import { agentFiles } from "../site-build/agent-files.ts"
-import { DEMO_CURSOR } from "../../site/src/demo/content/cursor-track.ts"
-import { cameraOffsetAt } from "../../site/src/demo/core/cursor-camera.ts"
 
 import { movie, chunkPath } from "../../site/lib/pages-video-metadata.js"
 
@@ -24,12 +22,12 @@ test("packaged homepage ships the brand favicon and its cache-busting URL", () =
     readFileSync(join(site, "../../shared/assets/brand/apparent-app-icon.svg"), "utf8"))
 })
 
-test("public homepage has one interactive demonstration", () => {
+test("the Hermes submission occupies the only homepage demo slot", () => {
   const html = readFileSync(join(publicDir, "index.html"), "utf8")
-  assert.match(html, /id="demo"/)
-  assert.equal(html.match(/aria-label="apparent demo"/g)?.length, 1)
-  assert.match(html, /Play with sound/)
-  assert.equal(/id="demo-film"|apparent-demo-pi\.mp4|id="how"|href="#how"/.test(html), false, "duplicate demos must not appear in the public page")
+  assert.equal(html.match(/id="demo"/g)?.length, 1)
+  assert.match(html, /<iframe[^>]+title="Apparent’s Hermes Agent hackathon submission"/)
+  assert.match(html, /href="https:\/\/youtu\.be\/IXJVr0-PJ7k">Open on YouTube</)
+  assert.doesNotMatch(html, /id="demo-film"|apparent-demo-pi\.mp4|id="how"|href="#how"|Play with sound|aria-label="Demo timeline"/)
   assert.equal(existsSync(join(publicDir, "apparent-demo-pi.mp4")), false)
   assert.equal(existsSync(join(publicDir, "apparent-demo-pi-poster.jpg")), false)
 })
@@ -39,7 +37,7 @@ test("product names use the boxed wordmark including the demo heading", () => {
   const body = html.split("<body>")[1]
   assert.match(body, /class="pond-wordmark"[^>]*src="\/apparent-wordmark\.svg"[^>]*alt="apparent"[^>]*\/> creates the instructions/)
   assert.equal(existsSync(join(publicDir, "apparent-wordmark.svg")), true)
-  assert.match(body, /<h2>See what <span class="demo-heading-product"><img[^>]*src="\/apparent-wordmark\.svg"[^>]*alt="apparent"[^>]*\/> captures<\/span><\/h2>/)
+  assert.match(body, /<h2 id="hermes-video-title"><img[^>]*src="\/apparent-wordmark\.svg"[^>]*alt="apparent"[^>]*\/> is now a <a href="https:\/\/hermes-agent\.nousresearch\.com\/marketplace\/apparent">Hermes Agent plugin<\/a><\/h2>/)
   assert.match(body, /Your agent makes the changes and uses<br class="hero-return-break"\/> apparent to send back a video walkthrough\./)
 })
 
@@ -194,24 +192,13 @@ test("source homepage preserves accepted responsive layout and interactions", as
       try {
         for (const width of [1280, 768, 390, 320]) {
           const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: "reduce" })
-          // Metadata readiness can precede delivery of its notification. Hold
-          // that real event so Home must supersede the earlier cold seek.
-          if (width === 320) await page.addInitScript(() => {
-            document.addEventListener("loadedmetadata", event => {
-              if (!(event.target instanceof HTMLVideoElement)) return
-              event.stopImmediatePropagation()
-              const element = event.target
-              ;(window as Window & { releaseDemoMetadata?: () => void }).releaseDemoMetadata = () =>
-                element.dispatchEvent(new Event("loadedmetadata"))
-            }, { capture: true, once: true })
-          })
-
           const errors: string[] = []
           page.on("pageerror", error => errors.push(error.message))
           page.on("console", message => { if (message.type() === "error" && /React|hydrat/i.test(message.text())) errors.push(message.text()) })
           await page.route("https://api.github.com/**", route => route.fulfill({ contentType: "application/json", body: "[]" }))
           // Page routes do not intercept a popup's initial navigation.
           await page.context().route("https://www.linkedin.com/**", route => route.fulfill({ contentType: "text/html", body: "<title>Synthetic LinkedIn destination</title>" }))
+          await page.route("https://www.youtube-nocookie.com/**", route => route.abort())
           const analyticsRequests: string[] = []
           await page.route("https://eu.i.posthog.com/**", route => {
             analyticsRequests.push(route.request().url())
@@ -348,62 +335,33 @@ test("source homepage preserves accepted responsive layout and interactions", as
             assert.equal(await page.locator(".feature-mobile:visible").count(), 4)
             const smallest = await page.locator(".feature-mobile").evaluateAll(elements => Math.min(...elements.flatMap(element => [...element.querySelectorAll("p,time,li,figcaption")].map(child => parseFloat(getComputedStyle(child).fontSize)))))
             assert(smallest >= 14, "phone examples retain readable text without scaling")
-          } else {
-            const toggle = page.getByRole("button", { name: "Play animations", exact: true })
-            assert.equal(await toggle.isVisible(), true)
-            await toggle.click()
-            await page.getByRole("button", { name: "Pause animations", exact: true }).click()
           }
-          const track = page.getByRole("slider", { name: "Demo timeline" })
-          await track.focus()
-          await track.press("ArrowRight")
-          assert.equal(await track.getAttribute("aria-valuenow"), "5")
-          if (width === 320) await page.waitForFunction(() => {
-            const element = document.querySelector(".video-demo video") as HTMLVideoElement
-            return element.readyState >= 1 && !!(window as Window & { releaseDemoMetadata?: () => void }).releaseDemoMetadata
-          })
-          await track.press("Home")
-          assert.equal(await track.getAttribute("aria-valuenow"), "0")
-          if (width === 320) {
-            await page.evaluate(() => (window as Window & { releaseDemoMetadata?: () => void }).releaseDemoMetadata!())
-            await page.waitForFunction(() => {
-              const element = document.querySelector(".video-demo video") as HTMLVideoElement
-              return !element.seeking
-            })
-            assert.equal(await page.locator(".video-demo video").evaluate((element: HTMLVideoElement) => element.currentTime), 0,
-              "late metadata must not restore the superseded ArrowRight seek after Home")
-          }
-          assert.equal(await page.locator(".track .seg").first().evaluate(element => getComputedStyle(element).borderTopWidth), "1px")
-          assert.equal(await page.getByRole("button", { name: /close-up|Full recording/ }).count(), 0)
-          if (width <= 700) {
-            const stage = page.locator(".video-demo .stage-wrap")
-            const fullHeight = (await stage.boundingBox())!.height
+          assert.equal(await page.getByRole("button", { name: /^(Play|Pause) animations$/ }).count(), 0)
+          if (width > 700) {
+            const timeline = page.locator('iframe[src="/feature-demos/timeline/index.html"]')
+            await timeline.scrollIntoViewIfNeeded()
+            const control = timeline.contentFrame().locator("#play")
+            await control.filter({ hasText: /^Play$/ }).waitFor({ state: "attached" })
             await page.emulateMedia({ reducedMotion: "no-preference" })
-            await page.waitForFunction(() => document.querySelector(".video-demo")?.getAttribute("data-camera") === "following")
-            await page.waitForFunction(height => document.querySelector(".video-demo .stage-wrap")!.getBoundingClientRect().height > height * 1.8, fullHeight)
-            const left = DEMO_CURSOR.reduce((a, b) => a.x < b.x ? a : b)
-            const right = DEMO_CURSOR.reduce((a, b) => a.x > b.x ? a : b)
-            await page.waitForFunction(() => {
-              const element = document.querySelector(".video-demo video") as HTMLVideoElement
-              return element.readyState >= 1 && !element.seeking && element.currentTime < .1
-            })
-            for (const point of [left, right, left]) {
-              await stage.scrollIntoViewIfNeeded()
-              await page.locator(".video-demo video").evaluate((element: HTMLVideoElement, time) => { element.currentTime = time }, point.t)
-              await page.waitForFunction(time => {
-                const element = document.querySelector(".video-demo video") as HTMLVideoElement
-                return !element.seeking && Math.abs(element.currentTime - time) < .1
-              }, point.t)
-              await page.waitForFunction(expected => Math.abs(Number((document.querySelector(".video-demo video") as HTMLElement).style.getPropertyValue("--cursor-offset")) - expected) < .001, cameraOffsetAt(point.t, DEMO_CURSOR))
-            }
+            await control.filter({ hasText: /^Pause$/ }).waitFor({ state: "attached" })
             await page.emulateMedia({ reducedMotion: "reduce" })
-            await page.waitForFunction(() => document.querySelector(".video-demo")?.getAttribute("data-camera") === "full")
-            await page.waitForFunction(height => Math.abs(document.querySelector(".video-demo .stage-wrap")!.getBoundingClientRect().height - height) < .1, fullHeight)
-            for (const button of await page.locator(".controls-left button, .beats button").all()) {
-              const bounds = (await button.boundingBox())!
-              assert(bounds.height >= 44 && bounds.x >= 0 && bounds.x + bounds.width <= width, "mobile playback and chapter controls fit with full touch targets")
-            }
+            await control.filter({ hasText: /^Play$/ }).waitFor({ state: "attached" })
           }
+          const player = page.locator("#demo iframe")
+          await page.waitForFunction(() => document.querySelector("#demo iframe")?.hasAttribute("src"))
+          const embed = new URL((await player.getAttribute("src"))!)
+          assert.equal(embed.origin + embed.pathname, "https://www.youtube-nocookie.com/embed/IXJVr0-PJ7k")
+          assert.equal(embed.searchParams.get("mute"), "1")
+          assert.equal(embed.searchParams.get("playsinline"), "1")
+          assert.equal(embed.searchParams.has("autoplay"), false)
+          await page.emulateMedia({ reducedMotion: "no-preference" })
+          await page.waitForFunction(() => document.querySelector<HTMLIFrameElement>("#demo iframe")?.src.includes("autoplay=1"))
+          const fallback = page.getByRole("link", { name: "Open on YouTube", exact: true })
+          await fallback.focus()
+          assert.equal(await fallback.getAttribute("href"), "https://youtu.be/IXJVr0-PJ7k")
+          assert.equal(await fallback.evaluate(element => element === document.activeElement), true)
+          const bounds = (await player.boundingBox())!
+          assert(bounds.width >= 200 && bounds.height >= 200 && bounds.x >= 0 && bounds.x + bounds.width <= width)
           await page.locator(".photo-story").scrollIntoViewIfNeeded()
           await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>(".cutout-person img")].every(image => image.complete && image.naturalWidth > 0))
           await page.locator(".footer-hi").click()
@@ -421,15 +379,6 @@ test("source homepage preserves accepted responsive layout and interactions", as
           assert.equal(await dialog.evaluate((element: HTMLDialogElement) => element.open), true, "the original social dialog remains open")
           await dialog.locator(".footer-close").click()
           assert.equal(await page.locator(".footer-hi").evaluate(element => element === document.activeElement), true)
-          if (width === 320) {
-            // A native video API may reject entering fullscreen before playback.
-            await page.locator(".video-demo video").evaluate(element => {
-              Object.defineProperty(element, "requestFullscreen", { value: undefined })
-              Object.defineProperty(element, "webkitEnterFullscreen", { value: () => { throw new DOMException("Unavailable", "InvalidStateError") } })
-            })
-            await page.getByRole("button", { name: "Fullscreen", exact: true }).click()
-            await page.getByRole("alert").getByRole("link", { name: "Open video", exact: true }).waitFor()
-          }
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, "no horizontal page overflow")
           assert.deepEqual(errors, [], "no page or hydration errors")
           assert.deepEqual(analyticsRequests, [], "homepage interactions must not send analytics without consent")

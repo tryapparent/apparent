@@ -24,7 +24,7 @@ test('packaged homepage places four explanations between the video and belief se
   assert.ok(root.indexOf('id="demo"') < root.indexOf('id="feature-grid-title"'))
   assert.ok(root.indexOf('id="feature-grid-title"') < root.indexOf('id="belief"'))
   assert.equal((root.match(/class="feature-grid-card"/g) ?? []).length, 4)
-  assert.match(root, /Pause animations/)
+  assert.doesNotMatch(root, /(?:Play|Pause) animations/)
 })
 test('every local animation asset is packaged, including the cropped whiteboard movie', async () => {
   for (const page of ['how-it-works', 'timeline', 'handoff', 'anywhere']) {
