@@ -10,68 +10,16 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
-use transcribe_cpp::{Model, RunOptions, Session, TimestampKind};
+use transcribe_cpp::{Model, RunOptions, TimestampKind};
 
 use crate::capture::desktop::helper::SpeechModelLine;
 use crate::shared::model::{TranscriptData, TranscriptSegment, WordTiming};
 
 const KHZ: u64 = 16;
 
-/// Reuse one Parakeet session across speech chunks discovered during a recording.
-pub struct Incremental {
-    session: Session,
-    name: String,
-}
-
-impl Incremental {
-    pub fn new() -> Result<Self> {
-        let path = installed_models().into_iter().next().context("No Parakeet model installed")?;
-        Self::load(&path)
-    }
-
-    pub fn load(path: &Path) -> Result<Self> {
-        init_backends()?;
-        let session = Model::load(path)?.session()?;
-        Ok(Self { session, name: model_name(path) })
-    }
-
-    pub fn transcribe(&mut self, samples: &[f32], offset_ms: u64) -> Result<TranscriptData> {
-        let options = RunOptions {
-            timestamps: TimestampKind::Word,
-            language: Some("en".into()),
-            ..Default::default()
-        };
-        // One-shot runs replace native results (including word times); the binding
-        // materializes owned output. Do not use a streaming context across captures.
-        let result = self.session.run(samples, &options)?;
-        let text = result.text.split_whitespace().collect::<Vec<_>>().join(" ");
-        let at = |ms: i64| offset_ms + ms.max(0) as u64;
-        let mut transcript = TranscriptData {
-            source: format!("parakeet:{}", self.name),
-            model: Some(self.name.clone()),
-            text: text.clone(),
-            ..Default::default()
-        };
-        if text.is_empty() { return Ok(transcript); }
-        transcript.words = result.words.iter().filter(|w| !w.text.trim().is_empty()).map(|w| WordTiming {
-            t0: at(w.t0_ms), t1: at(w.t1_ms.max(w.t0_ms)), text: w.text.trim().to_owned(),
-        }).collect();
-        if transcript.words.is_empty() {
-            let (segments, words) = crate::shared::hex::spread_words(&text, offset_ms, offset_ms + samples.len() as u64 / KHZ);
-            transcript.estimated = true;
-            transcript.segments = segments;
-            transcript.words = words;
-        } else {
-            transcript.segments = result.segments.iter().filter(|s| !s.text.trim().is_empty()).map(|s| TranscriptSegment {
-                t0: at(s.t0_ms), t1: at(s.t1_ms.max(s.t0_ms)), text: s.text.trim().to_owned(),
-            }).collect();
-            if transcript.segments.is_empty() {
-                transcript.segments.push(TranscriptSegment { t0: transcript.words[0].t0, t1: transcript.words.last().unwrap().t1, text });
-            }
-        }
-        Ok(transcript)
-    }
-}
+#[path = "../../../../../engine/recording/parakeet.rs"]
+mod parakeet;
+pub(super) use parakeet::{Incremental, RecognitionPhase};
 
 /// The model Apparent downloads when Hex hasn't installed one: the same file, revision and
 /// checksum as Hex's `PARAKEET_UNIFIED_ENGLISH_ARTIFACT`.

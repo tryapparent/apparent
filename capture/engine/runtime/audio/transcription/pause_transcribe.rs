@@ -8,8 +8,10 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, ensure};
 
-use crate::capture::engine::runtime::audio::persistence::Samples;
+use crate::capture::engine::runtime::audio::{audio, persistence::Samples};
 use crate::shared::model::TranscriptData;
+
+use super::{speech::{Incremental, RecognitionPhase}, warm_recognizer};
 
 const RATE: usize = 16_000;
 const QUIET_MS: usize = 700;
@@ -30,22 +32,22 @@ pub struct Pause {
 
 impl Pause {
     pub fn start(samples: Arc<Mutex<Samples>>) -> Result<Self> {
-        crate::capture::engine::runtime::audio::transcription::warm_recognizer::clear_if_disabled();
+        warm_recognizer::clear_if_disabled();
         if crate::shared::handoff::warm_recognizer() {
-            return Self::start_with(samples, crate::capture::engine::runtime::audio::transcription::warm_recognizer::transcriber()?);
+            return Self::start_with(samples, warm_recognizer::transcriber()?);
         }
-        let mut model: Option<crate::capture::engine::runtime::audio::transcription::speech::Incremental> = None;
-        Self::start_with(samples, move |chunk, offset| {
+        let mut model = None;
+        Self::start_with(samples, move |chunk, offset, phase| {
             if model.is_none() {
-                model = Some(crate::capture::engine::runtime::audio::transcription::speech::Incremental::new()?);
+                model = Some(Incremental::new()?);
             }
-            model.as_mut().unwrap().transcribe(chunk, offset)
+            model.as_mut().unwrap().transcribe(chunk, offset, phase)
         })
     }
 
     pub(super) fn start_with(
         samples: Arc<Mutex<Samples>>,
-        mut transcribe: impl FnMut(&[f32], u64) -> Result<TranscriptData> + Send + 'static,
+        mut transcribe: impl FnMut(&[f32], u64, RecognitionPhase) -> Result<TranscriptData> + Send + 'static,
     ) -> Result<Self> {
         let stop = Arc::new(AtomicBool::new(false));
         let worker_stop = Arc::clone(&stop);
@@ -77,9 +79,13 @@ impl Pause {
                         }
                     }
                     if let Some((start, end)) = pause_boundary(&pending) {
+                        if worker_stop.load(Ordering::Acquire) {
+                            break;
+                        }
                         let part = transcribe(
                             &pending[start..end],
                             (consumed + start) as u64 * 1_000 / RATE as u64,
+                            RecognitionPhase::Recording,
                         )?;
                         parts.push(part);
                         pending.drain(..end);
@@ -89,7 +95,7 @@ impl Pause {
                     }
                 }
                 let wav = finished.recv().context("No finished recording")?;
-                let all = crate::capture::engine::runtime::audio::audio::decode_wav_16k(&wav)?;
+                let all = audio::decode_wav_16k(&wav)?;
                 ensure!(
                     consumed <= all.len(),
                     "Pause exceeded the finished recording"
@@ -98,6 +104,7 @@ impl Pause {
                     parts.push(transcribe(
                         &all[consumed..],
                         consumed as u64 * 1_000 / RATE as u64,
+                        RecognitionPhase::Finishing,
                     )?);
                 }
                 Ok(merge(parts))
@@ -135,7 +142,7 @@ impl Drop for Pause {
 }
 
 fn pause_boundary(samples: &[f32]) -> Option<(usize, usize)> {
-    let islands = crate::capture::engine::runtime::audio::audio::speech_islands(samples);
+    let islands = audio::speech_islands(samples);
     let clips = islands;
     // Energy chooses only when to cut. Every drained sample must reach recognition.
     clips.first()?;
@@ -156,7 +163,7 @@ fn pause_boundary(samples: &[f32]) -> Option<(usize, usize)> {
 
 /// Feed a saved WAV at microphone speed for a repeatable CLI comparison.
 pub fn simulate(wav: &[u8], speed: f64) -> Result<Pause> {
-    let samples = crate::capture::engine::runtime::audio::audio::decode_wav_16k(wav)?;
+    let samples = audio::decode_wav_16k(wav)?;
     let buffer = Arc::new(Mutex::new(Samples::default()));
     let pause = Pause::start(Arc::clone(&buffer))?;
     let started = std::time::Instant::now();
@@ -258,8 +265,8 @@ mod tests {
     fn finished_pause_is_processed_before_stop_and_tail_is_not_lost() {
         let samples = Arc::new(Mutex::new(Samples::default()));
         let (sent, received) = mpsc::channel();
-        let pause = Pause::start_with(Arc::clone(&samples), move |chunk, offset| {
-            sent.send((chunk.len(), offset)).unwrap();
+        let pause = Pause::start_with(Arc::clone(&samples), move |chunk, offset, phase| {
+            sent.send((chunk.len(), offset, phase)).unwrap();
             Ok(TranscriptData {
                 source: "test".into(),
                 text: if offset == 0 { "first" } else { "last" }.into(),
@@ -273,13 +280,15 @@ mod tests {
             .recv_timeout(Duration::from_secs(3))
             .expect("pause must be processed during recording");
         assert_eq!(first.1, 0);
+        assert_eq!(first.2, RecognitionPhase::Recording);
         assert!(first.0 >= 4 * 16_000);
         samples.lock().unwrap().extend(vec![0.2; 16_000]);
-        let wav = crate::capture::engine::runtime::audio::audio::encode_wav_16k(&samples.lock().unwrap()).unwrap();
+        let wav = audio::encode_wav_16k(&samples.lock().unwrap()).unwrap();
         let result = pause.finish(&wav).unwrap();
         assert_eq!(result.text, "first last");
         let second = received.recv_timeout(Duration::from_secs(1)).unwrap();
         assert_eq!(second.1 as usize, first.0 * 1_000 / RATE);
+        assert_eq!(second.2, RecognitionPhase::Finishing);
         assert_eq!(first.0 + second.0, 6 * 16_000);
     }
 
@@ -287,7 +296,7 @@ mod tests {
     fn early_chunk_preserves_quiet_lead_in_without_shifting_word_times() {
         let samples = Arc::new(Mutex::new(vec![0.0; 2 * RATE].into()));
         let (sent, received) = mpsc::channel();
-        let pause = Pause::start_with(Arc::clone(&samples), move |chunk, offset| {
+        let pause = Pause::start_with(Arc::clone(&samples), move |chunk, offset, _| {
             sent.send((chunk.len(), offset)).unwrap();
             Ok(TranscriptData {
                 source: "test".into(),
@@ -302,7 +311,7 @@ mod tests {
             .expect("first phrase should be transcribed during recording");
         assert_eq!(offset, 0);
         assert_eq!(length, 6 * RATE + PAD_MS * RATE / 1_000);
-        let wav = crate::capture::engine::runtime::audio::audio::encode_wav_16k(&samples.lock().unwrap()).unwrap();
+        let wav = audio::encode_wav_16k(&samples.lock().unwrap()).unwrap();
         pause.finish(&wav).unwrap();
     }
 
@@ -310,7 +319,7 @@ mod tests {
     fn short_phrase_after_silence_still_runs_before_stop() {
         let samples = Arc::new(Mutex::new(vec![0.0; 2 * RATE].into()));
         let (sent, received) = mpsc::channel();
-        let pause = Pause::start_with(Arc::clone(&samples), move |chunk, offset| {
+        let pause = Pause::start_with(Arc::clone(&samples), move |chunk, offset, _| {
             sent.send((chunk.len(), offset)).unwrap();
             Ok(TranscriptData::default())
         })
@@ -322,7 +331,7 @@ mod tests {
             .expect("a short phrase after silence must be processed during recording");
         assert_eq!(offset, 0);
         assert_eq!(length, 3 * RATE + PAD_MS * RATE / 1_000);
-        let wav = crate::capture::engine::runtime::audio::audio::encode_wav_16k(&samples.lock().unwrap()).unwrap();
+        let wav = audio::encode_wav_16k(&samples.lock().unwrap()).unwrap();
         pause.finish(&wav).unwrap();
     }
 
@@ -331,7 +340,7 @@ mod tests {
         let samples = Arc::new(Mutex::new(Samples::from(vec![0.2; 4 * RATE])));
         samples.lock().unwrap().extend(vec![0.0; RATE]);
         let (sent, received) = mpsc::channel();
-        let pause = Pause::start_with(Arc::clone(&samples), move |chunk, _| {
+        let pause = Pause::start_with(Arc::clone(&samples), move |chunk, _, _| {
             sent.send(chunk.len()).unwrap();
             Ok(TranscriptData {
                 source: "test".into(),
@@ -340,7 +349,7 @@ mod tests {
         })
         .unwrap();
         let first = received.recv_timeout(Duration::from_secs(3)).unwrap();
-        let wav = crate::capture::engine::runtime::audio::audio::encode_wav_16k(&samples.lock().unwrap()).unwrap();
+        let wav = audio::encode_wav_16k(&samples.lock().unwrap()).unwrap();
         pause.finish(&wav).unwrap();
         let tail = received
             .recv_timeout(Duration::from_secs(1))
@@ -400,7 +409,7 @@ mod tests {
             0.0;
             (MAX_PENDING_MS + 1_000) * RATE / 1_000
         ].into()));
-        let mut pause = Pause::start_with(samples, |_, _| panic!("no chunk is safe")).unwrap();
+        let mut pause = Pause::start_with(samples, |_, _, _| panic!("no chunk is safe")).unwrap();
         let worker = pause.worker.take().unwrap();
         let deadline = std::time::Instant::now() + Duration::from_secs(3);
         while !worker.is_finished() {
@@ -415,7 +424,7 @@ mod tests {
     fn rolling_capture_keeps_absolute_chunk_and_tail_offsets() {
         let samples = Arc::new(Mutex::new(Samples::default()));
         let (sent, received) = mpsc::channel();
-        let pause = Pause::start_with(Arc::clone(&samples), move |chunk, offset| {
+        let pause = Pause::start_with(Arc::clone(&samples), move |chunk, offset, _| {
             sent.send((chunk.len(), offset)).unwrap();
             Ok(TranscriptData::default())
         }).unwrap();
@@ -434,7 +443,7 @@ mod tests {
             assert_eq!(captured.recent().len(), 60 * RATE);
             assert!(captured.get(0..).is_none());
         }
-        let wav = crate::capture::engine::runtime::audio::audio::encode_wav_16k(&all).unwrap();
+        let wav = audio::encode_wav_16k(&all).unwrap();
         samples.lock().unwrap().clear();
         pause.finish(&wav).unwrap();
         let (length, offset) = received.recv_timeout(Duration::from_secs(1)).unwrap();
@@ -448,7 +457,7 @@ mod tests {
         samples.lock().unwrap().extend(vec![0.0; RATE]);
         let (entered, seen) = mpsc::channel();
         let (release, wait) = mpsc::channel();
-        let pause = Pause::start_with(samples, move |_, _| {
+        let pause = Pause::start_with(samples, move |_, _, _| {
             entered.send(()).unwrap();
             wait.recv().unwrap();
             Ok(TranscriptData::default())
@@ -472,8 +481,8 @@ mod tests {
         let start = std::time::Instant::now();
         let baseline = crate::capture::engine::runtime::audio::transcription::speech::transcribe(std::path::Path::new(&path)).unwrap();
         let batch_ms = start.elapsed().as_millis();
-        let samples = crate::capture::engine::runtime::audio::audio::decode_wav_16k(&wav).unwrap();
-        let whole = crate::capture::engine::runtime::audio::transcription::speech::Incremental::new().unwrap().transcribe(&samples, 0).unwrap();
+        let samples = audio::decode_wav_16k(&wav).unwrap();
+        let whole = Incremental::new().unwrap().transcribe(&samples, 0, RecognitionPhase::Finishing).unwrap();
         let pause = simulate(&wav, 1.0).unwrap();
         let stop = std::time::Instant::now();
         let candidate = pause.finish(&wav).unwrap();
