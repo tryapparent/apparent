@@ -59,7 +59,13 @@ try {
   const probe = `
     import assert from "node:assert/strict";
     import { PracticeHost } from "@apparent/onboarding/practice-host";
+    import traversal from "@apparent/onboarding/traversal";
     for (const entry of ${JSON.stringify(imports)}) await import(entry);
+    const shortcut = { $: "TourShortcut" };
+    assert.deepEqual(traversal.back(shortcut, false, false), { $: "TourPermissions" });
+    assert.deepEqual(traversal.back(shortcut, false, true), { $: "TourWelcome" });
+    assert.deepEqual(traversal.primary(shortcut, true, true, true, false, false), { $: "TourStay" });
+    assert.deepEqual(traversal.resume_capture({ $: "TourDone" }, true, false), { $: "TourTryIt" });
     const host = new PracticeHost();
     const result = host.accept({
       type: "practice-batch", version: 1, source: "1", transport: "1",

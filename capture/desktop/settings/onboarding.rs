@@ -98,10 +98,6 @@ impl Step {
     fn position(self) -> usize {
         Self::TOUR.iter().position(|s| *s == self).unwrap_or(0)
     }
-
-    fn next(self) -> Step {
-        Self::TOUR[(self.position() + 1).min(Self::TOUR.len() - 1)]
-    }
 }
 
 /// What happened with the demo on the how-it-works screen. Later variants win: a demo skipped
@@ -291,15 +287,7 @@ impl Flow {
         self.shortcut_chosen = chosen;
         self.shortcut_tested = chosen && (tested || completed);
         self.first_capture_completed = completed;
-        if self.first_capture_required && self.step.position() >= Step::Shortcut.position() {
-            self.step = if self.first_capture_completed {
-                Step::Done
-            } else if self.step == Step::Done {
-                Step::TryIt
-            } else {
-                self.step
-            };
-        }
+        self.step = traversal::resume_capture(self.step, self.first_capture_required, completed);
         self
     }
     /// The tour from `start`. Walking forward passes the permissions screen when everything on
@@ -316,14 +304,14 @@ impl Flow {
         } else if start == Step::Permissions {
             start
         } else {
-            flow.forward_from(start)
+            traversal::enter(start, flow.done())
         };
         flow
     }
 
     pub fn coaching(start: Step, grants: Option<Grants>) -> Self {
         let mut flow = Self::new(Mode::Tour, start, Vec::new(), grants);
-        flow.step = flow.forward_from(start);
+        flow.step = traversal::enter(start, flow.done());
         flow
     }
 
@@ -422,7 +410,7 @@ impl Flow {
             }
             Input::Continue => self.primary(),
             Input::Back => {
-                self.step = self.back_from(self.step);
+                self.step = traversal::back(self.step, self.mode == Mode::Fix, self.done());
                 self.shortcut_editing = false;
                 Effect::None
             }
@@ -483,10 +471,11 @@ impl Flow {
     }
 
     pub fn view(&self) -> View {
+        let ready = self.done();
         let shown: Vec<Step> = Step::TOUR
             .into_iter()
             .filter(|s| *s != Step::Done)
-            .filter(|s| *s == self.step || !self.passes(*s))
+            .filter(|s| *s == self.step || traversal::visible(*s, ready))
             .collect();
         View {
             step: self.step,
@@ -506,7 +495,7 @@ impl Flow {
                     }
                 })
                 .collect(),
-            ready: self.done(),
+            ready,
             fix: self.mode == Mode::Fix,
             tutorial: self.tutorial,
             picker_note: self.screen_confirmed == Some(self.step),
@@ -560,49 +549,30 @@ impl Flow {
         self.needed().all(|p| self.usable(p))
     }
 
-    /// Skip the removed demonstration and already-usable permissions.
-    fn passes(&self, step: Step) -> bool {
-        step == Step::HowItWorks || (step == Step::Permissions && self.done())
-    }
-
-    fn forward_from(&self, mut step: Step) -> Step {
-        while self.passes(step) {
-            step = step.next();
-        }
-        step
-    }
-
-    fn back_from(&self, step: Step) -> Step {
-        if self.mode == Mode::Fix {
-            return step;
-        }
-        let mut i = step.position();
-        while i > 0 {
-            i -= 1;
-            if !self.passes(Step::TOUR[i]) {
-                return Step::TOUR[i];
-            }
-        }
-        step
-    }
-
     fn advance(&mut self) -> Effect {
         self.ready_at = None;
         self.shortcut_editing = false;
-        if self.mode == Mode::Fix {
-            return Effect::Close;
+        match traversal::advance(self.step, self.mode == Mode::Fix, self.done()) {
+            Some(step) => {
+                self.step = step;
+                Effect::None
+            }
+            None => Effect::Close,
         }
-        self.step = self.forward_from(self.step.next());
-        Effect::None
     }
 
     fn primary(&mut self) -> Effect {
-        match self.step {
-            Step::Shortcut if self.first_capture_required && (!self.shortcut_chosen || !self.shortcut_tested || self.shortcut_editing) => Effect::None,
-            Step::TryIt if self.first_capture_required => Effect::None,
-            Step::TryIt | Step::Done => Effect::Close,
-            Step::Permissions if !self.done() => Effect::None,
-            _ => self.advance(),
+        match traversal::primary(
+            self.step,
+            self.done(),
+            self.first_capture_required,
+            self.shortcut_chosen,
+            self.shortcut_tested,
+            self.shortcut_editing,
+        ) {
+            traversal::Primary::Stay => Effect::None,
+            traversal::Primary::Close => Effect::Close,
+            traversal::Primary::Advance => self.advance(),
         }
     }
 

@@ -1,6 +1,6 @@
 {
   "name": "@apparent/onboarding",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "exports": {
     "./practice": {
@@ -34,6 +34,10 @@
     "./actions": {
       "types": "./dist/host/actions.d.ts",
       "import": "./dist/host/actions.js"
+    },
+    "./traversal": {
+      "types": "./dist/host/traversal/tour-traversal.d.mts",
+      "import": "./dist/host/traversal/tour-traversal.mjs"
     }
   },
   "files": [
@@ -42,7 +46,7 @@
   "scripts": {
     "test": "node --experimental-strip-types --test practice/*.test.ts host/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node enablement/ci/bend/build.ts",
     "check": "node --experimental-strip-types enablement/ci/check.ts"
   },
   "devDependencies": {

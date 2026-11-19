@@ -70,6 +70,8 @@ fn compile_onboarding_entry_policy() {
     let generator = "onboarding/enablement/ci/entry-policy.ts";
     println!("cargo:rerun-if-changed={generator}");
     println!("cargo:rerun-if-changed=onboarding/host/entry-policy.ts");
+    println!("cargo:rerun-if-changed=onboarding/enablement/ci/bend");
+    println!("cargo:rerun-if-changed=onboarding/host/traversal/tour-traversal.json");
     let generated = Command::new("node")
         .args(["--experimental-strip-types", generator])
         .output()
