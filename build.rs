@@ -90,6 +90,7 @@ fn emit_recording_permissions() {
     let generator = "record/enablement/permissions/native.ts";
     println!("cargo:rerun-if-changed={generator}");
     println!("cargo:rerun-if-changed=record/capture-request/src/permission-requirements.ts");
+    println!("cargo:rerun-if-changed=record/settings/permissions/permission-policy.json");
     let output = Command::new("node")
         .args(["--experimental-strip-types", generator])
         .output()

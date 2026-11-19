@@ -15,6 +15,10 @@ pub enum Permission {
 }
 
 impl Permission {
+    pub fn draggable(self) -> bool {
+        matches!(self, Self::ScreenRecording | Self::Accessibility)
+    }
+
     pub(crate) fn asked(self, grants: Option<&Grants>) -> bool {
         self != Self::SpeechRecognition
             || grants.is_some_and(|grants| grants.statuses.contains_key(&self))

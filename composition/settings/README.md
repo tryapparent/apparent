@@ -40,3 +40,22 @@ synthetic native parent. For a real-provider check, stage the same Settings
 package beside an unchanged native app built with the Recording bridge. Its
 normal sidebar sends the same actions and writer acknowledgements. Pure pane
 changes rebuild the JavaScript assets only.
+
+## Permissions
+
+The same Electron window presents Record's Permissions section and accepts its
+actions only on the Permissions route. The renderer receives status and the
+applicable repair affordance. The native presenter waits for an OS observation
+started after the action before confirming a Recheck or applying a repair.
+Returning to Recording cancels pending requests and closes any owned drag
+guides. Screen Recording prompts come from Apparent, and the existing signed
+helper handles microphone, camera, speech and the System Settings drag guide.
+Reopening uses the guarded application restart and refuses while a capture is
+active. On Wayland the command repairs input-device access, and screen
+authorization stays with the capture-time portal.
+
+The native pane remains the rollback when the Electron assets fail to open.
+Retire the native presentation after installed macOS and Linux package
+acceptance covers both routes, native prompt and recovery behavior and fallback
+on the supported packages. The underlying native observations and effects
+remain in use.

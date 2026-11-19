@@ -1,5 +1,8 @@
 use crate::capture::engine::runtime::recording::recorder::selection;
 use crate::permission_facts::{Grants, Permission, Status};
+use crate::shared::handoff::Config;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 
 include!(concat!(env!("OUT_DIR"), "/recording_permissions.rs"));
 
@@ -190,4 +193,138 @@ mod tests {
         assert_eq!(check_required(None, silent), Admission::Ready);
         assert_eq!(check_required(Some(&grants), narrated), Admission::Ready);
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum Repair {
+    None,
+    Request,
+    OpenSettings,
+    CopyInput,
+}
+
+pub(crate) fn repair(
+    status: Status,
+    requested: bool,
+    open_directly: bool,
+    copy_input: bool,
+) -> Repair {
+    let observed = match status {
+        Status::NotDetermined => 0,
+        Status::Denied => 1,
+        Status::Granted => 2,
+        Status::Unavailable => 3,
+    };
+    let index = observed
+        | (usize::from(requested) << 2)
+        | (usize::from(open_directly) << 3)
+        | (usize::from(copy_input) << 4);
+    REPAIR[index]
+}
+
+#[derive(Clone, Copy, Deserialize, Debug, PartialEq)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub(crate) enum PermissionIntent {
+    Recheck,
+    Repair {
+        permission: Permission,
+        repair: RepairIntent,
+    },
+    Reopen,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum RepairIntent {
+    Request,
+    OpenSettings,
+    CopyInput,
+}
+
+impl RepairIntent {
+    pub(crate) fn matches(self, repair: Repair) -> bool {
+        matches!(
+            (self, repair),
+            (Self::Request, Repair::Request)
+                | (Self::OpenSettings, Repair::OpenSettings)
+                | (Self::CopyInput, Repair::CopyInput)
+        )
+    }
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum Platform {
+    Macos,
+    Wayland,
+    X11,
+}
+
+impl Platform {
+    fn rows(self) -> impl Iterator<Item = Permission> {
+        use Permission::*;
+        let mask = ROWS[self as usize];
+        [
+            ScreenRecording,
+            Microphone,
+            Accessibility,
+            Camera,
+            SpeechRecognition,
+        ]
+        .into_iter()
+        .enumerate()
+        .filter_map(move |(index, permission)| (mask & (1 << index) != 0).then_some(permission))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Row {
+    pub(crate) permission: Permission,
+    pub(crate) status: Status,
+    pub(crate) required: bool,
+    pub(crate) relaunch: bool,
+    pub(crate) requested: bool,
+    pub(crate) repair: Repair,
+}
+
+pub(crate) fn project_rows<'a>(
+    platform: Platform,
+    grants: Option<&'a Grants>,
+    requested: &'a BTreeSet<Permission>,
+    microphone: bool,
+    config: &'a Config,
+    legacy: bool,
+) -> impl Iterator<Item = Row> + 'a {
+    let grants = grants.filter(|grants| legacy || grants.is_current());
+    platform
+        .rows()
+        .filter(move |permission| permission.asked(grants))
+        .map(move |permission| {
+            let status = grants.map_or(
+                if legacy {
+                    Status::NotDetermined
+                } else {
+                    Status::Unavailable
+                },
+                |grants| grants.status(permission),
+            );
+            let relaunch = permission == Permission::ScreenRecording && screen_relaunch(grants);
+            let copy_input =
+                matches!(platform, Platform::Wayland) && permission == Permission::Accessibility;
+            let repair = if matches!(platform, Platform::Macos) || copy_input {
+                repair(status, requested.contains(&permission), false, copy_input)
+            } else {
+                Repair::None
+            };
+            Row {
+                permission,
+                status,
+                required: requires(permission, microphone, config),
+                relaunch,
+                requested: requested.contains(&permission),
+                repair,
+            }
+        })
 }

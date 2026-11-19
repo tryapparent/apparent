@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, renameSync, writeFileSync } from "node:fs";
+import { copyFileSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -9,6 +9,7 @@ import {
   proofOptions,
 } from "../../../../shared/enablement/bend/build.ts";
 import { run } from "../../../../shared/enablement/bend/toolchain.ts";
+import { repairTable } from "./permission-table.ts";
 import { admissionSource, buildAdmission } from "./build.ts";
 
 const root = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -16,6 +17,13 @@ const options = proofOptions(process.argv.slice(2));
 await bendScratch(async (scratch) => {
   const proofOutput = join(scratch, "proof");
   await buildBend(root, "record", proofOutput, options);
+  const repair = JSON.parse(
+    readFileSync(
+      join(root, "record/settings/permissions/permission-policy.json"),
+      "utf8",
+    ),
+  );
+  assert.deepEqual(repairTable(proofOutput), repair);
   run(
     process.execPath,
     [

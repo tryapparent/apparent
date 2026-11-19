@@ -50,14 +50,7 @@ impl Permission {
         Self::REQUIRED.contains(&self) && (self != Self::Microphone || crate::capture::engine::runtime::audio::mic::enabled())
     }
 
-    /// Privacy lists the app can be dragged into: Grant flies the drag panel to System
-    /// Settings (`apparent-helper permission-panel`) instead of raising Apple's prompt.
-    pub fn draggable(self) -> bool {
-        matches!(
-            self,
-            Permission::ScreenRecording | Permission::Accessibility
-        )
-    }
+
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -237,12 +230,14 @@ pub struct View {
     pub shortcut_tested: bool,
 }
 
+pub(crate) type PermissionRepair = fn(Status, bool, bool, bool) -> crate::permission_admission::Repair;
+
 #[derive(Clone, Debug)]
 pub struct Flow {
+    pub(crate) permission_repair: Option<PermissionRepair>,
     mode: Mode,
     step: Step,
     grants: Option<Grants>,
-    /// The rows on the permissions screen.
     asks: Vec<Permission>,
     requested: BTreeSet<Permission>,
     ready_at: Option<u64>,
@@ -322,6 +317,10 @@ impl Flow {
 
     fn new(mode: Mode, step: Step, asks: Vec<Permission>, grants: Option<Grants>) -> Self {
         Self {
+            #[cfg(test)]
+            permission_repair: Some(crate::permission_admission::repair),
+            #[cfg(not(test))]
+            permission_repair: None,
             mode,
             step,
             grants,
@@ -577,9 +576,7 @@ impl Flow {
     }
 
     fn grant(&mut self, permission: Permission) -> Effect {
-        if self.step != Step::Permissions || !self.asks.contains(&permission)
-            || self.status(permission) == Status::Unavailable
-        {
+        if self.step != Step::Permissions || !self.asks.contains(&permission) {
             return Effect::None;
         }
         // The fallback after a relaunch that didn't take: the row's button is Reopen.
@@ -590,16 +587,18 @@ impl Flow {
                 self.relaunch()
             };
         }
-        if self.granted(permission) {
-            return Effect::None;
-        }
-        if self.requested.insert(permission)
-            && self.status(permission) != Status::Denied
-            && !permission.draggable()
-        {
-            Effect::Request(permission)
-        } else {
-            Effect::OpenSettings(permission)
+        use crate::permission_admission::Repair;
+        let Some(repair) = self.permission_repair else { return Effect::None; };
+        let choice = repair(
+            self.status(permission), self.requested.contains(&permission), permission.draggable(), false,
+        );
+        match choice {
+            Repair::Request | Repair::OpenSettings => {
+                self.requested.insert(permission);
+                if choice == Repair::Request { Effect::Request(permission) }
+                else { Effect::OpenSettings(permission) }
+            }
+            Repair::None | Repair::CopyInput => Effect::None,
         }
     }
 
@@ -1091,42 +1090,7 @@ pub fn relaunch() {
 }
 
 #[cfg(not(windows))]
-/// Waits (at most 10 s) for process `$1` to exit, then runs the rest.
-const AFTER_EXIT: &str = "pid=$1; shift; i=0; \
-    while kill -0 \"$pid\" 2>/dev/null && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done; ";
-
-/// Starts Apparent again once this copy has quit (after a Screen Recording grant). The app is
-/// opened without `-n`: if macOS's own "Quit & Reopen" already started a new copy, `open` only
-/// brings that one forward, so there are never two.
-#[cfg(not(windows))]
-pub fn relaunch() {
-    let Ok(exe) = std::env::current_exe() else {
-        return;
-    };
-    let bundle = exe
-        .ancestors()
-        .find(|p| p.extension().is_some_and(|ext| ext == "app"));
-    let pid = std::process::id().to_string();
-    let mut command = std::process::Command::new("/bin/sh");
-    match bundle {
-        Some(app) => command
-            .arg("-c")
-            .arg(format!("{AFTER_EXIT}exec /usr/bin/open \"$1\""))
-            .args(["apparent-relaunch", &pid])
-            .arg(app),
-        None => command
-            .arg("-c")
-            .arg(format!("{AFTER_EXIT}exec \"$@\""))
-            .args(["apparent-relaunch", &pid])
-            .arg(&exe)
-            .args(std::env::args_os().skip(1)),
-    };
-    let _ = command
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
-}
+pub use crate::permission_relaunch::relaunch;
 
 include!("onboarding/tests.rs");
 

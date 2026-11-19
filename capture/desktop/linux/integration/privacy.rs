@@ -11,9 +11,13 @@ use crate::permission_facts::{Permission, Status};
 pub const INPUT_COMMAND: &str = "sudo usermod -aG input \"$USER\"";
 
 pub fn copy_input_command() {
-    if let Err(error) = super::super::interaction::clipboard::set_text(INPUT_COMMAND) {
+    if let Err(error) = try_copy_input_command() {
         crate::capture::engine::runtime::apparent_log(format!("Copy input command: {error:#}"));
     }
+}
+
+pub fn try_copy_input_command() -> anyhow::Result<()> {
+    super::super::interaction::clipboard::set_text(INPUT_COMMAND)
 }
 
 pub fn permissions() -> BTreeMap<Permission, Status> {
