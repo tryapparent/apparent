@@ -8,7 +8,7 @@ import {fileURLToPath} from 'node:url';
 
 const owner=fileURLToPath(new URL('..',import.meta.url));
 const builtModules=['activity/index','transfer','transfer/contract','transfer/files','foreground','handoff','index','shares','mcp-wire','mcp-files','mcp-bundle','mcp-endpoint','mcp-cli','mcp/stdio'];
-const builtFiles=builtModules.flatMap(name=>[name+'.d.ts',name+'.js']).sort();
+const builtFiles=[...builtModules.flatMap(name=>[name+'.d.ts',name+'.js']),'reader/reader-route.mjs'].sort();
 function run(command:string,args:string[],cwd:string,env=process.env):string {
   return execFileSync(command,args,{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe']});
 }
@@ -16,9 +16,12 @@ async function fixture(t:test.TestContext) {
   const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'connect-package-'));
   await fs.chmod(root,0o700);
   t.after(()=>fs.rm(root,{recursive:true,force:true}));
-  const source=path.join(root,'source');await fs.mkdir(source);
-  for(const name of ['src','scripts','package.json','tsconfig.json','README.md']) {
+  const source=path.join(root,'connect/client/typescript');await fs.mkdir(source,{recursive:true});
+  for(const name of ['src','package.json','tsconfig.json','README.md']) {
     await fs.cp(path.join(owner,name),path.join(source,name),{recursive:true});
+  }
+  for(const relative of ['shared/enablement/bend','connect/enablement/ci/bend/modules.json','connect/enablement/ci/build-client.ts']) {
+    await fs.cp(path.resolve(owner,'../../..',relative),path.join(root,relative),{recursive:true});
   }
   await fs.symlink(path.join(owner,'node_modules'),path.join(source,'node_modules'));
   return {root,source};
@@ -29,7 +32,7 @@ test('build removes stale generated modules and refuses redirected output',async
   await fs.mkdir(dist);await fs.writeFile(path.join(dist,'obsolete.js'),'obsolete');
   await fs.writeFile(path.join(dist,'obsolete.d.ts'),'obsolete');
   run('npm',['run','build'],source);
-  assert.deepEqual((await fs.readdir(dist,{recursive:true})).filter(name=>/\.(js|ts)$/.test(name)).sort(),builtFiles);
+  assert.deepEqual((await fs.readdir(dist,{recursive:true})).filter(name=>/\.(m?js|ts)$/.test(name)).sort(),builtFiles);
   await fs.rm(dist,{recursive:true});
   const external=path.join(root,'external');await fs.mkdir(external);
   await fs.writeFile(path.join(external,'sentinel'),'preserve');
@@ -105,6 +108,8 @@ test('packed consumer installs and runs without Rust, compilers or source resolu
   }
   const unavailable=execFileSync(process.execPath,[installedPolicy],{cwd:consumer,env,input:'{"operation":"fetchFailure","kind":"unavailable"}\n',encoding:'utf8'});
   assert.match(JSON.parse(unavailable), /Capture unavailable.*API origin.*fresh handoff/);
+  const routed=execFileSync(process.execPath,[installedPolicy],{cwd:consumer,env,input:'{"operation":"readerRoute","outcomes":["missing","found"],"canWait":false}\n',encoding:'utf8'});
+  assert.deepEqual(JSON.parse(routed),{$:'Use',index:1});
   const help=execFileSync(process.execPath,[installedPolicy],{cwd:consumer,env,input:'{"operation":"alternatives"}\n',encoding:'utf8'});
   assert.match(JSON.parse(help),/scp -r/);
   await fs.writeFile(path.join(consumer,'consumer.mts'),`

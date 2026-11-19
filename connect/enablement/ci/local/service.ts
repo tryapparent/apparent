@@ -2,6 +2,7 @@ export const serviceInputs = [
   "connect/service",
   "connect/enablement/ci/bend/build.ts",
   "connect/enablement/ci/bend/modules.json",
+  "connect/enablement/ci/build-client.ts",
   "shared/enablement/bend",
   "connect/client/typescript",
   "shared/ui",

@@ -87,6 +87,8 @@ pub enum ConnectCommand {
         /// Print the verification link without opening a browser.
         #[arg(long)]
         no_browser: bool,
+        #[arg(long, help = "Save a separate named read profile")]
+        reader: Option<String>,
     },
     /// Inspect local queue and credentials (never prints tokens); --account also reads quota.
     Status {
@@ -94,7 +96,12 @@ pub enum ConnectCommand {
         account: bool,
     },
     /// Disable automatic uploads, cancel pending jobs and remove both local tokens.
-    Logout,
+    Logout {
+        #[arg(long, help = "Sign out only this named read profile")]
+        reader: Option<String>,
+    },
+    #[command(about = "List local Connect read profiles and authorization status")]
+    Readers,
     /// Disable automatic uploads and cancel pending jobs, retaining credentials.
     Disable,
     /// Retry failed queued captures. Does not discover or upload old captures.
@@ -106,7 +113,11 @@ pub enum ConnectCommand {
     /// Explicitly upload one historical capture (requires upload consent).
     Upload { bundle: PathBuf },
     /// List original assets using only the encrypted index (v2 captures).
-    Files { id: String },
+    Files {
+        id: String,
+        #[arg(long, help = "Use a specific read profile")]
+        reader: Option<String>,
+    },
     /// Show local inspection and authorized transfer options when Connect is unavailable.
     Alternatives,
     /// List or revoke public-by-link access. IDs are management IDs, not capture IDs.
@@ -202,6 +213,7 @@ pub struct Client {
     #[cfg(any(test, feature = "test-support"))]
     config: PathBuf,
     state: PathBuf,
+    named_reader: bool,
 }
 
 fn now() -> u64 {
@@ -1002,6 +1014,7 @@ impl Client {
             #[cfg(any(test, feature = "test-support"))]
             config,
             state,
+            named_reader: false,
         }
     }
     fn settings(&self) -> CloudConfig {
@@ -1529,6 +1542,11 @@ impl Client {
         ensure!(allowed(), "cancelled");
         let server = server_url(server)?;
         ensure!(matches!(scope, "upload" | "read"), "Invalid scope");
+        ensure!(!self.named_reader || scope == "read", "Named readers require --scope read");
+        ensure!(
+            !self.named_reader || self.provider.experiment(HOSTED_ENCRYPTION),
+            "Enable hostedEncryption before approving a named reader"
+        );
         ensure!(
             scope != "upload" || consent,
             "Upload shares screen, voice, transcript and all bundle media with the hosted service. Repeat with --consent-upload to explicitly agree"
@@ -1696,24 +1714,26 @@ impl Client {
         )?;
         // Read-only login must not silently enable upload or switch an active uploader's server.
         ensure!(allowed(), "cancelled");
-        let mut settings = self.settings();
         #[cfg(any(test, feature = "test-support"))]
         test_support::run_hook("login_snapshot", &self.config);
-        ensure!(
-            scope == "upload" || !settings.enabled || settings.server == server,
-            "Disable uploads before switching servers"
-        );
-        if scope == "upload" {
-            settings = CloudConfig {
-                enabled: true,
-                upload_consent: true,
-                server: server.clone(),
-            };
-            self.provider.set_experiment(HOSTED_SYNC, true)?;
-        } else {
-            settings.server = server;
+        if !self.named_reader {
+            let mut settings = self.settings();
+            ensure!(
+                scope == "upload" || !settings.enabled || settings.server == server,
+                "Disable uploads before switching servers"
+            );
+            if scope == "upload" {
+                settings = CloudConfig {
+                    enabled: true,
+                    upload_consent: true,
+                    server: server.clone(),
+                };
+                self.provider.set_experiment(HOSTED_SYNC, true)?;
+            } else {
+                settings.server = server;
+            }
+            self.provider.set_cloud_allowed(&settings, allowed)?;
         }
-        self.provider.set_cloud_allowed(&settings, allowed)?;
         ensure!(allowed(), "cancelled");
         self.clear_renewal(scope)?;
         atomic_json(&self.state.join(format!("{scope}.credential")), &credential)?;
@@ -1743,10 +1763,12 @@ impl Client {
         atomic_json(&self.state.join("cancellation"), &random_id()?)?;
         // Serialize the snapshot and gate write with login's settings/credential
         // commit. No network or staging holds this lock, only brief state work.
-        let mut settings = self.settings();
-        settings.enabled = false;
-        settings.upload_consent = false;
-        self.provider.set_cloud(&settings)?;
+        if !self.named_reader {
+            let mut settings = self.settings();
+            settings.enabled = false;
+            settings.upload_consent = false;
+            self.provider.set_cloud(&settings)?;
+        }
         let mut stopped = Vec::new();
         let mut revoke = Vec::new();
         for scope in ["upload", "read"] {
@@ -2064,154 +2086,6 @@ impl Client {
             "Hosted completion verification failed"
         );
         Ok(())
-    }
-    pub fn fetch(&self, id: &str, out: &Path, wait: u64) -> Result<PathBuf> {
-        self.fetch_selected(id, out, wait, None)
-    }
-    pub fn fetch_selected(&self, id: &str, out: &Path, wait:u64, selection:Option<&[String]>) -> Result<PathBuf> {
-        self.fetch_inner(id, out, wait, selection).map_err(|error| {
-            let kind = match error.to_string().as_str() {
-                "Hosted API: not_found" => "unavailable",
-                message if message.starts_with("auth_required:") || matches!(message,
-                    "Hosted API: unauthorized" | "Hosted API: forbidden" | "Hosted API: reauthorization_required") => "authorization",
-                "Server must use HTTPS" | "Invalid server URL" | "Invalid server host"
-                    | "Invalid server port" | "Server must be an origin without a path"
-                    | "Plain HTTP is allowed only on loopback" => "server_configuration",
-                "Hosted transport failed (network, timeout or response limit)"
-                    | "Hosted transport input failed"
-                    | "curl is required for hosted transport"
-                    | "Hosted API: http_error" => "transport",
-                _ => return error,
-            };
-            // Presentation stays with Connect's TypeScript handoff owner.
-            Self::handoff_policy(json!({"operation":"fetchFailure","kind":kind}))
-                .ok().and_then(|value| value.as_str().map(str::to_owned))
-                .map(|hint| anyhow::Error::msg(if matches!(kind, "server_configuration" | "transport") {
-                    format!("{error}. {hint}")
-                } else { hint })).unwrap_or(error)
-        })
-    }
-    fn fetch_inner(&self, id: &str, out: &Path, wait: u64, selection:Option<&[String]>) -> Result<PathBuf> {
-        ensure!(
-            valid_id(id),
-            "Capture ID must be 32 lowercase hexadecimal characters"
-        );
-        ensure!(wait <= 900, "--wait must be between 0 and 900 seconds");
-        let server = server_url(&self.settings().server)?;
-        let credential = self.credential("read", &server)?;
-        let out = std::path::absolute(out)?;
-        no_symlinks(&out)?;
-        ensure!(
-            fs::symlink_metadata(&out).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound),
-            "Output already exists; choose a new directory (nothing is overwritten)"
-        );
-        let parent = out.parent().context("Missing output parent")?;
-        ensure!(parent.is_dir(), "Output parent must already exist");
-        trusted_directory_tree(parent, true)?;
-        let parent = parent.canonicalize()?;
-        let out = parent.join(out.file_name().context("Invalid output name")?);
-        let stage = Scratch::new_output(&parent)?;
-        #[cfg(any(test, feature = "test-support"))]
-        test_support::run_hook("fetch_stage", &stage.0);
-        let deadline = Instant::now() + Duration::from_secs(wait);
-        let base = format!("/v1/captures/{id}");
-        let manifest = loop {
-            let timeout = if wait == 0 {
-                Duration::from_secs(30)
-            } else {
-                deadline
-                    .saturating_duration_since(Instant::now())
-                    .min(Duration::from_secs(30))
-            };
-            ensure!(
-                !timeout.is_zero(),
-                "Capture is still pending; retry fetch later"
-            );
-            let reply = self.json_request(
-                &server,
-                Some(&credential),
-                "GET",
-                &base,
-                None,
-                timeout,
-                &|| true,
-            );
-            // A pointer may precede reservation; a privacy-safe 404 also hides
-            // unavailable or inaccessible captures. Never retry authorization.
-            let reply = match reply {
-                Ok(reply) => reply,
-                Err(error) if error.to_string() == "Hosted API: not_found"
-                    && wait > 0 && Instant::now() < deadline => {
-                    std::thread::sleep(Duration::from_millis(500)
-                        .min(deadline.saturating_duration_since(Instant::now())));
-                    if Instant::now() >= deadline { return Err(error); }
-                    continue;
-                }
-                Err(error) => return Err(error),
-            };
-            ensure!(
-                reply["id"].as_str() == Some(id),
-                "Wrong capture ID in manifest"
-            );
-            match reply["status"].as_str() {
-                Some("ready") => break reply,
-                Some("pending") => {
-                    ensure!(
-                        wait > 0 && Instant::now() < deadline,
-                        "Capture is still pending; retry fetch later"
-                    );
-                    std::thread::sleep(
-                        Duration::from_millis(500)
-                            .min(deadline.saturating_duration_since(Instant::now())),
-                    );
-                }
-                _ => bail!("Invalid capture status"),
-            }
-        };
-        let files: Vec<Asset> =
-            serde_json::from_value(manifest["files"].clone()).context("Invalid hosted manifest")?;
-        match manifest.get("format").and_then(Value::as_str).unwrap_or("plaintext-v1") {
-            "apparent-encrypted-v2" => {
-                ensure!(self.provider.experiment(HOSTED_ENCRYPTION), "encryption_required");
-                return self.fetch_files_v2(id, &server, &credential, &manifest, &stage.0, &out, &parent, selection);
-            }
-            "apparent-encrypted-v1" => {
-                ensure!(selection.is_none(), "selective_fetch_requires_v2: request a fresh upload or fetch the full legacy bundle");
-                ensure!(self.provider.experiment(HOSTED_ENCRYPTION), "encryption_required: enable hostedEncryption to fetch this capture");
-                return self.fetch_encrypted(id, &server, &credential, &manifest, &stage.0, &out, &parent);
-            }
-            "plaintext-v1" => ensure!(!self.provider.experiment(HOSTED_ENCRYPTION), "encryption_downgrade_refused: capture is explicitly plaintext; disable the experiment only to deliberately fetch legacy content"),
-            _ => bail!("unsupported_encryption_format"),
-        }
-        ensure!(selection.is_none(), "selective_fetch_requires_v2");
-        validate_assets(&files)?;
-        for file in &files {
-            let destination = stage.0.join(&file.path);
-            if let Some(parent) = destination.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            self.request(
-                &server,
-                Some(&credential),
-                "GET",
-                &format!("{base}/files/{}", file.path),
-                None,
-                &destination,
-                file.size.max(1),
-                Duration::from_secs(60),
-                &|| true,
-            )?;
-            ensure!(
-                fs::metadata(&destination)?.len() == file.size
-                    && digest_file(&destination)? == file.sha256,
-                "Hosted file integrity mismatch"
-            );
-        }
-        validate_bundle_references(&stage.0, &files)?;
-        // Atomic no-replace publish. Linux/macOS use their kernel's exclusive rename.
-        publish_noreplace(&stage.0, &out)?;
-        File::open(&parent)?.sync_all()?;
-        Ok(out)
     }
     pub fn status(&self, account: bool) -> Result<Value> {
         let settings = self.settings();

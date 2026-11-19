@@ -168,4 +168,120 @@ impl Drop for PolicyChild {
     }
 }
 
-// Exact allowlist: unknown files are not uploaded, and are rejected on download.
+struct Reader {
+    client: Client,
+    credential: Credential,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "$")]
+enum ReaderRoute {
+    Use { index: usize },
+    Report { index: usize },
+    Retry,
+    Unavailable,
+}
+
+impl Client {
+    pub(super) fn resolve_reader(
+        &self,
+        base: &str,
+        wait: u64,
+        deadline: Instant,
+    ) -> Result<Option<(Client, Credential, Value)>> {
+        let profiles = self.reader_profiles()?;
+        if profiles.is_empty() {
+            return Ok(None);
+        }
+        let configured = self.settings().server;
+        let server = if configured.is_empty() {
+            settings::DEFAULT_SERVER
+        } else {
+            configured.as_str()
+        };
+        let server = server_url(server)?;
+        let mut readers = Vec::new();
+        for (_, client) in profiles {
+            if let Ok(credential) = client.read_credential()
+                && credential.server == server
+            {
+                readers.push(Reader { client, credential });
+            }
+        }
+        if readers.is_empty() {
+            return Ok(None);
+        }
+        if let Ok(credential) = self.credential("read", &server) {
+            readers.insert(
+                0,
+                Reader {
+                    client: self.clone(),
+                    credential,
+                },
+            );
+        }
+        let lookup_deadline = if wait == 0 {
+            Instant::now() + Duration::from_secs(30)
+        } else {
+            deadline
+        };
+        loop {
+            let mut probes = Vec::new();
+            for reader in &readers {
+                let timeout = lookup_deadline.saturating_duration_since(Instant::now());
+                if timeout.is_zero() {
+                    break;
+                }
+                probes.push(reader.client.json_request(
+                    &reader.credential.server,
+                    Some(&reader.credential),
+                    "GET",
+                    base,
+                    None,
+                    timeout.min(Duration::from_secs(5)),
+                    &|| true,
+                ));
+            }
+            let outcomes: Vec<_> = probes
+                .iter()
+                .map(|probe| match probe {
+                    Ok(_) => "found",
+                    Err(error) if error.to_string() == "Hosted API: not_found" => "missing",
+                    Err(_) => "failed",
+                })
+                .collect();
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let route: ReaderRoute = serde_json::from_value(Self::handoff_policy(json!({
+                "operation": "readerRoute", "outcomes": outcomes, "canWait": !remaining.is_zero()
+            }))?)?;
+            match route {
+                ReaderRoute::Use { index } => {
+                    let reader = readers.get(index).context("Invalid Connect reader route")?;
+                    let manifest = probes
+                        .into_iter()
+                        .nth(index)
+                        .context("Invalid Connect reader result")??;
+                    return Ok(Some((
+                        reader.client.clone(),
+                        reader.credential.clone(),
+                        manifest,
+                    )));
+                }
+                ReaderRoute::Report { index } => {
+                    return Err(probes
+                        .into_iter()
+                        .nth(index)
+                        .and_then(Result::err)
+                        .context("Invalid Connect reader failure")?);
+                }
+                ReaderRoute::Unavailable => bail!("Hosted API: not_found"),
+                ReaderRoute::Retry => {
+                    std::thread::sleep(Duration::from_millis(500).min(remaining));
+                    if Instant::now() >= deadline {
+                        bail!("Hosted API: not_found");
+                    }
+                }
+            }
+        }
+    }
+}

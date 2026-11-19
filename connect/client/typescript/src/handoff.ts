@@ -1,5 +1,6 @@
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
+import type { Probe, Probes } from './reader/reader-route.mjs';
 
 export const mcpRecovery = `If this agent workspace blocks direct HTTPS access, use Apparent's encrypted MCP relay. Reuse an installed Apparent connector. If it is missing, give the user these ChatGPT setup instructions instead of only asking them to add a URL:
 1. Open https://chatgpt.com/plugins, select the plus button, then Add custom MCP server.
@@ -42,11 +43,24 @@ export function handoffPointer(value: unknown): string | null {
     ? `apparent inspect ${id}\n` : null;
 }
 
+async function readerRoute(outcomes: readonly string[], canWait: boolean) {
+  const { default: policy } = await import('./reader/reader-route.mjs');
+  const probes = outcomes.reduceRight<Probes>((tail, outcome, index) => {
+    const probe: Probe = outcome === 'found' ? { $: 'Found', index }
+      : outcome === 'missing' ? { $: 'Missing' } : { $: 'Failed', index };
+    return { $: 'Next', probe, tail };
+  }, { $: 'End' });
+  return policy.reader_route(probes, canWait);
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
   for await (const line of lines) {
     const request = JSON.parse(line);
-    process.stdout.write(`${JSON.stringify(request.operation === 'alternatives' ? alternatives : request.operation === 'fetchFailure' ? fetchFailure(request.kind) : handoffPointer(request.job))}\n`);
+    const response = request.operation === 'readerRoute' ? await readerRoute(request.outcomes, request.canWait)
+      : request.operation === 'alternatives' ? alternatives
+      : request.operation === 'fetchFailure' ? fetchFailure(request.kind) : handoffPointer(request.job);
+    process.stdout.write(`${JSON.stringify(response)}\n`);
     break;
   }
   lines.close();
