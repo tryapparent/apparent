@@ -40,5 +40,3 @@ function bindShortcutInput(root: HTMLDivElement, read: () => InputState | undefi
   }
 
 Object.defineProperty(window, 'apparentSettingsShortcutInput', {value: Object.freeze({bindShortcutInput})});
-
-export { ConnectSettingsCard } from "./connect/card";

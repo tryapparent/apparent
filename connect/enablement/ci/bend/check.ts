@@ -29,6 +29,33 @@ await bendScratch(async (scratch) => {
       directory,
     );
     assert.deepEqual(JSON.parse(decisions), [true, false, false, false]);
+    const account = run(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `import policy from "./account-status.mjs";
+        const tag = $ => ({$});
+        console.log(JSON.stringify([
+          ["SignedOut", false, "Idle", "NoOutcome", "NoOutcome"],
+          ["Current", true, "Idle", "NoOutcome", "NoOutcome"],
+          ["Renewable", false, "Idle", "NoOutcome", "NoOutcome"],
+          ["Current", true, "Idle", "Waitlisted", "NoOutcome"],
+          ["Current", true, "Idle", "NoOutcome", "LocalState"]
+        ].map(([grant, enabled, activity, outcome, local]) => {
+          const status = policy.account_status(tag(grant), enabled, tag(activity), tag(outcome), tag(local));
+          return [status.$, policy.recovery(status, tag(grant), enabled).$];
+        })));`,
+      ],
+      directory,
+    );
+    assert.deepEqual(JSON.parse(account), [
+      ["SignedOutCard", "Connect"],
+      ["UploadsOn", "NoRecovery"],
+      ["Renew", "CheckAgain"],
+      ["WaitlistCard", "Retry"],
+      ["LocalError", "Refresh"],
+    ]);
     const routes = run(
       process.execPath,
       [

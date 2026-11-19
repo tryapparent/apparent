@@ -65,24 +65,6 @@ pub fn settings_backend(
 
 struct SettingsBackend(Client, PathBuf);
 use crate::capture::desktop::settings::connect as settings_controller;
-use apparent_connect_client::settings as client_settings;
-
-fn settings_error(error: client_settings::SafeError) -> settings_controller::SafeError {
-    use client_settings::SafeError as C;
-    use settings_controller::SafeError as S;
-    match error {
-        C::Waitlisted => S::Waitlisted,
-        C::Cancelled => S::Cancelled,
-        C::Offline => S::Offline,
-        C::AuthRequired => S::AuthRequired,
-        C::Rejected => S::Rejected,
-        C::Expired => S::Expired,
-        C::LocalState => S::LocalState,
-        C::InvalidServer => S::InvalidServer,
-        C::Unavailable => S::Unavailable,
-    }
-}
-
 impl settings_controller::Backend for SettingsBackend {
     fn shared_links_url(&self) -> Option<String> {
         crate::shared::handoff::capture_location::experiment_in(&self.1, HOSTED_SHARING)
@@ -91,18 +73,7 @@ impl settings_controller::Backend for SettingsBackend {
     fn snapshot(
         &self,
     ) -> std::result::Result<settings_controller::Snapshot, settings_controller::SafeError> {
-        self.0
-            .settings_snapshot()
-            .map(|state| settings_controller::Snapshot {
-                reusable_upload_grant: state.reusable_upload_grant,
-                encryption: state.encryption,
-                server: state.server,
-                connected: state.connected,
-                uploads_enabled: state.uploads_enabled,
-                reauthorization_required: state.reauthorization_required,
-                account_initial: state.account_initial,
-            })
-            .map_err(settings_error)
+        self.0.settings_snapshot()
     }
     fn login(
         &self,
@@ -110,27 +81,16 @@ impl settings_controller::Backend for SettingsBackend {
         allowed: Arc<dyn Fn() -> bool + Send + Sync>,
         on_approval: &dyn Fn(settings_controller::Approval),
     ) -> std::result::Result<(), settings_controller::SafeError> {
-        self.0
-            .login_with_approval(server, "upload", true, &*allowed, &|approval| {
-                on_approval(settings_controller::Approval {
-                    verification_uri: approval.verification_uri,
-                    user_code: approval.user_code,
-                });
-            })
-            .map_err(settings_error)
+        self.0.login_with_approval(server, "upload", true, &*allowed, on_approval)
     }
     fn resume(&self, server: &str, allowed: Arc<dyn Fn() -> bool + Send + Sync>) -> std::result::Result<(), settings_controller::SafeError> {
-        self.0.settings_resume(server, &*allowed).map_err(settings_error)
+        self.0.settings_resume(server, &*allowed)
     }
     fn health(&self, allowed: Arc<dyn Fn() -> bool + Send + Sync>) -> settings_controller::Health {
-        match self.0.settings_health(&*allowed) {
-            client_settings::Health::Online => settings_controller::Health::Online,
-            client_settings::Health::Offline => settings_controller::Health::Offline,
-            client_settings::Health::AuthRequired => settings_controller::Health::AuthRequired,
-        }
+        self.0.settings_health(&*allowed)
     }
     fn disable(&self, logout: bool) -> std::result::Result<(), settings_controller::SafeError> {
-        self.0.settings_disable(logout).map_err(settings_error)
+        self.0.settings_disable(logout)
     }
 }
 fn client() -> Client {

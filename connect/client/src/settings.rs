@@ -11,6 +11,7 @@ pub struct Snapshot {
     pub connected: bool,
     pub uploads_enabled: bool,
     pub reauthorization_required: bool,
+    pub renewal_due: bool,
     pub account_initial: Option<String>,
 }
 #[derive(Clone)]
@@ -18,13 +19,15 @@ pub struct Approval {
     pub verification_uri: String,
     pub user_code: String,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum Health {
     Online,
     Offline,
     AuthRequired,
+    Cancelled,
+    Unavailable,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum SafeError {
     Waitlisted,
     Cancelled,
@@ -34,34 +37,43 @@ pub enum SafeError {
     Expired,
     LocalState,
     InvalidServer,
+    UnverifiedCommit,
     Unavailable,
 }
 
-// Inspect only known internal diagnostics, never copy remote text, paths or secrets.
+impl std::fmt::Display for SafeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+impl std::error::Error for SafeError {}
+
+#[derive(Debug)]
+pub(super) struct HostedFailure {
+    pub(super) kind: SafeError,
+    message: String,
+}
+impl std::fmt::Display for HostedFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+impl std::error::Error for HostedFailure {}
+pub(super) fn hosted_failure(kind: SafeError, message: impl Into<String>) -> anyhow::Error {
+    HostedFailure { kind, message: message.into() }.into()
+}
+
 fn safe_error(error: &anyhow::Error, allowed: &dyn Fn() -> bool) -> SafeError {
     if !allowed() {
         return SafeError::Cancelled;
     }
-    let message = error.to_string();
-    if message == "Connect account is waitlisted" {
-        SafeError::Waitlisted
-    } else if message == "cancelled" || message.starts_with("cancelled:") {
-        SafeError::Cancelled
-    } else if message.starts_with("auth_required:") {
-        SafeError::AuthRequired
-    } else if message == "Device authorization expired" || message == "Hosted API: device_expired" {
-        SafeError::Expired
-    } else if message == "Device authorization rejected or invalid"
-        || message == "Hosted API: device_rejected"
-        || message == "Hosted API: rejected"
-    {
-        SafeError::Rejected
-    } else if message.starts_with("Hosted transport")
-        || message.starts_with("Hosted request")
-        || message == "Hosted API temporarily unavailable; retry later"
-    {
-        SafeError::Offline
-    } else if error.downcast_ref::<std::io::Error>().is_some()
+    if let Some(error) = error.downcast_ref::<HostedFailure>() {
+        return error.kind;
+    }
+    if let Some(error) = error.downcast_ref::<SafeError>() {
+        return *error;
+    }
+    if error.downcast_ref::<std::io::Error>().is_some()
         || error.downcast_ref::<serde_json::Error>().is_some()
     {
         SafeError::LocalState
@@ -170,6 +182,8 @@ impl Client {
             reusable_upload_grant: upload.as_ref().is_some_and(|g| g.grant_id.is_some() && self.settings_usable(g)),
             encryption: self.provider.experiment(HOSTED_ENCRYPTION),
             account_initial,
+            renewal_due: upload.as_ref().or(read.as_ref()).is_some_and(|grant|
+                self.settings_authorized(grant) && grant.expires_at.is_some_and(|expiry| expiry <= now())),
             uploads_enabled: server.is_some()
                 && !self.revocation_pending()
                 && config.enabled
@@ -199,18 +213,18 @@ impl Client {
         server_url(server).map_err(|_| SafeError::InvalidServer)?;
         self.settings_local_config()?;
         self.login_presented(server, scope, consent, allowed, on_approval, false)
-            .map_err(|error| safe_error(&error, allowed))
+            .map_err(|error| safe_error(&error, &|| allowed() && !self.revocation_pending()))
     }
     /// Bounded authenticated account probe, sharing renewal and cancellation logic.
     /// No queue/config lock is retained across transport or renewal waits.
     pub fn settings_health(&self, allowed: &dyn Fn() -> bool) -> Health {
         if !allowed() {
-            return Health::Offline;
+            return Health::Cancelled;
         }
         let snapshot = match self.settings_snapshot() {
             Ok(snapshot) => snapshot,
             Err(SafeError::AuthRequired) => return Health::AuthRequired,
-            Err(_) => return Health::Offline,
+            Err(_) => return Health::Unavailable,
         };
         let server = snapshot.server.as_deref().unwrap_or(DEFAULT_SERVER);
         let credential = ["upload", "read"].into_iter().find_map(|scope| {
@@ -229,7 +243,7 @@ impl Client {
         }
         let epoch = match self.cancellation() {
             Ok(epoch) => epoch,
-            Err(_) => return Health::Offline,
+            Err(_) => return Health::Unavailable,
         };
         let current = || {
             allowed()
@@ -248,36 +262,40 @@ impl Client {
             Some(deadline),
         ) {
             Ok(_) if current() => Health::Online,
-            Err(error) if current() && safe_error(&error, &current) == SafeError::AuthRequired => {
-                Health::AuthRequired
-            }
-            _ => Health::Offline,
+            Err(error) => match safe_error(&error, &current) {
+                SafeError::AuthRequired => Health::AuthRequired,
+                SafeError::Offline => Health::Offline,
+                SafeError::Cancelled => Health::Cancelled,
+                _ => Health::Unavailable,
+            },
+            _ => Health::Unavailable,
         }
     }
     /// Explicit local consent; live upload-grant check then existing writer.
     pub fn settings_resume(&self, server: &str, allowed: &dyn Fn() -> bool) -> std::result::Result<(), SafeError> {
         let attempt = || -> Result<()> {
-            ensure!(allowed() && !self.revocation_pending(), "cancelled");
+            ensure!(allowed() && !self.revocation_pending(), SafeError::Cancelled);
             let epoch = self.cancellation()?;
-            ensure!(self.settings_local_config().map_err(|_| anyhow::anyhow!("Local state unavailable"))?.server == server, "auth_required: server changed");
+            ensure!(self.settings_local_config()?.server == server, SafeError::AuthRequired);
             let grant = self.credential("upload", server)?;
-            ensure!(grant.grant_id.is_some() && self.settings_usable(&grant), "auth_required: approve upload access");
+            ensure!(grant.grant_id.is_some() && self.settings_usable(&grant), SafeError::AuthRequired);
             let encryption = self.provider.experiment(HOSTED_ENCRYPTION);
             let current = || allowed() && !self.revocation_pending() && self.cancellation().is_ok_and(|v| v == epoch);
             let deadline = Instant::now() + Duration::from_secs(3);
             let receipt = self.json_request_until(server, Some(&grant), "GET", "/v1/encryption/peers", None, Duration::from_secs(3), &current, Some(deadline))?;
-            ensure!(receipt["scope"] == "upload" && receipt["grantId"].as_str() == grant.grant_id.as_deref(), "auth_required: grant changed");
+            ensure!(receipt["scope"] == "upload" && receipt["grantId"].as_str() == grant.grant_id.as_deref(), SafeError::AuthRequired);
             #[cfg(any(test, feature = "test-support"))]
             test_support::run_hook("resume_before_commit", &self.config);
             let _lock = Lock::acquire_until(&self.state.join("queue.lock"), false, Some(deadline))?;
-            ensure!(current(), "cancelled");
+            ensure!(current(), SafeError::Cancelled);
             let latest = self.credential("upload", server)?;
             ensure!(latest.generation == grant.generation && latest.grant_id == grant.grant_id && self.settings_usable(&latest)
                 && self.provider.experiment(HOSTED_ENCRYPTION) == encryption && self.settings().server == server,
-                "auth_required: grant changed");
+                SafeError::AuthRequired);
             self.provider.set_experiment(HOSTED_SYNC, true)?;
-            self.provider.set_cloud_allowed(&CloudConfig { enabled:true, upload_consent:true, server:server.into() }, &current)?;
-            ensure!(current(), "cancelled");
+            self.provider.set_cloud_allowed(&CloudConfig { enabled:true, upload_consent:true, server:server.into() }, &current)
+                .map_err(|error| if current() { error } else { SafeError::Cancelled.into() })?;
+            ensure!(current(), SafeError::Cancelled);
             Ok(())
         };
         attempt().map_err(|error| safe_error(&error, allowed))
@@ -289,6 +307,25 @@ impl Client {
 }
 
 impl Client {
+    pub(super) fn auth_status(&self, scope: &str, server: &str) -> Value {
+        let Ok(c) = self.credential(scope, server) else {
+            return json!({"status":"signed_out"});
+        };
+        let status = if !c.usable() {
+            "auth_required"
+        } else if c.refresh_token.is_none() {
+            "legacy_reapproval_on_expiry"
+        } else if c
+            .expires_at
+            .is_some_and(|expiry| expiry <= now().saturating_add(30))
+        {
+            "renewal_due"
+        } else {
+            "signed_in"
+        };
+        json!({"status":status,"expiresAt":c.expires_at,"refreshExpiresAt":c.refresh_expires_at,
+            "action": if status == "auth_required" { Some(if scope == "upload" { "Run apparent connect login --scope upload --consent-upload for this server" } else { "Run apparent connect login --scope read for this server" }) } else { None }})
+    }
     fn readers_directory(&self) -> PathBuf {
         self.state.join("readers")
     }

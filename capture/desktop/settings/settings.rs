@@ -1,3 +1,4 @@
+use super::connect::native_connect;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -1226,16 +1227,8 @@ impl Session {
         if let Some(grants) = grants {
             panel.set_grants(grants);
         }
-        let config_path = crate::shared::handoff::default_config_path();
-        let connect = crate::shared::handoff::experiment(super::connect::CONNECT_SETTINGS)
-            .then(|| {
-                let events = events.clone();
-                super::connect::Controller::open(
-                    crate::connect::hosted::settings_backend(&config_path),
-                    std::sync::Arc::new(move |event| events(Event::Connect(event))),
-                )
-            });
-        panel.connect = connect.as_ref().map(|controller| controller.view());
+        let connect = (!electron && crate::shared::handoff::experiment(super::connect::CONNECT_SETTINGS))
+            .then(|| native_connect(&events, &crate::shared::handoff::default_config_path()));
         Ok(Self {
             generation,
             electron,
@@ -1459,6 +1452,9 @@ impl Session {
                 if let Ok((transport, electron)) = Self::open_presentation(self.pane, generation, &self.events, false) {
                     self.generation = generation;
                     self.electron = electron;
+                    if crate::shared::handoff::experiment(super::connect::CONNECT_SETTINGS) {
+                        self.connect = Some(native_connect(&self.events, &host.config_path()));
+                    }
                     self.last_view.clear();
                     super::presentation::retire(std::mem::replace(&mut self.transport, transport));
                     self.sync(host);
@@ -1475,7 +1471,9 @@ impl Session {
         if let Some(controller) = &mut self.connect {
             if effect == Effect::Close { controller.close(); }
             controller.refresh();
-            self.panel.connect = Some(controller.view());
+            if let Some(view) = controller.native_view() {
+                self.panel.connect = view;
+            }
         }
         let result = match effect {
             // Attributed to whichever process asks, so Apparent itself asks.

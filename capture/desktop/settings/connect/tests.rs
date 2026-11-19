@@ -68,7 +68,7 @@ fn disconnected(server: Option<&str>) -> Snapshot {
         server: server.map(str::to_owned),
         connected: false,
         uploads_enabled: false,
-        reauthorization_required: false, account_initial: None,
+        reauthorization_required: false, renewal_due: false, account_initial: None,
     }
 }
 
@@ -77,7 +77,7 @@ fn connected() -> Snapshot {
         server: Some(DEFAULT_SERVER.into()),
         connected: true,
         uploads_enabled: true,
-        reauthorization_required: false, account_initial: None,
+        reauthorization_required: false, renewal_due: false, account_initial: None,
     }
 }
 
@@ -127,10 +127,10 @@ fn native_open_checks_saved_session_once_without_enrollment() {
         let (send, events) = mpsc::channel();
         let mut controller = Controller::open(backend, Arc::new(move |event| { send.send(event).unwrap(); }));
         if saved {
-            assert_eq!(controller.view().presentation.headline, "Checking connection…");
+            assert_eq!(controller.facts().activity, Activity::Check);
             recv(&probes).send(Health::Offline).unwrap();
             controller.receive(recv(&events));
-            assert_eq!(controller.view().presentation.headline, "Connect is offline.");
+            assert_eq!(controller.facts().outcome, Some(SafeError::Offline));
         }
         for _ in 0..3 { controller.refresh(); }
         assert!(probes.try_recv().is_err());
@@ -152,20 +152,20 @@ fn local_opt_out_waits_for_durable_disable_and_can_retry_a_failed_write() {
     active.connected = true; active.uploads_enabled = true;
     *backend.local.lock().unwrap() = Ok(active);
     c.refresh();
-    assert!(!c.view().local_ready);
+    assert!(!c.facts().local_ready);
     c.command(Command::Disable);
     let (_, finish) = recv(&disables);
-    assert_eq!(c.view().phase, "cancelling");
+    assert_eq!(c.facts().activity, Activity::Disable);
     finish.send(Err(SafeError::LocalState)).unwrap();
     c.receive(recv(&events));
-    assert!(!c.view().local_ready);
+    assert!(!c.facts().local_ready);
     c.command(Command::Disable);
     let (_, finish) = recv(&disables);
     *backend.local.lock().unwrap() = Ok(disconnected(None));
     finish.send(Ok(())).unwrap();
     c.receive(recv(&events));
-    assert!(c.view().local_ready);
-    assert_eq!(c.view().phase, "disconnected");
+    assert!(c.facts().local_ready);
+    assert_eq!(c.facts().activity, Activity::Idle);
 }
 
 #[test]
@@ -176,9 +176,8 @@ fn confirmed_waitlist_never_claims_upload_connection() {
     c.receive(recv(&events));
     login.finish.send(Err(SafeError::Waitlisted)).unwrap();
     c.receive(recv(&events));
-    assert_eq!(c.view().phase, "waitlisted");
-    assert!(c.view().local_ready);
-    assert_ne!(c.view().presentation.tone, Tone::Success);
+    assert_eq!(c.facts().outcome, Some(SafeError::Waitlisted));
+    assert!(c.facts().local_ready);
 }
 
 #[test]
@@ -190,12 +189,7 @@ fn consent_precedes_network_and_preserves_custom_server() {
     c.command(Command::Connect);
     assert!(logins.try_recv().is_err());
     assert!(probes.try_recv().is_err());
-    assert!(
-        c.view()
-            .buttons
-            .iter()
-            .any(|b| b.command == Command::Allow && b.enabled)
-    );
+    assert_eq!(c.facts().activity, Activity::Consent);
     c.command(Command::Allow);
     let call = recv(&logins);
     assert_eq!(call.server, "https://custom.example");
@@ -214,7 +208,7 @@ fn consent_precedes_network_and_preserves_custom_server() {
     assert!(!logout);
     finish.send(Ok(())).unwrap();
     assert!(!c.receive(recv(&events)));
-    assert_eq!(c.view().status, "Not connected");
+    assert!(!c.facts().connected);
 }
 
 #[test]
@@ -240,7 +234,7 @@ fn late_a_and_duplicate_completion_cannot_replace_or_authorize_b() {
     assert!(c.receive(success.clone()));
     assert!(!c.receive(success));
     assert_eq!(c.command(Command::OpenBrowser), None);
-    assert_eq!(c.view().status, "Uploads on");
+    assert!(c.facts().uploads_enabled);
 }
 
 #[test]
@@ -255,13 +249,13 @@ fn cancelled_b_cannot_authorize_worker_even_after_backend_success() {
     assert!(!c.receive(recv(&events)));
     assert!(!(b.allowed)());
     assert_eq!(c.command(Command::OpenBrowser), None);
-    assert!(c.view().verification_uri.is_none());
+    assert!(c.facts().verification_uri.is_none());
     let (logout, finish) = recv(&disables);
     assert!(!logout);
     *backend.local.lock().unwrap() = Ok(disconnected(None));
     finish.send(Ok(())).unwrap();
     assert!(!c.receive(recv(&events)));
-    assert_eq!(c.view().status, "Not connected");
+    assert!(!c.facts().connected);
 }
 
 #[test]
@@ -273,13 +267,13 @@ fn login_requires_authoritative_enabled_state_not_transport_success() {
             server: Some(DEFAULT_SERVER.into()),
             connected: true,
             uploads_enabled: false,
-            reauthorization_required: false, account_initial: None,
+            reauthorization_required: false, renewal_due: false, account_initial: None,
         }),
         Ok(Snapshot { reusable_upload_grant: false, encryption: true,
             server: Some("https://other.example".into()),
             connected: true,
             uploads_enabled: true,
-            reauthorization_required: false, account_initial: None,
+            reauthorization_required: false, renewal_due: false, account_initial: None,
         }),
     ] {
         let (mut c, backend, events, logins, _, _) = fixture();
@@ -289,8 +283,8 @@ fn login_requires_authoritative_enabled_state_not_transport_success() {
         *backend.local.lock().unwrap() = local;
         call.finish.send(Ok(())).unwrap();
         assert!(!c.receive(recv(&events)));
-        assert_ne!(c.view().status, "Uploads on");
-        assert!(c.view().verification_uri.is_none());
+        assert!(c.facts().local_error.is_some() || c.facts().outcome == Some(SafeError::UnverifiedCommit));
+        assert!(c.facts().verification_uri.is_none());
     }
 }
 
@@ -308,14 +302,14 @@ fn disable_cancels_login_and_blocks_reenable_until_durable_result_even_on_close(
     c.command(Command::Allow);
     c.command(Command::Cancel);
     assert!(logins.try_recv().is_err());
-    assert_eq!(c.view().status, "Disconnecting…");
+    assert_eq!(c.facts().activity, Activity::Disconnect);
     c.close();
     call.finish.send(Ok(())).unwrap();
     assert!(!c.receive(recv(&events)));
     *backend.local.lock().unwrap() = Ok(disconnected(None));
     finish.send(Ok(())).unwrap();
     assert!(!c.receive(recv(&events)));
-    assert_eq!(c.view().status, "Not connected");
+    assert!(!c.facts().connected);
 }
 
 #[test]
@@ -327,27 +321,22 @@ fn failed_disable_retains_retry_and_fresh_read_only_status_without_health_flood(
     let (_, finish) = recv(&disables);
     finish.send(Err(SafeError::LocalState)).unwrap();
     c.receive(recv(&events));
-    assert!(c.view().detail.contains("could not"));
-    assert!(
-        c.view()
-            .buttons
-            .iter()
-            .any(|b| b.command == Command::Disable && b.enabled)
-    );
+    assert_eq!(c.facts().outcome, Some(SafeError::LocalState));
+    assert_eq!(c.facts().retry_disable, Some(false));
     *backend.local.lock().unwrap() = Ok(Snapshot { reusable_upload_grant: false, encryption: true,
         server: Some(DEFAULT_SERVER.into()),
         connected: true,
         uploads_enabled: false,
-        reauthorization_required: false, account_initial: None,
+        reauthorization_required: false, renewal_due: false, account_initial: None,
     });
     c.refresh();
     c.refresh();
     assert!(probes.try_recv().is_err());
-    assert_eq!(c.view().status, "Connected · uploads off");
+    assert!(c.facts().connected && !c.facts().uploads_enabled);
     c.command(Command::Check);
     recv(&probes).send(Health::AuthRequired).unwrap();
     c.receive(recv(&events));
-    assert_eq!(c.view().status, "Sign-in required");
+    assert_eq!(c.facts().outcome, Some(SafeError::AuthRequired));
 }
 
 #[test]
@@ -359,7 +348,7 @@ fn stale_probe_cannot_override_new_login_and_offline_does_not_revoke_consent() {
     let call = start(&mut c, &logins);
     health.send(Health::Offline).unwrap();
     assert!(!c.receive(recv(&events)));
-    assert_eq!(c.view().status, "Signing in…");
+    assert_eq!(c.facts().activity, Activity::Starting);
     call.approve.send(approval()).unwrap();
     c.receive(recv(&events));
     *backend.local.lock().unwrap() = Ok(connected());
@@ -368,14 +357,14 @@ fn stale_probe_cannot_override_new_login_and_offline_does_not_revoke_consent() {
     c.command(Command::Check);
     recv(&probes).send(Health::Offline).unwrap();
     assert!(!c.receive(recv(&events)));
-    assert_eq!(c.view().status, "Uploads on · offline");
+    assert_eq!(c.facts().outcome, Some(SafeError::Offline));
     assert!(backend.snapshot().unwrap().uploads_enabled);
 }
 
 #[test]
 fn renderer_contract_uses_camel_case_fields_and_kebab_case_commands() {
     let (c, _, _, _, _, _) = fixture();
-    let view = serde_json::to_value(c.view()).unwrap();
+    let view = serde_json::to_value(c.facts()).unwrap();
     assert!(view.get("verificationUri").is_some());
     assert!(view.get("userCode").is_some());
     assert_eq!(
@@ -397,19 +386,7 @@ fn expired_authorization_is_actionable_without_network_or_enabled_upload_claim()
     expired.reauthorization_required = true;
     *backend.local.lock().unwrap() = Ok(expired);
     c.refresh();
-    assert_eq!(c.view().status, "Sign-in required");
-    assert!(
-        c.view()
-            .buttons
-            .iter()
-            .any(|b| b.command == Command::Connect && b.enabled)
-    );
-    assert!(
-        c.view()
-            .buttons
-            .iter()
-            .any(|b| b.command == Command::Disconnect && b.enabled)
-    );
+    assert!(c.facts().reauthorization_required && !c.facts().uploads_enabled);
     assert!(logins.try_recv().is_err());
     assert!(probes.try_recv().is_err());
 }
@@ -433,8 +410,8 @@ fn closing_signin_durably_disables_even_when_success_committed_before_receipt() 
     *backend.local.lock().unwrap() = Ok(disconnected(None));
     finish.send(Ok(())).unwrap();
     assert!(!c.receive(recv(&events)));
-    assert_eq!(c.view().status, "Not connected");
-    assert!(c.view().buttons.iter().all(|button| !button.enabled));
+    assert!(!c.facts().connected);
+    assert!(c.facts().closed);
 }
 
 #[test]
@@ -442,17 +419,7 @@ fn reopened_unsettled_revocation_can_be_retried_without_allowing_a_new_login() {
     let (mut c, backend, events, logins, _, disables) = fixture();
     *backend.local.lock().unwrap() = Err(SafeError::LocalState);
     c.refresh();
-    let view = c.view();
-    assert!(
-        view.buttons
-            .iter()
-            .any(|button| button.command == Command::Disable && button.enabled)
-    );
-    assert!(
-        view.buttons
-            .iter()
-            .any(|button| button.command == Command::Disconnect && button.enabled)
-    );
+    assert_eq!(c.facts().local_error, Some(SafeError::LocalState));
     c.command(Command::Connect);
     c.command(Command::Allow);
     assert!(logins.try_recv().is_err());
@@ -462,98 +429,32 @@ fn reopened_unsettled_revocation_can_be_retried_without_allowing_a_new_login() {
     *backend.local.lock().unwrap() = Ok(disconnected(None));
     finish.send(Ok(())).unwrap();
     assert!(!c.receive(recv(&events)));
-    assert_eq!(c.view().status, "Not connected");
-}
-
-#[test]
-fn typed_presentation_never_promotes_unverified_or_unreadable_state_to_success() {
-    let (mut c, backend, _events, _logins, _probes, _disables) = fixture();
-    assert_eq!(c.view().presentation.headline, "Help others see what you mean.");
-    assert_eq!(c.view().presentation.tone, Tone::Neutral);
-    *backend.local.lock().unwrap() = Ok(connected()); c.refresh();
-    assert_eq!(c.view().presentation.tone, Tone::Success);
-    c.health = Some(Health::Offline);
-    assert_eq!(c.view().presentation.tone, Tone::Failure);
-    c.health = None;
-    c.error = Some(SafeError::UnverifiedCommit);
-    assert_eq!(c.view().presentation.tone, Tone::Failure);
-    *backend.local.lock().unwrap() = Err(SafeError::LocalState); c.refresh();
-    let p = c.view().presentation;
-    assert_eq!(p.tone, Tone::Failure);
-    assert!(p.buttons.iter().any(|b| b.command == Command::RequestDisconnect));
+    assert!(!c.facts().connected);
 }
 
 #[test]
 fn confirmation_and_consent_cancel_are_local_until_explicit_allow_or_revoke() {
     let (mut c, backend, events, logins, probes, disables) = fixture();
-    *backend.local.lock().unwrap() = Ok(connected()); c.refresh();
+    *backend.local.lock().unwrap() = Ok(connected());
+    c.refresh();
     c.command(Command::RequestDisconnect);
-    let p = c.view().presentation;
-    assert_eq!(p.tone, Tone::Warning);
-    assert_eq!(p.buttons[0].command, Command::Disconnect);
+    assert_eq!(c.facts().activity, Activity::ConfirmDisconnect);
     assert!(disables.try_recv().is_err());
     c.command(Command::Cancel);
-    assert_eq!(c.view().presentation.tone, Tone::Success);
+    assert!(c.facts().uploads_enabled);
     c.command(Command::Connect);
     c.command(Command::Cancel);
     assert!(logins.try_recv().is_err());
     assert!(probes.try_recv().is_err());
     assert!(disables.try_recv().is_err());
-    assert_eq!(c.view().presentation.tone, Tone::Success);
     c.command(Command::RequestDisable);
     c.command(Command::Disable);
     let (logout, result) = recv(&disables);
     assert!(!logout);
-    assert_eq!(c.view().presentation.tone, Tone::Progress);
-    assert!(!c.view().presentation.buttons[0].enabled);
+    assert_eq!(c.facts().activity, Activity::Disable);
     result.send(Err(SafeError::LocalState)).unwrap();
     c.receive(recv(&events));
-    assert_eq!(c.view().presentation.tone, Tone::Failure);
-    assert!(c.view().presentation.buttons.iter().any(|b| b.command == Command::Disable));
-}
-
-#[test]
-fn failed_first_signin_keeps_recovery_actions_reachable() {
-    let (mut c, _backend, _events, _logins, _probes, _disables) = fixture();
-    for error in [SafeError::Rejected, SafeError::Expired, SafeError::Offline] {
-        c.error = Some(error);
-        let p = c.view().presentation;
-        assert_eq!(p.tone, Tone::Failure);
-        assert!(p.account_menu);
-        assert!(p.menu_actions.contains(&Command::Check));
-        assert!(p.buttons.iter().any(|b| b.command == Command::Check && b.enabled));
-    }
-}
-
-#[test]
-fn account_initial_tracks_fresh_identity_without_changing_actions() {
-    let (mut c, backend, _events, _logins, _probes, _disables) = fixture();
-    let mut snapshot = connected();
-    for initial in [Some("S"), Some("M"), None] {
-        snapshot.account_initial = initial.map(str::to_owned);
-        *backend.local.lock().unwrap() = Ok(snapshot.clone());
-        c.refresh();
-        let p = c.view().presentation;
-        assert_eq!(p.account_initial.as_deref(), initial);
-        assert!(p.account_menu);
-        assert!(p.menu_actions.contains(&Command::Check));
-        assert!(p.menu_actions.contains(&Command::RequestDisconnect));
-    }
-    snapshot.account_initial = Some("S".into());
-    *backend.local.lock().unwrap() = Ok(snapshot.clone()); c.refresh();
-    c.health = Some(Health::AuthRequired);
-    assert!(c.view().presentation.account_initial.is_none());
-    c.health = None;
-    c.error = Some(SafeError::AuthRequired);
-    assert!(c.view().presentation.account_initial.is_none());
-    c.error = None;
-    *backend.local.lock().unwrap() = Err(SafeError::LocalState); c.refresh();
-    assert!(c.view().presentation.account_initial.is_none());
-    snapshot.reauthorization_required = true;
-    *backend.local.lock().unwrap() = Ok(snapshot); c.refresh();
-    assert!(c.view().presentation.account_initial.is_none());
-    *backend.local.lock().unwrap() = Ok(disconnected(None)); c.refresh();
-    assert!(c.view().presentation.account_initial.is_none());
+    assert_eq!(c.facts().retry_disable, Some(false));
 }
 
 #[test]
@@ -562,13 +463,13 @@ fn failed_resume_withdraws_receipt_without_starting_browser_login() {
     let mut state=connected(); state.uploads_enabled=false; state.reusable_upload_grant=true;
     *backend.local.lock().unwrap()=Ok(state);
     controller.refresh();
-    assert!(controller.view().reusable_upload_grant);
+    assert!(controller.facts().reusable_upload_grant);
     assert!(logins.try_recv().is_err());
     controller.command(Command::Connect);
     controller.command(Command::Resume);
     assert!(!controller.receive(recv(&events)));
     controller.command(Command::Connect);
-    assert!(!controller.view().reusable_upload_grant);
+    assert!(!controller.facts().reusable_upload_grant);
     assert!(logins.try_recv().is_err());
     controller.command(Command::Allow);
     let call=recv(&logins);

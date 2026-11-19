@@ -87,7 +87,7 @@ const { readRuntimeState, storageLocation, errorReporting, captureReference, sto
 const { LocationWorkflow } = require('./storage-owner/location-workflow.js');
 const { RetentionWorkflow } = require('./storage-owner/retention-workflow.js');
 const { isRetentionPolicy } = require('./storage-owner/policy.js');
-const { ConnectSettings, actions } = require('./connect.cjs');
+const { ConnectSettings, actions, admitConnect } = require('./connect.cjs');
 const followWindowTheme = require('@apparent/ui/window-theme');
 nativeTheme.themeSource = 'system';
 const frame = require('./settings/frame.cjs');
@@ -364,6 +364,7 @@ app.whenReady().then(() => {
               generalState = undefined; aboutState = undefined;
               ++pairingPreviewVersion; pairingLinks.clear(); t3Approval?.abort(); resetPreferences();
             }
+            if (command.pane !== pane) connect.close();
             pane = command.pane;
             window.webContents.send('apparent:settings-route', pane);
           }
@@ -409,26 +410,25 @@ app.whenReady().then(() => {
       if (token !== generation || window.isDestroyed()) return { status: 'cancelled' };
       // Only this explicit zero-argument action may open the URI just authorized
       // by the current Rust controller. Never accept a renderer-supplied URL.
-      if (result.openUri !== undefined) {
-        await shell.openExternal(result.openUri);
-      }
-      const { openUri: _openUri, ...projected } = result;
-      return projected;
+      if (result.openUri) await shell.openExternal(result.openUri);
+      delete result.openUri;
+      return result;
     }).catch(() => ({ status: 'error' })).finally(() => {
-      if (pendingConnect === request) pendingConnect = undefined;
+      if (pendingConnect === request) pendingConnect = null;
     });
     pendingConnect = request;
     return request;
   };
+  const validateConnectCall = (event, args) => {
+    admitConnect(settings, pane); validate(event, args);
+  };
   ipcMain.handle('apparent:read-connect-settings', (event, ...args) => {
-    if (settings && pane !== 'general') throw new Error('Unavailable outside General');
-    validate(event, args);
+    validateConnectCall(event, args);
     return requestConnect();
   });
   for (const action of actions) {
     ipcMain.handle(`apparent:connect-${action}`, (event, ...args) => {
-      if (settings && pane !== 'general') throw new Error('Unavailable outside General');
-      validate(event, args);
+      validateConnectCall(event, args);
       return requestConnect(action);
     });
   }

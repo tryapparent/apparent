@@ -23,6 +23,7 @@ mod foreground;
 mod activity;
 pub use foreground::foreground_progress;
 pub mod settings;
+use settings::{SafeError, hosted_failure};
 
 /// Application-owned preferences and browser mechanics. Implementations must
 /// perform fresh reads, preserve unrelated config, and serialize each write.
@@ -701,27 +702,6 @@ fn config_escape(value: &str) -> Result<String> {
 impl Client {
     /// Pure workflow policy runs in the packaged TypeScript owner. Native code
     /// supplies bounded stdio and process cleanup, without queue locks or secrets.
-    fn handoff_policy(request: Value) -> Result<Value> {
-        let (runtime, module, electron) = connect_typescript_runtime("handoff")?;
-        let mut command = Command::new(runtime);
-        if electron { command.env("ELECTRON_RUN_AS_NODE", "1"); }
-        else if module.extension().is_some_and(|extension| extension == "ts") {
-            command.arg("--experimental-strip-types");
-        }
-        let mut child = PolicyChild(command.arg(module)
-            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?);
-        let mut input = child.stdin.take().context("Missing handoff policy input")?;
-        let mut output = child.stdout.take().context("Missing handoff policy output")?;
-        policy_write(&mut input, &request)?;
-        drop(input);
-        let line = policy_frame_bounded(&mut output, Duration::from_secs(3), 16_384)?;
-        ensure!(policy_exit(&mut child)?.success(), "Connect handoff policy failed");
-        Ok(serde_json::from_str(&line)?)
-    }
-    pub fn alternatives() -> Result<String> {
-        Self::handoff_policy(json!({"operation":"alternatives"}))?
-            .as_str().map(str::to_owned).context("Invalid Connect alternatives")
-    }
     pub fn shares(&self) -> Result<Value> {
         let server = server_url(&self.settings().server)?;
         let credential = self
@@ -1374,7 +1354,7 @@ impl Client {
         if input_result.is_err() {
             let _ = child.kill();
             let _ = child.wait();
-            bail!("Hosted transport input failed");
+            bail!(hosted_failure(SafeError::Offline, "Hosted transport input failed"));
         }
         let deadline = Instant::now() + timeout + Duration::from_millis(250);
         let status = loop {
@@ -1384,7 +1364,7 @@ impl Client {
                 let _ = child.kill();
                 let _ = child.wait();
                 ensure!(allowed(), "cancelled");
-                bail!("Hosted request timed out");
+                bail!(hosted_failure(SafeError::Offline, "Hosted request timed out"));
             }
             if let Some(status) = child.try_wait()? {
                 break status;
@@ -1413,7 +1393,7 @@ impl Client {
         }
         ensure!(
             status.success(),
-            "Hosted transport failed (network, timeout or response limit)"
+            hosted_failure(SafeError::Offline, "Hosted transport failed (network, timeout or response limit)")
         );
         ensure!(
             fs::metadata(output)?.len() <= limit,
@@ -1421,10 +1401,10 @@ impl Client {
         );
         if !code.starts_with('2') {
             if code.trim() == "401" {
-                bail!("auth_required: approve this device again with apparent connect login");
+                bail!(hosted_failure(SafeError::AuthRequired, "auth_required: approve this device again with apparent connect login"));
             }
             if code.trim() == "429" || code.starts_with('5') {
-                bail!("Hosted API temporarily unavailable; retry later");
+                bail!(hosted_failure(SafeError::Offline, "Hosted API temporarily unavailable; retry later"));
             }
             // Only expose a known non-secret error code, not remote text or curl stderr.
             let error = fs::read(output)
@@ -1453,7 +1433,12 @@ impl Client {
                 | "reauthorization_required" => code,
                 _ => "http_error",
             };
-            bail!("Hosted API: {safe}");
+            let kind = match safe {
+                "device_expired" => SafeError::Expired,
+                "device_rejected" | "rejected" => SafeError::Rejected,
+                _ => SafeError::Unavailable,
+            };
+            bail!(hosted_failure(kind, format!("Hosted API: {safe}")));
         }
         ensure!(allowed(), "cancelled");
         Ok(())
@@ -1552,7 +1537,7 @@ impl Client {
             "Upload shares screen, voice, transcript and all bundle media with the hosted service. Repeat with --consent-upload to explicitly agree"
         );
         private_dir(&self.state)?;
-        ensure!(!self.revocation_pending(), "cancelled: revocation pending");
+        ensure!(!self.revocation_pending(), hosted_failure(SafeError::Cancelled, "cancelled: revocation pending"));
         let cancellation = self.cancellation()?;
         let login_id = random_id()?;
         let login_path = self.state.join(format!("{scope}.login"));
@@ -1654,9 +1639,9 @@ impl Client {
         let interval = Duration::from_secs(start["interval"].as_u64().unwrap_or(5).clamp(1, 30));
         let credential = loop {
             ensure!(allowed(), "cancelled");
-            ensure!(Instant::now() < deadline, "Device authorization expired");
+            ensure!(Instant::now() < deadline, hosted_failure(SafeError::Expired, "Device authorization expired"));
             std::thread::sleep(interval.min(deadline.saturating_duration_since(Instant::now())));
-            ensure!(Instant::now() < deadline, "Device authorization expired");
+            ensure!(Instant::now() < deadline, hosted_failure(SafeError::Expired, "Device authorization expired"));
             let issued = now();
             let reply = self.json_request(
                 &server,
@@ -1671,7 +1656,7 @@ impl Client {
             )?;
             match reply["status"].as_str() {
                 Some("pending") => continue,
-                Some("waitlisted") => bail!("Connect account is waitlisted"),
+                Some("waitlisted") => bail!(hosted_failure(SafeError::Waitlisted, "Connect account is waitlisted")),
                 Some("approved") => {
                     ensure!(
                         reply["scope"].as_str() == Some(scope),
@@ -1703,7 +1688,7 @@ impl Client {
                     credential.apply_reply(&reply, issued, false)?;
                     break credential;
                 }
-                _ => bail!("Device authorization rejected or invalid"),
+                _ => bail!(hosted_failure(SafeError::Rejected, "Device authorization rejected or invalid")),
             }
         };
         private_dir(&self.state)?;
@@ -1732,7 +1717,9 @@ impl Client {
             } else {
                 settings.server = server;
             }
-            self.provider.set_cloud_allowed(&settings, allowed)?;
+            self.provider.set_cloud_allowed(&settings, allowed).map_err(|error| {
+                if allowed() { error } else { hosted_failure(SafeError::Cancelled, "cancelled") }
+            })?;
         }
         ensure!(allowed(), "cancelled");
         self.clear_renewal(scope)?;

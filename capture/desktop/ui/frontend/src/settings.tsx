@@ -1,7 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { Agents } from './settings/agents/agents';
 import { Labs } from './settings/labs/labs';
-import { ConnectSettingsCard } from './general';
 import { Storage } from './storage';
 
 class SettingsPane extends HTMLElement {
@@ -26,7 +25,7 @@ class SettingsPane extends HTMLElement {
   private renderPane() {
     const pane = this.getAttribute("pane");
     this.root?.render(pane === "Agents" ? <Agents /> :
-      pane === "Labs" ? <Labs /> : pane === "Connection" ? <ConnectSettingsCard /> : <Storage settings />);
+      pane === "Labs" ? <Labs /> : <Storage settings />);
   }
 }
 

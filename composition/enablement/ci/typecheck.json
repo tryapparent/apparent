@@ -3,6 +3,8 @@
     "config": "capture/desktop/ui/frontend/tsconfig.json",
     "inputs": [
       "composition/settings/renderer/",
+      "connect/settings/",
+      "connect/client/typescript/src/account/protocol.ts",
       "composition/quit/view.tsx",
       "shared/ui/",
       "record/capture-request/",
@@ -21,7 +23,11 @@
   },
   {
     "config": "composition/onboarding/tsconfig.json",
-    "inputs": ["onboarding/", "connect/native-adapter/"],
+    "inputs": [
+      "onboarding/",
+      "connect/native-adapter/",
+      "connect/client/typescript/src/account/"
+    ],
     "declarations": [
       {
         "config": "onboarding/tsconfig.build.json"

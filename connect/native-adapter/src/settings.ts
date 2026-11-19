@@ -1,3 +1,8 @@
+import {
+  accountPresentation,
+  browserUri,
+  decodeFacts,
+} from "../../client/typescript/src/account/presentation.ts";
 import { lstat } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
@@ -12,6 +17,7 @@ type Reply = SettingsResult & {
 type WireReply = {
   error?: unknown;
   connect?: ConnectView;
+  accountFacts?: unknown;
   openUri?: string;
 };
 const actions = new Set<string>([
@@ -32,22 +38,6 @@ const text = (value: unknown): value is string =>
   typeof value === "string" &&
   Buffer.byteLength(value) <= 4096 &&
   !/[\x00-\x1f\x7f]/.test(value);
-function browserUri(value: unknown, code: string | null) {
-  if (!text(value) || /[\s%#\\"']/.test(value)) return false;
-  try {
-    const url = new URL(value);
-    return (
-      !url.username &&
-      !url.password &&
-      (url.protocol === "https:" ||
-        (url.protocol === "http:" &&
-          ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))) &&
-      (!url.search || url.search === `?code=${code}`)
-    );
-  } catch {
-    return false;
-  }
-}
 function linksUri(value: unknown) {
   if (!browserUri(value, null)) return false;
   const url = new URL(value as string);
@@ -57,6 +47,28 @@ function linksUri(value: unknown) {
 }
 function decode(value: WireReply | null, action?: ConnectAction): Reply {
   if (value?.error === "feature_disabled") return { status: "disabled" };
+  if (value && Object.hasOwn(value, "accountFacts")) {
+    const facts = decodeFacts(value.accountFacts);
+    if (!facts) return failed();
+    const view = accountPresentation(facts);
+    if (
+      value.openUri !== undefined &&
+      !(
+        (action === "open-browser" &&
+          value.openUri === facts.verificationUri &&
+          browserUri(value.openUri, facts.userCode)) ||
+        (action === "open-shared-links" &&
+          value.openUri === facts.sharedLinksUrl &&
+          linksUri(value.openUri))
+      )
+    )
+      return failed();
+    return {
+      status: "connected",
+      view,
+      ...(value.openUri === undefined ? {} : { openUri: value.openUri }),
+    };
+  }
   const v = value?.connect;
   if (
     v?.phase !== undefined &&
@@ -363,4 +375,5 @@ export class OnboardingConnectAdapter {
     return this.controller.request(action);
   }
 }
+export { ConnectSettings, actions, browserUri };
 export type { Reply };

@@ -46,7 +46,7 @@ impl Drop for Fixture { fn drop(&mut self) { std::fs::remove_dir_all(&self.dir).
 fn fake() -> (Arc<Fake>, mpsc::Receiver<Allowed>, mpsc::Sender<()>) {
     let (login, started) = mpsc::channel();
     let (release, wait) = mpsc::channel();
-    (Arc::new(Fake { state: Mutex::new(Snapshot { encryption:true, reusable_upload_grant:false, server: None, connected: false, uploads_enabled: false, reauthorization_required: false, account_initial: None }),
+    (Arc::new(Fake { state: Mutex::new(Snapshot { encryption:true, reusable_upload_grant:false, server: None, connected: false, uploads_enabled: false, reauthorization_required: false, renewal_due:false, account_initial: None }),
         login, release: Mutex::new(wait), disables: AtomicUsize::new(0), completed: AtomicUsize::new(0) }), started, release)
 }
 fn start(config: &Path, backend: Arc<dyn Backend>, lease: Duration) -> (BufReader<UnixStream>, std::thread::JoinHandle<()>, Arc<AtomicUsize>) {
@@ -95,7 +95,7 @@ fn missing_config_opens_local_controls_without_writes_or_network() {
     let (backend, started, _release) = fake();
     let (mut client, handle, workers) = start(&fixture.config, backend.clone(), LEASE);
     let first = read(&mut client);
-    assert_eq!(first["connect"]["status"], "Not connected");
+    assert_eq!(first["accountFacts"]["connected"], false);
     drop(client); handle.join().unwrap();
     assert!(started.try_recv().is_err());
     assert_eq!(workers.load(Ordering::SeqCst), 0);
@@ -109,9 +109,9 @@ fn stream_reads_consent_cancel_and_preserves_unrelated_config_without_network() 
     let (backend, started, _release) = fake();
     let (mut client, handle, workers) = start(&fixture.config, backend.clone(), LEASE);
     let first = read(&mut client);
-    assert!(first.get("connect").is_some()); assert!(!first.to_string().contains("privateToken"));
+    assert!(first.get("accountFacts").is_some()); assert!(!first.to_string().contains("privateToken"));
     let consent = command(&mut client, "connect");
-    assert!(consent["connect"]["buttons"].as_array().unwrap().iter().any(|b| b["command"]=="allow"));
+    assert!(consent["accountFacts"]["activity"] == "Consent");
     command(&mut client, "cancel");
     assert!(started.try_recv().is_err());
     assert_eq!(std::fs::read(&fixture.config).unwrap(), before);
@@ -141,7 +141,7 @@ fn partial_frames_survive_read_waits_but_compound_frames_are_refused() {
     client.get_mut().write_all(b"{\"connect\":\"read\",").unwrap();
     std::thread::sleep(Duration::from_millis(100));
     writeln!(client.get_mut(), "\"deadline\":{}}}", clock_ms()+3000).unwrap();
-    assert!(read(&mut client).get("connect").is_some());
+    assert!(read(&mut client).get("accountFacts").is_some());
     client.get_mut().write_all(b"{}\n{}\n").unwrap();
     assert_eq!(read(&mut client)["error"], "invalid_request");
     drop(client); handle.join().unwrap();
@@ -214,7 +214,7 @@ fn admitted_window_read_observes_success_and_starts_the_worker_once() {
         std::thread::sleep(Duration::from_millis(10));
     }
     writeln!(client.get_mut(), "{}", serde_json::json!({"connect":"read","deadline":clock_ms()+3000})).unwrap();
-    assert_eq!(read(&mut client)["connect"]["status"], "Uploads on");
+    assert_eq!(read(&mut client)["accountFacts"]["uploadsEnabled"], true);
     drop(client); handle.join().unwrap();
     assert_eq!(workers.load(Ordering::SeqCst), 1);
     assert_eq!(backend.disables.load(Ordering::SeqCst), 0);
