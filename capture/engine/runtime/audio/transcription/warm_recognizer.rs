@@ -7,6 +7,8 @@ use std::time::{Duration, Instant};
 use crate::shared::model::TranscriptData;
 use anyhow::{Context, Result, ensure};
 
+use super::{pause_transcribe, speech::{self, Incremental, RecognitionPhase}};
+
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 // Include file identity, not just its name: replacing a model in place must reload it.
@@ -18,7 +20,7 @@ struct ModelKey {
 
 impl ModelKey {
     fn selected() -> Result<Self> {
-        let path = crate::capture::engine::runtime::audio::transcription::speech::installed_models()
+        let path = speech::installed_models()
             .into_iter()
             .next()
             .context("No Parakeet model installed")?;
@@ -48,12 +50,12 @@ impl ModelKey {
         Ok(())
     }
 
-    fn load(&self) -> Result<crate::capture::engine::runtime::audio::transcription::speech::Incremental> {
+    fn load(&self) -> Result<Incremental> {
         // Reopening an old lease after another capture changed the single cache must
         // not load replacement bytes under the old identity. No native state escapes
         // if the file changed while it was loading, either.
         self.check_current()?;
-        let recognizer = crate::capture::engine::runtime::audio::transcription::speech::Incremental::load(&self.path)?;
+        let recognizer = Incremental::load(&self.path)?;
         self.check_current()?;
         Ok(recognizer)
     }
@@ -146,7 +148,7 @@ enum Command<K> {
     Begin,
     End,
     Clear,
-    Run(K, Vec<f32>, u64, mpsc::Sender<Result<TranscriptData>>),
+    Run(K, Vec<f32>, u64, RecognitionPhase, mpsc::Sender<Result<TranscriptData>>),
     #[cfg(test)]
     Sweep(mpsc::Sender<()>),
     #[cfg(test)]
@@ -158,7 +160,7 @@ struct Owner<K>(mpsc::Sender<Command<K>>);
 impl<K: Eq + Send + 'static> Owner<K> {
     fn spawn<R: 'static>(
         mut load: impl FnMut(&K) -> Result<R> + Send + 'static,
-        mut run: impl FnMut(&mut R, &[f32], u64) -> Result<TranscriptData> + Send + 'static,
+        mut run: impl FnMut(&mut R, &[f32], u64, RecognitionPhase) -> Result<TranscriptData> + Send + 'static,
         now: impl Fn() -> Instant + Send + 'static,
     ) -> Result<Self> {
         let (sender, receiver) = mpsc::channel();
@@ -189,9 +191,9 @@ impl<K: Eq + Send + 'static> Owner<K> {
                         }
                         Command::End => cache.end(now()),
                         Command::Clear => cache.clear(),
-                        Command::Run(key, samples, offset, reply) => {
+                        Command::Run(key, samples, offset, phase, reply) => {
                             let result = cache.run(key, &mut load, |recognizer| {
-                                run(recognizer, &samples, offset)
+                                run(recognizer, &samples, offset, phase)
                             });
                             let _ = reply.send(result);
                         }
@@ -222,10 +224,10 @@ impl<K: Eq + Send + 'static> Owner<K> {
 // Its End reaches the owner only AFTER the final native run and all pause processing end.
 struct Lease<K>(mpsc::Sender<Command<K>>);
 impl<K> Lease<K> {
-    fn transcribe(&self, key: K, samples: &[f32], offset: u64) -> Result<TranscriptData> {
+    fn transcribe(&self, key: K, samples: &[f32], offset: u64, phase: RecognitionPhase) -> Result<TranscriptData> {
         let (reply, result) = mpsc::channel();
         self.0
-            .send(Command::Run(key, samples.to_vec(), offset, reply))
+            .send(Command::Run(key, samples.to_vec(), offset, phase, reply))
             .map_err(|_| anyhow::anyhow!("Warm recognizer owner stopped"))?;
         result.recv().context("Warm recognizer owner stopped")?
     }
@@ -234,15 +236,15 @@ impl<K: Clone + Send + 'static> Lease<K> {
     fn with_selection(
         self,
         mut select: impl FnMut() -> Result<K> + Send + 'static,
-    ) -> impl FnMut(&[f32], u64) -> Result<TranscriptData> + Send {
+    ) -> impl FnMut(&[f32], u64, RecognitionPhase) -> Result<TranscriptData> + Send {
         let mut selected = None;
-        move |samples: &[f32], offset| {
+        move |samples: &[f32], offset, phase| {
             if selected.is_none() {
                 selected = Some(select().inspect_err(|_| {
                     let _ = self.0.send(Command::Clear);
                 })?);
             }
-            self.transcribe(selected.as_ref().unwrap().clone(), samples, offset)
+            self.transcribe(selected.as_ref().unwrap().clone(), samples, offset, phase)
         }
     }
 }
@@ -256,7 +258,7 @@ static OWNER: OnceLock<Owner<ModelKey>> = OnceLock::new();
 
 /// No thread or model allocation at app launch. Called at the next recording start.
 pub fn clear_if_disabled() {
-    if (!crate::shared::handoff::warm_recognizer() || !crate::capture::engine::runtime::audio::transcription::pause_transcribe::wanted())
+    if (!crate::shared::handoff::warm_recognizer() || !pause_transcribe::wanted())
     {
         clear();
     }
@@ -267,7 +269,7 @@ pub fn clear() {
     if let Some(owner) = OWNER.get() { let _ = owner.0.send(Command::Clear); }
 }
 
-pub fn transcriber() -> Result<impl FnMut(&[f32], u64) -> Result<TranscriptData> + Send> {
+pub(super) fn transcriber() -> Result<impl FnMut(&[f32], u64, RecognitionPhase) -> Result<TranscriptData> + Send> {
     // Serialise initialization too: OnceLock::get_or_try_init is not stable.
     static INIT: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _init = INIT
@@ -276,7 +278,7 @@ pub fn transcriber() -> Result<impl FnMut(&[f32], u64) -> Result<TranscriptData>
     if OWNER.get().is_none() {
         let owner = Owner::spawn(
             ModelKey::load,
-            |recognizer, samples, offset| recognizer.transcribe(samples, offset),
+            |recognizer, samples, offset, phase| recognizer.transcribe(samples, offset, phase),
             Instant::now,
         )?;
         let _ = OWNER.set(owner);
@@ -323,7 +325,7 @@ mod tests {
         let selected = Arc::clone(&selection);
         let owner = Owner::spawn(
             |key: &usize| Ok(*key),
-            |key, _, _| {
+            |key, _, _, _| {
                 Ok(TranscriptData {
                     text: key.to_string(),
                     ..Default::default()
@@ -338,13 +340,13 @@ mod tests {
             .with_selection(move || Ok(selected.load(Ordering::SeqCst)));
         selection.store(2, Ordering::SeqCst);
         assert_eq!(
-            transcribe(&[0.1], 0).unwrap().text,
+            transcribe(&[0.1], 0, RecognitionPhase::Recording).unwrap().text,
             "2",
             "selection waits for recognition"
         );
         selection.store(3, Ordering::SeqCst);
         assert_eq!(
-            transcribe(&[0.1], 100).unwrap().text,
+            transcribe(&[0.1], 100, RecognitionPhase::Finishing).unwrap().text,
             "2",
             "a capture cannot mix models"
         );
@@ -353,7 +355,7 @@ mod tests {
             .begin()
             .unwrap()
             .with_selection(move || Ok(selection.load(Ordering::SeqCst)));
-        assert_eq!(next(&[0.1], 0).unwrap().text, "3");
+        assert_eq!(next(&[0.1], 0, RecognitionPhase::Recording).unwrap().text, "3");
     }
     #[test]
     fn warm_recognizer_reuses_across_capture_leases() {
@@ -502,7 +504,7 @@ mod tests {
                     _thread_bound: std::rc::Rc::new(()),
                 })
             },
-            move |_, samples, offset| {
+            move |_, samples, offset, _| {
                 if first {
                     first = false;
                     entered.send(()).unwrap();
@@ -521,9 +523,9 @@ mod tests {
         assert_eq!(loads.load(Ordering::SeqCst), 0, "capture start is lazy");
         let mut pcm = vec![0.2; 4 * 16_000];
         pcm.extend(vec![0.0; 16_000]);
-        let pause = crate::capture::engine::runtime::audio::transcription::pause_transcribe::Pause::start_with(
+        let pause = pause_transcribe::Pause::start_with(
             Arc::new(Mutex::new(pcm.into())),
-            move |samples, offset| lease.transcribe("model", samples, offset),
+            move |samples, offset, phase| lease.transcribe("model", samples, offset, phase),
         )
         .unwrap();
         running.recv_timeout(Duration::from_secs(3)).unwrap();
@@ -533,7 +535,7 @@ mod tests {
         // A new capture can queue behind the cancelled worker without a second model.
         let next = owner.begin().unwrap();
         release.send(()).unwrap();
-        assert_eq!(next.transcribe("model", &[0.7], 0).unwrap().text, "0.7:0");
+        assert_eq!(next.transcribe("model", &[0.7], 0, RecognitionPhase::Finishing).unwrap().text, "0.7:0");
         sweep(&owner);
         ticks.store(8_000, Ordering::SeqCst);
         sweep(&owner);
@@ -565,7 +567,7 @@ mod tests {
         sweep(&owner);
         assert_eq!(drops.load(Ordering::SeqCst), 1);
         let last = owner.begin().unwrap();
-        assert_eq!(last.transcribe("model", &[0.9], 0).unwrap().text, "0.9:0");
+        assert_eq!(last.transcribe("model", &[0.9], 0, RecognitionPhase::Finishing).unwrap().text, "0.9:0");
         assert_eq!(loads.load(Ordering::SeqCst), 2);
     }
 
@@ -575,7 +577,7 @@ mod tests {
         if let Ok(case) = std::env::var(CASE) {
             assert!(!crate::shared::handoff::experiment("warmRecognizer"));
             assert_eq!(case, "default");
-            let pause = crate::capture::engine::runtime::audio::transcription::pause_transcribe::Pause::start(std::sync::Arc::new(
+            let pause = pause_transcribe::Pause::start(std::sync::Arc::new(
                 std::sync::Mutex::new(crate::capture::engine::runtime::audio::persistence::Samples::default()),
             ))
             .unwrap();
@@ -613,7 +615,7 @@ mod tests {
                 loaded.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             },
-            |_, samples, offset| {
+            |_, samples, offset, _| {
                 let text = samples[0].to_string();
                 Ok(TranscriptData {
                     text: text.clone(),
@@ -630,9 +632,9 @@ mod tests {
         .unwrap();
         for value in [0.2, 0.7] {
             let lease = owner.begin().unwrap();
-            let pause = crate::capture::engine::runtime::audio::transcription::pause_transcribe::Pause::start_with(
+            let pause = pause_transcribe::Pause::start_with(
                 Arc::new(Mutex::new(crate::capture::engine::runtime::audio::persistence::Samples::default())),
-                move |samples, offset| lease.transcribe("model", samples, offset),
+                move |samples, offset, phase| lease.transcribe("model", samples, offset, phase),
             )
             .unwrap();
             let pcm = vec![value; 16_000];
@@ -658,7 +660,7 @@ mod tests {
         let loaded = Arc::clone(&loads);
         let owner = Owner::spawn(
             move |_| Ok(loaded.fetch_add(1, Ordering::SeqCst)),
-            |id, _, _| {
+            |id, _, _, _| {
                 if *id == 0 {
                     anyhow::bail!("synthetic native failure");
                 }
@@ -672,9 +674,9 @@ mod tests {
         .unwrap();
         for succeeds in [false, true] {
             let lease = owner.begin().unwrap();
-            let pause = crate::capture::engine::runtime::audio::transcription::pause_transcribe::Pause::start_with(
+            let pause = pause_transcribe::Pause::start_with(
                 Arc::new(Mutex::new(crate::capture::engine::runtime::audio::persistence::Samples::default())),
-                move |samples, offset| lease.transcribe("model", samples, offset),
+                move |samples, offset, phase| lease.transcribe("model", samples, offset, phase),
             )
             .unwrap();
             let wav = crate::capture::engine::runtime::audio::audio::encode_wav_16k(&vec![0.2; 16_000]).unwrap();

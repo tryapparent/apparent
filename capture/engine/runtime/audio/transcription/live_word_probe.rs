@@ -75,7 +75,8 @@ fn run(samples: Arc<Mutex<Samples>>, state: Arc<Mutex<LiveWordWarning>>, stop: A
                 recognizer = Some(crate::capture::engine::runtime::audio::transcription::speech::Incremental::new()?);
             }
             let offset_ms = ((processed - CHUNK) / (RATE / 1_000)) as u64;
-            Ok(!recognizer.as_mut().unwrap().transcribe(&chunk, offset_ms)?.text.trim().is_empty())
+            let phase = super::speech::RecognitionPhase::Recording;
+            Ok(!recognizer.as_mut().unwrap().transcribe(&chunk, offset_ms, phase)?.text.trim().is_empty())
         })();
         if stop.load(Ordering::Acquire) { break; }
         if let Ok(mut state) = state.lock() {
