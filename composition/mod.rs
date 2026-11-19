@@ -1,4 +1,27 @@
 pub(crate) mod cli;
+
+pub(crate) fn run() -> anyhow::Result<()> {
+    use crate::capture::desktop;
+    use clap::Parser;
+
+    #[cfg(target_os = "linux")]
+    desktop::linux::prepare_process();
+    if std::env::var_os("APPARENT_BENCH_START").is_some() {
+        desktop::run_start_benchmark();
+        return Ok(());
+    }
+    let cli = cli::Cli::parse();
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    let reading_capture = cli.reads_capture();
+    let result = cli::run_cli(cli);
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    if reading_capture && let Err(error) = &result {
+        eprintln!("Error: {error:?}\n\nUnexpected error? Run `apparent feedback --help` to draft a report.");
+        std::process::exit(1);
+    }
+    result
+}
+
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 mod hermes {
     use crate::capture::desktop::workflow::launch_url::open_hermes_trusted;
@@ -63,7 +86,7 @@ pub(crate) mod feedback {
 
     #[derive(Args)]
     #[command(
-        after_help = "Preview first and obtain the user's approval before submitting on their behalf. Submit only text you intend to share with Apparent. New report groups enter Apparent's automated fix queue."
+        after_help = "Draft a report locally:\n  apparent feedback --kind bug --title 'Zoom rejects 1:05' \\\n    --body 'Expected 65 seconds. Zoom rejected the timestamp.'\n\nInclude what you tried, what you expected, and what happened. Omit private\npaths, capture contents, and credentials. Show the user the exact preview\nand get approval before adding --submit on their behalf."
     )]
     pub(crate) struct FeedbackArgs {
         #[arg(long, value_enum, default_value = "feedback", help = "Report category")]

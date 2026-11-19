@@ -62,6 +62,13 @@ invoke its absolute executable or extracted-AppImage wrapper path with `--versio
 Keep the extracted runtime libraries beside it. See the repository's
 `capture/agent/docs/installation.md` for platform layouts.
 
+### Draft CLI feedback
+
+Draft feedback for unexpected errors or confusing behavior, even if you found a workaround.
+Run `apparent feedback --help` for a local preview example. Include the sanitized command,
+expected and actual result, and workaround. Omit private data. Show the exact preview
+to the user and get approval before adding `--submit` to send it to Apparent's PostHog fix queue.
+
 ### Configuring Apparent
 
 Native app launch is available by default on Mac and Linux (an explicit
@@ -156,15 +163,7 @@ It prints the path of a PNG sheet of frames around that moment, the time of each
 
 `--mark` takes a mark's number from the text or its id (`m2`) and centres the sheet on the time it was drawn, with only that mark's ink, drawn whole from the moment it starts. `apparent inspect <bundle> --marks` lists every mark (`#2 ✎② 0:09 marked (2 strokes) · m2`: keyframe, number, time, shape, what it was drawn on, id), and `--marks --json` gives the same as JSON.
 
-### Other commands
-
-### Report an Apparent bug or improvement
-
-Preview with `apparent feedback --kind bug --title 'Short title' --body 'Description'`.
-Use `--kind feedback` for suggestions. Show the exact text to the user and obtain
-approval before adding `--submit`. Omit credentials, personal data and private capture
-content. Apparent receives the report in PostHog Error Tracking. New groups enter its
-automated fix queue.
+### Open a public GitHub issue
 
 For a public GitHub issue, search existing issues, then preview with `apparent issue
 --title 'Short title' --body 'Description'`. Get approval for the exact repository and

@@ -1431,30 +1431,21 @@ fn check_key_tap(telemetry: &Arc<SharedCaptureTelemetry>) -> bool {
     live
 }
 
-/// Starts watching input across every app, with no Input Monitoring:
-/// - clicks, drags and scrolls from an AppKit global mouse monitor, which needs no permission
-///   (only key events need Accessibility, per `addGlobalMonitorForEvents`' documentation);
-/// - ⇧ (ink), the laser and the shortcut's held modifiers from polled modifier flags, which need
-///   no permission either (the HID poller);
-/// - key presses (Esc, ⌘Z, ⌘-chords for the window log) from an active key
-///   event tap, which Accessibility allows and which is made, without a relaunch, as soon as
-///   Accessibility is on (`check_key_tap`).
-///
-/// ⌥⇧S and ⌥⇧V themselves are Carbon hotkeys and need nothing. Call on the main thread.
+#[path = "../../../../engine/native/macos/pointer.rs"]
+mod pointer;
+pub(in crate::capture::engine::runtime) use pointer::ShiftInk;
+
 pub fn start_global_input_tap(telemetry: Arc<SharedCaptureTelemetry>) {
     let live = install_mouse_monitor(Arc::clone(&telemetry));
     telemetry.mouse_live.store(live, Ordering::Release);
-    apparent_log(format!(
-        "mouse monitor {}",
-        if live {
-            "installed"
-        } else {
-            "unavailable; polling the mouse buttons"
-        }
-    ));
+    apparent_log(if live {
+        "mouse monitor installed"
+    } else {
+        "mouse monitor unavailable; polling the mouse buttons"
+    });
     let _ = thread::Builder::new()
         .name("apparent-hid-poller".into())
-        .spawn(move || run_global_hid_poller(telemetry));
+        .spawn(move || pointer::run_hid_poller(telemetry));
 }
 
 /// `struct __CGEvent`, so `-[NSEvent CGEvent]` passes objc2's encoding check.
@@ -1517,7 +1508,6 @@ fn mouse_event(
     let t_ms = telemetry.elapsed_ms();
     let loc = unsafe { CGEventGetLocation(event) };
     match event_type {
-        // A ⇧-press is never a click: a ⇧-click drops a pin, a ⇧-drag is ink (the poller's).
         EVENT_LEFT_MOUSE_DOWN | EVENT_RIGHT_MOUSE_DOWN if !on_apparent(loc.x, loc.y) => {
             if !pure_shift {
                 telemetry.pointer_down(t_ms, loc.x, loc.y);
@@ -1585,7 +1575,8 @@ fn spawn_key_tap(telemetry: Arc<SharedCaptureTelemetry>) {
         .spawn(move || {
             let mask = (1_u64 << EVENT_KEY_DOWN) | (1_u64 << EVENT_FLAGS_CHANGED)
                 | (1_u64 << EVENT_LEFT_MOUSE_DOWN) | (1_u64 << EVENT_RIGHT_MOUSE_DOWN) | (1_u64 << 25)
-                | (1_u64 << EVENT_SCROLL_WHEEL) | (1_u64 << EVENT_SYSTEM_DEFINED);
+                | (1_u64 << EVENT_SCROLL_WHEEL) | (1_u64 << EVENT_SYSTEM_DEFINED)
+                | pointer::MOTION_MASK;
             let user_info = Arc::into_raw(Arc::clone(&telemetry))
                 .cast_mut()
                 .cast::<c_void>();
@@ -1652,6 +1643,10 @@ unsafe extern "C" fn key_tap_callback(
         if !tap.is_null() {
             unsafe { CGEventTapEnable(tap, true) };
         }
+        return event;
+    }
+    if pointer::is_motion_event(event_type) {
+        pointer::handle_motion_event(telemetry, event);
         return event;
     }
     if matches!(event_type, EVENT_LEFT_MOUSE_DOWN | EVENT_RIGHT_MOUSE_DOWN | 25 | EVENT_SCROLL_WHEEL | EVENT_SYSTEM_DEFINED) {
@@ -1819,70 +1814,6 @@ pub fn post_synthetic_click(screen_x: f64, screen_y: f64) {
             CGEventPost(0, up);
             CFRelease(up.cast());
         }
-    }
-}
-
-/// 120 Hz poller of modifier flags and mouse buttons, neither of which needs a permission, so
-/// Shift-laser (`⇧` + move) and Shift-drag ink (`⇧` + drag) work across all apps (including
-/// Karabiner's virtual HID). Every 500 ms it also keeps the key tap in step with Accessibility.
-/// Key codes are never polled: reading them is Input Monitoring's.
-fn run_global_hid_poller(telemetry: Arc<SharedCaptureTelemetry>) {
-    let mut prev_shift_ink = false;
-    let mut await_shift_release = false;
-    let mut prev_buttons = [false; 2];
-    let mut last_tap_check: Option<Instant> = None;
-    loop {
-        thread::sleep(Duration::from_millis(8));
-        if last_tap_check.is_none_or(|t| t.elapsed() >= Duration::from_millis(500)) {
-            check_key_tap(&telemetry);
-            last_tap_check = Some(Instant::now());
-        }
-
-        // Combine COMBINED_SESSION_STATE (0, includes Karabiner virtual HID) and HID_SYSTEM_STATE (1).
-        let flags = unsafe { CGEventSourceFlagsState(0) | CGEventSourceFlagsState(1) };
-        let cmd = (flags & FLAG_COMMAND) != 0;
-        let ctrl = (flags & FLAG_CONTROL) != 0;
-        let alt = (flags & FLAG_ALTERNATE) != 0;
-        let shift = (flags & FLAG_SHIFT) != 0;
-        if !shift {
-            await_shift_release = false;
-        } else if cmd || ctrl || alt {
-            await_shift_release = true;
-        }
-        let buttons = unsafe {
-            [
-                CGEventSourceButtonState(1, 0) || CGEventSourceButtonState(0, 0),
-                CGEventSourceButtonState(1, 1) || CGEventSourceButtonState(0, 1),
-            ]
-        };
-        if !telemetry.active.load(Ordering::Acquire) {
-            prev_shift_ink = false;
-            prev_buttons = buttons;
-            continue;
-        }
-
-        let Some(loc) = current_mouse_location() else {
-            continue;
-        };
-        *telemetry
-            .pointer_screen
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = [loc.x as f32, loc.y as f32];
-
-        poll_clicks(
-            &telemetry,
-            &mut prev_buttons,
-            buttons,
-            (loc.x, loc.y),
-            shift && !cmd && !ctrl && !alt,
-            |x, y| telemetry.on_capture_input_ui(x, y),
-        );
-
-        let pure_shift = shift && !cmd && !ctrl && !alt && !await_shift_release;
-        // Hold Shift + move cursor inside the capture target = draw a persistent stroke.
-        track_shift_ink(&telemetry, (loc.x, loc.y), pure_shift, prev_shift_ink);
-
-        prev_shift_ink = pure_shift;
     }
 }
 
