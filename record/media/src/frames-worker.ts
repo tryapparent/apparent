@@ -1,4 +1,4 @@
-import {decodeMovieFrames} from '@apparent/engine-sdk';
+import {decodeMovieFrames, EngineFrameError} from '@apparent/engine-sdk';
 import {basename} from 'node:path';
 import {movieTimes, bundleTimes} from './frames-policy.ts';
 
@@ -18,7 +18,7 @@ try {
     requestIndex: frame.requestIndex, requestedMs: labels[index], actualMovieMs: frame.actualMs,
     width: frame.width, height: frame.height, file: basename(frame.file),
   }))}) + '\n');
-} catch {
+} catch (error) {
   process.stderr.write('Record could not decode the requested keyframes\n');
-  process.exitCode = 1;
+  process.exitCode = error instanceof EngineFrameError && error.code === 'resource_limit' ? 72 : 1;
 }

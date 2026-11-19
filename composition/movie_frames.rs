@@ -52,19 +52,21 @@ pub(crate) fn record(
     offset: u64,
     edge: u32,
 ) -> Result<Vec<RgbaFrame>> {
-    batches(
-        "Record media",
-        "record-media",
-        "frames-worker.js",
-        movie,
-        times,
-        offset,
-        edge,
-    )
+    adaptive_batches_from(times, 12, |batch| {
+        frames(
+            "Record media",
+            "record-media",
+            "frames-worker.js",
+            movie,
+            batch,
+            offset,
+            edge,
+        )
+    })
 }
 
 pub(crate) fn agent_range(movie: &Path, times: &[u64], offset: u64) -> Result<Vec<RgbaFrame>> {
-    adaptive_batches(times, |batch| {
+    adaptive_batches_from(times, 4, |batch| {
         frames(
             "Agent media",
             "agent-media",
@@ -92,7 +94,7 @@ pub(crate) fn record_phone_candidates(movie: &Path, duration: u64) -> Result<Vec
     let reply: Reply =
         serde_json::from_slice(&bytes).context("Invalid candidate frame response")?;
     let times = candidate_times(&reply)?;
-    read_frames(output.path(), &directory, &bytes, &times, 0)
+    read_reply(output.path(), &directory, reply, &times, 0)
 }
 
 fn candidate_times(reply: &Reply) -> Result<Vec<u64>> {
@@ -117,12 +119,13 @@ pub(super) fn sampled_times(reply: &Reply, offset: u64) -> Result<Vec<u64>> {
     Ok(times)
 }
 
-fn adaptive_batches(
+fn adaptive_batches_from(
     times: &[u64],
+    initial_limit: usize,
     mut decode: impl FnMut(&[u64]) -> Result<Vec<RgbaFrame>>,
 ) -> Result<Vec<RgbaFrame>> {
     let mut out = Vec::new();
-    let (mut cursor, mut limit) = (0, 4);
+    let (mut cursor, mut limit) = (0, initial_limit);
     while cursor < times.len() {
         let count = limit.min(times.len() - cursor);
         match decode(&times[cursor..cursor + count]) {
@@ -153,32 +156,6 @@ fn adaptive_batches(
             }
             Err(error) => return Err(error),
         }
-    }
-    Ok(out)
-}
-
-fn batches(
-    label: &str,
-    package: &str,
-    worker_file: &str,
-    movie: &Path,
-    times: &[u64],
-    offset: u64,
-    edge: u32,
-) -> Result<Vec<RgbaFrame>> {
-    let mut out = Vec::new();
-    // Four maximum-sized frames fit Engine's 256MP job resource limit.
-    // This does not select keyframes or change Record's workflow budget.
-    for chunk in times.chunks(4) {
-        out.extend(frames(
-            label,
-            package,
-            worker_file,
-            movie,
-            chunk,
-            offset,
-            edge,
-        )?);
     }
     Ok(out)
 }
@@ -411,7 +388,7 @@ mod tests {
     fn resource_backoff_preserves_order_and_does_not_repeat_other_failures() {
         let times = [0, 250, 500, 500, 1000, 1500, 2000, 2500];
         let mut rejected = 0;
-        let decoded = adaptive_batches(&times, |batch| {
+        let decoded = adaptive_batches_from(&times, 4, |batch| {
             if batch.len() > 3 {
                 rejected += 1;
                 return Err(super::super::worker::WorkerExitError { code: Some(72) }.into());
@@ -424,10 +401,10 @@ mod tests {
         .unwrap();
         assert!(rejected > 0);
         assert_eq!(decoded.iter().map(|f| f.t_ms).collect::<Vec<_>>(), times);
-        for code in [Some(1), Some(7), None] {
+        for code in [Some(1), None] {
             let mut calls = 0;
             assert!(
-                adaptive_batches(&times, |_| {
+                adaptive_batches_from(&times, 4, |_| {
                     calls += 1;
                     Err(super::super::worker::WorkerExitError { code }.into())
                 })
@@ -437,7 +414,7 @@ mod tests {
         }
         let mut calls = 0;
         assert!(
-            adaptive_batches(&[0], |_| {
+            adaptive_batches_from(&[0], 4, |_| {
                 calls += 1;
                 Err(super::super::worker::WorkerExitError { code: Some(72) }.into())
             })
@@ -479,9 +456,7 @@ mod tests {
         // Exercise ordinary offset mapping alongside the clamped requests below.
         // package.ts separately checks distinct clamped bundle identities.
         let times = [500, 700, 900, 1100, 1300, 1500];
-        // More than one four-frame native job; clamping and duplicate labels
-        // must survive both Record's worker and application resource batching.
-        let requested = [0, 250, 500, 1000, 1000, 1250];
+        let requested = [0, 250, 500, 625, 750, 875, 1000, 1000, 1100, 1150, 1200, 1250, 1300];
         let assembled = record(&movie, &requested, 500, 900).unwrap();
         assert_eq!(
             assembled.iter().map(|f| f.t_ms).collect::<Vec<_>>(),

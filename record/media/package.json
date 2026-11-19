@@ -7,7 +7,7 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "build": "tsc && node --experimental-strip-types ../enablement/ci/bend/build.ts dist/export quiet-export",
+    "build": "tsc && node --experimental-strip-types ../enablement/ci/bend/build.ts dist media",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.tools.json",
     "pretest": "npm run build",
     "test": "node --experimental-strip-types --test test/policy.test.ts test/frames.test.ts test/phone.test.ts test/screen.test.ts test/assembly.test.ts test/transcript/policy.test.ts test/selection/cues.test.ts test/selection/scene.test.ts test/export/quiet.test.ts",

@@ -1,4 +1,6 @@
 use crate::output::Directory;
+#[cfg(target_os = "linux")]
+use crate::output::output_write_error;
 pub use crate::output::Result;
 use std::io::Write;
 #[cfg(target_os = "macos")]
@@ -64,7 +66,7 @@ impl Output {
         }
         let name = format!("frame-{index:03}.rgba");
         let mut file = self.directory.create_private(&name)?;
-        file.write_all(rgba).map_err(|_| "write_failed")?;
+        file.write_all(rgba).map_err(output_write_error)?;
         self.pixels += pixels;
         Ok(Frame {
             request_index: index,

@@ -9,6 +9,7 @@ export function recordMediaCommands() {
       argv: ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"],
       cwd,
     },
+    { argv: ["npm", "run", "build"], cwd },
     { argv: ["npm", "run", "typecheck"], cwd },
     { argv: ["npm", "test"], cwd },
   ];

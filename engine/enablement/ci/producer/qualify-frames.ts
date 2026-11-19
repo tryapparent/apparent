@@ -108,10 +108,10 @@ export async function qualifyFrames(
   assert.equal(hash(frames[2].file), hash(frames[3].file));
   for (const frame of frames) {
     assert.equal(statSync(frame.file).mode & 0o777, 0o600);
-    assert.equal(
-      readFileSync(frame.file).length,
-      frame.width * frame.height * 4,
-    );
+    const rgba = readFileSync(frame.file);
+    assert.equal(rgba.length, frame.width * frame.height * 4);
+    for (let offset = 3; offset < rgba.length; offset += 4)
+      assert.equal(rgba[offset], 255);
   }
   const portrait = await decode("rotated-dimensions", {
     executable,
@@ -258,6 +258,99 @@ export async function qualifyFrames(
     [2500, 500, 1500, 1500, 2900, 1000, 2000],
   );
   assert.equal(hash(colors), colorsHash);
+
+  if (process.platform === "linux") {
+    const sparse = join(directory, "sparse-temporal-colors.mp4");
+    execFileSync(
+      "ffmpeg",
+      [
+        "-v",
+        "error",
+        "-nostdin",
+        "-stream_loop",
+        "7",
+        "-i",
+        colors,
+        "-map",
+        "0:v:0",
+        "-c",
+        "copy",
+        "-y",
+        sparse,
+      ],
+      { stdio: "pipe" },
+    );
+    const sparseTimes = [500, 4_550, 13_550, 6_550, 22_750, 99_999];
+    const frames = await decode("sparse-forward-and-backward-requests", {
+      executable,
+      movie: sparse,
+      outputDirectory: output(),
+      timesMs: sparseTimes,
+    });
+    const referenceTimes = [500, 1_500, 1_500, 500, 1_700, 2_900];
+    const reference = await decode("sparse-reference-frames", {
+      executable,
+      movie: colors,
+      outputDirectory: output(),
+      timesMs: referenceTimes,
+    });
+    assert.deepEqual(
+      frames.map((frame) => frame.actualMs),
+      [500, 4_500, 13_500, 6_500, 22_700, 23_900],
+    );
+    assert.deepEqual(
+      frames.map((frame) => hash(frame.file)),
+      reference.map((frame) => hash(frame.file)),
+    );
+
+    const openGop = join(directory, "open-gop-variable-frame-rate.mp4");
+    execFileSync(
+      "ffmpeg",
+      [
+        "-v",
+        "error",
+        "-nostdin",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=640x352:rate=30:duration=22",
+        "-vf",
+        "select='not(mod(n,5))+not(mod(n,7))'",
+        "-fps_mode",
+        "vfr",
+        "-c:v",
+        "libx264",
+        "-x264-params",
+        "open-gop=1",
+        "-g",
+        "48",
+        "-bf",
+        "3",
+        "-pix_fmt",
+        "yuv420p",
+        "-threads",
+        "2",
+        openGop,
+      ],
+      { stdio: "pipe" },
+    );
+    const requested = 18_033;
+    const seek = await decode("open-gop-sparse-request", {
+      executable,
+      movie: openGop,
+      outputDirectory: output(),
+      timesMs: [500, requested],
+    });
+    const sequential = await decode("open-gop-sequential-reference", {
+      executable,
+      movie: openGop,
+      outputDirectory: output(),
+      timesMs: [500, 3_000, 6_000, 9_000, 12_000, 15_000, requested],
+    });
+    const expected = sequential.at(-1)!;
+    assert.equal(seek[1].actualMs, expected.actualMs);
+    assert.equal(hash(seek[1].file), hash(expected.file));
+  }
 
   const batchTimes = Array.from({ length: 480 }, (_, index) => index * 10);
   const batch = await decode("480-frame-batch", {
