@@ -1,4 +1,4 @@
-import { Demo } from "../../demo/core/VideoDemo"
+import { HermesVideo } from "./HermesVideo"
 import { PhotoStory } from "./PhotoStory"
 import { FrogPond } from "./FrogPond"
 import { GithubStars } from "./GithubStars"
@@ -16,12 +16,7 @@ export function App() {
       </header>
       <main>
         <FrogPond />
-        <section className="pond-demo" aria-label="See apparent in action">
-          <h2>See what <span className="demo-heading-product"><img src="/apparent-wordmark.svg" alt="apparent" width={120} height={28} /> captures</span></h2>
-          <div className="demo-section" id="demo" aria-label="Product demo">
-            <Demo />
-          </div>
-        </section>
+        <HermesVideo />
         <FeatureGrid />
         <PhotoStory />
       </main>
