@@ -1,4 +1,5 @@
 import { launch } from "../../host/entry-policy.ts";
+import { nativeTraversal } from "./bend/native.ts";
 
 const inputs = [false, true];
 const rows = inputs.flatMap((seen) =>
@@ -20,3 +21,5 @@ ${rows.join("\n")}
     }
 }
 `);
+
+process.stdout.write(nativeTraversal());
