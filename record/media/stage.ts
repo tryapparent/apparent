@@ -34,7 +34,7 @@ try {
   const base = `engine-media-${key}`;
   const archive = join(temporary, base + '.tar.gz');
   const cached = join(out, 'native');
-  const names = ['LICENSE', 'apparent-engine-media', 'apparent-engine-frames', 'manifest.json'];
+  const names = ['LICENSE', 'apparent-engine-media', 'apparent-engine-frames', 'apparent-engine-audio', 'manifest.json'];
   if (process.platform === 'darwin') names.push('apparent-engine-probe', 'apparent-engine-frames-native');
   const verify = (directory: string) => {
     assert.deepEqual(readdirSync(directory).sort(), names.slice().sort());

@@ -98,16 +98,30 @@ impl ApparentCoordinator {
         }
         let view = self.electron_pill_view(0);
         let selection = self.electron_pill_selection();
+        let completion = self.electron_pill.as_ref()
+            .filter(|session| !session.has_completion(self.capture_generation))
+            .and_then(|_| self.completed_handoff_bundle())
+            .map(|(dir, bundle)| crate::shared::handoff::clipboard_summary(bundle, dir));
         if let Some(session) = &mut self.electron_pill {
             session.set_t3_eligible(!self.capture_local_practice);
-            if !self.capture_local_practice && !session.has_completion(self.capture_generation)
-                && let Some((dir, bundle)) = &self.review_bundle
-                && self.completed_dir.as_ref() == Some(dir)
-            {
-                session.complete(self.capture_generation, Some(crate::shared::handoff::clipboard_summary(bundle, dir)));
+            if let Some(text) = completion {
+                session.complete(self.capture_generation, Some(text));
             }
             session.update(view, self.capture_generation, selection);
         }
+    }
+
+    pub(in crate::capture::desktop) fn completed_handoff_bundle(
+        &self,
+    ) -> Option<&(std::path::PathBuf, crate::capture::desktop::ApparentBundle)> {
+        if self.capture_local_practice
+            || self.completion_pending != Some(self.capture_generation)
+            || !matches!(self.island_phase, IslandPhase::Completed { .. })
+        {
+            return None;
+        }
+        self.review_bundle.as_ref()
+            .filter(|(dir, _)| self.completed_dir.as_ref() == Some(dir))
     }
     pub(crate) fn tick_electron_pill(&mut self, cx: &mut Context<Self>) {
         self.sync_electron_pill();
@@ -193,5 +207,51 @@ impl ApparentCoordinator {
         if matches!(self.island_phase, IslandPhase::Hidden) {
             self.sync_electron_pill();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::capture::desktop::{ApparentBundle, SharedCaptureTelemetry};
+    use std::{path::PathBuf, time::Instant};
+
+    #[test]
+    fn t3_recovery_requires_the_current_recordings_completed_bundle() {
+        let (sender, _receiver) = flume::unbounded();
+        let mut coordinator = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
+        let bundle = |id: &str| -> ApparentBundle {
+            serde_json::from_value(serde_json::json!({
+                "version": 1, "id": id, "createdAtMs": 0, "durationMs": 1000,
+                "target": {"mode": "display", "displayId": 0,
+                    "frame": {"x": 0.0, "y": 0.0, "width": 640.0, "height": 480.0, "scale": 1.0}},
+                "transcript": {"source": "test", "text": id, "segments": []},
+                "strokes": [], "marks": [], "events": [], "keyframes": [], "contactSheet": "c.png"
+            })).unwrap()
+        };
+        let completed = || IslandPhase::Completed {
+            finished_at: Instant::now(), frame_count: 1, duration_ms: 1000, inbox_count: 0,
+        };
+        coordinator.set_island_phase(IslandPhase::Recording);
+        coordinator.set_island_phase(IslandPhase::Processing);
+        let first = PathBuf::from("/synthetic/first.apparent");
+        coordinator.completed_dir = Some(first.clone());
+        coordinator.completion_pending = Some(coordinator.capture_generation);
+        coordinator.review_bundle = Some((first, bundle("first")));
+        coordinator.set_island_phase(completed());
+        assert_eq!(coordinator.completed_handoff_bundle().unwrap().1.id, "first");
+
+        coordinator.set_island_phase(IslandPhase::Recording);
+        assert!(coordinator.completed_handoff_bundle().is_none());
+        coordinator.set_island_phase(IslandPhase::Processing);
+        assert!(coordinator.completed_handoff_bundle().is_none());
+        coordinator.completion_pending = Some(coordinator.capture_generation);
+        assert!(coordinator.completed_handoff_bundle().is_none());
+
+        let second = PathBuf::from("/synthetic/second.apparent");
+        coordinator.completed_dir = Some(second.clone());
+        coordinator.review_bundle = Some((second, bundle("second")));
+        coordinator.set_island_phase(completed());
+        assert_eq!(coordinator.completed_handoff_bundle().unwrap().1.id, "second");
     }
 }
