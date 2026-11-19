@@ -3,6 +3,7 @@ type Runtime = { $: "Idle" | "Busy" | "Failed" | "Other" };
 
 declare const policy: {
   inbox_done(shelf: number, completed: boolean): boolean;
+  reuse_destination(sameDestination: boolean, isNew: boolean): boolean;
   destination_rank(
     now: Stamp,
     placement: {

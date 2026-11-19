@@ -66,8 +66,7 @@ test('real pill keeps Paste by default, then selects during processing and dispa
  frame={...frame,view:{...frame.view,revision:3,phase:'completed',label:'Saved',actions:[{id:'paste',label:'Paste',enabled:true,selected:false,primary:true}]}};await publish();
  await expect.poll(()=>f.calls.length).toBe(1);await expect(trigger).toBeDisabled();assert.equal(f.calls[0].payload.threadId,'thread');assert.equal(f.calls[0].payload.text,handoff);assert.equal(await page.evaluate(()=>document.body.textContent.includes('PRIVATE')),false);
  await page.reload();await expect(trigger).toBeDisabled();assert.equal(f.accepted.size,1);
- // A new capture starts with New thread; a missing ACK retains the exact request for retry.
- frame={...frame,capture:'retry',view:{...frame.view,revision:4}};await publish();await expect(trigger).toBeEnabled();await app.evaluate(()=>process.stdin.emit('data',JSON.stringify({type:'handoff-ready',capture:'retry',text:'COPY THIS EXACT HANDOFF'})+'\n'));
+ frame={...frame,capture:'retry',view:{...frame.view,revision:4}};await publish();await expect(trigger).toContainText('Chosen thread');await app.evaluate(()=>process.stdin.emit('data',JSON.stringify({type:'handoff-ready',capture:'retry',text:'COPY THIS EXACT HANDOFF'})+'\n'));
  f.lose();await trigger.click();await search.fill('settled');await expect(options).toHaveCount(1);
  await search.press('Enter');await expect(page.getByRole('alert')).toContainText('Delivery not confirmed');
  await expect(page.locator('.destination-confirmed')).toContainText('Settled onboarding notes');
