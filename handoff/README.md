@@ -18,10 +18,12 @@ the visible rows without creating outbound intent. Selection and retries
 keep the original origin and request identity.
 
 Opening the picker shows a scrollable catalogue. Search matches thread title,
-project, computer and thread state. Browse groups new, pinned, done and other
-idle, working, snoozed, then settled threads. Archived threads and subagent
-threads are excluded. The catalogue uses the settled history the connected T3
-server returns. The collapsed picker retains the existing quick-send shortcut.
+project, computer and thread state. Browse groups new, pinned, inbox, working,
+snoozed, then settled threads. Within those shelves the picker uses T3's
+server timestamps and saved pin keys. T3's client-local folders, project
+filters, optimistic moves, and observed inbox return times can differ from
+the shell snapshot. Archived threads and subagent threads are excluded.
+The collapsed picker retains the existing quick-send shortcut.
 An unconfirmed send displays the saved destination and retries the persisted
 request. The Handoff renderer receives focus, send and share callbacks from
 the existing Electron pill adapter, which remains the native integration point.
