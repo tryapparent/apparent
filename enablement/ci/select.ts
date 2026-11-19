@@ -1,5 +1,6 @@
 import {admissionTooling, admissionConsumersKnown} from '../../shared/enablement/ci/inputs.ts';
 import {engineIndependentRange} from './routing/engine-inputs/qualify.ts';
+import {portableForegroundInputs, foregroundPortableChange, serviceOnlyRange} from '../../shared/enablement/ci/connect-inputs.ts';
 import {fixtureCandidate, qualifyFixtures, fixtureMacRequired, fixturePlatformBoundary} from './routing/fixture-portability/qualify.ts';
 import {qualifyCiTests} from './routing/test-only/qualify.ts';
 import {storageControllers, storageReferences, nativeStorageGraph, portableStorageController} from './routing/record-storage/qualify.ts';
@@ -7,9 +8,9 @@ import {execFileSync} from 'node:child_process';
 import {appendFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {isDeepStrictEqual} from 'node:util';
-import {changedPaths as inputPaths, matchesRegularBlob, workflowControlPaths} from './inputs.ts';
+import {changes, matchesRegularBlob, workflowControlPaths} from './inputs.ts';
 
-import {portableForegroundInputs, foregroundPortableChange, routingProblems, onboardingInput, onboardingPureInputs, onboardingWisprInputs, retiredOnboardingInputs, routeDecision, documentationOnlyPath, linuxDrivers, suitePlan} from './routing/consumers.ts';
+import {routingProblems, onboardingInput, onboardingPureInputs, onboardingWisprInputs, retiredOnboardingInputs, routeDecision, documentationOnlyPath, linuxDrivers, suitePlan} from './routing/consumers.ts';
 export {documentationOnlyPath} from './routing/consumers.ts';
 
 export function needsPlatform(paths: string[] | null): boolean {
@@ -63,35 +64,11 @@ export function requiresMac(paths: string[] | null, nonModifications: string[] |
   return macDecision(paths, nonModifications).macos;
 }
 
-type Change = {path: string; status: string; oldMode: string; newMode: string};
+type Change = NonNullable<ReturnType<typeof changes>>[number];
 const git = (args: string[], cwd = process.cwd()) => execFileSync('git', args,
   {cwd, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe']});
 
 const resolveCommit = (value: string, cwd?: string) => git(['rev-parse', '--verify', '--end-of-options', value + '^{commit}'], cwd).trim();
-
-function changes(base: string, head: string, cwd = process.cwd()): Change[] | null {
-  if (!/^[a-f0-9]{40}$/.test(base) || /^0+$/.test(base) || !/^[a-f0-9]{40}$/.test(head)) return null;
-  try {
-    if (git(['rev-parse', '--is-shallow-repository'], cwd).trim() !== 'false') return null;
-    git(['merge-base', '--is-ancestor', base, head], cwd);
-    const sharedPaths = inputPaths(base, head, cwd);
-    const raw = git(['diff', '--no-renames', '--no-ext-diff', '--no-textconv', '--ignore-submodules=none',
-      '--raw', '--no-abbrev', '-z', base, head, '--'], cwd);
-    if (!raw) return sharedPaths.length ? null : [];
-    const parts = raw.split('\0');
-    if (parts.pop() !== '' || parts.length % 2 !== 0) return null;
-    const result: Change[] = [];
-    for (let i = 0; i < parts.length; i += 2) {
-      const match = /^:(\d{6}) (\d{6}) [a-f0-9]{40} [a-f0-9]{40} ([A-Z])$/.exec(parts[i]);
-      if (!match || !parts[i + 1]) return null;
-      const [, oldMode, newMode, status] = match;
-      result.push({path: parts[i + 1], status, oldMode, newMode});
-    }
-    return isDeepStrictEqual(sharedPaths, result.map(change => change.path)) ? result : null;
-  } catch {
-    return null;
-  }
-}
 
 const unsupported = (change: Change) => change.status !== 'M' || change.oldMode !== '100644' || change.newMode !== '100644';
 
@@ -140,11 +117,12 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
       (change.status === 'A' && !supportedOnboardingAddition(change) && !supportedToolingAddition(change)) ||
       (change.status !== 'D' && change.status !== 'A' && unsupported(change)))).map(change => change.path) ?? [];
   const engineBoundary = paths !== null && !engineIndependentRange(base, head, paths, cwd);
+  const serviceBoundary = paths !== null && !serviceOnlyRange(base, head, paths, cwd);
   const admissionChanges = delta?.filter(change => admissionTooling(change.path)) ?? [];
   const admissionKnown = !admissionChanges.length || admissionConsumersKnown(cwd, head);
   const supportedAdmission = (change: Change) => admissionKnown && admissionTooling(change.path) &&
     ['M','A','D'].includes(change.status) && [change.oldMode,change.newMode].every(mode => ['000000','100644','100755'].includes(mode));
-  const unsafe = !admissionKnown || engineBoundary || changedOnboardingBoundary.length > 0 || (delta?.some(change => !provenFileChange(change) && !supportedAdmission(change)) ?? false) || changedPolicyImports.length > 0;
+  const unsafe = !admissionKnown || engineBoundary || serviceBoundary || changedOnboardingBoundary.length > 0 || (delta?.some(change => !provenFileChange(change) && !supportedAdmission(change)) ?? false) || changedPolicyImports.length > 0;
   const effective = unsafe ? null : paths;
   const workflowControls = !conservativeWorkflows && effective?.length ? workflowControlPaths(base, head, effective, cwd) : [];
   const foregroundBoundaries = delta?.filter(change => portableForegroundInputs.has(change.path)).filter(change => {
@@ -205,6 +183,7 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
     reasons: [...routing.reasons,
       ...(!admissionKnown ? ['fallback:admission-product-consumer'] : []),
       ...(engineBoundary ? ['fallback:engine-consumer-boundary'] : []),
+      ...(serviceBoundary ? ['fallback:connect-service-consumer-boundary'] : []),
       ...(delta?.filter(change => !provenFileChange(change) && !supportedAdmission(change)).map(change =>
         `fallback:unproven-input:${change.path}:${change.status}:${change.oldMode}->${change.newMode}`) ?? []),
       ...foregroundBoundaries.map(path => 'foreground:native-boundary:' + path), ...changedPolicyImports.map(path => 'fallback:onboarding-new-import:' + path), ...changedOnboardingBoundary.map(path => 'fallback:onboarding-boundary-change:' + path), ...mac.reasons]};
