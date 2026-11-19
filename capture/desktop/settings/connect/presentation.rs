@@ -65,7 +65,7 @@ impl Controller {
             None => ("Connection settings unavailable.", "You can still stop uploads or disconnect this computer."),
         };
         let presentation = Presentation {
-            headline: headline.into(), detail: detail.into(), buttons: buttons.clone(),
+            headline: headline.into(), detail: detail.into(), buttons: buttons.clone(), compact: true,
             tone: if self.confirmation.is_some() { Tone::Warning } else { Tone::Failure },
             ..Default::default()
         };
