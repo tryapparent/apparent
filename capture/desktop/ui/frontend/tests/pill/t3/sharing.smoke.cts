@@ -113,6 +113,37 @@ test('picker warms both computers during recording and keeps the waiting state a
   await page.keyboard.press('Escape');await expect(trigger).toHaveAttribute('aria-expanded','false');await proof('friendly-reclosed-'+theme+'-'+width);
   assert.deepEqual(await pickerGeometry(app,page),collapsed);
  }
- await trigger.focus();await page.keyboard.press('ArrowDown');await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');await expect(page.locator('.destination-receipt')).toContainText('Preparing recording');await send({type:'handoff-ready',capture:'names',text:'Synthetic name routing check'});
- await expect.poll(()=>b.calls.length).toBe(1);assert.equal(a.calls.length,0);
+ await trigger.click();
+ await page.getByRole('option',{name:/Chosen thread, Clanker/}).click();
+ await expect(page.locator('.destination-receipt')).toContainText('Preparing recording');
+ await send({type:'handoff-ready',capture:'names',text:'Synthetic name routing check'});
+ await expect(page.getByRole('img',{name:'Submitted',exact:true})).toBeVisible();
+ assert.equal(b.calls.length,1);assert.equal(a.calls.length,0);
+
+ const resumePrevious=b.delayConfig();
+ frame.capture='follow-up';
+ ++frame.view.revision;
+ await send(frame);
+ await expect.poll(()=>[a.reads,b.reads]).toEqual([2,2]);
+ await expect(trigger).toBeDisabled();
+ await expect(trigger).toContainText('Loading T3 threads');
+ resumePrevious();
+ await expect(trigger).toHaveAccessibleName(/Chosen thread, recording destination, Clanker/);
+ for(const theme of ['light','dark'])for(const width of [1200,320]){
+  await app.evaluate(({screen},width)=>{screen.getDisplayMatching=b=>({...screen.__pickerDisplay(b),workArea:{x:0,y:0,width,height:800}});},width);
+  await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});
+  await proof('remembered-collapsed-'+theme+'-'+width);
+  await trigger.press('ArrowDown');
+  const options=page.getByRole('option');
+  await expect(options.first()).toHaveAccessibleName(/Chosen thread, Clanker/);
+  await expect(options.first()).toHaveAttribute('aria-selected','true');
+  await expect(options.nth(1)).toHaveAccessibleName(/New thread, Clanker/);
+  await expect(options.nth(2)).toHaveAccessibleName(/New thread, X1/);
+  await proof('remembered-expanded-'+theme+'-'+width);
+  await page.keyboard.press('Escape');
+ }
+ await send({type:'handoff-ready',capture:'follow-up',text:'Synthetic quick send'});
+ await trigger.press('Enter');
+ await expect(page.getByRole('img',{name:'Submitted',exact:true})).toBeVisible();
+ assert.equal(b.calls.length,2);assert.equal(b.calls[1].payload.threadId,'thread');assert.equal(a.calls.length,0);
 });

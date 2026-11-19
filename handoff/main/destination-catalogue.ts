@@ -1,6 +1,7 @@
 import order from "../pure/destination-order.mjs";
 import type { Destination } from "../pure/destinations.ts";
-import type { Transport } from "./transport.ts";
+import type { Job } from "./delivery.ts";
+import { Transport, type Connection } from "./transport.ts";
 
 const shelves = ["pinned", "active", "working", "snoozed", "settled"] as const;
 
@@ -67,6 +68,13 @@ export type Project = {
   archivedAt?: Stamp;
 };
 
+export function preferDestination(choices: Destination[], preferredId: string) {
+  const index = choices.findIndex(({ id, kind }) =>
+    order.reuse_destination(id === preferredId, kind === "new"),
+  );
+  if (index > 0) choices.unshift(...choices.splice(index, 1));
+}
+
 export async function readDestinationShell(transport: Transport) {
   const [raw, config] = await Promise.all([
     transport.get("/api/orchestration/shell?omitIdleSubagents=1") as Promise<{
@@ -85,6 +93,38 @@ export async function readDestinationShell(transport: Transport) {
   )
     throw Error("Invalid T3 catalogue");
   return { raw, settings: config.settings, environment: config.environment };
+}
+
+export async function loadComputer(config: Connection, recent: Job[]) {
+  const { raw, settings, environment } = await readDestinationShell(
+    new Transport(config),
+  );
+  const projects = raw.projects.filter((p) => !p.archivedAt);
+  const last = recent.find(
+    ({ target }) =>
+      target.origin === config.origin &&
+      projects.some((project) => project.id === target.projectId),
+  );
+  const projectId = [
+    last?.target.projectId,
+    config.projectId,
+    projects[0]?.id,
+  ].find((id) => projects.some((p) => p.id === id));
+  if (!projectId) throw Error("No T3 project");
+  const label = environment?.label;
+  return {
+    config,
+    raw,
+    projects,
+    projectId,
+    last,
+    settings,
+    label: typeof label === "string" ? label.trim() : "",
+    environmentId:
+      typeof environment?.environmentId === "string"
+        ? environment.environmentId
+        : config.origin,
+  };
 }
 
 type RuntimeTag = "Idle" | "Busy" | "Failed" | "Other";

@@ -3,7 +3,8 @@ import path from "node:path";
 import type { DestinationView } from "../pure/destinations.ts";
 import {
   destinations,
-  readDestinationShell,
+  loadComputer,
+  preferDestination,
   type Project,
   type Thread,
 } from "./destination-catalogue.ts";
@@ -104,20 +105,19 @@ export class Controller {
         phase: "setup",
         processing: this.phase === "processing",
       };
-    const job = this.jobs.get(this.capture);
+    const current = this.jobs.get(this.capture);
+    const job = current?.phase === "cancelled" ? undefined : current;
     return {
       capture: this.capture,
       choices: this.choices,
-      selected:
-        job && job.phase !== "cancelled"
-          ? ([...this.catalogue].find(
-              ([, v]) =>
-                v.config.origin === job.target.origin &&
-                v.choice.id ===
-                  (job.target.launch ? "new" : job.target.threadId),
-            )?.[0] ?? "")
-          : (this.choices[0]?.id ?? ""),
-      ...(job && job.phase !== "cancelled"
+      selected: job
+        ? ([...this.catalogue].find(
+            ([, v]) =>
+              v.config.origin === job.target.origin &&
+              v.choice.id === (job.target.launch ? "new" : job.target.threadId),
+          )?.[0] ?? "")
+        : (this.choices[0]?.id ?? ""),
+      ...(job
         ? {
             confirmed: {
               id: job.target.launch ? "new" : job.target.threadId,
@@ -135,26 +135,21 @@ export class Controller {
             },
           }
         : {}),
-      phase:
-        job && job.phase !== "cancelled"
-          ? job.phase === "error"
-            ? "error"
-            : job.phase === "uncertain"
-              ? "uncertain"
-              : job.phase === "sending"
-                ? "sending"
-                : job.phase === "sent"
-                  ? "sent"
-                  : "armed"
-          : this.error || this.catalogueError
-            ? "error"
-            : "choosing",
+      phase: job
+        ? job.phase === "error"
+          ? "error"
+          : job.phase === "uncertain"
+            ? "uncertain"
+            : job.phase === "sending"
+              ? "sending"
+              : job.phase === "sent"
+                ? "sent"
+                : "armed"
+        : this.error || this.catalogueError
+          ? "error"
+          : "choosing",
       processing: this.phase === "processing",
-      error:
-        this.error ||
-        (job && job.phase !== "cancelled"
-          ? undefined
-          : this.catalogueError || undefined),
+      error: this.error || (job ? undefined : this.catalogueError || undefined),
     };
   }
   text(capture: string) {
@@ -235,40 +230,15 @@ export class Controller {
     if (this.pickerVisible) this.changed();
     if (!this.config) return;
     const multiple = configured.length > 1;
+    const scope = (origin: string, id: string) =>
+      multiple ? JSON.stringify([origin, id]) : id;
     const recent = [...this.jobs.values()]
       .filter((job) => job.phase === "sent")
       .sort((a, b) => (b.sentAt ?? b.createdAt) - (a.sentAt ?? a.createdAt));
-    const loadComputer = async (config: Connection) => {
-      const { raw, settings, environment } = await readDestinationShell(
-        new Transport(config),
-      );
-      const projects = raw.projects.filter((p) => !p.archivedAt);
-      const last = recent.find(
-        ({ target }) =>
-          target.origin === config.origin &&
-          projects.some((project) => project.id === target.projectId),
-      );
-      const projectId = [
-        last?.target.projectId,
-        config.projectId,
-        projects[0]?.id,
-      ].find((id) => projects.some((p) => p.id === id));
-      if (!projectId) throw Error("No T3 project");
-      const label = environment?.label;
-      return {
-        config,
-        raw,
-        projects,
-        projectId,
-        last,
-        settings,
-        label: typeof label === "string" ? label.trim() : "",
-        environmentId:
-          typeof environment?.environmentId === "string"
-            ? environment.environmentId
-            : config.origin,
-      };
-    };
+    const previous = recent[0]?.target;
+    const previousComputer = configured.findIndex(
+      (config) => config.origin === previous?.origin,
+    );
     const results: (
       | Awaited<ReturnType<typeof loadComputer>>
       | null
@@ -276,6 +246,8 @@ export class Controller {
     )[] = Array.from(configured, () => undefined);
     const publish = () => {
       if (version !== this.version) return;
+      if (previousComputer >= 0 && results[previousComputer] === undefined)
+        return;
       this.choices = [];
       this.catalogue.clear();
       this.catalogueError = "";
@@ -310,8 +282,7 @@ export class Controller {
           last,
           environmentId,
         } = result;
-        const scoped = (id: string) =>
-          multiple ? JSON.stringify([config.origin, id]) : id;
+        const scoped = (id: string) => scope(config.origin, id);
         scopedProjects.push(
           ...projects.map((project) => ({
             ...project,
@@ -379,11 +350,16 @@ export class Controller {
               : {}),
           });
       }
+      if (previousComputer >= 0 && previous)
+        preferDestination(
+          this.choices,
+          scope(previous.origin, previous.threadId),
+        );
       if (this.pickerVisible) this.changed();
     };
     await Promise.all(
       configured.map(async (config, index) => {
-        results[index] = await loadComputer(config).catch(() => null);
+        results[index] = await loadComputer(config, recent).catch(() => null);
         publish();
       }),
     );

@@ -94,6 +94,13 @@ test("confirmed processing handoff survives dismissal/reload and is dispatched o
   );
   assert.equal(JSON.parse(receipt).phase, "sent");
   assert.equal(receipt.includes("private-test-token"), false);
+  const restarted = new Controller(() => {}, f.config);
+  await restarted.update("next-recording", "processing");
+  assert.equal(restarted.view()?.selected, "thread");
+  assert.deepEqual(
+    restarted.view()?.choices.map(({ id }) => id),
+    ["thread", "new"],
+  );
 });
 
 test("lost acknowledgement retries the same new thread, command and message with T3 defaults", async (t) => {
@@ -265,6 +272,24 @@ test("all connected computers are combined without collisions and dispatch to th
   assert.equal(reopened.view()!.choices[0].computer, "Clanker");
   assert.equal(reopened.view()!.choices[0].project, "Build project");
   assert.equal(reopened.view()!.selected, reopened.view()!.choices[0].id);
+  const existing = choices.find(
+    (choice) => choice.computer === "Clanker" && choice.kind !== "new",
+  )!;
+  await reopened.ready("next", "Follow-up recording");
+  await reopened.confirm("next", existing.id);
+  await reopened.update("follow-up", "completed");
+  assert.equal(reopened.view()!.selected, existing.id);
+  assert.deepEqual(
+    reopened
+      .view()!
+      .choices.slice(0, 3)
+      .map(({ id, kind }) => [id, kind]),
+    [
+      [existing.id, existing.kind],
+      [target.id, "new"],
+      [choices[0].id, "new"],
+    ],
+  );
 });
 
 test("one unreachable computer leaves the other computer selectable and reports the missing host", async (t) => {

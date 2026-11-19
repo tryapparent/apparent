@@ -107,3 +107,6 @@ def destination_rank(now: Stamp, placement: Placement, attention: Attention, act
 
 def inbox_done(shelf: U32, completed: Bool) -> Bool:
   Bool.and(U32.is_eq(shelf, 1), completed)
+
+def reuse_destination(same_destination: Bool, is_new: Bool) -> Bool:
+  Bool.and(same_destination, Bool.not(is_new))

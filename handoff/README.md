@@ -18,8 +18,10 @@ the visible rows without creating outbound intent. Selection and retries
 keep the original origin and request identity.
 
 Opening the picker shows a scrollable catalogue. Search matches thread title,
-project, computer and thread state. Browse groups new, pinned, inbox, working,
-snoozed, then settled threads. Within those shelves the picker uses T3's
+project, computer and thread state. The last successfully sent recording's
+thread appears first and is the quick-send default while it is available.
+New thread options follow it, or appear first when the previous thread is unavailable.
+The remaining shelves are pinned, inbox, working, snoozed and settled. Within those shelves the picker uses T3's
 server timestamps and saved pin keys. T3's client-local folders, project
 filters, optimistic moves, and observed inbox return times can differ from
 the shell snapshot. Archived threads and subagent threads are excluded.
