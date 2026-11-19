@@ -2,7 +2,10 @@ import { app } from "electron";
 import path from "node:path";
 import { homedir } from "node:os";
 import { OnboardingConnectAdapter } from "@apparent/connect-native-adapter/onboarding";
-import { macWispr, savedWisprExperiment } from "./wispr.ts";
+import {
+  macWispr,
+  savedWisprExperiment,
+} from "@apparent/onboarding/wispr-native";
 import { install } from "./reporting.ts";
 import { reportException } from "./exception.ts";
 import { start } from "./host.ts";

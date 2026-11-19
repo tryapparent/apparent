@@ -73,7 +73,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
    await expect(toggle).toHaveAttribute('aria-checked','true');
    await page.reload();await expect(autoPaste).toHaveAttribute('aria-checked','true');await expect(toggle).toHaveAttribute('aria-checked','true');
   }else await expect(autoPaste).toBeDisabled();
-  const wispr=page.getByRole('switch',{name:'Wispr onboarding',exact:true});
+  const wispr=page.getByRole('switch',{name:'Dictation app conflicts',exact:true});
   await expect(wispr).toHaveAttribute('aria-checked','false');
   if(process.platform==='darwin'){
    await wispr.focus();await page.keyboard.press('Space');await expect(wispr).toHaveAttribute('aria-checked','true');await expect(wispr).toBeFocused();

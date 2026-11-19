@@ -306,7 +306,7 @@ continues; Finish remains in the recording controls. Closing never fabricates le
 completion. Native fallback remains available if the Electron transport fails;
 its legacy account presentation remains local-only.
 
-The [Onboarding owner](../../../onboarding/README.md) defines when the optional tour opens and how to resume it. The native adapter saves progress under `"onboarding"` in `~/.config/apparent/config.json`, and the renderer reports user actions.
+The [Onboarding owner](../../../../onboarding/README.md) defines when the optional tour opens and how to resume it. The native adapter saves progress under `"onboarding"` in `~/.config/apparent/config.json`, and the renderer reports user actions.
 Progress saves on both platforms update only the current schema's leaves through
 the shared durable config transaction. Unknown nested onboarding fields and other
 settings survive; omitted optional schema fields are removed. A non-object
@@ -920,43 +920,13 @@ rolling back the Electron command restores that refusal, with no config migratio
 or second writer. Installed platform capture and live upload acceptance remain
 separate from synthetic renderer and protocol checks.
 
-### Labs: Wispr onboarding (macOS, default off)
+### Labs: Dictation app conflicts (macOS, default off)
 
-Settings → Labs → **Wispr onboarding** saves
-`experiments.onboardingWisprFlow` through the existing shared config transaction.
-The default is false; enabling it applies when Electron next reaches shortcut
-setup. Direct config edits take effect on the next native onboarding state
-refresh. Disabling it removes the offer; a quit already requested may still finish.
-Linux keeps its existing shortcut flow and cannot enable this Mac-only control.
-
-The TypeScript workflow in `ui/frontend/src/onboarding/wispr/` asks whether Wispr
-Flow is running before an unchosen shortcut. A running app gets the quit/keep-open
-choice. Closed apps skip it; an unavailable check offers retry or continuation.
-The host independently rechecks the saved flag and current native step on each
-request. Its fixed AppKit adapter in `electron/onboarding/wispr.ts` requests normal
-termination of `com.electron.wispr-flow` and observes exit for up to five seconds.
-It never launches Wispr, force-quits, edits Wispr preferences or requests Apple
-Events Automation permission. Refusal/timeout does not trigger the success dunk.
-
-The accepted frog sequence starts only after a closed receipt. The finished pose
-holds for 1.2 seconds, then reveals existing shortcut setup without another click.
-The quit label stays stable; reduced motion uses the final pose and same hold.
-Keep open skips only this offer for the current setup visit. Renderer close/state
-changes invalidate pending callbacks. Existing native fallback, permission and
-capture routing remain authoritative; fallback does not gain this experiment.
-Rollback is turning the flag off. No legacy surface is removed by this slice.
-
-`tests/onboarding/wispr/policy.test.ts` covers admission/defaults and stale receipts;
-`wispr/smoke.ts` uses the built Electron renderer with synthetic native facts.
-On an isolated Mac, `APPARENT_WISPR_NATIVE_TEST=1` enables
-`wispr/macos.test.ts`, which refuses to run against an existing Wispr process and
-uses an owned AppKit fixture for normal quit and refusal. Synthetic proof is not
-verification of an active dictation in the vendor's app. The sprite sheet was
-generated from Apparent's existing frog reference; the key and basket carry no
-Wispr logo.
+The Labs switch uses the existing `experiments.onboardingWisprFlow` preference.
+See [Onboarding's shortcut conflict behavior](../../../onboarding/README.md#dictation-app-conflicts).
 
 General retains its compact capture-card artwork, action ordering and privacy
 and activity disclosures while inheriting the shared Settings title/section/body
 roles and narrow-window navigation. This follows the approved 48/24/18 hierarchy;
 General no longer pins the earlier 36px title or 18px section headings. Agents
-and Labs retain the shared switch states and the default-off Wispr experiment.
+and Labs retain the shared switch states and the default-off dictation app experiment.

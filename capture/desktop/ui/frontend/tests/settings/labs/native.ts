@@ -57,7 +57,7 @@ try{
    await page.reload();await expect(autoPaste).toBeEnabled();await expect(autoPaste).toHaveAttribute('aria-checked',String(on));
   }
  }else await expect(page.getByRole('switch',{name:'Auto paste',exact:true})).toBeDisabled();
- const wispr=page.getByRole('switch',{name:'Wispr onboarding',exact:true});
+ const wispr=page.getByRole('switch',{name:'Dictation app conflicts',exact:true});
  await expect(wispr).toHaveAttribute('aria-checked','false');
  if(process.platform==='darwin'){
   for(const on of [true,false]){
