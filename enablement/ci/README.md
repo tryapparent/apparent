@@ -98,9 +98,12 @@ GitHub's image assigns Azure/Ubuntu mirrors priorities 1–3. The helper tests
 Ubuntu's HTTPS archive and then Kernel.org with APT's own acquire backend, since
 curl can succeed for a host that stalls APT. Each candidate must supply the
 updates suite's InRelease and its amd64 main by-hash package index (hash checked),
-within one ten-second timeout plus two seconds of termination headroom. The first
-passing candidate is promoted to priority 0; only this helper's exact priority
-entries are replaced, preserving hosted fallbacks. If neither candidate passes,
+within a shared 15-second deadline per candidate, with two seconds of
+termination headroom. Both transfers keep a five-second inactivity limit and
+zero retries. The two sequential probes have up to 34 seconds including
+termination headroom. The first passing candidate is promoted to priority 0.
+Only this helper's exact priority entries are replaced, preserving hosted
+fallbacks. If neither candidate passes,
 preparation warns and leaves the runner list in place for signed APT installs.
 The disposable runner's dedicated `zzzz-apparent-transport` APT config limits HTTP
 and HTTPS inactivity to 15 seconds and acquisition retries to one. These are
