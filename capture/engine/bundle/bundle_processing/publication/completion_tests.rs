@@ -61,11 +61,12 @@ fn dispatch(result: CaptureResult, success: bool) {
         usize::from(success),
         "retention notification must consume only the successful outer result"
     );
-    use crate::capture::desktop::{ApparentCoordinator, IslandPhase};
+    use crate::capture::desktop::{ApparentCoordinator, PillEvent};
     use crate::capture::engine::runtime::SharedCaptureTelemetry;
     let (sender, _receiver) = flume::unbounded();
     let mut coordinator = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
-    coordinator.set_island_phase(IslandPhase::Processing);
+    coordinator.apply_pill_event(PillEvent::CaptureStarted);
+    coordinator.apply_pill_event(PillEvent::CaptureSealed);
     assert!(
         coordinator
             .agent_captures

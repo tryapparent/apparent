@@ -12,6 +12,16 @@ export function bendConsumers(path: string) {
     return ["capture", "desktop"] as const;
   if (sharedBendInput(path))
     return ["capture", "desktop", "service", "onboarding"] as const;
+  if (path.startsWith("record/pill/renderer/"))
+    return path.endsWith(".md") ? [] : (["desktop", "onboarding"] as const);
+  if (
+    /^record\/pill\/(?:pill-state\.bend|host\.ts|presentation\.ts)$/.test(
+      path,
+    ) ||
+    path === "record/enablement/ci/bend/pill.ts"
+  )
+    return ["capture", "desktop"] as const;
+  if (path.startsWith("record/enablement/ci/pill/")) return [] as const;
   if (path.startsWith("record/enablement/ci/bend/"))
     return /\/(?:build\.ts|modules\.json)$/.test(path)
       ? (["capture", "desktop", "onboarding"] as const)

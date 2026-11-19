@@ -22,6 +22,7 @@ export type State = Readonly<{
   connected: boolean;
   copyPending: boolean;
   status: string | null;
+  manualRecovery: boolean;
   notifications: readonly Readonly<{title: string; body: string}>[];
 }>;
 export type Event =
@@ -32,7 +33,7 @@ export type Effect = Readonly<{type: 'copy'; capture: Capture; mode: 'text' | 'b
 export type Decision = Readonly<{state: State; effects: readonly Effect[]}>;
 
 export function begin(context: Context, current: boolean): State {
-  return {context, observation: null, current, connected: true, copyPending: false, status: null, notifications: []};
+  return {context, observation: null, current, connected: true, copyPending: false, status: null, manualRecovery: false, notifications: []};
 }
 export function sameCapture(a: Capture, b: Capture): boolean {
   return a.generation === b.generation && a.captureId === b.captureId && a.requestId === b.requestId;
@@ -69,6 +70,7 @@ export function reduce(previous: State, event: Event, mayCopy: MayCopy): Decisio
         mode: autoPasteTrial(state.context) ? 'autoPasteAndSubmit' : 'bundle'});
     } else if (event.type === 'clipboard' && state.copyPending && state.observation?.outcome.kind === 'saved') {
       state = {...state, copyPending: false, observation: {...state.observation, clipboard: event.result},
+        manualRecovery: event.result === 'failed' && !autoPasteTrial(state.context),
         status: event.result === 'failed' ? autoPasteTrial(state.context) ? 'Saved · auto paste stopped' : 'Saved · open bundle (copy failed)'
           : autoPasteTrial(state.context) ? 'Saved · Enter pressed' : 'Saved · copied',
         notifications: autoPasteTrial(state.context) ? [...state.notifications, {title: 'Auto paste', body: event.result === 'failed'

@@ -70,7 +70,7 @@ test('foreground upload states stay private, bounded, and use one authorized pil
  await assertNoOverflow('normal workarea');
  if(evidence)await page.screenshot({path:path.join(evidence,'foreground-copy-link.png'),fullPage:true});
 
- const uploading={...base,revision:2,label:'Uploading… 42%',actions:actions('Cancel upload',true)};
+ const uploading={...base,revision:2,shareIndicator:'uploading',label:'Uploading… 42%',actions:actions('Cancel upload',true)};
  await publish(uploading);
  await expect(page.getByText(uploading.label,{exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:'Cancel upload',exact:true})).toBeEnabled();
@@ -96,7 +96,7 @@ test('foreground upload states stay private, bounded, and use one authorized pil
   screen.getDisplayMatching=bounds=>narrow(matching(bounds));
   screen.getDisplayNearestPoint=point=>narrow(nearest(point));
  });
- const failed={...base,revision:3,label:'Upload failed · recording saved locally',actions:actions('Retry upload',true)};
+ const failed={...base,revision:3,shareIndicator:'retry',label:'Upload failed · recording saved locally',actions:actions('Retry upload',true)};
  await publish(failed);
  await expect(page.getByText(failed.label,{exact:true})).toBeVisible();
  const retry=page.getByRole('button',{name:'Retry upload',exact:true});
@@ -114,7 +114,7 @@ test('foreground upload states stay private, bounded, and use one authorized pil
  await expect.poll(()=>sent.filter(message=>message.action==='copy-public-link').length).toBe(1);
  assert.deepEqual(sent.filter(message=>message.action==='copy-public-link').at(-1),{revision:3,action:'copy-public-link'});
 
- const cancelled={...base,revision:4,label:'Upload cancelled · recording saved locally',actions:actions('Retry upload',true)};
+ const cancelled={...base,revision:4,shareIndicator:'retry',label:'Upload cancelled · recording saved locally',actions:actions('Retry upload',true)};
  await publish(cancelled);
  await expect(page.getByText(cancelled.label,{exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:'Retry upload',exact:true})).toBeEnabled();
@@ -122,7 +122,7 @@ test('foreground upload states stay private, bounded, and use one authorized pil
  await assertPrivate();
  if(evidence)await page.screenshot({path:path.join(evidence,'foreground-cancelled.png'),fullPage:true});
 
- const copied={...base,revision:5,label:'Link copied',actions:actions('Public link',true)};
+ const copied={...base,revision:5,shareIndicator:'receipt',label:'Link copied',actions:actions('Public link',true)};
  await publish(copied);
  await expect(page.getByText('Link copied',{exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:'Public link',exact:true})).toBeEnabled();

@@ -3,11 +3,9 @@
 
 mod worker;
 
-use std::time::Instant;
-
 use gpui::Context;
 
-use super::super::{ApparentCoordinator, CAPTURE_STATUS, IslandPhase};
+use super::super::{ApparentCoordinator, CAPTURE_STATUS, PillEvent};
 use super::recording_completion::CaptureResult;
 use crate::capture::engine::runtime::apparent_log;
 pub(in crate::capture::desktop) use worker::{Capture, Facts};
@@ -167,12 +165,11 @@ impl ApparentCoordinator {
                 if let Ok(mut status) = CAPTURE_STATUS.lock() {
                     *status = Some(state.and_then(|s| s.status).unwrap_or_else(|| "Capture failed".into()));
                 }
-                self.set_island_phase(IslandPhase::Dismissing);
+                self.apply_pill_event(PillEvent::CaptureFailed);
                 cx.notify();
                 return;
             }
         };
-        let frame_count = bundle.keyframes.len();
         if let Ok(mut status) = CAPTURE_STATUS.lock() {
             *status = None;
         }
@@ -186,15 +183,12 @@ impl ApparentCoordinator {
         self.last_local_capture_ms = crate::shared::clock::now_epoch_ms();
         // Exceptional recovery is factual only: preserve access to the exact saved
         // artifact, never emulate copy policy or infer that a write succeeded.
-        self.completed_note = Some(state.and_then(|s| s.status)
-            .unwrap_or_else(|| "Saved · handoff unavailable".into()));
-        self.set_review_bundle((dir, bundle), self.completed_note.clone());
-        self.set_island_phase(IslandPhase::Completed {
-            finished_at: Instant::now(),
-            frame_count,
-            duration_ms,
-            inbox_count: 0,
-        });
+        let recovery = state.as_ref().is_some_and(|result| result.manual_recovery);
+        let text = state.and_then(|s| s.status)
+            .unwrap_or_else(|| "Saved · handoff unavailable".into());
+        let frame_count = bundle.keyframes.len();
+        self.set_review_bundle((dir, bundle), Some(text.clone()));
+        self.apply_pill_event(PillEvent::CaptureSaved { recovery, text: Some(text), frame_count, duration_ms });
         cx.notify();
     }
 }

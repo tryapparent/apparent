@@ -2,6 +2,8 @@
 mod build_version { include!("enablement/build_version.rs"); }
 mod capture;
 mod composition;
+#[path = "engine/native/embedded_policy.rs"]
+mod embedded_policy;
 #[path = "engine/permissions/facts.rs"]
 mod permission_facts;
 #[path = "engine/permissions/admission.rs"]

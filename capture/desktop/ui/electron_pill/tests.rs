@@ -27,7 +27,53 @@ fn late_child_stays_hidden_until_its_filter_receipt() {
     // Device capture records the phone stream, not SCK's display; it has no SCK receipt.
     assert!(capture_exclusion_ready(Some(42), &[], false));
 }
-use crate::capture::desktop::native::pill::PillStyle;
+use crate::capture::desktop::native::pill::{PillStyle, PillSnapshot, model::Pres};
+
+fn test_view(source: &PillSnapshot, revision: u64, movable: bool) -> View {
+    project(source, revision, Facts { movable, paste: true, inspect: true, ..Facts::default() })
+}
+
+fn project(source: &PillSnapshot, revision: u64, mut facts: Facts) -> View {
+    let session = PolicySession::open().unwrap();
+    let send = |event| session.dispatch(event, 0, 0).unwrap();
+    match &source.pres {
+        Pres::Hidden => {}
+        Pres::Selecting { mode, has_iphone } => {
+            facts.phone = *has_iphone;
+            send(Event::PickerOpened { mode: (*mode).into() });
+        }
+        Pres::Recording { chips, has_iphone } | Pres::RecordingWarning { chips, has_iphone } => {
+            send(Event::CaptureStarted);
+            facts.phone = *has_iphone;
+            facts.no_words = matches!(source.pres, Pres::RecordingWarning { .. });
+            if *chips { send(Event::RevealOpened { activity: 0 }); }
+        }
+        Pres::Processing => {
+            send(Event::CaptureStarted);
+            send(Event::CaptureSealed);
+        }
+        Pres::Completed { label, warning, share, .. } => {
+            send(Event::CaptureStarted);
+            send(Event::CaptureSealed);
+            send(Event::CaptureSaved { recovery: false, text: Some(label.clone()), frame_count: 1, duration_ms: 1000 });
+            facts.audio_issue = warning.then_some("No words");
+            facts.audio_problem = *warning;
+            facts.sharing_enabled = share.is_some();
+            facts.sharing_online = *share == Some(true);
+        }
+    }
+    facts.microphone_problem = source.mic_warning.is_some();
+    facts.mic_warning = source.mic_warning.map(|warning| warning.announcement());
+    View {
+        presentation: session.present(&facts).unwrap(),
+        revision,
+        clock: source.clock.clone(),
+        input_waveform: source.input_waveform,
+        reduced_motion: source.reduced_motion,
+        transcript: None,
+        notice: None,
+    }
+}
 fn snapshot(pres: Pres) -> PillSnapshot {
     PillSnapshot {
         pres,
@@ -48,7 +94,7 @@ fn command(revision: u64, action: &str) -> Command {
 #[test]
 #[cfg(target_os = "linux")]
 fn electron_pill_drag_admission_stays_with_current_recording() {
-    let mut view = View::new(&snapshot(Pres::Recording { chips: false, has_iphone: false }), 12, true);
+    let mut view = test_view(&snapshot(Pres::Recording { chips: false, has_iphone: false }), 12, true);
     let mut drag = command(12, "drag");
     drag.target = Some([300.0, 60.0]);
     assert_eq!(view.drag_point(&drag, true), drag.target);
@@ -59,16 +105,16 @@ fn electron_pill_drag_admission_stays_with_current_recording() {
     drag.target = Some([f32::NAN, 60.0]);
     assert_eq!(view.drag_point(&drag, true), None);
     drag.target = Some([300.0, 60.0]);
-    view.draggable = false;
+    view.presentation.draggable = false;
     assert_eq!(view.drag_point(&drag, true), None);
-    view.draggable = true;
-    view.phase = "selecting";
+    view.presentation.draggable = true;
+    view.presentation.phase = "selecting".into();
     assert_eq!(view.drag_point(&drag, true), None);
     assert!(view.admit(drag).is_none(), "Geometry cannot dispatch a capture action");
 }
 #[test]
 fn electron_pill_refuses_stale_and_unavailable_mutations() {
-    let view = View::new(
+    let view = test_view(
         &snapshot(Pres::Recording {
             chips: false,
             has_iphone: false,
@@ -125,7 +171,7 @@ fn electron_pill_preserves_capabilities_and_one_primary_action() {
         },
     ];
     for state in states {
-        let view = View::new(&snapshot(state), 1, true);
+        let view = test_view(&snapshot(state), 1, true);
         assert!(view.actions.iter().filter(|a| a.primary).count() <= 1);
         assert!(!view.actions.iter().any(|a| a.id.contains("window")));
         if view.phase != "recording" {
@@ -137,35 +183,6 @@ fn electron_pill_preserves_capabilities_and_one_primary_action() {
         }
     }
 }
-#[test]
-fn electron_pill_warning_keeps_finish_without_competing_accent() {
-    let view = View::new(
-        &snapshot(Pres::RecordingWarning {
-            chips: false,
-            has_iphone: false,
-        }),
-        1,
-        true,
-    );
-    assert_eq!(view.warning.as_deref(), Some("No words recognized yet"));
-    assert!(
-        view.actions
-            .iter()
-            .any(|a| a.id == "finish" && a.enabled && !a.primary)
-    );
-    let view = View::new(
-        &snapshot(Pres::Completed {
-            label: "Saved".into(),
-            routes: vec![],
-            warning: false,
-            share: Some(false),
-        }),
-        1,
-        false,
-    );
-    assert!(view.admit(command(1, "copy-link")).is_none());
-}
-
 #[cfg(target_os = "linux")]
 fn pipe_sandbox_preflight(root_suid_helper: bool, namespace_available: bool) -> Result<(), &'static str> {
     if root_suid_helper || namespace_available { return Ok(()); }
@@ -237,7 +254,7 @@ fn electron_pill_real_pipe_child() {
         std::env::var("APPARENT_PILL_PIPE_CHILD").as_deref(),
         Ok("1")
     );
-    let view = View::new(
+    let view = test_view(
         &snapshot(Pres::Recording {
             chips: false,
             has_iphone: false,
@@ -273,7 +290,7 @@ fn electron_pill_real_pipe_child() {
     let anchor = session.note_badge_anchor().expect("visible child must report its native frame");
     assert!(anchor.iter().all(|value| value.is_finite()) && anchor[2] > 0.0 && anchor[3] > 0.0);
     session.update(
-        View::new(&snapshot(Pres::Hidden), 0, false),
+        test_view(&snapshot(Pres::Hidden), 0, false),
         1,
         Default::default(),
     );
@@ -285,7 +302,7 @@ fn electron_pill_real_pipe_child() {
 
 #[test]
 fn electron_pill_expired_command_returns_fresh_actionable_readback_without_dispatch() {
-    let mut view = View::new(
+    let mut view = test_view(
         &snapshot(Pres::Recording {
             chips: false,
             has_iphone: false,
@@ -310,17 +327,13 @@ fn electron_pill_expired_command_returns_fresh_actionable_readback_without_dispa
 
 #[test]
 fn electron_pill_requires_an_explicit_capture_for_handoff() {
-    let view = View::new(
+    let view = project(
         &snapshot(Pres::Completed {
-            label: "Saved".into(),
-            routes: vec![],
-            warning: false,
-            share: Some(true),
+            label: "Saved".into(), routes: vec![], warning: false, share: Some(true),
         }),
         1,
-        false,
-    )
-    .with_handoff(false, false);
+        Facts::default(),
+    );
     for action in ["paste", "copy-link", "inspect"] {
         assert!(view.admit(command(1, action)).is_none());
     }
@@ -334,61 +347,33 @@ fn electron_pill_requires_an_explicit_capture_for_handoff() {
 fn captured_level_projects_to_shared_pill_without_a_platform_gate() {
     let mut source = snapshot(Pres::Recording { chips: false, has_iphone: false });
     source.input_waveform = Some([0.6; 24]);
-    assert_eq!(View::new(&source, 1, false).input_waveform, Some([0.6; 24]));
-}
-
-#[test]
-fn foreground_upload_reuses_completed_action_and_keeps_cancel_available() {
-    let source = snapshot(Pres::Completed { label: "Uploading… 42%".into(), routes: vec![], warning: false, share: Some(false) });
-    let active = View::new(&source, 5, false).with_handoff(true, true).with_foreground_upload(true, false);
-    let cancel = active.actions.iter().find(|a| a.id == "copy-link").unwrap();
-    assert_eq!(cancel.label, "Cancel upload");
-    assert!(cancel.enabled);
-    assert!(matches!(active.admit(command(5, "copy-link")), Some(PillAction::CopyLink)));
-    let retry = View::new(&snapshot(Pres::Completed { label: "Upload failed".into(), routes: vec![], warning: false, share: Some(true) }), 6, false)
-        .with_handoff(true, true).with_foreground_upload(false, true);
-    assert_eq!(retry.actions.iter().find(|a| a.id == "copy-link").unwrap().label, "Retry upload");
-    assert!(retry.admit(command(5, "copy-link")).is_none());
-}
-
-#[test]
-fn saved_notes_are_recording_only_and_admitted_by_revision() {
-    let mut snapshot = snapshot(Pres::Recording { chips: false, has_iphone: false });
-    let view = View::new(&snapshot, 7, true).with_notes(0);
-    assert_eq!(view.note_count, 0);
-    assert_eq!(view.actions.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["cancel", "whiteboard", "finish"]);
-    assert!(!view.actions.iter().any(|a| a.id == "notes"));
-    let view = view.with_notes(12);
-    assert_eq!(view.note_count, 12);
-    assert!(matches!(view.admit(Command { revision: 7, action: "notes".into(), target: None }), Some(PillAction::Notes)));
-    snapshot.pres = Pres::Processing;
-    assert_eq!(View::new(&snapshot, 8, true).with_notes(12).note_count, 0);
+    assert_eq!(test_view(&source, 1, false).input_waveform, Some([0.6; 24]));
 }
 
 #[test]
 fn agents_setup_navigation_is_revision_bound_and_never_admitted_during_capture() {
     let snapshot = snapshot(Pres::Processing);
-    let view = View::new(&snapshot, 9, false);
+    let view = test_view(&snapshot, 9, false);
     assert!(matches!(view.admit(command(9, "settings-labs")), Some(PillAction::SettingsAgents)));
     assert!(view.admit(command(8, "settings-labs")).is_none());
-    let mut recording = view.clone(); recording.phase = "recording";
+    let mut recording = view.clone(); recording.presentation.phase = "recording".into();
     assert!(recording.admit(command(9, "settings-labs")).is_none());
 }
 
 #[test]
 fn explicit_public_copy_requires_the_current_enabled_share_control() {
-    let view = View::new(&snapshot(Pres::Completed {share:Some(true),warning:false,label:"Saved".into(),routes:vec![]}), 10, false);
+    let view = test_view(&snapshot(Pres::Completed {share:Some(true),warning:false,label:"Saved".into(),routes:vec![]}), 10, false);
     assert!(matches!(view.admit(command(10, "copy-public-link")), Some(PillAction::CopyPublicLink)));
     assert!(view.admit(command(9, "copy-public-link")).is_none());
-    let disabled = View::new(&snapshot(Pres::Completed {share:Some(false),warning:false,label:"Saved".into(),routes:vec![]}), 10, false);
+    let disabled = test_view(&snapshot(Pres::Completed {share:Some(false),warning:false,label:"Saved".into(),routes:vec![]}), 10, false);
     assert!(disabled.admit(command(10, "copy-public-link")).is_none());
-    let hidden = View::new(&snapshot(Pres::Completed {share:None,warning:false,label:"Saved".into(),routes:vec![]}), 10, false);
+    let hidden = test_view(&snapshot(Pres::Completed {share:None,warning:false,label:"Saved".into(),routes:vec![]}), 10, false);
     assert!(hidden.admit(command(10, "copy-public-link")).is_none());
 }
 
 #[test]
 fn sharing_confirmation_cannot_retain_a_stale_or_unavailable_completion() {
-    let view = View::new(&snapshot(Pres::Completed {share:Some(true),warning:false,label:"Link copied".into(),routes:vec![]}), 10, false);
+    let view = test_view(&snapshot(Pres::Completed {share:Some(true),warning:false,label:"Link copied".into(),routes:vec![]}), 10, false);
     assert!(view.admits_sharing_confirmation(Some(10)));
     for revision in [None, Some(9), Some(11)] {
         assert!(!view.admits_sharing_confirmation(revision));
@@ -398,6 +383,21 @@ fn sharing_confirmation_cannot_retain_a_stale_or_unavailable_completion() {
         Pres::Completed {share:None,warning:false,label:"Saved".into(),routes:vec![]},
         Pres::Recording {chips:false,has_iphone:false}, Pres::Hidden,
     ] {
-        assert!(!View::new(&snapshot(pres), 10, false).admits_sharing_confirmation(Some(10)));
+        assert!(!test_view(&snapshot(pres), 10, false).admits_sharing_confirmation(Some(10)));
     }
 }
+
+    #[test]
+    fn embedded_module_keeps_state_through_native_calls() -> Result<()> {
+        let pill = PolicySession::open()?;
+        let selected = pill.dispatch(Event::PickerOpened { mode: Mode::Screen }, 0, 0)?;
+        assert_eq!(selected.phase, Phase::Selecting);
+        assert!(matches!(selected.mode, Some(Mode::Screen)));
+        assert_eq!(pill.dispatch(Event::CaptureStarted, 1, 1)?.phase, Phase::Recording);
+        assert_eq!(pill.dispatch(Event::CaptureSealed, 2, 2)?.phase, Phase::Processing);
+        let completed = pill.dispatch(Event::CaptureSaved { recovery: false, text: None, frame_count: 1, duration_ms: 1000 }, 3, 3)?;
+        assert_eq!(completed.phase, Phase::Completed);
+        assert_eq!(completed.wake_in_ms, Some(15_000));
+        assert_eq!(pill.dispatch(Event::Deadline, 15_003, 15_003)?.phase, Phase::Dismissing);
+        Ok(())
+    }

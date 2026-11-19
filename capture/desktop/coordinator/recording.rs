@@ -1,9 +1,22 @@
+use ui::electron_pill::{self as pill_state, Event as PillEvent};
+
 use crate::capture::engine::runtime::recording::recorder::{PreparedSource, selection as display_selection};
 
 impl ApparentCoordinator {
-    /// Moves the island to `phase`, triggering a `.blurReplace` cross-transition on the inner content
-    /// while the outer shell springs its width smoothly (`stiffness: 400, damping: 30` equivalent).
-    fn set_island_phase(&mut self, phase: IslandPhase) {
+    fn apply_pill_event(&mut self, event: PillEvent) {
+        let began_capture = matches!(event, PillEvent::CaptureStarted);
+        let reopened_picker = matches!(event, PillEvent::PickerOpened { .. });
+        let Some((phase, reveal)) = self.observe_pill_event(event) else { return };
+        self.reveal.facts = None;
+        let previous_reveal = std::mem::replace(&mut self.reveal.chips, reveal);
+        let changed = std::mem::discriminant(&self.island_phase) != std::mem::discriminant(&phase);
+        if !changed && !began_capture && !reopened_picker {
+            self.island_phase = phase;
+            if previous_reveal && !reveal {
+                self.play_fold();
+            }
+            return;
+        }
         use crate::capture::desktop::settings::onboarding::Input;
         if matches!(phase, IslandPhase::Selecting { .. } | IslandPhase::Processing | IslandPhase::Recording | IslandPhase::Hidden | IslandPhase::Dismissing) {
             self.public_share.cancel_all();
@@ -14,6 +27,7 @@ impl ApparentCoordinator {
             }
             self.share_waiting_account = false;
             self.share_copied = None;
+            self.reveal.observed_upload_progress = None;
             self.share_probe_at = None;
             // A new recording or dismissal revokes detached workers' UI ownership.
             // Their finalized bundles remain on disk; stale results must not copy to
@@ -43,12 +57,10 @@ impl ApparentCoordinator {
         {
             session.input(input);
         }
-        let changed = std::mem::discriminant(&self.island_phase) != std::mem::discriminant(&phase);
         if changed {
             // A new phase replaces the whole content; the chips go with it, and the outgoing
             // Recording content keeps showing them while it blurs away.
-            self.reveal_prev_chips = self.reveal.is_open();
-            self.reveal.close();
+            self.reveal_prev_chips = previous_reveal;
             self.reveal_outgoing = None;
             self.island_morph = Morph::Phase;
             self.switch = None;
@@ -261,14 +273,7 @@ impl ApparentCoordinator {
         }
     }
 
-    fn completed_audio_issue(&self) -> Option<CompletedAudioIssue> {
-        match (&self.completed_dir, &self.review_bundle) {
-            (Some(dir), Some((review_dir, _))) if dir == review_dir => self.review_audio_issue,
-            _ => None,
-        }
-    }
-
-    fn recording_has_no_words(&self) -> bool {
+    pub(in crate::capture::desktop) fn recording_has_no_words(&self) -> bool {
         matches!(
             self.active_recording.as_ref().map(|rec| &rec.source),
             Some(CaptureSource::Screen { audio: Some(audio), .. })
@@ -289,27 +294,22 @@ impl ApparentCoordinator {
         let pres = match self.island_phase {
             IslandPhase::Hidden | IslandPhase::Dismissing => Pres::Hidden,
             IslandPhase::Selecting { mode } => Pres::Selecting { mode, has_iphone },
-            IslandPhase::Recording if self.recording_has_no_words() && !self.reveal.is_open() => {
+            IslandPhase::Recording if self.reveal.presentation.no_words => {
                 Pres::RecordingWarning {
                     chips: false,
                     has_iphone,
                 }
             }
             IslandPhase::Recording => Pres::Recording {
-                chips: self.reveal.is_open(),
+                chips: self.reveal.chips,
                 has_iphone,
             },
             IslandPhase::Processing => Pres::Processing,
-            IslandPhase::Completed { inbox_count, .. } => {
-                let issue = self.completed_audio_issue();
+            IslandPhase::Completed { .. } => {
                 Pres::Completed {
-                    share: crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING).then_some(self.share_online && self.share_pending.is_none()),
-                    warning: issue.is_some(),
-                    label: completed_status_label(
-                        inbox_count,
-                        self.completed_note.as_deref(),
-                        issue,
-                    ),
+                    share: self.fallback_share(),
+                    warning: self.reveal.completed_presentation.completed_warning,
+                    label: self.reveal.completed_presentation.label.clone(),
                     routes: Vec::new(),
                 }
             }
@@ -334,6 +334,7 @@ impl ApparentCoordinator {
     }
 
     pub(crate) fn sync_native_pill(&mut self) {
+        self.refresh_pill_presentation();
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         self.sync_electron_pill();
         if self.native_pill.is_some() {
@@ -395,7 +396,7 @@ impl ApparentCoordinator {
         self.selection_drag = None;
         self.hovered_window = None;
         self.animated_window_rect = None;
-        self.set_island_phase(IslandPhase::Dismissing);
+        self.apply_pill_event(PillEvent::Dismiss);
         cx.defer(close_picker_window);
         cx.notify();
     }
@@ -411,7 +412,7 @@ impl ApparentCoordinator {
         if let Some(dir) = self.completed_dir.clone() {
             self.mark_handled(&dir);
         }
-        self.set_island_phase(IslandPhase::Hidden);
+        self.apply_pill_event(PillEvent::Hide);
         self.island_opacity = 0.0;
         let entity = cx.entity().clone();
         cx.defer(move |cx| {
@@ -424,9 +425,9 @@ impl ApparentCoordinator {
     fn tick_hosted_sharing(&mut self, cx: &mut Context<Self>) {
         if self.share_pending.is_some() {
             if let Some(percent) = crate::connect::hosted::foreground_progress() {
-                let note = format!("Uploading… {percent}%");
-                if self.completed_note.as_ref() != Some(&note) {
-                    self.completed_note = Some(note);
+                if self.reveal.observed_upload_progress != Some(percent) {
+                    self.reveal.observed_upload_progress = Some(percent);
+                    self.show_completion_text(pill_state::CompletionCopy::Uploading, format!("Uploading… {percent}%"));
                     self.sync_native_pill();
                     cx.notify();
                 }
@@ -450,13 +451,17 @@ impl ApparentCoordinator {
                 coord.share_online = online;
                 if coord.share_pending.is_none() {
                     if let Some(progress) = progress {
-                        coord.completed_note = Some(progress);
+                        coord.show_completion_text(pill_state::CompletionCopy::ShareReceipt, progress);
                     } else if !online {
-                        coord.completed_note = Some(if crate::connect::hosted::sharing_server().is_none() {
-                            "Configure Hosted account in Settings"
-                        } else { "Connect to the internet to share" }.into());
-                    } else if coord.completed_note.as_deref() == Some("Connect to the internet to share") {
-                        coord.completed_note = None;
+                        let configured = crate::connect::hosted::sharing_server().is_some();
+                        let (kind, text) = if configured {
+                            (pill_state::CompletionCopy::Offline, "Connect to the internet to share")
+                        } else {
+                            (pill_state::CompletionCopy::Ordinary, "Configure Hosted account in Settings")
+                        };
+                        coord.show_completion_text(kind, text);
+                    } else {
+                        coord.apply_pill_event(PillEvent::OnlineObserved);
                     }
                 }
                 coord.sync_native_pill();
@@ -465,19 +470,14 @@ impl ApparentCoordinator {
         }).detach();
     }
 
-    // A terminal share result starts a new completed presentation. The original
-    // save timestamp must not immediately retire freshly published recovery controls.
-    fn renew_completed_share_presentation(&mut self) {
-        if let IslandPhase::Completed { finished_at, .. } = &mut self.island_phase {
-            *finished_at = Instant::now();
-        }
-    }
-
     fn cancel_completed_foreground_share(&mut self) -> bool {
         let Some((_, _, active)) = self.share_pending.take() else { return false };
         active.store(false, std::sync::atomic::Ordering::SeqCst);
-        self.completed_note = Some("Upload cancelled · recording saved locally".into());
-        self.renew_completed_share_presentation();
+        self.show_completion_text(
+            pill_state::CompletionCopy::UploadStopped,
+            "Upload cancelled · recording saved locally",
+        );
+        self.apply_pill_event(PillEvent::ShareEnded { renew: true });
         true
     }
 
@@ -491,7 +491,7 @@ impl ApparentCoordinator {
             || self.completed_dir.as_deref() != Some(bundle)
             || !matches!(self.island_phase, IslandPhase::Completed { .. }) { return false; }
         self.share_pending = None;
-        if foreground { self.renew_completed_share_presentation(); }
+        self.apply_pill_event(PillEvent::ShareEnded { renew: foreground });
         true
     }
 
@@ -513,9 +513,11 @@ impl ApparentCoordinator {
         let Some(bundle) = self.completed_dir.clone() else { return };
         self.share_public = public;
         self.share_pending = Some((bundle, self.capture_generation, std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true))));
+        self.reveal.observed_upload_progress = None;
+        self.apply_pill_event(PillEvent::ShareStarted);
         if !crate::connect::hosted::sharing_connected() {
             self.share_waiting_account = true;
-            self.completed_note = Some("Connect Hosted account to share".into());
+            self.show_completion_text(pill_state::CompletionCopy::Ordinary, "Connect Hosted account to share");
             self.open_settings(Some(crate::capture::desktop::settings::Pane::General));
         } else {
             self.reserve_completed_link(false, cx);
@@ -529,7 +531,7 @@ impl ApparentCoordinator {
         self.share_waiting_account = false;
         let foreground = crate::connect::hosted::foreground_enabled();
         let public = self.share_public;
-        self.completed_note = Some(if connect { "Approve hosted upload in your browser…" } else { "Reserving link…" }.into());
+        self.show_completion_text(pill_state::CompletionCopy::Ordinary, if connect { "Approve hosted upload in your browser…" } else { "Reserving link…" });
         cx.spawn(async move |entity, cx| {
             let worker_bundle = bundle.clone();
             let worker_active = active.clone();
@@ -542,7 +544,8 @@ impl ApparentCoordinator {
             }).await;
             let _ = entity.update(cx, |coord, cx| {
                 if !coord.admit_completed_share_result(&bundle, generation, &active, foreground) { return; }
-                coord.completed_note = Some(match result {
+                let mut copy = pill_state::CompletionCopy::ShareReceipt;
+                let text = match result {
                     Ok(link) if link.authorized() => match crate::shared::handoff::copy_string_to_clipboard(&link.text) {
                         Ok(()) => {
                             if foreground { "Link copied".into() }
@@ -550,9 +553,13 @@ impl ApparentCoordinator {
                         }
                         Err(_) => "Copy failed · click Public link to retry".into(),
                     },
-                    Ok(_) | Err(_) => if foreground { "Upload failed · recording saved locally".into() }
+                    Ok(_) | Err(_) => if foreground {
+                        copy = pill_state::CompletionCopy::UploadStopped;
+                        "Upload failed · recording saved locally".into()
+                    }
                         else { "Sharing stopped · click Public link to retry".into() },
-                });
+                };
+                coord.show_completion_text(copy, text);
                 coord.sync_native_pill();
                 cx.notify();
             });
@@ -699,22 +706,7 @@ impl ApparentCoordinator {
         // A late frame slows the motion rather than skipping it ahead (a new window's second
         // frame comes ~50 ms after its first).
         let dt = (real * motion::time_scale()).min(0.025);
-        // The TypeScript consent flow retains only its current native surface.
-        // Releasing it resumes the existing completion interval.
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        if self.electron_pill.as_ref().is_some_and(|session| session.confirming_public_share()) {
-            self.renew_completed_share_presentation();
-        }
-        if let IslandPhase::Completed { finished_at, .. } = self.island_phase
-            && finished_at.elapsed() >= Duration::from_millis(15_000)
-            && self.share_pending.is_none()
-            && !matches!(
-                self.completed_note.as_deref(),
-                Some("Saved · paste manually" | "Saved · open bundle (copy failed)")
-            )
-        {
-            self.set_island_phase(IslandPhase::Dismissing);
-        }
+        self.advance_pill_deadlines();
 
         if let IslandPhase::Selecting { mode } = self.island_phase {
             if let Some(pos) = current_mouse_screen() {
@@ -762,7 +754,7 @@ impl ApparentCoordinator {
             _ => (self.island_target_width, 1.0, 0.0, 1.0, 20.0),
         };
 
-        if self.reveal.is_open() {
+        if self.reveal.chips {
             let activity = self.telemetry.reveal_activity();
             let on_pill = self
                 .native_pill
@@ -770,8 +762,13 @@ impl ApparentCoordinator {
                 .map_or_else(pointer_on_hud_pill, |p| p.pointer_on_pill());
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             let on_pill = self.electron_pill.as_ref().filter(|s| s.ready()).map_or(on_pill, |s| s.hovered());
-            if self.reveal.tick(reveal_clock_ms(), on_pill, activity) {
-                self.play_fold();
+            if on_pill != self.reveal.pointer_inside {
+                self.reveal.pointer_inside = on_pill;
+                self.apply_pill_event(PillEvent::PointerChanged { inside: on_pill });
+            }
+            if activity != self.reveal.activity_count {
+                self.reveal.activity_count = activity;
+                self.apply_pill_event(PillEvent::ActivityObserved { activity: activity as u32 });
             }
         }
 
@@ -832,7 +829,7 @@ impl ApparentCoordinator {
             self.island_opacity < 0.03
         };
         if matches!(self.island_phase, IslandPhase::Dismissing) && dismiss_done {
-            self.set_island_phase(IslandPhase::Hidden);
+            self.apply_pill_event(PillEvent::SurfaceHidden);
             self.island_opacity = 0.0;
             cx.defer(close_capture_windows);
         }
@@ -939,7 +936,6 @@ impl ApparentCoordinator {
             self.island_y = -6.0;
             self.island_y_velocity = 0.0;
             self.island_opacity = 0.0;
-            self.island_phase = IslandPhase::Hidden;
         }
         // Open on the mode the last recording used. The phone needs a live preview, started once
         // the picker is up; Window starts on Area's crosshair until the window list arrives.
@@ -947,7 +943,7 @@ impl ApparentCoordinator {
             SelectionMode::Iphone => SelectionMode::Area,
             mode => mode,
         };
-        self.set_island_phase(IslandPhase::Selecting { mode: opening });
+        self.apply_pill_event(PillEvent::PickerOpened { mode: opening.into() });
         self.open_iphone_when_found = false;
         if mode.is_none() && self.last_mode == SelectionMode::Iphone {
             if self.iphone.is_some() {
@@ -1243,7 +1239,7 @@ impl ApparentCoordinator {
                 self.onboarding = None;
             }
         }
-        self.set_island_phase(IslandPhase::Recording);
+        self.apply_pill_event(PillEvent::CaptureStarted);
         let entity = cx.entity().clone();
         cx.defer(move |cx| {
             close_review_window(cx);
@@ -1497,7 +1493,7 @@ impl ApparentCoordinator {
         // and morph the Dynamic Island into the compact spinning "Processing…" state while
         // media teardown, transcription, and PNG encoding run on a background worker.
         drop(rec._metal_overlay);
-        self.set_island_phase(IslandPhase::Processing);
+        self.apply_pill_event(PillEvent::CaptureSealed);
         let generation = self.capture_generation;
         let completion_facts = desktop_completion::Facts {
             capture: desktop_completion::Capture {
@@ -1528,7 +1524,6 @@ impl ApparentCoordinator {
         }
         // Freeze practice policy with the worker, independent of window/UI lifetime.
         let local_practice = self.capture_local_practice;
-        self.completed_note = None;
         cx.notify();
         if matches!(source, CaptureSource::Lab) {
             cx.defer(whiteboard::close);
@@ -1540,12 +1535,7 @@ impl ApparentCoordinator {
                     if !coord.accepts_capture_result(generation) {
                         return;
                     }
-                    coord.set_island_phase(IslandPhase::Completed {
-                        finished_at: Instant::now(),
-                        frame_count: 6,
-                        duration_ms,
-                        inbox_count: 0,
-                    });
+                    coord.apply_pill_event(PillEvent::CaptureSaved { recovery: false, text: None, frame_count: 6, duration_ms });
                     cx.notify();
                 });
             })

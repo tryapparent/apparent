@@ -58,10 +58,10 @@ test('T3 destinations and public sharing coexist with explicit consent', {timeou
  await copy.click();await confirm.focus();await page.keyboard.press('Enter');
  await expect.poll(()=>sent.filter(x=>x.action==='copy-public-link').length).toBe(1);assert.equal(f.calls.length,0);
  // Authoritative upload readback leaves cancel/retry available beside T3.
- frame={...frame,view:{...frame.view,revision:2,label:'Uploading…',actions:[{id:'copy-link',label:'Cancel upload',enabled:true,selected:false,primary:false}]}};await publish();
+ frame={...frame,view:{...frame.view,revision:2,shareIndicator:'uploading',label:'Uploading…',actions:[{id:'copy-link',label:'Cancel upload',enabled:true,selected:false,primary:false}]}};await publish();
  await expect(page.getByRole('button',{name:'Cancel upload',exact:true})).toBeEnabled();
  await page.getByRole('button',{name:'Cancel upload',exact:true}).click();await expect.poll(()=>sent.filter(x=>x.action==='copy-link').length).toBe(1);await expect(confirm).toHaveCount(0);
- frame={...frame,view:{...frame.view,revision:3,label:'Upload failed',actions:[{id:'copy-link',label:'Retry upload',enabled:true,selected:false,primary:false}]}};await publish();
+ frame={...frame,view:{...frame.view,revision:3,shareIndicator:'retry',label:'Upload failed',actions:[{id:'copy-link',label:'Retry upload',enabled:true,selected:false,primary:false}]}};await publish();
  await page.getByRole('button',{name:'Retry upload',exact:true}).click();await expect(confirm).toBeVisible();
  frame={...frame,capture:'next',view:{...frame.view,revision:4,actions:[]}};await publish();await expect(confirm).toHaveCount(0);await expect(page.getByRole('button',{name:'Retry upload',exact:true})).toHaveCount(0);
  await assert.rejects(page.evaluate(()=>window.apparentPill.act(3,'confirm-public-link')));

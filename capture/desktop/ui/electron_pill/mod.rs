@@ -1,6 +1,3 @@
-//! Rust-authoritative presentation contract for the shared recording pill.
-//! Only bounded, opted-in live text crosses the private presentation pipe. No
-//! paths, credentials or renderer-selected capture IDs cross it or diagnostics.
 use serde::{Deserialize, Serialize};
 mod coordinator;
 mod session;
@@ -8,8 +5,217 @@ mod session;
 mod pin;
 use crate::capture::desktop::{
     SelectionMode,
-    native::pill::{PillAction, PillSnapshot, model::Pres},
+    native::pill::PillAction,
 };
+use anyhow::{Context as _, Result};
+use crate::embedded_policy::EmbeddedPolicy;
+
+const SOURCE: &str = include_str!(concat!(env!("OUT_DIR"), "/record-pill.mjs"));
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "$")]
+pub(crate) enum Event {
+    PickerOpened { mode: Mode },
+    ModeSelected { mode: Mode },
+    CaptureStarted,
+    CaptureSealed,
+    CaptureSaved { recovery: bool, text: Option<String>, frame_count: usize, duration_ms: u64 },
+    CaptureFailed,
+    Dismiss,
+    SurfaceHidden,
+    Hide,
+    RevealOpened { activity: u32 },
+    RevealClosed,
+    PointerChanged { inside: bool },
+    ActivityObserved { activity: u32 },
+    ShareStarted,
+    ShareEnded { renew: bool },
+    ConsentChanged { open: bool },
+    CompletionText { copy: CompletionCopy, text: Option<String> },
+    OnlineObserved,
+    Deadline,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) enum CompletionCopy {
+    Ordinary,
+    Offline,
+    Uploading,
+    UploadStopped,
+    ShareReceipt,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+pub(crate) enum Mode {
+    Area,
+    Screen,
+    Iphone,
+    Window,
+}
+
+impl From<Mode> for SelectionMode {
+    fn from(mode: Mode) -> Self {
+        match mode {
+            Mode::Area => Self::Area,
+            Mode::Screen => Self::Screen,
+            Mode::Iphone => Self::Iphone,
+            Mode::Window => Self::Window,
+        }
+    }
+}
+
+impl From<SelectionMode> for Mode {
+    fn from(mode: SelectionMode) -> Self {
+        match mode {
+            SelectionMode::Area => Self::Area,
+            SelectionMode::Screen => Self::Screen,
+            SelectionMode::Iphone => Self::Iphone,
+            SelectionMode::Window => Self::Window,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+pub(crate) enum Phase {
+    #[default]
+    Hidden,
+    Selecting,
+    Recording,
+    Processing,
+    Completed,
+    Dismissing,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Snapshot {
+    pub(crate) phase: Phase,
+    pub(crate) mode: Option<Mode>,
+    pub(crate) reveal: bool,
+    pub(crate) wake_in_ms: Option<u64>,
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Facts {
+    pub(crate) phone: bool,
+    pub(crate) no_words: bool,
+    pub(crate) note_count: usize,
+    pub(crate) movable: bool,
+    pub(crate) paste: bool,
+    pub(crate) inspect: bool,
+    pub(crate) sharing_enabled: bool,
+    pub(crate) sharing_online: bool,
+    pub(crate) mic_warning: Option<&'static str>,
+    pub(crate) audio_issue: Option<&'static str>,
+    pub(crate) microphone_problem: bool,
+    pub(crate) audio_problem: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum ShareIndicator {
+    #[default]
+    None,
+    Uploading,
+    Retry,
+    Receipt,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Control {
+    pub(crate) id: String,
+    pub(crate) label: String,
+    pub(crate) enabled: bool,
+    pub(crate) selected: bool,
+    pub(crate) primary: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Presentation {
+    pub(crate) phase: String,
+    pub(crate) label: String,
+    pub(crate) warning: Option<String>,
+    pub(crate) actions: Vec<Control>,
+    pub(crate) note_count: usize,
+    pub(crate) no_words: bool,
+    pub(crate) completed_warning: bool,
+    pub(crate) draggable: bool,
+    pub(crate) share_indicator: ShareIndicator,
+}
+
+impl Default for Presentation {
+    fn default() -> Self {
+        Self {
+            phase: "hidden".into(),
+            label: String::new(),
+            warning: None,
+            actions: Vec::new(),
+            note_count: 0,
+            no_words: false,
+            completed_warning: false,
+            draggable: false,
+            share_indicator: ShareIndicator::None,
+        }
+    }
+}
+
+pub(crate) struct Adapter {
+    pub(crate) policy: Option<PolicySession>,
+    pub(crate) epoch: std::time::Instant,
+    pub(crate) wake: Option<std::time::Instant>,
+    pub(crate) motion_wake: Option<f64>,
+    pub(crate) chips: bool,
+    pub(crate) pointer_inside: bool,
+    pub(crate) activity_count: usize,
+    pub(crate) consent_open: bool,
+    pub(crate) facts: Option<Facts>,
+    pub(crate) presentation: Presentation,
+    pub(crate) completed_presentation: Presentation,
+    pub(crate) observed_upload_progress: Option<u64>,
+}
+
+impl Default for Adapter {
+    fn default() -> Self {
+        Self {
+            policy: None,
+            epoch: std::time::Instant::now(),
+            wake: None,
+            motion_wake: None,
+            chips: false,
+            pointer_inside: false,
+            activity_count: 0,
+            consent_open: false,
+            facts: None,
+            presentation: Presentation::default(),
+            completed_presentation: Presentation::default(),
+            observed_upload_progress: None,
+        }
+    }
+}
+
+pub(crate) struct PolicySession(EmbeddedPolicy);
+
+impl PolicySession {
+    pub(crate) fn open() -> Result<Self> {
+        EmbeddedPolicy::open("record-pill", SOURCE, &["dispatchNative", "presentNative"]).map(Self)
+    }
+
+    pub(crate) fn dispatch(&self, event: Event, now: u64, animation_now: u64) -> Result<Snapshot> {
+        let event = serde_json::to_string(&event)?;
+        let output = self.0.call("dispatchNative", (event, now, animation_now))?;
+        serde_json::from_str(&output).context("Decode Record pill snapshot")
+    }
+
+    pub(crate) fn present(&self, facts: &Facts) -> Result<Presentation> {
+        let input = serde_json::to_string(facts)?;
+        let output = self.0.call("presentNative", (input,))?;
+        serde_json::from_str(&output).context("Decode Record pill presentation")
+    }
+}
+
 pub use session::Session;
 
 /// Restore an externally hosted control's native window ID after capture reset,
@@ -27,174 +233,30 @@ pub(crate) fn capture_exclusion_ready(window: Option<u32>, applied: &[u32], scre
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct View {
+pub(crate) struct View {
     pub transcript: Option<crate::capture::engine::runtime::audio::transcription::parakeet_stream::Preview>,
     pub revision: u64,
-    pub phase: &'static str,
+    #[serde(flatten)]
+    pub presentation: Presentation,
     pub clock: String,
-    pub label: String,
-    pub warning: Option<String>,
     pub notice: Option<String>,
     pub reduced_motion: bool,
-    pub draggable: bool,
     pub input_waveform: Option<[f32; 24]>,
-    pub note_count: usize,
-    pub actions: Vec<Control>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct Control {
-    pub id: String,
-    pub label: String,
-    pub enabled: bool,
-    pub selected: bool,
-    pub primary: bool,
+impl std::ops::Deref for View {
+    type Target = Presentation;
+
+    fn deref(&self) -> &Self::Target {
+        &self.presentation
+    }
 }
 
 impl View {
     fn admits_sharing_confirmation(&self, revision: Option<u64>) -> bool {
         self.phase == "completed" && revision == Some(self.revision)
+            && self.share_indicator != ShareIndicator::Uploading
             && self.actions.iter().any(|action| action.id == "copy-link" && action.enabled)
-    }
-
-    pub fn new(snapshot: &PillSnapshot, revision: u64, draggable: bool) -> Self {
-        let mut view = Self {
-            transcript: None,
-            revision,
-            phase: "hidden",
-            clock: snapshot.clock.clone(),
-            label: String::new(),
-            notice: None,
-            warning: snapshot
-                .mic_warning
-                .map(|warning| warning.announcement().to_owned()),
-            reduced_motion: snapshot.reduced_motion,
-            draggable: false,
-            input_waveform: snapshot.input_waveform,
-            note_count: 0,
-            actions: vec![],
-        };
-        match &snapshot.pres {
-            Pres::Hidden => {}
-            Pres::Selecting { mode, has_iphone } => {
-                view.phase = "selecting";
-                view.label = "Choose what to record".into();
-                view.modes(*has_iphone, Some(*mode), false);
-                // Area starts through its picker; Screen and iPhone offer Record.
-                if matches!(mode, SelectionMode::Screen | SelectionMode::Iphone) {
-                    view.control("record", "Record", true, false, true);
-                }
-                view.control("cancel", "Cancel", true, false, false);
-            }
-            Pres::Recording { chips, has_iphone }
-            | Pres::RecordingWarning { chips, has_iphone } => {
-                view.phase = "recording";
-                view.label = "Recording".into();
-                view.draggable = draggable;
-                if matches!(snapshot.pres, Pres::RecordingWarning { .. }) {
-                    view.warning = Some(view.warning.map_or_else(
-                        || "No words recognized yet".into(),
-                        |warning| format!("{warning} · No words recognized yet"),
-                    ));
-                }
-                if *chips {
-                    view.modes(*has_iphone, None, true);
-                } else {
-                    view.control("cancel", "Cancel", true, false, false);
-                    view.control("whiteboard", "Whiteboard", true, false, false);
-                    view.control("finish", "Finish", true, false, view.warning.is_none());
-                }
-                if *chips { view.control("cancel", "Cancel", true, false, false); }
-            }
-            Pres::Processing => {
-                view.phase = "processing";
-                view.label = "Processing recording…".into();
-            }
-            Pres::Completed {
-                label,
-                warning,
-                share,
-                ..
-            } => {
-                view.phase = "completed";
-                view.label = label.clone();
-                if *warning {
-                    view.warning = Some(label.clone());
-                }
-                view.control("paste", "Paste", true, false, !warning);
-                if let Some(enabled) = share {
-                    view.control("copy-link", "Public link", *enabled, false, false);
-                }
-                view.control("inspect", "Inspect", true, false, false);
-                view.control("dismiss", "Dismiss", true, false, false);
-            }
-        }
-        view
-    }
-
-    /// The new bridge never falls back to an implicit latest capture.
-    pub fn with_handoff(mut self, completed: bool, review: bool) -> Self {
-        for action in &mut self.actions {
-            let available = match action.id.as_str() {
-                "paste" | "copy-link" => completed,
-                "inspect" => review,
-                _ => true,
-            };
-            action.enabled &= available;
-        }
-        self
-    }
-
-    pub fn with_foreground_upload(mut self, active: bool, retry: bool) -> Self {
-        if self.phase == "completed" {
-            for action in &mut self.actions {
-                if action.id == "copy-link" {
-                    if active { action.label = "Cancel upload".into(); action.enabled = true; }
-                    else if retry { action.label = "Retry upload".into(); }
-                }
-            }
-        }
-        self
-    }
-
-    pub fn with_notes(mut self, count: usize) -> Self {
-        if self.phase == "recording" && count > 0 {
-            self.note_count = count.min(100);
-            self.control("notes", "Open notes", true, false, false);
-        }
-        self
-    }
-
-    fn control(&mut self, id: &str, label: &str, enabled: bool, selected: bool, primary: bool) {
-        self.actions.push(Control {
-            id: id.into(),
-            label: label.into(),
-            enabled,
-            selected,
-            primary,
-        });
-    }
-
-    fn modes(&mut self, iphone: bool, selected: Option<SelectionMode>, switching: bool) {
-        for mode in SelectionMode::available(iphone) {
-            let label = match mode {
-                SelectionMode::Area => "Area",
-                SelectionMode::Screen => "Screen",
-                SelectionMode::Iphone => "iPhone",
-                SelectionMode::Window => continue,
-            };
-            self.control(
-                &format!(
-                    "{}{}",
-                    if switching { "switch-" } else { "select-" },
-                    mode.key()
-                ),
-                label,
-                true,
-                selected == Some(*mode),
-                false,
-            );
-        }
     }
 
     /// Known rejection advances the matching revision so the renderer can recover.
@@ -222,9 +284,12 @@ impl View {
     /// Admission is checked again against current coordinator state before dispatch.
     pub fn admit(&self, mut command: Command) -> Option<PillAction> {
         let public = command.action == "copy-public-link";
-        if public { command.action = "copy-link".into(); }
+        if public {
+            if self.share_indicator == ShareIndicator::Uploading { return None; }
+            command.action = "copy-link".into();
+        }
         if command.revision == self.revision && command.action == "settings-labs" && command.target.is_none()
-            && matches!(self.phase, "processing" | "completed") {
+            && matches!(self.phase.as_str(), "processing" | "completed") {
             return Some(PillAction::SettingsAgents);
         }
         if command.revision != self.revision

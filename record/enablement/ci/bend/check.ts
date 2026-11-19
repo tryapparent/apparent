@@ -11,6 +11,7 @@ import {
 import { run } from "../../../../shared/enablement/bend/toolchain.ts";
 import { repairTable } from "./permission-table.ts";
 import { admissionSource, buildAdmission } from "./build.ts";
+import { assemblePill } from "./pill.ts";
 
 const root = fileURLToPath(new URL("../../../../", import.meta.url));
 const options = proofOptions(process.argv.slice(2));
@@ -44,6 +45,22 @@ await bendScratch(async (scratch) => {
     ],
     proofOutput,
   );
+  const pill = join(scratch, "record-pill.mjs");
+  assemblePill(proofOutput, pill);
+  const stateTest = join(scratch, "state-cases.ts");
+  copyFileSync(
+    join(root, "record/enablement/ci/pill/state-cases.ts"),
+    stateTest,
+  );
+  console.log(run(process.execPath, [stateTest], scratch).trim());
+  console.log(
+    run(
+      process.execPath,
+      ["record/enablement/ci/pill/meter.test.ts"],
+      root,
+    ).trim(),
+  );
+
   const quiet = (directory: string) =>
     JSON.parse(
       run(

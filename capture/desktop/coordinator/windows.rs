@@ -382,7 +382,7 @@ pub fn run_start_benchmark() {
                     assert_eq!(wav.duration() as usize, audio.sample_count);
                     std::fs::write(rec.bundle_dir.join("audio.wav"), &audio.wav_bytes).unwrap();
                     println!("START_RUN {}", serde_json::json!({"run": run, "frames": recording.frames.len(), "first_frame_ms": recording.frames[0].t_ms, "audio_samples": audio.sample_count, "duration_ms": recording.duration_ms, "video_offset_ms": recording.video_offset_ms}));
-                    coord.set_island_phase(IslandPhase::Hidden);
+                    coord.apply_pill_event(PillEvent::Hide);
                     close_capture_windows(cx);
                 }).unwrap();
             }

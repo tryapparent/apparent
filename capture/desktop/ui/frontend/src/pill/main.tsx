@@ -91,7 +91,7 @@ function Pill() {
   const shareAction=view.actions.find(action=>action.id==='copy-link');
   if(showingDestination && destination)return <main data-revision={view.revision} className="pill apparent-theme pill-destination" data-phase={view.phase} data-reduced={view.reducedMotion}>
     <DestinationPicker key={destination.capture} view={destination} disabled={pending||sharing!==null} shareAction={shareAction} onShare={()=>void act('copy-link')}/>
-    {shareAction&&/^(Uploading|Upload failed|Upload cancelled|Link copied|Copy failed|Sharing stopped)/.test(view.label)&&<div className="destination-notification destination-receipt" role="status">{view.label}</div>}
+    {shareAction&&(view.shareIndicator??'none')!=='none'&&<div className="destination-notification destination-receipt" role="status">{view.label}</div>}
     {error&&<div className="destination-notification"><StatusCard tone="failure" headline="Action not confirmed" compact><p>Try Public link again.</p></StatusCard></div>}
     {confirmation}
   </main>;

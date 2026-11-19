@@ -39,6 +39,7 @@ impl ApparentCoordinator {
             electron_pill_exclusions: Vec::new(),
             iphone_preview: None,
             island_phase: IslandPhase::Hidden,
+            reveal: crate::capture::desktop::settings::shortcut::Reveal::default(),
             island_prev_phase: IslandPhase::Hidden,
             island_phase_since: motion::now(),
             island_dismissed_from: IslandPhase::Hidden,
@@ -51,7 +52,6 @@ impl ApparentCoordinator {
             island_y_velocity: 0.0,
             island_opacity: 0.0,
             island_morph: Morph::Phase,
-            reveal: crate::capture::desktop::settings::shortcut::Reveal::default(),
             reveal_since: motion::now(),
             reveal_outgoing: None,
             reveal_prev_chips: false,
@@ -81,9 +81,9 @@ impl ApparentCoordinator {
             selected_keyframe: 0,
             iphone: None,
             completed_dir: None,
+            completed_note: None,
             #[cfg(target_os = "linux")]
             auto_paste_target: None,
-            completed_note: None,
             share_public: false,
             share_online: false,
             share_probe_at: None,
@@ -452,6 +452,7 @@ impl ApparentCoordinator {
                 self.cancel_share_login();
                 if let Some((_, _, active)) = self.share_pending.take() {
                     active.store(false, std::sync::atomic::Ordering::SeqCst);
+                    self.apply_pill_event(PillEvent::ShareEnded { renew: false });
                 }
                 self.share_waiting_account = false;
             }
@@ -1026,8 +1027,7 @@ impl ApparentCoordinator {
             self.refresh_iphone(cx);
         }
         self.reduced_motion = reduce_motion();
-        let activity = self.telemetry.reveal_activity();
-        self.reveal.show(reveal_clock_ms(), activity);
+        self.reveal_pill_controls();
         self.reveal_since = motion::now();
         self.reveal_outgoing = None;
         self.island_morph = Morph::RevealOpen;
@@ -1042,10 +1042,7 @@ impl ApparentCoordinator {
     }
 
     fn fold_reveal(&mut self) {
-        if self.reveal.is_open() {
-            self.reveal.close();
-            self.play_fold();
-        }
+        self.apply_pill_event(PillEvent::RevealClosed);
     }
 
     fn play_fold(&mut self) {
@@ -1073,7 +1070,7 @@ impl ApparentCoordinator {
             return;
         }
         apparent_log(format!("switch_recording -> {mode:?}"));
-        let chips_shown = self.reveal.is_open();
+        let chips_shown = self.reveal.chips;
         let Some((_, overlay)) = self.discard_recording() else {
             return;
         };
@@ -1208,7 +1205,7 @@ impl ApparentCoordinator {
             {
                 preview.hide_preview();
             }
-            self.island_phase = IslandPhase::Selecting { mode };
+            self.select_pill_mode(mode);
             self.selection_drag = None;
             if let Some(pos) = current_mouse_screen().or(self.selection_pointer) {
                 self.selection_pointer = Some(pos);

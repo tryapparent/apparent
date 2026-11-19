@@ -50,6 +50,7 @@ pub(super) struct State {
     connected: bool,
     copy_pending: bool,
     pub status: Option<String>,
+    pub manual_recovery: bool,
     pub notifications: Vec<Notification>,
 }
 #[derive(Deserialize)]
