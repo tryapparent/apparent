@@ -53,10 +53,12 @@ no runtime dependencies and requires no Rust toolchain or cached native outputs.
 
 `apparent-engine-frames frames-v1 MOVIE OUTPUT MAX_EDGE TIMES_CSV` decodes finite
 MP4/QuickTime snapshots through GStreamer on Linux and a separate AVFoundation
-helper on Mac. Mac uses exact-time image generation; a native decode failure
-falls back to a serial reader from the beginning to retain open-GOP reference
-pictures. That path must find the exact selected sample; it cannot substitute a
-nearby frame. It can take longer and retains the same SDK deadline and limits.
+helper on Mac. Linux can seek over unrelated frames after verifying an
+independent H.264 frame and converts only selected samples on the deferred
+conversion path. Mac uses exact-time image generation and resolves misses in a
+single serial pass from the beginning to retain open-GOP reference pictures.
+That pass must find each exact selected sample. Both providers preserve request
+order and report exhausted pixel or scratch capacity as a resource limit.
 `OUTPUT` must be a fresh, caller-owned `0700` directory. The public
 SDK validates request identity, file ownership, dimensions and exact byte counts.
 See [the SDK contract](sdk/README.md#movie-frames) for clocks, limits and cleanup.

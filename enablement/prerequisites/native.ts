@@ -5,6 +5,8 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
+export const recordMediaFiles = ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'assembly-worker.js', 'assembly-policy.js', 'assembly/frame-limits.mjs', 'transcript/worker.js', 'export/worker.js', 'export/policy.js', 'export/quiet-export.mjs', 'export/parameters.json', 'transcript/policy.js', 'selection/worker.js', 'selection/cues.js', 'selection/scene-worker.js', 'selection/scene.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/apparent-engine-frames', 'native/manifest.json'];
+
 export function checkElectron(root: string): string {
   const frontend = resolve(root, 'capture/desktop/ui/frontend');
   const require = createRequire(resolve(frontend, 'package.json'));
@@ -45,31 +47,7 @@ export function checkNativeInputs(root: string, platform = process.platform): st
     'capture/desktop/ui/frontend/electron/record-completion/session.js',
     'capture/desktop/ui/frontend/electron/record-completion/copy-admission.mjs',
     'capture/desktop/ui/frontend/electron/record-completion/package.json',
-    'capture/desktop/ui/frontend/electron/record-media/worker.js',
-    'capture/desktop/ui/frontend/electron/record-media/policy.js',
-    'capture/desktop/ui/frontend/electron/record-media/frames-worker.js',
-    'capture/desktop/ui/frontend/electron/record-media/frames-policy.js',
-    'capture/desktop/ui/frontend/electron/record-media/phone-worker.js',
-    'capture/desktop/ui/frontend/electron/record-media/phone-policy.js',
-    'capture/desktop/ui/frontend/electron/record-media/screen-worker.js',
-    'capture/desktop/ui/frontend/electron/record-media/screen-policy.js',
-    'capture/desktop/ui/frontend/electron/record-media/assembly-worker.js',
-    'capture/desktop/ui/frontend/electron/record-media/assembly-policy.js',
-    'capture/desktop/ui/frontend/electron/record-media/transcript/worker.js',
-    'capture/desktop/ui/frontend/electron/record-media/export/worker.js',
-    'capture/desktop/ui/frontend/electron/record-media/export/policy.js',
-    'capture/desktop/ui/frontend/electron/record-media/export/quiet-export.mjs',
-    'capture/desktop/ui/frontend/electron/record-media/export/parameters.json',
-    'capture/desktop/ui/frontend/electron/record-media/transcript/policy.js',
-    'capture/desktop/ui/frontend/electron/record-media/selection/worker.js',
-    'capture/desktop/ui/frontend/electron/record-media/selection/cues.js',
-    'capture/desktop/ui/frontend/electron/record-media/selection/scene-worker.js',
-    'capture/desktop/ui/frontend/electron/record-media/selection/scene.js',
-    'capture/desktop/ui/frontend/electron/record-media/package.json',
-    'capture/desktop/ui/frontend/electron/record-media/node_modules/@apparent/engine-sdk/dist/index.js',
-    'capture/desktop/ui/frontend/electron/record-media/native/apparent-engine-media',
-    'capture/desktop/ui/frontend/electron/record-media/native/apparent-engine-frames',
-    'capture/desktop/ui/frontend/electron/record-media/native/manifest.json',
+    ...recordMediaFiles.map(name => 'capture/desktop/ui/frontend/electron/record-media/' + name),
     'capture/desktop/ui/frontend/electron/agent-media/worker.js',
     'capture/desktop/ui/frontend/electron/agent-media/policy.js',
     'capture/desktop/ui/frontend/electron/agent-media/range-worker.js',

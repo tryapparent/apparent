@@ -1,7 +1,8 @@
 {
   "modules": [
     "completion/src/copy-admission.bend",
+    "media/src/assembly/frame-limits.bend",
     "media/src/export/quiet-export.bend"
   ],
-  "inputs": ["completion/", "media/src/export/"]
+  "inputs": ["completion/", "media/"]
 }

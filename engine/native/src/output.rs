@@ -3,6 +3,12 @@ use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 pub type Result<T> = std::result::Result<T, &'static str>;
+pub fn output_write_error(error: std::io::Error) -> &'static str {
+    match error.raw_os_error() {
+        Some(libc::ENOSPC | libc::EDQUOT) => "resource_limit",
+        _ => "write_failed",
+    }
+}
 pub struct Directory {
     directory: File,
 }
@@ -44,11 +50,11 @@ impl Directory {
             )
         };
         if fd < 0 {
-            return Err("write_failed");
+            return Err(output_write_error(std::io::Error::last_os_error()));
         }
         let file = unsafe { File::from_raw_fd(fd) };
         file.set_permissions(Permissions::from_mode(0o600))
-            .map_err(|_| "write_failed")?;
+            .map_err(output_write_error)?;
         Ok(file)
     }
 }

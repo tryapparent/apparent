@@ -2,13 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, readFileSync, realpathSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
-import { checkNativeInputs, prepareNativeInputs } from './native.ts';
+import { checkNativeInputs, prepareNativeInputs, recordMediaFiles } from './native.ts';
 import { spawnSync } from 'node:child_process';
 import '../native-build/build.test.ts';
 import './source-identity/git-index.test.ts';
 import './targeted/run.test.ts';
 
-const mediaFiles = ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'assembly-worker.js', 'assembly-policy.js', 'transcript/worker.js', 'transcript/policy.js', 'selection/worker.js', 'selection/cues.js', 'selection/scene-worker.js', 'selection/scene.js', 'export/worker.js', 'export/policy.js', 'export/quiet-export.mjs', 'export/parameters.json', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/apparent-engine-frames', 'native/manifest.json'];
 const completionFiles = ['worker.js', 'policy.js', 'session.js', 'copy-admission.mjs', 'package.json'];
 
 function fixture(t: any) {
@@ -32,7 +31,7 @@ function fixture(t: any) {
   for (const name of completionFiles) {
     put(app + 'record-completion/' + name);
   }
-  for (const name of mediaFiles) {
+  for (const name of recordMediaFiles) {
     put(app + 'record-media/' + name);
   }
   for (const name of ['worker.js', 'policy.js', 'range-worker.js', 'range-policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json']) {
@@ -51,7 +50,7 @@ function generators(f: ReturnType<typeof fixture>, fail = '') {
     'connect-transport': ['electron/connect.cjs', 'electron/settings/agents.cjs'],
     'updates': ['electron/settings/update-worker.cjs'],
     'pill': completionFiles.map(name => 'electron/record-completion/' + name),
-    'record-media': mediaFiles.map(name => 'electron/record-media/' + name),
+    'record-media': recordMediaFiles.map(name => 'electron/record-media/' + name),
     'agent-media': ['worker.js', 'policy.js', 'range-worker.js', 'range-policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json'].map(name => 'electron/agent-media/' + name),
   };
   outputs['connect-transport'].push('electron/settings/labs.cjs');

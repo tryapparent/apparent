@@ -3,8 +3,14 @@
 compile_error!("Engine supports Linux and macOS only");
 
 #[cfg(target_os = "linux")]
+#[path = "frames/convert.rs"]
+mod frame_convert;
+#[cfg(target_os = "linux")]
 mod frame_linux;
 mod frame_output;
+#[cfg(target_os = "linux")]
+#[path = "frames/seek.rs"]
+mod frame_seek;
 mod output;
 
 use frame_output::{MAX_EDGE, MAX_FRAMES, MAX_TIME, Output, Result};

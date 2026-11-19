@@ -24,19 +24,29 @@ private struct Frame: Codable, Sendable {
 }
 private struct Reply: Codable { let version: Int; let frames: [Frame] }
 
+private struct Target: Sendable {
+  let index: Int
+  let requestedMs: Int64
+  let sample: CMTime
+  let actualMs: Int64
+}
+
+private struct DecodeBatch: Sendable {
+  var frames: [Frame] = []
+  var fallback: [Target] = []
+}
+
 // Random seeking into an open GOP can omit reference pictures. On a native
 // decode failure, read from the beginning in presentation order instead. Keep
 // this rare path serial and retain no movie-sized frame cache.
-private actor SequentialFrames {
+private struct SequentialFrames {
   let asset: AVAsset
   let track: AVAssetTrack
   let transform: CGAffineTransform
-  lazy var context = CIContext(options: [.cacheIntermediates: false])
-  init(asset: AVAsset, track: AVAssetTrack, transform: CGAffineTransform) {
-    self.asset = asset; self.track = track; self.transform = transform
-  }
 
-  func image(at target: CMTime, edge: Int) throws -> CGImage {
+  func decode(_ targets: [Target], edge: Int, into destination: Output) async throws -> [Frame] {
+    guard !targets.isEmpty else { return [] }
+    let ordered = targets.sorted { CMTimeCompare($0.sample, $1.sample) < 0 }
     let reader = try AVAssetReader(asset: asset)
     defer { reader.cancelReading() }
     let output = AVAssetReaderTrackOutput(track: track,
@@ -45,6 +55,8 @@ private actor SequentialFrames {
     guard reader.canAdd(output) else { throw Failure.sequentialReader }
     reader.add(output)
     guard reader.startReading() else { throw readerFailure(reader) }
+    let context = CIContext(options: [.cacheIntermediates: false])
+    var frames: [Frame] = []
     var previous: CMTime?
     while let sample = output.copyNextSampleBuffer() {
       try Task.checkCancellation()
@@ -52,35 +64,44 @@ private actor SequentialFrames {
       guard time.seconds.isFinite,
             previous.map({ CMTimeCompare(time, $0) >= 0 }) ?? true else { throw Failure.sequentialTime }
       previous = time
-      if CMTimeCompare(time, target) < 0 { continue }
-      guard CMTimeCompare(time, target) == 0 else {
-        FileHandle.standardError.write(Data("Engine frame timing: sample=\(target.value)/\(target.timescale) actual=\(time.value)/\(time.timescale) request=\(CMTimeConvertScale(target, timescale: 1000, method: .roundTowardNegativeInfinity).value)\n".utf8))
+      let target = ordered[frames.count]
+      if CMTimeCompare(time, target.sample) < 0 { continue }
+      guard CMTimeCompare(time, target.sample) == 0 else {
+        FileHandle.standardError.write(Data("Engine frame timing: sample=\(target.sample.value)/\(target.sample.timescale) actual=\(time.value)/\(time.timescale) request=\(target.requestedMs)\n".utf8))
         throw Failure.sequentialTime
       }
-      guard let buffer = CMSampleBufferGetImageBuffer(sample) else { throw Failure.sequentialImage }
-      let rawWidth = CVPixelBufferGetWidth(buffer), rawHeight = CVPixelBufferGetHeight(buffer)
-      guard rawWidth > 0, rawHeight > 0, rawWidth <= 16384, rawHeight <= 16384,
-            Int64(rawWidth) * Int64(rawHeight) <= 64 * 1024 * 1024 else { throw Failure.resourceLimit }
-      // Video transforms use a downward Y axis; Core Image uses an upward Y
-      // axis. Change basis on both sides (F * T * F). Normalizing the resulting
-      // extent below removes the origin translations without reversing rotation.
-      let flip = CGAffineTransform(scaleX: 1, y: -1)
-      let image = CIImage(cvPixelBuffer: buffer).transformed(by: flip)
-        .transformed(by: transform).transformed(by: flip)
-      let bounds = image.extent
-      guard bounds.minX.isFinite, bounds.minY.isFinite, bounds.width.isFinite, bounds.height.isFinite,
-            bounds.width > 0, bounds.height > 0 else { throw Failure.sequentialImage }
-      let scale = edge > 0 ? min(1, CGFloat(edge) / max(bounds.width, bounds.height)) : 1
-      let width = max(1, (bounds.width * scale).rounded()), height = max(1, (bounds.height * scale).rounded())
-      guard width <= 16384, height <= 16384, width * height <= 64 * 1024 * 1024 else { throw Failure.resourceLimit }
-      let normalized = image.transformed(by: CGAffineTransform(translationX: -bounds.minX, y: -bounds.minY))
-        .transformed(by: CGAffineTransform(scaleX: width / bounds.width, y: height / bounds.height))
-      guard let rendered = context.createCGImage(normalized, from: CGRect(x: 0, y: 0, width: width, height: height),
-        format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!) else { throw Failure.sequentialImage }
-      return rendered
+      let image = try render(sample, edge: edge, context: context)
+      repeat {
+        frames.append(try await destination.write(image, target: ordered[frames.count]))
+        if frames.count == ordered.count { return frames }
+      } while CMTimeCompare(time, ordered[frames.count].sample) == 0
     }
     if reader.status == .failed { throw readerFailure(reader) }
     throw Failure.sequentialTime
+  }
+
+  private func render(_ sample: CMSampleBuffer, edge: Int, context: CIContext) throws -> CGImage {
+    guard let buffer = CMSampleBufferGetImageBuffer(sample) else { throw Failure.sequentialImage }
+    let rawWidth = CVPixelBufferGetWidth(buffer), rawHeight = CVPixelBufferGetHeight(buffer)
+    guard rawWidth > 0, rawHeight > 0, rawWidth <= 16384, rawHeight <= 16384,
+          Int64(rawWidth) * Int64(rawHeight) <= 64 * 1024 * 1024 else { throw Failure.resourceLimit }
+    // Video transforms use a downward Y axis; Core Image uses an upward Y
+    // axis. Change basis on both sides (F * T * F). Normalizing the resulting
+    // extent below removes the origin translations without reversing rotation.
+    let flip = CGAffineTransform(scaleX: 1, y: -1)
+    let image = CIImage(cvPixelBuffer: buffer).transformed(by: flip)
+      .transformed(by: transform).transformed(by: flip)
+    let bounds = image.extent
+    guard bounds.minX.isFinite, bounds.minY.isFinite, bounds.width.isFinite, bounds.height.isFinite,
+          bounds.width > 0, bounds.height > 0 else { throw Failure.sequentialImage }
+    let scale = edge > 0 ? min(1, CGFloat(edge) / max(bounds.width, bounds.height)) : 1
+    let width = max(1, (bounds.width * scale).rounded()), height = max(1, (bounds.height * scale).rounded())
+    guard width <= 16384, height <= 16384, width * height <= 64 * 1024 * 1024 else { throw Failure.resourceLimit }
+    let normalized = image.transformed(by: CGAffineTransform(translationX: -bounds.minX, y: -bounds.minY))
+      .transformed(by: CGAffineTransform(scaleX: width / bounds.width, y: height / bounds.height))
+    guard let rendered = context.createCGImage(normalized, from: CGRect(x: 0, y: 0, width: width, height: height),
+      format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!) else { throw Failure.sequentialImage }
+    return rendered
   }
 
   private func readerFailure(_ reader: AVAssetReader) -> Failure {
@@ -96,7 +117,7 @@ private actor Output {
   var pixels: Int64 = 0
   init(_ fd: Int32) { self.fd = fd }
 
-  func write(_ image: CGImage, index: Int, requested: Int64, actual: Int64) throws -> Frame {
+  func write(_ image: CGImage, target: Target) throws -> Frame {
     let width = image.width, height = image.height
     guard width > 0, height > 0, width <= 16384, height <= 16384 else { throw Failure.resourceLimit }
     let count = Int64(width) * Int64(height)
@@ -110,6 +131,8 @@ private actor Output {
         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
       context.interpolationQuality = .high
       context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+      if image.alphaInfo == .none || image.alphaInfo == .noneSkipFirst ||
+          image.alphaInfo == .noneSkipLast { return true }
       // Public RGBA8 uses straight alpha; CoreGraphics draws premultiplied bytes.
       let pixels = buffer.bindMemory(to: UInt8.self)
       for index in stride(from: 0, to: pixels.count, by: 4) {
@@ -125,16 +148,34 @@ private actor Output {
       return true
     }
     guard drawn else { throw Failure.rgbaContext }
-    let name = String(format: "frame-%03d.rgba", index)
+    let name = String(format: "frame-%03d.rgba", target.index)
     let file = name.withCString { openat(fd, $0, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600) }
-    guard file >= 0 else { throw Failure.writeFailed }
+    guard file >= 0 else { throw writeFailure(errno) }
     let handle = FileHandle(fileDescriptor: file, closeOnDealloc: true)
     defer { try? handle.close() }
-    guard fchmod(file, 0o600) == 0 else { throw Failure.writeFailed }
-    try handle.write(contentsOf: bytes)
+    guard fchmod(file, 0o600) == 0 else { throw writeFailure(errno) }
+    do {
+      try handle.write(contentsOf: bytes)
+    } catch {
+      let native = error as NSError
+      if native.domain == NSCocoaErrorDomain &&
+          native.code == CocoaError.Code.fileWriteOutOfSpace.rawValue {
+        throw Failure.resourceLimit
+      }
+      let posix = native.domain == NSPOSIXErrorDomain
+        ? native : native.userInfo[NSUnderlyingErrorKey] as? NSError
+      if let posix, posix.domain == NSPOSIXErrorDomain, let code = Int32(exactly: posix.code) {
+        throw writeFailure(code)
+      }
+      throw Failure.writeFailed
+    }
     pixels += count
-    return Frame(requestIndex: index, requestedMs: requested, actualMs: actual,
+    return Frame(requestIndex: target.index, requestedMs: target.requestedMs, actualMs: target.actualMs,
                  width: width, height: height, file: name)
+  }
+
+  private func writeFailure(_ code: Int32) -> Failure {
+    code == ENOSPC || code == EDQUOT ? .resourceLimit : .writeFailed
   }
 }
 
@@ -160,7 +201,7 @@ struct Frames {
     let output = Output(fd)
     let workers = min(6, times.count)
     let chunk = (times.count + workers - 1) / workers
-    let frames = try await withThrowingTaskGroup(of: [Frame].self) { group in
+    let batch = try await withThrowingTaskGroup(of: DecodeBatch.self) { group in
       for start in stride(from: 0, to: times.count, by: chunk) {
         let end = min(times.count, start + chunk)
         group.addTask {
@@ -169,7 +210,7 @@ struct Frames {
           generator.requestedTimeToleranceBefore = .zero
           generator.requestedTimeToleranceAfter = .zero
           if edge > 0 { generator.maximumSize = CGSize(width: edge, height: edge) }
-          var result: [Frame] = []
+          var result = DecodeBatch()
           for index in start..<end {
             let requested = CMTime(value: times[index], timescale: 1000)
             let mapping = mappings.last { CMTimeCompare($0.target.start, requested) <= 0 } ?? mappings[0]
@@ -187,17 +228,23 @@ struct Frames {
             let sample = CMTimeMaximum(mapping.target.start,
               CMTimeMapTimeFromRangeToRange(cursor.presentationTimeStamp, fromRange: mapping.source, toRange: mapping.target))
             guard sample.seconds.isFinite else { throw Failure.sampleTime }
-            let decoded: (CGImage, CMTime)
+            let milliseconds = CMTimeConvertScale(sample, timescale: 1000, method: .roundTowardNegativeInfinity).value
+            guard milliseconds >= -9_007_199_254_740_991, milliseconds <= 9_007_199_254_740_991 else {
+              throw Failure.decodeFailed
+            }
+            let target = Target(index: index, requestedMs: times[index], sample: sample, actualMs: milliseconds)
             if qualifySequential {
-              decoded = (try await sequential.image(at: sample, edge: edge), sample)
-            } else {
-              do { decoded = try await generator.image(at: sample) }
-              catch {
-                let native = error as NSError
-                guard native.domain == AVFoundationErrorDomain,
-                      native.code == AVError.Code.decodeFailed.rawValue else { throw error }
-                decoded = (try await sequential.image(at: sample, edge: edge), sample)
-              }
+              result.fallback.append(target)
+              continue
+            }
+            let decoded: (CGImage, CMTime)
+            do { decoded = try await generator.image(at: sample) }
+            catch {
+              let native = error as NSError
+              guard native.domain == AVFoundationErrorDomain,
+                    native.code == AVError.Code.decodeFailed.rawValue else { throw error }
+              result.fallback.append(target)
+              continue
             }
             let (image, actual) = decoded
             guard CMTimeCompare(actual, sample) == 0 else {
@@ -205,20 +252,20 @@ struct Frames {
               FileHandle.standardError.write(Data("Engine frame timing: sample=\(sample.value)/\(sample.timescale) actual=\(actual.value)/\(actual.timescale) request=\(times[index])\n".utf8))
               throw Failure.generatorTime
             }
-            let milliseconds = CMTimeConvertScale(sample, timescale: 1000, method: .roundTowardNegativeInfinity).value
-            guard milliseconds >= -9_007_199_254_740_991, milliseconds <= 9_007_199_254_740_991 else {
-              throw Failure.decodeFailed
-            }
-            result.append(try await output.write(image, index: index, requested: times[index], actual: milliseconds))
+            result.frames.append(try await output.write(image, target: target))
           }
           return result
         }
       }
-      var result: [Frame] = []
-      for try await groupResult in group { result.append(contentsOf: groupResult) }
+      var result = DecodeBatch()
+      for try await groupResult in group {
+        result.frames.append(contentsOf: groupResult.frames)
+        result.fallback.append(contentsOf: groupResult.fallback)
+      }
       return result
     }
-    return frames.sorted { $0.requestIndex < $1.requestIndex }
+    let fallback = try await sequential.decode(batch.fallback, edge: edge, into: output)
+    return (batch.frames + fallback).sorted { $0.requestIndex < $1.requestIndex }
   }
 
   static func main() async {
