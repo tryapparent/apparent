@@ -79,10 +79,10 @@ export function Labs() {
       <p id="public-sharing-limits">Anyone with the link can view the shared capture. Shared captures are not end-to-end encrypted.</p>
     </section>
     <section className="agent-preference">
-      <div className="agent-preference-row"><h2 className="settings-preference-label" id="wispr-lab-label">Wispr onboarding</h2>
+      <div className="agent-preference-row"><h2 className="settings-preference-label" id="wispr-lab-label">Dictation app conflicts</h2>
         <Switch id={controls.wisprFlow} className="agent-switch" checked={wispr ?? false} aria-labelledby="wispr-lab-label" aria-describedby="wispr-lab-help" aria-busy={busy && setting === 'wisprFlow'}
           disabled={busy || wispr === undefined || !wisprSupported.current} onCheckedChange={value => void request(value, 'wisprFlow')} /></div>
-      <p id="wispr-lab-help">Avoid shortcut clashes during setup. macOS only. Off by default.</p>
+      <p id="wispr-lab-help">Offer to quit Wispr Flow or Superwhisper before choosing a recording shortcut. macOS only. Off by default.</p>
     </section>
     <span role="status" className="sr-only">{busy ? operation === 'save' ? 'Saving preference' : 'Reading saved preference' : ''}</span>
     {(!facts || facts.error) && !busy && !error && <Button id="labs-refresh" variant="secondary" onClick={() => void request(undefined, setting)}>Refresh preference</Button>}

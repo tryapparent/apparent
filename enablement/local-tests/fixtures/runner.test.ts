@@ -27,6 +27,7 @@ test('fixture source closure follows a new nested import without copying real te
   const source = join(dir, 'source'), target = join(dir, 'fixture');
   mkdirSync(target);
   put(source, 'engine/enablement/ci/inputs.json', readFileSync(new URL('../../../engine/enablement/ci/inputs.json', import.meta.url), 'utf8'));
+  put(source, 'onboarding/enablement/ci/inputs.json', readFileSync(new URL('../../../onboarding/enablement/ci/inputs.json', import.meta.url), 'utf8'));
   put(source, 'enablement/local-tests/run.ts', "export {value} from '../ci/new/helper.ts';\n");
   put(source, 'enablement/ci/new/helper.ts', 'export const value = 42;\n');
   put(source, 'public/enablement/cd/ci/inputs.ts', 'export const publicInput = true;\n');
@@ -40,6 +41,7 @@ test('fixture source closure follows a new nested import without copying real te
     'enablement/local-tests/node_modules/dependency/index.ts', 'enablement/ci/dist/generated.ts'])
     put(source, path, "throw Error('must not copy');\n");
   copyRunnerSources(target, source);
+  assert.ok(existsSync(join(target, 'onboarding/enablement/ci/inputs.json')));
   const module = pathToFileURL(join(target, 'enablement/local-tests/run.ts')).href;
   const result = spawnSync(process.execPath, ['--experimental-strip-types', '--input-type=module', '-e',
     `import {value} from ${JSON.stringify(module)}; if (value !== 42) process.exit(1);`], {env: childEnvironment(), encoding: 'utf8'});

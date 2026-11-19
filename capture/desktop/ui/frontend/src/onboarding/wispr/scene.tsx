@@ -1,7 +1,13 @@
 import {useEffect,useId,useRef} from 'react';
 import sprites from './frog-sprites.png';
-import {dunkDuration,dunkFrame} from './motion';
-import type {WisprPhase} from './use-wispr';
+import {dunkDuration,dunkFrame} from '../../../../../../../onboarding/renderer/wispr/motion';
+import {WisprStep} from '../../../../../../../onboarding/renderer/wispr/step';
+import type {WisprPhase,useWisprFlow} from '../../../../../../../onboarding/renderer/wispr/use-wispr';
+export {useWisprFlow,type WisprRequest} from '../../../../../../../onboarding/renderer/wispr/use-wispr';
+
+export function WisprPrompt({flow}:{flow:ReturnType<typeof useWisprFlow>}){
+  return <WisprStep flow={flow}><WisprScene phase={flow.phase} onLanded={flow.landed}/></WisprStep>;
+}
 
 export function WisprScene({phase,onLanded}:{phase:WisprPhase;onLanded:()=>void}){
   const root=useRef<HTMLDivElement>(null),landed=useRef(onLanded),pattern=useId();
@@ -33,7 +39,7 @@ export function WisprScene({phase,onLanded}:{phase:WisprPhase;onLanded:()=>void}
     })();
     return()=>{active=false;cancelAnimationFrame(frame);reduced.removeEventListener('change',changed);};
   },[phase]);
-  return <div ref={root} className="wispr-art" role="img" aria-label={phase==='dunking'||phase==='confirmed'?'The frog dunks a shortcut key to confirm Wispr Flow has closed.':'A frog waits, ready to dunk a shortcut key.'}>
+  return <div ref={root} className="wispr-art" aria-hidden="true">
     <div className="wispr-court" aria-hidden="true">
       <div className="wispr-basket"><svg viewBox="0 0 120 160" fill="none"><defs><pattern id={pattern} width="22" height="22" patternUnits="userSpaceOnUse"><path d="M-11 0 11 22 33 0M-11 22 11 0 33 22" stroke="var(--apparent-carbon)" strokeWidth="3"/></pattern></defs><path d="m12 28 13 118h70l13-118" fill="var(--apparent-stock)" stroke="var(--apparent-carbon)" strokeWidth="5"/><path d="m15 30 12 112h66l12-112" fill={`url(#${pattern})`}/><path d="M24 147h72v6H24z" fill="var(--apparent-carbon)"/><ellipse cx="60" cy="27" rx="54" ry="17" fill="var(--apparent-lilac)" stroke="var(--apparent-carbon)" strokeWidth="5"/><ellipse cx="60" cy="26" rx="43" ry="10" fill="var(--apparent-carbon)"/></svg></div>
       <div className="wispr-frog" data-pose="0"><img src={sprites} alt="" draggable={false}/></div>
