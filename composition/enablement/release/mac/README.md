@@ -8,7 +8,7 @@ tap. Linux distribution remains the coordinator's responsibility.
 
 Portable frontend compilation runs on Linux. A tar artifact preserves its files
 and modes across the artifact service. One ARM Mac allocation builds the native app and recording-controls addon, provisions pinned Mac media
-providers, stages the locked Electron runtime, signs/notarizes the app, installer
+providers, stages the locked Electron runtime, signs/notarizes the app
 and DMG, validates Homebrew install/upgrade/reinstall/uninstall and signs the Sparkle ZIP.
 The final immutable artifact is `stable-macos-aarch64-<run_attempt>`; it contains final DMG,
 checksum, ZIP, `sparkle-signature-attributes.txt`, `mac-update.json`, `apparent.rb`
@@ -17,8 +17,8 @@ The shared manifest CLI owns provenance and hashing. It receives the admitted
 source separately from the calling run's workflow/control SHA and writes evidence
 only after all preceding gates succeed.
 
-Stable describes coordinated release publication. Bundle name, helper/installer
-IDs, preview build restrictions, preview key and existing preview feed remain
+Stable describes coordinated release publication. Bundle name, helper
+ID, preview build restrictions, preview key and existing preview feed remain
 unchanged so installed fork clients retain their update contract. This does not
 migrate Kit's original app or prove an update from an older installed preview.
 
@@ -31,6 +31,12 @@ layout and signs nested code before the outer bundle. Remove the legacy stager
 only after its other callers adopt this staged-input contract and both platforms
 accept real packages. Revert the candidate caller to stop stable candidates;
 manual preview and installed clients remain independently usable.
+
+The DMG uses the checksum-pinned Electron Builder dmgbuild backend to create a
+Finder window with the app and the Applications shortcut. Its background source
+and 1× and 2× PNGs live in `dmg/`. The backend writes Finder metadata before the
+existing signature and notarization steps. Revert the packaging change to restore
+the previous DMG layout.
 
 Focused offline checks from the repository root:
 
