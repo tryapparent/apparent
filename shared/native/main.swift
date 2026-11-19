@@ -19,6 +19,7 @@
 // `mirror` command over stdin (`stop`, `cancel`) and reads its events from stdout.
 
 import AppKit
+import Combine
 import CoreImage
 import Foundation
 
@@ -147,6 +148,17 @@ case "onboarding":
 case "playback-volume":
   runPlaybackVolume(arguments: Array(arguments.dropFirst()))
 case "settings":
+  if let id = option("--input-level", in: arguments) {
+    let meter = MicMeter()
+    meter.meter(id)
+    let subscription = meter.$level.removeDuplicates().sink { emit(["level": $0]) }
+    DispatchQueue.global().async {
+      _ = readLine()
+      exit(0)
+    }
+    withExtendedLifetime((meter, subscription)) { RunLoop.main.run() }
+    exit(0)
+  }
   SettingsWindow.run(arguments: arguments)
 case "qr":
   guard arguments.count >= 2, let qr = renderQR(arguments[1]) else {

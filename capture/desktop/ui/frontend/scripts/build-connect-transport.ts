@@ -30,12 +30,14 @@ if (diagnostics.length) {
 if (program.emit(undefined, (file, content) => {
   if (file === `${root}/electron/settings/general.js`) ts.sys.writeFile(`${root}/electron/settings/general.cjs`, content);
   // Type-only renderer contracts participate in checking, never runtime output.
-  if (file === `${root}/electron/connect.cjs` || file === `${root}/electron/settings/frame.cjs`) ts.sys.writeFile(file, content);
+  if (file === `${root}/electron/connect.cjs`) ts.sys.writeFile(file, content);
   if (file === `${root}/src/settings/agents/policy.js`) ts.sys.writeFile(`${root}/electron/settings/agents.cjs`, content);
 
   if (file === `${root}/tests/settings/agents/parent.cjs`) ts.sys.writeFile(file,content);
   if (file === `${root}/src/settings/labs/policy.js`) ts.sys.writeFile(`${root}/electron/settings/labs.cjs`, content);
 }).emitSkipped) throw Error('Connect transport emission failed');
+
+await build({entryPoints:[`${root}/electron/settings/frame.cts`],outfile:`${root}/electron/settings/frame.cjs`,bundle:true,platform:'node',format:'cjs',target:'node22'});
 
 await build({entryPoints:[`${root}/electron/settings/t3.ts`],outfile:`${root}/electron/settings/t3.cjs`,bundle:true,platform:'node',format:'cjs',target:'node22'});
 

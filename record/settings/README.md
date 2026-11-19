@@ -23,3 +23,26 @@ notes on macOS, select **Start screen recording right away**.
 Area capture, phone capture, and Agent capture retain their existing admission
 and source selection. Keep the immediate Screen route while it is the rollout
 default and while other callers still need it.
+
+## Recording pane
+
+The installed Settings sidebar delegates **Recording** to Record’s public
+`RecordingSection`. Composition supplies the `RecordingBridge`. It carries
+projected device, transcriber and playback facts plus acknowledgements from the
+existing Settings config transaction. The renderer has no config file or device
+access. **Settings → Labs → Recording start** uses its existing experiment.
+
+| Control | Saved value and effect |
+| --- | --- |
+| Microphone input | `microphone` stores the native device ID and name, or clears them for System default. New recordings fall back to default if the device is unavailable. The input level uses only an authorized native input while Recording is visible. |
+| Transcription engine | `transcriber` selects Parakeet on Linux or Apple Speech on macOS under the existing `apple` value. Hex and Command depend on native availability. Command uses an existing usable `transcribeCommand`. The next capture uses the preferred engine and its existing fallback. |
+| Language | macOS Apple Speech reads `appleLocale`, or uses the system language when Automatic clears the value. A successful change restarts the speech-model check. Permission and model readiness come from the native provider. |
+| Hex model and language | The model selector is available on both systems when Hex reports models. Selecting a model saves `hexModel` and selects Hex in one transaction. The macOS language field saves `hexLanguage` and accepts blank for English. Model support determines whether Hex applies it. |
+| Other-app volume | `lowerPlayback` and `playbackLevel` apply at the next recording's volume-lowering start. macOS uses a 0–100% slider. Linux uses presets and requires audio support plus `experiments.linux-playback-ducking`; a saved On preference can be turned off when the experiment is unavailable. |
+| Video export | `videoExport` controls the Export Last Capture as Video menu item. It does not export a capture by itself. |
+
+Linux also projects H.264 encoder/decoder warnings and local model download
+status. The native controller keeps the shared writer, microphone permission,
+device enumeration, speech preparation and volume effects. The Electron meter
+uses the existing Linux capture meter or the macOS helper’s existing AVFoundation
+meter. Neither publishes audio samples to the renderer.

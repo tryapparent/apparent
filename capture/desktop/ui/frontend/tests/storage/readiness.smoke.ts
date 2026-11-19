@@ -81,8 +81,8 @@ test(compositor ? `committed Settings stays hidden until the native snapshot fin
     // Delay only the native compositor response; use the shipped implementation
     // and real capturePage after release. A committed React DOM stays hidden.
     await fs.appendFile(path.join(fixture, 'electron/settings/frame.cjs'), `
-const originalFrame = exports.committedFrame;
-exports.committedFrame = async contents => {
+const originalFrame = module.exports.committedFrame;
+module.exports = { ...module.exports, committedFrame: async contents => {
   await new Promise(resolve => { globalThis.releaseSettingsFrame = resolve; });
   return originalFrame({ capturePage: async (...args) => {
     const image = await contents.capturePage(...args);
@@ -94,7 +94,7 @@ exports.committedFrame = async contents => {
     globalThis.settingsFramePixels = { sidebar: pixel(100, 450), content: pixel(680, 20) };
     return image;
   }});
-};
+}};
 `);
   }
   app = await _electron.launch({ args: [fixture, '--settings-storage'],

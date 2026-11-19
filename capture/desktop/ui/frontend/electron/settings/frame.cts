@@ -1,3 +1,5 @@
+export { RecordingHost } from "../../../../../../composition/settings/recording-host.ts";
+
 // Desktop's native presentation barrier. A DOM commit and an older first-paint
 // event do not prove that Chromium has composited the committed Settings UI.
 export async function committedFrame(contents: {
@@ -10,8 +12,17 @@ export async function committedFrame(contents: {
 }
 
 // Desktop shell presentation, independent of the renderer and native backend.
+const destinations = ['about', 'labs', 'agents', 'general', 'recording', 'storage'];
 export function isSharedSettingsPane(pane: unknown): pane is string {
-  return typeof pane === 'string' && ['general', 'agents', 'about', 'labs', 'storage'].includes(pane);
+  return typeof pane === 'string' && destinations.includes(pane);
+}
+
+export function isSettingsDestination(pane: unknown) {
+  return pane === 'permissions' || isSharedSettingsPane(pane);
+}
+
+export function initialSettingsPane(args: string[]) {
+  if (args.includes('--settings-storage')) return destinations.find(pane => args.includes(`--settings-${pane}`));
 }
 
 export function settingsWindowOptions(platform: string, agents = false) {

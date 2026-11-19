@@ -51,7 +51,7 @@ test('Settings changes adopted panes in one live document and enforces the curre
     for(const width of [720,640,320])for(const colorScheme of ['light','dark'] as const){
       await session.send('Emulation.setDeviceMetricsOverride',{width,height:width===320?265:530,deviceScaleFactor:1,mobile:false});
       await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
-      for(const pane of ['Labs','Agents','Storage','About','Storage','General','Labs','About','Agents','General']){
+      for(const pane of ['Labs','Recording','Agents','Storage','About','Storage','General','Labs','About','Agents','General']){
         const nav=await openPane(pane);
         await expect(page).toHaveTitle(`Apparent Settings — ${pane}`);
         await expect(page.locator('.settings-navigation-wide').getByRole('button',{name:pane,exact:true,includeHidden:true})).toHaveAttribute('aria-current','page');

@@ -314,58 +314,6 @@ pub struct MenuOptionView {
     pub enabled: bool,
 }
 
-fn microphone_view(
-    choice: Option<&crate::capture::engine::runtime::audio::mic::Choice>,
-    inputs: Option<&crate::capture::engine::runtime::audio::mic::Inputs>,
-    allowed: bool,
-) -> MicrophoneView {
-    use crate::capture::engine::runtime::audio::mic::Pick;
-    let option = |id: &str, title: String, enabled: bool| MenuOptionView {
-        id: id.to_owned(),
-        title,
-        enabled,
-    };
-    let empty = crate::capture::engine::runtime::audio::mic::Inputs::default();
-    let pick = Pick::new(choice, inputs.unwrap_or(&empty));
-    let default_title = match inputs.and_then(crate::capture::engine::runtime::audio::mic::Inputs::default_input) {
-        Some(input) => format!("System default ({})", input.name),
-        None => "System default".to_owned(),
-    };
-    let mut options = vec![option("default", default_title, true)];
-    if let Some(inputs) = inputs.filter(|i| !i.devices.is_empty()) {
-        options.push(option("-", String::new(), false));
-        options.extend(
-            inputs
-                .devices
-                .iter()
-                .map(|input| option(&input.id, input.name.clone(), true)),
-        );
-    }
-    // Until the first list arrives, a choice is shown as it was saved, not as missing.
-    let loaded = inputs.is_some();
-    if let (Some(choice), true, Pick::Missing { .. }) = (choice, loaded, &pick) {
-        options.push(option(
-            &choice.id,
-            format!("{} (not connected)", choice.name),
-            false,
-        ));
-    }
-    MicrophoneView {
-        selected: choice.map_or_else(|| "default".to_owned(), |c| c.id.clone()),
-        value: match (choice, &pick) {
-            (_, Pick::Chosen(input)) => input.name.clone(),
-            (Some(choice), _) => choice.name.clone(),
-            (None, _) => "System default".to_owned(),
-        },
-        options,
-        note: if loaded { pick.note() } else { None },
-        meter: pick
-            .device()
-            .filter(|_| allowed && loaded)
-            .map(|input| input.id.clone()),
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriberView {
@@ -540,6 +488,8 @@ pub enum Action {
     #[cfg(target_os = "linux")]
     Storage { command: super::storage::Command },
     Connect { command: super::connect::Command },
+    RecordingPreference { request: u32, key: String, value: serde_json::Value },
+    RecordingMeter { visible: bool },
     /// A settings control: `launchAtLogin`, `errorReporting`, `videoExport`, `lowerPlayback` (bool),
     /// `playbackLevel` (u8), `microphone` ("default" or a device id), `transcriber`
     /// ("apple"/"hex"/"command"), `hexModel` (an id), `hexLanguage` (a code), `appleLocale`
@@ -699,7 +649,7 @@ impl Panel {
     pub fn on(&mut self, action: Action, host: &mut dyn Host) -> Effect {
         match action {
             // Session owns the asynchronous controller; forged actions cannot bypass it.
-            Action::Connect { .. } => Effect::None,
+            Action::Connect { .. } | Action::RecordingPreference { .. } | Action::RecordingMeter { .. } => Effect::None,
             Action::ConnectHosted => Effect::ConnectHosted,
             Action::ManageSharedLinks => Effect::ManageSharedLinks,
             Action::Set { key, value } => self.set(&key, &value, host),
@@ -885,9 +835,6 @@ impl Panel {
                 }
             }
 
-            ("videoExport" | "lowerPlayback", serde_json::Value::Bool(on)) => {
-                write(key, (*on).into())
-            }
             ("updateChannel", serde_json::Value::String(channel))
                 if !self.update_check.checking && matches!(channel.as_str(), "stable" | "main") =>
             {
@@ -896,41 +843,10 @@ impl Panel {
                     Err(error) => crate::capture::engine::runtime::apparent_log(format!("Saving {key} failed: {error:#}")),
                 }
             }
-            ("playbackLevel", serde_json::Value::Number(level))
-                if level.as_u64().is_some_and(|n| n <= 100) =>
-            {
-                write(key, value.clone());
-            }
-            ("microphone", serde_json::Value::String(id)) => {
-                let inputs = self.inputs.clone().unwrap_or_default();
-                if let Err(error) = crate::capture::engine::runtime::audio::mic::save_in(&path, id, &inputs) {
-                    crate::capture::engine::runtime::apparent_log(format!("Saving microphone failed: {error:#}"));
-                }
-            }
-            ("transcriber", serde_json::Value::String(name)) => {
-                if let Some(engine) = crate::capture::engine::runtime::audio::transcription::transcribe::Engine::parse(name) {
-                    write("transcriber", engine.name().into());
-                }
-            }
-            ("hexModel", serde_json::Value::String(model)) if !model.trim().is_empty() => {
-                // Picking a Hex model is choosing Hex.
-                write("hexModel", model.trim().into());
-                write("transcriber", "hex".into());
-            }
-            ("hexLanguage", serde_json::Value::String(language)) => {
-                if let Some(language) = crate::shared::hex::language_code(language) {
-                    write("hexLanguage", language.into());
-                }
-            }
-            ("appleLocale", serde_json::Value::String(locale)) => {
-                let locale = locale.trim();
-                if locale.is_empty() || locale.eq_ignore_ascii_case("auto") {
-                    write("appleLocale", serde_json::Value::Null);
-                    return Effect::SpeechModel;
-                }
-                if let Some(locale) = crate::capture::engine::runtime::audio::transcription::speech_model::locale_id(locale) {
-                    write("appleLocale", locale.into());
-                    return Effect::SpeechModel;
+            _ if super::recording_key(key, value) => {
+                match super::save_recording(&path, key, value, self.inputs.as_ref()) {
+                    Ok(effect) => return effect,
+                    Err(error) => crate::capture::engine::runtime::apparent_log(format!("Saving {key} failed: {error:#}")),
                 }
             }
             // An absolute folder from the helper's open panel; "" or null is the built-in one.
@@ -1051,7 +967,7 @@ impl Panel {
                     )
                 })
                 .collect(),
-            microphone: microphone_view(
+            microphone: super::microphone_view(
                 crate::capture::engine::runtime::audio::mic::choice_in(&host.config_path()).as_ref(),
                 self.inputs.as_ref(),
                 self.status(Permission::Microphone) == Status::Granted,
@@ -1199,6 +1115,7 @@ pub enum Event {
     UpdateChecked(Result<&'static str, (String, Option<UpdateFailure>)>),
     /// Something outside the window may have changed (Hex, the login item): redraw.
     Tick,
+    RecordingLevel { meter: u64, level: f32 },
     Exited,
 }
 
@@ -1235,11 +1152,14 @@ pub struct Session {
     storage_scan: std::sync::Arc<std::sync::atomic::AtomicU64>,
     events: std::sync::Arc<dyn Fn(Event) + Send + Sync>,
     last_view: String,
+    meter_visible: bool,
+    meter_serial: u64,
+    meter: Option<(String, super::RecordingMeter)>,
     _microphones: crate::capture::engine::runtime::audio::mic::Watch,
 }
 
 // Presentation is independent of Connect visibility and never grants consent.
-fn electron_general(pane: Option<Pane>) -> bool {
+pub(super) fn electron_general(pane: Option<Pane>) -> bool {
     pane == Some(Pane::General)
 }
 
@@ -1247,7 +1167,7 @@ fn initial_settings_pane(pane: Option<Pane>) -> Option<Pane> {
     Some(pane.unwrap_or(Pane::General))
 }
 
-fn electron_storage(pane: Option<Pane>, enabled: bool) -> bool {
+pub(super) fn electron_storage(pane: Option<Pane>, enabled: bool) -> bool {
     enabled && pane == Some(Pane::Storage)
 }
 
@@ -1328,6 +1248,9 @@ impl Session {
             storage_scan,
             events,
             last_view: String::new(),
+            meter_visible: false,
+            meter_serial: 0,
+            meter: None,
             _microphones: microphones,
         })
     }
@@ -1341,7 +1264,7 @@ impl Session {
         let events: std::sync::Arc<dyn Fn(Event) + Send + Sync> = std::sync::Arc::new(move |event| {
             target(Event::Presentation { generation, event: Box::new(event) });
         });
-        if allow_electron && (electron_general(pane) || matches!(pane, Some(Pane::About | Pane::Agents | Pane::Labs)) || electron_storage(pane, crate::shared::handoff::experiment("electronCaptureLocation"))) {
+        if allow_electron && super::electron_pane(pane) {
             match super::presentation::open(pane.unwrap_or(Pane::Storage), events.clone()) {
                 Ok(transport) => return Ok((transport, true)),
                 Err(error) => crate::capture::engine::runtime::apparent_log(format!("Settings fallback: {error:#}")),
@@ -1428,6 +1351,37 @@ impl Session {
                 self.show(Some(pane));
                 Effect::None
             }
+            Event::Action(Action::RecordingPreference { request, key, value }) => {
+                if self.electron && self.pane == Some(Pane::Recording) {
+                    let result = if super::recording_key(&key, &value)
+                        && (cfg!(target_os = "macos") || !matches!(key.as_str(), "appleLocale" | "hexLanguage"))
+                    {
+                        super::save_recording(&host.config_path(), &key, &value, self.panel.inputs.as_ref())
+                    } else {
+                        Err(anyhow::anyhow!("Unsupported Recording preference"))
+                    };
+                    match &result {
+                        Ok(Effect::SpeechModel) => crate::capture::engine::runtime::audio::transcription::speech_model::restart(),
+                        Err(error) => crate::capture::engine::runtime::apparent_log(format!("Saving {key} failed: {error:#}")),
+                        _ => {}
+                    }
+                    self.sync(host);
+                    self.send(&serde_json::json!({"type":"recording-result","request":request,"ok":result.is_ok()}));
+                }
+                return Effect::None;
+            }
+            Event::Action(Action::RecordingMeter { visible }) => {
+                if self.electron && self.pane == Some(Pane::Recording) {
+                    self.meter_visible = visible;
+                }
+                Effect::None
+            }
+            Event::RecordingLevel { meter, level } => {
+                if self.electron && self.pane == Some(Pane::Recording) && self.meter.is_some() && meter == self.meter_serial {
+                    self.send(&serde_json::json!({"type":"recording-level","level":level}));
+                }
+                return Effect::None;
+            }
             Event::Action(Action::AgentsPreference { request, enabled, setting }) => {
                 if self.electron && self.pane == Some(Pane::Agents) {
                     self.send(&super::agents::request_for(&host.config_path(), request, enabled, setting.as_deref()));
@@ -1497,6 +1451,8 @@ impl Session {
             }
             Event::Tick => Effect::None,
             Event::Exited if self.electron => {
+                self.meter_visible = false;
+                self.meter = None;
                 // EOF without a normal Close means Electron crashed or failed to
                 // launch. Keep Settings usable without touching saved policy.
                 let generation = super::presentation::generation();
@@ -1606,7 +1562,7 @@ impl Session {
 
     pub fn show(&mut self, pane: Option<Pane>) {
         if let Some(pane) = pane {
-            let electron = electron_general(Some(pane)) || matches!(pane, Pane::About | Pane::Agents | Pane::Labs) || electron_storage(Some(pane), crate::shared::handoff::experiment("electronCaptureLocation"));
+            let electron = super::electron_pane(Some(pane));
             // Every adopted pane uses settings.html and the same restricted bridge.
             // Native-only destinations still replace the presentation.
             let shared_shell = self.electron && electron;
@@ -1629,7 +1585,11 @@ impl Session {
             }
         }
         if pane.is_some() {
-            if self.pane != pane { self.last_view.clear(); }
+            if self.pane != pane {
+                self.last_view.clear();
+                self.meter_visible = false;
+                self.meter = None;
+            }
             self.pane = pane;
         }
         self.send(&serde_json::json!({"type": "show", "pane": pane}));
@@ -1656,6 +1616,9 @@ impl Session {
         // Storage reads its narrow projected socket contract. Do not forward the
         // other pages' state to a renderer which does not present those pages.
         if self.electron {
+            if self.pane == Some(Pane::Recording) {
+                self.sync_recording(host);
+            }
             if self.pane == Some(Pane::General) {
                 let view = self.panel.view(host);
                 let message = serde_json::json!({"type":"general-state",
@@ -1698,6 +1661,32 @@ impl Session {
         let text = view.to_string();
         if text != self.last_view {
             self.send(&view);
+            self.last_view = text;
+        }
+    }
+
+    fn sync_recording(&mut self, host: &dyn Host) {
+        let view = self.panel.view(host);
+        let wanted = if self.meter_visible { view.microphone.meter.as_deref() } else { None };
+        if self.meter.as_ref().map(|(id, _)| id.as_str()) != wanted {
+            self.meter = None;
+            self.meter_serial += 1;
+            let serial = self.meter_serial;
+            let events = self.events.clone();
+            let generation = self.generation;
+            self.meter = wanted.and_then(|id| {
+                let meter = super::RecordingMeter::start(id.to_owned(), move |level|
+                    events(Event::Presentation {
+                        generation,
+                        event: Box::new(Event::RecordingLevel { meter: serial, level }),
+                    }))?;
+                Some((id.to_owned(), meter))
+            });
+        }
+        let message = super::recording_state(view);
+        let text = message.to_string();
+        if text != self.last_view {
+            self.send(&message);
             self.last_view = text;
         }
     }

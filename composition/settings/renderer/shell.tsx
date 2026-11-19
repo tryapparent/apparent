@@ -14,6 +14,8 @@ import {
   RecordingStartPreference,
   recordingStartPreference,
 } from "../../../record/settings/recording-start";
+import { RecordingSection } from "../../../record/settings/renderer/recording-section";
+import type { RecordingBridge } from "../../../record/settings/recording-contract";
 import "./base.css";
 import "./settings.css";
 import wordmark from "../../../shared/assets/brand/apparent-wordmark.svg";
@@ -79,6 +81,7 @@ declare global {
 declare global {
   interface Window {
     apparentAbout: AboutBridge;
+    apparentRecording: RecordingBridge;
   }
 }
 
@@ -96,15 +99,9 @@ const recordStart = recordingStartPreference({
 
 function Settings() {
   const [current, setCurrent] = useState(
-    location.hash === "#about"
-      ? "About"
-      : location.hash === "#agents"
-        ? "Agents"
-        : location.hash === "#labs"
-          ? "Labs"
-          : location.hash === "#general"
-            ? "General"
-            : "Storage",
+    () =>
+      panes.find((pane) => location.hash === `#${pane.toLowerCase()}`) ??
+      "Storage",
   );
   useLayoutEffect(
     () =>
@@ -205,6 +202,8 @@ function Settings() {
         )}
         {current === "General" ? (
           <General />
+        ) : current === "Recording" ? (
+          <RecordingSection bridge={window.apparentRecording} />
         ) : current === "About" ? (
           <About bridge={window.apparentAbout} artwork={aboutArtwork} />
         ) : (

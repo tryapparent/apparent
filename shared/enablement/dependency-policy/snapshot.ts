@@ -39,6 +39,7 @@ export function owner(file: string): string | undefined {
     ['capture/desktop/settings/connect/', 'Connect'],
     ['capture/desktop/workflow/connect_settings.rs', 'Connect'],
     ['capture/desktop/workflow/connect_settings/', 'Connect'],
+    ['capture/desktop/ui/frontend/electron/settings/frame.cts', 'Composition'],
     ['capture/desktop/', 'Legacy'],
     ['capture/engine/', 'Engine'], ['engine/', 'Engine'], ['record/', 'Record'],
     ['shared/', 'Shared'], ['connect/', 'Connect'], ['public/', 'Public'],

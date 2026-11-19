@@ -138,3 +138,213 @@ fn update_failure(error: &anyhow::Error) -> Option<UpdateFailure> {
         None
     }
 }
+
+fn electron_pane(pane: Option<Pane>) -> bool {
+    settings::electron_general(pane)
+        || matches!(pane, Some(Pane::About | Pane::Agents | Pane::Labs | Pane::Recording))
+        || settings::electron_storage(pane, crate::shared::handoff::experiment("electronCaptureLocation"))
+}
+
+fn recording_key(key: &str, value: &serde_json::Value) -> bool {
+    match key {
+        "videoExport" | "lowerPlayback" => value.is_boolean(),
+        "playbackLevel" => value.as_u64().is_some_and(|level| level <= 100),
+        "microphone" | "transcriber" | "hexModel" | "hexLanguage" | "appleLocale" =>
+            value.as_str().is_some_and(|value| value.len() <= 16_384),
+        _ => false,
+    }
+}
+
+enum RecordingMeter {
+    #[cfg(not(target_os = "macos"))]
+    Local(std::sync::mpsc::Sender<()>),
+    #[cfg(target_os = "macos")]
+    Native(std::process::ChildStdin),
+}
+
+impl RecordingMeter {
+    #[cfg(not(target_os = "macos"))]
+    fn start(id: String, report: impl Fn(f32) + Send + 'static) -> Option<Self> {
+        let (stop, stop_requested) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let meter = crate::capture::engine::runtime::audio::mic::Meter::start(id);
+            let mut previous = -1.0;
+            while let Err(std::sync::mpsc::RecvTimeoutError::Timeout) =
+                stop_requested.recv_timeout(std::time::Duration::from_millis(50))
+            {
+                let level = meter.level();
+                if level != previous { report(level); previous = level; }
+            }
+        });
+        Some(Self::Local(stop))
+    }
+
+    #[cfg(target_os = "macos")]
+    fn start(id: String, report: impl Fn(f32) + Send + 'static) -> Option<Self> {
+        use std::{io::BufRead, process::{Command, Stdio}};
+        let mut child = Command::new(crate::capture::desktop::helper::path().ok()?)
+            .args(["settings", "--input-level", &id])
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().ok()?;
+        let stop = child.stdin.take()?;
+        let stdout = child.stdout.take()?;
+        std::thread::spawn(move || {
+            #[derive(serde::Deserialize)]
+            struct Reading { level: f32 }
+            for line in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
+                if let Ok(reading) = serde_json::from_str::<Reading>(&line) {
+                    report(reading.level);
+                }
+            }
+            let _ = child.wait();
+        });
+        Some(Self::Native(stop))
+    }
+}
+
+impl Drop for RecordingMeter {
+    fn drop(&mut self) {
+        #[cfg(not(target_os = "macos"))]
+        let Self::Local(stop) = self;
+        #[cfg(not(target_os = "macos"))]
+        let _ = stop.send(());
+        #[cfg(target_os = "macos")]
+        let Self::Native(_stop_on_drop) = self;
+    }
+}
+
+fn save_recording(path: &std::path::Path, key: &str, value: &serde_json::Value, inputs: Option<&crate::capture::engine::runtime::audio::mic::Inputs>) -> anyhow::Result<Effect> {
+    use crate::capture::engine::runtime::audio::{mic, transcription::{speech_model, transcribe::Engine}};
+    use crate::shared::handoff::{set_config_value_in, update_config_in};
+    let string = value.as_str().unwrap_or_default();
+    let value = match key {
+        "microphone" => {
+            anyhow::ensure!(string == "default" || inputs.and_then(|inputs| inputs.find(string)).is_some(),
+                "Microphone disconnected");
+            mic::save_in(path, string, inputs.unwrap_or(&mic::Inputs::default()))?;
+            return Ok(Effect::None);
+        }
+        "transcriber" => Engine::parse(string).ok_or_else(|| anyhow::anyhow!("Invalid transcriber"))?.name().into(),
+        "hexModel" => {
+            let model = string.trim();
+            anyhow::ensure!(!model.is_empty(), "Missing Hex model");
+            update_config_in(path, |config| {
+                config["hexModel"] = model.into();
+                config["transcriber"] = "hex".into();
+                Ok(())
+            })?;
+            return Ok(Effect::None);
+        }
+        "hexLanguage" => crate::shared::hex::language_code(string)
+            .ok_or_else(|| anyhow::anyhow!("Invalid Hex language"))?.into(),
+        "appleLocale" => {
+            let locale = string.trim();
+            let value = if locale.is_empty() || locale.eq_ignore_ascii_case("auto") {
+                serde_json::Value::Null
+            } else {
+                speech_model::locale_id(locale).ok_or_else(|| anyhow::anyhow!("Invalid Apple Speech language"))?.into()
+            };
+            set_config_value_in(path, key, value)?;
+            return Ok(Effect::SpeechModel);
+        }
+        _ => value.clone(),
+    };
+    set_config_value_in(path, key, value)?;
+    Ok(Effect::None)
+}
+
+fn recording_state(view: View) -> serde_json::Value {
+    use crate::capture::engine::runtime::audio::transcription::speech_model;
+    let speech = speech_model::current();
+    if view.transcriber.engine == "apple" && speech.state == speech_model::State::Unknown {
+        speech_model::ensure();
+    }
+    #[cfg(target_os = "linux")]
+    let warnings: Vec<_> = [
+        crate::capture::desktop::linux::media::encoder_warning(),
+        crate::capture::desktop::linux::media::decoder_warning(),
+    ].into_iter().flatten().collect();
+    #[cfg(not(target_os = "linux"))]
+    let warnings: Vec<String> = Vec::new();
+    let message = serde_json::json!({"type":"recording-state","state":{
+        "platform":if cfg!(target_os="macos") {"macos"} else {"linux"},
+        "microphone":view.microphone,"transcriber":view.transcriber,"speech":speech,
+        "lowerPlayback":view.lower_playback,"playbackLevel":view.playback_level,
+        "playbackAvailable":cfg!(target_os="macos") || crate::shared::handoff::experiment("linux-playback-ducking"),
+        "videoExport":view.video_export,"mediaWarnings":warnings
+    }});
+    message
+}
+
+fn microphone_view(
+    choice: Option<&crate::capture::engine::runtime::audio::mic::Choice>,
+    inputs: Option<&crate::capture::engine::runtime::audio::mic::Inputs>,
+    allowed: bool,
+) -> MicrophoneView {
+    use crate::capture::engine::runtime::audio::mic::Pick;
+    let option = |id: &str, title: String, enabled: bool| MenuOptionView {
+        id: id.to_owned(),
+        title,
+        enabled,
+    };
+    let empty = crate::capture::engine::runtime::audio::mic::Inputs::default();
+    let pick = Pick::new(choice, inputs.unwrap_or(&empty));
+    let default_title = match inputs.and_then(crate::capture::engine::runtime::audio::mic::Inputs::default_input) {
+        Some(input) => format!("System default ({})", input.name),
+        None => "System default".to_owned(),
+    };
+    let mut options = vec![option("default", default_title, true)];
+    if let Some(inputs) = inputs.filter(|i| !i.devices.is_empty()) {
+        options.push(option("-", String::new(), false));
+        options.extend(
+            inputs
+                .devices
+                .iter()
+                .map(|input| option(&input.id, input.name.clone(), true)),
+        );
+    }
+    let loaded = inputs.is_some();
+    if let (Some(choice), true, Pick::Missing { .. }) = (choice, loaded, &pick) {
+        options.push(option(
+            &choice.id,
+            format!("{} (not connected)", choice.name),
+            false,
+        ));
+    }
+    MicrophoneView {
+        selected: choice.map_or_else(|| "default".to_owned(), |c| c.id.clone()),
+        value: match (choice, &pick) {
+            (_, Pick::Chosen(input)) => input.name.clone(),
+            (Some(choice), _) => choice.name.clone(),
+            (None, _) => "System default".to_owned(),
+        },
+        options,
+        note: if loaded { pick.note() } else { None },
+        meter: pick
+            .device()
+            .filter(|_| allowed && loaded)
+            .map(|input| input.id.clone()),
+    }
+}
+
+#[test]
+fn recording_preferences_use_one_durable_config_mutation_and_keep_unrelated_values() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.json");
+    std::fs::write(&path, r#"{"transcriber":"apple","future":{"field":42},"microphone":{"id":"gone","name":"Previous input"}}"#).unwrap();
+    let read_json = |path: &std::path::Path| serde_json::from_slice::<serde_json::Value>(&std::fs::read(path).unwrap()).unwrap();
+    assert!(save_recording(&path, "microphone", &"disconnected".into(), None).is_err());
+    assert_eq!(read_json(&path)["microphone"]["id"], "gone");
+    assert_eq!(save_recording(&path, "microphone", &"default".into(), None).unwrap(), Effect::None);
+    assert_eq!(save_recording(&path, "hexModel", &"selected".into(), None).unwrap(), Effect::None);
+    assert_eq!(save_recording(&path, "videoExport", &true.into(), None).unwrap(), Effect::None);
+    let saved = read_json(&path);
+    assert_eq!(saved["future"]["field"], 42);
+    assert_eq!(saved["hexModel"], "selected");
+    assert_eq!(saved["transcriber"], "hex");
+    assert_eq!(saved["videoExport"], true);
+    assert!(saved.get("microphone").is_none());
+
+    std::fs::write(&path, "invalid config").unwrap();
+    assert!(save_recording(&path, "videoExport", &false.into(), None).is_err());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "invalid config");
+}
