@@ -146,6 +146,8 @@ export function start(capabilities: Capabilities) {
       "cancel",
       "disable",
       "open-browser",
+      "check",
+      "resume",
     ]);
     ipcMain.handle("onboarding:connect", async (e, ...args: unknown[]) => {
       const action = args[0];

@@ -355,7 +355,9 @@ export type OnboardingConnectAction =
   | "allow"
   | "cancel"
   | "disable"
-  | "open-browser";
+  | "open-browser"
+  | "check"
+  | "resume";
 export class OnboardingConnectAdapter {
   private controller: ConnectSettings;
   constructor(home: string) {
@@ -367,9 +369,15 @@ export class OnboardingConnectAdapter {
   request(action?: OnboardingConnectAction) {
     if (
       action !== undefined &&
-      !["connect", "allow", "cancel", "disable", "open-browser"].includes(
-        action,
-      )
+      ![
+        "connect",
+        "allow",
+        "cancel",
+        "disable",
+        "open-browser",
+        "check",
+        "resume",
+      ].includes(action)
     )
       throw Error("Forbidden onboarding Connect action");
     return this.controller.request(action);

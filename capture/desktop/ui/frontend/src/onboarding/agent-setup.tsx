@@ -41,16 +41,18 @@ function ConnectSetup({onContinue}:{onContinue:()=>Promise<void>}) {
     }
   },[phase,busy,leaving,view?.localReady,onContinue]);
   async function local(){setLeaving(true);await request('disable');}
-  const waiting=phase==='starting'||phase==='approval'||phase==='cancelling';
+  const waiting=phase==='starting'||phase==='approval'||phase==='cancelling'||phase==='checking'||phase==='enabling';
   const unavailable=result.status!=='connected'||!phase;
-  return <><h1>{phase==='waitlisted'?'Ur spot is saved.':waiting?'Finish in ur browser.':'Meet in the cloud.'}</h1>
+  const recovery=view?.buttons.find(b=>b.enabled && (b.command==='connect'||b.command==='check'&&!view.presentation?.menuActions.includes('check')));
+  const action=recovery?.command==='check'?'check':'connect';
+  return <><h1>{phase==='waitlisted'?'Ur spot is saved.':waiting?view?.presentation?.headline??'Finish in ur browser.':'Meet in the cloud.'}</h1>
     <AgentArt cloud/>
     {phase==='waitlisted'?<><p>You’re on the Connect waitlist. <strong className="native-brand-name">apparent</strong> still works on this computer.</p><Button disabled={busy||leaving} onClick={()=>void local()}>Continue locally</Button></>:
       <><p>Connect <strong className="native-brand-name">apparent</strong>. Give ur agent a link.</p>
       {!waiting&&<><p className="native-connect-disclosure">Continuing requests upload access for new captures, including screen images, voice, transcript and context. Older captures stay local. Approve this computer in ur browser.</p>
-        <Button disabled={busy||leaving||unavailable} onClick={()=>void request('connect')}>Continue with Google</Button></>}
+        <Button disabled={busy||leaving||unavailable} onClick={()=>void request(action)}>{recovery?.title==='Connect with Google'?'Continue with Google':recovery?.title??'Continue with Google'}</Button></>}
       {phase==='approval'&&browserFailed&&<Button disabled={busy||leaving} onClick={()=>void request('open-browser')}>Try opening browser</Button>}
-      {phase==='failed'&&<p role="alert">{view?.detail}</p>}
+      {(phase==='failed'||action==='check')&&<p role="status">{view?.detail}</p>}
       {unavailable&&!busy&&<p role="alert">Connect is unavailable. Try again to continue locally.</p>}
       <Button variant="ghost" disabled={busy||leaving||phase==='cancelling'} onClick={()=>void local()}>Keep it local</Button></>}
     {phase==='cancelling'&&<p role="status">Turning uploads off before continuing…</p>}

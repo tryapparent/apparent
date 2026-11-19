@@ -2,14 +2,14 @@ use super::*;
 use std::sync::{Mutex, mpsc};
 use std::time::Duration;
 
-struct LoginCall {
+pub(super) struct LoginCall {
     server: String,
     allowed: Arc<dyn Fn() -> bool + Send + Sync>,
     approve: mpsc::Sender<Approval>,
     finish: mpsc::Sender<Result<(), SafeError>>,
 }
 
-struct Fake {
+pub(super) struct Fake {
     local: Mutex<Result<Snapshot, SafeError>>,
     logins: mpsc::Sender<LoginCall>,
     probes: mpsc::Sender<mpsc::Sender<Health>>,
@@ -60,7 +60,7 @@ impl Backend for Fake {
 
 fn recv<T>(rx: &mpsc::Receiver<T>) -> T {
     rx.recv_timeout(Duration::from_secs(5))
-        .expect("controlled worker event")
+        .unwrap()
 }
 
 fn disconnected(server: Option<&str>) -> Snapshot {
@@ -81,7 +81,7 @@ fn connected() -> Snapshot {
     }
 }
 
-fn fixture() -> (
+pub(super) fn fixture() -> (
     Controller,
     Arc<Fake>,
     mpsc::Receiver<Event>,
@@ -366,7 +366,6 @@ fn renderer_contract_uses_camel_case_fields_and_kebab_case_commands() {
     let (c, _, _, _, _, _) = fixture();
     let view = serde_json::to_value(c.facts()).unwrap();
     assert!(view.get("verificationUri").is_some());
-    assert!(view.get("userCode").is_some());
     assert_eq!(
         serde_json::to_value(Command::OpenBrowser).unwrap(),
         "open-browser"

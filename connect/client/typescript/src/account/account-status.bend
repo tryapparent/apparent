@@ -120,7 +120,7 @@ def status_copy(status: Status) -> Copy:
     case BadServer{}: Card{"Check your Connect server.", "Correct the configured server before connecting.", Failure{}}
     case Unverified{}: Card{"Connection not confirmed.", "Apparent could not verify that uploads are enabled. Check the connection before trying again.", Failure{}}
     case Unknown{}: Card{"Connect is unavailable.", "Try checking the connection again. Local recording still works.", Failure{}}
-    case ConsentCard{}: Card{"Allow new capture uploads?", "New captures upload privately. Older captures stay local. Sharing is a separate action.", Neutral{}}
+    case ConsentCard{}: Card{"Allow new capture uploads?", "New captures upload privately, including recordings, images, voice, transcripts and context. Older captures stay local. Sharing is a separate action.", Neutral{}}
     case StartingCard{}: Card{"Connecting…", "", Progress{}}
     case ApprovalCard{}: Card{"Approve in your browser.", "", Progress{}}
     case ResumeCard{}: Card{"Enabling uploads…", "", Progress{}}

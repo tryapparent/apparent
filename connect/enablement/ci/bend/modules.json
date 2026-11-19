@@ -10,6 +10,7 @@
     "client/typescript/src/handoff.ts",
     "tooling/hosting/package.json",
     "tooling/hosting/scripts/bundle.ts",
-    "native-adapter/"
+    "native-adapter/",
+    "client/typescript/src/account/"
   ]
 }

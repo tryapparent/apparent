@@ -1,4 +1,4 @@
-use super::connect::native_connect;
+use super::connect::sync_native;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -1227,14 +1227,12 @@ impl Session {
         if let Some(grants) = grants {
             panel.set_grants(grants);
         }
-        let connect = (!electron && crate::shared::handoff::experiment(super::connect::CONNECT_SETTINGS))
-            .then(|| native_connect(&events, &crate::shared::handoff::default_config_path()));
         Ok(Self {
             generation,
             electron,
             pane,
             panel,
-            connect,
+            connect: None,
             transport,
             polling,
             #[cfg(target_os = "linux")]
@@ -1452,9 +1450,6 @@ impl Session {
                 if let Ok((transport, electron)) = Self::open_presentation(self.pane, generation, &self.events, false) {
                     self.generation = generation;
                     self.electron = electron;
-                    if crate::shared::handoff::experiment(super::connect::CONNECT_SETTINGS) {
-                        self.connect = Some(native_connect(&self.events, &host.config_path()));
-                    }
                     self.last_view.clear();
                     super::presentation::retire(std::mem::replace(&mut self.transport, transport));
                     self.sync(host);
@@ -1468,8 +1463,8 @@ impl Session {
                 return Effect::Close;
             }
         };
+        self.sync_connect(effect != Effect::Close);
         if let Some(controller) = &mut self.connect {
-            if effect == Effect::Close { controller.close(); }
             controller.refresh();
             if let Some(view) = controller.native_view() {
                 self.panel.connect = view;
@@ -1558,6 +1553,11 @@ impl Session {
         result
     }
 
+    fn sync_connect(&mut self, active: bool) {
+        sync_native(&mut self.connect, active && !self.electron && self.pane == Some(Pane::General), &self.events);
+        if self.connect.is_none() { self.panel.connect = None; }
+    }
+
     pub fn show(&mut self, pane: Option<Pane>) {
         if let Some(pane) = pane {
             let electron = super::electron_pane(Some(pane));
@@ -1589,6 +1589,7 @@ impl Session {
             }
             self.pane = pane;
         }
+        self.sync_connect(true);
         self.send(&serde_json::json!({"type": "show", "pane": pane}));
     }
 

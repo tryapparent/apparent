@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 
 mod presentation;
 pub use presentation::{Presentation, Tone};
+pub(super) use presentation::sync_native;
 
 pub const CONNECT_SETTINGS: &str = "connectSettings";
 
@@ -192,6 +193,7 @@ pub struct Controller {
     confirmation: Option<bool>,
     resume_failed: bool,
     native_facts: Option<AccountFacts>,
+    native_retry: Option<std::time::Instant>,
 }
 
 impl Controller {
@@ -211,6 +213,7 @@ impl Controller {
             confirmation: None,
             resume_failed: false,
             native_facts: None,
+            native_retry: None,
         };
         controller.refresh();
         controller
@@ -453,18 +456,6 @@ impl Controller {
         false
     }
 
-    pub fn native_view(&mut self) -> Option<Option<View>> {
-        let facts = self.facts();
-        if self.native_facts.as_ref() == Some(&facts) {
-            return None;
-        }
-        let view = serde_json::to_value(&facts).ok()
-            .and_then(|facts| apparent_connect_client::Client::account_presentation(facts).ok())
-            .and_then(|view| serde_json::from_value(view).ok());
-        self.native_facts = Some(facts);
-        Some(view)
-    }
-
     pub fn facts(&self) -> AccountFacts {
         let snapshot = self.snapshot.as_ref();
         let approval = self.approval.as_ref().filter(|_| !self.closed);
@@ -508,15 +499,6 @@ impl Controller {
             local_error: self.local_error,
         }
     }
-}
-
-pub(super) fn native_connect(
-    events: &Arc<dyn Fn(super::settings::Event) + Send + Sync>,
-    config: &std::path::Path,
-) -> Controller {
-    let events = events.clone();
-    Controller::open(crate::connect::hosted::settings_backend(config),
-        Arc::new(move |event| events(super::settings::Event::Connect(event))))
 }
 
 impl Drop for Controller {
