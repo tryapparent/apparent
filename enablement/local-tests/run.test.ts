@@ -95,10 +95,8 @@ test('prerequisite, CI routing, selector and timing regressions are mandatory ev
     assert.ok(args.includes(path), path);
   }
   assert.ok(args.includes('--pr'));
-  assert.ok(args.includes('enablement/ci/'));
-  const contracts = contractTests().map(command => command.argv.join(' '));
-  assert.ok(contracts.includes('bun test enablement/ci/'));
-  assert.ok(contracts.includes('bun test connect/enablement/ci/'));
+  assert.deepEqual(contractTests().slice(-3).map(({argv}) => argv.join(' ')),
+    ['node handoff/enablement/ci/bend/build.ts', 'bun test enablement/ci/', 'bun test connect/enablement/ci/']);
   assert.ok(!args.includes('cargo'));
   assert.ok(!args.some(arg => arg.includes('verification-status')), 'retired reporter stays absent from local gates');
 });
