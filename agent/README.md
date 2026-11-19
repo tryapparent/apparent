@@ -6,6 +6,11 @@ This is the canonical top-level owner root, not a claim of completed migration. 
 
 ## Report feedback from the CLI
 
+Use `apparent feedback --help` for a copyable example. Failed `inspect`, `fetch`,
+`frames` and `zoom` commands point to it after the original error. Draft feedback
+for unexpected errors or confusing CLI behavior, including problems you solved
+with a workaround.
+
 ```sh
 apparent feedback --kind bug --title 'Zoom rejects minutes and seconds' --body 'A timestamp of 1:05 should select 65 seconds.'
 ```
