@@ -36,7 +36,6 @@
 :root .frog-footer .footer-hi:hover, :root .frog-footer a:hover { color: var(--color-foreground); text-decoration: underline; }
 :root .person-name, :root dialog[data-dialog="social"] .social-names a { color: var(--color-foreground); }
 :root .feature-grid-section, :root .feature-grid-card h3 { color: var(--color-foreground); }
-:root .feature-grid-toggle { color: var(--color-muted-foreground); }
 
 /* Statement, photos, and social details share the same system palette. */
 :root .preview-statement { background: var(--color-background); color: var(--color-foreground); }

@@ -50,7 +50,6 @@ dialog[data-dialog="social"] .rude-bubble{position:absolute;top:24px;left:0}
 .pond-copy .pond-download{display:flex;justify-content:center}
 @media(max-width:700px){.pond-copy h1{padding-right:0;padding-bottom:105px}.pond-copy h1 .pond-word{right:0;top:auto;bottom:0;width:116px;min-width:116px;height:90px}.pond-copy h1 .pond-cover-frog{width:116px;height:73px}.pond-copy h1 .pond-cover-pad{width:116px;top:50px}.pond-hero{height:auto;min-height:800px}.pond-copy{padding-bottom:180px}}
 /* Keep the feature heading visually attached to its first item. */
-.feature-grid-toggle{display:block;min-height:44px;padding:8px 12px;border:1px solid var(--color-border);font-size:14px}
 .feature-grid-heading{margin-bottom:28px}
 .feature-grid-card:first-child{padding-top:0}
 .feature-grid-card:first-child .feature-copy{align-self:center;padding-top:0}

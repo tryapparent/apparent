@@ -37,7 +37,7 @@ test("product names use the boxed wordmark including the demo heading", () => {
   const body = html.split("<body>")[1]
   assert.match(body, /class="pond-wordmark"[^>]*src="\/apparent-wordmark\.svg"[^>]*alt="apparent"[^>]*\/> creates the instructions/)
   assert.equal(existsSync(join(publicDir, "apparent-wordmark.svg")), true)
-  assert.match(body, /<h2 id="hermes-video-title"><img[^>]*src="\/apparent-wordmark\.svg"[^>]*alt="apparent"[^>]*\/> is now a Hermes Agent plugin<\/h2>/)
+  assert.match(body, /<h2 id="hermes-video-title"><img[^>]*src="\/apparent-wordmark\.svg"[^>]*alt="apparent"[^>]*\/> is now a <a href="https:\/\/hermes-agent\.nousresearch\.com\/marketplace\/apparent">Hermes Agent plugin<\/a><\/h2>/)
   assert.match(body, /Your agent makes the changes and uses<br class="hero-return-break"\/> apparent to send back a video walkthrough\./)
 })
 
@@ -335,11 +335,17 @@ test("source homepage preserves accepted responsive layout and interactions", as
             assert.equal(await page.locator(".feature-mobile:visible").count(), 4)
             const smallest = await page.locator(".feature-mobile").evaluateAll(elements => Math.min(...elements.flatMap(element => [...element.querySelectorAll("p,time,li,figcaption")].map(child => parseFloat(getComputedStyle(child).fontSize)))))
             assert(smallest >= 14, "phone examples retain readable text without scaling")
-          } else {
-            const toggle = page.getByRole("button", { name: "Play animations", exact: true })
-            assert.equal(await toggle.isVisible(), true)
-            await toggle.click()
-            await page.getByRole("button", { name: "Pause animations", exact: true }).click()
+          }
+          assert.equal(await page.getByRole("button", { name: /^(Play|Pause) animations$/ }).count(), 0)
+          if (width > 700) {
+            const timeline = page.locator('iframe[src="/feature-demos/timeline/index.html"]')
+            await timeline.scrollIntoViewIfNeeded()
+            const control = timeline.contentFrame().locator("#play")
+            await control.filter({ hasText: /^Play$/ }).waitFor({ state: "attached" })
+            await page.emulateMedia({ reducedMotion: "no-preference" })
+            await control.filter({ hasText: /^Pause$/ }).waitFor({ state: "attached" })
+            await page.emulateMedia({ reducedMotion: "reduce" })
+            await control.filter({ hasText: /^Play$/ }).waitFor({ state: "attached" })
           }
           const player = page.locator("#demo iframe")
           await page.waitForFunction(() => document.querySelector("#demo iframe")?.hasAttribute("src"))

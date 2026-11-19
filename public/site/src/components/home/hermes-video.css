@@ -2,6 +2,10 @@
   max-width: clamp(300px, calc((100svh - 152px) * 16 / 9), 1072px);
 }
 
+.hermes-video > .demo-section {
+  width: min(100%, 920px);
+}
+
 :root .pond-demo.hermes-video h2 img {
   margin-inline: 0 .16em;
 }
@@ -17,12 +21,15 @@
 }
 
 .hermes-video a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
   color: var(--color-foreground);
   text-decoration: underline;
   text-underline-offset: .16em;
+}
+
+.hermes-video .demo-section a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
 }
 
 .hermes-video a:focus-visible,

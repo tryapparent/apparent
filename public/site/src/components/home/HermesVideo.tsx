@@ -3,6 +3,7 @@ import "./hermes-video.css"
 
 const EMBED = "https://www.youtube-nocookie.com/embed/IXJVr0-PJ7k?mute=1&playsinline=1&rel=0"
 const WATCH = "https://youtu.be/IXJVr0-PJ7k"
+const MARKETPLACE = "https://hermes-agent.nousresearch.com/marketplace/apparent"
 const motionPreference = () => matchMedia("(prefers-reduced-motion: reduce)")
 
 function subscribe(onChange: () => void) {
@@ -18,7 +19,7 @@ export function HermesVideo() {
 
   return (
     <section className="pond-demo hermes-video" aria-labelledby="hermes-video-title">
-      <h2 id="hermes-video-title"><img src="/apparent-wordmark.svg" alt="apparent" width={120} height={28} /> is now a Hermes Agent plugin</h2>
+      <h2 id="hermes-video-title"><img src="/apparent-wordmark.svg" alt="apparent" width={120} height={28} /> is now a <a href={MARKETPLACE}>Hermes Agent plugin</a></h2>
       <div className="demo-section" id="demo">
         <iframe src={source} title="Apparent’s Hermes Agent hackathon submission" loading="lazy"
           referrerPolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen />
