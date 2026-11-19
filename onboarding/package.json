@@ -1,6 +1,6 @@
 {
   "name": "@apparent/onboarding",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "type": "module",
   "exports": {
     "./practice": {
@@ -22,6 +22,10 @@
     "./wispr": {
       "types": "./dist/host/wispr.d.ts",
       "import": "./dist/host/wispr.js"
+    },
+    "./wispr-native": {
+      "types": "./dist/host/wispr-native.d.ts",
+      "import": "./dist/host/wispr-native.js"
     },
     "./projection": {
       "types": "./dist/host/projection.d.ts",

@@ -28,15 +28,17 @@ export default defineConfig({
         "\n@source '.';",
       );
     },
-  }, tailwindcss(), {name: 'onboarding-host-policy', closeBundle() {
+  }, tailwindcss(), {name: 'onboarding-host-policy', async closeBundle() {
     mkdirSync('dist/composition/onboarding', { recursive: true });
     cpSync('../../../../composition/onboarding/dist/entry.cjs', 'dist/composition/onboarding/entry.cjs');
-    for (const name of ['presentation', 'hyprland', 'selection', 'wispr']) {
+    for (const name of ['presentation', 'hyprland', 'selection']) {
       const file = `electron/onboarding/${name}.ts`;
       const result = ts.transpileModule(readFileSync(file, 'utf8'), {fileName: file,
         compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022}});
       writeFileSync(`dist/onboarding-${name}.cjs`, result.outputText);
     }
+    await build({ entryPoints: ['electron/onboarding/wispr.ts'],
+      bundle: true, platform: 'node', format: 'cjs', outfile: 'dist/onboarding-wispr.cjs' });
   }}, {
     name: 'desktop-reporting-policy',
     apply: 'build',

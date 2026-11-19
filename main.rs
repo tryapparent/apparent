@@ -12,5 +12,5 @@ mod shared;
 
 fn main() -> anyhow::Result<()> {
     crate::shared::handoff::pen::refresh();
-    composition::cli::run()
+    composition::run()
 }

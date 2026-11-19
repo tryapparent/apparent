@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -605,7 +605,10 @@ pub struct SharedCaptureTelemetry {
     pub picker_started_at: Mutex<Instant>,
     pub picker_rect: Mutex<Option<([f32; 4], u8)>>,
     pub target_frame: Mutex<TargetFrame>,
+    #[cfg(not(target_os = "macos"))]
     pub pointer_screen: Mutex<[f32; 2]>,
+    #[cfg(target_os = "macos")]
+    shift_ink: Mutex<platform::macos::ShiftInk>,
     pub events: Mutex<Vec<InteractionEvent>>,
     pub strokes: Mutex<Vec<Stroke>>,
     pub active_laser: Mutex<Option<Stroke>>,
@@ -691,7 +694,10 @@ impl SharedCaptureTelemetry {
                 height: 900.0,
                 scale: 2.0,
             }),
+            #[cfg(not(target_os = "macos"))]
             pointer_screen: Mutex::new([0.0, 0.0]),
+            #[cfg(target_os = "macos")]
+            shift_ink: Mutex::default(),
             events: Mutex::new(Vec::new()),
             strokes: Mutex::new(Vec::new()),
             active_laser: Mutex::new(None),
@@ -1419,39 +1425,34 @@ fn same_target_frame(a: TargetFrame, b: TargetFrame) -> bool {
         && (a.height - b.height).abs() <= 0.5
 }
 
-/// One poll of the Shift ink: holding Shift alone and moving the cursor inside the capture
-/// target draws a persistent stroke; letting go of Shift commits it. `pure_shift` is Shift
-/// without other modifiers (and not left over from a chord such as the capture shortcut).
 fn track_shift_ink(
     telemetry: &SharedCaptureTelemetry,
     (x, y): (f64, f64),
     pure_shift: bool,
     prev_shift_ink: bool,
 ) {
-    let inside_target = !telemetry.notes_editing.load(Ordering::Acquire) && telemetry.contains_screen_point(x, y);
-    if pure_shift && inside_target {
+    if pure_shift && !telemetry.notes_editing.load(Ordering::Acquire) && telemetry.contains_screen_point(x, y) {
         telemetry.shift_held.store(true, Ordering::Release);
         let t_ms = telemetry.elapsed_ms();
         let (nx, ny, fw, fh) = telemetry.normalize_point(x, y);
-        let sx = (nx * SCALE as f32).round() as i32;
-        let sy = (ny * SCALE as f32).round() as i32;
+        let [sx, sy] = [nx, ny].map(|v| (v * SCALE as f32).round() as i32);
         let mut guard = telemetry
             .live_ink
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if guard.is_none() {
+            .unwrap_or_else(PoisonError::into_inner);
+        let stroke = guard.get_or_insert_with(|| {
             telemetry.window_log_request.store(true, Ordering::Release);
-        }
-        let stroke = guard.get_or_insert_with(|| Stroke {
-            color: Some(crate::shared::handoff::pen::rgb()),
-            t0: t_ms,
-            t1: t_ms,
-            fw,
-            fh,
-            on: None,
-            pin: None,
-            laser: false,
-            pts: Vec::new(),
+            Stroke {
+                color: Some(crate::shared::handoff::pen::rgb()),
+                t0: t_ms,
+                t1: t_ms,
+                fw,
+                fh,
+                on: None,
+                pin: None,
+                laser: false,
+                pts: Vec::new(),
+            }
         });
         let dt = t_ms.saturating_sub(stroke.t0) as i32;
         let should_push = stroke.pts.chunks_exact(3).last().is_none_or(|prev| {
@@ -1468,7 +1469,7 @@ fn track_shift_ink(
         if let Some(stroke) = telemetry
             .live_ink
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .take()
             // Ignore stationary Shift taps (e.g. typing a capital letter without moving the mouse).
             && is_real_ink(&stroke)
@@ -1477,7 +1478,7 @@ fn track_shift_ink(
                 let frame = *telemetry
                     .target_frame
                     .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    .unwrap_or_else(PoisonError::into_inner);
                 if let Some((x, y)) = crate::capture::engine::accessibility::ax::stroke_probe_point(&stroke, frame) {
                     crate::capture::engine::accessibility::ax::Prober::shared().probe(crate::capture::engine::accessibility::ax::Target::Stroke(stroke.t0), x, y);
                 }
@@ -1485,7 +1486,7 @@ fn track_shift_ink(
             telemetry
                 .strokes
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .unwrap_or_else(PoisonError::into_inner)
                 .push(stroke);
             let _ = telemetry
                 .ui_sender

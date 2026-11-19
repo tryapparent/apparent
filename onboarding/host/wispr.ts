@@ -1,6 +1,10 @@
-export type WisprResult = {
-  status: "disabled" | "running" | "closed" | "refused" | "unknown";
-};
+import {
+  dictationApps,
+  type DictationApp,
+  type WisprResult,
+} from "./dictation.ts";
+export type { WisprResult } from "./dictation.ts";
+
 export type WisprContext = {
   platform?: string;
   step?: string;
@@ -11,6 +15,7 @@ export type WisprContext = {
 export type WisprProvider = (
   operation: "read" | "quit",
   signal: AbortSignal,
+  apps: readonly DictationApp[],
 ) => Promise<WisprResult>;
 export const wisprExperiment = "onboardingWisprFlow";
 export function eligibleWispr(context: WisprContext | null): boolean {
@@ -25,6 +30,7 @@ export function eligibleWispr(context: WisprContext | null): boolean {
 export class WisprOnboarding {
   private active: AbortController | null = null;
   private revision = 0;
+  private detected: readonly DictationApp[] = [];
   private context: () => WisprContext | null;
   private enabled: () => Promise<boolean>;
   private provider: WisprProvider;
@@ -44,6 +50,7 @@ export class WisprOnboarding {
     this.revision++;
     this.active?.abort();
     this.active = null;
+    this.detected = [];
   }
   async request(operation: unknown): Promise<WisprResult> {
     if (operation !== "read" && operation !== "quit")
@@ -59,13 +66,25 @@ export class WisprOnboarding {
     )
       return { status: "disabled" };
     if (this.active) return { status: "unknown" };
+    if (operation === "quit" && this.detected.length === 0)
+      return { status: "unknown" };
+    if (operation === "read") this.detected = [];
     const controller = new AbortController();
     this.active = controller;
     try {
-      const result = await this.provider(operation, controller.signal);
-      return revision === this.revision && eligibleWispr(this.context())
-        ? result
-        : { status: "disabled" };
+      const result = await this.provider(
+        operation,
+        controller.signal,
+        this.detected,
+      );
+      if (revision !== this.revision || !eligibleWispr(this.context()))
+        return { status: "disabled" };
+      if (operation === "read" && result.status === "running")
+        this.detected = dictationApps.filter((app) =>
+          result.apps.includes(app),
+        );
+      if (result.status === "closed") this.detected = [];
+      return result;
     } catch {
       return { status: "unknown" };
     } finally {
