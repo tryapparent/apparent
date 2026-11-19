@@ -14,6 +14,19 @@ bundle finalizer. The milestone is process-wide and can reflect overlapping
 Finish workers. Return records that the finalizer returned either result.
 A missing milestone is unknown. The new field does not affect error grouping.
 
+`native_exit.recent_steps` preserves up to eight allowlisted checkpoint
+transitions with monotonic milliseconds since observation began. It lives on
+the exception and has no separate ingestion or session identity. Phase and
+step history are cleared when the reporting generation changes.
+
+For Linux SIGKILL, `native_exit.cgroup_oom_kill_increased` is an optional
+boolean comparing the local OOM kill counter of the cgroup observed for the
+recorder at consent admission with the same counter at exit. The cgroup may
+contain other processes, and the recorder may move to a different group.
+The boolean describes only the observed group over the sampling interval.
+When the counter is unavailable the field is null. The cgroup path, counter
+value, and kernel log are kept out of the report.
+
 With reporting enabled, private `native-errors/*.json` files beside config retain
 pending native diagnostics across crashes and failed delivery. Live setting
 changes apply within one second; a consent generation change discards prior

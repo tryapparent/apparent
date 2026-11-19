@@ -6,6 +6,7 @@ on:
     paths:
       - "engine/**"
       - "!engine/permissions/**"
+      - "!engine/diagnostics/**"
       - "!engine/**/*.md"
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
   push:
@@ -13,6 +14,7 @@ on:
     paths:
       - "engine/**"
       - "!engine/permissions/**"
+      - "!engine/diagnostics/**"
       - "!engine/**/*.md"
   workflow_dispatch:
 

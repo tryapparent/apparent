@@ -9,7 +9,7 @@ const dependencies = ['node:test', 'node:assert/strict', 'node:fs', 'node:path',
 // Reviewed ownership comments and literal references to other named contracts.
 // Pin complete regular-file blobs: changed code, aliases or modes need an audit.
 const reviewedMentions = new Map([
-  ['enablement/ci/routing/engine-inputs/qualify.ts', '81e64db4b1e44d84ddec53c47908c06bedc40392'],
+  ['enablement/ci/routing/engine-inputs/qualify.ts', 'b66de612376888a99dc04c77d4ffec6818b897e4'],
   ['enablement/ci/routing/engine-inputs/range.test.ts', '57e53af4325bfc51ce19c686cf65a9bd3a355e61'],
   ['capture/desktop/ui/frontend/tests/foreground/mac.ts', '33bd87d974b8940cbf8875a1f68c8a9a9c7b98b9'],
   ['enablement/ci/runner/mac-pill-bootstrap.test.ts', 'a9c82401add2a37546776de3afd803ee3f5af4e1'],
