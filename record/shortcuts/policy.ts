@@ -1,5 +1,13 @@
 export type ShortcutPlatform = "macos" | "linux";
 
+export type StartDisplayPreference = "focused" | "pointer" | "first";
+
+export const START_DISPLAY_PREFERENCE: readonly StartDisplayPreference[] = [
+  "focused",
+  "pointer",
+  "first",
+];
+
 export function recordDefault(platform: ShortcutPlatform) {
   return platform === "macos"
     ? { key: "Fn", keyCode: 63, modifiers: 0 }

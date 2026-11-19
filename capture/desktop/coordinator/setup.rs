@@ -1014,7 +1014,7 @@ impl ApparentCoordinator {
     pub fn record_screen_now(&mut self, cx: &mut Context<Self>) {
         if self.choose_system_display(cx) { return; }
         self.start_recording_with_target(|lab| {
-            if lab { lab::target() } else { discover_target(None) }
+            if lab { lab::target() } else { discover_start_target() }
         }, cx);
         if self.is_recording() {
             self.show_reveal(cx);

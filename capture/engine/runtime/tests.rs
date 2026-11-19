@@ -388,6 +388,16 @@ mod tests {
         assert_eq!(pick_display(&above, Some([10.0, 0.0]), None), 0);
     }
 
+    #[test]
+    fn shortcuts_start_on_the_frontmost_window_s_display_whatever_the_cursor() {
+        let displays = [[0.0, 0.0, 1728.0, 1117.0], [1728.0, -200.0, 2560.0, 1440.0]];
+        let focused = Some([1900.0, 0.0, 800.0, 600.0]);
+        assert_eq!(pick_start_display(&displays, Some([100.0, 100.0]), focused), 1);
+        assert_eq!(pick_start_display(&displays, Some([2000.0, 300.0]), Some([100.0, 100.0, 400.0, 400.0])), 0);
+        assert_eq!(pick_start_display(&displays, Some([2000.0, 300.0]), None), 1);
+        assert_eq!(pick_start_display(&displays, None, None), 0);
+    }
+
     /// Clicks and ink on a display left of, right of or above the laptop normalize into that
     /// display, and land on the recording's pixels at its own scale.
     #[test]

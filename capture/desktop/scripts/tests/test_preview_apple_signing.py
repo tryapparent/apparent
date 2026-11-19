@@ -23,6 +23,11 @@ class AppleSigningTest(unittest.TestCase):
             "r = Path(sys.argv[1]) / 'runtime/Electron.app/Contents/MacOS/Electron'\nr.parent.mkdir(parents=True)\nr.write_text('synthetic shared runtime')\n"
             "with Path(os.environ['TRACE']).open('a') as f: f.write('stage-settings ' + ' '.join(sys.argv[1:]) + '\\n')\n")
         shutil.copytree(ROOT / "composition/enablement/release/mac", root / "composition/enablement/release/mac")
+        dmg_builder = root / "composition/enablement/release/mac/dmg/build.ts"
+        dmg_builder.write_text(dmg_builder.read_text().split("const toolByArch")[0] +
+            'export function createDmg(app, dmg, version, build) {'
+            'writeFileSync(dmg, JSON.stringify(finderLayout(app, version, build)));'
+            'if (process.env.TRACE) writeFileSync(process.env.TRACE, "createDmg\\n", { flag: "a" }); }')
         (root / "bin").mkdir()
         (root / "sparkle/Sparkle.framework/Versions/B/XPCServices").mkdir(parents=True)
         setup = root / "capture/desktop/scripts/release/setup-sparkle.sh"
@@ -98,13 +103,10 @@ fi''',
             self.assertLess(trace.index("stage-settings "), trace.index("codesign --force"))
             self.assertNotIn("--sign - ", trace)
             app_staple = trace.index("stapler staple " + str(root / "dist/Apparent Preview.app"))
-            self.assertLess(app_staple, trace.index("hdiutil create"))
-            installer = root / "dist/Install Apparent.app"
-            installer_staple = trace.index("stapler staple " + str(installer))
-            self.assertLess(app_staple, installer_staple)
-            self.assertLess(installer_staple, trace.index("hdiutil create"))
-            self.assertIn("--identifier dev.simonvanlaak.apparent.preview.installer.b123.2 " + str(installer), trace)
-            self.assertIn("codesign --verify --deep --strict " + str(installer), trace)
+            self.assertLess(app_staple, trace.index("createDmg"))
+            dmg_sign = next(line for line in trace.splitlines()
+                            if line.startswith("codesign ") and line.endswith(".dmg"))
+            self.assertLess(trace.index("createDmg"), trace.index(dmg_sign))
             self.assertIn("stapler validate", trace)
             self.assertIn("spctl --assess", trace)
             self.assertLess(trace.index("stapler staple " + str(root / "dist/Apparent-Preview")),

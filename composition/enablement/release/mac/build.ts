@@ -1,11 +1,11 @@
-import { appPlist } from "./metadata.ts";
+import { createDmg } from "./dmg/build.ts";
+import { appDisplayNames, appPlist } from "./metadata.ts";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   cpSync,
   mkdirSync,
   readFileSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -90,12 +90,9 @@ run("cargo", ["build", "--release", "--locked", "-j", "3"], {
 });
 const dist = join(root, "dist");
 const app = join(dist, "Apparent Preview.app");
-const staging = join(dist, "preview-staging");
-for (const directory of [app, staging])
-  rmSync(directory, { recursive: true, force: true });
+rmSync(app, { recursive: true, force: true });
 for (const directory of ["MacOS", "Resources", "Frameworks"])
   mkdirSync(join(app, "Contents", directory), { recursive: true });
-mkdirSync(staging, { recursive: true });
 for (const name of ["apparent", "apparent-helper"])
   cpSync(join(root, "target/release", name), join(app, "Contents/MacOS", name));
 for (const [source, name] of [
@@ -125,6 +122,9 @@ run("ditto", [
   join(app, "Contents/Frameworks/Sparkle.framework"),
 ]);
 writeFileSync(join(app, "Contents/Info.plist"), appPlist(version, build, key));
+const localized = join(app, "Contents/Resources/en.lproj");
+mkdirSync(localized);
+writeFileSync(join(localized, "InfoPlist.strings"), appDisplayNames);
 const settings = join(app, "Contents/Resources/settings");
 if (prepared)
   run(process.execPath, [
@@ -224,74 +224,10 @@ if (notarize === "true") {
     throw Error("Actual signing authority/team differs");
 }
 notarizeBundle(app, join(dist, "preview-notary.zip"));
-const installer = join(dist, "Install Apparent.app");
-const installerId = `dev.simonvanlaak.apparent.preview.installer.b${build}`;
-rmSync(installer, { recursive: true, force: true });
-for (const name of ["MacOS", "Resources", "SharedSupport"])
-  mkdirSync(join(installer, "Contents", name), { recursive: true });
-cpSync(
-  join(root, "capture/desktop/assets/Apparent.icns"),
-  join(installer, "Contents/Resources/Apparent.icns"),
-);
-const arch = output("lipo", ["-archs", join(app, "Contents/MacOS/apparent")]);
-if (!["arm64", "x86_64"].includes(arch))
-  throw Error("Installer needs a single supported Mac architecture");
-run("xcrun", [
-  "swiftc",
-  "-O",
-  "-parse-as-library",
-  "-target",
-  `${arch}-apple-macos15.0`,
-  "capture/desktop/native/installer/Installer.swift",
-  "-o",
-  join(installer, "Contents/MacOS/Installer"),
-]);
-run("ditto", [
-  app,
-  join(installer, "Contents/SharedSupport/Apparent Preview.app"),
-]);
-run("ditto", [
-  join(settings, "app"),
-  join(installer, "Contents/Resources/installer-ui"),
-]);
-run(process.execPath, [
-  "--experimental-strip-types",
-  join(tooling, "composition/enablement/release/mac/metadata.ts"),
-  "installer",
-  installer,
-  version,
-  build,
-  installerId,
-]);
-run("codesign", [...sign, "--identifier", installerId, installer]);
-run("codesign", ["--verify", "--deep", "--strict", installer]);
-notarizeBundle(installer, join(dist, "installer-notary.zip"));
-run("ditto", [installer, join(staging, "Install Apparent.app")]);
-writeFileSync(
-  join(staging, "Start here.txt"),
-  "Double-click Install Apparent to install with the frog, or drag Apparent Preview to Applications in Finder.\nOpening the downloaded disk image does not automatically run the installer.\n",
-);
-cpSync(app, join(staging, "Apparent Preview.app"), {
-  recursive: true,
-  verbatimSymlinks: true,
-});
-symlinkSync("/Applications", join(staging, "Applications"));
 const name = `Apparent-Preview-${version}-arm64.dmg`;
 const dmg = join(dist, name);
 rmSync(dmg, { force: true });
-run("hdiutil", [
-  "create",
-  "-quiet",
-  "-fs",
-  "HFS+",
-  "-format",
-  "UDZO",
-  "-volname",
-  "Apparent Preview",
-  "-srcfolder",
-  staging,
-  dmg,
-]);
+createDmg(app, dmg, version, build);
 run("hdiutil", ["verify", dmg]);
 if (notarize === "true") {
   run("codesign", [...sign, dmg]);

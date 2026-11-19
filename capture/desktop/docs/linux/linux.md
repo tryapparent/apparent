@@ -108,7 +108,8 @@ Without the `input` group, a capture on Wayland has no clicks, keys or ⇧ ink o
 ### Picker and portal limits
 
 The Linux GUI records a full display. **Record screen** or the recording shortcut
-starts the display under the pointer once the shortcut's keys come up. The tray,
+starts the display holding the frontmost window (the pointer's display when no window
+is known) once the shortcut's keys come up. The tray,
 Electron controls and native fallback omit **Choose What to Record…**, and a
 recording opens directly onto Whiteboard, Finish and Cancel rather than Area/Screen
 switch chips. A retired bridge picker command is rejected without starting a capture.

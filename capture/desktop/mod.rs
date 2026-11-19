@@ -56,9 +56,9 @@ pub(crate) use platform::{gpui_display_for, hwnd_of, set_app_icon};
 use crate::capture::engine::runtime::audio::audio::{AudioRecorder, InputWarning};
 use crate::capture::engine::runtime::{
     LiveOverlayEvent, ScreenCaptureSession, SharedCaptureTelemetry, apparent_log,
-    current_mouse_screen, discover_target, install_global_hotkeys, list_selectable_windows,
-    record_external_frontmost_app, region_target, selectable_window_at, shortcut_from_key_and_mods,
-    start_global_input_tap, update_global_shortcut,
+    current_mouse_screen, discover_start_target, install_global_hotkeys,
+    list_selectable_windows, record_external_frontmost_app, region_target, selectable_window_at,
+    shortcut_from_key_and_mods, start_global_input_tap, update_global_shortcut,
 };
 use crate::capture::desktop::helper::PhoneDevice;
 #[cfg(target_os = "macos")]

@@ -33,7 +33,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use super::super::{
     CARBON_CMD_KEY, CARBON_CONTROL_KEY, CARBON_OPTION_KEY, CARBON_SHIFT_KEY, LiveOverlayEvent,
     Sampler, SharedCaptureTelemetry, ShortcutConfig, ShortcutKind, clean_label, hotkey_combos,
-    layout_default_keycode, pick_display, poll_clicks, apparent_log, shortcut_label, shortcut_matches,
+    layout_default_keycode, pick_display, pick_start_display, poll_clicks, apparent_log, shortcut_label, shortcut_matches,
     track_shift_ink,
 };
 use crate::shared::model::{CaptureMode, InteractionEvent, TargetFrame, TargetInfo};
@@ -346,8 +346,20 @@ pub fn discover_target(window_query: Option<&str>) -> TargetInfo {
     discover_target_at(window_query, win::cursor_position().map(|(x, y)| [x, y]))
 }
 
+pub fn discover_start_target() -> TargetInfo {
+    discover_target_preferring(win::cursor_position().map(|(x, y)| [x, y]), true)
+}
+
 /// Like `discover_target`, recording the display under `point` (see `pick_display`).
 pub fn discover_target_at(window_query: Option<&str>, point: Option<[f64; 2]>) -> TargetInfo {
+    discover_target_preferring_with(window_query, point, false)
+}
+
+fn discover_target_preferring(point: Option<[f64; 2]>, start: bool) -> TargetInfo {
+    discover_target_preferring_with(None, point, start)
+}
+
+fn discover_target_preferring_with(window_query: Option<&str>, point: Option<[f64; 2]>, start: bool) -> TargetInfo {
     let frontmost = frontmost_app_info();
     if let Some(query) = window_query {
         let q = query.to_lowercase();
@@ -360,7 +372,11 @@ pub fn discover_target_at(window_query: Option<&str>, point: Option<[f64; 2]>) -
     let monitors = win::monitors();
     let front = external_front_window();
     let rects: Vec<[f64; 4]> = monitors.iter().map(|m| m.rect).collect();
-    let index = pick_display(&rects, point, front.as_ref().map(|w| w.rect));
+    let index = if start {
+        pick_start_display(&rects, point, front.as_ref().map(|w| w.rect))
+    } else {
+        pick_display(&rects, point, front.as_ref().map(|w| w.rect))
+    };
     let (rect, scale) = monitors
         .get(index)
         .map_or(([0.0, 0.0, 1920.0, 1080.0], 1.0), |m| (m.rect, m.scale));
