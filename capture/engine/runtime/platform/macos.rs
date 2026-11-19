@@ -19,7 +19,7 @@ use screencapturekit::screenshot_manager::{CGImageExt, SCScreenshotManager};
 use super::super::{
     CANDIDATE_EDGE, CANDIDATE_EDGE_NO_VIDEO, CARBON_CMD_KEY, CARBON_CONTROL_KEY, CARBON_OPTION_KEY,
     CARBON_SHIFT_KEY, FRAME_SAMPLE_INTERVAL, LiveOverlayEvent, Sampler, SharedCaptureTelemetry,
-    ShortcutConfig, ShortcutKind, MACOS_FN_KEY_CODE, capture_size, clean_label, fn_gesture_transition, hotkey_combos, pick_display,
+    ShortcutConfig, ShortcutKind, MACOS_FN_KEY_CODE, capture_size, clean_label, fn_gesture_transition, hotkey_combos, pick_display, pick_start_display,
     poll_clicks, apparent_log, track_shift_ink,
 };
 use crate::capture::engine::runtime::sample_real_candidate;
@@ -797,8 +797,16 @@ pub fn discover_target(window_query: Option<&str>) -> TargetInfo {
     discover_target_at(window_query, current_mouse_location().map(|p| [p.x, p.y]))
 }
 
+pub fn discover_start_target() -> TargetInfo {
+    discover_target_preferring(current_mouse_location().map(|p| [p.x, p.y]), true)
+}
+
 /// Like `discover_target`, recording the display under `point` (see `pick_display`).
 pub fn discover_target_at(_window_query: Option<&str>, point: Option<[f64; 2]>) -> TargetInfo {
+    discover_target_preferring(point, false)
+}
+
+fn discover_target_preferring(point: Option<[f64; 2]>, start: bool) -> TargetInfo {
     let frontmost = frontmost_app_info();
     let screens = crate::capture::engine::runtime::screens::displays();
     if let Ok(content) = SCShareableContent::get() {
@@ -823,7 +831,12 @@ pub fn discover_target_at(_window_query: Option<&str>, point: Option<[f64; 2]>) 
             let f = w.frame();
             [f.origin.x, f.origin.y, f.size.width, f.size.height]
         });
-        if let Some(display) = displays.get(pick_display(&rects, point, focused)) {
+        let index = if start {
+            pick_start_display(&rects, point, focused)
+        } else {
+            pick_display(&rects, point, focused)
+        };
+        if let Some(display) = displays.get(index) {
             let f = display.frame();
             let rect = [f.origin.x, f.origin.y, f.size.width, f.size.height];
             let window_title = front_window.as_ref().and_then(|w| w.title());
@@ -845,7 +858,12 @@ pub fn discover_target_at(_window_query: Option<&str>, point: Option<[f64; 2]>) 
 
     // No ScreenCaptureKit: the display under `point` from CoreGraphics.
     let rects: Vec<[f64; 4]> = screens.iter().map(|s| s.frame).collect();
-    let (display_id, frame) = screens.get(pick_display(&rects, point, None)).map_or_else(
+    let index = if start {
+        pick_start_display(&rects, point, None)
+    } else {
+        pick_display(&rects, point, None)
+    };
+    let (display_id, frame) = screens.get(index).map_or_else(
         || {
             let id = unsafe { CGMainDisplayID() };
             let w = (unsafe { CGDisplayPixelsWide(id) } as f64).max(1440.0);

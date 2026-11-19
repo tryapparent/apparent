@@ -101,8 +101,8 @@ Preview every pane, dark and light, with the recorder listening and a combinatio
 
 ## Capture Controls
 
-- **Press `⌥⇧S`**: record the display under the pointer as soon as you let go, however long you
-  held it, auto-cropped (see below). Press it again to finish; a press within 0.4 s of the start is
+- **Press `⌥⇧S`**: record the display holding the frontmost window (the pointer's display when
+  no window is known) as soon as you let go, however long you held it, auto-cropped (see below). Press it again to finish; a press within 0.4 s of the start is
   ignored, so a double press doesn't leave an empty capture. `⌃⌥⇧S` also works (only while `⌥⇧S` is the
   shortcut; see [Settings](#settings) to change it). As it starts, the island opens onto the modes (Area ·
   **Screen** · iPhone when one is cabled) for about 3.5 s, or until you click, scroll or draw;

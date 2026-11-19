@@ -1,8 +1,9 @@
 # Record shortcut
 
-`policy.ts` defines the platform default and the precedence of a verified
-desktop-managed shortcut over an ordinary saved shortcut. A valid explicit
-Apparent choice retains precedence on Linux.
+`policy.ts` defines the platform default, the precedence of a verified
+desktop-managed shortcut over an ordinary saved shortcut, and which display a
+keyboard-started recording prefers (the frontmost window's, then the pointer's,
+then the first). A valid explicit Apparent choice retains precedence on Linux.
 
 Cargo uses Node 22 to compile this policy into the native app at build time.
 The native adapter resolves the keyboard-layout code on Linux, verifies
