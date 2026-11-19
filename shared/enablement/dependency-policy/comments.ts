@@ -56,6 +56,7 @@ const noncode = new Set([
 const cache = new Map<string, Language>();
 let initialized = false;
 const swiftCommentTask = "apparent-swift-comments";
+type EmbeddedHtml = { markup?: string };
 
 function swiftComments(file: string, text: string): Promise<string[]> {
   return new Promise((resolve, reject) => {
@@ -79,7 +80,11 @@ function swiftComments(file: string, text: string): Promise<string[]> {
   });
 }
 
-export async function comments(file: string, text: string): Promise<string[]> {
+export async function comments(
+  file: string,
+  text: string,
+  embeddedHtml?: EmbeddedHtml,
+): Promise<string[]> {
   if (path.posix.basename(file) === ".gitattributes") {
     if (text.includes("\0"))
       throw new Error(`${file}: invalid NUL in attribute patterns`);
@@ -133,13 +138,14 @@ export async function comments(file: string, text: string): Promise<string[]> {
     return result;
   }
   if (language === "swift") return swiftComments(file, text);
-  return treeSitterComments(file, text, language);
+  return treeSitterComments(file, text, language, embeddedHtml);
 }
 
 async function treeSitterComments(
   file: string,
   text: string,
   language: string,
+  embeddedHtml?: EmbeddedHtml,
 ): Promise<string[]> {
   if (!initialized) {
     await Parser.init();
@@ -200,10 +206,21 @@ async function treeSitterComments(
           result.push(node.text.replace(/\r?\n$/, ""));
         return;
       }
-      if (node.type === "raw_text" && node.text.trim())
-        throw new Error(
-          `${file}: embedded HTML code requires a dedicated parser; unsupported changed file`,
-        );
+      if (node.type === "raw_text" && node.text.trim()) {
+        if (language !== "html" || !embeddedHtml)
+          throw new Error(
+            `${file}: embedded HTML code requires a dedicated parser; unsupported changed file`,
+          );
+        if (embeddedHtml.markup === undefined) {
+          const parts: string[] = [];
+          let offset = 0;
+          for (const plainText of tree!.rootNode.descendantsOfType("text")) {
+            parts.push(text.slice(offset, plainText.startIndex));
+            offset = plainText.endIndex;
+          }
+          embeddedHtml.markup = parts.join("") + text.slice(offset);
+        }
+      }
       if (language === "swift" && node.type === "raw_string_literal")
         throw new Error(
           `${file}: syntax parser cannot safely classify Swift raw strings`,
@@ -267,10 +284,20 @@ export async function checkComments(
           `${file}: unsupported changed Git mode; comment rule requires regular files`,
         );
       const text = git(["show", `${tree}:${file}`], cwd);
-      const candidate = await comments(file, text);
+      const candidateHtml: EmbeddedHtml = {};
+      const baselineHtml: EmbeddedHtml = {};
+      const candidate = await comments(file, text, candidateHtml);
       const baseline = old
-        ? await comments(old, git(["show", `${head}:${old}`], cwd))
+        ? await comments(
+            old,
+            git(["show", `${head}:${old}`], cwd),
+            baselineHtml,
+          )
         : [];
+      if (candidateHtml.markup !== baselineHtml.markup)
+        throw new Error(
+          `${file}: embedded HTML code requires a dedicated parser; only plain text changes are supported`,
+        );
       const allowance = new Map<string, number>();
       for (const comment of baseline)
         allowance.set(comment, (allowance.get(comment) ?? 0) + 1);

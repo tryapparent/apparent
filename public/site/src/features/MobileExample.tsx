@@ -5,7 +5,6 @@ const GHOST = "/feature-demos/how-it-works/.local-media/ghost-after-aligned.png"
 /** Small-screen explanations use readable semantic content, not scaled desktop chrome. */
 export function MobileExample({ path }: { path: string }) {
   return <figure className={`feature-mobile mobile-${path}`}>
-    <figcaption>Illustrative example</figcaption>
     {path === "how-it-works" && <>
       <p className="example-label">Draw the change</p>
       <div className="example-board"><svg viewBox="0 0 280 190" aria-label="A sketch of a ghost with large eyes" role="img"><path d="M62 164 L64 70 Q60 20 131 20 Q203 16 210 70 L216 166 L191 148 L169 169 L143 149 L117 170 L92 148 Z M98 65 C74 66 76 110 98 110 C122 108 120 65 98 65 M167 63 C144 63 145 108 167 108 C190 107 191 63 167 63 M112 128 Q138 151 164 126" /></svg></div>

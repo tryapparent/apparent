@@ -100,8 +100,11 @@ path; copies do not. Both languages parse separately on language-changing rename
 safely. Changed invalid/unsupported syntax and nonregular files reject; symlink targets are never read.
 
 Pinned Tree-sitter WASM (including tree-sitter-bash 0.25.1 for the current runtime ABI) covers TS/JS variants, Rust, Swift, Python, CSS, shell, C/headers, Objective-C,
-C++, TOML, JSON/JSONC and HTML without embedded code. YAML uses its pinned CST parser. Swift raw
-strings, embedded HTML scripts/styles and unknown source formats currently fail safely. Markdown,
+C++, TOML, JSON/JSONC and HTML without embedded code. For HTML with embedded code, staged
+verification permits plain text edits only when both parses preserve the entire source outside
+plain text nodes, including embedded scripts, styles and markup. Changes to those protected
+bytes still fail closed. YAML uses its pinned CST parser. Swift raw strings and unknown
+source formats currently fail safely. Markdown,
 plain text, LICENSE/NOTICE, listed binary/media/font suffixes and lock data are non-code; there is no
 blanket generated/vendor comment skip. See comments.ts for exact grammar/suffix mappings.
 

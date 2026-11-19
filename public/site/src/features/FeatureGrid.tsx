@@ -59,7 +59,7 @@ function FeatureAnimation({ path, title, paused }: { path: string; title: string
   }, [])
   return <div className="feature-grid-viewport" ref={host}>
     <MobileExample path={path} />
-    {near && <iframe ref={frame} aria-hidden="true" title={`${title} — illustrative animation`} src={`/feature-demos/${path}/index.html`}
+    {near && <iframe ref={frame} aria-hidden="true" title={title} src={`/feature-demos/${path}/index.html`}
       onLoad={() => { prepareTheme(); setLoaded(true) }} tabIndex={-1}
       style={{ transform: `scale(${width / 800})`, opacity: loaded ? 1 : 0 }} />}
   </div>
