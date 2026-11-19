@@ -49,6 +49,10 @@ test('recipient failures preserve 404 ambiguity and approved-origin guidance', (
   assert.match(fetchFailure('unavailable')!, /Capture unavailable.*sender may still be uploading/);
   assert.match(fetchFailure('unavailable')!, /expired or been deleted.*account.*API origin/);
   assert.match(fetchFailure('unavailable')!, /fresh handoff.*--wait 120/);
+  assert.match(fetchFailure('unavailable')!, /apparent connect readers/);
+  assert.match(fetchFailure('unavailable')!, /no approved reader.*connect login --server <confirmed-https-origin> --reader <name> --no-browser/);
+  assert.match(fetchFailure('unavailable')!, /approve the verification link while signed in to that account/);
+  assert.match(fetchFailure('unavailable')!, /fresh handoff from a new upload if the original upload was encrypted before this reader was approved/);
   assert.match(fetchFailure('authorization')!, /authorization failed.*configured API origin/);
   assert.equal(fetchFailure('unknown'), null);
 });

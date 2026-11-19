@@ -10,7 +10,7 @@
     "test": "npm run build && node --experimental-strip-types --test test/*.test.ts test/activity/*.test.ts test/mcp/*.test.ts test/fixtures/*.test.ts",
     "test:cli": "node --experimental-strip-types --test test/cli.integration.ts test/foreground.integration.ts",
     "typecheck": "tsc --noEmit",
-    "build": "node scripts/build.ts",
+    "build": "node ../../enablement/ci/build-client.ts",
     "pack": "npm pack --dry-run",
     "prepack": "npm run build"
   },

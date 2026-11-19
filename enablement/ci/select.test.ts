@@ -32,7 +32,7 @@ test('Linux suites run on ready PRs and main; unknown selection broadens', () =>
   for (const name of ['linux', 'macos']) {
     const job = ci().jobs[name];
     assert.deepEqual(job.needs, name === 'linux'
-      ? ['contracts', 'select', 'reuse', 'record-media']
+      ? ['select', 'reuse', 'record-media']
       : ['contracts', 'select', 'reuse', 'portable', 'record-media']);
     for (const result of ['success', 'failure', 'skipped', 'cancelled']) {
       const needs = parents({platform: 'true', macos: 'true', mac_rust: 'true', hermes: 'true'});
@@ -42,7 +42,7 @@ test('Linux suites run on ready PRs and main; unknown selection broadens', () =>
       assert.equal(admitted(job.if, needs, 'pull_request', true), false);
       assert.equal(admitted(job.if, needs, 'pull_request', false, true), false);
       needs.contracts.result = 'failure';
-      assert.equal(admitted(job.if, needs), false);
+      assert.equal(admitted(job.if, needs), name === 'linux');
     }
   }
 });

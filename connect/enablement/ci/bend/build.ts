@@ -6,4 +6,6 @@ await buildBend(
   root,
   "connect",
   fileURLToPath(new URL("../../../service/dist/bend", import.meta.url)),
+  undefined,
+  "connect/service/",
 );

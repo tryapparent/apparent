@@ -1,3 +1,4 @@
+import {contractChecks} from '../../shared/enablement/ci/contract-inputs.ts';
 import {admissionTooling, admissionConsumersKnown} from '../../shared/enablement/ci/inputs.ts';
 import {engineIndependentRange} from './routing/engine-inputs/qualify.ts';
 import {portableForegroundInputs, foregroundPortableChange, serviceOnlyRange} from '../../shared/enablement/ci/connect-inputs.ts';
@@ -10,7 +11,7 @@ import {pathToFileURL} from 'node:url';
 import {isDeepStrictEqual} from 'node:util';
 import {changes, matchesRegularBlob, workflowControlPaths} from './inputs.ts';
 
-import {routingProblems, onboardingInput, onboardingPureInputs, onboardingWisprInputs, retiredOnboardingInputs, routeDecision, documentationOnlyPath, linuxDrivers, suitePlan} from './routing/consumers.ts';
+import {routingProblems, onboardingInput, onboardingPureInputs, onboardingWisprInputs, retiredOnboardingInputs, routeDecision, documentationOnlyPath, linuxDrivers, suitePlan, unownedPaths} from './routing/consumers.ts';
 export {documentationOnlyPath} from './routing/consumers.ts';
 
 export function needsPlatform(paths: string[] | null): boolean {
@@ -214,6 +215,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const macEnabled = result.macos || !mac_rust;
   const macPlan = {...plan, root: plan.root && mac_rust && macEnabled, engine: plan.engine && mac_rust && macEnabled,
     desktop: plan.desktop && macEnabled, client: plan.client && macEnabled};
-  console.log(JSON.stringify({...result, mac_rust, plan, mac_plan: macPlan, reasons}));
-  appendFileSync(process.env.GITHUB_OUTPUT!, Object.entries({...result, mac_rust, plan: JSON.stringify(plan), mac_plan: JSON.stringify(macPlan)}).map(([key, value]) => key + '=' + (typeof value === 'object' ? JSON.stringify(value) : String(value)) + '\n').join(''));
+  const classified = process.env.GITHUB_EVENT_NAME !== 'workflow_dispatch' && result.inputProofKnown && !unownedPaths(result.paths).length;
+  const storage = result.paths.some(path => storageControllers.has(path) || nativeStorageGraph.has(path));
+  const output = {...result, mac_rust, plan, mac_plan: macPlan, ...contractChecks(classified ? result.paths : null, plan.tooling, storage)};
+  console.log(JSON.stringify({...output, reasons}));
+  appendFileSync(process.env.GITHUB_OUTPUT!, Object.entries(output).map(([key, value]) => key + '=' + (typeof value === 'object' ? JSON.stringify(value) : value) + '\n').join(''));
 }

@@ -108,7 +108,7 @@ test('Connect automatic entry covers its web, service, native and composed brows
 test('Connect retains real native client/service consumers and skips native for web-only edits', () => {
   const web = connectPlan(suitePlan(['connect/web/src/main.tsx']));
   assert.equal(web.browser, true); assert.equal(web.root, false); assert.equal(web.client, false);
-  for (const path of ['connect/service/src/worker.ts', 'connect/hosted.rs']) {
+  for (const path of ['connect/service/src/worker.ts', 'connect/hosted.rs', 'connect/enablement/ci/build-client.ts']) {
     const plan = connectPlan(suitePlan([path]));
     assert.equal(plan.root, true, path); assert.equal(plan.client, true, path);
   }

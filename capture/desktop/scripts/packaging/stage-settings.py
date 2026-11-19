@@ -71,6 +71,8 @@ def main():
     connect_dist.mkdir(parents=True)
     shutil.copy2(connect / "dist/shares.js", connect_dist / "shares.js")
     shutil.copy2(connect / "dist/handoff.js", connect_dist / "handoff.js")
+    (connect_dist / "reader").mkdir()
+    shutil.copy2(connect / "dist/reader/reader-route.mjs", connect_dist / "reader/reader-route.mjs")
     shutil.copy2(connect / "dist/foreground.js", connect_dist / "foreground.js")
     (connect_dist / "activity").mkdir()
     shutil.copy2(connect / "dist/activity/index.js", connect_dist / "activity/index.js")

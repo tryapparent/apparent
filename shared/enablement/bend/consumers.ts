@@ -23,6 +23,20 @@ export function bendConsumers(path: string) {
     path === "connect/enablement/ci/bend/check.ts"
   )
     return [];
+  if (
+    path.startsWith("onboarding/host/traversal/") ||
+    /^onboarding\/package(?:-lock)?\.json$/.test(path) ||
+    /^onboarding\/enablement\/ci\/(entry-policy\.ts|bend\/(build\.ts|native\.ts|table\.ts|modules\.json))$/.test(
+      path,
+    )
+  )
+    return ["capture", "desktop", "onboarding"] as const;
+  if (
+    path === ".github/workflows/stream-onboarding.yml" ||
+    path === "onboarding/enablement/ci/bend/check.ts" ||
+    path === "onboarding/enablement/ci/pack.ts"
+  )
+    return ["onboarding"] as const;
   if (path.startsWith("connect/enablement/ci/bend/"))
     return ["service"] as const;
 }

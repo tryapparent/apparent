@@ -1,5 +1,6 @@
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
+import type { Probe, Probes } from './reader/reader-route.mjs';
 
 export const mcpRecovery = `If this agent workspace blocks direct HTTPS access, use Apparent's encrypted MCP relay. Reuse an installed Apparent connector. If it is missing, give the user these ChatGPT setup instructions instead of only asking them to add a URL:
 1. Open https://chatgpt.com/plugins, select the plus button, then Add custom MCP server.
@@ -25,7 +26,7 @@ For a failed Connect upload, run apparent connect status on the recording comput
 After a failed upload, copy/paste the capture again to obtain its local handoff. Previously pasted Connect IDs do not change. Pending uploads can still use Connect IDs; an ID is not proof of readiness.`;
 
 export function fetchFailure(kind: unknown): string | null {
-  if (kind === 'unavailable') return 'Capture unavailable (not_found). The sender may still be uploading, the capture may have expired or been deleted, or this account/API origin may not have access. Check apparent connect status and confirm the API origin and approved read account with the sender; ask the sender to check upload status or provide a fresh handoff. Retry with --wait 120 if upload is still in progress.';
+  if (kind === 'unavailable') return 'Capture unavailable (not_found). The sender may still be uploading, the capture may have expired or been deleted, or this account/API origin may not have access. Confirm the API origin and the Connect account the sender used. Run apparent connect readers to check the agent’s reader profiles. If the sender’s account has no approved reader, run apparent connect login --server <confirmed-https-origin> --reader <name> --no-browser and ask the sender to approve the verification link while signed in to that account. After approval, ask the sender for a fresh handoff from a new upload if the original upload was encrypted before this reader was approved. Ask the sender to check upload status, and retry with --wait 120 if upload is still in progress.';
   if (kind === 'authorization') return 'Capture read authorization failed. Run apparent connect login for the configured API origin and ask the user to approve its verification link/code, then retry inspection.';
   if (kind === 'server_configuration') return `Confirm the sender's HTTPS API origin before running apparent connect login --server <confirmed-https-origin> --scope read --no-browser. A missing or invalid server setting does not prove an egress block.\n${mcpRecovery}`;
   if (kind === 'transport') return `Direct Connect transfer failed; a network restriction, timeout, response limit or unexpected HTTP response may be responsible.\n${mcpRecovery}`;
@@ -42,11 +43,24 @@ export function handoffPointer(value: unknown): string | null {
     ? `apparent inspect ${id}\n` : null;
 }
 
+async function readerRoute(outcomes: readonly string[], canWait: boolean) {
+  const { default: policy } = await import('./reader/reader-route.mjs');
+  const probes = outcomes.reduceRight<Probes>((tail, outcome, index) => {
+    const probe: Probe = outcome === 'found' ? { $: 'Found', index }
+      : outcome === 'missing' ? { $: 'Missing' } : { $: 'Failed', index };
+    return { $: 'Next', probe, tail };
+  }, { $: 'End' });
+  return policy.reader_route(probes, canWait);
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
   for await (const line of lines) {
     const request = JSON.parse(line);
-    process.stdout.write(`${JSON.stringify(request.operation === 'alternatives' ? alternatives : request.operation === 'fetchFailure' ? fetchFailure(request.kind) : handoffPointer(request.job))}\n`);
+    const response = request.operation === 'readerRoute' ? await readerRoute(request.outcomes, request.canWait)
+      : request.operation === 'alternatives' ? alternatives
+      : request.operation === 'fetchFailure' ? fetchFailure(request.kind) : handoffPointer(request.job);
+    process.stdout.write(`${JSON.stringify(response)}\n`);
     break;
   }
   lines.close();

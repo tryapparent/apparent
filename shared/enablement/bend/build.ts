@@ -31,11 +31,15 @@ export async function buildBend(
   owner: BendOwner,
   destination: string,
   proof?: ReturnType<typeof proofOptions>,
+  modulePrefix?: string,
 ): Promise<void> {
   const manifest = ownerManifest(root, owner);
   if (!manifest) throw new Error(`Missing Bend manifest for ${owner}`);
-  if (!manifest.modules.length) return;
-  for (const source of manifest.modules)
+  const modules = manifest.modules.filter(
+    (source) => !modulePrefix || source.startsWith(modulePrefix),
+  );
+  if (!modules.length) return;
+  for (const source of modules)
     if (!regularFile(root, source))
       throw new Error(
         `Bend source must be a regular non-executable file: ${source}`,
@@ -53,7 +57,7 @@ export async function buildBend(
     const staging = mkdtempSync(join(destination, ".bend-"));
     try {
       const outputs = [];
-      for (const source of manifest.modules) {
+      for (const source of modules) {
         const output = basename(source, ".bend") + ".mjs";
         compile(join(root, source), join(staging, output));
         run(process.execPath, ["--check", output], staging);

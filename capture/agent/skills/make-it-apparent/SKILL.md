@@ -43,14 +43,25 @@ Every mode needs timed, plain-spoken explanation, readable burned captions and e
 
 ### Use Apparent's local narrator
 
-Use Apparent's Kokoro narrator (`bm_fable`) for generated speech. Check the installed CLI and narrator before searching for generic TTS tools; finding FFmpeg's Flite filter is not a reason to substitute it.
+Use Apparent's installed Kokoro narrator (`bm_fable`). Report setup or synthesis failures before proposing another voice. Keep Flite, espeak, cloud TTS and transcription models out of this route.
 
-- **Bundle export:** read [export narration](../../../engine/docs/export-and-retention.md#local-narration), check `apparent export --help`, and use `apparent export /absolute/private/path/walkthrough.apparent --narration /absolute/private/path/cues.json --out /absolute/private/path/walkthrough.mp4 --fps 30`. The JSON script uses exported-video milliseconds: `{"version":1,"cues":[{"startMs":500,"endMs":5500,"text":"Here is the first change."}]}`. Shorten text or extend the slot if speech does not fit. Narration is available by default but remains an explicit export choice; respect an existing `experiments.exportNarration: false` opt-out. Preserve the source bundle and unrelated config keys.
-- **Generated explainer without a bundle:** use the same [standalone narrator](../../narrator/README.md) directly, then align the visuals and captions to its WAV duration. Run `~/.local/share/apparent/narrator/apparent-narrator ~/.local/share/apparent/narrator /absolute/private/path/cue.txt /absolute/private/path/fresh-output.wav` for each plain-text cue. The output path must be fresh; require successful synthesis and validate the WAV before mixing it into the movie. This route needs no bundle export or export configuration changes.
+- **Bundle export:** check `apparent export --help`, then use `apparent export "$bundle" --narration "$cues" --out "$movie" --fps 30` with private absolute paths. Follow the [cue schema](../../../engine/docs/export-and-retention.md#local-narration) in exported-video milliseconds. Shorten text or extend slots as needed. Respect `experiments.exportNarration: false` and preserve the source bundle and config.
+- **Explainer without a bundle:** use the [standalone narrator](../../narrator/README.md#worker-protocol-and-offline-behavior) per plain-text cue. Require successful synthesis to a fresh private path and validate each WAV before aligning visuals and captions to it.
 
-Both routes use the worker and pinned assets at `~/.local/share/apparent/narrator` on macOS and Linux. Run `node capture/agent/scripts/provision-narrator.ts --check` from a checkout with Node 22.18+ and Python 3.10+: readiness requires verified pinned assets and a real synthetic WAV, not executable existence. If assets are missing for an existing worker, run setup without `--check`. If the worker is absent, the current releases provide no prebuilt narrator: follow the explicit source-build prerequisites in the narrator docs and use `--build-from-source`; synthesis afterward is offline. Setup reports unavailable, downloading/building, ready or failed; interrupted partials never count as ready. Kokoro is TTS; Parakeet and Apple Speech transcription models do not fulfill this requirement. Respect existing network/build authority and verify provisioning on the actual OS/architecture. Report a concrete setup, gate or synthesis failure before proposing a substitute; do not silently downgrade to Flite/espeak or a cloud service.
+On the target macOS or Linux host run `node capture/agent/scripts/provision-narrator.ts --check` from the checkout. Require validated pinned assets and a synthetic WAV. Follow the [provisioning steps](../../narrator/README.md#provision-explicitly) for missing assets or a missing worker, within existing network and build authority. Synthesis is offline after setup.
 
-Listen to the entire final narration in sync with the video through an approved private playback route; check intelligibility, pronunciation, pacing, clipping and caption alignment. Successful synthesis, decoding and frame inspection do not establish audio quality. If listening review is unavailable, report that verification gap and do not call the export fully reviewed.
+When approved private listening is supported, listen to the full final narration in sync with the video. Check intelligibility, pronunciation, pacing, clipping and caption alignment.
+
+Without confirmed audio input, keep audio local and return only text and video frames from QA tools. Set `movie` to the exact final private export. Require a successful end-to-end decode of both streams:
+
+```sh
+ffmpeg -hide_banner -nostdin -xerror -i "$movie" -map 0:v:0 -map 0:a:0 \
+  -af silencedetect=noise=-45dB:d=0.2,astats=metadata=0:reset=0 -f null -
+```
+
+From the text diagnostics, compare non-silent intervals with cue windows and check peak levels for possible clipping. Adjust the silence threshold if needed. Inspect cue-boundary frames for caption and action timing. If local transcription is available, compare it with the script and cue times. Review the whole video visually. Keep audio bytes and base64 out of model input. Disclose the private listening and playback quality gap and any native proof gap. Deliver the playable file via the supported route below.
+
+If the context rejects input after an audio attempt, record the error and failed step, then stop retrying there. Use a supported fresh context to resume from the exact retained local movie, cue sheet and available QA outputs. Carry forward completed checks and their limits.
 
 ### Produce a conceptual video for an invisible mechanism
 
