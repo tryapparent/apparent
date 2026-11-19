@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { recordingPermissions } from "../../capture-request/src/permission-requirements.ts";
 
 for (const platform of ["macos", "macosPicker", "linux"] as const) {
@@ -15,3 +16,27 @@ for (const platform of ["macos", "macosPicker", "linux"] as const) {
       `const ${name}: [&[Permission]; 2] = [${requirements.join(", ")}];\n`,
   );
 }
+
+const { repair: table, rows }: { repair: number[]; rows: number[] } =
+  JSON.parse(
+    readFileSync(
+      new URL(
+        "../../settings/permissions/permission-policy.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+const actions = ["None", "Request", "OpenSettings", "CopyInput"];
+if (table.length !== 32 || table.some((index) => !actions[index]))
+  throw Error("Invalid Bend permission repair table");
+process.stdout.write(
+  `const REPAIR: [Repair; 32] = [${table.map((index) => "Repair::" + actions[index]).join(", ")}];\n`,
+);
+
+if (
+  rows.length !== 3 ||
+  rows.some((mask) => !Number.isInteger(mask) || mask < 0 || mask > 31)
+)
+  throw Error("Invalid Bend permission rows");
+process.stdout.write(`const ROWS: [u32; 3] = [${rows.join(", ")}];\n`);

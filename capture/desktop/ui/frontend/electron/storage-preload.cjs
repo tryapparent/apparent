@@ -6,7 +6,7 @@ contextBridge.exposeInMainWorld('apparentSettingsRoute', callback => {
   ipcRenderer.on('apparent:settings-route', listener);
   // A parent can select a pane before this document's preload is attached.
   void ipcRenderer.invoke('apparent:settings-route').then(pane => {
-    if (live && !received && ['general', 'agents', 'about', 'labs', 'recording', 'storage'].includes(pane)) callback(pane);
+    if (live && !received && ['general', 'agents', 'about', 'labs', 'recording', 'permissions', 'storage'].includes(pane)) callback(pane);
   }).catch(() => {});
   return () => { live = false; ipcRenderer.removeListener('apparent:settings-route', listener); };
 });
@@ -106,4 +106,10 @@ contextBridge.exposeInMainWorld('apparentRecording', Object.freeze({
   setMeterVisible: visible => ipcRenderer.invoke('apparent:recording-meter', visible),
   save: change => ipcRenderer.invoke('apparent:recording-save', change),
   openVolumeGuide: () => ipcRenderer.invoke('apparent:recording-volume-guide'),
+}));
+
+contextBridge.exposeInMainWorld('apparentPermissions', Object.freeze({
+  read: () => ipcRenderer.invoke('apparent:permissions-read'),
+  subscribe: callback => recordingSubscription('apparent:permission-state', callback),
+  act: intent => ipcRenderer.invoke('apparent:permissions-act', intent),
 }));

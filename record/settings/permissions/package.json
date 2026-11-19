@@ -1,0 +1,11 @@
+{
+  "name": "@apparent/record-permissions-settings",
+  "private": true,
+  "exports": {
+    "./contract": "./permissions-contract.ts",
+    "./section": "./permissions-section.tsx"
+  },
+  "peerDependencies": {
+    "react": "^19.2.0"
+  }
+}

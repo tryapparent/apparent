@@ -94,7 +94,7 @@ const frame = require('./settings/frame.cjs');
 let pane = frame.initialSettingsPane(process.argv);
 const settings = !!pane;
 const hasSettingsParent = process.argv.includes('--settings-parent');
-const recordingHost = new frame.RecordingHost(action => process.stdout.write(JSON.stringify(action) + '\n'));
+const settingsHosts = new frame.SettingsHosts(action => process.stdout.write(JSON.stringify(action) + '\n'));
 let generalState;
 const settingsHash = settings && pane !== 'storage' ? '#' + pane : '';
 const {LabsPreferences, facts: labsFacts} = require('./settings/labs.cjs');
@@ -115,7 +115,7 @@ const preferenceQueue=new PreferenceQueue();
 const resetPreferences = () => {
   agentsPreferences.close();
   labsPreferences.close();
-  recordingHost.reset();
+  settingsHosts.reset();
 };
 let aboutState;
 
@@ -238,10 +238,10 @@ app.whenReady().then(() => {
     if (pane !== 'general' || !require('./settings/general.cjs').validAction(action)) throw new Error('Forbidden General action');
     process.stdout.write(JSON.stringify(action) + '\n');
   });
-  recordingHost.bind(window, {
-    bind: (name, handle) => ipcMain.handle('apparent:recording-' + name, (event, ...args) => {
+  settingsHosts.bind(window, {
+    bind: (owner, name, handle) => ipcMain.handle(`apparent:${owner}-${name}`, (event, ...args) => {
       validate(event, []);
-      if (pane !== 'recording' || !hasSettingsParent || settingsClosing) throw Error('Unavailable');
+      if (pane !== owner || !hasSettingsParent || settingsClosing) throw Error('Unavailable');
       return handle(...args);
     }),
     platform: process.platform,
@@ -345,7 +345,7 @@ app.whenReady().then(() => {
           generalState = command;
           window.webContents.send('apparent:general-state', command);
         }
-        if (pane === 'recording') recordingHost.receive(command);
+        settingsHosts.receive(pane, command);
         if (command.type === 'about-state' && pane === 'about') {
           aboutState = command;
           window.webContents.send('apparent:about-state', command);

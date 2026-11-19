@@ -46,3 +46,13 @@ status. The native controller keeps the shared writer, microphone permission,
 device enumeration, speech preparation and volume effects. The Electron meter
 uses the existing Linux capture meter or the macOS helper’s existing AVFoundation
 meter. Neither publishes audio samples to the renderer.
+
+## Permissions
+
+`PermissionsSection` uses only the projected state and actions in
+`permissions-contract.ts`. Its rows reuse Record's recording requirements.
+The Bend repair policy also serves the native Settings fallback and onboarding
+repair. The native build consumes the compact generated table so Cargo can
+build offline. After editing the policy, run
+`node record/enablement/ci/bend/permission-table.ts > record/settings/permissions/permission-policy.json`
+and verify it with `node record/enablement/ci/bend/check.ts`.

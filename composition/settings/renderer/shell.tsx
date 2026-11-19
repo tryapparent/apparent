@@ -15,6 +15,8 @@ import {
   recordingStartPreference,
 } from "../../../record/settings/recording-start";
 import { RecordingSection } from "../../../record/settings/renderer/recording-section";
+import { PermissionsSection } from "../../../record/settings/permissions/permissions-section";
+import type { PermissionBridge } from "../../../record/settings/permissions/permissions-contract";
 import type { RecordingBridge } from "../../../record/settings/recording-contract";
 import "./base.css";
 import "./settings.css";
@@ -83,6 +85,7 @@ declare global {
   interface Window {
     apparentAbout: AboutBridge;
     apparentRecording: RecordingBridge;
+    apparentPermissions: PermissionBridge;
   }
 }
 
@@ -206,6 +209,8 @@ function Settings() {
           <General />
         ) : current === "Recording" ? (
           <RecordingSection bridge={window.apparentRecording} />
+        ) : current === "Permissions" ? (
+          <PermissionsSection bridge={window.apparentPermissions} />
         ) : current === "About" ? (
           <About bridge={window.apparentAbout} artwork={aboutArtwork} />
         ) : (

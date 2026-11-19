@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+pub(super) use super::Transport;
 use super::{UpdateCheck, UpdateResult};
 #[cfg(target_os = "linux")]
 use super::{UpdateFailure, update_failure};
@@ -12,6 +13,8 @@ use crate::capture::engine::runtime::{
     ShortcutKind, modifier_symbols,
 };
 use crate::permission_facts::{Grants, Permission, Status};
+use crate::composition::settings_permissions::{self, PermissionIntent, Outcome, PermissionsPresenter};
+use crate::permission_admission::Repair;
 
 // MARK: Shortcuts in the config
 
@@ -164,7 +167,7 @@ pub struct View {
     pub captures_dir: CapturesDirView,
     #[cfg(target_os = "linux")]
     pub storage: super::storage::View,
-    pub permissions: Vec<PermissionView>,
+    pub permissions: Vec<crate::permission_admission::Row>,
     pub updates: bool,
     pub update_check: UpdateCheck,
     pub update_channel: &'static str,
@@ -376,17 +379,6 @@ pub struct OptionView {
     pub label: &'static str,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PermissionView {
-    pub permission: Permission,
-    pub status: Status,
-    pub required: bool,
-    pub requested: bool,
-    /// Granted, but on only after Apparent reopens.
-    pub relaunch: bool,
-}
-
 pub(crate) fn preset_id(preset: crate::capture::engine::bundle::retention::Preset) -> &'static str {
     match preset {
         crate::capture::engine::bundle::retention::Preset::Week => "week",
@@ -491,6 +483,7 @@ pub enum Action {
     Connect { command: super::connect::Command },
     RecordingPreference { request: u32, key: String, value: serde_json::Value },
     RecordingMeter { visible: bool },
+    PermissionAction { request: u32, intent: PermissionIntent },
     /// A settings control: `launchAtLogin`, `errorReporting`, `videoExport`, `lowerPlayback` (bool),
     /// `playbackLevel` (u8), `microphone` ("default" or a device id), `transcriber`
     /// ("apple"/"hex"/"command"), `hexModel` (an id), `hexLanguage` (a code), `appleLocale`
@@ -650,7 +643,7 @@ impl Panel {
     pub fn on(&mut self, action: Action, host: &mut dyn Host) -> Effect {
         match action {
             // Session owns the asynchronous controller; forged actions cannot bypass it.
-            Action::Connect { .. } | Action::RecordingPreference { .. } | Action::RecordingMeter { .. } => Effect::None,
+            Action::Connect { .. } | Action::RecordingPreference { .. } | Action::RecordingMeter { .. } | Action::PermissionAction { .. } => Effect::None,
             Action::ConnectHosted => Effect::ConnectHosted,
             Action::ManageSharedLinks => Effect::ManageSharedLinks,
             Action::Set { key, value } => self.set(&key, &value, host),
@@ -894,14 +887,16 @@ impl Panel {
     /// Like onboarding: the first press asks macOS, later ones (or a denied one) open the
     /// System Settings pane.
     fn grant(&mut self, permission: Permission) -> Effect {
-        let status = self.status(permission);
-        if matches!(status, Status::Granted | Status::Unavailable) {
-            return Effect::None;
-        }
-        if self.requested.insert(permission) && status != Status::Denied {
-            Effect::Request(permission)
-        } else {
-            Effect::OpenSettings(permission)
+        let repair = crate::permission_admission::repair(
+            self.status(permission), self.requested.contains(&permission), false, false,
+        );
+        match repair {
+            Repair::Request | Repair::OpenSettings => {
+                self.requested.insert(permission);
+                if repair == Repair::Request { Effect::Request(permission) }
+                else { Effect::OpenSettings(permission) }
+            }
+            Repair::None | Repair::CopyInput => Effect::None,
         }
     }
 
@@ -921,25 +916,6 @@ impl Panel {
         let policy = crate::capture::engine::bundle::retention::Policy::load_from(&host.config_path());
         let login = login_item();
         let microphone = config.microphone_enabled.unwrap_or(true);
-        // Windows asks for no screen or accessibility grant, and has no cabled iPhone. Linux
-        // asks for the input devices on Wayland only (the Accessibility row).
-        let order: &[Permission] = if cfg!(target_os = "windows") {
-            &[Permission::Microphone]
-        } else if cfg!(target_os = "linux") {
-            if wayland() {
-                &[Permission::Microphone, Permission::Accessibility]
-            } else {
-                &[Permission::Microphone]
-            }
-        } else {
-            &[
-                Permission::ScreenRecording,
-                Permission::Microphone,
-                Permission::Accessibility,
-                Permission::Camera,
-                Permission::SpeechRecognition,
-            ]
-        };
         View {
             version: env!("APPARENT_VERSION_LABEL").to_owned(),
             connect: self.connect.clone(),
@@ -999,17 +975,9 @@ impl Panel {
             captures_dir: CapturesDirView::new(&config),
             #[cfg(target_os = "linux")]
             storage: self.storage.view(&host.config_path()),
-            permissions: order
-                .iter()
-                .filter(|p| p.asked(self.grants.as_ref()))
-                .map(|&permission| PermissionView {
-                    permission,
-                    status: self.status(permission),
-                    required: crate::permission_admission::requires(permission, microphone, &config),
-                    requested: self.requested.contains(&permission),
-                    relaunch: permission == Permission::ScreenRecording && self.screen_relaunch(),
-                })
-                .collect(),
+            permissions: crate::permission_admission::project_rows(
+                settings_permissions::platform(), self.grants.as_ref(), &self.requested, microphone, &config, true,
+            ).collect(),
             updates: updates_available(),
             update_check: self.update_check.clone(),
             update_channel: if config.update_channel.as_deref() == Some("main") {
@@ -1025,16 +993,6 @@ impl Panel {
             skill_command: SKILL_COMMAND,
         }
     }
-}
-
-#[cfg(target_os = "linux")]
-fn wayland() -> bool {
-    crate::capture::desktop::linux::wayland_session()
-}
-
-#[cfg(not(target_os = "linux"))]
-fn wayland() -> bool {
-    false
 }
 
 /// Whether this copy can check for updates: Sparkle in Apparent.app; on Windows the releases
@@ -1130,16 +1088,6 @@ impl Event {
     }
 }
 
-/// Native or Electron presentation. Separate children register their exact live
-/// process with capture's own-window exclusion; all use the same bounded actions.
-pub(super) enum Transport {
-    Helper {
-        child: crate::capture::ui_process::UiChild,
-        stdin: Option<std::process::ChildStdin>,
-    },
-    InProcess(Option<flume::Sender<serde_json::Value>>),
-}
-
 /// The open Settings window.
 pub struct Session {
     generation: u64,
@@ -1153,6 +1101,7 @@ pub struct Session {
     storage_scan: std::sync::Arc<std::sync::atomic::AtomicU64>,
     events: std::sync::Arc<dyn Fn(Event) + Send + Sync>,
     last_view: String,
+    permissions: PermissionsPresenter,
     meter_visible: bool,
     meter_serial: u64,
     meter: Option<(String, super::RecordingMeter)>,
@@ -1239,6 +1188,7 @@ impl Session {
             storage_scan,
             events,
             last_view: String::new(),
+            permissions: Default::default(),
             meter_visible: false,
             meter_serial: 0,
             meter: None,
@@ -1414,13 +1364,28 @@ impl Session {
                 }
                 Effect::None
             }
+            Event::Action(Action::PermissionAction { request, intent }) => {
+                if self.presents_permissions() && let Err(error) = self.permissions.begin(request, intent) {
+                    self.permission_result(request, Some(error));
+                }
+                return Effect::None;
+            }
             Event::Action(action) => {
                 crate::capture::engine::runtime::apparent_log(format!("settings: {action:?}"));
                 self.panel.on(action, host)
             }
             Event::Grants(grants) => {
+                let outcome = self.permissions.observe(&grants, &mut self.panel.requested, &host.config_path());
                 self.panel.set_grants(grants);
-                Effect::None
+                match outcome {
+                    Some(Outcome::Reply(request, error)) => {
+                        self.sync_permissions(host);
+                        self.permission_result(request, error);
+                        return Effect::None;
+                    }
+                    Some(Outcome::Reopen) => Effect::Relaunch,
+                    None => Effect::None,
+                }
             }
             Event::CapturesSize(bytes) => {
                 self.panel.set_captures_size(bytes);
@@ -1440,8 +1405,14 @@ impl Session {
                 self.panel.finish_update_check(result);
                 Effect::None
             }
-            Event::Tick => Effect::None,
+            Event::Tick => {
+                if let Some(request) = self.permissions.expire() {
+                    self.permission_result(request, Some("unavailable"));
+                }
+                Effect::None
+            }
             Event::Exited if self.electron => {
+                self.permissions = Default::default();
                 self.meter_visible = false;
                 self.meter = None;
                 // EOF without a normal Close means Electron crashed or failed to
@@ -1560,10 +1531,13 @@ impl Session {
 
     pub fn show(&mut self, pane: Option<Pane>) {
         if let Some(pane) = pane {
+            if self.pane != Some(pane) {
+                self.permissions = Default::default();
+            }
             let electron = super::electron_pane(Some(pane));
             // Every adopted pane uses settings.html and the same restricted bridge.
             // Native-only destinations still replace the presentation.
-            if electron != self.electron && !(pane == Pane::Recording && self.pane == Some(pane)) {
+            if electron != self.electron && !(matches!(pane, Pane::Recording | Pane::Permissions) && self.pane == Some(pane)) {
                 let generation = super::presentation::generation();
                 match Self::open_presentation(Some(pane), generation, &self.events, true) {
                     Ok((transport, electron)) => {
@@ -1617,13 +1591,14 @@ impl Session {
             if self.pane == Some(Pane::Recording) {
                 self.sync_recording(host);
             }
+            if self.pane == Some(Pane::Permissions) {
+                self.sync_permissions(host);
+            }
             if self.pane == Some(Pane::General) {
                 let view = self.panel.view(host);
-                let message = serde_json::json!({"type":"general-state",
+                self.send_state(serde_json::json!({"type":"general-state",
                     "platform": if cfg!(target_os="macos") {"macos"} else {"linux"},
-                    "login":view.login,"shortcuts":view.shortcuts,"errorReporting":view.error_reporting});
-                let text = message.to_string();
-                if text != self.last_view { self.send(&message); self.last_view = text; }
+                    "login":view.login,"shortcuts":view.shortcuts,"errorReporting":view.error_reporting}));
             }
             if self.pane == Some(Pane::Labs) {
                 let message = serde_json::json!({"type":"labs-state","facts":super::labs::facts(&host.config_path())});
@@ -1634,15 +1609,11 @@ impl Session {
                 if text != self.last_view {self.send(&message); self.send(&t3); self.last_view = text;}
             }
             if self.pane == Some(Pane::About) {
-                let message = self.panel.about_state(&host.config_path());
-                let text = message.to_string();
-                if text != self.last_view { self.send(&message); self.last_view = text; }
+                self.send_state(self.panel.about_state(&host.config_path()));
             }
             if self.pane == Some(Pane::Agents) {
                 let facts = super::agents::facts(&host.config_path());
-                let message = serde_json::json!({"type": "agents-state", "facts": facts});
-                let text = message.to_string();
-                if text != self.last_view { self.send(&message); self.last_view = text; }
+                self.send_state(serde_json::json!({"type": "agents-state", "facts": facts}));
             }
             return;
         }
@@ -1656,11 +1627,36 @@ impl Session {
             crate::capture::engine::runtime::audio::transcription::speech_model::ensure();
         }
         view["transcriber"]["speech"] = serde_json::to_value(speech).unwrap_or_default();
-        let text = view.to_string();
-        if text != self.last_view {
-            self.send(&view);
-            self.last_view = text;
+        self.send_state(view);
+    }
+
+    fn presents_permissions(&self) -> bool {
+        self.electron && self.pane == Some(Pane::Permissions)
+    }
+
+    pub(crate) fn note_grants(&mut self, grants: Grants, changed: bool) -> Option<Event> {
+        if changed || self.permissions.waiting() {
+            Some(Event::Grants(grants))
+        } else {
+            self.panel.set_grants(grants);
+            None
         }
+    }
+
+    pub(crate) fn restart(&mut self, busy: bool) -> bool {
+        let error = settings_permissions::restart(busy);
+        if let Some(request) = self.permissions.take_reopen_request() {
+            self.permission_result(request, error);
+        }
+        error.is_none()
+    }
+
+    fn permission_result(&mut self, request: u32, error: Option<&str>) {
+        self.send(&serde_json::json!({"type":"permission-result", "request":request, "error":error}));
+    }
+
+    fn sync_permissions(&mut self, host: &dyn Host) {
+        self.send_state(settings_permissions::state(self.panel.grants.as_ref(), &self.panel.requested, &host.config_path()));
     }
 
     fn sync_recording(&mut self, host: &dyn Host) {
@@ -1681,7 +1677,10 @@ impl Session {
                 Some((id.to_owned(), meter))
             });
         }
-        let message = super::recording_state(view);
+        self.send_state(super::recording_state(view));
+    }
+
+    fn send_state(&mut self, message: serde_json::Value) {
         let text = message.to_string();
         if text != self.last_view {
             self.send(&message);
@@ -1690,25 +1689,7 @@ impl Session {
     }
 
     fn send(&mut self, message: &serde_json::Value) {
-        use std::io::Write;
-        match &mut self.transport {
-            Transport::Helper { stdin, .. } => {
-                if let Some(pipe) = stdin.as_mut()
-                    && writeln!(pipe, "{message}")
-                        .and_then(|()| pipe.flush())
-                        .is_err()
-                {
-                    *stdin = None;
-                }
-            }
-            Transport::InProcess(sender) => {
-                if let Some(channel) = sender.as_ref()
-                    && channel.send(message.clone()).is_err()
-                {
-                    *sender = None;
-                }
-            }
-        }
+        self.transport.send(message);
     }
 }
 
