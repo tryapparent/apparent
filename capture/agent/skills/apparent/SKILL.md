@@ -64,10 +64,10 @@ Keep the extracted runtime libraries beside it. See the repository's
 
 ### Draft CLI feedback
 
-Draft feedback for unexpected errors or confusing behavior, even if you found a workaround.
-Run `apparent feedback --help` for a local preview example. Include the sanitized command,
-expected and actual result, and workaround. Omit private data. Show the exact preview
-to the user and get approval before adding `--submit` to send it to Apparent's PostHog fix queue.
+Report CLI friction, including workarounds. See `apparent feedback --help`.
+Include the sanitized command and expected and actual results. Omit private data.
+Show the title and body in chat. After approval, send with `--submit`.
+Omit it for an optional local preview.
 
 ### Configuring Apparent
 
