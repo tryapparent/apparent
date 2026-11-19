@@ -19,6 +19,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[path = "supervisor/finish.rs"]
+mod finish;
+pub(in crate::capture::desktop) use finish::FinishPhase;
+
 const CHILD: &str = "APPARENT_SUPERVISOR_PID";
 
 #[derive(Clone)]
@@ -63,10 +67,28 @@ struct Record {
     environment: String,
     modified: bool,
     stage: Stage,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    finish_phase: Option<FinishPhase>,
     code: Option<i32>,
     signal: Option<i32>,
     core_dumped: bool,
     runtime_ms: u64,
+}
+
+impl Record {
+    fn diagnostics(&self) -> serde_json::Value {
+        serde_json::json!({
+            "exit_code": self.code,
+            "signal": self.signal,
+            "core_dumped": self.core_dumped,
+            "last_stage": self.stage,
+            "last_finish_phase": self.finish_phase,
+            "runtime_ms": self.runtime_ms,
+            "started_at_ms": self.created_ms,
+            "exited_at_ms": self.exited_ms,
+            "supervisor_lost": self.supervisor != 0,
+        })
+    }
 }
 
 pub(crate) fn is_child() -> bool {
@@ -163,12 +185,11 @@ fn read(path: &Path) -> Option<Record> {
 
 fn replay(directory: &Path, hooks: &Hooks) {
     replay_with(directory, hooks.consent, |record| {
-        let diagnostics = serde_json::json!({"exit_code": record.code, "signal": record.signal, "core_dumped": record.core_dumped, "last_stage": record.stage, "runtime_ms": record.runtime_ms, "started_at_ms": record.created_ms, "exited_at_ms": record.exited_ms, "supervisor_lost": record.supervisor != 0});
         let metadata = serde_json::json!({"build": record.build, "commit_sha": record.revision, "$app_version": record.version, "package_version": record.version, "release_version": record.release, "$release_id": record.release_id, "channel": record.channel, "environment": record.environment, "build_modified": record.modified});
         record
             .consent
             .as_ref()
-            .is_some_and(|consent| (hooks.deliver)(consent, diagnostics, &record.id, metadata))
+            .is_some_and(|consent| (hooks.deliver)(consent, record.diagnostics(), &record.id, metadata))
     });
 }
 
@@ -261,6 +282,40 @@ fn stage(line: &[u8]) -> Option<Stage> {
     }
 }
 
+enum Observation {
+    Stage(Stage),
+    FinishPhase(FinishPhase),
+}
+
+impl Observation {
+    fn read(line: &[u8]) -> Option<Self> {
+        if line.starts_with(b"apparent-native-finish: ") {
+            FinishPhase::from_marker(line).map(Self::FinishPhase)
+        } else {
+            stage(line).map(Self::Stage)
+        }
+    }
+
+    fn apply(self, record: &mut Record) -> bool {
+        match self {
+            Self::Stage(next) => {
+                let changed = record.stage != next;
+                record.stage = next;
+                let reset_finish = matches!(next, Stage::Idle | Stage::Recording | Stage::Finishing | Stage::Cancelled)
+                    && record.finish_phase.take().is_some();
+                changed || reset_finish
+            }
+            Self::FinishPhase(next) => {
+                if record.consent.is_none() || record.finish_phase == Some(next) {
+                    return false;
+                }
+                record.finish_phase = Some(next);
+                true
+            }
+        }
+    }
+}
+
 fn observe(
     mut pipe: impl Read + std::os::fd::AsRawFd,
     stop: Arc<AtomicBool>,
@@ -283,14 +338,12 @@ fn observe(
                 for byte in &buffer[..count] {
                     if *byte == b'\n' {
                         if !oversized
-                            && let Some(next) = stage(&line)
+                            && let Some(observation) = Observation::read(&line)
                             && let Ok(mut slot) = record.lock()
                             && let Some((path, record)) = slot.as_mut()
+                            && observation.apply(record)
                         {
-                            if record.stage != next {
-                                record.stage = next;
-                                let _ = save(path, record);
-                            }
+                            let _ = save(path, record);
                         }
                         line.clear();
                         oversized = false;
@@ -322,6 +375,7 @@ fn refresh_consent(path: &Path, record: &mut Record, consent: Option<String>) {
     if record.consent != consent {
         record.consent = consent;
         record.stage = Stage::Starting;
+        record.finish_phase = None;
         let _ = save(path, record);
     }
 }
@@ -365,6 +419,7 @@ pub(crate) fn run(hooks: Hooks) -> Result<()> {
             environment: env!("APPARENT_REPORTING_ENVIRONMENT").into(),
             modified: env!("APPARENT_BUILD_MODIFIED") == "true",
             stage: Stage::Starting,
+            finish_phase: None,
             code: None,
             signal: None,
             core_dumped: false,

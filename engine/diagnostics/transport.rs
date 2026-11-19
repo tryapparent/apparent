@@ -32,7 +32,7 @@ pub(crate) fn native_payload(
     {
         payload["properties"]["$release_id"] = metadata["$release_id"].clone();
     }
-    payload["properties"]["diagnostics_schema_version"] = json!(7);
+    payload["properties"]["diagnostics_schema_version"] = json!(8);
     payload["properties"]["$exception_fingerprint"] = json!(format!(
         "desktop:native_process_exit:{}:{}:{}",
         diagnostics["signal"],

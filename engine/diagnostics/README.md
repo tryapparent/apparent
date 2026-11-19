@@ -8,6 +8,12 @@ failure. The monitor forwards stderr without storing or uploading its contents;
 only fixed stage markers enter diagnostics. It does not produce a native stack.
 CLI-only commands and macOS are not supervised.
 
+`native_exit.last_finish_phase` records the latest observed Finish milestone:
+source shutdown, bundle setup, bundle building, publication, or return from the
+bundle finalizer. The milestone is process-wide and can reflect overlapping
+Finish workers. Return records that the finalizer returned either result.
+A missing milestone is unknown. The new field does not affect error grouping.
+
 With reporting enabled, private `native-errors/*.json` files beside config retain
 pending native diagnostics across crashes and failed delivery. Live setting
 changes apply within one second; a consent generation change discards prior

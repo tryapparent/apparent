@@ -1,6 +1,8 @@
 pub(crate) mod agent_capture;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub(crate) mod error_reporting;
+#[cfg(target_os = "linux")]
+pub(super) use error_reporting::native_supervisor::FinishPhase;
 pub(crate) mod connect_settings;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub(crate) mod public_sharing;
