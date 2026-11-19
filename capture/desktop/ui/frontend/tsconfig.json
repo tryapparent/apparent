@@ -18,6 +18,10 @@
         "./node_modules/@apparent/ui/src/keyboard/keycap.tsx"
       ],
       "@apparent/ui/button": ["./node_modules/@apparent/ui/src/button.tsx"],
+      "@apparent/ui/input": ["./node_modules/@apparent/ui/src/forms/input.tsx"],
+      "@apparent/ui/status-card": [
+        "./node_modules/@apparent/ui/src/status-card.tsx"
+      ],
       "@apparent/ui/disclosure-menu": [
         "./node_modules/@apparent/ui/src/disclosure-menu.tsx"
       ],

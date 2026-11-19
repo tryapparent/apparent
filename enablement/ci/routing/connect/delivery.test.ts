@@ -37,6 +37,7 @@ const service = "connect/service/src/reporting/aggregate-dau.ts";
 const contract = "connect/client/typescript/src/transfer/contract.ts";
 const shared = "shared/ui/package.json";
 const dynamic = "connect/service/src/worker.ts";
+const ffmpeg = "connect/enablement/ci/recipient-ffmpeg.ts";
 const aNewConsumer = "composition/desktop-activity.ts";
 const flows = [
   [general, "checks.yml"],
@@ -156,12 +157,19 @@ test("real Connect diffs route hosted delivery and retain Desktop contract integ
     git("config", "core.hooksPath", join(cwd, ".git", "hooks"));
     git("config", "user.name", "Synthetic");
     git("config", "user.email", "synthetic@example.invalid");
-    for (const path of [service, contract, shared, dynamic])
+    for (const path of [service, contract, shared, dynamic, ffmpeg])
       put(path, read(path));
     const base = commit("baseline");
     const cases = [
       ["edit", [service], () => put(service, read(service) + "\n"), false],
       ["delete", [service], () => rmSync(join(cwd, service)), false],
+      [
+        "FFmpeg cache",
+        [ffmpeg],
+        () => put(ffmpeg, read(ffmpeg) + "\n"),
+        false,
+        true,
+      ],
       [
         "contract",
         [contract],
@@ -186,7 +194,13 @@ test("real Connect diffs route hosted delivery and retain Desktop contract integ
         true,
       ],
     ] as const;
-    for (const [label, expected, change, desktop] of cases) {
+    for (const [
+      label,
+      expected,
+      change,
+      desktop,
+      generalTrigger = desktop,
+    ] of cases) {
       git("reset", "--hard", base);
       change();
       const head = commit(label);
@@ -202,7 +216,7 @@ test("real Connect diffs route hosted delivery and retain Desktop contract integ
         for (const [workflow, name] of flows)
           assert.equal(
             trigger(workflow, event, paths),
-            name === "stream-connect.yml" || desktop,
+            name === "stream-connect.yml" || generalTrigger,
             label,
           );
         const repository = run(general, event, base, head);
@@ -211,12 +225,14 @@ test("real Connect diffs route hosted delivery and retain Desktop contract integ
         assert.equal(owner.error, "", label);
         assert.equal(repository.outputs.platform, String(desktop), label);
         assert.equal(repository.outputs.installer, String(desktop), label);
+        assert.equal(JSON.parse(repository.outputs.plan).service, true, label);
         assert.equal(
           owner.outputs.native,
           String(desktop || event === "push"),
           label,
         );
         assert.equal(owner.outputs.portable, "true", label);
+        assert.equal(JSON.parse(owner.outputs.plan).service, true, label);
         assert.equal(owner.outputs.publish, "true", label);
         assert.equal(
           currentStream("capture", base, head, cwd),
@@ -355,23 +371,16 @@ test("owner portable verification keeps the service suite and its Ubuntu depende
     const apt = steps.findIndex(
       (step) => step.uses === "./.github/actions/ubuntu-apt",
     );
-    const ffmpeg = steps.findIndex((step) =>
-      step.run?.includes("install -y --no-install-recommends ffmpeg"),
-    );
     const run = steps.findIndex(
       (step) =>
         step.run ===
         "node --experimental-strip-types enablement/ci/routing/run.ts --portable",
     );
-    assert.ok(apt >= 0 && apt < ffmpeg && ffmpeg < run, name);
+    assert.ok(apt >= 0 && apt < run, name);
     assert.equal(steps[apt].if, "runner.os == 'Linux'");
     assert.equal(
       steps[run].env?.VERIFICATION_PLAN,
       "${{ needs.select.outputs.plan }}",
-    );
-    assert.equal(
-      steps.find((step) => step.id === "chrome")?.with?.["chrome-version"],
-      "stable",
     );
   }
   const selected = commands(

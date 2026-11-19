@@ -154,37 +154,26 @@ async function treeSitterComments(
               here,
               "node_modules/tree-sitter-bash/tree-sitter-bash.wasm",
             )
-          : path.join(
-              here,
-              "node_modules",
-              fallback.has(language)
-                ? "tree-sitter-wasms"
-                : "@repomix/tree-sitter-wasms",
-              "out",
-              `tree-sitter-${language}.wasm`,
-            ),
+          : language === "rust"
+            ? path.join(
+                here,
+                "node_modules/@vscode/tree-sitter-wasm/wasm/tree-sitter-rust.wasm",
+              )
+            : path.join(
+                here,
+                "node_modules",
+                fallback.has(language)
+                  ? "tree-sitter-wasms"
+                  : "@repomix/tree-sitter-wasms",
+                "out",
+                `tree-sitter-${language}.wasm`,
+              ),
       ),
     );
   const parser = new Parser();
   parser.setLanguage(cache.get(language)!);
-  let tree = parser.parse(text);
+  const tree = parser.parse(text);
   try {
-    if (language === "rust" && (!tree || tree.rootNode.hasError)) {
-      if (!cache.has("rust-compat"))
-        cache.set(
-          "rust-compat",
-          await Language.load(
-            path.join(
-              here,
-              "node_modules/tree-sitter-wasms/out/tree-sitter-rust.wasm",
-            ),
-          ),
-        );
-      parser.setLanguage(cache.get("rust-compat")!);
-      tree?.delete();
-      tree = null;
-      tree = parser.parse(text);
-    }
     if (!tree || tree.rootNode.hasError)
       throw new Error(
         `${file}: syntax parser cannot safely classify comments; repair syntax or add supported grammar`,

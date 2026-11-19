@@ -54,6 +54,16 @@ pub(super) struct Cli {
     command: Option<Command>,
 }
 
+impl Cli {
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    pub(super) fn reads_capture(&self) -> bool {
+        matches!(
+            self.command,
+            Some(Command::Inspect { .. } | Command::Fetch { .. } | Command::Frames { .. } | Command::Zoom { .. })
+        )
+    }
+}
+
 fn parse_engine(
     name: &str,
 ) -> Result<crate::capture::engine::runtime::audio::transcription::transcribe::Engine, String> {
@@ -212,7 +222,7 @@ enum Command {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     Issue(super::issues::IssueArgs),
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    #[command(about = "Preview or submit Apparent feedback to PostHog Error Tracking")]
+    #[command(about = "Report an Apparent CLI error, confusing behavior, or a suggestion")]
     Feedback(super::feedback::FeedbackArgs),
     /// Opt-in hosted account and upload queue management.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -692,7 +702,6 @@ enum CaptureCommand {
     Handoff { capture_id: String },
 }
 
-/// `capture/agent/skills/apparent/SKILL.md`, the same text served from app.tryapparent.com/skill.md.
 const SKILL: &str = include_str!("../capture/agent/skills/apparent/SKILL.md");
 
 #[cfg(target_os = "linux")]
@@ -746,17 +755,6 @@ fn run_owned_app(record: bool, iphone: bool, background: bool) -> Result<()> {
     #[cfg(target_os = "linux")]
     crate::capture::desktop::workflow::shutdown::check_app_exit()?;
     Ok(())
-}
-
-pub(crate) fn run() -> Result<()> {
-    #[cfg(target_os = "linux")]
-    linux::prepare_process();
-    if std::env::var_os("APPARENT_BENCH_START").is_some() {
-        ui::run_start_benchmark();
-        return Ok(());
-    }
-    let cli = Cli::parse();
-    run_cli(cli)
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -814,7 +812,7 @@ fn setup_hermes(check: bool, json: bool, profile: Option<PathBuf>, package: Opti
     std::process::exit(status.code().unwrap_or(1));
 }
 
-fn run_cli(cli: Cli) -> Result<()> {
+pub(super) fn run_cli(cli: Cli) -> Result<()> {
     let command = match cli.command {
         Some(command) => command,
         // `apparent` typed in a terminal (on PATH through Settings › Agents or Homebrew) would

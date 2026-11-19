@@ -93,13 +93,13 @@ test('picker warms both computers during recording and keeps the waiting state a
  await send(frame);if(next)page=await next;
  const trigger=page.getByRole('combobox');await expect(trigger).toBeEnabled();
  const proof=async name=>{await page.evaluate(()=>document.fonts.ready);await expect.poll(()=>page.evaluate(()=>{const r=document.querySelector('main').getBoundingClientRect();return innerWidth===Math.ceil(r.width)&&innerHeight===Math.max(58,Math.ceil(r.height));})).toBe(true);if(process.env.APPARENT_T3_PROOF)await page.screenshot({path:path.join(process.env.APPARENT_T3_PROOF,name+'.png')});};
- await trigger.click();await expect(page.getByRole('option')).toHaveCount(2);
+ await trigger.click();await expect(page.getByRole('option')).toHaveCount(3);
  await page.getByRole('option',{name:/Chosen thread, X1/}).click();
  await expect(page.getByRole('button',{name:'Cancel send'})).toBeVisible();assert.equal(a.calls.length+b.calls.length,0);
  await page.getByRole('button',{name:'Cancel send'}).click();
- resumeClanker();await expect.poll(()=>page.evaluate(async()=>(await window.apparentPill.destinations()).choices.length)).toBe(4);
+ resumeClanker();await expect.poll(()=>page.evaluate(async()=>(await window.apparentPill.destinations()).choices.length)).toBe(6);
  assert.deepEqual([a.reads,b.reads],[1,1]);
- await trigger.click();await proof('friendly-selecting');await page.getByRole('button',{name:'More destinations',exact:true}).click();await expect(page.getByRole('option',{name:/Chosen thread, Clanker/})).toBeVisible();assert.equal(a.calls.length+b.calls.length,0);await expect(trigger).toBeFocused();await page.keyboard.press('Escape');await trigger.click();await page.getByRole('option',{name:/New thread, Clanker/}).click();await expect(page.locator('.destination-receipt')).toContainText('Preparing recording');await expect(trigger).toContainText('Clanker · Apparent');
+ await trigger.click();await proof('friendly-selecting');await page.getByRole('combobox',{name:'Search threads'}).fill('Clanker chosen');await expect(page.getByRole('option',{name:/Chosen thread, Clanker/})).toBeVisible();assert.equal(a.calls.length+b.calls.length,0);await expect(trigger).toBeFocused();await page.keyboard.press('Escape');await trigger.click();await page.getByRole('option',{name:/New thread, Clanker/}).click();await expect(page.locator('.destination-receipt')).toContainText('Preparing recording');await expect(trigger).toContainText('Clanker · Apparent');
  for(const theme of ['light','dark'])for(const width of [1200,320]){await app.evaluate(({screen},width)=>{screen.__pickerDisplay??=screen.getDisplayMatching.bind(screen);screen.getDisplayMatching=b=>({...screen.__pickerDisplay(b),workArea:{x:0,y:0,width,height:800}});},width);++frame.view.revision;await send(frame);await page.evaluate(revision=>window.apparentPill.layout(revision),frame.view.revision);await page.emulateMedia({colorScheme:theme});await proof('friendly-waiting-'+theme+'-'+width);}
  await page.getByRole('button',{name:'Cancel send',exact:true}).focus();await page.keyboard.press('Enter');await expect(trigger).toBeEnabled();assert.equal(a.calls.length,0);assert.equal(b.calls.length,0);
  for(const theme of ['light','dark'])for(const width of [1200,320]){
@@ -107,7 +107,7 @@ test('picker warms both computers during recording and keeps the waiting state a
   ++frame.view.revision;await send(frame);await page.evaluate(revision=>window.apparentPill.layout(revision),frame.view.revision);await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});
   await proof('friendly-collapsed-'+theme+'-'+width);
   const collapsed=await pickerGeometry(app,page);
-  await trigger.click();await expect(trigger).toHaveAttribute('aria-expanded','true');await expect(page.getByRole('option')).toHaveCount(3);
+  await trigger.click();await expect(trigger).toHaveAttribute('aria-expanded','true');await expect(page.getByRole('option')).toHaveCount(6);
   await expect(page.getByRole('option',{name:/New thread, Clanker/})).toBeVisible();await expect(page.locator('main')).not.toContainText('127.0.0.1');await proof('friendly-expanded-'+theme+'-'+width);
   assert.deepEqual(await pickerGeometry(app,page),collapsed);
   await page.keyboard.press('Escape');await expect(trigger).toHaveAttribute('aria-expanded','false');await proof('friendly-reclosed-'+theme+'-'+width);
