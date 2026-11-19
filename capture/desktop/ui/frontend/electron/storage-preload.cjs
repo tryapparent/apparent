@@ -1,11 +1,12 @@
 const { contextBridge, ipcRenderer } = require('electron');
+contextBridge.exposeInMainWorld('apparentSettingsHasInsetTitlebar', process.platform === 'darwin');
 contextBridge.exposeInMainWorld('apparentSettingsRoute', callback => {
   let live = true, received = false;
   const listener = (_event, pane) => { received = true; if (live) callback(pane); };
   ipcRenderer.on('apparent:settings-route', listener);
   // A parent can select a pane before this document's preload is attached.
   void ipcRenderer.invoke('apparent:settings-route').then(pane => {
-    if (live && !received && ['general', 'agents', 'about', 'labs', 'storage'].includes(pane)) callback(pane);
+    if (live && !received && ['general', 'agents', 'about', 'labs', 'recording', 'storage'].includes(pane)) callback(pane);
   }).catch(() => {});
   return () => { live = false; ipcRenderer.removeListener('apparent:settings-route', listener); };
 });
@@ -91,4 +92,18 @@ contextBridge.exposeInMainWorld('apparentGeneral', Object.freeze({
     ipcRenderer.on('apparent:general-state', listener);
     return () => ipcRenderer.removeListener('apparent:general-state', listener);
   },
+}));
+
+function recordingSubscription(channel, callback) {
+  const listener = (_event, value) => callback(value);
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
+}
+contextBridge.exposeInMainWorld('apparentRecording', Object.freeze({
+  read: () => ipcRenderer.invoke('apparent:recording-read'),
+  subscribe: callback => recordingSubscription('apparent:recording-state', callback),
+  subscribeLevel: callback => recordingSubscription('apparent:recording-level', callback),
+  setMeterVisible: visible => ipcRenderer.invoke('apparent:recording-meter', visible),
+  save: change => ipcRenderer.invoke('apparent:recording-save', change),
+  openVolumeGuide: () => ipcRenderer.invoke('apparent:recording-volume-guide'),
 }));

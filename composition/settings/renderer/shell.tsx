@@ -14,6 +14,8 @@ import {
   RecordingStartPreference,
   recordingStartPreference,
 } from "../../../record/settings/recording-start";
+import { RecordingSection } from "../../../record/settings/renderer/recording-section";
+import type { RecordingBridge } from "../../../record/settings/recording-contract";
 import "./base.css";
 import "./settings.css";
 import wordmark from "../../../shared/assets/brand/apparent-wordmark.svg";
@@ -70,6 +72,7 @@ declare module "react" {
 declare global {
   interface Window {
     apparentSettingsMounted?: () => Promise<void>;
+    apparentSettingsHasInsetTitlebar?: boolean;
   }
   interface Window {
     apparentSettingsRoute?: (callback: (pane: string) => void) => () => void;
@@ -79,6 +82,7 @@ declare global {
 declare global {
   interface Window {
     apparentAbout: AboutBridge;
+    apparentRecording: RecordingBridge;
   }
 }
 
@@ -96,15 +100,9 @@ const recordStart = recordingStartPreference({
 
 function Settings() {
   const [current, setCurrent] = useState(
-    location.hash === "#about"
-      ? "About"
-      : location.hash === "#agents"
-        ? "Agents"
-        : location.hash === "#labs"
-          ? "Labs"
-          : location.hash === "#general"
-            ? "General"
-            : "Storage",
+    () =>
+      panes.find((pane) => location.hash === `#${pane.toLowerCase()}`) ??
+      "Storage",
   );
   useLayoutEffect(
     () =>
@@ -172,6 +170,7 @@ function Settings() {
   return (
     <div
       className={`settings-shell${current === "General" ? " settings-general-shell" : ""}`}
+      data-inset-titlebar={window.apparentSettingsHasInsetTitlebar || undefined}
     >
       <aside className="settings-sidebar" aria-label="Settings pages">
         <div className="settings-brand">
@@ -205,6 +204,8 @@ function Settings() {
         )}
         {current === "General" ? (
           <General />
+        ) : current === "Recording" ? (
+          <RecordingSection bridge={window.apparentRecording} />
         ) : current === "About" ? (
           <About bridge={window.apparentAbout} artwork={aboutArtwork} />
         ) : (

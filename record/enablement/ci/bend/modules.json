@@ -2,7 +2,8 @@
   "modules": [
     "completion/src/copy-admission.bend",
     "media/src/assembly/frame-limits.bend",
-    "media/src/export/quiet-export.bend"
+    "media/src/export/quiet-export.bend",
+    "settings/recording-policy.bend"
   ],
-  "inputs": ["completion/", "media/"]
+  "inputs": ["completion/", "media/", "settings/"]
 }

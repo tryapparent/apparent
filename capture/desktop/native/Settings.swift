@@ -980,9 +980,10 @@ struct SettingsView: View {
 
   private func select(_ pane: SettingsPane) {
     if model.state.recording != nil { model.act("cancel-shortcut") }
-    if pane == .general || pane == .storage || pane == .labs || pane == .about {
+    switch pane {
+    case .general, .recording, .storage, .labs, .about:
       model.act("navigate", ["pane": pane.rawValue])
-    } else {
+    default:
       model.pane = pane
     }
   }

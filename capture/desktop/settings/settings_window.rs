@@ -324,7 +324,8 @@ const ORANGE: Tint = (0xff9e4d, 0xf2701f);
 
 // Native frame routing only; the parent retains the candidate/fallback owner.
 fn parent_routes_pane(pane: Pane) -> bool {
-    matches!(pane, Pane::General | Pane::About | Pane::Agents | Pane::Labs) || (!LINUX && pane == Pane::Storage)
+    matches!(pane, Pane::General | Pane::About | Pane::Agents | Pane::Labs | Pane::Recording)
+        || (!LINUX && pane == Pane::Storage)
 }
 
 fn pane_title(pane: Pane) -> &'static str {
@@ -2783,14 +2784,11 @@ mod tests {
 mod general_parent_route_tests {
     use super::*;
     #[test]
-    fn general_candidate_escapes_the_native_frame_without_changing_other_routes() {
-        assert!(parent_routes_pane(Pane::General));
-        assert!(parent_routes_pane(Pane::About));
-        assert!(parent_routes_pane(Pane::Agents));
-        assert!(parent_routes_pane(Pane::Labs));
-        assert_eq!(parent_routes_pane(Pane::Storage), !LINUX);
-        for pane in [Pane::Recording, Pane::Permissions] {
-            assert!(!parent_routes_pane(pane));
+    fn adopted_panes_route_through_the_parent_from_the_native_frame() {
+        for pane in [Pane::General, Pane::About, Pane::Agents, Pane::Labs, Pane::Recording] {
+            assert!(parent_routes_pane(pane));
         }
+        assert_eq!(parent_routes_pane(Pane::Storage), !LINUX);
+        assert!(!parent_routes_pane(Pane::Permissions));
     }
 }

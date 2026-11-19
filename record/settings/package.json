@@ -2,7 +2,9 @@
   "name": "@apparent/record-settings",
   "private": true,
   "exports": {
-    "./recording-start": "./recording-start.tsx"
+    "./recording-start": "./recording-start.tsx",
+    "./recording-section": "./renderer/recording-section.tsx",
+    "./recording-contract": "./recording-contract.ts"
   },
   "peerDependencies": {
     "react": "^19.2.0"

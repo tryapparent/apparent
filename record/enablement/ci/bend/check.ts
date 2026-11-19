@@ -16,6 +16,26 @@ const options = proofOptions(process.argv.slice(2));
 await bendScratch(async (scratch) => {
   const proofOutput = join(scratch, "proof");
   await buildBend(root, "record", proofOutput, options);
+  run(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+    import assert from "node:assert/strict";
+    import recording from "./recording-policy.mjs";
+    for (const available of [false, true]) {
+      for (const saved of [false, true]) {
+        assert.equal(recording.volume_switch_enabled(available, saved), available || saved);
+        assert.equal(recording.volume_level_enabled(available, saved), available && saved);
+        assert.equal(recording.transcription_detail(false, saved, available), available || saved ? 1 : 0);
+        assert.equal(recording.transcription_detail(true, saved, available), 2);
+      }
+    }
+  `,
+    ],
+    proofOutput,
+  );
   const quiet = (directory: string) =>
     JSON.parse(
       run(

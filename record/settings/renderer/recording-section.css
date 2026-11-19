@@ -1,0 +1,114 @@
+.recording-settings {
+  --apparent-switch-off-track: var(
+    --apparent-desktop-settings-switch-off-track
+  );
+  --apparent-switch-on-track: var(--apparent-desktop-settings-switch-on-track);
+  --apparent-switch-light-thumb: var(
+    --apparent-desktop-settings-switch-light-thumb
+  );
+  --apparent-switch-dark-thumb: var(
+    --apparent-desktop-settings-switch-dark-thumb
+  );
+  display: grid;
+  gap: 24px;
+}
+
+.recording-group {
+  background: var(--apparent-stock);
+  color: var(--apparent-carbon);
+}
+
+.recording-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  min-height: 60px;
+  padding: 8px 16px;
+}
+
+.recording-row > label,
+.recording-row > span {
+  font-weight: 500;
+}
+
+.recording-row [data-slot="native-select-wrapper"] {
+  max-width: 100%;
+}
+
+.settings-content .recording-row select {
+  min-height: 44px;
+  border: 1px solid var(--apparent-carbon);
+  border-radius: 0;
+}
+
+.recording-note {
+  margin-block: 8px;
+}
+
+.recording-level {
+  flex: 1;
+  max-width: 200px;
+  min-width: 100px;
+  height: 8px;
+  background: var(--apparent-paper);
+  outline: 1px solid var(--apparent-carbon);
+}
+
+.recording-level > div {
+  height: 100%;
+  background: var(--apparent-signal);
+}
+
+.settings-content .recording-switch {
+  flex: none;
+  min-width: 48px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.settings-content .recording-switch[aria-busy="true"] {
+  cursor: wait;
+}
+
+.recording-range,
+.recording-language .recording-row > div {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.recording-range input {
+  width: min(150px, 40vw);
+  min-height: 44px;
+  accent-color: var(--apparent-signal);
+}
+
+.recording-range output {
+  min-width: 4ch;
+  font-variant-numeric: tabular-nums;
+}
+
+.recording-language input {
+  max-width: 8rem;
+  min-height: 44px;
+  background: var(--apparent-paper);
+  color: var(--apparent-carbon);
+  border-color: var(--apparent-carbon);
+}
+
+.recording-language .recording-note {
+  margin: 0;
+  padding: 0 16px 12px;
+}
+
+.settings-content .recording-guide {
+  padding-inline: 0;
+  white-space: normal;
+  text-align: left;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

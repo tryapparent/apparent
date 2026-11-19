@@ -14,11 +14,15 @@ for (const file of ['button.tsx', 'keyboard/keycap.tsx', 'keyboard/keycap.css', 
   if (canonical !== installed) throw new Error('Shared UI changed. Run npm ci before building.');
 }
 
+import { execFileSync } from "node:child_process";
+
 let reportingOutput: string;
 export default defineConfig({
   base: './',
   resolve: { dedupe: ['react', 'react-dom', '@apparent/ui', 'lucide-react'] },
-  plugins: [react(), {
+  plugins: [{ name: 'recording-settings-policy', buildStart() {
+    execFileSync(process.execPath, [fileURLToPath(new URL('../../../../record/settings/build.ts', import.meta.url))], { stdio: 'inherit' });
+  } }, react(), {
     name: 'settings-utility-sources',
     enforce: 'pre',
     transform(css, id) {

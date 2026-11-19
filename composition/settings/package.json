@@ -1,6 +1,9 @@
 {
   "name": "@apparent/settings-composition",
   "private": true,
+  "exports": {
+    "./recording-host": "./recording-host.ts"
+  },
   "dependencies": {
     "@apparent/ui": "file:../../shared/ui",
     "react": "^19.2.0",

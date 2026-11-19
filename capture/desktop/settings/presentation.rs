@@ -122,6 +122,9 @@ fn settings_assets() -> Result<(PathBuf, PathBuf), OnboardingAssetFailure> {
 
 pub(super) fn admits(pane: Pane, action: &Action) -> bool {
     matches!(action, Action::Navigate { .. } | Action::Close)
+        || pane == Pane::Recording && (
+            matches!(action, Action::RecordingMeter { .. })
+            || matches!(action, Action::RecordingPreference { key, value, .. } if super::recording_key(key, value)))
         || pane == Pane::Storage && matches!(action, Action::ShowCaptures)
         || pane == Pane::General && (
             matches!(action, Action::RecordShortcut { .. } | Action::Shortcut { .. } | Action::CancelShortcut | Action::ResetShortcut { .. } | Action::ClearShortcut { .. })
@@ -133,41 +136,11 @@ pub(super) fn admits(pane: Pane, action: &Action) -> bool {
             || matches!(action, Action::Set { key, value } if key == "updateChannel" && matches!(value.as_str(), Some("stable" | "main"))))
 }
 
-#[test]
-fn settings_page_capabilities_follow_live_route() {
-    let preference: Action = serde_json::from_str(r#"{"action":"agents-preference","request":1}"#).unwrap();
-    assert!(admits(Pane::Agents, &preference));
-    assert!(!admits(Pane::About, &preference));
-    let connection = Action::AgentsConnection { request: 1, connection: None, disconnect: None };
-    assert!(admits(Pane::Labs, &connection));
-    assert!(!admits(Pane::About, &connection));
-    assert!(!admits(Pane::Storage, &connection));
-    assert!(!admits(Pane::Agents, &connection));
-    assert!(admits(Pane::Labs, &preference));
-    for setting in ["streaming", "autoPaste", "sharing", "wisprFlow"] {
-        let experiment = Action::LabsPreference { request: 2, enabled: Some(true), setting: Some(setting.into()) };
-        assert!(admits(Pane::Labs, &experiment));
-        assert!(!admits(Pane::Agents, &experiment));
-        assert!(!admits(Pane::About, &experiment));
-        let legacy = Action::AgentsPreference { request: 2, enabled: Some(true), setting: Some(setting.into()) };
-        assert!(!admits(Pane::Labs, &legacy));
-        assert!(!admits(Pane::Agents, &legacy));
-    }
-    let invalid = Action::LabsPreference { request: 2, enabled: Some(true), setting: Some("t3".into()) };
-    assert!(!admits(Pane::Labs, &invalid));
-    assert!(!admits(Pane::Labs, &Action::ShowCaptures));
-    assert!(!admits(Pane::Labs, &Action::CheckForUpdates));
-    assert!(admits(Pane::About, &Action::CheckForUpdates));
-    assert!(!admits(Pane::Agents, &Action::CheckForUpdates));
-    assert!(!admits(Pane::Agents, &Action::ShowCaptures));
-    assert!(!admits(Pane::About, &Action::ShowCaptures));
-    assert!(admits(Pane::Storage, &Action::ShowCaptures));
-}
-
 pub(super) fn open(pane: Pane, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyhow::Result<Transport> {
     use std::io::BufRead;
     let (app, runtime) = assets().ok_or_else(|| anyhow::anyhow!("Packaged Settings unavailable"))?;
     let mut launch = command(runtime, app);
+    if pane == Pane::Recording { launch.arg("--settings-recording"); }
     if pane == Pane::About { launch.arg("--settings-about"); }
     if pane == Pane::Agents { launch.arg("--settings-agents"); }
     if pane == Pane::General { launch.arg("--settings-general"); }
@@ -181,7 +154,7 @@ pub(super) fn open(pane: Pane, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyh
         if let Some(stdout) = stdout {
             for line in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
                 if let Ok(action) = serde_json::from_str::<Action>(&line)
-                    && [Pane::General, Pane::Storage, Pane::Agents, Pane::Labs, Pane::About]
+                    && [Pane::General, Pane::Recording, Pane::Storage, Pane::Agents, Pane::Labs, Pane::About]
                         .into_iter().any(|pane| admits(pane, &action))
                 {
                     events(Event::Action(action));
@@ -337,8 +310,14 @@ mod capability_tests {
         let panes = [Pane::General, Pane::Recording, Pane::Storage, Pane::Permissions, Pane::Agents, Pane::Labs, Pane::About];
         for (wire, owners) in [
             (r#"{"action":"show-captures"}"#, vec![Pane::Storage]),
+            (r#"{"action":"check-for-updates"}"#, vec![Pane::About]),
+            (r#"{"action":"labs-preference","request":1,"setting":"t3","enabled":true}"#, vec![]),
             (r#"{"action":"set","key":"launchAtLogin","value":true}"#, vec![Pane::General]),
             (r#"{"action":"set","key":"playbackLevel","value":101}"#, vec![]),
+            (r#"{"action":"recording-preference","request":1,"key":"lowerPlayback","value":true}"#, vec![Pane::Recording]),
+            (r#"{"action":"recording-preference","request":1,"key":"playbackLevel","value":101}"#, vec![]),
+            (r#"{"action":"recording-preference","request":1,"key":"launchAtLogin","value":true}"#, vec![]),
+            (r#"{"action":"recording-meter","visible":true}"#, vec![Pane::Recording]),
             (r#"{"action":"agents-preference","request":1,"setting":"autoPaste","enabled":true}"#, vec![]),
             (r#"{"action":"agents-preference","request":2,"setting":"sharing","enabled":true}"#, vec![]),
             (r#"{"action":"labs-preference","request":1,"setting":"streaming","enabled":true}"#, vec![Pane::Labs]),
