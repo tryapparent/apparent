@@ -54,3 +54,25 @@ export function admissionConsumersKnown(cwd: string, head: string): boolean {
   );
   return !result.error && result.status === 1;
 }
+export function connectConsumers(path: string, native: boolean) {
+  if (path === "connect/enablement/ci/recipient-ffmpeg.ts")
+    return ["service"] as const;
+  if (!native && path.startsWith("connect/enablement/"))
+    return [
+      path === "connect/enablement/ci/verify-composition.ts"
+        ? "web"
+        : "tooling",
+    ] as const;
+  if (!native && path.startsWith("connect/web/")) return ["web"] as const;
+  if (
+    [
+      "connect/client/typescript/src/mcp-wire.ts",
+      "connect/client/typescript/src/transfer/contract.ts",
+      "connect/client/typescript/contracts.ts",
+    ].includes(path)
+  )
+    return ["client", "capture", "service"] as const;
+  if (path.startsWith("connect/client/")) return ["client", "capture"] as const;
+  if (!native && path.startsWith("connect/service/"))
+    return ["service", "client", "web", "capture"] as const;
+}
