@@ -21,7 +21,12 @@ test("staged Recording opens directly, receives native facts and saves only on i
   const home = await mkdtemp(join(tmpdir(), "recording-pane-"));
   const stage = process.env.APPARENT_RECORDING_STAGE;
   const runtime = stage
-    ? join(stage, "runtime/electron")
+    ? join(
+        stage,
+        process.platform === "darwin"
+          ? "runtime/Electron.app/Contents/MacOS/Electron"
+          : "runtime/electron",
+      )
     : loadFrontendDependency("electron");
   const child = spawn(
     runtime,
@@ -93,6 +98,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
     await expect(volume).toBeDisabled();
     const session = await context.newCDPSession(page);
     const video = page.getByRole("switch", { name: "Video export" });
+    const wordmark = page.getByRole("img", { name: "Apparent", exact: true });
     for (const width of [720, 640]) {
       for (const colorScheme of ["light", "dark"]) {
         await session.send("Emulation.setDeviceMetricsOverride", {
@@ -102,6 +108,9 @@ test("staged Recording opens directly, receives native facts and saves only on i
           mobile: false,
         });
         await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
+        const expectedLeft =
+          width === 720 ? 24 : process.platform === "darwin" ? 88 : 16;
+        assert.equal((await wordmark.boundingBox())?.x, expectedLeft);
         await input.focus();
         await expect(input).toBeFocused();
         assert.equal(

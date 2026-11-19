@@ -72,6 +72,7 @@ declare module "react" {
 declare global {
   interface Window {
     apparentSettingsMounted?: () => Promise<void>;
+    apparentSettingsHasInsetTitlebar?: boolean;
   }
   interface Window {
     apparentSettingsRoute?: (callback: (pane: string) => void) => () => void;
@@ -169,6 +170,7 @@ function Settings() {
   return (
     <div
       className={`settings-shell${current === "General" ? " settings-general-shell" : ""}`}
+      data-inset-titlebar={window.apparentSettingsHasInsetTitlebar || undefined}
     >
       <aside className="settings-sidebar" aria-label="Settings pages">
         <div className="settings-brand">

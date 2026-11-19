@@ -132,6 +132,9 @@
   .settings-brand {
     padding: 0;
   }
+  .settings-shell[data-inset-titlebar] .settings-brand {
+    margin-inline-start: 72px;
+  }
   .settings-brand img {
     flex: none;
   }

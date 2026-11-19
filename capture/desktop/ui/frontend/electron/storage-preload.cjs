@@ -1,4 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
+contextBridge.exposeInMainWorld('apparentSettingsHasInsetTitlebar', process.platform === 'darwin');
 contextBridge.exposeInMainWorld('apparentSettingsRoute', callback => {
   let live = true, received = false;
   const listener = (_event, pane) => { received = true; if (live) callback(pane); };
