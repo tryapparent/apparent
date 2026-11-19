@@ -51,6 +51,8 @@ on:
       - "agent/**"
       - "AGENTS.md"
       - "public/**"
+      - "!connect/service/src/reporting/aggregate-dau.ts"
+      - "!connect/service/test/lifecycle/aggregate-dau.test.ts"
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
   push:
     branches: [main]
@@ -101,6 +103,8 @@ on:
       - "agent/**"
       - "AGENTS.md"
       - "public/**"
+      - "!connect/service/src/reporting/aggregate-dau.ts"
+      - "!connect/service/test/lifecycle/aggregate-dau.test.ts"
 
 permissions:
   contents: read

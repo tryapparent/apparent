@@ -133,7 +133,7 @@ test('Connect publication requires successful stream-owned gates on canonical ma
   const guard = connect.jobs.admit.if;
   assert.deepEqual(connect.jobs.admit.needs, ['select','contracts','portable','linux']);
   const evaluate = (event: string, overrides: any = {}, repo = 'tryapparent/apparent', ref = 'refs/heads/main', enabled = 'true') => {
-    const needs = {select: {result: 'success', outputs: {native: 'true'}}, contracts: {result: 'success'},
+    const needs = {select: {result: 'success', outputs: {native: 'true', publish: 'true'}}, contracts: {result: 'success'},
       portable: {result: 'success'}, linux: {result: 'success'}, ...overrides};
     return Function('github','needs','cancelled','vars',`return (${guard})`)(
       {event_name: event, repository: repo, ref}, needs, () => false, {HOSTED_CD_ENABLED: enabled});
@@ -142,7 +142,7 @@ test('Connect publication requires successful stream-owned gates on canonical ma
     assert.equal(evaluate(event), true);
     for (const result of ['failure','cancelled','skipped','queued'])
       assert.equal(evaluate(event, {macos: {result}}), true, `${event}:optional Mac ${result}`);
-    assert.equal(evaluate(event, {select: {result: 'success', outputs: {native: 'false'}}, linux: {result: 'skipped'}}), true);
+    assert.equal(evaluate(event, {select: {result: 'success', outputs: {native: 'false', publish: 'true'}}, linux: {result: 'skipped'}}), true);
     assert.equal(evaluate(event, {select: {result: 'success', outputs: {native: 'true', publish: 'false'}}}), false);
     for (const name of ['select','contracts','portable','linux']) for (const result of ['failure','cancelled','skipped'])
       assert.equal(evaluate(event, {[name]: {result, outputs: {native: 'true'}}}), false, `${event}:${name}:${result}`);

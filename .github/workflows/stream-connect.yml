@@ -237,7 +237,7 @@ jobs:
       vars.HOSTED_CD_ENABLED == 'true' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       needs.select.result == 'success' && needs.contracts.result == 'success' && needs.portable.result == 'success' &&
-      needs.select.outputs.publish != 'false' &&
+      needs.select.outputs.publish == 'true' &&
       (needs.select.outputs.native == 'false' || needs.linux.result == 'success')
     permissions:
       contents: read

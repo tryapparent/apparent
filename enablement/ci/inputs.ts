@@ -1,6 +1,7 @@
 // Committed input facts shared by local and hosted selectors; plans stay separate.
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {isDeepStrictEqual} from 'node:util';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const options = (cwd: string) => ({cwd, encoding: 'utf8' as const, maxBuffer: 16 * 1024 * 1024});
@@ -42,4 +43,31 @@ export function matchesRegularBlob(head: string, path: string, oid: string, cwd 
     return execFileSync('git', ['ls-tree', head, '--', path], options(cwd)).trim() ===
       `100644 blob ${oid}\t${path}`;
   } catch { return false; }
+}
+
+type Change = {path: string; status: string; oldMode: string; newMode: string};
+const git = (args: string[], cwd: string) => execFileSync('git', args, {...options(cwd), stdio: ['ignore', 'pipe', 'pipe']});
+
+export function changes(base: string, head: string, cwd = process.cwd()): Change[] | null {
+  if (!/^[a-f0-9]{40}$/.test(base) || /^0+$/.test(base) || !/^[a-f0-9]{40}$/.test(head)) return null;
+  try {
+    if (git(['rev-parse', '--is-shallow-repository'], cwd).trim() !== 'false') return null;
+    git(['merge-base', '--is-ancestor', base, head], cwd);
+    const sharedPaths = changedPaths(base, head, cwd);
+    const raw = git(['diff', '--no-renames', '--no-ext-diff', '--no-textconv', '--ignore-submodules=none',
+      '--raw', '--no-abbrev', '-z', base, head, '--'], cwd);
+    if (!raw) return sharedPaths.length ? null : [];
+    const parts = raw.split('\0');
+    if (parts.pop() !== '' || parts.length % 2 !== 0) return null;
+    const result: Change[] = [];
+    for (let i = 0; i < parts.length; i += 2) {
+      const match = /^:(\d{6}) (\d{6}) [a-f0-9]{40} [a-f0-9]{40} ([A-Z])$/.exec(parts[i]);
+      if (!match || !parts[i + 1]) return null;
+      const [, oldMode, newMode, status] = match;
+      result.push({path: parts[i + 1], status, oldMode, newMode});
+    }
+    return isDeepStrictEqual(sharedPaths, result.map(change => change.path)) ? result : null;
+  } catch {
+    return null;
+  }
 }
