@@ -1,6 +1,8 @@
 use crate::output::Directory;
 pub use crate::output::Result;
 use std::io::Write;
+#[cfg(target_os = "macos")]
+use std::os::fd::AsRawFd;
 use std::path::Path;
 pub const MAX_FRAMES: usize = 480;
 pub const MAX_EDGE: u32 = 16_384;
@@ -32,7 +34,12 @@ impl Output {
     }
     #[cfg(target_os = "macos")]
     pub fn inherited_fd(&self) -> Result<i32> {
-        self.directory.inherited_fd()
+        let fd = self.directory.as_raw_fd();
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+        if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC) } < 0 {
+            return Err("unsafe_output");
+        }
+        Ok(fd)
     }
     #[cfg(target_os = "linux")]
     pub fn write(

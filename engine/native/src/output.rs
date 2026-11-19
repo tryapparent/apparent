@@ -30,15 +30,6 @@ impl Directory {
         Ok(Self { directory })
     }
 
-    pub fn inherited_fd(&self) -> Result<i32> {
-        let fd = self.directory.as_raw_fd();
-        let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
-        if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFD, flags & !libc::FD_CLOEXEC) } < 0 {
-            return Err("unsafe_output");
-        }
-        Ok(fd)
-    }
-
     pub fn create_private(&self, name: &str) -> Result<File> {
         if name.is_empty() || name == "." || name == ".." || name.contains('/') {
             return Err("unsafe_output");
@@ -59,5 +50,11 @@ impl Directory {
         file.set_permissions(Permissions::from_mode(0o600))
             .map_err(|_| "write_failed")?;
         Ok(file)
+    }
+}
+
+impl AsRawFd for Directory {
+    fn as_raw_fd(&self) -> std::os::fd::RawFd {
+        self.directory.as_raw_fd()
     }
 }
