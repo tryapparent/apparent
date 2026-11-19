@@ -263,7 +263,7 @@ fn settings_authenticated_health_and_cancellation() {
     let f = Fixture::new();
     let server = Server::new("");
     f.authorize(&server.url);
-    assert_eq!(f.client.settings_health(&|| false), Health::Offline);
+    assert_eq!(f.client.settings_health(&|| false), Health::Cancelled);
     assert_eq!(server.state.lock().unwrap().requests, 0);
     assert_eq!(f.client.settings_health(&|| true), Health::Online);
     assert_eq!(

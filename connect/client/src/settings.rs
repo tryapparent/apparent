@@ -268,7 +268,7 @@ impl Client {
                 SafeError::Cancelled => Health::Cancelled,
                 _ => Health::Unavailable,
             },
-            _ => Health::Unavailable,
+            Ok(_) => Health::Cancelled,
         }
     }
     /// Explicit local consent; live upload-grant check then existing writer.
