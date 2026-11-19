@@ -21,6 +21,12 @@ use std::{
 
 #[path = "supervisor/finish.rs"]
 mod finish;
+#[path = "supervisor/oom.rs"]
+mod oom;
+use oom::OomSample;
+#[path = "supervisor/trace.rs"]
+mod trace;
+use trace::{Observation, Stage, Trace};
 pub(in crate::capture::desktop) use finish::FinishPhase;
 
 const CHILD: &str = "APPARENT_SUPERVISOR_PID";
@@ -31,20 +37,6 @@ pub(crate) struct Hooks {
     pub consent: fn() -> Option<String>,
     pub deliver: fn(&str, serde_json::Value, &str, serde_json::Value) -> bool,
     pub requested: fn() -> bool,
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-enum Stage {
-    #[default]
-    Starting,
-    Idle,
-    Recording,
-    Shortcut,
-    Finishing,
-    Saved,
-    Cancelled,
-    UnexpectedReturn,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -69,6 +61,10 @@ struct Record {
     stage: Stage,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     finish_phase: Option<FinishPhase>,
+    #[serde(default, skip_serializing_if = "Trace::is_empty")]
+    trace: Trace,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cgroup_oom_kill_increased: Option<bool>,
     code: Option<i32>,
     signal: Option<i32>,
     core_dumped: bool,
@@ -83,6 +79,8 @@ impl Record {
             "core_dumped": self.core_dumped,
             "last_stage": self.stage,
             "last_finish_phase": self.finish_phase,
+            "recent_steps": self.trace,
+            "cgroup_oom_kill_increased": self.cgroup_oom_kill_increased,
             "runtime_ms": self.runtime_ms,
             "started_at_ms": self.created_ms,
             "exited_at_ms": self.exited_ms,
@@ -180,7 +178,7 @@ fn read(path: &Path) -> Option<Record> {
     {
         return None;
     }
-    Some(record)
+    record.trace.is_bounded().then_some(record)
 }
 
 fn replay(directory: &Path, hooks: &Hooks) {
@@ -257,70 +255,12 @@ fn replay_with(
     }
 }
 
-fn stage(line: &[u8]) -> Option<Stage> {
-    let line = std::str::from_utf8(line).ok()?;
-    let (stamp, message) = line.strip_prefix('[')?.split_once("] ")?;
-    if !stamp.bytes().all(|c| c.is_ascii_digit()) {
-        return None;
-    }
-    if message.starts_with("run_app started pid=") {
-        Some(Stage::Idle)
-    } else if message.starts_with("Recording ") {
-        Some(Stage::Recording)
-    } else if message == "emit_capture_shortcut" {
-        Some(Stage::Shortcut)
-    } else if message == "finish_recording invoked" {
-        Some(Stage::Finishing)
-    } else if message.starts_with("finish timings: ") {
-        Some(Stage::Saved)
-    } else if message == "cancel_recording invoked" {
-        Some(Stage::Cancelled)
-    } else if message == "native_event_loop_ended_during_capture" {
-        Some(Stage::UnexpectedReturn)
-    } else {
-        None
-    }
-}
-
-enum Observation {
-    Stage(Stage),
-    FinishPhase(FinishPhase),
-}
-
-impl Observation {
-    fn read(line: &[u8]) -> Option<Self> {
-        if line.starts_with(b"apparent-native-finish: ") {
-            FinishPhase::from_marker(line).map(Self::FinishPhase)
-        } else {
-            stage(line).map(Self::Stage)
-        }
-    }
-
-    fn apply(self, record: &mut Record) -> bool {
-        match self {
-            Self::Stage(next) => {
-                let changed = record.stage != next;
-                record.stage = next;
-                let reset_finish = matches!(next, Stage::Idle | Stage::Recording | Stage::Finishing | Stage::Cancelled)
-                    && record.finish_phase.take().is_some();
-                changed || reset_finish
-            }
-            Self::FinishPhase(next) => {
-                if record.consent.is_none() || record.finish_phase == Some(next) {
-                    return false;
-                }
-                record.finish_phase = Some(next);
-                true
-            }
-        }
-    }
-}
-
 fn observe(
     mut pipe: impl Read + std::os::fd::AsRawFd,
     stop: Arc<AtomicBool>,
     record: Arc<Mutex<Option<(PathBuf, Record)>>>,
 ) {
+    let observed_since = Instant::now();
     let fd = pipe.as_raw_fd();
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
     if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
@@ -341,7 +281,7 @@ fn observe(
                             && let Some(observation) = Observation::read(&line)
                             && let Ok(mut slot) = record.lock()
                             && let Some((path, record)) = slot.as_mut()
-                            && observation.apply(record)
+                            && observation.apply(record, observed_since.elapsed().as_millis() as u64)
                         {
                             let _ = save(path, record);
                         }
@@ -376,6 +316,7 @@ fn refresh_consent(path: &Path, record: &mut Record, consent: Option<String>) {
         record.consent = consent;
         record.stage = Stage::Starting;
         record.finish_phase = None;
+        record.trace = Trace::default();
         let _ = save(path, record);
     }
 }
@@ -420,6 +361,8 @@ pub(crate) fn run(hooks: Hooks) -> Result<()> {
             modified: env!("APPARENT_BUILD_MODIFIED") == "true",
             stage: Stage::Starting,
             finish_phase: None,
+            trace: Trace::default(),
+            cgroup_oom_kill_increased: None,
             code: None,
             signal: None,
             core_dumped: false,
@@ -433,8 +376,12 @@ pub(crate) fn run(hooks: Hooks) -> Result<()> {
         .env(CHILD, parent.to_string())
         .stderr(Stdio::piped())
         .spawn()?;
+    let mut oom = None;
     if let Some((path, state)) = record.lock().unwrap().as_mut() {
         state.child = child.id();
+        if state.consent.is_some() {
+            oom = OomSample::start(state.child);
+        }
         state.child_identity = identity(child.id()).unwrap_or_default();
         let _ = save(path, state);
     }
@@ -455,7 +402,11 @@ pub(crate) fn run(hooks: Hooks) -> Result<()> {
         }
         if checked.elapsed() >= Duration::from_secs(1) {
             if let Some((path, record)) = record.lock().unwrap().as_mut() {
-                refresh_consent(path, record, (hooks.consent)());
+                let consent = (hooks.consent)();
+                if record.consent != consent {
+                    oom = consent.as_ref().and_then(|_| OomSample::start(record.child));
+                }
+                refresh_consent(path, record, consent);
             }
             checked = Instant::now();
         }
@@ -475,6 +426,9 @@ pub(crate) fn run(hooks: Hooks) -> Result<()> {
         } else {
             record.code = status.code();
             record.signal = status.signal();
+            if record.signal == Some(libc::SIGKILL) {
+                record.cgroup_oom_kill_increased = oom.and_then(OomSample::increased);
+            }
             record.core_dumped = status.core_dumped();
             record.runtime_ms = started.elapsed().as_millis() as u64;
             record.exited_ms = Some(crate::shared::clock::now_epoch_ms());

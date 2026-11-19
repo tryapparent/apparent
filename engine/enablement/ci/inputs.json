@@ -1,5 +1,5 @@
 {
   "root": "engine",
   "excludedSuffixes": [".md"],
-  "desktopPermissions": "engine/permissions/"
+  "desktopPaths": ["engine/permissions/", "engine/diagnostics/"]
 }

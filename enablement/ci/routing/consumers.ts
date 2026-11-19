@@ -1,11 +1,8 @@
 import {readFileSync} from 'node:fs';
 import {portableForegroundInputs, serviceOnlyInputs} from '../../../shared/enablement/ci/connect-inputs.ts';
 import {bendConsumers} from '../../../shared/enablement/bend/consumers.ts';
-const rule = JSON.parse(readFileSync(new URL('../../../engine/enablement/ci/inputs.json', import.meta.url), 'utf8')) as {root: string; excludedSuffixes: string[]; desktopPermissions: string};
-const automaticPaths = [rule.root + '/**', '!' + rule.desktopPermissions + '**', ...rule.excludedSuffixes.map(suffix => '!' + rule.root + '/**/*' + suffix)];
-const affectsEngine = (path: string) => path.startsWith(rule.root + '/') && !path.startsWith(rule.desktopPermissions) && !rule.excludedSuffixes.some(suffix => path.endsWith(suffix));
 import {admissionTooling, branchCleanupInput, connectConsumers, nativeWorkflowPaths} from '../../../shared/enablement/ci/inputs.ts';
-import {independentInputs} from './engine-inputs/qualify.ts';
+import {affectsEngine, automaticPaths, desktopEnginePaths, desktopPaths, independentInputs} from './engine-inputs/qualify.ts';
 export const owners = ['capture', 'engine', 'desktop', 'capture-tools', 'client', 'client-foreground', 'web', 'service', 'public', 'hermes', 'tooling', 'onboarding', 'engine-media'] as const;
 export type Owner = typeof owners[number];
 export const desktopPackagingInputs = new Set(['install-app.sh', 'frontend/stage.ts']
@@ -59,7 +56,8 @@ function directConsumers(path: string): readonly Owner[] {
   if (branchCleanupInput(path)) return ['tooling'];
   if (admissionTooling(path)) return ['tooling'];
   if (desktopPackagingInputs.has(path)) return ['capture', 'engine', 'desktop', 'capture-tools', 'client-foreground'];
-  if (path.startsWith(rule.desktopPermissions)) return ['capture', 'engine', 'desktop'];
+  if (path.startsWith('engine/diagnostics/')) return ['capture'];
+  if (desktopPaths.some(prefix => path.startsWith(prefix))) return ['capture', 'engine', 'desktop'];
   if (path.startsWith('engine/')) return affectsEngine(path) ? ['engine-media'] : [];
   if (independent.includes('!' + path)) return ['tooling'];
   if (independentInputs.has(path)) return owners.filter(owner => owner !== 'engine-media');
@@ -143,7 +141,7 @@ const native = ['Cargo.toml', 'Cargo.lock', 'build.rs', 'main.rs', '.cargo/**',
 const nativeOnlyTriggers = [...nativeWorkflowPaths.map(path => '!' + path),
   '!enablement/prerequisites/**', '!enablement/native-build/**', '!enablement/verification.py', '!enablement/build_version.rs'];
 const directoryPaths = {
-  capture: [...common, ...independent, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, rule.desktopPermissions + '**', 'capture/**', 'record/**', 'connect/**',
+  capture: [...common, ...independent, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, ...desktopEnginePaths, 'capture/**', 'record/**', 'connect/**',
     'agent/**', 'AGENTS.md', 'public/**', ...Array.from(serviceOnlyInputs, path => '!' + path)],
   connect: [...common, ...independent, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, ...desktopPackagingInputs, 'connect/**', 'public/**',
     '.github/workflows/stream-connect.yml', 'enablement/release_gate.py'],

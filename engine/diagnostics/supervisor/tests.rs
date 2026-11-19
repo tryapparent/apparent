@@ -1,4 +1,5 @@
 use super::*;
+use super::trace::stage;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::sync::atomic::AtomicUsize;
 
@@ -117,6 +118,9 @@ fn production_supervision_records_signal_and_removes_clean_exit_markers() {
             if mode == "kill" {
                 assert_eq!(diagnostics["last_stage"], "finishing");
                 assert_eq!(diagnostics["last_finish_phase"], "building_bundle");
+                let steps = diagnostics["recent_steps"].as_array().unwrap();
+                assert_eq!(steps.last().unwrap()["checkpoint"]["finish_phase"], "building_bundle");
+                assert!(steps.windows(2).all(|pair| pair[0]["elapsed_ms"].as_u64() <= pair[1]["elapsed_ms"].as_u64()));
                 assert!(!diagnostics.to_string().contains("private transcript canary"));
             } else {
                 assert_eq!(diagnostics["last_stage"], "shortcut");
@@ -148,6 +152,8 @@ fn fixture() -> Record {
         modified: false,
         stage: Stage::Shortcut,
         finish_phase: None,
+        trace: Trace::default(),
+        cgroup_oom_kill_increased: None,
         code: None,
         signal: Some(libc::SIGKILL),
         core_dumped: false,
@@ -287,21 +293,22 @@ fn enabling_and_rotating_consent_discards_previous_context_without_restart() {
     let current = read(&path).unwrap();
     assert_eq!(current.stage, Stage::Starting);
     assert_eq!(current.finish_phase, None);
+    assert!(current.trace.is_empty());
 }
 
 #[test]
 fn finish_phases_survive_inner_bundle_timing_and_reset_for_a_new_recording() {
     let mut record = fixture();
-    Observation::read(b"[123] finish_recording invoked").unwrap().apply(&mut record);
-    Observation::read(FinishPhase::BuildingBundle.marker().as_bytes()).unwrap().apply(&mut record);
-    Observation::read(b"[124] finish timings: synthetic").unwrap().apply(&mut record);
+    Observation::read(b"[123] finish_recording invoked").unwrap().apply(&mut record, 1);
+    Observation::read(FinishPhase::BuildingBundle.marker().as_bytes()).unwrap().apply(&mut record, 1);
+    Observation::read(b"[124] finish timings: synthetic").unwrap().apply(&mut record, 1);
     assert_eq!(record.finish_phase, Some(FinishPhase::BuildingBundle));
-    Observation::read(FinishPhase::PublishingBundle.marker().as_bytes()).unwrap().apply(&mut record);
+    Observation::read(FinishPhase::PublishingBundle.marker().as_bytes()).unwrap().apply(&mut record, 1);
     assert_eq!(record.finish_phase, Some(FinishPhase::PublishingBundle));
-    Observation::read(b"[125] Recording synthetic").unwrap().apply(&mut record);
+    Observation::read(b"[125] Recording synthetic").unwrap().apply(&mut record, 1);
     assert_eq!(record.finish_phase, None);
     record.consent = None;
-    assert!(!Observation::read(FinishPhase::StoppingSource.marker().as_bytes()).unwrap().apply(&mut record));
+    assert!(!Observation::read(FinishPhase::StoppingSource.marker().as_bytes()).unwrap().apply(&mut record, 1));
     assert_eq!(record.finish_phase, None);
 }
 

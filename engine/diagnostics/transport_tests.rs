@@ -69,8 +69,18 @@ fn native_exit_payload_preserves_original_release_and_event_identity_over_http()
     });
     let id = "cb02e8ec-35ed-4fb5-8afc-000000000001";
     let metadata = json!({"build":"0.22.8 · 4373c3f", "commit_sha":"4373c3f", "$app_version":"0.22.8", "package_version":"0.22.8", "release_version":"original", "channel":"main", "environment":"test", "build_modified":false, "$release_id":"cb02e8ec-35ed-4fb5-8afc-000000000002", "private_extra":"must not leave"});
-    let diagnostics =
-        json!({"signal":9, "exit_code":null, "last_stage":"finishing", "last_finish_phase":"building_bundle", "supervisor_lost":false});
+    let diagnostics = json!({
+        "signal": 9,
+        "exit_code": null,
+        "last_stage": "finishing",
+        "last_finish_phase": "building_bundle",
+        "recent_steps": [
+            {"elapsed_ms": 2400, "checkpoint": {"stage": "finishing"}},
+            {"elapsed_ms": 2440, "checkpoint": {"finish_phase": "building_bundle"}}
+        ],
+        "cgroup_oom_kill_increased": false,
+        "supervisor_lost": false
+    });
     let payload = native_payload(base(), diagnostics.clone(), id, metadata.clone());
     assert!(send(&endpoint, &payload).unwrap());
     let received = server.join().unwrap();
@@ -82,7 +92,7 @@ fn native_exit_payload_preserves_original_release_and_event_identity_over_http()
         metadata["$release_id"]
     );
     assert_eq!(received["properties"]["native_exit"], diagnostics);
-    assert_eq!(received["properties"]["diagnostics_schema_version"], 8);
+    assert_eq!(received["properties"]["diagnostics_schema_version"], 9);
     assert_eq!(
         received["properties"]["$exception_list"][0]["mechanism"]["handled"],
         false
