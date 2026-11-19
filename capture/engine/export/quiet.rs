@@ -1,16 +1,65 @@
 //! Conservative presentation-only compression. Detection uses full source frames, never keyframes.
-use super::Done;
-use crate::shared::model::{ApparentBundle, InteractionEvent};
+use super::{Done, Plan};
+use crate::shared::model::ApparentBundle;
 use anyhow::{Context, Result, ensure};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{path::Path, process::Command};
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct Interval {
-    start_ms: u64,
-    end_ms: u64,
-    rate: u32,
+pub(crate) struct Interval {
+    pub(crate) start_ms: u64,
+    pub(crate) end_ms: u64,
+    pub(crate) rate: u32,
+}
+
+pub(crate) const RETIME_RATE: u32 = 4;
+pub(crate) const MAX_INTERVALS: usize = 64;
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct Parameters {
+    pub(crate) freeze_noise_db: f64,
+    pub(crate) freeze_duration_ms: u32,
+    pub(crate) silence_noise_db: f64,
+    pub(crate) silence_duration_ms: u32,
+}
+impl Parameters {
+    pub(crate) fn validate(&self) -> Result<()> {
+        ensure!(
+            [self.freeze_noise_db, self.silence_noise_db]
+                .iter()
+                .all(|value| value.is_finite() && (-120.0..=0.0).contains(value))
+                && self.freeze_duration_ms > 0
+                && self.silence_duration_ms > 0,
+            "Invalid quiet-export observation parameters"
+        );
+        Ok(())
+    }
+}
+
+pub(crate) struct Observations {
+    pub(crate) frozen: Vec<(u64, u64)>,
+    pub(crate) silent: Vec<(u64, u64)>,
+}
+
+pub(crate) fn validate_intervals(intervals: &[Interval], duration: u64) -> Result<()> {
+    ensure!(
+        intervals.len() <= MAX_INTERVALS,
+        "Too many native retiming intervals"
+    );
+    let mut previous = 0;
+    for interval in intervals {
+        ensure!(
+            interval.start_ms >= previous
+                && interval.start_ms < interval.end_ms
+                && interval.end_ms <= duration
+                && interval.rate == RETIME_RATE,
+            "Invalid native retiming interval"
+        );
+        previous = interval.end_ms;
+    }
+    Ok(())
 }
 
 fn ffmpeg(command: &mut Command) -> Result<String> {
@@ -55,107 +104,59 @@ fn ranges(log: &str, prefix: &str, duration: u64) -> Vec<(u64, u64)> {
     out
 }
 
-fn select(frozen: &[(u64, u64)], silent: &[(u64, u64)], protected: &[(u64, u64)]) -> Vec<Interval> {
-    let mut out = Vec::new();
-    for &(a, b) in frozen {
-        for &(c, d) in silent {
-            // Preserve five seconds to read each new state and five before the next change.
-            let start = a.max(c).saturating_add(5000);
-            let end = b.min(d).saturating_sub(5000);
-            let mut pieces = vec![(start, end)];
-            for &(p, q) in protected {
-                pieces = pieces
-                    .into_iter()
-                    .flat_map(|(x, y)| {
-                        if p >= y || q <= x {
-                            vec![(x, y)]
-                        } else {
-                            vec![(x, p.max(x)), (q.min(y), y)]
-                        }
-                    })
-                    .collect();
-            }
-            for (start_ms, end_ms) in pieces {
-                if end_ms.saturating_sub(start_ms) >= 10_000 {
-                    out.push(Interval {
-                        start_ms,
-                        end_ms,
-                        rate: 4,
-                    });
-                }
-            }
-        }
+fn seconds(milliseconds: u32) -> String {
+    if milliseconds % 1000 == 0 {
+        (milliseconds / 1000).to_string()
+    } else {
+        format!("{}.{:03}", milliseconds / 1000, milliseconds % 1000)
     }
-    out.sort_by_key(|i| i.start_ms);
-    // Bound filter graph size; later holds conservatively retain recorded timing.
-    out.truncate(64);
-    out
 }
 
-pub(super) fn analyze(
+fn observe(
     video: &Path,
     audio: Option<&Path>,
     offset: u64,
     duration: u64,
-    bundle: &ApparentBundle,
-) -> Result<Vec<Interval>> {
+    parameters: &Parameters,
+) -> Result<Observations> {
+    parameters.validate()?;
+    let freeze = format!(
+        "freezedetect=n={}dB:d={}",
+        parameters.freeze_noise_db,
+        seconds(parameters.freeze_duration_ms)
+    );
     let log = ffmpeg(
         Command::new("ffmpeg")
             .args(["-nostdin", "-hide_banner", "-i"])
             .arg(video)
-            .args(["-an", "-vf", "freezedetect=n=-60dB:d=12", "-f", "null", "-"]),
+            .args(["-an", "-vf", &freeze, "-f", "null", "-"]),
     )?;
     let frozen = ranges(&log, "freeze", duration);
     if frozen.is_empty() {
-        return Ok(Vec::new());
+        return Ok(Observations {
+            frozen,
+            silent: Vec::new(),
+        });
     }
     let silent = if let Some(audio) = audio {
+        let silence = format!(
+            "silencedetect=n={}dB:d={}",
+            parameters.silence_noise_db,
+            seconds(parameters.silence_duration_ms)
+        );
         let log = ffmpeg(
             Command::new("ffmpeg")
                 .args(["-nostdin", "-hide_banner", "-ss"])
                 .arg(format!("{:.3}", offset as f64 / 1000.0))
                 .arg("-i")
                 .arg(audio)
-                .args(["-vn", "-af", "silencedetect=n=-55dB:d=1", "-f", "null", "-"]),
+                .args(["-vn", "-af", &silence, "-f", "null", "-"]),
         )?;
         ranges(&log, "silence", duration)
     } else {
         vec![(0, duration)]
     };
-    let mut protected = Vec::new();
-    let mut protect = |start: u64, end: u64| {
-        let start = start.saturating_sub(bundle.video_offset_ms);
-        let end = end.saturating_sub(bundle.video_offset_ms);
-        protected.push((start.saturating_sub(2000), end.saturating_add(5000)));
-    };
-    for event in &bundle.events {
-        let start = event.timestamp_ms();
-        let end = if let InteractionEvent::Drag { t1, .. } = event {
-            *t1
-        } else {
-            start
-        };
-        protect(start, end);
-    }
-    for stroke in &bundle.strokes {
-        protect(stroke.t0, stroke.t1);
-    }
-    for mark in &bundle.marks {
-        protect(mark.t0, mark.t1);
-    }
-    for segment in &bundle.transcript.segments {
-        protect(segment.t0, segment.t1);
-    }
-    // Samples are emitted while moving. A gap between samples is not continuous motion.
-    for sample in &bundle.cursor {
-        protect(sample.0, sample.0);
-    }
-    let intervals = select(&frozen, &silent, &protected);
-    eprintln!(
-        "Quiet-stretch speedup (source video milliseconds): {}",
-        serde_json::to_string(&intervals)?
-    );
-    Ok(intervals)
+    Ok(Observations { frozen, silent })
 }
 
 // A fixed vector 4x badge keeps export independent of fonts and optional drawtext builds.
@@ -180,7 +181,24 @@ fn badge_filter(enabled: &str) -> String {
     filters.join(",")
 }
 
-pub(super) fn retime(
+pub(super) fn pace(
+    plan: &Plan<'_>,
+    bundle: &ApparentBundle,
+    parameters: Option<&Parameters>,
+    done: Done,
+) -> Result<Done> {
+    let Some(parameters) = parameters else { return Ok(done); };
+    let audio = plan.audio.is_some();
+    let observations = observe(plan.video, audio.then_some(plan.out), 0, plan.duration_ms, parameters)?;
+    let intervals = crate::composition::media_probe::quiet::quiet_plan(bundle, plan.duration_ms, &observations)?;
+    if !observations.frozen.is_empty() {
+        eprintln!("Quiet-stretch speedup (source video milliseconds): {}", serde_json::to_string(&intervals)?);
+    }
+    if intervals.is_empty() { return Ok(done); }
+    retime(plan.out, &intervals, plan.duration_ms, audio, plan.codec == "hevc", plan.fps)
+}
+
+fn retime(
     movie: &Path,
     intervals: &[Interval],
     duration: u64,
@@ -188,6 +206,7 @@ pub(super) fn retime(
     hevc: bool,
     fps: u32,
 ) -> Result<Done> {
+    validate_intervals(intervals, duration)?;
     let output = movie.with_extension("paced.mp4");
     let result = (|| {
         let mut spans = Vec::new();
@@ -309,27 +328,6 @@ pub(super) fn retime(
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn holds_preserve_reading_time_and_actions() {
-        assert!(select(&[(0, 19000)], &[(0, 19000)], &[]).is_empty());
-        assert_eq!(
-            select(&[(0, 40000)], &[(0, 40000)], &[]),
-            vec![Interval {
-                start_ms: 5000,
-                end_ms: 35000,
-                rate: 4
-            }]
-        );
-        let selected = select(&[(0, 60000)], &[(0, 60000)], &[(25000, 35000)]);
-        assert_eq!(
-            selected
-                .iter()
-                .map(|i| (i.start_ms, i.end_ms))
-                .collect::<Vec<_>>(),
-            vec![(5000, 25000), (35000, 55000)]
-        );
-        assert!(select(&[(0, 40000)], &[], &[]).is_empty());
-    }
     #[test]
     fn detector_boundaries_include_terminal_holds() {
         assert_eq!(

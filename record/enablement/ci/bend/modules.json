@@ -1,4 +1,7 @@
 {
-  "modules": ["completion/src/copy-admission.bend"],
-  "inputs": ["completion/"]
+  "modules": [
+    "completion/src/copy-admission.bend",
+    "media/src/export/quiet-export.bend"
+  ],
+  "inputs": ["completion/", "media/src/export/"]
 }

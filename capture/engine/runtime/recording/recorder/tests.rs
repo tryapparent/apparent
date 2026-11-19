@@ -102,6 +102,8 @@ fn synthetic_candidate_does_not_make_agent_capture_ready() {
         real_frame_seen: seen,
         startup_failed: Arc::new(AtomicBool::new(false)),
         video_offset_ms: Arc::new(AtomicU64::new(0)),
+        #[cfg(target_os = "macos")]
+        native_stop: None,
         sampler_thread: None,
         _recording: crate::capture::engine::bundle::retention::Recording::start(),
     };
@@ -140,6 +142,8 @@ fn transient_screenshot_failure_retries_to_readiness_and_finalization() {
             real_frame_seen: Arc::new(AtomicBool::new(false)),
             startup_failed: Arc::new(AtomicBool::new(false)),
             video_offset_ms: Arc::new(AtomicU64::new(0)),
+            #[cfg(target_os = "macos")]
+            native_stop: None,
             sampler_thread: Some(worker),
             _recording: crate::capture::engine::bundle::retention::Recording::start(),
         };
@@ -198,6 +202,8 @@ fn pending_worker_is_not_failed_and_terminal_signal_does_not_discard_it() {
         real_frame_seen: Arc::new(AtomicBool::new(false)),
         startup_failed: Arc::new(AtomicBool::new(false)),
         video_offset_ms: Arc::new(AtomicU64::new(0)),
+        #[cfg(target_os = "macos")]
+        native_stop: None,
         sampler_thread: Some(worker),
         _recording: crate::capture::engine::bundle::retention::Recording::start(),
     };
@@ -244,6 +250,8 @@ fn screen_stop_joins_worker_before_collecting_its_final_media() {
         real_frame_seen: Arc::new(AtomicBool::new(false)),
         video_offset_ms: Arc::new(AtomicU64::new(120)),
         startup_failed: Arc::new(AtomicBool::new(false)),
+        #[cfg(target_os = "macos")]
+        native_stop: None,
         sampler_thread: Some(worker),
         _recording: crate::capture::engine::bundle::retention::Recording::start(),
     };
@@ -321,6 +329,8 @@ fn stopped_capture_without_real_frames_stays_empty() {
         real_frame_seen: Arc::new(AtomicBool::new(false)),
         video_offset_ms: Arc::new(AtomicU64::new(0)),
         startup_failed: Arc::new(AtomicBool::new(false)),
+        #[cfg(target_os = "macos")]
+        native_stop: None,
         sampler_thread: None,
         _recording: crate::capture::engine::bundle::retention::Recording::start(),
     };

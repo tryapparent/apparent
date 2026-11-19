@@ -16,6 +16,34 @@ const options = proofOptions(process.argv.slice(2));
 await bendScratch(async (scratch) => {
   const proofOutput = join(scratch, "proof");
   await buildBend(root, "record", proofOutput, options);
+  const quiet = (directory: string) =>
+    JSON.parse(
+      run(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `
+      import bend from "./quiet-export.mjs";
+      const clock = (hi, lo) => ({ $: "Clock", hi, lo });
+      const span = { $: "Span", start: clock(0,0), end: clock(1,12000) };
+      const nil = { $: "Nil" };
+      const observed = { $: "Con", head: span, tail: nil };
+      console.log(JSON.stringify(bend.plan_quiet_export(observed, observed, nil, clock(0,0), 64)));
+    `,
+        ],
+        directory,
+      ),
+    );
+  assert.deepEqual(quiet(proofOutput), {
+    $: "Con",
+    head: {
+      $: "Span",
+      start: { $: "Clock", hi: 0, lo: 5000 },
+      end: { $: "Clock", hi: 1, lo: 7000 },
+    },
+    tail: { $: "Nil" },
+  });
   const production = join(scratch, "production");
   await buildAdmission(production);
   const decisions = (directory: string) =>
