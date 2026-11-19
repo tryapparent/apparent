@@ -1,0 +1,37 @@
+{
+  "pure": [
+    "capture/desktop/ui/frontend/electron/onboarding/account.ts",
+    "capture/desktop/ui/frontend/electron/onboarding/presentation.ts",
+    "capture/desktop/ui/frontend/electron/onboarding/selection.ts",
+    "capture/desktop/ui/frontend/src/onboarding/state.ts",
+    "capture/desktop/ui/frontend/src/onboarding/shortcut/keys.ts"
+  ],
+  "legacy": [
+    "capture/desktop/ui/frontend/electron/onboarding/wispr.ts",
+    "capture/desktop/ui/frontend/src/onboarding/wispr/motion.ts",
+    "capture/desktop/ui/frontend/src/onboarding/wispr/use-wispr.ts",
+    "capture/desktop/ui/frontend/src/onboarding/wispr/frog-sprites.png",
+    "capture/desktop/ui/frontend/tests/onboarding/wispr/smoke.ts"
+  ],
+  "retired": [
+    "capture/desktop/settings/onboarding/account.rs",
+    "capture/desktop/ui/frontend/electron/onboarding/account.ts",
+    "capture/desktop/ui/frontend/tests/onboarding/account.test.ts",
+    "capture/desktop/ui/frontend/src/onboarding/account.tsx",
+    "capture/desktop/ui/frontend/src/onboarding/control-guide.tsx",
+    "capture/desktop/ui/frontend/src/onboarding/control-guide.css",
+    "capture/desktop/ui/frontend/src/onboarding/permissions.tsx",
+    "capture/desktop/ui/frontend/src/onboarding/wispr/step.tsx",
+    "capture/desktop/ui/frontend/src/onboarding/wispr/wispr.css",
+    "capture/desktop/ui/frontend/src/onboarding/wispr/use-wispr.ts",
+    "capture/desktop/ui/frontend/src/onboarding/wispr/motion.ts"
+  ],
+  "paths": [
+    "onboarding/renderer/package.json",
+    "onboarding/host/wispr.ts",
+    "onboarding/host/wispr-native.ts",
+    "onboarding/host/dictation.ts",
+    "composition/onboarding/src/entry.ts"
+  ],
+  "prefix": "onboarding/renderer/wispr/"
+}

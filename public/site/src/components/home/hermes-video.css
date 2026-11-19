@@ -1,0 +1,39 @@
+:root .pond-demo.hermes-video > :is(h2, .demo-section) {
+  max-width: clamp(300px, calc((100svh - 152px) * 16 / 9), 1072px);
+}
+
+.hermes-video > .demo-section {
+  width: min(100%, 920px);
+}
+
+:root .pond-demo.hermes-video h2 img {
+  margin-inline: 0 .16em;
+}
+
+.hermes-video iframe {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 200px;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.hermes-video a {
+  color: var(--color-foreground);
+  text-decoration: underline;
+  text-underline-offset: .16em;
+}
+
+.hermes-video .demo-section a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.hermes-video a:focus-visible,
+.hermes-video iframe:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 3px;
+}

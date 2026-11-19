@@ -30,23 +30,14 @@ const webAssets = new Set(['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.pn
   'hosted/agent-reading-v4.png', 'fonts/HostGrotesk-Variable.ttf', 'brand/apparent-wordmark.svg']
   .map(path => 'public/site/public/assets/' + path));
 const frontend = 'capture/desktop/ui/frontend/';
-export const onboardingPureInputs = new Set([
-  'electron/onboarding/account.ts', 'electron/onboarding/presentation.ts', 'electron/onboarding/selection.ts',
-  'src/onboarding/state.ts', 'src/onboarding/shortcut/keys.ts',
-].map(path => frontend + path));
-export const onboardingWisprInputs = new Set([
-  'electron/onboarding/wispr.ts', 'src/onboarding/wispr/motion.ts',
-  'src/onboarding/wispr/use-wispr.ts', 'src/onboarding/wispr/frog-sprites.png',
-  'tests/onboarding/wispr/smoke.ts',
-].map(path => frontend + path));
-export const retiredOnboardingInputs = new Set([
-  'capture/desktop/settings/onboarding/account.rs',
-  ...['electron/onboarding/account.ts', 'tests/onboarding/account.test.ts',
-    ...['account.tsx', 'control-guide.tsx', 'control-guide.css', 'permissions.tsx']
-      .map(file => 'src/onboarding/' + file),
-  ].map(file => frontend + file),
-]);
+const onboarding = JSON.parse(readFileSync(new URL('../../../onboarding/enablement/ci/inputs.json', import.meta.url), 'utf8')) as {
+  pure: string[]; legacy: string[]; retired: string[]; paths: string[]; prefix: string;
+};
+export const onboardingPureInputs = new Set(onboarding.pure);
+export const onboardingWisprInputs = new Set(onboarding.legacy);
+export const retiredOnboardingInputs = new Set(onboarding.retired);
 export const onboardingRoots = ['src', 'electron', 'tests'].map(dir => frontend + dir + '/onboarding/');
+const shortcutConflictInput = (path: string) => path.startsWith(onboarding.prefix) || onboarding.paths.includes(path);
 const onboardingRendererTestInputs = new Set([
   'renderer/window-coach.smoke.ts', 'renderer/tsconfig.json', 'wispr/smoke.ts',
 ].map(file => frontend + 'tests/onboarding/' + file));
@@ -56,7 +47,7 @@ const onboardingConnectInputs = new Set([
   'tests/connect/session.test.ts', 'tests/connect/flow-hook.test.ts',
 ].map(path => frontend + path));
 export function onboardingInput(path: string): boolean {
-  return onboardingConnectInputs.has(path) || onboardingRoots.some(root => path.startsWith(root)) ||
+  return shortcutConflictInput(path) || onboardingConnectInputs.has(path) || onboardingRoots.some(root => path.startsWith(root)) ||
     ['onboarding.html', 'electron/onboarding.cjs', 'electron/onboarding-preload.cjs', 'electron/onboarding-protocol.cjs']
       .some(file => path === frontend + file) ||
     path.startsWith('capture/desktop/settings/onboarding') || path.endsWith('/practice.rs') ||
@@ -105,6 +96,7 @@ function directConsumers(path: string): readonly Owner[] {
   if (path.startsWith('enablement/ci/') || path === 'enablement/local-tests/run.ts' || path.startsWith('.github/actions/ubuntu-apt/')) return owners;
   if (portableForegroundInputs.has(path)) return ['client-foreground'];
   if (onboardingPureInputs.has(path) || onboardingRendererTestInputs.has(path)) return ['desktop', 'onboarding'];
+  if (shortcutConflictInput(path)) return ['desktop', 'onboarding'];
   if (path.startsWith(frontend + 'tests/onboarding/') &&
       (/\.test\.ts$/.test(path) || ['package.json','package-lock.json','tsconfig.json'].some(name => path.endsWith('/' + name)))) return ['onboarding'];
   if (/^(capture\/desktop\/ui\/frontend\/src\/onboarding|onboarding\/renderer)\/.*\.(tsx|css)$/.test(path) ||

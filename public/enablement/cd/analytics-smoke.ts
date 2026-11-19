@@ -62,13 +62,13 @@ try {
       if (/posthog/i.test(url.hostname)) analyticsRequests.push(url.href)
       await route.abort()
     })
-    await context.addInitScript(choice => {
-      if (choice === null) return
+    await context.addInitScript(({ choice, origin }) => {
+      if (choice === null || window !== window.top || location.origin !== origin) return
       localStorage.setItem('apparent.product-analytics.v1', JSON.stringify({
         choice, at: Date.now(), noticeVersion: 'product-analytics-v1',
         id: 'anon:11111111-1111-4111-8111-111111111111',
       }))
-    }, savedChoice)
+    }, { choice: savedChoice, origin: publicOrigin })
     const page = await context.newPage()
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))

@@ -49,3 +49,26 @@ The native fallback remains available when the Electron presentation cannot
 open. An app rollback restores the earlier Electron renderer and native
 permission routing together. Retiring the fallback or moving the rest
 of the tour requires installed acceptance on macOS and Linux.
+
+## Dictation app conflicts
+
+On macOS, **Settings → Labs → Dictation app conflicts** uses the existing
+default-off `experiments.onboardingWisprFlow` preference and config writer.
+The next shortcut setup visit checks for running Wispr Flow and Superwhisper
+apps. The prompt names the apps it found and offers to keep them open or request
+a normal quit. With both running, the quit action asks both to exit. A refusal
+or timeout offers retry or continuation. The frog animation follows an observed
+exit, then setup proceeds to shortcut selection. Neither app's settings change.
+
+The Electron hosts share the Onboarding decision in `host/wispr.ts`, the
+React screen in `renderer/wispr/`, and the AppKit adapter in `host/wispr-native.ts`. The
+adapter looks up fixed bundle IDs and receives only the app set from the
+current offer when quitting. Package consumers of `./wispr` now return app IDs
+with a running result and receive that set as the provider's third argument.
+Turn the flag off to bypass the prompt. Linux and the native fallback continue
+directly to shortcut setup.
+
+The Electron smoke uses synthetic detection and quit responses. Run
+`APPARENT_WISPR_NATIVE_TEST=1 node --experimental-strip-types --test capture/desktop/ui/frontend/tests/onboarding/wispr/macos.test.ts`
+from the repository root on an isolated Mac to exercise the AppKit adapter
+against owned fixtures.

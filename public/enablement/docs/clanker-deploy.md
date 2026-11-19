@@ -42,38 +42,23 @@ does not rewrite the packaged HTML. Run `node --test ../enablement/commerce/test
 to check acceptance and rejection through the real packager, including preservation
 of the previous artifact when marker validation rejects a build.
 
-## Recorded ghost demo
+## Homepage video
 
-`public/site/src/demo/core/VideoDemo.tsx` replaces the public scripted animation with the approved
-`public/site/public/assets/media/Apparent-ghost-demo-v4-lilac.mp4`. Keep this file byte-identical to the
-approved export. Its poster is a still from that same export. The movie has burned
-subtitles, lasts 59.818667 seconds, and loads only after a playback or seek action.
-Chapter times are final-export seconds: Start 0, Capture 3.733333, Sketch 15.433333,
-Handoff 27.92, Result 48.7, Try it 55.7. Controls follow the real video clock.
+The existing homepage demo slot embeds the Hermes Agent hackathon submission
+using YouTube’s privacy-enhanced player. It starts muted and inline, and
+respects the visitor’s reduced-motion preference. The link below the player
+opens the same submission directly if embedded playback is unavailable.
 
-The Pages package boundary includes only the approved movie, poster and public
-assets. Verify the source-built desktop/mobile layout and movie interactions
-before publication. The compiled-bundle overlay and snapshot are retired.
+The previously published ghost movie and poster retain their public URLs.
+The homepage feature grid still uses excerpts and illustrations from that demo.
 
-After building and packaging, run the source and artifact Node tests with
-`node --test ../enablement/brand/test-brand-favicon.mjs ../enablement/browser-proof/test-github-stars.mjs ../enablement/pages/test-latest-download.mjs ../enablement/pages/test-platform-os.mjs ../enablement/pages/test-public-homepage.ts ../enablement/browser-proof/test-video-demo.ts`.
-`npm run verify` runs the standalone source, theme and prepared-movie checks.
-Against a server that supports HTTP byte ranges, run
+After building and packaging, run the Public verification command
+(`npm run verify`). For browser proof, run
 `node ../enablement/browser-proof/verify-video-demo-browser.mjs <URL> <private evidence directory>`.
-`CHROME_PATH` can select an existing Chrome installation. The browser check covers
-first-load chapter seeking, play/pause, replay, all chapters, sound, pointer and
-keyboard seeking, absence of drawing controls and Shift-drag ink, natural ending, rapid switching, missing-media
-feedback, and 390/320px layouts. It does not verify physical speakers or Safari.
-Do not use Python's basic `http.server` to judge seeking: it ignores Range requests
-and Chrome can clamp an early seek to zero. Require a live `206` response with
-the correct `Content-Range`, compare the downloaded movie's SHA-256 with the
-packaged source, and rerun the browser check on the public URL after cutover.
+This checks the responsive layout, fallback focus, reduced motion and live
+muted autoplay. A sign-in prompt from YouTube leaves autoplay unverified.
 
-For layout changes, run `node ../enablement/browser-proof/verify-page-density-browser.mjs <URL>`
-against the packaged page. It checks the download gap, shorter hero, uncropped
-movie, and visible, reachable playback/chapter controls at seven desktop and
-phone sizes, including a 600px-tall desktop. The movie width follows viewport
-height so its controls do not fall below the screen. Keep the belief section's
-scroll runway below its content: the marks must still complete before the page
-ends, and the frog's jump must stay below the heading. Run the belief browser
-regression from `belief-release.md` after changing those gaps.
+For layout changes, run
+`node ../enablement/browser-proof/verify-page-density-browser.mjs <URL>`
+against the packaged page. It verifies that the
+Hermes player and its fallback fit at seven desktop and phone sizes.
