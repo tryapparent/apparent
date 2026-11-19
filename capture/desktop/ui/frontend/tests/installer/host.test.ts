@@ -35,16 +35,20 @@ test('installer host admits only its fixed regular bundled adapter',()=>{
 test('installer actual host binds requests to its page and closes only after successful native Open', async()=>{
   let ready:()=>Promise<void>, invoke:(event:any,request:any)=>Promise<any>, close:(event:any)=>void;
   let quit=false,blocked=false;
+  let activationPolicy: string | undefined;
   const frame={url:''};
   const contents={mainFrame:frame,setWindowOpenHandler:()=>{},on:()=>{}};
   const calls:any[]=[];
   class Window {
+    constructor() { assert.equal(activationPolicy, 'regular'); }
     webContents=contents;
     removeMenu(){}
     on(name:string,callback:any){if(name==='close')close=callback;}
     async loadURL(url:string){frame.url=url;}
   }
-  const electron={app:{setName:()=>{},dock:{setIcon:(file:string)=>{if(file.endsWith('.icns'))throw Error('Failed to load image from path');}},whenReady:()=>({then:(callback:any)=>{ready=callback;return{catch:()=>{}};}}),on:()=>{},
+  const electron={app:{setName:()=>{},setActivationPolicy:(policy:string)=>{activationPolicy=policy;},
+    dock:{setIcon:(file:string)=>{if(file.endsWith('.icns'))throw Error('Failed to load image from path');}},
+    whenReady:()=>({then:(callback:()=>Promise<void>)=>{ready=callback;return{catch:()=>{}};}}),on:()=>{},
     quit:()=>{quit=true;close({preventDefault:()=>{blocked=true;}});}},BrowserWindow:Window,
     ipcMain:{handle:(_channel:string,handler:any)=>{invoke=handler;}},
     session:{defaultSession:{setPermissionRequestHandler:()=>{},setPermissionCheckHandler:()=>{}}}};
@@ -128,7 +132,7 @@ for (const phase of ['window', 'load', 'dialog', 'activate']) test(`installer st
     show() { actions.push('show'); }
     focus() { actions.push('focus'); }
   }
-  const electron = {app: {setName() {}, on: (name:string, callback:()=>void) => handlers.set(name, callback),
+  const electron = {app: {setName() {}, setActivationPolicy() {}, on: (name:string, callback:()=>void) => handlers.set(name, callback),
     whenReady: () => ({then: (callback:()=>Promise<void>) => {
       pending = Promise.resolve().then(callback);
       void pending.catch(() => {}); // Preserve the original failure without an unhandled test rejection.

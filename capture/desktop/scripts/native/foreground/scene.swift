@@ -7,9 +7,10 @@ guard environment["CI"] == "true", environment["GITHUB_ACTIONS"] == "true",
 let application = NSApplication.shared
 application.setActivationPolicy(.regular)
 let window = NSWindow(contentRect: NSRect(x: 80, y: 100, width: 960, height: 620),
-    styleMask: [.titled, .closable], backing: .buffered, defer: false)
+    styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
 window.title = "Apparent foreground test — SYNTHETIC"
 window.isReleasedWhenClosed = false
+window.collectionBehavior = .fullScreenPrimary
 let content = NSView(frame: NSRect(x: 0, y: 0, width: 960, height: 620))
 content.wantsLayer = true
 content.layer?.backgroundColor = NSColor(calibratedRed: 0.12, green: 0.17, blue: 0.32, alpha: 1).cgColor
@@ -27,8 +28,12 @@ window.contentView = content
 application.finishLaunching()
 window.makeKeyAndOrderFront(nil)
 application.activate(ignoringOtherApps: true)
-DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+let fullscreen = NotificationCenter.default.addObserver(forName: NSWindow.didEnterFullScreenNotification, object: window, queue: .main) { _ in
     print("{\"ready\":true,\"pid\":\(ProcessInfo.processInfo.processIdentifier)}")
     fflush(stdout)
 }
+DispatchQueue.main.async {
+    window.toggleFullScreen(nil)
+}
 application.run()
+NotificationCenter.default.removeObserver(fullscreen)

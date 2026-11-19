@@ -15,6 +15,7 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { markElectronAccessory } from "./metadata.ts";
 
 const tooling = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const root = process.env.APPARENT_SOURCE_ROOT ?? tooling;
@@ -227,8 +228,10 @@ export function stageNative(prepared: string, destination: string) {
       run("codesign", ["--verify", "--strict", file]);
     }
   }
+  const runtime = join(destination, "runtime/Electron.app");
+  markElectronAccessory(runtime);
   signRuntime(
-    join(destination, "runtime/Electron.app"),
+    runtime,
     sign,
     join(root, "capture/desktop/scripts/packaging/Settings.entitlements"),
   );

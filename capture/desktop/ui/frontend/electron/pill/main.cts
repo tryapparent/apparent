@@ -6,6 +6,7 @@ const {pathToFileURL}=require('node:url');
 const protocol=require('./protocol.cjs');
 const geometry=require('./geometry.cjs');
 if(!['linux','darwin'].includes(process.platform))process.exit(1);
+if(process.platform==='darwin')app.setActivationPolicy('accessory');
 const hyprland=process.platform==='linux' && (Boolean(process.env.HYPRLAND_INSTANCE_SIGNATURE) || (process.env.XDG_CURRENT_DESKTOP||'').toLowerCase().split(':').includes('hyprland'));
 app.setName('Apparent recording controls');
 app.setPath('userData',path.join(app.getPath('appData'),'apparent-pill'));
@@ -150,7 +151,6 @@ process.stdin.on('error',()=>{note('parent_stream_error');app.quit();});
 app.whenReady().then(()=>{
   let appliedShape=null,shapePaint=null,documentGeneration=0,inputRegions=null,layoutGeneration=0,layoutKey='';
   Menu.setApplicationMenu(null);
-  if(process.platform==='darwin')app.setActivationPolicy('accessory');
   session.defaultSession.setPermissionRequestHandler((_contents,_permission,reply)=>reply(false));
   session.defaultSession.setPermissionCheckHandler(()=>false);
   session.defaultSession.webRequest.onBeforeRequest((details,reply)=>reply({cancel:!details.url.startsWith('file:')}));
@@ -324,7 +324,7 @@ app.whenReady().then(()=>{
     if(!bounds){visibleWidth=0;layoutPhase=null;}
     if(bounds)position(bounds);else if(pendingPlace)applyPlacement(pendingPlace);
   window.setAlwaysOnTop(true,'screen-saver');
-  window.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
+  if(process.platform==='linux')window.setVisibleOnAllWorkspaces(true);
   window.setContentProtection(false);
   window.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   window.webContents.on('will-navigate',event=>event.preventDefault());

@@ -39,6 +39,10 @@ static napi_value preventActivation(napi_env env, napi_callback_info info) {
                 !target.canBecomeKeyWindow || NSApp.activationPolicy != NSApplicationActivationPolicyAccessory ||
                 ![target respondsToSelector:@selector(_setPreventsActivation:)])
                 return refuse(env);
+            target.canHide = NO;
+            target.hidesOnDeactivate = NO;
+            target.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces |
+                NSWindowCollectionBehaviorCanJoinAllApplications;
             // The existing native pill uses this guarded AppKit mechanism.
             // Retain keyboard eligibility while setting the WindowServer tag.
             [target _setPreventsActivation:YES];

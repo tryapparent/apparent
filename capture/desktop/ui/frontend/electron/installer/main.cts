@@ -26,6 +26,7 @@ function startInstaller() {
   let busy = false;
   app.on('window-all-closed', () => app.quit());
   return app.whenReady().then(async () => {
+    app.setActivationPolicy('regular');
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     session.defaultSession.setPermissionCheckHandler(() => false);
     const page = pathToFileURL(path.join(__dirname, 'ui/src/installer/index.html')).href;

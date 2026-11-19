@@ -48,7 +48,7 @@ test('foreground upload states stay private, bounded, and use one authorized pil
  await application.evaluate(()=>process.stdin.emit('data',JSON.stringify({type:'activate'})+'\n'));
  await expect(page.getByRole('button',{name:'Public link',exact:true})).toBeVisible();
  if(process.platform==='darwin'){
-  const native=await application.evaluate(({BrowserWindow},modulePath)=>{
+  const native=await application.evaluate(({app,BrowserWindow},modulePath)=>{
    const window=BrowserWindow.getAllWindows()[0];
    const adapter=process.mainModule.require(modulePath);
    const refused=[];
@@ -60,8 +60,9 @@ test('foreground upload states stay private, bounded, and use one authorized pil
    try{adapter.preventActivation(otherId);refused.push(false);}
    catch(error){refused.push(error.code==='APPARENT_PILL_WINDOW');}
    finally{other.destroy();}
-   return {focusable:window.isFocusable(),otherId,refused};
+   return {dockVisible:app.dock.isVisible(),focusable:window.isFocusable(),otherId,refused};
   },path.resolve(__dirname,'../../../electron/pill/native/window.node'));
+  assert.equal(native.dockVisible,false,'Recording controls stay out of the Mac Dock');
   assert.equal(native.focusable,true,'Native admission must preserve keyboard eligibility');
   assert.ok(Number.isSafeInteger(native.otherId)&&native.otherId>0,'Other-window negative needs a real native window ID');
   assert.deepEqual(native.refused,[true,true,true,true,true,true],'Native adapter refuses invalid IDs and other surfaces');

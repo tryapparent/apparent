@@ -185,7 +185,22 @@ async function treeSitterComments(
       tree = null;
       tree = parser.parse(text);
     }
-    if (!tree || tree.rootNode.hasError)
+    let objcModule = false;
+    if (language === "objc" && tree?.rootNode.hasError) {
+      const errors = tree.rootNode.children.filter((node) => node.hasError);
+      const [statement] = errors;
+      const call = statement?.firstNamedChild;
+      const trailing = statement?.lastChild;
+      objcModule =
+        errors.length === 1 &&
+        statement.type === "expression_statement" &&
+        trailing?.type === ";" &&
+        trailing.isMissing &&
+        call?.type === "call_expression" &&
+        !call.hasError &&
+        /^NAPI_MODULE\([A-Za-z_]\w*,\s*[A-Za-z_]\w*\)$/.test(call.text);
+    }
+    if (!tree || (tree.rootNode.hasError && !objcModule))
       throw new Error(
         `${file}: syntax parser cannot safely classify comments; repair syntax or add supported grammar`,
       );
