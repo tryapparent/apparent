@@ -1,4 +1,4 @@
-import { useRef, useState, useSyncExternalStore } from "react";
+import { useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@apparent/ui/button";
 import { ErrorDialog } from "@apparent/ui/error-dialog";
 import type { RecordingBridge, RecordingChange } from "../recording-contract";
@@ -15,9 +15,20 @@ export function RecordingSection({ bridge }: { bridge: RecordingBridge }) {
   const focused = useRef<HTMLElement | null>(null);
   const inFlight = useRef(false);
 
+  useLayoutEffect(() => {
+    if (!pending && !failure && document.activeElement === document.body)
+      focused.current?.focus();
+  }, [pending, failure]);
+
+  function rememberFocus() {
+    const element = document.activeElement;
+    if (element instanceof HTMLElement && !element.closest("dialog"))
+      focused.current = element;
+  }
+
   async function save(change: RecordingChange) {
     if (inFlight.current) return;
-    if (!failure) focused.current = document.activeElement as HTMLElement;
+    rememberFocus();
     inFlight.current = true;
     retry.current = () => void save(change);
     setPending(change);
@@ -28,18 +39,12 @@ export function RecordingSection({ bridge }: { bridge: RecordingBridge }) {
       if (feed.connected) setFailure("save");
     } finally {
       inFlight.current = false;
-      if (feed.connected) {
-        setPending(undefined);
-        requestAnimationFrame(() => {
-          if (document.activeElement === document.body)
-            focused.current?.focus();
-        });
-      }
+      if (feed.connected) setPending(undefined);
     }
   }
 
   async function openGuide() {
-    if (!failure) focused.current = document.activeElement as HTMLElement;
+    rememberFocus();
     retry.current = () => void openGuide();
     try {
       await bridge.openVolumeGuide();
