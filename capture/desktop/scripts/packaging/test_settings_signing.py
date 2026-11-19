@@ -120,6 +120,8 @@ class SigningTests(unittest.TestCase):
                     signed.append(command)
 
                 def runtime_signer(runtime, sign, entitlements):
+                    metadata = root / "composition/enablement/release/mac/metadata.ts"
+                    self.assertIn(["node", "--experimental-strip-types", str(metadata), "electron-accessory", str(runtime)], signed)
                     self.assertIn(sign + [str(addon)], signed)
                     self.assertIn(["codesign", "--verify", "--strict", str(addon)], signed)
                     for name in ("apparent-engine-media", "apparent-engine-probe", "apparent-engine-frames", "apparent-engine-frames-native", "apparent-engine-audio"):

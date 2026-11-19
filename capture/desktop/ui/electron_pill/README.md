@@ -86,15 +86,12 @@ It is enabled by default. Explicitly set `experiments.movableRecordingControls`
 to `false` to exercise the excluded Mac route; omitting it tests the included route.
 Glass retains native routing.
 There is one visible pill. Missing packaged assets retain the native route.
-The Mac host admits its exact AppKit window before publishing readiness or
-showing it. A small Node-API adapter applies the existing native pill's guarded
-`_setPreventsActivation:` mechanism without disabling keyboard eligibility.
-It accepts only an owned window ID with the pinned pill title and panel mask;
-unsupported native setup exits the child and retains ordinary native recovery.
-The adapter is built with AppKit only on Mac, staged and signed with the app,
-and included in the native candidate's architecture and file checks. Linux and
-the standalone Connect TypeScript package do not build or load it. This is a
-private AppKit mechanism: native focus and keyboard acceptance remain required.
+The packaged Mac runtime starts as an accessory. The installer opts into regular
+activation. Before readiness, the Mac-only signed AppKit adapter configures the
+owned panel for all Spaces and other apps' fullscreen windows. It checks the ID,
+title and panel mask, and applies `_setPreventsActivation:` with keyboard access.
+Refusal keeps native recovery. The installed foreground test uses a separate
+fullscreen app to verify stacking and focus.
 On Mac with movable controls explicitly disabled, capture reset restores the child
 window's explicit exclusion. If the
 child becomes ready during capture, the native controls remain visible until

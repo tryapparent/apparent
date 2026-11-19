@@ -143,6 +143,8 @@ for (const name of ['main', 'preload']) {
                     parser.error("Missing regular Engine media capability")
                 subprocess.run(sign + [str(binary)], check=True)
                 subprocess.run(["codesign", "--verify", "--strict", str(binary)], check=True)
+        metadata = root / "composition/enablement/release/mac/metadata.ts"
+        subprocess.run(["node", "--experimental-strip-types", str(metadata), "electron-accessory", str(runtime)], check=True)
         sign_runtime(runtime, sign, entitlements)
     print(f"Staged Storage Settings: {destination}")
 

@@ -1,6 +1,17 @@
 import { fileURLToPath } from "node:url";
 import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+
+export function markElectronAccessory(runtime: string) {
+  execFileSync("/usr/bin/plutil", [
+    "-replace",
+    "LSUIElement",
+    "-bool",
+    "YES",
+    join(runtime, "Contents/Info.plist"),
+  ]);
+}
 
 export function appPlist(version: string, build: string, key: string) {
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -40,6 +51,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       Buffer.from(args[0], "base64").length !== 32
     )
       throw Error("Invalid Sparkle public key");
+  } else if (command === "electron-accessory" && args.length === 1) {
+    markElectronAccessory(args[0]);
   } else if (command === "installer") {
     const [app, version, build, id] = args;
     const plist = {
