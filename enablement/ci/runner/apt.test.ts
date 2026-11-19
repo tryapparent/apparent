@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,readFileSync,readdirSync,writeFileSync,rmSync,symlinkSync} from 'node:fs';
 import {execFileSync,spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {YAML} from 'bun';
 const root=new URL('../../../',import.meta.url);
 type Step = {if?: string; uses?: string; run?: string};
@@ -9,6 +10,8 @@ const read=(p:string)=>YAML.parse(readFileSync(new URL(p,root),'utf8'));
 const runner='enablement/ci/runner/ubuntu-apt.ts';
 const localAction='./.github/actions/ubuntu-apt';
 const action=read('.github/actions/ubuntu-apt/action.yml');
+const indexDigest=createHash('sha256').update('fixture').digest('hex');
+const fallbackWarning=/Continuing with the runner mirror list/;
 function probeFixture(job:string){
  writeFileSync(job+'/apt-helper',[
   '#!/bin/bash','set -euo pipefail',
@@ -16,20 +19,42 @@ function probeFixture(job:string){
   'while [ "$1" = -o ]; do shift 2; done',
   'test "$1" = download-file','url=$2; target=$3',
   'test "$PROBE_ALL_BAD" = false',
-  'case "$url" in *archive.ubuntu.com*) test "$PROBE_STATUS" = 0 || exit "$PROBE_STATUS"; if [[ "$url" != */InRelease && "$PROBE_INDEX_BAD" = true ]]; then exit 100; fi;; esac',
   'if [[ "$url" = */InRelease ]]; then',
-  '  printf "%064d 1 main/binary-amd64/Packages.xz\\n" 0 > "$target"',
+  '  elapsed=$PROBE_METADATA_SECONDS',
+  '  printf "%s 7 main/binary-amd64/Packages.xz\\n" "$PROBE_INDEX_DIGEST" > "$target"',
   'else',
-  '  [[ "$4" =~ ^SHA256:[0-9a-f]{64}$ ]]',
-  '  printf fixture > "$target"',
+  '  elapsed=$(( $(cat "${target%/*}/InRelease.elapsed") + PROBE_INDEX_SECONDS ))',
+  '  test "$4" = "SHA256:$PROBE_INDEX_DIGEST"',
+  '  printf fix > "$target"',
+  '  if [[ -n "$PROBE_TIMEOUT_BIN" ]]; then',
+  '    trap \'printf "terminated\\n" >> "$PROBE_TERMINATED"; exit 143\' TERM',
+  '    sleep 6 & child=$!',
+  '    printf "%s\\n" "$child" >> "$PROBE_CHILDREN"',
+  '    wait "$child"',
+  '  fi',
+  'fi',
+  '(( elapsed < PROBE_DEADLINE )) || exit 124',
+  'printf "%s\\n" "$elapsed" > "$target.elapsed"',
+  'if [[ "$url" != */InRelease ]]; then',
+  '  if [[ "$url" != *archive.ubuntu.com* || "$PROBE_INDEX_BAD" = false ]]; then printf ture >> "$target"; fi',
+  '  printf "%s  %s\\n" "${4#SHA256:}" "$target" | shasum -a 256 --check --status || exit 100',
   'fi','',
  ].join('\n'),{mode:0o700});
  writeFileSync(job+'/timeout',[
-  '#!/bin/sh','set -eu','printf "%s\\n" "$@" >> "$TIMEOUT_ARGS"',
-  'test "$1" = --signal=TERM','test "$2" = --kill-after=2s','test "$3" = 10s',
+  '#!/bin/bash','set -eu','printf "%s\\n" "$@" >> "$TIMEOUT_ARGS"',
+  'test "$1" = --signal=TERM','test "$2" = --kill-after=2s',
+  'export PROBE_DEADLINE=${3%s}',
+  'if [ -n "$PROBE_TIMEOUT_BIN" ]; then',
+  '  exec "$PROBE_TIMEOUT_BIN" "$1" "$2" 1s "${@:4}"',
+  'fi',
   'shift 3','exec "$@"','',
  ].join('\n'),{mode:0o700});
- return {PROBE_ARGS:job+'/args',TIMEOUT_ARGS:job+'/timeout-args',PROBE_STATUS:'0',PROBE_ALL_BAD:'false',PROBE_INDEX_BAD:'false'};
+ return {
+  PROBE_ARGS:job+'/args',TIMEOUT_ARGS:job+'/timeout-args',
+  PROBE_ALL_BAD:'false',PROBE_INDEX_BAD:'false',
+  PROBE_METADATA_SECONDS:'0',PROBE_INDEX_SECONDS:'0',PROBE_INDEX_DIGEST:indexDigest,
+  PROBE_TIMEOUT_BIN:'',PROBE_TERMINATED:job+'/terminated',PROBE_CHILDREN:job+'/children',
+ };
 }
 function fixture(job:string, transport=job+'/transport') {
  const paths={mirrors:job+'/mirrors',transport,osRelease:job+'/os-release',aptHelper:job+'/apt-helper',temporaryRoot:job};
@@ -48,6 +73,12 @@ function fixture(job:string, transport=job+'/transport') {
   `import {prepareHostedUbuntuApt} from ${JSON.stringify(new URL(runner,root).href)};prepareHostedUbuntuApt(${JSON.stringify(paths)});`,
  ],{env:{...env,...overrides},encoding:'utf8',stdio:'pipe'});
  return {old,paths,run};
+}
+function fixtureAptConfig(job:string) {
+ writeFileSync(job+'/apt-config',"#!/bin/sh\nprintf \"apparentRetries='1'\\napparentHttp='15'\\napparentHttps='15'\\n\"\n",{mode:0o700});
+}
+function assertProbeCleaned(job:string) {
+ assert.ok(!readdirSync(job).some(name=>name.startsWith('apparent-dev-apt-')));
 }
 test('effective acquisition limits survive hosted APT configuration precedence',{
  skip:spawnSync('apt-config',['--version'],{stdio:'ignore'}).status!==0,
@@ -76,24 +107,23 @@ test('runner mirror transport preserves sources and is idempotent; unsafe target
  try {
   const {old,paths,run}=fixture(job);
   const {mirrors:file,transport:config}=paths;
-  writeFileSync(job+'/apt-config',"#!/bin/sh\nprintf \"apparentRetries='1'\\napparentHttp='15'\\napparentHttps='15'\\n\"\n",{mode:0o700});
+  fixtureAptConfig(job);
   run();const expected='https://archive.ubuntu.com/ubuntu/\tpriority:0\n'+old;
   assert.equal(readFileSync(file,'utf8'),expected);run();assert.equal(readFileSync(file,'utf8'),expected);
   const settings=readFileSync(config,'utf8');
   assert.equal(settings,'Acquire::Retries "1";\nAcquire::http::Timeout "15";\nAcquire::https::Timeout "15";\n');
   const args=readFileSync(job+'/args','utf8');
-  assert.ok(args.includes('Acquire::Retries=0\n'));
+  assert.ok(args.includes('Acquire::Retries=0\n-o\nAcquire::http::Timeout=5\n-o\nAcquire::https::Timeout=5\n'));
   assert.ok(args.includes('/dists/noble-updates/InRelease\n'));
-  assert.ok(args.includes('/main/binary-amd64/by-hash/SHA256/'+'0'.repeat(64)+'\n'));
-  assert.ok(args.includes('SHA256:'+'0'.repeat(64)+'\n'));
-  assert.ok(readFileSync(job+'/timeout-args','utf8').includes('--signal=TERM\n--kill-after=2s\n10s\nbash\n'));
+  assert.ok(args.includes('/main/binary-amd64/by-hash/SHA256/'+indexDigest+'\n'));
+  assert.ok(args.includes('SHA256:'+indexDigest+'\n'));
+  assert.ok(readFileSync(job+'/timeout-args','utf8').includes('--signal=TERM\n--kill-after=2s\n15s\nbash\n'));
   const fallback='https://mirrors.edge.kernel.org/ubuntu/\tpriority:0\n'+old;
-  run({PROBE_STATUS:'124'});assert.equal(readFileSync(file,'utf8'),fallback);
-  run({PROBE_STATUS:'100'});assert.equal(readFileSync(file,'utf8'),fallback);
   // Successful metadata alone must not promote a mirror whose index fails.
   run({PROBE_INDEX_BAD:'true'});assert.equal(readFileSync(file,'utf8'),fallback);
+  assertProbeCleaned(job);
   writeFileSync(file,old);
-  assert.match(run({PROBE_ALL_BAD:'true'}),/Continuing with the runner mirror list/);
+  assert.match(run({PROBE_ALL_BAD:'true'}),fallbackWarning);
   assert.equal(readFileSync(file,'utf8'),old);
   assert.equal(readFileSync(config,'utf8'),settings);
   run();assert.equal(readFileSync(file,'utf8'),expected);
@@ -107,6 +137,41 @@ test('runner mirror transport preserves sources and is idempotent; unsafe target
   rmSync(file);writeFileSync(file,old);rmSync(config);symlinkSync(outside,config);
   assert.throws(()=>run());assert.equal(readFileSync(file,'utf8'),old);assert.equal(readFileSync(outside,'utf8'),'preserved');
   assert.doesNotMatch(readFileSync(new URL(runner,root),'utf8'),/trusted=yes|allow-unauthenticated|allow-insecure|Signed-By/);
+ }finally{rmSync(job,{recursive:true,force:true});}
+});
+test('two transfers can finish past ten seconds and expiry preserves fallback',()=>{
+ const job=mkdtempSync('/tmp/apparent-dev-apt-budget-');
+ try {
+  const {old,paths,run}=fixture(job);
+  fixtureAptConfig(job);
+  assert.match(run({PROBE_METADATA_SECONDS:'6',PROBE_INDEX_SECONDS:'6'}),/APT mirror selected: https:\/\/archive\.ubuntu\.com/);
+  assert.equal(readFileSync(paths.mirrors,'utf8'),'https://archive.ubuntu.com/ubuntu/\tpriority:0\n'+old);
+  assert.doesNotMatch(readFileSync(job+'/args','utf8'),/mirrors\.edge\.kernel\.org/);
+  assertProbeCleaned(job);
+  writeFileSync(paths.mirrors,old);
+  assert.match(run({PROBE_METADATA_SECONDS:'6',PROBE_INDEX_SECONDS:'10'}),fallbackWarning);
+  assert.equal(readFileSync(paths.mirrors,'utf8'),old);
+  assertProbeCleaned(job);
+ }finally{rmSync(job,{recursive:true,force:true});}
+});
+test('GNU timeout stops both probe groups and discards partial indexes',{
+ skip:process.platform!=='linux',
+},()=>{
+ const job=mkdtempSync('/tmp/apparent-dev-apt-termination-');
+ try {
+  const {old,paths,run}=fixture(job);
+  fixtureAptConfig(job);
+  const timeout=execFileSync('bash',['-c','command -v timeout'],{encoding:'utf8'}).trim();
+  assert.match(run({PROBE_TIMEOUT_BIN:timeout}),fallbackWarning);
+  assert.equal(readFileSync(paths.mirrors,'utf8'),old);
+  assert.equal(readFileSync(job+'/terminated','utf8'),'terminated\n'.repeat(2));
+  const children=readFileSync(job+'/children','utf8').trim().split('\n');
+  assert.equal(children.length,2);
+  for(const pid of children){
+   const state=spawnSync('ps',['-o','stat=','-p',pid],{encoding:'utf8'}).stdout.trim();
+   assert.match(state,/^(?:$|Z)/);
+  }
+  assertProbeCleaned(job);
  }finally{rmSync(job,{recursive:true,force:true});}
 });
 // A plugin's --install-deps flag installs Python packages, not OS packages.

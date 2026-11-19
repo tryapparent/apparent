@@ -2,11 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   destinations,
+  filterDestinations,
   type Thread,
-} from "../../../capture/desktop/ui/frontend/src/pill/destinations.ts";
-import { visibleDestinations } from "../../pure/chooser.ts";
-test("server shelves hide settled/archived/subagents; working stays among active and snoozes follow", () => {
-  const t = (id: string, extra: Partial<Thread> = {}): Thread => ({
+} from "../../pure/destinations.ts";
+
+test("browse orders thread states and searches title, environment, project and state", () => {
+  const thread = (id: string, extra: Partial<Thread> = {}): Thread => ({
     id,
     projectId: "p",
     title: id,
@@ -16,30 +17,71 @@ test("server shelves hide settled/archived/subagents; working stays among active
   });
   const choices = destinations(
     [
-      t("settled", { settledOverride: "settled" }),
-      t("child", { lineage: { relationshipToParent: "subagent" } }),
-      t("archived", { archivedAt: "2026-01-02" }),
-      t("active"),
-      t("working", { status: "running", activeOrderKey: "a" }),
-      t("snooze", { snoozedUntil: "2030-01-01" }),
-      t("pin-b", { pinnedAt: "2026-01-02", pinOrderKey: "b" }),
-      t("pin-a", { pinnedAt: "2026-01-02", pinOrderKey: "a" }),
+      thread("onboarding notes", {
+        settledOverride: "settled",
+        settledAt: "2026-01-03",
+      }),
+      thread("older", { settledAt: "2026-01-02" }),
+      thread("child", { lineage: { relationshipToParent: "subagent" } }),
+      thread("archived", { archivedAt: "2026-01-02" }),
+      thread("deleted", { deletedAt: "2026-01-02" }),
+      thread("active", { settledAt: "2026-01-02", settledOverride: "active" }),
+      thread("onboarding recording", {
+        session: { status: "running" },
+        latestTurn: { state: "running" },
+        activeOrderKey: "a",
+      }),
+      thread("done", {
+        latestTurn: { state: "completed" },
+        activeOrderKey: "a",
+      }),
+      thread("snooze", { snoozedUntil: "2030-01-01" }),
+      thread("pin-b", { pinnedAt: "2026-01-02", pinOrderKey: "b" }),
+      thread("pin-a", { pinnedAt: "2026-01-02", pinOrderKey: "a" }),
     ],
-    [{ id: "p", title: "Project" }],
+    [{ id: "p", title: "Apparent" }],
     "p",
+    Date.parse("2026-01-04"),
+  ).map((choice) => ({ ...choice, computer: "Clanker" }));
+  const ids = choices.map((choice) => choice.id);
+  assert.deepEqual(ids, [
+    "new",
+    "pin-a",
+    "pin-b",
+    "done",
+    "active",
+    "onboarding recording",
+    "snooze",
+    "onboarding notes",
+    "older",
+  ]);
+  assert.deepEqual(
+    choices.map((choice) => choice.kind),
+    [
+      "new",
+      "pinned",
+      "pinned",
+      "done",
+      "active",
+      "working",
+      "snoozed",
+      "settled",
+      "settled",
+    ],
   );
   assert.deepEqual(
-    choices.map((t) => t.id),
-    ["new", "pin-a", "pin-b", "working", "active", "snooze"],
-  );
-  assert.equal(choices[3].kind, "working");
-  assert.equal(choices[5].kind, "snoozed");
-  assert.deepEqual(
-    visibleDestinations(choices, 1).rows.map((t) => t.id),
-    ["new", "pin-a", "pin-b"],
+    filterDestinations(choices, "  ONBOARDING  ").map((choice) => choice.id),
+    ["onboarding recording", "onboarding notes"],
   );
   assert.deepEqual(
-    visibleDestinations(choices, 5).rows.map((t) => t.id),
-    ["working", "active", "snooze"],
+    filterDestinations(choices, "Clanker apparent settled onboarding").map(
+      (choice) => choice.id,
+    ),
+    ["onboarding notes"],
+  );
+  assert.deepEqual(filterDestinations(choices, "no matches"), []);
+  assert.deepEqual(
+    filterDestinations(choices, " ").map((choice) => choice.id),
+    ids,
   );
 });

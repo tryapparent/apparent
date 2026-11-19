@@ -117,7 +117,7 @@ export function prepareHostedUbuntuApt(paths = runnerPaths, env = process.env) {
           "timeout",
           "--signal=TERM",
           "--kill-after=2s",
-          "10s",
+          "15s",
           "bash",
           probe,
           paths.aptHelper,

@@ -314,9 +314,31 @@ jobs:
         id: chrome
         with:
           chrome-version: stable
+      - name: Resolve recipient FFmpeg archives
+        id: ffmpeg_plan
+        if: needs.select.result != 'success' || fromJSON(needs.select.outputs.plan).service
+        run: node --experimental-strip-types connect/enablement/ci/recipient-ffmpeg.ts plan
+      - uses: actions/cache/restore@v4
+        id: ffmpeg_archives
+        if: steps.ffmpeg_plan.outputs.key != ''
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/apparent-recipient-ffmpeg/archives
+          key: ${{ steps.ffmpeg_plan.outputs.key }}
+          restore-keys: recipient-ffmpeg-noble-amd64-v1-
       - name: Install recipient media fixture dependency
         if: needs.select.result != 'success' || fromJSON(needs.select.outputs.plan).service
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+        env:
+          RECIPIENT_ARCHIVE_HIT: ${{ steps.ffmpeg_archives.outputs.cache-hit }}
+        run: node --experimental-strip-types connect/enablement/ci/recipient-ffmpeg.ts install
+      - uses: actions/cache/save@v4
+        if: >-
+          steps.ffmpeg_plan.outputs.key != '' && steps.ffmpeg_archives.outputs.cache-hit != 'true' &&
+          github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/apparent-recipient-ffmpeg/archives
+          key: ${{ steps.ffmpeg_plan.outputs.key }}
       - name: Install disk-image contract dependency (no KVM required)
         if: needs.select.result != 'success' || fromJSON(needs.select.outputs.plan).tools
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends qemu-utils

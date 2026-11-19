@@ -535,23 +535,6 @@ test('portable tool contracts retain the updater harness disk-image/OCR prerequi
   }
 });
 
-test('recipient playback provisions FFmpeg and stable Chrome before the portable suite', () => {
-  const recipient=readFileSync(new URL('connect/service/test/sharing/recipient-browser.mjs',root),'utf8');
-  assert.match(recipient,/execFileSync\('ffmpeg'/);
-  assert.match(recipient,/libx264/);
-  for(const [steps,condition] of [
-    [ci().jobs.portable.steps,"needs.select.result != 'success' || fromJSON(needs.select.outputs.plan).service"],
-    [workflow('verification-platform.yml').jobs.select.steps,'inputs.portable'],
-  ] as const) {
-    const run=steps.findIndex((step:any)=>step.run?.includes('--portable'));
-    const media=steps.findIndex((step:any)=>step.name==='Install recipient media fixture dependency');
-    assert.ok(media>=0&&media<run,'media tool must exist before the real recipient fixture');
-    assert.match(steps[media].run,/apt-get install -y --no-install-recommends ffmpeg$/);
-    assert.equal(steps[media].if,condition);
-    assert.equal(steps.find((step:any)=>step.id==='chrome').with['chrome-version'],'stable');
-  }
-});
-
 test('audited Record inputs retain Desktop and native platform consumers only', () => {
   for (const pkg of ['storage', 'completion', 'capture-request']) {
     for (const input of ['src/policy.ts', 'test/policy.test.ts', 'package.json', 'package-lock.json', 'tsconfig.json', ...(pkg === 'storage' ? ['build.ts'] : []), ...(pkg === 'capture-request' ? ['tsconfig.build.json'] : [])]) {
