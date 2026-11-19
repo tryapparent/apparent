@@ -4,9 +4,11 @@ import { comments, checkComments } from "../../comments.ts";
 import { fixture } from "../fixture.ts";
 
 test("Rust raw identifiers and raw pointers preserve lexical comment classification", async () => {
-  const source = `fn sample() {
+  const source = `unsafe extern "C" { fn native(p: *const i32); }
+fn sample() {
     let mut raw = 1;
     consume(&raw, raw);
+    let pointer = &raw const raw;
     let r#type = br###"// bytes /* literal */"###;
     let text = r###"/* literal */"###;
     /* outer /* nested */ end */
@@ -30,7 +32,6 @@ fn documented() {} // trailing
     "fn broken( {",
     "fn sample() { /* unterminated",
     'fn sample() { let text = r###"unterminated; }',
-    "fn sample() { let raw = 1; consume(&raw, raw); let p = &raw const value; }",
   ])
     await assert.rejects(
       comments("engine/sample.rs", invalid),

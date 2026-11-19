@@ -445,6 +445,7 @@ impl SharedMetalOverlay {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
 
+        let mut tip = None;
         let mut strokes: Vec<(crate::shared::model::Stroke, bool)> =
             committed_strokes.into_iter().map(|s| (s, false)).collect();
         if let Some(laser) = active_laser {
@@ -509,8 +510,10 @@ impl SharedMetalOverlay {
                     .into_iter()
                     .map(|[nx, ny]| to_screen(nx, ny))
                     .collect();
-                let smoothed = ink_points(&pts);
-                for pair in smoothed.windows(2) {
+                if *is_live {
+                    tip = pts.last().copied();
+                }
+                for pair in ink_points(&pts).windows(2) {
                     segments.push(PathSegment {
                         a: pair[0].0,
                         b: pair[1].0,
@@ -530,14 +533,6 @@ impl SharedMetalOverlay {
         }
 
         let shift_held = self.telemetry.shift_held.load(Ordering::Acquire);
-        let pointer = {
-            let [px, py] = *self
-                .telemetry
-                .pointer_screen
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            [px - ox, py - oy]
-        };
 
         if segments.is_empty() {
             segments.push(PathSegment::default());
@@ -566,8 +561,8 @@ impl SharedMetalOverlay {
                 scale: renderer.scale,
                 now_sec,
                 tail_duration: picker_fade,
-                tip_active: if is_active && shift_held { 1.0 } else { 0.0 },
-                tip_pos: pointer,
+                tip_active: if is_active && shift_held && tip.is_some() { 1.0 } else { 0.0 },
+                tip_pos: tip.unwrap_or_default(),
                 segment_count: segment_count as u32,
                 pin_count: if !is_active || (pins.len() == 1 && pins[0].radius == 0.0) {
                     0
