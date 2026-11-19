@@ -1,59 +1,65 @@
 {
-  "commit": "2d4686185850037424e86bb7ec34496a549d328d",
+  "commit": "26c26ef3145493411f148ddc6897d9a701cb001d",
   "capabilities": [
     "movie-probe/1",
     "movie-frames/1"
   ],
-  "sdkVersion": "0.3.0",
-  "sdkSha256": "ac5d85abccacb362de656d235cd78ca0eb6fdc1a0092751b95d32540e94eb8af",
+  "sdkVersion": "0.4.0",
+  "sdkSha256": "a5e6ec71b193e452a1c39b82ad5c67c47f3505a14a9ef8daebedd2c4d93aa0ea",
   "sdkFiles": {
     "LICENSE": "4994c24b5bbb85529407e8cd0211efcf819236899d2c911cbdb18c00f231273a",
-    "README.md": "22ff53874140451baecc3e060314a26cd5d004aad8b015093f1f7cbaeee03449",
-    "package.json": "fbfcbec9be74af1552bceaae2b33b73419516765b55ddf7bbeb15ff3b29c2ec7",
-    "dist/index.js": "7ac61f83c146d967b93008f41a792f3d95ce97c8a7a6a0d757d77e17338d0558",
-    "dist/index.d.ts": "d042385713506213c402667d1aa3da7f667c3490b5d171c5d752ebf575971ec1",
+    "dist/audio.js": "01137dc5cbd7384fcb3c273c87e796189528e8647364f458f721605a027bc6c1",
     "dist/frames.js": "2720e0ba13704ad6ad015cfa98858c8420e391172989d854e2ebda0c0ac308f6",
-    "dist/frames.d.ts": "c480b359efe55bcc0abd5075ce3dd5038c851f258427ee8a6f0a5291f2dc0542"
+    "dist/index.js": "be093da848a48f8c8a5682e72512fd6d1ae94e7ac7cf2d43cde53aa57cb2c523",
+    "package.json": "b112d869571c0979061379d156104f8645e7c07391f1ea8df2eaebc1802cf1c8",
+    "README.md": "ad85aca3d4d0e5d40ea36ed59d99b180eb64d0e9a73425ac8da1cc00e739ae03",
+    "dist/audio.d.ts": "716817acbea9186cb94a5e8378c1d9440863ac53ede2ec63a8cdffb3cba6032c",
+    "dist/frames.d.ts": "c480b359efe55bcc0abd5075ce3dd5038c851f258427ee8a6f0a5291f2dc0542",
+    "dist/index.d.ts": "6671b8b907773e4fd6499f265578bacd33741185f86214508cb9f3f464ba7999"
   },
   "runtimes": {
     "darwin-arm64": {
-      "archiveSha256": "4210456830aa9fff660fd7938ce505516bc8450651c13a5181e47dbda449a22d",
+      "archiveSha256": "4cc7d0d94b4dde14f018903c2d639afae347575e7c1d726c5a6af0474ead3e5d",
       "files": {
-        "LICENSE": "4994c24b5bbb85529407e8cd0211efcf819236899d2c911cbdb18c00f231273a",
-        "manifest.json": "74a967e9621f9141363c0f355832cc41c75b2416112a7bf6a809dc0ec3c393df",
-        "apparent-engine-media": "6b315f293717a6056013cc0da95d8919294e00999762807ccc2804db8278d974",
-        "apparent-engine-frames": "3a29f00e6ae6d81cf60eff00acccaf5aa7949c6524111cc32a27b257d1cacf1f",
+        "manifest.json": "410eb4416c070d64bcd8106e80031413febcdc46ad2c2706ae473bacbcae8485",
+        "apparent-engine-media": "b14d57374cf50c9ab88ebe6aaf75253c88832164aab9c84efbe40ca0307bbec2",
+        "apparent-engine-frames": "98f1ddb354d7e5604452ebf821707ae9ab4277d40e4666339d6333b3ed47b7ba",
+        "apparent-engine-audio": "f9063b35b5e2f87b956a499bdf717fbc430fafa21fd5867ec664f73c332c3095",
         "apparent-engine-probe": "c02ee6220caf99363995fa0b702ca280c8598d047d88bc2100993689ad652099",
-        "apparent-engine-frames-native": "304b3d447e86d99ee28fcf2fff8d56a919ac2704e8fe04b3a787b478fd1ce07f"
+        "apparent-engine-frames-native": "34673de0aeab551f851a54cf035bbff8edb520b228431bd06ca9a72585711d3b",
+        "LICENSE": "4994c24b5bbb85529407e8cd0211efcf819236899d2c911cbdb18c00f231273a"
       }
     },
     "darwin-x64": {
-      "archiveSha256": "37924c5ee62c0c989863b1ddd7b2003a8d6efe0ac6eebcf8311a4833d34522fd",
+      "archiveSha256": "ce8bcb9968447d1f73dc64b03172deda639ebb9b99d2eefd537bf50aa157240b",
       "files": {
-        "LICENSE": "4994c24b5bbb85529407e8cd0211efcf819236899d2c911cbdb18c00f231273a",
-        "manifest.json": "5184dc1e492720a073f9df434c2cb86e45a6e91c7faabdd73a6bc43cd1d99402",
-        "apparent-engine-media": "9c15e63c3b10df74ae2ce02a6f7cfdc84ea6bc1c5a058334bb938a010f072090",
-        "apparent-engine-frames": "07593be3acf0fdfb7025c44ba5f6323ecdadcd7f75b11d0bfa51f69dbc83d41a",
+        "manifest.json": "af189feec92d1985879fd62a637fa70275041ea847237313a0b074068781f578",
+        "apparent-engine-media": "f47b84a297c93c5710b189eb8c87fa637614f32dfaa1b43f87b898a76423cfc5",
+        "apparent-engine-frames": "a55c8a166bd94bd34a3dfd7aa36db2205c00313f91a4947da3392458e2b3e763",
+        "apparent-engine-audio": "37aa62ed49d4394d2c03962349994cd3e107236167962a5bbf525ea205440f81",
         "apparent-engine-probe": "9d08033752705ab174fe5eb49f4a41956e6ef9818a1287c87b2f4774d88540aa",
-        "apparent-engine-frames-native": "423fe7aa84fbe36470e43f276d8072835ace642595ba10d98d3e8d6a91237e97"
+        "apparent-engine-frames-native": "b5fd5105150da52886a8573ae6584422daf61cdf95c29fd9b52b1bab6e1aba96",
+        "LICENSE": "4994c24b5bbb85529407e8cd0211efcf819236899d2c911cbdb18c00f231273a"
       }
     },
     "linux-arm64": {
-      "archiveSha256": "10f9abd971ae3a924155acecf63a218f7deeb050448777cfcf449e91827d793a",
+      "archiveSha256": "db3db6fadd7847d7291a9eda70600147373eabfec09b1faa80e378b655cd2fc2",
       "files": {
-        "LICENSE": "4994c24b5bbb85529407e8cd0211efcf819236899d2c911cbdb18c00f231273a",
-        "manifest.json": "ccd6e0193fb2e5f6770244cbb155bcc8bb84dfc6fc804deb311fa22890a831c6",
-        "apparent-engine-media": "b348e8b265b3e991f1e46ba55268a678fb77c28ce862ef2206f6e710594bbd67",
-        "apparent-engine-frames": "60a7d407b6a57bbb5c961b72a10f94564022b1c3edde2afdeb4f7bd7b5257f97"
+        "manifest.json": "7d0c632e2be70148bcf0676aee62c12e5cdc326646ab25fbad40d6e128b70e04",
+        "apparent-engine-media": "db80ad97625bb529150960158d57ce247683118f14c41a63fc725be0c321efe8",
+        "apparent-engine-frames": "5f79729148cbe85a9e258fa6a761cdbff2ef0c585b47aaa3dd15e8d085c130e0",
+        "apparent-engine-audio": "491e7da28a7e94e2db6600b9b62a09fb66f05a63c5d4b26af431debbfec2822d",
+        "LICENSE": "4994c24b5bbb85529407e8cd0211efcf819236899d2c911cbdb18c00f231273a"
       }
     },
     "linux-x64": {
-      "archiveSha256": "f8b29a3e0af16b61af2c69c99f485f01cb0c52662389c1e7fca0ffd988b80055",
+      "archiveSha256": "3aeaedb83aff0db080d08dbc1bd3df2f6623a3d4b3919a5abe34779124a88efb",
       "files": {
-        "LICENSE": "4994c24b5bbb85529407e8cd0211efcf819236899d2c911cbdb18c00f231273a",
-        "manifest.json": "fc600b09ad46e68457174f96e331d52f774afbe192fc183e7fd333aee4299b63",
-        "apparent-engine-media": "ed8538d7e24c3cecd9d68e97efb262c84632136c7f395ff0b59390e599891fc6",
-        "apparent-engine-frames": "752c009d2debb22db00655ef10f7ad0e7c855b24b1690142d6180b8d9ca8a5ff"
+        "manifest.json": "08f4d81ba1cecfd36c35293a669082aea88e99ae77176a5e94bbb6b4d2df31e1",
+        "apparent-engine-media": "0bf1321c1d1d478bf8867b743af2526f0697b0809328eb4b0e1f280b462f0522",
+        "apparent-engine-frames": "0a3c2e13715644a6dc4db163e03f50bd8202fe928818deedce79e28905292bb8",
+        "apparent-engine-audio": "8adcd96957694a8ffbcbad1cbbc8a978ea90ba86943fc627cd8d856f6fdc2c2f",
+        "LICENSE": "4994c24b5bbb85529407e8cd0211efcf819236899d2c911cbdb18c00f231273a"
       }
     }
   }

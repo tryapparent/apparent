@@ -18,9 +18,8 @@ FFmpeg. The default verification workflow also runs them in a clean Node contain
 ## Installed consumer
 
 Record and Agent use the same application-owned finite-worker resource helper in
-`composition/worker.rs`. Record now independently pins SDK/provider 0.3 from
-`2d4686185850037424e86bb7ec34496a549d328d`. Agent retains its independently
-pinned 0.2 generation.
+`composition/worker.rs`. Record pins SDK/provider 0.4 in `engine.json`.
+Agent retains its independently pinned 0.2 generation.
 Its existing metadata policy and wire contracts remain unchanged.
 
 Desktop composition builds this package and explicitly stages the runtime pinned
