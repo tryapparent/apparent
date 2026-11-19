@@ -3,6 +3,7 @@
 from pathlib import Path
 import base64
 import hashlib
+import json
 import os
 import plistlib
 import shutil
@@ -23,6 +24,11 @@ class PreviewReleaseTest(unittest.TestCase):
             (root / "capture/desktop/scripts/packaging").mkdir(parents=True)
             (root / "capture/desktop/scripts/release").mkdir(parents=True)
             shutil.copytree(PACKAGER, root / "composition/enablement/release/mac")
+            dmg_builder = root / "composition/enablement/release/mac/dmg/build.ts"
+            dmg_builder.write_text(dmg_builder.read_text().split("const toolByArch")[0] +
+                'export function createDmg(app, dmg, version, build) {'
+                'writeFileSync(dmg, JSON.stringify(finderLayout(app, version, build)));'
+                'if (process.env.TRACE) writeFileSync(process.env.TRACE, "createDmg\\n", { flag: "a" }); }')
             (root / "bin").mkdir()
             for asset in ("fonts/HostGrotesk-Variable.ttf", "brand/apparent-wordmark.png",
                           "Apparent.icns", "brand/apparent-a.png", "brand/connect-frogs.png"):
@@ -79,6 +85,11 @@ class PreviewReleaseTest(unittest.TestCase):
             self.assertEqual(info["CFBundleIdentifier"], "dev.simonvanlaak.apparent.preview")
             self.assertEqual(info["CFBundleShortVersionString"], "0.123.2")
             self.assertEqual(info["CFBundleVersion"], "123.2")
+            self.assertTrue(info["LSHasLocalizedDisplayName"])
+            self.assertEqual(info["CFBundleDevelopmentRegion"], "en")
+            strings = root / "dist/Apparent Preview.app/Contents/Resources/en.lproj/InfoPlist.strings"
+            self.assertIn('"CFBundleDisplayName" = "Apparent";', strings.read_text())
+            self.assertIn('"CFBundleName" = "Apparent";', strings.read_text())
             self.assertTrue((root / "dist/Apparent Preview.app/Contents/Resources/settings/app/dist/settings.html").is_file())
             self.assertIn("preview-mac-feed/appcast.xml", info["SUFeedURL"])
             self.assertEqual(info["SUPublicEDKey"], env["APPARENT_PREVIEW_PUBLIC_KEY"])
@@ -92,17 +103,13 @@ class PreviewReleaseTest(unittest.TestCase):
             self.assertTrue((root / "dist/Apparent Preview.app/Contents/Resources/settings/runtime/Electron.app/Contents/MacOS/Electron").is_file())
             self.assertTrue((root / "dist/Apparent-Preview-0.123.2-arm64.dmg.sha256").is_file())
             self.assertTrue((root / "dist/Apparent-Preview-0.123.2-arm64.zip").is_file())
-            self.assertTrue((root / "dist/preview-staging/Applications").is_symlink())
-            installer = root / "dist/preview-staging/Install Apparent.app"
-            installer_info = plistlib.loads((installer / "Contents/Info.plist").read_bytes())
-            self.assertEqual(installer_info["CFBundleIdentifier"], "dev.simonvanlaak.apparent.preview.installer.b123.2")
-            self.assertEqual(installer_info["CFBundleVersion"], info["CFBundleVersion"])
-            self.assertTrue((installer / "Contents/MacOS/Installer").is_file())
-            payload = installer / "Contents/SharedSupport/Apparent Preview.app"
-            self.assertEqual(plistlib.loads((payload / "Contents/Info.plist").read_bytes()), info)
-            self.assertEqual((payload / "Contents/MacOS/apparent").read_bytes(), b"test")
-            self.assertTrue((installer / "Contents/Resources/installer-ui/electron/installer/main.cjs").is_file())
-            self.assertIn("does not automatically run", (root / "dist/preview-staging/Start here.txt").read_text())
+            dmg = root / "dist/Apparent-Preview-0.123.2-arm64.dmg"
+            layout = json.loads(dmg.read_text())
+            self.assertEqual(layout["title"], "Apparent 0.123.2 (123.2)")
+            self.assertTrue(Path(layout["background"]).is_file())
+            self.assertEqual([(item["type"], Path(item["path"]).name) for item in layout["contents"]],
+                             [("file", "Apparent Preview.app"), ("link", "Applications")])
+            self.assertEqual(layout["contents"][1]["path"], "/Applications")
             archive = (root / "dist/Apparent-Preview-0.123.2-arm64.zip").read_text()
             self.assertEqual(archive, "fake zip:" + str(root / "dist/Apparent Preview.app"))
             env["APPARENT_PREVIEW_BUILD_NUMBER"] = "123.3"
@@ -111,9 +118,8 @@ class PreviewReleaseTest(unittest.TestCase):
                                    env=env, capture_output=True, text=True, cwd=root)
             self.assertEqual(newer.returncode, 0, newer.stderr)
             self.assertEqual((root / "target/reporting-identity").read_text().splitlines(), ["0.123.2", "stable", "production"])
-            newer_info = plistlib.loads((installer / "Contents/Info.plist").read_bytes())
-            self.assertEqual(newer_info["CFBundleIdentifier"], "dev.simonvanlaak.apparent.preview.installer.b123.3")
-            self.assertNotEqual(newer_info["CFBundleIdentifier"], installer_info["CFBundleIdentifier"])
+            self.assertEqual(json.loads(dmg.read_text())["title"], "Apparent 0.123.2 (123.3)")
+
 
 
     def test_app_icon_uses_the_approved_boxed_a_not_the_wordmark_or_brush(self):
