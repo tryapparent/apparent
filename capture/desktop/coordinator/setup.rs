@@ -388,19 +388,19 @@ impl ApparentCoordinator {
         let _ = request.reply.send(response.to_string());
     }
 
-    pub fn open_onboarding(&mut self, flow: crate::capture::desktop::settings::onboarding::Flow) {
+    pub fn open_onboarding(&mut self, mut flow: crate::capture::desktop::settings::onboarding::Flow) {
+        use crate::capture::desktop::settings::onboarding::Session;
+        flow.permission_repair = Some(crate::composition::permission_repair);
         self.cancel_onboarding_editor();
         self.onboarding = None;
         let sender = self.telemetry.ui_sender.clone();
-        let events = move |event| {
-            let _ = sender.send(LiveOverlayEvent::Onboarding(event));
-        };
-        match crate::capture::desktop::settings::onboarding::Session::open(flow, &self.shortcut_label(), events) {
+        match Session::open(flow, &self.shortcut_label(), move |event| drop(sender.send(LiveOverlayEvent::Onboarding(event)))
+        ) {
             Ok(session) => {
                 self.onboarding = Some(session);
                 self.sync_onboarding_editor();
             }
-            Err(error) => apparent_log(format!("onboarding could not open: {error:#}")),
+            Err(e) => apparent_log(format!("{e:#}")),
         }
     }
 
@@ -436,13 +436,12 @@ impl ApparentCoordinator {
             crate::capture::desktop::linux::shell::notify("Update ready", "Finish or cancel the capture before restarting Apparent.");
             return;
         }
-        let Some(session) = self.settings.as_mut() else {
-            return;
-        };
+        let session = self.settings.as_mut().unwrap();
         let mut host = crate::capture::desktop::settings::AppHost {
             telemetry: &self.telemetry,
         };
         let effect = session.event(event, &mut host);
+        let busy = effect == Effect::Relaunch && self.refuse_capture_restart();
         let shortcut = self.shortcut_label();
         if let Some(onboarding) = self.onboarding.as_mut() {
             onboarding.shortcut_changed(&shortcut);
@@ -498,10 +497,8 @@ impl ApparentCoordinator {
                 }
                 self.open_onboarding(Flow::coaching(step, self.grants.clone()));
             }
-            Effect::Relaunch => {
-                if self.refuse_capture_restart() { return; }
+            Effect::Relaunch if self.settings.as_mut().unwrap().restart(busy) => {
                 self.settings = None;
-                crate::capture::desktop::settings::onboarding::relaunch();
                 cx.quit();
             }
             Effect::QuitForUpdate => {
@@ -555,7 +552,7 @@ impl ApparentCoordinator {
         launch: bool,
         cx: &mut Context<Self>,
     ) {
-        use crate::capture::desktop::settings::{self, onboarding};
+        use crate::capture::desktop::settings::onboarding;
         let grants = grants.filter(Grants::is_current);
         let changed = match (&self.grants, &grants) {
             (Some(before), Some(now)) => !before.same_permissions(now),
@@ -563,11 +560,10 @@ impl ApparentCoordinator {
             _ => true,
         };
         self.grants = grants;
-        if changed && let Some(session) = self.settings.as_mut() {
-            session.event(
-                settings::Event::Grants(self.grants.clone().unwrap_or_else(Grants::unavailable)),
-                &mut settings::AppHost { telemetry: &self.telemetry },
-            );
+        if let Some(event) = self.settings.as_mut().and_then(|session| {
+            session.note_grants(self.grants.clone().unwrap_or_else(Grants::unavailable), changed)
+        }) {
+            self.settings_event(event, cx);
         }
         if let Some(grants) = self.grants.clone() {
             if launch {

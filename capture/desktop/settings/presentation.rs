@@ -125,6 +125,7 @@ pub(super) fn admits(pane: Pane, action: &Action) -> bool {
         || pane == Pane::Recording && (
             matches!(action, Action::RecordingMeter { .. })
             || matches!(action, Action::RecordingPreference { key, value, .. } if super::recording_key(key, value)))
+        || pane == Pane::Permissions && matches!(action, Action::PermissionAction { request, .. } if *request > 0)
         || pane == Pane::Storage && matches!(action, Action::ShowCaptures)
         || pane == Pane::General && (
             matches!(action, Action::RecordShortcut { .. } | Action::Shortcut { .. } | Action::CancelShortcut | Action::ResetShortcut { .. } | Action::ClearShortcut { .. })
@@ -140,11 +141,9 @@ pub(super) fn open(pane: Pane, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyh
     use std::io::BufRead;
     let (app, runtime) = assets().ok_or_else(|| anyhow::anyhow!("Packaged Settings unavailable"))?;
     let mut launch = command(runtime, app);
-    if pane == Pane::Recording { launch.arg("--settings-recording"); }
-    if pane == Pane::About { launch.arg("--settings-about"); }
-    if pane == Pane::Agents { launch.arg("--settings-agents"); }
-    if pane == Pane::General { launch.arg("--settings-general"); }
-    if pane == Pane::Labs { launch.arg("--settings-labs"); }
+    if let serde_json::Value::String(pane) = serde_json::to_value(pane)? {
+        launch.arg(format!("--settings-{pane}"));
+    }
     let mut child = launch
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
     let stdin = child.stdin.take();
@@ -154,7 +153,7 @@ pub(super) fn open(pane: Pane, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyh
         if let Some(stdout) = stdout {
             for line in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
                 if let Ok(action) = serde_json::from_str::<Action>(&line)
-                    && [Pane::General, Pane::Recording, Pane::Storage, Pane::Agents, Pane::Labs, Pane::About]
+                    && [Pane::General, Pane::Recording, Pane::Permissions, Pane::Storage, Pane::Agents, Pane::Labs, Pane::About]
                         .into_iter().any(|pane| admits(pane, &action))
                 {
                     events(Event::Action(action));
@@ -318,6 +317,7 @@ mod capability_tests {
             (r#"{"action":"recording-preference","request":1,"key":"playbackLevel","value":101}"#, vec![]),
             (r#"{"action":"recording-preference","request":1,"key":"launchAtLogin","value":true}"#, vec![]),
             (r#"{"action":"recording-meter","visible":true}"#, vec![Pane::Recording]),
+            (r#"{"action":"permission-action","request":1,"intent":{"kind":"recheck"}}"#, vec![Pane::Permissions]),
             (r#"{"action":"agents-preference","request":1,"setting":"autoPaste","enabled":true}"#, vec![]),
             (r#"{"action":"agents-preference","request":2,"setting":"sharing","enabled":true}"#, vec![]),
             (r#"{"action":"labs-preference","request":1,"setting":"streaming","enabled":true}"#, vec![Pane::Labs]),

@@ -142,6 +142,7 @@ fn update_failure(error: &anyhow::Error) -> Option<UpdateFailure> {
 fn electron_pane(pane: Option<Pane>) -> bool {
     settings::electron_general(pane)
         || matches!(pane, Some(Pane::About | Pane::Agents | Pane::Labs | Pane::Recording))
+        || cfg!(any(target_os = "linux", target_os = "macos")) && pane == Some(Pane::Permissions)
         || settings::electron_storage(pane, crate::shared::handoff::experiment("electronCaptureLocation"))
 }
 
@@ -347,4 +348,37 @@ fn recording_preferences_use_one_durable_config_mutation_and_keep_unrelated_valu
     std::fs::write(&path, "invalid config").unwrap();
     assert!(save_recording(&path, "videoExport", &false.into(), None).is_err());
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "invalid config");
+}
+
+pub(super) enum Transport {
+    Helper {
+        child: crate::capture::ui_process::UiChild,
+        stdin: Option<std::process::ChildStdin>,
+    },
+    InProcess(Option<flume::Sender<serde_json::Value>>),
+}
+
+
+impl Transport {
+    pub(super) fn send(&mut self, message: &serde_json::Value) {
+        use std::io::Write;
+        match self {
+            Transport::Helper { stdin, .. } => {
+                if let Some(pipe) = stdin.as_mut()
+                    && writeln!(pipe, "{message}")
+                        .and_then(|()| pipe.flush())
+                        .is_err()
+                {
+                    *stdin = None;
+                }
+            }
+            Transport::InProcess(sender) => {
+                if let Some(channel) = sender.as_ref()
+                    && channel.send(message.clone()).is_err()
+                {
+                    *sender = None;
+                }
+            }
+        }
+    }
 }
