@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Destination } from "../../capture/desktop/ui/frontend/src/pill/destinations.ts";
+import type { Destination } from "../pure/destinations.ts";
 export type Target = {
   origin: string;
   threadId: string;

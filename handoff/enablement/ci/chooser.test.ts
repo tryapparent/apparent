@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { computerLabels, visibleDestinations } from "../../pure/chooser.ts";
+import { computerLabels } from "../../pure/chooser.ts";
 
 test("address-only labels use computer numbers while names remain distinct", () => {
   assert.deepEqual(
@@ -12,14 +12,4 @@ test("address-only labels use computer numbers while names remain distinct", () 
     "X1 (3)",
     "X1 (1)",
   ]);
-});
-
-test("browse advances past the visible rows and ends at the last page", () => {
-  const choices = ["a", "b", "c", "d", "e"];
-  const first = visibleDestinations(choices, 0);
-  assert.deepEqual(first.rows, ["a", "b", "c"]);
-  assert.equal(first.moreIndex, 3);
-  const last = visibleDestinations(choices, first.moreIndex);
-  assert.deepEqual(last.rows, ["c", "d", "e"]);
-  assert.equal(last.moreIndex, null);
 });

@@ -1,12 +1,3 @@
-const pageSize = 3;
-
-export function visibleDestinations<T>(choices: readonly T[], index: number) {
-  const start = Math.max(0, Math.min(index - 1, choices.length - pageSize));
-  const rows = choices.slice(start, start + pageSize);
-  const next = start + rows.length;
-  return { start, rows, moreIndex: next < choices.length ? next : null };
-}
-
 export function computerLabels(values: readonly unknown[]) {
   const labels = values.map((value, index) => {
     const label = typeof value === "string" ? value.trim() : "";

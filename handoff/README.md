@@ -16,3 +16,12 @@ computers. Missing, duplicate, or address-only names receive numeric
 disambiguation. Connection addresses remain in Settings. Browse advances
 the visible rows without creating outbound intent. Selection and retries
 keep the original origin and request identity.
+
+Opening the picker shows a scrollable catalogue. Search matches thread title,
+project, computer and thread state. Browse groups new, pinned, done and other
+idle, working, snoozed, then settled threads. Archived threads and subagent
+threads are excluded. The catalogue uses the settled history the connected T3
+server returns. The collapsed picker retains the existing quick-send shortcut.
+An unconfirmed send displays the saved destination and retries the persisted
+request. The Handoff renderer receives focus, send and share callbacks from
+the existing Electron pill adapter, which remains the native integration point.
