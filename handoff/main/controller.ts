@@ -1,11 +1,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import type { DestinationView } from "../pure/destinations.ts";
 import {
   destinations,
-  type DestinationView,
+  readDestinationShell,
   type Project,
   type Thread,
-} from "../pure/destinations.ts";
+} from "./destination-catalogue.ts";
 import { connections, Transport, type Connection } from "./transport.ts";
 import { choiceTarget, Delivery, type Job } from "./delivery.ts";
 import { Store } from "./store.ts";
@@ -238,22 +239,9 @@ export class Controller {
       .filter((job) => job.phase === "sent")
       .sort((a, b) => (b.sentAt ?? b.createdAt) - (a.sentAt ?? a.createdAt));
     const loadComputer = async (config: Connection) => {
-      const transport = new Transport(config);
-      const [raw, configuration] = await Promise.all([
-        transport.get(
-          "/api/orchestration/shell?omitIdleSubagents=true",
-        ) as Promise<{ threads: Thread[]; projects: Project[] }>,
-        transport.rpc("server.getConfig", {}) as Promise<{
-          settings: Record<string, unknown>;
-          environment?: { label?: unknown };
-        }>,
-      ]);
-      if (
-        !Array.isArray(raw.threads) ||
-        !Array.isArray(raw.projects) ||
-        !configuration.settings
-      )
-        throw Error("Invalid T3 catalogue");
+      const { raw, settings, environment } = await readDestinationShell(
+        new Transport(config),
+      );
       const projects = raw.projects.filter((p) => !p.archivedAt);
       const last = recent.find(
         ({ target }) =>
@@ -266,15 +254,19 @@ export class Controller {
         projects[0]?.id,
       ].find((id) => projects.some((p) => p.id === id));
       if (!projectId) throw Error("No T3 project");
-      const label = configuration.environment?.label;
+      const label = environment?.label;
       return {
         config,
         raw,
         projects,
         projectId,
         last,
-        settings: configuration.settings,
+        settings,
         label: typeof label === "string" ? label.trim() : "",
+        environmentId:
+          typeof environment?.environmentId === "string"
+            ? environment.environmentId
+            : config.origin,
       };
     };
     const results: (
@@ -293,6 +285,7 @@ export class Controller {
       }[] = [];
       const threads: Thread[] = [];
       const scopedProjects: Project[] = [];
+      const now = Date.now();
       const labels = computerLabels(results.map((result) => result?.label));
       labels.forEach((label, i) =>
         this.computerNames.set(configured[i].origin, label),
@@ -308,7 +301,15 @@ export class Controller {
             .join(" ");
           return;
         }
-        const { config, raw, projects, projectId, settings, last } = result;
+        const {
+          config,
+          raw,
+          projects,
+          projectId,
+          settings,
+          last,
+          environmentId,
+        } = result;
         const scoped = (id: string) =>
           multiple ? JSON.stringify([config.origin, id]) : id;
         scopedProjects.push(
@@ -321,6 +322,8 @@ export class Controller {
           ...raw.threads.map((thread) => ({
             ...thread,
             id: scoped(thread.id),
+            sourceId: thread.id,
+            environmentId,
             projectId: scoped(thread.projectId),
           })),
         );
@@ -330,7 +333,12 @@ export class Controller {
         const projectsById = new Map(
           projects.map((project) => [project.id, project]),
         );
-        for (const original of destinations(raw.threads, projects, projectId)) {
+        for (const original of destinations(
+          raw.threads,
+          projects,
+          projectId,
+          now,
+        )) {
           const project = projectsById.get(
             threadProjects.get(original.id) ?? projectId,
           );
@@ -359,7 +367,9 @@ export class Controller {
           (a.last?.sentAt ?? a.last?.createdAt ?? 0),
       );
       this.choices = newThreads.map((item) => item.choice);
-      for (const thread of destinations(threads, scopedProjects, "").slice(1)) {
+      for (const thread of destinations(threads, scopedProjects, "", now).slice(
+        1,
+      )) {
         const entry = this.catalogue.get(thread.id);
         if (entry)
           this.choices.push({

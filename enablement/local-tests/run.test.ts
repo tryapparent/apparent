@@ -100,7 +100,7 @@ test('prerequisite, CI routing, selector and timing regressions are mandatory ev
   assert.ok(contracts.includes('bun test enablement/ci/'));
   assert.ok(contracts.includes('bun test connect/enablement/ci/'));
   assert.ok(!args.includes('cargo'));
-  assert.ok(!args.some(arg => arg.includes('verification-status')), 'retired reporter stays absent from local gates');
+  assert.ok(!args.some(arg => arg.includes('verification-status')));
 });
 
 test('package gates execute complete canonical suites including browser and Electron smoke', () => {

@@ -7,6 +7,9 @@ import {fileURLToPath} from 'node:url';
 import './build-pill-native.ts';
 await build({entryPoints:[fileURLToPath(new URL('../../../../../record/transcription/src/worker.ts',import.meta.url))],
  outfile:fileURLToPath(new URL('../electron/notes/record-transcription.cjs',import.meta.url)),bundle:true,platform:'node',format:'cjs',target:'node22'});
+execFileSync(process.execPath, [
+ fileURLToPath(new URL('../../../../../handoff/enablement/ci/bend/build.ts', import.meta.url)),
+], {stdio:'inherit'});
 await build({entryPoints:[fileURLToPath(new URL('../../../../../composition/handoff/main/entry.ts',import.meta.url))],
  outfile:fileURLToPath(new URL('../electron/pill/t3.cjs',import.meta.url)),bundle:true,platform:'node',format:'cjs',target:'node22'});
 // Record owns the source; the installed app uses its already packaged Node runtime.

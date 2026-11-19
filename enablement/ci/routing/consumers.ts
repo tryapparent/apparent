@@ -1,4 +1,5 @@
 import {readFileSync} from 'node:fs';
+import {portableForegroundInputs, serviceOnlyInputs} from '../../../shared/enablement/ci/connect-inputs.ts';
 import {bendConsumers} from '../../../shared/enablement/bend/consumers.ts';
 const rule = JSON.parse(readFileSync(new URL('../../../engine/enablement/ci/inputs.json', import.meta.url), 'utf8')) as {root: string; excludedSuffixes: string[]; desktopPermissions: string};
 const automaticPaths = [rule.root + '/**', '!' + rule.desktopPermissions + '**', ...rule.excludedSuffixes.map(suffix => '!' + rule.root + '/**/*' + suffix)];
@@ -53,37 +54,6 @@ export function onboardingInput(path: string): boolean {
     path.startsWith('capture/desktop/settings/onboarding') || path.endsWith('/practice.rs') ||
     path.startsWith('shared/ui/') || path.startsWith('record/');
 }
-export const portableForegroundInputs = new Set([
-  'connect/client/typescript/src/foreground.ts', 'connect/client/typescript/test/foreground.test.ts',
-]);
-export function foregroundPortableChange(path: string, before: string, after: string): boolean {
-  const source = path.endsWith('/src/foreground.ts');
-  const allowed = source ? ['node:readline', 'node:url'] : ['node:assert/strict', 'node:test', '../src/foreground.ts'];
-  const closure = (text: string) => {
-    const imports: string[] = [];
-    const rest = text.replace(/^\s*import\s+.*?from\s*['"]([^'"]+)['"];?/gm, (_line, name: string) => {imports.push(name); return '';});
-    return !/\b(?:import|require)\b/.test(rest.replace(/\bimport\.meta\b/g, '')) && imports.length === allowed.length &&
-      imports.every(name => allowed.includes(name)) && new Set(imports).size === allowed.length;
-  };
-  if (!closure(before) || !closure(after)) return false;
-  const resources = /\bprocess\s*[.\[]|\bglobalThis\b|\b(?:fetch|WebSocket|XMLHttpRequest|eval|Function)\s*\(/;
-  if (!source) return !resources.test(before) && !resources.test(after);
-  const protocol = (text: string) => {
-    const types = text.match(/export type Asset[\s\S]*?(?=\nconst fail)/)?.[0];
-    const signature = text.match(/export async function uploadForeground[^\n]*/)?.[0];
-    const stdio = text.match(/async function stdio\(\)[\s\S]*/)?.[0];
-    if (!types || !signature || !stdio || /\bas\s+any\b/.test(text) || resources.test(text.replace(stdio, ''))) return null;
-    const channels = text.match(/\b\w+\.(?:request|progress)\s*\(/g) ?? [];
-    const packets = [...text.matchAll(/\b\w+\.(request|progress)\s*\(\s*\{([^{}]*)\}\s*\)/g)].map(match => [match[1], match[2]]);
-    if (channels.length !== packets.length || /\bport\s*\[/.test(text)) return null;
-    const casts = [...text.matchAll(/\bas\s+(\w+)/g)].map(match => match[1]).sort();
-    const operations = [...text.matchAll(/operation:\s*['"]([^'"]+)['"]/g)].map(match => match[1]).sort();
-    return JSON.stringify({types, signature, stdio, operations, packets, casts});
-  };
-  const original = protocol(before);
-  return original !== null && original === protocol(after);
-}
-
 function directConsumers(path: string): readonly Owner[] {
   if (documentationOnlyPath(path)) return [];
   if (branchCleanupInput(path)) return ['tooling'];
@@ -174,7 +144,7 @@ const nativeOnlyTriggers = [...nativeWorkflowPaths.map(path => '!' + path),
   '!enablement/prerequisites/**', '!enablement/native-build/**', '!enablement/verification.py', '!enablement/build_version.rs'];
 const directoryPaths = {
   capture: [...common, ...independent, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, rule.desktopPermissions + '**', 'capture/**', 'record/**', 'connect/**',
-    'agent/**', 'AGENTS.md', 'public/**'],
+    'agent/**', 'AGENTS.md', 'public/**', ...Array.from(serviceOnlyInputs, path => '!' + path)],
   connect: [...common, ...independent, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, ...desktopPackagingInputs, 'connect/**', 'public/**',
     '.github/workflows/stream-connect.yml', 'enablement/release_gate.py'],
   public: [...common, ...independent, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/hermes.yml', 'public/**', '.github/workflows/stream-public.yml', 'README.md',

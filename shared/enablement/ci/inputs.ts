@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { serviceOnlyInputs } from "./connect-inputs.ts";
 
 export const nativeWorkflowPaths = [
   "checks",
@@ -73,6 +74,7 @@ export function connectConsumers(path: string, native: boolean) {
   )
     return ["client", "capture", "service"] as const;
   if (path.startsWith("connect/client/")) return ["client", "capture"] as const;
+  if (serviceOnlyInputs.has(path)) return ["service", "web"] as const;
   if (!native && path.startsWith("connect/service/"))
     return ["service", "client", "web", "capture"] as const;
 }

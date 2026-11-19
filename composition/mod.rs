@@ -86,7 +86,7 @@ pub(crate) mod feedback {
 
     #[derive(Args)]
     #[command(
-        after_help = "Draft a report locally:\n  apparent feedback --kind bug --title 'Zoom rejects 1:05' \\\n    --body 'Expected 65 seconds. Zoom rejected the timestamp.'\n\nInclude what you tried, what you expected, and what happened. Omit private\npaths, capture contents, and credentials. Show the user the exact preview\nand get approval before adding --submit on their behalf."
+        after_help = "Send in one call with --submit. When sending on someone's\nbehalf, show them the exact title and body and get approval.\n\nOptional local preview:\n  apparent feedback --kind bug --title 'Zoom rejects 1:05' \\\n    --body 'Expected 65 seconds. Zoom rejected the timestamp.'\n\nInclude what you tried, what you expected, and what happened.\nOmit private paths, capture contents, and credentials."
     )]
     pub(crate) struct FeedbackArgs {
         #[arg(long, value_enum, default_value = "feedback", help = "Report category")]
