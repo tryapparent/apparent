@@ -19,13 +19,29 @@ export function buildAdmission(destination: string): Promise<void> {
 async function buildRecordModule(
   destination: string,
   module: string,
-  source?: string,
 ): Promise<void> {
   await bendScratch(async (scratch) => {
     await buildBend(root, "record", scratch);
     mkdirSync(destination, { recursive: true });
     copyFileSync(join(scratch, module), join(destination, module));
-    if (source) copyFileSync(join(scratch, module), join(source, module));
+  });
+}
+
+async function buildMedia(destination: string): Promise<void> {
+  await bendScratch(async (scratch) => {
+    await buildBend(root, "record", scratch);
+    for (const [folder, module] of [
+      ["assembly", "frame-limits.mjs"],
+      ["export", "quiet-export.mjs"],
+    ]) {
+      const output = join(destination, folder);
+      mkdirSync(output, { recursive: true });
+      copyFileSync(join(scratch, module), join(output, module));
+    }
+    copyFileSync(
+      join(scratch, "quiet-export.mjs"),
+      join(root, "record/media/src/export/quiet-export.mjs"),
+    );
   });
 }
 
@@ -34,15 +50,10 @@ if (
   import.meta.url === pathToFileURL(resolve(process.argv[1])).href
 ) {
   const [destination, mode, ...extra] = process.argv.slice(2);
-  if (!destination || extra.length || (mode && mode !== "quiet-export"))
+  if (!destination || extra.length || (mode && mode !== "media"))
     throw new Error(
-      "Usage: node record/enablement/ci/bend/build.ts <destination> [quiet-export]",
+      "Usage: node record/enablement/ci/bend/build.ts <destination> [media]",
     );
-  if (mode === "quiet-export")
-    await buildRecordModule(
-      resolve(destination),
-      "quiet-export.mjs",
-      join(root, "record/media/src/export"),
-    );
+  if (mode === "media") await buildMedia(resolve(destination));
   else await buildAdmission(resolve(destination));
 }

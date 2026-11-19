@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { probeMovie } from "@apparent/engine-sdk";
+import { decodeMovieFrames, probeMovie } from "@apparent/engine-sdk";
 import { qualifyFrames } from "./qualify-frames.ts";
 import { qualifyAudio } from "./audio/qualify.ts";
 
@@ -107,6 +107,33 @@ await qualifyAudio(
   directory,
 );
 const frames = join(dirname(executable), "apparent-engine-frames");
+
+async function verifySequentialBatch(directory: string) {
+  const times = [800, 0, 400, 400, 10_000];
+  async function decode(timesMs: number[], name: string) {
+    const outputDirectory = join(directory, name);
+    mkdirSync(outputDirectory, { mode: 0o700 });
+    return decodeMovieFrames({
+      executable: frames,
+      movie,
+      outputDirectory,
+      timesMs,
+      maxEdge: 32,
+    });
+  }
+  const batch = await decode(times, "batch-reference");
+  for (const [index, time] of times.entries()) {
+    const [single] = await decode([time], "single-reference-" + index);
+    assert.equal(batch[index].actualMs, single.actualMs);
+    assert.equal(batch[index].width, single.width);
+    assert.equal(batch[index].height, single.height);
+    assert.deepEqual(
+      readFileSync(batch[index].file),
+      readFileSync(single.file),
+    );
+  }
+}
+
 const previous = process.env.APPARENT_ENGINE_QUALIFY_SEQUENTIAL;
 if (process.platform === "darwin")
   delete process.env.APPARENT_ENGINE_QUALIFY_SEQUENTIAL;
@@ -117,6 +144,7 @@ try {
     mkdirSync(sequential, { mode: 0o700 });
     process.env.APPARENT_ENGINE_QUALIFY_SEQUENTIAL = "1";
     await qualifyFrames(frames, sequential, movie, rotated);
+    await verifySequentialBatch(sequential);
   }
 } finally {
   if (process.platform === "darwin") {

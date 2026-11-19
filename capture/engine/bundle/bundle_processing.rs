@@ -12,7 +12,7 @@ use crate::capture::engine::runtime::audio::audio::RecordedAudio;
 pub mod publication;
 use crate::capture::engine::autocrop::autocrop;
 use crate::capture::engine::bundle::recover;
-use crate::capture::engine::keyframes::{captured_ink_frame_warning, select_keyframes_with_limits};
+use crate::capture::engine::keyframes::{SelectionFrames, captured_ink_frame_warning};
 #[cfg(test)]
 use crate::capture::engine::keyframes::select_keyframes;
 use crate::capture::engine::render;
@@ -361,6 +361,7 @@ pub fn finalize_capture_bundle(
             .flatten();
         let assembly_plan = crate::composition::assembly::plan(duration_ms)?;
         let limits = assembly_plan.limits(duration_ms)?;
+        let mut frames = SelectionFrames::from(frames);
         let ((transcript, transcribe_ms), (predecoded, prepared)) = std::thread::scope(|scope| -> Result<_> {
             let transcribe_handle = scope.spawn(|| {
                 let t0 = std::time::Instant::now();
@@ -370,13 +371,9 @@ pub fn finalize_capture_bundle(
                 );
                 (tr, t0.elapsed().as_millis() as u64)
             });
-            let pre = if let Some(ref movie) = video_path
-                && !frames.is_empty()
-            {
+            let pre = if let Some(ref movie) = video_path {
                 let mut preview_marks = marks_of(&strokes);
-                let budget = limits.maximum;
-                let preview = select_keyframes_with_limits(
-                    &frames,
+                let preview = frames.select(
                     &strokes,
                     &mut preview_marks,
                     &events,
@@ -384,7 +381,7 @@ pub fn finalize_capture_bundle(
                     limits,
                     video_ink,
                 )?.frames;
-                let marks_fill = preview.len() == budget
+                let marks_fill = preview.len() == limits.maximum
                     && preview
                         .iter()
                         .all(|(k, _)| k.reason == model::KeyframeReason::Mark);
@@ -558,7 +555,7 @@ pub fn build_bundle_from_parts(
     bundle_dir: &Path,
     target: TargetInfo,
     duration_ms: u64,
-    frames: Vec<RgbaFrame>,
+    frames: impl Into<SelectionFrames>,
     strokes: Vec<Stroke>,
     events: Vec<InteractionEvent>,
     transcript: TranscriptData,
@@ -566,6 +563,7 @@ pub fn build_bundle_from_parts(
     note: Option<String>,
     extras: SourceExtras,
 ) -> Result<(PathBuf, ApparentBundle, String)> {
+    let mut frames = frames.into();
     publication::publish_after(bundle_dir, || {
         let mut events = events;
         merge_capture_notes(bundle_dir, &mut events)?;
@@ -616,8 +614,7 @@ pub fn build_bundle_from_parts(
         let bench = std::env::var_os("APPARENT_BENCH").is_some();
         let started = std::time::Instant::now();
         let speech = crate::composition::transcript::speech::plan(&transcript)?;
-        let selected = crate::composition::transcript::apply(select_keyframes_with_limits(
-            &frames,
+        let selected = crate::composition::transcript::apply(frames.select(
             &strokes,
             &mut marks,
             &events,
@@ -626,6 +623,7 @@ pub fn build_bundle_from_parts(
             extras.video_ink,
         )?, &transcript)?;
         let select_only_at = std::time::Instant::now();
+        let frames = frames.into_frames();
         let completion_warning = captured_ink_frame_warning(&selected, &marks, extras.video_ink);
         let matches_prepared = completion_warning.is_none() && extras.prepared.as_ref().is_some_and(|prep| {
             prep.video_ink == extras.video_ink && prep.keyframes.len() == selected.len()
