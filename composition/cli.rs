@@ -59,7 +59,7 @@ impl Cli {
     pub(super) fn reads_capture(&self) -> bool {
         matches!(
             self.command,
-            Some(Command::Inspect { .. } | Command::Fetch { .. } | Command::Frames { .. } | Command::Zoom { .. })
+            Some(Command::Inspect { .. } | Command::Fetch(_) | Command::Frames { .. } | Command::Zoom { .. })
         )
     }
 }
@@ -233,16 +233,7 @@ enum Command {
     },
     /// Retrieve selected evidence or a complete hosted capture using a separate read credential.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    Fetch {
-        id: String,
-        /// Retrieve only these original asset paths into an extraction directory (v2).
-        #[arg(long = "file")]
-        files: Vec<String>,
-        #[arg(long)]
-        out: PathBuf,
-        #[arg(long, default_value_t = 0)]
-        wait: u64,
-    },
+    Fetch(hosted::FetchArgs),
     /// Open Apparent, or start it without presenting Settings.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     Launch {
@@ -414,6 +405,8 @@ enum Command {
         /// Connect ID (fetches to ./<id>.apparent, waits 120s), local bundle, or `latest`.
         #[arg(default_value = "latest")]
         bundle: PathBuf,
+        #[arg(long, help = "Use a specific Connect read profile for a capture ID")]
+        reader: Option<String>,
         /// Emit raw `apparent.json` instead of `summary.md` (with `--marks`, the marks as JSON).
         #[arg(long)]
         json: bool,
@@ -843,7 +836,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         Command::Feedback(args) => super::feedback::command(args),
         #[cfg(any(target_os = "macos", target_os = "linux"))]
-        Command::Fetch { id, out, wait, files } => hosted::fetch_selected(&id, &out, wait, &files),
+        Command::Fetch(args) => hosted::fetch(args),
         #[cfg(target_os = "linux")]
         Command::LaunchHandler { command } => match command {
             LaunchHandlerCommand::Install => linux::launch_handler::install(),
@@ -1509,6 +1502,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
         }
         Command::Inspect {
             bundle,
+            reader,
             json,
             marks,
             experiments,
@@ -1517,7 +1511,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
                 handoff::enable_experiment(name);
             }
             #[cfg(any(target_os = "macos", target_os = "linux"))]
-            let bundle = hosted::inspect_source(&bundle)?;
+            let bundle = hosted::inspect_source(&bundle, reader.as_deref())?;
             let (dir, loaded) = handoff::load_bundle(&bundle)?;
             if marks {
                 let entries = agent_context::mark_entries(&loaded);

@@ -188,8 +188,8 @@ fn recovery(error: anyhow::Error) -> anyhow::Error {
 pub fn command(command: ConnectCommand) -> Result<()> {
     let client = client();
     let result = (|| match command {
-        ConnectCommand::Files { id } => {
-            println!("{}",serde_json::to_string_pretty(&client.files(&id)?)?);
+        ConnectCommand::Files { id, reader } => {
+            println!("{}",serde_json::to_string_pretty(&client.list_files(&id, reader.as_deref())?)?);
             Ok(())
         }
         ConnectCommand::Alternatives => {
@@ -212,7 +212,14 @@ pub fn command(command: ConnectCommand) -> Result<()> {
             scope,
             consent_upload,
             no_browser,
-        } => client.login(&server, &scope, consent_upload, !no_browser),
+            reader,
+        } => match reader {
+            Some(name) => {
+                anyhow::ensure!(scope == "read" && !consent_upload, "--reader is for read approval");
+                client.login_reader(&name, &server, !no_browser)
+            }
+            None => client.login(&server, &scope, consent_upload, !no_browser),
+        },
         ConnectCommand::Status { account } => {
             println!(
                 "{}",
@@ -220,7 +227,16 @@ pub fn command(command: ConnectCommand) -> Result<()> {
             );
             Ok(())
         }
-        ConnectCommand::Logout => {
+        ConnectCommand::Readers => {
+            println!("{}", serde_json::to_string_pretty(&client.readers()?)?);
+            Ok(())
+        }
+        ConnectCommand::Logout { reader: Some(name) } => {
+            client.logout_reader(&name)?;
+            println!("Signed out reader {name}.");
+            Ok(())
+        }
+        ConnectCommand::Logout { reader: None } => {
             client.disable(true)?;
             println!(
                 "Signed out locally; pending uploads cancelled. Server data expires after seven days."
@@ -259,21 +275,35 @@ pub fn command(command: ConnectCommand) -> Result<()> {
     })();
     result.map_err(recovery)
 }
-pub fn fetch(id: &str, out: &Path, wait: u64) -> Result<()> {
-    println!("{}", client().fetch(id, out, wait).map_err(recovery)?.display());
-    Ok(())
+#[derive(clap::Args)]
+pub struct FetchArgs {
+    id: String,
+    #[arg(long, help = "Use a specific Connect read profile")]
+    reader: Option<String>,
+    #[arg(long = "file", help = "Retrieve these original asset paths into an extraction directory (v2)")]
+    files: Vec<String>,
+    #[arg(long)]
+    out: PathBuf,
+    #[arg(long, default_value_t = 0)]
+    wait: u64,
 }
-pub fn fetch_selected(id:&str,out:&Path,wait:u64,files:&[String])->Result<()> {
-    println!("{}",client().fetch_selected(id,out,wait,if files.is_empty(){None}else{Some(files)}).map_err(recovery)?.display());
+
+pub fn fetch(args: FetchArgs) -> Result<()> {
+    let selection = (!args.files.is_empty()).then_some(args.files.as_slice());
+    let fetched = client().fetch_with_reader(
+        &args.id, &args.out, args.wait, selection, args.reader.as_deref(),
+    ).map_err(recovery)?;
+    println!("{}", fetched.display());
     Ok(())
 }
 /// Only a bare canonical Connect ID implies a download. Explicit local paths
 /// retain local inspection semantics; fetch never overwrites existing output.
-pub fn inspect_source(source: &Path) -> Result<PathBuf> {
+pub fn inspect_source(source: &Path, reader: Option<&str>) -> Result<PathBuf> {
     let Some(id) = inspect_capture_id(source) else {
+        anyhow::ensure!(reader.is_none(), "--reader requires a Connect capture ID");
         return Ok(source.to_path_buf());
     };
-    client().fetch(id, &PathBuf::from(format!("./{id}.apparent")), 120)
+    client().fetch_with_reader(id, &PathBuf::from(format!("./{id}.apparent")), 120, None, reader)
         .map_err(recovery)
 }
 

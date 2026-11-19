@@ -209,7 +209,7 @@ apparent fetch 0123456789abcdef0123456789abcdef --out ./capture.apparent --wait 
 
 A person approves a separate **read** device grant. Never paste an upload/read token into an agent prompt or silently expose one through the clipboard. Fetch does not require the upload experiment or consent. `--wait` bounds pending-manifest polling to 0–900 seconds; zero makes a single manifest request. Individual network operations are bounded separately (30 seconds for JSON, 60 for a file); the wait deadline does not cap transfer time once ready. The complete manifest and all files must arrive and pass size/SHA-256 checks before a sibling private staging directory is atomically renamed to `--out`. There is no lazy media retrieval. The parent directory must exist, and the destination must **not** exist: existing directories/files/symlinks are rejected, never merged or replaced. Traversal, absolute paths, invalid IDs, symlink paths, duplicate/unknown assets and invalid hashes are rejected. Failed fetches remove their staging directory and publish nothing.
 
-After fetching, inspect `contact-sheet.png` visually and read `summary.md`/`apparent.json`, then use `apparent zoom` against the downloaded recording as usual. A pending/offline/expired capture is not evidence that the agent has seen the images.
+After fetching, inspect `contact-sheet.png` visually and read `summary.md`/`apparent.json`, then use `apparent zoom` against the downloaded recording as usual. For multiple sender accounts, see [reader profiles](../client/README.md).
 
 ### Local filesystem security boundary
 

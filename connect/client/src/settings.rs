@@ -287,3 +287,93 @@ impl Client {
             .map_err(|_| SafeError::LocalState)
     }
 }
+
+impl Client {
+    fn readers_directory(&self) -> PathBuf {
+        self.state.join("readers")
+    }
+
+    pub(super) fn named_reader(&self, name: &str) -> Result<Self> {
+        ensure!(
+            !self.named_reader
+                && name != "default"
+                && (1..=64).contains(&name.len())
+                && name.as_bytes()[0].is_ascii_alphanumeric()
+                && name.bytes().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || matches!(byte, b'-' | b'_')
+                }),
+            "Invalid reader name; use 1–64 lowercase letters, digits, hyphens or underscores, starting with a letter or digit"
+        );
+        let mut reader = self.clone();
+        reader.state = self.readers_directory().join(name);
+        reader.named_reader = true;
+        Ok(reader)
+    }
+
+    pub fn login_reader(&self, name: &str, server: &str, browser: bool) -> Result<()> {
+        self.named_reader(name)?
+            .login(server, "read", false, browser)
+    }
+
+    pub fn logout_reader(&self, name: &str) -> Result<()> {
+        let reader = self.named_reader(name)?;
+        fs::symlink_metadata(&reader.state).context("Unknown Connect reader profile")?;
+        reader.disable(true)
+    }
+
+    pub(super) fn read_credential(&self) -> Result<Credential> {
+        if self.named_reader {
+            ensure!(!self.revocation_pending(), "cancelled: revocation pending");
+            let auth = "auth_required: approve the named reader with apparent connect login --reader <name>";
+            fs::symlink_metadata(self.state.join("read.credential")).context(auth)?;
+            return self.stored_credential("read").context(auth);
+        }
+        self.credential("read", &server_url(&self.settings().server)?)
+    }
+
+    pub(super) fn reader_profiles(&self) -> Result<Vec<(String, Client)>> {
+        let directory = self.readers_directory();
+        match fs::symlink_metadata(&directory) {
+            Ok(_) => private_dir(&directory)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(error.into()),
+        }
+        let mut readers = Vec::new();
+        for entry in fs::read_dir(directory)? {
+            let entry = entry?;
+            if let Some(name) = entry.file_name().to_str()
+                && entry.file_type()?.is_dir()
+                && let Ok(reader) = self.named_reader(name)
+                && private_dir(&reader.state).is_ok()
+            {
+                readers.push((name.to_owned(), reader));
+            }
+        }
+        readers.sort_by(|left, right| left.0.cmp(&right.0));
+        Ok(readers)
+    }
+
+    pub fn readers(&self) -> Result<Value> {
+        let server = self.settings().server;
+        let mut readers = vec![json!({
+            "name": "default",
+            "server": server,
+            "auth": self.auth_status("read", &server)
+        })];
+        for (name, client) in self.reader_profiles()? {
+            let server = client
+                .stored_credential("read")
+                .ok()
+                .map(|credential| credential.server);
+            let mut auth = client.auth_status("read", server.as_deref().unwrap_or(""));
+            if auth.get("action").is_some_and(Value::is_string) {
+                auth["action"] =
+                    format!("Run apparent connect login --reader {name} for this server").into();
+            }
+            readers.push(json!({"name": name, "server": server, "auth": auth}));
+        }
+        Ok(json!(readers))
+    }
+}
