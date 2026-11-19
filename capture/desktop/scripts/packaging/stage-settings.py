@@ -134,7 +134,7 @@ for (const name of ['main', 'preload']) {
         subprocess.run(["codesign", "--verify", "--strict", str(addon)], check=True)
         # The published native provider is verified before staging, then signed
         # as nested app code. Installed payload hashes belong to the app seal.
-        for owner, names in (("record-media", ("apparent-engine-media", "apparent-engine-probe", "apparent-engine-frames", "apparent-engine-frames-native")),
+        for owner, names in (("record-media", ("apparent-engine-media", "apparent-engine-probe", "apparent-engine-frames", "apparent-engine-frames-native", "apparent-engine-audio")),
                              ("agent-media", ("apparent-engine-frames", "apparent-engine-frames-native"))):
             engine = app / "electron" / owner / "native"
             for name in names:

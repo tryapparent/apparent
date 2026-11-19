@@ -14,7 +14,7 @@
     "test:native": "node --experimental-strip-types --test test/native.test.ts"
   },
   "dependencies": {
-    "@apparent/engine-sdk": "https://github.com/tryapparent/apparent/releases/download/engine-media-2d4686185850037424e86bb7ec34496a549d328d/apparent-engine-sdk-0.3.0.tgz"
+    "@apparent/engine-sdk": "https://github.com/tryapparent/apparent/releases/download/engine-media-26c26ef3145493411f148ddc6897d9a701cb001d/apparent-engine-sdk-0.4.0.tgz"
   },
   "devDependencies": {
     "@types/node": "22.19.0",
