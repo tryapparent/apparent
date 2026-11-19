@@ -23,8 +23,9 @@ package and a new consented occurrence; historical reports cannot be enriched.
 ## Recording
 
 Recording joins General, About, Agents, Labs and eligible Storage routes in
-the same Electron document. The native Settings session chooses the route,
-filters its actions, and owns the existing config transaction. The Electron
+the same Electron document. The native Permissions sidebar routes Recording
+through that Settings session. The session chooses the presenter, filters its
+actions, and owns the existing config transaction. The Electron
 host clears Recording facts and cancels pending acknowledgements on a route
 change. A lost acknowledgement leaves the saved value uncertain until the
 native state arrives. The native presenter remains available on missing or

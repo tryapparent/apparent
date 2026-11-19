@@ -1565,8 +1565,7 @@ impl Session {
             let electron = super::electron_pane(Some(pane));
             // Every adopted pane uses settings.html and the same restricted bridge.
             // Native-only destinations still replace the presentation.
-            let shared_shell = self.electron && electron;
-            if electron != self.electron || (self.electron && self.pane != Some(pane) && !shared_shell) {
+            if electron != self.electron && !(pane == Pane::Recording && self.pane == Some(pane)) {
                 let generation = super::presentation::generation();
                 match Self::open_presentation(Some(pane), generation, &self.events, true) {
                     Ok((transport, electron)) => {
