@@ -5,6 +5,8 @@ use std::time::Instant;
 
 use super::super::CaptureSource;
 use super::whiteboard;
+#[cfg(target_os = "linux")]
+use crate::capture::desktop::workflow::FinishPhase;
 use crate::capture::engine::runtime::apparent_log;
 use crate::capture::engine::runtime::recording::diagnostics::{Diagnose, Stage};
 use crate::shared::model::{ApparentBundle, InteractionEvent, Stroke, TargetInfo};
@@ -22,6 +24,8 @@ pub(in crate::capture::desktop) fn finalize(
     final_whiteboard: whiteboard::Board,
     notes_finished: Option<flume::Receiver<crate::capture::desktop::workflow::notes::FinishResult>>,
 ) -> (CaptureResult, u64) {
+    #[cfg(target_os = "linux")]
+    FinishPhase::StoppingSource.emit();
     let (screen_session, audio_recorder, window_log) = match source {
         CaptureSource::Screen {
             session,
@@ -146,9 +150,24 @@ fn complete_bundle(
     board: &whiteboard::Board,
     build: impl FnOnce() -> CaptureResult,
 ) -> CaptureResult {
-    complete_bundle_with(path, build, |dir, bundle, summary| {
-        whiteboard::finish_handoff(dir, bundle, summary, board)
-    }).stage(Stage::Publication)
+    #[cfg(target_os = "linux")]
+    FinishPhase::PreparingBundle.emit();
+    let result = complete_bundle_with(
+        path,
+        || {
+            #[cfg(target_os = "linux")]
+            FinishPhase::BuildingBundle.emit();
+            build()
+        },
+        |dir, bundle, summary| {
+            #[cfg(target_os = "linux")]
+            FinishPhase::PublishingBundle.emit();
+            whiteboard::finish_handoff(dir, bundle, summary, board)
+        },
+    ).stage(Stage::Publication);
+    #[cfg(target_os = "linux")]
+    FinishPhase::FinalizerReturned.emit();
+    result
 }
 
 fn complete_bundle_with(

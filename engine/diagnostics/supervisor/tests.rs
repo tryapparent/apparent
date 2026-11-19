@@ -18,9 +18,16 @@ fn supervised_fixture_process() {
         eprintln!("[123] Recording synthetic fixture");
         eprintln!("[124] emit_capture_shortcut");
         match mode.as_str() {
-            "kill" => unsafe {
-                libc::raise(libc::SIGKILL);
-            },
+            "kill" => {
+                eprintln!("[125] finish_recording invoked");
+                FinishPhase::StoppingSource.emit();
+                FinishPhase::PreparingBundle.emit();
+                FinishPhase::BuildingBundle.emit();
+                eprintln!("apparent-native-finish: publishing_bundle private transcript canary");
+                unsafe {
+                    libc::raise(libc::SIGKILL);
+                }
+            }
             "term" => loop {
                 std::thread::sleep(Duration::from_millis(10));
             },
@@ -106,7 +113,15 @@ fn production_supervision_records_signal_and_removes_clean_exit_markers() {
                     libc::SIGTERM
                 })
             );
-            assert_eq!(records[0].stage, Stage::Shortcut);
+            let diagnostics = records[0].diagnostics();
+            if mode == "kill" {
+                assert_eq!(diagnostics["last_stage"], "finishing");
+                assert_eq!(diagnostics["last_finish_phase"], "building_bundle");
+                assert!(!diagnostics.to_string().contains("private transcript canary"));
+            } else {
+                assert_eq!(diagnostics["last_stage"], "shortcut");
+                assert!(diagnostics["last_finish_phase"].is_null());
+            }
             assert_eq!(records[0].supervisor, 0);
             assert!(records[0].exited_ms.is_some());
         }
@@ -132,6 +147,7 @@ fn fixture() -> Record {
         environment: "production".into(),
         modified: false,
         stage: Stage::Shortcut,
+        finish_phase: None,
         code: None,
         signal: Some(libc::SIGKILL),
         core_dumped: false,
@@ -265,8 +281,28 @@ fn enabling_and_rotating_consent_discards_previous_context_without_restart() {
     assert_eq!(read(&path).unwrap().consent.as_deref(), Some("new"));
     assert_eq!(read(&path).unwrap().stage, Stage::Starting);
     record.stage = Stage::Finishing;
+    record.finish_phase = Some(FinishPhase::StoppingSource);
+    save(&path, &record).unwrap();
     refresh_consent(&path, &mut record, Some("another".into()));
-    assert_eq!(read(&path).unwrap().stage, Stage::Starting);
+    let current = read(&path).unwrap();
+    assert_eq!(current.stage, Stage::Starting);
+    assert_eq!(current.finish_phase, None);
+}
+
+#[test]
+fn finish_phases_survive_inner_bundle_timing_and_reset_for_a_new_recording() {
+    let mut record = fixture();
+    Observation::read(b"[123] finish_recording invoked").unwrap().apply(&mut record);
+    Observation::read(FinishPhase::BuildingBundle.marker().as_bytes()).unwrap().apply(&mut record);
+    Observation::read(b"[124] finish timings: synthetic").unwrap().apply(&mut record);
+    assert_eq!(record.finish_phase, Some(FinishPhase::BuildingBundle));
+    Observation::read(FinishPhase::PublishingBundle.marker().as_bytes()).unwrap().apply(&mut record);
+    assert_eq!(record.finish_phase, Some(FinishPhase::PublishingBundle));
+    Observation::read(b"[125] Recording synthetic").unwrap().apply(&mut record);
+    assert_eq!(record.finish_phase, None);
+    record.consent = None;
+    assert!(!Observation::read(FinishPhase::StoppingSource.marker().as_bytes()).unwrap().apply(&mut record));
+    assert_eq!(record.finish_phase, None);
 }
 
 #[test]
