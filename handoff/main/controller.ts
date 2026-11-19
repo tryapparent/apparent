@@ -5,7 +5,7 @@ import {
   type DestinationView,
   type Project,
   type Thread,
-} from "../../capture/desktop/ui/frontend/src/pill/destinations.ts";
+} from "../pure/destinations.ts";
 import { connections, Transport, type Connection } from "./transport.ts";
 import { choiceTarget, Delivery, type Job } from "./delivery.ts";
 import { Store } from "./store.ts";
@@ -241,7 +241,7 @@ export class Controller {
       const transport = new Transport(config);
       const [raw, configuration] = await Promise.all([
         transport.get(
-          "/api/orchestration/shell?omitIdleSubagents=true&omitOlderSettled=true",
+          "/api/orchestration/shell?omitIdleSubagents=true",
         ) as Promise<{ threads: Thread[]; projects: Project[] }>,
         transport.rpc("server.getConfig", {}) as Promise<{
           settings: Record<string, unknown>;
@@ -324,11 +324,16 @@ export class Controller {
             projectId: scoped(thread.projectId),
           })),
         );
+        const threadProjects = new Map(
+          raw.threads.map((thread) => [thread.id, thread.projectId]),
+        );
+        const projectsById = new Map(
+          projects.map((project) => [project.id, project]),
+        );
         for (const original of destinations(raw.threads, projects, projectId)) {
-          const thread = raw.threads.find((t) => t.id === original.id),
-            project = projects.find(
-              (p) => p.id === (thread?.projectId ?? projectId),
-            );
+          const project = projectsById.get(
+            threadProjects.get(original.id) ?? projectId,
+          );
           if (!project) continue;
           const id = scoped(original.id);
           const choice = {
