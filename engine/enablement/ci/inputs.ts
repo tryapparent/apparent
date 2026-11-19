@@ -4,12 +4,12 @@ import rule from "./inputs.json" with { type: "json" };
 
 export const automaticPaths = [
   rule.root + "/**",
-  "!" + rule.desktopPermissions + "**",
+  ...rule.desktopPaths.map((path) => "!" + path + "**"),
   ...rule.excludedSuffixes.map((suffix) => "!" + rule.root + "/**/*" + suffix),
 ];
 export const affectsEngine = (path: string) =>
   path.startsWith(rule.root + "/") &&
-  !path.startsWith(rule.desktopPermissions) &&
+  !rule.desktopPaths.some((prefix) => path.startsWith(prefix)) &&
   !rule.excludedSuffixes.some((suffix) => path.endsWith(suffix));
 export const linuxRunners = ["ubuntu-24.04", "ubuntu-24.04-arm"];
 export const nativeRunners = [...linuxRunners, "macos-15", "macos-15-intel"];

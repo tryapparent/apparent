@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import {execFileSync} from 'node:child_process';
 import {posix} from 'node:path';
 import {moduleImports} from '../fixture-portability/imports.ts';
@@ -78,3 +79,21 @@ export function engineIndependentRange(base: string, head: string, paths: string
     return true;
   } catch {return false;}
 }
+
+const { root, desktopPaths, excludedSuffixes } = JSON.parse(
+  readFileSync(
+    new URL("../../../../engine/enablement/ci/inputs.json", import.meta.url),
+    "utf8",
+  ),
+) as { root: string; desktopPaths: string[]; excludedSuffixes: string[] };
+export const desktopEnginePaths = desktopPaths.map((path) => path + "**");
+export const automaticPaths = [
+  root + "/**",
+  ...desktopEnginePaths.map((path) => "!" + path),
+  ...excludedSuffixes.map((suffix) => "!" + root + "/**/*" + suffix),
+];
+export const affectsEngine = (path: string) =>
+  path.startsWith(root + "/") &&
+  !desktopPaths.some((prefix) => path.startsWith(prefix)) &&
+  !excludedSuffixes.some((suffix) => path.endsWith(suffix));
+export { desktopPaths };
