@@ -523,15 +523,35 @@ pub fn pick_display(
     point: Option<[f64; 2]>,
     focused: Option<[f64; 4]>,
 ) -> usize {
-    let inside = |p: [f64; 2]| {
-        displays
-            .iter()
-            .position(|&[x, y, w, h]| p[0] >= x && p[0] < x + w && p[1] >= y && p[1] < y + h)
-    };
     point
-        .and_then(inside)
-        .or_else(|| focused.and_then(|[x, y, w, h]| inside([x + w / 2.0, y + h / 2.0])))
+        .and_then(|p| display_at(displays, p))
+        .or_else(|| focused.and_then(|[x, y, w, h]| display_at(displays, [x + w / 2.0, y + h / 2.0])))
         .unwrap_or(0)
+}
+
+fn display_at(displays: &[[f64; 4]], point: [f64; 2]) -> Option<usize> {
+    displays
+        .iter()
+        .position(|&[x, y, w, h]| point[0] >= x && point[0] < x + w && point[1] >= y && point[1] < y + h)
+}
+
+pub fn pick_start_display(
+    displays: &[[f64; 4]],
+    point: Option<[f64; 2]>,
+    focused: Option<[f64; 4]>,
+) -> usize {
+    for preference in START_DISPLAY_PREFERENCE {
+        let found = match preference {
+            "focused" => focused.and_then(|[x, y, w, h]| display_at(displays, [x + w / 2.0, y + h / 2.0])),
+            "pointer" => point.and_then(|p| display_at(displays, p)),
+            "first" => displays.first().map(|_| 0),
+            _ => None,
+        };
+        if let Some(index) = found {
+            return index;
+        }
+    }
+    0
 }
 
 pub fn selectable_window_at(windows: &[TargetInfo], x: f64, y: f64) -> Option<&TargetInfo> {

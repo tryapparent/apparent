@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { recordDefault, usesDesktopRecord } from "../../shortcuts/policy.ts";
+import {
+  START_DISPLAY_PREFERENCE,
+  recordDefault,
+  usesDesktopRecord,
+} from "../../shortcuts/policy.ts";
+
+test("a keyboard-started recording follows the frontmost window before the pointer", () => {
+  assert.deepEqual(START_DISPLAY_PREFERENCE, ["focused", "pointer", "first"]);
+});
 
 test("defaults preserve the Mac Fn press and Linux layout-resolved Alt+Shift+S", () => {
   assert.deepEqual(recordDefault("macos"), {

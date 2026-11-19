@@ -1,4 +1,8 @@
-import { recordDefault, usesDesktopRecord } from "../../shortcuts/policy.ts";
+import {
+  START_DISPLAY_PREFERENCE,
+  recordDefault,
+  usesDesktopRecord,
+} from "../../shortcuts/policy.ts";
 
 const platform = process.argv[2] === "macos" ? "macos" : "linux";
 const binding = recordDefault(platform);
@@ -14,5 +18,6 @@ process.stdout.write(
     `const RECORD_DEFAULT_CODE: Option<u32> = ${binding.keyCode === null ? "None" : `Some(${binding.keyCode})`};`,
     `const RECORD_DEFAULT_MODIFIERS: u32 = ${binding.modifiers};`,
     `const DESKTOP_RECORD_PRECEDENCE: [bool; 4] = [${desktop.join(", ")}];`,
+    `const START_DISPLAY_PREFERENCE: [&str; ${START_DISPLAY_PREFERENCE.length}] = [${START_DISPLAY_PREFERENCE.map((preference) => JSON.stringify(preference)).join(", ")}];`,
   ].join("\n"),
 );
