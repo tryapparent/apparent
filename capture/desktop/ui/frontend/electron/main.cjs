@@ -364,7 +364,6 @@ app.whenReady().then(() => {
               generalState = undefined; aboutState = undefined;
               ++pairingPreviewVersion; pairingLinks.clear(); t3Approval?.abort(); resetPreferences();
             }
-            if (command.pane !== pane) connect.close();
             pane = command.pane;
             window.webContents.send('apparent:settings-route', pane);
           }

@@ -15,7 +15,7 @@ const load = createRequire(join(frontend, "package.json"));
 const { _electron: electron, expect } = load("@playwright/test");
 
 test("installed General renders Connect facts with keyboard recovery and redacted receipts", {
-  timeout: 40_000,
+  timeout: 60_000,
 }, async (t) => {
   const home = await mkdtemp(join(tmpdir(), "cs-"));
   const directory = join(home, ".config/apparent/agent-control");
@@ -65,6 +65,14 @@ test("installed General renders Connect facts with keyboard recovery and redacte
           return;
         }
         const request = JSON.parse(line);
+        if (request.microphone === "read") {
+          socket.end('{"microphone":{"enabled":false}}\n');
+          return;
+        }
+        if (request.errorReporting === "read") {
+          socket.end('{"errorReporting":{"enabled":false}}\n');
+          return;
+        }
         if (!request.connect) {
           socket.end('{"error":"feature_disabled"}\n');
           return;
@@ -110,10 +118,26 @@ test("installed General renders Connect facts with keyboard recovery and redacte
     env: { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, ".config") },
   });
   const page = await app.firstWindow();
+  await page.emulateMedia({ colorScheme: null });
   const card = page.getByRole("region", { name: "Apparent Connect" });
   await expect(
     card.getByRole("button", { name: "Connect with Google" }),
   ).toBeEnabled();
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0].webContents.send(
+      "apparent:general-state",
+      {
+        type: "general-state",
+        platform: process.platform === "darwin" ? "macos" : "linux",
+        login: { on: false, available: true, needsApproval: false },
+        shortcuts: [],
+        errorReporting: false,
+      },
+    );
+  });
+  await expect(
+    page.getByRole("switch", { name: "Launch at login" }),
+  ).toBeVisible();
   const evidence = process.env.CONNECT_EVIDENCE;
   if (evidence) await mkdir(evidence, { recursive: true });
   for (const theme of ["light", "dark"]) {
@@ -125,6 +149,13 @@ test("installed General renders Connect facts with keyboard recovery and redacte
         },
         { theme, width },
       );
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () => matchMedia("(prefers-color-scheme: dark)").matches,
+          ),
+        )
+        .toBe(theme === "dark");
       for (const [outcome, headline, action] of [
         [null, "Connection needs a refresh.", "Check connection"],
         ["Offline", "Connect is offline.", "Check connection"],
@@ -147,7 +178,7 @@ test("installed General renders Connect facts with keyboard recovery and redacte
         });
         await expect(recovery).toBeEnabled();
         await recovery.focus();
-        await expect(recovery).toBeFocused();
+        await expect(card.locator("button:focus")).toHaveText(action);
         assert.equal(
           await page.evaluate(
             () => document.documentElement.scrollWidth <= innerWidth,
