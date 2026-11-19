@@ -1,0 +1,4 @@
+{
+  "modules": ["pure/destination-order.bend"],
+  "inputs": ["main/", "pure/"]
+}
