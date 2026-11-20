@@ -156,6 +156,7 @@ impl Session {
             return Err(error);
         }
         let note_pid = child.id();
+        telemetry.block_note_tap();
         telemetry
             .note_ui_pid
             .store(u64::from(note_pid), Ordering::Release);
@@ -205,10 +206,6 @@ impl Session {
         let saved_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let count = Arc::clone(&saved_count);
         let actor_lifecycle = Arc::clone(&lifecycle);
-        telemetry.set_double_shift_notes(
-            cfg!(any(target_os = "linux", target_os = "macos"))
-                && crate::shared::handoff::experiment("doubleShiftNotes"),
-        );
         std::thread::spawn(move || {
             let mut admitted_pin = None;
             let mut focus = 0;

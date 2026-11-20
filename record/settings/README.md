@@ -59,11 +59,10 @@ and verify it with `node record/enablement/ci/bend/check.ts`.
 
 ## Double-tap Shift for notes
 
-**Settings → Labs → Double-tap Shift for notes** is off by default. With it
-enabled, two quick Shift taps over the recording target open the note editor at
-the pointer. Holding Shift and moving the pointer still draws. The next
-note-capable recording reads `experiments.doubleShiftNotes` from the shared
-config. Turn the switch off to restore Shift-click for new recordings.
+During a screen recording with typed notes available, tap Shift twice quickly
+over the recording target to open the note editor at the pointer. Hold Shift
+and move the pointer to draw. The shortcut is always available in these
+recordings. The app ignores the former `experiments.doubleShiftNotes` preference.
 
 Record's Bend policy builds a checked native decision table for the input
 pollers. They keep the monotonic timestamps, live ink, pointer position and

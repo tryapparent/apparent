@@ -380,12 +380,12 @@ mod note_tip {
         fn the_third_start_claims_the_tip_once_and_preserves_other_config() {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("config.json");
-            std::fs::write(&path, r#"{"onboarding":{"seen":true},"experiments":{"doubleShiftNotes":true}}"#).unwrap();
+            std::fs::write(&path, r#"{"onboarding":{"seen":true},"experiments":{"doubleShiftNotes":false}}"#).unwrap();
             assert_eq!((0..5).map(|_| record_start(&path)).collect::<Vec<_>>(), [false, false, true, false, false]);
             let config: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
             assert_eq!(config["onboarding"]["doubleShiftNoteStarts"], 3);
             assert_eq!(config["onboarding"]["seen"], true);
-            assert_eq!(config["experiments"]["doubleShiftNotes"], true);
+            assert_eq!(config["experiments"]["doubleShiftNotes"], false);
             assert!(active(7999));
             assert!(!active(8000));
         }
@@ -396,7 +396,7 @@ impl crate::capture::desktop::ApparentCoordinator {
     fn observe_note_tip(&mut self) {
         use crate::capture::desktop::CaptureSource;
         if self.capture_local_practice
-            || !self.telemetry.double_shift_notes()
+            || !self.telemetry.has_note_editor()
             || !self.electron_pill_routed
             || !self.active_recording.as_ref().is_some_and(|recording|
                 matches!(&recording.source, CaptureSource::Screen { session, .. } if session.has_frames()))

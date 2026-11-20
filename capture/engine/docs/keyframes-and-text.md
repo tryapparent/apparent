@@ -299,9 +299,9 @@ Use the Agent-owned [context comparison scenario](../../agent/enablement/README.
 
 ## Typed capture notes
 
-During screen capture, Shift-click opens a compact Electron text field at the
-point; Shift drawing is unchanged. Enter or Attach saves; empty Enter keeps
-only the pin. Escape preserves the in-capture draft. The count reflects durable
+Double-tap Shift to open a note at the pointer. Hold Shift to draw. Enter or
+Attach saves. Empty Enter keeps only the pin. Escape preserves the draft.
+The count reflects durable
 saved notes; its compact list edits/deletes them. Unsubmitted drafts are not
 handoff content and do not survive ending/restarting the capture.
 

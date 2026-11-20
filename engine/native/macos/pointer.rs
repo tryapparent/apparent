@@ -28,7 +28,7 @@ pub(super) fn is_motion_event(kind: u32) -> bool {
 }
 
 pub(super) fn invalidate_note_taps(telemetry: &SharedCaptureTelemetry, kind: u32, event: EventRef) {
-    if !telemetry.double_shift_notes() { return; }
+    if !telemetry.has_note_editor() { return; }
     let blocked = match kind {
         EVENT_FLAGS_CHANGED => !matches!(unsafe { CGEventGetIntegerValueField(event, KEYBOARD_EVENT_KEYCODE) }, 56 | 60),
         EVENT_KEY_DOWN | EVENT_LEFT_MOUSE_DOWN | EVENT_RIGHT_MOUSE_DOWN | 25 | EVENT_SCROLL_WHEEL
@@ -273,7 +273,6 @@ mod tests {
             scale: 1.0,
         };
         telemetry.active.store(true, Ordering::Release);
-        telemetry.set_double_shift_notes(true);
         telemetry.note_ui_pid.store(1, Ordering::Release);
         let mut ink = ShiftInk::default();
         let at = Some(CGPoint { x: -8_960.0, y: -8_960.0 });
@@ -301,7 +300,6 @@ mod tests {
             scale: 1.0,
         };
         telemetry.active.store(true, Ordering::Release);
-        telemetry.set_double_shift_notes(true);
         telemetry.note_ui_pid.store(1, Ordering::Release);
         let mut ink = ShiftInk::default();
         let at = Some(CGPoint { x: -8_960.0, y: -8_960.0 });

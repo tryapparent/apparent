@@ -607,11 +607,10 @@ roll back. Do not remove the legacy donor or switch installed capsule routing
 until this workflow passes real macOS/isolated Linux acceptance and the routing
 switch is authorized. Socket/controller/browser fixtures are not native proof.
 
-## Shift-click notes
+## Double-tap Shift for notes
 
-The default-available notes surface runs `electron/notes/main.cjs`, launched by
-Rust for a screen capture. It renders only the nearby text popup and a small
-saved-note badge/list beside the existing capture controls; picker, ink and
+Rust launches `electron/notes/main.cjs` for screen capture. It renders the
+text popup and saved-note badge/list beside the capture controls. Picker, ink and
 capture lifecycle remain on their current native path. There is no competing
 Electron capture state machine. This is independent of the foundation Settings
 window and requires no experiment. Packagers ship its production assets and
