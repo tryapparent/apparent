@@ -77,3 +77,16 @@ by itself. Pointer movement, clicks, scrolling, ink, notes and scene changes
 keep the full handoff. A missing transcript or a timed CLI capture without
 interaction telemetry also uses the full handoff. Saved recordings remain
 available through Apparent.
+
+## Auto paste
+
+Labs reads the same native Hyprland Wayland capability as recording completion.
+The trial requires Lua dispatchers and remains an opt-in that can press Enter
+in the focused composer when the recording finishes. An unsupported session
+cannot turn it on, but can turn off a saved On value. Completion uses the
+ordinary copy path when the trial is unavailable. The saved recording's Paste
+action leaves submission to you, and you can paste the copied text yourself.
+
+The existing Labs action and config writer still own `experiments.autoPasteDraft`.
+A rollback should revert the native capability gate and the bundled Labs
+presentation together. The saved value needs no migration.

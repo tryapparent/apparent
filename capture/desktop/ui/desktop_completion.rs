@@ -11,6 +11,19 @@ use crate::capture::engine::runtime::apparent_log;
 pub(in crate::capture::desktop) use worker::{Capture, Facts};
 use worker::{Completion, CopyMode, Effect, Outcome, State, Worker};
 
+pub(in crate::capture::desktop) fn auto_paste_enabled(local_practice: bool) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        !local_practice && crate::shared::handoff::experiment("autoPasteDraft")
+            && crate::capture::desktop::linux::auto_paste::available()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = local_practice;
+        false
+    }
+}
+
 pub(in crate::capture::desktop) fn connect_completed(dir: &std::path::Path) {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     crate::connect::hosted::completed(dir);

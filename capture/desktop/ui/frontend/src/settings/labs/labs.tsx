@@ -17,9 +17,11 @@ export type LabsExperiment = ComponentType<{
   id: string; checked: boolean; disabled: boolean; saving: boolean;
   onCheckedChange: (value: boolean) => void;
 }>;
-export function Labs({frogExperiment: FrogNudge, agentContextExperiment: AgentContext}: {
+export type AutoPasteExperiment = ComponentType<React.ComponentProps<LabsExperiment> & {supported: boolean}>;
+export function Labs({frogExperiment: FrogNudge, agentContextExperiment: AgentContext, autoPasteExperiment: AutoPaste}: {
   frogExperiment?: LabsExperiment;
   agentContextExperiment?: LabsExperiment;
+  autoPasteExperiment?: AutoPasteExperiment;
 }) {
   const [facts, setFacts] = useState<LabsFacts>();
   const [busy, setBusy] = useState(true), [error, setError] = useState('');
@@ -85,31 +87,27 @@ export function Labs({frogExperiment: FrogNudge, agentContextExperiment: AgentCo
       disabled={busy || !facts || !!facts.error} saving={busy && setting === 'agentContext'}
       onCheckedChange={value => void request(value, 'agentContext')} />}
     <section className="agent-preference">
-      <div className="agent-preference-row"><h2 className="settings-preference-label" id="local-stream-label">Live local transcription</h2>
+      <div className="agent-preference-row"><h2 className="settings-preference-label" id="local-stream-label" tabIndex={-1}>Live local transcription</h2>
         <Switch id={controls.streaming} className="agent-switch" checked={on ?? false} aria-labelledby="local-stream-label" aria-describedby="local-stream-help local-stream-ready" aria-busy={busy && setting === 'streaming'}
           disabled={busy || on === undefined} onCheckedChange={value => void request(value)} /></div>
       <p id="local-stream-help">See a live preview of your English speech below the recording controls. The saved transcript is generated separately on this computer.</p>
       <p id="local-stream-ready">Enabling downloads any missing speech models. Live text starts on the next recording after the models are ready.</p>
     </section>
+    {AutoPaste && <AutoPaste id={controls.autoPaste} checked={autoPaste ?? false} supported={autoPasteSupported.current}
+      disabled={busy || autoPaste === undefined} saving={busy && setting === 'autoPaste'}
+      onCheckedChange={value => void request(value, 'autoPaste')} />}
     <section className="agent-preference">
-      <div className="agent-preference-row"><h2 className="settings-preference-label" id="auto-paste-label">Auto paste</h2>
-        <Switch id={controls.autoPaste} className="agent-switch" checked={autoPaste ?? false} aria-labelledby="auto-paste-label" aria-describedby="auto-paste-help auto-paste-limits" aria-busy={busy && setting === 'autoPaste'}
-          disabled={busy || autoPaste === undefined || !autoPasteSupported.current} onCheckedChange={value => void request(value, 'autoPaste')} /></div>
-      <p id="auto-paste-help">Paste the image and text into your focused composer, then press Enter to send. Off by default; applies to the next recording.</p>
-      <p id="auto-paste-limits">Linux with Hyprland only. Keep your composer focused until processing finishes. Enter is pressed automatically; attachment acceptance and sending depend on your app.</p>
-    </section>
-    <section className="agent-preference">
-      <div className="agent-preference-row"><h2 className="settings-preference-label" id="public-sharing-label">Public sharing links</h2>
+      <div className="agent-preference-row"><h2 className="settings-preference-label" id="public-sharing-label" tabIndex={-1}>Public sharing links</h2>
         <Switch id={controls.sharing} className="agent-switch" checked={sharing ?? false} aria-labelledby="public-sharing-label" aria-describedby="public-sharing-help public-sharing-limits" aria-busy={busy && setting === 'sharing'}
           disabled={busy || sharing === undefined} onCheckedChange={value => void request(value, 'sharing')} /></div>
-      <p id="public-sharing-help">Show Public link after recording. Off by default; applies to the next recording.</p>
+      <p id="public-sharing-help">Show Public link after your next recording.</p>
       <p id="public-sharing-limits">Anyone with the link can view the shared capture. Shared captures are not end-to-end encrypted.</p>
     </section>
     <section className="agent-preference">
       <div className="agent-preference-row"><h2 className="settings-preference-label" id="wispr-lab-label">Dictation app conflicts</h2>
         <Switch id={controls.wisprFlow} className="agent-switch" checked={wispr ?? false} aria-labelledby="wispr-lab-label" aria-describedby="wispr-lab-help" aria-busy={busy && setting === 'wisprFlow'}
           disabled={busy || wispr === undefined || !wisprSupported.current} onCheckedChange={value => void request(value, 'wisprFlow')} /></div>
-      <p id="wispr-lab-help">Offer to quit Wispr Flow or Superwhisper before choosing a recording shortcut. macOS only. Off by default.</p>
+      <p id="wispr-lab-help">Offer to quit Wispr Flow or Superwhisper before choosing a recording shortcut. macOS only.</p>
     </section>
     {FrogNudge && wisprSupported.current && <FrogNudge id={controls.dictationFrog} checked={facts?.dictationFrogSaved ?? false}
       disabled={busy || !facts || !!facts.error} saving={busy && setting === 'dictationFrog'}

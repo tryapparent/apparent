@@ -575,9 +575,6 @@ body:has(.settings-shell),
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.settings-t3-next {
-  margin-top: 8px;
-}
 .settings-agents {
   position: relative;
 }

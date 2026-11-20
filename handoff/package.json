@@ -5,7 +5,8 @@
   "exports": {
     "./controller": "./main/controller.ts",
     "./destinations": "./pure/destinations.ts",
-    "./picker": "./renderer/picker.tsx"
+    "./picker": "./renderer/picker.tsx",
+    "./auto-paste": "./settings/auto-paste.tsx"
   },
   "peerDependencies": {
     "@apparent/ui": "0.0.0",
