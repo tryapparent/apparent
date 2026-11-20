@@ -151,13 +151,14 @@ test('readback binds revision before any public HTTP request', async () => {
   assert.equal(requested, false)
 })
 
-test('readback verifies Public and brand HTML/bundles at Pages, app and root without requesting Connect', () => temp(async root => {
+test('readback verifies Public and brand artifacts directly at Pages and app', () => temp(async root => {
   const artifact = fixture(root, true), packagePath = join(artifact, 'dist-apparent')
   const bodies: Record<string, string> = { '/': 'index.html', '/assets/index-test.js': 'assets/index-test.js', '/brand/': 'brand/index.html', '/brand/assets/index-brand.js': 'brand/assets/index-brand.js' }
   const visited = new Set<string>()
   let badPath: string | null = null, badOrigin: string | null = null, shortMovie = 0, corruptMovie = false
-  const fetcher: typeof fetch = async input => {
+  const fetcher: typeof fetch = async (input, init) => {
     const url = new URL(String(input)); visited.add(url.host)
+    assert.equal(init?.redirect, 'manual')
     assert(!url.pathname.startsWith('/connect') && !url.pathname.startsWith('/hosted'), `Public publisher must not request ${url.pathname}`)
     const headers = new Headers({ 'X-Apparent-Publisher': 'cloudflare-pages', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow', 'Content-Type': 'video/mp4', 'Set-Cookie': 'private-cookie-sentinel' })
     if (url.pathname === badPath && (badOrigin === null || url.host === badOrigin)) return new Response('unexpected response body sentinel', { headers })
@@ -174,7 +175,12 @@ test('readback verifies Public and brand HTML/bundles at Pages, app and root wit
   }
   const deps: PublisherDeps = { api: async () => project(), fetch: fetcher, sleep: async () => {} }
   assert.equal((await verify(sha, packagePath, deps)).deployment_id, 'deployment')
-  assert.deepEqual(visited, new Set(['deployment.apparent-capture.pages.dev', 'app.tryapparent.com', 'tryapparent.com']))
+  assert.deepEqual(visited, new Set(['deployment.apparent-capture.pages.dev', 'app.tryapparent.com']))
+  const redirectingApp: typeof fetch = (input, init) =>
+    new URL(String(input)).hostname === 'app.tryapparent.com'
+      ? Promise.resolve(Response.redirect('https://tryapparent.com/', 301))
+      : fetcher(input, init)
+  await assert.rejects(verify(sha, packagePath, { ...deps, fetch: redirectingApp }), /HTTP 301/)
   shortMovie = 1
   const sleeps: number[] = []
   assert.equal((await verifyReady(sha, packagePath, { ...deps, sleep: async ms => { sleeps.push(ms) } })).deployment_id, 'deployment')

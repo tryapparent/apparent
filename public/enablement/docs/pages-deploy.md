@@ -8,7 +8,7 @@ match the checked-in asset library; unknown paths remain denied. The fixed-color
 baseline preserves this recovered brand specimen without changing Shared tokens.
 Browser checks cover reading/navigation, downloads, slide keyboard controls and
 320/390/1440px layouts. Publication readback includes the brand HTML and bundles
-at the immutable deployment, app alias and `https://tryapparent.com/brand/`.
+at the immutable deployment and `https://app.tryapparent.com/brand/`.
 
 The canonical repository is `https://github.com/tryapparent/apparent`, branch
 `main`. `.github/workflows/stream-public.yml` is the sole production publisher for
@@ -83,9 +83,15 @@ refuses to overwrite an equal or newer deployed revision. A superseded candidate
 skips publication without a new receipt; the next main run verifies the complete
 tree, or dispatch current main again when needed. A disabled website gate skips
 deployment without changing the gate or provider settings.
-Readback verifies the revision and Public HTML, JS/CSS and full movie bytes at both
-the immutable deployment URL and `https://app.tryapparent.com`. Merge success alone
-is not production delivery.
+Readback verifies the revision and Public HTML, JS/CSS and full movie bytes directly at
+both the immutable deployment URL and `https://app.tryapparent.com`. Redirects fail
+readback.
+
+Cloudflare Pages serves the document product from `tryapparent-website` at
+`tryapparent.com` and the screen-recording product from `apparent-capture` at
+`app.tryapparent.com`. The zone redirect `apparent_public_apex_canonical`
+matches only `www.tryapparent.com`. The apex retains the existing redirects for
+`/connect` and `/hosted` to the app origin.
 
 ## Connect boundary
 
