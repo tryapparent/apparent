@@ -30,8 +30,8 @@ export async function admitDailyActivity(env:Env,account:string,occurredAt:numbe
   // data or claim full coverage. The view is permanently labelled a lower bound.
  }
 }
-export function queueDailyActivity(env:Env,context:ExecutionContext|undefined,request:Request,account:string,occurredAt:number) {
- queueProductActivity(env,context,request,account,'connect');
+export function queueDailyActivity(env:Env,context:ExecutionContext|undefined,request:Request,account:string,occurredAt:number,completedUpload = false) {
+ queueProductActivity(env,context,request,account,'connect',{occurredAt,completedUpload});
  if(!context||request.headers.get('Sec-GPC')==='1'||request.headers.get('DNT')==='1')return;
  try {context.waitUntil(admitDailyActivity(env,account,occurredAt));}catch{/* Primary service remains available. */}
 }
