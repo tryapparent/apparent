@@ -3,6 +3,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { gh, repository, verified } from "./assets.ts";
 import { updateFeed } from "./feed.ts";
 import { publish } from "./homebrew.ts";
+import { macFeedBranch, macProduct } from "../metadata.ts";
+import { optional } from "../../github.ts";
 
 const [command, directory, output] = process.argv.slice(2);
 if (command === "cask-publish" && directory && output) {
@@ -10,13 +12,18 @@ if (command === "cask-publish" && directory && output) {
 } else if (["feed", "cask-prepare"].includes(command) && directory) {
   const { metadata, cask } = await verified(directory);
   if (command === "cask-prepare") {
-    assert(output);
+    assert(output && cask);
     writeFileSync(output, cask);
   } else {
-    const endpoint = `repos/${repository}/contents/appcast.xml`;
-    const branch = "preview-mac-feed";
-    const old = JSON.parse(gh(["api", `${endpoint}?ref=${branch}`]));
-    const previous = Buffer.from(old.content, "base64").toString("utf8");
+    const product = macProduct(metadata.channel);
+    const endpoint = `repos/${repository}/contents/${product.feed}`;
+    const branch = macFeedBranch;
+    const resource = `contents/${product.feed}?ref=${branch}`;
+    const old = optional<{ content: string; sha: string }>(resource);
+    assert(old || product.nightly, "Stable feed must already exist");
+    const previous = old
+      ? Buffer.from(old.content, "base64").toString("utf8")
+      : "";
     const next = updateFeed(previous, metadata);
     const target = JSON.parse(
       gh(["api", `repos/${repository}/git/ref/tags/${metadata.tag}`]),
@@ -30,7 +37,7 @@ if (command === "cask-publish" && directory && output) {
         timeout: 120_000,
         input: JSON.stringify({
           branch,
-          sha: old.sha,
+          sha: old?.sha,
           message: `Publish signed Mac ${metadata.version}`,
           content: Buffer.from(next).toString("base64"),
         }),

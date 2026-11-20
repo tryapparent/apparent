@@ -344,7 +344,7 @@ jobs:
             "$GITHUB_WORKSPACE/homebrew-publish" "$RUNNER_TEMP/apparent.rb"
 
   frontend:
-    if: (inputs.channel == 'stable' || inputs.channel == 'mac-main') && github.repository == 'tryapparent/apparent'
+    if: (inputs.channel == 'stable' || inputs.channel == 'mac-main' || inputs.channel == 'main') && github.repository == 'tryapparent/apparent'
     permissions:
       contents: read
       actions: read
@@ -401,7 +401,7 @@ jobs:
       APPARENT_SOURCE_ROOT: ${{ github.workspace }}/release-source
       APPARENT_PREVIEW_VERSION: ${{ inputs.version }}
       APPARENT_RELEASE_VERSION: ${{ inputs.version }}
-      APPARENT_RELEASE_CHANNEL: ${{ inputs.channel == 'stable' && 'stable' || 'preview' }}
+      APPARENT_RELEASE_CHANNEL: ${{ inputs.channel == 'stable' && 'stable' || inputs.channel == 'main' && 'main' || 'preview' }}
       APPARENT_PREVIEW_BUILD_NUMBER: ${{ github.run_id }}.${{ github.run_attempt }}
       APPARENT_PREVIEW_NOTARIZE: 'true'
       APPARENT_APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
@@ -460,7 +460,7 @@ jobs:
           APPARENT_POSTHOG_TOKEN: ${{ secrets.APPARENT_POSTHOG_TOKEN }}
         run: |
           node --experimental-strip-types composition/enablement/release/mac/workflow.ts assemble
-      - name: Validate candidate installation with Homebrew
+      - name: Validate candidate installation
         run: node --experimental-strip-types composition/enablement/release/mac/verify-install.ts
       - name: Sign Sparkle bytes and seal candidate
         env:

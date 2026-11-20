@@ -1,5 +1,9 @@
 {
   "root": "engine",
   "excludedSuffixes": [".md"],
-  "desktopPaths": ["engine/permissions/", "engine/diagnostics/"]
+  "desktopPaths": [
+    "engine/permissions/",
+    "engine/diagnostics/",
+    "engine/recording/model-cache/"
+  ]
 }

@@ -12,6 +12,13 @@ worker with the repository outside its working directory. The About Electron
 smoke exercises the installed entry and preload with a synthetic parent.
 Native update execution and package acceptance remain platform checks.
 
+On Apple silicon, Stable About includes a secondary **Download Nightly** action
+under App updates. The host resolves the latest installer from the Nightly
+appcast and opens the exact GitHub release asset. The separate Nightly bundle
+checks its own Sparkle feed and shows its version and commit in About. Nightly
+starts with fresh onboarding, settings, shortcuts and recordings, and both
+bundles reuse verified downloaded speech models. Both apps can run together.
+
 Updater diagnostics schema 6 adds Linux curl transfer milliseconds (0–600,000)
 and downloaded bytes (0–1 GiB). Invalid or unavailable measurements remain null.
 These facts identify partial downloads reaching the total deadline without
@@ -32,7 +39,7 @@ native state arrives. The native presenter remains available on missing or
 failed Electron assets. It is the rollback path until the supported platform
 and package checks qualify deletion of the legacy Recording presentation.
 
-After the ordinary frontend bootstrap, run `npm exec -- vite build` in
+After the ordinary frontend bootstrap, run `npm run build` in
 `capture/desktop/ui/frontend` to rebuild the installed Settings renderer and
 Bend module on Linux. Run the existing `tests/settings/shared-shell.smoke.ts`
 Electron test to verify navigation, keyboard operation, and save/refusal with a

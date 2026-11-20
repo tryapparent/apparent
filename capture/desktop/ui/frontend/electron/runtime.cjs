@@ -21,7 +21,7 @@ async function exchange(home, request, decode, maxBytes, timeoutMs, timeoutResul
   });
   const read = async () => {
     try {
-      const directory = path.join(home, '.config/apparent/agent-control');
+      const directory = path.join(home, '.config', process.env.APPARENT_PROFILE === 'apparent-nightly' ? 'apparent-nightly' : 'apparent', 'agent-control');
       const address = path.join(directory, 'capture.sock');
       const owner = process.geteuid();
       const dir = await lstat(directory);

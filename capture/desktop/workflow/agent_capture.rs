@@ -163,26 +163,7 @@ pub fn new_id() -> Result<String> {
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
-fn socket_path(create: bool) -> Result<PathBuf> {
-    let home = std::env::var_os("HOME").context("HOME is not set")?;
-    let dir = PathBuf::from(home).join(".config/apparent/agent-control");
-    if create {
-        std::fs::create_dir_all(&dir)?;
-    }
-    let meta = std::fs::symlink_metadata(&dir)?;
-    ensure!(
-        meta.is_dir() && meta.uid() == unsafe { libc::geteuid() },
-        "unsafe control directory"
-    );
-    if create {
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))?;
-    }
-    ensure!(
-        std::fs::metadata(&dir)?.permissions().mode() & 0o077 == 0,
-        "control directory is not private"
-    );
-    Ok(dir.join("capture.sock"))
-}
+use crate::shared::handoff::capture_socket as socket_path;
 
 fn same_user(stream: &UnixStream) -> Result<()> {
     #[cfg(target_os = "linux")]

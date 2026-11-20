@@ -32,4 +32,8 @@ function command(current, revision, action) {
       !current.actions.some(a => a.id === action && a.enabled)) throw Error('Stale or unavailable pill action');
   return {revision,action};
 }
-module.exports = {view,command};
+function profile(appData) {
+  const name = process.env.APPARENT_PROFILE === 'apparent-nightly' ? 'apparent-nightly-pill' : 'apparent-pill';
+  return require('node:path').join(appData, name);
+}
+module.exports = {view,command,profile};

@@ -1,3 +1,5 @@
+export { bindAbout } from "../../../../../../composition/settings/about/host.ts";
+
 import { PermissionHost } from "../../../../../../composition/settings/permission-host.ts";
 import { RecordingHost } from "../../../../../../composition/settings/recording-host.ts";
 

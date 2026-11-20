@@ -17,6 +17,7 @@ import {
   TooltipTrigger,
 } from "@apparent/ui/tooltip";
 import { channelUpdateHint } from "../update-policy";
+import macUpdates from "../about/mac-updates.mjs";
 import "./about.css";
 
 type UpdateProgress =
@@ -52,6 +53,8 @@ export interface AboutState {
   updates: boolean;
   linux: boolean;
   mainUpdates: boolean;
+  mac?: boolean;
+  nightly?: boolean;
   updateChannel: string;
   resumeTour?: boolean;
   updateCheck: {
@@ -66,7 +69,7 @@ export interface AboutBridge {
   read(): Promise<AboutState | undefined>;
   act(action: Action): Promise<void>;
   subscribe(callback: (state: AboutState) => void): () => void;
-  link(link: "website" | "source" | "discord"): Promise<void>;
+  link(link: "website" | "source" | "discord" | "nightly"): Promise<void>;
   copyVersion(): Promise<void>;
 }
 type AboutArtwork = { available: string; current: string; failed: string };
@@ -152,11 +155,16 @@ export function About({
       setError("Unable to change the update channel. Please try again.");
     }
   }
-  async function open(link: "website" | "source" | "discord") {
+  async function open(link: "website" | "source" | "discord" | "nightly") {
+    setError("");
     try {
       await bridge.link(link);
     } catch {
-      setError("Unable to open that link. Please try again.");
+      setError(
+        link === "nightly"
+          ? "Nightly download unavailable. Try again later."
+          : "Unable to open that link. Please try again.",
+      );
     }
   }
   const result = state?.updateCheck.result;
@@ -212,7 +220,7 @@ export function About({
       {state && (
         <>
           <section className="settings-identity" aria-label="Build identity">
-            <h2>apparent</h2>
+            <h2>{state.nightly ? "apparent Nightly" : "apparent"}</h2>
             <div className="settings-version">
               <span className="select-text">Version {state.version}</span>
               <TooltipProvider>
@@ -380,6 +388,19 @@ export function About({
                 />
               )}
             </div>
+            {macUpdates.show_nightly_download(
+              state.mac === true,
+              state.nightly === true,
+            ) && (
+              <Button
+                variant="link"
+                className="settings-nightly-download"
+                disabled={checking}
+                onClick={() => void open("nightly")}
+              >
+                Download Nightly <ExternalLink aria-hidden="true" />
+              </Button>
+            )}
           </section>
         </>
       )}

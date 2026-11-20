@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { macToolchain } from "./runner.ts";
+import { macProduct } from "./metadata.ts";
 
 function run(command: string, args: string[]) {
   execFileSync(command, args, { stdio: "inherit" });
@@ -97,7 +98,8 @@ if (command === "preview-admit") {
   const directory = join(process.env.RUNNER_TEMP!, "mac-candidate");
   mkdirSync(directory);
   const version = process.env.APPARENT_VERSION!;
-  const zip = `dist/Apparent-Preview-${version}-arm64.zip`;
+  const { asset } = macProduct(process.env.RELEASE_CHANNEL);
+  const zip = `dist/${asset}-${version}-arm64.zip`;
   const sparkle = execFileSync(
     "bash",
     ["capture/desktop/scripts/release/setup-sparkle.sh"],
@@ -114,12 +116,12 @@ if (command === "preview-admit") {
   );
   writeFileSync(join(directory, "sparkle-signature-attributes.txt"), signature);
   for (const file of [
-    `Apparent-Preview-${version}-arm64.dmg`,
-    `Apparent-Preview-${version}-arm64.dmg.sha256`,
-    `Apparent-Preview-${version}-arm64.zip`,
+    `${asset}-${version}-arm64.dmg`,
+    `${asset}-${version}-arm64.dmg.sha256`,
+    `${asset}-${version}-arm64.zip`,
   ])
     cpSync(join("dist", file), join(directory, file));
-  if (process.env.RELEASE_CHANNEL === "stable")
+  if (process.env.RELEASE_CHANNEL !== "mac-main")
     run(process.execPath, [
       "--experimental-strip-types",
       join(tooling, "composition/enablement/release/mac/distribution.ts"),

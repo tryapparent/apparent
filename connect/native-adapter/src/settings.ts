@@ -255,7 +255,11 @@ class ConnectSettings {
         if (action !== undefined) return failed();
         const directory = path.join(
           this.home,
-          ".config/apparent/agent-control",
+          ".config",
+          process.env.APPARENT_PROFILE === "apparent-nightly"
+            ? "apparent-nightly"
+            : "apparent",
+          "agent-control",
         );
         const address = path.join(directory, "capture.sock");
         let dir, entry;

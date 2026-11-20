@@ -22,13 +22,6 @@ fn from_stored(kind: ShortcutKind, stored: Stored) -> Option<ShortcutConfig> {
     })
 }
 
-fn legacy_path() -> PathBuf {
-    crate::shared::handoff::builtin_captures_dir()
-        .parent()
-        .map_or_else(|| PathBuf::from("."), Path::to_path_buf)
-        .join("config.json")
-}
-
 fn read_json(path: &Path) -> serde_json::Value {
     std::fs::read(path)
         .ok()
@@ -53,7 +46,7 @@ pub fn save_shortcut_in(
     let app_owned = kind == ShortcutKind::Record && (prefers_app_shortcut(&read_json(path))
         || crate::capture::desktop::linux::hyprland::external_record().is_some());
     #[cfg(not(target_os = "linux"))]
-    let app_owned = false;
+    let app_owned = kind == ShortcutKind::Record && crate::shared::handoff::is_nightly();
     save_shortcut_source_in(path, kind, cfg, app_owned)
 }
 

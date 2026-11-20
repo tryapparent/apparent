@@ -65,7 +65,7 @@ export async function publish(
   directory: string,
 ): Promise<void> {
   const mode = process.env.RELEASE_CHANNEL || "stable";
-  const pairedMain = mode === "paired-main";
+  const pairedMain = mode === "paired-main" || mode === "latest-main";
   const channel = pairedMain ? "main" : mode;
   if (channel !== "main" && channel !== "mac-main" && channel !== "stable")
     throw Error("Invalid publication channel");
@@ -77,6 +77,18 @@ export async function publish(
     pairedMain,
   );
   const candidate = candidateIdentity(manifests, channel, pairedMain);
+  if (
+    mode === "latest-main" &&
+    !manifests.some(
+      (manifest) =>
+        manifest.platform === "macos" &&
+        manifest.files.some(
+          ({ name }) =>
+            name === `Apparent-Nightly-${candidate.version}-arm64.dmg`,
+        ),
+    )
+  )
+    throw Error("Latest Main requires the Mac Nightly candidate");
   const prerelease = channel !== "stable";
   recordOutput(`source_sha=${candidate.sourceSha}\n`);
   execFileSync(
@@ -145,11 +157,14 @@ export async function publish(
       ref: `refs/tags/${candidate.tag}`,
       sha: candidate.sourceSha,
     });
-  const previewName = pairedMain
-    ? "Paired Main"
-    : channel === "main"
-      ? "Linux Main"
-      : "Mac Main";
+  const previewName =
+    mode === "latest-main"
+      ? "Latest Main"
+      : pairedMain
+        ? "Paired Main"
+        : channel === "main"
+          ? "Linux Main"
+          : "Mac Main";
   const notes = prerelease
     ? `${previewName} candidate ${candidate.sourceSha}\nProducer ${repository}/actions/runs/${runId}/attempts/${attempt}\n\n${JSON.stringify(manifests)}`
     : `Paired stable candidate ${candidate.sourceSha}\nProducer ${repository}/actions/runs/${runId}/attempts/${attempt}\nChannel stable; fork Mac Preview identity and preview Sparkle feed retained.\n\n${JSON.stringify(manifests)}`;

@@ -99,7 +99,7 @@ export function dispatchMain(
   const queued = competingMain(env.GITHUB_SHA!, lookup());
   if (queued) {
     console.log(
-      `Linux Main already has a queued or active candidate at ${queued}`,
+      `Latest Main already has a queued or active candidate at ${queued}`,
     );
     return;
   }
@@ -114,7 +114,7 @@ export function dispatchMain(
     }),
   );
   console.log(
-    `Queued Linux Main publication for ${env.GITHUB_SHA}; verification run ${env.GITHUB_RUN_ID}`,
+    `Queued Latest Main publication for ${env.GITHUB_SHA}; verification run ${env.GITHUB_RUN_ID}`,
   );
 }
 

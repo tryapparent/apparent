@@ -80,6 +80,9 @@ impl Shortcuts {
     pub fn load_from(path: &Path, legacy: &Path) -> (Self, bool) {
         let config = read_json(path);
         let mut shortcuts = Self::default();
+        if crate::shared::handoff::is_nightly() {
+            shortcuts.record = ShortcutConfig::unset();
+        }
         let stored = config.get("shortcuts");
         for kind in ShortcutKind::ALL {
             let value = stored.and_then(|s| s.get(kind_key(kind)));
@@ -120,6 +123,13 @@ impl Shortcuts {
         }
         (shortcuts, false)
     }
+}
+
+fn legacy_path() -> PathBuf {
+    crate::shared::handoff::builtin_captures_dir()
+        .parent()
+        .map_or_else(|| PathBuf::from("."), Path::to_path_buf)
+        .join("config.json")
 }
 
 include!("shortcut/config.rs");
@@ -592,14 +602,7 @@ impl Panel {
     // About is also the app-launch surface. Keep native login/shortcut/device
     // discovery and unrelated pane state out of its GUI-thread projection.
     fn about_state(&self, config_path: &Path) -> serde_json::Value {
-        let config = crate::shared::handoff::load_config_from(config_path);
-        serde_json::json!({
-            "type": "about-state", "version": env!("APPARENT_VERSION_LABEL"),
-            "updates": updates_available(), "updateCheck": self.update_check,
-            "updateChannel": if config.update_channel.as_deref() == Some("main") { "main" } else { "stable" },
-            "mainUpdates": cfg!(target_os = "linux"), "linux": cfg!(target_os = "linux"),
-            "resumeTour": super::onboarding::Progress::load_from(config_path).resume.is_some()
-        })
+        super::about_state(config_path, &self.update_check)
     }
 
     /// The same Record recorder state for Settings and the onboarding shortcut page.
@@ -997,7 +1000,7 @@ impl Panel {
 
 /// Whether this copy can check for updates: Sparkle in Apparent.app; on Windows the releases
 /// page always opens.
-fn updates_available() -> bool {
+pub(super) fn updates_available() -> bool {
     #[cfg(target_os = "macos")]
     return crate::capture::desktop::sparkle::available();
     #[cfg(target_os = "linux")]
