@@ -14,7 +14,7 @@ use screencapturekit::recording_output::{
     SCRecordingOutput, SCRecordingOutputCodec, SCRecordingOutputConfiguration,
     SCRecordingOutputFileType,
 };
-use screencapturekit::screenshot_manager::{CGImageExt, SCScreenshotManager};
+use screencapturekit::screenshot_manager::SCScreenshotManager;
 
 use super::super::{
     CANDIDATE_EDGE, CANDIDATE_EDGE_NO_VIDEO, CARBON_CMD_KEY, CARBON_CONTROL_KEY, CARBON_OPTION_KEY,
@@ -23,7 +23,13 @@ use super::super::{
     poll_clicks, apparent_log, track_shift_ink,
 };
 use crate::capture::engine::runtime::sample_real_candidate;
-use crate::shared::model::{CaptureMode, InteractionEvent, RgbaFrame, TargetInfo};
+use crate::capture::engine::runtime::recording::{
+    diagnostics::sampling::Rejection, recorder::CandidateBuffer,
+};
+use crate::shared::model::{CaptureMode, InteractionEvent, TargetInfo};
+
+#[path = "../../../../engine/recording/macos_screenshot.rs"]
+mod macos_screenshot;
 
 /// Recordings may hold up to twice a frame's size in points (Retina pixels).
 pub const MAX_CAPTURE_SCALE: f64 = 2.0;
@@ -1061,6 +1067,7 @@ pub(crate) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
     let shot_config = sck_config(&sampler_target, shot_edge);
     let mut filter_and_config = filter.map(|f| (f, shot_config));
     if filter_and_config.is_none() {
+        CandidateBuffer::reject_sample(&thread_frames, Rejection::FilterUnavailable);
         apparent_log("Screen capture failed to start: no ScreenCaptureKit filter");
         startup_failed.store(true, Ordering::Release);
     }
@@ -1125,6 +1132,9 @@ pub(crate) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
         // A system prompt ScreenCaptureKit can't leave out: no candidates until
         // it's answered.
         if prompts.showing() {
+            if !thread_real_frame_seen.load(Ordering::Acquire) {
+                CandidateBuffer::reject_sample(&thread_frames, Rejection::PrivacyPrompt);
+            }
             thread::park_timeout(Duration::from_millis(30));
             continue;
         }
@@ -1139,7 +1149,7 @@ pub(crate) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
                     &thread_real_frame_seen,
                     &startup_failed,
                     urgent,
-                    || capture_sck_frame(filter, config, t_ms),
+                    || macos_screenshot::capture(filter, config, t_ms),
                 );
             }
         }
@@ -1300,33 +1310,6 @@ fn setup_sck_capture(
     *applied_excluded_window_ids.lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = applied;
     (None, None, None, Some(filter))
-}
-
-fn capture_sck_frame(
-    filter: &SCContentFilter,
-    config: &SCStreamConfiguration,
-    t_ms: u64,
-) -> Result<RgbaFrame, String> {
-    // Development-only fault injection: keep the movie recording, but force the
-    // privacy-filtered screenshot path to fail for an end-to-end GUI check.
-    #[cfg(debug_assertions)]
-    if std::env::var("APPARENT_TEST_DROP_SCK_FRAMES").as_deref() == Ok("1") {
-        return Err("test-injected screenshot failure".into());
-    }
-    // Acquisition and conversion can fail for an individual sample. The sampler retries;
-    // these unclassified errors do not establish a terminal setup/source failure.
-    let image = SCScreenshotManager::capture_image(filter, config)
-        .map_err(|error| format!("{error:?}"))?;
-    let width = u32::try_from(image.width()).map_err(|error| error.to_string())?;
-    let height = u32::try_from(image.height()).map_err(|error| error.to_string())?;
-    if width == 0 || height == 0 {
-        return Err("screenshot has zero dimensions".into());
-    }
-    let rgba = image.rgba_data().map_err(|error| format!("{error:?}"))?;
-    if rgba.len() != (width as usize) * (height as usize) * 4 {
-        return Err("screenshot has invalid pixel length".into());
-    }
-    Ok(RgbaFrame::new(t_ms, width, height, rgba))
 }
 
 /// macOS prompts over a capture (`windows::system_prompts_over`): ScreenCaptureKit's "bypass

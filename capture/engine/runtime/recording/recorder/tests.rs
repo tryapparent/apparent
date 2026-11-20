@@ -1,6 +1,7 @@
 use crate::capture::engine::runtime::{
     push_candidate, CandidateBuffer, ScreenCaptureSession, FRAME_SAMPLE_INTERVAL,
 };
+use super::{Rejection, Route};
 use crate::shared::model::{CaptureMode, RgbaFrame, TargetFrame, TargetInfo};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -125,7 +126,7 @@ fn synthetic_candidate_does_not_make_agent_capture_ready() {
 
 #[test]
 fn transient_screenshot_failure_retries_to_readiness_and_finalization() {
-    for error in ["screenshot acquisition failed", "screenshot has invalid pixel length"] {
+    for error in [Rejection::ScreenshotAcquisition, Rejection::ScreenshotPixels] {
         let stopping = Arc::new(AtomicBool::new(false));
         let worker_stopping = Arc::clone(&stopping);
         let worker = thread::spawn(move || {
@@ -147,10 +148,13 @@ fn transient_screenshot_failure_retries_to_readiness_and_finalization() {
             sampler_thread: Some(worker),
             _recording: crate::capture::engine::bundle::retention::Recording::start(),
         };
+        session.frames.lock().unwrap().set_sampling_route(Route::Screenshot);
         sample_real_candidate(
             &session.frames, &session.real_frame_seen, &session.startup_failed,
-            true, || Err(error.into()),
+            true, || Err(error),
         );
+        let sampling = session.frames.lock().unwrap().sampling.unwrap();
+        assert_eq!(sampling.last_rejection, Some(error));
         assert!(!session.has_frames(), "a failed sample cannot supply readiness");
         assert_eq!(session.frames.lock().unwrap().len(), 0, "no demo pixels");
         let mut retried = false;
@@ -161,7 +165,7 @@ fn transient_screenshot_failure_retries_to_readiness_and_finalization() {
                 Ok(RgbaFrame::new(220, 64, 64, vec![255; 64 * 64 * 4]))
             },
         );
-        assert!(retried, "{error}: an individual sample failure must not disable later attempts");
+        assert!(retried, "{error:?}: an individual sample failure must not disable later attempts");
         assert!(session.has_frames(), "the next successful sample unlocks Stop");
         assert!(!session.failed_to_start());
         let recording = session.stop();
@@ -320,7 +324,7 @@ fn frames_that_may_show_a_system_prompt_are_dropped_but_never_the_first() {
 }
 
 #[test]
-fn stopped_capture_without_real_frames_stays_empty() {
+fn stopped_capture_without_real_frames_retains_sampling_diagnostics() {
     let session = ScreenCaptureSession {
         started_at: Instant::now(),
         stopping: Arc::new(AtomicBool::new(false)),
@@ -334,5 +338,11 @@ fn stopped_capture_without_real_frames_stays_empty() {
         sampler_thread: None,
         _recording: crate::capture::engine::bundle::retention::Recording::start(),
     };
-    assert!(session.stop().frames.is_empty());
+    session.frames.lock().unwrap().set_sampling_route(Route::SystemPicker);
+    CandidateBuffer::reject_sample(&session.frames, Rejection::PickerStatusMissing);
+    let (recording, sampling) = session.stop_with_sampling();
+    assert!(recording.frames.is_empty());
+    let sampling = sampling.unwrap();
+    assert_eq!(sampling.route, Route::SystemPicker);
+    assert_eq!(sampling.last_rejection, Some(Rejection::PickerStatusMissing));
 }
