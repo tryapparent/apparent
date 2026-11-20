@@ -744,9 +744,9 @@ impl Panel {
             Action::UpdateNow => {
                 #[cfg(target_os = "linux")]
                 {
-                    use crate::capture::desktop::linux::update::{status_at, restart_matches_channel};
+                    use crate::capture::desktop::linux::update::{restart_pending, status_at};
                     if !self.update_check.checking
-                        && status_at(&host.config_path()).as_ref().is_ok_and(restart_matches_channel)
+                        && status_at(&host.config_path()).as_ref().is_ok_and(restart_pending)
                     {
                         return Effect::RelaunchUpdate;
                     }

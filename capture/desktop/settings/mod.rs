@@ -386,20 +386,20 @@ impl Transport {
 fn about_state(config_path: &std::path::Path, update_check: &UpdateCheck) -> serde_json::Value {
     let config = crate::shared::handoff::load_config_from(config_path);
     #[cfg(target_os = "linux")]
-    use crate::capture::desktop::linux::update::{status_at, restart_matches_channel};
+    use crate::capture::desktop::linux::update::{restart_pending, status_at};
     #[cfg(target_os = "linux")]
     let status = status_at(config_path).ok();
     let update_channel = if config.update_channel.as_deref() == Some("main") { "main" } else { "stable" };
     #[cfg(target_os = "linux")]
     let update_channel = status.as_ref().and_then(|status| status["channel"].as_str()).unwrap_or(update_channel);
     #[cfg(target_os = "linux")]
-    let restart_pending = status.as_ref().is_some_and(restart_matches_channel);
+    let pending = status.as_ref().is_some_and(restart_pending);
     #[cfg(not(target_os = "linux"))]
-    let restart_pending = false;
+    let pending = false;
     serde_json::json!({
         "type": "about-state", "version": env!("APPARENT_VERSION_LABEL"),
         "updates": settings::updates_available(), "updateCheck": update_check,
-        "restartPending": restart_pending,
+        "restartPending": pending,
         "updateChannel": update_channel,
         "mainUpdates": cfg!(target_os = "linux"), "linux": cfg!(target_os = "linux"),
         "mac": cfg!(target_os = "macos"), "nightly": crate::shared::handoff::is_nightly(),

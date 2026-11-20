@@ -19,3 +19,8 @@ def show_failure(failed: Bool, restart_failure: Bool, restart: Bool) -> Bool:
   match restart_failure:
     case True{}: restart
     case False{}: failed
+
+def show_unstaged_restart_failure(restart_failure: Bool, restart: Bool) -> Bool:
+  match restart:
+    case True{}: False{}
+    case False{}: restart_failure

@@ -92,7 +92,7 @@ test('installed About projects parent state and bounds actions', async () => {
       catch { return true; }
     }), true);
     await publish({ ...state, updateCheck: { checking: true, result: null } });
-    await expect(page.getByRole('button', { name: 'Checking…' })).toBeDisabled();
+    await expect(page.getByRole('heading', { name: 'Checking for updates…' })).toBeVisible();
     await expect(channel).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Restart now', exact: true })).toHaveCount(0);
     if (process.env.APPARENT_SETTINGS_PROOF) {
@@ -190,7 +190,7 @@ test('installed About projects parent state and bounds actions', async () => {
     await publish({ ...state, updates: false, restartPending: false, updateCheck: { checking: false, result: null } });
     await expect(page.getByRole('heading', { name: 'Updates unavailable' })).toBeVisible();
     await expect(page.getByRole('button', { name: "Install latest release" })).toBeDisabled();
-    await expect(page.getByText('Update checks work when Apparent runs from an AppImage.', {exact: true})).toBeVisible();
+    await expect(page.getByText('To install updates here, run Apparent from an AppImage.', {exact: true})).toBeVisible();
     if (process.env.APPARENT_SETTINGS_PROOF) await page.screenshot({path: path.join(process.env.APPARENT_SETTINGS_PROOF, 'about-unavailable.png')});
     await page.getByRole('button', { name: 'Copy version', exact: true }).click();
     await expect(page.getByText('Unable to copy. Try again.', { exact: true })).toBeVisible();

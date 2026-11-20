@@ -180,12 +180,12 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn staged_update_survives_dismissal_and_reopen_only_for_selected_channel() {
+    fn staged_update_survives_dismissal_reopen_and_channel_changes() {
         if std::env::var_os("APPARENT_TEST_STAGED_SETTINGS").is_none() {
             let home = TempDir::new("staged-settings");
             let module = module_path!().split_once("::").unwrap().1;
             let output = std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", &format!("{module}::staged_update_survives_dismissal_and_reopen_only_for_selected_channel")])
+                .args(["--exact", &format!("{module}::staged_update_survives_dismissal_reopen_and_channel_changes")])
                 .env("APPARENT_TEST_STAGED_SETTINGS", "1")
                 .env("HOME", &home.0)
                 .env("APPARENT_CONFIG", home.0.join("config.json"))
@@ -195,7 +195,7 @@ mod tests {
             assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
             return;
         }
-        use crate::capture::desktop::linux::update::{record_running, set_channel_in};
+        use crate::capture::desktop::linux::update::{record_running, relaunch_staged};
         let image = std::path::PathBuf::from(std::env::var_os("APPIMAGE").unwrap());
         let marker = image.with_extension("AppImage.apparent-update.json");
         std::fs::write(&image, b"synthetic AppImage").unwrap();
@@ -218,11 +218,15 @@ mod tests {
         assert_eq!(panel.on(Action::UpdateNow, &mut host), Effect::RelaunchUpdate);
         let mut reopened = Panel::default();
         assert_eq!(reopened.about_state(&host.path)["restartPending"], true);
-        set_channel_in(&host.path, "main").unwrap();
-        assert_eq!(reopened.about_state(&host.path)["restartPending"], false);
-        assert_eq!(reopened.on(Action::UpdateNow, &mut host), Effect::None);
-        set_channel_in(&host.path, "stable").unwrap();
-        assert_eq!(reopened.about_state(&host.path)["restartPending"], true);
+        assert_eq!(reopened.on(Action::Set {
+            key: "updateChannel".into(),
+            value: "main".into(),
+        }, &mut host), Effect::None);
+        let about = reopened.about_state(&host.path);
+        assert_eq!(about["updateChannel"], "main");
+        assert_eq!(about["restartPending"], true);
+        assert_eq!(reopened.on(Action::UpdateNow, &mut host), Effect::RelaunchUpdate);
+        assert_eq!(relaunch_staged().unwrap_err().to_string(), "previous AppImage is unavailable for recovery");
         record_running().unwrap();
         assert_eq!(reopened.about_state(&host.path)["restartPending"], false);
         assert_eq!(panel.on(Action::UpdateNow, &mut host), Effect::None);

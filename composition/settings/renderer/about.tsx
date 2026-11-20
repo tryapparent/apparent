@@ -51,7 +51,7 @@ const updateFailures = {
   ],
   restart: [
     "Couldn’t restart Apparent",
-    "Apparent is still running.",
+    "The update is still installed. After closing, use Restart now in About.",
     "Retry restart",
   ],
 } as const;
@@ -194,6 +194,10 @@ export function About({
     failedRestart,
     restart,
   );
+  const showUnstagedRestartFailure = updateAction.show_unstaged_restart_failure(
+    failedRestart && !checking,
+    restart,
+  );
   const installWarning =
     state?.linux && state.updates && !checking && !restart;
   const progress = checking ? state?.updateCheck.progress : undefined;
@@ -214,7 +218,7 @@ export function About({
         ? "Verifying download…"
         : progress?.phase === "installing"
           ? "Installing update…"
-          : null
+          : "Checking for updates…"
     : !state?.updates
       ? "Updates unavailable"
       : restart
@@ -293,6 +297,7 @@ export function About({
                   <label htmlFor="update-channel">Release channel</label>
                   <NativeSelect
                     id="update-channel"
+                    aria-describedby="update-channel-description"
                     value={state.updateChannel}
                     disabled={checking}
                     onChange={(event) => void changeChannel(event.target.value)}
@@ -305,6 +310,10 @@ export function About({
                     </NativeSelectOption>
                   </NativeSelect>
                 </div>
+                <p id="update-channel-description" className="settings-metadata">
+                  Source for the next install. Stable is for everyday use.
+                  Development gets changes sooner and may be less reliable.
+                </p>
               </div>
             )}
             <div className="settings-update-flow">
@@ -315,9 +324,6 @@ export function About({
                     role="status"
                     aria-atomic="true"
                   >
-                    {checking && !progress && (
-                      <span className="sr-only">Checking for updates…</span>
-                    )}
                     {title && (
                       <>
                         {checking && !downloading ? (
@@ -359,27 +365,28 @@ export function About({
                 {!state.updates && (
                   <p className="settings-metadata">
                     {state.linux
-                      ? "Update checks work when Apparent runs from an AppImage."
+                      ? "To install updates here, run Apparent from an AppImage."
                       : "Updates work in the installed Apparent.app."}
                   </p>
                 )}
+                {showUnstagedRestartFailure && (
+                  <p className="settings-update-note" role="alert">
+                    Apparent couldn’t restart. A staged update couldn’t be confirmed.
+                  </p>
+                )}
                 {installWarning && (
-                  <p id="update-channel-hint" className="settings-metadata">
-                    Installs the latest release from this channel, which may be an earlier version.
+                  <p id="update-channel-hint" className="settings-update-note">
+                    Installing can replace your current version with an earlier one.
                   </p>
                 )}
                 {restart && (
-                  <p className="settings-metadata">
-                    The channel release is installed.
+                  <p className="settings-update-note">
+                    An update is installed. Restart Apparent to use it.
                   </p>
                 )}
-                {(!checking || !progress) && (
+                {!checking && (
                   <div className="settings-actions">
-                    {checking ? (
-                      <Button disabled variant="outline">
-                        Checking…
-                      </Button>
-                    ) : restart ? (
+                    {restart ? (
                       <>
                         <Button
                           ref={primaryAction}

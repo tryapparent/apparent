@@ -12,10 +12,12 @@ worker with the repository outside its working directory. The About Electron
 smoke exercises the installed entry and preload with a synthetic parent.
 Native update execution and package acceptance remain platform checks.
 
-On Linux, About warns that installing the selected channel's release may
-install an earlier version. After installation, the updater reports whether
-a restart is required. About shows the running build identity because the
-restart receipt carries no target version. macOS opens the Sparkle check.
+On Linux, the channel preference selects the source for a separate install
+action, which may install an earlier version. About reads restart readiness
+from the native AppImage receipt independently of the configured channel.
+Dismissing the offer or closing a failed restart keeps **Restart now** available
+while that receipt still shows a staged image. About displays the running build
+identity. macOS opens the Sparkle check.
 
 On Apple silicon, Stable About includes a secondary **Download Nightly** action
 under App updates. The host resolves the latest installer from the Nightly

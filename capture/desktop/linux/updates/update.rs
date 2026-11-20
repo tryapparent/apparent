@@ -134,7 +134,7 @@ fn check_cli_inner(progress: &dyn Fn(UpdateProgress)) -> Result<&'static str> {
         "installed; restart Apparent to use it"
     } else {
         let status = status().stage(Stage::Config)?;
-        if restart_matches_channel(&status) {
+        if restart_pending(&status) && status["installed"]["channel"] == status["channel"] {
             "already installed; restart Apparent to use it"
         } else {
             "up to date"
@@ -142,8 +142,8 @@ fn check_cli_inner(progress: &dyn Fn(UpdateProgress)) -> Result<&'static str> {
     })
 }
 
-pub(crate) fn restart_matches_channel(status: &serde_json::Value) -> bool {
-    status["pendingRestart"] == true && status["installed"]["channel"] == status["channel"]
+pub(crate) fn restart_pending(status: &serde_json::Value) -> bool {
+    status["pendingRestart"] == true
 }
 
 /// Start the installed AppImage after this process exits, not the old running inode.
@@ -153,7 +153,7 @@ pub fn relaunch_staged() -> Result<()> {
     let backup = image.with_file_name(format!(".{name}.previous"));
     // Own the transaction from validation through post-exit readiness/recovery.
     let mut command = relaunch_command(&image, &backup, std::process::id())?;
-    ensure_update!(restart_matches_channel(&status()?), "no installed update for the selected channel is waiting for a restart");
+    ensure_update!(restart_pending(&status()?), "no installed update is waiting for a restart");
     ensure_update!(backup.is_file(), "previous AppImage is unavailable for recovery");
     ensure_update!(fs::metadata(&backup)?.permissions().mode() & 0o111 != 0, "previous AppImage is not executable");
     // A successful shell spawn proves nothing about the image it will execute later.

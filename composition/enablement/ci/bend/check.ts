@@ -35,6 +35,8 @@ await bendScratch(async (destination) => {
           assert.equal(restart, pending && !checking);
           assert.equal(actions.show_restart_later(restart, offer), pending && !checking && offer);
           assert.equal(actions.show_failure(true, true, restart), restart);
+          assert.equal(actions.show_unstaged_restart_failure(true, restart), !restart);
+          assert.equal(actions.show_unstaged_restart_failure(false, restart), false);
           assert.equal(actions.show_failure(true, false, restart), true);
           assert.equal(actions.show_failure(false, false, restart), false);
         }
