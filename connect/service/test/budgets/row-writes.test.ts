@@ -71,13 +71,14 @@ test('cleanup row reads do not scale with retired uploads',async t=>{
  }finally{await f.close();}
 });
 
-test('device key lookups skip retained revoked grants',async t=>{
+test('device key lookups skip revoked grants and expired refresh tokens',async t=>{
  const f=await setup({},false);try{
   const a=await f.identity('registry-reader');
   const grant='registry-reader-read',key={version:1,recipient:'age1jyg59kq02njlzz0h99thxywpltpp2ywtsgef3h8sawepwnglyq3qqz5957',signing:'01'.repeat(32)};
   await f.db.batch([
    f.db.prepare('UPDATE auth_grants SET approved_at=1 WHERE id=?').bind(grant),
    f.db.prepare('INSERT INTO encryption_keys(grant_id,version,recipient,signing) VALUES(?,1,?,?)').bind(grant,key.recipient,key.signing),
+   f.db.prepare("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<1000) INSERT INTO oauthRefreshToken(id,token,clientId,userId,expiresAt,scopes) SELECT 'old-refresh-'||i,'old-refresh-'||i,?,'registry-reader','2000-01-01T00:00:00.000Z','[]' FROM n").bind(grant),
    f.db.prepare("INSERT INTO oauthRefreshToken(id,token,clientId,userId,expiresAt,scopes) VALUES(?,?,?,?,?,'[]')").bind(grant,'fixture-refresh-token',grant,'registry-reader',new Date(Date.now()+86400000).toISOString()),
    f.db.prepare("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<1000) INSERT INTO auth_grants(id,client_id,device_hash,user_code,scope,account_id,user_id,expires_at,approved_at,revoked_at) SELECT 'retired-'||i,'retired-'||i,'retired-'||i,'retired-'||i,'read',?,'registry-reader',0,1,2 FROM n").bind(a.id),
    f.db.prepare("INSERT INTO encryption_keys(grant_id,version,recipient,signing) SELECT id,1,?,? FROM auth_grants WHERE revoked_at=2").bind(key.recipient,key.signing),
@@ -95,7 +96,7 @@ test('device key lookups skip retained revoked grants',async t=>{
   const registryReads=({reads}:{reads:{sql:string;rows:number}[]})=>reads.find(statement=>statement.sql.includes('JOIN encryption_keys'))?.rows??0;
   const beforeReads=registryReads(before),afterReads=registryReads(after);
   t.diagnostic(`D1 rows read per key lookup: ${beforeReads} before, ${afterReads} after`);
-  assert.ok(beforeReads>=1000);
+  assert.ok(beforeReads>=2000);
   assert.ok(afterReads>0&&afterReads<20,JSON.stringify(after.reads));
  }finally{await f.close();}
 });
