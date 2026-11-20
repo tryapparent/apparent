@@ -8,6 +8,7 @@ import {
 import { buildTraversal, host } from "./build.ts";
 import { type Table, traversalTable } from "./table.ts";
 
+import { frogTable, frogTablePath } from "./frog-nudge.ts";
 import { tipTable, tipTablePath } from "./note-tip.ts";
 
 const args = process.argv.slice(2);
@@ -28,7 +29,18 @@ await bendScratch(async (scratch) => {
       [3, false],
     ],
   });
+  const frog = frogTable(production);
+  assert.deepEqual(JSON.parse(frog), {
+    delay: 350,
+    eligible: [false, false, false, false, true, false, false, false],
+    ended: [
+      [false, false, false],
+      [false, false, false],
+      [false, true, false],
+    ],
+  });
   if (update) {
+    writeFileSync(frogTablePath, frog);
     writeFileSync(tipTablePath, tips);
     writeFileSync(tablePath, generated);
   } else {
@@ -36,6 +48,11 @@ await bendScratch(async (scratch) => {
     await buildTraversal(proof, proofOptions(args));
     assert.equal(traversalTable(proof), generated);
     assert.equal(tipTable(proof), tips);
+    assert.equal(frogTable(proof), frog);
+    assert.deepEqual(
+      JSON.parse(readFileSync(frogTablePath, "utf8")),
+      JSON.parse(frog),
+    );
     assert.deepEqual(
       JSON.parse(readFileSync(tipTablePath, "utf8")),
       JSON.parse(tips),

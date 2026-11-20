@@ -1,6 +1,11 @@
 {
   "private": true,
   "peerDependencies": {
-    "react": "^19.2.0"
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "name": "@apparent/onboarding-renderer",
+  "exports": {
+    "./frog-nudge": "./frog-nudge/preview.tsx"
   }
 }

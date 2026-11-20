@@ -12,7 +12,7 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
         Err(_) => return serde_json::json!({"error":"config_read_failed"}),
     };
     let saved = |key| value.get("experiments").and_then(|flags|flags.get(key)).and_then(|flag|flag.as_bool());
-    serde_json::json!({"saved":saved(KEY),"sharingSaved":saved("hostedSharing"),"autoPasteSaved":saved("autoPasteDraft"),"autoPasteSupported":cfg!(target_os = "linux"),"wisprSaved":saved("onboardingWisprFlow"),"wisprSupported":cfg!(target_os = "macos"),"doubleShiftSaved":saved("doubleShiftNotes"),"screenPickerSaved":saved(selection::PREFERENCE),"screenPickerSupported":selection::supported()})
+    serde_json::json!({"saved":saved(KEY),"sharingSaved":saved("hostedSharing"),"autoPasteSaved":saved("autoPasteDraft"),"autoPasteSupported":cfg!(target_os = "linux"),"wisprSaved":saved("onboardingWisprFlow"),"wisprSupported":cfg!(target_os = "macos"),"dictationFrogSaved":saved("dictationFrog"),"doubleShiftSaved":saved("doubleShiftNotes"),"screenPickerSaved":saved(selection::PREFERENCE),"screenPickerSupported":selection::supported()})
 }
 pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
     match setting {
@@ -20,6 +20,7 @@ pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
         Some("sharing") => Some(("hostedSharing", true)),
         Some("autoPaste") => Some(("autoPasteDraft", cfg!(target_os = "linux"))),
         Some("wisprFlow") => Some(("onboardingWisprFlow", cfg!(target_os = "macos"))),
+        Some("dictationFrog") => Some(("dictationFrog", cfg!(target_os = "macos"))),
         Some("doubleShiftNotes") => Some(("doubleShiftNotes", cfg!(any(target_os = "linux", target_os = "macos")))),
         Some("screenPicker") => Some((selection::PREFERENCE, selection::supported())),
         _ => None,

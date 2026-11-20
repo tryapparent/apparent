@@ -18,10 +18,10 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
  const exited=new Promise<void>(resolve=>application.once('exit',()=>resolve()));
  let browser:Awaited<ReturnType<typeof chromium.connectOverCDP>>|undefined;
  const messages:Record<string,unknown>[]=[];
- let saved:boolean|null=null, autoPasteSaved:boolean|null=null, sharingSaved:boolean|null=null, wisprSaved:boolean|null=null, screenPickerSaved:boolean|null=null, doubleShiftSaved:boolean|null=null, hold=true, fail=false, held:Record<string,unknown>|undefined;
+ let saved:boolean|null=null, autoPasteSaved:boolean|null=null, sharingSaved:boolean|null=null, wisprSaved:boolean|null=null, screenPickerSaved:boolean|null=null, doubleShiftSaved:boolean|null=null, dictationFrogSaved:boolean|null=null, hold=true, fail=false, held:Record<string,unknown>|undefined;
  const reply=(message:Record<string,unknown>)=>{
-  if(typeof message.enabled==='boolean' && !fail){if(message.setting==='autoPaste')autoPasteSaved=message.enabled;else if(message.setting==='sharing')sharingSaved=message.enabled;else if(message.setting==='wisprFlow')wisprSaved=message.enabled;else if(message.setting==='doubleShiftNotes')doubleShiftSaved=message.enabled;else if(message.setting==='screenPicker')screenPickerSaved=message.enabled;else saved=message.enabled;}
-  application.stdin.write(JSON.stringify({type:'labs-result',request:message.request,facts:fail?{error:'config_write_failed'}:{saved,sharingSaved,autoPasteSaved,autoPasteSupported:process.platform==='linux',wisprSaved,wisprSupported:process.platform==='darwin',screenPickerSupported:true,screenPickerSaved,doubleShiftSaved}})+'\n');
+  if(typeof message.enabled==='boolean' && !fail){if(message.setting==='autoPaste')autoPasteSaved=message.enabled;else if(message.setting==='sharing')sharingSaved=message.enabled;else if(message.setting==='wisprFlow')wisprSaved=message.enabled;else if(message.setting==='dictationFrog')dictationFrogSaved=message.enabled;else if(message.setting==='doubleShiftNotes')doubleShiftSaved=message.enabled;else if(message.setting==='screenPicker')screenPickerSaved=message.enabled;else saved=message.enabled;}
+  application.stdin.write(JSON.stringify({type:'labs-result',request:message.request,facts:fail?{error:'config_write_failed'}:{saved,sharingSaved,autoPasteSaved,autoPasteSupported:process.platform==='linux',wisprSaved,wisprSupported:process.platform==='darwin',screenPickerSupported:true,screenPickerSaved,doubleShiftSaved,dictationFrogSaved}})+'\n');
  };
  createInterface({input:application.stdout}).on('line',line=>{
   try{const value=JSON.parse(line);messages.push(value);if(value.action==='agents-preference'){application.stdin.write(JSON.stringify({type:'agents-result',request:value.request,facts:{saved:null,t3Saved:false,t3Configured:false}})+'\n');}if(value.action==='labs-preference'){if(hold)held=value;else reply(value);}}catch{}
@@ -86,6 +86,21 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   }else await expect(wispr).toBeDisabled();
   assert.equal(await page.evaluate(async()=>await window.apparentGeneral.read().then(()=>false,()=>true) && await window.apparent.readConnectSettings().then(()=>false,()=>true)),true);
   if(process.platform!=='darwin')await assert.rejects(()=>page.evaluate(()=>window.apparentLabs.save(true,'wisprFlow')));
+  const frog = page.getByRole('switch', {name:'Frog after dictation'});
+  if (process.platform === 'darwin') {
+   await expect(frog).toHaveAttribute('aria-checked','false');
+   await page.getByRole('button',{name:'Preview frog'}).click();
+   const animation = page.locator('.dictation-frog-preview img');
+   await expect.poll(() => animation.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(240);
+   await page.getByRole('button',{name:'Stop preview'}).click();
+   await expect(animation).toHaveCount(0);
+   await expect(frog).toHaveAttribute('aria-checked','false');
+   await frog.click();
+   await expect(frog).toHaveAttribute('aria-checked','true');
+   await frog.click();
+   await expect(frog).toHaveAttribute('aria-checked','false');
+  } else await expect(frog).toHaveCount(0);
+
   assert.equal(await page.evaluate(async()=>{
    for(const call of [()=>window.apparentAgents.save(true),()=>window.apparentAgents.copySkill(),()=>window.apparent.resetCaptureLocation(),()=>window.apparentLabs.save('true' as unknown as boolean),()=>window.apparentLabs.save(true,'t3' as 'sharing')]){
     try{await call();return false;}catch{}

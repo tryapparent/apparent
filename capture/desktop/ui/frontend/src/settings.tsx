@@ -11,6 +11,13 @@ class SettingsPane extends HTMLElement {
     this.renderPane();
   }
 
+  private renderFrogExperiment?: NoteExperiment;
+
+  set frogExperiment(component: NoteExperiment | undefined) {
+    this.renderFrogExperiment = component;
+    this.renderPane();
+  }
+
   private root?: ReturnType<typeof createRoot>;
 
   connectedCallback() {
@@ -31,7 +38,7 @@ class SettingsPane extends HTMLElement {
   private renderPane() {
     const pane = this.getAttribute("pane");
     this.root?.render(pane === "Agents" ? <Agents /> :
-      pane === "Labs" ? <Labs noteExperiment={this.renderNoteExperiment} /> : <Storage settings />);
+      pane === "Labs" ? <Labs noteExperiment={this.renderNoteExperiment} frogExperiment={this.renderFrogExperiment} /> : <Storage settings />);
   }
 }
 

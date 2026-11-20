@@ -10,6 +10,8 @@ fn main() {
     emit_recording_permissions();
     emit_note_policy("record", "note-gesture", "notes/double-shift.json");
     emit_note_policy("onboarding", "note-tip", "host/tips/note-tip.json");
+    #[cfg(target_os = "macos")]
+    emit_note_policy("onboarding", "frog-nudge", "host/tips/frog-nudge.json");
     compile_record_pill();
     println!("cargo:rerun-if-env-changed=APPARENT_POSTHOG_TOKEN");
     println!("cargo:rerun-if-env-changed=APPARENT_POSTHOG_RELEASE_ID");

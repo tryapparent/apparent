@@ -5,6 +5,10 @@ import {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
+import {
+  FrogNudgePreference,
+  type FrogNudgePreferenceProps,
+} from "../../../onboarding/renderer/frog-nudge/preview";
 import { About, type AboutBridge } from "./about";
 import availableFrog from "../../../capture/desktop/assets/settings/frog-jump.png";
 import currentFrog from "../../../capture/desktop/assets/settings/frog-lounge.png";
@@ -74,6 +78,7 @@ declare module "react" {
       > & {
         pane: string;
         noteExperiment?: ComponentType<DoubleShiftNotesProps>;
+        frogExperiment?: ComponentType<FrogNudgePreferenceProps>;
       };
     }
   }
@@ -225,6 +230,9 @@ function Settings() {
           <apparent-settings-pane
             pane={current}
             noteExperiment={current === "Labs" ? DoubleShiftNotes : undefined}
+            frogExperiment={
+              current === "Labs" ? FrogNudgePreference : undefined
+            }
           />
         )}
       </main>
