@@ -74,7 +74,7 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByRole('switch',{name:'Auto paste',exact:true})).toHaveCount(0);
     await expect(page.getByRole('switch',{name:'Public sharing links',exact:true})).toHaveCount(0);
-    await expect(page.getByRole('switch',{name:'Send recordings to T3'})).toHaveCount(0);
+    await expect(page.getByRole('switch',{name:'Enable sending to T3'})).toHaveCount(0);
     await expect(page.getByRole('button', {name: 'Agents', exact: true})).toHaveAttribute('aria-current', 'page');
     holdWrite = true;
     await toggle.focus(); await page.keyboard.press('Space');

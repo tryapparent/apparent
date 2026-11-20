@@ -27,7 +27,7 @@ test('Labs pairs multiple computers without exposing credentials, changing sendi
  const page=await app.firstWindow(),session=await page.context().newCDPSession(page);
  const resize=async(width:number)=>{await session.send('Emulation.setDeviceMetricsOverride',{width,height:600,deviceScaleFactor:1,mobile:false});await page.evaluate(()=>document.fonts.ready);};
  const shot=async(name:string)=>{if(proof)await page.screenshot({path:path.join(proof,name+'.png')});};
- const toggle=page.getByRole('switch',{name:'Send recordings to T3'});
+ const toggle=page.getByRole('switch',{name:'Enable sending to T3'});
  await expect(toggle).toBeEnabled();await expect(page.getByRole('heading',{name:'Labs',exact:true})).toBeVisible();
  await expect(page.getByRole('switch',{name:'Ask for video proof'})).toHaveCount(0);
  for(const p of [a,b]){
@@ -105,7 +105,7 @@ test('switching panes cancels a queued T3 connection before the private native w
  await expect(page).toHaveTitle('Apparent Settings — Agents');assert.deepEqual(await connecting,{reason:'cancelled'});assert.equal(writes,0);assert.equal(await queuedPreference,true);assert.equal(preferenceWrites,0);
  await reply(held!);await expect(page.getByRole('switch',{name:'Ask for video proof'})).toBeEnabled();
  await send({type:'show',pane:'labs'});await expect(page).toHaveTitle('Apparent Settings — Labs');
- await expect(page.getByRole('switch',{name:'Send recordings to T3'})).toBeEnabled();await expect(page.getByRole('alertdialog')).toHaveCount(0);
+ await expect(page.getByRole('switch',{name:'Enable sending to T3'})).toBeEnabled();await expect(page.getByRole('alertdialog')).toHaveCount(0);
  p.renew();await page.getByRole('button',{name:'Connect T3',exact:true}).click();
  await app.evaluate(({clipboard},link)=>clipboard.writeText(link),p.link);
  await page.getByRole('dialog').getByRole('button',{name:'Paste link or code',exact:true}).click();

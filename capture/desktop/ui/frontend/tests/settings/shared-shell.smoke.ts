@@ -76,7 +76,7 @@ test('Settings changes adopted panes in one live document and enforces the curre
       }
     }
     await openPane('Labs');
-    const streaming=page.getByRole('switch',{name:'Live local transcription'});
+    const streaming=page.getByRole('switch',{name:'Live transcription'});
     await expect(streaming).toBeEnabled();holdLabs=true;await streaming.click();
     await expect.poll(()=>heldLabs?.enabled).toBe(true);await expect(streaming).toBeDisabled();
     await openPane('General');await expect(page).toHaveTitle('Apparent Settings — General');

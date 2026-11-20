@@ -427,7 +427,9 @@ export function General() {
             className="general-section"
             aria-labelledby="general-shortcuts"
           >
-            <h2 id="general-shortcuts">Keyboard shortcuts</h2>
+            <h2 id="general-shortcuts" tabIndex={-1}>
+              Keyboard shortcuts
+            </h2>
             {state.shortcuts.map((s) => {
               const fn = s.suggestedFn;
               const message = s.error || (s.recording ? validation : "");

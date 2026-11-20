@@ -55,12 +55,14 @@ function Options({
 
 function Toggle({
   label,
+  descriptionId,
   checked,
   disabled,
   busy,
   onChange,
 }: {
   label: string;
+  descriptionId?: string;
   checked: boolean;
   disabled: boolean;
   busy: boolean;
@@ -73,6 +75,7 @@ function Toggle({
       <Switch
         className="recording-switch"
         aria-labelledby={id}
+        aria-describedby={descriptionId}
         checked={checked}
         disabled={disabled}
         aria-busy={busy || undefined}
@@ -82,11 +85,22 @@ function Toggle({
   );
 }
 
-function Group({ title, children }: { title: string; children: ReactNode }) {
-  const id = useId();
+function Group({
+  title,
+  sectionId,
+  children,
+}: {
+  title: string;
+  sectionId?: string;
+  children: ReactNode;
+}) {
+  const generatedId = useId();
+  const id = sectionId ?? generatedId;
   return (
     <section aria-labelledby={id}>
-      <h2 id={id}>{title}</h2>
+      <h2 id={id} tabIndex={sectionId ? -1 : undefined}>
+        {title}
+      </h2>
       {children}
     </section>
   );
@@ -242,10 +256,15 @@ function HexLanguage({
           </Button>
         </div>
       </div>
-      <p id={`${id}-help`} className="recording-note">
+      <p
+        id={`${id}-help`}
+        className="recording-note"
+        data-invalid={!valid}
+        aria-live="polite"
+      >
         {valid
           ? "Use a language code such as en, nl or auto. Some Hex models ignore this preference."
-          : "Enter a language code of up to 35 letters, digits or hyphens, starting with a letter."}
+          : "Invalid code. Start with a letter and use up to 35 letters, digits or hyphens."}
       </p>
     </form>
   );
@@ -386,7 +405,10 @@ export function RecordingControls({
           </p>
         )}
       </Group>
-      <Group title="Transcription">
+      <Group
+        title="Transcription after recording"
+        sectionId="recording-transcription"
+      >
         <div className="recording-group">
           <Options
             label="Transcription engine"
@@ -499,21 +521,22 @@ export function RecordingControls({
           )}
         </div>
       </Group>
-      <Group title="Notes">
+      <Group title="Notes" sectionId="recording-notes">
         <div className="recording-group">
           <Toggle
             label="Double-tap Shift for notes"
+            descriptionId="recording-notes-help"
             checked={state.doubleShiftNotes}
             disabled={disabled}
             busy={pending?.key === "doubleShiftNotes"}
             onChange={(value) => save({ key: "doubleShiftNotes", value })}
           />
         </div>
-        <p className="recording-note">
+        <p id="recording-notes-help" className="recording-note">
           Opens the note editor during recording. Turn off to use Shift-click.
         </p>
       </Group>
-      <Group title="Experimental">
+      <Group title="Export" sectionId="recording-video-export">
         <div className="recording-group">
           <Toggle
             label="Video export"
@@ -524,7 +547,7 @@ export function RecordingControls({
           />
         </div>
         <p className="recording-note">
-          Adds Export Last Capture as Video… to the menu.
+          Experimental. Adds Export Last Capture as Video… to the menu.
         </p>
       </Group>
     </>

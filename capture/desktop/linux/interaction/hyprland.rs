@@ -230,17 +230,16 @@ pub fn check_window(original: &FocusedWindow) -> Result<()> {
     Ok(())
 }
 
-pub fn targeted_paste_supported(original: &FocusedWindow) -> Result<()> {
+pub fn targeted_paste_supported() -> Result<()> {
     anyhow::ensure!(
         syntax()? == Syntax::Lua,
         "Targeted paste needs Hyprland Lua dispatchers"
     );
-    target_address(original)?;
     Ok(())
 }
 
 pub fn paste_into_focused(original: &FocusedWindow, terminal: bool) -> Result<()> {
-    targeted_paste_supported(original)?;
+    targeted_paste_supported()?;
     anyhow::ensure!(focused_window()? == *original, "Paste target lost focus");
     let mods = if terminal { "CTRL SHIFT" } else { "CTRL" };
     run(&format!(
@@ -250,7 +249,7 @@ pub fn paste_into_focused(original: &FocusedWindow, terminal: bool) -> Result<()
 }
 
 pub fn enter_into_focused(original: &FocusedWindow) -> Result<()> {
-    targeted_paste_supported(original)?;
+    targeted_paste_supported()?;
     check_window(original)?;
     anyhow::ensure!(focused_window()? == *original, "Paste target lost focus");
     run(&format!(
