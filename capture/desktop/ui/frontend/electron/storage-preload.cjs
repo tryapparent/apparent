@@ -85,6 +85,8 @@ contextBridge.exposeInMainWorld('apparentAgents', Object.freeze({
   cancelT3: () => ipcRenderer.invoke('apparent:agents-t3-cancel'),
   disconnectT3: origin => ipcRenderer.invoke('apparent:agents-t3-disconnect',origin),
   copySkill: () => ipcRenderer.invoke('apparent:agents-copy-skill'),
+  copyT3Setup: () => ipcRenderer.invoke('apparent:agents-t3-copy-setup'),
+  t3Environments: () => ipcRenderer.invoke('apparent:agents-t3-environments'),
   subscribe: callback => {
     const listener = (_event, facts) => callback(facts);
     ipcRenderer.on('apparent:agents-state', listener);

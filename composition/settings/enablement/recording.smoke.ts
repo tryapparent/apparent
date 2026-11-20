@@ -252,20 +252,12 @@ test("staged Recording opens directly, receives native facts and saves only on i
         await screenshot(`screen-selection-${variant}`);
         await openRecording();
 
-        await openTask("Send to T3", "Send recordings to T3");
-        const t3 = page.getByRole("switch", { name: "Enable sending to T3" });
+        await openTask("Send to T3", "Send recordings to T3 Code");
+        const t3 = page.getByRole("switch", { name: "Send recordings to T3 Code" });
         await expect(t3).toBeEnabled();
-        await expect(t3).toHaveAccessibleDescription(/You choose what to send/);
-        await expect(
-          page.getByRole("button", { name: "Connect T3", exact: true }),
-        ).toBeEnabled();
-        const steps = page.locator(".settings-t3-steps").getByRole("listitem");
-        await expect(steps).toHaveText([
-          /Connect a computer/,
-          /Enable sending to T3/,
-          /Choose a thread.*recording pill/,
-        ]);
+        await expect(t3).toHaveAccessibleDescription(/Choose a T3 Code thread/);
         await expect(t3).not.toBeChecked();
+        await expect(page.getByRole("heading", { name: "Computers" })).toHaveCount(0);
         await screenshot(`send-${variant}`);
         await openRecording();
 
@@ -277,79 +269,39 @@ test("staged Recording opens directly, receives native facts and saves only on i
             { origin: "https://expired.example", expiresAt: 0 },
           ],
         };
-        await openTask("Send to T3", "Send recordings to T3");
-        await expect(
-          page.getByRole("button", { name: "Add computer", exact: true }),
-        ).toBeEnabled();
-        await expect(
-          page.getByText(
-            "expired.example · Expired. Use Add computer to pair it again.",
-          ),
-        ).toBeVisible();
-        await page
-          .getByRole("button", { name: "Add computer", exact: true })
-          .press("Enter");
-        await expect(
-          page.getByRole("dialog", { name: "Connect T3" }),
-        ).toBeVisible();
-        await page.keyboard.press("Escape");
-        await expect(
-          page.getByRole("dialog", { name: "Connect T3" }),
-        ).toHaveCount(0);
+        await openTask("Send to T3", "Send recordings to T3 Code");
         await expect(t3).not.toBeChecked();
-        await screenshot(`send-connected-off-${variant}`);
+        await expect(page.getByRole("button", { name: "Pair with a link" })).toHaveCount(0);
         heldT3 = undefined;
         await t3.press("Space");
         await expect.poll(() => heldT3).toBeDefined();
         await expect(t3).toHaveAttribute("aria-busy", "true");
         await expect(t3).toHaveCSS("cursor", "wait");
-        await expect(
-          page.getByRole("status").filter({
-            hasText: "Saving the T3 sending preference…",
-          }),
-        ).toBeInViewport();
         await expect(t3).not.toBeChecked();
-        await screenshot(`send-pending-${variant}`);
         t3Facts = { ...t3Facts, t3Saved: true };
         send({ type: "agents-result", request: heldT3, facts: t3Facts });
         await expect(t3).toBeChecked();
-        await steps.last().scrollIntoViewIfNeeded();
+        await expect(page.getByText("Pairing expired", { exact: true })).toBeVisible();
+        const manual = page.getByRole("button", { name: "Pair with a link" });
+        await manual.press("Enter");
+        await expect(page.getByRole("dialog", { name: "Pair with a link" })).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(manual).toBeFocused();
         await screenshot(`send-connected-on-${variant}`);
         heldT3 = undefined;
         await t3.press("Space");
         await expect.poll(() => heldT3).toBeDefined();
-        send({
-          type: "agents-result",
-          request: heldT3,
-          facts: { error: "config_write_failed" },
-        });
-        const t3Failure = page.getByRole("alertdialog", {
-          name: "Unable to save T3 sending preference",
-        });
-        await expect(
-          t3Failure.getByRole("button", { name: "Refresh T3 sending" }),
-        ).toBeFocused();
-        await screenshot(`send-failure-${variant}`);
+        send({ type: "agents-result", request: heldT3, facts: { error: "config_write_failed" } });
+        const failure = page.getByRole("alertdialog", { name: "Unable to save T3 sending preference" });
+        await expect(failure.getByRole("button", { name: "Refresh T3 sending" })).toBeFocused();
         await page.keyboard.press("Escape");
-        await expect(t3).toHaveCount(0);
-        const refresh = steps.nth(1).getByRole("button", {
-          name: "Refresh T3 sending",
-        });
+        const refresh = page.getByRole("button", { name: "Refresh T3 sending" });
         await expect(refresh).toBeFocused();
-        await expect(refresh).toHaveAccessibleDescription(
-          /preference is unconfirmed/,
-        );
-        await screenshot(`send-unconfirmed-${variant}`);
         heldT3 = undefined;
-        await page.keyboard.press("Enter");
+        await refresh.press("Enter");
         await expect(t3).toBeChecked();
         await expect(t3).toBeFocused();
         assert.equal(heldT3, undefined);
-        await screenshot(`send-confirmed-on-${variant}`);
-        await page
-          .getByRole("heading", { name: "Compact recording prompts" })
-          .scrollIntoViewIfNeeded();
-        await screenshot(`send-group-end-${variant}`);
         t3Facts = disconnected;
         await openRecording();
 
@@ -442,12 +394,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
         }
       }
     await navigate("Agents");
-    await page
-      .getByRole("button", { name: "Send recordings to T3", exact: true })
-      .press("Enter");
-    await expect(
-      page.getByRole("heading", { name: "Send recordings to T3" }),
-    ).toBeFocused();
+    await expect(page.getByRole("heading", { name: "Send recordings to T3 Code" })).toBeVisible();
     assert.equal(page.url(), startUrl);
     await openRecording();
     await openTask("How to add notes", "Notes");

@@ -1332,13 +1332,11 @@ impl Session {
             Event::Action(Action::AgentsPreference { request, enabled, setting }) => {
                 if self.electron && self.pane == Some(Pane::Agents) {
                     self.send(&super::agents::request_for(&host.config_path(), request, enabled, setting.as_deref()));
-                } else if self.electron && self.pane == Some(Pane::Labs) && (setting.as_deref() == Some("t3") || setting.is_none() && enabled.is_none()) {
-                    self.send(&super::agents::request_for(&host.config_path(), request, enabled, setting.as_deref()));
                 }
                 Effect::None
             }
             Event::Action(Action::AgentsConnection { request, connection, disconnect }) => {
-                if self.electron && self.pane == Some(Pane::Labs) {
+                if self.electron && self.pane == Some(Pane::Agents) {
                     self.send(&super::agents::connection_request(&host.config_path(), request, connection, disconnect));
                 }
                 Effect::None
@@ -1608,11 +1606,7 @@ impl Session {
             }
             if self.pane == Some(Pane::Labs) {
                 let message = serde_json::json!({"type":"labs-state","facts":super::labs::facts(&host.config_path())});
-                let t3 = serde_json::json!({"type":"agents-state","facts":super::agents::facts(&host.config_path())});
-                // One view key for both channels avoids resending unchanged
-                // preferences every tick when their messages alternate.
-                let text = serde_json::json!([message, t3]).to_string();
-                if text != self.last_view {self.send(&message); self.send(&t3); self.last_view = text;}
+                self.send_state(message);
             }
             if self.pane == Some(Pane::About) {
                 self.send_state(self.panel.about_state(&host.config_path()));

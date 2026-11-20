@@ -4,7 +4,6 @@ import type {T3Connection} from '../../../electron/settings/t3.ts';
 export const skillCommand = 'bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent';
 export type T3ConnectionResult = {facts:PreferenceFacts;reason?:never}|{reason:'cancelled'|'unavailable'|'unconfirmed';facts?:never};
 export type PreferenceFacts = { saved: boolean | null; sharingSaved?:boolean|null;t3Saved?:boolean|null;t3Configured?:boolean;t3Origin?:string;t3ExpiresAt?:number;t3Connections?:{origin:string;expiresAt:number}[];autoPasteSaved?:boolean|null;autoPasteSupported?:boolean;wisprSaved?:boolean|null;wisprSupported?:boolean;error?: never } | { error: 'config_read_failed' | 'config_write_failed'; saved?: never;sharingSaved?:never;t3Saved?:never;t3Configured?:never;t3Origin?:never;t3ExpiresAt?:never;t3Connections?:never;autoPasteSaved?:never;autoPasteSupported?:never;wisprSaved?:never;wisprSupported?:never };
-export function t3PickerEnabled(facts:PreferenceFacts):boolean|undefined{return facts.error?undefined:facts.t3Saved??false;}
 export function preferenceEnabled(facts: PreferenceFacts): boolean | undefined {
   return facts.error ? undefined : facts.saved ?? true;
 }

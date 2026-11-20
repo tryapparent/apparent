@@ -131,8 +131,8 @@ pub(super) fn admits(pane: Pane, action: &Action) -> bool {
             matches!(action, Action::RecordShortcut { .. } | Action::Shortcut { .. } | Action::CancelShortcut | Action::ResetShortcut { .. } | Action::ClearShortcut { .. })
             || matches!(action, Action::Set { key, value }
                 if matches!(key.as_str(), "launchAtLogin" | "errorReporting") && value.is_boolean()))
-        || pane == Pane::Agents && matches!(action, Action::AgentsPreference { setting, .. } if matches!(setting.as_deref(), None | Some("video")))
-        || pane == Pane::Labs && (matches!(action, Action::AgentsConnection { .. }) || matches!(action, Action::AgentsPreference { setting, enabled, .. } if setting.as_deref() == Some("t3") || setting.is_none() && enabled.is_none()) || matches!(action, Action::LabsPreference { setting, .. } if super::labs::key(setting.as_deref()).is_some()))
+        || pane == Pane::Agents && (matches!(action, Action::AgentsConnection { .. }) || matches!(action, Action::AgentsPreference { setting, .. } if matches!(setting.as_deref(), None | Some("video") | Some("t3"))))
+        || pane == Pane::Labs && matches!(action, Action::LabsPreference { setting, .. } if super::labs::key(setting.as_deref()).is_some())
         || pane == Pane::About && (matches!(action, Action::CheckForUpdates | Action::DismissUpdateCheck | Action::UpdateNow | Action::UpdateLater | Action::Tour)
             || matches!(action, Action::Set { key, value } if key == "updateChannel" && matches!(value.as_str(), Some("stable" | "main"))))
 }
@@ -179,6 +179,7 @@ fn renderer_command(runtime: PathBuf, app: PathBuf) -> Command {
 fn command(runtime: PathBuf, app: PathBuf) -> Command {
     let mut command = renderer_command(runtime, app);
     command.env("APPARENT_MODELS_DIR", crate::capture::engine::runtime::audio::transcription::speech::own_models_dir());
+    command.env("APPARENT_CONFIG", crate::shared::handoff::default_config_path());
     command.arg("--settings-storage").arg("--settings-parent");
     command
 }
@@ -326,9 +327,9 @@ mod capability_tests {
             (r#"{"action":"labs-preference","request":2,"setting":"autoPaste","enabled":true}"#, vec![Pane::Labs]),
             (r#"{"action":"labs-preference","request":3,"setting":"sharing","enabled":true}"#, vec![Pane::Labs]),
             (r#"{"action":"labs-preference","request":4,"setting":"wisprFlow","enabled":true}"#, vec![Pane::Labs]),
-            (r#"{"action":"agents-connection","request":4,"connection":null}"#, vec![Pane::Labs]),
-            (r#"{"action":"agents-preference","request":3,"setting":"t3","enabled":true}"#, vec![Pane::Labs]),
-            (r#"{"action":"agents-preference","request":5}"#, vec![Pane::Agents, Pane::Labs]),
+            (r#"{"action":"agents-connection","request":4,"connection":null}"#, vec![Pane::Agents]),
+            (r#"{"action":"agents-preference","request":3,"setting":"t3","enabled":true}"#, vec![Pane::Agents]),
+            (r#"{"action":"agents-preference","request":5}"#, vec![Pane::Agents]),
             (r#"{"action":"agents-preference","request":6,"enabled":true}"#, vec![Pane::Agents]),
         ] {
             let action: Action = serde_json::from_str(wire).expect(wire);

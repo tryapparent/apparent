@@ -104,12 +104,12 @@ const labsPreferences = new LabsPreferences(message => {
   process.stdout.write(JSON.stringify(message) + '\n');
 });
 const { AgentsPreferences, PreferenceQueue, skillCommand, preferenceFacts } = require('./settings/agents.cjs');
-const {PairingLinks} = require('./settings/t3.cjs');
+const {PairingLinks, bindT3Setup} = require('./settings/t3.cjs');
 const pairingLinks = new PairingLinks();
 let t3Approval;
 let pairingPreviewVersion=0;
 const agentsPreferences = new AgentsPreferences(message => {
-  if ((pane !== 'agents' && pane !== 'labs') || !hasSettingsParent) throw new Error('Settings parent unavailable');
+  if (pane !== 'agents' || !hasSettingsParent) throw new Error('Settings parent unavailable');
   process.stdout.write(JSON.stringify(message) + '\n');
 });
 const preferenceQueue=new PreferenceQueue();
@@ -279,8 +279,8 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('apparent:agents-preference', (event, ...args) => {
     validate(event, []);
-    if ((pane !== 'agents' && !(pane === 'labs' && args.length===0)) || args.length > 1 || args.length === 1 && typeof args[0] !== 'boolean') throw new Error('Forbidden Agents preference');
-    return pane === 'labs' ? preferenceRequest(undefined,'t3') : agentsPreferences.request(...args);
+    if (pane !== 'agents' || args.length > 1 || args.length === 1 && typeof args[0] !== 'boolean') throw new Error('Forbidden Agents preference');
+    return preferenceRequest(...args);
   });
   ipcMain.handle('apparent:labs-preference', (event, ...args) => {
     validate(event, []);
@@ -289,7 +289,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('apparent:agents-t3-preference', (event, ...args) => {
     validate(event, []);
-    if (pane !== 'labs' || args.length !== 1 || typeof args[0] !== 'boolean') throw new Error('Forbidden Agents preference');
+    if (pane !== 'agents' || args.length !== 1 || typeof args[0] !== 'boolean') throw new Error('Forbidden Agents preference');
     return preferenceRequest(args[0], 't3');
   });
   ipcMain.handle('apparent:agents-copy-skill', (event, ...args) => {
@@ -297,16 +297,24 @@ app.whenReady().then(() => {
     if (pane !== 'agents') throw new Error('Unavailable outside Agents');
     return clipboard.writeText(skillCommand);
   });
+  bindT3Setup({
+    bind: (name, handle) => ipcMain.handle(name, (event, ...args) => {
+      validate(event, args);
+      if (pane !== 'agents' || !hasSettingsParent || settingsClosing) throw Error('T3 setup unavailable');
+      return handle();
+    }),
+    copy: text => clipboard.writeText(text), configPath: process.env.APPARENT_CONFIG,
+  });
   ipcMain.handle('apparent:agents-t3-preview', async (event, ...args) => {
     validate(event,[]);
-    if (pane !== 'labs' || !hasSettingsParent || t3Approval || args.length>1 || args.length===1&&(typeof args[0]!=='string'||args[0].length>2048)) throw Error('T3 connection unavailable');
+    if (pane !== 'agents' || !hasSettingsParent || t3Approval || args.length>1 || args.length===1&&(typeof args[0]!=='string'||args[0].length>2048)) throw Error('T3 connection unavailable');
     const version=++pairingPreviewVersion;pairingLinks.clear();
     try { const link=await clipboard.readText();if(settingsClosing||version!==pairingPreviewVersion)throw Error('Preview cancelled');return {preview:pairingLinks.preview(link,args[0])}; }
     catch { return {error:'Copy a T3 code or full link. For a code, check the server address and use HTTPS or localhost.'}; }
   });
   ipcMain.handle('apparent:agents-t3-connect', async (event, ...args) => {
     validate(event, []);
-    if (pane !== 'labs' || !hasSettingsParent || args.length!==1 || typeof args[0]!=='string' || t3Approval) throw new Error('T3 connection unavailable');
+    if (pane !== 'agents' || !hasSettingsParent || args.length!==1 || typeof args[0]!=='string' || t3Approval) throw new Error('T3 connection unavailable');
     const approval=new AbortController();t3Approval=approval;
     let persisting=false;
     try {
@@ -318,10 +326,10 @@ app.whenReady().then(() => {
     } finally {if(t3Approval===approval)t3Approval=undefined;}
   });
   ipcMain.handle('apparent:agents-t3-cancel', (event, ...args) => {
-    validate(event,args);if(pane !== 'labs')throw Error('T3 connection unavailable');++pairingPreviewVersion;pairingLinks.clear();t3Approval?.abort();
+    validate(event,args);if(pane !== 'agents')throw Error('T3 connection unavailable');++pairingPreviewVersion;pairingLinks.clear();t3Approval?.abort();
   });
   ipcMain.handle('apparent:agents-t3-disconnect', (event, ...args) => {
-    validate(event,[]);if(pane !== 'labs'||args.length!==1||typeof args[0]!=='string'||args[0].length>2048||!hasSettingsParent||t3Approval)throw Error('T3 connection unavailable');
+    validate(event,[]);if(pane !== 'agents'||args.length!==1||typeof args[0]!=='string'||args[0].length>2048||!hasSettingsParent||t3Approval)throw Error('T3 connection unavailable');
     return preferenceTask(()=>agentsPreferences.storeConnection(null,args[0]));
   });
   ipcMain.handle('apparent:navigate-settings', (event, ...args) => {
@@ -354,14 +362,14 @@ app.whenReady().then(() => {
           aboutState = command;
           window.webContents.send('apparent:about-state', command);
         }
-        if (['agents','labs'].includes(pane) && command.type === 'agents-result') agentsPreferences.receive(command);
+        if (pane === 'agents' && command.type === 'agents-result') agentsPreferences.receive(command);
         if (pane === 'labs' && ['labs-result', 'labs-state'].includes(command.type)) {
           lip.enabled = labsFacts(command.facts).silentPromptSaved === true;
           if (!lip.enabled) { lip.cancel(); lip.stopSetup(); }
         }
         if (pane === 'labs' && command.type === 'labs-result') labsPreferences.receive(command);
         if (pane === 'labs' && command.type === 'labs-state') window.webContents.send('apparent:labs-state', labsFacts(command.facts));
-        if (['agents','labs'].includes(pane) && command.type === 'agents-state') {
+        if (pane === 'agents' && command.type === 'agents-state') {
           window.webContents.send('apparent:agents-state', preferenceFacts(command.facts));
         }
         if (command.type === 'close') closeSettings();

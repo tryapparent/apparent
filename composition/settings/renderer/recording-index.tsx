@@ -1,6 +1,6 @@
 import { Button } from "@apparent/ui/button";
 
-type RecordingDestination = "General" | "Recording" | "Labs" | "Permissions";
+type RecordingDestination = "General" | "Recording" | "Agents" | "Labs" | "Permissions";
 
 const stages = [
   {
@@ -21,7 +21,7 @@ const stages = [
     title: "After",
     links: [
       ["Transcription after recording", "Recording", "recording-transcription"],
-      ["Send to T3", "Labs", "agent-t3-label"],
+      ["Send to T3", "Agents", "agent-t3-label"],
       ["Public links", "Labs", "public-sharing-label"],
       ["Auto paste", "Labs", "auto-paste-label"],
       ["Video export", "Recording", "recording-video-export"],

@@ -645,7 +645,7 @@ fn t3_command(command: T3Command) -> Result<()> {
             ensure!(output.status.success(), "T3 did not confirm pairing");
             let value: serde_json::Value = serde_json::from_slice(&output.stdout).context("Invalid pairing acknowledgement")?;
             crate::capture::desktop::settings::persist_t3_connection(&config, Some(serde_json::from_value(value).context("Invalid T3 connection")?), None)?;
-            println!("T3 connection saved. Enable Send recordings to T3 in Settings > Labs.");
+            println!("T3 connection saved. Enable Send recordings to T3 Code in Settings > Agents.");
         }
         T3Command::Status => {
             let value: serde_json::Value = std::fs::read(&config).ok()

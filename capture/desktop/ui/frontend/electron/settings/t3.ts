@@ -2,8 +2,19 @@
 // short-lived confirmation handle; the native parent alone persists credentials.
 import {randomBytes} from 'node:crypto';
 import {parsePairingLink,pair} from '../../../../workflow/t3/pair.ts';
+import {settingsEnvironments} from '../../../../../../handoff/main/settings-environments.ts';
+import {t3SetupPrompt} from '../../../../../../handoff/settings/t3-contract.ts';
 export type T3Connection = {origin:string;token:string;expiresAt:number};
 export type PairingPreview = {id:string;origin:string};
+
+export function bindT3Setup(io: {
+ bind(name: string, handle: () => unknown): void;
+ copy(text: string): unknown;
+ configPath?: string;
+}) {
+ io.bind("apparent:agents-t3-copy-setup", () => io.copy(t3SetupPrompt));
+ io.bind("apparent:agents-t3-environments", () => io.configPath ? settingsEnvironments(io.configPath) : []);
+}
 export class PairingLinks {
  private timer?:ReturnType<typeof setTimeout>;
  private pending?:{id:string;link:string;origin:string;expires:number};

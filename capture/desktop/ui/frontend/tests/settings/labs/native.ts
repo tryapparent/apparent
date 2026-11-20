@@ -63,13 +63,7 @@ try{
   assert.equal(saved.experiments.localStreamingTranscription,on);assert.equal(saved.experiments.other,true);assert.equal(saved.secret,'private');
   await page.reload();await expect(toggle).toBeEnabled();await expect(toggle).toHaveAttribute('aria-checked',String(on));
  }
- const t3=page.getByRole('switch',{name:'Enable sending to T3'});
- await expect(t3).toHaveAttribute('aria-checked','false');
- for(const on of [true,false]){
-  await t3.click();await expect(t3).toHaveAttribute('aria-checked',String(on));
-  const saved=JSON.parse(await fs.readFile(process.argv[2],'utf8'));
-  assert.equal(saved.experiments.t3DestinationPicker,on);assert.equal(saved.experiments.localStreamingTranscription,false);assert.equal(saved.secret,'private');
- }
+ await expect(page.getByRole('switch',{name:'Send recordings to T3 Code'})).toHaveCount(0);
  const sharing=page.getByRole('switch',{name:'Public sharing links'});
  for(const on of [true,false]){
   await sharing.click();await expect(sharing).toHaveAttribute('aria-checked',String(on));

@@ -10,6 +10,7 @@ import {
   AutoPaste,
   type AutoPasteProps,
 } from "../../../handoff/settings/auto-paste";
+import { T3Settings } from "../../../handoff/settings/t3";
 import {
   FrogNudgePreference,
   type FrogNudgePreferenceProps,
@@ -274,16 +275,6 @@ function Settings() {
         {current === "Labs" && (
           <RecordingStartPreference preference={recordStart} />
         )}
-        {current === "Agents" && (
-          <Button
-            className="settings-task-link settings-agent-delivery"
-            variant="link"
-            disabled={navigating}
-            onClick={() => void navigate("Labs", "agent-t3-label")}
-          >
-            Send recordings to T3
-          </Button>
-        )}
         {current === "General" ? (
           <General />
         ) : current === "Recording" ? (
@@ -305,6 +296,7 @@ function Settings() {
             }
           />
         )}
+        {current === "Agents" && <T3Settings bridge={window.apparentAgents} artwork={failedFrog} />}
       </main>
     </div>
   );
