@@ -93,10 +93,9 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   const refreshUsage = button('Refresh usage');
   const proof = process.env.APPARENT_SETTINGS_PROOF;
   if (proof) await fs.mkdir(proof, { recursive: true });
-  const screenshot = (name, fullPage = false) => proof && page.screenshot({
-    path: path.join(proof, name), animations: 'disabled', fullPage,
+  const screenshot = name => proof && page.screenshot({
+    path: path.join(proof, name), animations: 'disabled',
   });
-  t.diagnostic('Retention window opened');
   await expect.poll(() => typeof releaseLocation).toBe('function');
   await expect(page.getByText('Waiting for capture location…')).toBeVisible();
   assert.equal(await page.getByText('Storage is disabled in your configuration.', { exact: false }).count(), 0);
@@ -131,7 +130,6 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   await expect(select).toHaveValue('month');
   await expect(select.locator('option:checked')).toHaveText('Media 30 days · capture 90 days');
   assert.equal(preset, 'month');
-  t.diagnostic('Retention saved');
   await refresh.click();
   await expect(select).toHaveValue('month');
   await expect(reset).toBeEnabled();
@@ -141,13 +139,17 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   await expect(reset).toBeDisabled();
   failure = 'config_write_failed';
   await select.selectOption('forever');
+  const recovery = requests.length;
   await save.click();
   await expect(page.getByRole('alert')).toContainText('Could not save retention.');
-  assert.equal(preset, 'week');
+  await expect(refresh).toBeFocused();
   assert.equal(await select.count(), 0);
   failure = undefined;
-  await refresh.click();
+  await expect(refresh).toBeEnabled();
+  await page.keyboard.press('Enter');
   await expect(select).toHaveValue('week');
+  assert.deepEqual(requests.slice(recovery).map(r => r.storage).filter(operation => operation !== 'usage'),
+    ['saveretention', 'retention']);
   unknownOutcome = true;
   const previousSaves = requests.filter(request => request.storage === 'saveretention').length;
   await select.selectOption('month');
@@ -155,12 +157,16 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   await expect(page.getByRole('alert')).toContainText('Save is unconfirmed.');
   await expect(page.getByText('Requested save · Media 30 days · capture 90 days')).toBeVisible();
   await expect(refresh).toBeFocused();
+  storedPolicy = { mediaDays: { present: true, value: null }, bundleDays: { present: true, value: null } };
   await page.keyboard.press('Enter');
-  await expect(select).toHaveValue('month');
+  await expect(select).toHaveValue('forever');
+  const saved = page.getByText('Saved · Media forever · capture forever', { exact: true });
+  await expect(saved).toBeVisible();
   await expect(refresh).toBeFocused();
   await select.selectOption('week');
   await expect(select.locator('option:checked')).toHaveText('Media 7 days · capture 30 days');
-  await expect(page.getByText('Unsaved changes', { exact: true })).toBeVisible();
+  await expect(saved).toBeVisible();
+  await expect(select).toHaveAccessibleDescription('Draft Saved · Media forever · capture forever');
   await expect(save).toHaveAccessibleDescription(consequence);
   await expect(reset).toHaveAccessibleDescription(resetDescription);
   assert.equal(requests.filter(({storage}) => storage === 'saveretention').length, previousSaves + 1);
@@ -186,7 +192,6 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   await expect(select).toHaveValue('forever');
   releaseUsage(); releaseUsage = undefined;
   assert.deepEqual(await page.evaluate(() => window.oldUsage), { status: 'cancelled' });
-  t.diagnostic('Stale usage cancelled');
   const safe = await page.evaluate(() => window.apparent.readRetention());
   assert.equal(safe.revision, undefined); assert.equal(safe.secret, undefined);
   assert.equal(await page.evaluate(() => window.apparent.saveRetention('arbitrary').then(() => false, () => true)), true);
@@ -226,7 +231,6 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   assert.equal(await content.evaluate(element => element.scrollWidth <= element.clientWidth), true);
   const refreshBounds = await refreshUsage.boundingBox();
   assert.ok(refreshBounds && refreshBounds.y >= 0 && refreshBounds.y + refreshBounds.height <= await page.evaluate(() => innerHeight));
-  assert.equal(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight), true);
   assert.equal(await app.evaluate(async ({ ipcMain, BrowserWindow }) => {
     const sender = BrowserWindow.getAllWindows()[0].webContents;
     for (const channel of ['read-retention', 'read-capture-usage', 'save-retention', 'reset-retention']) {
@@ -246,7 +250,8 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(640);
   await page.evaluate(() => document.fonts.ready);
   await expect(select).toHaveCSS('font-size', '18px');
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth &&
+    document.documentElement.scrollHeight <= innerHeight));
   for (const mode of ['light', 'dark']) {
     await page.emulateMedia({ colorScheme: mode });
     assert.equal(await select.evaluate(element => {
@@ -258,6 +263,9 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
     await select.selectOption('month');
     await select.scrollIntoViewIfNeeded();
     assert.equal(await page.locator('.settings-sidebar').evaluate(element => element.scrollWidth <= element.clientWidth), true);
+    await expect(page.locator('.settings-policy + [data-slot="native-select-icon"]')).toHaveCSS('color',await select.evaluate(e=>getComputedStyle(e).color));
+    await expect(page.locator('.settings-shell')).toHaveCSS('--apparent-primary', '#7a58c7');
+    await expect(page.locator('.settings-shell')).toHaveCSS('color-scheme', mode);
     await screenshot(`storage-640-${mode}.png`);
   }
   await select.focus(); await expect(select).toBeFocused();
@@ -276,19 +284,10 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   assert.equal(await page.evaluate(() => window.apparent.navigateSettings('storage').then(() => false, () => true)), true);
   assert.equal(await page.evaluate(() => window.apparent.navigateSettings('arbitrary').then(() => false, () => true)), true);
   assert.equal(await page.evaluate(() => window.apparent.showCaptureFolder('arbitrary').then(() => false, () => true)), false, 'zero-argument preload cannot forward a path');
-  for (const colorScheme of ['light', 'dark']) {
-    await page.emulateMedia({ colorScheme });
-    await expect(page.locator('.settings-policy + [data-slot="native-select-icon"]')).toHaveCSS('color',await select.evaluate(e=>getComputedStyle(e).color));
-    await expect(page.locator('.settings-shell')).toHaveCSS('--apparent-primary', '#7a58c7');
-    assert.equal(await page.locator('.settings-shell').evaluate(element => getComputedStyle(element).colorScheme), colorScheme);
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-    await screenshot(`storage-${colorScheme}.png`, true);
-  }
   const emitted = [];
   app.process().stdout.on('data', data => emitted.push(data.toString()));
   const compact = button('Settings pages, Storage');
   if (await compact.isVisible()) await compact.click();
   await button('General').click();
   await expect.poll(() => emitted.join('')).toContain('"action":"navigate","pane":"general"');
-  t.diagnostic('Retention and installed Settings presentation assertions completed');
 });

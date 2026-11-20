@@ -57,13 +57,16 @@ await bendScratch(async (scratch) => {
       retention.reset_available(true, true),
       retention.keep_submission(true, false),
       retention.keep_submission(true, true),
+      retention.has_draft(false, false),
+      retention.has_draft(true, true),
+      retention.has_draft(true, false),
     ]));
   `,
         ],
         proofOutput,
       ),
     ),
-    [0, 1, 2, 3, false, true, true, false],
+    [0, 1, 2, 3, false, true, true, false, false, false, true],
   );
   assert.deepEqual(
     JSON.parse(

@@ -16,3 +16,6 @@ def reset_available(custom: Bool, defaults_known: Bool) -> Bool:
 
 def keep_submission(submitted: Bool, confirmed: Bool) -> Bool:
   Bool.and(submitted, Bool.not(confirmed))
+
+def has_draft(selected: Bool, matches_saved: Bool) -> Bool:
+  Bool.and(selected, Bool.not(matches_saved))

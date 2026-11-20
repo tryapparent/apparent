@@ -26,8 +26,10 @@ test('real Git controller changes preserve Desktop renderer and main packaging, 
     for (const path of nativeStorageGraph.keys()) write(path, readFileSync(new URL('../../../../' + path, import.meta.url), 'utf8'));
     const base = commit();
     for (const [path, source] of sources) {
+      const implementation = source.replace('generation === this.#generation', 'this.#generation === generation');
+      assert.notEqual(source, implementation);
       git('reset', '--hard', base);
-      write(path, source.replace('generation === this.#generation', 'this.#generation === generation'));
+      write(path, implementation);
       const head = commit(), result = selectRange(base, head, root);
       assert.deepEqual(result.qualifiedStorageControllers, [path]);
       assert.equal(result.plan.root, false); assert.equal(result.plan.engine, false);
@@ -59,11 +61,14 @@ test('real Git controller changes preserve Desktop renderer and main packaging, 
       write(path, source.replace('dispose() {', 'dispose() { import("node:fs");'));
       assert.equal(selectRange(base, commit(), root).plan.root, true);
       git('reset', '--hard', base);
-      write(path, source.replace('generation === this.#generation', 'this.#generation === generation'));
+      write(path, source.replace('read():', 'read(extra: string):'));
+      assert.equal(selectRange(base, commit(), root).plan.root, true);
+      git('reset', '--hard', base);
+      write(path, implementation);
       write('capture/new-consumer.rs', 'const SOURCE: &str = include_str!("record/storage/src/location-controller.ts");');
       assert.equal(selectRange(base, commit(), root).qualifiedStorageControllers.length, 0);
       git('reset', '--hard', base);
-      write(path, source.replace('generation === this.#generation', 'this.#generation === generation'));
+      write(path, implementation);
       write('record/storage/src/retention/worker.ts', 'import "../index.js";');
       assert.equal(selectRange(base, commit(), root).qualifiedStorageControllers.length, 0);
       git('reset', '--hard', base);
@@ -79,6 +84,14 @@ test('real Git controller changes preserve Desktop renderer and main packaging, 
       write('record/storage/src/new-controller.ts', source);
       assert.equal(selectRange(base, commit(), root).plan.root, true);
     }
+    git('reset', '--hard', base);
+    const retention = 'record/storage/src/retention-controller.ts';
+    write(retention, sources.get(retention)!.replace('this.#generation++;', 'this.#generation += 1;'));
+    const feedback = 'record/storage/src/retention/feedback.bend';
+    write(feedback, readFileSync(join(root, feedback), 'utf8') + '\n');
+    const providerChange = selectRange(base, commit(), root);
+    assert.deepEqual(providerChange.qualifiedStorageControllers, []);
+    assert.equal(providerChange.plan.root, true);
     assert.equal(selectRange('missing', 'missing', root).plan.root, true);
   } finally {rmSync(root, {recursive: true, force: true});}
 });

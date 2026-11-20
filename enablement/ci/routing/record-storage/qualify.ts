@@ -11,7 +11,8 @@ export const storageControllers = new Set([
 // catches an indirect ../index.js barrel import with no controller-name text.
 export const nativeStorageGraph = new Map([
   ['capture/desktop/ui/frontend/scripts/build-storage-policy.ts', 'b466b93fe00d51bb4b65656f7b483a7e3e44c8a4'],
-  ['record/storage/build.ts', '3d5e5f25b4047d2d9363215d5ed322084cd0ca1d'],
+  ['record/enablement/ci/bend/modules.json', 'd201f57ba21ad808e0cfb8f1eaa493a793d95cc1'],
+  ['record/storage/build.ts', 'ae0958975cc9643e6a5eec4a674a9815a38f462f'],
   ['record/storage/tsconfig.json', '96d1a20c5109ff4e1996123a75730b7aa99b6165'],
   ['record/storage/package.json', 'a4af0bd9d619131db2423283f51c160d7c738bef'],
   ['record/storage/package-lock.json', '00f2fe49ea668718ef8e9d35ea7baa7236ce685b'],
@@ -19,11 +20,18 @@ export const nativeStorageGraph = new Map([
   ['record/storage/src/location-contract.ts', '7ca220e3d9530dea8931473387a9704d329e10d0'],
   ['record/storage/src/location-policy.ts', 'bf45096ee826e7fc398fd0f93fada5ed7c194d7a'],
   ['record/storage/src/location-workflow.ts', 'd564377cd884dda1b0f4e9578d9afeaa0672f9c2'],
-  ['record/storage/src/policy.ts', '612cf025d8dc71003c8633f65ce5a6e9c9f04a74'],
-  ['record/storage/src/retention-workflow.ts', '75493c3259cd8bffa1d307a4857b1a7a5dd3d1dd'],
+  ['record/storage/src/policy.ts', '0debd0cd97c2b1957b15ddfb6110c9fa16248853'],
+  ['record/storage/src/retention-workflow.ts', '20c1a9189671025f359434b35625b9f2450e2c61'],
+  ['record/storage/src/retention/feedback.bend', '2945071db6cde922849e0173cfad7b4870f90d01'],
+  ['record/storage/src/retention/feedback.d.mts', 'c6fc3809b091a7b74178183814048c67d18c8dec'],
   ['record/storage/src/retention/policy.ts', 'e1d14cba2899eced97ec5336cac662940049fdbf'],
   ['record/storage/src/retention/worker.ts', 'c1882b8523de007985eff2764ffed19d5df7fb40'],
-  ['record/storage/src/types.ts', 'a3e92d50388098a4cf259f1e0a256dd25f0a16fd'],
+  ['record/storage/src/types.ts', '594b604e20fc45f2ea32ee044a8247811827b71a'],
+  ['shared/enablement/bend/build.ts', '513b4899621933e5a13cafeeaddc43d5635ecd5e'],
+  ['shared/enablement/bend/manifest.ts', '7657c844f0c9851aa21ae32641864160e034f0dd'],
+  ['shared/enablement/bend/owners.ts', 'b527b1b063951f9f3184be594197dc2e5149e37a'],
+  ['shared/enablement/bend/source.ts', '631b590a17498f515b693808782cf7539997806b'],
+  ['shared/enablement/bend/toolchain.ts', 'eeaa26190ec44e9acfeac47153dccaa8d0f63158'],
 ]);
 
 // The audited controllers use ordinary quoted strings/comments, no templates or
@@ -80,7 +88,8 @@ function publicSurface(body: string): string[] | null {
 // selector supplies candidate Git references, including data-driven readers.
 export const storageReferences = new Set([
   ...storageControllers,
-  'record/storage/src/index.ts', 'record/storage/package.json', 'record/storage/package-lock.json',
+  'composition/enablement/ci/typecheck.json',
+  'record/storage/build.ts', 'record/storage/src/index.ts', 'record/storage/package.json', 'record/storage/package-lock.json',
   'record/storage/test/controller.test.ts',
   'capture/desktop/ui/frontend/package.json', 'capture/desktop/ui/frontend/package-lock.json',
   ...['scripts/build-storage-policy.ts', 'scripts/settings-native/inputs.ts',
@@ -99,12 +108,15 @@ export const storageReferences = new Set([
 export function portableStorageController(path: string, before: string, after: string): boolean {
   if (!storageControllers.has(path)) return false;
   const className = path.includes('/location-') ? 'LocationController' : 'RetentionController';
+  const expectedImports = className === 'LocationController'
+    ? ['./types.js', './policy.js']
+    : ['./types.js', './policy.js', './retention/feedback.mjs'];
   const inspect = (text: string) => {
     const marker = `export class ${className} {`;
     const start = text.indexOf(marker);
     if (start < 0 || text.indexOf(marker, start + marker.length) >= 0) return null;
     const imports = moduleImports(text);
-    if (!imports || imports.length !== 2 || !imports.includes('./types.js') || !imports.includes('./policy.js')) return null;
+    if (!imports || imports.length !== expectedImports.length || !expectedImports.every(name => imports.includes(name))) return null;
     const body = text.slice(start);
     // New execution/OS/DOM capabilities are not controller policy. Treat unknown
     // syntax conservatively; the ordinary package and renderer compiler still run.

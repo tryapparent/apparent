@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import type { MouseEvent } from 'react';
 import { Button } from '@apparent/ui/button';
 import {RetentionController, retentionFeedback, retentionForPreset, type RetentionOperation, type RetentionPolicy, type RetentionState, type RetentionResult, type UsageResult} from '@apparent/record-storage';
 import {retentionPorts} from './storage/transport';
@@ -36,10 +35,10 @@ export function Retention({ effectivePath, settings = false }: { effectivePath: 
   const controller = useRef<RetentionController | undefined>(undefined);
   const refresh = useRef<HTMLButtonElement>(null);
   const {result, usage, preset, busy, scanning, submission, operation} = state;
-  const {phase, canReset} = retentionFeedback(state);
+  const {phase, canReset, hasDraft} = retentionFeedback(state);
   const request = (operation: RetentionOperation) => controller.current?.request(operation);
-  const commit = (operation: 'save' | 'reset', event: MouseEvent<HTMLButtonElement>) => {
-    if (document.activeElement === event.currentTarget) refresh.current?.focus({preventScroll: true});
+  const commit = (operation: 'save' | 'reset') => {
+    refresh.current?.focus();
     void request(operation);
   };
   const measure = () => controller.current?.measure();
@@ -60,7 +59,7 @@ export function Retention({ effectivePath, settings = false }: { effectivePath: 
       <div className="settings-label"><h2 id="retention-label">Keep recordings</h2>
         <Help label="About keeping recordings">Media includes video, audio and full-size frames. The capture limit applies to the whole capture. Saving or resetting schedules cleanup, which waits until recording finishes.</Help>
         <Button ref={refresh} variant={showRefreshLabel ? 'secondary' : 'ghost'} size={showRefreshLabel ? 'default' : 'icon'}
-          className={showRefreshLabel ? 'aria-disabled:cursor-wait' : 'settings-help aria-disabled:cursor-wait'}
+          className={showRefreshLabel ? 'aria-disabled:cursor-wait focus:outline-2 focus:outline-offset-3 focus:outline-ring' : 'settings-help aria-disabled:cursor-wait'}
           aria-label="Refresh retention" title="Refresh retention" aria-disabled={busy || scanning}
           onClick={() => { if (!busy && !scanning) void request('read'); }}>
           <RefreshCw aria-hidden="true" />{showRefreshLabel && 'Refresh'}
@@ -76,21 +75,24 @@ export function Retention({ effectivePath, settings = false }: { effectivePath: 
       </p>
       {issue && <p role="alert">{issue}</p>}
       {snapshot && <>
-        <NativeSelect aria-labelledby="retention-label" className="settings-policy" disabled={busy || scanning} value={preset}
-          onChange={event => controller.current?.select(event.target.value)}>
-          <NativeSelectOption value="" disabled>Custom policy (config file)</NativeSelectOption>
-          {snapshot.retention.options.map(option => <NativeSelectOption key={option.id} value={option.id}>{retentionLabel(retentionForPreset(option.id))}</NativeSelectOption>)}
-        </NativeSelect>
-        {!snapshot.retention.preset && <p className="settings-metadata">Saved · {retentionLabel(snapshot.retention.effective)}</p>}
+        <p id="retention-saved" className="settings-metadata" role="status">Saved · {retentionLabel(snapshot.retention.effective)}</p>
+        <div className="flex items-baseline gap-2">
+          {hasDraft && <span id="retention-draft" className="settings-metadata shrink-0">Draft</span>}
+          <NativeSelect aria-labelledby="retention-label" aria-describedby={hasDraft ? 'retention-draft retention-saved' : 'retention-saved'}
+            className="settings-policy" disabled={busy || scanning} value={preset}
+            onChange={event => controller.current?.select(event.target.value)}>
+            <NativeSelectOption value="" disabled>Custom policy (config file)</NativeSelectOption>
+            {snapshot.retention.options.map(option => <NativeSelectOption key={option.id} value={option.id}>{retentionLabel(retentionForPreset(option.id))}</NativeSelectOption>)}
+          </NativeSelect>
+        </div>
         <p id="retention-cleanup" className="mt-2 font-medium text-pretty">Shorter limits can move existing files to the Trash.</p>
         {snapshot.custom && <p id="retention-defaults">{snapshot.defaults
           ? `Reset to default · ${retentionLabel(snapshot.defaults)}`
           : 'Update Apparent to preview and reset the default limits.'}</p>}
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Button aria-describedby="retention-cleanup" disabled={busy || scanning || !preset || preset === snapshot.retention.preset} onClick={event => commit('save', event)}>Save retention</Button>
+          <Button aria-describedby="retention-cleanup" disabled={busy || scanning || !hasDraft} onClick={() => commit('save')}>Save retention</Button>
           <Button variant="secondary" aria-describedby={snapshot.custom ? 'retention-defaults retention-cleanup' : 'retention-cleanup'}
-            disabled={busy || scanning || !canReset} onClick={event => commit('reset', event)}>Reset retention</Button>
-          <span className="settings-metadata" role="status">{preset && preset !== snapshot.retention.preset ? 'Unsaved changes' : ''}</span>
+            disabled={busy || scanning || !canReset} onClick={() => commit('reset')}>Reset retention</Button>
         </div>
       </>}
     </section>
@@ -123,7 +125,7 @@ export function Retention({ effectivePath, settings = false }: { effectivePath: 
           {snapshot.retention.options.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
         </select>
       </label>
-      <Button disabled={busy || scanning || !preset || preset === snapshot.retention.preset} onClick={() => void request('save')}>Save retention</Button>
+      <Button disabled={busy || scanning || !hasDraft} onClick={() => void request('save')}>Save retention</Button>
       <Button variant="outline" aria-describedby={snapshot.custom ? 'legacy-retention-defaults' : undefined}
         disabled={busy || scanning || !canReset} onClick={() => void request('reset')}>Reset retention</Button>
     </div>}

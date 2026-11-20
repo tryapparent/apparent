@@ -15,12 +15,13 @@ export type RetentionState = {
   submission?: {operation: 'save' | 'reset'; policy: RetentionPolicy};
 };
 
-export function retentionFeedback({result, submission, busy, operation}: RetentionState) {
+export function retentionFeedback({result, submission, busy, operation, preset}: RetentionState) {
   const snapshot = result?.status === 'connected' ? result : undefined;
   const phases = ['idle', 'submitting', 'checking', 'unconfirmed'] as const;
   return {
     phase: phases[feedback.submission_phase(!!submission, busy, operation === 'read')],
     canReset: feedback.reset_available(!!snapshot?.custom, !!snapshot?.defaults),
+    hasDraft: feedback.has_draft(!!preset, preset === snapshot?.retention.preset),
   };
 }
 
