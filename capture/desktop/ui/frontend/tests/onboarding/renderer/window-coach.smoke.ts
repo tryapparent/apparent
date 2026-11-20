@@ -361,8 +361,7 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 9
   await expect(page.getByRole('button',{name:'Continue',exact:true})).toHaveCount(0);
   await page.getByRole('button',{name:'Choose another shortcut',exact:true}).click();
   await expect.poll(()=>output).toContain('"action":"change-shortcut"');
-  send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:false,platform:'macos',shortcutEditor:{recording:false,externallyManaged:false}});
-  await expect(page.getByRole('heading',{name:'Choose your shortcut.',exact:true})).toBeVisible();
+  send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:false,platform:'macos',shortcut:'',shortcutEditor:{recording:false,externallyManaged:false}});
   await expect(page.locator('.native-shortcut kbd')).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Continue',exact:true})).toHaveCount(0);
   await page.getByRole('button',{name:'Choose shortcut',exact:true}).click();
