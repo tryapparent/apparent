@@ -344,7 +344,7 @@ jobs:
             "$GITHUB_WORKSPACE/homebrew-publish" "$RUNNER_TEMP/apparent.rb"
 
   frontend:
-    if: (inputs.channel == 'stable' || inputs.channel == 'mac-main' || inputs.channel == 'main') && github.repository == 'tryapparent/apparent'
+    if: (inputs.channel == 'stable' || inputs.channel == 'mac-main' || inputs.channel == 'main' || inputs.channel == 'mac-nightly') && github.repository == 'tryapparent/apparent'
     permissions:
       contents: read
       actions: read
@@ -401,7 +401,7 @@ jobs:
       APPARENT_SOURCE_ROOT: ${{ github.workspace }}/release-source
       APPARENT_PREVIEW_VERSION: ${{ inputs.version }}
       APPARENT_RELEASE_VERSION: ${{ inputs.version }}
-      APPARENT_RELEASE_CHANNEL: ${{ inputs.channel == 'stable' && 'stable' || inputs.channel == 'main' && 'main' || 'preview' }}
+      APPARENT_RELEASE_CHANNEL: ${{ inputs.channel == 'stable' && 'stable' || (inputs.channel == 'main' || inputs.channel == 'mac-nightly') && 'main' || 'preview' }}
       APPARENT_PREVIEW_BUILD_NUMBER: ${{ github.run_id }}.${{ github.run_attempt }}
       APPARENT_PREVIEW_NOTARIZE: 'true'
       APPARENT_APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}

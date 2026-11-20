@@ -12,7 +12,7 @@ export async function nightlyDownload(request = fetch): Promise<string> {
   const link = item?.match(/<link>([^<]+)<\/link>/)?.[1];
   if (
     !link ||
-    !/^https:\/\/github\.com\/tryapparent\/apparent\/releases\/download\/linux-main-v2-[a-f0-9]{40}\/Apparent-Nightly-\d+\.\d+\.\d+-arm64\.dmg$/.test(
+    !/^https:\/\/github\.com\/tryapparent\/apparent\/releases\/download\/(?:linux-main-v2|mac-nightly-v2)-[a-f0-9]{40}\/Apparent-Nightly-\d+\.\d+\.\d+-arm64\.dmg$/.test(
       link,
     )
   )

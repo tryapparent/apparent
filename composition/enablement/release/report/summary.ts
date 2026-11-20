@@ -1,12 +1,13 @@
 import { appendFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { repository, sha, versionPattern } from "../manifest.ts";
+import { releaseTag, repository, sha, versionPattern } from "../manifest.ts";
 
 type Job = { result: string; outputs: Record<string, string> };
 type Jobs = Record<
   "admit" | "linux" | "macos" | "publish" | "feed" | "cask",
   Job
->;
+> &
+  Partial<Record<"publish-linux" | "publish-nightly", Job>>;
 type Download = { name: string; size: number };
 
 const releaseUrl = `https://github.com/${repository}/releases/download`;
@@ -47,6 +48,28 @@ export async function releaseSummary(
   env: NodeJS.ProcessEnv,
   request = fetch,
 ): Promise<string> {
+  if (
+    env.RELEASE_CHANNEL === "main" &&
+    jobs["publish-linux"] &&
+    jobs["publish-nightly"]
+  ) {
+    const skipped = { result: "skipped", outputs: {} };
+    const [linux, nightly] = await Promise.all([
+      releaseSummary(
+        { ...jobs, macos: skipped, publish: jobs["publish-linux"] },
+        { ...env, RELEASE_CHANNEL: "linux-main" },
+        request,
+      ),
+      releaseSummary(
+        { ...jobs, linux: skipped, publish: jobs["publish-nightly"] },
+        { ...env, RELEASE_CHANNEL: "mac-nightly" },
+        request,
+      ),
+    ]);
+    return `## Linux Main\n\n${linux}\n## Mac Nightly\n\n${nightly}`;
+  }
+  if (env.RELEASE_CHANNEL === "linux-main" && jobs["publish-linux"])
+    jobs = { ...jobs, publish: jobs["publish-linux"] };
   const { admit, linux, macos, publish, feed, cask } = jobs;
   const channel = env.RELEASE_CHANNEL;
   const source = [
@@ -84,14 +107,22 @@ export async function releaseSummary(
     const validTag =
       channel === "stable"
         ? tag?.startsWith("v") && versionPattern.test(tag.slice(1))
-        : tag ===
-          `${channel === "mac-main" ? "mac" : "linux"}-main-v2-${source}`;
+        : !!source &&
+          tag ===
+            releaseTag(
+              channel === "mac-main" || channel === "mac-nightly"
+                ? channel
+                : "main",
+              "",
+              source,
+            );
     try {
       if (publish.outputs.sha !== source || !source || !validTag)
         throw Error("Missing verified publication identity");
       const links = await verifyLinks(tag, JSON.parse(downloads), request);
       const distribution =
-        channel === "main" && feed.result !== "success"
+        (channel === "main" || channel === "mac-nightly") &&
+        feed.result !== "success"
           ? `\n\nMac Nightly update discovery needs attention (feed: ${feed.result}). Retry the feed for the exact producer attempt.`
           : channel === "stable" &&
               (feed.result !== "success" || cask.result !== "success")

@@ -7,7 +7,7 @@ on:
       mode:
         description: Latest Main, on-demand Mac Main, paired Stable, verification, or retry
         type: choice
-        options: [main, mac-main, stable, verify, distribution, paired-main, linux-main]
+        options: [main, mac-main, stable, verify, distribution, paired-main, linux-main, mac-nightly]
         default: main
       source_sha:
         description: Exact verified main source (required for Mac Main)
@@ -84,8 +84,34 @@ jobs:
           VERIFY_RUN_ID: ${{ inputs.verification_run_id }}
           GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: node --experimental-strip-types composition/enablement/release/admit.ts "$SOURCE_SHA"
+  linux:
+    needs: admit
+    if: needs.admit.outputs.sha != '' && (inputs.mode == 'main' || inputs.mode == 'stable')
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release-linux.yml
+    with:
+      release_channel: ${{ inputs.mode }}
+      verification_run_id: ${{ needs.admit.outputs.verification_run_id }}
+      verification_run_attempt: ${{ needs.admit.outputs.verification_run_attempt }}
+      tag: ${{ needs.admit.outputs.tag }}
+      source_sha: ${{ needs.admit.outputs.sha }}
+      version: ${{ needs.admit.outputs.version }}
+    secrets: inherit
+  mac-signing:
+    needs: admit
+    if: needs.admit.outputs.sha != '' && (inputs.mode == 'main' || inputs.mode == 'mac-main' || inputs.mode == 'stable')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
       - name: Check signing configuration before scarce allocation
-        if: steps.candidate.outputs.sha != ''
         env:
           RELEASE_CHANNEL: ${{ inputs.mode }}
           APPLE_ENABLED: ${{ vars.MAC_APPLE_SIGNING_ENABLED }}
@@ -116,23 +142,8 @@ jobs:
           [[ "$NOTARY_ISSUER" =~ ^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$ ]]
           [[ "$SIGNING_IDENTITY" == "Developer ID Application: "*" ($APPLE_TEAM)" ]]
           node --experimental-strip-types composition/enablement/release/mac/metadata.ts key "$SPARKLE_PUBLIC"
-  linux:
-    needs: admit
-    if: needs.admit.outputs.sha != '' && (inputs.mode == 'main' || inputs.mode == 'stable')
-    permissions:
-      contents: write
-      actions: read
-    uses: ./.github/workflows/release-linux.yml
-    with:
-      release_channel: ${{ inputs.mode }}
-      verification_run_id: ${{ needs.admit.outputs.verification_run_id }}
-      verification_run_attempt: ${{ needs.admit.outputs.verification_run_attempt }}
-      tag: ${{ needs.admit.outputs.tag }}
-      source_sha: ${{ needs.admit.outputs.sha }}
-      version: ${{ needs.admit.outputs.version }}
-    secrets: inherit
   macos:
-    needs: admit
+    needs: [admit, mac-signing]
     if: needs.admit.outputs.sha != '' && (inputs.mode == 'main' || inputs.mode == 'mac-main' || inputs.mode == 'stable')
     permissions:
       contents: write
@@ -142,29 +153,29 @@ jobs:
     with:
       source_sha: ${{ needs.admit.outputs.sha }}
       version: ${{ needs.admit.outputs.version }}
-      tag: ${{ needs.admit.outputs.tag }}
-      channel: ${{ inputs.mode }}
+      tag: ${{ inputs.mode == 'main' && format('mac-nightly-v2-{0}', needs.admit.outputs.sha) || needs.admit.outputs.tag }}
+      channel: ${{ inputs.mode == 'main' && 'mac-nightly' || inputs.mode }}
       mac_runner: ${{ inputs.mac_runner }}
     secrets: inherit
   publish:
     needs: [admit, linux, macos]
     if: >-
-      !cancelled() && (inputs.mode == 'stable' || inputs.mode == 'main' || inputs.mode == 'mac-main' || inputs.mode == 'paired-main' || inputs.mode == 'linux-main') &&
+      !cancelled() && (inputs.mode == 'stable' || inputs.mode == 'mac-main' || inputs.mode == 'paired-main' || inputs.mode == 'mac-nightly') &&
       github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
       ((needs.admit.result == 'success' &&
         (inputs.mode == 'mac-main' && needs.macos.outputs.ready == 'true' ||
-         (inputs.mode == 'main' || inputs.mode == 'stable') && needs.linux.result == 'success' && needs.macos.outputs.ready == 'true')) ||
+         inputs.mode == 'stable' && needs.linux.result == 'success' && needs.macos.outputs.ready == 'true')) ||
        (inputs.candidate_run_id != '' && inputs.source_sha == '' && inputs.candidate_attempt != ''))
     runs-on: ubuntu-24.04
     permissions:
       contents: write
       actions: read
-    outputs:
+    outputs: &publication-outputs
       sha: ${{ steps.publication.outputs.source_sha }}
       tag: ${{ steps.publication.outputs.tag }}
       downloads: ${{ steps.publication.outputs.downloads }}
       superseded_tag: ${{ steps.publication.outputs.superseded_tag }}
-    steps:
+    steps: &publication-steps
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.workflow_sha }}
@@ -174,18 +185,43 @@ jobs:
         with:
           node-version: '22.23.0'
       - id: publication
-        name: Verify immutable producers and expose complete paired release
+        name: Verify immutable producers and publish installers
         env:
           GH_TOKEN: ${{ github.token }}
           PRODUCER_RUN: ${{ inputs.candidate_run_id || github.run_id }}
           PRODUCER_ATTEMPT: ${{ inputs.candidate_attempt || needs.admit.outputs.producer_attempt }}
-          RELEASE_CHANNEL: ${{ inputs.mode == 'main' && 'latest-main' || inputs.mode == 'linux-main' && 'main' || inputs.mode }}
+          RELEASE_CHANNEL: ${{ github.job == 'publish-linux' && 'main' || github.job == 'publish-nightly' && 'mac-nightly' || inputs.mode }}
         run: node --experimental-strip-types composition/enablement/release/publish.ts "$PRODUCER_RUN" "$PRODUCER_ATTEMPT"
-  feed:
-    needs: [admit, publish]
+  publish-linux:
+    needs: [admit, linux]
     if: >-
       !cancelled() && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
-      (((inputs.mode == 'stable' || inputs.mode == 'main') && needs.publish.result == 'success') || (inputs.mode == 'distribution' && inputs.candidate_run_id != '' && inputs.candidate_attempt != '' && inputs.source_sha == ''))
+      (inputs.mode == 'main' && needs.linux.result == 'success' ||
+       inputs.mode == 'linux-main' && inputs.candidate_run_id != '' && inputs.source_sha == '' && inputs.candidate_attempt != '')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    outputs: *publication-outputs
+    steps: *publication-steps
+  publish-nightly:
+    needs: [admit, macos]
+    if: >-
+      !cancelled() && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
+      inputs.mode == 'main' && needs.macos.outputs.ready == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    outputs: *publication-outputs
+    steps: *publication-steps
+  feed:
+    needs: [admit, publish, publish-nightly]
+    if: >-
+      !cancelled() && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
+      (inputs.mode == 'main' && needs['publish-nightly'].result == 'success' ||
+       (inputs.mode == 'stable' || inputs.mode == 'mac-nightly') && needs.publish.result == 'success' ||
+       inputs.mode == 'distribution' && inputs.candidate_run_id != '' && inputs.candidate_attempt != '' && inputs.source_sha == '')
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -203,7 +239,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PRODUCER_RUN: ${{ inputs.candidate_run_id || github.run_id }}
           PRODUCER_ATTEMPT: ${{ inputs.candidate_attempt || needs.admit.outputs.producer_attempt }}
-          MAC_FEED_CHANNEL: ${{ inputs.mode == 'main' && 'main' || 'stable' }}
+          MAC_FEED_CHANNEL: ${{ (inputs.mode == 'main' || inputs.mode == 'mac-nightly') && 'mac-nightly' || 'stable' }}
         run: node --experimental-strip-types composition/enablement/release/distribute.ts feed
   cask:
     needs: [admit, publish]
@@ -238,10 +274,10 @@ jobs:
         run: node --experimental-strip-types composition/enablement/release/mac/publication/cli.ts cask-publish "$GITHUB_WORKSPACE/homebrew-publish" "$RUNNER_TEMP/apparent-stable.rb"
   summary:
     name: Desktop release outcome
-    needs: [admit, linux, macos, publish, feed, cask]
+    needs: [admit, linux, macos, publish, publish-linux, publish-nightly, feed, cask]
     if: >-
       always() && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
-      (inputs.mode == 'main' || inputs.mode == 'mac-main' || inputs.mode == 'stable' || inputs.mode == 'paired-main' || inputs.mode == 'linux-main')
+      (inputs.mode == 'main' || inputs.mode == 'mac-main' || inputs.mode == 'stable' || inputs.mode == 'paired-main' || inputs.mode == 'linux-main' || inputs.mode == 'mac-nightly')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
