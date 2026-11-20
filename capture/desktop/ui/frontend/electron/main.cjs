@@ -94,7 +94,7 @@ const frame = require('./settings/frame.cjs');
 let pane = frame.initialSettingsPane(process.argv);
 const settings = !!pane;
 const hasSettingsParent = process.argv.includes('--settings-parent');
-const lip = new frame.LipHost();
+const lip = new frame.LipHost(process.env.APPARENT_MODELS_DIR);
 const settingsHosts = new frame.SettingsHosts(action => process.stdout.write(JSON.stringify(action) + '\n'));
 let generalState;
 const settingsHash = settings && pane !== 'storage' ? '#' + pane : '';
@@ -224,12 +224,7 @@ app.whenReady().then(() => {
     if (!canUseLip() || args.length !== arity) throw Error('Silent prompts unavailable');
     return handle(...args);
   });
-  bindLip('select', 0, () => lip.select(async () => {
-    const choice = await dialog.showOpenDialog(window, {
-      title: 'Choose a trusted Lipflow checkout to run', properties: ['openDirectory'],
-    });
-    return choice.canceled ? undefined : choice.filePaths[0];
-  }));
+  bindLip('ready', 0, () => lip.ready());
   bindLip('begin', 0, () => lip.begin());
   bindLip('decode', 1, bytes => lip.decode(bytes));
   bindLip('cancel', 0, () => lip.cancel());

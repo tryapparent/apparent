@@ -178,6 +178,7 @@ fn renderer_command(runtime: PathBuf, app: PathBuf) -> Command {
 
 fn command(runtime: PathBuf, app: PathBuf) -> Command {
     let mut command = renderer_command(runtime, app);
+    command.env("APPARENT_MODELS_DIR", crate::capture::engine::runtime::audio::transcription::speech::own_models_dir());
     command.arg("--settings-storage").arg("--settings-parent");
     command
 }

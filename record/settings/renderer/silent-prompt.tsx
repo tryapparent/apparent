@@ -5,7 +5,7 @@ import "./silent-prompt.css";
 declare global {
   interface Window {
     apparentLipPrompt: {
-      select(): Promise<boolean>;
+      ready(): Promise<boolean>;
       begin(): Promise<number>;
       decode(clip: Uint8Array): Promise<string>;
       cancel(): Promise<void>;
@@ -14,11 +14,11 @@ declare global {
   }
 }
 
-type State = "idle" | "setup" | "opening" | "recording" | "reading";
+type State = "idle" | "checking" | "opening" | "recording" | "reading";
 type Capture = { stream?: MediaStream; recorder?: MediaRecorder; timer?: number };
 
 export function SilentPrompt() {
-  const [state, setState] = useState<State>("idle");
+  const [state, setState] = useState<State>("checking");
   const [ready, setReady] = useState(false);
   const [text, setText] = useState("");
   const [notice, setNotice] = useState("");
@@ -40,18 +40,19 @@ export function SilentPrompt() {
     void bridge.cancel().catch(() => {});
   }
 
-  useEffect(() => cancel, []);
+  useEffect(() => {
+    let mounted = true;
+    void bridge.ready().then(value => {
+      if (mounted) setReady(value);
+    }).catch(() => {}).finally(() => { if (mounted) setState("idle"); });
+    return () => { mounted = false; cancel(); };
+  }, []);
 
-  async function select() {
-    setState("setup");
-    setNotice("");
-    try {
-      if (await bridge.select()) setReady(true);
-    } catch {
-      setNotice("Choose a Lipflow folder with its .venv and model files installed.");
-    } finally {
-      setState("idle");
-    }
+  async function refresh() {
+    setState("checking");
+    try { setReady(await bridge.ready()); }
+    catch { setReady(false); }
+    finally { setState("idle"); }
   }
 
   async function start() {
@@ -120,16 +121,16 @@ export function SilentPrompt() {
 
   return (
     <div className="silent-prompt">
-      {!ready && <p>Choose a trusted local Lipflow checkout with its models installed. The trial runs locally and deletes its temporary video after reading.</p>}
+      {!ready && <p>The lip-reading model isn’t ready. Install Lipflow in Apparent’s models folder, then check again.</p>}
       <video autoPlay muted playsInline hidden={state !== "recording"} ref={preview} aria-label="Camera preview" />
       <div className="silent-prompt-actions">
         <Button aria-disabled={actionUnavailable} onClick={() => {
           if (actionUnavailable) return;
           if (state === "recording") stop();
           else if (ready) void start();
-          else void select();
-        }}>{state === "recording" ? "Read my lips" : ready ? "Start camera" : "Choose Lipflow folder"}</Button>
-        {ready && state !== "idle" && <Button variant="secondary" onClick={() => { cancel(); setState("idle"); }}>Cancel</Button>}
+          else void refresh();
+        }}>{state === "recording" ? "Read my lips" : ready ? "Start camera" : "Check model again"}</Button>
+        {ready && state !== "idle" && state !== "checking" && <Button variant="secondary" onClick={() => { cancel(); setState("idle"); }}>Cancel</Button>}
         {text && <Button variant="secondary" onClick={async () => {
           try { await bridge.copy(); setNotice("Prompt copied."); }
           catch { setNotice("Couldn’t copy. Select the text to copy it."); }

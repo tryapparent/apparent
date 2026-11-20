@@ -22,7 +22,7 @@ contextBridge.exposeInMainWorld('apparentLabs', Object.freeze({
 }));
 
 contextBridge.exposeInMainWorld('apparentLipPrompt', Object.freeze({
-  select: () => ipcRenderer.invoke('apparent:lip-select'),
+  ready: () => ipcRenderer.invoke('apparent:lip-ready'),
   begin: () => ipcRenderer.invoke('apparent:lip-begin'),
   decode: bytes => ipcRenderer.invoke('apparent:lip-decode', bytes),
   cancel: () => ipcRenderer.invoke('apparent:lip-cancel'),
