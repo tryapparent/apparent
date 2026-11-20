@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { connections, Transport } from "./transport";
+import { connections, Transport } from "./transport.ts";
 import type { T3Environment } from "../settings/t3-contract";
 import policy from "../pure/t3-settings.mjs";
 

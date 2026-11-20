@@ -42,7 +42,7 @@ test('An unacknowledged write times out and allows a fresh read', async context 
   assert.deepEqual(await reading, {saved: false});
 });
 
-test('T3 has an independent acknowledged preference', ()=>{
+test('T3 has an independent acknowledged preference', async()=>{
  const messages:object[]=[],bridge=new AgentsPreferences(value=>messages.push(value));
  const saving=bridge.request(true,'t3');assert.deepEqual(messages,[{action:'agents-preference',request:1,enabled:true,setting:'t3'}]);
  bridge.receive({request:1,facts:{saved:false,t3Saved:true,t3Configured:false}});
