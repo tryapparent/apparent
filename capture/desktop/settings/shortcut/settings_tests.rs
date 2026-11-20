@@ -41,7 +41,8 @@ mod tests {
         let state = panel.about_state(&path);
         assert_eq!(state["updateChannel"], "main");
         assert_eq!(state["resumeTour"], true);
-        assert_eq!(state.as_object().unwrap().len(), 10, "Only the About wire contract is projected");
+        assert_eq!(state["restartPending"], false);
+        assert_eq!(state.as_object().unwrap().len(), 11, "Only the About wire contract is projected");
         for key in ["login", "shortcuts", "microphone", "permissions", "commandLine", "ingestToken"] {
             assert!(state.get(key).is_none(), "unrelated Settings field: {key}");
         }
@@ -179,18 +180,51 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn available_update_accepts_now_and_later_actions() {
+    fn staged_update_survives_dismissal_and_reopen_only_for_selected_channel() {
+        if std::env::var_os("APPARENT_TEST_STAGED_SETTINGS").is_none() {
+            let home = TempDir::new("staged-settings");
+            let module = module_path!().split_once("::").unwrap().1;
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", &format!("{module}::staged_update_survives_dismissal_and_reopen_only_for_selected_channel")])
+                .env("APPARENT_TEST_STAGED_SETTINGS", "1")
+                .env("HOME", &home.0)
+                .env("APPARENT_CONFIG", home.0.join("config.json"))
+                .env("APPIMAGE", home.0.join("Apparent.AppImage"))
+                .output().unwrap();
+            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stdout));
+            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+            return;
+        }
+        use crate::capture::desktop::linux::update::{record_running, set_channel_in};
+        let image = std::path::PathBuf::from(std::env::var_os("APPIMAGE").unwrap());
+        let marker = image.with_extension("AppImage.apparent-update.json");
+        std::fs::write(&image, b"synthetic AppImage").unwrap();
+        std::fs::write(&marker, r#"{"channel":"stable","id":"v1.0.0"}"#).unwrap();
+        record_running().unwrap();
         let dir = TempDir::new("update-choices");
         let mut host = fake(&dir);
+        host.path = crate::shared::handoff::default_config_path();
         let mut panel = Panel::default();
-        assert_eq!(panel.on(Action::UpdateNow, &mut host), Effect::None);
         panel.finish_update_check(Ok("installed; restart Apparent to use it"));
-        assert_eq!(panel.on(serde_json::from_str("{\"action\":\"update-later\"}").unwrap(), &mut host), Effect::None);
-        assert!(panel.view(&host).update_check.result.is_none());
         assert_eq!(panel.on(Action::UpdateNow, &mut host), Effect::None);
-        panel.finish_update_check(Ok("already installed; restart Apparent to use it"));
-        assert_eq!(panel.on(serde_json::from_str("{\"action\":\"update-now\"}").unwrap(), &mut host), Effect::RelaunchUpdate);
-        panel.finish_update_check(Err(("offline".into(), None)));
+        std::fs::write(&marker, r#"{"channel":"stable","id":"v2.0.0"}"#).unwrap();
+        assert_eq!(panel.about_state(&host.path)["restartPending"], true);
+        assert_eq!(panel.on(Action::UpdateLater, &mut host), Effect::None);
+        assert!(panel.view(&host).update_check.result.is_none());
+        assert_eq!(panel.on(Action::UpdateNow, &mut host), Effect::RelaunchUpdate);
+        panel.update_check.result = Some(UpdateResult::Failed);
+        panel.update_check.failure = Some(UpdateFailure::Restart);
+        assert_eq!(panel.on(Action::DismissUpdateCheck, &mut host), Effect::None);
+        assert_eq!(panel.on(Action::UpdateNow, &mut host), Effect::RelaunchUpdate);
+        let mut reopened = Panel::default();
+        assert_eq!(reopened.about_state(&host.path)["restartPending"], true);
+        set_channel_in(&host.path, "main").unwrap();
+        assert_eq!(reopened.about_state(&host.path)["restartPending"], false);
+        assert_eq!(reopened.on(Action::UpdateNow, &mut host), Effect::None);
+        set_channel_in(&host.path, "stable").unwrap();
+        assert_eq!(reopened.about_state(&host.path)["restartPending"], true);
+        record_running().unwrap();
+        assert_eq!(reopened.about_state(&host.path)["restartPending"], false);
         assert_eq!(panel.on(Action::UpdateNow, &mut host), Effect::None);
     }
 

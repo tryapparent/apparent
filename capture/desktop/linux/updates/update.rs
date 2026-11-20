@@ -142,7 +142,7 @@ fn check_cli_inner(progress: &dyn Fn(UpdateProgress)) -> Result<&'static str> {
     })
 }
 
-fn restart_matches_channel(status: &serde_json::Value) -> bool {
+pub(crate) fn restart_matches_channel(status: &serde_json::Value) -> bool {
     status["pendingRestart"] == true && status["installed"]["channel"] == status["channel"]
 }
 

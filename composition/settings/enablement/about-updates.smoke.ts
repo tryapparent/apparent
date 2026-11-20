@@ -11,7 +11,8 @@ const frontend = fileURLToPath(
 );
 const load = createRequire(join(frontend, "package.json"));
 const { _electron: electron, expect } = load("@playwright/test");
-const warning = "This may install an earlier version.";
+const warning =
+  "Installs the latest release from this channel, which may be an earlier version.";
 const version = "Version 1.2.3 · a1b2c3d +modified";
 
 test("About makes channel installation, restart and recovery distinct", async () => {
@@ -22,11 +23,15 @@ test("About makes channel installation, restart and recovery distinct", async ()
   });
   try {
     const page = await application.firstWindow();
+    await expect(page.getByText("Loading update status…")).toBeVisible();
     let output = "";
     application.process().stdout?.on("data", (data: Buffer) => {
       output += data.toString();
     });
-    const publish = (updateCheck: object, linux = true) =>
+    const publish = (
+      updateCheck: object,
+      { linux = true, restartPending = false, updateChannel = "stable" } = {},
+    ) =>
       application.evaluate(
         ({ BrowserWindow }, value) => {
           BrowserWindow.getAllWindows()[0].webContents.send(
@@ -41,7 +46,8 @@ test("About makes channel installation, restart and recovery distinct", async ()
           mac: !linux,
           updates: true,
           mainUpdates: linux,
-          updateChannel: "stable",
+          updateChannel,
+          restartPending,
           updateCheck,
         },
       );
@@ -54,9 +60,9 @@ test("About makes channel installation, restart and recovery distinct", async ()
         .poll(() => output.slice(start).includes(`"action":"${action}"`))
         .toBe(true);
     };
-    const channel = page.getByRole("combobox", { name: "Update channel" });
+    const channel = page.getByRole("combobox", { name: "Release channel" });
     const install = page.getByRole("button", {
-      name: "Install latest channel release",
+      name: "Install latest release",
     });
     const restart = page.getByRole("button", { name: "Restart now" });
     const proof = process.env.APPARENT_SETTINGS_PROOF;
@@ -85,13 +91,15 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
         await publish(idle);
         await expect(install).toHaveAccessibleDescription(warning);
-        await expect(channel).toHaveAccessibleDescription(warning);
+        await expect(channel.locator("option[value=main]")).toHaveText("Development builds");
         await page.evaluate(() => document.fonts.ready.then(() => {}));
         await page.locator(".settings-content").evaluate((el) => {
           el.scrollTop = 0;
         });
         await capture("idle");
-        await channel.focus();
+        await page.getByRole("button", { name: "Copy version" }).focus();
+        await page.keyboard.press("Tab");
+        await expect(channel).toBeFocused();
         await page.keyboard.press("Tab");
         await expect(install).toBeFocused();
         await pressForAction("check-for-updates");
@@ -104,7 +112,9 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await expect(restart).toHaveCount(0);
         await capture("checking");
 
-        await publish({ checking: false, result: "available" });
+        const offered = { checking: false, result: "available" };
+        const pending = { restartPending: true };
+        await publish(offered, pending);
         await expect(
           page.getByRole("heading", { name: "Restart required" }),
         ).toBeVisible();
@@ -115,14 +125,25 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await expect(page.getByText(warning)).toHaveCount(0);
         await expect(install).toHaveCount(0);
         await capture("restart");
-        await restart.focus();
+        const later = page.getByRole("button", { name: "Restart later" });
+        await channel.focus();
+        await page.keyboard.press("Tab");
+        await expect(restart).toBeFocused();
+        await page.keyboard.press("Tab");
+        await expect(later).toBeFocused();
+        await pressForAction("update-later");
+        await publish(idle, pending);
+        await expect(later).toHaveCount(0);
+        await expect(restart).toBeFocused();
+        await capture("restart-later");
         await pressForAction("update-now");
 
-        await publish({
+        const restartFailed = {
           checking: false,
           result: "failed",
           failure: "restart",
-        });
+        };
+        await publish(restartFailed, pending);
         const restartError = page.getByRole("alertdialog", {
           name: "Couldn’t restart Apparent",
         });
@@ -132,10 +153,30 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await expect(page.getByText(warning)).toHaveCount(0);
         await capture("restart-failure");
         await pressForAction("update-now");
-        await pressForAction("dismiss-update-check", "Escape");
-        await publish(idle);
-        await expect(install).toBeFocused();
+        if (width === 640) {
+          await page.keyboard.press("Tab");
+          await expect(restartError.getByRole("button", { name: "Close" })).toBeFocused();
+          await pressForAction("dismiss-update-check");
+        } else {
+          await pressForAction("dismiss-update-check", "Escape");
+        }
+        await publish(idle, pending);
+        await expect(restartError).toBeHidden();
+        await expect(restart).toBeFocused();
         await capture("restart-dismissed");
+        await pressForAction("update-now");
+        await publish(idle, { updateChannel: "main" });
+        await expect(channel).toHaveValue("main");
+        await expect(restart).toHaveCount(0);
+        await expect(install).toBeVisible();
+        await capture("development");
+        await publish(offered);
+        await expect(channel).toHaveValue("stable");
+        await expect(restart).toHaveCount(0);
+        await expect(later).toHaveCount(0);
+        await publish(restartFailed);
+        await expect(restartError).toBeHidden();
+        await expect(install).toBeVisible();
 
         await publish({
           checking: false,
@@ -145,7 +186,7 @@ test("About makes channel installation, restart and recovery distinct", async ()
         const downloadError = page.getByRole("alertdialog", {
           name: "Download failed",
         });
-        const retry = downloadError.getByRole("button", { name: "Try again" });
+        const retry = downloadError.getByRole("button", { name: "Retry update" });
         await expect(retry).toBeFocused();
         await page.keyboard.press("Tab");
         await expect(
@@ -168,9 +209,16 @@ test("About makes channel installation, restart and recovery distinct", async ()
         ).toHaveAttribute("value", "25");
         await expect(downloadError).not.toBeVisible();
         await capture("download-retry");
+        await publish({ checking: false, result: "failed", failure: "verification" });
+        const verification = page.getByRole("alertdialog", {
+          name: "Couldn’t verify the download",
+        });
+        await expect(verification.getByRole("button", { name: "Retry update" })).toBeFocused();
+        await capture("verification-failure");
+        await pressForAction("check-for-updates");
       }
     }
-    await publish(idle, false);
+    await publish(idle, { linux: false });
     await expect(
       page.getByRole("button", { name: "Check for updates" }),
     ).toBeVisible();

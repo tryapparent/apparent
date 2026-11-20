@@ -26,8 +26,18 @@ await bendScratch(async (destination) => {
     for (const mac of [false, true])
       for (const nightly of [false, true])
         assert.equal(policy.show_nightly_download(mac, nightly), mac && !nightly);
-    assert.equal(actions.release_action(true), "Install latest channel release");
+    assert.equal(actions.release_action(true), "Install latest release");
     assert.equal(actions.release_action(false), "Check for updates");
+    for (const pending of [false, true])
+      for (const checking of [false, true])
+        for (const offer of [false, true]) {
+          const restart = actions.show_restart(pending, checking);
+          assert.equal(restart, pending && !checking);
+          assert.equal(actions.show_restart_later(restart, offer), pending && !checking && offer);
+          assert.equal(actions.show_failure(true, true, restart), restart);
+          assert.equal(actions.show_failure(true, false, restart), true);
+          assert.equal(actions.show_failure(false, false, restart), false);
+        }
   `,
     ],
     { cwd: destination, stdio: "inherit" },

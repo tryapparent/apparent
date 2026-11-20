@@ -17,7 +17,7 @@ test('installed About projects parent state and bounds actions', async () => {
     let output = '';
     application.process().stdout?.on('data', data => { output += data.toString(); });
     const state = { type: 'about-state', version: '1.2.3 · a1b2c3d +modified', updates: true, linux: true,
-      mainUpdates: true, updateChannel: 'main', updateCheck: { checking: false, result: 'available' } };
+      mainUpdates: true, updateChannel: 'main', restartPending: true, updateCheck: { checking: false, result: 'available' } };
     const publish = (value: unknown) => application.evaluate(({ BrowserWindow }, value) => {
       BrowserWindow.getAllWindows()[0].webContents.send('apparent:about-state', value);
     }, value);
@@ -49,7 +49,7 @@ test('installed About projects parent state and bounds actions', async () => {
     await expect.poll(() => output.includes('"action":"tour"')).toBe(true);
     assert.equal(output.includes('"action":"update-now"'), false, 'Enter on a focused action must not accept an update');
     await expect(page.getByRole('button', { name: 'Restart now', exact: true })).toBeVisible();
-    const channel = page.getByRole('combobox', {name: 'Update channel'});
+    const channel = page.getByRole('combobox', {name: 'Release channel'});
     await channel.focus();
     await expect(channel).toBeFocused();
     // This Linux state is exercised on both hosts. Native select keyboard maps
@@ -59,7 +59,7 @@ test('installed About projects parent state and bounds actions', async () => {
     assert.equal(output.includes('"action":"dismiss-update-check"'), false,
       'the native channel mutation also clears the old offer');
     await page.keyboard.press('Escape');
-    await publish({...state, resumeTour: true, updateChannel: 'stable', updateCheck: {checking: false, result: null}});
+    await publish({...state, resumeTour: true, updateChannel: 'stable', restartPending: false, updateCheck: {checking: false, result: null}});
     await expect(channel).toHaveValue('stable');
     for (const width of [720, 640]) {
       await application.evaluate(({BrowserWindow}, width) => { const window = BrowserWindow.getAllWindows()[0]; window.setResizable(true); window.setSize(width, 530); }, width);
@@ -145,14 +145,14 @@ test('installed About projects parent state and bounds actions', async () => {
       ['busy', 'Update in progress'],
       ['rateLimited', 'GitHub limited update checks'],
       ['download', 'Download failed'],
-      ['verification', 'Update check failed'],
+      ['verification', 'Couldn’t verify the download'],
       ['installation', 'Couldn’t install the update'],
       ['restart', 'Couldn’t restart Apparent'],
     ]) {
       await publish({...state, updateCheck: {checking: false, result: 'failed', failure}});
       const dialog = page.getByRole('alertdialog', {name: title});
       await expect(dialog).toBeVisible();
-      await expect(dialog.getByRole('button', {name: failure === 'restart' ? 'Retry restart' : 'Try again'})).toBeFocused();
+      await expect(dialog.getByRole('button', {name: failure === 'restart' ? 'Retry restart' : ['download', 'verification', 'installation'].includes(failure) ? 'Retry update' : 'Try again'})).toBeFocused();
       if (process.env.APPARENT_SETTINGS_PROOF && failure === 'download') {
         await page.screenshot({ animations: 'disabled', path: path.join(process.env.APPARENT_SETTINGS_PROOF, 'update-linux-download-failure.png') });
       }
@@ -163,7 +163,7 @@ test('installed About projects parent state and bounds actions', async () => {
     await page.keyboard.press('Escape');
     await expect.poll(() => output.slice(actionStart).includes('"action":"dismiss-update-check"')).toBe(true);
     for (const result of ['current', 'failed', null] as const) {
-      await publish({ ...state, linux: false, mainUpdates: false, updateCheck: { checking: false, result } });
+      await publish({ ...state, linux: false, mainUpdates: false, restartPending: false, updateCheck: { checking: false, result } });
       if (result) await expect(page.getByRole('heading', { name: result === 'current' ? 'No update available' : 'Update check failed', exact: true })).toBeVisible();
       else {
         await expect(page.getByRole('heading', { name: 'Check for updates', exact: true })).toHaveCount(0);
@@ -187,9 +187,9 @@ test('installed About projects parent state and bounds actions', async () => {
         }
       }
     }
-    await publish({ ...state, updates: false, updateCheck: { checking: false, result: null } });
+    await publish({ ...state, updates: false, restartPending: false, updateCheck: { checking: false, result: null } });
     await expect(page.getByRole('heading', { name: 'Updates unavailable' })).toBeVisible();
-    await expect(page.getByRole('button', { name: "Install latest channel release" })).toBeDisabled();
+    await expect(page.getByRole('button', { name: "Install latest release" })).toBeDisabled();
     await expect(page.getByText('Update checks work when Apparent runs from an AppImage.', {exact: true})).toBeVisible();
     if (process.env.APPARENT_SETTINGS_PROOF) await page.screenshot({path: path.join(process.env.APPARENT_SETTINGS_PROOF, 'about-unavailable.png')});
     await page.getByRole('button', { name: 'Copy version', exact: true }).click();
