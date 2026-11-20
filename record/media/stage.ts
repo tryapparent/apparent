@@ -47,16 +47,19 @@ try {
     assert.equal(manifest.platform, process.platform); assert.equal(manifest.arch, process.arch);
     assert.equal(manifest.capability, 'movie-probe/1'); assert.equal(manifest.sdkVersion, pin.sdkVersion);
     for (const capability of pin.capabilities) assert(manifest.capabilities.includes(capability));
-    assert.deepEqual(manifest.files.map((entry: {path: string}) => entry.path).sort(), names.filter(n => n !== 'manifest.json').sort());
-    for (const entry of manifest.files) {
+    const files: {path: string; mode: number; sha256: string}[] = manifest.files;
+    assert.deepEqual(files.map(entry => entry.path).sort(), names.filter(n => n !== 'manifest.json').sort());
+    for (const entry of files) {
       assert.equal(basename(entry.path), entry.path);
       const file = join(directory, entry.path), stat = lstatSync(file);
       assert(stat.isFile()); assert.equal(stat.mode & 0o777, entry.mode);
       assert.equal(checksum(file), entry.sha256);
     }
+    return files;
   };
   let native: string;
-  try { verify(cached); native = cached; }
+  let files: ReturnType<typeof verify>;
+  try { files = verify(cached); native = cached; }
   catch {
     const url = `https://github.com/tryapparent/apparent/releases/download/engine-media-${pin.commit}/${base}.tar.gz`;
     const response = await fetch(url, {signal: AbortSignal.timeout(60_000)});
@@ -70,8 +73,8 @@ try {
     assert.deepEqual(entries.slice().sort(), [base + '/', ...names.map(n => base + '/' + n)].sort());
     const types = execFileSync('tar', ['-tvzf', archive], {encoding: 'utf8'}).trim().split('\n');
     assert(types.every(line => /^[-d]/.test(line)), 'Unexpected Engine archive member');
-    execFileSync('tar', ['-xzf', archive, '-C', temporary]);
-    native = join(temporary, base); verify(native);
+    execFileSync('tar', ['-xzf', archive, '-p', '-C', temporary]);
+    native = join(temporary, base); files = verify(native);
   }
   const prepared = join(temporary, 'prepared'); mkdirSync(prepared, {mode: 0o700});
   cpSync(native, join(prepared, 'native'), {recursive: true});
@@ -94,6 +97,7 @@ try {
   mkdirSync(dirname(out), {recursive: true});
   // Build output only; the installed app is staged/signed separately, never hot-updated.
   cpSync(prepared, out, {recursive: true});
+  for (const {path, mode} of files) chmodSync(join(out, 'native', path), mode);
   chmodSync(join(out, 'native'), 0o755);
   console.log(`Staged Record media with pinned Engine ${pin.commit} (${key})`);
 } finally { rmSync(temporary, {recursive: true, force: true}); }
