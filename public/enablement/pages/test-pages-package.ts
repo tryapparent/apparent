@@ -11,8 +11,10 @@ function fixture() {
   const outer = mkdtempSync(join(tmpdir(), 'pages-package-'))
   const root = join(outer, 'public/site')
   mkdirSync(join(root, '../enablement/pages'), { recursive: true })
+  mkdirSync(join(root, '../enablement/artifact'), { recursive: true })
   mkdirSync(join(root, 'dist-apparent/assets'), { recursive: true })
   cpSync(join(site, '../enablement/pages/prepare-pages.mjs'), join(root, '../enablement/pages/prepare-pages.mjs'))
+  cpSync(join(site, '../enablement/artifact/agent-paths.ts'), join(root, '../enablement/artifact/agent-paths.ts'))
   // Leftover snapshot files have no authority over the source build.
   mkdirSync(join(root, 'published-homepage'))
   writeFileSync(join(root, 'published-homepage/index.html'), 'stale snapshot')

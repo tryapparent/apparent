@@ -83,11 +83,9 @@ export function agentFiles(): Record<string, string> {
   const processing = guide("capture/engine/docs/guides/processing.md")
   const agents = guide("capture/agent/docs/usage.md")
   const skill = repo("capture/agent/skills/apparent/SKILL.md")
-  const { version, macos } = release()
-  const releaseNote = version ? `Version ${version}, for Apple silicon Mac, macOS ${macos} or later.` : "For platform-specific stable and preview builds, see official GitHub releases."
   const tagline = readme.match(/^### (.+)$/m)![1]
   const intro = readme.split(/^### .+$/m)[1].split("\n\n").filter((p) => p.trim())[0].trim()
-  const summary = `> ${tagline} Apparent records your screen, voice, clicks and drawings and packs them into a bundle an AI coding agent can read. ${releaseNote}`
+  const summary = `> ${tagline} Apparent is an open-source screen recorder for macOS and Linux. It turns your screen, voice, clicks and drawings into annotated keyframes, a timed transcript, and an interaction timeline for a coding agent.`
 
   const llms = `# Apparent
 
@@ -97,6 +95,7 @@ ${intro}
 
 ## Install
 
+- [Agent quickstart](${SITE}/agents/): choose your install path and see a sample UI bug handoff.
 - [Official headless CLI installation](${REPO}/blob/main/capture/agent/docs/installation.md): Linux architecture selection, checksums and extraction without FUSE or GUI launch. Installing a skill does not install the executable.
 - [Official releases](${REPO}/releases): select the platform and stable/preview channel explicitly; Mac appcast availability does not describe Linux builds.
 
@@ -121,7 +120,6 @@ ${commands(skill).join("\n")}
 
 - [README](${REPO}#readme): the project introduction and links to recording, processing and development guides. Captures are copied, not sent to sessions.
 - [Source code](${REPO}): Rust and Swift, MIT licensed.
-- [Appcast](${SITE}/appcast.xml): the Sparkle update feed.
 `
 
   const full = `# Apparent
@@ -131,6 +129,7 @@ ${summary}
 ${intro}
 
 Website: ${SITE}
+Agent quickstart: ${SITE}/agents/
 Source: ${REPO}
 Download: ${REPO}/releases
 Headless CLI installation: ${REPO}/blob/main/capture/agent/docs/installation.md

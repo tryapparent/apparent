@@ -39,6 +39,12 @@ frog QR interaction. Simon approved publication on 2026-11-08 after comparison
 confirmed it matched the live site. No snapshot or bundle overlay replaces the
 source build. Marketing analytics was subsequently removed; see Website analytics below.
 
+The homepage links to the static agent quickstart at `/agents/`. The Public
+package also admits the generated `/llms.txt`, `/llms-full.txt`, and `/skill.md`.
+The capture sitemap lists the homepage and quickstart on its own host. Previews
+and production use the same generated agent files and the Pages publisher
+checks each route and the sitemap byte-for-byte on both origins.
+
 The sealed `.build/website` artifact contains only `dist-apparent`, the isolated
 Pages configuration and a revision/checksum manifest. The publisher revalidates its
 complete inventory, approved movie chunks, metadata and revision before staging it.
