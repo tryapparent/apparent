@@ -39,15 +39,9 @@ package and a new consented occurrence; historical reports cannot be enriched.
 
 ## Recording
 
-Recording starts with a compact task index for setup, during recording,
-and after recording, with a direct Permissions link. Its links open the
-owning preference and focus its heading. The Record shortcut value stays
-in General, where the parent admits shortcut readback. The Send to T3 task
-opens the T3 preference in Agents and focuses its heading. Agents shows
-the computer list and setup actions only while sending is enabled. The parent
-still admits each page and the existing owner loads and saves its settings.
-Reverting the index and heading links restores the previous navigation
-without a preference migration.
+Recording opens directly to its microphone and recording controls. The Record
+shortcut is in General, T3 sending is in Agents, and experimental preferences
+are in Labs.
 
 Recording joins General, About, Agents, Labs and eligible Storage routes in
 the same Electron document. The native Permissions sidebar routes Recording
