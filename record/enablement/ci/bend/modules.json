@@ -5,6 +5,7 @@
     "media/src/assembly/frame-label.bend",
     "media/src/export/quiet-export.bend",
     "settings/recording-policy.bend",
+    "settings/lip-policy.bend",
     "settings/permissions/permission-policy.bend",
     "pill/pill-state.bend",
     "notes/double-shift.bend"

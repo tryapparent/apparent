@@ -47,6 +47,7 @@ await build({
   outfile: `${root}/electron/connect.cjs`, bundle: true, platform: 'node', format: 'cjs', target: 'node22',
 });
 
+execFileSync(process.execPath, [path.resolve(root, '../../../../record/settings/build.ts')], { stdio: 'inherit' });
 await build({entryPoints:[`${root}/electron/settings/frame.cts`],outfile:`${root}/electron/settings/frame.cjs`,bundle:true,platform:'node',format:'cjs',target:'node22'});
 
 await build({entryPoints:[`${root}/electron/settings/t3.ts`],outfile:`${root}/electron/settings/t3.cjs`,bundle:true,platform:'node',format:'cjs',target:'node22'});
