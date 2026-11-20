@@ -57,6 +57,44 @@ const cache = new Map<string, Language>();
 let initialized = false;
 const swiftCommentTask = "apparent-swift-comments";
 type EmbeddedHtml = { markup?: string };
+const connectMigration =
+  /^connect\/service\/migrations\/(?:baseline\/)?\d{4}\.sql$/;
+let sqliteParser:
+  | Promise<import("@willbooster/web-tree-sitter").Parser>
+  | undefined;
+
+async function createSqliteParser() {
+  const { Parser, Language } = await import("@willbooster/web-tree-sitter");
+  await Parser.init();
+  const language = await Language.load(
+    fileURLToPath(
+      import.meta.resolve(
+        "@willbooster/tree-sitter-sql/tree-sitter-sqlite.wasm",
+      ),
+    ),
+  );
+  const parser = new Parser();
+  parser.setLanguage(language);
+  return parser;
+}
+
+async function sqliteComments(file: string, text: string): Promise<string[]> {
+  if (text.includes("\0"))
+    throw new Error(`${file}: invalid NUL in SQLite syntax`);
+  const parser = await (sqliteParser ??= createSqliteParser());
+  const tree = parser.parse(text);
+  try {
+    if (!tree || tree.rootNode.hasError)
+      throw new Error(
+        `${file}: syntax parser cannot safely classify SQLite comments`,
+      );
+    return tree.rootNode
+      .descendantsOfType("comment")
+      .map((node) => node.text.replace(/\r$/, ""));
+  } finally {
+    tree?.delete();
+  }
+}
 
 function swiftComments(file: string, text: string): Promise<string[]> {
   return new Promise((resolve, reject) => {
@@ -103,6 +141,7 @@ export async function comments(
   }
   const ext = path.posix.extname(file).slice(1).toLowerCase();
   if (ext === "bend") return bendComments(file, text);
+  if (connectMigration.test(file)) return sqliteComments(file, text);
   if (
     noncode.has(ext) ||
     ["LICENSE", "NOTICE"].includes(path.posix.basename(file))

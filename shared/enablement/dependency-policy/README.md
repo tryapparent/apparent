@@ -103,10 +103,10 @@ Pinned Tree-sitter WASM (including tree-sitter-bash 0.25.1 for the current runti
 C++, TOML, JSON/JSONC and HTML without embedded code. For HTML with embedded code, staged
 verification permits plain text edits only when both parses preserve the entire source outside
 plain text nodes, including embedded scripts, styles and markup. Changes to those protected
-bytes still fail closed. YAML uses its pinned CST parser. Swift raw strings and unknown
-source formats currently fail safely. Markdown,
-plain text, LICENSE/NOTICE, listed binary/media/font suffixes and lock data are non-code; there is no
-blanket generated/vendor comment skip. See comments.ts for exact grammar/suffix mappings.
+bytes still fail closed. YAML uses its pinned CST parser. Connect D1 migrations use
+a pinned SQLite Tree-sitter parser. Swift raw strings and unknown formats fail safely.
+Markdown, plain text, LICENSE/NOTICE, listed media/font suffixes and lock data are
+non-code. See comments.ts for exact mappings.
 
 Rust retains its primary grammar and retries a rejected parse with the locked `tree-sitter-wasms` Rust grammar,
 which handles identifiers named `raw`. Only a complete error-free parse supplies comments; both grammars failing
