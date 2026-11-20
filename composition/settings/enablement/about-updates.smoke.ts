@@ -13,6 +13,9 @@ const load = createRequire(join(frontend, "package.json"));
 const { _electron: electron, expect } = load("@playwright/test");
 const warning =
   "Installing can replace your current version with an earlier one.";
+const stagedStable = "Stable release v2.0.0 is installed.";
+const unconfirmed =
+  "Apparent couldn’t confirm an installed update. To try again, install from the selected channel.";
 const version = "Version 1.2.3 · a1b2c3d +modified";
 
 test("About makes channel installation, restart and recovery distinct", async () => {
@@ -30,7 +33,19 @@ test("About makes channel installation, restart and recovery distinct", async ()
     });
     const publish = (
       updateCheck: object,
-      { linux = true, restartPending = false, updateChannel = "stable", updates = true } = {},
+      {
+        linux = true,
+        restartPending = false,
+        stagedRelease = null,
+        updateChannel = "stable",
+        updates = true,
+      }: {
+        linux?: boolean;
+        restartPending?: boolean;
+        stagedRelease?: { channel: string; id: string } | null;
+        updateChannel?: string;
+        updates?: boolean;
+      } = {},
     ) =>
       application.evaluate(
         ({ BrowserWindow }, value) => {
@@ -48,6 +63,7 @@ test("About makes channel installation, restart and recovery distinct", async ()
           mainUpdates: linux,
           updateChannel,
           restartPending,
+          stagedRelease,
           updateCheck,
         },
       );
@@ -118,14 +134,15 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await capture("checking");
 
         const offered = { checking: false, result: "available" };
-        const pending = { restartPending: true };
+        const pending = {
+          restartPending: true,
+          stagedRelease: { channel: "stable", id: "v2.0.0" },
+        };
         await publish(offered, pending);
         await expect(
           page.getByRole("heading", { name: "Restart required" }),
         ).toBeVisible();
-        await expect(
-          page.getByText("An update is installed. Restart Apparent to use it."),
-        ).toBeVisible();
+        await expect(restart).toHaveAccessibleDescription(stagedStable);
         await expect(page.getByText(version)).toBeVisible();
         await expect(page.getByText(warning)).toHaveCount(0);
         await expect(install).toHaveCount(0);
@@ -140,6 +157,7 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await publish(idle, pending);
         await expect(later).toHaveCount(0);
         await expect(restart).toBeFocused();
+        await expect(restart).toHaveAccessibleDescription(stagedStable);
         await capture("restart-later");
         await page.keyboard.press("Shift+Tab");
         await expect(channel).toBeFocused();
@@ -155,6 +173,7 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await expect(channel).toHaveValue("main");
         await expect(install).toHaveCount(0);
         await expect(restart).toBeInViewport({ ratio: 1 });
+        await expect(restart).toHaveAccessibleDescription(stagedStable);
         await capture("restart-after-channel-change");
         await page.keyboard.press("Tab");
         await expect(restart).toBeFocused();
@@ -188,8 +207,18 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await publish(idle, changedChannelWhilePending);
         await expect(restartError).toBeHidden();
         await expect(restart).toBeFocused();
+        await expect(restart).toHaveAccessibleDescription(stagedStable);
         await capture("restart-dismissed");
         await pressForAction("update-now");
+        await publish(idle, {
+          restartPending: true,
+          stagedRelease: { channel: "main", id: "a".repeat(40) },
+        });
+        await expect(restart).toHaveAccessibleDescription(
+          "A Development build is installed.",
+        );
+        await expect(channel).toHaveValue("stable");
+        await capture("restart-development-source-stable");
         await publish(idle, { updateChannel: "main" });
         await expect(channel).toHaveValue("main");
         await expect(restart).toHaveCount(0);
@@ -199,13 +228,23 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await expect(channel).toHaveValue("stable");
         await expect(restart).toHaveCount(0);
         await expect(later).toHaveCount(0);
-        await publish(restartFailed);
-        await expect(restartError).toBeHidden();
-        await expect(page.getByRole("alert")).toHaveText(
-          "Apparent couldn’t restart. A staged update couldn’t be confirmed.",
-        );
-        await expect(install).toBeVisible();
-        await capture("restart-without-receipt");
+        for (const updateChannel of ["stable", "main"]) {
+          await publish(restartFailed, { updateChannel });
+          await expect(restartError).toBeHidden();
+          await expect(page.getByRole("alert")).toHaveText(unconfirmed);
+          const recovery = page.getByRole("button", {
+            name: updateChannel === "main"
+              ? "Install latest Development build"
+              : "Install latest Stable release",
+          });
+          await expect(recovery).toHaveAccessibleDescription(`${unconfirmed} ${warning}`);
+          await channel.focus();
+          await page.keyboard.press("Tab");
+          await expect(recovery).toBeFocused();
+          await expect(recovery).toBeInViewport({ ratio: 1 });
+          await capture(`restart-without-receipt-${updateChannel}`);
+          await pressForAction("check-for-updates");
+        }
 
         await publish(idle, { updates: false });
         await expect(page.getByRole("heading", { name: "Updates unavailable" })).toBeVisible();

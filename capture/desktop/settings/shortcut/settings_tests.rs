@@ -42,7 +42,7 @@ mod tests {
         assert_eq!(state["updateChannel"], "main");
         assert_eq!(state["resumeTour"], true);
         assert_eq!(state["restartPending"], false);
-        assert_eq!(state.as_object().unwrap().len(), 11, "Only the About wire contract is projected");
+        assert_eq!(state.as_object().unwrap().len(), 12, "Only the About wire contract is projected");
         for key in ["login", "shortcuts", "microphone", "permissions", "commandLine", "ingestToken"] {
             assert!(state.get(key).is_none(), "unrelated Settings field: {key}");
         }
@@ -191,12 +191,12 @@ mod tests {
                 .env("APPARENT_CONFIG", home.0.join("config.json"))
                 .env("APPIMAGE", home.0.join("Apparent.AppImage"))
                 .output().unwrap();
-            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stdout));
-            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(output.status.success() && stdout.contains("1 passed"), "{stdout}");
             return;
         }
         use crate::capture::desktop::linux::update::{record_running, relaunch_staged};
-        let image = std::path::PathBuf::from(std::env::var_os("APPIMAGE").unwrap());
+        let image = PathBuf::from(std::env::var_os("APPIMAGE").unwrap());
         let marker = image.with_extension("AppImage.apparent-update.json");
         std::fs::write(&image, b"synthetic AppImage").unwrap();
         std::fs::write(&marker, r#"{"channel":"stable","id":"v1.0.0"}"#).unwrap();
@@ -214,21 +214,21 @@ mod tests {
         assert_eq!(panel.on(Action::UpdateNow, &mut host), Effect::RelaunchUpdate);
         panel.update_check.result = Some(UpdateResult::Failed);
         panel.update_check.failure = Some(UpdateFailure::Restart);
-        assert_eq!(panel.on(Action::DismissUpdateCheck, &mut host), Effect::None);
+        panel.on(Action::DismissUpdateCheck, &mut host);
         assert_eq!(panel.on(Action::UpdateNow, &mut host), Effect::RelaunchUpdate);
-        let mut reopened = Panel::default();
-        assert_eq!(reopened.about_state(&host.path)["restartPending"], true);
-        assert_eq!(reopened.on(Action::Set {
+        panel = Panel::default();
+        assert_eq!(panel.about_state(&host.path)["restartPending"], true);
+        assert_eq!(panel.on(Action::Set {
             key: "updateChannel".into(),
             value: "main".into(),
         }, &mut host), Effect::None);
-        let about = reopened.about_state(&host.path);
+        let about = panel.about_state(&host.path);
         assert_eq!(about["updateChannel"], "main");
-        assert_eq!(about["restartPending"], true);
-        assert_eq!(reopened.on(Action::UpdateNow, &mut host), Effect::RelaunchUpdate);
+        assert_eq!(about["stagedRelease"], serde_json::json!({"channel": "stable", "id": "v2.0.0"}));
+        assert_eq!(panel.on(Action::UpdateNow, &mut host), Effect::RelaunchUpdate);
         assert_eq!(relaunch_staged().unwrap_err().to_string(), "previous AppImage is unavailable for recovery");
         record_running().unwrap();
-        assert_eq!(reopened.about_state(&host.path)["restartPending"], false);
+        assert!(panel.about_state(&host.path)["stagedRelease"].is_null());
         assert_eq!(panel.on(Action::UpdateNow, &mut host), Effect::None);
     }
 

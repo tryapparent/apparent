@@ -65,6 +65,7 @@ export interface AboutState {
   nightly?: boolean;
   updateChannel: string;
   restartPending?: boolean;
+  stagedRelease?: { channel: string; id: string } | null;
   resumeTour?: boolean;
   updateCheck: {
     checking: boolean;
@@ -370,8 +371,14 @@ export function About({
                   </p>
                 )}
                 {showUnstagedRestartFailure && (
-                  <p className="settings-update-note" role="alert">
-                    Apparent couldn’t restart. A staged update couldn’t be confirmed.
+                  <p
+                    id="restart-unconfirmed"
+                    className="settings-update-note"
+                    role="alert"
+                  >
+                    Apparent couldn’t confirm an installed update.
+                    {installWarning &&
+                      " To try again, install from the selected channel."}
                   </p>
                 )}
                 {installWarning && (
@@ -380,8 +387,11 @@ export function About({
                   </p>
                 )}
                 {restart && (
-                  <p className="settings-update-note">
-                    An update is installed. Restart Apparent to use it.
+                  <p id="staged-release" className="settings-update-note">
+                    {updateAction.staged_release_note(
+                      state.stagedRelease?.channel ?? "",
+                      state.stagedRelease?.id ?? "",
+                    )}
                   </p>
                 )}
                 {!checking && (
@@ -390,6 +400,7 @@ export function About({
                       <>
                         <Button
                           ref={primaryAction}
+                          aria-describedby="staged-release"
                           onClick={() => void act({ action: "update-now" })}
                         >
                           Restart now
@@ -412,7 +423,11 @@ export function About({
                         ref={primaryAction}
                         disabled={!state.updates}
                         aria-describedby={
-                          installWarning ? "update-channel-hint" : undefined
+                          installWarning
+                            ? showUnstagedRestartFailure
+                              ? "restart-unconfirmed update-channel-hint"
+                              : "update-channel-hint"
+                            : undefined
                         }
                         onClick={() =>
                           void act({ action: "check-for-updates" })
@@ -420,7 +435,11 @@ export function About({
                       >
                         {result === "current" && !state.linux
                             ? "Check again"
-                            : updateAction.release_action(state.linux)}
+                            : updateAction.release_action(
+                                state.linux,
+                                showUnstagedRestartFailure,
+                                state.updateChannel,
+                              )}
                       </Button>
                     )}
                   </div>
