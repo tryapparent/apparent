@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url"
 
 const site = join(dirname(fileURLToPath(import.meta.url)), "../../site")
 const artifact = process.env.SITE_ARTIFACT ? resolve(process.env.SITE_ARTIFACT) : join(site, "dist-apparent")
-const imageUrl = "https://tryapparent.com/social-preview-v1.png"
+const imageUrl = "https://app.tryapparent.com/social-preview-v1.png"
 const alt = "apparent wordmark in lilac on a carbon background."
 
 function meta(html, key) {
