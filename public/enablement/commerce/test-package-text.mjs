@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { spawnSync } from "node:child_process"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
+import { agentOutputNames } from "../artifact/agent-paths.ts"
 
 const site = fileURLToPath(new URL("../../site/", import.meta.url))
 const heading = "Tell your coding agent what to change"
@@ -18,17 +19,19 @@ function packageFixture(html) {
   try {
     mkdirSync(join(root, "../enablement/site-build"), { recursive: true })
     mkdirSync(join(root, "../enablement/browser-proof"), { recursive: true })
-    mkdirSync(join(root, "dist"))
+    mkdirSync(join(root, "../enablement/artifact"), { recursive: true })
+    mkdirSync(join(root, "dist/agents"), { recursive: true })
     mkdirSync(join(root, "dist-apparent"))
     writeFileSync(join(root, "dist-apparent", "previous.txt"), "previous artifact")
     symlinkSync(join(site, "../node_modules"), join(job, "node_modules"), "dir")
-    for (const [group, names] of [["site-build", ["package-apparent.mjs", "package-page-text.mjs", "expected-homepage-canonical.mjs"]], ["browser-proof", ["upstream-link-guard.mjs"]]]) {
+    for (const [group, names] of [["site-build", ["package-apparent.mjs", "package-page-text.mjs", "expected-homepage-canonical.mjs"]], ["browser-proof", ["upstream-link-guard.mjs"]], ["artifact", ["agent-paths.ts"]]]) {
       for (const name of names) cpSync(join(site, "../enablement", group, name), join(root, "../enablement", group, name))
     }
     for (const name of [
       "brand", "connect", "hosted", "assets", "pond", "team", "feature-demos", "apparent-wordmark.svg", "icon.svg", "HostGrotesk-Variable.ttf",
       "social-preview-v1.png", "Apparent-ghost-demo-v4-lilac.mp4", "Apparent-ghost-demo-v4-lilac-poster.jpg",
-      "appcast.xml", "llms.txt", "skill.md", "og.mp4", "narration.mp3", "narration-iphone.mp3", "releases", "map-tyyxsf5b", "private-pitch.html",
+      "appcast.xml", "og.mp4", "narration.mp3", "narration-iphone.mp3", "releases", "map-tyyxsf5b", "private-pitch.html",
+      ...agentOutputNames,
     ]) writeFileSync(join(root, "dist", name), "synthetic fixture")
     writeFileSync(join(root, "dist", "index.html"), html)
     const result = spawnSync(process.execPath, [join(root, "../enablement", "site-build", "package-apparent.mjs")], { encoding: "utf8" })
@@ -38,7 +41,7 @@ function packageFixture(html) {
       previous: existsSync(join(root, "dist-apparent", "previous.txt")) ? readFileSync(join(root, "dist-apparent", "previous.txt"), "utf8") : null,
       outputFiles: readdirSync(join(root, "dist-apparent")),
       published: existsSync(join(root, "dist-apparent", "index.html")) ? readFileSync(join(root, "dist-apparent", "index.html"), "utf8") : null,
-      leaked: ["appcast.xml", "llms.txt", "skill.md", "og.mp4", "narration.mp3", "narration-iphone.mp3", "releases", "map-tyyxsf5b", "private-pitch.html"]
+      leaked: ["appcast.xml", "og.mp4", "narration.mp3", "narration-iphone.mp3", "releases", "map-tyyxsf5b", "private-pitch.html"]
         .filter((name) => existsSync(join(root, "dist-apparent", name))),
     }
   } finally {

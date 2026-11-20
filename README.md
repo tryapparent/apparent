@@ -7,7 +7,7 @@
 That button. That weird layout. That bug that only happens when you do *this*.
 Show your agent what you mean with a quick screen recording, your voice, and a few marks.
 
-[Download Apparent](https://github.com/tryapparent/apparent/releases) · [Agent setup](capture/agent/docs/installation.md) · [Docs](#find-your-way) · [MIT](LICENSE)
+[Download Apparent](https://github.com/tryapparent/apparent/releases) · [Agent quickstart](https://app.tryapparent.com/agents/) · [Docs](#find-your-way) · [MIT](LICENSE)
 
 ## Show, then tell
 
@@ -36,7 +36,7 @@ Install the Apparent desktop app from [Apparent releases](https://github.com/try
 Need help getting set up? See the [recording guide](capture/desktop/docs/guides/recording.md)
 and [Linux setup](capture/desktop/docs/linux/linux.md).
 
-## Give your agent eyes
+## Agents
 
 Install the optional capture-reading skill for Claude Code, Codex, OpenCode, and other agents:
 
@@ -99,7 +99,9 @@ and agent read approval are separate; website sign-in grants neither.
 
 [![Star History Chart](https://api.star-history.com/svg?repos=tryapparent/apparent&type=Date)](https://www.star-history.com/#tryapparent/apparent&Date)
 
-## License
+## License and credits
 
-[MIT](LICENSE). With thanks to the projects credited in our
-[third-party notices](capture/desktop/docs/guides/credits.md).
+Apparent began as a fork of [Scrawl](https://github.com/kitlangton/scrawl), created by Kit Langton.
+
+Apparent is [MIT licensed](LICENSE). See the
+[third-party notices](capture/desktop/docs/guides/credits.md) for additional credits.

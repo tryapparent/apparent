@@ -2,6 +2,9 @@
 //! Keep the original error chain for local diagnosis; transports must not format it.
 use std::{error::Error, fmt, panic::Location};
 
+#[path = "../../../../engine/recording/sampling.rs"]
+pub(crate) mod sampling;
+
 #[derive(Clone, Copy, Debug, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Stage {
@@ -39,6 +42,7 @@ pub(crate) struct Failure {
     pub stage: Stage,
     pub location: &'static Location<'static>,
     source: anyhow::Error,
+    pub sampling: Option<sampling::Sampling>,
 }
 
 impl fmt::Display for Failure {
@@ -58,12 +62,22 @@ impl Error for Failure {
 /// Capture provenance before errors cross executors, preserving typed OS causes.
 #[track_caller]
 pub(crate) fn at<T>(result: anyhow::Result<T>, stage: Stage) -> anyhow::Result<T> {
+    with_sampling(result, stage, None)
+}
+
+#[track_caller]
+pub(crate) fn with_sampling<T>(
+    result: anyhow::Result<T>,
+    stage: Stage,
+    sampling: Option<sampling::Sampling>,
+) -> anyhow::Result<T> {
     let location = Location::caller();
     result.map_err(|source| {
         anyhow::Error::new(Failure {
             stage,
             location,
             source,
+            sampling,
         })
     })
 }

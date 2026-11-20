@@ -12,7 +12,7 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
         Err(_) => return serde_json::json!({"error":"config_read_failed"}),
     };
     let saved = |key| value.get("experiments").and_then(|flags|flags.get(key)).and_then(|flag|flag.as_bool());
-    serde_json::json!({"saved":saved(KEY),"compactHandoffSaved":saved(crate::composition::frame_labels::EXPERIMENT),"transcriptOnlySaved":saved(crate::composition::transcript_handoff::EXPERIMENT),"sharingSaved":saved("hostedSharing"),"autoPasteSaved":saved("autoPasteDraft"),"autoPasteSupported":cfg!(target_os = "linux"),"wisprSaved":saved("onboardingWisprFlow"),"wisprSupported":cfg!(target_os = "macos"),"dictationFrogSaved":saved("dictationFrog"),"screenPickerSaved":saved(selection::PREFERENCE),"screenPickerSupported":selection::supported()})
+    serde_json::json!({"saved":saved(KEY),"compactHandoffSaved":saved(crate::composition::frame_labels::EXPERIMENT),"transcriptOnlySaved":saved(crate::composition::transcript_handoff::EXPERIMENT),"sharingSaved":saved("hostedSharing"),"autoPasteSaved":saved("autoPasteDraft"),"autoPasteSupported":cfg!(target_os = "linux"),"wisprSaved":saved("onboardingWisprFlow"),"wisprSupported":cfg!(target_os = "macos"),"silentPromptSaved":saved("silentPrompt"),"dictationFrogSaved":saved("dictationFrog"),"screenPickerSaved":saved(selection::PREFERENCE),"screenPickerSupported":selection::supported()})
 }
 pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
     match setting {
@@ -22,6 +22,7 @@ pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
         Some("sharing") => Some(("hostedSharing", true)),
         Some("autoPaste") => Some(("autoPasteDraft", cfg!(target_os = "linux"))),
         Some("wisprFlow") => Some(("onboardingWisprFlow", cfg!(target_os = "macos"))),
+        Some("silentPrompt") => Some(("silentPrompt", true)),
         Some("dictationFrog") => Some(("dictationFrog", cfg!(target_os = "macos"))),
         Some("screenPicker") => Some((selection::PREFERENCE, selection::supported())),
         _ => None,
@@ -49,6 +50,19 @@ pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>, setting:
         assert!(facts(&path).get("doubleShiftSaved").is_none());
         assert_eq!(request(&path, 5, Some(false), Some("doubleShiftNotes"))["facts"]["error"], "config_write_failed");
         assert_eq!(std::fs::read_to_string(path).unwrap(), original);
+    }
+    #[test]
+    fn silent_prompt_is_opt_in_and_round_trips() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("config.json");
+        std::fs::write(&path, r#"{"experiments":{"other":true}}"#).unwrap();
+        assert!(facts(&path)["silentPromptSaved"].is_null());
+        for enabled in [true, false] {
+            let response = request(&path, 1, Some(enabled), Some("silentPrompt"));
+            assert_eq!(response["facts"]["silentPromptSaved"], enabled);
+            let config = crate::shared::handoff::load_config_from(&path);
+            assert!(crate::shared::handoff::experiment_enabled_in(&config, "other"));
+        }
     }
     #[test]
     fn wispr_lab_defaults_off_and_uses_the_shared_config_transaction_only_on_mac() {

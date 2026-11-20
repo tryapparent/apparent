@@ -124,7 +124,7 @@ test("reusable Mac workflow shares native gates across the primary and capacity 
   assert.match(workflow, /if: inputs.channel == '' && github.repository/);
   assert.match(
     stable,
-    /if: \(inputs.channel == 'stable' \|\| inputs.channel == 'mac-main' \|\| inputs.channel == 'main'\) && github.repository/,
+    /if: \(inputs.channel == 'stable' \|\| inputs.channel == 'mac-main' \|\| inputs.channel == 'main' \|\| inputs.channel == 'mac-nightly'\) && github.repository/,
   );
   assert(
     workflow.indexOf("Validate candidate installation") <

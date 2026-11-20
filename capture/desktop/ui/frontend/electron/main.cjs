@@ -94,6 +94,7 @@ const frame = require('./settings/frame.cjs');
 let pane = frame.initialSettingsPane(process.argv);
 const settings = !!pane;
 const hasSettingsParent = process.argv.includes('--settings-parent');
+const lip = new frame.LipHost();
 const settingsHosts = new frame.SettingsHosts(action => process.stdout.write(JSON.stringify(action) + '\n'));
 let generalState;
 const settingsHash = settings && pane !== 'storage' ? '#' + pane : '';
@@ -115,6 +116,8 @@ const preferenceQueue=new PreferenceQueue();
 const resetPreferences = () => {
   agentsPreferences.close();
   labsPreferences.close();
+  lip.enabled = false;
+  lip.cancel();
   settingsHosts.reset();
 };
 let aboutState;
@@ -207,6 +210,30 @@ app.whenReady().then(() => {
     if (window.isDestroyed() || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame ||
         event.senderFrame.url !== page + settingsHash || args.length !== 0) throw new Error('Forbidden bridge request');
   };
+  const canUseLip = () => pane === 'labs' && hasSettingsParent && !settingsClosing;
+  const cameraFrame = (contents, permission, details) => canUseLip() &&
+    lip.allowsCamera() && permission === 'media' && contents === window.webContents &&
+    details.isMainFrame === true && details.requestingUrl?.split('#')[0] === page;
+  session.defaultSession.setPermissionRequestHandler((contents, permission, reply, details) =>
+    reply(cameraFrame(contents, permission, details) && details.mediaTypes?.length === 1 &&
+      details.mediaTypes[0] === 'video'));
+  session.defaultSession.setPermissionCheckHandler((contents, permission, _origin, details) =>
+    cameraFrame(contents, permission, details) && details.mediaType === 'video');
+  const bindLip = (name, arity, handle) => ipcMain.handle(`apparent:lip-${name}`, (event, ...args) => {
+    validate(event, []);
+    if (!canUseLip() || args.length !== arity) throw Error('Silent prompts unavailable');
+    return handle(...args);
+  });
+  bindLip('select', 0, () => lip.select(async () => {
+    const choice = await dialog.showOpenDialog(window, {
+      title: 'Choose a trusted Lipflow checkout to run', properties: ['openDirectory'],
+    });
+    return choice.canceled ? undefined : choice.filePaths[0];
+  }));
+  bindLip('begin', 0, () => lip.begin());
+  bindLip('decode', 1, bytes => lip.decode(bytes));
+  bindLip('cancel', 0, () => lip.cancel());
+  bindLip('copy', 0, () => clipboard.writeText(lip.textToCopy()));
   const validateFoundation = (event, args) => {
     if (settings) throw new Error('Unavailable in Storage Settings');
     validate(event, args);
@@ -332,6 +359,10 @@ app.whenReady().then(() => {
           window.webContents.send('apparent:about-state', command);
         }
         if (['agents','labs'].includes(pane) && command.type === 'agents-result') agentsPreferences.receive(command);
+        if (pane === 'labs' && ['labs-result', 'labs-state'].includes(command.type)) {
+          lip.enabled = labsFacts(command.facts).silentPromptSaved === true;
+          if (!lip.enabled) lip.cancel();
+        }
         if (pane === 'labs' && command.type === 'labs-result') labsPreferences.receive(command);
         if (pane === 'labs' && command.type === 'labs-state') window.webContents.send('apparent:labs-state', labsFacts(command.facts));
         if (['agents','labs'].includes(pane) && command.type === 'agents-state') {

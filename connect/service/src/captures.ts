@@ -93,7 +93,7 @@ export async function captureRoutes(request: Request,env: Env,url: URL,context?:
   await checkedHeads(env,files,verified);
   const completed=await stmt(env,`UPDATE captures SET status='ready' WHERE id=? AND account_id=? AND status='pending' AND ${live}
    RETURNING CAST(unixepoch('subsec')*1000 AS INTEGER) AS occurred_at`,id,a.account_id,Date.now(),Date.now()).first<{occurred_at:number}>();
-  if(completed)queueDailyActivity(env,context,request,a.account_id,completed.occurred_at);
+  if(completed)queueDailyActivity(env,context,request,a.account_id,completed.occurred_at,true);
   const ready=await capture(env,id,a.account_id);if(ready.status!=='ready')fail('not_ready',409);return json(await info(env,ready));
  }
  if(encoded) {

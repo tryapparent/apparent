@@ -234,7 +234,7 @@ pub(crate) fn capture_exclusion_ready(window: Option<u32>, applied: &[u32], scre
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct View {
-    pub transcript: Option<crate::capture::engine::runtime::audio::transcription::parakeet_stream::Preview>,
+    pub transcript: Option<crate::capture::engine::runtime::audio::transcription::speech_preview::Preview>,
     pub revision: u64,
     #[serde(flatten)]
     pub presentation: Presentation,

@@ -141,16 +141,12 @@ pub fn transcribe(wav: Option<&Path>, audio: Option<&RecordedAudio>) -> Transcri
     };
     let live = audio.live.take();
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    if let Some(stream) = audio.streaming.take() {
-        // An unhealthy preview is never a completed transcript. Retry the whole
-        // persisted recording through the ordinary on-device provider.
-        return match stream.finish(&audio.wav_bytes) {
-            Ok(transcript) => transcript,
-            Err(_) => {
-                crate::capture::engine::runtime::apparent_log("Local streaming unavailable; using the complete saved recording");
-                apple(wav)
-            }
-        };
+    if audio.streaming {
+        if let Some(model) = super::speech::installed_parakeet() {
+            return local_result(super::speech::transcribe_model(wav, &model), "Parakeet");
+        }
+        super::speech_preview::prepare();
+        return apple(wav);
     }
     #[cfg(target_os = "linux")]
     let pause = audio.pause.take();
@@ -275,12 +271,16 @@ fn try_hex(audio: &RecordedAudio) -> Result<Option<TranscriptData>> {
 }
 
 fn apple(wav: &Path) -> TranscriptData {
-    let transcript = crate::capture::desktop::helper::transcribe(wav).unwrap_or_else(|error| {
-        crate::capture::engine::runtime::apparent_log(format!("{LOCAL_ENGINE_TITLE} failed: {error:#}"));
+    local_result(crate::capture::desktop::helper::transcribe(wav), LOCAL_ENGINE_TITLE)
+}
+
+fn local_result(result: Result<TranscriptData>, provider: &str) -> TranscriptData {
+    let transcript = result.unwrap_or_else(|error| {
+        crate::capture::engine::runtime::apparent_log(format!("{provider} failed: {error:#}"));
         TranscriptData {
             source: "offline".into(),
             missing: Some(crate::shared::model::MissingTranscript {
-                reason: format!("{LOCAL_ENGINE_TITLE} failed ({error:#})."),
+                reason: format!("{provider} failed ({error:#})."),
                 retry: false,
             }),
             ..Default::default()

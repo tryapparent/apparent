@@ -8,7 +8,9 @@ use super::whiteboard;
 #[cfg(target_os = "linux")]
 use crate::capture::desktop::workflow::FinishPhase;
 use crate::capture::engine::runtime::apparent_log;
-use crate::capture::engine::runtime::recording::diagnostics::{Diagnose, Stage};
+use crate::capture::engine::runtime::recording::diagnostics::{
+    Diagnose, Stage, sampling::Sampling, with_sampling,
+};
 use crate::shared::model::{ApparentBundle, InteractionEvent, Stroke, TargetInfo};
 
 pub(in crate::capture::desktop) type CaptureResult =
@@ -35,7 +37,7 @@ pub(in crate::capture::desktop) fn finalize(
         CaptureSource::Phone(session) => {
             // Stop the producer before waiting for a possibly contended writer lease.
             let finalized = session.stop().stage(Stage::PhoneStop).and_then(|recording| {
-                complete_bundle(&bundle_dir, &final_whiteboard, || {
+                complete_bundle(&bundle_dir, &final_whiteboard, None, || {
                     crate::capture::engine::runtime::phone::finalize_live_capture(
                         &bundle_dir,
                         recording,
@@ -61,8 +63,8 @@ pub(in crate::capture::desktop) fn finalize(
         }
     };
     let stop_started = Instant::now();
-    let (recording, recorded_audio, mut activity) = std::thread::scope(|s| {
-        let screen_handle = s.spawn(|| screen_session.stop());
+    let ((recording, sampling), recorded_audio, mut activity) = std::thread::scope(|s| {
+        let screen_handle = s.spawn(|| screen_session.stop_with_sampling());
         let win_handle = s.spawn(|| {
             window_log
                 .map(crate::shared::windows::WindowLogger::stop)
@@ -82,7 +84,7 @@ pub(in crate::capture::desktop) fn finalize(
         Ok(audio) => audio,
         Err(error) => return (Err(error).stage(Stage::AudioStop), duration_ms),
     };
-    let finalized = complete_bundle(&bundle_dir, &final_whiteboard, || {
+    let finalized = complete_bundle(&bundle_dir, &final_whiteboard, sampling, || {
         if let Some(receipt) = notes_finished {
             if let Err(error) = receipt
                 .recv_timeout(std::time::Duration::from_secs(12))
@@ -148,6 +150,7 @@ fn after_publication(
 fn complete_bundle(
     path: &std::path::Path,
     board: &whiteboard::Board,
+    sampling: Option<Sampling>,
     build: impl FnOnce() -> CaptureResult,
 ) -> CaptureResult {
     #[cfg(target_os = "linux")]
@@ -164,7 +167,8 @@ fn complete_bundle(
             FinishPhase::PublishingBundle.emit();
             whiteboard::finish_handoff(dir, bundle, summary, board)
         },
-    ).stage(Stage::Publication);
+    );
+    let result = with_sampling(result, Stage::Publication, sampling);
     #[cfg(target_os = "linux")]
     FinishPhase::FinalizerReturned.emit();
     result

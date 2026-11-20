@@ -36,7 +36,7 @@ export async function verified(directory: string) {
   );
   assert.match(manifest.producer?.controlSha ?? "", /^[a-f0-9]{40}$/);
   assert.equal(manifest.repository, repository);
-  assert(["stable", "main"].includes(manifest.channel));
+  assert(["stable", "main", "mac-nightly"].includes(manifest.channel));
   assert.equal(manifest.platform, "macos");
   assert.equal(manifest.architecture, "aarch64");
   assert.deepEqual(manifest.evidence, {
@@ -102,7 +102,7 @@ export async function verified(directory: string) {
     gh(["api", `repos/${repository}/releases/tags/${metadata.tag}`]),
   );
   assert.equal(release.draft, false);
-  assert.equal(release.prerelease, metadata.channel === "main");
+  assert.equal(release.prerelease, metadata.channel !== "stable");
   assert.equal(release.tag_name, metadata.tag);
   const scratch = mkdtempSync(join(tmpdir(), "apparent-dev-mac-publication-"));
   try {

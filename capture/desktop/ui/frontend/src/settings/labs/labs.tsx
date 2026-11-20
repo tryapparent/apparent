@@ -6,12 +6,13 @@ import {ErrorDialog} from '@apparent/ui/error-dialog';
 import frog from '../../../../../assets/settings/frog-puzzled.png';
 import {enabled, autoPasteEnabled, sharingEnabled, wisprEnabled, type LabsFacts, type LabsSetting} from './policy';
 import type {ComponentType} from 'react';
+import {SilentPrompt} from '../../../../../../../record/settings/renderer/silent-prompt';
 
 declare global {interface Window {apparentLabs: {
   read(): Promise<LabsFacts>; save(value: boolean, setting?: LabsSetting): Promise<LabsFacts>;
   subscribe(callback: (facts: LabsFacts) => void): () => void;
 };}}
-const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', screenPicker: 'recording-picker-mode', dictationFrog: 'dictation-frog-toggle', compactHandoff: 'compact-handoff-toggle', transcriptOnly: 'transcript-only-toggle'};
+const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', screenPicker: 'recording-picker-mode', dictationFrog: 'dictation-frog-toggle', compactHandoff: 'compact-handoff-toggle', transcriptOnly: 'transcript-only-toggle', silentPrompt: 'silent-prompt-toggle'};
 export type FrogExperiment = ComponentType<{
   id: string; checked: boolean; disabled: boolean; saving: boolean;
   onCheckedChange: (value: boolean) => void;
@@ -81,8 +82,8 @@ export function Labs({frogExperiment: FrogNudge}: {frogExperiment?: FrogExperime
       <div className="agent-preference-row"><h2 className="settings-preference-label" id="local-stream-label">Live local transcription</h2>
         <Switch id={controls.streaming} className="agent-switch" checked={on ?? false} aria-labelledby="local-stream-label" aria-describedby="local-stream-help local-stream-ready" aria-busy={busy && setting === 'streaming'}
           disabled={busy || on === undefined} onCheckedChange={value => void request(value)} /></div>
-      <p id="local-stream-help">See your words below the recording controls as you speak. Transcribes English on this computer with Parakeet.</p>
-      <p id="local-stream-ready">Enabling downloads a speech model if needed. Live text starts with your next recording once it is ready. Recording continues if live text is unavailable.</p>
+      <p id="local-stream-help">See a live preview of your English speech below the recording controls. The saved transcript is generated separately on this computer.</p>
+      <p id="local-stream-ready">Enabling downloads any missing speech models. Live text starts on the next recording after the models are ready.</p>
     </section>
     <section className="agent-preference">
       <div className="agent-preference-row"><h2 className="settings-preference-label" id="auto-paste-label">Auto paste</h2>
@@ -107,6 +108,19 @@ export function Labs({frogExperiment: FrogNudge}: {frogExperiment?: FrogExperime
     {FrogNudge && wisprSupported.current && <FrogNudge id={controls.dictationFrog} checked={facts?.dictationFrogSaved ?? false}
       disabled={busy || !facts || !!facts.error} saving={busy && setting === 'dictationFrog'}
       onCheckedChange={value => void request(value, 'dictationFrog')} />}
+    <section className="agent-preference">
+      <div className="agent-preference-row">
+        <h2 className="settings-preference-label" id="silent-prompt-label">Silent prompts</h2>
+        <Switch id={controls.silentPrompt} className="agent-switch"
+          checked={facts?.silentPromptSaved ?? false}
+          aria-labelledby="silent-prompt-label" aria-describedby="silent-prompt-help"
+          aria-busy={busy && setting === 'silentPrompt'}
+          disabled={busy || !facts || !!facts.error}
+          onCheckedChange={value => void request(value, 'silentPrompt')} />
+      </div>
+      <p id="silent-prompt-help">Mouth a short prompt and copy the text. The camera starts only when you ask, and the microphone stays off.</p>
+      {facts?.silentPromptSaved && <SilentPrompt />}
+    </section>
     <span role="status" className="sr-only">{busy ? operation === 'save' ? 'Saving preference' : 'Reading saved preference' : ''}</span>
     {(!facts || facts.error) && !busy && !error && <Button id="labs-refresh" variant="secondary" onClick={() => void request(undefined, setting)}>Refresh preference</Button>}
     <ErrorDialog open={!!error} title={!facts ? 'Preference not confirmed' : facts.error === 'config_read_failed' ? 'Unable to read preference' : 'Unable to save preference'} description={error} artwork={<img src={frog} alt="" />} recoveryLabel="Refresh preference" busy={busy}

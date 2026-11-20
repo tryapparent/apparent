@@ -3,12 +3,13 @@ import { lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { join, posix } from 'node:path'
 import { parse } from 'parse5'
 import { init, parse as moduleImports } from 'es-module-lexer'
+import { agentOutputNames } from './agent-paths.ts'
 
 await init()
 
 const privatePath = /(?:^|\/)(?:\.env[^/]*|.*\.map|pitch[^/]*|captures?|contact-sheet\.png|recording\.(?:mp4|mov)|deployment\.json|node_modules|functions|backend)(?:\/|$)/i
 const sensitive = /sourceMappingURL|verified@example|synthetic-csrf|must-not-render|BEGIN (?:RSA |OPENSSH )?PRIVATE KEY|client_secret/
-const canonicalFiles = new Set(['index.html','brand/index.html','_worker.js','robots.txt','sitemap.xml','404.html','_headers','_redirects','apparent-wordmark.svg','icon.svg','HostGrotesk-Variable.ttf','social-preview-v1.png','Apparent-ghost-demo-v4-lilac.mp4','Apparent-ghost-demo-v4-lilac-poster.jpg'])
+const canonicalFiles = new Set(['index.html','brand/index.html','_worker.js','robots.txt','sitemap.xml','404.html','_headers','_redirects','apparent-wordmark.svg','icon.svg','HostGrotesk-Variable.ttf','social-preview-v1.png','Apparent-ghost-demo-v4-lilac.mp4','Apparent-ghost-demo-v4-lilac-poster.jpg', ...agentOutputNames])
 const brandGenerated = /^brand\/assets\/[^/]+-[\w-]+\.(?:js|css|ttf)$/
 const groupedPublic = /^(?:pond|team|feature-demos)\/.+/
 
@@ -125,7 +126,9 @@ export function validatePublic(files: FileInventory, canonical: FileInventory = 
     const grouped = (groupedPublic.test(path) && canonical.get(`assets/${path}`)?.equals(bytes)) || (path.startsWith('brand/') && canonical.get(`assets/brand-book/${path.slice(6)}`)?.equals(bytes))
     if ((!ordinary && !grouped) || (!options.prepared && ['404.html','_headers','_redirects'].includes(path))) throw Error(`Unexpected Public output: ${path}`)
     if (/\.(?:html|js|css)$/.test(path) && /X-CSRF-Token|hosted-panel|hosted-page|Checking your account/.test(bytes.toString())) throw Error(`Wrong resource owner: ${path}`)
-    if (/\.(?:html|js|css|svg)$/.test(path) && sensitive.test(bytes.toString())) throw Error(`Private Public content: ${path}`)
+    if (/\.(?:html|js|css|svg)$/.test(path) || agentOutputNames.includes(path)) {
+      if (sensitive.test(bytes.toString())) throw Error(`Private Public content: ${path}`)
+    }
   }
   publicMetadata(files)
   const starts = files.has('_worker.js') ? ['index.html','_worker.js'] : ['index.html']

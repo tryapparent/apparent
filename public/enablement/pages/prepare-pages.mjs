@@ -2,10 +2,12 @@
 import { readdirSync, lstatSync, writeFileSync } from 'node:fs'
 import { resolve, join, dirname, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { agentOutputNames } from '../artifact/agent-paths.ts'
 const site = resolve(dirname(fileURLToPath(import.meta.url)), '../../site')
 const output = join(site, process.env.COMPOSE_SYNTHETIC_ORIGIN ? 'dist/synthetic-composition' : 'dist-apparent')
 export function publicPath(path) {
-  return /^(?:index\.html|_worker\.js|robots\.txt|sitemap\.xml|apparent-wordmark\.svg|icon\.svg|HostGrotesk-Variable\.ttf|social-preview-v1\.png|Apparent-ghost-demo-v4-lilac(?:-poster\.jpg|\.mp4)|apparent-narration-(?:mac|iphone)\.mp3|apparent-demo-pi(?:-poster\.jpg|\.mp4))$/.test(path)
+  return agentOutputNames.includes(path)
+    || /^(?:index\.html|_worker\.js|robots\.txt|sitemap\.xml|apparent-wordmark\.svg|icon\.svg|HostGrotesk-Variable\.ttf|social-preview-v1\.png|Apparent-ghost-demo-v4-lilac(?:-poster\.jpg|\.mp4)|apparent-narration-(?:mac|iphone)\.mp3|apparent-demo-pi(?:-poster\.jpg|\.mp4))$/.test(path)
     || /^(?:brand|assets|pond|team|feature-demos)\/.+/.test(path)
     || /^connect(?:\/(?:device|shares))?\/index\.html$/.test(path)
     || /^hosted\/(?:source-pond|agent-pond|agent-reading)-v4\.png$/.test(path)

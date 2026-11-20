@@ -8,9 +8,16 @@ import { CanonicalPropagationPending, differenceMetadata, inventory, main, publi
 import { movie } from '../../site/lib/pages-video-metadata.js'
 import { preparePagesVideo } from '../pages/prepare-pages-video.mjs'
 import { copyRunnerSources } from '../../../enablement/local-tests/support/sources.ts'
+import { agentOutputNames, agentRoutes } from '../artifact/agent-paths.ts'
 
 const sha = 'a'.repeat(40)
 const approvedMovie = readFileSync(new URL('../../site/public/assets/media/Apparent-ghost-demo-v4-lilac.mp4', import.meta.url))
+const publicReadback: Record<string, string> = {
+  '/': 'index.html',
+  '/sitemap.xml': 'sitemap.xml',
+  '/assets/index-test.js': 'assets/index-test.js',
+  ...Object.fromEntries(agentRoutes.map(([path, route]) => [route, path])),
+}
 function fixture(root: string, brand = false) {
   const files: Record<string, string> = {
     'public/site/dist-apparent/index.html': 'source homepage', 'public/site/dist-apparent/404.html': 'not found',
@@ -22,6 +29,7 @@ function fixture(root: string, brand = false) {
     'public/site/functions/movie.js': 'source must not reach publisher', 'public/site/wrangler.pages.jsonc': '{"name":"apparent-capture"}',
     'public/site/wrangler.jsonc': 'unrelated Worker', '.env': 'private sentinel',
   }
+  for (const path of ['sitemap.xml', ...agentOutputNames]) files['public/site/dist-apparent/' + path] = 'discovery fixture'
   if (brand) { files['public/site/dist-apparent/brand/index.html'] = 'brand reading view'; files['public/site/dist-apparent/brand/assets/index-brand.js'] = 'brand runtime' }
   for (const [name, data] of Object.entries(files)) { const path = join(root, name); mkdirSync(join(path, '..'), { recursive: true }); writeFileSync(path, data) }
   const output = join(root, 'public/site/dist-apparent')
@@ -151,9 +159,9 @@ test('readback binds revision before any public HTTP request', async () => {
   assert.equal(requested, false)
 })
 
-test('readback verifies Public and brand artifacts directly at Pages and app', () => temp(async root => {
+test('readback verifies Public, agent and brand artifacts directly at Pages and app', () => temp(async root => {
   const artifact = fixture(root, true), packagePath = join(artifact, 'dist-apparent')
-  const bodies: Record<string, string> = { '/': 'index.html', '/assets/index-test.js': 'assets/index-test.js', '/brand/': 'brand/index.html', '/brand/assets/index-brand.js': 'brand/assets/index-brand.js' }
+  const bodies: Record<string, string> = { ...publicReadback, '/brand/': 'brand/index.html', '/brand/assets/index-brand.js': 'brand/assets/index-brand.js' }
   const visited = new Set<string>()
   let badPath: string | null = null, badOrigin: string | null = null, shortMovie = 0, corruptMovie = false
   const fetcher: typeof fetch = async (input, init) => {
@@ -226,8 +234,7 @@ test('publisher stages exact bytes, writes success receipt, skips superseded can
       fetch: async input => {
         const url = new URL(String(input)), headers = new Headers({ 'X-Apparent-Publisher': 'cloudflare-pages', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow', 'Content-Type': 'video/mp4' })
         if (url.pathname.endsWith('.mp4')) return new Response(movieBytes, { headers })
-        const paths: Record<string, string> = { '/': 'index.html', '/assets/index-test.js': 'assets/index-test.js' }
-        return new Response(readFileSync(join(packagePath, paths[url.pathname])), { headers })
+        return new Response(readFileSync(join(packagePath, publicReadback[url.pathname])), { headers })
       },
     }
     for (const [key, invalid] of [['GITHUB_REPOSITORY', 'fork/apparent'], ['GITHUB_WORKFLOW_REF', 'tryapparent/apparent/.github/workflows/web-delivery.yml@refs/heads/main'], ['GITHUB_WORKFLOW_REF', undefined], ['GITHUB_JOB', 'website'], ...['pull_request', 'pull_request_target', 'workflow_call', 'workflow_run', 'schedule', undefined].map(event => ['GITHUB_EVENT_NAME', event])]) {
@@ -295,6 +302,8 @@ test('publisher CLI seals from a source path containing spaces', () => temp(root
   const script = join(root, 'public/enablement/cd/publish-pages.ts')
   mkdirSync(join(script, '..'), { recursive: true })
   writeFileSync(script, readFileSync(new URL('./publish-pages.ts', import.meta.url)))
+  mkdirSync(join(script, '../../artifact'), { recursive: true })
+  writeFileSync(join(script, '../../artifact/agent-paths.ts'), readFileSync(new URL('../artifact/agent-paths.ts', import.meta.url)))
   const metadata = join(root, 'public/site/lib/pages-video-metadata.js')
   mkdirSync(join(metadata, '..'), { recursive: true })
   writeFileSync(metadata, readFileSync(new URL('../../site/lib/pages-video-metadata.js', import.meta.url)))

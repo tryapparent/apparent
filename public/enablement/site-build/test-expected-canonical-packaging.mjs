@@ -5,6 +5,7 @@ import { dirname, join } from "node:path"
 import { spawnSync } from "node:child_process"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
+import { agentOutputNames } from "../artifact/agent-paths.ts"
 
 const site = join(dirname(fileURLToPath(import.meta.url)), "../../site")
 const homepage = readFileSync(join(site, "dist/index.html"), "utf8")
@@ -18,17 +19,20 @@ function packageHomepage(html, accept) {
   try {
     mkdirSync(join(root, "../enablement/site-build"), { recursive: true })
     mkdirSync(join(root, "../enablement/browser-proof"), { recursive: true })
-    for (const [group, names] of [["site-build", ["package-apparent.mjs", "package-page-text.mjs", "expected-homepage-canonical.mjs"]], ["browser-proof", ["upstream-link-guard.mjs"]]]) {
+    mkdirSync(join(root, "../enablement/artifact"), { recursive: true })
+    for (const [group, names] of [["site-build", ["package-apparent.mjs", "package-page-text.mjs", "expected-homepage-canonical.mjs"]], ["browser-proof", ["upstream-link-guard.mjs"]], ["artifact", ["agent-paths.ts"]]]) {
       for (const name of names) cpSync(join(site, "../enablement", group, name), join(root, "../enablement", group, name))
     }
     symlinkSync(join(site, "../node_modules"), join(job, "node_modules"), "dir")
     mkdirSync(join(root, "dist"))
+    mkdirSync(join(root, "dist/agents"))
     writeFileSync(join(root, "dist/index.html"), html)
     // Asset contents do not participate in admission. Exercise the real packager
     // with a complete disposable asset inventory, never rewrite the built page.
     for (const name of [
       "brand", "connect", "hosted", "assets", "pond", "team", "feature-demos", "apparent-wordmark.svg", "icon.svg", "HostGrotesk-Variable.ttf",
       "social-preview-v1.png", "Apparent-ghost-demo-v4-lilac.mp4", "Apparent-ghost-demo-v4-lilac-poster.jpg",
+      ...agentOutputNames,
     ]) writeFileSync(join(root, "dist", name), "fixture asset")
     mkdirSync(join(root, "dist-apparent"))
     writeFileSync(join(root, "dist-apparent/previous-release"), "preserve on rejection")
