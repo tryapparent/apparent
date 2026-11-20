@@ -670,10 +670,6 @@ const DIGIT_MIDDLE: f32 = if cfg!(target_os = "macos") {
     0.55
 };
 
-/// The keyframe's number, bold black on a small white rounded square with a thin dark ring,
-/// inset from the top-left corner of `rect` (bottom-left when ink or the cursor is there).
-/// `k` scales it: 1 is a 24 px square. A shaped container keeps a model from reading it as a
-/// number on the screen, and summary.md carries the time.
 fn draw_keyframe_badge(
     dst: &mut RgbaFrame,
     rect: [f32; 4],
@@ -686,7 +682,10 @@ fn draw_keyframe_badge(
         return;
     }
     let k = k.max(0.45);
-    let label = keyframe.index.to_string();
+    let label = keyframe.display_time.as_ref().map_or_else(
+        || std::borrow::Cow::Owned(keyframe.index.to_string()),
+        |time| std::borrow::Cow::Borrowed(time.as_str()),
+    );
     let size = 16.0 * k;
     let text_w = text_width(&label, size, true);
     let h = size * 1.5;
@@ -2027,6 +2026,7 @@ mod tests {
         Keyframe {
             index,
             t: 4000,
+            display_time: None,
             reason: KeyframeReason::Mark,
             file: format!("frames/{index}.png"),
             event: "✎ circled region x 0.42–0.58, y 0.26–0.34 over “Band header”".into(),

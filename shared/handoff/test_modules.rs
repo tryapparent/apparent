@@ -81,7 +81,7 @@ mod tests {
             class: "t3code".into(),
         };
         let error = run_draft_handoff_at(
-            b"image",
+            Some(b"image"),
             "text",
             Path::new("contact-sheet.png"),
             false,
@@ -207,7 +207,7 @@ mod tests {
             clipboard_contended_after_first: false,
         };
         run_draft_handoff(
-            &image,
+            Some(&image),
             "Synthetic transcript",
             Path::new("contact-sheet.png"),
             false,
@@ -231,7 +231,7 @@ mod tests {
         receiver.supported = false;
         assert!(
             run_draft_handoff(
-                &image,
+                Some(&image),
                 "Synthetic transcript",
                 Path::new("contact-sheet.png"),
                 false,
@@ -247,7 +247,7 @@ mod tests {
         receiver.editable_checks = 0;
         receiver.editable_after = usize::MAX;
         let error = run_draft_handoff(
-            &image,
+            Some(&image),
             "Synthetic transcript",
             Path::new("contact-sheet.png"),
             false,
@@ -264,7 +264,7 @@ mod tests {
         receiver.attachment_ready_after = 99;
         assert!(
             run_draft_handoff(
-                &image,
+                Some(&image),
                 "Synthetic transcript",
                 Path::new("contact-sheet.png"),
                 false,
@@ -280,7 +280,7 @@ mod tests {
         receiver.focus_lost_after_first = true;
         assert!(
             run_draft_handoff(
-                &image,
+                Some(&image),
                 "Synthetic transcript",
                 Path::new("contact-sheet.png"),
                 false,
@@ -299,7 +299,7 @@ mod tests {
         receiver.clipboard_contended_after_first = true;
         assert!(
             run_draft_handoff(
-                &image,
+                Some(&image),
                 "Synthetic transcript",
                 Path::new("contact-sheet.png"),
                 false,
@@ -319,7 +319,7 @@ mod tests {
         receiver.fail_at = Some(1);
         assert!(
             run_draft_handoff(
-                &image,
+                Some(&image),
                 "Synthetic transcript",
                 Path::new("contact-sheet.png"),
                 false,
@@ -337,7 +337,7 @@ mod tests {
         receiver.fail_at = Some(2);
         assert!(
             run_draft_handoff(
-                &image,
+                Some(&image),
                 "Synthetic transcript",
                 Path::new("contact-sheet.png"),
                 false,
@@ -352,7 +352,7 @@ mod tests {
         receiver.focus = (2, 1);
         assert!(
             run_draft_handoff_at(
-                &image,
+                Some(&image),
                 "Synthetic transcript",
                 Path::new("contact-sheet.png"),
                 false,
@@ -878,7 +878,6 @@ mod tests {
         let cfg = load_config_from(&path);
         assert_eq!(cfg.auto_send, Some(false));
         assert!(cfg.experiments.is_empty());
-        // Tests never read Kit's config, only what this process turned on.
         assert!(!experiment("neverEnabled"));
         enable_experiment("enabledForThisTest");
         assert!(experiment("enabledForThisTest"));

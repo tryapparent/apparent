@@ -136,21 +136,20 @@ pub fn keyframe_texts(bundle: &ApparentBundle) -> Vec<FrameText> {
         .collect()
 }
 
-/// A mark as the text names it: on keyframe `#keyframe`, the `number`th of its marks in drawing
-/// order (shown as ①②③ only when `numbered`, i.e. the keyframe draws two or more).
 #[derive(Clone, Debug)]
 pub struct MarkEntry<'a> {
     pub mark: &'a Mark,
     /// 1-based keyframe index, when a keyframe draws the mark.
     pub keyframe: Option<usize>,
+    pub display_time: Option<&'a str>,
     pub number: usize,
     pub numbered: bool,
 }
 
 impl MarkEntry<'_> {
-    /// `#2 ✎② 0:09 marked (2 strokes) · m2`
     pub fn line(&self) -> String {
-        let frame = self.keyframe.map_or("#-".to_owned(), |k| format!("#{k}"));
+        let frame = self.display_time.map(str::to_owned)
+            .unwrap_or_else(|| self.keyframe.map_or("#-".to_owned(), |k| format!("#{k}")));
         let num = self.numbered.then_some(self.number);
         format!(
             "{frame} {} · {}",
@@ -189,6 +188,7 @@ pub fn mark_entries(bundle: &ApparentBundle) -> Vec<MarkEntry<'_>> {
             MarkEntry {
                 mark,
                 keyframe: frame.map(|k| k.index),
+                display_time: frame.and_then(|k| k.display_time.as_deref()),
                 number: pos.map_or(1, |n| n + 1),
                 numbered: pos.is_some() && shown.len() >= 2,
             }
@@ -902,6 +902,7 @@ mod tests {
         Keyframe {
             index,
             t,
+            display_time: None,
             reason,
             file: format!("frames/frame-{index:02}.png"),
             event: "scene changed".into(),

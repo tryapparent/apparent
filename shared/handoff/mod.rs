@@ -320,9 +320,9 @@ pub fn copy_png_to_clipboard(png_bytes: &[u8]) -> Result<()> {
 
 pub fn copy_bundle_to_clipboard(bundle_dir: &Path) -> Result<()> {
     let (directory, bundle) = load_bundle(bundle_dir)?;
-    let summary = clipboard_summary(&bundle, &directory);
+    let (summary, with_image) = clipboard_payload(&bundle, &directory);
     offer_image_handoff(
-        experiment("clipboardImage"),
+        with_image && experiment("clipboardImage"),
         || fs::read(directory.join(&bundle.contact_sheet)).map_err(Into::into),
         &summary,
         copy_png_and_text_to_clipboard,
@@ -358,33 +358,51 @@ const DEMO_VIDEO_REQUEST: &str = "Use make-it-apparent for complex visible chang
 const CLI_INSTALL: &str =
     "If apparent is unavailable, install it: https://github.com/tryapparent/apparent#agents";
 
-/// Clipboard-only instructions precede the timeline so the last pasted lines identify
-/// the user's request. A queued hosted identity, not sign-in alone, selects remote access.
 pub(crate) fn clipboard_summary(bundle: &ApparentBundle, directory: &Path) -> String {
+    clipboard_payload(bundle, directory).0
+}
+
+pub(crate) fn clipboard_payload(bundle: &ApparentBundle, directory: &Path) -> (String, bool) {
+    if let Some(words) = crate::composition::transcript_handoff::words(bundle) {
+        return (words.into(), false);
+    }
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     let hosted = crate::connect::hosted::handoff_pointer(directory);
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     let hosted: Option<String> = None;
-    clipboard_summary_with_access(
-        bundle,
-        directory,
-        experiment(AGENT_DEMO_VIDEO),
-        hosted.as_deref(),
-    )
+    (clipboard_summary_with_access(bundle, directory, experiment(AGENT_DEMO_VIDEO), hosted.as_deref()), true)
 }
 
-fn clipboard_summary_with_access(
+pub(crate) fn clipboard_summary_with_access(
     bundle: &ApparentBundle,
     directory: &Path,
     request_video: bool,
     hosted: Option<&str>,
 ) -> String {
-    let mut out = hosted.map(str::to_owned).unwrap_or_else(|| {
+    let pointer = hosted.map(str::to_owned).unwrap_or_else(|| {
         format!(
             "apparent inspect {}\n",
             shell_quote(&directory.to_string_lossy())
         )
     });
+    if bundle.keyframes.iter().any(|frame| frame.display_time.is_some()) {
+        let mut out =
+            crate::capture::engine::sketch::clipboard_markdown(bundle, directory, hosted.is_some());
+        out.push_str(pointer.trim_end());
+        out.push_str("\nInspect relevant frames before edits.\n");
+        out.push_str("Install if missing: https://github.com/tryapparent/apparent\n");
+        if hosted.is_none() {
+            out.push_str("Path is on the recording computer. If inaccessible, transfer the complete bundle over an authorized connection. See apparent connect alternatives.\n");
+            if let Some(crop) = &bundle.autocrop {
+                out.push_str(&format!("Full frames: {}/\n", crop.full_frames));
+            }
+        }
+        if request_video {
+            out.push_str("For complex visible changes, use make-it-apparent. Share verified video or explain the blocker.\n");
+        }
+        return out;
+    }
+    let mut out = pointer;
     out.push_str(&format!("\n{CLI_INSTALL}\n\n"));
     if hosted.is_some() {
         out.push_str("Inspect relevant images before making changes.");
@@ -410,11 +428,6 @@ fn clipboard_summary_with_access(
     out
 }
 
-/// Pastes both the contact-sheet image and the transcript/keyframe text into the active app
-/// as a two-step sequence (`⌘V` image, then `⌘V` text; Ctrl+V on Windows and Linux, Ctrl+Shift+V
-/// in a Linux terminal). If `click_target` is
-/// provided (from dragging the Paste chip onto a window/input), clicks at that screen coordinate
-/// first to focus it.
 pub fn paste_bundle_at_target(bundle_dir: &Path, click_target: Option<[f32; 2]>) -> Result<()> {
     if let Some([x, y]) = click_target {
         crate::capture::engine::runtime::post_synthetic_click(f64::from(x), f64::from(y));
@@ -426,21 +439,19 @@ pub fn paste_bundle_at_target(bundle_dir: &Path, click_target: Option<[f32; 2]>)
 }
 
 pub fn paste_bundle_image_and_text(bundle_dir: &Path) -> Result<()> {
-    let (directory, bundle) = load_bundle(bundle_dir)?;
-    let sheet_path = directory.join(&bundle.contact_sheet);
-    let image = fs::read(&sheet_path).context("Could not read contact sheet")?;
-    let summary = clipboard_summary(&bundle, &directory);
-
     crate::capture::engine::runtime::wait_for_modifiers_released(350);
 
     #[cfg(target_os = "linux")]
     if crate::capture::desktop::linux::hyprland::running() && crate::capture::desktop::linux::wayland_session() {
         if !crate::capture::engine::runtime::is_frontmost_terminal() {
-            // On Hyprland the targeted shortcut works without the RemoteDesktop portal.
-            // Use it for any focused GUI composer, not only one named application.
             return crate::capture::desktop::linux::auto_paste::paste_bundle(bundle_dir);
         }
     }
+
+    let (directory, bundle) = load_bundle(bundle_dir)?;
+    let (summary, with_image) = clipboard_payload(&bundle, &directory);
+    let sheet_path = directory.join(&bundle.contact_sheet);
+    let image = with_image.then(|| fs::read(&sheet_path)).transpose().context("Could not read contact sheet")?;
 
     #[cfg(target_os = "linux")]
     if experiment("draftHandoff")
@@ -448,7 +459,7 @@ pub fn paste_bundle_image_and_text(bundle_dir: &Path) -> Result<()> {
         && crate::capture::desktop::linux::wayland_session()
     {
         return run_draft_handoff(
-            &image,
+            image.as_deref(),
             &summary,
             &sheet_path,
             crate::capture::engine::runtime::is_frontmost_terminal(),
@@ -456,25 +467,22 @@ pub fn paste_bundle_image_and_text(bundle_dir: &Path) -> Result<()> {
         );
     }
 
-    if crate::capture::engine::runtime::is_frontmost_terminal() {
-        // In terminals (Ghostty / OpenCode TUI / Claude Code), pasting the image path first
-        // resolves and attaches `[Image 1]`, and the second paste inserts the text summary.
-        copy_string_to_clipboard(&sheet_path.display().to_string())?;
-    } else {
-        // In GUI apps (OpenCode Desktop, Slack, Linear, browsers), PNG-only attaches the image.
-        copy_png_to_clipboard(&image)?;
+    if let Some(image) = image {
+        if crate::capture::engine::runtime::is_frontmost_terminal() {
+            copy_string_to_clipboard(&sheet_path.display().to_string())?;
+        } else {
+            copy_png_to_clipboard(&image)?;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        paste_synthetic_checked()?;
+        std::thread::sleep(std::time::Duration::from_millis(160));
     }
-    std::thread::sleep(std::time::Duration::from_millis(20));
-    paste_synthetic_checked()?;
-
-    std::thread::sleep(std::time::Duration::from_millis(160));
     copy_string_to_clipboard(&summary)?;
     std::thread::sleep(std::time::Duration::from_millis(20));
     paste_synthetic_checked()?;
     Ok(())
 }
 
-/// Automatic delivery never activates another app, clicks a target, or submits the draft.
 #[cfg(target_os = "linux")]
 pub(crate) fn paste_bundle_into_original_draft(
     bundle_dir: &Path,
@@ -490,11 +498,11 @@ pub(crate) fn paste_bundle_into_original_draft(
         "Original chat window is no longer focused; manual paste remains available"
     );
     let (directory, bundle) = load_bundle(bundle_dir)?;
+    let (summary, with_image) = clipboard_payload(&bundle, &directory);
     let sheet_path = directory.join(&bundle.contact_sheet);
-    let image = fs::read(&sheet_path).context("Could not read contact sheet")?;
-    let summary = clipboard_summary(&bundle, &directory);
+    let image = with_image.then(|| fs::read(&sheet_path)).transpose().context("Could not read contact sheet")?;
     run_draft_handoff_at(
-        &image,
+        image.as_deref(),
         &summary,
         &sheet_path,
         false,
@@ -524,7 +532,7 @@ fn paste_synthetic_checked() -> Result<()> {
 
 #[cfg(target_os = "linux")]
 pub(crate) fn run_draft_handoff(
-    image: &[u8],
+    image: Option<&[u8]>,
     summary: &str,
     sheet_path: &Path,
     terminal: bool,
@@ -536,7 +544,7 @@ pub(crate) fn run_draft_handoff(
 
 #[cfg(target_os = "linux")]
 fn run_draft_handoff_at<O: DraftHandoffOps>(
-    image: &[u8],
+    image: Option<&[u8]>,
     summary: &str,
     sheet_path: &Path,
     terminal: bool,
@@ -565,40 +573,34 @@ fn run_draft_handoff_at<O: DraftHandoffOps>(
     let mut offered: Option<(&str, &[u8])> = None;
     let result = (|| {
         ops.check_target(&target)?;
-        if terminal {
-            offered = Some(("text/plain;charset=utf-8", path_text.as_bytes()));
-            ops.text(&path_text)?;
-        } else {
-            offered = Some(("image/png", image));
-            ops.image(image)?;
-        }
-        ops.check_target(&target)?;
-        ensure!(
-            ops.editor_ready(target)?,
-            "Writable field lost before image paste"
-        );
-        ops.paste()?;
-        let Some((mime, bytes)) = offered else {
-            bail!("No image was offered");
-        };
-        let mut attached = false;
-        for _ in 0..20 {
-            ops.check_target(&target)?;
-            if ops.attachment_visible(&target, image)? {
-                attached = true;
-                break;
+        if let Some(image) = image {
+            let (mime, bytes) = if terminal {
+                ("text/plain;charset=utf-8", path_text.as_bytes())
+            } else {
+                ("image/png", image)
+            };
+            offered = Some((mime, bytes));
+            if terminal {
+                ops.text(&path_text)?;
+            } else {
+                ops.image(image)?;
             }
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            ops.check_target(target)?;
+            ensure!(ops.editor_ready(target)?, "Writable field lost before image paste");
+            ops.paste()?;
+            let mut attached = false;
+            for _ in 0..20 {
+                ops.check_target(target)?;
+                if ops.attachment_visible(target, image)? {
+                    attached = true;
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            ensure!(attached, "Image attachment was not confirmed; use manual upload and paste");
+            ops.check_target(target)?;
+            ensure!(ops.still_ours(mime, bytes)?, "Clipboard changed; text was not pasted");
         }
-        ensure!(
-            attached,
-            "Image attachment was not confirmed; use manual upload and paste"
-        );
-        ops.check_target(&target)?;
-        ensure!(
-            ops.still_ours(mime, bytes)?,
-            "Clipboard changed; text was not pasted"
-        );
         offered = Some(("text/plain;charset=utf-8", summary.as_bytes()));
         ops.text(summary)?;
         ops.check_target(&target)?;
@@ -1737,7 +1739,6 @@ pub fn resolve_opencode_session_with(
         return Ok((id.to_owned(), title));
     }
 
-    // Match against the last component if a bundle identifier was passed (com.kitlangton.UpDown -> updown).
     let short = app_name
         .and_then(|a| a.rsplit('.').next())
         .map(normalize_slug)
@@ -1771,7 +1772,6 @@ pub fn resolve_opencode_session_with(
     Ok((matched.id, title))
 }
 
-/// Queues a bundle's summary and pointers into an OpenCode session.
 pub fn send_bundle_to_session(bundle_dir: &Path, session: &str) -> Result<()> {
     let (directory, bundle) = load_bundle(bundle_dir)?;
     ensure!(
@@ -1793,6 +1793,9 @@ pub fn send_bundle_to_session(bundle_dir: &Path, session: &str) -> Result<()> {
 }
 
 fn session_prompt(directory: &Path, bundle: &ApparentBundle) -> serde_json::Value {
+    if let Some(words) = crate::composition::transcript_handoff::words(bundle) {
+        return serde_json::json!({ "text": words, "files": [], "delivery": "queue" });
+    }
     let summary = crate::capture::engine::sketch::summary_markdown(bundle, directory);
     let quoted_directory = shell_quote(&directory.to_string_lossy());
     let contact_sheet = directory.join(&bundle.contact_sheet);
@@ -1810,8 +1813,6 @@ fn session_prompt(directory: &Path, bundle: &ApparentBundle) -> serde_json::Valu
         quoted_directory,
         bundle.duration_ms,
     );
-    // The server reads `file://` attachments from its own disk; the bundle is at the same path
-    // there (copied above when the agents run on another Mac).
     let files = if clicked {
         serde_json::json!([{
                 "uri": file_uri(&contact_sheet),
@@ -1824,9 +1825,6 @@ fn session_prompt(directory: &Path, bundle: &ApparentBundle) -> serde_json::Valu
     serde_json::json!({ "text": text, "files": files, "delivery": "queue" })
 }
 
-/// A `file://` URL for an absolute path, percent-encoding everything but unreserved
-/// characters and `/` ("Application Support" → "Application%20Support"). A Windows path
-/// (`C:\Users\…`, or `\\?\C:\…` after `canonicalize`) becomes `file:///C:/Users/…`.
 pub(crate) fn file_uri(path: &Path) -> String {
     let mut text = path.to_string_lossy().into_owned();
     let mut uri = String::from("file://");

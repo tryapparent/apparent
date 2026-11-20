@@ -314,6 +314,7 @@ pub fn zoom(
         let keyframe = Keyframe {
             index: i + 1,
             t,
+            display_time: None,
             reason: KeyframeReason::Speech,
             file: String::new(),
             event: String::new(),

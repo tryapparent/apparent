@@ -445,9 +445,8 @@ enum Command {
         /// (`m2`). `apparent inspect --marks` lists them.
         #[arg(long)]
         mark: Option<String>,
-        /// The keyframe whose ✎① ✎② `--mark` counts (`--frame 2` for #2), when several have one.
-        #[arg(long, requires = "mark")]
-        frame: Option<usize>,
+        #[arg(long, requires = "mark", help = "Keyframe timestamp or number for the mark")]
+        frame: Option<String>,
         /// Seconds of video to cover (a quarter before the moment, the rest after; for a mark, at
         /// least the whole mark, centred).
         #[arg(long, default_value_t = 2.0)]
@@ -1650,6 +1649,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
             let (dir, loaded) = handoff::load_bundle(&bundle)?;
             ensure!(span.is_finite() && span > 0.0, "--span must be positive");
             let focus = if let Some(query) = &mark {
+                let frame = super::frame_labels::resolve(&loaded.keyframes, frame.as_deref())?;
                 let entry =
                     agent_context::find_mark(&loaded, query, frame).map_err(anyhow::Error::msg)?;
                 println!("{}", entry.line());

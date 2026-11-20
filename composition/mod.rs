@@ -66,6 +66,8 @@ pub(crate) mod movie_frames;
 pub(crate) mod screen_frames;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub(crate) mod transcript;
+pub(crate) use assembly::frame_labels;
+pub(crate) use assembly::transcript_handoff;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub(crate) mod worker;
 
