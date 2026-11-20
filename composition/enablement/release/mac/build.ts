@@ -224,10 +224,52 @@ if (notarize === "true") {
     throw Error("Actual signing authority/team differs");
 }
 notarizeBundle(app, join(dist, "preview-notary.zip"));
+const installer = join(dist, "Install apparent.app");
+const installerId = `dev.simonvanlaak.apparent.preview.installer.b${build}`;
+rmSync(installer, { recursive: true, force: true });
+for (const name of ["MacOS", "Resources", "SharedSupport"])
+  mkdirSync(join(installer, "Contents", name), { recursive: true });
+cpSync(
+  join(tooling, "composition/enablement/release/mac/dmg/frog.icns"),
+  join(installer, "Contents/Resources/frog.icns"),
+);
+const arch = output("lipo", ["-archs", join(app, "Contents/MacOS/apparent")]);
+if (!["arm64", "x86_64"].includes(arch))
+  throw Error("Installer needs a single supported Mac architecture");
+run("xcrun", [
+  "swiftc",
+  "-O",
+  "-parse-as-library",
+  "-target",
+  `${arch}-apple-macos15.0`,
+  "capture/desktop/native/installer/Installer.swift",
+  "-o",
+  join(installer, "Contents/MacOS/Installer"),
+]);
+run("ditto", [
+  app,
+  join(installer, "Contents/SharedSupport/Apparent Preview.app"),
+]);
+run("ditto", [
+  join(settings, "app"),
+  join(installer, "Contents/Resources/installer-ui"),
+]);
+run(process.execPath, [
+  "--experimental-strip-types",
+  join(tooling, "composition/enablement/release/mac/metadata.ts"),
+  "installer",
+  installer,
+  version,
+  build,
+  installerId,
+]);
+run("codesign", [...sign, "--identifier", installerId, installer]);
+run("codesign", ["--verify", "--deep", "--strict", installer]);
+notarizeBundle(installer, join(dist, "installer-notary.zip"));
 const name = `Apparent-Preview-${version}-arm64.dmg`;
 const dmg = join(dist, name);
 rmSync(dmg, { force: true });
-createDmg(app, dmg, version, build);
+createDmg(app, installer, dmg, version, build);
 run("hdiutil", ["verify", dmg]);
 if (notarize === "true") {
   run("codesign", [...sign, dmg]);

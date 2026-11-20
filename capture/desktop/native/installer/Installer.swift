@@ -86,7 +86,7 @@ final class InstallTransaction {
       try require(old.build.compare(info.build, options: .numeric) != .orderedDescending,
                   "A newer app is already installed. Keep it, or move it aside in Finder first.")
     }
-    try require(!running(target), "Finish any recording, then quit Apparent Preview yourself and try again. The installer will not quit it.")
+    try require(!running(target), "Finish any recording, then quit apparent yourself and try again. The installer will not quit it.")
     return ["version": info.version, "build": info.build, "needsReplacement": exists, "destination": target.path]
   }
   func install(replace: Bool) throws -> [String: Any] {
@@ -124,7 +124,7 @@ final class InstallTransaction {
     var statbuf = stat()
     try require(fstat(fd, &statbuf) == 0 && "\(statbuf.st_dev)·\(statbuf.st_ino)" == directoryIdentity,
                 "Applications changed during installation. Try again.")
-    try require(!running(target), "Apparent Preview started while copying. Quit it yourself before installing.")
+    try require(!running(target), "apparent started while copying. Quit it yourself before installing.")
     var backedUp = false
     if let old = oldIdentity {
       try require(renameat(fd, appName, fd, backup.lastPathComponent) == 0, "The old app could not be preserved. Nothing was replaced.")
@@ -174,7 +174,9 @@ private func run() throws {
     case "status": reply(try transaction.inspect())
     case "install": reply(try transaction.install(replace: request["replace"] as? Bool == true))
     case "open":
-      _ = try appInfo(transaction.target)
+      let installed = try appInfo(transaction.target)
+      try require(installed.team == payloadInfo.team && installed.build == payloadInfo.build && installed.version == payloadInfo.version,
+                  "The installed copy does not match this installer.")
       var done = false
       var error: Error?
       NSWorkspace.shared.openApplication(at: transaction.target, configuration: NSWorkspace.OpenConfiguration()) { app, failure in
@@ -184,7 +186,7 @@ private func run() throws {
       }
       let deadline = Date().addingTimeInterval(15)
       while !done && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
-      try require(done, "Opening the app timed out. Open it from Applications.")
+      try require(done, "Opening apparent timed out.")
       if let error { throw error }; reply(["opened": true])
     default: throw InstallError(message: "Unknown installer action.")
     }
@@ -197,7 +199,7 @@ private func run() throws {
   var cargs = args.map { strdup($0) } + [nil]
   defer { cargs.forEach { free($0) } }
   _ = cargs.withUnsafeMutableBufferPointer { execv(runtime.path, $0.baseAddress!) }
-  throw InstallError(message: "The installer could not open. Drag Apparent Preview to Applications in Finder.")
+  throw InstallError(message: "The installer could not open. Drag apparent to Applications in Finder.")
 }
 @main struct InstallerMain {
   static func main() {
