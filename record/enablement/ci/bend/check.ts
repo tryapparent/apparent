@@ -79,8 +79,10 @@ await bendScratch(async (scratch) => {
       `
     import assert from "node:assert/strict";
     import recording from "./recording-policy.mjs";
+    import captions from "./caption-admission.mjs";
     for (const available of [false, true]) {
       for (const saved of [false, true]) {
+        assert.equal(captions.preview_allowed(saved, available), saved && available);
         assert.equal(recording.volume_switch_enabled(available, saved), available || saved);
         assert.equal(recording.volume_level_enabled(available, saved), available && saved);
         assert.equal(recording.transcription_detail(false, saved, available), available || saved ? 1 : 0);

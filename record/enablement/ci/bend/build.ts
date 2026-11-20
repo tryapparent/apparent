@@ -19,9 +19,10 @@ export function buildAdmission(destination: string): Promise<void> {
 async function buildRecordModule(
   destination: string,
   module: string,
+  prefix?: string,
 ): Promise<void> {
   await bendScratch(async (scratch) => {
-    await buildBend(root, "record", scratch);
+    await buildBend(root, "record", scratch, undefined, prefix);
     mkdirSync(destination, { recursive: true });
     copyFileSync(join(scratch, module), join(destination, module));
   });
@@ -50,10 +51,20 @@ if (
   import.meta.url === pathToFileURL(resolve(process.argv[1])).href
 ) {
   const [destination, mode, ...extra] = process.argv.slice(2);
-  if (!destination || extra.length || (mode && mode !== "media"))
+  if (
+    !destination ||
+    extra.length ||
+    (mode && mode !== "media" && mode !== "captions")
+  )
     throw new Error(
-      "Usage: node record/enablement/ci/bend/build.ts <destination> [media]",
+      "Usage: node record/enablement/ci/bend/build.ts <destination> [media|captions]",
     );
   if (mode === "media") await buildMedia(resolve(destination));
+  else if (mode === "captions")
+    await buildRecordModule(
+      resolve(destination),
+      "caption-admission.mjs",
+      "record/transcription/",
+    );
   else await buildAdmission(resolve(destination));
 }

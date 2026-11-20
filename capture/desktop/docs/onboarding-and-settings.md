@@ -367,11 +367,11 @@ transaction and waits for acknowledgement. Errors require Refresh preference;
 the renderer cannot write arbitrary settings or read secrets. File edits are
 read by the Settings refresh and the next recording, without a restart.
 
-Enabling prepares the verified English Parakeet model in the background. The
-next recording uses a local stream once the model is ready, on Linux and macOS.
-Live text appears below the pill; Finish flushes the saved audio tail. Streaming
-failure preserves recording and retries the whole saved audio locally. This
-experiment overrides the ordinary Apple live/pause worker for that recording;
+Enabling prepares verified English Nemotron and Parakeet models in the
+background. On Linux and macOS, Nemotron supplies the live text below the pill.
+Finish cancels the preview and Parakeet transcribes the saved audio with word
+timings. Recording can finish during model preparation. This experiment overrides
+the ordinary Apple live/pause worker for that recording;
 disabling restores the existing path on the next recording. Missing Electron
 assets leave an explicit unavailable message in native Labs, with other Settings
 pages still reachable. Record's policy/bridge contract is in

@@ -1,11 +1,3 @@
-//! On-device Parakeet execution and verified model downloads, with measured word timings, through
-//! `transcribe.cpp`, the engine Hex uses. It loads a model Hex has already installed
-//! (`voice-control/models` in the user's data folder), else Apparent's own copy of Hex's Parakeet
-//! Unified English (`%LOCALAPPDATA%\Apparent\models`, `~/.local/share/apparent/models`), which
-//! `install` downloads once in the background and checks against its SHA-256. Like the Hex
-//! client, it transcribes continuous bounded chunks; unlike it, every word keeps the time the
-//! model heard it (`estimated: false`), so spoken cues ("look here") can cut keyframes.
-
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -74,7 +66,7 @@ fn receipt_path(model: &Path) -> PathBuf {
 }
 
 /// `.gguf` files in `dir` that have a `.verified.json` receipt beside them.
-fn verified_in(dir: &Path) -> Vec<PathBuf> {
+pub(super) fn verified_in(dir: &Path) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -140,11 +132,21 @@ pub fn transcribe(audio: &Path) -> Result<TranscriptData> {
             ..Default::default()
         });
     };
+    transcribe_model(audio, &path)
+}
+
+pub(super) fn installed_parakeet() -> Option<PathBuf> {
+    installed_models().into_iter().find(|path| {
+        path.file_name().is_some_and(|name| name == PARAKEET.filename)
+    })
+}
+
+pub(super) fn transcribe_model(audio: &Path, path: &Path) -> Result<TranscriptData> {
     let wav =
         std::fs::read(audio).with_context(|| format!("Could not read {}", audio.display()))?;
     let samples = crate::capture::engine::runtime::audio::audio::decode_wav_16k(&wav)?;
     let clips = crate::shared::hex::plan_clips(&samples);
-    let name = model_name(&path);
+    let name = model_name(path);
     let mut transcript = TranscriptData {
         source: format!("parakeet:{name}"),
         model: Some(name),
@@ -156,7 +158,7 @@ pub fn transcribe(audio: &Path) -> Result<TranscriptData> {
     }
 
     init_backends()?;
-    let model = Model::load(&path).with_context(|| format!("Could not load {}", path.display()))?;
+    let model = Model::load(path).with_context(|| format!("Could not load {}", path.display()))?;
     let mut session = model.session()?;
     let options = RunOptions {
         timestamps: TimestampKind::Word,
