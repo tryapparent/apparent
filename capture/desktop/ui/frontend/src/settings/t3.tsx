@@ -8,6 +8,8 @@ import {Switch} from '@apparent/ui/switch';
 import {Input} from '@apparent/ui/input';
 import {t3PickerEnabled,type PreferenceFacts} from './agents/policy';
 
+const refreshSending = 'Refresh to check whether sending to T3 is enabled, then try again.';
+
 export function T3Settings() {
   const [facts,setFacts]=useState<PreferenceFacts>();
   const [busy,setBusy]=useState(false),[operation,setOperation]=useState<'read'|'save'>('read');
@@ -67,12 +69,13 @@ export function T3Settings() {
   }
   const t3Enabled=facts&&t3PickerEnabled(facts);
 
-  return <section className="settings-agents" aria-label="T3 connections">
-    <section className="agent-preference" aria-labelledby="agent-t3-label">
+  return <section className="settings-agents settings-t3" aria-labelledby="agent-t3-label">
+    <div className="agent-preference">
       <h2 id="agent-t3-label" tabIndex={-1}>Send recordings to T3</h2>
       <ol className="settings-t3-steps">
         <li>
           <p><strong>Connect a computer</strong></p>
+          <p>Pair a computer to see its threads in Apparent.</p>
           <div className="settings-t3-connection">
             {disconnecting&&<p role="status">Disconnecting…</p>}
             {(facts?.t3Connections??(facts?.t3Origin?[{origin:facts.t3Origin,expiresAt:facts.t3ExpiresAt??0}]:[])).map(computer=><div key={computer.origin} className="settings-t3-computer">
@@ -88,14 +91,14 @@ export function T3Settings() {
             <p><strong id="agent-t3-enable">Enable sending to T3</strong></p>
             <Switch id="agent-t3-control" className="agent-switch" checked={t3Enabled??false} aria-labelledby="agent-t3-enable" aria-describedby="agent-t3-help" aria-busy={busy&&setting==='t3'} disabled={busy||t3Enabled===undefined||connecting} onCheckedChange={value=>void request(value,'t3')} />
           </div>
-          <p id="agent-t3-help">Off by default. Applies to your next recording.</p>
+          <p id="agent-t3-help">Applies to your next recording. You choose what to send.</p>
         </li>
         <li>
           <p><strong>Choose a thread</strong></p>
-          <p>With a computer connected and sending on, choose a thread from the recording pill during processing. It sends when ready.</p>
+          <p>Once a computer is connected and sending is on, choose a thread in the recording pill during processing. Apparent sends the recording when it’s ready.</p>
         </li>
       </ol>
-    </section>
+    </div>
     {setup&&<dialog ref={dialog} className="settings-t3-dialog" aria-labelledby="t3-setup-title" onCancel={event=>{event.preventDefault();closeSetup();}}>
       <h2 id="t3-setup-title">Connect T3</h2>
       <p>Threads from all connected computers appear together.</p>
@@ -110,9 +113,9 @@ export function T3Settings() {
       <div className="settings-t3-dialog-actions">{preview&&<Button disabled={connecting} onClick={()=>void connect()}>Connect</Button>}<Button variant={preview?'outline':'default'} className={preview?'settings-decision-alternative':undefined} disabled={connecting} onClick={()=>void pasteLink()}>{preview?'Paste another':'Paste link or code'}</Button><Button variant="outline" className="settings-decision-alternative" disabled={connecting} onClick={closeSetup}>Cancel</Button></div>
     </dialog>}
 
-    <span role="status" className="sr-only">{busy?(operation==='save'?'Saving preference':'Reading saved preference'):''}</span>
-    {(!facts||facts.error)&&!busy&&!error&&<Button id="agent-refresh" variant="secondary" onClick={()=>void request()}>Refresh preference</Button>}
-    <ErrorDialog open={!!error} title={!facts?'Preference not confirmed':facts.error==='config_read_failed'?'Unable to read preference':'Unable to save preference'} description={error} artwork={<img src={frog} alt=""/>} recoveryLabel="Refresh preference" busy={busy}
+    <span role="status" className="sr-only">{busy?(operation==='save'?'Saving the T3 sending preference…':'Reading the T3 sending preference…'):''}</span>
+    {(!facts||facts.error)&&!busy&&!error&&<Button id="agent-refresh" variant="secondary" onClick={()=>void request()}>Refresh T3 sending</Button>}
+    <ErrorDialog open={!!error} title={!facts?'T3 sending preference unconfirmed':facts.error==='config_read_failed'?'Unable to read T3 sending preference':'Unable to save T3 sending preference'} description={refreshSending} artwork={<img src={frog} alt=""/>} recoveryLabel="Refresh T3 sending" busy={busy}
       restoreFocus={()=>{const control=document.getElementById(`agent-${setting}-control`) as HTMLButtonElement|null;(control&&!control.disabled?control:document.getElementById('agent-refresh'))?.focus();}}
       onRecover={()=>void request(undefined,setting)} onClose={()=>setError('')}/>
     <ErrorDialog open={!!connectionError&&!setup} title="T3 connection not confirmed" description={connectionError} recoveryLabel="Refresh connection" busy={busy||connecting} artwork={<img src={frog} alt=""/>} onRecover={()=>{setConnectionError('');void request(undefined,'t3');}} onClose={()=>setConnectionError('')}/>

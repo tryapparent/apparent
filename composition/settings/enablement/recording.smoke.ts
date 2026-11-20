@@ -16,7 +16,7 @@ const loadFrontendDependency = createRequire(join(frontend, "package.json"));
 const { chromium, expect } = loadFrontendDependency("@playwright/test");
 
 test("staged Recording opens directly, receives native facts and saves only on its active route", {
-  timeout: 45_000,
+  timeout: 60_000,
 }, async () => {
   const home = await mkdtemp(join(tmpdir(), "recording-pane-"));
   const stage = process.env.APPARENT_RECORDING_STAGE;
@@ -53,7 +53,6 @@ test("staged Recording opens directly, receives native facts and saves only on i
     child.stdin.write(JSON.stringify(message) + "\n");
   const fixture = recordingFixture(send);
   const actions: Record<string, unknown>[] = [];
-  let pickerSupported = false;
   let heldT3: unknown;
   const disconnected = { saved: null, t3Saved: false, t3Configured: false };
   let t3Facts: typeof disconnected & {
@@ -62,58 +61,6 @@ test("staged Recording opens directly, receives native facts and saves only on i
   createInterface({ input: child.stdout }).on("line", (line) => {
     const action = JSON.parse(line);
     actions.push(action);
-    if (action.action === "navigate") {
-      send({ type: "show", pane: action.pane });
-      if (action.pane === "general")
-        send({
-          type: "general-state",
-          platform: "linux",
-          login: { on: false, available: true, needsApproval: false },
-          shortcuts: [
-            {
-              kind: "record",
-              title: "Record",
-              label: "F1",
-              recording: false,
-              externallyManaged: false,
-              isDefault: true,
-              clearable: false,
-            },
-          ],
-          errorReporting: true,
-        });
-      if (action.pane === "permissions")
-        send({
-          type: "permission-state",
-          state: {
-            platform: "wayland",
-            rows: [
-              {
-                permission: "accessibility",
-                status: "denied",
-                required: false,
-                relaunch: false,
-                repair: "copy-input",
-              },
-            ],
-          },
-        });
-    }
-    if (action.action === "labs-preference")
-      send({
-        type: "labs-result",
-        request: action.request,
-        facts: {
-          saved: false,
-          screenPickerSaved: false,
-          screenPickerSupported: pickerSupported,
-          doubleShiftSaved: false,
-          autoPasteSupported: false,
-          autoPasteSaved: false,
-          sharingSaved: false,
-          wisprSupported: false,
-        },
-      });
     if (action.action === "agents-preference") {
       if (action.setting === "t3" && typeof action.enabled === "boolean") {
         heldT3 = action.request;
@@ -146,6 +93,15 @@ test("staged Recording opens directly, receives native facts and saves only on i
     browser = await chromium.connectOverCDP(endpoint);
     const context = browser.contexts()[0];
     const page = context.pages()[0];
+    const proof = process.env.APPARENT_RECORDING_PROOF;
+    if (proof) await mkdir(proof, { recursive: true });
+    async function screenshot(name: string) {
+      if (proof)
+        await page.screenshot({
+          path: join(proof, `${name}.png`),
+          animations: "disabled",
+        });
+    }
     await expect(page).toHaveTitle("Apparent Settings — Recording");
     await expect(page.getByRole("status")).toHaveText(
       "Loading recording settings…",
@@ -187,16 +143,10 @@ test("staged Recording opens directly, receives native facts and saves only on i
           ),
           true,
         );
-        const proof = process.env.APPARENT_RECORDING_PROOF;
         if (proof) {
-          await mkdir(proof, { recursive: true });
-          await page.screenshot({
-            path: join(proof, `recording-${width}-${colorScheme}.png`),
-          });
+          await screenshot(`recording-${width}-${colorScheme}`);
           await video.focus();
-          await page.screenshot({
-            path: join(proof, `volume-export-${width}-${colorScheme}.png`),
-          });
+          await screenshot(`volume-export-${width}-${colorScheme}`);
           await input.focus();
         }
       }
@@ -223,12 +173,47 @@ test("staged Recording opens directly, receives native facts and saves only on i
     ).toBeVisible();
     await expect(page.getByRole("slider", { name: "Lower to" })).toBeEnabled();
     fixture.hex();
-    await expect(
-      page.getByRole("textbox", { name: "Hex language" }),
-    ).toBeVisible();
+    const language = page.getByRole("textbox", { name: "Hex language" });
+    const apply = page.getByRole("button", { name: "Apply", exact: true });
+    await expect(language).toBeVisible();
     await expect(
       page.getByRole("combobox", { name: "Hex model" }),
     ).toBeVisible();
+    for (const width of [720, 640]) {
+      for (const theme of ["light", "dark"] as const) {
+        await session.send("Emulation.setDeviceMetricsOverride", {
+          width,
+          height: 530,
+          deviceScaleFactor: 1,
+          mobile: false,
+        });
+        await page.emulateMedia({
+          colorScheme: theme,
+          reducedMotion: "reduce",
+        });
+        await page.evaluate(() => document.fonts.ready);
+        assert.equal(await page.evaluate(() => innerWidth), width);
+        await language.focus();
+        await expect(apply).toBeDisabled();
+        await expect(apply).toBeInViewport({ ratio: 1 });
+        assert.notEqual(
+          await apply.evaluate((el) => getComputedStyle(el).color),
+          await apply.evaluate((el) => getComputedStyle(el).backgroundColor),
+        );
+        await screenshot(`hex-disabled-${width}-${theme}`);
+        await language.fill("9");
+        await expect(language).toHaveAttribute("aria-invalid", "true");
+        await expect(apply).toBeDisabled();
+        await screenshot(`hex-invalid-${width}-${theme}`);
+        await language.fill("nl");
+        await page.keyboard.press("Tab");
+        await expect(apply).toBeEnabled();
+        await expect(apply).toBeFocused();
+        await expect(apply).toHaveCSS("outline-style", "solid");
+        await screenshot(`hex-apply-focus-${width}-${theme}`);
+        await language.fill("en");
+      }
+    }
     await expect(page.getByRole("meter")).toHaveCount(0);
     await expect
       .poll(() =>
@@ -268,13 +253,9 @@ test("staged Recording opens directly, receives native facts and saves only on i
     assert.equal(page.url(), startUrl);
     await expect(video).toBeChecked();
 
-    const proof = process.env.APPARENT_RECORDING_PROOF;
     const index = page.getByRole("navigation", {
       name: "Jump to a setting",
     });
-    async function screenshot(name: string) {
-      if (proof) await page.screenshot({ path: join(proof, `${name}.png`) });
-    }
     async function openTask(label: string, heading: string) {
       await index
         .getByRole("button", { name: label, exact: true })
@@ -341,12 +322,12 @@ test("staged Recording opens directly, receives native facts and saves only on i
         await screenshot(`shortcut-${variant}`);
         await openRecording();
 
-        pickerSupported = theme === "light";
+        fixture.pickerSupported = theme === "light";
         await openTask("Screen selection", "When you press Record");
         const chooseScreen = page.getByRole("radio", {
           name: "Choose a screen each time",
         });
-        if (pickerSupported) await expect(chooseScreen).toBeEnabled();
+        if (fixture.pickerSupported) await expect(chooseScreen).toBeEnabled();
         else await expect(chooseScreen).toBeDisabled();
         await screenshot(`screen-selection-${variant}`);
         await openRecording();
@@ -386,6 +367,12 @@ test("staged Recording opens directly, receives native facts and saves only on i
         await t3.press("Space");
         await expect.poll(() => heldT3).toBeDefined();
         await expect(t3).toHaveAttribute("aria-busy", "true");
+        await expect(t3).toHaveCSS("cursor", "wait");
+        await expect(
+          page.getByRole("status").filter({
+            hasText: "Saving the T3 sending preference…",
+          }),
+        ).toHaveCount(1);
         await expect(t3).not.toBeChecked();
         await screenshot(`send-pending-${variant}`);
         send({
@@ -394,12 +381,12 @@ test("staged Recording opens directly, receives native facts and saves only on i
           facts: { error: "config_write_failed" },
         });
         const t3Failure = page.getByRole("alertdialog", {
-          name: "Unable to save preference",
+          name: "Unable to save T3 sending preference",
         });
         await expect(t3Failure).toBeVisible();
         await screenshot(`send-failure-${variant}`);
         const recover = t3Failure.getByRole("button", {
-          name: "Refresh preference",
+          name: "Refresh T3 sending",
         });
         await expect(recover).toBeFocused();
         await page.keyboard.press("Enter");
@@ -415,6 +402,10 @@ test("staged Recording opens directly, receives native facts and saves only on i
         await expect(t3).toBeChecked();
         await steps.last().scrollIntoViewIfNeeded();
         await screenshot(`send-connected-on-${variant}`);
+        await page
+          .getByRole("heading", { name: "Compact recording prompts" })
+          .scrollIntoViewIfNeeded();
+        await screenshot(`send-group-end-${variant}`);
         t3Facts = disconnected;
         await openRecording();
 
@@ -426,22 +417,31 @@ test("staged Recording opens directly, receives native facts and saves only on i
         await openRecording();
 
         for (const [label, heading, name] of [
-          ["Transcription after recording", "Transcription", "transcription"],
           [
-            "Live transcription",
-            "Live local transcription",
-            "transcription-live",
+            "Transcription after recording",
+            "Transcription after recording",
+            "transcription",
           ],
+          ["Live transcription", "Live transcription", "transcription-live"],
           ["Double-tap Shift for notes", "Double-tap Shift for notes", "notes"],
           ["Public links", "Public sharing links", "public-links"],
           ["Auto paste", "Auto paste", "auto-paste-unavailable"],
           ["Video export", "Export", "video-export"],
         ]) {
           await openTask(label, heading);
-          if (label === "Auto paste")
+          if (label === "Auto paste") {
             await expect(
               page.getByRole("switch", { name: label }),
             ).toBeDisabled();
+            await expect(
+              page.getByText("Unavailable on this computer.", { exact: false }),
+            ).toBeVisible();
+            await expect(
+              page.getByText(
+                /Apparent pastes.*automatically presses Enter.*leave the message unsent/,
+              ),
+            ).toBeVisible();
+          }
           await screenshot(`${name}-${variant}`);
           await openRecording();
         }

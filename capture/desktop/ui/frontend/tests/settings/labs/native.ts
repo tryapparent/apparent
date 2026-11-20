@@ -42,7 +42,7 @@ try{
   assert.equal(saved.experiments.compactHandoff,on);assert.equal(saved.experiments.other,true);
   await page.reload();await expect(compact).toBeEnabled();await expect(compact).toHaveAttribute('aria-checked',String(on));
  }
- const toggle=page.getByRole('switch',{name:'Live local transcription'});
+ const toggle=page.getByRole('switch',{name:'Live transcription'});
  await expect(toggle).toHaveAttribute('aria-checked','false');await expect(toggle).toBeEnabled();
  for(const on of [true,false]){
   await toggle.click();await expect(toggle).toHaveAttribute('aria-checked',String(on));

@@ -397,7 +397,10 @@ export function RecordingControls({
           </p>
         )}
       </Group>
-      <Group title="Transcription" sectionId="recording-transcription">
+      <Group
+        title="Transcription after recording"
+        sectionId="recording-transcription"
+      >
         <div className="recording-group">
           <Options
             label="Transcription engine"

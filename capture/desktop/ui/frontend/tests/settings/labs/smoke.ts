@@ -40,7 +40,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   await expect(startNow).toBeChecked();
   await expect(chooseScreen).toBeDisabled();
   await expect(chooseScreen).toHaveAccessibleDescription("Open the system picker before recording starts.");
-  const toggle=page.getByRole('switch',{name:'Live local transcription'});
+  const toggle=page.getByRole('switch',{name:'Live transcription'});
   const compact=page.getByRole('switch',{name:'Compact recording prompts'});
   const speech=page.getByRole('switch',{name:'Transcript-only handoff'});
   await expect(compact).toBeDisabled();await expect(speech).toBeDisabled();

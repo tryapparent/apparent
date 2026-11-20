@@ -78,7 +78,7 @@ export function Labs({noteExperiment: DoubleShiftNotes, frogExperiment: FrogNudg
       <p id="transcript-only-help">Send just the transcript when no screen activity is detected.</p>
     </section>
     <section className="agent-preference">
-      <div className="agent-preference-row"><h2 className="settings-preference-label" id="local-stream-label" tabIndex={-1}>Live local transcription</h2>
+      <div className="agent-preference-row"><h2 className="settings-preference-label" id="local-stream-label" tabIndex={-1}>Live transcription</h2>
         <Switch id={controls.streaming} className="agent-switch" checked={on ?? false} aria-labelledby="local-stream-label" aria-describedby="local-stream-help local-stream-ready" aria-busy={busy && setting === 'streaming'}
           disabled={busy || on === undefined} onCheckedChange={value => void request(value)} /></div>
       <p id="local-stream-help">See your words below the recording controls as you speak. Transcribes English on this computer with Parakeet.</p>
@@ -88,21 +88,23 @@ export function Labs({noteExperiment: DoubleShiftNotes, frogExperiment: FrogNudg
       <div className="agent-preference-row"><h2 className="settings-preference-label" id="auto-paste-label" tabIndex={-1}>Auto paste</h2>
         <Switch id={controls.autoPaste} className="agent-switch" checked={autoPaste ?? false} aria-labelledby="auto-paste-label" aria-describedby="auto-paste-help auto-paste-limits" aria-busy={busy && setting === 'autoPaste'}
           disabled={busy || autoPaste === undefined || !autoPasteSupported.current} onCheckedChange={value => void request(value, 'autoPaste')} /></div>
-      <p id="auto-paste-help">Paste the image and text into your focused composer, then press Enter to send. Off by default; applies to the next recording.</p>
-      <p id="auto-paste-limits">Linux with Hyprland only. Keep your composer focused until processing finishes. Enter is pressed automatically; attachment acceptance and sending depend on your app.</p>
+      <p id="auto-paste-help">After processing, Apparent pastes the image and text into the focused composer and automatically presses Enter. Your app may reject the attachment or leave the message unsent.</p>
+      <p id="auto-paste-limits">{facts?.autoPasteSupported === false
+        ? 'Unavailable on this computer. Auto paste requires Linux with Hyprland.'
+        : 'Linux with Hyprland only. Starting with your next recording, keep your composer focused until processing finishes.'}</p>
     </section>
     <section className="agent-preference">
       <div className="agent-preference-row"><h2 className="settings-preference-label" id="public-sharing-label" tabIndex={-1}>Public sharing links</h2>
         <Switch id={controls.sharing} className="agent-switch" checked={sharing ?? false} aria-labelledby="public-sharing-label" aria-describedby="public-sharing-help public-sharing-limits" aria-busy={busy && setting === 'sharing'}
           disabled={busy || sharing === undefined} onCheckedChange={value => void request(value, 'sharing')} /></div>
-      <p id="public-sharing-help">Show Public link after recording. Off by default; applies to the next recording.</p>
+      <p id="public-sharing-help">Show Public link after your next recording.</p>
       <p id="public-sharing-limits">Anyone with the link can view the shared capture. Shared captures are not end-to-end encrypted.</p>
     </section>
     <section className="agent-preference">
       <div className="agent-preference-row"><h2 className="settings-preference-label" id="wispr-lab-label">Dictation app conflicts</h2>
         <Switch id={controls.wisprFlow} className="agent-switch" checked={wispr ?? false} aria-labelledby="wispr-lab-label" aria-describedby="wispr-lab-help" aria-busy={busy && setting === 'wisprFlow'}
           disabled={busy || wispr === undefined || !wisprSupported.current} onCheckedChange={value => void request(value, 'wisprFlow')} /></div>
-      <p id="wispr-lab-help">Offer to quit Wispr Flow or Superwhisper before choosing a recording shortcut. macOS only. Off by default.</p>
+      <p id="wispr-lab-help">Offer to quit Wispr Flow or Superwhisper before choosing a recording shortcut. macOS only.</p>
     </section>
     {FrogNudge && wisprSupported.current && <FrogNudge id={controls.dictationFrog} checked={facts?.dictationFrogSaved ?? false}
       disabled={busy || !facts || !!facts.error} saving={busy && setting === 'dictationFrog'}

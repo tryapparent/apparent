@@ -89,6 +89,20 @@
   border-color: var(--apparent-carbon);
 }
 
+.settings-content .recording-language button {
+  background: var(--apparent-paper);
+  border-color: var(--apparent-carbon);
+  color: inherit;
+}
+
+.settings-content .recording-language button:enabled:hover {
+  background: var(--apparent-lilac);
+}
+
+.settings-content .recording-language button:disabled {
+  opacity: 0.65;
+}
+
 .recording-language .recording-note {
   margin: 0;
   padding: 0 16px 12px;
