@@ -1,6 +1,6 @@
 # Desktop Settings
 
-Status: adopted Desktop Settings interaction rules, revised 16.11.2026.
+Status: adopted Desktop Settings interaction rules, revised 20.11.2026.
 
 Use this specification for apparent Desktop Settings on macOS and Linux.
 It extends [the product interface system](product-interface.md), not the
@@ -56,20 +56,12 @@ complete option labels. Compact wordmarks remain at least 120px wide.
 
 ## Switches
 
-- Use a rounded 48 by 24px track with an 18px circular thumb, inside an
-  interaction region at least 48 by 44px. The rounded track and thumb are a
-  functional control exception to square panels, not permission for pill cards.
-- Preference-switch tracks are muted neutral gray (#767676) when Off and
-  Signal (#7A58C7) when On. Use a white (#FFFFFF) circular thumb in both
-  themes and states. Gray tracks and white thumbs are functional switch-only
-  exceptions; do not use them for text, general surfaces, artwork or new brand
-  accents. Gray means Off, not unavailable: preserve full enabled contrast
-  and keyboard operation; distinguish genuinely disabled controls separately. Give the thumb a 1px Carbon edge within its
-  18px diameter so it remains distinct against both tracks. Tracks have no
-  visible outline. The thumb is left when Off and right when On; expose the
-  checked state accessibly. Color never supplies the only distinction.
-  A checked preference is not an in-progress status or primary action. The
-  optional command-copy surface remains Lilac independently of switch state.
+- Use a 51 by 31px rounded track, a 27px white thumb and a 51 by 44px
+  minimum interaction area. Keep the thumb white with a neutral rim in
+  both states.
+- Use pale gray for Off in light appearance and charcoal gray for Off in
+  dark appearance. Use a thin neutral track edge for Off and a solid Signal
+  track for On. Thumb position shows the state alongside color.
 - Retain a visible setting label and short consequence. A switch represents an
   immediately applied, reversible binary preference, not an arbitrary action.
   Do not introduce a pane-wide Save button for independent immediate settings.
@@ -78,11 +70,9 @@ complete option labels. Compact wordmarks remain at least 120px wide.
   Never turn a saved preference into proof that an OS effect or installation
   happened.
 - Keep successful preference saves quiet. During persistence, use a native wait cursor over the switch, prevent repeat activation and announce pending state to assistive technology without visible saving text. Operational failures open the shared ErrorDialog with a failure icon/color, clear message, optional update-style artwork and a named recovery action. Put recovery first on the left, Close second, and align the action group left. Support keyboard focus, Escape and focus restoration. Keep field validation beside its field. Do not show routine success toasts or a persistent "Saved" label.
-- Essential component/state cues need at least 3:1 contrast with adjacent
-  colors. Neutral #767676 against Paper measures 4.00:1, against Carbon
-  4.59:1 and against the white thumb 4.54:1. Signal against Paper measures
-  4.57:1, against Carbon 4.02:1 and against white 5.19:1. Retain thumb
-  position and accessible checked state so hue is never the only state cue.
+- Essential component cues need at least 3:1 contrast with adjacent colors.
+  The gray rim defines the white thumb on pale gray and the Off track edge
+  distinguishes that track from Paper and Carbon.
 
 The reusable dimensions are under `component.desktopSettings` in JSON and
 `--apparent-desktop-settings-*` in CSS. Reuse the existing
@@ -90,7 +80,7 @@ The reusable dimensions are under `component.desktopSettings` in JSON and
 
 ## Dark-theme principle
 
-Dark mode retains the five canonical colors plus the neutral Off-track and white switch-thumb exceptions. Use Carbon for the main
+Dark mode retains the five canonical colors plus the switch-specific neutral exceptions. Use Carbon for the main
 canvas and Paper for reading text; reuse Stock, Lilac and Signal for their
 appropriate surface, selection and focus roles. Do not introduce other grays
 or replace the palette with framework defaults. Token roles may adapt to the
@@ -99,8 +89,8 @@ contrast. The precise dark-theme component treatments still need visual review.
 
 ## Remaining decisions and verification
 
-The owner’s 16 November recording selects neutral Off tracks, highlighted On tracks and white circular thumbs in both themes, replacing the earlier purple-in-both-states rule. This revision adopts that direction in brand tokens and the gallery; it does not establish Desktop rollout. Retain the compact geometry, no track outline, quiet save success, busy cursor, shared error dialogs and the
-palette-preserving dark-theme principle. Detailed copy-feedback presentation
+The 20 November selection uses the Apple-style silhouette and Signal On in
+both appearances. Detailed copy-feedback presentation
 and other unshown component states remain open; do not present an unreviewed
 variant as owner-approved. The implementing
 product must still verify actual fonts, focus, keyboard/assistive behavior,

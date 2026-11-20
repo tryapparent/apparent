@@ -34,9 +34,8 @@ await bendScratch(async (scratch) => {
     delay: 350,
     eligible: [false, false, true, false],
     cycle: [
-      [1, false],
-      [2, false],
-      [0, true],
+      [1, true],
+      [0, false],
     ],
     ended: [
       [false, false, false],

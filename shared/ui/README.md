@@ -11,9 +11,7 @@ The optional `--apparent-error-dialog-inset` and
 `--apparent-error-dialog-action-gap` retain 24px defaults. General uses 16px
 in short viewports so recovery remains visible at enlarged text sizes.
 
-`@apparent/ui/switch` supplies optional binary preferences: a 48 × 24px
-Signal-off/Lilac-on track, 18px Carbon light-mode thumb and white dark-mode thumb with a Carbon edge and 44px interaction target, without
-a track outline in either theme. Supply a visible accessible label, controlled
+`@apparent/ui/switch` supplies optional binary preferences: a 51 × 31px rounded track, 27px white thumb and 51 × 44px target. Off uses a theme-specific gray and a thin neutral boundary. On uses Signal. The white thumb keeps its neutral rim in both states. Supply a visible accessible label, controlled
 checked value and acknowledgement-based save handler. During persistence set
 `disabled` and `aria-busy`; the switch retains its pointer hotspot for the wait
 cursor. Its stylesheet is included automatically.
@@ -45,10 +43,8 @@ gold/Carbon preventive caution, and retains legible theme-specific success cues.
 Selected Lilac navigation uses Carbon focus to retain non-text contrast.
 The native window background remains paired with the system canvas.
 
-Desktop's adopted neutral-Off/Signal-On switch palette is published as the
-additive `--apparent-desktop-settings-switch-*` roles. General opts its shared
-Switch controls into these roles; other consumers keep their existing mapping
-until their owning surface adopts and verifies the change.
+Fixed-theme specimens such as the Public brand book use the published switch
+roles and set their Off track per specimen.
 
 Input provides the native text/URL field with shared colors, a 44px minimum
 height and a visible keyboard focus outline. Supply a persistent label and
@@ -114,8 +110,7 @@ and checks CSS, native window background and app-owned screenshots. It requires
 a missing system appearance route is an unrun gate, not a passing emulation.
 
 Product Settings uses the approved 48/24/18 title/section/body scale (4:2:1.5).
-Preference labels remain 18px at medium weight. White is a functional switch-thumb
-exception, not a brand accent. Left/right position and accessible checked state
+Preference labels remain 18px at medium weight. White is reserved for the switch thumb. Left/right position and accessible checked state
 supplement color. At up to 700px, navigation moves above the content so complete
 retention choices remain readable.
 See [content-card action guidance](actions.md) for recommendation ordering,

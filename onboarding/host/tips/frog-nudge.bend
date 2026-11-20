@@ -18,14 +18,12 @@ def next_count(previous: U32) -> U32:
   match previous:
     case 0:
       1
-    case 1:
-      2
     case other:
       0
 
 def wave_due(previous: U32) -> Bool:
   match previous:
-    case 2:
+    case 0:
       True{}
     case other:
       False{}

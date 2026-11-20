@@ -84,17 +84,17 @@ are verified by `onboarding/enablement/ci/bend/check.ts`.
 ## Frog after dictation
 
 **Settings → Labs → Frog after dictation** is off by default. On macOS, the
-frog waves after every third input session in Wispr Flow or Superwhisper.
-Each app has its own count.
+frog waves after the first, third, fifth, and subsequent odd-numbered input
+sessions in Wispr Flow and Superwhisper. Each app has its own cycle.
 Cancellations and microphone tests also count.
 The observer reads per-app input state through Core Audio. It opens no input
 stream and stores neither audio nor text.
 
 The desktop coordinator supplies current capture state. Onboarding's
 Bend policy admits the transition and the existing config transaction reserves
-the cycle position in `onboarding.dictationFrogSessions` or
-`onboarding.superwhisperFrogSessions`. The updated version
-starts a fresh cycle. Turning the experiment off pauses progress. The Labs
+the cycle position in `onboarding.dictationFrogAlternation` or
+`onboarding.superwhisperFrogAlternation`. Upgrading starts a fresh cycle for
+each app. Turning the experiment off pauses progress. The Labs
 preview plays the same transparent eight-second clip without touching progress.
 Reduce Motion suppresses animation. The automatic overlay is click-through,
 non-activating, and closes if a capture starts.

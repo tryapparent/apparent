@@ -40,7 +40,7 @@ function Library() {
     </article>
     <article>
       <h3>Optional preference switch</h3>
-      <p id="example-playful-help">Muted gray when Off; Signal highlight when On. The circular thumb stays white. Thumb position and the accessible checked value also communicate state. No setting is saved.</p>
+      <p id="example-playful-help">Light or dark gray with a neutral edge when Off. Signal when On. The white thumb keeps the same neutral rim in both states. Thumb position and the accessible checked value also communicate state. No setting is saved.</p>
       {(['light', 'dark'] as const).map(theme => <div className={`bb-switch-specimen bb-switch-${theme}`} key={theme}>
         <h4>{theme === 'light' ? 'Light mode' : 'Dark mode'}</h4>
         <div className="bb-control-row">
@@ -53,7 +53,7 @@ function Library() {
           <Switch className="bb-switch" aria-labelledby={`example-disabled-${theme}`} checked={false} onCheckedChange={() => {}} disabled />
         </div>
       </div>)}
-      <p>48 × 24px track, 18px thumb, 48 × 44px target. White circular thumbs with a Carbon edge in both themes. No track outline. Real preferences save quietly; a wait cursor indicates saving and operational failures open ErrorDialog.</p>
+      <p>51 × 31px track and 27px thumb, with a 51 × 44px target. Real preferences save quietly; a wait cursor indicates saving and operational failures open ErrorDialog.</p>
       <Source file="forms/switch.tsx" example={'import { Switch } from "@apparent/ui/switch";\n<Switch aria-label="Playful details" checked={enabled} onCheckedChange={setEnabled} />'} />
     </article>
     <article>

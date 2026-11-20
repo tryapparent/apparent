@@ -130,6 +130,37 @@ test("lost acknowledgement retries the same new thread, command and message with
   });
 });
 
+test("new thread uses origin/main when T3 does not mark the default branch", async (t) => {
+  const f = await fixture(t);
+  f.worktree(
+    {
+      isRepo: true,
+      refs: [
+        { name: "main", isDefault: false, isRemote: false },
+        { name: "origin/feature/main", isDefault: false, isRemote: true },
+      ],
+      nextCursor: 100,
+    },
+    {
+      isRepo: true,
+      refs: [{ name: "origin/main", isDefault: false, isRemote: true }],
+      nextCursor: null,
+    },
+  );
+  const c = new Controller(() => {}, f.config);
+  await c.update("capture", "completed");
+  await c.ready("capture", "Synthetic recording");
+  await c.confirm("capture", "new");
+  assert.equal(c.view()?.phase, "sent");
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0].tag, "orchestration.launchThread");
+  assert.deepEqual(f.calls[0].payload.workspaceStrategy, {
+    type: "worktree",
+    baseRef: "origin/main",
+    startFromOrigin: true,
+  });
+});
+
 test("cancel and failed finalization never dispatch; stale confirmation cannot target a newer recording", async (t) => {
   const f = await fixture(t),
     c = new Controller(() => {}, f.config);

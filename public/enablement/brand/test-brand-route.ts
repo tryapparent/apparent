@@ -69,8 +69,8 @@ test('packaged brand reading view, downloads, deep links and keyboard slides wor
       await preference.focus()
       await page.keyboard.press('Space')
       assert.equal(await preference.getAttribute('aria-checked'),'false')
-      assert.equal(await preference.locator('.apparent-switch-track').evaluate(element=>getComputedStyle(element).backgroundColor),'rgb(118, 118, 118)')
-      assert.equal(await preference.locator('.apparent-switch-track').evaluate(element=>getComputedStyle(element).borderWidth),'0px')
+      assert.equal(await preference.locator('.apparent-switch-track').evaluate(element=>getComputedStyle(element).backgroundColor),'rgb(229, 229, 234)')
+      assert.equal(await preference.locator('.apparent-switch-track').evaluate(element=>getComputedStyle(element).boxShadow),'rgb(118, 118, 118) 0px 0px 0px 1px inset')
       await page.keyboard.press('Enter')
       assert.equal(await preference.getAttribute('aria-checked'),'true')
       assert.deepEqual(await page.locator('.bb-type-hierarchy').evaluate(element =>
@@ -87,7 +87,7 @@ test('packaged brand reading view, downloads, deep links and keyboard slides wor
         }
         await page.keyboard.press('Space')
         assert.equal(await control.getAttribute('aria-checked'),'false')
-        assert.equal(await control.locator('.apparent-switch-track').evaluate(element => getComputedStyle(element).backgroundColor),'rgb(118, 118, 118)')
+        assert.equal(await control.locator('.apparent-switch-track').evaluate(element => getComputedStyle(element).backgroundColor),theme==='light'?'rgb(229, 229, 234)':'rgb(57, 57, 61)')
         assert.equal(await control.locator('.apparent-switch-thumb').evaluate(element => getComputedStyle(element).backgroundColor),'rgb(255, 255, 255)')
         assert.equal(await page.locator(`.bb-switch-${theme} .bb-switch`).last().isDisabled(),true)
         if (proof) await page.locator(`.bb-switch-${theme}`).screenshot({path:join(proof,`switch-${theme}-off-${width}.png`)})
