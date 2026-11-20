@@ -24,7 +24,6 @@ export function macProduct(channel: string | undefined) {
       : "dev.simonvanlaak.apparent.preview",
     asset: nightly ? "Apparent-Nightly" : "Apparent-Preview",
     feed: nightly ? "nightly.xml" : "appcast.xml",
-    scheme: nightly ? "apparent-nightly" : "apparent",
   };
 }
 
@@ -36,10 +35,10 @@ export function appPlist(
   key: string,
   product = macProduct(undefined),
 ) {
-  return `<?xml version="1.0" encoding="UTF-8"?>
+  const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>Apparent launch</string><key>CFBundleURLSchemes</key><array><string>${product.scheme}</string></array><key>CFBundleTypeRole</key><string>Viewer</string></dict></array>
+<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>Apparent launch</string><key>CFBundleURLSchemes</key><array><string>apparent</string></array><key>CFBundleTypeRole</key><string>Viewer</string></dict></array>
 <key>CFBundleExecutable</key><string>apparent</string>
 <key>CFBundleIconFile</key><string>Apparent</string>
 <key>CFBundleIdentifier</key><string>${product.id}</string>
@@ -66,6 +65,9 @@ export function appPlist(
 <key>SUPublicEDKey</key><string>${key}</string>
 <key>SUVerifyUpdateBeforeExtraction</key><true/>
 </dict></plist>`;
+  return product.nightly
+    ? plist.replace(/^<key>CFBundleURLTypes<\/key>.*\n/m, "")
+    : plist;
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const [command, ...args] = process.argv.slice(2);

@@ -48,6 +48,8 @@ test("Nightly feed updates between commits with the same application version", a
   const nightly = appPlist("1.2.3", "1001.1", "key", macProduct("main"));
   assert.match(stable, /apparent\.preview/);
   assert.match(stable, /\/appcast\.xml/);
+  assert.match(stable, /<key>CFBundleURLSchemes<\/key>/);
   assert.match(nightly, /apparent\.nightly/);
   assert.match(nightly, /\/nightly\.xml/);
+  assert.doesNotMatch(nightly, /<key>CFBundleURLTypes<\/key>/);
 });
