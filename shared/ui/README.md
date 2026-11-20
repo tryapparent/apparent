@@ -12,8 +12,9 @@ The optional `--apparent-error-dialog-inset` and
 in short viewports so recovery remains visible at enlarged text sizes.
 
 `@apparent/ui/switch` supplies optional binary preferences: a 48 × 24px
-Signal-off/Lilac-on track, 18px Carbon light-mode thumb and white dark-mode thumb with a Carbon edge and 44px interaction target, without
-a track outline in either theme. Supply a visible accessible label, controlled
+muted-gray Off (#767676) / Signal On (#7A58C7) track, an 18px white thumb in
+both themes with a Carbon edge, and a 44px interaction target, without a track
+outline in either theme. Supply a visible accessible label, controlled
 checked value and acknowledgement-based save handler. During persistence set
 `disabled` and `aria-busy`; the switch retains its pointer hotspot for the wait
 cursor. Its stylesheet is included automatically.
@@ -45,10 +46,9 @@ gold/Carbon preventive caution, and retains legible theme-specific success cues.
 Selected Lilac navigation uses Carbon focus to retain non-text contrast.
 The native window background remains paired with the system canvas.
 
-Desktop's adopted neutral-Off/Signal-On switch palette is published as the
-additive `--apparent-desktop-settings-switch-*` roles. General opts its shared
-Switch controls into these roles; other consumers keep their existing mapping
-until their owning surface adopts and verifies the change.
+The neutral-Off/Signal-On switch palette is canonical for every consumer. The
+published `--apparent-desktop-settings-switch-*` roles remain available for
+fixed-theme specimens such as the Public brand book.
 
 Input provides the native text/URL field with shared colors, a 44px minimum
 height and a visible keyboard focus outline. Supply a persistent label and

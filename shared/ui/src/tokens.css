@@ -25,11 +25,10 @@
   --apparent-desktop-settings-switch-on-track: var(--apparent-signal);
   --apparent-desktop-settings-switch-light-thumb: #ffffff;
   --apparent-desktop-settings-switch-dark-thumb: var(--apparent-desktop-settings-switch-light-thumb);
-  --apparent-switch-off-track: var(--apparent-signal);
-  --apparent-switch-on-track: var(--apparent-lilac);
-  --apparent-switch-light-thumb: var(--apparent-carbon);
-  /* Functional dark-mode thumb only; not an additional brand accent. */
-  --apparent-switch-dark-thumb: #ffffff;
+  --apparent-switch-off-track: var(--apparent-desktop-settings-switch-off-track);
+  --apparent-switch-on-track: var(--apparent-desktop-settings-switch-on-track);
+  --apparent-switch-light-thumb: var(--apparent-desktop-settings-switch-light-thumb);
+  --apparent-switch-dark-thumb: var(--apparent-desktop-settings-switch-dark-thumb);
   --apparent-confirmed: #146b43;
   --apparent-failed: #b42318;
   /* Solid semantic fields retain their brand master in both appearances.
