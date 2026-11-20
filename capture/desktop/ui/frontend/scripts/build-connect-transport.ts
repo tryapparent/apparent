@@ -4,10 +4,12 @@ import ts from 'typescript';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { lstatSync, mkdirSync } from 'node:fs';
+import { buildOrdering } from '../../../../../handoff/enablement/ci/bend/build.ts';
 
 // Keep the existing Electron/main and package consumer path. Authored source is
 // TypeScript; emitted CommonJS is a build artifact and has no Rust prerequisite.
 const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
+await buildOrdering();
 execFileSync(process.execPath, [path.resolve(root, '../../../../connect/enablement/ci/bend/settings.ts')], { stdio: 'inherit' });
 const program = ts.createProgram([`${root}/electron/settings/frame.cts`, `${root}/electron/settings/t3.ts`, `${root}/src/settings/agents/policy.ts`, `${root}/src/settings/labs/policy.ts`, `${root}/tests/settings/agents/parent.cts`, `${root}/electron/settings/general.ts`], {
   target: ts.ScriptTarget.ES2022,

@@ -406,12 +406,14 @@ clipboard, persistence and failure recovery are accepted on both platforms.
 Rollback reverts the paired routing and bridge; the existing config key and
 bundle readers remain compatible.
 
-**Labs → Send recordings to T3** is off by default. Only an explicit
+**Agents → Send recordings to T3 Code** is off by default. Only an explicit
 `experiments.t3DestinationPicker: true` enables it for subsequent recordings.
-Connecting alone does not enable sending. **Connect T3** explains the one-time
-setup: in T3, open **Settings → Sharing & access → Authorized clients → Create
-link**, allow reading threads and sending messages, and choose **Copy link**.
-Return to Apparent and choose **Paste T3 link**, check the server shown,
+Connecting alone does not enable sending. The enabled section shows saved computers
+with names and icons from T3 when reachable. **Copy setup prompt** copies the
+terminal-assisted setup instructions. **Pair with a link** explains the one-time
+setup: in T3 Code Settings, open **Authorized clients**, create a link with
+**View environment** and **Operate tasks**, and choose **Copy link**.
+Return to Apparent and choose **Paste link or code**, check the server shown,
 then **Connect**. Under **Use a code instead**, the editable **T3 server address** defaults to the
 local T3 (`http://127.0.0.1:3773`); a full link supplies its own
 address. Direct fragment links, legacy query links, hosted links with an embedded backend,
@@ -426,7 +428,7 @@ the first in the legacy `t3` shape and additional computers in `t3.connections`.
 Removing the first promotes the next; unrelated preferences and connection metadata
 are preserved. Older readers see only the first computer. Rollback to an older
 writer can replace the list, so retain the new writer while using multiple computers; raw tokens never enter the page or logs.
-Labs lists saved computers and their expiry. **Add computer** keeps existing
+Turning off sending hides the list and setup actions. Pairing keeps existing
 connections. The picker shows projects from every reachable computer, with
 friendly names for multiple computers. **New thread** also works with empty
 projects. If a computer is unavailable, the others stay selectable. Disconnect
@@ -438,7 +440,8 @@ Refresh connection. An enabled picker without a usable connection shows
 remains available when processing finishes.
 The optional CLI `apparent t3 pair` still accepts a pairing link on stdin (Node
 22.23+), and shares the same keyed connection transaction. `status` reports the
-first saved server; `forget` removes all local T3 connections. No flow changes T3 or its providers.
+saved origins; `forget <origin>` removes one local connection and `forget`
+removes all local T3 connections. No flow changes T3 or its providers.
 Disabling the setting affects the next recording; a previously confirmed handoff
 keeps its original destination. See the [pill workflow](../ui/electron_pill/README.md#t3-destinations).
 

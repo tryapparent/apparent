@@ -1,6 +1,7 @@
 {
   "modules": [
     "settings/auto-paste-preference.bend",
+    "settings/t3-settings.bend",
     "pure/destination-order.bend",
     "pure/transcript-only.bend",
     "pure/worktree-base.bend"

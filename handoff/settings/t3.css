@@ -1,0 +1,99 @@
+.settings-t3 {
+  margin-block-start: 32px;
+}
+
+.settings-t3 > p,
+.settings-t3-computers p {
+  margin: 0;
+}
+
+.settings-t3 .agent-preference-row h2 {
+  margin: 0;
+}
+
+.settings-t3-computers {
+  display: grid;
+  gap: 8px;
+  margin-block-start: 24px;
+}
+
+.settings-content .settings-t3-computers h3 {
+  margin: 0;
+  font: 500 var(--apparent-type-body) / 1.5 "Host Grotesk", sans-serif;
+}
+
+.settings-t3-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--apparent-stock);
+  color: var(--apparent-carbon);
+}
+
+.settings-t3-computer {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  padding: 8px 12px;
+}
+
+.settings-t3-computer + .settings-t3-computer {
+  border-block-start: 1px solid color-mix(in srgb, var(--apparent-carbon) 28%, transparent);
+}
+
+.settings-t3-glyph {
+  width: 18px;
+  height: 18px;
+}
+
+.settings-t3-identity {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-t3-identity p {
+  font-weight: 500;
+}
+
+.settings-t3-row-actions, .settings-t3-actions, .settings-t3-details {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-t3-details {
+  grid-column: 2 / -1;
+  overflow-wrap: anywhere;
+}
+
+.settings-t3-actions > button:first-child {
+  min-inline-size: min(100%, 12rem);
+}
+
+.settings-content .settings-t3-list button {
+  color: var(--apparent-carbon);
+}
+
+.settings-t3-row-actions > button:last-child {
+  padding-inline: 8px;
+  min-width: 44px;
+}
+
+.settings-content .settings-t3 .t3-text-action {
+  padding-inline: 0;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 480px) {
+  .settings-t3-computer {
+    grid-template-columns: 20px minmax(0, 1fr);
+  }
+
+  .settings-t3-row-actions {
+    grid-column: 2;
+  }
+}

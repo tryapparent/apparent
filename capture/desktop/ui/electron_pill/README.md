@@ -111,7 +111,7 @@ macOS environments. Synthetic renderer checks do not establish that acceptance.
 
 ## T3 destinations
 
-Settings → Labs → **Send recordings to T3** is explicitly off by default.
+Settings → Agents → **Send recordings to T3 Code** is explicitly off by default.
 When enabled and paired, processing/completion replaces Paste with the approved
 destination capsule. The last successful destination comes first, then New
 thread options. Down opens the list and highlights the first row. Up/Down, wheel and touch

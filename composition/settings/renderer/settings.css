@@ -266,33 +266,8 @@
   min-height: 44px;
 }
 
-.settings-t3 {
-  padding-block-end: 24px;
-  border-block-end: 1px solid var(--color-border);
-}
-
-.settings-t3-computer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-.settings-t3-computer p {
-  overflow-wrap: anywhere;
-  min-width: 0;
-}
-
-.settings-t3-steps {
-  display: grid;
-  gap: 12px;
-  margin-block-start: 8px;
-  padding-inline-start: 24px;
-  list-style: decimal;
-}
-.settings-t3-steps > li::marker,
-.settings-t3-steps strong {
-  font-weight: 500;
+.settings-content > apparent-settings-pane[pane="Agents"] {
+  display: block;
 }
 
 .settings-general-shell .settings-content {
@@ -344,9 +319,6 @@
   text-underline-offset: 3px;
   white-space: normal;
   text-align: start;
-}
-.settings-agent-delivery {
-  margin-block-end: 8px;
 }
 .settings-content .settings-task-link:hover {
   text-decoration-thickness: 2px;
