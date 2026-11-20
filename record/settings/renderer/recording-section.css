@@ -89,6 +89,33 @@
   border-color: var(--apparent-carbon);
 }
 
+.settings-content .recording-language button {
+  background: var(--apparent-paper);
+  border-color: var(--apparent-carbon);
+  color: inherit;
+}
+
+.settings-content .recording-language button:enabled {
+  background: var(--apparent-lilac);
+  color: var(--apparent-carbon);
+}
+
+.settings-content .recording-language button:enabled:hover {
+  background: var(--apparent-stock);
+}
+
+.recording-language input[aria-invalid="true"] {
+  border-color: var(--apparent-failed);
+}
+
+.recording-language .recording-note[data-invalid="true"] {
+  color: var(--apparent-failed);
+}
+
+.settings-content .recording-language button:disabled {
+  opacity: 0.65;
+}
+
 .recording-language .recording-note {
   margin: 0;
   padding: 0 16px 12px;

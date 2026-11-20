@@ -3,6 +3,14 @@ use std::path::Path;
 use crate::capture::engine::runtime::recording::recorder::selection;
 use crate::shared::handoff::{AGENT_CONTEXT, Config};
 const KEY: &str = "localStreamingTranscription";
+const AUTO_PASTE: &str = "autoPasteDraft";
+
+fn auto_paste_supported() -> bool {
+    #[cfg(target_os = "linux")]
+    { crate::capture::desktop::linux::auto_paste::available() }
+    #[cfg(not(target_os = "linux"))]
+    { false }
+}
 pub(super) fn facts(path: &Path) -> serde_json::Value {
     let value = match std::fs::read(path) {
         Ok(bytes) => match serde_json::from_slice::<serde_json::Value>(&bytes) {
@@ -17,7 +25,7 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
     let agent_context = serde_json::from_value::<Config>(experiment_config)
         .ok()
         .and_then(|config| config.experiments.get(AGENT_CONTEXT).copied());
-    serde_json::json!({"saved":saved(KEY),"compactHandoffSaved":saved(crate::composition::frame_labels::EXPERIMENT),"transcriptOnlySaved":saved(crate::composition::transcript_handoff::EXPERIMENT),"agentContextSaved":agent_context,"sharingSaved":saved("hostedSharing"),"autoPasteSaved":saved("autoPasteDraft"),"autoPasteSupported":cfg!(target_os = "linux"),"wisprSaved":saved("onboardingWisprFlow"),"wisprSupported":cfg!(target_os = "macos"),"silentPromptSaved":saved("silentPrompt"),"dictationFrogSaved":saved("dictationFrog"),"screenPickerSaved":saved(selection::PREFERENCE),"screenPickerSupported":selection::supported()})
+    serde_json::json!({"saved":saved(KEY),"compactHandoffSaved":saved(crate::composition::frame_labels::EXPERIMENT),"transcriptOnlySaved":saved(crate::composition::transcript_handoff::EXPERIMENT),"agentContextSaved":agent_context,"sharingSaved":saved("hostedSharing"),"autoPasteSaved":saved(AUTO_PASTE),"autoPasteSupported":auto_paste_supported(),"wisprSaved":saved("onboardingWisprFlow"),"wisprSupported":cfg!(target_os = "macos"),"silentPromptSaved":saved("silentPrompt"),"dictationFrogSaved":saved("dictationFrog"),"screenPickerSaved":saved(selection::PREFERENCE),"screenPickerSupported":selection::supported()})
 }
 pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
     match setting {
@@ -26,7 +34,7 @@ pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
         Some("transcriptOnly") => Some((crate::composition::transcript_handoff::EXPERIMENT, true)),
         Some("agentContext") => Some((AGENT_CONTEXT, true)),
         Some("sharing") => Some(("hostedSharing", true)),
-        Some("autoPaste") => Some(("autoPasteDraft", cfg!(target_os = "linux"))),
+        Some("autoPaste") => Some((AUTO_PASTE, true)),
         Some("wisprFlow") => Some(("onboardingWisprFlow", cfg!(target_os = "macos"))),
         Some("silentPrompt") => Some(("silentPrompt", true)),
         Some("dictationFrog") => Some(("dictationFrog", cfg!(target_os = "macos"))),
@@ -38,7 +46,9 @@ pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>, setting:
     let Some((key, true)) = key(setting) else {
         return serde_json::json!({"type":"labs-result","request":request,"facts":{"error":"config_write_failed"}});
     };
-    let result = if let Some(on) = enabled {
+    let result = if key == AUTO_PASTE && enabled == Some(true) && !auto_paste_supported() {
+        serde_json::json!({"error":"config_write_failed"})
+    } else if let Some(on) = enabled {
         match crate::shared::handoff::set_experiment_in(path, key, on) {
             Ok(()) => facts(path), Err(_) => serde_json::json!({"error":"config_write_failed"}),
         }
@@ -147,12 +157,17 @@ pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>, setting:
             assert_eq!(saved["t3"]["token"],"private-token");
             assert_eq!(saved["experiments"]["agentDemoVideo"],true);assert_eq!(saved["experiments"]["t3DestinationPicker"],true);
         }
-        if cfg!(target_os = "linux") {
-            assert_eq!(request(&path,3,Some(true),Some("autoPaste"))["facts"]["autoPasteSaved"],true);
-            assert_eq!(facts(&path)["saved"],false);
+        let initial = facts(&path);
+        let enable = request(&path,3,Some(true),Some("autoPaste"));
+        if initial["autoPasteSupported"] == true {
+            assert_eq!(enable["facts"]["autoPasteSaved"],true);
         } else {
-            assert_eq!(request(&path,3,Some(true),Some("autoPaste"))["facts"]["error"],"config_write_failed");
+            assert_eq!(enable["facts"]["error"],"config_write_failed");
+            assert!(facts(&path)["autoPasteSaved"].is_null());
         }
+        crate::shared::handoff::set_experiment_in(&path, AUTO_PASTE, true).unwrap();
+        assert_eq!(request(&path,3,Some(false),Some("autoPaste"))["facts"]["autoPasteSaved"],false);
+        assert_eq!(facts(&path)["saved"],false);
         let before=std::fs::read(&path).unwrap();
         assert_eq!(request(&path,4,Some(true),Some("unknown"))["facts"]["error"],"config_write_failed");
         assert_eq!(std::fs::read(&path).unwrap(),before);

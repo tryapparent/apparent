@@ -18,6 +18,23 @@ await bendScratch(async (scratch) => {
     scratch,
     proofOptions(process.argv.slice(2)),
   );
+  run(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+      import assert from "node:assert/strict";
+      import policy from "./auto-paste-preference.mjs";
+      assert.deepEqual(
+        [[false, false], [false, true], [true, false], [true, true]]
+          .map(([supported, saved]) => policy.can_toggle(supported, saved)),
+        [false, true, true, true],
+      );
+    `,
+    ],
+    scratch,
+  );
   assert.deepEqual(
     JSON.parse(
       readFileSync(join(root, "handoff/pure/transcript-only.json"), "utf8"),

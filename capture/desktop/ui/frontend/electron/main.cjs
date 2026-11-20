@@ -283,7 +283,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('apparent:labs-preference', (event, ...args) => {
     validate(event, []);
-    if (pane !== 'labs' || args.length > 2 || args.length > 0 && typeof args[0] !== 'boolean' || args[1] === 'autoPaste' && process.platform !== 'linux' || args[1] === 'wisprFlow' && process.platform !== 'darwin') throw new Error('Forbidden Labs preference');
+    if (pane !== 'labs' || args.length > 2 || args.length > 0 && typeof args[0] !== 'boolean' || args[1] === 'wisprFlow' && process.platform !== 'darwin') throw new Error('Forbidden Labs preference');
     return labsPreferences.request(...args);
   });
   ipcMain.handle('apparent:agents-t3-preference', (event, ...args) => {

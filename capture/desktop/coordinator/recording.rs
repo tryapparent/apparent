@@ -1504,11 +1504,11 @@ impl ApparentCoordinator {
             platform: if cfg!(target_os = "linux") { "linux" } else { "macos" }.into(),
             source: completion_source.into(),
             agent_requested,
-            automatic_trial_enabled: !self.capture_local_practice && crate::shared::handoff::experiment("autoPasteDraft"),
+            automatic_trial_enabled: desktop_completion::auto_paste_enabled(self.capture_local_practice),
             image_quality_warning: None, // Filled from the finalizer's immutable result.
             lab: self.lab,
             #[cfg(target_os = "linux")]
-            hyprland: crate::capture::desktop::linux::hyprland::running(),
+            hyprland: linux::hyprland::running(),
             #[cfg(not(target_os = "linux"))]
             hyprland: false,
             #[cfg(target_os = "linux")]

@@ -1,8 +1,9 @@
 {
   "modules": [
+    "settings/auto-paste-preference.bend",
     "pure/destination-order.bend",
     "pure/transcript-only.bend",
     "pure/worktree-base.bend"
   ],
-  "inputs": ["main/", "pure/"]
+  "inputs": ["main/", "pure/", "settings/"]
 }

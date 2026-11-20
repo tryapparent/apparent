@@ -39,7 +39,7 @@ try {
   await expect(page.locator('.agent-command')).toHaveText(process.argv[3]);
   const toggle = page.getByRole('switch', {name: 'Ask for video proof'});
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
-  await expect(page.getByRole('switch',{name:'Send recordings to T3'})).toHaveCount(0);
+  await expect(page.getByRole('switch',{name:'Enable sending to T3'})).toHaveCount(0);
   for (const on of [false, true]) {
     await expect(toggle).toBeEnabled();
     await toggle.click();

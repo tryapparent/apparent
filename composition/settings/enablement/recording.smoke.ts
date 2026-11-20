@@ -1,83 +1,52 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
-import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
-import { recordingFixture } from "./recording-fixture.ts";
-
-const frontend = fileURLToPath(
-  new URL("../../../capture/desktop/ui/frontend/", import.meta.url),
-);
-const loadFrontendDependency = createRequire(join(frontend, "package.json"));
-const { chromium, expect } = loadFrontendDependency("@playwright/test");
+import {
+  expect,
+  launchRecording,
+  recordingFixture,
+} from "./recording-fixture.ts";
 
 test("staged Recording opens directly, receives native facts and saves only on its active route", {
-  timeout: 45_000,
+  timeout: 60_000,
 }, async () => {
-  const home = await mkdtemp(join(tmpdir(), "recording-pane-"));
-  const stage = process.env.APPARENT_RECORDING_STAGE;
-  const runtime = stage
-    ? join(
-        stage,
-        process.platform === "darwin"
-          ? "runtime/Electron.app/Contents/MacOS/Electron"
-          : "runtime/electron",
-      )
-    : loadFrontendDependency("electron");
-  const child = spawn(
-    runtime,
-    [
-      "--no-sandbox",
-      stage ? join(stage, "app") : frontend,
-      "--settings-storage",
-      "--settings-recording",
-      "--settings-parent",
-      "--remote-debugging-port=0",
-    ],
-    {
-      env: {
-        ...process.env,
-        HOME: home,
-        XDG_CONFIG_HOME: join(home, "config"),
-        ELECTRON_RUN_AS_NODE: "",
-      },
-      stdio: "pipe",
-    },
-  );
-  const exited = new Promise((resolve) => child.once("exit", resolve));
-  const send = (message: object) =>
-    child.stdin.write(JSON.stringify(message) + "\n");
+  const { child, send, open, close } = await launchRecording();
   const fixture = recordingFixture(send);
   const actions: Record<string, unknown>[] = [];
+  let heldT3: unknown;
+  const disconnected = { saved: null, t3Saved: false, t3Configured: false };
+  let t3Facts: typeof disconnected & {
+    t3Connections?: { origin: string; expiresAt: number }[];
+  } = disconnected;
   createInterface({ input: child.stdout }).on("line", (line) => {
     const action = JSON.parse(line);
     actions.push(action);
-    if (action.action === "navigate") send({ type: "show", pane: action.pane });
+    if (action.action === "agents-preference") {
+      if (action.setting === "t3" && typeof action.enabled === "boolean") {
+        heldT3 = action.request;
+      } else {
+        send({
+          type: "agents-result",
+          request: action.request,
+          facts: t3Facts,
+        });
+      }
+    }
     fixture.receive(action);
   });
-  let browser: Awaited<ReturnType<typeof chromium.connectOverCDP>> | undefined;
   try {
-    const endpoint = await new Promise<string>((resolve, reject) => {
-      let stderr = "";
-      child.stderr.on("data", (chunk) => {
-        stderr += String(chunk);
-        const match = stderr.match(
-          /DevTools listening on (ws:\/\/127\.0\.0\.1:\d+\/devtools\/browser\/[^\s]+)/,
-        );
-        if (match) resolve(match[1]);
-      });
-      child.once("error", reject);
-      child.once("exit", (code) =>
-        reject(Error(`Settings exited ${code}: ${stderr.slice(-1000)}`)),
-      );
-    });
-    browser = await chromium.connectOverCDP(endpoint);
-    const context = browser.contexts()[0];
-    const page = context.pages()[0];
+    const { page, setVariant } = await open();
+    const proof = process.env.APPARENT_RECORDING_PROOF;
+    if (proof) await mkdir(proof, { recursive: true });
+    async function screenshot(name: string) {
+      if (proof)
+        await page.screenshot({
+          path: join(proof, `${name}.png`),
+          animations: "disabled",
+        });
+    }
     await expect(page).toHaveTitle("Apparent Settings — Recording");
     await expect(page.getByRole("status")).toHaveText(
       "Loading recording settings…",
@@ -96,18 +65,11 @@ test("staged Recording opens directly, receives native facts and saves only on i
       name: "Lower volume while recording",
     });
     await expect(volume).toBeDisabled();
-    const session = await context.newCDPSession(page);
     const video = page.getByRole("switch", { name: "Video export" });
     const wordmark = page.getByRole("img", { name: "Apparent", exact: true });
     for (const width of [720, 640]) {
-      for (const colorScheme of ["light", "dark"]) {
-        await session.send("Emulation.setDeviceMetricsOverride", {
-          width,
-          height: 530,
-          deviceScaleFactor: 1,
-          mobile: false,
-        });
-        await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
+      for (const colorScheme of ["light", "dark"] as const) {
+        await setVariant(width, colorScheme);
         const expectedLeft =
           width === 720 ? 24 : process.platform === "darwin" ? 88 : 16;
         assert.equal((await wordmark.boundingBox())?.x, expectedLeft);
@@ -119,16 +81,10 @@ test("staged Recording opens directly, receives native facts and saves only on i
           ),
           true,
         );
-        const proof = process.env.APPARENT_RECORDING_PROOF;
         if (proof) {
-          await mkdir(proof, { recursive: true });
-          await page.screenshot({
-            path: join(proof, `recording-${width}-${colorScheme}.png`),
-          });
+          await screenshot(`recording-${width}-${colorScheme}`);
           await video.focus();
-          await page.screenshot({
-            path: join(proof, `volume-export-${width}-${colorScheme}.png`),
-          });
+          await screenshot(`volume-export-${width}-${colorScheme}`);
           await input.focus();
         }
       }
@@ -155,12 +111,39 @@ test("staged Recording opens directly, receives native facts and saves only on i
     ).toBeVisible();
     await expect(page.getByRole("slider", { name: "Lower to" })).toBeEnabled();
     fixture.hex();
-    await expect(
-      page.getByRole("textbox", { name: "Hex language" }),
-    ).toBeVisible();
+    const language = page.getByRole("textbox", { name: "Hex language" });
+    const apply = page.getByRole("button", { name: "Apply", exact: true });
+    await expect(language).toBeVisible();
     await expect(
       page.getByRole("combobox", { name: "Hex model" }),
     ).toBeVisible();
+    for (const width of [720, 640]) {
+      for (const theme of ["light", "dark"] as const) {
+        await setVariant(width, theme);
+        await language.focus();
+        await expect(apply).toBeDisabled();
+        await expect(apply).toBeInViewport({ ratio: 1 });
+        await expect(apply).toHaveCSS("background-color", "rgb(245, 240, 232)");
+        assert.notEqual(
+          await apply.evaluate((el) => getComputedStyle(el).color),
+          await apply.evaluate((el) => getComputedStyle(el).backgroundColor),
+        );
+        await screenshot(`hex-disabled-${width}-${theme}`);
+        await language.fill("9");
+        await expect(language).toHaveAttribute("aria-invalid", "true");
+        await expect(page.getByText(/^Invalid code\./)).toBeInViewport();
+        await expect(apply).toBeDisabled();
+        await screenshot(`hex-invalid-${width}-${theme}`);
+        await language.fill("nl");
+        await page.keyboard.press("Tab");
+        await expect(apply).toBeEnabled();
+        await expect(apply).toHaveCSS("background-color", "rgb(183, 165, 216)");
+        await expect(apply).toBeFocused();
+        await expect(apply).toHaveCSS("outline-style", "solid");
+        await screenshot(`hex-apply-focus-${width}-${theme}`);
+        await language.fill("en");
+      }
+    }
     await expect(page.getByRole("meter")).toHaveCount(0);
     await expect
       .poll(() =>
@@ -170,6 +153,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
         ),
       )
       .toBe(true);
+    fixture.linux();
 
     const startUrl = page.url();
     const navigate = async (pane: string) => {
@@ -199,9 +183,274 @@ test("staged Recording opens directly, receives native facts and saves only on i
     await navigate("Recording");
     assert.equal(page.url(), startUrl);
     await expect(video).toBeChecked();
+
+    const index = page.getByRole("navigation", {
+      name: "Jump to",
+    });
+    async function openTask(label: string, heading: string) {
+      await index
+        .getByRole("button", { name: label, exact: true })
+        .press("Enter");
+      const target = page
+        .getByText(heading, { exact: true })
+        .and(page.locator("h1, h2, legend"));
+      await expect(target).toBeFocused();
+      await expect(target).toBeInViewport();
+    }
+    async function openRecording() {
+      const compact = page.locator(".settings-navigation-compact");
+      if (await compact.isVisible())
+        await compact
+          .getByRole("button", { name: /^Settings pages,/ })
+          .press("Enter");
+      await page
+        .getByRole("button", { name: "Recording", exact: true })
+        .press("Enter");
+      await expect(index).toBeVisible();
+      await expect(page.locator("h1")).toBeInViewport();
+    }
+
+    for (const width of [720, 640])
+      for (const theme of ["light", "dark"] as const) {
+        const variant = `${width}-${theme}`;
+        await setVariant(width, theme);
+        assert.equal(
+          await page
+            .locator(".settings-content")
+            .evaluate((el) => el.scrollWidth <= el.clientWidth),
+          true,
+        );
+        const videoJump = index.getByRole("button", { name: "Video export" });
+        await expect(videoJump).toBeEnabled();
+        await expect(videoJump).toBeInViewport();
+        await expect(videoJump).toHaveCSS("opacity", "1");
+        await expect(input).toBeInViewport({ ratio: 1 });
+        const jumps = await index.getByRole("button").all();
+        for (const jump of jumps) {
+          const bounds = await jump.boundingBox();
+          assert.ok(bounds && bounds.width >= 24 && bounds.height >= 36);
+        }
+        await screenshot(`index-${variant}`);
+
+        await openTask("Change record shortcut", "Keyboard shortcuts");
+        await page.keyboard.press("Tab");
+        await expect(
+          page.getByRole("button", {
+            name: "Change Record shortcut, currently F1",
+          }),
+        ).toBeFocused();
+        await screenshot(`shortcut-${variant}`);
+        await openRecording();
+
+        fixture.pickerSupported = theme === "light";
+        await openTask("Screen selection", "When you press Record");
+        const chooseScreen = page.getByRole("radio", {
+          name: "Choose a screen each time",
+        });
+        if (fixture.pickerSupported) await expect(chooseScreen).toBeEnabled();
+        else await expect(chooseScreen).toBeDisabled();
+        await screenshot(`screen-selection-${variant}`);
+        await openRecording();
+
+        await openTask("Send to T3", "Send recordings to T3");
+        const t3 = page.getByRole("switch", { name: "Enable sending to T3" });
+        await expect(t3).toBeEnabled();
+        await expect(t3).toHaveAccessibleDescription(/You choose what to send/);
+        await expect(
+          page.getByRole("button", { name: "Connect T3", exact: true }),
+        ).toBeEnabled();
+        const steps = page.locator(".settings-t3-steps").getByRole("listitem");
+        await expect(steps).toHaveText([
+          /Connect a computer/,
+          /Enable sending to T3/,
+          /Choose a thread.*recording pill/,
+        ]);
+        await expect(t3).not.toBeChecked();
+        await screenshot(`send-${variant}`);
+        await openRecording();
+
+        t3Facts = {
+          ...disconnected,
+          t3Configured: true,
+          t3Connections: [
+            { origin: "https://studio.example", expiresAt: 4_000_000_000_000 },
+            { origin: "https://expired.example", expiresAt: 0 },
+          ],
+        };
+        await openTask("Send to T3", "Send recordings to T3");
+        await expect(
+          page.getByRole("button", { name: "Add computer", exact: true }),
+        ).toBeEnabled();
+        await expect(
+          page.getByText(
+            "expired.example · Expired. Use Add computer to pair it again.",
+          ),
+        ).toBeVisible();
+        await page
+          .getByRole("button", { name: "Add computer", exact: true })
+          .press("Enter");
+        await expect(
+          page.getByRole("dialog", { name: "Connect T3" }),
+        ).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(
+          page.getByRole("dialog", { name: "Connect T3" }),
+        ).toHaveCount(0);
+        await expect(t3).not.toBeChecked();
+        await screenshot(`send-connected-off-${variant}`);
+        heldT3 = undefined;
+        await t3.press("Space");
+        await expect.poll(() => heldT3).toBeDefined();
+        await expect(t3).toHaveAttribute("aria-busy", "true");
+        await expect(t3).toHaveCSS("cursor", "wait");
+        await expect(
+          page.getByRole("status").filter({
+            hasText: "Saving the T3 sending preference…",
+          }),
+        ).toBeInViewport();
+        await expect(t3).not.toBeChecked();
+        await screenshot(`send-pending-${variant}`);
+        t3Facts = { ...t3Facts, t3Saved: true };
+        send({ type: "agents-result", request: heldT3, facts: t3Facts });
+        await expect(t3).toBeChecked();
+        await steps.last().scrollIntoViewIfNeeded();
+        await screenshot(`send-connected-on-${variant}`);
+        heldT3 = undefined;
+        await t3.press("Space");
+        await expect.poll(() => heldT3).toBeDefined();
+        send({
+          type: "agents-result",
+          request: heldT3,
+          facts: { error: "config_write_failed" },
+        });
+        const t3Failure = page.getByRole("alertdialog", {
+          name: "Unable to save T3 sending preference",
+        });
+        await expect(
+          t3Failure.getByRole("button", { name: "Refresh T3 sending" }),
+        ).toBeFocused();
+        await screenshot(`send-failure-${variant}`);
+        await page.keyboard.press("Escape");
+        await expect(t3).toHaveCount(0);
+        const refresh = steps.nth(1).getByRole("button", {
+          name: "Refresh T3 sending",
+        });
+        await expect(refresh).toBeFocused();
+        await expect(refresh).toHaveAccessibleDescription(
+          /preference is unconfirmed/,
+        );
+        await screenshot(`send-unconfirmed-${variant}`);
+        heldT3 = undefined;
+        await page.keyboard.press("Enter");
+        await expect(t3).toBeChecked();
+        await expect(t3).toBeFocused();
+        assert.equal(heldT3, undefined);
+        await screenshot(`send-confirmed-on-${variant}`);
+        await page
+          .getByRole("heading", { name: "Compact recording prompts" })
+          .scrollIntoViewIfNeeded();
+        await screenshot(`send-group-end-${variant}`);
+        t3Facts = disconnected;
+        await openRecording();
+
+        await openTask("Fix permissions", "Permissions");
+        await expect(
+          page.getByText("Input devices", { exact: true }),
+        ).toBeVisible();
+        await screenshot(`permissions-${variant}`);
+        await openRecording();
+
+        for (const [label, heading, name] of [
+          [
+            "Transcription after recording",
+            "Transcription after recording",
+            "transcription",
+          ],
+          [
+            "Live transcription",
+            "Live local transcription",
+            "transcription-live",
+          ],
+          ["How to add notes", "Notes", "notes"],
+          ["Public links", "Public sharing links", "public-links"],
+          ["Auto paste", "Auto paste", "auto-paste-unavailable"],
+          ["Video export", "Export", "video-export"],
+        ]) {
+          await openTask(label, heading);
+          if (name === "notes") {
+            await expect(page).toHaveTitle("Apparent Settings — Recording");
+            await expect(
+              page.getByText(/tap Shift twice quickly.*open the note editor/),
+            ).toBeInViewport();
+            await expect(
+              page.getByRole("switch", { name: /notes/i }),
+            ).toHaveCount(0);
+          }
+          if (name === "transcription-live") {
+            await expect(
+              page.getByText(/live preview of your English speech/),
+            ).toBeInViewport();
+          }
+          if (label === "Auto paste") {
+            await expect(
+              page.getByRole("switch", { name: label }),
+            ).toBeDisabled();
+            await expect(
+              page.getByText("Unavailable in this session.", { exact: false }),
+            ).toBeVisible();
+            await expect(
+              page.getByText(
+                /Apparent pastes.*automatically presses Enter.*leave the message unsent/,
+              ),
+            ).toBeVisible();
+          }
+          await screenshot(`${name}-${variant}`);
+          if (name === "notes") {
+            await page.keyboard.press("Tab");
+            await expect(video).toBeFocused();
+          }
+          await openRecording();
+          if (label === "Auto paste") {
+            fixture.autoPasteSaved = true;
+            await openTask(label, heading);
+            const autoPaste = page.getByRole("switch", { name: label });
+            await expect(autoPaste).toBeChecked();
+            await expect(autoPaste).toBeEnabled();
+            await expect(autoPaste).toHaveAccessibleDescription(
+              /Paste on the saved recording.*submit it yourself/,
+            );
+            await screenshot(`auto-paste-unavailable-saved-${variant}`);
+            await autoPaste.press("Space");
+            await expect(autoPaste).not.toBeChecked();
+            await expect(autoPaste).toBeDisabled();
+            await openRecording();
+
+            fixture.autoPasteSupported = true;
+            await openTask(label, heading);
+            await expect(autoPaste).toBeEnabled();
+            await autoPaste.press("Space");
+            await expect(autoPaste).toBeChecked();
+            await expect(autoPaste).toHaveAccessibleDescription(
+              /automatically presses Enter.*supported Hyprland/,
+            );
+            await screenshot(`auto-paste-supported-${variant}`);
+            await autoPaste.press("Space");
+            await expect(autoPaste).not.toBeChecked();
+            fixture.autoPasteSupported = false;
+            await openRecording();
+          }
+        }
+      }
+    await navigate("Agents");
+    await page
+      .getByRole("button", { name: "Send recordings to T3", exact: true })
+      .press("Enter");
     await expect(
-      page.getByRole("switch", { name: "Double-tap Shift for notes" }),
-    ).toHaveCount(0);
+      page.getByRole("heading", { name: "Send recordings to T3" }),
+    ).toBeFocused();
+    assert.equal(page.url(), startUrl);
+    await openRecording();
+    await openTask("How to add notes", "Notes");
     assert.equal(
       await page.evaluate(async () => {
         try {
@@ -217,16 +466,6 @@ test("staged Recording opens directly, receives native facts and saves only on i
       true,
     );
   } finally {
-    await browser?.close().catch(() => {});
-    child.stdin.end();
-    await Promise.race([
-      exited,
-      new Promise((resolve) => setTimeout(resolve, 3000)),
-    ]);
-    if (child.exitCode === null) {
-      child.kill("SIGKILL");
-      await exited;
-    }
-    await rm(home, { recursive: true, force: true });
+    await close();
   }
 });
