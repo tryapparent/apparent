@@ -25,6 +25,9 @@ The remaining shelves are pinned, inbox, working, snoozed and settled. Within th
 server timestamps and saved pin keys. T3's client-local folders, project
 filters, optimistic moves, and observed inbox return times can differ from
 the shell snapshot. Archived threads and subagent threads are excluded.
+New worktree launches prefer T3's marked default ref. If T3 cannot mark a
+default, the picker uses an existing `origin/main`, `origin/master`, `main`
+or `master` ref, in that order.
 The collapsed picker retains the existing quick-send shortcut.
 An unconfirmed send displays the saved destination and retries the persisted
 request. The Handoff renderer receives focus, send and share callbacks from

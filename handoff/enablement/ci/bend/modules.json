@@ -1,4 +1,4 @@
 {
-  "modules": ["pure/destination-order.bend"],
+  "modules": ["pure/destination-order.bend", "pure/worktree-base.bend"],
   "inputs": ["main/", "pure/"]
 }
