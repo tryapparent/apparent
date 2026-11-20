@@ -4,8 +4,8 @@ export type Unavailable = {status: 'disabled' | 'disconnected' | 'incompatible' 
 export type CaptureLocation = Unavailable | {status: 'connected'; storage: LocationSnapshot};
 export type RetentionPreset = 'week' | 'month' | 'forever';
 export type RetentionPolicy = {mediaDays: number | null; bundleDays: number | null};
-export type RetentionView = {preset: RetentionPreset | null; options: {id: RetentionPreset; label: string}[]; note: string};
-export type NativeRetentionResult = Unavailable | {status: 'connected'; custom: boolean;
+export type RetentionView = {preset: RetentionPreset | null; options: {id: RetentionPreset; label: string}[]; note: string; effective: RetentionPolicy};
+export type NativeRetentionResult = Unavailable | {status: 'connected'; custom: boolean; defaults?: RetentionPolicy;
   policy: {mediaDays: {present: boolean; value: number | null}; bundleDays: {present: boolean; value: number | null}}};
-export type RetentionResult = Unavailable | {status: 'connected'; custom: boolean; retention: RetentionView};
+export type RetentionResult = Unavailable | {status: 'connected'; custom: boolean; defaults?: RetentionPolicy; retention: RetentionView};
 export type UsageResult = Unavailable | {status: 'connected'; usage: {effectivePath: string; displayPath: string; formatted: string}};

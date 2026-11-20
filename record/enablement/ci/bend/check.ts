@@ -41,6 +41,32 @@ await bendScratch(async (scratch) => {
   await buildBend(root, "record", proofOutput, options);
   assert.deepEqual(
     JSON.parse(
+      run(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `
+    import retention from "./feedback.mjs";
+    console.log(JSON.stringify([
+      retention.submission_phase(false, true, true),
+      retention.submission_phase(true, true, false),
+      retention.submission_phase(true, true, true),
+      retention.submission_phase(true, false, true),
+      retention.reset_available(true, false),
+      retention.reset_available(true, true),
+      retention.keep_submission(true, false),
+      retention.keep_submission(true, true),
+    ]));
+  `,
+        ],
+        proofOutput,
+      ),
+    ),
+    [0, 1, 2, 3, false, true, true, false],
+  );
+  assert.deepEqual(
+    JSON.parse(
       readFileSync(
         join(root, "record/media/src/assembly/frame-label.json"),
         "utf8",

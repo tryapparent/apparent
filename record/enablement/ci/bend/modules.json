@@ -7,7 +7,8 @@
     "settings/recording-policy.bend",
     "settings/permissions/permission-policy.bend",
     "pill/pill-state.bend",
-    "notes/double-shift.bend"
+    "notes/double-shift.bend",
+    "storage/src/retention/feedback.bend"
   ],
   "inputs": [
     "completion/",
@@ -15,6 +16,7 @@
     "settings/",
     "pill/",
     "enablement/ci/pill/",
-    "notes/"
+    "notes/",
+    "storage/"
   ]
 }

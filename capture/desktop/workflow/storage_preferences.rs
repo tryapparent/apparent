@@ -57,6 +57,7 @@ pub(in crate::capture::desktop) fn read(config: &Path) -> Result<serde_json::Val
         || raw["retention"].get("bundleDays").is_some();
     Ok(serde_json::json!({
         "retention": {"mediaDays":media_days,"bundleDays":bundle_days},
+        "defaults": crate::capture::engine::bundle::retention::Policy::default(),
         "revision": revision(&raw),
         "custom": custom,
     }))
@@ -283,6 +284,7 @@ mod tests {
         assert_eq!(read["retention"]["mediaDays"], serde_json::json!({"present":false,"value":null}));
         assert_eq!(read["retention"]["bundleDays"], serde_json::json!({"present":false,"value":null}));
         assert_eq!(read["custom"], true);
+        assert_eq!(read["defaults"], serde_json::to_value(crate::capture::engine::bundle::retention::Policy::default()).unwrap());
         assert!(read.to_string().find("private-invalid").is_none());
         assert_eq!(crate::capture::engine::bundle::retention::Policy::load_from(&config), Default::default());
         std::fs::remove_dir_all(root).unwrap();

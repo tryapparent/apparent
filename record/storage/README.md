@@ -28,6 +28,13 @@ preferences change and rejected if their effective folder differs. Disposing a
 controller retires notifications and follow-up reads. It does not prove that an
 open native chooser was cancelled or that a dispatched write was prevented.
 
+Retention readback also carries the defaults reported by the native cleanup
+policy. An older backend can still read and save preferences. Reset in Electron
+requires the native pair so the user sees the actual limits before committing.
+The renderer keeps the submitted pair visible through a pending write and any
+uncertain result until an authoritative read succeeds. Bend owns the feedback
+phase and Reset availability, and the package build bundles the compiled module.
+
 The native config transaction remains the single durable writer, preserving
 unknown fields/secrets, locking, CAS, cancellation before publication and uncertain
 publication semantics. Native ports retain chooser execution, filesystem safety,
