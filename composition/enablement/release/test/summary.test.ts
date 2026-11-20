@@ -19,6 +19,39 @@ const pending = () => ({
 const noNetwork: typeof fetch = async () =>
   assert.fail("No download should be attempted");
 
+test("a published Linux Main release remains visible after Mac runner failure", async () => {
+  const jobs = {
+    ...pending(),
+    admit: job("success", { sha: source }),
+    linux: job("success"),
+    macos: job("abandoned"),
+    "publish-linux": job("success", {
+      sha: source,
+      tag: `linux-main-v2-${source}`,
+      downloads: JSON.stringify([{ name: "Apparent-linux.AppImage", size: 5 }]),
+    }),
+    "publish-nightly": job(),
+  };
+  const result = await releaseSummary(
+    jobs,
+    { RELEASE_CHANNEL: "main" },
+    async () =>
+      new Response("a", {
+        status: 206,
+        headers: { "content-range": "bytes 0-0/5" },
+      }),
+  );
+  assert.match(
+    result,
+    /Linux Main[\s\S]*Published[\s\S]*Apparent-linux\.AppImage/,
+  );
+  assert.match(
+    result,
+    /Mac Nightly[\s\S]*could not allocate a runner for macOS/,
+  );
+  assert.doesNotMatch(result, /Mac Nightly update discovery needs attention/);
+});
+
 test("a superseded source is distinct from an unsuccessful admission", async () => {
   const jobs = pending();
   jobs.admit = job("success", { superseded_by: newer });

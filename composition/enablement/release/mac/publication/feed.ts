@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import type { distribution } from "../distribution.ts";
+import { macProduct } from "../metadata.ts";
 type Metadata = ReturnType<typeof distribution>["metadata"];
 function compare(left: string, right: string) {
   const a = left.split(".").map(BigInt),
@@ -40,7 +41,7 @@ export function updateFeed(
   metadata: Metadata,
   now = new Date(),
 ) {
-  const nightly = metadata.channel === "main";
+  const nightly = macProduct(metadata.channel).nightly;
   const old = !previous && nightly ? null : latest(previous);
   if (old?.version === metadata.version && old.build === metadata.buildNumber) {
     assert(

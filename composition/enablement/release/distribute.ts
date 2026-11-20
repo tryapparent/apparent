@@ -16,7 +16,10 @@ const runId = process.env.PRODUCER_RUN!,
 const directory = mkdtempSync(join(tmpdir(), "apparent-dev-distribution-"));
 try {
   const channel = process.env.MAC_FEED_CHANNEL ?? "stable";
-  if (channel !== "stable" && (channel !== "main" || command !== "feed"))
+  if (
+    channel !== "stable" &&
+    (!(channel === "main" || channel === "mac-nightly") || command !== "feed")
+  )
     throw Error("Unsupported distribution channel");
   const pairedMain = channel === "main";
   candidateIdentity(
