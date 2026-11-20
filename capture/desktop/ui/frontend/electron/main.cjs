@@ -219,12 +219,13 @@ app.whenReady().then(() => {
       details.mediaTypes[0] === 'video'));
   session.defaultSession.setPermissionCheckHandler((contents, permission, _origin, details) =>
     cameraFrame(contents, permission, details) && details.mediaType === 'video');
+  app.on('before-quit', () => lip.stopSetup());
   const bindLip = (name, arity, handle) => ipcMain.handle(`apparent:lip-${name}`, (event, ...args) => {
     validate(event, []);
     if (!canUseLip() || args.length !== arity) throw Error('Silent prompts unavailable');
     return handle(...args);
   });
-  bindLip('ready', 0, () => lip.ready());
+  bindLip('prepare', 0, () => lip.prepare());
   bindLip('begin', 0, () => lip.begin());
   bindLip('decode', 1, bytes => lip.decode(bytes));
   bindLip('cancel', 0, () => lip.cancel());
@@ -356,7 +357,7 @@ app.whenReady().then(() => {
         if (['agents','labs'].includes(pane) && command.type === 'agents-result') agentsPreferences.receive(command);
         if (pane === 'labs' && ['labs-result', 'labs-state'].includes(command.type)) {
           lip.enabled = labsFacts(command.facts).silentPromptSaved === true;
-          if (!lip.enabled) lip.cancel();
+          if (!lip.enabled) { lip.cancel(); lip.stopSetup(); }
         }
         if (pane === 'labs' && command.type === 'labs-result') labsPreferences.receive(command);
         if (pane === 'labs' && command.type === 'labs-state') window.webContents.send('apparent:labs-state', labsFacts(command.facts));
