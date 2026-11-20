@@ -99,7 +99,11 @@ export function RecordingStartPreference({
       className="agent-preference recording-start-preference"
       aria-busy={busy}
     >
-      <legend className="settings-preference-label">
+      <legend
+        id="recording-start"
+        className="settings-preference-label"
+        tabIndex={-1}
+      >
         When you press Record
       </legend>
       <label>

@@ -82,11 +82,22 @@ function Toggle({
   );
 }
 
-function Group({ title, children }: { title: string; children: ReactNode }) {
-  const id = useId();
+function Group({
+  title,
+  sectionId,
+  children,
+}: {
+  title: string;
+  sectionId?: string;
+  children: ReactNode;
+}) {
+  const generatedId = useId();
+  const id = sectionId ?? generatedId;
   return (
     <section aria-labelledby={id}>
-      <h2 id={id}>{title}</h2>
+      <h2 id={id} tabIndex={sectionId ? -1 : undefined}>
+        {title}
+      </h2>
       {children}
     </section>
   );
@@ -386,7 +397,7 @@ export function RecordingControls({
           </p>
         )}
       </Group>
-      <Group title="Transcription">
+      <Group title="Transcription" sectionId="recording-transcription">
         <div className="recording-group">
           <Options
             label="Transcription engine"
@@ -499,7 +510,7 @@ export function RecordingControls({
           )}
         </div>
       </Group>
-      <Group title="Experimental">
+      <Group title="Export" sectionId="recording-video-export">
         <div className="recording-group">
           <Toggle
             label="Video export"
@@ -510,7 +521,7 @@ export function RecordingControls({
           />
         </div>
         <p className="recording-note">
-          Adds Export Last Capture as Video… to the menu.
+          Experimental. Adds Export Last Capture as Video… to the menu.
         </p>
       </Group>
     </>

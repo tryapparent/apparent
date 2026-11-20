@@ -29,6 +29,13 @@ package and a new consented occurrence; historical reports cannot be enriched.
 
 ## Recording
 
+Recording starts with a task index for capture setup, voice and notes,
+and sending or exporting. Its links open the existing preference and
+focus its heading. Agents links to the T3 preference in Labs. The parent
+still admits each page and the existing owner loads and saves its settings.
+Reverting the index and heading links restores the previous navigation
+without a preference migration.
+
 Recording joins General, About, Agents, Labs and eligible Storage routes in
 the same Electron document. The native Permissions sidebar routes Recording
 through that Settings session. The session chooses the presenter, filters its

@@ -53,10 +53,74 @@ test("staged Recording opens directly, receives native facts and saves only on i
     child.stdin.write(JSON.stringify(message) + "\n");
   const fixture = recordingFixture(send);
   const actions: Record<string, unknown>[] = [];
+  let pickerSupported = false;
+  let heldT3: unknown;
   createInterface({ input: child.stdout }).on("line", (line) => {
     const action = JSON.parse(line);
     actions.push(action);
-    if (action.action === "navigate") send({ type: "show", pane: action.pane });
+    if (action.action === "navigate") {
+      send({ type: "show", pane: action.pane });
+      if (action.pane === "general")
+        send({
+          type: "general-state",
+          platform: "linux",
+          login: { on: false, available: true, needsApproval: false },
+          shortcuts: [
+            {
+              kind: "record",
+              title: "Record",
+              label: "F1",
+              recording: false,
+              externallyManaged: false,
+              isDefault: true,
+              clearable: false,
+            },
+          ],
+          errorReporting: true,
+        });
+      if (action.pane === "permissions")
+        send({
+          type: "permission-state",
+          state: {
+            platform: "wayland",
+            rows: [
+              {
+                permission: "accessibility",
+                status: "denied",
+                required: false,
+                relaunch: false,
+                repair: "copy-input",
+              },
+            ],
+          },
+        });
+    }
+    if (action.action === "labs-preference")
+      send({
+        type: "labs-result",
+        request: action.request,
+        facts: {
+          saved: false,
+          screenPickerSaved: false,
+          screenPickerSupported: pickerSupported,
+          doubleShiftSaved: false,
+          autoPasteSupported: false,
+          autoPasteSaved: false,
+          sharingSaved: false,
+          wisprSupported: false,
+        },
+      });
+    if (action.action === "agents-preference") {
+      if (action.setting === "t3" && typeof action.enabled === "boolean") {
+        heldT3 = action.request;
+      } else {
+        send({
+          type: "agents-result",
+          request: action.request,
+          facts: { saved: null, t3Saved: false, t3Configured: false },
+        });
+      }
+    }
     fixture.receive(action);
   });
   let browser: Awaited<ReturnType<typeof chromium.connectOverCDP>> | undefined;
@@ -199,6 +263,149 @@ test("staged Recording opens directly, receives native facts and saves only on i
     await navigate("Recording");
     assert.equal(page.url(), startUrl);
     await expect(video).toBeChecked();
+
+    const proof = process.env.APPARENT_RECORDING_PROOF;
+    const index = page.getByRole("navigation", {
+      name: "Recording preferences",
+    });
+    async function screenshot(name: string) {
+      if (proof) await page.screenshot({ path: join(proof, `${name}.png`) });
+    }
+    async function openTask(label: string, heading: string) {
+      await index
+        .getByRole("button", { name: label, exact: true })
+        .press("Enter");
+      const target = page
+        .getByText(heading, { exact: true })
+        .and(page.locator("h1, h2, legend"));
+      await expect(target).toBeFocused();
+      await expect(target).toBeInViewport();
+    }
+    async function openRecording() {
+      const compact = page.locator(".settings-navigation-compact");
+      if (await compact.isVisible())
+        await compact
+          .getByRole("button", { name: /^Settings pages,/ })
+          .press("Enter");
+      await page
+        .getByRole("button", { name: "Recording", exact: true })
+        .press("Enter");
+      await expect(index).toBeVisible();
+      await expect(page.locator("h1")).toBeInViewport();
+    }
+
+    for (const width of [720, 640])
+      for (const theme of ["light", "dark"] as const) {
+        const variant = `${width}-${theme}`;
+        await session.send("Emulation.setDeviceMetricsOverride", {
+          width,
+          height: 530,
+          deviceScaleFactor: 1,
+          mobile: false,
+        });
+        await page.emulateMedia({
+          colorScheme: theme,
+          reducedMotion: "reduce",
+        });
+        await page.evaluate(() => document.fonts.ready);
+        assert.equal(await page.evaluate(() => innerWidth), width);
+        assert.equal(
+          await page
+            .locator(".settings-content")
+            .evaluate((el) => el.scrollWidth <= el.clientWidth),
+          true,
+        );
+        const videoJump = index.getByRole("button", { name: "Video export" });
+        await expect(videoJump).toBeEnabled();
+        await expect(videoJump).toBeInViewport();
+        await expect(videoJump).toHaveCSS("opacity", "1");
+        await screenshot(`index-${variant}`);
+
+        await openTask("Record shortcut", "Keyboard shortcuts");
+        await page.keyboard.press("Tab");
+        await expect(
+          page.getByRole("button", {
+            name: "Change Record shortcut, currently F1",
+          }),
+        ).toBeFocused();
+        await screenshot(`shortcut-${variant}`);
+        await openRecording();
+
+        pickerSupported = theme === "light";
+        await openTask("Screen selection", "When you press Record");
+        const chooseScreen = page.getByRole("radio", {
+          name: "Choose a screen each time",
+        });
+        if (pickerSupported) await expect(chooseScreen).toBeEnabled();
+        else await expect(chooseScreen).toBeDisabled();
+        await screenshot(`screen-selection-${variant}`);
+        await openRecording();
+
+        await openTask("Send to T3", "Send recordings to T3");
+        const t3 = page.getByRole("switch", { name: "Send recordings to T3" });
+        await expect(t3).toBeEnabled();
+        await expect(
+          page.getByRole("button", { name: "Connect T3", exact: true }),
+        ).toBeEnabled();
+        await screenshot(`send-${variant}`);
+        heldT3 = undefined;
+        await t3.press("Space");
+        await expect.poll(() => heldT3).toBeDefined();
+        await expect(t3).toHaveAttribute("aria-busy", "true");
+        await expect(t3).not.toBeChecked();
+        await screenshot(`send-pending-${variant}`);
+        send({
+          type: "agents-result",
+          request: heldT3,
+          facts: { error: "config_write_failed" },
+        });
+        const t3Failure = page.getByRole("alertdialog", {
+          name: "Unable to save preference",
+        });
+        await expect(t3Failure).toBeVisible();
+        await screenshot(`send-failure-${variant}`);
+        const recover = t3Failure.getByRole("button", {
+          name: "Refresh preference",
+        });
+        await expect(recover).toBeFocused();
+        await page.keyboard.press("Enter");
+        await expect(t3Failure).not.toBeVisible();
+        await expect(t3).toBeEnabled();
+        await expect(t3).toBeFocused();
+        await screenshot(`send-recovered-${variant}`);
+        await openRecording();
+
+        await openTask("Fix permissions", "Permissions");
+        await expect(
+          page.getByText("Input devices", { exact: true }),
+        ).toBeVisible();
+        await screenshot(`permissions-${variant}`);
+        await openRecording();
+      }
+
+    for (const [label, heading] of [
+      ["Transcription", "Transcription"],
+      ["Live transcription", "Live local transcription"],
+      ["Notes gesture", "Double-tap Shift for notes"],
+      ["Public links", "Public sharing links"],
+      ["Auto paste", "Auto paste"],
+      ["Video export", "Export"],
+    ]) {
+      await openTask(label, heading);
+      if (label === "Auto paste") {
+        await expect(page.getByRole("switch", { name: label })).toBeDisabled();
+        await screenshot("auto-paste-unavailable-640-dark");
+      }
+      await openRecording();
+    }
+    await navigate("Agents");
+    await page
+      .getByRole("button", { name: "Send recordings to T3", exact: true })
+      .press("Enter");
+    await expect(
+      page.getByRole("heading", { name: "Send recordings to T3" }),
+    ).toBeFocused();
+    assert.equal(page.url(), startUrl);
   } finally {
     await browser?.close().catch(() => {});
     child.stdin.end();

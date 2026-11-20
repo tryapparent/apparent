@@ -281,3 +281,36 @@
 .settings-general-shell .settings-content {
   padding-inline: 32px;
 }
+.settings-recording-index {
+  display: grid;
+  gap: 12px;
+  margin-block-end: 24px;
+}
+.settings-recording-index ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 12px;
+}
+.settings-content .settings-task-link {
+  min-height: 44px;
+  max-width: 100%;
+  height: auto;
+  padding: 4px 0;
+  color: inherit;
+  font-size: var(--apparent-type-body);
+  font-weight: 400;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: normal;
+  text-align: start;
+}
+.settings-agent-delivery {
+  margin-block-end: 8px;
+}
+.settings-content .settings-task-link:hover {
+  text-decoration-thickness: 2px;
+}
+.settings-content :is(h1, h2, legend, p)[tabindex="-1"]:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+}

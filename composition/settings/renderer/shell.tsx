@@ -2,6 +2,7 @@ import {
   type DetailedHTMLProps,
   type HTMLAttributes,
   useLayoutEffect,
+  useRef,
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
@@ -32,6 +33,7 @@ import "./settings.css";
 import wordmark from "../../../shared/assets/brand/apparent-wordmark.svg";
 import { Button } from "@apparent/ui/button";
 import { DisclosureMenu } from "@apparent/ui/disclosure-menu";
+import { RecordingIndex } from "./recording-index";
 
 const panes = [
   "General",
@@ -42,6 +44,7 @@ const panes = [
   "Labs",
   "About",
 ] as const;
+type Pane = (typeof panes)[number];
 const icons = [
   <>
     <path d="M12 8v8M8 12h8" />
@@ -120,11 +123,20 @@ function Settings() {
       panes.find((pane) => location.hash === `#${pane.toLowerCase()}`) ??
       "Storage",
   );
+  const content = useRef<HTMLElement>(null);
+  const destination = useRef<{ pane: Pane; section?: string }>(null);
+  const [section, setSection] = useState<string>();
   useLayoutEffect(
     () =>
       window.apparentSettingsRoute?.((pane) => {
         const selected = panes.find((value) => value.toLowerCase() === pane);
         if (selected) {
+          setSection(
+            destination.current?.pane === selected
+              ? destination.current.section
+              : undefined,
+          );
+          destination.current = null;
           setCurrent(selected);
           setError("");
         }
@@ -133,27 +145,60 @@ function Settings() {
   );
   useLayoutEffect(() => {
     document.title = `Apparent Settings — ${current}`;
+    content.current?.scrollTo(0, 0);
   }, [current]);
+  useLayoutEffect(() => {
+    const root = content.current;
+    if (!section || !root) return;
+
+    const focusSection = () => {
+      const target =
+        document.getElementById(section) ??
+        root.querySelector<HTMLElement>("[data-settings-section-fallback]");
+      if (!target || !root.contains(target)) return;
+      cancel();
+      target.focus({ preventScroll: true });
+      target.scrollIntoView({ block: "start" });
+    };
+    function cancel() {
+      observer.disconnect();
+      setSection(undefined);
+    }
+    const observer = new MutationObserver(focusSection);
+    observer.observe(root, { childList: true, subtree: true });
+    focusSection();
+    document.addEventListener("keydown", cancel);
+    document.addEventListener("pointerdown", cancel);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("keydown", cancel);
+      document.removeEventListener("pointerdown", cancel);
+    };
+  }, [current, section]);
   useLayoutEffect(() => {
     void window.apparentSettingsMounted?.().catch(() => {});
   }, []);
   const [error, setError] = useState("");
   const [navigating, setNavigating] = useState(false);
-  async function navigate(pane: string) {
+  async function navigate(pane: Pane, section?: string) {
+    if (pane === current) {
+      setError("");
+      setSection(section);
+      return;
+    }
+    destination.current = { pane, section };
+    setSection(undefined);
     setNavigating(true);
     try {
       await window.apparent?.navigateSettings(pane.toLowerCase());
     } catch {
+      destination.current = null;
       setError("Unable to open that Settings page. Please try again.");
     } finally {
       setNavigating(false);
     }
   }
-  function pageButton(
-    pane: (typeof panes)[number],
-    index: number,
-    close?: () => void,
-  ) {
+  function pageButton(pane: Pane, index: number, close?: () => void) {
     return (
       <Button
         variant="ghost"
@@ -163,7 +208,8 @@ function Settings() {
         aria-current={pane === current ? "page" : undefined}
         onClick={() => {
           close?.();
-          if (pane !== current) void navigate(pane);
+          if (pane === current) content.current?.scrollTo(0, 0);
+          else void navigate(pane);
         }}
       >
         <svg
@@ -209,19 +255,37 @@ function Settings() {
           </DisclosureMenu>
         </nav>
       </aside>
-      <main className="settings-content">
+      <main className="settings-content" ref={content}>
         <header className="settings-page-heading">
-          <h1>{current}</h1>
+          <h1
+            id={current === "Permissions" ? "settings-permissions" : undefined}
+            tabIndex={current === "Permissions" ? -1 : undefined}
+          >
+            {current}
+          </h1>
           <div id="settings-account" />
         </header>
         {error && <p role="alert">{error}</p>}
         {current === "Labs" && (
           <RecordingStartPreference preference={recordStart} />
         )}
+        {current === "Agents" && (
+          <Button
+            className="settings-task-link settings-agent-delivery"
+            variant="link"
+            disabled={navigating}
+            onClick={() => void navigate("Labs", "agent-t3-label")}
+          >
+            Send recordings to T3
+          </Button>
+        )}
         {current === "General" ? (
           <General />
         ) : current === "Recording" ? (
-          <RecordingSection bridge={window.apparentRecording} />
+          <>
+            <RecordingIndex disabled={navigating} navigate={navigate} />
+            <RecordingSection bridge={window.apparentRecording} />
+          </>
         ) : current === "Permissions" ? (
           <PermissionsSection bridge={window.apparentPermissions} />
         ) : current === "About" ? (

@@ -18,7 +18,11 @@ export function DoubleShiftNotes({
   return (
     <section className="agent-preference">
       <div className="agent-preference-row">
-        <h2 className="settings-preference-label" id="double-shift-notes-label">
+        <h2
+          className="settings-preference-label"
+          id="double-shift-notes-label"
+          tabIndex={-1}
+        >
           Double-tap Shift for notes
         </h2>
         <Switch
