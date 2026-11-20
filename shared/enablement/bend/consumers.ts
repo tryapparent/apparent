@@ -1,8 +1,16 @@
 import { sharedBendInput } from "./manifest.ts";
 
+export const sparklePolicySource = "shared/analytics/sparkle-outcomes.bend";
+export const sparklePolicyBuild = "shared/enablement/ci/bend/";
+
 export function bendConsumers(path: string) {
   if (path === "shared/enablement/bend/consumers.ts")
     return ["tooling"] as const;
+  if (
+    path === sparklePolicySource ||
+    (path.startsWith(sparklePolicyBuild) && !path.endsWith("/check.ts"))
+  )
+    return ["capture", "desktop"] as const;
   if (
     path === ".github/workflows/stream-handoff.yml" ||
     path === "handoff/enablement/ci/bend/check.ts"

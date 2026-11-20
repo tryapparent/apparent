@@ -3,6 +3,9 @@ use std::process::Command;
 
 mod build_version { include!("enablement/build_version.rs"); }
 
+#[path = "engine/diagnostics/build.rs"]
+mod sparkle_outcomes;
+
 fn main() {
     build_version::emit();
     compile_record_shortcut_policy();
@@ -13,6 +16,7 @@ fn main() {
     #[cfg(target_os = "macos")]
     emit_note_policy("onboarding", "frog-nudge", "host/tips/frog-nudge.json");
     compile_record_pill();
+    sparkle_outcomes::compile();
     println!("cargo:rerun-if-env-changed=APPARENT_POSTHOG_TOKEN");
     println!("cargo:rerun-if-env-changed=APPARENT_POSTHOG_RELEASE_ID");
     let release_id = std::env::var("APPARENT_POSTHOG_RELEASE_ID").unwrap_or_default();

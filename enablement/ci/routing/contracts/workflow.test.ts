@@ -51,10 +51,11 @@ test("committed candidate routing selects the workflow contract commands and pre
   const release = "composition/enablement/release/mac/inputs.ts";
   const verifier = "enablement/verification.py";
   const workflow = ".github/workflows/checks.yml";
+  const sparkle = "shared/analytics/sparkle-outcomes.bend";
   git("init", "-q");
   git("config", "user.name", "Fixture");
   git("config", "user.email", "fixture@example.invalid");
-  for (const path of [native, theme, release, verifier, workflow]) {
+  for (const path of [native, theme, release, verifier, workflow, sparkle]) {
     mkdirSync(dirname(join(cwd, path)), { recursive: true });
     writeFileSync(join(cwd, path), "");
   }
@@ -113,6 +114,7 @@ test("committed candidate routing selects the workflow contract commands and pre
 
   const checks = {
     release: "Verify paired release contracts",
+    sparkle: "Verify shared Sparkle outcome policy",
     theme: "Verify shared theme",
     engineering: "Verify push guards, selection and publication admission",
     tooling: "Verify the shared selected tooling suite",
@@ -122,6 +124,7 @@ test("committed candidate routing selects the workflow contract commands and pre
   for (const [paths, expected] of [
     [[native], []],
     [[theme], [checks.theme]],
+    [[sparkle], [checks.sparkle]],
     [[verifier], [checks.release, checks.engineering]],
     [[release], [checks.release]],
     [
