@@ -12,6 +12,7 @@
     "./native-select": "./src/forms/native-select.tsx",
     "./settings-theme.css": "./src/settings/theme.css",
     "./button": "./src/button.tsx",
+    "./overflow-button.css": "./src/overflow-button.css",
     "./tabs": "./src/tabs.tsx",
     "./theme.css": "./src/theme.css",
     "./status-card": "./src/status-card.tsx",

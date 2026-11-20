@@ -63,6 +63,24 @@ test('packaged brand reading view, downloads, deep links and keyboard slides wor
       await page.getByRole('button',{name:'Try a button',exact:true}).click()
       assert(await page.getByText('Button tried 1 time.',{exact:true}).count())
       assert(await page.getByRole('button',{name:'Unavailable',exact:true}).isDisabled())
+      const overflow = page.getByRole('button',{name:'Manage work laptop'})
+      const overflowFill = () => overflow.evaluate(button=>getComputedStyle(button).backgroundColor)
+      const restFill = await overflowFill()
+      await overflow.hover()
+      await page.waitForFunction(fill => {
+        const button = document.querySelector('.bb-overflow-specimen button')
+        return button && getComputedStyle(button).backgroundColor !== fill
+      }, restFill)
+      const hoverFill = await overflowFill()
+      if (proof) {
+        mkdirSync(proof,{recursive:true})
+        await page.locator('.bb-overflow-specimen').screenshot({path:join(proof,`overflow-hover-${width}.png`)})
+      }
+      await overflow.press('Enter')
+      assert.equal(await overflow.getAttribute('aria-expanded'),'true')
+      assert.notEqual(await overflowFill(), hoverFill)
+      await overflow.press('Enter')
+      assert.equal(await overflow.getAttribute('aria-expanded'),'false')
       const preference = page.getByRole('switch',{name:'Playful details'}).first()
       assert.equal(await preference.getAttribute('aria-checked'),'true')
       assert.equal(await preference.locator('.apparent-switch-track').evaluate(element=>getComputedStyle(element).backgroundColor),'rgb(122, 88, 199)')
