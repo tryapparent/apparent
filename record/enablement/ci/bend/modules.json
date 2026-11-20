@@ -4,7 +4,14 @@
     "media/src/assembly/frame-limits.bend",
     "media/src/export/quiet-export.bend",
     "settings/recording-policy.bend",
-    "settings/permissions/permission-policy.bend"
+    "settings/permissions/permission-policy.bend",
+    "pill/pill-state.bend"
   ],
-  "inputs": ["completion/", "media/", "settings/"]
+  "inputs": [
+    "completion/",
+    "media/",
+    "settings/",
+    "pill/",
+    "enablement/ci/pill/"
+  ]
 }

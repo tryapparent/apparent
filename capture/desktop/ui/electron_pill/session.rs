@@ -466,7 +466,7 @@ impl Session {
             "activation_ack": self.activated.load(Ordering::Acquire),
             "activation_age_ms": self.activation.map(|at| at.elapsed().as_millis()),
             "last_queued_state": {
-                "phase": diagnostics::known_phase(self.view.phase),
+                "phase": diagnostics::known_phase(&self.view.phase),
                 "revision": self.view.revision,
                 "age_ms": self.sent.elapsed().as_millis(),
             },
@@ -535,7 +535,7 @@ impl Session {
         let (lock, wake) = &*self.mailbox;
         lock.lock().unwrap().state = Some(serde_json::json!({"type":"state","view":self.view,
             "capture":Self::capture_key(self.generation),"t3Eligible":self.t3_eligible}));
-        self.observation.lock().unwrap().queued_state(self.view.phase);
+        self.observation.lock().unwrap().queued_state(&self.view.phase);
         self.sent = Instant::now();
         wake.notify_one();
     }
@@ -621,10 +621,16 @@ mod native_tests {
     fn cancelled_native_pin_keeps_child_for_next_capture() {
         assert!(crate::capture::desktop::linux::hyprland::running());
         let view = View {
-            revision: 1, phase: "recording", clock: "00:01".into(), label: "Synthetic pin test".into(),
-            warning: None, notice: None, reduced_motion: true,
+            revision: 1,
+            clock: "00:01".into(),
+            notice: None,
+            reduced_motion: true,
             transcript: None,
-            draggable: false, input_waveform: None, note_count: 0, actions: vec![],
+            input_waveform: None,
+            presentation: super::super::Presentation {
+                phase: "recording".into(),
+                ..Default::default()
+            },
         };
         let mut session = Session::open(view.clone(), 1, Default::default()).unwrap();
         let deadline = Instant::now() + Duration::from_secs(8);
@@ -636,7 +642,7 @@ mod native_tests {
         session.activate();
         std::thread::sleep(Duration::from_millis(600));
         let mut hidden = view.clone();
-        hidden.phase = "hidden";
+        hidden.presentation.phase = "hidden".into();
         session.update(hidden, 1, Default::default());
         // Model a show/resize notification already in flight when Cancel hides
         // the surface. The real worker, child and compositor handle the request.

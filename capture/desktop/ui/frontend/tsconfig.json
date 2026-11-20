@@ -18,6 +18,7 @@
       "@apparent/ui/keycap": [
         "./node_modules/@apparent/ui/src/keyboard/keycap.tsx"
       ],
+      "@apparent/ui/icons": ["./node_modules/@apparent/ui/src/icons.ts"],
       "@apparent/ui/button": ["./node_modules/@apparent/ui/src/button.tsx"],
       "@apparent/ui/input": ["./node_modules/@apparent/ui/src/forms/input.tsx"],
       "@apparent/ui/status-card": [

@@ -8,6 +8,7 @@ fn main() {
     compile_record_shortcut_policy();
     compile_onboarding_entry_policy();
     emit_recording_permissions();
+    compile_record_pill();
     println!("cargo:rerun-if-env-changed=APPARENT_POSTHOG_TOKEN");
     println!("cargo:rerun-if-env-changed=APPARENT_POSTHOG_RELEASE_ID");
     let release_id = std::env::var("APPARENT_POSTHOG_RELEASE_ID").unwrap_or_default();
@@ -84,6 +85,30 @@ fn compile_onboarding_entry_policy() {
     let output = PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo output directory"));
     std::fs::write(output.join("onboarding_entry_policy.rs"), generated.stdout)
         .expect("write generated Onboarding entry policy");
+}
+
+fn compile_record_pill() {
+    for input in [
+        "record/pill/pill-state.bend",
+        "record/pill/host.ts",
+        "record/pill/presentation.ts",
+        "record/enablement/ci/bend/pill.ts",
+        "record/enablement/ci/bend/modules.json",
+        "shared/enablement/bend",
+    ] {
+        println!("cargo:rerun-if-changed={input}");
+    }
+    let output = PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo output directory"));
+    let result = Command::new("node")
+        .arg("record/enablement/ci/bend/pill.ts")
+        .arg(output.join("record-pill.mjs"))
+        .output()
+        .expect("Node 22 is required to compile Record pill policy");
+    assert!(
+        result.status.success(),
+        "Unable to compile Record pill policy: {}",
+        String::from_utf8_lossy(&result.stderr),
+    );
 }
 
 fn emit_recording_permissions() {

@@ -7,20 +7,22 @@ mod tests {
         use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
         let (sender, _receiver) = flume::unbounded();
         let mut coord = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
-        let original = Instant::now() - Duration::from_secs(30);
-        coord.island_phase = IslandPhase::Completed { finished_at: original, frame_count: 3, duration_ms: 1200, inbox_count: 0 };
+        coord.apply_pill_event(PillEvent::CaptureStarted);
+        coord.apply_pill_event(PillEvent::CaptureSealed);
+        coord.apply_pill_event(PillEvent::CaptureSaved { recovery: false, text: None, frame_count: 1, duration_ms: 1000 });
+        coord.apply_pill_event(PillEvent::ShareStarted);
         let active = Arc::new(AtomicBool::new(true));
         coord.share_pending = Some((PathBuf::from("/synthetic/current.apparent"), coord.capture_generation, active.clone()));
         let cancelled = Instant::now();
         assert!(coord.cancel_completed_foreground_share());
         assert!(!active.load(Ordering::SeqCst));
         assert!(coord.share_pending.is_none());
-        assert_eq!(coord.completed_note.as_deref(), Some("Upload cancelled · recording saved locally"));
-        let IslandPhase::Completed { finished_at, frame_count, duration_ms, inbox_count } = coord.island_phase else { panic!("Retry presentation was dismissed") };
-        assert!(finished_at >= cancelled, "Retry inherited the expired save deadline");
-        assert_eq!((frame_count, duration_ms, inbox_count), (3, 1200, 0));
+        assert_eq!(coord.reveal.completed_presentation.label, "Upload cancelled · recording saved locally");
+        assert!(matches!(coord.island_phase, IslandPhase::Completed { .. }));
+        assert!(coord.reveal.wake.unwrap() >= cancelled + Duration::from_secs(15));
+        let renewed = coord.reveal.wake;
         assert!(!coord.cancel_completed_foreground_share(), "Cancellation must not replay");
-        assert!(matches!(coord.island_phase, IslandPhase::Completed { finished_at: unchanged, .. } if unchanged == finished_at));
+        assert_eq!(coord.reveal.wake, renewed);
     }
 
     #[test]
@@ -29,11 +31,13 @@ mod tests {
         for fault in ["none", "legacy", "revoked", "token", "generation", "bundle", "new-capture"] {
             let (sender, _receiver) = flume::unbounded();
             let mut coord = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
-            let original = Instant::now() - Duration::from_secs(30);
             let bundle = PathBuf::from("/synthetic/current.apparent");
             let active = Arc::new(AtomicBool::new(true));
             coord.completed_dir = Some(bundle.clone());
-            coord.island_phase = IslandPhase::Completed { finished_at: original, frame_count: 1, duration_ms: 1000, inbox_count: 0 };
+            coord.apply_pill_event(PillEvent::CaptureStarted);
+            coord.apply_pill_event(PillEvent::CaptureSealed);
+            coord.apply_pill_event(PillEvent::CaptureSaved { recovery: false, text: None, frame_count: 1, duration_ms: 1000 });
+            coord.apply_pill_event(PillEvent::ShareStarted);
             let generation = coord.capture_generation;
             coord.share_pending = Some((bundle.clone(), generation, active.clone()));
             match fault {
@@ -41,7 +45,7 @@ mod tests {
                 "token" => coord.share_pending.as_mut().unwrap().2 = Arc::new(AtomicBool::new(true)),
                 "generation" => coord.capture_generation = generation.wrapping_add(1),
                 "bundle" => coord.completed_dir = Some(PathBuf::from("/synthetic/newer.apparent")),
-                "new-capture" => coord.set_island_phase(IslandPhase::Recording),
+                "new-capture" => coord.apply_pill_event(PillEvent::CaptureStarted),
                 _ => (),
             }
             let before = coord.island_phase;
@@ -50,7 +54,7 @@ mod tests {
             assert_eq!(accepted, matches!(fault, "none" | "legacy"), "{fault}");
             if fault == "none" {
                 assert!(coord.share_pending.is_none());
-                assert!(matches!(coord.island_phase, IslandPhase::Completed { finished_at, .. } if finished_at >= delivered));
+                assert!(coord.reveal.wake.unwrap() >= delivered + Duration::from_secs(15));
                 assert!(!coord.admit_completed_share_result(&bundle, generation, &active, true), "Duplicate result refreshed the clock");
             } else {
                 assert_eq!(coord.island_phase, before, "Stale/legacy result changed the presentation: {fault}");
@@ -73,11 +77,13 @@ mod tests {
         coord.recording_shortcut_key = true;
         assert!(coord.defer_update_restart(&restart));
         coord.recording_shortcut_key = false;
-        coord.set_island_phase(IslandPhase::Processing);
+        coord.apply_pill_event(PillEvent::CaptureStarted);
+        coord.apply_pill_event(PillEvent::CaptureSealed);
         assert!(coord.defer_update_restart(&restart));
-        coord.set_island_phase(IslandPhase::Selecting { mode: SelectionMode::Screen });
+        coord.apply_pill_event(PillEvent::Hide);
+        coord.apply_pill_event(PillEvent::PickerOpened { mode: pill_state::Mode::Screen });
         assert!(coord.defer_update_restart(&restart));
-        coord.set_island_phase(IslandPhase::Hidden);
+        coord.apply_pill_event(PillEvent::Hide);
         assert!(!coord.defer_update_restart(&restart));
         coord.lab = true;
         assert!(coord.defer_update_restart(&restart));
@@ -88,13 +94,14 @@ mod tests {
         let (sender, _receiver) = flume::unbounded();
         let mut coord = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
         assert!(!coord.capture_busy());
-        coord.set_island_phase(IslandPhase::Processing);
+        coord.apply_pill_event(PillEvent::CaptureStarted);
+        coord.apply_pill_event(PillEvent::CaptureSealed);
         let generation = coord.capture_generation;
         coord.capture_finalizer_started();
         // Escape cancels UI ownership, not the detached encoding/bundle worker.
         coord.cancel_capture_attempt();
-        coord.set_island_phase(IslandPhase::Dismissing);
-        coord.set_island_phase(IslandPhase::Hidden);
+        coord.apply_pill_event(PillEvent::Dismiss);
+        coord.apply_pill_event(PillEvent::Hide);
         assert!(!coord.accepts_capture_result(generation));
         assert!(coord.capture_busy());
         #[cfg(target_os = "linux")]
@@ -158,7 +165,7 @@ mod tests {
         let (sender, _receiver) = flume::unbounded();
         let mut coord = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
         coord.capture_finalizer_started();
-        coord.set_island_phase(IslandPhase::Hidden);
+        coord.apply_pill_event(PillEvent::Hide);
         assert!(coord.refuse_capture_restart());
         coord.capture_finalizer_finished();
         assert!(!coord.refuse_capture_restart());
@@ -209,35 +216,36 @@ mod tests {
         };
         assert!(coordinator.agent_captures.admit("a", false, false));
         coordinator.agent_capture_id = Some("a".into());
-        coordinator.set_island_phase(IslandPhase::Recording);
+        coordinator.apply_pill_event(PillEvent::CaptureStarted);
         // finish_recording detaches A's ID before starting its finalizer.
         let finishing_id = coordinator.agent_capture_id.take().unwrap();
         coordinator.agent_captures.set(&finishing_id, "processing", None, None);
-        coordinator.set_island_phase(IslandPhase::Processing);
+        coordinator.apply_pill_event(PillEvent::CaptureSealed);
         let generation_a = coordinator.capture_generation;
 
         // Native Escape uses cancel_recording: its state-only cancellation and
         // dismiss_island's phase transition revoke UI ownership, not A's worker.
         coordinator.cancel_capture_attempt();
-        coordinator.set_island_phase(IslandPhase::Dismissing);
-        coordinator.set_island_phase(IslandPhase::Hidden);
+        coordinator.apply_pill_event(PillEvent::Dismiss);
+        coordinator.apply_pill_event(PillEvent::Hide);
         assert_eq!(coordinator.agent_captures.inspect("a")["status"], "processing");
         assert!(coordinator.agent_captures.admit("b", false, false));
         coordinator.agent_capture_id = Some("b".into());
         coordinator.onboarding.as_mut().unwrap().input(Input::ShortcutTriggered);
-        coordinator.set_island_phase(IslandPhase::Recording);
+        coordinator.apply_pill_event(PillEvent::CaptureStarted);
         coordinator.agent_captures.set("b", "recording", None, None);
         if processing_b {
             // Also cover B already finalizing: a phase-only guard must not accept A.
             coordinator.agent_capture_id.take();
             coordinator.agent_captures.set("b", "processing", None, None);
-            coordinator.set_island_phase(IslandPhase::Processing);
+            coordinator.apply_pill_event(PillEvent::CaptureSealed);
         }
         let state_b = coordinator.agent_state();
         let receipt_b = coordinator.agent_captures.inspect("b");
         let generation_b = coordinator.capture_generation;
         coordinator.completed_dir = Some(PathBuf::from("/synthetic/b-review.apparent"));
-        coordinator.completed_note = Some("B's note".into());
+        coordinator.refresh_pill_presentation();
+        let label_b = coordinator.reveal.presentation.label.clone();
         coordinator.review_bundle = Some((PathBuf::from("/synthetic/b-review.apparent"), bundle));
         let review_b = coordinator.review_bundle.clone();
 
@@ -263,7 +271,7 @@ mod tests {
         assert_eq!(coordinator.agent_captures.inspect("b"), receipt_b);
         assert_eq!(coordinator.capture_generation, generation_b);
         assert_eq!(coordinator.completed_dir, Some(PathBuf::from("/synthetic/b-review.apparent")));
-        assert_eq!(coordinator.completed_note.as_deref(), Some("B's note"));
+        assert_eq!(coordinator.reveal.presentation.label, label_b);
         assert_eq!(coordinator.review_bundle, review_b);
         assert_eq!(coordinator.onboarding.as_mut().unwrap().action("continue"), Effect::None);
     }
@@ -273,7 +281,8 @@ mod tests {
         for owned in [false, true] {
             let (sender, _receiver) = flume::unbounded();
             let mut coordinator = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
-            coordinator.set_island_phase(IslandPhase::Processing);
+            coordinator.apply_pill_event(PillEvent::CaptureStarted);
+            coordinator.apply_pill_event(PillEvent::CaptureSealed);
             let generation = coordinator.capture_generation;
             if owned {
                 assert!(coordinator.agent_captures.admit("a", false, false));
@@ -349,11 +358,9 @@ mod tests {
         assert!(matches!(coordinator.island_phase, IslandPhase::Hidden));
         assert!(coordinator.active_recording.is_none());
         // A later menu recording has no ShortcutTriggered event.
-        coordinator.set_island_phase(IslandPhase::Recording);
-        coordinator.set_island_phase(IslandPhase::Processing);
-        coordinator.set_island_phase(IslandPhase::Completed {
-            finished_at: Instant::now(), frame_count: 1, duration_ms: 1000, inbox_count: 0,
-        });
+        coordinator.apply_pill_event(PillEvent::CaptureStarted);
+        coordinator.apply_pill_event(PillEvent::CaptureSealed);
+        coordinator.apply_pill_event(PillEvent::CaptureSaved { recovery: false, text: None, frame_count: 1, duration_ms: 1000 });
         assert_eq!(coordinator.onboarding.as_mut().unwrap().action("continue"), Effect::None);
     }
 
@@ -368,30 +375,28 @@ mod tests {
         }
         let mut flow = Flow::tour(Step::TryIt, Some(grants))
             .with_first_capture(true, true, true, false);
-        coordinator.set_island_phase(IslandPhase::Recording);
+        coordinator.apply_pill_event(PillEvent::CaptureStarted);
         let first = coordinator.capture_generation;
-        coordinator.set_island_phase(IslandPhase::Processing);
+        coordinator.apply_pill_event(PillEvent::CaptureSealed);
         assert!(coordinator.accepts_capture_result(first));
-        coordinator.set_island_phase(IslandPhase::Dismissing);
+        coordinator.apply_pill_event(PillEvent::Dismiss);
         // The detached worker is still running, but dismissal revokes its UI result.
         assert!(!coordinator.accepts_capture_result(first));
-        coordinator.set_island_phase(IslandPhase::Hidden);
+        coordinator.apply_pill_event(PillEvent::Hide);
         flow.on(Input::ShortcutTriggered);
         assert_eq!(flow.on(Input::CaptureStarted), Effect::Hide);
-        coordinator.set_island_phase(IslandPhase::Recording);
+        coordinator.apply_pill_event(PillEvent::CaptureStarted);
         let second = coordinator.capture_generation;
         let deliver = |coordinator: &mut ApparentCoordinator, flow: &mut Flow, generation| {
             if coordinator.accepts_capture_result(generation) {
-                coordinator.set_island_phase(IslandPhase::Completed {
-                    finished_at: Instant::now(), frame_count: 1, duration_ms: 1000, inbox_count: 0,
-                });
+                coordinator.apply_pill_event(PillEvent::CaptureSaved { recovery: false, text: None, frame_count: 1, duration_ms: 1000 });
                 flow.on(Input::CaptureEnded { completed: true });
             }
         };
         deliver(&mut coordinator, &mut flow, first);
         assert!(matches!(coordinator.island_phase, IslandPhase::Recording));
         assert_eq!(flow.step(), Step::TryIt);
-        coordinator.set_island_phase(IslandPhase::Processing);
+        coordinator.apply_pill_event(PillEvent::CaptureSealed);
         deliver(&mut coordinator, &mut flow, first);
         assert!(coordinator.is_processing());
         assert_eq!(flow.step(), Step::TryIt);
@@ -424,7 +429,7 @@ mod tests {
             source: CaptureSource::Screen {session,audio:None,windows:None},
             _metal_overlay:None,microphone_enabled:false,
         });
-        coordinator.set_island_phase(IslandPhase::Recording);
+        coordinator.apply_pill_event(PillEvent::CaptureStarted);
         assert_eq!(coordinator.take_recording_start(),None,"pending permission/frame is not activity");
         seen.store(true,Ordering::Release);
         assert_eq!(coordinator.take_recording_start(),Some(false));
@@ -458,7 +463,7 @@ mod tests {
                 bundle_dir: dir.clone(), source: CaptureSource::Screen { session, audio: None, windows: None },
                 _metal_overlay: None, microphone_enabled: false,
             });
-            coordinator.set_island_phase(IslandPhase::Recording);
+            coordinator.apply_pill_event(PillEvent::CaptureStarted);
             let mut notices = Vec::new();
             assert_eq!(coordinator.cancel_pending_screen_finish_notifying(|title, message| {
                 notices.push((title.to_owned(), message.to_owned()));
@@ -633,18 +638,6 @@ mod tests {
         assert_eq!(
             completed_audio_issue(None, &spoken, false),
             Some(CompletedAudioIssue::NoAudio)
-        );
-        assert_eq!(
-            completed_status_label(0, None, Some(CompletedAudioIssue::NoAudio)),
-            "Copied · No audio"
-        );
-        assert_eq!(
-            completed_status_label(0, None, Some(CompletedAudioIssue::NoWords)),
-            "Copied · No words"
-        );
-        assert_eq!(
-            completed_status_label(0, None, Some(CompletedAudioIssue::TranscriptionUnavailable)),
-            "Copied · Transcript unavailable"
         );
     }
 
@@ -1065,26 +1058,5 @@ mod tests {
     #[test]
     fn clock_template_is_width_stable() {
         assert_eq!(clock_template("12:34"), "00:00");
-        assert_eq!(completed_label(0, None), "Copied");
-        assert_eq!(
-            completed_label(0, Some("Sent to APPARENT")),
-            "Sent to APPARENT"
-        );
-        assert_eq!(completed_label(1, Some("Sent to APPARENT")), "From iPhone");
-        assert_eq!(completed_label(3, None), "3 from iPhone");
-        assert_eq!(
-            completed_status_label(0, None, Some(CompletedAudioIssue::NoWords)),
-            "Copied · No words"
-        );
-        assert_eq!(
-            completed_status_label(
-                0,
-                Some("Sent to APPARENT"),
-                Some(CompletedAudioIssue::NoWords)
-            ),
-            "Sent to APPARENT · No words"
-        );
-        assert_eq!(completed_status_label(0, None, None), "Copied");
-
     }
 }

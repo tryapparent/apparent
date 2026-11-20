@@ -185,7 +185,7 @@ app.whenReady().then(()=>{
     if(confirming&&sharingConfirmation!==revision)throw Error('Sharing confirmation expired');
     if(action==='cancel-public-link'){setSharingConfirmation(null);return {cancelled:true};}
     if(action==='confirm-public-link'){setSharingConfirmation(null);message.action='copy-public-link';}
-    else if(action==='copy-link'&&!current.actions.some(a=>a.id==='copy-link'&&a.label==='Cancel upload')){
+    else if(action==='copy-link'&&current.shareIndicator!=='uploading'){
       setSharingConfirmation(revision);return {confirmationRequired:true};
     } else setSharingConfirmation(null);
     if(drop){

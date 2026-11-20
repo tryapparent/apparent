@@ -207,7 +207,7 @@ test('close stays at the trailing edge and progress rotates unless motion is red
    }
   }
   for(const phase of ['processing','completed']){
-   await publish({phase,label:phase==='processing'?'Processing recording…':'Uploading…',
+   await publish({phase,shareIndicator:phase==='completed'?'uploading':'none',
     actions:phase==='completed'?[control('copy-link','Cancel upload')]:[]});
    const spinner=page.locator('.indicator.processing');
    const transform=()=>spinner.evaluate(el=>getComputedStyle(el).transform);

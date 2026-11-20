@@ -97,6 +97,8 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
   const record = workflow("stream-record.yml");
   const paths = [
     "record/completion/**",
+    "record/pill/**",
+    "record/enablement/ci/pill/**",
     "record/enablement/ci/bend/**",
     "shared/enablement/bend/**",
     ".github/workflows/stream-record.yml",

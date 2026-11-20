@@ -119,16 +119,16 @@ impl Render for HudPillWindow {
         let highlight_p = ease_out_cubic(motion::age(coord.highlight_since) / HIGHLIGHT_FADE_S);
         let clock = format_clock(elapsed_ms);
         let has_iphone = coord.iphone.is_some();
-        let completed_note = coord.completed_note.clone();
-        let completed_issue = coord.completed_audio_issue();
-        let completed_warning = completed_issue.is_some();
-        let live_no_words = coord.recording_has_no_words() && !coord.reveal.is_open();
+        let completed_label = coord.completed_note.clone();
+        let completed_warning = coord.reveal.completed_presentation.completed_warning;
+        let share = coord.fallback_share();
+        let live_no_words = coord.reveal.presentation.no_words;
         let pill_theme = PillTheme::for_window(window);
         let recording_warning = mic_warning.is_some() || live_no_words;
         let warning_focus = recording_warning || completed_warning;
         // The Recording capsule's trailing group: switch chips or controls, and the swap between.
         let chips = if matches!(phase, IslandPhase::Recording) {
-            coord.reveal.is_open()
+            coord.reveal.chips
         } else {
             coord.reveal_prev_chips
         };
@@ -151,8 +151,8 @@ impl Render for HudPillWindow {
             has_iphone,
             chips,
             mic_warning,
-            completed_note.as_deref(),
-            completed_issue,
+            completed_label.as_deref(),
+            None,
             live_no_words,
         );
         let snap_initial_width =
@@ -419,7 +419,7 @@ impl Render for HudPillWindow {
                         }),
                 )
             }
-            IslandPhase::Completed { inbox_count, .. } => traced(
+            IslandPhase::Completed { .. } => traced(
                 row,
                 ["done.lead", "divider.lead", "paste"]
                     .into_iter()
@@ -457,11 +457,7 @@ impl Render for HudPillWindow {
                             .ml(px(8.0))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(rgb(pill_theme.text()))
-                            .child(completed_status_label(
-                                inbox_count,
-                                completed_note.as_deref(),
-                                completed_issue,
-                            )),
+                            .child(completed_label.unwrap_or_default()),
                     ),
             )
             .child(island_divider(pill_theme))
@@ -493,8 +489,7 @@ impl Render for HudPillWindow {
                         });
                     }),
             )
-            .when(crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING), |row| {
-                let enabled = self.coordinator.read(cx).share_online && self.coordinator.read(cx).share_pending.is_none();
+            .when_some(share, |row, enabled| {
                 let coordinator = self.coordinator.clone();
                 row.child(pill_chip("hud-copy-link", "Public link", pill_theme)
                     .opacity(if enabled { 1.0 } else { 0.4 })
