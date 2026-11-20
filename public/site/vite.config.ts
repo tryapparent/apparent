@@ -12,7 +12,7 @@ const TYPES: Record<string, string> = { ".txt": "text/plain; charset=utf-8", ".m
 function forAgents(): Plugin {
   return {
     name: "apparent-agent-files",
-    transformIndexHtml: (_, context) => process.env.APPARENT_PUBLIC_SITE !== "1" && context.path === "/index.html"
+    transformIndexHtml: (_, context) => context.path === "/index.html"
       ? [{ tag: "script", attrs: { type: "application/ld+json" }, children: jsonLd(), injectTo: "head" }]
       : [],
     configureServer(server) {
