@@ -58,7 +58,7 @@ export function homebrewCask(
       verified: "github.com/${repository}/"
   name "Apparent Preview"
   desc "Record your screen, voice, and annotations for coding agents"
-  homepage "https://tryapparent.com/"
+  homepage "https://app.tryapparent.com/"
 
   livecheck do
     url "https://raw.githubusercontent.com/${repository}/preview-mac-feed/appcast.xml"
