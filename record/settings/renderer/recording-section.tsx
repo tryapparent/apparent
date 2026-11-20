@@ -6,6 +6,11 @@ import { RecordingControls } from "./recording-controls";
 import { RecordingFeed } from "./recording-feed";
 import "./recording-section.css";
 
+export {
+  AgentContextPreference,
+  type AgentContextPreferenceProps,
+} from "./agent-context-preference";
+
 export function RecordingSection({ bridge }: { bridge: RecordingBridge }) {
   const [feed] = useState(() => new RecordingFeed(bridge));
   const state = useSyncExternalStore(feed.subscribe, feed.snapshot);

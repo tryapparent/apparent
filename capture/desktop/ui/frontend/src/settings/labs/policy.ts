@@ -1,9 +1,10 @@
 // Desktop owns which trials are exposed. Native persists only this allowlist.
-export type LabsSetting = 'streaming' | 'autoPaste' | 'sharing' | 'wisprFlow' | 'screenPicker' | 'dictationFrog' | 'compactHandoff' | 'transcriptOnly' | 'silentPrompt';
+export type LabsSetting = 'streaming' | 'autoPaste' | 'sharing' | 'wisprFlow' | 'screenPicker' | 'dictationFrog' | 'compactHandoff' | 'transcriptOnly' | 'silentPrompt' | 'agentContext';
 type Preferences = {
   saved: boolean | null;
   compactHandoffSaved?: boolean | null;
   transcriptOnlySaved?: boolean | null;
+  agentContextSaved?: boolean | null;
   sharingSaved?: boolean | null;
   autoPasteSaved?: boolean | null;
   autoPasteSupported?: boolean;
@@ -19,6 +20,7 @@ export type LabsFacts = Preferences | {
   error: 'config_read_failed' | 'config_write_failed';
   compactHandoffSaved?: never;
   transcriptOnlySaved?: never;
+  agentContextSaved?: never;
   saved?: never; sharingSaved?: never; autoPasteSaved?: never; autoPasteSupported?: never; wisprSaved?: never; wisprSupported?: never; screenPickerSaved?: never; dictationFrogSaved?: never; screenPickerSupported?: never; silentPromptSaved?: never;
 };
 const savedFlag = (value: unknown): value is boolean | null => value === null || typeof value === 'boolean';
@@ -28,7 +30,7 @@ export function facts(value: unknown): LabsFacts {
   if (input.error === 'config_read_failed' || input.error === 'config_write_failed') return {error: input.error};
   if (!savedFlag(input.saved)) throw Error('Invalid Labs preference');
   const result: Preferences = {saved: input.saved};
-  for (const key of ['autoPasteSaved', 'sharingSaved', 'wisprSaved', 'screenPickerSaved', 'dictationFrogSaved', 'compactHandoffSaved', 'silentPromptSaved','transcriptOnlySaved'] as const) {
+  for (const key of ['autoPasteSaved', 'sharingSaved', 'wisprSaved', 'screenPickerSaved', 'dictationFrogSaved', 'compactHandoffSaved', 'silentPromptSaved','transcriptOnlySaved', 'agentContextSaved'] as const) {
     if (input[key] === undefined) continue;
     if (!savedFlag(input[key])) throw Error('Invalid Labs preference');
     result[key] = input[key];
@@ -56,7 +58,7 @@ export class LabsPreferences {
     return this.sendRequest(value, setting);
   }
   private sendRequest(value: unknown, setting: LabsSetting): Promise<LabsFacts> {
-    if (value !== undefined && typeof value !== 'boolean' || !['streaming','autoPaste','sharing','wisprFlow','screenPicker','dictationFrog','compactHandoff','silentPrompt','transcriptOnly'].includes(setting) || this.pending) return Promise.reject(Error('Invalid or pending Labs request'));
+    if (value !== undefined && typeof value !== 'boolean' || !['streaming','autoPaste','sharing','wisprFlow','screenPicker','dictationFrog','compactHandoff','silentPrompt','transcriptOnly','agentContext'].includes(setting) || this.pending) return Promise.reject(Error('Invalid or pending Labs request'));
     const request = ++this.next;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {this.pending = undefined; reject(Error('Labs acknowledgement timed out'));}, 3500);

@@ -19,7 +19,11 @@ import {
   recordingStartPreference,
 } from "../../../record/settings/renderer/recording-start";
 import type { ComponentType } from "react";
-import { RecordingSection } from "../../../record/settings/renderer/recording-section";
+import {
+  AgentContextPreference,
+  RecordingSection,
+  type AgentContextPreferenceProps,
+} from "../../../record/settings/renderer/recording-section";
 import { PermissionsSection } from "../../../record/settings/permissions/permissions-section";
 import type { PermissionBridge } from "../../../record/settings/permissions/permissions-contract";
 import type { RecordingBridge } from "../../../record/settings/recording-contract";
@@ -74,6 +78,7 @@ declare module "react" {
       > & {
         pane: string;
         frogExperiment?: ComponentType<FrogNudgePreferenceProps>;
+        agentContextExperiment?: ComponentType<AgentContextPreferenceProps>;
       };
     }
   }
@@ -224,6 +229,7 @@ function Settings() {
         ) : (
           <apparent-settings-pane
             pane={current}
+            agentContextExperiment={AgentContextPreference}
             frogExperiment={
               current === "Labs" ? FrogNudgePreference : undefined
             }

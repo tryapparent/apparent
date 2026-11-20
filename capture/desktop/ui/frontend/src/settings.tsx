@@ -1,14 +1,20 @@
 import { createRoot } from 'react-dom/client';
 import { Agents } from './settings/agents/agents';
-import { Labs, type FrogExperiment } from './settings/labs/labs';
+import { Labs, type LabsExperiment } from './settings/labs/labs';
 import { Storage } from './storage';
 
 class SettingsPane extends HTMLElement {
   static observedAttributes = ["pane"];
-  private renderFrogExperiment?: FrogExperiment;
+  private renderFrogExperiment?: LabsExperiment;
+  private renderAgentContextExperiment?: LabsExperiment;
 
-  set frogExperiment(component: FrogExperiment | undefined) {
+  set frogExperiment(component: LabsExperiment | undefined) {
     this.renderFrogExperiment = component;
+    this.renderPane();
+  }
+
+  set agentContextExperiment(component: LabsExperiment | undefined) {
+    this.renderAgentContextExperiment = component;
     this.renderPane();
   }
 
@@ -32,7 +38,7 @@ class SettingsPane extends HTMLElement {
   private renderPane() {
     const pane = this.getAttribute("pane");
     this.root?.render(pane === "Agents" ? <Agents /> :
-      pane === "Labs" ? <Labs frogExperiment={this.renderFrogExperiment} /> : <Storage settings />);
+      pane === "Labs" ? <Labs frogExperiment={this.renderFrogExperiment} agentContextExperiment={this.renderAgentContextExperiment} /> : <Storage settings />);
   }
 }
 

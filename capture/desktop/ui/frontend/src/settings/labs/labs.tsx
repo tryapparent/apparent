@@ -12,12 +12,15 @@ declare global {interface Window {apparentLabs: {
   read(): Promise<LabsFacts>; save(value: boolean, setting?: LabsSetting): Promise<LabsFacts>;
   subscribe(callback: (facts: LabsFacts) => void): () => void;
 };}}
-const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', screenPicker: 'recording-picker-mode', dictationFrog: 'dictation-frog-toggle', compactHandoff: 'compact-handoff-toggle', transcriptOnly: 'transcript-only-toggle', silentPrompt: 'silent-prompt-toggle'};
-export type FrogExperiment = ComponentType<{
+const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', screenPicker: 'recording-picker-mode', dictationFrog: 'dictation-frog-toggle', compactHandoff: 'compact-handoff-toggle', transcriptOnly: 'transcript-only-toggle', silentPrompt: 'silent-prompt-toggle', agentContext: 'agent-context-toggle'};
+export type LabsExperiment = ComponentType<{
   id: string; checked: boolean; disabled: boolean; saving: boolean;
   onCheckedChange: (value: boolean) => void;
 }>;
-export function Labs({frogExperiment: FrogNudge}: {frogExperiment?: FrogExperiment}) {
+export function Labs({frogExperiment: FrogNudge, agentContextExperiment: AgentContext}: {
+  frogExperiment?: LabsExperiment;
+  agentContextExperiment?: LabsExperiment;
+}) {
   const [facts, setFacts] = useState<LabsFacts>();
   const [busy, setBusy] = useState(true), [error, setError] = useState('');
   const [setting, setSetting] = useState<LabsSetting>('streaming'), [operation, setOperation] = useState<'read' | 'save'>('read');
@@ -78,6 +81,9 @@ export function Labs({frogExperiment: FrogNudge}: {frogExperiment?: FrogExperime
           disabled={busy || !facts || !!facts.error} onCheckedChange={value => void request(value, 'transcriptOnly')} /></div>
       <p id="transcript-only-help">Send just the transcript when no screen activity is detected.</p>
     </section>
+    {AgentContext && <AgentContext id={controls.agentContext} checked={facts?.agentContextSaved === true}
+      disabled={busy || !facts || !!facts.error} saving={busy && setting === 'agentContext'}
+      onCheckedChange={value => void request(value, 'agentContext')} />}
     <section className="agent-preference">
       <div className="agent-preference-row"><h2 className="settings-preference-label" id="local-stream-label">Live local transcription</h2>
         <Switch id={controls.streaming} className="agent-switch" checked={on ?? false} aria-labelledby="local-stream-label" aria-describedby="local-stream-help local-stream-ready" aria-busy={busy && setting === 'streaming'}

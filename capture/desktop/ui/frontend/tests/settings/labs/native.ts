@@ -24,6 +24,19 @@ try{
   app.once('error',reject);app.once('exit',code=>reject(Error(`Labs exited ${code}: ${stderr.slice(-600)}`)));
  });
  browser=await chromium.connectOverCDP(url);const page=browser.contexts()[0].pages()[0];
+ const agentContext=page.getByRole('switch',{name:'Recording context for agents'});
+ await expect(agentContext).toHaveAttribute('aria-checked','false');
+ for(const on of [true,false]){
+  await agentContext.click();
+  await expect(agentContext).toHaveAttribute('aria-checked',String(on));
+  const saved=JSON.parse(await fs.readFile(process.argv[2],'utf8'));
+  assert.equal(saved.experiments.agentContext,on);
+  assert.equal(saved.experiments.other,true);
+  assert.equal(saved.secret,'private');
+  await page.reload();
+  await expect(agentContext).toBeEnabled();
+  await expect(agentContext).toHaveAttribute('aria-checked',String(on));
+ }
  const speech=page.getByRole('switch',{name:'Transcript-only handoff'});
  await expect(speech).toBeEnabled();await expect(speech).toHaveAttribute('aria-checked','false');
  for(const on of [true,false]){
