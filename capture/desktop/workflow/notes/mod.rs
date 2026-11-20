@@ -205,10 +205,9 @@ impl Session {
         let saved_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let count = Arc::clone(&saved_count);
         let actor_lifecycle = Arc::clone(&lifecycle);
-        telemetry.set_double_shift_notes(
-            cfg!(any(target_os = "linux", target_os = "macos"))
-                && crate::shared::handoff::experiment("doubleShiftNotes"),
-        );
+        telemetry.set_double_shift_notes(crate::capture::engine::runtime::platform::note_tap::double_shift_notes(
+            &crate::shared::handoff::default_config_path(),
+        ));
         std::thread::spawn(move || {
             let mut admitted_pin = None;
             let mut focus = 0;

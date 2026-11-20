@@ -1664,9 +1664,9 @@ impl Session {
 
     fn sync_recording(&mut self, host: &dyn Host) {
         let view = self.panel.view(host);
-        let wanted = if self.meter_visible { view.microphone.meter.as_deref() } else { None };
+        let wanted = view.microphone.meter.as_deref().filter(|_| self.meter_visible);
         if self.meter.as_ref().map(|(id, _)| id.as_str()) != wanted {
-            self.meter = None;
+            self.meter.take();
             self.meter_serial += 1;
             let serial = self.meter_serial;
             let events = self.events.clone();
@@ -1680,7 +1680,7 @@ impl Session {
                 Some((id.to_owned(), meter))
             });
         }
-        self.send_state(super::recording_state(view));
+        self.send_state(super::recording_state(view, host));
     }
 
     fn send_state(&mut self, message: serde_json::Value) {

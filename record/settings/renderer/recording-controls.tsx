@@ -499,6 +499,20 @@ export function RecordingControls({
           )}
         </div>
       </Group>
+      <Group title="Notes">
+        <div className="recording-group">
+          <Toggle
+            label="Double-tap Shift for notes"
+            checked={state.doubleShiftNotes}
+            disabled={disabled}
+            busy={pending?.key === "doubleShiftNotes"}
+            onChange={(value) => save({ key: "doubleShiftNotes", value })}
+          />
+        </div>
+        <p className="recording-note">
+          Opens the note editor during recording. Turn off to use Shift-click.
+        </p>
+      </Group>
       <Group title="Experimental">
         <div className="recording-group">
           <Toggle
