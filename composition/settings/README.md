@@ -13,7 +13,9 @@ smoke exercises the installed entry and preload with a synthetic parent.
 Native update execution and package acceptance remain platform checks.
 
 On Linux, the channel preference selects the source named by the separate
-install action, which may install an earlier version. About reads restart readiness
+install action, which may install an earlier version. When the check finds no
+update, About shows the result without an install action. Selecting a different
+source clears that result and offers its install action. About reads restart readiness
 from the native AppImage receipt independently of the configured channel.
 Dismissing the offer or closing a failed restart keeps **Restart now** available
 while that receipt still shows a staged image. About names the installed

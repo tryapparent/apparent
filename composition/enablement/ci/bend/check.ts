@@ -30,6 +30,9 @@ await bendScratch(async (destination) => {
     assert.equal(actions.release_action(true, "stable"), "Install latest Stable release");
     assert.equal(actions.release_action(true, ""), "Install latest release");
     assert.equal(actions.release_action(false, "main"), "Check for updates");
+    for (const linux of [false, true])
+      for (const current of [false, true])
+        assert.equal(actions.show_release_action(linux, current), !(linux && current));
     assert.equal(actions.staged_release_note("stable", "v2.0.0"), "Restart to use Stable v2.0.0.");
     for (const id of ["", "v", "v.2.0", "v2.0.", "v2..0", "v2.0.0-dev", "v" + "1".repeat(100)])
       assert.equal(actions.staged_release_note("stable", id), "Restart to use the installed Stable release.");
