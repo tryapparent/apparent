@@ -21,7 +21,7 @@ export function bendConsumers(path: string) {
   if (sharedBendInput(path))
     return ["capture", "desktop", "service", "onboarding"] as const;
   if (
-    path === "composition/settings/about/mac-updates.bend" ||
+    path.startsWith("composition/settings/about/") ||
     /^composition\/enablement\/ci\/bend\/(?:build\.ts|modules\.json)$/.test(
       path,
     )

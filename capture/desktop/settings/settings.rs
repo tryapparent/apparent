@@ -743,10 +743,13 @@ impl Panel {
             }
             Action::UpdateNow => {
                 #[cfg(target_os = "linux")]
-                if self.update_check.result == Some(UpdateResult::Available)
-                    || self.update_check.failure == Some(UpdateFailure::Restart)
                 {
-                    return Effect::RelaunchUpdate;
+                    use crate::capture::desktop::linux::update::{restart_pending, status_at};
+                    if !self.update_check.checking
+                        && status_at(&host.config_path()).as_ref().is_ok_and(restart_pending)
+                    {
+                        return Effect::RelaunchUpdate;
+                    }
                 }
                 Effect::None
             }

@@ -17,12 +17,12 @@ test('installed About projects parent state and bounds actions', async () => {
     let output = '';
     application.process().stdout?.on('data', data => { output += data.toString(); });
     const state = { type: 'about-state', version: '1.2.3 · a1b2c3d +modified', updates: true, linux: true,
-      mainUpdates: true, updateChannel: 'main', updateCheck: { checking: false, result: 'available' } };
+      mainUpdates: true, updateChannel: 'main', restartPending: true, updateCheck: { checking: false, result: 'available' } };
     const publish = (value: unknown) => application.evaluate(({ BrowserWindow }, value) => {
       BrowserWindow.getAllWindows()[0].webContents.send('apparent:about-state', value);
     }, value);
     await publish(state);
-    await expect(page.getByText('Version 1.2.3 · a1b2c3d +modified')).toBeVisible();
+    await expect(page.getByText('1.2.3 · a1b2c3d +modified')).toBeVisible();
     assert.equal(await application.evaluate(async ({ ipcMain, BrowserWindow }) => {
       const sender = BrowserWindow.getAllWindows()[0].webContents;
       const handler = ipcMain._invokeHandlers.get('apparent:about-copy-version');
@@ -48,9 +48,8 @@ test('installed About projects parent state and bounds actions', async () => {
     await page.keyboard.press('Enter');
     await expect.poll(() => output.includes('"action":"tour"')).toBe(true);
     assert.equal(output.includes('"action":"update-now"'), false, 'Enter on a focused action must not accept an update');
-    await expect(page.getByRole('button', { name: 'Update now', exact: true })).toBeVisible();
-    const channel = page.getByRole('combobox', {name: 'Update channel'});
-    await expect(channel).toHaveAccessibleDescription('Checking installs the latest release in this channel, even if it’s an earlier version. You choose when to restart.');
+    await expect(page.getByRole('button', { name: 'Restart now', exact: true })).toBeVisible();
+    const channel = page.getByRole('combobox', {name: 'Next install source'});
     await channel.focus();
     await expect(channel).toBeFocused();
     // This Linux state is exercised on both hosts. Native select keyboard maps
@@ -60,7 +59,7 @@ test('installed About projects parent state and bounds actions', async () => {
     assert.equal(output.includes('"action":"dismiss-update-check"'), false,
       'the native channel mutation also clears the old offer');
     await page.keyboard.press('Escape');
-    await publish({...state, resumeTour: true, updateChannel: 'stable', updateCheck: {checking: false, result: null}});
+    await publish({...state, resumeTour: true, updateChannel: 'stable', restartPending: false, updateCheck: {checking: false, result: null}});
     await expect(channel).toHaveValue('stable');
     for (const width of [720, 640]) {
       await application.evaluate(({BrowserWindow}, width) => { const window = BrowserWindow.getAllWindows()[0]; window.setResizable(true); window.setSize(width, 530); }, width);
@@ -86,21 +85,21 @@ test('installed About projects parent state and bounds actions', async () => {
     }
     await publish(state);
     if (process.env.APPARENT_ABOUT_PROOF) await page.screenshot({ path: process.env.APPARENT_ABOUT_PROOF });
-    await page.getByRole('button', { name: 'Update later', exact: true }).click();
+    await page.getByRole('button', { name: 'Restart later', exact: true }).click();
     await expect.poll(() => output.includes('"action":"update-later"')).toBe(true);
     assert.equal(await page.evaluate(async () => {
       try { await window.apparentAbout.act({ action: 'set', key: 'capturesDir', value: '/bad' }); return false; }
       catch { return true; }
     }), true);
     await publish({ ...state, updateCheck: { checking: true, result: null } });
-    await expect(page.getByRole('button', { name: 'Checking…' })).toBeDisabled();
+    await expect(page.getByRole('heading', { name: 'Checking for updates…' })).toBeVisible();
     await expect(channel).toBeDisabled();
-    await expect(page.getByRole('button', { name: 'Update now', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Restart now', exact: true })).toHaveCount(0);
     if (process.env.APPARENT_SETTINGS_PROOF) {
       await fs.mkdir(process.env.APPARENT_SETTINGS_PROOF, {recursive: true});
       await page.screenshot({path: path.join(process.env.APPARENT_SETTINGS_PROOF, 'about-checking.png')});
     }
-    for (const width of [920, 640]) {
+    for (const width of [720, 640]) {
       await application.evaluate(({BrowserWindow}, width) => { const window = BrowserWindow.getAllWindows()[0]; window.setSize(width, 600); }, width);
       await expect.poll(() => page.evaluate(() => innerWidth)).toBe(width);
       for (const colorScheme of ['light', 'dark'] as const) {
@@ -120,7 +119,7 @@ test('installed About projects parent state and bounds actions', async () => {
         await expect(page.getByRole('heading', {name: 'Downloading update…'})).toBeVisible();
         await expect(channel).toBeDisabled();
         await expect(channel.locator('..')).toHaveCSS('opacity', '1');
-        await expect(page.getByRole('button', {name: 'Update now'})).toHaveCount(0);
+        await expect(page.getByRole('button', {name: 'Restart now'})).toHaveCount(0);
         assert.equal(await page.evaluate(() => document.querySelector('.settings-content')!.scrollWidth <= document.querySelector('.settings-content')!.clientWidth), true);
         if (process.env.APPARENT_SETTINGS_PROOF) {
           await page.evaluate(() => document.fonts.ready.then(() => {}));
@@ -136,7 +135,7 @@ test('installed About projects parent state and bounds actions', async () => {
         await expect(page.locator('.settings-spin')).toHaveCSS('animation-name', 'none');
         await snapshot('installing');
         await publish(state);
-        await expect(page.getByRole('button', {name: 'Update now'})).toBeVisible();
+        await expect(page.getByRole('button', {name: 'Restart now'})).toBeVisible();
         await expect(channel).toHaveValue('main');
         await expect(channel).toBeEnabled();
         await snapshot('restart');
@@ -146,14 +145,14 @@ test('installed About projects parent state and bounds actions', async () => {
       ['busy', 'Update in progress'],
       ['rateLimited', 'GitHub limited update checks'],
       ['download', 'Download failed'],
-      ['verification', 'Update check failed'],
+      ['verification', 'Couldn’t verify the download'],
       ['installation', 'Couldn’t install the update'],
       ['restart', 'Couldn’t restart Apparent'],
     ]) {
       await publish({...state, updateCheck: {checking: false, result: 'failed', failure}});
       const dialog = page.getByRole('alertdialog', {name: title});
       await expect(dialog).toBeVisible();
-      await expect(dialog.getByRole('button', {name: 'Try again'})).toBeFocused();
+      await expect(dialog.getByRole('button', {name: failure === 'restart' ? 'Retry restart' : ['download', 'verification', 'installation'].includes(failure) ? 'Retry update' : 'Try again'})).toBeFocused();
       if (process.env.APPARENT_SETTINGS_PROOF && failure === 'download') {
         await page.screenshot({ animations: 'disabled', path: path.join(process.env.APPARENT_SETTINGS_PROOF, 'update-linux-download-failure.png') });
       }
@@ -164,7 +163,7 @@ test('installed About projects parent state and bounds actions', async () => {
     await page.keyboard.press('Escape');
     await expect.poll(() => output.slice(actionStart).includes('"action":"dismiss-update-check"')).toBe(true);
     for (const result of ['current', 'failed', null] as const) {
-      await publish({ ...state, linux: false, mainUpdates: false, updateCheck: { checking: false, result } });
+      await publish({ ...state, linux: false, mainUpdates: false, restartPending: false, updateCheck: { checking: false, result } });
       if (result) await expect(page.getByRole('heading', { name: result === 'current' ? 'No update available' : 'Update check failed', exact: true })).toBeVisible();
       else {
         await expect(page.getByRole('heading', { name: 'Check for updates', exact: true })).toHaveCount(0);
@@ -188,10 +187,10 @@ test('installed About projects parent state and bounds actions', async () => {
         }
       }
     }
-    await publish({ ...state, updates: false, updateCheck: { checking: false, result: null } });
+    await publish({ ...state, updates: false, restartPending: false, updateCheck: { checking: false, result: null } });
     await expect(page.getByRole('heading', { name: 'Updates unavailable' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Check for updates', exact: true })).toBeDisabled();
-    await expect(page.getByText('Update checks work when Apparent runs from an AppImage.', {exact: true})).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Install latest/ })).toBeDisabled();
+    await expect(page.getByText('To install updates here, run Apparent from an AppImage.', {exact: true})).toBeVisible();
     if (process.env.APPARENT_SETTINGS_PROOF) await page.screenshot({path: path.join(process.env.APPARENT_SETTINGS_PROOF, 'about-unavailable.png')});
     await page.getByRole('button', { name: 'Copy version', exact: true }).click();
     await expect(page.getByText('Unable to copy. Try again.', { exact: true })).toBeVisible();
@@ -230,7 +229,7 @@ test('Copy version uses the real parent identity through the shipped preload', {
     await page.locator('.settings-shell').waitFor();
     application.stdin.write(JSON.stringify({type: 'about-state', version: '1.2.3 · abcdef0 +modified', updates: true,
       linux: true, mainUpdates: false, updateChannel: 'stable', updateCheck: {checking: false, result: 'current'}}) + '\n');
-    await expect(page.getByText('Version 1.2.3 · abcdef0 +modified')).toBeVisible();
+    await expect(page.getByText('1.2.3 · abcdef0 +modified')).toBeVisible();
     await page.getByRole('button', {name: 'Copy version', exact: true}).click();
     await expect(page.getByText('Copied', {exact: true})).toBeVisible();
     await page.evaluate(() => {

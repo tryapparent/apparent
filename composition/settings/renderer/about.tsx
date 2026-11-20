@@ -5,6 +5,7 @@ import {
   Copy,
   ExternalLink,
   LoaderCircle,
+  RotateCw,
   Star,
 } from "lucide-react";
 import { Button } from "@apparent/ui/button";
@@ -16,8 +17,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@apparent/ui/tooltip";
-import { channelUpdateHint } from "../update-policy";
 import macUpdates from "../about/mac-updates.mjs";
+import updateAction from "../about/release-action.mjs";
 import "./about.css";
 
 type UpdateProgress =
@@ -35,17 +36,24 @@ const updateFailures = {
   ],
   download: [
     "Download failed",
-    "Check your connection and available disk space, then try again.",
+    "Check your connection and free disk space, then retry the update.",
+    "Retry update",
   ],
   verification: [
-    "Update check failed",
-    "The downloaded file couldn’t be verified. Try downloading it again.",
+    "Couldn’t verify the download",
+    "Retry the update to start with a fresh release check.",
+    "Retry update",
   ],
   installation: [
     "Couldn’t install the update",
-    "Check that your AppImage folder is writable and has free space, then try again.",
+    "Check that your AppImage folder is writable and has free space, then retry the update.",
+    "Retry update",
   ],
-  restart: ["Couldn’t restart Apparent", "Try restarting again."],
+  restart: [
+    "Couldn’t restart Apparent",
+    "After closing, use Restart now in About.",
+    "Retry restart",
+  ],
 } as const;
 
 export interface AboutState {
@@ -56,6 +64,8 @@ export interface AboutState {
   mac?: boolean;
   nightly?: boolean;
   updateChannel: string;
+  restartPending?: boolean;
+  stagedRelease?: { channel: string; id: string } | null;
   resumeTour?: boolean;
   updateCheck: {
     checking: boolean;
@@ -88,6 +98,7 @@ export function About({
   );
 
   const pane = useRef<HTMLElement | null>(null);
+  const primaryAction = useRef<HTMLButtonElement>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -169,6 +180,27 @@ export function About({
   }
   const result = state?.updateCheck.result;
   const checking = state?.updateCheck.checking;
+  const failure = state?.updateCheck.failure;
+  const restart = updateAction.show_restart(
+    state?.restartPending === true,
+    checking === true,
+  );
+  const restartOffer = updateAction.show_restart_later(
+    restart,
+    result === "available",
+  );
+  const failedRestart = result === "failed" && failure === "restart";
+  const showFailure = updateAction.show_failure(
+    result === "failed" && !checking,
+    failedRestart,
+    restart,
+  );
+  const showUnstagedRestartFailure = updateAction.show_unstaged_restart_failure(
+    failedRestart && !checking,
+    restart,
+  );
+  const installWarning =
+    state?.linux && state.updates && !checking && !restart;
   const progress = checking ? state?.updateCheck.progress : undefined;
   const downloading = progress?.phase === "downloading";
   const percent =
@@ -177,10 +209,13 @@ export function About({
     progress.downloadedBytes <= progress.totalBytes
       ? Math.floor((100 * progress.downloadedBytes) / progress.totalBytes)
       : undefined;
-  const failure = state?.updateCheck.failure;
-  const [failureTitle, failureDescription] = failure
+  const [failureTitle, failureDescription, failureRecovery] = failure
     ? updateFailures[failure]
     : ["Update check failed", "Your current version is still running."];
+  const restartTarget = updateAction.staged_release_note(
+    state?.stagedRelease?.channel ?? "",
+    state?.stagedRelease?.id ?? "",
+  );
   const title = checking
     ? downloading
       ? "Downloading update…"
@@ -188,17 +223,21 @@ export function About({
         ? "Verifying download…"
         : progress?.phase === "installing"
           ? "Installing update…"
-          : null
+          : "Checking for updates…"
     : !state?.updates
       ? "Updates unavailable"
-      : result === "available"
-        ? "Update available"
+      : restart
+        ? "Restart required"
         : result === "current"
           ? "No update available"
           : null;
   const listenForDismissal = useCallback(
     (section: HTMLElement | null) => {
-      if (!section || !result || result === "failed" || copyStatus === "failed")
+      if (
+        !section ||
+        (!restartOffer && result !== "current") ||
+        copyStatus === "failed"
+      )
         return;
       const listener = (event: KeyboardEvent) => {
         if (event.key === "Escape" && !event.defaultPrevented)
@@ -207,7 +246,7 @@ export function About({
       window.addEventListener("keydown", listener);
       return () => window.removeEventListener("keydown", listener);
     },
-    [result, copyStatus, act],
+    [restartOffer, result, copyStatus, act],
   );
   return (
     <section
@@ -220,9 +259,9 @@ export function About({
       {state && (
         <>
           <section className="settings-identity" aria-label="Build identity">
-            <h2>{state.nightly ? "apparent Nightly" : "apparent"}</h2>
+            {state.nightly && <h2>apparent Nightly</h2>}
             <div className="settings-version">
-              <span className="select-text">Version {state.version}</span>
+              <span className="select-text">Running version {state.version}</span>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -260,10 +299,10 @@ export function About({
             {state.linux && state.mainUpdates && state.updates && (
               <div className="settings-channel-group">
                 <div className="settings-channel">
-                  <label htmlFor="update-channel">Update channel</label>
+                  <label htmlFor="update-channel">Next install source</label>
                   <NativeSelect
                     id="update-channel"
-                    aria-describedby="update-channel-hint"
+                    aria-describedby="update-channel-description"
                     value={state.updateChannel}
                     disabled={checking}
                     onChange={(event) => void changeChannel(event.target.value)}
@@ -272,12 +311,13 @@ export function About({
                       Stable releases
                     </NativeSelectOption>
                     <NativeSelectOption value="main">
-                      Latest main
+                      Development builds
                     </NativeSelectOption>
                   </NativeSelect>
                 </div>
-                <p id="update-channel-hint" className="settings-metadata">
-                  {channelUpdateHint}
+                <p id="update-channel-description" className="settings-metadata">
+                  Stable is for everyday use.
+                  Development gets changes sooner and may be less reliable.
                 </p>
               </div>
             )}
@@ -289,9 +329,6 @@ export function About({
                     role="status"
                     aria-atomic="true"
                   >
-                    {checking && !progress && (
-                      <span className="sr-only">Checking for updates…</span>
-                    )}
                     {title && (
                       <>
                         {checking && !downloading ? (
@@ -299,6 +336,8 @@ export function About({
                             className="settings-spin"
                             aria-hidden="true"
                           />
+                        ) : restart ? (
+                          <RotateCw aria-hidden="true" />
                         ) : (
                           result && (
                             <CheckCircle2
@@ -331,59 +370,85 @@ export function About({
                 {!state.updates && (
                   <p className="settings-metadata">
                     {state.linux
-                      ? "Update checks work when Apparent runs from an AppImage."
+                      ? "To install updates here, run Apparent from an AppImage."
                       : "Updates work in the installed Apparent.app."}
                   </p>
                 )}
-                {result === "available" && (
-                  <p className="settings-metadata">
-                    Restart Apparent to finish updating.
+                {showUnstagedRestartFailure && (
+                  <p
+                    id="restart-unconfirmed"
+                    className="settings-update-note"
+                    role="alert"
+                  >
+                    Apparent couldn’t confirm an installed update.
+                    {installWarning &&
+                      " To try again, install from the selected channel."}
                   </p>
                 )}
-                {(!checking || !progress) && (
+                {installWarning && (
+                  <p id="update-channel-hint" className="settings-update-note">
+                    Installing can replace your current version with an earlier one.
+                  </p>
+                )}
+                {restart && (
+                  <p id="staged-release" className="settings-update-note">
+                    {restartTarget}
+                  </p>
+                )}
+                {!checking && (
                   <div className="settings-actions">
-                    {checking ? (
-                      <Button disabled variant="outline">
-                        Checking…
-                      </Button>
-                    ) : result === "available" ? (
+                    {restart ? (
                       <>
                         <Button
+                          ref={primaryAction}
+                          aria-describedby="staged-release"
                           onClick={() => void act({ action: "update-now" })}
                         >
-                          Update now
+                          Restart now
                         </Button>
-                        <Button
-                          variant="outline"
-                          className="settings-decision-alternative"
-                          onClick={() => void act({ action: "update-later" })}
-                        >
-                          Update later
-                        </Button>
+                        {restartOffer && (
+                          <Button
+                            variant="outline"
+                            className="settings-decision-alternative"
+                            onClick={() => {
+                              primaryAction.current?.focus();
+                              void act({ action: "update-later" });
+                            }}
+                          >
+                            Restart later
+                          </Button>
+                        )}
                       </>
                     ) : (
                       <Button
+                        ref={primaryAction}
                         disabled={!state.updates}
+                        aria-describedby={
+                          installWarning
+                            ? showUnstagedRestartFailure
+                              ? "restart-unconfirmed update-channel-hint"
+                              : "update-channel-hint"
+                            : undefined
+                        }
                         onClick={() =>
                           void act({ action: "check-for-updates" })
                         }
                       >
-                        {result === "failed"
-                          ? "Try again"
-                          : result
+                        {result === "current" && !state.linux
                             ? "Check again"
-                            : "Check for updates"}
+                            : updateAction.release_action(
+                                state.linux,
+                                state.updateChannel,
+                              )}
                       </Button>
                     )}
                   </div>
                 )}
               </div>
-              {result && result !== "failed" && !checking && (
+              {(restart || (!checking && result === "current")) && (
                 <img
                   className="settings-frog"
-                  src={
-                    result === "available" ? artwork.available : artwork.current
-                  }
+                  src={restart ? artwork.available : artwork.current}
                   alt=""
                 />
               )}
@@ -464,23 +529,21 @@ export function About({
         {state?.resumeTour ? "Resume setup" : "Show welcome tour"}
       </Button>
       <ErrorDialog
-        open={result === "failed" && !checking}
+        open={showFailure}
         title={failureTitle}
-        description={failureDescription}
+        description={
+          failedRestart
+            ? `${restartTarget} ${failureDescription}`
+            : failureDescription
+        }
         artwork={<img src={artwork.failed} alt="" />}
-        recoveryLabel="Try again"
+        recoveryLabel={failureRecovery ?? "Try again"}
         onRecover={() =>
           void act({
             action: failure === "restart" ? "update-now" : "check-for-updates",
           })
         }
-        restoreFocus={() =>
-          document
-            .querySelector<HTMLButtonElement>(
-              ".settings-updates .settings-actions button",
-            )
-            ?.focus()
-        }
+        restoreFocus={() => primaryAction.current?.focus()}
         onClose={() => void act({ action: "dismiss-update-check" })}
       />
       <ErrorDialog

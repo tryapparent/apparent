@@ -7,20 +7,24 @@
   margin-top: 8px;
   padding-inline: 0;
 }
+.settings-about .settings-nightly-download,
+.settings-about .settings-support a,
+.settings-about .settings-links a {
+  transition: none;
+}
 .settings-update-flow {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 .settings-updates[data-busy] .settings-update-flow {
-  min-height: 64px;
   align-items: flex-start;
-}
-.settings-updates[data-busy] .settings-actions button {
-  opacity: 1;
 }
 .settings-updates[data-idle] .settings-actions {
   margin-top: 0;
+}
+.settings-updates[data-idle] .settings-update-note + .settings-actions {
+  margin-top: 8px;
 }
 .settings-update-text {
   flex: 1;
@@ -70,7 +74,12 @@
   flex: none;
 }
 .settings-update-text > p {
-  margin-top: 5px;
+  margin-top: 8px;
+}
+.settings-update-note {
+  font-size: var(--apparent-type-body);
+  line-height: 1.5;
+  color: var(--color-foreground);
 }
 .settings-frog {
   width: 140px;

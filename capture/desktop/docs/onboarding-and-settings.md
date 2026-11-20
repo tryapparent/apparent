@@ -596,14 +596,15 @@ parent version and update availability; routing and fallback remain unchanged.
 The Mac legacy fallback retains its existing presentation until packaged Electron
 About is accepted on both platforms.
 
-Settings › About offers **Check for updates** when the installation supports
-updates. On Linux, Electron About displays the native phase and measured
-download progress. **Update available** means the selected channel’s
-AppImage has been installed on disk. **Update now** relaunches into it
-and reopens About. **Update later** or Escape dismisses the offer. An error dialog
-identifies the affected operation and gives a recovery action. The native
-fallback retains its compact result dialog. On macOS, Sparkle owns the
-update and its progress window.
+On Linux, Electron Settings › About uses **Release channel** to choose the source
+for **Install latest release**. Installing may replace the running version with an
+earlier release on disk. During installation, About shows the native phase and
+measured download progress. **Restart now** launches the staged AppImage and
+reopens About. **Restart later** or Escape dismisses the offer. The restart action
+remains available after dismissal, reopening About and changing the channel,
+while the native status reports a staged image. The channel choice applies to
+the next install. The native fallback retains its compact result dialog. On
+macOS, **Check for updates** opens the Sparkle-managed update flow.
 
 Restart admission uses the shared coordinator's `capture_busy()` decision, including admitted
 captures and detached finalizers whose capsule was dismissed. Settings/onboarding relaunches,

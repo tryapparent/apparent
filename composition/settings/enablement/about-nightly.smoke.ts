@@ -20,6 +20,7 @@ test("Stable Mac About shows the Nightly download and Nightly identifies its own
   });
   try {
     const page = await application.firstWindow();
+    await expect(page.getByText("Loading update status…")).toBeVisible();
     const publish = (mac: boolean, nightly = false, checking = false) =>
       application.evaluate(
         ({ BrowserWindow }, state) => {
@@ -55,6 +56,14 @@ test("Stable Mac About shows the Nightly download and Nightly identifies its own
         await page.emulateMedia({ colorScheme });
         await action.focus();
         await expect(action).toBeFocused();
+        const linkColors = await page
+          .locator(".settings-nightly-download, .settings-support a, .settings-links a")
+          .evaluateAll((links) => links.map((link) => {
+            const { color, transitionDuration } = getComputedStyle(link);
+            return [color, transitionDuration];
+          }));
+        const foreground = colorScheme === "dark" ? "rgb(245, 240, 232)" : "rgb(2, 1, 2)";
+        assert.deepEqual(linkColors, Array.from({ length: 5 }, () => [foreground, "0s"]));
         assert.equal(
           await page.evaluate(
             () => document.documentElement.scrollWidth <= innerWidth,
@@ -64,6 +73,11 @@ test("Stable Mac About shows the Nightly download and Nightly identifies its own
         const evidence = process.env.APPARENT_SETTINGS_PROOF;
         if (evidence) {
           await mkdir(evidence, { recursive: true });
+          await page.evaluate(async () => {
+            await document.fonts.ready;
+            await new Promise(requestAnimationFrame);
+            await new Promise(requestAnimationFrame);
+          });
           await page.screenshot({
             path: join(evidence, `mac-nightly-${width}-${colorScheme}.png`),
           });
@@ -73,6 +87,9 @@ test("Stable Mac About shows the Nightly download and Nightly identifies its own
     await publish(true, false, true);
     await expect(action).toBeDisabled();
     await publish(true);
+    await application.evaluate(() => {
+      globalThis.fetch = async () => new Response("", { status: 404 });
+    });
     await action.press("Enter");
     await expect(page.getByRole("alert")).toHaveText(
       "Nightly download unavailable. Try again later.",
@@ -81,7 +98,7 @@ test("Stable Mac About shows the Nightly download and Nightly identifies its own
     await expect(
       page.getByRole("heading", { name: "apparent Nightly" }),
     ).toBeVisible();
-    await expect(page.getByText("Version 1.2.3 · a1b2c3d")).toBeVisible();
+    await expect(page.getByText("Running version 1.2.3 · a1b2c3d")).toBeVisible();
     await expect(action).toHaveCount(0);
   } finally {
     await application.close();
