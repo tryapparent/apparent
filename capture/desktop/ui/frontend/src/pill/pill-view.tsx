@@ -42,7 +42,7 @@ export function PillSurface({view,pending=false,controlsDisabled=false,children,
     </div>}
     {view.inputWaveform!==null && view.phase==='recording' && <InputMeter input={view.inputWaveform} receivedAt={receivedAt} reduced={view.reducedMotion || reduced}/>}
     {view.warning && view.warning!==view.label && <span className="warning" role="status">{view.warning}</span>}
-    {view.notice && <span className="notice" role="status">{view.notice}</span>}
+    {(view.notice || view.noteTip) && <span className="notice" role="status">{view.notice || view.noteTip}</span>}
     {error && <span role="alert">Action not confirmed. Use the recording shortcut or tray menu.</span>}
     {view.actions.length>0 && <div className="controls" role="group" aria-label="Recording controls" aria-busy={pending}>
       {controls.map(action=>{const Icon=action.label==='Cancel upload'?X:actionIcons[action.id];const iconOnly=isClose(action.id);return <Button key={action.id} variant={action.primary?'default':action.selected?'secondary':'ghost'}

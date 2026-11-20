@@ -618,12 +618,11 @@ mod native_tests {
 
     #[test]
     #[ignore = "requires owned disposable Hyprland guest and packaged Electron assets"]
-    fn cancelled_native_pin_keeps_child_for_next_capture() {
+    fn cancelled_pin_keeps_child_for_next_capture() {
         assert!(crate::capture::desktop::linux::hyprland::running());
         let view = View {
-            revision: 1, phase: "recording", clock: "00:01".into(), label: "Synthetic pin test".into(),
-            warning: None, notice: None, reduced_motion: true,
-            transcript: None,
+            revision: 1, phase: "recording", clock: "00:01".into(), label: "".into(),
+            warning: None, notice: None, note_tip: None, reduced_motion: true, transcript: None,
             draggable: false, input_waveform: None, note_count: 0, actions: vec![],
         };
         let mut session = Session::open(view.clone(), 1, Default::default()).unwrap();

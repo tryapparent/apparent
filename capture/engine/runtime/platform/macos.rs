@@ -1654,6 +1654,7 @@ unsafe extern "C" fn key_tap_callback(
         return event;
     }
     let telemetry = unsafe { &*user_info.cast::<SharedCaptureTelemetry>() };
+    pointer::invalidate_note_taps(telemetry, event_type, event);
     if event_type == EVENT_TAP_DISABLED_BY_TIMEOUT || event_type == EVENT_TAP_DISABLED_BY_USER_INPUT
     {
         telemetry.fn_candidate.store(false, Ordering::Release);
@@ -1683,8 +1684,6 @@ unsafe extern "C" fn key_tap_callback(
         let fn_down = flags & gesture_flag != 0;
         let other_modifiers = (option && !gesture_key) || flags & ((FLAG_COMMAND | FLAG_CONTROL | FLAG_ALTERNATE | FLAG_SHIFT | FLAG_SECONDARY_FN) & !gesture_flag) != 0;
         let fn_event = gesture_key && record.is_standalone_modifier();
-        // A key held before Fn produces no new key-down for this gesture. Read both
-        // session and hardware state, as the pointer poller does for virtual HID.
         let other_key = fn_event && ((option && (0_u32..5).any(|button| unsafe { CGEventSourceButtonState(0, button) || CGEventSourceButtonState(1, button) })) || (0_u16..128).any(|key| {
             key != keycode
                 && unsafe { CGEventSourceKeyState(0, key) || CGEventSourceKeyState(1, key) }

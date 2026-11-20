@@ -72,3 +72,11 @@ The Electron smoke uses synthetic detection and quit responses. Run
 `APPARENT_WISPR_NATIVE_TEST=1 node --experimental-strip-types --test capture/desktop/ui/frontend/tests/onboarding/wispr/macos.test.ts`
 from the repository root on an isolated Mac to exercise the AppKit adapter
 against owned fixtures.
+
+When the **Double-tap Shift for notes** Labs experiment is enabled, the
+Electron recording controls display a note tip for eight seconds on the third
+eligible recording start. Onboarding counts real starts with both the Electron
+controls and note editor available, excluding guided practice. It persists the count in
+`onboarding.doubleShiftNoteStarts` through the existing config transaction.
+Disabling the experiment pauses progress. The tip policy and native table
+are verified by `onboarding/enablement/ci/bend/check.ts`.

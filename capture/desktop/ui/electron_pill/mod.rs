@@ -35,6 +35,7 @@ pub struct View {
     pub label: String,
     pub warning: Option<String>,
     pub notice: Option<String>,
+    pub note_tip: Option<&'static str>,
     pub reduced_motion: bool,
     pub draggable: bool,
     pub input_waveform: Option<[f32; 24]>,
@@ -65,6 +66,7 @@ impl View {
             clock: snapshot.clock.clone(),
             label: String::new(),
             notice: None,
+            note_tip: None,
             warning: snapshot
                 .mic_warning
                 .map(|warning| warning.announcement().to_owned()),

@@ -12,6 +12,11 @@ export function bendConsumers(path: string) {
     return ["capture", "desktop"] as const;
   if (sharedBendInput(path))
     return ["capture", "desktop", "service", "onboarding"] as const;
+  if (
+    path.startsWith("record/notes/") ||
+    path === "record/enablement/ci/bend/note-gesture.ts"
+  )
+    return ["capture", "desktop"] as const;
   if (path.startsWith("record/enablement/ci/bend/"))
     return /\/(?:build\.ts|modules\.json)$/.test(path)
       ? (["capture", "desktop", "onboarding"] as const)
@@ -25,8 +30,9 @@ export function bendConsumers(path: string) {
     return [];
   if (
     path.startsWith("onboarding/host/traversal/") ||
+    path.startsWith("onboarding/host/tips/") ||
     /^onboarding\/package(?:-lock)?\.json$/.test(path) ||
-    /^onboarding\/enablement\/ci\/(entry-policy\.ts|bend\/(build\.ts|native\.ts|table\.ts|modules\.json))$/.test(
+    /^onboarding\/enablement\/ci\/(entry-policy\.ts|bend\/(build\.ts|native\.ts|note-tip\.ts|table\.ts|modules\.json))$/.test(
       path,
     )
   )

@@ -56,3 +56,17 @@ repair. The native build consumes the compact generated table so Cargo can
 build offline. After editing the policy, run
 `node record/enablement/ci/bend/permission-table.ts > record/settings/permissions/permission-policy.json`
 and verify it with `node record/enablement/ci/bend/check.ts`.
+
+## Double-tap Shift for notes
+
+**Settings → Labs → Double-tap Shift for notes** is off by default. With it
+enabled, two quick Shift taps over the recording target open the note editor at
+the pointer. Holding Shift and moving the pointer still draws. The next
+note-capable recording reads `experiments.doubleShiftNotes` from the shared
+config. Turn the switch off to restore Shift-click for new recordings.
+
+Record's Bend policy builds a checked native decision table for the input
+pollers. They keep the monotonic timestamps, live ink, pointer position and
+session guards local, so the gesture works without waiting on the renderer.
+Regenerate the table with
+`node record/enablement/ci/bend/check.ts --write-native-gesture`.
