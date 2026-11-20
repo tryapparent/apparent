@@ -48,6 +48,16 @@ mod tests {
     }
 
     #[test]
+    fn option_ignores_hid_only_power_key_state_and_still_blocks_held_keys() {
+        for option_key in [58, 61] {
+            assert!(!another_key_is_held(option_key, true, |_| false, |key| key == 127));
+            assert!(another_key_is_held(option_key, true, |_| false, |key| matches!(key, 15 | 127)));
+            assert!(another_key_is_held(option_key, true, |key| key == 127, |_| false));
+        }
+        assert!(another_key_is_held(63, false, |_| false, |key| key == 127));
+    }
+
+    #[test]
     fn option_callback_cancels_chords_clicks_other_modifiers_and_paused_selection() {
         for (kind, key, flags, repeat) in [
             (EVENT_KEY_DOWN, 15, FLAG_ALTERNATE, false),
