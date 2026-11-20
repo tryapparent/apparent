@@ -13,11 +13,17 @@ export const managedLipflow = ".apparent-lipflow-v1";
 
 export async function trustedPath(path: string) {
   const uid = process.getuid?.();
-  for (let current = path; current !== dirname(current); current = dirname(current)) {
+  const parents: string[] = [];
+  for (let current = path; current !== dirname(current); current = dirname(current))
+    parents.unshift(current);
+  let privateParent = false;
+  for (const current of parents) {
     const item = await lstat(current);
     if (item.isSymbolicLink() || (item.uid !== uid && item.uid !== 0) ||
-        ((item.mode & 0o022) !== 0 && (!item.isDirectory() || (item.mode & 0o1000) === 0)))
+        (!privateParent && (item.mode & 0o022) !== 0 &&
+          (!item.isDirectory() || (item.mode & 0o1000) === 0)))
       throw Error("Unsafe model location");
+    if (item.isDirectory() && (item.mode & 0o011) === 0) privateParent = true;
   }
 }
 
