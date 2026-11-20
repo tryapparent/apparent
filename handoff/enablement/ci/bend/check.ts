@@ -1,3 +1,6 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   bendScratch,
@@ -14,6 +17,26 @@ await bendScratch(async (scratch) => {
     "handoff",
     scratch,
     proofOptions(process.argv.slice(2)),
+  );
+  assert.deepEqual(
+    JSON.parse(
+      readFileSync(join(root, "handoff/pure/transcript-only.json"), "utf8"),
+    ),
+    JSON.parse(
+      run(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `
+      import policy from "./transcript-only.mjs";
+      console.log(JSON.stringify(Array.from({length: 8}, (_, bits) =>
+        policy.transcript_only(...[1, 2, 4].map(flag => Boolean(bits & flag))))));
+    `,
+        ],
+        scratch,
+      ),
+    ),
   );
 });
 await buildOrdering();

@@ -1,4 +1,8 @@
 {
-  "modules": ["pure/destination-order.bend", "pure/worktree-base.bend"],
+  "modules": [
+    "pure/destination-order.bend",
+    "pure/transcript-only.bend",
+    "pure/worktree-base.bend"
+  ],
   "inputs": ["main/", "pure/"]
 }

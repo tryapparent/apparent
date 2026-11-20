@@ -550,7 +550,6 @@ pub enum InteractionEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         window_title: Option<String>,
     },
-    /// An event reported by an older in-app recording.
     AppEvent {
         t: u64,
         label: String,
@@ -617,6 +616,8 @@ pub enum KeyframeReason {
 pub struct Keyframe {
     pub index: usize,
     pub t: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_time: Option<String>,
     pub reason: KeyframeReason,
     pub file: String,
     pub event: String,
@@ -628,7 +629,6 @@ pub struct Keyframe {
     pub cursor: Option<[f32; 2]>,
 }
 
-/// Raw RGBA8 frame buffer in memory used for candidate selection and compositing.
 #[derive(Clone, Debug)]
 pub struct RgbaFrame {
     pub t_ms: u64,

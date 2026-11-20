@@ -1902,7 +1902,6 @@ pub fn annotate_and_crop(
     (cropped, Some((info, full)))
 }
 
-/// Writes the full keyframes and contact sheet that sit beside a cropped bundle's.
 pub fn write_full_frames(
     dir: &std::path::Path,
     info: &crate::shared::model::AutocropInfo,
@@ -1956,6 +1955,7 @@ mod tests {
         Keyframe {
             index,
             t,
+            display_time: None,
             reason: KeyframeReason::Click,
             file: format!("frames/frame-{index:02}.png"),
             event: String::new(),
