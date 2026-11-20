@@ -98,7 +98,7 @@ test("Stable Mac About shows the Nightly download and Nightly identifies its own
     await expect(
       page.getByRole("heading", { name: "apparent Nightly" }),
     ).toBeVisible();
-    await expect(page.getByText("Version 1.2.3 · a1b2c3d")).toBeVisible();
+    await expect(page.getByText("Running version 1.2.3 · a1b2c3d")).toBeVisible();
     await expect(action).toHaveCount(0);
   } finally {
     await application.close();

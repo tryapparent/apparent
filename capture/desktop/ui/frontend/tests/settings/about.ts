@@ -22,7 +22,7 @@ test('installed About projects parent state and bounds actions', async () => {
       BrowserWindow.getAllWindows()[0].webContents.send('apparent:about-state', value);
     }, value);
     await publish(state);
-    await expect(page.getByText('Version 1.2.3 · a1b2c3d +modified')).toBeVisible();
+    await expect(page.getByText('1.2.3 · a1b2c3d +modified')).toBeVisible();
     assert.equal(await application.evaluate(async ({ ipcMain, BrowserWindow }) => {
       const sender = BrowserWindow.getAllWindows()[0].webContents;
       const handler = ipcMain._invokeHandlers.get('apparent:about-copy-version');
@@ -49,7 +49,7 @@ test('installed About projects parent state and bounds actions', async () => {
     await expect.poll(() => output.includes('"action":"tour"')).toBe(true);
     assert.equal(output.includes('"action":"update-now"'), false, 'Enter on a focused action must not accept an update');
     await expect(page.getByRole('button', { name: 'Restart now', exact: true })).toBeVisible();
-    const channel = page.getByRole('combobox', {name: 'Release channel'});
+    const channel = page.getByRole('combobox', {name: 'Next install source'});
     await channel.focus();
     await expect(channel).toBeFocused();
     // This Linux state is exercised on both hosts. Native select keyboard maps
@@ -189,7 +189,7 @@ test('installed About projects parent state and bounds actions', async () => {
     }
     await publish({ ...state, updates: false, restartPending: false, updateCheck: { checking: false, result: null } });
     await expect(page.getByRole('heading', { name: 'Updates unavailable' })).toBeVisible();
-    await expect(page.getByRole('button', { name: "Install latest release" })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^Install latest/ })).toBeDisabled();
     await expect(page.getByText('To install updates here, run Apparent from an AppImage.', {exact: true})).toBeVisible();
     if (process.env.APPARENT_SETTINGS_PROOF) await page.screenshot({path: path.join(process.env.APPARENT_SETTINGS_PROOF, 'about-unavailable.png')});
     await page.getByRole('button', { name: 'Copy version', exact: true }).click();
@@ -229,7 +229,7 @@ test('Copy version uses the real parent identity through the shipped preload', {
     await page.locator('.settings-shell').waitFor();
     application.stdin.write(JSON.stringify({type: 'about-state', version: '1.2.3 · abcdef0 +modified', updates: true,
       linux: true, mainUpdates: false, updateChannel: 'stable', updateCheck: {checking: false, result: 'current'}}) + '\n');
-    await expect(page.getByText('Version 1.2.3 · abcdef0 +modified')).toBeVisible();
+    await expect(page.getByText('1.2.3 · abcdef0 +modified')).toBeVisible();
     await page.getByRole('button', {name: 'Copy version', exact: true}).click();
     await expect(page.getByText('Copied', {exact: true})).toBeVisible();
     await page.evaluate(() => {

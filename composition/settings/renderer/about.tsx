@@ -51,7 +51,7 @@ const updateFailures = {
   ],
   restart: [
     "Couldn’t restart Apparent",
-    "The update is still installed. After closing, use Restart now in About.",
+    "After closing, use Restart now in About.",
     "Retry restart",
   ],
 } as const;
@@ -212,6 +212,10 @@ export function About({
   const [failureTitle, failureDescription, failureRecovery] = failure
     ? updateFailures[failure]
     : ["Update check failed", "Your current version is still running."];
+  const restartTarget = updateAction.staged_release_note(
+    state?.stagedRelease?.channel ?? "",
+    state?.stagedRelease?.id ?? "",
+  );
   const title = checking
     ? downloading
       ? "Downloading update…"
@@ -255,9 +259,9 @@ export function About({
       {state && (
         <>
           <section className="settings-identity" aria-label="Build identity">
-            <h2>{state.nightly ? "apparent Nightly" : "apparent"}</h2>
+            {state.nightly && <h2>apparent Nightly</h2>}
             <div className="settings-version">
-              <span className="select-text">Version {state.version}</span>
+              <span className="select-text">Running version {state.version}</span>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -295,7 +299,7 @@ export function About({
             {state.linux && state.mainUpdates && state.updates && (
               <div className="settings-channel-group">
                 <div className="settings-channel">
-                  <label htmlFor="update-channel">Release channel</label>
+                  <label htmlFor="update-channel">Next install source</label>
                   <NativeSelect
                     id="update-channel"
                     aria-describedby="update-channel-description"
@@ -312,7 +316,7 @@ export function About({
                   </NativeSelect>
                 </div>
                 <p id="update-channel-description" className="settings-metadata">
-                  Source for the next install. Stable is for everyday use.
+                  Stable is for everyday use.
                   Development gets changes sooner and may be less reliable.
                 </p>
               </div>
@@ -388,10 +392,7 @@ export function About({
                 )}
                 {restart && (
                   <p id="staged-release" className="settings-update-note">
-                    {updateAction.staged_release_note(
-                      state.stagedRelease?.channel ?? "",
-                      state.stagedRelease?.id ?? "",
-                    )}
+                    {restartTarget}
                   </p>
                 )}
                 {!checking && (
@@ -437,7 +438,6 @@ export function About({
                             ? "Check again"
                             : updateAction.release_action(
                                 state.linux,
-                                showUnstagedRestartFailure,
                                 state.updateChannel,
                               )}
                       </Button>
@@ -531,7 +531,11 @@ export function About({
       <ErrorDialog
         open={showFailure}
         title={failureTitle}
-        description={failureDescription}
+        description={
+          failedRestart
+            ? `${restartTarget} ${failureDescription}`
+            : failureDescription
+        }
         artwork={<img src={artwork.failed} alt="" />}
         recoveryLabel={failureRecovery ?? "Try again"}
         onRecover={() =>

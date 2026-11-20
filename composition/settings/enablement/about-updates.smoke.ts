@@ -13,10 +13,10 @@ const load = createRequire(join(frontend, "package.json"));
 const { _electron: electron, expect } = load("@playwright/test");
 const warning =
   "Installing can replace your current version with an earlier one.";
-const stagedStable = "Stable release v2.0.0 is installed.";
+const stagedStable = "Restart to use Stable v2.0.0.";
 const unconfirmed =
   "Apparent couldn’t confirm an installed update. To try again, install from the selected channel.";
-const version = "Version 1.2.3 · a1b2c3d +modified";
+const version = "Running version 1.2.3 · a1b2c3d +modified";
 
 test("About makes channel installation, restart and recovery distinct", async () => {
   const home = await mkdtemp(join(tmpdir(), "apparent-dev-about-updates-"));
@@ -76,10 +76,8 @@ test("About makes channel installation, restart and recovery distinct", async ()
         .poll(() => output.slice(start).includes(`"action":"${action}"`))
         .toBe(true);
     };
-    const channel = page.getByRole("combobox", { name: "Release channel" });
-    const install = page.getByRole("button", {
-      name: "Install latest release",
-    });
+    const channel = page.getByRole("combobox", { name: "Next install source" });
+    const install = page.getByRole("button", { name: /^Install latest/ });
     const restart = page.getByRole("button", { name: "Restart now" });
     const proof = process.env.APPARENT_SETTINGS_PROOF;
     if (proof) await mkdir(proof, { recursive: true });
@@ -106,10 +104,11 @@ test("About makes channel installation, restart and recovery distinct", async ()
         };
         await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
         await publish(idle);
+        await expect(install).toHaveAccessibleName("Install latest Stable release");
         await expect(install).toHaveAccessibleDescription(warning);
         await expect(channel.locator("option[value=main]")).toHaveText("Development builds");
         await expect(channel).toHaveAccessibleDescription(
-          "Source for the next install. Stable is for everyday use. Development gets changes sooner and may be less reliable.",
+          "Stable is for everyday use. Development gets changes sooner and may be less reliable.",
         );
         await page.evaluate(() => document.fonts.ready.then(() => {}));
         await page.locator(".settings-content").evaluate((el) => {
@@ -192,7 +191,7 @@ test("About makes channel installation, restart and recovery distinct", async ()
           restartError.getByRole("button", { name: "Retry restart" }),
         ).toBeFocused();
         await expect(restartError).toHaveAccessibleDescription(
-          "The update is still installed. After closing, use Restart now in About.",
+          `${stagedStable} After closing, use Restart now in About.`,
         );
         await expect(page.getByText(warning)).toHaveCount(0);
         await capture("restart-failure");
@@ -215,14 +214,14 @@ test("About makes channel installation, restart and recovery distinct", async ()
           stagedRelease: { channel: "main", id: "a".repeat(40) },
         });
         await expect(restart).toHaveAccessibleDescription(
-          "A Development build is installed.",
+          "Restart to use Development build aaaaaaaa.",
         );
         await expect(channel).toHaveValue("stable");
         await capture("restart-development-source-stable");
         await publish(idle, { updateChannel: "main" });
         await expect(channel).toHaveValue("main");
         await expect(restart).toHaveCount(0);
-        await expect(install).toBeVisible();
+        await expect(install).toHaveAccessibleName("Install latest Development build");
         await capture("development");
         await publish(offered);
         await expect(channel).toHaveValue("stable");
