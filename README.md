@@ -99,7 +99,9 @@ and agent read approval are separate; website sign-in grants neither.
 
 [![Star History Chart](https://api.star-history.com/svg?repos=tryapparent/apparent&type=Date)](https://www.star-history.com/#tryapparent/apparent&Date)
 
-## License
+## License and credits
 
-[MIT](LICENSE). With thanks to the projects credited in our
-[third-party notices](capture/desktop/docs/guides/credits.md).
+Apparent began as a fork of [Scrawl](https://github.com/kitlangton/scrawl), created by Kit Langton.
+
+Apparent is [MIT licensed](LICENSE). See the
+[third-party notices](capture/desktop/docs/guides/credits.md) for additional credits.
