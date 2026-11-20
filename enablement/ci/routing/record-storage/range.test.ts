@@ -4,7 +4,7 @@ import {execFileSync} from 'node:child_process';
 import {mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, dirname} from 'node:path';
-import {storageControllers, nativeStorageGraph} from './qualify.ts';
+import {storageControllers, nativeStorageGraph, recordBendManifest} from './qualify.ts';
 import {YAML} from 'bun';
 import {accepted} from '../evidence.ts';
 
@@ -24,10 +24,15 @@ test('real Git controller changes preserve Desktop renderer and main packaging, 
     git('init', '-q');
     for (const [path, source] of sources) write(path, source);
     for (const path of nativeStorageGraph.keys()) write(path, readFileSync(new URL('../../../../' + path, import.meta.url), 'utf8'));
+    const manifest = JSON.parse(readFileSync(new URL('../../../../' + recordBendManifest, import.meta.url), 'utf8'));
+    manifest.modules.push('notes/routing-fixture.bend');
+    write(recordBendManifest, JSON.stringify(manifest));
     const base = commit();
     for (const [path, source] of sources) {
+      const implementation = source.replace('generation === this.#generation', 'this.#generation === generation');
+      assert.notEqual(source, implementation);
       git('reset', '--hard', base);
-      write(path, source.replace('generation === this.#generation', 'this.#generation === generation'));
+      write(path, implementation);
       const head = commit(), result = selectRange(base, head, root);
       assert.deepEqual(result.qualifiedStorageControllers, [path]);
       assert.equal(result.plan.root, false); assert.equal(result.plan.engine, false);
@@ -59,11 +64,14 @@ test('real Git controller changes preserve Desktop renderer and main packaging, 
       write(path, source.replace('dispose() {', 'dispose() { import("node:fs");'));
       assert.equal(selectRange(base, commit(), root).plan.root, true);
       git('reset', '--hard', base);
-      write(path, source.replace('generation === this.#generation', 'this.#generation === generation'));
+      write(path, source.replace('read():', 'read(extra: string):'));
+      assert.equal(selectRange(base, commit(), root).plan.root, true);
+      git('reset', '--hard', base);
+      write(path, implementation);
       write('capture/new-consumer.rs', 'const SOURCE: &str = include_str!("record/storage/src/location-controller.ts");');
       assert.equal(selectRange(base, commit(), root).qualifiedStorageControllers.length, 0);
       git('reset', '--hard', base);
-      write(path, source.replace('generation === this.#generation', 'this.#generation === generation'));
+      write(path, implementation);
       write('record/storage/src/retention/worker.ts', 'import "../index.js";');
       assert.equal(selectRange(base, commit(), root).qualifiedStorageControllers.length, 0);
       git('reset', '--hard', base);
@@ -79,6 +87,21 @@ test('real Git controller changes preserve Desktop renderer and main packaging, 
       write('record/storage/src/new-controller.ts', source);
       assert.equal(selectRange(base, commit(), root).plan.root, true);
     }
+    git('reset', '--hard', base);
+    const retention = 'record/storage/src/retention-controller.ts';
+    write(retention, sources.get(retention)!.replace('this.#generation++;', 'this.#generation += 1;'));
+    const feedback = 'record/storage/src/retention/feedback.bend';
+    write(feedback, readFileSync(join(root, feedback), 'utf8') + '\n');
+    const providerChange = selectRange(base, commit(), root);
+    assert.deepEqual(providerChange.qualifiedStorageControllers, []);
+    assert.equal(providerChange.plan.root, true);
+    git('reset', '--hard', base);
+    write(recordBendManifest, JSON.stringify({...manifest, inputs: manifest.inputs.filter((path: string) => path !== 'storage/')}));
+    const manifestBase = commit();
+    write(retention, sources.get(retention)!.replace('this.#generation++;', 'this.#generation += 1;'));
+    const manifestChange = selectRange(manifestBase, commit(), root);
+    assert.deepEqual(manifestChange.qualifiedStorageControllers, []);
+    assert.equal(manifestChange.plan.root, true);
     assert.equal(selectRange('missing', 'missing', root).plan.root, true);
   } finally {rmSync(root, {recursive: true, force: true});}
 });

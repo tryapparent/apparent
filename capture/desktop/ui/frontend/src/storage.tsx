@@ -29,7 +29,8 @@ export function Storage({ settings = false }: { settings?: boolean }) {
     return () => { unsubscribe(); current.dispose(); if (controller.current === current) controller.current = undefined; };
   }, []);
   if (result.status === 'disabled' && !settings) return null;
-  return <section aria-labelledby="storage-title" className={settings ? 'storage-settings' : 'space-y-4 rounded-xl border border-border bg-surface p-6'}>
+  return <div className={settings ? 'storage-settings' : 'space-y-4 rounded-xl border border-border bg-surface p-6'}>
+    <section aria-labelledby="storage-title" className={settings ? undefined : 'space-y-4'}>
     <div className="flex flex-wrap items-center justify-between gap-4">
       <div>{!settings && <p className="text-xs font-medium text-primary">EXPERIMENTAL / STORAGE</p>}
         <div className="settings-label"><h2 id="storage-title" className="text-lg font-semibold">Capture location</h2>
@@ -60,6 +61,7 @@ export function Storage({ settings = false }: { settings?: boolean }) {
       }}>Show folder</Button>}
       <Button variant={settings ? 'secondary' : 'outline'} disabled={busy || result.status !== 'connected' || !snapshot?.custom} onClick={() => void request('reset')}>{settings ? 'Reset location' : 'Reset'}</Button>
     </div>
+    </section>
     {snapshot && !busy && <Retention key={snapshot.effectivePath} effectivePath={snapshot.effectivePath} settings={settings} />}
-  </section>;
+  </div>;
 }

@@ -2,6 +2,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 import {lstat, rm} from 'node:fs/promises';
 import path from 'node:path';
 import type compiler from 'typescript';
+import {buildBend} from '../../shared/enablement/bend/build.ts';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 export async function build(ts: typeof compiler) {
@@ -21,5 +22,6 @@ export async function build(ts: typeof compiler) {
     getCurrentDirectory: () => root, getCanonicalFileName: file => file, getNewLine: () => '\n',
   }));
   if (program.emit().emitSkipped) throw Error('Record Storage build failed');
+  await buildBend(path.resolve(root, '../..'), 'record', path.join(output, 'retention'), undefined, 'record/storage/');
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) await build((await import('typescript')).default);

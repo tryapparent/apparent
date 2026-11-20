@@ -9,7 +9,8 @@
     "settings/permissions/permission-policy.bend",
     "pill/pill-state.bend",
     "notes/double-shift.bend",
-    "transcription/src/caption-admission.bend"
+    "transcription/src/caption-admission.bend",
+    "storage/src/retention/feedback.bend"
   ],
   "inputs": [
     "completion/",
@@ -18,6 +19,7 @@
     "pill/",
     "enablement/ci/pill/",
     "notes/",
-    "transcription/"
+    "transcription/",
+    "storage/"
   ]
 }

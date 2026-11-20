@@ -23,7 +23,8 @@ export class RetentionWorkflow {
         typeof result.custom !== 'boolean' || !isStoredRetention(result.policy))
       return {status: 'error', code: 'invalid_response'};
     this.#revision = result.revision;
-    return {status: 'connected', custom: result.custom, policy: result.policy};
+    return {status: 'connected', custom: result.custom, policy: result.policy,
+      ...(result.defaults && {defaults: result.defaults})};
   }
   async read(version: number, current: () => boolean): Promise<NativeRetentionResult> {
     const epoch = this.#epoch;

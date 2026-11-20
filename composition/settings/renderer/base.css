@@ -206,9 +206,7 @@
   max-width: 100%;
 }
 .settings-usage {
-  border-top: 1px solid var(--color-border);
   margin-top: 24px;
-  padding-top: 14px;
 }
 .settings-usage-row {
   display: flex;
