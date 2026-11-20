@@ -1,7 +1,8 @@
 // Desktop owns which trials are exposed. Native persists only this allowlist.
-export type LabsSetting = 'streaming' | 'autoPaste' | 'sharing' | 'wisprFlow' | 'screenPicker' | 'doubleShiftNotes' | 'dictationFrog';
+export type LabsSetting = 'streaming' | 'autoPaste' | 'sharing' | 'wisprFlow' | 'screenPicker' | 'doubleShiftNotes' | 'dictationFrog' | 'compactHandoff';
 type Preferences = {
   saved: boolean | null;
+  compactHandoffSaved?: boolean | null;
   sharingSaved?: boolean | null;
   autoPasteSaved?: boolean | null;
   autoPasteSupported?: boolean;
@@ -15,6 +16,7 @@ type Preferences = {
 };
 export type LabsFacts = Preferences | {
   error: 'config_read_failed' | 'config_write_failed';
+  compactHandoffSaved?: never;
   saved?: never; sharingSaved?: never; autoPasteSaved?: never; autoPasteSupported?: never; wisprSaved?: never; wisprSupported?: never; screenPickerSaved?: never; doubleShiftSaved?: never; dictationFrogSaved?: never; screenPickerSupported?: never;
 };
 const savedFlag = (value: unknown): value is boolean | null => value === null || typeof value === 'boolean';
@@ -24,7 +26,7 @@ export function facts(value: unknown): LabsFacts {
   if (input.error === 'config_read_failed' || input.error === 'config_write_failed') return {error: input.error};
   if (!savedFlag(input.saved)) throw Error('Invalid Labs preference');
   const result: Preferences = {saved: input.saved};
-  for (const key of ['autoPasteSaved', 'sharingSaved', 'wisprSaved', 'screenPickerSaved', 'doubleShiftSaved', 'dictationFrogSaved'] as const) {
+  for (const key of ['autoPasteSaved', 'sharingSaved', 'wisprSaved', 'screenPickerSaved', 'doubleShiftSaved', 'dictationFrogSaved', 'compactHandoffSaved'] as const) {
     if (input[key] === undefined) continue;
     if (!savedFlag(input[key])) throw Error('Invalid Labs preference');
     result[key] = input[key];
@@ -52,7 +54,7 @@ export class LabsPreferences {
     return this.sendRequest(value, setting);
   }
   private sendRequest(value: unknown, setting: LabsSetting): Promise<LabsFacts> {
-    if (value !== undefined && typeof value !== 'boolean' || !['streaming','autoPaste','sharing','wisprFlow','screenPicker','doubleShiftNotes','dictationFrog'].includes(setting) || this.pending) return Promise.reject(Error('Invalid or pending Labs request'));
+    if (value !== undefined && typeof value !== 'boolean' || !['streaming','autoPaste','sharing','wisprFlow','screenPicker','doubleShiftNotes','dictationFrog','compactHandoff'].includes(setting) || this.pending) return Promise.reject(Error('Invalid or pending Labs request'));
     const request = ++this.next;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {this.pending = undefined; reject(Error('Labs acknowledgement timed out'));}, 3500);

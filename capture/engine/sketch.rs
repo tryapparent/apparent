@@ -718,10 +718,8 @@ pub(crate) fn typed_note_text(bundle: &ApparentBundle, pin: u32, text: &str) -> 
     label
 }
 
-/// Longest app-provided screen name or context value shown in the summary.
 const CONTEXT_VALUE_CHARS: usize = 60;
 
-/// An app-provided string on one line, cut to `CONTEXT_VALUE_CHARS`.
 fn context_value(raw: &str) -> String {
     let compact = raw.split_whitespace().collect::<Vec<_>>().join(" ");
     if compact.chars().count() <= CONTEXT_VALUE_CHARS {
@@ -741,16 +739,7 @@ pub fn summary_markdown(bundle: &ApparentBundle, bundle_dir: &std::path::Path) -
     summary_markdown_with(bundle, bundle_dir, agent_context)
 }
 
-/// `agent_context` is the `agentContext` experiment (`agent_context::keyframe_texts`).
 pub fn summary_markdown_with(
-    bundle: &ApparentBundle,
-    bundle_dir: &std::path::Path,
-    agent_context: bool,
-) -> String {
-    summary_markdown_with_visual_policy(bundle, bundle_dir, agent_context)
-}
-
-pub(crate) fn summary_markdown_with_visual_policy(
     bundle: &ApparentBundle,
     bundle_dir: &std::path::Path,
     agent_context: bool,
@@ -758,8 +747,6 @@ pub(crate) fn summary_markdown_with_visual_policy(
     summary_markdown_formatted(bundle, bundle_dir, agent_context, None)
 }
 
-/// Clipboard transport instructions are supplied by Handoff; archived summaries keep
-/// their full local inspection context. Words, marks, notes and warnings stay semantic.
 pub(crate) fn clipboard_markdown(
     bundle: &ApparentBundle,
     bundle_dir: &std::path::Path,
@@ -809,7 +796,10 @@ fn summary_markdown_formatted(
             }
         }
     }
+    let compact = clipboard_hosted.is_some()
+        && bundle.keyframes.iter().any(|frame| frame.display_time.is_some());
     let mut out = match clipboard_hosted {
+        Some(_) if compact => String::new(),
         Some(true) => format!("[apparent {}]\n", format_clock(bundle.duration_ms)),
         Some(false) => format!(
             "[apparent {} · {}]\n",
@@ -942,11 +932,8 @@ fn summary_markdown_formatted(
             } else {
                 format!(" {}", text.head)
             };
-            out.push_str(&format!(
-                "- #{} ({}){screen_marker}{flag_marker}{head}\n",
-                frame.index,
-                format_clock(frame.t)
-            ));
+            let prefix = crate::composition::frame_labels::prefix(frame);
+            out.push_str(&format!("{prefix}{screen_marker}{flag_marker}{head}\n"));
             for line in text.lines {
                 out.push_str(&format!("  {line}\n"));
             }
@@ -960,7 +947,7 @@ fn summary_markdown_formatted(
         }
         let mut shown_screen = start_screen;
         for (i, frame) in bundle.keyframes.iter().enumerate() {
-            let clock = format_clock(frame.t);
+            let prefix = crate::composition::frame_labels::prefix(frame);
             let screen = bundle.screen_at(frame.t);
             let screen_marker = match screen {
                 Some(name) if screen != shown_screen => format!(" ⟨{}⟩", context_value(name)),
@@ -997,15 +984,10 @@ fn summary_markdown_formatted(
                     } else {
                         String::new()
                     };
-                    out.push_str(&format!(
-                        "- #{} ({clock}){screen_marker}{action_marker} “{said}”\n",
-                        frame.index
-                    ));
+                    let (open, close) = if frame.display_time.is_some() { ("", "") } else { ("“", "”") };
+                    out.push_str(&format!("{prefix}{screen_marker}{action_marker} {open}{said}{close}\n"));
                 }
-                None => out.push_str(&format!(
-                    "- #{} ({clock}){screen_marker}{flag_marker} {}\n",
-                    frame.index, frame.event
-                )),
+                None => out.push_str(&format!("{prefix}{screen_marker}{flag_marker} {}\n", frame.event)),
             }
             let next = bundle.keyframes.get(i + 1).map_or(u64::MAX, |k| k.t);
             for (t, label) in &app_events {
@@ -2134,6 +2116,7 @@ mod tests {
             keyframes: vec![Keyframe {
                 index: 1,
                 t: 5100,
+                display_time: None,
                 reason: KeyframeReason::Mark,
                 file: "frames/frame-01.png".into(),
                 event: "tapped x 0.50, y 0.50".into(),
@@ -2161,7 +2144,7 @@ mod tests {
         assert!(tl.find("0:04 · pressed").unwrap() < tl.find("0:05 ✎").unwrap());
         assert!(tl.contains("— frame #1"));
 
-        let summary = summary_markdown_with_visual_policy(&bundle, std::path::Path::new("/recordings/test"), false);
+        let summary = summary_markdown_with(&bundle, std::path::Path::new("/recordings/test"), false);
         assert!(summary.starts_with("[apparent 0:14 · App “Window” · /recordings/test]"));
         assert!(summary.contains("Note: Simplify it."));
         assert!(!summary.contains(LOOK_AT_IMAGES));
@@ -2350,6 +2333,7 @@ mod tests {
         phone.keyframes.push(Keyframe {
             index: 2,
             t: 9000,
+            display_time: None,
             reason: KeyframeReason::Mark,
             file: "frames/frame-02.png".into(),
             event: "flagged this moment".into(),
@@ -2371,7 +2355,7 @@ mod tests {
                 label: "Done tapped".into(),
             },
         ];
-        let summary = summary_markdown_with_visual_policy(&phone, std::path::Path::new("/recordings/phone"), false);
+        let summary = summary_markdown_with(&phone, std::path::Path::new("/recordings/phone"), false);
         assert_eq!(
             summary,
             format!(
@@ -2406,6 +2390,7 @@ mod tests {
         phone.keyframes.push(Keyframe {
             index: 3,
             t: 11_000,
+            display_time: None,
             reason: KeyframeReason::Click,
             file: "frames/frame-03.png".into(),
             event: "swiped up (x 0.50, y 0.80 → x 0.50, y 0.20)".into(),
@@ -2435,6 +2420,7 @@ mod tests {
         let keyframe = |index: usize, t: u64, reason, event: &str, said: Option<&str>| Keyframe {
             index,
             t,
+            display_time: None,
             reason,
             file: format!("frames/frame-{index:02}.png"),
             event: event.into(),
