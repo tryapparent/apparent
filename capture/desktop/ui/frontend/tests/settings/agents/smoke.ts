@@ -145,8 +145,8 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
         assert.equal(await page.locator('h1').evaluate(e=>getComputedStyle(e).fontSize),'48px');
         assert.equal(await page.locator('#agent-skill-label').evaluate(e=>getComputedStyle(e).fontSize),'24px');
         assert.equal(await page.locator('#agent-video-label').evaluate(e=>getComputedStyle(e).fontSize),'18px');
-        assert.equal(await toggle.locator('.apparent-switch-thumb').evaluate(e=>getComputedStyle(e).backgroundColor),colorScheme==='dark'?'rgb(255, 255, 255)':'rgb(2, 1, 2)');
-        assert.equal(await toggle.locator('.apparent-switch-track').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(183, 165, 216)');
+        assert.equal(await toggle.locator('.apparent-switch-thumb').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(255, 255, 255)');
+        assert.equal(await toggle.locator('.apparent-switch-track').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(122, 88, 199)');
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
         assert.equal(await page.locator('.settings-shell').evaluate(element=>element.getBoundingClientRect().top),0,'Settings shell stays fixed while pane scrolls');
         assert.equal(await page.locator('.settings-content').evaluate(element => element.scrollWidth <= element.clientWidth), true);

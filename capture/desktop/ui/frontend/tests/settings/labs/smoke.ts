@@ -43,6 +43,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   const toggle=page.getByRole('switch',{name:'Live local transcription'});
   await expect(toggle).toBeDisabled();await expect.poll(()=>Boolean(held)).toBe(true);
   reply(held!);hold=false;await expect(toggle).toBeEnabled();await expect(toggle).toHaveAttribute('aria-checked','false');
+  assert.equal(await toggle.locator('.apparent-switch-track').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(118, 118, 118)');
   await expect(chooseScreen).toBeEnabled();
   await startNow.focus();await page.keyboard.press("ArrowDown");
   await expect(chooseScreen).toBeChecked();
@@ -111,7 +112,8 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
    await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});
    assert.equal(await page.locator('h1').evaluate(e=>getComputedStyle(e).fontSize),'48px');
    assert.equal(await page.locator('#auto-paste-label').evaluate(e=>getComputedStyle(e).fontSize),'18px');
-   assert.equal(await sharing.locator('.apparent-switch-thumb').evaluate(e=>getComputedStyle(e).backgroundColor),theme==='dark'?'rgb(255, 255, 255)':'rgb(2, 1, 2)');
+   assert.equal(await sharing.locator('.apparent-switch-thumb').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(255, 255, 255)');
+   assert.equal(await toggle.locator('.apparent-switch-track').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(122, 88, 199)');
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
    assert.equal(await page.locator('.settings-content').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
    await toggle.scrollIntoViewIfNeeded();await expect(toggle).toBeInViewport();
