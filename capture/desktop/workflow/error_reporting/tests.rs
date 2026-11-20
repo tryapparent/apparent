@@ -399,15 +399,6 @@ fn exception_names_identify_each_category_without_changing_fingerprints() {
 }
 
 #[test]
-fn sparkle_reports_only_errors_not_normal_no_update_or_user_deferrals() {
-    for code in [1001, 4007, 4008] {
-        assert!(!sparkle_error_should_report("SUSparkleErrorDomain", code));
-    }
-    assert!(sparkle_error_should_report("SUSparkleErrorDomain", 1002));
-    assert!(sparkle_error_should_report("NSURLErrorDomain", -1009));
-}
-
-#[test]
 fn payload_is_allowlisted_with_no_user_or_error_text() {
     let consent = Consent {
         generation: "private-consent-canary".into(),

@@ -1,4 +1,6 @@
 import { serviceOnlyInputs } from "./connect-inputs.ts";
+import { sparklePolicyBuild, sparklePolicySource } from "../bend/consumers.ts";
+import { sharedBendInput } from "../bend/manifest.ts";
 
 const all = {
   contract_engineering: true,
@@ -6,6 +8,7 @@ const all = {
   contract_theme: true,
   contract_workflow: true,
   contract_tooling: true,
+  contract_sparkle: true,
 };
 const engineeringFixtures = new Set([
   "capture/desktop/ui/frontend/package.json",
@@ -70,5 +73,11 @@ export function contractChecks(
     contract_theme: theme,
     contract_workflow: workflow,
     contract_tooling: tooling,
+    contract_sparkle: paths.some(
+      (path) =>
+        path === sparklePolicySource ||
+        path.startsWith(sparklePolicyBuild) ||
+        sharedBendInput(path),
+    ),
   };
 }
