@@ -43,7 +43,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   const toggle=page.getByRole('switch',{name:'Live local transcription'});
   await expect(toggle).toBeDisabled();await expect.poll(()=>Boolean(held)).toBe(true);
   reply(held!);hold=false;await expect(toggle).toBeEnabled();await expect(toggle).toHaveAttribute('aria-checked','false');
-  assert.equal(await toggle.locator('.apparent-switch-track').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(118, 118, 118)');
+  assert.equal(await toggle.locator('.apparent-switch-track').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(229, 229, 234)');
   await expect(chooseScreen).toBeEnabled();
   await startNow.focus();await page.keyboard.press("ArrowDown");
   await expect(chooseScreen).toBeChecked();
@@ -52,7 +52,9 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   await expect.poll(()=>page.evaluate(()=>document.hasFocus())).toBe(true);
   await page.reload();await expect(chooseScreen).toBeChecked();
   await startNow.check();await expect(startNow).toBeChecked();
-  assert.deepEqual(await toggle.locator('.apparent-switch-track').evaluate(el=>({width:el.getBoundingClientRect().width,height:el.getBoundingClientRect().height})),{width:48,height:24});
+  const track=toggle.locator('.apparent-switch-track');
+  await expect(track).toHaveCSS('width','51px');
+  await expect(track).toHaveCSS('height','31px');
   await expect(page.getByRole('button',{name:'Labs',exact:true})).toHaveAttribute('aria-current','page');
   assert.match(await page.getByRole('button',{name:'Labs',exact:true}).locator('svg').innerHTML(),/M9 3h6/);
   hold=true;held=undefined;await toggle.focus();await page.keyboard.press('Space');
@@ -62,7 +64,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   await expect.poll(()=>Boolean(held)).toBe(true);reply(held!);hold=false;
   await expect(toggle).toHaveAttribute('aria-checked','true');
   await expect(toggle).toBeFocused();
-  assert.equal(await toggle.locator('.apparent-switch-thumb').evaluate(el=>getComputedStyle(el).transform),'matrix(1, 0, 0, 1, 24, 0)');
+  await expect(toggle.locator('.apparent-switch-thumb')).toHaveCSS('transform','matrix(1, 0, 0, 1, 20, 0)');
   const sharing=page.getByRole('switch',{name:'Public sharing links'});
   await expect(sharing).toHaveAttribute('aria-checked','false');
   await sharing.focus();await page.keyboard.press('Space');await expect(sharing).toHaveAttribute('aria-checked','true');await expect(sharing).toBeFocused();
