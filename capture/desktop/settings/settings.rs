@@ -1346,8 +1346,8 @@ impl Session {
                     #[cfg(any(target_os = "linux", target_os = "macos"))]
                     if setting.as_deref().is_none_or(|name| name == "streaming")
                         && let Some(on) = enabled && reply["facts"]["saved"].as_bool() == Some(on) {
-                        if on { crate::capture::engine::runtime::audio::transcription::parakeet_stream::prepare(); }
-                        else { crate::capture::engine::runtime::audio::transcription::parakeet_stream::release_cache(); }
+                        if on { crate::capture::engine::runtime::audio::transcription::speech_preview::prepare(); }
+                        else { crate::capture::engine::runtime::audio::transcription::speech_preview::release_cache(); }
                     }
                     self.send(&reply);
                 }

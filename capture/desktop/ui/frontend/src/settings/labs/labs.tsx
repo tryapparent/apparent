@@ -81,8 +81,8 @@ export function Labs({frogExperiment: FrogNudge}: {frogExperiment?: NoteExperime
       <div className="agent-preference-row"><h2 className="settings-preference-label" id="local-stream-label">Live local transcription</h2>
         <Switch id={controls.streaming} className="agent-switch" checked={on ?? false} aria-labelledby="local-stream-label" aria-describedby="local-stream-help local-stream-ready" aria-busy={busy && setting === 'streaming'}
           disabled={busy || on === undefined} onCheckedChange={value => void request(value)} /></div>
-      <p id="local-stream-help">See your words below the recording controls as you speak. Transcribes English on this computer with Parakeet.</p>
-      <p id="local-stream-ready">Enabling downloads a speech model if needed. Live text starts with your next recording once it is ready. Recording continues if live text is unavailable.</p>
+      <p id="local-stream-help">See a live preview of your English speech below the recording controls. The saved transcript is generated separately on this computer.</p>
+      <p id="local-stream-ready">Enabling downloads any missing speech models. Live text starts on the next recording after the models are ready.</p>
     </section>
     <section className="agent-preference">
       <div className="agent-preference-row"><h2 className="settings-preference-label" id="auto-paste-label">Auto paste</h2>
