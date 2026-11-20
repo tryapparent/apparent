@@ -452,8 +452,6 @@ body:has(.settings-shell),
   margin-top: 8px;
 }
 .settings-content .agent-switch {
-  width: 48px;
-  min-width: 48px;
   height: 44px;
   padding: 0;
   border: 0;

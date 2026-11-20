@@ -68,13 +68,13 @@
       "sidebarWidth": { "$type": "dimension", "$value": "216px" },
       "infoIconSize": { "$type": "dimension", "$value": "16px" },
       "copyIconSize": { "$type": "dimension", "$value": "16px" },
-      "switchWidth": { "$type": "dimension", "$value": "48px" },
-      "switchHeight": { "$type": "dimension", "$value": "24px" },
-      "switchThumbSize": { "$type": "dimension", "$value": "18px" },
-      "switchOffTrack": { "$type": "color", "$value": "#767676", "$description": "Functional neutral for available Off switches only; not disabled or a general brand color." },
-      "switchOnTrack": { "$type": "color", "$value": "#7A58C7" },
-      "switchLightThumb": { "$type": "color", "$value": "#FFFFFF", "$description": "White circular switch thumb in both states; retain a Carbon edge." },
-      "switchDarkThumb": { "$type": "color", "$value": "#FFFFFF", "$description": "White circular switch thumb in both states; retain a Carbon edge." }
+      "switchWidth": { "$type": "dimension", "$value": "51px" },
+      "switchHeight": { "$type": "dimension", "$value": "31px" },
+      "switchThumbSize": { "$type": "dimension", "$value": "27px" },
+      "switchOffLight": { "$type": "color", "$value": "#E5E5EA" },
+      "switchOffDark": { "$type": "color", "$value": "#39393D" },
+      "switchEdge": { "$type": "color", "$value": "#767676" },
+      "switchThumb": { "$type": "color", "$value": "#FFFFFF" }
     }
   },
   "motion": {
