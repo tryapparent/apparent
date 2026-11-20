@@ -450,8 +450,8 @@ test("source homepage preserves accepted responsive layout and interactions", as
             try {
               await page.goto(origin)
               await page.getByRole("link", { name: "Agent quickstart" }).click()
+              await page.getByRole("heading", { name: "Screen recordings your coding agent can read" }).waitFor()
               assert.equal(new URL(page.url()).pathname, "/agents/")
-              assert.equal(await page.getByRole("heading", { name: "Screen recordings your coding agent can read" }).count(), 1)
               assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
               await page.keyboard.press("Tab")
               assert.equal(await page.locator("a:focus-visible").getAttribute("href"), "/")
