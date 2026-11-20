@@ -258,9 +258,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
         await openTask("Send to T3", "Send recordings to T3");
         const t3 = page.getByRole("switch", { name: "Enable sending to T3" });
         await expect(t3).toBeEnabled();
-        await expect(t3).toHaveAccessibleDescription(
-          /Pair a computer to send.*You choose what to send/,
-        );
+        await expect(t3).toHaveAccessibleDescription(/You choose what to send/);
         await expect(
           page.getByRole("button", { name: "Connect T3", exact: true }),
         ).toBeEnabled();
@@ -315,6 +313,14 @@ test("staged Recording opens directly, receives native facts and saves only on i
         ).toBeInViewport();
         await expect(t3).not.toBeChecked();
         await screenshot(`send-pending-${variant}`);
+        t3Facts = { ...t3Facts, t3Saved: true };
+        send({ type: "agents-result", request: heldT3, facts: t3Facts });
+        await expect(t3).toBeChecked();
+        await steps.last().scrollIntoViewIfNeeded();
+        await screenshot(`send-connected-on-${variant}`);
+        heldT3 = undefined;
+        await t3.press("Space");
+        await expect.poll(() => heldT3).toBeDefined();
         send({
           type: "agents-result",
           request: heldT3,
@@ -323,25 +329,26 @@ test("staged Recording opens directly, receives native facts and saves only on i
         const t3Failure = page.getByRole("alertdialog", {
           name: "Unable to save T3 sending preference",
         });
-        await expect(t3Failure).toBeVisible();
+        await expect(
+          t3Failure.getByRole("button", { name: "Refresh T3 sending" }),
+        ).toBeFocused();
         await screenshot(`send-failure-${variant}`);
-        const recover = t3Failure.getByRole("button", {
+        await page.keyboard.press("Escape");
+        await expect(t3).toHaveCount(0);
+        const refresh = steps.nth(1).getByRole("button", {
           name: "Refresh T3 sending",
         });
-        await expect(recover).toBeFocused();
-        await page.keyboard.press("Enter");
-        await expect(t3Failure).not.toBeVisible();
-        await expect(t3).toBeEnabled();
-        await expect(t3).toBeFocused();
-        await screenshot(`send-recovered-${variant}`);
+        await expect(refresh).toBeFocused();
+        await expect(refresh).toHaveAccessibleDescription(
+          /preference is unconfirmed/,
+        );
+        await screenshot(`send-unconfirmed-${variant}`);
         heldT3 = undefined;
-        await t3.press("Space");
-        await expect.poll(() => heldT3).toBeDefined();
-        t3Facts = { ...t3Facts, t3Saved: true };
-        send({ type: "agents-result", request: heldT3, facts: t3Facts });
+        await page.keyboard.press("Enter");
         await expect(t3).toBeChecked();
-        await steps.last().scrollIntoViewIfNeeded();
-        await screenshot(`send-connected-on-${variant}`);
+        await expect(t3).toBeFocused();
+        assert.equal(heldT3, undefined);
+        await screenshot(`send-confirmed-on-${variant}`);
         await page
           .getByRole("heading", { name: "Compact recording prompts" })
           .scrollIntoViewIfNeeded();
