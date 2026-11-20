@@ -1,17 +1,8 @@
-//! The `agentContext` experiment's text: each keyframe's speech broken up by what happened while
-//! it was said (marks, clicks, drags, shortcuts, windows opening and closing, app events), so the
-//! agent reads "this part" next to the mark drawn as it was said. Marks sharing a keyframe are
-//! numbered ①②③ in drawing order (the images show only the ink; `apparent zoom --mark` and
-//! `apparent inspect --marks` look marks up by these numbers).
-//! Nothing here gives raw coordinates: the images show where, so a place is only written when
-//! something names it (an Accessibility label, the dev page's element).
-
 use crate::shared::model::*;
 use crate::capture::engine::sketch::{
     describe_event, direction, mark_on_keyframe, marks_on, quote_label, settled_events,
 };
 
-/// One keyframe's text: `head` follows `- #N (M:SS)` on the bullet line, `lines` go under it.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct FrameText {
     pub head: String,
@@ -117,15 +108,16 @@ pub fn keyframe_texts(bundle: &ApparentBundle) -> Vec<FrameText> {
         .map(|(i, frame)| {
             let mut timed = std::mem::take(&mut items[i]);
             timed.sort_by_key(|item| item.t);
+            let frame_label = frame.display_time.as_deref();
             let mut text = match &words {
-                Some(words) => interleave(&words[i], &timed),
-                None => interleave_unsplit(frame.said.as_deref(), &timed),
+                Some(words) => interleave(&words[i], &timed, frame_label),
+                None => interleave_unsplit(frame.said.as_deref(), &timed, frame_label),
             };
             if let Some(changed) = changed_regions(bundle, i) {
                 text.head = if text.head.is_empty() {
-                    format!("[changed: {changed}]")
+                    format!("[{changed} changed]")
                 } else {
-                    format!("[changed: {changed}] {}", text.head)
+                    format!("[{changed} changed] {}", text.head)
                 };
             }
             if text.head.is_empty() && text.lines.is_empty() {
@@ -153,7 +145,7 @@ impl MarkEntry<'_> {
         let num = self.numbered.then_some(self.number);
         format!(
             "{frame} {} · {}",
-            mark_label(self.mark, num),
+            mark_label(self.mark, num, Some(&format_clock(self.mark.t0))),
             self.mark.id
         )
     }
@@ -500,7 +492,6 @@ impl DragRun {
     }
 }
 
-/// A click, scroll, point or key press without coordinates; `None` for a point nothing names.
 fn event_text(event: &InteractionEvent) -> Option<String> {
     match event {
         InteractionEvent::Note { .. } => None, // Kept as separate lossless items in keyframe_texts().
@@ -523,13 +514,6 @@ fn event_text(event: &InteractionEvent) -> Option<String> {
             if let Some(label) = label.as_deref().filter(|l| !l.is_empty()) {
                 text.push(' ');
                 text.push_str(&quote_label(label));
-            }
-            #[cfg(target_os = "linux")]
-            if button.as_deref() != Some("touch")
-                && role.as_deref().is_none_or(str::is_empty)
-                && label.as_deref().is_none_or(str::is_empty)
-            {
-                text.push_str(" (element unavailable)");
             }
             Some(text)
         }
@@ -664,15 +648,26 @@ fn quoted(text: &str) -> String {
     }
 }
 
-fn mark_label(mark: &Mark, number: Option<usize>) -> String {
+fn mark_label(mark: &Mark, number: Option<usize>, clock: Option<&str>) -> String {
     let n = number.map(circled).unwrap_or_default();
-    format!("✎{n} {} {}", format_clock(mark.t0), mark_text(mark))
+    let text = mark_text(mark);
+    match clock {
+        Some(clock) => format!("✎{n} {clock} {text}"),
+        None => format!("✎{n} {text}"),
+    }
 }
 
-fn label(item: &Timed) -> String {
+fn label(item: &Timed, frame_label: Option<&str>) -> String {
+    const SHOW_TIME: [bool; 2] = include!("../../record/media/src/assembly/action-time.json");
+    let clock = format_clock(item.t);
+    let clock = SHOW_TIME[usize::from(frame_label == Some(clock.as_str()))]
+        .then_some(clock.as_str());
     match &item.item {
-        Item::Mark { mark, number } => mark_label(mark, *number),
-        Item::Event { text } | Item::Note { text } => format!("· {} {text}", format_clock(item.t)),
+        Item::Mark { mark, number } => mark_label(mark, *number, clock),
+        Item::Event { text } | Item::Note { text } => match clock {
+            Some(clock) => format!("· {clock} {text}"),
+            None => format!("· {text}"),
+        },
     }
 }
 
@@ -732,7 +727,7 @@ fn split_point(t: u64, words: &[&WordTiming], clauses: &[usize]) -> u64 {
 
 /// Speech before the first item goes on the bullet; each mark, or run of events with no speech
 /// between them, starts a line followed by the words said until the next one.
-fn interleave(words: &[&WordTiming], items: &[Timed]) -> FrameText {
+fn interleave(words: &[&WordTiming], items: &[Timed], frame_label: Option<&str>) -> FrameText {
     let clauses = clause_starts(words);
     let mut splits: Vec<u64> = items
         .iter()
@@ -761,7 +756,7 @@ fn interleave(words: &[&WordTiming], items: &[Timed]) -> FrameText {
     for (i, item) in items.iter().enumerate() {
         if matches!(item.item, Item::Note { .. }) {
             lines.extend(open.take());
-            lines.push(label(item));
+            lines.push(label(item, frame_label));
             let said = said_between(Some(splits[i]), splits.get(i + 1).copied());
             if !said.is_empty() {
                 lines.push(said);
@@ -770,10 +765,10 @@ fn interleave(words: &[&WordTiming], items: &[Timed]) -> FrameText {
         }
         let is_mark = matches!(item.item, Item::Mark { .. });
         let line = match open.take() {
-            Some(line) if !is_mark => format!("{line} {}", label(item)),
+            Some(line) if !is_mark => format!("{line} {}", label(item, frame_label)),
             previous => {
                 lines.extend(previous);
-                label(item)
+                label(item, frame_label)
             }
         };
         let said = said_between(Some(splits[i]), splits.get(i + 1).copied());
@@ -790,16 +785,13 @@ fn interleave(words: &[&WordTiming], items: &[Timed]) -> FrameText {
 }
 
 /// Without word times the speech stays whole on the bullet and the items follow it.
-fn interleave_unsplit(said: Option<&str>, items: &[Timed]) -> FrameText {
+fn interleave_unsplit(said: Option<&str>, items: &[Timed], frame_label: Option<&str>) -> FrameText {
     FrameText {
         head: quoted(said.unwrap_or("")),
-        lines: items.iter().map(label).collect(),
+        lines: items.iter().map(|item| label(item, frame_label)).collect(),
     }
 }
 
-/// What changed on a scene-change keyframe, when it can be named: for now only a change of the
-/// whole screen (autocrop's change boxes). Smaller regions have no names yet and the image shows
-/// them.
 fn changed_regions(bundle: &ApparentBundle, index: usize) -> Option<String> {
     let frame = bundle.keyframes.get(index)?;
     if frame.reason != KeyframeReason::SceneChange {
@@ -810,7 +802,7 @@ fn changed_regions(bundle: &ApparentBundle, index: usize) -> Option<String> {
     merge_boxes(boxes)
         .iter()
         .any(|b| area(b) >= 0.9)
-        .then(|| "the whole screen".into())
+        .then(|| "whole screen".into())
 }
 
 fn merge_boxes(boxes: &[[f32; 4]]) -> Vec<[f32; 4]> {
@@ -1153,7 +1145,7 @@ mod tests {
             ..Default::default()
         });
         let texts = keyframe_texts(&b);
-        assert_eq!(texts[0].head, "[changed: the whole screen]");
+        assert_eq!(texts[0].head, "[whole screen changed]");
         assert_eq!(
             texts[1].head, "scene changed",
             "unnamed regions aren't listed"
@@ -1291,19 +1283,18 @@ mod tests {
             click(9_000, 0.2),
         ];
         let texts = keyframe_texts(&b);
-        let fallback = if cfg!(target_os = "linux") {
-            " (element unavailable)"
-        } else {
-            ""
-        };
-        assert_eq!(texts[0].lines, vec![format!("· 0:01 clicked{fallback} ×3")]);
-        assert_eq!(texts[1].lines, vec![format!("· 0:09 clicked{fallback}")]);
+        assert_eq!(texts[0].lines, vec!["· 0:01 clicked ×3"]);
+        assert_eq!(texts[1].lines, vec!["· 0:09 clicked"]);
         assert_eq!(texts[1].head, "");
+        b.keyframes[0].display_time = Some("0:01".into());
+        b.keyframes[1].display_time = Some("0:09.300".into());
+        let texts = keyframe_texts(&b);
+        assert_eq!(texts[0].lines, ["· clicked ×3"]);
+        assert_eq!(texts[1].lines, ["· 0:09 clicked"]);
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
-    fn linux_unidentified_clicks_have_a_fallback_without_hiding_page_labels_or_touch() {
+    fn unidentified_clicks_are_concise_without_hiding_page_labels_or_touch() {
         let click = |role: Option<&str>, label: Option<&str>, button: Option<&str>| {
             InteractionEvent::Click {
                 t: 0,
@@ -1316,11 +1307,11 @@ mod tests {
         };
         assert_eq!(
             event_text(&click(None, None, None)).as_deref(),
-            Some("clicked (element unavailable)")
+            Some("clicked")
         );
         assert_eq!(
             event_text(&click(Some(""), Some(""), None)).as_deref(),
-            Some("clicked (element unavailable)")
+            Some("clicked")
         );
         assert_eq!(
             event_text(&click(Some("button"), Some("Area"), None)).as_deref(),

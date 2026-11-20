@@ -114,6 +114,28 @@ await bendScratch(async (scratch) => {
     ),
   );
   assert.equal(gestureTable(proofOutput), gesture);
+  assert.deepEqual(
+    JSON.parse(
+      readFileSync(
+        join(root, "record/media/src/assembly/action-time.json"),
+        "utf8",
+      ),
+    ),
+    JSON.parse(
+      run(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `
+          import labels from "./frame-label.mjs";
+          console.log(JSON.stringify([false, true].map(labels.show_action_time)));
+          `,
+        ],
+        proofOutput,
+      ),
+    ),
+  );
   const repair = JSON.parse(
     readFileSync(
       join(root, "record/settings/permissions/permission-policy.json"),

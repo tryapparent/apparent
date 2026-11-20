@@ -69,6 +69,12 @@ still work, and `zoom --mark ... --frame` accepts the displayed label.
 Record's Bend check compares the shipped native precision table with
 `record/media/src/assembly/frame-label.bend`.
 
+Recording context uses plain “clicked” when the capture has no element name.
+Named targets, repeat counts, shortcuts, and speech stay in the handoff.
+With compact recording prompts, an action inherits its keyframe timestamp when
+the displayed times match. Distinct times and precise frame labels remain
+visible. The raw timeline remains available through `apparent inspect --json`.
+
 ## Transcript-only handoff
 
 The separate Labs switch is off by default and applies when a handoff is prepared.
