@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.tools.json",
     "pretest": "npm run build",
     "test": "node --experimental-strip-types --test test/policy.test.ts test/frames.test.ts test/phone.test.ts test/screen.test.ts test/assembly.test.ts test/transcript/policy.test.ts test/selection/cues.test.ts test/selection/scene.test.ts test/export/quiet.test.ts",
-    "test:native": "node --experimental-strip-types --test test/native.test.ts"
+    "test:native": "node --experimental-strip-types --test test/native.test.ts test/stage.test.ts"
   },
   "dependencies": {
     "@apparent/engine-sdk": "https://github.com/tryapparent/apparent/releases/download/engine-media-26c26ef3145493411f148ddc6897d9a701cb001d/apparent-engine-sdk-0.4.0.tgz"

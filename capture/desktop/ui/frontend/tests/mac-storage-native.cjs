@@ -46,8 +46,6 @@ const { panelScript, persistentPanelScript, PickerProcess, prepareStorageChange,
 const { isolatePickerRuntime } = require('../../../../../enablement/prerequisites/mac-runtime.ts');
 const { assertReportingRead } = require('../../../../../enablement/prerequisites/reporting-read.ts');
 
-// A direct authoritative read does not update the renderer's terminal app_busy.
-// Recover only that observed state with one visible read, never replay Choose.
 async function refreshBusyLocation({ idle, busy, refresh }) {
   await idle();
   if (!await busy()) return false;
@@ -569,6 +567,8 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     const locationStatus = card.locator(':scope > [role="status"]');
     const change = card.getByRole('button', { name: 'Change…', exact: true });
     const reset = card.getByRole('button', { name: 'Reset', exact: true });
+    const refreshRetention = page.getByRole('button', { name: 'Refresh retention', exact: true });
+    const refreshUsage = page.getByRole('button', { name: 'Refresh usage', exact: true });
     let nativeChangeStarting = false;
     const startNativeChange = async () => {
       assert.equal(pendingNativeChange, undefined, 'A native Change is already pending');
@@ -619,13 +619,12 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     // Storage worker. Observe those receipts before one Change mutation: an
     // app_busy reply never opens a picker, regardless of AX polling duration.
     const waitStorageIdle = async () => {
-      const refreshRetention = card.getByRole('button', { name: 'Refresh retention', exact: true });
       await expect(change).toBeEnabled({ timeout: budget() });
       await expect(refreshRetention).toBeEnabled({ timeout: budget() });
       await refreshRetention.click({ timeout: budget() }); // Read-only, no preference write.
-      await expect(card.getByRole('combobox', { name: 'Keep recordings', exact: true })).toBeEnabled({ timeout: budget() });
-      await expect(card.getByRole('button', { name: 'Refresh usage', exact: true })).toBeEnabled({ timeout: budget() });
-      await expect(card.getByText(/ in captures$/)).toBeVisible({ timeout: budget() });
+      await expect(page.getByRole('combobox', { name: 'Keep recordings', exact: true })).toBeEnabled({ timeout: budget() });
+      await expect(refreshUsage).toBeEnabled({ timeout: budget() });
+      await expect(page.getByText(/ in captures$/)).toBeVisible({ timeout: budget() });
     };
     const goPathOperation = (operation, target) => {
       assert.equal(electronChild.exitCode, null, 'Owned Electron exited before picker navigation');
@@ -668,7 +667,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     }, 'Saved location readback');
     report.postChooseVisibleRefresh = await refreshBusyLocation({
       idle: () => expect(refreshLocation).toBeEnabled({ timeout: budget() }),
-      busy: () => locationStatus.getByText('Another location request is still running. Refresh when it finishes.', { exact: true }).isVisible(),
+      busy: () => locationStatus.getByText(/^(Another location request is still running|The save outcome is unknown)\./).isVisible(),
       refresh: () => refreshLocation.click({ timeout: budget() }),
     });
     await locationStatus.getByText(changed.location.storage.displayPath, { exact: true }).waitFor({ timeout: budget() });
@@ -697,7 +696,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     // Cancel remounts Retention, which reads policy and then scans usage on
     // Rust's single Storage worker. Wait for that real receipt before the
     // fixture's direct socket probe and Reset; never retry an unknown outcome.
-    await expect(card.getByRole('button', { name: 'Refresh usage', exact: true }))
+    await expect(refreshUsage)
       .toBeEnabled({ timeout: budget() });
     report.cancel = { ...await snapshot(), files: await assertFiles(selected),
       bytesUnchanged: true, inodeUnchanged: true, mtimeUnchanged: true };
@@ -718,7 +717,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
       report.resetBusyRecovery = { response: 'app_busy', unchangedConfig: true, refreshes: 1, retries: 1 };
       await card.getByRole('button', { name: 'Refresh location', exact: true }).click({ timeout: budget() });
       await locationStatus.getByText(report.change.location.storage.displayPath, { exact: true }).waitFor({ timeout: budget() });
-      await expect(card.getByRole('button', { name: 'Refresh usage', exact: true }))
+      await expect(refreshUsage)
         .toBeEnabled({ timeout: budget() });
       await reset.click({ timeout: budget() });
     }
