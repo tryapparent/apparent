@@ -14,7 +14,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
  const frontend=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../..');
  const application=spawn(createRequire(import.meta.url)('electron') as string,
   ['--no-sandbox',frontend,'--settings-storage','--settings-labs','--settings-parent','--remote-debugging-port=0'],
-  {env:{...process.env,ELECTRON_RUN_AS_NODE:'',HOME:home,XDG_CONFIG_HOME:path.join(home,'config'),XDG_CACHE_HOME:path.join(home,'cache')},stdio:'pipe'});
+  {env:{...process.env,ELECTRON_RUN_AS_NODE:'',APPARENT_MODELS_DIR:'',HOME:home,XDG_CONFIG_HOME:path.join(home,'config'),XDG_CACHE_HOME:path.join(home,'cache')},stdio:'pipe'});
  const exited=new Promise<void>(resolve=>application.once('exit',()=>resolve()));
  let browser:Awaited<ReturnType<typeof chromium.connectOverCDP>>|undefined;
  const messages:Record<string,unknown>[]=[];
@@ -104,17 +104,21 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   assert.equal(await page.evaluate(async()=>await window.apparentGeneral.read().then(()=>false,()=>true) && await window.apparent.readConnectSettings().then(()=>false,()=>true)),true);
   if(process.platform!=='darwin')await assert.rejects(()=>page.evaluate(()=>window.apparentLabs.save(true,'wisprFlow')));
   const silentPrompt = page.getByRole('switch', {name:'Silent prompts'});
-  const checkLipflow = page.getByRole('button', {name:'Check model again'});
+  const retryLipflow = page.getByRole('button', {name:'Retry setup'});
   await expect(silentPrompt).toHaveAttribute('aria-checked','false');
-  await expect(checkLipflow).toHaveCount(0);
+  await expect(retryLipflow).toHaveCount(0);
   await assert.rejects(() => page.evaluate(() => window.apparentLipPrompt.begin()));
   await silentPrompt.focus(); await page.keyboard.press('Space');
   await expect(silentPrompt).toHaveAttribute('aria-checked','true');
   await expect(silentPrompt).toBeFocused();
-  await expect(checkLipflow).toBeEnabled();
+  if (process.platform === "linux" && process.arch === "arm64")
+   await expect(page.getByText("Automatic model setup is unavailable on this platform.")).toBeVisible();
+  else await expect(retryLipflow).toBeEnabled();
   await page.reload();
   await expect(silentPrompt).toHaveAttribute('aria-checked','true');
-  await expect(checkLipflow).toBeEnabled();
+  if (process.platform === "linux" && process.arch === "arm64")
+   await expect(page.getByText("Automatic model setup is unavailable on this platform.")).toBeVisible();
+  else await expect(retryLipflow).toBeEnabled();
   const frog = page.getByRole('switch', {name:'Frog after dictation'});
   if (process.platform === 'darwin') {
    await expect(frog).toHaveAttribute('aria-checked','false');
@@ -164,7 +168,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   }
   await silentPrompt.click();
   await expect(silentPrompt).toHaveAttribute('aria-checked','false');
-  await expect(checkLipflow).toHaveCount(0);
+  await expect(retryLipflow).toHaveCount(0);
   const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setDeviceMetricsOverride',{width:640,height:530,deviceScaleFactor:1,mobile:false});
   const recoveries: [string,typeof toggle][]=[['streaming',toggle],['compactHandoff',compact],['transcriptOnly',speech],['agentContext',agentContext]];
   if(process.platform==='linux')recoveries.push(['autoPaste',autoPaste]);
