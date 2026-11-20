@@ -149,7 +149,7 @@ test("source homepage preserves accepted responsive layout and interactions", as
   }) : null
   const movieOrigin = movieRuntime ? await movieRuntime.ready.catch(async error => { await movieRuntime.dispose(); throw error }) : null
   console.info(`Homepage browser fixture: ${prepared ? "compiled Pages movie worker" : "raw source movie"}`)
-  const types: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".webp": "image/webp", ".jpg": "image/jpeg", ".ttf": "font/ttf", ".mp4": "video/mp4" }
+  const types: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".webp": "image/webp", ".jpg": "image/jpeg", ".ttf": "font/ttf", ".mp4": "video/mp4", ".txt": "text/plain", ".md": "text/markdown" }
   const server = createServer(async (request, response) => {
     const pathname = new URL(request.url!, "http://localhost").pathname
     const file = resolve(publicDir, "." + (pathname.endsWith("/") ? pathname + "index.html" : pathname))
@@ -444,6 +444,23 @@ test("source homepage preserves accepted responsive layout and interactions", as
           }
           await page.close()
         }
+        for (const width of [1280, 320]) {
+          for (const colorScheme of ["light", "dark"] as const) {
+            const page = await browser.newPage({ viewport: { width, height: 900 }, colorScheme, javaScriptEnabled: false })
+            try {
+              await page.goto(origin)
+              await page.getByRole("link", { name: "Agent quickstart" }).click()
+              assert.equal(new URL(page.url()).pathname, "/agents/")
+              assert.equal(await page.getByRole("heading", { name: "Screen recordings your coding agent can read" }).count(), 1)
+              assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+              await page.keyboard.press("Tab")
+              assert.equal(await page.locator("a:focus-visible").getAttribute("href"), "/")
+              if (process.env.SITE_EVIDENCE) await page.screenshot({ path: join(process.env.SITE_EVIDENCE, `agents-${engine.name()}-${width}-${colorScheme}.png`), fullPage: true })
+              await page.getByRole("link", { name: "Read the skill instructions" }).click()
+              assert.equal(new URL(page.url()).pathname, "/skill.md")
+            } finally { await page.close() }
+          }
+        }
       } finally { await browser.close() }
     }
     if (process.env.SITE_EVIDENCE) await writeFile(join(process.env.SITE_EVIDENCE, "source-homepage.json"), JSON.stringify(receipts, null, 2))
@@ -456,6 +473,10 @@ test("source homepage preserves accepted responsive layout and interactions", as
 
 test("agent documentation survives the illustrated README and relocated guides", () => {
   const files = agentFiles()
+  for (const [name, content] of Object.entries(files)) {
+    assert.equal(readFileSync(join(publicDir, name), "utf8"), content)
+  }
+  assert.match(readFileSync(join(publicDir, "sitemap.xml"), "utf8"), /<loc>https:\/\/app\.tryapparent\.com\/agents\/<\/loc>/)
   for (const name of ["llms.txt", "llms-full.txt"]) {
     assert.match(files[name], /Point\. Talk\. Draw\./)
     assert.doesNotMatch(files[name], /readme-banner|\]\((?:\.\.\/|capture\/|shared\/)/)

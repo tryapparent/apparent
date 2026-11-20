@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agent quickstart | Apparent</title>
+    <meta name="description" content="Install the open-source Apparent screen recorder for macOS or Linux, read captures in Codex or Claude Code, and see an example UI bug handoff." />
+    <link rel="canonical" href="https://app.tryapparent.com/agents/" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./quickstart.css" />
+  </head>
+  <body>
+    <header class="shell">
+      <a href="/" aria-label="Apparent home"><img src="/apparent-wordmark.svg" width="132" height="31" alt="Apparent" /></a>
+      <a href="https://github.com/tryapparent/apparent">GitHub repository</a>
+    </header>
+    <main class="shell">
+      <h1>Screen recordings your coding agent can read</h1>
+      <p class="intro">Apparent is an open-source screen recorder for macOS and Linux. Record your screen, talk through a change, and draw on the part that matters. Paste the capture into Codex, Claude Code, or another coding agent.</p>
+
+      <section aria-labelledby="setup">
+        <h2 id="setup">Choose your setup</h2>
+        <ul class="setup">
+          <li>
+            <h3>Record on your desktop</h3>
+            <p>Install Apparent and grant screen and microphone permissions when prompted. Press <kbd>⌥⇧S</kbd> on macOS or <kbd>Alt+Shift+S</kbd> on Linux to start and stop, then paste into your agent chat.</p>
+            <a class="download" href="https://github.com/tryapparent/apparent/releases">Download Apparent</a>
+          </li>
+          <li>
+            <h3>Read a capture on an agent machine</h3>
+            <p>Install the Apparent CLI on the machine that will read the capture. The optional reading skill teaches the agent which frames to inspect and how to zoom in.</p>
+            <ul class="links">
+              <li><a href="https://github.com/tryapparent/apparent/blob/main/capture/agent/docs/installation.md">Install the headless CLI</a></li>
+              <li><a href="https://www.skills.sh/tryapparent/apparent/apparent">Install the capture-reading skill</a></li>
+              <li><a href="/skill.md">Read the skill instructions</a></li>
+            </ul>
+          </li>
+          <li>
+            <h3>Have your agent record a walkthrough</h3>
+            <p>Install the separate video-making skill for a narrated demo of a change. Live desktop recording requires a running app, capture permissions, and a safe screen to record.</p>
+            <a href="https://www.skills.sh/tryapparent/apparent/make-it-apparent">Install the video-making skill</a>
+          </li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="example">
+        <h2 id="example">What the agent receives</h2>
+        <p>A <code>.apparent</code> bundle contains annotated keyframes, a timed transcript, and an interaction timeline. This example shows how the pieces fit together for a UI bug.</p>
+        <figure class="example">
+          <figcaption>Illustrative capture of a disabled Save button</figcaption>
+          <dl>
+            <dt>Annotated keyframe</dt>
+            <dd><span class="sample-window"><span>Profile settings</span><span class="sample-save">Save</span></span></dd>
+            <dt>Transcript</dt>
+            <dd><time datetime="PT8S">0:08</time> “I changed the display name, but Save is still disabled.”</dd>
+            <dt>Interaction timeline</dt>
+            <dd><time datetime="PT8S">0:08</time> Pin placed on Save.</dd>
+          </dl>
+        </figure>
+        <p>For a local bundle, run <code>apparent inspect &lt;bundle&gt;</code> to read the summary and <code>apparent zoom &lt;bundle&gt; --at 0:08</code> to look closer. <a href="https://github.com/tryapparent/apparent/blob/main/capture/agent/docs/usage.md">See the CLI guide</a>.</p>
+      </section>
+    </main>
+    <footer class="shell"><a href="/llms.txt">Agent documentation index (plain text)</a></footer>
+  </body>
+</html>

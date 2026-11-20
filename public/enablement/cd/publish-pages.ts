@@ -6,6 +6,7 @@ import { join, relative, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { chunkPath, movie } from '../../site/lib/pages-video-metadata.js'
+import { agentOutputNames, agentRoutes } from '../artifact/agent-paths.ts'
 
 export const ACCOUNT = 'a54dcebead3b8ad688f891da0ab54d1f'
 export const PROJECT = 'apparent-capture'
@@ -78,6 +79,7 @@ function isPublicOutputPath(name: string): boolean {
   if (name === 'wrangler.jsonc') return true
   if (!name.startsWith('dist-apparent/')) return false
   const path = name.slice('dist-apparent/'.length)
+  if (agentOutputNames.includes(path)) return true
   if (path.startsWith('brand/')) {
     const relative = path.slice(6)
     if (relative.split('/').some(part => !part || part === '.' || part === '..') || /[\\%?#]/.test(relative)) return false
@@ -95,6 +97,9 @@ export function verifyArtifact(sha: string, artifact: string): Manifest {
   if (manifest.schema !== 1 || manifest.revision !== sha) throw new Error('Artifact revision mismatch')
   if (!sameInventory(actual, manifest.files)) throw new Error('Artifact checksum/inventory mismatch')
   if (Object.keys(actual).some(name => !isPublicOutputPath(name))) throw new Error('Unexpected artifact input')
+  for (const path of ['sitemap.xml', ...agentOutputNames]) {
+    if (!Object.hasOwn(actual, 'dist-apparent/' + path)) throw new Error('Missing Public discovery file: ' + path)
+  }
   const headers = readFileSync(join(artifact, 'dist-apparent/_headers'), 'utf8')
   if (headers !== '/*\n  Cache-Control: no-cache, no-transform\n  X-Apparent-Publisher: cloudflare-pages\n' || readFileSync(join(artifact, 'dist-apparent/_redirects'), 'utf8') !== '') throw new Error('Invalid Public Pages metadata')
   const routes = JSON.parse(readFileSync(join(artifact, 'dist-apparent/_routes.json'), 'utf8'))
@@ -161,7 +166,7 @@ export async function verify(sha: string, packagePath: string, deps: PublisherDe
   const deployment = project.canonical_deployment
   if (deployment.latest_stage.status !== 'success' || deployment.deployment_trigger.metadata.commit_hash !== sha) throw new Error('Pages production is not the checked revision')
   const manifest = verifyArtifact(sha, resolve(packagePath, '..'))
-  const paths: [string, string][] = [['index.html', '/']]
+  const paths: (readonly [string, string])[] = [['index.html', '/'], ['sitemap.xml', '/sitemap.xml'], ...agentRoutes]
   for (const name of Object.keys(manifest.files)) if (name.startsWith('dist-apparent/assets/') && /\.(js|css)$/.test(name)) { const path = name.slice('dist-apparent/'.length); paths.push([path, '/' + path]) }
   const hasBrand = Object.hasOwn(manifest.files, 'dist-apparent/brand/index.html')
   if (hasBrand) {

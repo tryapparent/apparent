@@ -12,11 +12,15 @@ const TYPES: Record<string, string> = { ".txt": "text/plain; charset=utf-8", ".m
 function forAgents(): Plugin {
   return {
     name: "apparent-agent-files",
-    transformIndexHtml: () => [{ tag: "script", attrs: { type: "application/ld+json" }, children: jsonLd(), injectTo: "head" }],
+    transformIndexHtml: (_, context) => process.env.APPARENT_PUBLIC_SITE !== "1" && context.path === "/index.html"
+      ? [{ tag: "script", attrs: { type: "application/ld+json" }, children: jsonLd(), injectTo: "head" }]
+      : [],
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const name = req.url?.split("?")[0].slice(1) ?? ""
-        const file = agentFiles()[name]
+        if (!Object.hasOwn(TYPES, name.slice(name.lastIndexOf(".")))) return next()
+        const files = agentFiles()
+        const file = Object.hasOwn(files, name) ? files[name] : undefined
         if (file === undefined) return next()
         res.setHeader("Content-Type", TYPES[name.slice(name.lastIndexOf("."))])
         res.end(file)
@@ -32,10 +36,14 @@ function forAgents(): Plugin {
 export default defineConfig({
 
   publicDir: false,
-  // The public Apparent demo has no Kit release feed or agent instructions.
-  plugins: [publicAssetPlugin(fileURLToPath(new URL("./public/assets/", import.meta.url))), react(), ...(process.env.APPARENT_PUBLIC_SITE === "1" ? [] : [forAgents()])],
+  plugins: [publicAssetPlugin(fileURLToPath(new URL("./public/assets/", import.meta.url))), react(), forAgents()],
   // three.js lives in the lazily loaded hero brush chunk.
-  build: { chunkSizeWarningLimit: 700 },
+  build: {
+    chunkSizeWarningLimit: 700,
+    rollupOptions: {
+      input: ["./index.html", "./agents/index.html"].map(path => fileURLToPath(new URL(path, import.meta.url))),
+    },
+  },
   // Previews are shared over Tailscale (studio.*.ts.net).
   server: { allowedHosts: [".ts.net"] },
   preview: { allowedHosts: [".ts.net"] },

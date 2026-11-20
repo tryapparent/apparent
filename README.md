@@ -7,7 +7,7 @@
 That button. That weird layout. That bug that only happens when you do *this*.
 Show your agent what you mean with a quick screen recording, your voice, and a few marks.
 
-[Download Apparent](https://github.com/tryapparent/apparent/releases) · [Agent setup](capture/agent/docs/installation.md) · [Docs](#find-your-way) · [MIT](LICENSE)
+[Download Apparent](https://github.com/tryapparent/apparent/releases) · [Agent quickstart](https://app.tryapparent.com/agents/) · [Docs](#find-your-way) · [MIT](LICENSE)
 
 ## Show, then tell
 
@@ -36,7 +36,7 @@ Install the Apparent desktop app from [Apparent releases](https://github.com/try
 Need help getting set up? See the [recording guide](capture/desktop/docs/guides/recording.md)
 and [Linux setup](capture/desktop/docs/linux/linux.md).
 
-## Give your agent eyes
+## Agents
 
 Install the optional capture-reading skill for Claude Code, Codex, OpenCode, and other agents:
 
