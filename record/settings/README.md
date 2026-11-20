@@ -74,18 +74,22 @@ Regenerate the table with
 
 Enable **Settings → Labs → Silent prompts** to try camera-only dictation. The
 switch is off by default and uses the existing config writer
-(`experiments.silentPrompt`). With a trusted local [Lipflow checkout](https://github.com/amywork777/lipflow)
-prepared with its `.venv/bin/lipflow` and visual models in
-`lipflow/` inside Apparent’s model directory, select **Start camera**. Silently mouth a short prompt and select
-**Read my lips**. The camera stops after 12 seconds if you leave it running.
-Review the raw result and select **Copy prompt** to use it in another app.
+(`experiments.silentPrompt`). Apparent automatically prepares the local runtime
+and downloads the visual model on first use. Keep Settings open during setup.
+Once ready, select **Start camera**, silently mouth a short prompt, then select
+**Read my lips**. The camera stops after 12 seconds. Review the raw result and
+select **Copy prompt** to use it in another app.
 
-Apparent uses video only and calls Lipflow's file mode with cleanup disabled.
-It runs the stock model in a private temporary directory and deletes the clip
-after decoding. The native Settings host supplies the same model directory
-Parakeet uses. It defaults to `~/.local/share/apparent/models` on Linux (or
-`$XDG_DATA_HOME/apparent/models`) and `~/Library/Application Support/apparent/models`
-on macOS. Prepare the checkout with `umask 077` so its executable and parent
-directories are writable only by their owners. The trial ships no model weights. Lipflow's standard weights are for non-commercial
-research. This slice measures the stock baseline, with STT-assisted
-personalization tracked in [#1603](https://github.com/tryapparent/apparent/issues/1603).
+The app checks pinned [Lipflow](https://github.com/amywork777/lipflow), uv and
+model downloads, installs locked Python dependencies, and places the working
+setup beside Parakeet. The model download is about 1.2 GB and the runtime can
+require several additional GB. Automatic setup supports Linux x86-64 and
+macOS. Existing trusted Lipflow installs in the model store still work. The
+stock LRS3-derived weights are for non-commercial research.
+
+Setup uses a private staging directory. A successful install moves into
+`lipflow-managed/` only after the decoder starts. Turning the switch off cancels
+setup. Leaving Labs within the same Settings window lets setup continue.
+If setup fails, **Retry setup** starts a fresh attempt. Inference reads video
+only with Lipflow cleanup disabled and removes its temporary clip afterward.
+STT-assisted personalization is tracked in [#1603](https://github.com/tryapparent/apparent/issues/1603).

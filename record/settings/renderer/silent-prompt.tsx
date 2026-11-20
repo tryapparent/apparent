@@ -5,7 +5,7 @@ import "./silent-prompt.css";
 declare global {
   interface Window {
     apparentLipPrompt: {
-      ready(): Promise<boolean>;
+      prepare(): Promise<SetupResult>;
       begin(): Promise<number>;
       decode(clip: Uint8Array): Promise<string>;
       cancel(): Promise<void>;
@@ -14,12 +14,16 @@ declare global {
   }
 }
 
+type SetupResult = "ready" | "failed" | "unavailable" | "unsupported";
+
 type State = "idle" | "checking" | "opening" | "recording" | "reading";
 type Capture = { stream?: MediaStream; recorder?: MediaRecorder; timer?: number };
 
 export function SilentPrompt() {
   const [state, setState] = useState<State>("checking");
-  const [ready, setReady] = useState(false);
+  const [setup, setSetup] = useState<SetupResult>();
+  const [attempt, setAttempt] = useState(0);
+  const ready = setup === "ready";
   const [text, setText] = useState("");
   const [notice, setNotice] = useState("");
   const active = useRef<Capture | undefined>(undefined);
@@ -42,18 +46,13 @@ export function SilentPrompt() {
 
   useEffect(() => {
     let mounted = true;
-    void bridge.ready().then(value => {
-      if (mounted) setReady(value);
-    }).catch(() => {}).finally(() => { if (mounted) setState("idle"); });
-    return () => { mounted = false; cancel(); };
-  }, []);
-
-  async function refresh() {
     setState("checking");
-    try { setReady(await bridge.ready()); }
-    catch { setReady(false); }
-    finally { setState("idle"); }
-  }
+    void bridge.prepare().then(
+      value => { if (mounted) setSetup(value); },
+      () => { if (mounted) setSetup("failed"); },
+    ).finally(() => { if (mounted) setState("idle"); });
+    return () => { mounted = false; cancel(); };
+  }, [attempt]);
 
   async function start() {
     const capture: Capture = {};
@@ -121,15 +120,15 @@ export function SilentPrompt() {
 
   return (
     <div className="silent-prompt">
-      {!ready && <p>The lip-reading model isn’t ready. Install Lipflow in Apparent’s models folder, then check again.</p>}
+
       <video autoPlay muted playsInline hidden={state !== "recording"} ref={preview} aria-label="Camera preview" />
       <div className="silent-prompt-actions">
-        <Button aria-disabled={actionUnavailable} onClick={() => {
+        {(ready || state === "idle" && (setup === "failed" || setup === "unavailable")) && <Button aria-disabled={actionUnavailable} onClick={() => {
           if (actionUnavailable) return;
           if (state === "recording") stop();
           else if (ready) void start();
-          else void refresh();
-        }}>{state === "recording" ? "Read my lips" : ready ? "Start camera" : "Check model again"}</Button>
+          else setAttempt(attempt + 1);
+        }}>{state === "recording" ? "Read my lips" : ready ? "Start camera" : "Retry setup"}</Button>}
         {ready && state !== "idle" && state !== "checking" && <Button variant="secondary" onClick={() => { cancel(); setState("idle"); }}>Cancel</Button>}
         {text && <Button variant="secondary" onClick={async () => {
           try { await bridge.copy(); setNotice("Prompt copied."); }
@@ -137,6 +136,10 @@ export function SilentPrompt() {
         }}>Copy prompt</Button>}
       </div>
       <div role="status">
+        {state === "checking" && <p>Setting up the lip-reading model. Keep Settings open while it downloads.</p>}
+        {state === "idle" && setup === "failed" && <p>Model setup failed. Check your internet connection and free disk space, then retry.</p>}
+        {state === "idle" && setup === "unavailable" && <p>Apparent couldn’t access its models folder. Reopen Settings and retry.</p>}
+        {state === "idle" && setup === "unsupported" && <p>Automatic model setup is unavailable on this platform.</p>}
         {state === "opening" && <p>Opening camera…</p>}
         {state === "recording" && <p>Camera on. Silently mouth your prompt, then select Read my lips.</p>}
         {state === "reading" && <p>Reading lips…</p>}

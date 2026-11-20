@@ -15,5 +15,3 @@ export function needsChannelRelease(facts: UpdateFacts): boolean {
   // Freshly packaged Main already embeds its revision, before the first marker.
   return !(candidate.channel === 'main' && !facts.modified && candidate.id === facts.revision);
 }
-
-export const channelUpdateHint = 'Checking installs the latest release in this channel, even if it’s an earlier version. You choose when to restart.';

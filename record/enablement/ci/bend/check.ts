@@ -158,6 +158,13 @@ await bendScratch(async (scratch) => {
     assert.equal(lip.valid_size(1), true);
     assert.equal(lip.valid_size(8388608), true);
     assert.equal(lip.valid_size(8388609), false);
+    for (const enabled of [false, true]) {
+      for (const existing of [false, true]) {
+        for (const supported of [false, true]) {
+          assert.equal(lip.setup_state(enabled, existing, supported), !enabled ? 0 : existing ? 1 : supported ? 2 : 3);
+        }
+      }
+    }
     for (const available of [false, true]) {
       for (const saved of [false, true]) {
         assert.equal(lip.admit(saved, available), saved && available);
