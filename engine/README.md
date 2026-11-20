@@ -10,6 +10,13 @@ also owns recording controls; Onboarding owns teaching/practice and Handoff owns
 outbound delivery intent. Composition assembles owner public surfaces. Engine must not import those owners'
 implementations. Linux and macOS are supported; there is no Windows provider.
 
+On macOS, technical error reports for finalization with zero safe frames can
+include `finalization.screen_sampling`. It records the native sampling route
+and the last rejection before stop. The rejection distinguishes prompt
+blocking, an unavailable filter, screenshot acquisition or pixel conversion,
+and missing status, incomplete frames or unavailable pixels from the system
+picker. A null rejection means the sampler recorded no rejected candidate.
+
 ## Local movie metadata
 
 `native/` builds `apparent-engine-media probe-v1 /absolute/movie`. This finite,

@@ -19,7 +19,8 @@ use screencapturekit::recording_output::{
 use screencapturekit::stream::content_filter::SCShareableContentStyle;
 use screencapturekit::stream::delegate_trait::ErrorHandler;
 
-use super::{CANDIDATE_EDGE, Sampler};
+use super::{CANDIDATE_EDGE, CandidateBuffer, Sampler};
+use crate::capture::engine::runtime::recording::diagnostics::sampling::Rejection;
 use crate::capture::engine::runtime::{
     apparent_log, capture_size, recording::recorder::push_candidate, screens,
 };
@@ -212,10 +213,18 @@ fn record(
     let (candidate_width, candidate_height) = capture_size(&sampler.target, CANDIDATE_EDGE);
     stream.add_output_handler(
         move |sample: CMSampleBuffer, kind| {
-            if kind != SCStreamOutputType::Screen
-                || stopping.load(Ordering::Acquire)
-                || sample.frame_status() != Some(SCFrameStatus::Complete)
-            {
+            if kind != SCStreamOutputType::Screen || stopping.load(Ordering::Acquire) {
+                return;
+            }
+            let rejection = match sample.frame_status() {
+                Some(SCFrameStatus::Complete) => None,
+                Some(_) => Some(Rejection::PickerFrameIncomplete),
+                None => Some(Rejection::PickerStatusMissing),
+            };
+            if let Some(rejection) = rejection {
+                if !ready.load(Ordering::Acquire) {
+                    CandidateBuffer::reject_sample(&candidate_frames, rejection);
+                }
                 return;
             }
             let Ok(mut recent) = last.try_lock() else {
@@ -233,6 +242,8 @@ fn record(
             if let Some(frame) = candidate(sample, candidate_width, candidate_height, t_ms) {
                 *recent = Some(Instant::now());
                 push_candidate(&candidate_frames, &ready, frame, force, true);
+            } else if !ready.load(Ordering::Acquire) {
+                CandidateBuffer::reject_sample(&candidate_frames, Rejection::PickerPixels);
             }
         },
         SCStreamOutputType::Screen,
