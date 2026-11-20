@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@apparent/ui/button";
+import { LoaderCircle } from "lucide-react";
 import "./silent-prompt.css";
 
 declare global {
@@ -136,7 +137,12 @@ export function SilentPrompt() {
         }}>Copy prompt</Button>}
       </div>
       <div role="status">
-        {state === "checking" && <p>Setting up the lip-reading model. Keep Settings open while it downloads.</p>}
+        {state === "checking" && (
+          <div className="silent-prompt-progress">
+            <LoaderCircle className="settings-spin" size={18} aria-hidden="true" />
+            <p>Setting up the lip-reading model. Keep Settings open while it downloads.</p>
+          </div>
+        )}
         {state === "idle" && setup === "failed" && <p>Model setup failed. Check your internet connection and free disk space, then retry.</p>}
         {state === "idle" && setup === "unavailable" && <p>Apparent couldn’t access its models folder. Reopen Settings and retry.</p>}
         {state === "idle" && setup === "unsupported" && <p>Automatic model setup is unavailable on this platform.</p>}

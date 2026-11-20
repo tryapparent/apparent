@@ -25,3 +25,14 @@
   overflow-wrap: anywhere;
   user-select: text;
 }
+
+.silent-prompt-progress {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.silent-prompt-progress svg {
+  flex: none;
+  margin-top: 5px;
+}
