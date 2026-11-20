@@ -170,6 +170,9 @@ jobs:
       - name: Verify Connect Bend types and laws with Lean
         if: needs.select.outputs.bend == 'true'
         run: node connect/enablement/ci/bend/check.ts --proof
+      - name: Verify the Connect account host
+        if: needs.select.outputs.bend == 'true'
+        run: node connect/enablement/ci/local/settings.ts
       - uses: browser-actions/setup-chrome@v1
         id: chrome
         with:

@@ -1,3 +1,4 @@
+use super::connect::sync_native;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -1175,22 +1176,12 @@ impl Session {
         if let Some(grants) = grants {
             panel.set_grants(grants);
         }
-        let config_path = crate::shared::handoff::default_config_path();
-        let connect = crate::shared::handoff::experiment(super::connect::CONNECT_SETTINGS)
-            .then(|| {
-                let events = events.clone();
-                super::connect::Controller::open(
-                    crate::connect::hosted::settings_backend(&config_path),
-                    std::sync::Arc::new(move |event| events(Event::Connect(event))),
-                )
-            });
-        panel.connect = connect.as_ref().map(|controller| controller.view());
         Ok(Self {
             generation,
             electron,
             pane,
             panel,
-            connect,
+            connect: None,
             transport,
             polling,
             #[cfg(target_os = "linux")]
@@ -1443,10 +1434,12 @@ impl Session {
                 return Effect::Close;
             }
         };
+        self.sync_connect(effect != Effect::Close);
         if let Some(controller) = &mut self.connect {
-            if effect == Effect::Close { controller.close(); }
             controller.refresh();
-            self.panel.connect = Some(controller.view());
+            if let Some(view) = controller.native_view() {
+                self.panel.connect = view;
+            }
         }
         let result = match effect {
             // Attributed to whichever process asks, so Apparent itself asks.
@@ -1531,6 +1524,11 @@ impl Session {
         result
     }
 
+    fn sync_connect(&mut self, active: bool) {
+        sync_native(&mut self.connect, active && !self.electron && self.pane == Some(Pane::General), &self.events);
+        if self.connect.is_none() { self.panel.connect = None; }
+    }
+
     pub fn show(&mut self, pane: Option<Pane>) {
         if let Some(pane) = pane {
             if self.pane != Some(pane) {
@@ -1565,6 +1563,7 @@ impl Session {
             }
             self.pane = pane;
         }
+        self.sync_connect(true);
         self.send(&serde_json::json!({"type": "show", "pane": pane}));
     }
 

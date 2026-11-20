@@ -21,7 +21,7 @@ for (const owner of [
     "--no-audit",
     "--no-fund",
   ]);
-  if (owner === "onboarding/") run(owner, ["run", "build"]);
+  if (owner !== "composition/onboarding/") run(owner, ["run", "build"]);
 }
 run("composition/onboarding/", ["run", "typecheck"]);
 run("composition/onboarding/", ["run", "build"]);

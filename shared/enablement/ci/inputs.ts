@@ -56,6 +56,13 @@ export function admissionConsumersKnown(cwd: string, head: string): boolean {
   return !result.error && result.status === 1;
 }
 export function connectConsumers(path: string, native: boolean) {
+  if (
+    /^connect\/(?:settings\/|native-adapter\/|client\/typescript\/src\/account\/)/.test(
+      path,
+    ) ||
+    path === "connect/enablement/ci/bend/settings.ts"
+  )
+    return ["desktop", "capture", "onboarding", "client"] as const;
   if (path === "connect/enablement/ci/build-client.ts")
     return ["capture", "client"] as const;
   if (path === "connect/enablement/ci/recipient-ffmpeg.ts")

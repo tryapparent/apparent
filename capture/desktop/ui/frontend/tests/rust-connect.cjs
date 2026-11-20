@@ -35,7 +35,7 @@ async function raw(request, command) {
       bytes += chunk;
       if (!bytes.endsWith('\n')) return;
       const value = JSON.parse(bytes); bytes = '';
-      if (first && command && value.connect) { first = false; socket.write(JSON.stringify(command) + '\n'); return; }
+      if (first && command && value.accountFacts) { first = false; socket.write(JSON.stringify(command) + '\n'); return; }
       clearTimeout(timer); socket.destroy(); resolve(value);
     });
   });

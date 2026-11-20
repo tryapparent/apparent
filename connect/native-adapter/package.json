@@ -8,7 +8,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test enablement/*.test.ts"
+    "test": "npm run build && node --experimental-strip-types --test enablement/*.test.ts",
+    "build": "node ../enablement/ci/bend/settings.ts && tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "22.20.5",

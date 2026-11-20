@@ -1,13 +1,16 @@
 {
   "modules": [
     "service/src/reporting/activity-preference.bend",
-    "client/typescript/src/reader/reader-route.bend"
+    "client/typescript/src/reader/reader-route.bend",
+    "client/typescript/src/account/account-status.bend"
   ],
   "inputs": [
     "service/",
     "enablement/ci/build-client.ts",
     "client/typescript/src/handoff.ts",
     "tooling/hosting/package.json",
-    "tooling/hosting/scripts/bundle.ts"
+    "tooling/hosting/scripts/bundle.ts",
+    "native-adapter/",
+    "client/typescript/src/account/"
   ]
 }

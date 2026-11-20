@@ -21,7 +21,7 @@ async function inspect(url:string,expression:string):Promise<unknown>{
 }
 // Production main, preload and renderer against an isolated synthetic socket.
 // This is Electron contract evidence, not native capture or live Google proof.
-for(const outcome of ['connected','waitlisted','opt-out','initial-unavailable'] as const)test(`onboarding fast Connect: ${outcome}`,{timeout:30000},async t=>{
+for(const outcome of ['connected','waitlisted','opt-out','initial-unavailable','renewable','paused'] as const)test(`onboarding fast Connect: ${outcome}`,{timeout:30000},async t=>{
  // Darwin's system TMPDIR can exceed the Unix socket pathname limit once the
  // real control-socket suffix is appended. Keep this owned fixture short.
  const home=await fs.mkdtemp('/tmp/apparent-dev-onboard-');
@@ -47,7 +47,7 @@ for(const outcome of ['connected','waitlisted','opt-out','initial-unavailable'] 
  });
  const dir=path.join(home,'.config/apparent/agent-control');
  await fs.mkdir(dir,{recursive:true,mode:0o700});await fs.chmod(dir,0o700);
- let phase=outcome==='initial-unavailable'?'connected':'disconnected',disableAttempts=0,healthyReads=0,available=outcome!=='initial-unavailable';
+ let phase=outcome==='initial-unavailable'?'connected':outcome==='renewable'?'renewable':outcome==='paused'?'paused':'disconnected',disableAttempts=0,healthyReads=0,available=outcome!=='initial-unavailable';
  const requests:string[]=[];
  server=net.createServer(socket=>{
   sockets.add(socket);socket.on('error',()=>{});socket.on('close',()=>sockets.delete(socket));
@@ -60,10 +60,19 @@ for(const outcome of ['connected','waitlisted','opt-out','initial-unavailable'] 
     if(!request.command)healthyReads++;
     if(request.command==='connect')phase='consent';
     if(request.command==='allow')phase='approval';
+    if(['resume','check'].includes(request.command))phase='connected';
     if(request.command==='disable'){disableAttempts++;phase=disableAttempts===1&&outcome==='opt-out'?'failed':'disconnected';}
-    const buttons=phase==='consent'?[{command:'allow',title:'Allow',enabled:true}]:phase==='disconnected'||phase==='failed'?[{command:'connect',title:'Connect',enabled:true}]:[{command:'open-browser',title:'Open browser',enabled:true}];
     const verificationUri=phase==='approval'?'https://synthetic.example/connect/device?code=ABCDEF123456':null;
-    socket.write(JSON.stringify({connect:{title:'apparent',status:'synthetic',detail:'Synthetic cancellation failure',note:'',phase,localReady:phase==='disconnected'||phase==='waitlisted',server:null,userCode:verificationUri?'ABCDEF123456':null,verificationUri,buttons},...(request.command==='open-browser'?{openUri:verificationUri}:{})})+'\n');
+    const facts={
+     activity:phase==='consent'?'Consent':phase==='approval'?'Approval':'Idle',
+     connected:['renewable','paused','connected'].includes(phase), reauthorizationRequired:false,
+     renewalDue:phase==='renewable',uploadsEnabled:phase==='connected',
+     reusableUploadGrant:outcome==='paused',localReady:phase==='disconnected'||phase==='waitlisted',
+     closed:false,encryption:true,retryDisable:null,server:null,accountInitial:null,
+     verificationUri,userCode:verificationUri?'ABCDEF123456':null,sharedLinksUrl:null,
+     outcome:phase==='waitlisted'?'Waitlisted':phase==='failed'?'LocalState':null,localError:null,
+    };
+    socket.write(JSON.stringify({accountFacts:facts,...(request.command==='open-browser'?{openUri:verificationUri}:{})})+'\n');
    }
   });
  });
@@ -76,7 +85,7 @@ for(const outcome of ['connected','waitlisted','opt-out','initial-unavailable'] 
  if(process.env.APPARENT_TEST_ONBOARDING_SETUP_FAILURE==='1')throw Error('Controlled fixture failure after socket bind');
  // Onboarding's parent pipe is a real lifetime requirement. Playwright's
  // Electron launcher closes stdin; spawn with the same pipes as Rust instead.
- const child=spawn(require('electron'),['--inspect=0',root,'--onboarding','--remote-debugging-port=0',...(process.platform==='linux'?['--no-sandbox']:[])],{env:{...process.env,HOME:home,APPARENT_UI_PROFILE:path.join(home,'profile')},stdio:['pipe','pipe','pipe']});
+ const child=spawn(require('electron'),['--inspect=0',path.join(root,'dist/composition/onboarding/entry.cjs'),'--assets-root',root,'--remote-debugging-port=0',...(process.platform==='linux'?['--no-sandbox']:[])],{env:{...process.env,HOME:home,APPARENT_UI_PROFILE:path.join(home,'profile')},stdio:['pipe','pipe','pipe']});
  ownedChild=child;
  const endpoints=await new Promise<{node:string;browser:string}>((resolve,reject)=>{
   let log='';const timer=setTimeout(()=>reject(Error('No inspector endpoints: '+log)),10000);
@@ -117,6 +126,13 @@ for(const outcome of ['connected','waitlisted','opt-out','initial-unavailable'] 
   await expect.poll(()=>output).toContain('"action":"continue"');
   assert.equal(disableAttempts,1,'local continuation follows durable disable');
   assert(!requests.includes('allow'));
+  return;
+ }
+ if(outcome==='renewable'||outcome==='paused'){
+  const check=outcome==='renewable';
+  await page.getByRole('button',{name:check?'Check connection':'Enable uploads',exact:true}).click();
+  await expect.poll(()=>output).toContain('"action":"continue"');
+  assert.deepEqual(requests.filter(r=>['check','connect','resume','allow','open-browser'].includes(r)),check?['check']:['connect','resume']);
   return;
  }
  await expect(page.getByRole('button',{name:'Continue with Google',exact:true})).toBeEnabled();

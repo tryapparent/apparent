@@ -3,6 +3,7 @@
 use super::*;
 
 const AUTH_REQUIRED: &str = "auth_required: approve this device again with apparent connect login";
+fn reapproval() -> anyhow::Error { hosted_failure(SafeError::AuthRequired, AUTH_REQUIRED) }
 pub(super) fn valid_account_initial(value: &str) -> bool {
     let count = value.chars().take(4).count();
     (1..=3).contains(&count) && value.chars().all(char::is_alphanumeric)
@@ -48,7 +49,7 @@ impl Credential {
     pub(super) fn apply_reply(&mut self, reply: &Value, issued: u64, renewal: bool) -> Result<()> {
         ensure!(
             reply["scope"].as_str() == Some(&self.scope),
-            "auth_required: credential scope mismatch"
+            hosted_failure(SafeError::AuthRequired, "auth_required: credential scope mismatch")
         );
         let access = reply["accessToken"]
             .as_str()
@@ -64,7 +65,7 @@ impl Credential {
             .context("Invalid grant ID")?;
         ensure!(
             !renewal || self.grant_id.as_deref() == Some(grant),
-            "auth_required: credential grant mismatch"
+            hosted_failure(SafeError::AuthRequired, "auth_required: credential grant mismatch")
         );
         let access_life = reply["expiresIn"]
             .as_u64()
@@ -102,25 +103,6 @@ struct Renewal {
     completed: bool,
 }
 impl Client {
-    pub(super) fn auth_status(&self, scope: &str, server: &str) -> Value {
-        let Ok(c) = self.credential(scope, server) else {
-            return json!({"status":"signed_out"});
-        };
-        let status = if !c.usable() {
-            "auth_required"
-        } else if c.refresh_token.is_none() {
-            "legacy_reapproval_on_expiry"
-        } else if c
-            .expires_at
-            .is_some_and(|expiry| expiry <= now().saturating_add(30))
-        {
-            "renewal_due"
-        } else {
-            "signed_in"
-        };
-        json!({"status":status,"expiresAt":c.expires_at,"refreshExpiresAt":c.refresh_expires_at,
-            "action": if status == "auth_required" { Some(if scope == "upload" { "Run apparent connect login --scope upload --consent-upload for this server" } else { "Run apparent connect login --scope read for this server" }) } else { None }})
-    }
     fn same_login(&self, credential: &Credential) -> bool {
         self.credential(&credential.scope, &credential.server)
             .is_ok_and(|current| current.generation == credential.generation)
@@ -144,19 +126,19 @@ impl Client {
             Ok(reply) => Ok(reply),
             Err(_) => {
                 self.mark_auth_required(expected, allowed, queue_deadline)?;
-                bail!("{AUTH_REQUIRED}: invalid renewal response");
+                bail!(hosted_failure(SafeError::AuthRequired, format!("{AUTH_REQUIRED}: invalid renewal response")));
             }
         }
     }
     fn current_credential(&self, expected: &Credential) -> Result<Credential> {
         let current = self
             .credential(&expected.scope, &expected.server)
-            .map_err(|_| anyhow::anyhow!(AUTH_REQUIRED))?;
+            .map_err(|_| reapproval())?;
         ensure!(
             current.generation == expected.generation,
             "cancelled: device login changed"
         );
-        ensure!(!current.auth_required, "{AUTH_REQUIRED}");
+        ensure!(!current.auth_required, reapproval());
         Ok(current)
     }
     // Settings opts into cancellable queue waits; CLI/worker retain blocking waits.
@@ -164,7 +146,7 @@ impl Client {
         let check = || -> Result<()> {
             if let Some(end) = deadline {
                 ensure!(allowed(), "cancelled");
-                ensure!(Instant::now() < end, "Hosted request deadline exceeded");
+                ensure!(Instant::now() < end, hosted_failure(SafeError::Offline, "Hosted request deadline exceeded"));
             }
             Ok(())
         };
@@ -254,7 +236,7 @@ impl Client {
         }
         if current.refresh_token.is_none() {
             self.mark_auth_required(&current, allowed, queue_deadline)?;
-            bail!("{AUTH_REQUIRED}");
+            bail!(reapproval());
         }
         let journal = self.state.join(format!("{}.renewal", current.scope));
         let response = self.state.join(format!("{}.response", current.scope));
@@ -290,7 +272,7 @@ impl Client {
             ensure!(allowed(), "cancelled");
             if current.refresh_expires_at.is_some_and(|t| t <= now()) {
                 self.mark_auth_required(&current, allowed, queue_deadline)?;
-                bail!("{AUTH_REQUIRED}");
+                bail!(reapproval());
             }
             {
                 let _queue = self.renewal_queue(allowed, queue_deadline)?;
@@ -363,7 +345,7 @@ impl Client {
         );
         if applied.is_err() {
             self.mark_auth_required(&record.base, allowed, queue_deadline)?;
-            bail!("{AUTH_REQUIRED}: invalid renewal response");
+            bail!(hosted_failure(SafeError::AuthRequired, format!("{AUTH_REQUIRED}: invalid renewal response")));
         }
         ensure!(allowed(), "cancelled");
         #[cfg(any(test, feature = "test-support"))]

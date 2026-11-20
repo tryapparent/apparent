@@ -22,5 +22,12 @@ await buildBend(
   "connect",
   fileURLToPath(new URL("dist/reader", client)),
   undefined,
-  "connect/client/",
+  "connect/client/typescript/src/reader/",
+);
+await buildBend(
+  fileURLToPath(new URL("../../../", import.meta.url)),
+  "connect",
+  fileURLToPath(new URL("dist/account", client)),
+  undefined,
+  "connect/client/typescript/src/account/",
 );

@@ -22,9 +22,9 @@ use serde::{Deserialize, Serialize};
 
 mod presentation;
 pub use presentation::{Presentation, Tone};
+pub(super) use presentation::sync_native;
 
 pub const CONNECT_SETTINGS: &str = "connectSettings";
-pub const DEFAULT_SERVER: &str = "https://hosted.tryapparent.com";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -73,77 +73,42 @@ pub struct View {
     pub presentation: Presentation,
 }
 
-/// Local, authoritative state, not cached network health. The adapter must validate
-/// a configured server with the existing client's validator; invalid configuration
-/// is an error, never `None`. `None` means no server was configured. `connected`
-/// includes a usable read-only grant. `uploads_enabled` requires *all* current upload
-/// gates plus a usable upload grant for this server, not just cloud.enabled.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Snapshot {
-    pub reusable_upload_grant: bool,
-    pub encryption: bool,
-    pub server: Option<String>,
+pub use apparent_connect_client::settings::{Approval, Health, SafeError, Snapshot, DEFAULT_SERVER};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub enum Activity {
+    Idle,
+    Consent,
+    Starting,
+    Approval,
+    Resume,
+    Check,
+    Disable,
+    Disconnect,
+    ConfirmDisable,
+    ConfirmDisconnect,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountFacts {
     pub connected: bool,
-    pub uploads_enabled: bool,
     pub reauthorization_required: bool,
+    pub renewal_due: bool,
+    pub uploads_enabled: bool,
+    pub reusable_upload_grant: bool,
+    pub local_ready: bool,
+    pub closed: bool,
+    pub encryption: Option<bool>,
+    pub retry_disable: Option<bool>,
+    pub server: Option<String>,
     pub account_initial: Option<String>,
-}
-
-/// Only public device-flow presentation data. The adapter must use the client's
-/// existing verification-URI validation (HTTPS, or test loopback HTTP), reject embedded
-/// credentials/device secrets and control characters, and supply only the public code.
-/// Never pass a deviceCode, access token, raw response or error into this module.
-#[derive(Clone)]
-pub struct Approval {
-    pub verification_uri: String,
-    pub user_code: String,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Health {
-    Online,
-    Offline,
-    AuthRequired,
-}
-
-/// Closed error vocabulary prevents raw protocol responses/credentials reaching UI.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SafeError {
-    Waitlisted,
-    Cancelled,
-    Offline,
-    AuthRequired,
-    Rejected,
-    Expired,
-    LocalState,
-    InvalidServer,
-    UnverifiedCommit,
-    Unavailable,
-}
-
-impl SafeError {
-    fn message(self) -> &'static str {
-        match self {
-            Self::Waitlisted => "You’re on the Connect waitlist. Local recording still works.",
-            Self::Cancelled => {
-                "Cancelled. Check the current local upload settings before reconnecting."
-            }
-            Self::Offline => "Could not reach Connect. Check your connection and try again.",
-            Self::AuthRequired => "Sign in again to authorize this device.",
-            Self::Rejected => "Sign-in was not approved. You can try again.",
-            Self::Expired => "The sign-in code expired. Connect again for a new code.",
-            Self::LocalState => {
-                "Apparent could not read or save Connect state. Check local storage and try again."
-            }
-            Self::InvalidServer => {
-                "The configured Connect server is invalid. Correct it before connecting."
-            }
-            Self::UnverifiedCommit => {
-                "Sign-in finished, but Apparent could not verify uploads are enabled for this server. Check local state before trying again."
-            }
-            Self::Unavailable => "Connect is unavailable. Try again.",
-        }
-    }
+    pub verification_uri: Option<String>,
+    pub user_code: Option<String>,
+    pub shared_links_url: Option<String>,
+    pub activity: Activity,
+    pub outcome: Option<SafeError>,
+    pub local_error: Option<SafeError>,
 }
 
 /// Adapter over the sole owned Connect client; no protocol or config implementation here.
@@ -227,6 +192,8 @@ pub struct Controller {
     retry_disable: Option<bool>,
     confirmation: Option<bool>,
     resume_failed: bool,
+    native_facts: Option<AccountFacts>,
+    native_retry: Option<std::time::Instant>,
 }
 
 impl Controller {
@@ -245,6 +212,8 @@ impl Controller {
             retry_disable: None,
             confirmation: None,
             resume_failed: false,
+            native_facts: None,
+            native_retry: None,
         };
         controller.refresh();
         controller
@@ -487,209 +456,54 @@ impl Controller {
         false
     }
 
-    pub fn view(&self) -> View {
-        let mut view = View {
-            reusable_upload_grant: !self.resume_failed && self.snapshot.as_ref().is_some_and(|s| s.reusable_upload_grant),
-            encryption: self.snapshot.as_ref().map(|s| s.encryption),
-            phase: if self.request.is_some() {
-                if self.disabling() { "cancelling" } else if self.request.as_ref().is_some_and(|r| r.operation == Operation::Resume) { "enabling" } else if self.request.as_ref().is_some_and(|r| r.operation == Operation::Probe) { "checking" } else if self.approval.is_some() { "approval" } else { "starting" }
-            } else if self.error == Some(SafeError::Waitlisted) { "waitlisted" }
-            else if self.local_error.is_some() || self.error.is_some() { "failed" }
-            else if self.consent { "consent" }
-            else if self.snapshot.as_ref().is_some_and(|s| s.uploads_enabled) { "connected" }
-            else { "disconnected" }.into(),
-            local_ready: self.request.is_none() && self.retry_disable.is_none() && self.local_error.is_none()
-                && self.snapshot.as_ref().is_some_and(|s| !s.uploads_enabled),
-            title: "Apparent Connect".into(),
-            status: "Not connected".into(),
-            detail: "Sign in to send new captures to your Connect account.".into(),
-            server: self.snapshot.as_ref().map(|s| s.server.clone().unwrap_or_else(|| DEFAULT_SERVER.into())),
-            verification_uri: None,
-            user_code: None,
-            buttons: Vec::new(),
-            presentation: Presentation::default(),
-            note: "Existing captures are not uploaded. No public links are created. Disabling cancels unfinished uploads; disconnecting also signs out this computer. Already uploaded data is not deleted.".into(),
+    pub fn facts(&self) -> AccountFacts {
+        let snapshot = self.snapshot.as_ref();
+        let approval = self.approval.as_ref().filter(|_| !self.closed);
+        let activity = match (self.confirmation, self.request.as_ref().map(|r| r.operation)) {
+            (_, Some(Operation::Disable { logout: true })) => Activity::Disconnect,
+            (_, Some(Operation::Disable { logout: false })) => Activity::Disable,
+            (Some(true), _) => Activity::ConfirmDisconnect,
+            (Some(false), _) => Activity::ConfirmDisable,
+            (_, Some(Operation::Login)) if approval.is_some() => Activity::Approval,
+            (_, Some(Operation::Login)) => Activity::Starting,
+            (_, Some(Operation::Resume)) => Activity::Resume,
+            (_, Some(Operation::Probe)) => Activity::Check,
+            (_, None) if self.consent => Activity::Consent,
+            (_, None) => Activity::Idle,
         };
-        if let Some(snapshot) = &self.snapshot {
-            if snapshot.reauthorization_required {
-                view.status = "Sign-in required".into();
-                view.detail = "Sign in again to authorize this computer for Connect. Local captures still work.".into();
-            } else if snapshot.uploads_enabled {
-                view.status = "Uploads on".into();
-                view.detail = "New captures can upload privately to your Connect account.".into();
-            } else if snapshot.connected {
-                view.status = "Connected · uploads off".into();
-                view.detail =
-                    "This device is signed in. Uploads require your explicit permission.".into();
-            }
+        let outcome = self.error.or(match self.health {
+            Some(Health::Offline) => Some(SafeError::Offline),
+            Some(Health::AuthRequired) => Some(SafeError::AuthRequired),
+            Some(Health::Cancelled) => Some(SafeError::Cancelled),
+            Some(Health::Unavailable) => Some(SafeError::Unavailable),
+            _ => None,
+        });
+        AccountFacts {
+            connected: snapshot.is_some_and(|s| s.connected),
+            reauthorization_required: snapshot.is_some_and(|s| s.reauthorization_required),
+            renewal_due: snapshot.is_some_and(|s| s.renewal_due),
+            uploads_enabled: snapshot.is_some_and(|s| s.uploads_enabled),
+            reusable_upload_grant: !self.resume_failed && snapshot.is_some_and(|s| s.reusable_upload_grant),
+            local_ready: self.request.is_none() && self.retry_disable.is_none()
+                && snapshot.is_some_and(|s| !s.uploads_enabled),
+            closed: self.closed,
+            encryption: snapshot.map(|s| s.encryption),
+            retry_disable: self.retry_disable,
+            server: snapshot.map(|s| s.server.clone().unwrap_or_else(|| DEFAULT_SERVER.into())),
+            account_initial: snapshot.and_then(|s| s.account_initial.clone()),
+            verification_uri: approval.filter(|_| activity == Activity::Approval).map(|a| a.verification_uri.clone()),
+            user_code: approval.filter(|_| activity == Activity::Approval).map(|a| a.user_code.clone()),
+            shared_links_url: self.backend.shared_links_url(),
+            activity,
+            outcome,
+            local_error: self.local_error,
         }
-        match self.health {
-            Some(Health::Offline) => {
-                view.status = if self.snapshot.as_ref().is_some_and(|s| s.uploads_enabled) {
-                    "Uploads on · offline"
-                } else {
-                    "Offline"
-                }
-                .into();
-                view.detail = "Connect could not be reached. Local captures still work; upload consent has not changed.".into();
-            }
-            Some(Health::AuthRequired) => {
-                view.status = "Sign-in required".into();
-                view.detail =
-                    "Sign in again to authorize this device. Local captures still work.".into();
-            }
-            Some(Health::Online) => view.detail.push_str(" Connect is reachable."),
-            None => {}
-        }
-        if let Some(error) = self.error {
-            view.detail = error.message().into();
-            if error == SafeError::UnverifiedCommit {
-                view.status = "Sign-in not verified".into();
-            }
-        }
-        if let Some(error) = self.local_error {
-            view.status = "Local state unavailable".into();
-            view.detail = error.message().into();
-        }
-        if let Some(request) = &self.request {
-            match request.operation {
-                Operation::Login => {
-                    view.status = "Signing in…".into();
-                    view.detail =
-                        "Approve upload access in your browser. You can cancel at any time.".into();
-                    if let Some(approval) = &self.approval {
-                        view.verification_uri = Some(approval.verification_uri.clone());
-                        view.user_code = Some(approval.user_code.clone());
-                        view.buttons
-                            .push(button(Command::OpenBrowser, "Open browser", true));
-                    }
-                    view.buttons
-                        .push(button(Command::Cancel, "Cancel sign-in", true));
-                    view.buttons
-                        .push(button(Command::Disable, "Disable uploads", true));
-                    view.buttons
-                        .push(button(Command::Disconnect, "Disconnect", true));
-                }
-                Operation::Resume => {
-                    view.status = "Enabling uploads…".into();
-                    view.buttons.push(button(Command::Cancel, "Cancel", true));
-                }
-                Operation::Probe => {
-                    view.status = "Checking connection…".into();
-                    view.buttons
-                        .push(button(Command::Cancel, "Cancel check", true));
-                    view.buttons
-                        .push(button(Command::Disable, "Disable uploads", true));
-                    view.buttons
-                        .push(button(Command::Disconnect, "Disconnect", true));
-                }
-                Operation::Disable { logout } => {
-                    view.status = if logout {
-                        "Disconnecting…"
-                    } else {
-                        "Disabling uploads…"
-                    }
-                    .into();
-                    view.detail = "Saving your choice and cancelling unfinished uploads. Wait for confirmation before reconnecting.".into();
-                    view.buttons.push(button(
-                        if logout {
-                            Command::Disconnect
-                        } else {
-                            Command::Disable
-                        },
-                        "Please wait…",
-                        false,
-                    ));
-                }
-            }
-        } else if self.consent {
-            view.status = "Allow uploads?".into();
-            view.detail = "New captures will upload privately to your account, including screen images, recordings, voice, transcripts, context and other supported assets. Website sign-in alone does not connect this computer. Allow uploads to continue?".into();
-            view.buttons.push(button(
-                Command::Allow,
-                "Allow and continue",
-                self.snapshot.is_some(),
-            ));
-            view.buttons.push(button(Command::Cancel, "Not now", true));
-        } else {
-            let uploads = self.snapshot.as_ref().is_some_and(|s| s.uploads_enabled);
-            let connected = self.snapshot.as_ref().is_some_and(|s| s.connected);
-            let reauthorize = self
-                .snapshot
-                .as_ref()
-                .is_some_and(|s| s.reauthorization_required)
-                || self.health == Some(Health::AuthRequired);
-            if !uploads || reauthorize {
-                view.buttons.push(button(
-                    Command::Connect,
-                    if reauthorize {
-                        "Sign in again…"
-                    } else if connected {
-                        "Enable uploads…"
-                    } else {
-                        "Sign in to Connect…"
-                    },
-                    self.snapshot.is_some() && self.retry_disable.is_none(),
-                ));
-            }
-            if connected || reauthorize || self.error.is_some() || self.local_error.is_some() {
-                view.buttons.push(button(
-                    Command::Check,
-                    "Check connection",
-                    self.snapshot.is_some(),
-                ));
-            }
-            if uploads || self.retry_disable == Some(false) || self.local_error.is_some() {
-                view.buttons.push(button(
-                    Command::Disable,
-                    if self.retry_disable == Some(false) {
-                        "Retry disabling uploads"
-                    } else {
-                        "Disable uploads"
-                    },
-                    true,
-                ));
-            }
-            if connected
-                || reauthorize
-                || self.retry_disable == Some(true)
-                || self.local_error.is_some()
-            {
-                view.buttons.push(button(
-                    Command::Disconnect,
-                    if self.retry_disable == Some(true) {
-                        "Retry disconnecting"
-                    } else {
-                        "Disconnect"
-                    },
-                    true,
-                ));
-            }
-        }
-        view.presentation = self.presentation(&view);
-        if self.closed {
-            view.verification_uri = None;
-            view.user_code = None;
-            for button in &mut view.presentation.buttons { button.enabled = false; }
-            for button in &mut view.buttons {
-                button.enabled = false;
-            }
-        }
-        view
     }
 }
 
 impl Drop for Controller {
     fn drop(&mut self) {
         self.close();
-    }
-}
-
-fn button(command: Command, title: &str, enabled: bool) -> Button {
-    Button {
-        command,
-        title: title.into(),
-        enabled,
     }
 }
 

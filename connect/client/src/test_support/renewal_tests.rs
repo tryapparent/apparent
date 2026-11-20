@@ -258,12 +258,8 @@ fn settings_health_contended_renewal(cancel: bool) {
         // Release and join before asserting, including on broken behavior.
         drop(held);
         worker.join().unwrap();
-        assert_eq!(
-            completed.unwrap_or_else(|_| panic!(
-                "health worker remained blocked at {phase}; cancel={cancel}"
-            )),
-            Health::Offline
-        );
+        let expected = if cancel { Health::Cancelled } else { Health::Offline };
+        assert_eq!(completed.unwrap(), expected, "{phase} cancel={cancel}");
         assert_eq!(
             fs::read(f.client.state.join("upload.credential")).unwrap(),
             credential,

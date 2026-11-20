@@ -285,3 +285,33 @@ impl Client {
         }
     }
 }
+
+impl Client {
+    pub(super) fn handoff_policy(request: Value) -> Result<Value> {
+        Self::run_public_policy("handoff", request)
+    }
+    pub fn account_presentation(facts: Value) -> Result<Value> {
+        Self::run_public_policy("account/cli", facts)
+    }
+    fn run_public_policy(name: &str, request: Value) -> Result<Value> {
+        let (runtime, module, electron) = connect_typescript_runtime(name)?;
+        let mut command = Command::new(runtime);
+        if electron { command.env("ELECTRON_RUN_AS_NODE", "1"); }
+        else if module.extension().is_some_and(|extension| extension == "ts") {
+            command.arg("--experimental-strip-types");
+        }
+        let mut child = PolicyChild(command.arg(module)
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?);
+        let mut input = child.stdin.take().context("Missing Connect policy input")?;
+        let mut output = child.stdout.take().context("Missing Connect policy output")?;
+        policy_write(&mut input, &request)?;
+        drop(input);
+        let line = policy_frame_bounded(&mut output, Duration::from_secs(3), 16_384)?;
+        ensure!(policy_exit(&mut child)?.success(), "Connect policy failed");
+        Ok(serde_json::from_str(&line)?)
+    }
+    pub fn alternatives() -> Result<String> {
+        Self::handoff_policy(json!({"operation":"alternatives"}))?
+            .as_str().map(str::to_owned).context("Invalid Connect alternatives")
+    }
+}

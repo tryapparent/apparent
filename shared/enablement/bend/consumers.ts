@@ -37,6 +37,13 @@ export function bendConsumers(path: string) {
     path === "onboarding/enablement/ci/pack.ts"
   )
     return ["onboarding"] as const;
+  if (
+    path === "connect/enablement/ci/bend/settings.ts" ||
+    path === "connect/client/typescript/src/account/account-status.bend"
+  )
+    return ["capture", "desktop", "onboarding"] as const;
+  if (path === "connect/enablement/ci/bend/modules.json")
+    return ["capture", "desktop", "onboarding", "service"] as const;
   if (path.startsWith("connect/enablement/ci/bend/"))
     return ["service"] as const;
 }

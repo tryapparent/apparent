@@ -1,0 +1,13 @@
+{
+  "name": "@apparent/connect-settings",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./card": "./card.tsx",
+    "./session": "./session.ts"
+  },
+  "peerDependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  }
+}

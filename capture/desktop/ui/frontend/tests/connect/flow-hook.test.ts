@@ -10,7 +10,7 @@ import type {ConnectAction, ConnectSettings, ConnectView} from '../../src/connec
 // Resolve the existing minimal locked compiler, not frontend dependencies.
 const require=createRequire(new URL('../onboarding/package.json',import.meta.url));
 const ts=require('typescript');
-const code=ts.transpileModule(readFileSync(new URL('../../src/connect/flow.ts',import.meta.url),'utf8'),{
+const code=ts.transpileModule(readFileSync(new URL('../../../../../../connect/settings/flow.ts',import.meta.url),'utf8'),{
   compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022},
 }).outputText;
 const disconnected:ConnectSettings={status:'disconnected'};
@@ -23,18 +23,16 @@ function deferred<T>(){
 }
 type Flow={result:ConnectSettings;view:ConnectView|undefined;busy:boolean;browserFailed:boolean;request:(action:ConnectAction)=>Promise<ConnectSettings|undefined>};
 function harness(bridge:ConnectBridge){
-  const slots:unknown[]=[];
-  const effects=new Map<number,{deps:unknown[];cleanup?:()=>void}>();
-  const queued:(()=>void)[]=[];
   const timers=new Set<()=>void>();
-  let cursor=0,dirty=true,mounted=true;
+  let dirty=true,mounted=true;
+  let store: unknown;
+  let close: (()=>void)|undefined;
+  let open: (()=>()=>void)|undefined;
   const react={
-    useState<T>(initial:T){const slot=cursor++;if(!(slot in slots))slots[slot]=initial;return [slots[slot],(next:T)=>{slots[slot]=next;dirty=true}];},
-    useRef<T>(initial:T){const slot=cursor++;if(!(slot in slots))slots[slot]={current:initial};return slots[slot];},
-    useEffect(effect:()=>void|(()=>void),deps:unknown[]){
-      const slot=cursor++,previous=effects.get(slot);
-      if(previous&&deps.length===previous.deps.length&&deps.every((dep,i)=>Object.is(dep,previous.deps[i])))return;
-      queued.push(()=>{previous?.cleanup?.();effects.set(slot,{deps,cleanup:effect()??undefined});});
+    useMemo<T>(create:()=>T){ return (store ??= create()) as T; },
+    useSyncExternalStore<T>(subscribe:(listener:()=>void)=>()=>void,snapshot:()=>T){
+      if (!close && !open) open = () => subscribe(() => { dirty = true });
+      return snapshot();
     },
   };
   const exports:{useConnectFlow?:(bridge:ConnectBridge)=>Flow}={};
@@ -44,14 +42,14 @@ function harness(bridge:ConnectBridge){
     throw Error(`Unexpected hook dependency: ${name}`);
   },setInterval:(callback:()=>void)=>{timers.add(callback);return callback},clearInterval:(callback:()=>void)=>timers.delete(callback)});
   let flow:Flow;
-  function render(){if(!mounted||!dirty)return;dirty=false;cursor=0;flow=exports.useConnectFlow!(bridge);while(queued.length)queued.shift()!();}
+  function render(){if(!mounted||!dirty)return;dirty=false;flow=exports.useConnectFlow!(bridge);if(open){close=open();open=undefined;}}
   render();
   return {
     get flow(){return flow},
     async flush(){for(let i=0;i<20;i++){await Promise.resolve();render();}},
     tick(){for(const callback of timers)callback()},
     get timerCount(){return timers.size},
-    unmount(){mounted=false;for(const effect of effects.values())effect.cleanup?.();},
+    unmount(){mounted=false;close?.();},
   };
 }
 

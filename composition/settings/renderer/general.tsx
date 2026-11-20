@@ -1,3 +1,4 @@
+import { ConnectSettingsCard } from "./connect";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@apparent/ui/button";
 import { Switch } from "@apparent/ui/switch";
@@ -349,7 +350,7 @@ export function General() {
   }
   return (
     <div ref={mount} className="general-settings">
-      <apparent-settings-pane pane="Connection" />
+      <ConnectSettingsCard />
       <span role="status" className="sr-only">
         {pending.length ? "Waiting for Apparent to confirm the change." : ""}
       </span>

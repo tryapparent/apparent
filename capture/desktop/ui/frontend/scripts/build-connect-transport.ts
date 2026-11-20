@@ -1,4 +1,5 @@
 import {build} from 'esbuild';
+import {execFileSync} from 'node:child_process';
 import ts from 'typescript';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -7,7 +8,8 @@ import { lstatSync, mkdirSync } from 'node:fs';
 // Keep the existing Electron/main and package consumer path. Authored source is
 // TypeScript; emitted CommonJS is a build artifact and has no Rust prerequisite.
 const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-const program = ts.createProgram([`${root}/electron/connect.cts`, `${root}/electron/settings/frame.cts`, `${root}/electron/settings/t3.ts`, `${root}/src/settings/agents/policy.ts`, `${root}/src/settings/labs/policy.ts`, `${root}/tests/settings/agents/parent.cts`, `${root}/electron/settings/general.ts`], {
+execFileSync(process.execPath, [path.resolve(root, '../../../../connect/enablement/ci/bend/settings.ts')], { stdio: 'inherit' });
+const program = ts.createProgram([`${root}/electron/settings/frame.cts`, `${root}/electron/settings/t3.ts`, `${root}/src/settings/agents/policy.ts`, `${root}/src/settings/labs/policy.ts`, `${root}/tests/settings/agents/parent.cts`, `${root}/electron/settings/general.ts`], {
   target: ts.ScriptTarget.ES2022,
   module: ts.ModuleKind.CommonJS,
   moduleResolution: ts.ModuleResolutionKind.Node10,
@@ -30,12 +32,20 @@ if (diagnostics.length) {
 if (program.emit(undefined, (file, content) => {
   if (file === `${root}/electron/settings/general.js`) ts.sys.writeFile(`${root}/electron/settings/general.cjs`, content);
   // Type-only renderer contracts participate in checking, never runtime output.
-  if (file === `${root}/electron/connect.cjs`) ts.sys.writeFile(file, content);
+
   if (file === `${root}/src/settings/agents/policy.js`) ts.sys.writeFile(`${root}/electron/settings/agents.cjs`, content);
 
   if (file === `${root}/tests/settings/agents/parent.cjs`) ts.sys.writeFile(file,content);
   if (file === `${root}/src/settings/labs/policy.js`) ts.sys.writeFile(`${root}/electron/settings/labs.cjs`, content);
 }).emitSkipped) throw Error('Connect transport emission failed');
+
+await build({
+  stdin: {
+    contents: "export * from './electron/connect.cts'; export * from '../../../../connect/native-adapter/src/settings.ts';",
+    resolveDir: root,
+  },
+  outfile: `${root}/electron/connect.cjs`, bundle: true, platform: 'node', format: 'cjs', target: 'node22',
+});
 
 await build({entryPoints:[`${root}/electron/settings/frame.cts`],outfile:`${root}/electron/settings/frame.cjs`,bundle:true,platform:'node',format:'cjs',target:'node22'});
 

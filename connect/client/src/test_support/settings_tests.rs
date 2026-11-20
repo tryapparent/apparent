@@ -84,7 +84,7 @@ fn settings_snapshot_is_fresh_local_and_read_does_not_enable_upload() {
             server: None,
             connected: false,
             uploads_enabled: false,
-            reauthorization_required: false, account_initial: None,
+            reauthorization_required: false, renewal_due: false, account_initial: None,
         }
     );
     f.authorize(&server.url);
@@ -241,17 +241,43 @@ fn settings_cancel_at_approved_transport_and_disable_incarnation() {
     server.state.lock().unwrap().media_gate = Some(gate.clone());
     let client = f.client.clone();
     let url = server.url.clone();
+    let transport_gate = gate.clone();
     let worker = std::thread::spawn(move || {
+        let mut first_poll = None;
+        set_hook(move |point, path| {
+            if point != "transport_poll"
+                || !fs::read(path).is_ok_and(|bytes| {
+                    serde_json::from_slice::<Value>(&bytes)
+                        .is_ok_and(|body| body.get("deviceCode").is_some())
+                })
+                || first_poll.get_or_insert_with(|| path.to_path_buf()) == path
+            {
+                return;
+            }
+            transport_gate.transport_paused.store(true, Ordering::SeqCst);
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !transport_gate.transport_release.load(Ordering::SeqCst)
+                && Instant::now() < deadline
+            {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            assert!(transport_gate.transport_release.load(Ordering::SeqCst));
+        });
         client.login_with_approval(&url, "upload", true, &|| true, &|_| ())
     });
     let deadline = Instant::now() + Duration::from_secs(5);
-    while !gate.started.load(Ordering::SeqCst) && Instant::now() < deadline {
+    while !(gate.started.load(Ordering::SeqCst) && gate.transport_paused.load(Ordering::SeqCst))
+        && Instant::now() < deadline
+    {
         std::thread::sleep(Duration::from_millis(5));
     }
     assert!(gate.started.load(Ordering::SeqCst));
+    assert!(gate.transport_paused.load(Ordering::SeqCst));
     // A different controller/CLI disable durably invalidates the login marker.
     f.client.settings_disable(false).unwrap();
+    assert!(!f.client.revocation_pending());
     gate.release.store(true, Ordering::SeqCst);
+    gate.transport_release.store(true, Ordering::SeqCst);
     assert_eq!(worker.join().unwrap(), Err(SafeError::Cancelled));
     assert!(!f.client.state.join("upload.credential").exists());
     assert!(!f.client.settings().enabled);
@@ -263,7 +289,7 @@ fn settings_authenticated_health_and_cancellation() {
     let f = Fixture::new();
     let server = Server::new("");
     f.authorize(&server.url);
-    assert_eq!(f.client.settings_health(&|| false), Health::Offline);
+    assert_eq!(f.client.settings_health(&|| false), Health::Cancelled);
     assert_eq!(server.state.lock().unwrap().requests, 0);
     assert_eq!(f.client.settings_health(&|| true), Health::Online);
     assert_eq!(
