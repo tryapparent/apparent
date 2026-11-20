@@ -25,8 +25,8 @@ class AppleSigningTest(unittest.TestCase):
         shutil.copytree(ROOT / "composition/enablement/release/mac", root / "composition/enablement/release/mac")
         dmg_builder = root / "composition/enablement/release/mac/dmg/build.ts"
         dmg_builder.write_text(dmg_builder.read_text().split("const toolByArch")[0] +
-            'export function createDmg(app, dmg, version, build) {'
-            'writeFileSync(dmg, JSON.stringify(finderLayout(app, version, build)));'
+            'export function createDmg(app, installer, dmg, version, build) {'
+            'writeFileSync(dmg, JSON.stringify(finderLayout(app, installer, version, build)));'
             'if (process.env.TRACE) writeFileSync(process.env.TRACE, "createDmg\\n", { flag: "a" }); }')
         (root / "bin").mkdir()
         (root / "sparkle/Sparkle.framework/Versions/B/XPCServices").mkdir(parents=True)
@@ -103,7 +103,9 @@ fi''',
             self.assertLess(trace.index("stage-settings "), trace.index("codesign --force"))
             self.assertNotIn("--sign - ", trace)
             app_staple = trace.index("stapler staple " + str(root / "dist/Apparent Preview.app"))
-            self.assertLess(app_staple, trace.index("createDmg"))
+            installer_staple = trace.index("stapler staple " + str(root / "dist/Install apparent.app"))
+            self.assertLess(app_staple, installer_staple)
+            self.assertLess(installer_staple, trace.index("createDmg"))
             dmg_sign = next(line for line in trace.splitlines()
                             if line.startswith("codesign ") and line.endswith(".dmg"))
             self.assertLess(trace.index("createDmg"), trace.index(dmg_sign))

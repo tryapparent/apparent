@@ -73,8 +73,12 @@ app.on('window-all-closed',()=>app.quit());`);
     assert.ok(movement.frogTop<before.y-24 && movement.iconTop<beforeIcon.y-24,'both frog and app rise in the hop');
     assert.ok(movement.aligned,'frog stays on top of its app throughout the hop');
   }
-  await expect(page.getByRole('button',{name:'Open apparent',exact:true})).toBeVisible();
+  await expect(page.getByText('apparent is open.',{exact:true})).toBeVisible();
   await expect(page.locator('.installer-app')).toBeHidden();
-  const installs = (await application.evaluate(()=> (globalThis as any).fixtureCalls)).filter((x:any)=>x.action==='install');
+  const calls: {action: string; replace: boolean}[] = await application.evaluate(
+    () => (globalThis as typeof globalThis & {fixtureCalls: unknown}).fixtureCalls,
+  );
+  assert.deepEqual(calls.map(call=>call.action),['status','install','open']);
+  const installs = calls.filter(x=>x.action==='install');
   assert.equal(installs.length,1);assert.equal(installs[0].replace,replace);
 });

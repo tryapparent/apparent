@@ -4,19 +4,20 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export function finderLayout(app: string, version: string, build: string) {
+export function finderLayout(app: string, installer: string, version: string, build: string) {
   return {
-    title: `Apparent ${version} (${build})`,
+    title: `apparent ${version} (${build})`,
     background: fileURLToPath(new URL("background.png", import.meta.url)),
     filesystem: "HFS+",
     format: "UDZO",
     "compression-level": 9,
-    "icon-size": 104,
+    "icon-size": 88,
     "text-size": 13,
     window: { position: { x: 80, y: 100 }, size: { width: 576, height: 384 } },
     contents: [
-      { path: app, type: "file", x: 162, y: 175 },
-      { path: "/Applications", type: "link", x: 414, y: 175 },
+      { path: installer, type: "file", x: 288, y: 121 },
+      { path: app, type: "file", x: 162, y: 251 },
+      { path: "/Applications", type: "link", x: 414, y: 251 },
     ],
   };
 }
@@ -32,7 +33,7 @@ const toolByArch = {
   ],
 } as const;
 
-export function createDmg(app: string, dmg: string, version: string, build: string) {
+export function createDmg(app: string, installer: string, dmg: string, version: string, build: string) {
   const arch = process.arch;
   if (process.platform !== "darwin" || (arch !== "arm64" && arch !== "x64"))
     throw Error("DMG creation requires an Apple silicon or Intel Mac");
@@ -52,7 +53,7 @@ export function createDmg(app: string, dmg: string, version: string, build: stri
     execFileSync("tar", ["-xzf", archive, "-C", workspace]);
 
     const settings = join(workspace, "layout.json");
-    const layout = finderLayout(app, version, build);
+    const layout = finderLayout(app, installer, version, build);
     writeFileSync(settings, JSON.stringify(layout));
     execFileSync(join(workspace, "dmgbuild"), ["-s", settings, layout.title, dmg], {
       stdio: "inherit",

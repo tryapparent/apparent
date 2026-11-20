@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="576" height="384" viewBox="0 0 576 384">
-  <rect width="576" height="384" fill="#F5F0E8"/>
-  <path d="M0 4H576" stroke="#B7A5D8" stroke-width="8"/>
-  <text x="36" y="77" fill="#020102" font-family="Host Grotesk, sans-serif" font-size="29" font-weight="700">Drag Apparent to Applications</text>
-  <rect x="36" y="105" width="504" height="170" fill="#E7E0EE"/>
-  <path d="M256 173Q283 155 318 172M305 157L319 172L299 177" fill="none" stroke="#5939A1" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M36 304H540" stroke="#B7A5D8"/>
-  <text x="36" y="337" fill="#020102" font-family="Host Grotesk, sans-serif" font-size="16">Then open Apparent from Applications.</text>
-</svg>

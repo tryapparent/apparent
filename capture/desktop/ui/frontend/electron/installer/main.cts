@@ -7,7 +7,7 @@ function failStartup(error: unknown) {
   try {
     console.error('Installer startup failed:', error);
     dialog.showErrorBox('Installer could not open',
-      'Drag Apparent Preview to Applications in Finder, then open it from Applications.');
+      'Drag apparent to Applications in Finder.');
   } finally {
     // A failed, windowless installer must not intercept future Finder launches.
     app.exit(1);

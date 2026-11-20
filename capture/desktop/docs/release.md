@@ -107,17 +107,18 @@ all later preview releases: replacing it breaks updates for installed copies. Th
 Sparkle key and production appcast are unrelated. Test an actual update between two previews on
 a Mac before announcing it; CI packaging and an appcast alone do not prove installation works.
 
-Opening the DMG brings up a branded Finder window with **Apparent** and
-**Applications**. Drag the app onto the Applications shortcut, then launch the
-installed copy. Keyboard users can select the app, copy it with Command-C,
-open Applications with Command-Shift-A, then paste with Command-V.
+Opening the DMG brings up a branded Finder window. Double-click the frog to
+open the installer, then click it or drag it onto Applications. The installer
+opens apparent after a successful copy. If launching fails, retry from the
+installer. Finder also offers a manual drag path.
 
-The release builder uses Electron Builder’s pinned dmgbuild backend for the
-Finder layout and signs, notarizes and staples the resulting disk image. The
-Sparkle ZIP contains the same signed application bundle. Native acceptance
-must verify the exact signed candidate’s Finder window and install path on Mac.
+The release builder signs and notarizes the installer and uses Electron
+Builder’s pinned dmgbuild backend for the Finder layout. It signs, notarizes
+and staples the finished disk image. The Sparkle ZIP contains the app alone.
+Native acceptance must verify the exact signed candidate’s Finder window and
+install path on Mac.
 
-Finder shows **Apparent** using the bundle’s localized display name. The on-disk
+Finder shows **apparent** using the bundle’s localized display name. The on-disk
 name stays `Apparent Preview.app` and the bundle ID stays
 `dev.simonvanlaak.apparent.preview` to preserve the installed path and avoid
 replacing Kit’s `Apparent.app`. The app uses the fork’s Sparkle feed. Release

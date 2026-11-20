@@ -13,7 +13,7 @@ export function markElectronAccessory(runtime: string) {
   ]);
 }
 
-export const appDisplayNames = '"CFBundleName" = "Apparent";\n"CFBundleDisplayName" = "Apparent";\n';
+export const appDisplayNames = '"CFBundleName" = "apparent";\n"CFBundleDisplayName" = "apparent";\n';
 
 export function appPlist(version: string, build: string, key: string) {
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -57,6 +57,51 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       throw Error("Invalid Sparkle public key");
   } else if (command === "electron-accessory" && args.length === 1) {
     markElectronAccessory(args[0]);
+  } else if (command === "installer") {
+    const [app, version, build, id] = args;
+    const plist = {
+      CFBundleIdentifier: id,
+      CFBundleName: "Install apparent",
+      CFBundleDisplayName: "Install apparent",
+      CFBundleExecutable: "Installer",
+      CFBundlePackageType: "APPL",
+      CFBundleIconFile: "frog",
+      CFBundleShortVersionString: version,
+      CFBundleVersion: build,
+      LSMinimumSystemVersion: "15.0",
+      NSHighResolutionCapable: true,
+    };
+    const file = join(app, "Contents/Info.plist");
+    const escape = (value: string) =>
+      value
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    writeFileSync(
+      file,
+      '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict>' +
+        Object.entries(plist)
+          .map(
+            ([key, value]) =>
+              "<key>" +
+              key +
+              "</key>" +
+              (typeof value === "boolean"
+                ? "<true/>"
+                : "<string>" + escape(value) + "</string>"),
+          )
+          .join("") +
+        "</dict></plist>",
+    );
+    writeFileSync(
+      join(app, "Contents/Resources/installer-ui/package.json"),
+      JSON.stringify({
+        name: "apparent-installer",
+        version: "0.0.0",
+        main: "electron/installer/main.cjs",
+      }),
+    );
   } else if (command === "notes") {
     const [prepared, destination] = args;
     mkdirSync(join(destination, "electron"), { recursive: true });

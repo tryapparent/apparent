@@ -26,11 +26,11 @@ function load(adapter:string, linked=false) {
 }
 test('installer host rejects an arbitrary absolute adapter before startup',()=>{
   const fixture=load('/tmp/other-executable');
-  fixture.run();assert.match(fixture.diagnostics[0],/bundled Mac adapter/);assert.match(fixture.failures[0],/Drag Apparent Preview/);assert.deepEqual(fixture.exits,[1]);assert.equal(fixture.started(),0);
+  fixture.run();assert.match(fixture.diagnostics[0],/bundled Mac adapter/);assert.match(fixture.failures[0],/Drag apparent/);assert.deepEqual(fixture.exits,[1]);assert.equal(fixture.started(),0);
 });
 test('installer host admits only its fixed regular bundled adapter',()=>{
   const fixture=load(expected);fixture.run();assert.equal(fixture.started(),1);
-  const link=load(expected,true);link.run();assert.match(link.diagnostics[0],/regular bundled executable/);assert.match(link.failures[0],/Drag Apparent Preview/);assert.deepEqual(link.exits,[1]);assert.equal(link.started(),0);
+  const link=load(expected,true);link.run();assert.match(link.diagnostics[0],/regular bundled executable/);assert.match(link.failures[0],/Drag apparent/);assert.deepEqual(link.exits,[1]);assert.equal(link.started(),0);
 });
 test('installer actual host binds requests to its page and closes only after successful native Open', async()=>{
   let ready:()=>Promise<void>, invoke:(event:any,request:any)=>Promise<any>, close:(event:any)=>void;
@@ -157,7 +157,7 @@ for (const phase of ['window', 'load', 'dialog', 'activate']) test(`installer st
     assert.deepEqual(exits, []);
   } else {
     assert.equal(errors.length, 1, 'startup failure must show a visible recovery message');
-    assert.match(errors[0][1], /Drag Apparent Preview to Applications/);
+    assert.match(errors[0][1], /Drag apparent to Applications/);
     assert.doesNotMatch(errors[0][1], /fixture|ERR_|file:/, 'technical startup errors stay out of the recovery instructions');
     assert.deepEqual(exits, [1], 'failed startup must exit even if the native dialog fails');
   }
