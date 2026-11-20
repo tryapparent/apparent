@@ -4,11 +4,10 @@ import {engineIndependentRange} from './routing/engine-inputs/qualify.ts';
 import {portableForegroundInputs, foregroundPortableChange, serviceOnlyRange} from '../../shared/enablement/ci/connect-inputs.ts';
 import {fixtureCandidate, qualifyFixtures, fixtureMacRequired, fixturePlatformBoundary} from './routing/fixture-portability/qualify.ts';
 import {qualifyCiTests} from './routing/test-only/qualify.ts';
-import {storageControllers, storageReferences, nativeStorageGraph, portableStorageController} from './routing/record-storage/qualify.ts';
+import {storageControllers, nativeStorageGraph, portableStorageController, recordBendManifest, storageGraphMatches} from './routing/record-storage/qualify.ts';
 import {execFileSync} from 'node:child_process';
 import {appendFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
-import {isDeepStrictEqual} from 'node:util';
 import {changes, matchesRegularBlob, workflowControlPaths} from './inputs.ts';
 
 import {routingProblems, onboardingInput, onboardingPureInputs, onboardingWisprInputs, retiredOnboardingInputs, routeDecision, documentationOnlyPath, linuxDrivers, suitePlan, unownedPaths} from './routing/consumers.ts';
@@ -155,14 +154,9 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
     } catch { }
   }
   let qualifiedStorageControllers: string[] = [];
-  if (effective?.some(path => storageControllers.has(path)) && delta) {
+  if (effective?.some(path => storageControllers.has(path)) && !effective.includes(recordBendManifest) && delta) {
     try {
-      const references = git(['grep', '-I', '-l', '-E',
-        'LocationController|RetentionController|record-storage|record/storage|/location-controller|/retention-controller',
-        head, '--', ':!*.md'], cwd).trim().split('\n').map(line => line.slice(head.length + 1));
-      const graph = git(['ls-tree', '-r', head, '--', ...nativeStorageGraph.keys()], cwd).trim().split('\n').sort();
-      const expectedGraph = [...nativeStorageGraph].map(([path, blob]) => `100644 blob ${blob}\t${path}`).sort();
-      if (references.every(path => storageReferences.has(path)) && isDeepStrictEqual(graph, expectedGraph)) {
+      if (storageGraphMatches(head, args => git(args, cwd))) {
         qualifiedStorageControllers = delta.filter(change => storageControllers.has(change.path) && !unsupported(change) &&
           portableStorageController(change.path, git(['show', base + ':' + change.path], cwd), git(['show', head + ':' + change.path], cwd)))
           .map(change => change.path);
@@ -216,7 +210,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const macPlan = {...plan, root: plan.root && mac_rust && macEnabled, engine: plan.engine && mac_rust && macEnabled,
     desktop: plan.desktop && macEnabled, client: plan.client && macEnabled};
   const classified = process.env.GITHUB_EVENT_NAME !== 'workflow_dispatch' && result.inputProofKnown && !unownedPaths(result.paths).length;
-  const storage = result.paths.some(path => storageControllers.has(path) || nativeStorageGraph.has(path));
+  const storage = result.paths.some(path => path === recordBendManifest || storageControllers.has(path) || nativeStorageGraph.has(path));
   const output = {...result, mac_rust, plan, mac_plan: macPlan, ...contractChecks(classified ? result.paths : null, plan.tooling, storage)};
   console.log(JSON.stringify({...output, reasons}));
   appendFileSync(process.env.GITHUB_OUTPUT!, Object.entries(output).map(([key, value]) => key + '=' + (typeof value === 'object' ? JSON.stringify(value) : value) + '\n').join(''));

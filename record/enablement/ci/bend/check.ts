@@ -41,6 +41,57 @@ await bendScratch(async (scratch) => {
   await buildBend(root, "record", proofOutput, options);
   assert.deepEqual(
     JSON.parse(
+      run(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `
+    import retention from "./feedback.mjs";
+    console.log(JSON.stringify([
+      retention.submission_phase(false, true, true),
+      retention.submission_phase(true, true, false),
+      retention.submission_phase(true, true, true),
+      retention.submission_phase(true, false, true),
+      retention.reset_available(true, false),
+      retention.reset_available(true, true),
+      retention.keep_submission(true, false),
+      retention.keep_submission(true, true),
+      retention.show_readback_difference(true, true, true, false, true),
+      retention.show_readback_difference(true, true, true, true, false),
+      retention.show_readback_difference(true, true, true, true, true),
+      retention.show_readback_difference(true, true, false, false, false),
+      retention.show_readback_difference(false, true, true, false, false),
+      retention.has_draft(false, false),
+      retention.has_draft(true, true),
+      retention.has_draft(true, false),
+    ]));
+  `,
+        ],
+        proofOutput,
+      ),
+    ),
+    [
+      0,
+      1,
+      2,
+      3,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+    ],
+  );
+  assert.deepEqual(
+    JSON.parse(
       readFileSync(
         join(root, "record/media/src/assembly/frame-label.json"),
         "utf8",
