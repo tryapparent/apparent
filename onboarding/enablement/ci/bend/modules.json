@@ -1,8 +1,9 @@
 {
-  "modules": ["host/traversal/tour-traversal.bend"],
+  "modules": ["host/traversal/tour-traversal.bend", "host/tips/note-tip.bend"],
   "inputs": [
     "host/traversal/tour-traversal.d.mts",
     "host/traversal/tour-traversal.json",
-    "enablement/ci/entry-policy.ts"
+    "enablement/ci/entry-policy.ts",
+    "host/tips/"
   ]
 }

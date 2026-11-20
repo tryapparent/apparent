@@ -8,6 +8,8 @@ fn main() {
     compile_record_shortcut_policy();
     compile_onboarding_entry_policy();
     emit_recording_permissions();
+    emit_note_policy("record", "note-gesture", "notes/double-shift.json");
+    emit_note_policy("onboarding", "note-tip", "host/tips/note-tip.json");
     compile_record_pill();
     println!("cargo:rerun-if-env-changed=APPARENT_POSTHOG_TOKEN");
     println!("cargo:rerun-if-env-changed=APPARENT_POSTHOG_RELEASE_ID");
@@ -46,6 +48,20 @@ fn main() {
             println!("cargo:rustc-link-arg=-Wl,-rpath,{swift_runtime}");
         }
     }
+}
+
+fn emit_note_policy(owner: &str, name: &str, table: &str) {
+    let generator = format!("{owner}/enablement/ci/bend/{name}.ts");
+    println!("cargo:rerun-if-changed={generator}");
+    println!("cargo:rerun-if-changed={owner}/{table}");
+    let output = Command::new("node")
+        .args(["--experimental-strip-types", &generator])
+        .output()
+        .expect("Node 22 is required to generate native note policy");
+    assert!(output.status.success(), "{name}: {}", String::from_utf8_lossy(&output.stderr));
+    let out = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+    std::fs::write(out.join(format!("{name}.rs")), output.stdout)
+        .expect("write generated native note policy");
 }
 
 fn compile_record_shortcut_policy() {

@@ -6,6 +6,7 @@ use super as pill_state;
 use gpui::Context;
 
 impl ApparentCoordinator {
+
     pub(in crate::capture::desktop) fn observe_pill_event(&mut self, event: PillEvent) -> Option<(IslandPhase, bool)> {
         let completed = match &event {
             PillEvent::CaptureSaved { frame_count, duration_ms, .. } => Some((*frame_count, *duration_ms)),
@@ -161,11 +162,13 @@ impl ApparentCoordinator {
             input_waveform: snapshot.input_waveform,
             transcript: None,
             notice: None,
+            note_tip: None,
         };
         if view.phase == "recording" {
             if let Some(crate::capture::desktop::CaptureSource::Screen {audio: Some(audio), ..}) = self.active_recording.as_ref().map(|recording| &recording.source) {
                 view.transcript = audio.streaming_preview();
             }
+            view.note_tip = self.recording_note_tip();
         }
         view
     }
@@ -225,6 +228,7 @@ impl ApparentCoordinator {
             return;
         }
         self.refresh_pill_presentation();
+        self.observe_note_tip();
         let view = self.electron_pill_view(0);
         let selection = self.electron_pill_selection();
         let completion = self.electron_pill.as_ref()

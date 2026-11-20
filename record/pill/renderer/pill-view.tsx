@@ -161,9 +161,9 @@ export function PillSurface({
               {view.warning}
             </span>
           )}
-          {view.notice && (
+          {(view.notice || view.noteTip) && (
             <span className="notice" role="status">
-              {view.notice}
+              {view.notice || view.noteTip}
             </span>
           )}
           {error && (

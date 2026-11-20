@@ -119,6 +119,7 @@ struct Held {
     left: bool,
     right: bool,
     keys: HashSet<u16>,
+    note_blocked: bool,
 }
 
 impl Modifiers {
@@ -175,6 +176,10 @@ fn from_devices() -> bool {
     linux::wayland_session() && input::held().is_some()
 }
 
+#[path = "../../../../engine/native/linux_input.rs"]
+mod input_snapshot;
+use input_snapshot::held_from;
+
 fn held_now() -> Held {
     held_from(input::held())
 }
@@ -182,48 +187,6 @@ fn held_now() -> Held {
 /// What the poller sees: like `held_now`, with presses too short to last until the next poll.
 fn held_polled() -> Held {
     held_from(input::take_held())
-}
-
-fn held_from(devices: Option<input::Held>) -> Held {
-    if linux::wayland_session()
-        && let Some(devices) = devices
-    {
-        return Held {
-            mods: Modifiers {
-                super_key: devices.super_key(),
-                ctrl: devices.ctrl(),
-                alt: devices.alt(),
-                shift: devices.shift(),
-            },
-            left: devices.left(),
-            right: devices.right(),
-            keys: devices
-                .keys
-                .iter()
-                .filter_map(|&code| input::vk_for_evdev_code(code))
-                .collect(),
-        };
-    }
-    let pointer = x11::pointer_state().unwrap_or_default();
-    let keys = x11::keys_down()
-        .map(|bits| {
-            (8..=255_u8)
-                .filter(|&code| x11::key_is_down(&bits, code))
-                .filter_map(|code| x11::keysym_at(code).and_then(vk_for_keysym))
-                .collect()
-        })
-        .unwrap_or_default();
-    Held {
-        mods: Modifiers {
-            super_key: pointer.super_key,
-            ctrl: pointer.ctrl,
-            alt: pointer.alt,
-            shift: pointer.shift,
-        },
-        left: pointer.left,
-        right: pointer.right,
-        keys,
-    }
 }
 
 /// The Super, Ctrl, Alt and Shift keys held right now, as a bit mask.
@@ -1096,13 +1059,12 @@ fn log_chord(telemetry: &SharedCaptureTelemetry, mods: Modifiers, vk: u16) {
         });
 }
 
-/// 125 Hz poller: the shortcuts where nothing else delivers them, Esc, Ctrl+Z, logged chords,
-/// clicks, the pointer for the overlay, and ⇧ ink.
 fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
     let mut prev_keys: HashSet<u16> = HashSet::new();
     let mut prev_shift_ink = false;
     let mut await_shift_release = false;
     let mut prev_buttons = [false; 2];
+    let mut note_tap = super::NoteTap::default();
     let mut last_tap_check = Instant::now() - Duration::from_secs(1);
     // On Wayland: whether the overlay has the pointer, and where XWayland last saw it before
     // it did (stale until the pointer moves over the overlay).
@@ -1167,6 +1129,7 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
         if !active {
             prev_shift_ink = false;
             prev_buttons = buttons;
+            note_tap.reset();
             if pointer_taken {
                 linux::overlay::take_pointer(false);
                 pointer_taken = false;
@@ -1186,6 +1149,7 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
         }
 
         let Some((x, y)) = linux::cursor_position() else {
+            note_tap.reset();
             continue;
         };
         if stale_pointer.is_some_and(|stale| stale == (x, y)) {
@@ -1198,6 +1162,11 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
             .pointer_screen
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = [x as f32, y as f32];
+        if held.note_blocked || buttons.into_iter().any(|down| down) || await_shift_release {
+            note_tap.reset();
+        } else {
+            super::observe_note_tap(&mut note_tap, Some((x, y)), Instant::now(), mods.shift, &telemetry);
+        }
 
         poll_clicks(
             &telemetry,

@@ -72,6 +72,7 @@ fn project(source: &PillSnapshot, revision: u64, mut facts: Facts) -> View {
         reduced_motion: source.reduced_motion,
         transcript: None,
         notice: None,
+        note_tip: None,
     }
 }
 fn snapshot(pres: Pres) -> PillSnapshot {
