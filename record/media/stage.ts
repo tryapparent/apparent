@@ -70,7 +70,7 @@ try {
     assert.deepEqual(entries.slice().sort(), [base + '/', ...names.map(n => base + '/' + n)].sort());
     const types = execFileSync('tar', ['-tvzf', archive], {encoding: 'utf8'}).trim().split('\n');
     assert(types.every(line => /^[-d]/.test(line)), 'Unexpected Engine archive member');
-    execFileSync('tar', ['-xzf', archive, '-C', temporary]);
+    execFileSync('tar', ['-xzf', archive, '-p', '-C', temporary]);
     native = join(temporary, base); verify(native);
   }
   const prepared = join(temporary, 'prepared'); mkdirSync(prepared, {mode: 0o700});
