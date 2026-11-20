@@ -18,10 +18,10 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
  const exited=new Promise<void>(resolve=>application.once('exit',()=>resolve()));
  let browser:Awaited<ReturnType<typeof chromium.connectOverCDP>>|undefined;
  const messages:Record<string,unknown>[]=[];
- let saved:boolean|null=null, autoPasteSaved:boolean|null=null, sharingSaved:boolean|null=null, wisprSaved:boolean|null=null, screenPickerSaved:boolean|null=null, dictationFrogSaved:boolean|null=null, compactHandoffSaved:boolean|null=null, transcriptOnlySaved:boolean|null=null, hold=true, fail=false, held:Record<string,unknown>|undefined;
+ let saved:boolean|null=null, autoPasteSaved:boolean|null=null, sharingSaved:boolean|null=null, wisprSaved:boolean|null=null, screenPickerSaved:boolean|null=null, dictationFrogSaved:boolean|null=null, compactHandoffSaved:boolean|null=null, transcriptOnlySaved:boolean|null=null, silentPromptSaved:boolean|null=null, hold=true, fail=false, held:Record<string,unknown>|undefined;
  const reply=(message:Record<string,unknown>)=>{
-  if(typeof message.enabled==='boolean' && !fail){if(message.setting==='autoPaste')autoPasteSaved=message.enabled;else if(message.setting==='sharing')sharingSaved=message.enabled;else if(message.setting==='wisprFlow')wisprSaved=message.enabled;else if(message.setting==='dictationFrog')dictationFrogSaved=message.enabled;else if(message.setting==='screenPicker')screenPickerSaved=message.enabled;else if(message.setting==='compactHandoff')compactHandoffSaved=message.enabled;else if(message.setting==='transcriptOnly')transcriptOnlySaved=message.enabled;else saved=message.enabled;}
-  application.stdin.write(JSON.stringify({type:'labs-result',request:message.request,facts:fail?{error:'config_write_failed'}:{saved,sharingSaved,autoPasteSaved,autoPasteSupported:process.platform==='linux',wisprSaved,wisprSupported:process.platform==='darwin',screenPickerSupported:true,screenPickerSaved,dictationFrogSaved,compactHandoffSaved,transcriptOnlySaved}})+'\n');
+  if(typeof message.enabled==='boolean' && !fail){if(message.setting==='autoPaste')autoPasteSaved=message.enabled;else if(message.setting==='sharing')sharingSaved=message.enabled;else if(message.setting==='wisprFlow')wisprSaved=message.enabled;else if(message.setting==='dictationFrog')dictationFrogSaved=message.enabled;else if(message.setting==='screenPicker')screenPickerSaved=message.enabled;else if(message.setting==='compactHandoff')compactHandoffSaved=message.enabled;else if(message.setting==='silentPrompt')silentPromptSaved=message.enabled;else if(message.setting==='transcriptOnly')transcriptOnlySaved=message.enabled;else saved=message.enabled;}
+  application.stdin.write(JSON.stringify({type:'labs-result',request:message.request,facts:fail?{error:'config_write_failed'}:{saved,sharingSaved,autoPasteSaved,autoPasteSupported:process.platform==='linux',wisprSaved,wisprSupported:process.platform==='darwin',screenPickerSupported:true,screenPickerSaved,dictationFrogSaved,compactHandoffSaved,transcriptOnlySaved,silentPromptSaved}})+'\n');
  };
  createInterface({input:application.stdout}).on('line',line=>{
   try{const value=JSON.parse(line);messages.push(value);if(value.action==='agents-preference'){application.stdin.write(JSON.stringify({type:'agents-result',request:value.request,facts:{saved:null,t3Saved:false,t3Configured:false}})+'\n');}if(value.action==='labs-preference'){if(hold)held=value;else reply(value);}}catch{}
@@ -95,6 +95,18 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   }else await expect(wispr).toBeDisabled();
   assert.equal(await page.evaluate(async()=>await window.apparentGeneral.read().then(()=>false,()=>true) && await window.apparent.readConnectSettings().then(()=>false,()=>true)),true);
   if(process.platform!=='darwin')await assert.rejects(()=>page.evaluate(()=>window.apparentLabs.save(true,'wisprFlow')));
+  const silentPrompt = page.getByRole('switch', {name:'Silent prompts'});
+  const chooseLipflow = page.getByRole('button', {name:'Choose Lipflow folder'});
+  await expect(silentPrompt).toHaveAttribute('aria-checked','false');
+  await expect(chooseLipflow).toHaveCount(0);
+  await assert.rejects(() => page.evaluate(() => window.apparentLipPrompt.begin()));
+  await silentPrompt.focus(); await page.keyboard.press('Space');
+  await expect(silentPrompt).toHaveAttribute('aria-checked','true');
+  await expect(silentPrompt).toBeFocused();
+  await expect(chooseLipflow).toBeEnabled();
+  await page.reload();
+  await expect(silentPrompt).toHaveAttribute('aria-checked','true');
+  await expect(chooseLipflow).toBeEnabled();
   const frog = page.getByRole('switch', {name:'Frog after dictation'});
   if (process.platform === 'darwin') {
    await expect(frog).toHaveAttribute('aria-checked','false');
@@ -142,6 +154,9 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
    }
    await cdp.detach();
   }
+  await silentPrompt.click();
+  await expect(silentPrompt).toHaveAttribute('aria-checked','false');
+  await expect(chooseLipflow).toHaveCount(0);
   const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setDeviceMetricsOverride',{width:640,height:530,deviceScaleFactor:1,mobile:false});
   const recoveries: [string,typeof toggle][]=[['streaming',toggle],['compactHandoff',compact],['transcriptOnly',speech]];
   if(process.platform==='linux')recoveries.push(['autoPaste',autoPaste]);

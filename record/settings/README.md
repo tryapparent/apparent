@@ -71,3 +71,20 @@ pollers. They keep the monotonic timestamps, live ink, pointer position and
 session guards local, so the gesture works without waiting on the renderer.
 Regenerate the table with
 `node record/enablement/ci/bend/check.ts --write-native-gesture`.
+
+## Silent prompts
+
+Enable **Settings → Labs → Silent prompts** to try camera-only dictation. The
+switch is off by default and uses the existing config writer
+(`experiments.silentPrompt`). With a trusted local [Lipflow checkout](https://github.com/amywork777/lipflow)
+prepared with its `.venv/bin/lipflow` and visual models, choose the checkout
+folder, then select **Start camera**. Silently mouth a short prompt and select
+**Read my lips**. The camera stops after 12 seconds if you leave it running.
+Review the raw result and select **Copy prompt** to use it in another app.
+
+Apparent uses video only and calls Lipflow's file mode with cleanup disabled.
+It runs the stock model in a private temporary directory and deletes the clip
+after decoding. The folder choice lasts for the Settings session. The trial
+ships no model weights. Lipflow's standard weights are for non-commercial
+research. This slice measures the stock baseline, with STT-assisted
+personalization tracked in [#1603](https://github.com/tryapparent/apparent/issues/1603).

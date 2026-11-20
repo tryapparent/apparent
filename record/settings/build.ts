@@ -6,8 +6,7 @@ import { bendScratch, buildBend } from "../../shared/enablement/bend/build.ts";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 await bendScratch(async (scratch) => {
   await buildBend(root, "record", scratch);
-  copyFileSync(
-    join(scratch, "recording-policy.mjs"),
-    join(root, "record/settings/recording-policy.mjs"),
-  );
+  for (const module of ["recording-policy.mjs", "lip-policy.mjs"]) {
+    copyFileSync(join(scratch, module), join(root, "record/settings", module));
+  }
 });

@@ -4,12 +4,20 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
 export function markElectronAccessory(runtime: string) {
+  const plist = join(runtime, "Contents/Info.plist");
   execFileSync("/usr/bin/plutil", [
     "-replace",
     "LSUIElement",
     "-bool",
     "YES",
-    join(runtime, "Contents/Info.plist"),
+    plist,
+  ]);
+  execFileSync("/usr/bin/plutil", [
+    "-replace",
+    "NSCameraUsageDescription",
+    "-string",
+    "Apparent films a short silent prompt when you start the camera in Labs.",
+    plist,
   ]);
 }
 
