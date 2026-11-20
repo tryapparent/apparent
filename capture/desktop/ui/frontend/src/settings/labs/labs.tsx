@@ -11,12 +11,12 @@ declare global {interface Window {apparentLabs: {
   read(): Promise<LabsFacts>; save(value: boolean, setting?: LabsSetting): Promise<LabsFacts>;
   subscribe(callback: (facts: LabsFacts) => void): () => void;
 };}}
-const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', screenPicker: 'recording-picker-mode', doubleShiftNotes: 'double-shift-notes-toggle'};
+const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', screenPicker: 'recording-picker-mode', doubleShiftNotes: 'double-shift-notes-toggle', dictationFrog: 'dictation-frog-toggle'};
 export type NoteExperiment = ComponentType<{
   id: string; checked: boolean; disabled: boolean; saving: boolean;
   onCheckedChange: (value: boolean) => void;
 }>;
-export function Labs({noteExperiment: DoubleShiftNotes}: {noteExperiment?: NoteExperiment}) {
+export function Labs({noteExperiment: DoubleShiftNotes, frogExperiment: FrogNudge}: {noteExperiment?: NoteExperiment; frogExperiment?: NoteExperiment}) {
   const [facts, setFacts] = useState<LabsFacts>();
   const [busy, setBusy] = useState(true), [error, setError] = useState('');
   const [setting, setSetting] = useState<LabsSetting>('streaming'), [operation, setOperation] = useState<'read' | 'save'>('read');
@@ -90,6 +90,9 @@ export function Labs({noteExperiment: DoubleShiftNotes}: {noteExperiment?: NoteE
           disabled={busy || wispr === undefined || !wisprSupported.current} onCheckedChange={value => void request(value, 'wisprFlow')} /></div>
       <p id="wispr-lab-help">Offer to quit Wispr Flow or Superwhisper before choosing a recording shortcut. macOS only. Off by default.</p>
     </section>
+    {FrogNudge && wisprSupported.current && <FrogNudge id={controls.dictationFrog} checked={facts?.dictationFrogSaved ?? false}
+      disabled={busy || !facts || !!facts.error} saving={busy && setting === 'dictationFrog'}
+      onCheckedChange={value => void request(value, 'dictationFrog')} />}
     {DoubleShiftNotes && <DoubleShiftNotes id={controls.doubleShiftNotes} checked={facts?.doubleShiftSaved ?? false}
       disabled={busy || !facts || !!facts.error} saving={busy && setting === 'doubleShiftNotes'}
       onCheckedChange={value => void request(value, 'doubleShiftNotes')} />}

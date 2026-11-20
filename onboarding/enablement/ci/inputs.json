@@ -31,7 +31,15 @@
     "onboarding/host/wispr.ts",
     "onboarding/host/wispr-native.ts",
     "onboarding/host/dictation.ts",
-    "composition/onboarding/src/entry.ts"
+    "composition/onboarding/src/entry.ts",
+    "onboarding/renderer/frog-nudge/index.html",
+    "onboarding/renderer/frog-nudge/overlay.tsx",
+    "onboarding/renderer/frog-nudge/preview.css",
+    "onboarding/renderer/frog-nudge/preview.tsx",
+    "onboarding/renderer/frog-nudge/overlay.css",
+    "onboarding/renderer/frog-nudge/wave.webp",
+    "composition/onboarding/frog-nudge/build.ts",
+    "composition/onboarding/frog-nudge/entry.ts"
   ],
   "prefix": "onboarding/renderer/wispr/"
 }

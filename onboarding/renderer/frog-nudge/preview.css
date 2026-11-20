@@ -1,0 +1,20 @@
+.dictation-frog-preview {
+  box-sizing: border-box;
+  width: min(100%, 240px);
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.dictation-frog-preview img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 240 / 220;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dictation-frog-preview {
+    display: none;
+  }
+}

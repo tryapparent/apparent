@@ -80,3 +80,23 @@ controls and note editor available, excluding guided practice. It persists the c
 `onboarding.doubleShiftNoteStarts` through the existing config transaction.
 Disabling the experiment pauses progress. The tip policy and native table
 are verified by `onboarding/enablement/ci/bend/check.ts`.
+
+## Frog after dictation
+
+**Settings → Labs → Frog after dictation** is off by default. On macOS, the
+first observed Wispr Flow input session to return to idle triggers the silent
+wave after a short quiet period. Cancellations and microphone tests also count.
+The observer reads per-app input state through Core Audio. It opens no input
+stream and stores neither audio nor text. Superwhisper has no automatic trigger.
+
+The desktop coordinator supplies current capture state. Onboarding's
+Bend policy admits the transition and the existing config transaction reserves
+the one automatic appearance in `onboarding.dictationFrogSeen`. Turning the
+experiment off stops sampling and leaves that progress intact. The Labs
+preview plays the same transparent eight-second clip without touching progress.
+Reduce Motion suppresses animation. The automatic overlay is click-through,
+non-activating, and closes if a capture starts.
+
+Composition builds the overlay into `dist/frog-nudge/` alongside the desktop
+Settings renderer. A build without that entry stays quiet. Linux retains its
+existing onboarding experience.

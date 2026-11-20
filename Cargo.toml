@@ -37,6 +37,7 @@ core-video = "0.4.3"
 gpui = { version = "0.2.2", default-features = false, features = ["font-kit"] }
 objc2 = "0.6.4"
 objc2-app-kit = { version = "0.3.2", features = ["NSPasteboard", "NSPasteboardItem"] }
+objc2-core-audio = { version = "0.3.2", default-features = false, features = ["AudioHardware", "objc2-core-audio-types"] }
 objc2-core-foundation = "0.3.2"
 objc2-foundation = { version = "0.3.2", features = ["NSArray", "NSData", "NSString"] }
 objc2-quartz-core = { version = "0.3.2", features = ["CALayer"] }

@@ -1,0 +1,5 @@
+{
+  "delay": 350,
+  "eligible": [false, false, false, false, true, false, false, false],
+  "ended": [[false, false, false], [false, false, false], [false, true, false]]
+}

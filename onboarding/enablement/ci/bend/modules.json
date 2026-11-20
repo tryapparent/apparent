@@ -1,5 +1,9 @@
 {
-  "modules": ["host/traversal/tour-traversal.bend", "host/tips/note-tip.bend"],
+  "modules": [
+    "host/traversal/tour-traversal.bend",
+    "host/tips/note-tip.bend",
+    "host/tips/frog-nudge.bend"
+  ],
   "inputs": [
     "host/traversal/tour-traversal.d.mts",
     "host/traversal/tour-traversal.json",

@@ -1,4 +1,5 @@
 import { build } from "esbuild";
+import { buildFrogNudge } from "./frog-nudge/build.ts";
 import { fileURLToPath } from "node:url";
 await build({
   absWorkingDir: fileURLToPath(new URL(".", import.meta.url)),
@@ -10,3 +11,4 @@ await build({
   external: ["electron"],
   outfile: "dist/entry.cjs",
 });
+await buildFrogNudge(build);
