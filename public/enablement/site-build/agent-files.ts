@@ -165,19 +165,21 @@ ${shift(unfrontmatter(skill), 2).trim()}
 }
 
 export function jsonLd(): string {
-  const { version, macos } = release()
+  const { version } = release()
   return JSON.stringify({
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     name: "Apparent",
     description: "Show an agent a problem instead of describing it. Apparent records your screen, voice, clicks and drawings and packs them into a bundle an AI coding agent can read.",
     url: `${SITE}/`,
-    operatingSystem: macos ? `macOS ${macos}, Linux` : "macOS, Linux",
+    installUrl: `${REPO}/releases`,
+    operatingSystem: ["macOS", "Linux"],
     applicationCategory: "DeveloperApplication",
     ...(version ? { softwareVersion: version } : {}),
-    image: `${SITE}/og.png`,
+    image: `${SITE}/social-preview-v1.png`,
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-    author: { "@type": "Person", name: "Kit Langton" },
+    publisher: { "@type": "Organization", name: "Apparent", url: "https://github.com/tryapparent" },
+    creditText: "Apparent began as a fork of Scrawl, created by Kit Langton.",
     sameAs: [REPO],
   })
 }

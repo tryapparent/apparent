@@ -4,7 +4,7 @@ import { dirname, join, resolve } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import { chromium } from "playwright-core"
-import { agentFiles } from "../site-build/agent-files.ts"
+import "../artifact/app-metadata.test.ts"
 
 import { movie, chunkPath } from "../../site/lib/pages-video-metadata.js"
 
@@ -468,22 +468,4 @@ test("source homepage preserves accepted responsive layout and interactions", as
     try { await new Promise<void>(done => server.close(() => done())) }
     finally { await movieRuntime?.dispose() }
   }
-})
-
-
-test("agent documentation survives the illustrated README and relocated guides", () => {
-  const files = agentFiles()
-  for (const [name, content] of Object.entries(files)) {
-    assert.equal(readFileSync(join(publicDir, name), "utf8"), content)
-  }
-  assert.match(readFileSync(join(publicDir, "sitemap.xml"), "utf8"), /<loc>https:\/\/app\.tryapparent\.com\/agents\/<\/loc>/)
-  for (const name of ["llms.txt", "llms-full.txt"]) {
-    assert.match(files[name], /Point\. Talk\. Draw\./)
-    assert.doesNotMatch(files[name], /readme-banner|\]\((?:\.\.\/|capture\/|shared\/)/)
-  }
-  const full = files["llms-full.txt"]
-  assert.match(full, /## Capture controls[\s\S]*Hold/)
-  assert.match(full, /## Export as video[\s\S]*ffmpeg/)
-  assert.match(full, /## Keeping captures small[\s\S]*pin/)
-  assert.match(full, /https:\/\/github\.com\/tryapparent\/apparent\/blob\/main\/capture\/agent\/docs\/installation\.md/)
 })
