@@ -16,11 +16,11 @@ await bendScratch(async (scratch) => {
       `
       import assert from "node:assert/strict";
       import { sparkle_outcome } from "./sparkle-outcomes.mjs";
-      for (const code of [1001, 1003, 4007, 4008]) {
+      for (const code of [1001, 1003, 1005, 4007, 4008]) {
         assert.equal(sparkle_outcome(true, code), "expected");
         assert.equal(sparkle_outcome(false, code), "report");
       }
-      for (const code of [1000, 1002, 1004, 1005, 4005, 4006, 4009]) {
+      for (const code of [1000, 1002, 1004, 1006, 4005, 4006, 4009]) {
         assert.equal(sparkle_outcome(true, code), "report");
       }
       `,

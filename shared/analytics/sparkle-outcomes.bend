@@ -10,6 +10,8 @@ def sparkle_outcome(sparkle_domain: Bool, code: U32) -> String:
           "expected"
         case 1003:
           "expected"
+        case 1005:
+          "expected"
         case 4007:
           "expected"
         case 4008:

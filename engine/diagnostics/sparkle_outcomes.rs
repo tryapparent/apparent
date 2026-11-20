@@ -27,11 +27,11 @@ pub(crate) fn sparkle_error_should_report(domain: &str, code: isize) -> bool {
 #[cfg(test)]
 #[test]
 fn sparkle_excludes_expected_update_outcomes_for_its_domain_only() {
-    for code in [1001, 1003, 4007, 4008] {
+    for code in [1001, 1003, 1005, 4007, 4008] {
         assert!(!sparkle_error_should_report("SUSparkleErrorDomain", code));
         assert!(sparkle_error_should_report("NSURLErrorDomain", code));
     }
-    for code in [-1009, 1002, 1005, 4005] {
+    for code in [-1009, 1002, 4005] {
         assert!(sparkle_error_should_report("SUSparkleErrorDomain", code));
     }
 }
