@@ -1680,7 +1680,7 @@ impl Session {
                 Some((id.to_owned(), meter))
             });
         }
-        self.send_state(super::recording_state(view, host));
+        self.send_state(super::recording_state(view));
     }
 
     fn send_state(&mut self, message: serde_json::Value) {

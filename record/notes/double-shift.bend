@@ -1,8 +1,5 @@
 import Base
 
-def enabled_by_default() -> Bool:
-  True{}
-
 def hold_limit_ms() -> U32:
   250
 

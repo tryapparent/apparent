@@ -4,25 +4,6 @@ use std::time::{Duration, Instant};
 
 include!(concat!(env!("OUT_DIR"), "/note-gesture.rs"));
 
-pub(crate) fn double_shift_enabled(saved: Option<bool>) -> bool {
-    saved.unwrap_or(ENABLED_BY_DEFAULT)
-}
-
-pub(crate) fn double_shift_notes(path: &std::path::Path) -> bool {
-    cfg!(any(target_os = "linux", target_os = "macos"))
-        && double_shift_enabled(
-            crate::shared::handoff::load_config_from(path)
-                .experiments.get("doubleShiftNotes").copied(),
-        )
-}
-
-#[test]
-fn note_gesture_defaults_on_and_respects_saved_choices() {
-    assert!(double_shift_enabled(None));
-    assert!(double_shift_enabled(Some(true)));
-    assert!(!double_shift_enabled(Some(false)));
-}
-
 #[derive(Default)]
 pub(crate) struct NoteTap {
     press: Option<(Instant, (f64, f64), u64)>,
@@ -81,13 +62,8 @@ impl NoteTap {
 }
 
 impl SharedCaptureTelemetry {
-    pub(crate) fn set_double_shift_notes(&self, enabled: bool) {
-        self.block_note_tap();
-        self.double_shift_notes.store(enabled, Ordering::Release);
-    }
-
-    pub(crate) fn double_shift_notes(&self) -> bool {
-        self.double_shift_notes.load(Ordering::Acquire)
+    pub(crate) fn has_note_editor(&self) -> bool {
+        self.note_ui_pid.load(Ordering::Acquire) != 0
     }
 
     pub(crate) fn block_note_tap(&self) {
@@ -142,9 +118,8 @@ impl SharedCaptureTelemetry {
 
     #[cfg_attr(target_os = "windows", allow(dead_code))]
     pub(crate) fn request_note_at(&self, t_ms: u64, screen_x: f64, screen_y: f64) {
-        if self.double_shift_notes()
-            && self.active.load(Ordering::Acquire)
-            && self.note_ui_pid.load(Ordering::Acquire) != 0
+        if self.active.load(Ordering::Acquire)
+            && self.has_note_editor()
             && !self.notes_editing.load(Ordering::Acquire)
             && self.contains_screen_point(screen_x, screen_y)
             && !self.on_capture_input_ui(screen_x, screen_y)
@@ -160,6 +135,42 @@ mod tests {
 
     fn base() -> Instant {
         Instant::now()
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn double_tap_uses_the_active_note_editor() {
+        use crate::shared::model::TargetFrame;
+        let (sender, receiver) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(sender);
+        *telemetry.target_frame.lock().unwrap() = TargetFrame {
+            x: -9_000.0,
+            y: -9_000.0,
+            width: 100.0,
+            height: 100.0,
+            scale: 1.0,
+        };
+        telemetry.active.store(true, Ordering::Release);
+        let mut tap = NoteTap::default();
+        let at = Some((-8_960.0, -8_960.0));
+        let now = base();
+        let mut double_tap = |start| {
+            for (offset, pure) in [(0, true), (60, false), (140, true), (200, false)] {
+                super::super::observe_note_tap(
+                    &mut tap, at, start + Duration::from_millis(offset), pure, &telemetry,
+                );
+            }
+        };
+        double_tap(now);
+        assert!(receiver.is_empty());
+
+        telemetry.note_ui_pid.store(1, Ordering::Release);
+        double_tap(now + Duration::from_millis(300));
+        let notes = receiver
+            .drain()
+            .filter(|event| matches!(event, LiveOverlayEvent::Note { .. }))
+            .count();
+        assert_eq!(notes, 1);
     }
 
     #[test]

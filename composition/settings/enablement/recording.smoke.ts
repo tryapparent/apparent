@@ -199,16 +199,23 @@ test("staged Recording opens directly, receives native facts and saves only on i
     await navigate("Recording");
     assert.equal(page.url(), startUrl);
     await expect(video).toBeChecked();
-    const notes = page.getByRole("switch", {
-      name: "Double-tap Shift for notes",
-    });
-    await expect(notes).toBeChecked();
-    await notes.press("Space");
-    await expect(notes).not.toBeChecked();
-    await navigate("Labs");
-    await expect(notes).toHaveCount(0);
-    await navigate("Recording");
-    await expect(notes).not.toBeChecked();
+    await expect(
+      page.getByRole("switch", { name: "Double-tap Shift for notes" }),
+    ).toHaveCount(0);
+    assert.equal(
+      await page.evaluate(async () => {
+        try {
+          await Reflect.get(window, "apparentRecording").save({
+            key: "doubleShiftNotes",
+            value: false,
+          });
+          return false;
+        } catch {
+          return true;
+        }
+      }),
+      true,
+    );
   } finally {
     await browser?.close().catch(() => {});
     child.stdin.end();

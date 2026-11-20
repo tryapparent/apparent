@@ -681,7 +681,6 @@ pub struct SharedCaptureTelemetry {
     agent_context: AtomicBool,
     /// A ⇧-press inside the target: when, where (global points) and on which frame.
     shift_press: Mutex<Option<(u64, f64, f64, TargetFrame)>>,
-    double_shift_notes: AtomicBool,
     note_tap_epoch: AtomicU64,
     #[cfg(target_os = "linux")]
     native_note_window: AtomicU64,
@@ -748,7 +747,6 @@ impl SharedCaptureTelemetry {
             drag_start: Mutex::new(None),
             agent_context: AtomicBool::new(false),
             shift_press: Mutex::new(None),
-            double_shift_notes: AtomicBool::new(false),
             note_tap_epoch: AtomicU64::new(0),
             #[cfg(target_os = "linux")]
             native_note_window: AtomicU64::new(0),
@@ -872,7 +870,7 @@ impl SharedCaptureTelemetry {
     }
 
     pub fn reset_for_session(&self, frame: TargetFrame) {
-        self.set_double_shift_notes(false);
+        self.block_note_tap();
         // Session admission runs on the UI thread; NSScreen is unavailable to
         // the background input poller. Cache its reserved Dock strip here.
         #[cfg(target_os = "macos")]
@@ -1127,7 +1125,7 @@ impl SharedCaptureTelemetry {
     fn finish_shift_press(&self, press: Option<(u64, f64, f64, TargetFrame)>, drawn_before_down: bool,
         t_ms: u64, screen_x: f64, screen_y: f64) -> bool {
         let Some((t0, x0, y0, start_frame)) = press else { return false; };
-        if self.double_shift_notes() || drawn_before_down { return true; }
+        if self.has_note_editor() || drawn_before_down { return true; }
         let frame = *self
             .target_frame
             .lock()

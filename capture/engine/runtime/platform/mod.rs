@@ -26,9 +26,7 @@ pub(crate) fn observe_note_tap(
     telemetry: &super::SharedCaptureTelemetry,
 ) {
     use std::sync::atomic::Ordering;
-    if !telemetry.double_shift_notes()
-        || telemetry.notes_editing.load(Ordering::Acquire)
-    {
+    if !telemetry.has_note_editor() || telemetry.notes_editing.load(Ordering::Acquire) {
         tap.reset();
         return;
     }

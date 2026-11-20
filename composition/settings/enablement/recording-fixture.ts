@@ -24,7 +24,6 @@ export function recordingFixture(send: (message: object) => void) {
     playbackLevel: 20,
     playbackAvailable: false,
     videoExport: false,
-    doubleShiftNotes: true,
     mediaWarnings: [],
   };
 
@@ -61,10 +60,6 @@ export function recordingFixture(send: (message: object) => void) {
       if (action.action === "recording-preference") {
         if (!fixture.refuse && action.key === "videoExport") {
           state.videoExport = Boolean(action.value);
-          fixture.show();
-        }
-        if (!fixture.refuse && action.key === "doubleShiftNotes") {
-          state.doubleShiftNotes = Boolean(action.value);
           fixture.show();
         }
         send({

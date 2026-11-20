@@ -132,7 +132,6 @@ function isChange(change: unknown): change is RecordingChange {
   switch (key) {
     case "lowerPlayback":
     case "videoExport":
-    case "doubleShiftNotes":
       return typeof value === "boolean";
     case "playbackLevel":
       return (

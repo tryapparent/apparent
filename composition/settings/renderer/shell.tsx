@@ -17,7 +17,7 @@ import { General } from "./general";
 import {
   RecordingStartPreference,
   recordingStartPreference,
-} from "../../../record/settings/recording-start";
+} from "../../../record/settings/renderer/recording-start";
 import type { ComponentType } from "react";
 import { RecordingSection } from "../../../record/settings/renderer/recording-section";
 import { PermissionsSection } from "../../../record/settings/permissions/permissions-section";

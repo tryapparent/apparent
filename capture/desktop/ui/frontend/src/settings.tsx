@@ -1,13 +1,13 @@
 import { createRoot } from 'react-dom/client';
 import { Agents } from './settings/agents/agents';
-import { Labs, type NoteExperiment } from './settings/labs/labs';
+import { Labs, type FrogExperiment } from './settings/labs/labs';
 import { Storage } from './storage';
 
 class SettingsPane extends HTMLElement {
   static observedAttributes = ["pane"];
-  private renderFrogExperiment?: NoteExperiment;
+  private renderFrogExperiment?: FrogExperiment;
 
-  set frogExperiment(component: NoteExperiment | undefined) {
+  set frogExperiment(component: FrogExperiment | undefined) {
     this.renderFrogExperiment = component;
     this.renderPane();
   }

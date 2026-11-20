@@ -30,7 +30,6 @@ export type RecordingState = {
   playbackLevel: number;
   playbackAvailable: boolean;
   videoExport: boolean;
-  doubleShiftNotes: boolean;
   mediaWarnings: string[];
 };
 
@@ -39,7 +38,6 @@ export type RecordingChange = {
 }[keyof RecordingValues];
 
 type RecordingValues = {
-  doubleShiftNotes: boolean;
   microphone: string;
   transcriber: string;
   appleLocale: string;

@@ -13,11 +13,11 @@ declare global {interface Window {apparentLabs: {
   subscribe(callback: (facts: LabsFacts) => void): () => void;
 };}}
 const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', screenPicker: 'recording-picker-mode', dictationFrog: 'dictation-frog-toggle', compactHandoff: 'compact-handoff-toggle', transcriptOnly: 'transcript-only-toggle', silentPrompt: 'silent-prompt-toggle'};
-export type NoteExperiment = ComponentType<{
+export type FrogExperiment = ComponentType<{
   id: string; checked: boolean; disabled: boolean; saving: boolean;
   onCheckedChange: (value: boolean) => void;
 }>;
-export function Labs({frogExperiment: FrogNudge}: {frogExperiment?: NoteExperiment}) {
+export function Labs({frogExperiment: FrogNudge}: {frogExperiment?: FrogExperiment}) {
   const [facts, setFacts] = useState<LabsFacts>();
   const [busy, setBusy] = useState(true), [error, setError] = useState('');
   const [setting, setSetting] = useState<LabsSetting>('streaming'), [operation, setOperation] = useState<'read' | 'save'>('read');

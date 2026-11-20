@@ -42,6 +42,16 @@ pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>, setting:
 #[cfg(test)] mod tests {
     use super::*;
     #[test]
+    fn labs_cannot_change_the_retired_note_experiment() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let original = r#"{"experiments":{"doubleShiftNotes":true},"onboarding":{"doubleShiftNoteStarts":1}}"#;
+        std::fs::write(&path, original).unwrap();
+        assert!(facts(&path).get("doubleShiftSaved").is_none());
+        assert_eq!(request(&path, 5, Some(false), Some("doubleShiftNotes"))["facts"]["error"], "config_write_failed");
+        assert_eq!(std::fs::read_to_string(path).unwrap(), original);
+    }
+    #[test]
     fn silent_prompt_is_opt_in_and_round_trips() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("config.json");

@@ -24,7 +24,6 @@ await bendScratch(async (scratch) => {
   await buildBend(root, "record", gestureOutput, undefined, "record/notes/");
   const gesture = gestureTable(gestureOutput);
   assert.deepEqual(JSON.parse(gesture), {
-    enabledByDefault: true,
     hold: 250,
     pair: 400,
     pointer: 12,
