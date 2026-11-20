@@ -1,5 +1,3 @@
-//! Resolve the single packaged Electron runtime. Callers own their surface protocol
-//! and child lifecycle; this module never launches a window or changes routing.
 use anyhow::{Context, Result, ensure};
 use std::path::{Path, PathBuf};
 
@@ -186,19 +184,19 @@ mod frog_nudge {
         sync::{
             Arc,
             atomic::{AtomicBool, Ordering},
-            mpsc::{Receiver, sync_channel},
+            mpsc::{Receiver, channel},
         },
         time::{Duration, Instant},
     };
 
-    use crate::shared::handoff::{
-        default_config_path, update_config_in,
-    };
+    use crate::shared::handoff::{default_config_path, update_config_in};
 
     include!(concat!(env!("OUT_DIR"), "/frog-nudge.rs"));
 
-    const FLAG: &str = "dictationFrog";
-    const SEEN: &str = "dictationFrogSeen";
+    const APPS: [(&str, &str); 2] = [
+        ("com.electron.wispr-flow", "dictationFrogSessions"),
+        ("com.superduper.superwhisper", "superwhisperFrogSessions"),
+    ];
 
     use objc2::rc::autoreleasepool;
     use objc2_app_kit::NSRunningApplication;
@@ -209,7 +207,7 @@ mod frog_nudge {
         kAudioProcessPropertyIsRunningInput, kAudioProcessPropertyPID,
     };
     use objc2_core_foundation::{CFString, CFRetained};
-    use objc2_foundation::ns_string;
+    use objc2_foundation::NSString;
 
     fn property(selector: u32) -> AudioObjectPropertyAddress {
         AudioObjectPropertyAddress {
@@ -235,10 +233,10 @@ mod frog_nudge {
         Some(value)
     }
 
-    fn mic_state() -> usize {
+    fn mic_state(bundle_id: &str) -> usize {
         autoreleasepool(|_| {
             let apps = NSRunningApplication::runningApplicationsWithBundleIdentifier(
-                ns_string!("com.electron.wispr-flow"),
+                &NSString::from_str(bundle_id),
             );
             if apps.is_empty() { return 0; }
             let system = kAudioObjectSystemObject as u32;
@@ -258,7 +256,7 @@ mod frog_nudge {
                     .and_then(NonNull::new)
                     .map(|ptr| unsafe { CFRetained::from_raw(ptr) }.to_string());
                 let identified = bundle.as_deref().is_some_and(|id| {
-                    id == "com.electron.wispr-flow" || id.starts_with("com.electron.wispr-flow.")
+                    id == bundle_id || id.strip_prefix(bundle_id).is_some_and(|suffix| suffix.starts_with('.'))
                 }) || read_one::<libc::pid_t>(object, kAudioProcessPropertyPID)
                     .is_some_and(|pid| apps.iter().any(|app| app.processIdentifier() == pid));
                 if identified {
@@ -273,37 +271,37 @@ mod frog_nudge {
         })
     }
 
-    fn eligible(enabled: bool, seen: bool, blocked: bool) -> bool {
-        ELIGIBLE[usize::from(enabled) * 4 + usize::from(seen) * 2 + usize::from(blocked)]
+    fn eligible(enabled: bool, blocked: bool) -> bool {
+        ELIGIBLE[usize::from(enabled) * 2 + usize::from(blocked)]
     }
 
     fn enabled(config: &serde_json::Value) -> bool {
-        config["experiments"][FLAG].as_bool() == Some(true)
+        config["experiments"]["dictationFrog"].as_bool() == Some(true)
     }
 
-    fn seen(config: &serde_json::Value) -> bool {
-        config["onboarding"][SEEN].as_bool() == Some(true)
-    }
-
-    fn claim(path: &Path, blocked: &AtomicBool) -> bool {
+    fn finish_session(path: &Path, count: &str, blocked: &AtomicBool) -> bool {
+        let mut due = false;
         update_config_in(path, |config| {
             anyhow::ensure!(
-                eligible(enabled(config), seen(config), blocked.load(Ordering::Acquire)),
-                "Dictation nudge unavailable"
+                eligible(enabled(config), blocked.load(Ordering::Acquire)),
+                "Nudge unavailable"
             );
             let onboarding = config.as_object_mut().unwrap().entry("onboarding")
                 .or_insert_with(|| serde_json::json!({}));
-            onboarding.as_object_mut().ok_or_else(|| anyhow::anyhow!("Invalid onboarding progress"))?
-                .insert(SEEN.into(), true.into());
+            let onboarding = onboarding.as_object_mut().ok_or_else(|| anyhow::anyhow!("Invalid onboarding"))?;
+            let previous = onboarding.get(count).and_then(|v| v.as_u64()).filter(|&n| n < 3).unwrap_or(0);
+            let (next, wave) = CYCLE[previous as usize];
+            onboarding.insert(count.into(), next.into());
+            due = wave;
             Ok(())
-        }).is_ok()
+        }).is_ok() && due
     }
 
     struct Nudge {
         blocked: Arc<AtomicBool>,
         due: Receiver<()>,
         child: Option<Child>,
-        app: PathBuf,
+        entry: PathBuf,
         runtime: PathBuf,
     }
 
@@ -313,46 +311,44 @@ mod frog_nudge {
             if !entry.is_file() {
                 return None;
             }
-            let (send, due) = sync_channel(1);
+            let (send, due) = channel();
             let blocked = Arc::new(AtomicBool::new(true));
             let paused = blocked.clone();
             let config = default_config_path();
             std::thread::Builder::new().name("dictation-nudge".into()).spawn(move || {
-                let mut previous = 0;
-                let mut pending = None;
+                let mut states = [(0, None); APPS.len()];
                 let mut next_config_check = Instant::now();
                 let mut watching = false;
                 loop {
                     if Instant::now() >= next_config_check {
                         let saved = std::fs::read(&config).ok()
                             .and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_default();
-                        if seen(&saved) { break; }
                         watching = enabled(&saved);
                         next_config_check = Instant::now() + Duration::from_millis(750);
                     }
-                    if eligible(watching, false, paused.load(Ordering::Acquire)) {
-                        let state = mic_state();
-                        if ENDED[previous][state] {
-                            pending = Some(Instant::now());
-                        } else if state != 1 {
-                            pending = None;
-                        }
-                        previous = state;
-                        if pending.is_some_and(|at| at.elapsed() >= Duration::from_millis(SETTLE_MS)) {
-                            pending = None;
-                            if claim(&config, &paused) {
-                                let _ = send.send(());
-                                break;
+                    if eligible(watching, paused.load(Ordering::Acquire)) {
+                        for ((bundle, count), (previous, pending)) in APPS.into_iter().zip(&mut states) {
+                            let state = mic_state(bundle);
+                            if ENDED[*previous][state] {
+                                *pending = Some(Instant::now());
+                            } else if state != 1 {
+                                *pending = None;
+                            }
+                            *previous = state;
+                            if pending.is_some_and(|at| at.elapsed() >= Duration::from_millis(SETTLE_MS)) {
+                                *pending = None;
+                                if finish_session(&config, count, &paused) && send.send(()).is_err() {
+                                    return;
+                                }
                             }
                         }
                     } else {
-                        previous = 0;
-                        pending = None;
+                        states.fill((0, None));
                     }
                     std::thread::sleep(Duration::from_millis(if watching { 125 } else { 750 }));
                 }
             }).ok()?;
-            Some(Self { blocked, due, child: None, app, runtime })
+            Some(Self { blocked, due, child: None, entry, runtime })
         }
 
         fn tick(&mut self, blocked: bool) {
@@ -365,9 +361,11 @@ mod frog_nudge {
                     self.child = None;
                 }
             }
-            if self.due.try_recv().is_ok() && !blocked {
+            if blocked {
+                while self.due.try_recv().is_ok() {}
+            } else if self.child.is_none() && self.due.try_recv().is_ok() {
                 self.child = Command::new(&self.runtime)
-                    .arg(self.app.join("dist/frog-nudge/entry.cjs"))
+                    .arg(&self.entry)
                     .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
                     .spawn().ok();
             }

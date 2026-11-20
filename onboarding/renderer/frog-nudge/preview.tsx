@@ -53,8 +53,8 @@ export function FrogNudgePreference({
         />
       </div>
       <p id="dictation-frog-help">
-        Show a frog once after you finish using Wispr Flow. Uses microphone
-        activity only. Off by default.
+        Show a frog after every third session in Wispr Flow or Superwhisper.
+        Uses microphone activity only. Off by default.
       </p>
       <Button
         type="button"
