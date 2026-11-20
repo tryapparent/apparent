@@ -189,14 +189,20 @@ export function recordingFixture(send: (message: object) => void) {
           send({
             type: "permission-state",
             state: {
-              platform: "wayland",
+              platform: fixture.pickerSupported ? "wayland" : "x11",
+              accessChecked: true,
+              screenSelection: fixture.pickerSupported
+                ? "picker"
+                : "unavailable",
               rows: [
                 {
-                  permission: "accessibility",
+                  permission: fixture.pickerSupported
+                    ? "accessibility"
+                    : "microphone",
                   status: "denied",
                   required: false,
                   relaunch: false,
-                  repair: "copy-input",
+                  repair: fixture.pickerSupported ? "copy-input" : "none",
                 },
               ],
             },
@@ -213,8 +219,6 @@ export function recordingFixture(send: (message: object) => void) {
           request: action.request,
           facts: {
             saved: false,
-            screenPickerSaved: false,
-            screenPickerSupported: fixture.pickerSupported,
             autoPasteSupported: fixture.autoPasteSupported,
             autoPasteSaved: fixture.autoPasteSaved,
             sharingSaved: false,

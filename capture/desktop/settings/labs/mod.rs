@@ -1,6 +1,5 @@
 //! Persistence mechanism only. The Labs catalogue/defaults belong to Desktop TS.
 use std::path::Path;
-use crate::capture::engine::runtime::recording::recorder::selection;
 use crate::shared::handoff::{AGENT_CONTEXT, Config};
 const KEY: &str = "localStreamingTranscription";
 const AUTO_PASTE: &str = "autoPasteDraft";
@@ -25,7 +24,7 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
     let agent_context = serde_json::from_value::<Config>(experiment_config)
         .ok()
         .and_then(|config| config.experiments.get(AGENT_CONTEXT).copied());
-    serde_json::json!({"saved":saved(KEY),"compactHandoffSaved":saved(crate::composition::frame_labels::EXPERIMENT),"transcriptOnlySaved":saved(crate::composition::transcript_handoff::EXPERIMENT),"agentContextSaved":agent_context,"sharingSaved":saved("hostedSharing"),"autoPasteSaved":saved(AUTO_PASTE),"autoPasteSupported":auto_paste_supported(),"wisprSaved":saved("onboardingWisprFlow"),"wisprSupported":cfg!(target_os = "macos"),"silentPromptSaved":saved("silentPrompt"),"dictationFrogSaved":saved("dictationFrog"),"screenPickerSaved":saved(selection::PREFERENCE),"screenPickerSupported":selection::supported()})
+    serde_json::json!({"saved":saved(KEY),"compactHandoffSaved":saved(crate::composition::frame_labels::EXPERIMENT),"transcriptOnlySaved":saved(crate::composition::transcript_handoff::EXPERIMENT),"agentContextSaved":agent_context,"sharingSaved":saved("hostedSharing"),"autoPasteSaved":saved(AUTO_PASTE),"autoPasteSupported":auto_paste_supported(),"wisprSaved":saved("onboardingWisprFlow"),"wisprSupported":cfg!(target_os = "macos"),"silentPromptSaved":saved("silentPrompt"),"dictationFrogSaved":saved("dictationFrog")})
 }
 pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
     match setting {
@@ -38,7 +37,6 @@ pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
         Some("wisprFlow") => Some(("onboardingWisprFlow", cfg!(target_os = "macos"))),
         Some("silentPrompt") => Some(("silentPrompt", true)),
         Some("dictationFrog") => Some(("dictationFrog", cfg!(target_os = "macos"))),
-        Some("screenPicker") => Some((selection::PREFERENCE, selection::supported())),
         _ => None,
     }
 }

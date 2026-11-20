@@ -1315,6 +1315,7 @@ mod tests {
     fn permission_rows_ask_once_then_open_settings() {
         let dir = TempDir::new("grant");
         let mut host = fake(&dir);
+        std::fs::write(&host.path, r#"{"experiments":{"chooseScreenEachTime":false}}"#).unwrap();
         let mut panel = Panel::default();
         let mut grants = Grants::default();
         grants
@@ -1343,8 +1344,6 @@ mod tests {
         );
         let view = panel.view(&host);
         if WIN {
-            // Only the microphone has a switch on Windows (and on Linux under X11; the tests
-            // run without a Wayland session).
             assert_eq!(view.permissions.len(), 1);
             assert_eq!(view.permissions[0].permission, Permission::Microphone);
         } else {
@@ -1362,7 +1361,6 @@ mod tests {
             assert!(view.permissions[..3].iter().all(|p| p.required));
             assert!(!view.permissions[3].required);
         }
-        // Screen Recording granted but not yet usable: Reopen relaunches.
         assert_eq!(panel.on(Action::Reopen, &mut host), Effect::None);
         grants
             .statuses

@@ -11,7 +11,7 @@ declare global {interface Window {apparentLabs: {
   read(): Promise<LabsFacts>; save(value: boolean, setting?: LabsSetting): Promise<LabsFacts>;
   subscribe(callback: (facts: LabsFacts) => void): () => void;
 };}}
-const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', screenPicker: 'recording-picker-mode', dictationFrog: 'dictation-frog-toggle', compactHandoff: 'compact-handoff-toggle', transcriptOnly: 'transcript-only-toggle', silentPrompt: 'silent-prompt-toggle', agentContext: 'agent-context-toggle'};
+const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', compactHandoff: 'compact-handoff-toggle', transcriptOnly: 'transcript-only-toggle', silentPrompt: 'silent-prompt-toggle', agentContext: 'agent-context-toggle'};
 export type LabsExperiment = ComponentType<{
   id: string; checked: boolean; disabled: boolean; saving: boolean;
   onCheckedChange: (value: boolean) => void;

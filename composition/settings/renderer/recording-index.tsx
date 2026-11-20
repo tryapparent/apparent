@@ -7,7 +7,7 @@ const stages = [
     title: "Setup",
     links: [
       ["Change record shortcut", "General", "general-shortcuts"],
-      ["Screen selection", "Labs", "recording-start"],
+      ["Screen selection", "Permissions", "recording-start"],
     ],
   },
   {

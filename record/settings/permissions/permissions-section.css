@@ -1,6 +1,6 @@
 .record-permissions {
   display: grid;
-  gap: 16px;
+  gap: 40px;
   container-type: inline-size;
 }
 
@@ -9,18 +9,21 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 16px;
+  margin-block-end: 12px;
 }
 
 .settings-content .record-permissions button {
   min-height: var(--apparent-control-minimum, 44px);
 }
 
-.settings-content .record-permissions button[aria-disabled="true"] {
+.settings-content .record-permissions button[aria-disabled="true"],
+.settings-content .record-permissions button[aria-busy="true"] {
   cursor: wait;
 }
 
-.record-permission-group > h2 {
-  margin-block-end: 8px;
+.record-permission-group > h2,
+.record-screen-selection > h2 {
+  margin-block-end: 12px;
 }
 
 .record-permission-group ul {
@@ -30,9 +33,9 @@
 
 .record-permission-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px 16px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px 12px;
   padding: 12px 16px;
 }
 
@@ -47,15 +50,42 @@
 }
 
 .record-permission-row p,
-.record-permission-action {
+.record-permission-status {
   font-size: var(--apparent-type-meta, 16px);
+}
+
+.record-permission-icon,
+.record-permission-status svg {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+
+.record-permission-icon {
+  margin-block-start: 4px;
+}
+
+.record-permission-status {
+  display: flex;
+  align-self: center;
+  align-items: center;
+  justify-content: end;
+  gap: 6px;
+}
+
+.record-permission-warning {
+  color: var(--apparent-failed);
+}
+
+.record-permission-action,
+.record-permission-feedback {
+  grid-column: 2 / -1;
 }
 
 .record-permission-action {
   display: grid;
-  justify-items: end;
-  text-align: end;
-  gap: 4px;
+  justify-items: start;
+  gap: 8px;
 }
 
 .record-permission-action button {
@@ -65,13 +95,42 @@
   white-space: normal;
 }
 
+.record-screen-selection-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.record-screen-selection-row label {
+  font-size: var(--apparent-type-body);
+  font-weight: 500;
+}
+
+.settings-content .record-screen-selection-row .apparent-switch {
+  padding: 0;
+}
+
+.record-screen-selection-row > div,
+.record-screen-selection-row > p {
+  grid-column: 1 / -1;
+}
+
+.record-screen-selection-row p {
+  font-size: var(--apparent-type-meta, 16px);
+}
+
+.record-screen-selection-row p + p {
+  margin-block-start: 4px;
+}
+
 @container (max-width: 340px) {
   .record-permission-row {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .record-permission-action {
-    justify-items: start;
-    text-align: start;
+  .record-permission-status {
+    grid-column: 2;
+    justify-content: start;
   }
 }

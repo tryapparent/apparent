@@ -65,3 +65,34 @@ def settings_rows(platform: Platform) -> U32:
       6
     case x11{}:
       2
+
+type SavedPicker is Data:
+  unset{}
+  picker{}
+  full_display{}
+
+def screen_selection(supported: Bool, saved: SavedPicker) -> U32:
+  match supported:
+    case False{}:
+      0
+    case True{}:
+      match saved:
+        case unset{}:
+          1
+        case picker{}:
+          1
+        case full_display{}:
+          2
+
+def save_picker(skip: Bool) -> Bool:
+  match skip:
+    case False{}:
+      True{}
+    case True{}:
+      False{}
+
+law fresh_install_uses_picker:
+  {screen_selection(True{}, unset{}) == 1 : U32}
+
+def fresh_install_uses_picker():
+  {==}

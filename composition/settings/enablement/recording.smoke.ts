@@ -243,12 +243,12 @@ test("staged Recording opens directly, receives native facts and saves only on i
         await openRecording();
 
         fixture.pickerSupported = theme === "light";
-        await openTask("Screen selection", "When you press Record");
-        const chooseScreen = page.getByRole("radio", {
-          name: "Choose a screen each time",
+        await openTask("Screen selection", "Screen recording");
+        const picker = page.getByRole("switch", {
+          name: "Skip screen selection",
         });
-        if (fixture.pickerSupported) await expect(chooseScreen).toBeEnabled();
-        else await expect(chooseScreen).toBeDisabled();
+        if (fixture.pickerSupported) await expect(picker).toBeEnabled();
+        else await expect(picker).toBeDisabled();
         await screenshot(`screen-selection-${variant}`);
         await openRecording();
 
@@ -306,9 +306,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
         await openRecording();
 
         await openTask("Fix permissions", "Permissions");
-        await expect(
-          page.getByText("Input devices", { exact: true }),
-        ).toBeVisible();
+        await expect(page.getByRole("listitem")).toBeVisible();
         await screenshot(`permissions-${variant}`);
         await openRecording();
 

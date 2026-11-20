@@ -1,14 +1,14 @@
 # Recording start preference
 
-In Settings → Labs, **Start screen recording right away** is the default.
-**Choose a screen each time** requests a fresh system selection for each Screen
-recording started from the app or Record shortcut. Linux Wayland can also ask for
-portal consent in the default mode. The picker choice is unavailable on X11.
+**Settings → Permissions → Skip screen selection** is off by default on
+macOS and Wayland. In that state, each Screen recording started from the app or
+Record shortcut opens the native picker. Turning it on records one full display.
+Wayland can still ask for system approval. X11 has no native picker.
 
 The next Screen recording reads `experiments.chooseScreenEachTime` from
-`~/.config/apparent/config.json`. The Electron Settings renderer uses the Labs
-bridge and the app's existing config transaction. To return to the default
-behavior, select **Start screen recording right away** in Labs.
+`~/.config/apparent/config.json`. Absent and explicit `true` choose the picker.
+Explicit `false` uses the full-display route, preserving older saved selections.
+The Record Permissions presenter uses the app's existing config transaction.
 
 macOS uses the picker-authorized ScreenCaptureKit filter for the movie and
 keyframe candidates. Wayland reuses the selected portal session directly, with
@@ -18,11 +18,10 @@ substituted. Microphone and input requirements still apply.
 
 Typed notes are unavailable with the macOS picker. Its fixed filter cannot add
 the notes editor to the window exclusions after capture starts. To use typed
-notes on macOS, select **Start screen recording right away**.
+notes on macOS, turn on **Skip screen selection**.
 
 Area capture, phone capture, and Agent capture retain their existing admission
-and source selection. Keep the immediate Screen route while it is the rollout
-default and while other callers still need it.
+and source selection.
 
 ## Recording pane
 
@@ -30,7 +29,7 @@ The installed Settings sidebar delegates **Recording** to Record’s public
 `RecordingSection`. Composition supplies the `RecordingBridge`. It carries
 projected device, transcriber and playback facts plus acknowledgements from the
 existing Settings config transaction. The renderer has no config file or device
-access. **Settings → Labs → Recording start** uses its existing experiment.
+access. **Screen selection** in the Recording index links to Permissions.
 
 | Control | Saved value and effect |
 | --- | --- |
@@ -50,9 +49,14 @@ meter. Neither publishes audio samples to the renderer.
 ## Permissions
 
 `PermissionsSection` uses only the projected state and actions in
-`permissions-contract.ts`. Its rows reuse Record's recording requirements.
+`permissions-contract.ts`. Its rows reuse Record's recording requirements and
+reflect observed system access. It shows **Check again** if the automatic access
+check fails. The screen selection preference takes effect on the next capture.
 The Bend repair policy also serves the native Settings fallback and onboarding
-repair. The native build consumes the compact generated table so Cargo can
+repair. Keep the native fallback available for missing assets or renderer startup
+failure. Rolling back the Electron surface also requires rolling back the
+screen-selection default because the native fallback cannot edit that preference.
+The native build consumes the compact generated table so Cargo can
 build offline. After editing the policy, run
 `node record/enablement/ci/bend/permission-table.ts > record/settings/permissions/permission-policy.json`
 and verify it with `node record/enablement/ci/bend/check.ts`.
