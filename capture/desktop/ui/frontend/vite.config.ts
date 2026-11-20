@@ -22,6 +22,7 @@ export default defineConfig({
   resolve: { dedupe: ['react', 'react-dom', '@apparent/ui', 'lucide-react'] },
   plugins: [{ name: 'recording-settings-policy', buildStart() {
     execFileSync(process.execPath, [fileURLToPath(new URL('../../../../record/settings/build.ts', import.meta.url))], { stdio: 'inherit' });
+    execFileSync(process.execPath, [fileURLToPath(new URL('../../../../composition/enablement/ci/bend/build.ts', import.meta.url))], { stdio: 'inherit' });
   } }, react(), {
     name: 'settings-utility-sources',
     enforce: 'pre',

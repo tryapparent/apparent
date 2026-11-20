@@ -121,7 +121,8 @@ let aboutState;
 
 // Deliberately separate from the installed application's profile and identity.
 app.setName(settings ? 'Apparent Settings' : 'Apparent UI Foundation');
-app.setPath('userData', path.join(app.getPath('appData'), settings ? 'apparent-settings' : 'apparent-ui-foundation'));
+const profile = process.env.APPARENT_PROFILE === 'apparent-nightly' ? 'apparent-nightly' : 'apparent';
+app.setPath('userData', path.join(app.getPath('appData'), `${profile}-${settings ? 'settings' : 'ui-foundation'}`));
 
 app.whenReady().then(() => {
   if (settings) {
@@ -247,31 +248,11 @@ app.whenReady().then(() => {
     platform: process.platform,
     openExternal: url => shell.openExternal(url),
   });
-  ipcMain.handle('apparent:about-link', (event, link, ...args) => {
-    validate(event, args);
-    if (pane !== 'about' || !['website', 'source', 'discord'].includes(link)) throw new Error('Forbidden link');
-    const urls = { website: 'https://app.tryapparent.com', source: 'https://github.com/tryapparent/apparent', discord: 'https://discord.gg/ZRGZwV32M' };
-    return shell.openExternal(urls[link]);
-  });
-  ipcMain.handle('apparent:about-copy-version', (event, ...args) => {
-    validate(event, args);
-    if (pane !== 'about' || typeof aboutState?.version !== 'string' || !aboutState.version)
-      throw new Error('Version unavailable');
-    clipboard.writeText(`Apparent ${aboutState.version}`);
-  });
-  ipcMain.handle('apparent:about-read', (event, ...args) => {
-    validate(event, args);
-    if (pane !== 'about') throw new Error('Unavailable outside About');
-    return aboutState;
-  });
-  ipcMain.handle('apparent:about-action', (event, action, ...args) => {
-    validate(event, args);
-    if (pane !== 'about' || !action || typeof action !== 'object') throw new Error('Forbidden About action');
-    const simple = ['check-for-updates', 'dismiss-update-check', 'update-now', 'update-later', 'tour'];
-    if (!(Object.keys(action).length === 1 && simple.includes(action.action)) &&
-        !(Object.keys(action).length === 3 && action.action === 'set' && action.key === 'updateChannel' && ['stable', 'main'].includes(action.value)))
-      throw new Error('Forbidden About action');
-    process.stdout.write(`${JSON.stringify(action)}\n`);
+  frame.bindAbout({
+    handle: (name, listener) => ipcMain.handle(name, listener),
+    validate, current: () => pane === 'about', read: () => aboutState,
+    send: action => process.stdout.write(JSON.stringify(action) + '\n'),
+    open: url => shell.openExternal(url), copy: text => clipboard.writeText(text),
   });
   ipcMain.handle('apparent:agents-preference', (event, ...args) => {
     validate(event, []);

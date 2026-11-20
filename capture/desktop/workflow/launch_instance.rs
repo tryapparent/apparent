@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+use crate::shared::handoff::launch_socket as socket_path;
+
 static OPEN: AtomicBool = AtomicBool::new(false);
 
 pub fn request_open() {
@@ -38,19 +40,6 @@ pub fn request_url(url: &str) -> Result<()> {
     );
     request_open();
     Ok(())
-}
-
-fn socket_path() -> Result<PathBuf> {
-    let dir = PathBuf::from(std::env::var_os("HOME").context("HOME is not set")?)
-        .join(".config/apparent/launch");
-    std::fs::create_dir_all(&dir)?;
-    let meta = std::fs::symlink_metadata(&dir)?;
-    ensure!(
-        meta.is_dir() && meta.uid() == unsafe { libc::geteuid() },
-        "unsafe launch directory"
-    );
-    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))?;
-    Ok(dir.join("open.sock"))
 }
 
 pub struct Owner {

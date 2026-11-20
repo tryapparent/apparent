@@ -1,7 +1,7 @@
 import { releaseTag } from "../manifest.ts";
 import { assertNewVersion } from "./publication/feed.ts";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
 export function validate(env: NodeJS.ProcessEnv, cargo: string, head: string) {
@@ -31,6 +31,11 @@ if (process.argv[1]?.endsWith("/inputs.ts")) {
     readFileSync("Cargo.toml", "utf8"),
     execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
   );
+  if (process.env.RELEASE_CHANNEL === "main")
+    assert(
+      existsSync("composition/settings/about/mac-updates.bend"),
+      "The admitted source predates Mac Nightly support",
+    );
   if (process.env.RELEASE_CHANNEL === "stable") {
     const contents = JSON.parse(
       execFileSync(

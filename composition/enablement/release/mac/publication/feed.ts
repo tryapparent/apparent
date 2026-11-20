@@ -40,8 +40,9 @@ export function updateFeed(
   metadata: Metadata,
   now = new Date(),
 ) {
-  const old = latest(previous);
-  if (old.version === metadata.version && old.build === metadata.buildNumber) {
+  const nightly = metadata.channel === "main";
+  const old = !previous && nightly ? null : latest(previous);
+  if (old?.version === metadata.version && old.build === metadata.buildNumber) {
     assert(
       old.item.includes(`url="${metadata.zipUrl}"`) &&
         old.item.includes(`sparkle:edSignature="${metadata.edSignature}"`) &&
@@ -50,13 +51,17 @@ export function updateFeed(
     );
     return previous;
   }
-  assertNewVersion(previous, metadata.version!);
-  assert(
-    compare(metadata.buildNumber!, old.build) > 0,
-    "Candidate build must exceed the live preview build",
-  );
+  if (!nightly) assertNewVersion(previous, metadata.version!);
+  if (old)
+    assert(
+      compare(metadata.buildNumber!, old.build) > 0,
+      "Candidate build must exceed the live preview build",
+    );
+  const download = nightly ? `<link>${metadata.dmgUrl}</link>` : "";
+  const item = `<item><title>${metadata.version}</title>${download}<pubDate>${now.toUTCString()}</pubDate><sparkle:version>${metadata.buildNumber}</sparkle:version><sparkle:shortVersionString>${metadata.version}</sparkle:shortVersionString><sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion><sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements><enclosure url="${metadata.zipUrl}" length="${metadata.length}" type="application/octet-stream" sparkle:edSignature="${metadata.edSignature}" /></item>`;
+  if (!old)
+    return `<?xml version="1.0" encoding="utf-8"?>\n<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><title>Apparent Nightly</title>\n${item}\n</channel></rss>\n`;
   assert.equal((previous.match(/<channel(?:\s[^>]*)?>/g) ?? []).length, 1);
   assert.equal((previous.match(/<\/channel>/g) ?? []).length, 1);
-  const item = `<item><title>${metadata.version}</title><pubDate>${now.toUTCString()}</pubDate><sparkle:version>${metadata.buildNumber}</sparkle:version><sparkle:shortVersionString>${metadata.version}</sparkle:shortVersionString><sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion><sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements><enclosure url="${metadata.zipUrl}" length="${metadata.length}" type="application/octet-stream" sparkle:edSignature="${metadata.edSignature}" /></item>`;
   return previous.replace(/<item(?:\s[^>]*)?>/, item + "\n<item>");
 }

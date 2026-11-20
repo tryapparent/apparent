@@ -98,15 +98,19 @@ export function identity(manifest: Manifest): void {
       throw Error("Invalid candidate file");
     names.add(file.name);
   }
+  const macAsset =
+    manifest.channel === "main" && names.has("mac-update.json")
+      ? "Apparent-Nightly"
+      : "Apparent-Preview";
   const base =
     manifest.platform === "linux"
       ? `Apparent-${manifest.version}-linux-${manifest.architecture}.AppImage`
-      : `Apparent-Preview-${manifest.version}-arm64.dmg`;
+      : `${macAsset}-${manifest.version}-arm64.dmg`;
   if (
     !names.has(base) ||
     !names.has(`${base}.sha256`) ||
     (manifest.platform === "macos" &&
-      !names.has(`Apparent-Preview-${manifest.version}-arm64.zip`))
+      !names.has(`${macAsset}-${manifest.version}-arm64.zip`))
   )
     throw Error("Missing platform payload");
 }

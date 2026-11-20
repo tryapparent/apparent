@@ -9,7 +9,7 @@ if(!['linux','darwin'].includes(process.platform))process.exit(1);
 if(process.platform==='darwin')app.setActivationPolicy('accessory');
 const hyprland=process.platform==='linux' && (Boolean(process.env.HYPRLAND_INSTANCE_SIGNATURE) || (process.env.XDG_CURRENT_DESKTOP||'').toLowerCase().split(':').includes('hyprland'));
 app.setName('Apparent recording controls');
-app.setPath('userData',path.join(app.getPath('appData'),'apparent-pill'));
+app.setPath('userData',protocol.profile(app.getPath('appData')));
 nativeTheme.themeSource='system';
 const page=pathToFileURL(path.join(__dirname,'../../dist/pill/index.html')).href;
 let sharingConfirmation=null;

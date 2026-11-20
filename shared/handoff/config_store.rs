@@ -20,8 +20,18 @@ pub fn default_config_path() -> PathBuf {
         .unwrap_or_else(|| {
             dirs::home_dir()
                 .unwrap_or_else(|| PathBuf::from("."))
-                .join(".config/apparent/config.json")
+                .join(".config")
+                .join(profile_name())
+                .join("config.json")
         })
+}
+
+pub(crate) fn is_nightly() -> bool {
+    cfg!(target_os = "macos") && env!("APPARENT_RELEASE_CHANNEL") == "main"
+}
+
+pub(crate) fn profile_name() -> &'static str {
+    if is_nightly() { "apparent-nightly" } else { "apparent" }
 }
 
 /// Sets one top-level key in `path` (`null` removes it), keeping the rest (and its `0600` mode,
@@ -273,4 +283,77 @@ fn config_write_hook(point: &str, path: &Path) {
             hook(point, path);
         }
     });
+}
+
+#[cfg(unix)]
+pub(crate) fn launch_socket() -> Result<PathBuf> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let dir = PathBuf::from(std::env::var_os("HOME").context("HOME is not set")?)
+        .join(".config")
+        .join(profile_name())
+        .join("launch");
+    std::fs::create_dir_all(&dir)?;
+    let meta = std::fs::symlink_metadata(&dir)?;
+    ensure!(
+        meta.is_dir() && meta.uid() == unsafe { libc::geteuid() },
+        "unsafe launch directory"
+    );
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))?;
+    Ok(dir.join("open.sock"))
+}
+
+
+#[cfg(unix)]
+pub(crate) fn capture_socket(create: bool) -> Result<PathBuf> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let home = std::env::var_os("HOME").context("HOME is not set")?;
+    let dir = PathBuf::from(home)
+        .join(".config")
+        .join(profile_name())
+        .join("agent-control");
+    if create {
+        std::fs::create_dir_all(&dir)?;
+    }
+    let meta = std::fs::symlink_metadata(&dir)?;
+    ensure!(
+        meta.is_dir() && meta.uid() == unsafe { libc::geteuid() },
+        "unsafe control directory"
+    );
+    if create {
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    ensure!(
+        std::fs::metadata(&dir)?.permissions().mode() & 0o077 == 0,
+        "control directory is not private"
+    );
+    Ok(dir.join("capture.sock"))
+}
+
+
+pub fn builtin_captures_dir() -> PathBuf {
+    if cfg!(not(target_os = "macos")) {
+        dirs::data_local_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("apparent")
+            .join("captures")
+    } else {
+        dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("Library/Application Support")
+            .join(profile_name())
+            .join("captures")
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub fn log_dir() -> Option<PathBuf> {
+    let name = if is_nightly() { "Apparent Nightly" } else { "Apparent" };
+    dirs::home_dir().map(|home| home.join("Library/Logs").join(name))
+}
+
+pub(crate) fn configure_nightly_child(command: &mut std::process::Command) {
+    if is_nightly() {
+        command.env("APPARENT_PROFILE", profile_name())
+            .env("APPARENT_CONFIG", default_config_path());
+    }
 }

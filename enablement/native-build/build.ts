@@ -104,7 +104,10 @@ export function buildNative(root: string, output: string, architecture: string) 
   const arch = architecture === 'aarch64' ? 'arm64' : architecture;
   if (!['arm64', 'x86_64'].includes(arch)) throw new Error('Unsupported Mac target architecture');
   const previewId = process.env.APPARENT_HELPER_BUNDLE_ID;
-  if (previewId !== undefined && previewId !== 'dev.simonvanlaak.apparent.preview.helper') throw new Error('Unexpected helper bundle ID');
+  if (previewId !== undefined && ![
+    'dev.simonvanlaak.apparent.preview.helper',
+    'dev.simonvanlaak.apparent.nightly.helper',
+  ].includes(previewId)) throw new Error('Unexpected helper bundle ID');
   const script = fileURLToPath(import.meta.url);
   watch(script);
   for (const key of environmentInputs) console.log(`cargo:rerun-if-env-changed=${key}`);

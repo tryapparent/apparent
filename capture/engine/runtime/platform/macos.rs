@@ -33,10 +33,7 @@ pub(crate) const MOUSE_SOURCE: &str = "the mouse monitor";
 pub(crate) const KEY_SOURCE: &str = "the key tap";
 pub(crate) const NO_KEY_SOURCE: &str = "nowhere (Accessibility off; the record shortcut still works)";
 
-/// `~/Library/Logs/Apparent`.
-pub fn log_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|home| home.join("Library/Logs/Apparent"))
-}
+pub use crate::shared::handoff::log_dir;
 
 pub fn main_display_id() -> u32 {
     unsafe { CGMainDisplayID() }

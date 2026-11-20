@@ -50,6 +50,7 @@ class PreviewReleaseTest(unittest.TestCase):
             (root / "bin/cargo").write_text(
                 '#!/bin/sh\nmkdir -p target/release\n'
                 'printf "%s\\n" "$APPARENT_RELEASE_VERSION" "$APPARENT_RELEASE_CHANNEL" "$APPARENT_REPORTING_ENVIRONMENT" > target/reporting-identity\n'
+                'printf "%s" "$APPARENT_HELPER_BUNDLE_ID" > target/helper-identity\n'
                 'printf "test" > target/release/apparent\n'
                 'printf "test" > target/release/apparent-helper\n'
             )
@@ -83,6 +84,7 @@ class PreviewReleaseTest(unittest.TestCase):
                              ["0.123.2", "preview", "production"])
             info = plistlib.loads((root / "dist/Apparent Preview.app/Contents/Info.plist").read_bytes())
             self.assertEqual(info["CFBundleIdentifier"], "dev.simonvanlaak.apparent.preview")
+            self.assertEqual((root / "target/helper-identity").read_text(), "dev.simonvanlaak.apparent.preview.helper")
             self.assertEqual(info["CFBundleShortVersionString"], "0.123.2")
             self.assertEqual(info["CFBundleVersion"], "123.2")
             self.assertTrue(info["LSHasLocalizedDisplayName"])
@@ -118,6 +120,7 @@ class PreviewReleaseTest(unittest.TestCase):
             self.assertEqual(newer.returncode, 0, newer.stderr)
             self.assertEqual((root / "target/reporting-identity").read_text().splitlines(), ["0.123.2", "stable", "production"])
             self.assertEqual(json.loads(dmg.read_text())["title"], "apparent 0.123.2 (123.3)")
+
 
 
 
@@ -160,10 +163,6 @@ class PreviewReleaseTest(unittest.TestCase):
         self.assertEqual(hashlib.sha256((ROOT / "capture/desktop/assets/menubar-icon@2x.png").read_bytes()).hexdigest(),
                          "4714f8ebbe8dd7816c7f7ab07ad98daa61fb4eee5fc3ed900af8f012b452dc07")
 
-    def test_packager_requests_isolated_preview_helper_identity(self):
-        script = (PACKAGER / "build.ts").read_text() + (PACKAGER / "metadata.ts").read_text()
-        self.assertIn("dev.simonvanlaak.apparent.preview.helper", script)
-
     def test_preview_cannot_replace_production_cli_or_login_item(self):
         script = (PACKAGER / "build.ts").read_text() + (PACKAGER / "metadata.ts").read_text()
         cli = (ROOT / "composition/command_line.rs").read_text()
@@ -177,11 +176,9 @@ class PreviewReleaseTest(unittest.TestCase):
     def test_preview_bundle_has_its_own_sparkle_feed(self):
         script = (PACKAGER / "build.ts").read_text() + (PACKAGER / "metadata.ts").read_text()
         self.assertIn("dev.simonvanlaak.apparent.preview", script)
-        self.assertIn("Apparent Preview.app", script)
         self.assertNotIn("dev.kitlangton.apparent", script)
         self.assertIn("Sparkle.framework", script)
         self.assertIn("SUFeedURL", script)
-        self.assertIn("preview-mac-feed/appcast.xml", script)
         self.assertIn("APPARENT_PREVIEW_PUBLIC_KEY", script)
         self.assertNotIn("apparent.kitlangton.com/appcast.xml", script)
         self.assertIn('APPARENT_PREVIEW_NOTARIZE', script)

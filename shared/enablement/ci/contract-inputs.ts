@@ -53,7 +53,7 @@ export function contractChecks(
     sharedVerifier ||
     nativeBuild ||
     has(
-      /^\.github\/(?:workflows|actions)\/|^composition\/enablement\/release\/|^enablement\/release_gate\.py$/,
+      /^\.github\/(?:workflows|actions)\/|^composition\/enablement\/release\/|^composition\/enablement\/ci\/bend\/|^composition\/settings\/about\/|^enablement\/release_gate\.py$/,
     ) ||
     has(
       /^capture\/desktop\/(?:scripts\/(?:packaging|release|linux\/appimage)\/|ui\/frontend\/(?:package(?:-lock)?\.json$|scripts\/))/,

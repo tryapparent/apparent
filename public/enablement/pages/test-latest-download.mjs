@@ -24,6 +24,12 @@ test("unsupported Windows and unknown platforms never receive another OS's insta
   assert.equal(selectLatestDownload(releases, "unsupported"), null)
 })
 
+test("Mac site downloads ignore Nightly and other Mac prereleases", () => {
+  const nightly = release("2026-10-30T00:00:00Z", ["Apparent-Nightly-0.5.3-arm64.dmg"])
+  const other = { ...release("2026-10-30T00:00:01Z", ["Apparent-Preview-0.5.4-arm64.dmg"]), prerelease: true }
+  assert.match(selectLatestDownload([other, nightly, ...releases], "mac"), /Apparent-Preview-0\.5\.1-arm64\.dmg$/)
+})
+
 test("does not send a visitor to a draft, checksum, old Scrawl binary, or untrusted asset URL", () => {
   const odd = [
     release("2026-10-31T00:00:00Z", ["Apparent-Preview-0.6.1-arm64.dmg"], true),

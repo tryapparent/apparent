@@ -1,0 +1,4 @@
+{
+  "modules": ["settings/about/mac-updates.bend"],
+  "inputs": ["settings/", "enablement/ci/bend/"]
+}

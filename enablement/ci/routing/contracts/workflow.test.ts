@@ -115,6 +115,7 @@ test("committed candidate routing selects the workflow contract commands and pre
   const checks = {
     release: "Verify paired release contracts",
     sparkle: "Verify shared Sparkle outcome policy",
+    macAbout: "Verify installed About download policy",
     theme: "Verify shared theme",
     engineering: "Verify push guards, selection and publication admission",
     tooling: "Verify the shared selected tooling suite",
@@ -124,16 +125,22 @@ test("committed candidate routing selects the workflow contract commands and pre
   for (const [paths, expected] of [
     [[native], []],
     [[theme], [checks.theme]],
-    [[sparkle], [checks.sparkle]],
-    [[verifier], [checks.release, checks.engineering]],
-    [[release], [checks.release]],
+    [[sparkle], [checks.sparkle, checks.macAbout]],
+    [[verifier], [checks.release, checks.macAbout, checks.engineering]],
+    [[release], [checks.release, checks.macAbout]],
     [
       [workflow],
-      [checks.release, checks.engineering, checks.tooling, checks.workflow],
+      [
+        checks.release,
+        checks.macAbout,
+        checks.engineering,
+        checks.tooling,
+        checks.workflow,
+      ],
     ],
     [
       [native, theme, release],
-      [checks.release, checks.theme],
+      [checks.release, checks.macAbout, checks.theme],
     ],
   ] as const) {
     git("reset", "--hard", base);
