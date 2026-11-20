@@ -6,6 +6,7 @@ export type PillView = {
   label: string;
   warning: string | null;
   notice: string | null;
+  noteTip?: string | null;
   reducedMotion: boolean;
   draggable: boolean;
   inputWaveform: number[] | null;

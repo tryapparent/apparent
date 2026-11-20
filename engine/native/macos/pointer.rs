@@ -5,7 +5,9 @@ use std::time::{Duration, Instant};
 
 use super::{
     CGEventGetFlags, CGEventGetLocation, CGEventSourceButtonState, CGPoint, EventRef,
-    FLAG_ALTERNATE, FLAG_COMMAND, FLAG_CONTROL, FLAG_SHIFT, SharedCaptureTelemetry, check_key_tap,
+    CGEventGetIntegerValueField, EVENT_FLAGS_CHANGED, EVENT_KEY_DOWN, EVENT_LEFT_MOUSE_DOWN,
+    EVENT_RIGHT_MOUSE_DOWN, EVENT_SCROLL_WHEEL, EVENT_SYSTEM_DEFINED, EVENT_TAP_DISABLED_BY_TIMEOUT,
+    EVENT_TAP_DISABLED_BY_USER_INPUT, KEYBOARD_EVENT_KEYCODE, FLAG_ALTERNATE, FLAG_COMMAND, FLAG_CONTROL, FLAG_SHIFT, SharedCaptureTelemetry, check_key_tap,
     current_mouse_location, modifier_flags, poll_clicks, track_shift_ink,
 };
 
@@ -25,6 +27,17 @@ pub(super) fn is_motion_event(kind: u32) -> bool {
     )
 }
 
+pub(super) fn invalidate_note_taps(telemetry: &SharedCaptureTelemetry, kind: u32, event: EventRef) {
+    if !telemetry.double_shift_notes() { return; }
+    let blocked = match kind {
+        EVENT_FLAGS_CHANGED => !matches!(unsafe { CGEventGetIntegerValueField(event, KEYBOARD_EVENT_KEYCODE) }, 56 | 60),
+        EVENT_KEY_DOWN | EVENT_LEFT_MOUSE_DOWN | EVENT_RIGHT_MOUSE_DOWN | 25 | EVENT_SCROLL_WHEEL
+        | EVENT_SYSTEM_DEFINED | EVENT_TAP_DISABLED_BY_TIMEOUT | EVENT_TAP_DISABLED_BY_USER_INPUT => true,
+        _ => false,
+    };
+    if blocked { telemetry.block_note_tap(); }
+}
+
 pub(super) fn handle_motion_event(telemetry: &SharedCaptureTelemetry, event: EventRef) {
     if !telemetry.active.load(Ordering::Acquire) || !pure_shift(unsafe { CGEventGetFlags(event) }) {
         return;
@@ -42,6 +55,7 @@ const MOTION_FALLBACK_DELAY: Duration = Duration::from_millis(48);
 pub(in crate::capture::engine::runtime) struct ShiftInk {
     await_release: bool,
     stroke: Option<StrokeMotion>,
+    note: super::super::note_tap::NoteTap,
 }
 
 enum StrokeMotion {
@@ -81,7 +95,14 @@ impl ShiftInk {
         }
         if !telemetry.active.load(Ordering::Acquire) {
             self.stroke = None;
+            self.note.reset();
             return;
+        }
+        let at = location.map(|at| (at.x, at.y));
+        if self.await_release || flags & (FLAG_COMMAND | FLAG_CONTROL | FLAG_ALTERNATE) != 0 {
+            self.note.reset();
+        } else {
+            super::super::observe_note_tap(&mut self.note, at, now, pure_shift(flags), telemetry);
         }
         if !pure_shift(flags) || self.await_release {
             if self.stroke.take().is_some() {
@@ -183,6 +204,7 @@ pub(super) fn run_hid_poller(telemetry: Arc<SharedCaptureTelemetry>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::capture::engine::runtime::LiveOverlayEvent;
     use crate::shared::model::TargetFrame;
 
     #[test]
@@ -237,5 +259,61 @@ mod tests {
             telemetry.strokes.lock().unwrap()[1].normalized_points(),
             [[0.1, 0.1], [0.6, 0.7]]
         );
+    }
+
+    #[test]
+    fn two_quick_shift_taps_open_one_note() {
+        let (sender, receiver) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(sender);
+        *telemetry.target_frame.lock().unwrap() = TargetFrame {
+            x: -9_000.0,
+            y: -9_000.0,
+            width: 100.0,
+            height: 100.0,
+            scale: 1.0,
+        };
+        telemetry.active.store(true, Ordering::Release);
+        telemetry.set_double_shift_notes(true);
+        telemetry.note_ui_pid.store(1, Ordering::Release);
+        let mut ink = ShiftInk::default();
+        let at = Some(CGPoint { x: -8_960.0, y: -8_960.0 });
+        let now = Instant::now();
+        ink.poll(&telemetry, FLAG_SHIFT, at, now);
+        ink.poll(&telemetry, 0, at, now + Duration::from_millis(60));
+        ink.poll(&telemetry, FLAG_SHIFT, at, now + Duration::from_millis(140));
+        ink.poll(&telemetry, 0, at, now + Duration::from_millis(200));
+        let notes = receiver
+            .drain()
+            .filter(|event| matches!(event, LiveOverlayEvent::Note { .. }))
+            .count();
+        assert_eq!(notes, 1);
+    }
+
+    #[test]
+    fn two_slow_shift_presses_open_no_note() {
+        let (sender, receiver) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(sender);
+        *telemetry.target_frame.lock().unwrap() = TargetFrame {
+            x: -9_000.0,
+            y: -9_000.0,
+            width: 100.0,
+            height: 100.0,
+            scale: 1.0,
+        };
+        telemetry.active.store(true, Ordering::Release);
+        telemetry.set_double_shift_notes(true);
+        telemetry.note_ui_pid.store(1, Ordering::Release);
+        let mut ink = ShiftInk::default();
+        let at = Some(CGPoint { x: -8_960.0, y: -8_960.0 });
+        let now = Instant::now();
+        ink.poll(&telemetry, FLAG_SHIFT, at, now);
+        ink.poll(&telemetry, 0, at, now + Duration::from_millis(400));
+        ink.poll(&telemetry, FLAG_SHIFT, at, now + Duration::from_millis(600));
+        ink.poll(&telemetry, 0, at, now + Duration::from_millis(1_000));
+        let notes = receiver
+            .drain()
+            .filter(|event| matches!(event, LiveOverlayEvent::Note { .. }))
+            .count();
+        assert_eq!(notes, 0);
     }
 }

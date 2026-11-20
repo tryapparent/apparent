@@ -5,12 +5,18 @@ import {Switch} from '@apparent/ui/switch';
 import {ErrorDialog} from '@apparent/ui/error-dialog';
 import frog from '../../../../../assets/settings/frog-puzzled.png';
 import {enabled, autoPasteEnabled, sharingEnabled, wisprEnabled, type LabsFacts, type LabsSetting} from './policy';
+import type {ComponentType} from 'react';
+
 declare global {interface Window {apparentLabs: {
   read(): Promise<LabsFacts>; save(value: boolean, setting?: LabsSetting): Promise<LabsFacts>;
   subscribe(callback: (facts: LabsFacts) => void): () => void;
 };}}
-const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', screenPicker: 'recording-picker-mode'};
-export function Labs() {
+const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', screenPicker: 'recording-picker-mode', doubleShiftNotes: 'double-shift-notes-toggle'};
+export type NoteExperiment = ComponentType<{
+  id: string; checked: boolean; disabled: boolean; saving: boolean;
+  onCheckedChange: (value: boolean) => void;
+}>;
+export function Labs({noteExperiment: DoubleShiftNotes}: {noteExperiment?: NoteExperiment}) {
   const [facts, setFacts] = useState<LabsFacts>();
   const [busy, setBusy] = useState(true), [error, setError] = useState('');
   const [setting, setSetting] = useState<LabsSetting>('streaming'), [operation, setOperation] = useState<'read' | 'save'>('read');
@@ -84,6 +90,9 @@ export function Labs() {
           disabled={busy || wispr === undefined || !wisprSupported.current} onCheckedChange={value => void request(value, 'wisprFlow')} /></div>
       <p id="wispr-lab-help">Offer to quit Wispr Flow or Superwhisper before choosing a recording shortcut. macOS only. Off by default.</p>
     </section>
+    {DoubleShiftNotes && <DoubleShiftNotes id={controls.doubleShiftNotes} checked={facts?.doubleShiftSaved ?? false}
+      disabled={busy || !facts || !!facts.error} saving={busy && setting === 'doubleShiftNotes'}
+      onCheckedChange={value => void request(value, 'doubleShiftNotes')} />}
     <span role="status" className="sr-only">{busy ? operation === 'save' ? 'Saving preference' : 'Reading saved preference' : ''}</span>
     {(!facts || facts.error) && !busy && !error && <Button id="labs-refresh" variant="secondary" onClick={() => void request(undefined, setting)}>Refresh preference</Button>}
     <ErrorDialog open={!!error} title={!facts ? 'Preference not confirmed' : facts.error === 'config_read_failed' ? 'Unable to read preference' : 'Unable to save preference'} description={error} artwork={<img src={frog} alt="" />} recoveryLabel="Refresh preference" busy={busy}

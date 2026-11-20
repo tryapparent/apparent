@@ -1,10 +1,16 @@
 import { createRoot } from 'react-dom/client';
 import { Agents } from './settings/agents/agents';
-import { Labs } from './settings/labs/labs';
+import { Labs, type NoteExperiment } from './settings/labs/labs';
 import { Storage } from './storage';
 
 class SettingsPane extends HTMLElement {
   static observedAttributes = ["pane"];
+  private renderNoteExperiment?: NoteExperiment;
+  set noteExperiment(component: NoteExperiment | undefined) {
+    this.renderNoteExperiment = component;
+    this.renderPane();
+  }
+
   private root?: ReturnType<typeof createRoot>;
 
   connectedCallback() {
@@ -25,7 +31,7 @@ class SettingsPane extends HTMLElement {
   private renderPane() {
     const pane = this.getAttribute("pane");
     this.root?.render(pane === "Agents" ? <Agents /> :
-      pane === "Labs" ? <Labs /> : <Storage settings />);
+      pane === "Labs" ? <Labs noteExperiment={this.renderNoteExperiment} /> : <Storage settings />);
   }
 }
 

@@ -623,7 +623,7 @@ mod native_tests {
         let view = View {
             revision: 1,
             clock: "00:01".into(),
-            notice: None,
+            notice: None, note_tip: None,
             reduced_motion: true,
             transcript: None,
             input_waveform: None,
@@ -648,7 +648,7 @@ mod native_tests {
         // the surface. The real worker, child and compositor handle the request.
         session.pin.store(true, Ordering::Release);
         std::thread::sleep(Duration::from_millis(1800));
-        assert!(session.healthy(), "cancelled native pin retired the reusable Electron child");
+        assert!(session.healthy());
         session.update(view, 2, Default::default());
         std::thread::sleep(Duration::from_millis(600));
         assert!(session.healthy());

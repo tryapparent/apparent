@@ -240,6 +240,7 @@ pub(crate) struct View {
     pub presentation: Presentation,
     pub clock: String,
     pub notice: Option<String>,
+    pub note_tip: Option<&'static str>,
     pub reduced_motion: bool,
     pub input_waveform: Option<[f32; 24]>,
 }
@@ -341,3 +342,79 @@ pub struct Command {
 
 #[cfg(test)]
 mod tests;
+
+mod note_tip {
+    use std::path::Path;
+
+    include!(concat!(env!("OUT_DIR"), "/note-tip.rs"));
+
+    pub(super) const MESSAGE: &str = "Double-tap Shift to add a note";
+
+    pub(super) fn record_start(path: &Path) -> bool {
+        let mut due = false;
+        let result = crate::shared::handoff::update_config_in(path, |config| {
+            let onboarding = config.as_object_mut().unwrap().entry("onboarding")
+                .or_insert_with(|| serde_json::json!({}));
+            let onboarding = onboarding.as_object_mut()
+                .ok_or_else(|| anyhow::anyhow!("Invalid onboarding progress"))?;
+            let previous = onboarding.get("doubleShiftNoteStarts")
+                .and_then(serde_json::Value::as_u64).unwrap_or_default();
+            let (next, show_tip) = STARTS[previous.min((STARTS.len() - 1) as u64) as usize];
+            anyhow::ensure!(next > previous, "Note lesson is complete");
+            onboarding.insert("doubleShiftNoteStarts".into(), next.into());
+            due = show_tip;
+            Ok(())
+        });
+        result.is_ok() && due
+    }
+
+    pub(super) fn active(elapsed_ms: u64) -> bool {
+        elapsed_ms < DURATION_MS
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn the_third_start_claims_the_tip_once_and_preserves_other_config() {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("config.json");
+            std::fs::write(&path, r#"{"onboarding":{"seen":true},"experiments":{"doubleShiftNotes":true}}"#).unwrap();
+            assert_eq!((0..5).map(|_| record_start(&path)).collect::<Vec<_>>(), [false, false, true, false, false]);
+            let config: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            assert_eq!(config["onboarding"]["doubleShiftNoteStarts"], 3);
+            assert_eq!(config["onboarding"]["seen"], true);
+            assert_eq!(config["experiments"]["doubleShiftNotes"], true);
+            assert!(active(7999));
+            assert!(!active(8000));
+        }
+    }
+}
+
+impl crate::capture::desktop::ApparentCoordinator {
+    fn observe_note_tip(&mut self) {
+        use crate::capture::desktop::CaptureSource;
+        if self.capture_local_practice
+            || !self.telemetry.double_shift_notes()
+            || !self.electron_pill_routed
+            || !self.active_recording.as_ref().is_some_and(|recording|
+                matches!(&recording.source, CaptureSource::Screen { session, .. } if session.has_frames()))
+        {
+            return;
+        }
+        if let Some(notes) = self.note_ui.as_mut()
+            && !notes.tip_checked
+        {
+            notes.tip_checked = true;
+            if note_tip::record_start(&crate::shared::handoff::default_config_path()) {
+                notes.tip_since = Some(std::time::Instant::now());
+            }
+        }
+    }
+
+    fn recording_note_tip(&self) -> Option<&'static str> {
+        let since = self.note_ui.as_ref()?.tip_since?;
+        note_tip::active(since.elapsed().as_millis() as u64).then_some(note_tip::MESSAGE)
+    }
+}

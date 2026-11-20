@@ -72,7 +72,8 @@ pub struct Session {
     finishing: bool,
     saved_note: Arc<AtomicBool>,
     saved_count: Arc<std::sync::atomic::AtomicUsize>,
-    // Transport coalescing only; these are not presentation decisions.
+    pub(crate) tip_checked: bool,
+    pub(crate) tip_since: Option<std::time::Instant>,
     last_sent_embedded: bool,
     last_sent_badge_rect: Option<[i32; 4]>,
     lifecycle: Arc<std::sync::Mutex<lifecycle::Lifecycle>>,
@@ -134,8 +135,6 @@ impl Session {
         let mut command = Command::new(&binary);
         super::electron::configure_sandbox(&mut command, &binary)?;
         super::error_reporting::configure_child(&mut command);
-        // The existing Linux overlay mechanics use XWayland global coordinates and XIDs.
-        // GPUI intentionally hides WAYLAND_DISPLAY; Electron must use that same X11 route.
         #[cfg(target_os = "linux")]
         command.arg("--ozone-platform=x11");
         let mut child = command
@@ -206,12 +205,14 @@ impl Session {
         let saved_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let count = Arc::clone(&saved_count);
         let actor_lifecycle = Arc::clone(&lifecycle);
+        telemetry.set_double_shift_notes(
+            cfg!(any(target_os = "linux", target_os = "macos"))
+                && crate::shared::handoff::experiment("doubleShiftNotes"),
+        );
         std::thread::spawn(move || {
             let mut admitted_pin = None;
             let mut focus = 0;
             let mut owner = 0;
-            // Native integration observes the Desktop presentation receipt; it
-            // does not choose modes or placement. Store remains the sole writer.
             let mut presentation_admission = lifecycle::PresentationAdmission::default();
             let mut presentation_events = Vec::new();
             let mut ready = false;
@@ -228,7 +229,6 @@ impl Session {
                 let timeout = std::time::Duration::from_millis(100);
                 #[cfg(target_os = "linux")]
                 let timeout = {
-                    // Draft traffic must not multiply synchronous X server queries.
                     if stack_checked_at.elapsed() >= timeout {
                         crate::capture::desktop::platform::maintain_note_surfaces(note_pid);
                         stack_checked_at = std::time::Instant::now();
@@ -462,6 +462,8 @@ impl Session {
             finishing: false,
             saved_note,
             saved_count,
+            tip_checked: false,
+            tip_since: None,
             last_sent_embedded: false,
             last_sent_badge_rect: None,
             lifecycle,

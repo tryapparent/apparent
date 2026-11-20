@@ -56,7 +56,7 @@ export function CaptureNotes() {
       {state.notes.length} {state.notes.length === 1 ? 'note' : 'notes'}
     </Button> : state.mode === 'list' ? <section className="note-list" aria-label="Capture notes">
       <header><strong>Notes</strong><Button variant="ghost" size="sm" aria-label="Close notes" onClick={() => void dismiss()}>Close</Button></header>
-      {state.drafts.filter(n => n.text.trim()).length === 0 ? <p>No notes yet. Shift-click to type.</p> :
+      {state.drafts.filter(n => n.text.trim()).length === 0 ? <p>No notes yet.</p> :
         state.drafts.filter(n => n.text.trim()).map(n => <article key={n.pin}>
           <Button variant="ghost" className="note-row" onClick={() => void command({ action: 'edit', pin: n.pin })}>
             <span className="note-number">{n.pin}</span><span>{n.text}</span>
