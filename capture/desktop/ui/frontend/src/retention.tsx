@@ -46,7 +46,7 @@ export function Retention({ effectivePath, settings = false }: { effectivePath: 
   if (settings) return <div className="settings-retention">
     <section aria-labelledby="retention-label">
       <div className="settings-label"><label id="retention-label" htmlFor="retention-preset">Keep recordings</label>
-        <Help label="About keeping recordings">Saving schedules cleanup shortly; it waits until recording finishes. Reset restores the default immediately. {snapshot?.retention.note}</Help>
+        <Help label="About keeping recordings">Cleanup waits until recording finishes. Reset restores the default retention. {snapshot?.retention.note}</Help>
         {snapshot?.retention.preset && <Button variant="ghost" size="icon" className="settings-help" aria-label="Refresh retention" title="Refresh retention" disabled={busy || scanning} onClick={() => void request('read')}><RefreshCw aria-hidden="true" /></Button>}
       </div>
       {busy && <p role="status">Waiting for retention…</p>}
@@ -59,9 +59,13 @@ export function Retention({ effectivePath, settings = false }: { effectivePath: 
           {snapshot.retention.options.map(option => <NativeSelectOption key={option.id} value={option.id}>{retentionLabel(option.id)}</NativeSelectOption>)}
         </NativeSelect>
         {!snapshot.retention.preset && <p className="settings-metadata">{snapshot.retention.note}</p>}
-        <div className="settings-actions">
-          <Button disabled={busy || scanning || !preset || preset === snapshot.retention.preset} onClick={() => void request('save')}>Save retention</Button>
-          <Button variant="secondary" disabled={busy || scanning || !snapshot.custom} onClick={() => void request('reset')}>Reset retention</Button>
+        <p id="retention-cleanup" className="mt-2 text-pretty">
+          <strong className="font-medium">Shorter limits can move existing files to the Trash.</strong>{' '}
+          Saving or resetting schedules cleanup.
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <Button aria-describedby="retention-cleanup" disabled={busy || scanning || !preset || preset === snapshot.retention.preset} onClick={() => void request('save')}>Save retention</Button>
+          <Button variant="secondary" aria-describedby="retention-cleanup" disabled={busy || scanning || !snapshot.custom} onClick={() => void request('reset')}>Reset retention</Button>
           <span className="settings-metadata" role="status">{preset && preset !== snapshot.retention.preset ? 'Unsaved changes' : ''}</span>
         </div>
       </>}
