@@ -204,7 +204,8 @@ function storagePreference(home, operation, fields = {}, timeoutMs = 3500) {
     if (!r || !field(r.mediaDays) || !field(r.bundleDays) || typeof value.custom !== 'boolean' ||
         !/^[a-f0-9]{16}$/.test(value.revision)) return { status: 'error', code: 'invalid_response' };
     return { status: 'connected', policy: { mediaDays: { present: r.mediaDays.present, value: r.mediaDays.value },
-      bundleDays: { present: r.bundleDays.present, value: r.bundleDays.value } }, custom: value.custom, revision: value.revision };
+      bundleDays: { present: r.bundleDays.present, value: r.bundleDays.value } }, custom: value.custom, revision: value.revision,
+      ...(require('./storage-owner/policy.js').isRetentionPolicy(value.defaults) ? { defaults: value.defaults } : {}) };
   }, 16384, timeoutMs, { status: 'error', code: mutation ? 'outcome_unknown' : 'timeout' });
 }
 

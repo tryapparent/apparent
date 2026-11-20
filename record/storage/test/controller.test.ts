@@ -106,6 +106,7 @@ test('retention save intent is bounded and unknown publication requires readback
   await controller.request('read'); await Promise.resolve();
   controller.select('invalid'); assert.equal(controller.state.preset, 'week');
   controller.select('month'); const pending = controller.request('save');
+  assert.deepEqual(controller.state.previousSaved, {mediaDays: 7, bundleDays: 30});
   controller.select('forever');
   await Promise.all([controller.request('read'), controller.request('save'), controller.request('reset')]);
   assert.deepEqual(policies, [{mediaDays: 30, bundleDays: 90}]);
@@ -113,7 +114,12 @@ test('retention save intent is bounded and unknown publication requires readback
   write.reject(Error('lost receipt')); await pending;
   assert.deepEqual(controller.state.result, {status: 'error', code: 'outcome_unknown'});
   await controller.request('reset'); assert.equal(resets, 0);
-  await controller.request('read'); await controller.request('reset'); assert.equal(resets, 1);
+  await controller.request('read');
+  assert.deepEqual(controller.state.readback, {operation: 'save', policy: {mediaDays: 30, bundleDays: 90}});
+  assert.equal(controller.state.previousSaved, undefined);
+  controller.select('forever');
+  assert.equal(controller.state.readback, undefined);
+  await controller.request('reset'); assert.equal(resets, 1);
 });
 
 test('pre-save usage and superseded measurements cannot overwrite current directory usage', async () => {

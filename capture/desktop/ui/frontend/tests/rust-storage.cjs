@@ -51,6 +51,7 @@ async function main() {
   assert.deepEqual(await storageLocation(home, 'reset', { expected: first.revision }), { status: 'error', code: 'conflict' });
   const policy = await storagePreference(home, 'retention');
   assert.deepEqual(policy.policy, { mediaDays: { present: false, value: null }, bundleDays: { present: false, value: null } });
+  assert.deepEqual(policy.defaults, { mediaDays: 7, bundleDays: 30 });
   const changedPolicy = await storagePreference(home, 'saveretention', { expected: policy.revision,
     policy: { mediaDays: 30, bundleDays: 90 } });
   assert.deepEqual(changedPolicy.policy, { mediaDays: { present: true, value: 30 }, bundleDays: { present: true, value: 90 } });
@@ -62,6 +63,7 @@ async function main() {
   const defaultPolicy = await storagePreference(home, 'resetretention', { expected: changedPolicy.revision });
   assert.deepEqual(defaultPolicy.policy, { mediaDays: { present: false, value: null }, bundleDays: { present: false, value: null } });
   assert.equal(defaultPolicy.custom, false);
+  assert.deepEqual(defaultPolicy.defaults, policy.defaults);
   assert.equal(JSON.parse(await fs.readFile(config, 'utf8')).privateFixture, 'keep');
   assert.equal((await fs.stat(path.join(selected, 'synthetic.bin'))).size, 1_000_000);
   const expired = await new Promise((resolve, reject) => {

@@ -57,7 +57,7 @@ module.exports = async function verifyRetention(page, { config, captures, output
   try {
     await fs.chmod(path.dirname(config), 0o500);
     await save.click();
-    await expect(page.getByText('Retention could not be saved.', { exact: false })).toBeVisible();
+    await expect(page.getByText('Could not save retention.', { exact: false })).toBeVisible();
     assert.deepEqual(await fs.readFile(config), beforeFailure);
     await page.screenshot({ path: path.join(output, 'retention-write-error.png'), fullPage: true });
   } finally { await fs.chmod(path.dirname(config), 0o700); }
