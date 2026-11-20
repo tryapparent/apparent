@@ -26,8 +26,8 @@ class PreviewReleaseTest(unittest.TestCase):
             shutil.copytree(PACKAGER, root / "composition/enablement/release/mac")
             dmg_builder = root / "composition/enablement/release/mac/dmg/build.ts"
             dmg_builder.write_text(dmg_builder.read_text().split("const toolByArch")[0] +
-                'export function createDmg(app, installer, dmg, version, build) {'
-                'writeFileSync(dmg, JSON.stringify(finderLayout(app, installer, version, build)));'
+                'export function createDmg(installer, dmg, version, build) {'
+                'writeFileSync(dmg, JSON.stringify(finderLayout(installer, version, build)));'
                 'if (process.env.TRACE) writeFileSync(process.env.TRACE, "createDmg\\n", { flag: "a" }); }')
             (root / "bin").mkdir()
             for asset in ("fonts/HostGrotesk-Variable.ttf", "brand/apparent-wordmark.png",
@@ -106,10 +106,9 @@ class PreviewReleaseTest(unittest.TestCase):
             dmg = root / "dist/Apparent-Preview-0.123.2-arm64.dmg"
             layout = json.loads(dmg.read_text())
             self.assertEqual(layout["title"], "apparent 0.123.2 (123.2)")
-            self.assertTrue(Path(layout["background"]).is_file())
+            self.assertNotIn("background", layout)
             self.assertEqual([Path(item["path"]).name for item in layout["contents"]],
-                             ["Install apparent.app", "Apparent Preview.app", "Applications"])
-            self.assertEqual(layout["contents"][2]["path"], "/Applications")
+                             ["Install apparent.app"])
             archive = (root / "dist/Apparent-Preview-0.123.2-arm64.zip").read_text()
             self.assertEqual(archive, "fake zip:" + str(root / "dist/Apparent Preview.app"))
             env["APPARENT_PREVIEW_BUILD_NUMBER"] = "123.3"
