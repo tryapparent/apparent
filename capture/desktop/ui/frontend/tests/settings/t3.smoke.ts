@@ -68,8 +68,43 @@ test('Agents pairs multiple computers without exposing credentials, changing sen
  assert.equal(computers.length,2);
  const rows=await page.locator('.settings-t3-computer').all();assert.ok((await rows[1].boundingBox())!.y>(await rows[0].boundingBox())!.y,'Computers remain distinct rows');
  await page.reload();await expect(page.locator('.settings-t3-computer')).toHaveCount(2);
- for(const width of [920,640,320])for(const colorScheme of ['light','dark'] as const){await resize(width);await page.emulateMedia({colorScheme,reducedMotion:'reduce'});await toggle.scrollIntoViewIfNeeded();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await shot(`computers-${width}-${colorScheme}`);}
- await resize(920);await page.getByRole('button',{name:`Manage ${new URL(a.origin).host}`,exact:true}).click();await page.getByRole('button',{name:`Disconnect ${new URL(a.origin).host}`,exact:true}).click();await expect(page.locator('.settings-t3-computer')).toHaveCount(1);assert.equal(computers[0].origin,b.origin);
+ const manage=page.getByRole('button',{name:`Manage ${new URL(a.origin).host}`,exact:true});
+ const triggerStyle=()=>manage.evaluate(button=>{
+  const {backgroundColor,color,outlineStyle,outlineWidth}=getComputedStyle(button);
+  return {backgroundColor,color,outlineStyle,outlineWidth};
+ });
+ for (const width of [920,640,320]) for (const colorScheme of ['light','dark'] as const) {
+  await resize(width);
+  await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
+  await page.mouse.move(0,0);
+  await manage.evaluate(button=>button.scrollIntoView({block:'center'}));
+  const rest=await triggerStyle();
+  await manage.hover();
+  await expect.poll(async()=>(await triggerStyle()).backgroundColor).not.toBe(rest.backgroundColor);
+  const hover=await triggerStyle();
+  assert.equal(hover.color,rest.color);
+  assert.equal(hover.outlineStyle,'none');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  await shot(`computers-hover-${width}-${colorScheme}`);
+  await page.mouse.move(0,0);
+  await manage.focus();
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');
+  await expect(manage).toBeFocused();
+  assert.equal((await triggerStyle()).outlineWidth,'2px');
+  await shot(`computers-focus-${width}-${colorScheme}`);
+  await page.keyboard.press('Enter');
+  await expect(manage).toHaveAttribute('aria-expanded','true');
+  const open=await triggerStyle();
+  assert.notEqual(open.backgroundColor,rest.backgroundColor);
+  assert.notEqual(open.backgroundColor,hover.backgroundColor);
+  assert.equal(open.color,rest.color);
+  await shot(`computers-open-${width}-${colorScheme}`);
+  await page.keyboard.press('Enter');
+  await expect(manage).toHaveAttribute('aria-expanded','false');
+  await toggle.focus();
+ }
+ await resize(920);await manage.click();await page.getByRole('button',{name:`Disconnect ${new URL(a.origin).host}`,exact:true}).click();await expect(page.locator('.settings-t3-computer')).toHaveCount(1);assert.equal(computers[0].origin,b.origin);
  assert.equal(await page.evaluate(()=>document.body.innerText.includes('private-fixture-token')),false);
  await page.getByRole('button',{name:'Pair with a link',exact:true}).click();await page.getByRole('dialog').getByText('Use a code instead',{exact:true}).click();
  await expect(page.getByRole('textbox',{name:'MCP URL or server address'})).toBeVisible();await expect(page.getByRole('textbox',{name:'MCP URL or server address'})).toHaveValue('');await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.getByRole('button',{name:'Pair with a link',exact:true})).toBeFocused();
