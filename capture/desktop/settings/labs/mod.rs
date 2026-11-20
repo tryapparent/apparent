@@ -12,11 +12,13 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
         Err(_) => return serde_json::json!({"error":"config_read_failed"}),
     };
     let saved = |key| value.get("experiments").and_then(|flags|flags.get(key)).and_then(|flag|flag.as_bool());
-    serde_json::json!({"saved":saved(KEY),"sharingSaved":saved("hostedSharing"),"autoPasteSaved":saved("autoPasteDraft"),"autoPasteSupported":cfg!(target_os = "linux"),"wisprSaved":saved("onboardingWisprFlow"),"wisprSupported":cfg!(target_os = "macos"),"dictationFrogSaved":saved("dictationFrog"),"doubleShiftSaved":saved("doubleShiftNotes"),"screenPickerSaved":saved(selection::PREFERENCE),"screenPickerSupported":selection::supported()})
+    serde_json::json!({"saved":saved(KEY),"compactHandoffSaved":saved(crate::composition::frame_labels::EXPERIMENT),"transcriptOnlySaved":saved(crate::composition::transcript_handoff::EXPERIMENT),"sharingSaved":saved("hostedSharing"),"autoPasteSaved":saved("autoPasteDraft"),"autoPasteSupported":cfg!(target_os = "linux"),"wisprSaved":saved("onboardingWisprFlow"),"wisprSupported":cfg!(target_os = "macos"),"dictationFrogSaved":saved("dictationFrog"),"doubleShiftSaved":saved("doubleShiftNotes"),"screenPickerSaved":saved(selection::PREFERENCE),"screenPickerSupported":selection::supported()})
 }
 pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
     match setting {
         None | Some("streaming") => Some((KEY, true)),
+        Some("compactHandoff") => Some((crate::composition::frame_labels::EXPERIMENT, true)),
+        Some("transcriptOnly") => Some((crate::composition::transcript_handoff::EXPERIMENT, true)),
         Some("sharing") => Some(("hostedSharing", true)),
         Some("autoPaste") => Some(("autoPasteDraft", cfg!(target_os = "linux"))),
         Some("wisprFlow") => Some(("onboardingWisprFlow", cfg!(target_os = "macos"))),
@@ -94,7 +96,8 @@ pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>, setting:
                 assert!(setting.as_deref() == Some("t3") || setting.is_none() && enabled.is_none());
                 writeln!(input, "{}", super::super::agents::request_for(&path, id, enabled, setting.as_deref())).unwrap();
             } else {
-                let value: serde_json::Value = serde_json::from_str(&line).unwrap();
+                let value: serde_json::Value = serde_json::from_str(&line)
+                    .unwrap_or_else(|error| panic!("Unexpected Labs driver output ({error}): {line}"));
                 assert_eq!(value["action"], "close");
             }
         }

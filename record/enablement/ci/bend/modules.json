@@ -2,6 +2,7 @@
   "modules": [
     "completion/src/copy-admission.bend",
     "media/src/assembly/frame-limits.bend",
+    "media/src/assembly/frame-label.bend",
     "media/src/export/quiet-export.bend",
     "settings/recording-policy.bend",
     "settings/permissions/permission-policy.bend",

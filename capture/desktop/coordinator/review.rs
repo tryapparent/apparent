@@ -343,7 +343,7 @@ impl Render for BundleReviewWindow {
                             cx.notify();
                         });
                     })
-                    .child(format!("{}  ·  {}", frame.index, format_clock(frame.t)))
+                    .child(frame.display_time.clone().unwrap_or_else(|| format!("{}  ·  {}", frame.index, format_clock(frame.t))))
                     .child(
                         div()
                             .mt_1()
@@ -687,7 +687,6 @@ impl Render for BundleReviewWindow {
                 )
             })
             .child(
-                // Keep the selected frame and its words together, even in a narrow window.
                 div()
                     .flex_1()
                     .min_h_0()

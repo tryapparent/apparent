@@ -230,3 +230,168 @@ pub(crate) mod scene {
         }
     }
 }
+
+pub(crate) mod frame_labels {
+    use crate::shared::model::{Keyframe, format_clock};
+    use anyhow::{Context, Result};
+
+    pub(crate) const EXPERIMENT: &str = "compactHandoff";
+    const PRECISION: [u8; 4] = include!("../record/media/src/assembly/frame-label.json");
+
+    pub(crate) fn configured<T>(frames: &mut [(Keyframe, T)]) {
+        stamp(frames, crate::shared::handoff::experiment(EXPERIMENT));
+    }
+
+    pub(crate) fn prefix(frame: &Keyframe) -> String {
+        frame.display_time.clone().unwrap_or_else(|| format!("- #{} ({})", frame.index, format_clock(frame.t)))
+    }
+
+    pub(crate) fn resolve(frames: &[Keyframe], reference: Option<&str>) -> Result<Option<usize>> {
+        reference.map(|value| {
+            value.parse::<usize>().ok().or_else(|| {
+                frames.iter().find(|key| key.display_time.as_deref() == Some(value)).map(|key| key.index)
+            }).with_context(|| format!("No keyframe matches {value}"))
+        }).transpose()
+    }
+
+    fn label(time: u64, earlier_equal: usize, same_second: bool, same_time: bool) -> String {
+        let clock = format_clock(time);
+        match PRECISION[usize::from(same_second) | (usize::from(same_time) << 1)] {
+            0 => clock,
+            1 => format!("{clock}.{:03}", time % 1_000),
+            _ => format!("{clock}.{:03}/{}", time % 1_000, earlier_equal + 1),
+        }
+    }
+
+    fn stamp<T>(frames: &mut [(Keyframe, T)], enabled: bool) {
+        if !enabled {
+            return;
+        }
+        let times: Vec<_> = frames.iter().map(|(frame, _)| frame.t).collect();
+        for (i, (frame, _)) in frames.iter_mut().enumerate() {
+            let others = times.iter().enumerate().filter(|(j, _)| *j != i);
+            frame.display_time = Some(label(
+                frame.t,
+                times[..i].iter().filter(|&&t| t == frame.t).count(),
+                others.clone().any(|(_, &t)| t / 1_000 == frame.t / 1_000),
+                others.into_iter().any(|(_, &t)| t == frame.t),
+            ));
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use crate::shared::model::KeyframeReason;
+
+        #[test]
+        fn compact_frame_times_disambiguate_and_keep_published_labels_when_appending() {
+            let mut frames: Vec<_> = [1200, 1530, 1530, 4000].into_iter().enumerate().map(|(i, t)| {
+                (Keyframe {
+                    index: i + 1, t, display_time: None, reason: KeyframeReason::Initial,
+                    file: format!("frames/frame-{:02}.png", i + 1), event: String::new(),
+                    said: None, mark_id: None, cursor: None,
+                }, ())
+            }).collect();
+            stamp(&mut frames, false);
+            assert!(frames.iter().all(|(key, _)| key.display_time.is_none()));
+            stamp(&mut frames, true);
+            let labels: Vec<_> = frames.iter().map(|(key, _)| key.display_time.as_deref().unwrap()).collect();
+            assert_eq!(labels, ["0:01.200", "0:01.530/1", "0:01.530/2", "0:04"]);
+            let keys: Vec<_> = frames.into_iter().map(|(key, _)| key).collect();
+            assert_eq!(appended(&keys, 4_001).as_deref(), Some("0:04.001"));
+            assert_eq!(appended(&keys, 1_530).as_deref(), Some("0:01.530/3"));
+        assert_eq!(resolve(&keys, Some("0:01.530/2")).unwrap(), Some(3));
+        assert_eq!(resolve(&keys, Some("3")).unwrap(), Some(3));
+        assert!(resolve(&keys, Some("0:03")).is_err());
+    }
+
+    #[test]
+    fn compact_handoff_puts_words_before_access_and_retains_fallbacks() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::Builder::new().permissions(std::fs::Permissions::from_mode(0o700)).tempdir().unwrap();
+        let (_, mut bundle, _) = crate::capture::desktop::demo::generate_demo_bundle(
+            Some(dir.path().join("sample.apparent")),
+        ).unwrap();
+        let path = dir.path().join("sample.apparent");
+        for frame in &mut bundle.keyframes {
+            frame.display_time = Some(format_clock(frame.t));
+        }
+        let pointer = "apparent inspect 0123456789abcdef0123456789abcdef\n";
+        for hosted in [Some(pointer), None] {
+            let prompt = crate::shared::handoff::clipboard_summary_with_access(&bundle, &path, false, hosted);
+            assert!(prompt.find("When I click").unwrap() < prompt.find("apparent inspect").unwrap());
+            assert!(prompt.contains("Inspect relevant frames before edits.\n"));
+            assert!(prompt.contains("Install if missing: https://github.com/tryapparent/apparent\n"));
+            assert_eq!(prompt.contains("apparent connect alternatives"), hosted.is_none());
+            assert!(!prompt.contains("#agents") && !prompt.contains("\n\n") && !prompt.contains("[apparent "));
+        }
+        }
+    }
+
+    pub(crate) fn appended(frames: &[Keyframe], time: u64) -> Option<String> {
+        frames.iter().any(|frame| frame.display_time.is_some()).then(|| {
+            let equal = frames.iter().filter(|frame| frame.t == time).count();
+            label(time, equal, frames.iter().any(|frame| frame.t / 1_000 == time / 1_000), equal > 0)
+        })
+    }
+}
+
+pub(crate) mod transcript_handoff {
+    use crate::shared::model::{ApparentBundle, KeyframeReason};
+
+    pub(crate) const EXPERIMENT: &str = "transcriptOnlyHandoff";
+    const ADMIT: [bool; 8] = include!("../handoff/pure/transcript-only.json");
+
+    pub(crate) fn words(bundle: &ApparentBundle) -> Option<&str> {
+        select(bundle, crate::shared::handoff::experiment(EXPERIMENT))
+    }
+
+    fn select(bundle: &ApparentBundle, enabled: bool) -> Option<&str> {
+        let text = bundle.transcript.text.trim();
+        let needs_visuals = bundle.interaction_telemetry.is_some()
+            || bundle.image_quality_warning.is_some()
+            || bundle.note.as_ref().is_some_and(|note| !note.trim().is_empty())
+            || !bundle.events.is_empty()
+            || !bundle.marks.is_empty()
+            || !bundle.strokes.is_empty()
+            || !bundle.context_changes.is_empty()
+            || bundle.screens.len() > 1
+            || bundle.windows.len() > 1
+            || bundle.cursor.len() > 1
+            || bundle.keyframes.iter().any(|key| {
+                !matches!(key.reason, KeyframeReason::Initial | KeyframeReason::Speech)
+            });
+        let index = usize::from(enabled) | (usize::from(!text.is_empty()) << 1)
+            | (usize::from(needs_visuals) << 2);
+        ADMIT[index].then_some(text)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use std::os::unix::fs::PermissionsExt;
+
+        #[test]
+        fn voice_only_requires_words_and_no_visual_evidence() {
+            let dir = tempfile::Builder::new().permissions(std::fs::Permissions::from_mode(0o700)).tempdir().unwrap();
+            let (_, mut bundle, _) = crate::capture::desktop::demo::generate_demo_bundle(
+                Some(dir.path().join("speech.apparent")),
+            ).unwrap();
+            assert_eq!(select(&bundle, true), None);
+            bundle.note = None;
+            bundle.events.clear();
+            bundle.strokes.clear();
+            bundle.marks.clear();
+            bundle.keyframes.truncate(1);
+            bundle.keyframes[0].reason = KeyframeReason::Speech;
+            assert_eq!(select(&bundle, false), None);
+            assert_eq!(select(&bundle, true), Some(bundle.transcript.text.trim()));
+            bundle.interaction_telemetry = Some(crate::shared::model::InteractionTelemetry::VideoOnly);
+            assert_eq!(select(&bundle, true), None);
+            bundle.interaction_telemetry = None;
+            bundle.transcript.text.clear();
+            assert_eq!(select(&bundle, true), None);
+        }
+    }
+}

@@ -475,6 +475,7 @@ fn append_to_bundle_with(
     let key = Keyframe {
         index,
         t: bundle.duration_ms,
+        display_time: crate::composition::frame_labels::appended(&bundle.keyframes, bundle.duration_ms),
         reason: KeyframeReason::Whiteboard,
         file: format!("frames/frame-{index:02}.png"),
         event,
@@ -483,8 +484,6 @@ fn append_to_bundle_with(
         cursor: None,
     };
     let paper = render_paper(&board.strokes, bundle.duration_ms, board.color);
-    // Contact sheets are rendered before the small number chip is stamped on the frame.
-    // Existing PNGs already have their chips; reusing them does not hide any sketch content.
     frames.push((key.clone(), paper.clone()));
     let sheet = crate::capture::engine::render::render_contact_sheet_for_duration(
         bundle.duration_ms,

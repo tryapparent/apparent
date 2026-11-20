@@ -674,7 +674,6 @@ fn select_with_analysis(
         transcript,
         &admissible,
     );
-    // Past the base, keyframes are only for marks and coverage.
     for slot in pending.iter_mut() {
         if selected.len() >= max_keyframes.min(limits.ordinary) {
             break;
@@ -721,6 +720,7 @@ fn select_with_analysis(
                 Keyframe {
                     index,
                     t: frame.t_ms,
+                    display_time: None,
                     reason: candidate.reason,
                     file,
                     event: candidate.event,

@@ -112,7 +112,7 @@ pub struct PreparedVisuals {
 
 #[allow(clippy::too_many_arguments)]
 pub fn prepare_visuals(
-    selected: Vec<(model::Keyframe, RgbaFrame)>,
+    mut selected: Vec<(model::Keyframe, RgbaFrame)>,
     baseline: Option<&RgbaFrame>,
     crop_settings: Option<&autocrop::Settings>,
     target: &TargetInfo,
@@ -126,6 +126,7 @@ pub fn prepare_visuals(
     if selected.is_empty() {
         return None;
     }
+    crate::composition::frame_labels::configured(&mut selected);
     let (mut annotated_frames, mut cropped) = autocrop::annotate_and_crop(
         selected,
         baseline,
@@ -614,7 +615,7 @@ pub fn build_bundle_from_parts(
         let bench = std::env::var_os("APPARENT_BENCH").is_some();
         let started = std::time::Instant::now();
         let speech = crate::composition::transcript::speech::plan(&transcript)?;
-        let selected = crate::composition::transcript::apply(frames.select(
+        let mut selected = crate::composition::transcript::apply(frames.select(
             &strokes,
             &mut marks,
             &events,
@@ -622,6 +623,7 @@ pub fn build_bundle_from_parts(
             limits,
             extras.video_ink,
         )?, &transcript)?;
+        crate::composition::frame_labels::configured(&mut selected);
         let select_only_at = std::time::Instant::now();
         let frames = frames.into_frames();
         let completion_warning = captured_ink_frame_warning(&selected, &marks, extras.video_ink);
@@ -630,6 +632,7 @@ pub fn build_bundle_from_parts(
                 && prep.keyframes.iter().zip(&selected).all(|(a, (b, _))| {
                     a.index == b.index
                         && a.t == b.t
+                        && a.display_time == b.display_time
                         && a.mark_id == b.mark_id
                         && a.cursor == b.cursor
                         && a.file == b.file
@@ -669,8 +672,6 @@ pub fn build_bundle_from_parts(
                     BundleOutput::Prepared(prep),
                 )
             } else {
-                // Only the first candidate is needed from here on (auto-crop's baseline); free the rest
-                // before the full-size keyframes arrive.
                 let baseline = {
                     let mut frames = frames;
                     frames.truncate(1);
@@ -713,9 +714,6 @@ pub fn build_bundle_from_parts(
                 };
                 let selected_at = std::time::Instant::now();
 
-                // A failed or partial MP4 decode leaves only small candidates. Their coarse change
-                // regions can miss the actual activity and make an idle cursor look like the target.
-                // Keep the whole candidate in the agent-facing images until full decode succeeds.
                 let crop_settings = if keyframe_warning.is_some() {
                     None
                 } else {
@@ -1246,6 +1244,7 @@ mod tests {
         let kf = |index: usize, t: u64| model::Keyframe {
             index,
             t,
+            display_time: None,
             reason: model::KeyframeReason::Click,
             file: format!("frames/frame-{index:02}.png"),
             event: "tap".into(),

@@ -32,3 +32,32 @@ The collapsed picker retains the existing quick-send shortcut.
 An unconfirmed send displays the saved destination and retries the persisted
 request. The Handoff renderer receives focus, send and share callbacks from
 the existing Electron pill adapter, which remains the native integration point.
+
+## Compact recording prompts
+
+Settings › Labs › Compact recording prompts is off by default. Turning it
+on sets `experiments.compactHandoff` in the standard config. The setting is
+read during bundle finalization. Copy, paste and T3 send use the format saved
+with the bundle, so the prompt still matches its images after a toggle.
+
+The format puts the timeline before the inspection command, with one line
+per timestamp. It keeps the setup link at the GitHub repository root and
+honors the Agents video preference. Local paths keep a short transfer cue.
+Existing recordings keep their original format. Turn off the Labs switch to
+return to numbered handoffs for newly saved recordings.
+
+Record stores one display label per frame and uses it for the full and cropped
+images, contact sheets and detailed inspection. Frames in the same second use
+milliseconds. Identical times also have a suffix. Numeric indexes and filenames
+still work, and `zoom --mark ... --frame` accepts the displayed label.
+Record's Bend check compares the shipped native precision table with
+`record/media/src/assembly/frame-label.bend`.
+
+## Transcript-only handoff
+
+The separate Labs switch is off by default and applies when a handoff is prepared.
+A recording with speech and no detected visual activity sends the transcript
+by itself. Pointer movement, clicks, scrolling, ink, notes and scene changes
+keep the full handoff. A missing transcript or a timed CLI capture without
+interaction telemetry also uses the full handoff. Saved recordings remain
+available through Apparent.

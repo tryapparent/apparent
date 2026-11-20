@@ -39,6 +39,29 @@ await bendScratch(async (scratch) => {
   );
   const proofOutput = join(scratch, "proof");
   await buildBend(root, "record", proofOutput, options);
+  assert.deepEqual(
+    JSON.parse(
+      readFileSync(
+        join(root, "record/media/src/assembly/frame-label.json"),
+        "utf8",
+      ),
+    ),
+    JSON.parse(
+      run(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `
+      import labels from "./frame-label.mjs";
+      console.log(JSON.stringify(Array.from({length: 4}, (_, bits) =>
+        labels.precision(Boolean(bits & 1), Boolean(bits & 2)))));
+    `,
+        ],
+        proofOutput,
+      ),
+    ),
+  );
   assert.equal(gestureTable(proofOutput), gesture);
   const repair = JSON.parse(
     readFileSync(
