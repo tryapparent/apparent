@@ -11,6 +11,7 @@ import {
 import { connections, Transport, type Connection } from "./transport.ts";
 import { choiceTarget, Delivery, type Job } from "./delivery.ts";
 import { Store } from "./store.ts";
+import { worktreeStrategy } from "./worktree-base.ts";
 import { computerLabels } from "../pure/chooser.ts";
 import {
   readPickerPreferences,
@@ -384,24 +385,10 @@ export class Controller {
       (project.defaultThreadEnvMode ?? settings.defaultThreadEnvMode) ===
         "worktree"
     ) {
-      const refs = (await new Transport(config).rpc("vcs.listRefs", {
-        cwd: project.workspaceRoot,
-        limit: 100,
-      })) as {
-        isRepo: boolean;
-        refs: { name: string; isDefault: boolean; isRemote?: boolean }[];
-        hasPrimaryRemote: boolean;
-      };
-      const base =
-        refs.refs.find((r) => r.isDefault && r.isRemote) ??
-        refs.refs.find((r) => r.isDefault);
-      if (refs.isRepo && !base) throw Error("T3 project has no default branch");
-      if (base)
-        workspaceStrategy = {
-          type: "worktree",
-          baseRef: base.name,
-          startFromOrigin: !!base.isRemote,
-        };
+      workspaceStrategy = await worktreeStrategy(
+        new Transport(config),
+        project.workspaceRoot,
+      );
     }
     const runtimeMode = settings.defaultRuntimeMode;
     if (

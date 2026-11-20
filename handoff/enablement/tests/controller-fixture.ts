@@ -6,11 +6,17 @@ import type { TestContext } from "node:test";
 import { Transport } from "../../main/transport.ts";
 
 type Call = { tag: string; payload: Record<string, unknown> };
+type RefPage = {
+  isRepo: boolean;
+  refs: { name: string; isDefault: boolean; isRemote?: boolean }[];
+  nextCursor: number | null;
+};
 type Peer = {
   reads: number;
   project: string;
   computer: unknown;
   worktree: boolean;
+  refPages: RefPage[];
   loseReply: boolean;
   calls: Call[];
   accepted: Set<unknown>;
@@ -76,11 +82,16 @@ export async function fixture(t: TestContext) {
             defaultThreadEnvMode: peer.worktree ? "worktree" : "root",
           },
         };
-      if (tag === "vcs.listRefs")
-        return {
-          isRepo: true,
-          refs: [{ name: "origin/main", isDefault: true, isRemote: true }],
-        };
+      if (tag === "vcs.listRefs") {
+        const page = peer.refPages.find(
+          (_, index) =>
+            (index === 0 ? 0 : peer.refPages[index - 1].nextCursor) ===
+            payload.cursor,
+        );
+        assert.ok(page, "Requested an unexpected ref page");
+        assert.equal(payload.includeMatchingRemoteRefs, true);
+        return page;
+      }
       assert.ok(
         tag === "orchestration.launchThread" ||
           tag === "orchestration.dispatchCommand",
@@ -100,6 +111,13 @@ export async function fixture(t: TestContext) {
     project: "Project",
     computer: undefined,
     worktree: false,
+    refPages: [
+      {
+        isRepo: true,
+        refs: [{ name: "origin/main", isDefault: true, isRemote: true }],
+        nextCursor: null,
+      },
+    ],
     loseReply: false,
     calls: [],
     accepted: new Set(),
@@ -134,8 +152,9 @@ export async function fixture(t: TestContext) {
     get reads() {
       return peer.reads;
     },
-    worktree: () => {
+    worktree: (...pages: RefPage[]) => {
       peer.worktree = true;
+      if (pages.length) peer.refPages = pages;
     },
     lose: () => {
       peer.loseReply = true;
