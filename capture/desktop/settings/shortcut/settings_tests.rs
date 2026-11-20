@@ -41,7 +41,7 @@ mod tests {
         let state = panel.about_state(&path);
         assert_eq!(state["updateChannel"], "main");
         assert_eq!(state["resumeTour"], true);
-        assert_eq!(state.as_object().unwrap().len(), 8, "Only the About wire contract is projected");
+        assert_eq!(state.as_object().unwrap().len(), 10, "Only the About wire contract is projected");
         for key in ["login", "shortcuts", "microphone", "permissions", "commandLine", "ingestToken"] {
             assert!(state.get(key).is_none(), "unrelated Settings field: {key}");
         }

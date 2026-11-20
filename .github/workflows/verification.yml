@@ -5,9 +5,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Linux Main, on-demand Mac Main, paired Stable, verification, or retry
+        description: Latest Main, on-demand Mac Main, paired Stable, verification, or retry
         type: choice
-        options: [main, mac-main, stable, verify, distribution, paired-main]
+        options: [main, mac-main, stable, verify, distribution, paired-main, linux-main]
         default: main
       source_sha:
         description: Exact verified main source (required for Mac Main)
@@ -26,7 +26,7 @@ on:
         type: string
         default: ''
       mac_runner:
-        description: First Apple Silicon image for Mac Main or Stable
+        description: First Apple Silicon image for desktop publication
         type: choice
         options: [macos-26, macos-15, xcode-27]
         default: macos-26
@@ -36,7 +36,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: application-${{ inputs.mode == 'verify' && github.ref || ((inputs.mode == 'main' || inputs.mode == 'paired-main') && 'main' || (inputs.mode == 'mac-main' && 'mac-main' || 'stable')) }}
+  group: application-${{ inputs.mode == 'verify' && github.ref || ((inputs.mode == 'main' || inputs.mode == 'paired-main' || inputs.mode == 'linux-main') && 'main' || (inputs.mode == 'mac-main' && 'mac-main' || 'stable')) }}
   cancel-in-progress: false
 
 jobs:
@@ -69,7 +69,7 @@ jobs:
         with:
           node-version: '22.23.0'
       - id: current
-        name: Check for a newer queued Linux Main candidate
+        name: Check for a newer queued Latest Main candidate
         if: inputs.mode == 'main' && inputs.verification_run_id != '' && inputs.source_sha != ''
         env:
           GH_TOKEN: ${{ github.token }}
@@ -85,7 +85,7 @@ jobs:
           GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: node --experimental-strip-types composition/enablement/release/admit.ts "$SOURCE_SHA"
       - name: Check signing configuration before scarce allocation
-        if: steps.candidate.outputs.sha != '' && inputs.mode != 'main'
+        if: steps.candidate.outputs.sha != ''
         env:
           RELEASE_CHANNEL: ${{ inputs.mode }}
           APPLE_ENABLED: ${{ vars.MAC_APPLE_SIGNING_ENABLED }}
@@ -133,7 +133,7 @@ jobs:
     secrets: inherit
   macos:
     needs: admit
-    if: needs.admit.outputs.sha != '' && (inputs.mode == 'mac-main' || inputs.mode == 'stable')
+    if: needs.admit.outputs.sha != '' && (inputs.mode == 'main' || inputs.mode == 'mac-main' || inputs.mode == 'stable')
     permissions:
       contents: write
       actions: read
@@ -149,12 +149,11 @@ jobs:
   publish:
     needs: [admit, linux, macos]
     if: >-
-      !cancelled() && (inputs.mode == 'stable' || inputs.mode == 'main' || inputs.mode == 'mac-main' || inputs.mode == 'paired-main') &&
+      !cancelled() && (inputs.mode == 'stable' || inputs.mode == 'main' || inputs.mode == 'mac-main' || inputs.mode == 'paired-main' || inputs.mode == 'linux-main') &&
       github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
       ((needs.admit.result == 'success' &&
-        (inputs.mode == 'main' && needs.linux.result == 'success' ||
-         inputs.mode == 'mac-main' && needs.macos.outputs.ready == 'true' ||
-         inputs.mode == 'stable' && needs.linux.result == 'success' && needs.macos.outputs.ready == 'true')) ||
+        (inputs.mode == 'mac-main' && needs.macos.outputs.ready == 'true' ||
+         (inputs.mode == 'main' || inputs.mode == 'stable') && needs.linux.result == 'success' && needs.macos.outputs.ready == 'true')) ||
        (inputs.candidate_run_id != '' && inputs.source_sha == '' && inputs.candidate_attempt != ''))
     runs-on: ubuntu-24.04
     permissions:
@@ -180,13 +179,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PRODUCER_RUN: ${{ inputs.candidate_run_id || github.run_id }}
           PRODUCER_ATTEMPT: ${{ inputs.candidate_attempt || needs.admit.outputs.producer_attempt }}
-          RELEASE_CHANNEL: ${{ inputs.mode }}
+          RELEASE_CHANNEL: ${{ inputs.mode == 'main' && 'latest-main' || inputs.mode == 'linux-main' && 'main' || inputs.mode }}
         run: node --experimental-strip-types composition/enablement/release/publish.ts "$PRODUCER_RUN" "$PRODUCER_ATTEMPT"
   feed:
     needs: [admit, publish]
     if: >-
       !cancelled() && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
-      ((inputs.mode == 'stable' && needs.publish.result == 'success') || (inputs.mode == 'distribution' && inputs.candidate_run_id != '' && inputs.candidate_attempt != '' && inputs.source_sha == ''))
+      (((inputs.mode == 'stable' || inputs.mode == 'main') && needs.publish.result == 'success') || (inputs.mode == 'distribution' && inputs.candidate_run_id != '' && inputs.candidate_attempt != '' && inputs.source_sha == ''))
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -204,6 +203,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PRODUCER_RUN: ${{ inputs.candidate_run_id || github.run_id }}
           PRODUCER_ATTEMPT: ${{ inputs.candidate_attempt || needs.admit.outputs.producer_attempt }}
+          MAC_FEED_CHANNEL: ${{ inputs.mode == 'main' && 'main' || 'stable' }}
         run: node --experimental-strip-types composition/enablement/release/distribute.ts feed
   cask:
     needs: [admit, publish]
@@ -241,7 +241,7 @@ jobs:
     needs: [admit, linux, macos, publish, feed, cask]
     if: >-
       always() && github.repository == 'tryapparent/apparent' && github.ref == 'refs/heads/main' &&
-      (inputs.mode == 'main' || inputs.mode == 'mac-main' || inputs.mode == 'stable' || inputs.mode == 'paired-main')
+      (inputs.mode == 'main' || inputs.mode == 'mac-main' || inputs.mode == 'stable' || inputs.mode == 'paired-main' || inputs.mode == 'linux-main')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:

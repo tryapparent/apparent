@@ -62,7 +62,7 @@ test("distribution recovery cannot publish while stable publication retains prod
         );
         assert.equal(
           enabled("publish", "main", retry, result, mac),
-          retry || result === "success",
+          retry || (mac && result === "success"),
         );
         assert.equal(
           enabled("publish", "mac-main", retry, result, mac),
@@ -78,10 +78,17 @@ test("distribution recovery cannot publish while stable publication retains prod
         );
       }
       for (const job of ["feed", "cask"])
-        for (const mode of ["main", "mac-main", "paired-main", "distribution"])
+        for (const mode of [
+          "main",
+          "mac-main",
+          "paired-main",
+          "linux-main",
+          "distribution",
+        ])
           assert.equal(
             enabled(job, mode, retry, result, true),
-            mode === "distribution" && retry,
+            (mode === "distribution" && retry) ||
+              (job === "feed" && mode === "main" && result === "success"),
           );
     }
 });
@@ -132,7 +139,7 @@ test("actual Linux readiness command rejects invalid signing configuration befor
     assert.notEqual(run(patch).status, 0);
 });
 
-test("each release channel admits only its platform jobs and Stable stays paired", () => {
+test("Latest Main and Stable admit both platform jobs", () => {
   const workflow = readFileSync(".github/workflows/verification.yml", "utf8");
   for (const platform of ["linux", "macos"]) {
     const job = workflow.split(`\n  ${platform}:\n`)[1].split(/\n  [a-z]+:/)[0];
@@ -141,16 +148,13 @@ test("each release channel admits only its platform jobs and Stable stays paired
       job.includes(
         platform === "linux"
           ? "(inputs.mode == 'main' || inputs.mode == 'stable')"
-          : "(inputs.mode == 'mac-main' || inputs.mode == 'stable')",
+          : "(inputs.mode == 'main' || inputs.mode == 'mac-main' || inputs.mode == 'stable')",
       ),
     );
   }
   assert.match(workflow, /publish:\n    needs: \[admit, linux, macos\]/);
   assert.match(workflow, /name: Release\n/);
   assert.match(workflow, /default: main/);
-  assert.match(
-    workflow,
-    /if: steps.candidate.outputs.sha != '' && inputs.mode != 'main'/,
-  );
+  assert.match(workflow, /if: steps.candidate.outputs.sha != ''/);
   assert.match(workflow, /cancel-in-progress: false/);
 });

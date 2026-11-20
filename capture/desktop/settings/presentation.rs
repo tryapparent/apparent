@@ -167,6 +167,7 @@ pub(super) fn open(pane: Pane, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyh
 
 fn renderer_command(runtime: PathBuf, app: PathBuf) -> Command {
     let mut command = Command::new(runtime);
+    crate::shared::handoff::configure_nightly_child(&mut command);
     crate::capture::desktop::workflow::error_reporting::configure_child(&mut command);
     if cfg!(target_os = "linux") && std::env::var_os("WAYLAND_DISPLAY").is_none() {
         command.arg("--ozone-platform=x11");

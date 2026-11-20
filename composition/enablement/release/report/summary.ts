@@ -66,7 +66,7 @@ export async function releaseSummary(
   if (admit.result === "success" && sha.test(admit.outputs.superseded_by ?? ""))
     return report(
       "Superseded",
-      `A newer Linux Main candidate was queued at \`${admit.outputs.superseded_by}\`.`,
+      `A newer Latest Main candidate was queued at \`${admit.outputs.superseded_by}\`.`,
     );
 
   const supersededTag = publish.outputs.superseded_tag ?? "";
@@ -91,10 +91,12 @@ export async function releaseSummary(
         throw Error("Missing verified publication identity");
       const links = await verifyLinks(tag, JSON.parse(downloads), request);
       const distribution =
-        channel === "stable" &&
-        (feed.result !== "success" || cask.result !== "success")
-          ? `\n\nStable distribution needs attention (feed: ${feed.result}, cask: ${cask.result}). Inspect those jobs and retry distribution for the exact producer attempt.`
-          : "";
+        channel === "main" && feed.result !== "success"
+          ? `\n\nMac Nightly update discovery needs attention (feed: ${feed.result}). Retry the feed for the exact producer attempt.`
+          : channel === "stable" &&
+              (feed.result !== "success" || cask.result !== "success")
+            ? `\n\nStable distribution needs attention (feed: ${feed.result}, cask: ${cask.result}). Inspect those jobs and retry distribution for the exact producer attempt.`
+            : "";
       return report("Published", links.join("\n") + distribution);
     } catch (error) {
       console.warn("Public installer link check failed:", error);

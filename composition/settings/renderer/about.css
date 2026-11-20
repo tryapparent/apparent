@@ -2,6 +2,11 @@
   max-width: 580px;
   margin-bottom: 24px;
 }
+.settings-updates .settings-nightly-download {
+  color: var(--color-foreground);
+  margin-top: 8px;
+  padding-inline: 0;
+}
 .settings-update-flow {
   display: flex;
   align-items: center;

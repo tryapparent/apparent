@@ -1,7 +1,16 @@
 import { assertCaskUpdate, homebrewCask } from "./publication/homebrew.ts";
+import { macProduct, macFeedBranch } from "./metadata.ts";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 if (process.platform !== "darwin" || process.arch !== "arm64")
@@ -10,6 +19,7 @@ if (process.env.APPARENT_SOURCE_ROOT)
   process.chdir(process.env.APPARENT_SOURCE_ROOT);
 const version = process.env.APPARENT_PREVIEW_VERSION!;
 const team = process.env.APPARENT_APPLE_TEAM_ID!;
+const product = macProduct(process.env.RELEASE_CHANNEL);
 if (!/^\d+\.\d+\.\d+$/.test(version) || !/^[A-Z0-9]{10}$/.test(team))
   throw Error("Invalid installation verification inputs");
 process.env.HOMEBREW_NO_AUTO_UPDATE = "1";
@@ -20,7 +30,58 @@ function run(command: string, args: string[]) {
 function output(command: string, args: string[]) {
   return execFileSync(command, args, { encoding: "utf8" }).trim();
 }
-const dmg = join(process.cwd(), `dist/Apparent-Preview-${version}-arm64.dmg`);
+const dmg = join(process.cwd(), `dist/${product.asset}-${version}-arm64.dmg`);
+if (product.nightly) {
+  const app = join("/Applications", product.name + ".app");
+  if (existsSync(app))
+    throw Error("Nightly is already installed on this runner");
+  const mount = mkdtempSync(join(tmpdir(), "apparent-dev-nightly-install-"));
+  let installed = false;
+  try {
+    run("hdiutil", ["attach", dmg, "-nobrowse", "-mountpoint", mount]);
+    try {
+      const installer = join(
+        mount,
+        "Install apparent.app/Contents/MacOS/Installer",
+      );
+      run(installer, ["--request", '{"action":"install","replace":false}']);
+      installed = true;
+      run("codesign", ["--verify", "--deep", "--strict", app]);
+      run("spctl", ["--assess", "--type", "execute", "--verbose=2", app]);
+      run("xcrun", ["stapler", "validate", app]);
+      for (const [field, expected] of [
+        ["CFBundleIdentifier", product.id],
+        ["CFBundleShortVersionString", version],
+        [
+          "SUFeedURL",
+          `https://raw.githubusercontent.com/tryapparent/apparent/${macFeedBranch}/${product.feed}`,
+        ],
+      ]) {
+        if (
+          output("/usr/libexec/PlistBuddy", [
+            "-c",
+            `Print ${field}`,
+            join(app, "Contents/Info.plist"),
+          ]) !== expected
+        )
+          throw Error(`Installed Nightly ${field} differs`);
+      }
+      const label = output(join(app, "Contents/MacOS/apparent"), ["--version"]);
+      if (
+        !label.includes(
+          `${version} · ${process.env.CANDIDATE_SHA!.slice(0, 7)}`,
+        )
+      )
+        throw Error("Installed Nightly version/source differs");
+    } finally {
+      run("hdiutil", ["detach", mount]);
+    }
+  } finally {
+    if (installed) rmSync(app, { recursive: true, force: true });
+    if (existsSync(mount)) rmdirSync(mount);
+  }
+  process.exit(0);
+}
 const checksum = createHash("sha256").update(readFileSync(dmg)).digest("hex");
 run("brew", ["tap", "tryapparent/tap"]);
 const tap = output("brew", ["--repository", "tryapparent/tap"]);

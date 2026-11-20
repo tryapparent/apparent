@@ -256,53 +256,9 @@ pub fn install(mut line: impl FnMut(SpeechModelLine)) -> Result<()> {
     Ok(())
 }
 
-/// Downloads `artifact` into `dir` (resuming a `.partial` file), checks it, and writes the
-/// `.verified.json` receipt that `installed_models` looks for. A file that fails the check is
-/// deleted, so the next try starts over.
-pub fn download(artifact: &Artifact, dir: &Path, progress: &mut dyn FnMut(f64)) -> Result<PathBuf> {
-    // Startup's installer and Labs share a resumable partial and receipt.
-    static DOWNLOAD: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _download = DOWNLOAD.lock().map_err(|_| anyhow::anyhow!("Model preparation unavailable"))?;
-    std::fs::create_dir_all(dir).with_context(|| format!("Could not create {}", dir.display()))?;
-    let model = dir.join(artifact.filename);
-    if !model.is_file() {
-        let partial = dir.join(format!("{}.partial", artifact.filename));
-        if std::fs::metadata(&partial).map_or(0, |m| m.len()) < artifact.bytes {
-            fetch(artifact.url, &partial, artifact.bytes, progress)?;
-        }
-        std::fs::rename(&partial, &model)?;
-    }
-    if let Err(error) = verify(&model, artifact) {
-        let _ = std::fs::remove_file(&model);
-        return Err(error);
-    }
-    let receipt = serde_json::json!({
-        "sha256": artifact.sha256,
-        "bytes": artifact.bytes,
-        "url": artifact.url,
-    });
-    std::fs::write(receipt_path(&model), receipt.to_string())?;
-    Ok(model)
-}
-
-fn verify(path: &Path, artifact: &Artifact) -> Result<()> {
-    use sha2::{Digest, Sha256};
-    let len = std::fs::metadata(path)?.len();
-    if len != artifact.bytes {
-        bail!(
-            "{} is {len} bytes, expected {}",
-            artifact.filename,
-            artifact.bytes
-        );
-    }
-    let mut hasher = Sha256::new();
-    std::io::copy(&mut std::fs::File::open(path)?, &mut hasher)?;
-    let sha256 = format!("{:x}", hasher.finalize());
-    if sha256 != artifact.sha256 {
-        bail!("{} failed its checksum ({sha256})", artifact.filename);
-    }
-    Ok(())
-}
+#[path = "../../../../../engine/recording/model-cache/download.rs"]
+mod model_cache;
+pub use model_cache::download;
 
 /// Fetches `url` into `partial` (resuming it), reporting how much of `total` has arrived.
 fn fetch(url: &str, partial: &Path, total: u64, progress: &mut dyn FnMut(f64)) -> Result<()> {

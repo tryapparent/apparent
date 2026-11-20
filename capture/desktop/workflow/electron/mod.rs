@@ -9,23 +9,22 @@ pub(crate) struct Resources {
 
 /// Preserve Chromium's namespace/renderer sandbox for user-owned Linux packages.
 /// An unusable privileged helper must not prevent the ordinary sandbox route.
-pub(crate) fn configure_sandbox(command: &mut std::process::Command, executable: &Path) -> Result<()> {
+pub(crate) fn configure_sandbox(command: &mut std::process::Command, _executable: &Path) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
-        let helper = std::fs::metadata(executable.parent().context("Missing runtime directory")?.join("chrome-sandbox"))?;
+        let helper = std::fs::metadata(_executable.parent().context("Missing runtime directory")?.join("chrome-sandbox"))?;
         if helper.uid() != 0 || helper.permissions().mode() & 0o4000 == 0 {
             command.arg("--disable-setuid-sandbox");
         }
     }
     #[cfg(not(target_os = "linux"))]
-    let _ = (command, executable);
+    crate::shared::handoff::configure_nightly_child(command);
     Ok(())
 }
 
 pub(crate) fn resolve() -> Result<Resources> {
-    let exe = std::env::current_exe()?;
-    resolve_from(&exe, &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("capture/desktop/ui/frontend"))
+    resolve_from(&std::env::current_exe()?, &Path::new(env!("CARGO_MANIFEST_DIR")).join("capture/desktop/ui/frontend"))
 }
 
 fn resolve_from(executable: &Path, development: &Path) -> Result<Resources> {

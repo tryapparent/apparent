@@ -53,6 +53,7 @@ pub fn release_identity(
     let channel = match channel {
         Some("stable") => "stable",
         Some("preview") => "preview",
+        Some("main") => "main",
         _ => "development",
     };
     let environment = match environment {
@@ -132,6 +133,10 @@ mod tests {
         assert_eq!(
             release_identity(Some("0.12.2"), Some("preview"), Some("production")),
             ("0.12.2".into(), "preview", "production")
+        );
+        assert_eq!(
+            release_identity(Some("0.12.2"), Some("main"), Some("production")),
+            ("0.12.2".into(), "main", "production")
         );
         assert_eq!(
             release_identity(None, None, None),

@@ -82,7 +82,11 @@ export const macWispr: WisprProvider = (operation, signal, apps) => {
 export async function savedWisprExperiment(home: string): Promise<boolean> {
   try {
     const config = JSON.parse(
-      await readFile(path.join(home, ".config/apparent/config.json"), "utf8"),
+      await readFile(
+        process.env.APPARENT_CONFIG ??
+          path.join(home, ".config/apparent/config.json"),
+        "utf8",
+      ),
     );
     return config?.experiments?.[wisprExperiment] === true;
   } catch {

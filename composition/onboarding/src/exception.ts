@@ -18,7 +18,11 @@ export async function reportException(
   });
   const send = async () => {
     try {
-      const directory = path.join(home, ".config/apparent/agent-control");
+      const profile =
+        process.env.APPARENT_PROFILE === "apparent-nightly"
+          ? "apparent-nightly"
+          : "apparent";
+      const directory = path.join(home, ".config", profile, "agent-control");
       const address = path.join(directory, "capture.sock");
       const dir = await lstat(directory),
         entry = await lstat(address);

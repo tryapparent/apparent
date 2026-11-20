@@ -11,7 +11,12 @@ use crate::shared::model::ApparentBundle;
 mod config_store;
 pub(crate) use config_store::ConfigPublicationUncertain;
 pub(crate) mod capture_location;
-pub use config_store::{default_config_path, set_config_value_in};
+pub use config_store::{builtin_captures_dir, default_config_path, set_config_value_in};
+pub(crate) use config_store::{configure_nightly_child, is_nightly};
+#[cfg(unix)]
+pub(crate) use config_store::{capture_socket, launch_socket};
+#[cfg(target_os = "macos")]
+pub use config_store::log_dir;
 pub(crate) use config_store::{update_config_in, update_config_allowed_in};
 #[cfg(test)]
 pub(crate) use config_store::set_config_write_hook;
@@ -76,22 +81,6 @@ pub fn configured_captures_dir(value: &str) -> Option<PathBuf> {
             "config.json: ignoring \"capturesDir\": {value} is not an absolute path"
         ));
         None
-    }
-}
-
-/// `~/Library/Application Support/apparent/captures` on macOS, `%LOCALAPPDATA%\apparent\captures`
-/// on Windows (local, not roaming: the movies are large), `~/.local/share/apparent/captures` on
-/// Linux.
-pub fn builtin_captures_dir() -> PathBuf {
-    if cfg!(not(target_os = "macos")) {
-        dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("apparent")
-            .join("captures")
-    } else {
-        dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("Library/Application Support/apparent/captures")
     }
 }
 

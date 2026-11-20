@@ -51,7 +51,10 @@ export function start(capabilities: Capabilities) {
   app.setPath(
     "userData",
     process.env.APPARENT_UI_PROFILE ||
-      path.join(app.getPath("appData"), "apparent-onboarding"),
+      path.join(
+        app.getPath("appData"),
+        `${process.env.APPARENT_PROFILE === "apparent-nightly" ? "apparent-nightly" : "apparent"}-onboarding`,
+      ),
   );
   let window: BrowserWindow,
     placement: Placement,

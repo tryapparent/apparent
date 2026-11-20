@@ -46,6 +46,7 @@ on:
       - "enablement/native-build/**"
       - "engine/permissions/**"
       - "engine/diagnostics/**"
+      - "engine/recording/model-cache/**"
       - "capture/**"
       - "record/**"
       - "connect/**"
@@ -99,6 +100,7 @@ on:
       - "enablement/native-build/**"
       - "engine/permissions/**"
       - "engine/diagnostics/**"
+      - "engine/recording/model-cache/**"
       - "capture/**"
       - "record/**"
       - "connect/**"
@@ -392,12 +394,15 @@ jobs:
         if: env.CHECK_RELEASE == 'true'
         run: node --experimental-strip-types --test composition/enablement/release/*.test.ts composition/enablement/release/test/*.test.ts composition/enablement/release/mac/test.ts composition/enablement/release/mac/publication/*.test.ts
       - uses: oven-sh/setup-bun@v2
-        if: env.CHECK_ENGINEERING == 'true' || env.CHECK_TOOLING == 'true' || env.CHECK_SPARKLE == 'true'
+        if: env.CHECK_ENGINEERING == 'true' || env.CHECK_TOOLING == 'true' || env.CHECK_SPARKLE == 'true' || env.CHECK_RELEASE == 'true'
         with:
           bun-version: '1.3.10'
       - name: Verify shared Sparkle outcome policy
         if: env.CHECK_SPARKLE == 'true'
         run: node shared/enablement/ci/bend/check.ts --proof
+      - name: Verify installed About download policy
+        if: env.CHECK_RELEASE == 'true' || env.CHECK_SPARKLE == 'true'
+        run: node composition/enablement/ci/bend/check.ts --proof
       - name: Verify shared theme
         if: env.CHECK_THEME == 'true'
         run: python3 shared/ui/scripts/check-theme.py

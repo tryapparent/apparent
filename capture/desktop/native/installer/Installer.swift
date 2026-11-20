@@ -4,8 +4,13 @@ import Foundation
 import Security
 import Darwin
 
+#if APPARENT_NIGHTLY
+private let appID = "dev.simonvanlaak.apparent.nightly"
+private let appName = "Apparent Nightly.app"
+#else
 private let appID = "dev.simonvanlaak.apparent.preview"
 private let appName = "Apparent Preview.app"
+#endif
 struct InstallError: LocalizedError {
   let message: String
   var errorDescription: String? { message }
@@ -29,7 +34,7 @@ func appInfo(_ url: URL, verify: (URL) throws -> String? = verifiedTeam) throws 
         p["CFBundleExecutable"] as? String == "apparent",
         let version = p["CFBundleShortVersionString"] as? String,
         let build = p["CFBundleVersion"] as? String else {
-    throw InstallError(message: "This is not the expected Apparent Preview app. Nothing was replaced.")
+    throw InstallError(message: "This is not the expected \(appName). Nothing was replaced.")
   }
   try require(build.range(of: "^[0-9]+(\\.[0-9]+)*$", options: .regularExpression) != nil,
               "The app has an invalid build number.")
@@ -132,7 +137,7 @@ final class InstallTransaction {
       try require((try? identity(backup)) == old, "The destination changed during replacement. The preserved item was left beside the app; nothing was deleted.")
     }
     do {
-      try require(!running(target), "Apparent Preview started during replacement. Quit it yourself before installing.")
+      try require(!running(target), "\(appName) started during replacement. Quit it yourself before installing.")
       // RENAME_EXCL prevents replacing a newly appeared file, app or symlink.
       try require(renameatx_np(fd, stage.lastPathComponent, fd, appName, UInt32(RENAME_EXCL)) == 0,
                   "The app could not be installed. Check Applications in Finder.")

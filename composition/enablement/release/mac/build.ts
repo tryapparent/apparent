@@ -1,5 +1,5 @@
 import { createDmg } from "./dmg/build.ts";
-import { appDisplayNames, appPlist } from "./metadata.ts";
+import { appPlist, macProduct } from "./metadata.ts";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   cpSync,
@@ -14,6 +14,8 @@ import { fileURLToPath } from "node:url";
 const tooling = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const root = process.env.APPARENT_SOURCE_ROOT ?? tooling;
 const env = process.env;
+const product = macProduct(env.APPARENT_RELEASE_CHANNEL);
+const helperId = product.id + ".helper";
 const version = env.APPARENT_PREVIEW_VERSION ?? "";
 const build = env.APPARENT_PREVIEW_BUILD_NUMBER ?? "";
 const key = env.APPARENT_PREVIEW_PUBLIC_KEY ?? "";
@@ -82,14 +84,14 @@ run("cargo", ["build", "--release", "--locked", "-j", "3"], {
   env: {
     ...env,
     APPARENT_PREVIEW_BUILD: "1",
-    APPARENT_HELPER_BUNDLE_ID: "dev.simonvanlaak.apparent.preview.helper",
+    APPARENT_HELPER_BUNDLE_ID: helperId,
     APPARENT_RELEASE_VERSION: version,
     APPARENT_RELEASE_CHANNEL: env.APPARENT_RELEASE_CHANNEL ?? "preview",
     APPARENT_REPORTING_ENVIRONMENT: "production",
   },
 });
 const dist = join(root, "dist");
-const app = join(dist, "Apparent Preview.app");
+const app = join(dist, product.name + ".app");
 rmSync(app, { recursive: true, force: true });
 for (const directory of ["MacOS", "Resources", "Frameworks"])
   mkdirSync(join(app, "Contents", directory), { recursive: true });
@@ -121,10 +123,16 @@ run("ditto", [
   join(sparkle, "Sparkle.framework"),
   join(app, "Contents/Frameworks/Sparkle.framework"),
 ]);
-writeFileSync(join(app, "Contents/Info.plist"), appPlist(version, build, key));
+writeFileSync(
+  join(app, "Contents/Info.plist"),
+  appPlist(version, build, key, product),
+);
 const localized = join(app, "Contents/Resources/en.lproj");
 mkdirSync(localized);
-writeFileSync(join(localized, "InfoPlist.strings"), appDisplayNames);
+writeFileSync(
+  join(localized, "InfoPlist.strings"),
+  `"CFBundleName" = "${product.displayName}";\n"CFBundleDisplayName" = "${product.displayName}";\n`,
+);
 const settings = join(app, "Contents/Resources/settings");
 if (prepared)
   run(process.execPath, [
@@ -165,16 +173,10 @@ run("codesign", [
   ...sign,
   ...entitlements,
   "--identifier",
-  "dev.simonvanlaak.apparent.preview.helper",
+  helperId,
   join(app, "Contents/MacOS/apparent-helper"),
 ]);
-run("codesign", [
-  ...sign,
-  ...entitlements,
-  "--identifier",
-  "dev.simonvanlaak.apparent.preview",
-  app,
-]);
+run("codesign", [...sign, ...entitlements, "--identifier", product.id, app]);
 run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", app]);
 function notarizeBundle(bundle: string, archive: string) {
   if (notarize !== "true") return;
@@ -225,7 +227,7 @@ if (notarize === "true") {
 }
 notarizeBundle(app, join(dist, "preview-notary.zip"));
 const installer = join(dist, "Install apparent.app");
-const installerId = `dev.simonvanlaak.apparent.preview.installer.b${build}`;
+const installerId = `${product.id}.installer.b${build}`;
 rmSync(installer, { recursive: true, force: true });
 for (const name of ["MacOS", "Resources", "SharedSupport"])
   mkdirSync(join(installer, "Contents", name), { recursive: true });
@@ -242,13 +244,14 @@ run("xcrun", [
   "-parse-as-library",
   "-target",
   `${arch}-apple-macos15.0`,
+  ...(product.nightly ? ["-D", "APPARENT_NIGHTLY"] : []),
   "capture/desktop/native/installer/Installer.swift",
   "-o",
   join(installer, "Contents/MacOS/Installer"),
 ]);
 run("ditto", [
   app,
-  join(installer, "Contents/SharedSupport/Apparent Preview.app"),
+  join(installer, "Contents/SharedSupport", product.name + ".app"),
 ]);
 run("ditto", [
   join(settings, "app"),
@@ -266,7 +269,7 @@ run(process.execPath, [
 run("codesign", [...sign, "--identifier", installerId, installer]);
 run("codesign", ["--verify", "--deep", "--strict", installer]);
 notarizeBundle(installer, join(dist, "installer-notary.zip"));
-const name = `Apparent-Preview-${version}-arm64.dmg`;
+const name = `${product.asset}-${version}-arm64.dmg`;
 const dmg = join(dist, name);
 rmSync(dmg, { force: true });
 createDmg(installer, dmg, version, build);
@@ -296,5 +299,5 @@ run("ditto", [
   "--sequesterRsrc",
   "--keepParent",
   app,
-  join(dist, `Apparent-Preview-${version}-arm64.zip`),
+  join(dist, `${product.asset}-${version}-arm64.zip`),
 ]);

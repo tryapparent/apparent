@@ -36,7 +36,7 @@ export async function verified(directory: string) {
   );
   assert.match(manifest.producer?.controlSha ?? "", /^[a-f0-9]{40}$/);
   assert.equal(manifest.repository, repository);
-  assert.equal(manifest.channel, "stable");
+  assert(["stable", "main"].includes(manifest.channel));
   assert.equal(manifest.platform, "macos");
   assert.equal(manifest.architecture, "aarch64");
   assert.deepEqual(manifest.evidence, {
@@ -67,7 +67,7 @@ export async function verified(directory: string) {
   );
   for (const name of [
     "mac-update.json",
-    "apparent.rb",
+    ...(manifest.channel === "stable" ? ["apparent.rb"] : []),
     "sparkle-signature-attributes.txt",
     raw.zipName,
     raw.dmgName,
@@ -80,13 +80,15 @@ export async function verified(directory: string) {
       RELEASE_TAG: manifest.tag,
       CANDIDATE_SHA: manifest.sourceSha,
       APPARENT_PREVIEW_BUILD_NUMBER: raw.buildNumber,
+      RELEASE_CHANNEL: manifest.channel,
     },
     await hash(join(directory, raw.dmgName)),
     readFileSync(join(directory, "sparkle-signature-attributes.txt"), "utf8"),
     lstatSync(join(directory, raw.zipName)).size,
   );
   assert.deepEqual(raw, metadata);
-  assert.equal(readFileSync(join(directory, "apparent.rb"), "utf8"), cask);
+  if (cask)
+    assert.equal(readFileSync(join(directory, "apparent.rb"), "utf8"), cask);
   assert.equal(
     readFileSync(join(directory, metadata.dmgName + ".sha256"), "utf8"),
     `${metadata.dmgSha256}  ${metadata.dmgName}\n`,
@@ -100,7 +102,7 @@ export async function verified(directory: string) {
     gh(["api", `repos/${repository}/releases/tags/${metadata.tag}`]),
   );
   assert.equal(release.draft, false);
-  assert.equal(release.prerelease, false);
+  assert.equal(release.prerelease, metadata.channel === "main");
   assert.equal(release.tag_name, metadata.tag);
   const scratch = mkdtempSync(join(tmpdir(), "apparent-dev-mac-publication-"));
   try {

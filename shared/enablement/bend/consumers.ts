@@ -21,6 +21,13 @@ export function bendConsumers(path: string) {
   if (sharedBendInput(path))
     return ["capture", "desktop", "service", "onboarding"] as const;
   if (
+    path === "composition/settings/about/mac-updates.bend" ||
+    /^composition\/enablement\/ci\/bend\/(?:build\.ts|modules\.json)$/.test(
+      path,
+    )
+  )
+    return ["capture", "desktop"] as const;
+  if (
     path.startsWith("record/notes/") ||
     path === "record/enablement/ci/bend/note-gesture.ts"
   )
