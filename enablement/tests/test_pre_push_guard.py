@@ -232,7 +232,6 @@ class PrePushGuardTests(unittest.TestCase):
 
     def test_later_document_commit_does_not_hide_source_delta(self):
         run("git", "update-ref", "refs/remotes/origin/main", self.head, cwd=self.repo)
-        (self.repo / "composition").mkdir()
         (self.repo / "composition/file.rs").write_text("// Rust source change\n")
         run("git", "add", "composition/file.rs", cwd=self.repo)
         run("git", "commit", "-qm", "source", cwd=self.repo)
