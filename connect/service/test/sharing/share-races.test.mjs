@@ -19,15 +19,24 @@ const instrumented=await build({stdin:{resolveDir:process.cwd(),contents:`
 `},bundle:true,format:'esm',platform:'browser',conditions:['workerd'],external:['node:*'],write:false});
 async function setup(metadata=false){
  const f=await fixture({SHARING_ENABLED:'true'},{scriptPath:undefined,script:instrumented.outputFiles[0].text,instances:true});
- await f.db.exec((await readFile('.generated/migrations/0003.sql','utf8')).replaceAll('\n',' '));
- await f.db.exec('CREATE TABLE test_barrier(released INTEGER,entered INTEGER); INSERT INTO test_barrier VALUES(0,0)');
- const a=await f.identity('race'),p='/v1/captures/'+id(171),asset=metadata?'apparent.json':'summary.md',text=metadata?JSON.stringify({transcript:{text:'hello'}}):'hello';
- assert.equal((await f.call(p,{token:a.token,method:'POST',body:{files:[file(asset,text)]}})).status,200);
- assert.equal((await f.call(p+'/files/'+asset,{token:a.token,method:'PUT',raw:text})).status,200);
- assert.equal((await f.call(p+'/complete',{token:a.token,method:'POST'})).status,200);
- const grants=await Promise.all(Array.from({length:5},()=>f.call(p+'/share',{token:a.token,method:'POST'})));
- const links=await Promise.all(grants.map(async r=>{assert.equal(r.status,200);return (await r.json()).url;}));assert.equal(new Set(links).size,1);
- return {...f,a,path:new URL(links[0]).pathname,management:(await f.db.prepare('SELECT id FROM shares').first()).id};
+ try {
+  await f.db.exec((await readFile('.generated/migrations/0003.sql','utf8')).replaceAll('\n',' '));
+  await f.db.exec('CREATE TABLE test_barrier(released INTEGER,entered INTEGER); INSERT INTO test_barrier VALUES(0,0)');
+  const a=await f.identity('race'),p='/v1/captures/'+id(171),asset=metadata?'apparent.json':'summary.md',text=metadata?JSON.stringify({transcript:{text:'hello'}}):'hello';
+  assert.equal((await f.call(p,{token:a.token,method:'POST',body:{files:[file(asset,text)]}})).status,200);
+  assert.equal((await f.call(p+'/files/'+asset,{token:a.token,method:'PUT',raw:text})).status,200);
+  assert.equal((await f.call(p+'/complete',{token:a.token,method:'POST'})).status,200);
+  const links=await Promise.all(Array.from({length:5},async()=>{
+   const grant=await f.call(p+'/share',{token:a.token,method:'POST',instance:'first'});
+   assert.equal(grant.status,200);
+   return (await grant.json()).url;
+  }));
+  assert.equal(new Set(links).size,1);
+  return {...f,a,path:new URL(links[0]).pathname,management:(await f.db.prepare('SELECT id FROM shares').first()).id};
+ } catch (error) {
+  await f.close();
+  throw error;
+ }
 }
 async function entered(f){for(let n=0;n<200;n++){if((await f.db.prepare('SELECT entered FROM test_barrier').first()).entered)return;await delay(5);}assert.fail('bounded barrier not reached');}
 const release=f=>f.db.exec('UPDATE test_barrier SET released=1');

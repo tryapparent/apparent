@@ -24,11 +24,17 @@ await bendScratch(async (scratch) => {
         "-e",
         `import policy from "./activity-preference.mjs";
       const values = [false, true];
-      console.log(JSON.stringify(values.flatMap(gpc => values.map(dnt => policy.may_queue(gpc, dnt)))));`,
+      console.log(JSON.stringify([
+        values.flatMap(gpc => values.map(dnt => policy.may_queue(gpc, dnt))),
+        values.map(completed => policy.upload_increment(completed)),
+      ]));`,
       ],
       directory,
     );
-    assert.deepEqual(JSON.parse(decisions), [true, false, false, false]);
+    assert.deepEqual(JSON.parse(decisions), [
+      [true, false, false, false],
+      [0, 1],
+    ]);
     const account = run(
       process.execPath,
       [

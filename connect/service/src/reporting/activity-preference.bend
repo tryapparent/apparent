@@ -28,3 +28,10 @@ def do_not_track_blocks_activity(gpc):
       {==}
     case False{}:
       {==}
+
+def upload_increment(completed_upload: Bool) -> U32:
+  match completed_upload:
+    case True{}:
+      1
+    case False{}:
+      0

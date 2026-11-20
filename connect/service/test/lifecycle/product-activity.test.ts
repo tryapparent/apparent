@@ -6,7 +6,7 @@ import {activitySubject,admitProductActivity,cleanupProductActivity} from '../..
 import {setAnalyticsChoice} from '../../src/analytics.ts';
 import type {Env} from '../../src/types.ts';
 const secret='synthetic-better-auth-secret-only-for-tests-32bytes';
-async function setup(){const f=await fixture({SHARING_ENABLED:'true',POSTHOG_ENABLED:'false'});for(const n of ['0003','0006','0007','0008','0009','0010','0012','0013'])await f.db.exec((await readFile('.generated/migrations/'+n+'.sql','utf8')).replaceAll('\n',' '));return {...f,env:{DB:f.db,BETTER_AUTH_SECRET:secret} as Env};}
+async function setup(cadence = false){const f=await fixture({SHARING_ENABLED:'true',POSTHOG_ENABLED:'false'});for(const n of ['0003','0006','0007','0008','0009','0010','0012','0013',...(cadence?['0015']:[])])await f.db.exec((await readFile('.generated/migrations/'+n+'.sql','utf8')).replaceAll('\n',' '));return {...f,env:{DB:f.db,BETTER_AUTH_SECRET:secret} as Env};}
 const rows=async f=>(await f.db.prepare('SELECT * FROM product_activity').all()).results;
 async function settled(f,n){for(let i=0;i<100;i++){if((await rows(f)).length===n)return;await new Promise(r=>setTimeout(r,10));}assert.fail('Worker activity did not settle');}
 test('real Worker authenticates recording starts; accounts deduplicate across devices and metrics expose aggregates only',async()=>{
@@ -96,6 +96,64 @@ test('reporting history deduplicates the Desktop total and preserves earlier agg
   assert.deepEqual((await history()).at(-1), {
    desktop_daily:1,connect_daily:null,desktop_weekly:2,connect_weekly:1,
   });
+ } finally {
+  await f.close();
+ }
+});
+test('upload cadence counts completed uploads once and uses the same eligible Connect cohort for both totals', async () => {
+ const f = await setup(true);
+ try {
+  const uploader = await f.identity('cadence-uploader');
+  const sharer = await f.identity('cadence-sharer');
+  const excluded = await f.identity('cadence-excluded');
+  const desktop = await f.identity('cadence-desktop');
+  const history = async () => (await f.db.prepare(
+   'SELECT completed_uploads,active_accounts FROM reporting_connect_upload_cadence ORDER BY day_utc',
+  ).all()).results;
+  const complete = async (capture: number, token: string, headers?: Record<string, string>) => {
+   const path = '/v1/captures/' + id(capture);
+   assert.equal((await f.call(path, { token, method: 'POST', body: { files: [file()] } })).status, 200);
+   assert.equal((await f.call(path + '/files/summary.md', { token, method: 'PUT', raw: 'hello' })).status, 200);
+   assert.equal((await f.call(path + '/complete', { token, method: 'POST', headers })).status, 200);
+   return path;
+  };
+  const cron = async () => (await f.mf.getWorker()).scheduled();
+  assert.deepEqual(await history(), [{ completed_uploads: null, active_accounts: null }]);
+  await admitProductActivity(f.env, uploader.id, 'connect', {
+   occurredAt: Date.now() - 86_400_000,
+   completedUpload: true,
+  });
+  assert.deepEqual(await rows(f), []);
+  await f.db.prepare('INSERT INTO aggregate_dau_exclusions(account_id) VALUES(?)').bind(excluded.id).run();
+  const sharePath = await complete(951, sharer.token, { 'Sec-GPC': '1' });
+  assert.equal((await f.call(sharePath + '/share', { token: sharer.token, method: 'POST' })).status, 200);
+  await settled(f, 1);
+  await cron();
+  assert.deepEqual(await history(), [{ completed_uploads: 0, active_accounts: 1 }]);
+
+  await f.db.exec("INSERT INTO product_activity_history(day_utc,as_of_ms,connect_uploads,connect_upload_accounts) VALUES(date('now','-1 day'),0,4,2)");
+  await f.db.exec("UPDATE product_activity SET last_day=date('now','-1 day'),last_cadence_day=date('now','-1 day'),daily_uploads=4");
+  await admitProductActivity(f.env, desktop.id, 'desktop');
+  await complete(952, excluded.token);
+  const [firstUpload] = await Promise.all([complete(953, uploader.token), complete(954, uploader.token)]);
+  assert.equal((await f.call(firstUpload + '/complete', { token: uploader.token, method: 'POST' })).status, 200);
+  const secondSharePath = await complete(955, sharer.token, { DNT: '1' });
+  assert.equal((await f.call(secondSharePath + '/share', { token: sharer.token, method: 'POST' })).status, 200);
+  const expected = [{ completed_uploads: 4, active_accounts: 2 }, { completed_uploads: 2, active_accounts: 2 }];
+  for (let i = 0; i < 100; i++) {
+   const observed = await rows(f);
+   if (observed.length === 3 && observed.some(r => r.daily_uploads === 2) &&
+    observed.some(r => r.product === 'connect' && r.daily_uploads === 0)) break;
+   await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  await cron();
+  assert.deepEqual(await history(), expected);
+  const schema = (await f.db.prepare('PRAGMA table_info(reporting_connect_upload_cadence)').all()).results;
+  assert.deepEqual(schema.map(r => r.name), ['day_utc', 'completed_uploads', 'active_accounts']);
+
+  await f.db.prepare('INSERT INTO aggregate_dau_exclusions(account_id) VALUES(?)').bind(uploader.id).run();
+  await cron();
+  assert.deepEqual(await history(), [expected[0], { completed_uploads: 0, active_accounts: 1 }]);
  } finally {
   await f.close();
  }

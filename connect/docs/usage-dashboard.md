@@ -77,9 +77,9 @@ a full refresh. This propagates the 30-day retention and replaces updated counts
 for the current day. Validate the imported columns and timestamp before changing
 the dashboard.
 
-Run `node connect/enablement/activity-dashboard.ts` from the repository root for
-the five PostHog insight payloads. Put the four current numbers in a compact row,
-with the full-width chart immediately below in the activity group. Clear
+Run `node connect/enablement/activity-dashboard.ts` for PostHog payloads. Put
+four numbers in a row, then the full-width chart. See [upload cadence](../enablement/activity-dashboard/README.md).
+Clear
 the previous activity table, daily chart and explanatory tile from the dashboard
 after verifying the replacement tiles. To roll back the presentation, restore
 the previous tile references from the dashboard backup and disable the new view
