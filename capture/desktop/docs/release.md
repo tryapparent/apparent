@@ -107,13 +107,11 @@ all later preview releases: replacing it breaks updates for installed copies. Th
 Sparkle key and production appcast are unrelated. Test an actual update between two previews on
 a Mac before announcing it; CI packaging and an appcast alone do not prove installation works.
 
-Opening the DMG brings up a branded Finder window. Double-click the frog to
-open the installer, then click it or drag it onto Applications. The installer
-opens apparent after a successful copy. If launching fails, retry from the
-installer. Finder also offers a manual drag path.
+Open **Install apparent** from the disk image. Click the frog on the app icon
+to install and open apparent. If launching fails, retry from the installer.
 
 The release builder signs and notarizes the installer and uses Electron
-Builder’s pinned dmgbuild backend for the Finder layout. It signs, notarizes
+Builder’s pinned dmgbuild backend for the launcher. It signs, notarizes
 and staples the finished disk image. The Sparkle ZIP contains the app alone.
 Native acceptance must verify the exact signed candidate’s Finder window and
 install path on Mac.

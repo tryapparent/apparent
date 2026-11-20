@@ -25,8 +25,8 @@ class AppleSigningTest(unittest.TestCase):
         shutil.copytree(ROOT / "composition/enablement/release/mac", root / "composition/enablement/release/mac")
         dmg_builder = root / "composition/enablement/release/mac/dmg/build.ts"
         dmg_builder.write_text(dmg_builder.read_text().split("const toolByArch")[0] +
-            'export function createDmg(app, installer, dmg, version, build) {'
-            'writeFileSync(dmg, JSON.stringify(finderLayout(app, installer, version, build)));'
+            'export function createDmg(installer, dmg, version, build) {'
+            'writeFileSync(dmg, JSON.stringify(finderLayout(installer, version, build)));'
             'if (process.env.TRACE) writeFileSync(process.env.TRACE, "createDmg\\n", { flag: "a" }); }')
         (root / "bin").mkdir()
         (root / "sparkle/Sparkle.framework/Versions/B/XPCServices").mkdir(parents=True)

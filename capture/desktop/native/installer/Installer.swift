@@ -86,7 +86,7 @@ final class InstallTransaction {
       try require(old.build.compare(info.build, options: .numeric) != .orderedDescending,
                   "A newer app is already installed. Keep it, or move it aside in Finder first.")
     }
-    try require(!running(target), "Finish any recording, then quit apparent yourself and try again. The installer will not quit it.")
+    try require(!running(target), "Finish recording and quit apparent, then check again.")
     return ["version": info.version, "build": info.build, "needsReplacement": exists, "destination": target.path]
   }
   func install(replace: Bool) throws -> [String: Any] {

@@ -32,4 +32,4 @@ html, body, #root { min-height: 100%; margin: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .installer-journey[data-hopping=true] .installer-app { animation: none; } }
 
-@media (max-width: 600px) { .installer { padding: 24px; } .installer-journey { gap: 16px; } .installer-app, .installer-applications { width: 96px; } }
+@media (max-width: 600px) { .installer { padding: 24px; } .installer-journey { gap: 16px; } .installer-app, .installer-applications { width: 112px; } }
