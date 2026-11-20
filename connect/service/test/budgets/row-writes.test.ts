@@ -14,7 +14,8 @@ const instrumented=await build({stdin:{resolveDir:process.cwd(),contents:`
  import worker from './src/worker.ts';
  export default {async fetch(request,env){
   const writes=[],deletes=[];
-  const record=(sql,r)=>{writes.push({sql,rows:r.meta.rows_written});return r;};
+  const reads=[];
+  const record=(sql,r)=>{writes.push({sql,rows:r.meta.rows_written});reads.push({sql,rows:r.meta.rows_read});return r;};
   const DB={prepare(sql){const wrap=s=>({bind(...args){return wrap(s.bind(...args));},
    async first(...args){return (await this.all(...args)).results[0]??null;},
    async all(){return record(sql,await s.all());},async run(){return record(sql,await s.run());},raw:s,sql});return wrap(env.DB.prepare(sql));},
@@ -26,11 +27,78 @@ const instrumented=await build({stdin:{resolveDir:process.cwd(),contents:`
   else if(url.pathname==='/analytics')await flushAnalytics(target);
   else if(url.pathname==='/activity')await cleanupDailyActivity(target);
   else if(url.pathname==='/delete')await deleteAttempts(target,await request.json());
+  else if(url.pathname==='/v1/encryption/peers'){
+   const response=await worker.fetch(request,target);
+   return Response.json({reads,body:await response.json()},{status:response.status});
+  }
   else return worker.fetch(request,env);
-  return Response.json({writes,rows:writes.reduce((n,w)=>n+w.rows,0),deletes});
+  return Response.json({reads,writes,rows:writes.reduce((n,w)=>n+w.rows,0),deletes});
  }};`},bundle:true,format:'esm',platform:'browser',conditions:['workerd'],external:['node:*'],write:false});
-const setup=(bindings={})=>fixture(bindings, {scriptPath:undefined,script:instrumented.outputFiles[0].text});
+const applyIndexes=async (f:Awaited<ReturnType<typeof fixture>>)=>
+ f.db.exec((await readFile('.generated/migrations/0014.sql','utf8')).replaceAll('\n',' '));
+const setup=async (bindings={},indexes=true)=>{
+ const f=await fixture(bindings, {scriptPath:undefined,script:instrumented.outputFiles[0].text});
+ try {
+  if(indexes)await applyIndexes(f);
+  return f;
+ }catch(error){await f.close();throw error;}
+};
 const sweep=async f=>{const r=await f.call('/sweep');assert.equal(r.status,200);return r.json();};
+
+test('cleanup row reads do not scale with retired uploads',async t=>{
+ const f=await setup({},false);try{
+  const a=await f.identity('retired-history');
+  const capture=id(953);
+  await f.db.prepare("INSERT INTO captures(id,account_id,manifest,bytes,expires_at,pending_until,status) VALUES(?,?,?,0,0,0,'deleted')").bind(capture,a.id,'[]').run();
+  await f.db.prepare("INSERT INTO attempts(key,capture_id,created_at) VALUES('retry',?,0)").bind(capture).run();
+  await sweep(f);
+  await f.db.batch([
+   f.db.prepare("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<12000) INSERT INTO captures(id,account_id,manifest,bytes,expires_at,pending_until,status) SELECT printf('historical-%05d',i),?,'[]',0,0,0,'deleted' FROM n").bind(a.id),
+   f.db.prepare("INSERT INTO attempts(key,capture_id,created_at,terminal,released) SELECT id,id,0,1,1 FROM captures WHERE id LIKE 'historical-%'"),
+   f.db.prepare("INSERT INTO files(capture_id,path,size,sha256,object_key) SELECT id,'summary.md',0,'',id FROM captures WHERE id LIKE 'historical-%'"),
+  ]);
+  const before=await sweep(f);
+  await applyIndexes(f);
+  const after=await sweep(f);
+  assert.deepEqual(before.deletes,['retry']);
+  assert.deepEqual(after.deletes,before.deletes);
+  assert.equal(after.rows,0);
+  const totalReads=({reads}:{reads:{rows:number}[]})=>reads.reduce((sum,statement)=>sum+statement.rows,0);
+  const beforeReads=totalReads(before),afterReads=totalReads(after);
+  t.diagnostic(`D1 rows read per sweep: ${beforeReads} before, ${afterReads} after`);
+  assert.ok(beforeReads>12000);
+  assert.ok(afterReads<100,JSON.stringify(after.reads));
+ }finally{await f.close();}
+});
+
+test('device key lookups skip retained revoked grants',async t=>{
+ const f=await setup({},false);try{
+  const a=await f.identity('registry-reader');
+  const grant='registry-reader-read',key={version:1,recipient:'age1jyg59kq02njlzz0h99thxywpltpp2ywtsgef3h8sawepwnglyq3qqz5957',signing:'01'.repeat(32)};
+  await f.db.batch([
+   f.db.prepare('UPDATE auth_grants SET approved_at=1 WHERE id=?').bind(grant),
+   f.db.prepare('INSERT INTO encryption_keys(grant_id,version,recipient,signing) VALUES(?,1,?,?)').bind(grant,key.recipient,key.signing),
+   f.db.prepare("INSERT INTO oauthRefreshToken(id,token,clientId,userId,expiresAt,scopes) VALUES(?,?,?,?,?,'[]')").bind(grant,'fixture-refresh-token',grant,'registry-reader',new Date(Date.now()+86400000).toISOString()),
+   f.db.prepare("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<1000) INSERT INTO auth_grants(id,client_id,device_hash,user_code,scope,account_id,user_id,expires_at,approved_at,revoked_at) SELECT 'retired-'||i,'retired-'||i,'retired-'||i,'retired-'||i,'read',?,'registry-reader',0,1,2 FROM n").bind(a.id),
+   f.db.prepare("INSERT INTO encryption_keys(grant_id,version,recipient,signing) SELECT id,1,?,? FROM auth_grants WHERE revoked_at=2").bind(key.recipient,key.signing),
+  ]);
+  const peers=async()=>{
+   const response=await f.call('/v1/encryption/peers',{token:a.read});
+   assert.equal(response.status,200);
+   return response.json();
+  };
+  const before=await peers();
+  await applyIndexes(f);
+  const after=await peers();
+  assert.deepEqual(after.body,before.body);
+  assert.deepEqual(after.body.devices,[{grantId:grant,scope:'read',key}]);
+  const registryReads=({reads}:{reads:{sql:string;rows:number}[]})=>reads.find(statement=>statement.sql.includes('JOIN encryption_keys'))?.rows??0;
+  const beforeReads=registryReads(before),afterReads=registryReads(after);
+  t.diagnostic(`D1 rows read per key lookup: ${beforeReads} before, ${afterReads} after`);
+  assert.ok(beforeReads>=1000);
+  assert.ok(afterReads>0&&afterReads<20,JSON.stringify(after.reads));
+ }finally{await f.close();}
+});
 
 test('uncertain cleanup uses one cursor write and visits every key across bounded pages',async()=>{
  const f=await setup();try{
@@ -38,8 +106,9 @@ test('uncertain cleanup uses one cursor write and visits every key across bounde
   await f.db.prepare("INSERT INTO captures(id,account_id,manifest,bytes,expires_at,pending_until,status) VALUES(?,?,?,0,0,0,'deleted')").bind(capture,a.id,'[]').run();
   await f.db.prepare("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<1500) INSERT INTO attempts(key,capture_id,created_at,bytes) SELECT printf('uncertain-%04d',i),?,0,1 FROM n").bind(capture).run();
   await f.db.prepare('UPDATE r2_budget SET physical_used=1500').run();
-  const first=await sweep(f);assert.equal(first.rows,1,'only the page cursor is stamped');assert.equal(first.deletes.length,1000);
-  const second=await sweep(f);assert.equal(second.rows,1);assert.equal(second.deletes.length,1000);
+  const first=await sweep(f);assert.equal(first.rows,2,'one cursor stamp plus its index entry');assert.equal(first.deletes.length,1000);
+  assert.equal(first.writes.filter(({rows})=>rows>0).length,1,'only the page cursor is stamped');
+  const second=await sweep(f);assert.equal(second.rows,2);assert.equal(second.deletes.length,1000);
   assert.equal(new Set([...first.deletes,...second.deletes]).size,1500,'wrapped selection cannot starve later uncertain keys');
   assert.equal((await f.db.prepare('SELECT physical_used FROM r2_budget').first()).physical_used,1500,'uncertain attempts remain charged');
  }finally{await f.close();}
@@ -50,7 +119,7 @@ test('a small uncertain backlog keeps deleting late objects without recurring SQ
   const a=await f.identity('uncertain-idle'),capture=id(951);
   await f.db.prepare("INSERT INTO captures(id,account_id,manifest,bytes,expires_at,pending_until,status) VALUES(?,?,?,0,0,0,'deleted')").bind(capture,a.id,'[]').run();
   await f.db.prepare("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<49) INSERT INTO attempts(key,capture_id,created_at) SELECT printf('uncertain-%04d',i),?,0 FROM n").bind(capture).run();
-  assert.equal((await sweep(f)).rows,1);
+  assert.equal((await sweep(f)).rows,2);
   await f.bucket.put('uncertain-0001','late');
   const next=await sweep(f);assert.equal(next.rows,0);assert.equal(next.deletes.length,49);assert.equal(await f.bucket.head('uncertain-0001'),null);
  }finally{await f.close();}

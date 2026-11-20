@@ -111,13 +111,11 @@ Only manifest insertion and cleanup stamping had per-row SQL loops. Account usag
 
 No contract limits were reduced and no multipart/queue protocol was added. Spending tests use real local D1/R2, small caps written to test D1 rows, two Worker instances sharing bindings, held-provider/stream barriers and real transaction faults. They cover cap races, retry accounting, missing/invalid state, crashes before PUT/terminal marker, late PUT after delete, terminal snapshot races, one-time release, eviction overlap and restart/migration rerun. These are local proofs, not live billing or Free CPU proof. Parent owns separate security review, exact changed-backend native integration, account configuration and any staging authorization. No provisioning, plan change or remote CPU measurement was performed here.
 
-Per-file encryption adds migration `0011.sql`. `npm run build` first stages the
-active migration sources (including `migrations/baseline/`) byte-for-byte into
-`.generated/migrations/`; Wrangler's `migrations_dir` points there. Always build
-before listing/applying migrations. D1 ledger filenames remain `0001.sql` through
-`0012.sql`, without directory prefixes, so existing migrations are not replayed.
-Migration `0012.sql` adds prospective, pseudonymous seven-day product activity;
-see [activity coverage and rollout](../docs/usage-dashboard.md).
-This source grouping changes no historical SQL or migration authority. Tests use
-the same staged artifacts. Applying migrations remains a separate authorized
-operation; building does not contact D1 or provision resources.
+Build before listing or applying D1 migrations. Build and tests use the same SQL
+staged into Wrangler's `.generated/migrations/` with unchanged ledger filenames.
+`0011.sql` adds per-file encryption. See [activity rollout](../docs/usage-dashboard.md)
+for `0012.sql` and `0013.sql`. Applying migrations is a separate authorized step.
+
+`0014.sql` indexes cleanup and device key lookup queries. Check remaining D1 read
+and write allowance before applying it. Compare query reads in D1 Insights before
+and after. Roll back by dropping only the new indexes and preserving the ledger.
