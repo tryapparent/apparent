@@ -1,6 +1,6 @@
 ---
 name: apparent
-description: Read and dig into Apparent screen captures, where someone recorded their screen while talking, clicking and drawing red marks on it. Use whenever a message contains an Apparent capture (a line like `[apparent 0:12 · App “Window” · /path/to/….apparent]`, a `.apparent` bundle path, or a contact-sheet.png from one), when the user says "look at my apparent" or refers to something they just recorded or drew, or when you need the `apparent` CLI to zoom into a moment, pull frames, copy a capture, or export one as video.
+description: Inspect a narrated screen recording to understand a visual bug or UI change the user is showing a coding agent. Match their words to clicks, drawings and annotated frames in an Apparent capture. Use for an `[apparent 0:12 …]` paste, a `.apparent` bundle or its contact-sheet.png, “look at my apparent”, or a screen the user just recorded or drew on. Use the apparent CLI to zoom in, extract frames, copy a capture or export video.
 ---
 
 # Apparent captures
