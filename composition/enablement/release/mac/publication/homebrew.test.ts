@@ -71,6 +71,18 @@ test("release identity accepts the existing 0.x and later numbered tags without 
   assert.throws(() => homebrewCask(version, "bad"));
 });
 
+test("the frog-only DMG upgrades Homebrew from the top-level app to the embedded payload", () => {
+  const previous = homebrewCask("0.22.12", checksum, "v0.22.12");
+  const current = homebrewCask("0.22.13", checksum, "v0.22.13");
+  assert.match(previous, /^  app "Apparent Preview\.app"$/m);
+  assert.ok(
+    current.includes(
+      'app "Install apparent.app/Contents/SharedSupport/Apparent Preview.app", target: "Apparent Preview.app"',
+    ),
+  );
+  assertCaskUpdate(previous, current);
+});
+
 test("missing, substituted, draft, and corrupted release assets cannot become an installable cask", () => {
   for (const changed of [
     { ...release, draft: true },

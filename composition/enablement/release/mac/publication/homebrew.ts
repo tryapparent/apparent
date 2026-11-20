@@ -69,7 +69,11 @@ export function homebrewCask(
   depends_on arch: :arm64
   depends_on macos: :sequoia
 
-  app "Apparent Preview.app"
+  ${
+    version.localeCompare("0.22.13", "en", { numeric: true }) >= 0
+      ? 'app "Install apparent.app/Contents/SharedSupport/Apparent Preview.app", target: "Apparent Preview.app"'
+      : 'app "Apparent Preview.app"'
+  }
 end
 `;
 }
