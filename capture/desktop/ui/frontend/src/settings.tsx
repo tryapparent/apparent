@@ -5,12 +5,6 @@ import { Storage } from './storage';
 
 class SettingsPane extends HTMLElement {
   static observedAttributes = ["pane"];
-  private renderNoteExperiment?: NoteExperiment;
-  set noteExperiment(component: NoteExperiment | undefined) {
-    this.renderNoteExperiment = component;
-    this.renderPane();
-  }
-
   private renderFrogExperiment?: NoteExperiment;
 
   set frogExperiment(component: NoteExperiment | undefined) {
@@ -38,7 +32,7 @@ class SettingsPane extends HTMLElement {
   private renderPane() {
     const pane = this.getAttribute("pane");
     this.root?.render(pane === "Agents" ? <Agents /> :
-      pane === "Labs" ? <Labs noteExperiment={this.renderNoteExperiment} frogExperiment={this.renderFrogExperiment} /> : <Storage settings />);
+      pane === "Labs" ? <Labs frogExperiment={this.renderFrogExperiment} /> : <Storage settings />);
   }
 }
 

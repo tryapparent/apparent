@@ -148,7 +148,7 @@ fn electron_pane(pane: Option<Pane>) -> bool {
 
 fn recording_key(key: &str, value: &serde_json::Value) -> bool {
     match key {
-        "videoExport" | "lowerPlayback" => value.is_boolean(),
+        "videoExport" | "lowerPlayback" | "doubleShiftNotes" => value.is_boolean(),
         "playbackLevel" => value.as_u64().is_some_and(|level| level <= 100),
         "microphone" | "transcriber" | "hexModel" | "hexLanguage" | "appleLocale" =>
             value.as_str().is_some_and(|value| value.len() <= 16_384),
@@ -218,6 +218,11 @@ fn save_recording(path: &std::path::Path, key: &str, value: &serde_json::Value, 
     use crate::shared::handoff::{set_config_value_in, update_config_in};
     let string = value.as_str().unwrap_or_default();
     let value = match key {
+        "doubleShiftNotes" => {
+            let enabled = value.as_bool().ok_or_else(|| anyhow::anyhow!("Invalid note gesture preference"))?;
+            crate::shared::handoff::set_experiment_in(path, key, enabled)?;
+            return Ok(Effect::None);
+        }
         "microphone" => {
             anyhow::ensure!(string == "default" || inputs.and_then(|inputs| inputs.find(string)).is_some(),
                 "Microphone disconnected");
@@ -253,7 +258,8 @@ fn save_recording(path: &std::path::Path, key: &str, value: &serde_json::Value, 
     Ok(Effect::None)
 }
 
-fn recording_state(view: View) -> serde_json::Value {
+fn recording_state(view: View, host: &dyn settings::Host) -> serde_json::Value {
+    use crate::capture::engine::runtime::platform::note_tap::double_shift_notes;
     use crate::capture::engine::runtime::audio::transcription::speech_model;
     let speech = speech_model::current();
     if view.transcriber.engine == "apple" && speech.state == speech_model::State::Unknown {
@@ -271,7 +277,7 @@ fn recording_state(view: View) -> serde_json::Value {
         "microphone":view.microphone,"transcriber":view.transcriber,"speech":speech,
         "lowerPlayback":view.lower_playback,"playbackLevel":view.playback_level,
         "playbackAvailable":cfg!(target_os="macos") || crate::shared::handoff::experiment("linux-playback-ducking"),
-        "videoExport":view.video_export,"mediaWarnings":warnings
+        "videoExport":view.video_export,"doubleShiftNotes":double_shift_notes(&host.config_path()),"mediaWarnings":warnings
     }});
     message
 }
@@ -338,11 +344,13 @@ fn recording_preferences_use_one_durable_config_mutation_and_keep_unrelated_valu
     assert_eq!(save_recording(&path, "microphone", &"default".into(), None).unwrap(), Effect::None);
     assert_eq!(save_recording(&path, "hexModel", &"selected".into(), None).unwrap(), Effect::None);
     assert_eq!(save_recording(&path, "videoExport", &true.into(), None).unwrap(), Effect::None);
+    assert_eq!(save_recording(&path, "doubleShiftNotes", &false.into(), None).unwrap(), Effect::None);
     let saved = read_json(&path);
     assert_eq!(saved["future"]["field"], 42);
     assert_eq!(saved["hexModel"], "selected");
     assert_eq!(saved["transcriber"], "hex");
     assert_eq!(saved["videoExport"], true);
+    assert_eq!(saved["experiments"]["doubleShiftNotes"], false);
     assert!(saved.get("microphone").is_none());
 
     std::fs::write(&path, "invalid config").unwrap();

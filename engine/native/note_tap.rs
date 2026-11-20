@@ -4,6 +4,25 @@ use std::time::{Duration, Instant};
 
 include!(concat!(env!("OUT_DIR"), "/note-gesture.rs"));
 
+pub(crate) fn double_shift_enabled(saved: Option<bool>) -> bool {
+    saved.unwrap_or(ENABLED_BY_DEFAULT)
+}
+
+pub(crate) fn double_shift_notes(path: &std::path::Path) -> bool {
+    cfg!(any(target_os = "linux", target_os = "macos"))
+        && double_shift_enabled(
+            crate::shared::handoff::load_config_from(path)
+                .experiments.get("doubleShiftNotes").copied(),
+        )
+}
+
+#[test]
+fn note_gesture_defaults_on_and_respects_saved_choices() {
+    assert!(double_shift_enabled(None));
+    assert!(double_shift_enabled(Some(true)));
+    assert!(!double_shift_enabled(Some(false)));
+}
+
 #[derive(Default)]
 pub(crate) struct NoteTap {
     press: Option<(Instant, (f64, f64), u64)>,

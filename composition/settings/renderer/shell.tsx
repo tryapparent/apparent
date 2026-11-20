@@ -18,10 +18,6 @@ import {
   RecordingStartPreference,
   recordingStartPreference,
 } from "../../../record/settings/recording-start";
-import {
-  DoubleShiftNotes,
-  type DoubleShiftNotesProps,
-} from "../../../record/settings/renderer/double-shift-notes";
 import type { ComponentType } from "react";
 import { RecordingSection } from "../../../record/settings/renderer/recording-section";
 import { PermissionsSection } from "../../../record/settings/permissions/permissions-section";
@@ -77,7 +73,6 @@ declare module "react" {
         HTMLElement
       > & {
         pane: string;
-        noteExperiment?: ComponentType<DoubleShiftNotesProps>;
         frogExperiment?: ComponentType<FrogNudgePreferenceProps>;
       };
     }
@@ -229,7 +224,6 @@ function Settings() {
         ) : (
           <apparent-settings-pane
             pane={current}
-            noteExperiment={current === "Labs" ? DoubleShiftNotes : undefined}
             frogExperiment={
               current === "Labs" ? FrogNudgePreference : undefined
             }

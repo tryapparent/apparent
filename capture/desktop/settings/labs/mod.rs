@@ -12,7 +12,7 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
         Err(_) => return serde_json::json!({"error":"config_read_failed"}),
     };
     let saved = |key| value.get("experiments").and_then(|flags|flags.get(key)).and_then(|flag|flag.as_bool());
-    serde_json::json!({"saved":saved(KEY),"compactHandoffSaved":saved(crate::composition::frame_labels::EXPERIMENT),"transcriptOnlySaved":saved(crate::composition::transcript_handoff::EXPERIMENT),"sharingSaved":saved("hostedSharing"),"autoPasteSaved":saved("autoPasteDraft"),"autoPasteSupported":cfg!(target_os = "linux"),"wisprSaved":saved("onboardingWisprFlow"),"wisprSupported":cfg!(target_os = "macos"),"dictationFrogSaved":saved("dictationFrog"),"doubleShiftSaved":saved("doubleShiftNotes"),"screenPickerSaved":saved(selection::PREFERENCE),"screenPickerSupported":selection::supported()})
+    serde_json::json!({"saved":saved(KEY),"compactHandoffSaved":saved(crate::composition::frame_labels::EXPERIMENT),"transcriptOnlySaved":saved(crate::composition::transcript_handoff::EXPERIMENT),"sharingSaved":saved("hostedSharing"),"autoPasteSaved":saved("autoPasteDraft"),"autoPasteSupported":cfg!(target_os = "linux"),"wisprSaved":saved("onboardingWisprFlow"),"wisprSupported":cfg!(target_os = "macos"),"dictationFrogSaved":saved("dictationFrog"),"screenPickerSaved":saved(selection::PREFERENCE),"screenPickerSupported":selection::supported()})
 }
 pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
     match setting {
@@ -23,7 +23,6 @@ pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
         Some("autoPaste") => Some(("autoPasteDraft", cfg!(target_os = "linux"))),
         Some("wisprFlow") => Some(("onboardingWisprFlow", cfg!(target_os = "macos"))),
         Some("dictationFrog") => Some(("dictationFrog", cfg!(target_os = "macos"))),
-        Some("doubleShiftNotes") => Some(("doubleShiftNotes", cfg!(any(target_os = "linux", target_os = "macos")))),
         Some("screenPicker") => Some((selection::PREFERENCE, selection::supported())),
         _ => None,
     }
@@ -41,22 +40,6 @@ pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>, setting:
 }
 #[cfg(test)] mod tests {
     use super::*;
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    #[test]
-    fn double_shift_notes_defaults_off_and_round_trips() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("config.json");
-        std::fs::write(&path, r#"{"experiments":{"other":true},"onboarding":{"doubleShiftNoteStarts":1}}"#).unwrap();
-        assert!(facts(&path)["doubleShiftSaved"].is_null());
-        for enabled in [true, false] {
-            assert_eq!(request(&path, 5, Some(enabled), Some("doubleShiftNotes"))["facts"]["doubleShiftSaved"], enabled);
-            let config = crate::shared::handoff::load_config_from(&path);
-            assert_eq!(crate::shared::handoff::experiment_enabled_in(&config, "doubleShiftNotes"), enabled);
-            assert!(crate::shared::handoff::experiment_enabled_in(&config, "other"));
-        }
-        let config: serde_json::Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-        assert_eq!(config["onboarding"]["doubleShiftNoteStarts"], 1);
-    }
     #[test]
     fn wispr_lab_defaults_off_and_uses_the_shared_config_transaction_only_on_mac() {
         let dir = tempfile::tempdir().unwrap(); let path = dir.path().join("config.json");

@@ -16,6 +16,7 @@ export function gestureTable(directory: string): string {
       `
     import gesture from "./double-shift.mjs";
     console.log(JSON.stringify({
+      enabledByDefault: gesture.enabled_by_default(),
       hold: gesture.hold_limit_ms(),
       pair: gesture.pair_limit_ms(),
       pointer: gesture.pointer_limit(),
@@ -29,9 +30,10 @@ export function gestureTable(directory: string): string {
 }
 
 export function nativeNoteGesture(): string {
-  const { hold, pair, pointer, release } = JSON.parse(
+  const { enabledByDefault, hold, pair, pointer, release } = JSON.parse(
     readFileSync(gestureTablePath, "utf8"),
   );
+  assert.equal(typeof enabledByDefault, "boolean");
   for (const limit of [hold, pair, pointer])
     assert.ok(Number.isSafeInteger(limit) && limit > 0 && limit <= 10000);
   assert.ok(
@@ -39,7 +41,8 @@ export function nativeNoteGesture(): string {
       release.length === 16 &&
       release.every((value) => [0, 1, 2].includes(value)),
   );
-  return `const HOLD_MS: u64 = ${hold};
+  return `const ENABLED_BY_DEFAULT: bool = ${enabledByDefault};
+const HOLD_MS: u64 = ${hold};
 const PAIR_MS: u64 = ${pair};
 const POINTER_LIMIT: f64 = ${pointer}.0;
 const RELEASE: [u8; 16] = [${release.join(", ")}];
