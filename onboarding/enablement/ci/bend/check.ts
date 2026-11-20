@@ -8,6 +8,8 @@ import {
 import { buildTraversal, host } from "./build.ts";
 import { type Table, traversalTable } from "./table.ts";
 
+import { tipTable, tipTablePath } from "./note-tip.ts";
+
 const args = process.argv.slice(2);
 const update = args.length === 1 && args[0] === "--write-native";
 const tablePath = join(host, "tour-traversal.json");
@@ -16,12 +18,28 @@ await bendScratch(async (scratch) => {
   const production = join(scratch, "production");
   await buildTraversal(production);
   const generated = traversalTable(production);
+  const tips = tipTable(production);
+  assert.deepEqual(JSON.parse(tips), {
+    duration: 8000,
+    starts: [
+      [1, false],
+      [2, false],
+      [3, true],
+      [3, false],
+    ],
+  });
   if (update) {
+    writeFileSync(tipTablePath, tips);
     writeFileSync(tablePath, generated);
   } else {
     const proof = join(scratch, "proof");
     await buildTraversal(proof, proofOptions(args));
     assert.equal(traversalTable(proof), generated);
+    assert.equal(tipTable(proof), tips);
+    assert.deepEqual(
+      JSON.parse(readFileSync(tipTablePath, "utf8")),
+      JSON.parse(tips),
+    );
     assert.deepEqual(
       JSON.parse(readFileSync(tablePath, "utf8")),
       JSON.parse(generated),

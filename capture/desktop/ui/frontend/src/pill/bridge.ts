@@ -4,6 +4,7 @@ export type PillView = {
   revision:number; phase:'hidden'|'selecting'|'recording'|'processing'|'completed';
   clock:string; label:string; warning:string|null;notice:string|null; reducedMotion:boolean; draggable:boolean;inputWaveform:number[]|null;
   noteCount:number;
+  noteTip?: string | null;
   actions:{id:string;label:string;enabled:boolean;selected:boolean;primary:boolean}[];
 };
 declare global { interface Window { apparentPill?: {

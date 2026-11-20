@@ -14,6 +14,11 @@ import {
   RecordingStartPreference,
   recordingStartPreference,
 } from "../../../record/settings/recording-start";
+import {
+  DoubleShiftNotes,
+  type DoubleShiftNotesProps,
+} from "../../../record/settings/renderer/double-shift-notes";
+import type { ComponentType } from "react";
 import { RecordingSection } from "../../../record/settings/renderer/recording-section";
 import { PermissionsSection } from "../../../record/settings/permissions/permissions-section";
 import type { PermissionBridge } from "../../../record/settings/permissions/permissions-contract";
@@ -66,7 +71,10 @@ declare module "react" {
       "apparent-settings-pane": DetailedHTMLProps<
         HTMLAttributes<HTMLElement>,
         HTMLElement
-      > & { pane: string };
+      > & {
+        pane: string;
+        noteExperiment?: ComponentType<DoubleShiftNotesProps>;
+      };
     }
   }
 }
@@ -214,7 +222,10 @@ function Settings() {
         ) : current === "About" ? (
           <About bridge={window.apparentAbout} artwork={aboutArtwork} />
         ) : (
-          <apparent-settings-pane pane={current} />
+          <apparent-settings-pane
+            pane={current}
+            noteExperiment={current === "Labs" ? DoubleShiftNotes : undefined}
+          />
         )}
       </main>
     </div>

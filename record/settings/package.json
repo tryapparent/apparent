@@ -4,7 +4,8 @@
   "exports": {
     "./recording-start": "./recording-start.tsx",
     "./recording-section": "./renderer/recording-section.tsx",
-    "./recording-contract": "./recording-contract.ts"
+    "./recording-contract": "./recording-contract.ts",
+    "./double-shift-notes": "./renderer/double-shift-notes.tsx"
   },
   "peerDependencies": {
     "react": "^19.2.0"

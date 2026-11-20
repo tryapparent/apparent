@@ -12,9 +12,30 @@ import { run } from "../../../../shared/enablement/bend/toolchain.ts";
 import { repairTable } from "./permission-table.ts";
 import { admissionSource, buildAdmission } from "./build.ts";
 
+import { gestureTable, gestureTablePath } from "./note-gesture.ts";
+
 const root = fileURLToPath(new URL("../../../../", import.meta.url));
-const options = proofOptions(process.argv.slice(2));
+const args = process.argv.slice(2);
+const update = args.length === 1 && args[0] === "--write-native-gesture";
+const options = proofOptions(update ? [] : args);
 await bendScratch(async (scratch) => {
+  const gestureOutput = join(scratch, "gesture");
+  await buildBend(root, "record", gestureOutput, undefined, "record/notes/");
+  const gesture = gestureTable(gestureOutput);
+  assert.deepEqual(JSON.parse(gesture), {
+    hold: 250,
+    pair: 400,
+    pointer: 12,
+    release: [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2],
+  });
+  if (update) {
+    writeFileSync(gestureTablePath, gesture);
+    return;
+  }
+  assert.deepEqual(
+    JSON.parse(readFileSync(gestureTablePath, "utf8")),
+    JSON.parse(gesture),
+  );
   const proofOutput = join(scratch, "proof");
   await buildBend(root, "record", proofOutput, options);
   const repair = JSON.parse(
@@ -44,6 +65,7 @@ await bendScratch(async (scratch) => {
     ],
     proofOutput,
   );
+  assert.equal(gestureTable(proofOutput), gesture);
   const quiet = (directory: string) =>
     JSON.parse(
       run(

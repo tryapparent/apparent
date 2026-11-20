@@ -4,7 +4,8 @@
     "media/src/assembly/frame-limits.bend",
     "media/src/export/quiet-export.bend",
     "settings/recording-policy.bend",
-    "settings/permissions/permission-policy.bend"
+    "settings/permissions/permission-policy.bend",
+    "notes/double-shift.bend"
   ],
-  "inputs": ["completion/", "media/", "settings/"]
+  "inputs": ["completion/", "media/", "settings/", "notes/"]
 }

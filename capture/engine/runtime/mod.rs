@@ -681,6 +681,8 @@ pub struct SharedCaptureTelemetry {
     agent_context: AtomicBool,
     /// A ⇧-press inside the target: when, where (global points) and on which frame.
     shift_press: Mutex<Option<(u64, f64, f64, TargetFrame)>>,
+    double_shift_notes: AtomicBool,
+    note_tap_epoch: AtomicU64,
     #[cfg(target_os = "linux")]
     native_note_window: AtomicU64,
     #[cfg(target_os = "linux")]
@@ -746,6 +748,8 @@ impl SharedCaptureTelemetry {
             drag_start: Mutex::new(None),
             agent_context: AtomicBool::new(false),
             shift_press: Mutex::new(None),
+            double_shift_notes: AtomicBool::new(false),
+            note_tap_epoch: AtomicU64::new(0),
             #[cfg(target_os = "linux")]
             native_note_window: AtomicU64::new(0),
             #[cfg(target_os = "linux")]
@@ -868,6 +872,7 @@ impl SharedCaptureTelemetry {
     }
 
     pub fn reset_for_session(&self, frame: TargetFrame) {
+        self.set_double_shift_notes(false);
         // Session admission runs on the UI thread; NSScreen is unavailable to
         // the background input poller. Cache its reserved Dock strip here.
         #[cfg(target_os = "macos")]
@@ -1122,7 +1127,7 @@ impl SharedCaptureTelemetry {
     fn finish_shift_press(&self, press: Option<(u64, f64, f64, TargetFrame)>, drawn_before_down: bool,
         t_ms: u64, screen_x: f64, screen_y: f64) -> bool {
         let Some((t0, x0, y0, start_frame)) = press else { return false; };
-        if drawn_before_down { return true; }
+        if self.double_shift_notes() || drawn_before_down { return true; }
         let frame = *self
             .target_frame
             .lock()
@@ -1144,31 +1149,7 @@ impl SharedCaptureTelemetry {
             // starts a new stroke.
             *live = None;
         }
-        let (nx, ny, fw, fh) = self.normalize_point(x0, y0);
-        let mut strokes = self
-            .strokes
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let number = self.next_note_pin.fetch_add(1, Ordering::AcqRel) as u32 + 1;
-        strokes.push(Stroke {
-            color: Some(crate::shared::handoff::pen::rgb()),
-            t0,
-            t1: t_ms,
-            fw,
-            fh,
-            on: None,
-            pin: Some(number),
-            laser: false,
-            pts: vec![
-                (nx * SCALE as f32).round() as i32,
-                (ny * SCALE as f32).round() as i32,
-                0,
-            ],
-        });
-        drop(strokes);
-        let _ = self.ui_sender.try_send(LiveOverlayEvent::Note { pin: number, t: t0, x: nx, y: ny, screen_x: x0, screen_y: y0 });
-        self.window_log_request.store(true, Ordering::Release);
-        let _ = self.ui_sender.try_send(LiveOverlayEvent::RequestSnapshot);
+        self.place_note(t0, t_ms, x0, y0);
         true
     }
 
