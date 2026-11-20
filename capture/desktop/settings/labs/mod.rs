@@ -1,6 +1,7 @@
 //! Persistence mechanism only. The Labs catalogue/defaults belong to Desktop TS.
 use std::path::Path;
 use crate::capture::engine::runtime::recording::recorder::selection;
+use crate::shared::handoff::{AGENT_CONTEXT, Config};
 const KEY: &str = "localStreamingTranscription";
 pub(super) fn facts(path: &Path) -> serde_json::Value {
     let value = match std::fs::read(path) {
@@ -12,13 +13,18 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
         Err(_) => return serde_json::json!({"error":"config_read_failed"}),
     };
     let saved = |key| value.get("experiments").and_then(|flags|flags.get(key)).and_then(|flag|flag.as_bool());
-    serde_json::json!({"saved":saved(KEY),"compactHandoffSaved":saved(crate::composition::frame_labels::EXPERIMENT),"transcriptOnlySaved":saved(crate::composition::transcript_handoff::EXPERIMENT),"sharingSaved":saved("hostedSharing"),"autoPasteSaved":saved("autoPasteDraft"),"autoPasteSupported":cfg!(target_os = "linux"),"wisprSaved":saved("onboardingWisprFlow"),"wisprSupported":cfg!(target_os = "macos"),"silentPromptSaved":saved("silentPrompt"),"dictationFrogSaved":saved("dictationFrog"),"screenPickerSaved":saved(selection::PREFERENCE),"screenPickerSupported":selection::supported()})
+    let experiment_config = serde_json::json!({"experiments": value.get("experiments")});
+    let agent_context = serde_json::from_value::<Config>(experiment_config)
+        .ok()
+        .and_then(|config| config.experiments.get(AGENT_CONTEXT).copied());
+    serde_json::json!({"saved":saved(KEY),"compactHandoffSaved":saved(crate::composition::frame_labels::EXPERIMENT),"transcriptOnlySaved":saved(crate::composition::transcript_handoff::EXPERIMENT),"agentContextSaved":agent_context,"sharingSaved":saved("hostedSharing"),"autoPasteSaved":saved("autoPasteDraft"),"autoPasteSupported":cfg!(target_os = "linux"),"wisprSaved":saved("onboardingWisprFlow"),"wisprSupported":cfg!(target_os = "macos"),"silentPromptSaved":saved("silentPrompt"),"dictationFrogSaved":saved("dictationFrog"),"screenPickerSaved":saved(selection::PREFERENCE),"screenPickerSupported":selection::supported()})
 }
 pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
     match setting {
         None | Some("streaming") => Some((KEY, true)),
         Some("compactHandoff") => Some((crate::composition::frame_labels::EXPERIMENT, true)),
         Some("transcriptOnly") => Some((crate::composition::transcript_handoff::EXPERIMENT, true)),
+        Some("agentContext") => Some((AGENT_CONTEXT, true)),
         Some("sharing") => Some(("hostedSharing", true)),
         Some("autoPaste") => Some(("autoPasteDraft", cfg!(target_os = "linux"))),
         Some("wisprFlow") => Some(("onboardingWisprFlow", cfg!(target_os = "macos"))),
@@ -50,6 +56,24 @@ pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>, setting:
         assert!(facts(&path).get("doubleShiftSaved").is_none());
         assert_eq!(request(&path, 5, Some(false), Some("doubleShiftNotes"))["facts"]["error"], "config_write_failed");
         assert_eq!(std::fs::read_to_string(path).unwrap(), original);
+    }
+    #[test]
+    fn agent_context_reads_existing_values_and_uses_the_shared_writer() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("config.json");
+        assert!(facts(&path)["agentContextSaved"].is_null());
+        std::fs::write(&path, r#"{"secret":"private","experiments":{"agentContext":"yes","other":true}}"#).unwrap();
+        assert_eq!(facts(&path)["agentContextSaved"], true);
+        for enabled in [false, true] {
+            let response = request(&path, 1, Some(enabled), Some(AGENT_CONTEXT));
+            assert_eq!(response["facts"]["agentContextSaved"], enabled);
+            assert!(!response.to_string().contains("private"));
+            let stored = std::fs::read_to_string(&path).unwrap();
+            let saved: serde_json::Value = serde_json::from_str(&stored).unwrap();
+            assert_eq!(saved["experiments"][AGENT_CONTEXT], enabled);
+            assert_eq!(saved["experiments"]["other"], true);
+            assert_eq!(saved["secret"], "private");
+        }
     }
     #[test]
     fn silent_prompt_is_opt_in_and_round_trips() {
