@@ -52,6 +52,15 @@ leaves the policy instance and its capture untouched.
 
 ## Verification and rollback
 
+On Linux, the native parent selects XWayland when launching Electron, before
+Ozone initializes, and supplies the same X11 scale as the native pill. The
+Electron constructor selects the window's keyboard role at creation. Native
+compositor admission uses the window ID reported by Electron main after layout
+and before activation. Hyprland pins the exact child by process and XID-specific
+title, and prepares its scoped motion rule before mapping. The parent ignores
+hidden geometry for admission and falls back to the native pill if compositor
+admission fails, even when Electron reports a visible window.
+
 Run `node record/enablement/ci/bend/check.ts` to compile the module and exercise
 the packaged host entrypoints under Node with no Cargo or Electron.
 Add `--proof` for the pinned kernel verdict. The root native suite exercises

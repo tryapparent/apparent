@@ -116,14 +116,9 @@ impl Session {
         let (app, runtime) =
             assets().ok_or_else(|| anyhow::anyhow!("Packaged recording pill unavailable"))?;
         let mut launch = Command::new(&runtime);
-        // Ozone initializes before main.cjs runs. Appending this switch in JS
-        // leaves current Electron on Wayland, where our X11 shape/ID contract
-        // is invalid. Select XWayland at process startup instead.
         #[cfg(target_os = "linux")]
         {
             launch.arg("--ozone-platform=x11");
-            // Use the same X11 scale as the retained native controls. Chromium
-            // can infer 2x from virtual-output physical metrics on a 1x desktop.
             launch.arg(format!("--force-device-scale-factor={}", crate::capture::desktop::linux::x11::ui_scale()));
         }
         launch.arg(app.join("electron/pill/main.cjs"));
@@ -240,6 +235,17 @@ impl Session {
                         Err(_) => break ReaderStop::InvalidJson,
                     };
                     #[cfg(target_os = "linux")]
+                    if let Some(id) = value.get("releasePickerFocus").and_then(|v| v.as_u64()) {
+                        let current = identified.load(Ordering::Acquire);
+                        if current != 0 && id == u64::from(current)
+                            && crate::capture::desktop::linux::hyprland::running()
+                            && let Err(error) = crate::capture::desktop::linux::hyprland::release_pill_focus(current, child_pid)
+                        {
+                            crate::capture::engine::runtime::apparent_log(format!("Pill focus release failed: {error:#}"));
+                        }
+                        continue;
+                    }
+                    #[cfg(target_os = "linux")]
                     if let Some(id) = value.get("retiredWindowId").and_then(|v| v.as_u64()).and_then(|id| u32::try_from(id).ok()) {
                         if id != identified.load(Ordering::Acquire)
                             && let Some(index) = motion_rules.iter().position(|old| *old == id)
@@ -297,8 +303,6 @@ impl Session {
                         #[cfg(target_os = "linux")]
                         if crate::capture::desktop::linux::hyprland::running() && !motion_rules.contains(&id) {
                             if motion_rules.len() >= 16 { break ReaderStop::PinPreparation; }
-                            // This reader is off the GUI thread. Finish compositor
-                            // preparation before publishing readiness/activation.
                             match crate::capture::desktop::linux::hyprland::prepare_pill_motion(id, child_pid) {
                                 Ok(true) => motion_rules.push(id),
                                 Ok(false) => {}, // Older Hyprlang retains compositor-owned motion.
@@ -416,12 +420,6 @@ impl Session {
                             "Electron recording pill: could not pin on Hyprland: {error:#} ({context}; activation_ack={})",
                             activated.load(Ordering::Acquire),
                         ));
-                        // Electron's visibility/activation acknowledgement does not
-                        // prove that XWayland supplied a compositor surface. Do not
-                        // leave capture without usable controls after bounded native
-                        // admission fails; the coordinator restores its native pill.
-                        // The GUI consumes this presentation's failure and restores
-                        // native controls if it is still current at its next tick.
                     }
                 }
             });
@@ -429,8 +427,6 @@ impl Session {
         session.send();
         Ok(session)
     }
-    /// Reported by Electron main's native API before readiness/activation.
-    /// Never derived from onscreen discovery or a renderer argument.
     pub fn window_number(&self) -> Option<u32> {
         match self.window_id.load(Ordering::Acquire) {
             0 => None,

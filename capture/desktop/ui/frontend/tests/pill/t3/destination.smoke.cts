@@ -4,23 +4,18 @@ test('real pill keeps Paste by default, then selects during processing and dispa
  // Close Electron before fixture teardown waits for sockets and removes its HOME.
  let app; t.after(async()=>{await app?.close().catch(()=>{});});
  const {fixture}=await import('./testing/server.ts');const f=await fixture(t);f.many();await f.save(false);
- app=await electron.launch({args:[path.resolve(__dirname,'../host.cjs'),'--no-sandbox','--ozone-platform=x11',`--force-device-scale-factor=${process.env.APPARENT_T3_SCALE??'1'}`],env:{...process.env,APPARENT_CONFIG:f.config,HOME:f.home,XDG_CONFIG_HOME:path.join(f.home,'config')}});
+ app=await electron.launch({args:[path.resolve(__dirname,'../host.cjs'),'--no-sandbox','--ozone-platform=x11',`--force-device-scale-factor=${process.env.APPARENT_T3_SCALE??'1'}`],env:{...process.env,APPARENT_CONFIG:f.config,HOME:f.home,XDG_CONFIG_HOME:path.join(f.home,'config'),HYPRLAND_INSTANCE_SIGNATURE:'focus-test'}});
  let page=await app.firstWindow();
- // Electron can publish the initial ready line before launch/firstWindow
- // resolves. Read that window's actual identity; observe only future ready
- // lines instead of assuming stdout replays the startup announcement.
  const initialWindowId=await app.evaluate(({BrowserWindow})=>Number(BrowserWindow.getAllWindows()[0].getMediaSourceId().split(':')[1]));
 
- let parentBuffer='',holdActivation=false;const readyIds=[];
+ let parentBuffer='',holdActivation=false;const readyIds=[],releasedIds=[];
  const activate=id=>app.evaluate((_electron,id)=>process.stdin.emit('data',JSON.stringify({type:'activate',windowId:id})+'\n'),id);
- app.process().stdout.on('data',chunk=>{parentBuffer+=String(chunk);let end;while((end=parentBuffer.indexOf('\n'))>=0){const line=parentBuffer.slice(0,end);parentBuffer=parentBuffer.slice(end+1);try{const message=JSON.parse(line);if(message.ready){readyIds.push(message.windowId);if(!holdActivation)void activate(message.windowId).catch(()=>{});}}catch{}}});
+ app.process().stdout.on('data',chunk=>{parentBuffer+=String(chunk);let end;while((end=parentBuffer.indexOf('\n'))>=0){const line=parentBuffer.slice(0,end);parentBuffer=parentBuffer.slice(end+1);try{const message=JSON.parse(line);if(message.ready){readyIds.push(message.windowId);if(!holdActivation)void activate(message.windowId).catch(()=>{});}if(message.releasePickerFocus)releasedIds.push(message.releasePickerFocus);}catch{}}});
  async function proofThemes(name){for(const colorScheme of ['dark','light']){await page.emulateMedia({colorScheme,reducedMotion:'reduce'});await proof(name+'-'+colorScheme);}}
  async function proof(name){await page.evaluate(()=>document.fonts.ready);await expect.poll(()=>page.evaluate(()=>{const r=document.querySelector('main')!.getBoundingClientRect();return innerWidth===Math.ceil(r.width)&&innerHeight===Math.max(58,Math.ceil(r.height));})).toBe(true);if(process.env.APPARENT_T3_PROOF){await fs.mkdir(process.env.APPARENT_T3_PROOF,{recursive:true});await page.screenshot({path:path.join(process.env.APPARENT_T3_PROOF,name+'.png')});}}
 
  let frame={type:'state',capture:'off',t3Eligible:true,view:{revision:1,phase:'completed',clock:'00:04',label:'Saved',warning:null,notice:null,reducedMotion:true,draggable:false,inputWaveform:null,noteCount:0,actions:[{id:'paste',label:'Paste',enabled:true,selected:false,primary:true},{id:'dismiss',label:'Dismiss',enabled:true,selected:false,primary:false}]}};
  const publish=async()=>app.evaluate((_electron,frame)=>process.stdin.emit('data',JSON.stringify(frame)+'\n'),frame);
- // A visible React control can precede the native paint/admission receipt.
- // Delay only the initial measurement to exercise that scheduling boundary in CI.
  if(process.platform==='linux')await app.evaluate(({BrowserWindow})=>{
   const contents=BrowserWindow.getAllWindows()[0].webContents,execute=contents.executeJavaScript.bind(contents),until=Date.now()+300;
   contents.executeJavaScript=(source,...args)=>{
@@ -31,8 +26,6 @@ test('real pill keeps Paste by default, then selects during processing and dispa
  await publish();const heartbeat=setInterval(()=>void publish().catch(()=>{}),500);t.after(()=>clearInterval(heartbeat));
  await expect(page.getByRole('button',{name:'Paste',exact:true})).toBeVisible();assert.equal(f.reads,0);
  if(process.platform==='linux'){
-  // Establish the original native window before testing its replacement. DOM
-  // visibility alone does not acknowledge the asynchronous layout/admission.
   await expect.poll(()=>readyIds.length).toBe(1);
   await expect.poll(()=>app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible())).toBe(true);
  }
@@ -62,6 +55,7 @@ test('real pill keeps Paste by default, then selects during processing and dispa
  await trigger.press('c');await search.fill('chosen');
  await proofThemes('search');
  await search.press('Enter');await expect(page.getByRole('button',{name:'Cancel send',exact:true})).toBeVisible();assert.equal(f.calls.length,0);
+ if(process.platform==='linux')await expect.poll(()=>releasedIds).toEqual([readyIds.at(-1)]);
  const handoff='PRIVATE exact recording handoff';await app.evaluate((_electron,args)=>process.stdin.emit('data',JSON.stringify({type:'handoff-ready',capture:'on',text:args})+'\n'),handoff);
  frame={...frame,view:{...frame.view,revision:3,phase:'completed',label:'Saved',actions:[{id:'paste',label:'Paste',enabled:true,selected:false,primary:true}]}};await publish();
  await expect.poll(()=>f.calls.length).toBe(1);await expect(trigger).toBeDisabled();assert.equal(f.calls[0].payload.threadId,'thread');assert.equal(f.calls[0].payload.text,handoff);assert.equal(await page.evaluate(()=>document.body.textContent.includes('PRIVATE')),false);
@@ -69,11 +63,13 @@ test('real pill keeps Paste by default, then selects during processing and dispa
  frame={...frame,capture:'retry',view:{...frame.view,revision:4}};await publish();await expect(trigger).toContainText('Chosen thread');await app.evaluate(()=>process.stdin.emit('data',JSON.stringify({type:'handoff-ready',capture:'retry',text:'COPY THIS EXACT HANDOFF'})+'\n'));
  f.lose();await trigger.click();await search.fill('settled');await expect(options).toHaveCount(1);
  await search.press('Enter');await expect(page.getByRole('alert')).toContainText('Delivery not confirmed');
+ if(process.platform==='linux')assert.equal(releasedIds.length,1);
  await expect(page.locator('.destination-confirmed')).toContainText('Settled onboarding notes');
  assert.equal(f.calls[1].payload.threadId,'settled');
  await page.getByRole('button',{name:'Copy recording',exact:true}).click();await expect(page.getByText('Copied',{exact:true})).toBeVisible();assert.equal(await app.evaluate(({clipboard})=>clipboard.readText()),'COPY THIS EXACT HANDOFF');
  await proofThemes('error');
  const retry=page.getByRole('button',{name:'Retry same send',exact:true});await expect(retry).toBeFocused();await page.keyboard.press('Enter');await expect(page.getByRole('img',{name:'Submitted',exact:true})).toBeVisible();await expect.poll(()=>f.calls.length).toBe(3);assert.equal(f.accepted.size,2);assert.deepEqual(f.calls[1],f.calls[2]);
+ if(process.platform==='linux')await expect.poll(()=>releasedIds).toEqual([readyIds.at(-1),readyIds.at(-1)]);
  await app.evaluate(({screen})=>{const matching=screen.getDisplayMatching.bind(screen);screen.getDisplayMatching=(bounds)=>{const display=matching(bounds);return {...display,workArea:{...display.workArea,width:320}};};});
  frame={...frame,capture:'narrow',view:{...frame.view,revision:5}};await publish();await expect(trigger).toBeEnabled();await trigger.focus();await page.keyboard.press('ArrowDown');
  const firstTray=await page.locator('.destination-tray').boundingBox();

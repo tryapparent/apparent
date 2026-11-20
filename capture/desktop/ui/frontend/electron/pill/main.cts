@@ -29,10 +29,12 @@ function reconcileKeyboardWindow(view){
 }
 function focusPicker(focused){
   pickerFocused=focused;
-  // Linux requires the constructor's activatable window role. Its runtime
-  // setFocusable API does not convert the non-focusable recording surface.
   if(process.platform!=='linux')window.setFocusable(focused);
-  if(focused)window.focus();else window.blur();
+  if(focused)window.focus();else{
+    window.blur();
+    if(hyprland && admittedWindowId!==null && destinations.view()?.confirmed)
+      emit({releasePickerFocus:admittedWindowId});
+  }
 }
 const destinations=require('./t3.cjs').createController(()=>{if(loaded&&window&&!window.isDestroyed()){
   const view=destinations.view();
@@ -160,7 +162,10 @@ app.whenReady().then(()=>{
     valid(event,args);if(sharingConfirmation!==null||pending||key!==capture||!['processing','completed'].includes(current?.phase))throw Error('Recording changed');
     try{
     if(action==='choose')await destinations.confirm(key,id);
-    else if(action==='retry')await destinations.retry(key);
+    else if(action==='retry'){
+      await destinations.retry(key);
+      if(key===capture && event.sender===window.webContents && destinations.view()?.phase==='sent')focusPicker(false);
+    }
     else if(action==='cancel')await destinations.cancel(key);
     else if(action==='copy'){
       const text=destinations.text(key);await clipboard.writeText(text);
@@ -345,12 +350,9 @@ app.whenReady().then(()=>{
   window.on('show',()=>{if(window===owned)reportFrame();});
   window.on('move',()=>{if(window===owned)reportFrame();});
   window.on('resize',()=>{if(window===owned)reportFrame();});
-  // Hyprland assigns even override-redirect XWayland windows to a workspace.
-  // Rust's existing native adapter pins only this exact child/window identity.
   if(process.platform==='linux'){
     for(const event of ['show','move','resize'])window.on(event,()=>{
       if(window!==owned)return;const visible=window.isVisible();
-      // Hidden placement between captures must not spend native admission retries.
       if(activated && rendererReady && current && current.phase!=='hidden' && visible)
         emit({pin:true,phase:current.phase,activated,rendererReady,visible});
     });

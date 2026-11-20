@@ -32,6 +32,9 @@ The collapsed picker retains the existing quick-send shortcut.
 An unconfirmed send displays the saved destination and retries the persisted
 request. The Handoff renderer receives focus, send and share callbacks from
 the existing Electron pill adapter, which remains the native integration point.
+On Hyprland, the native adapter returns focus to the previously active window
+after the picker releases it. The adapter acts only while the compositor still
+reports the admitted picker as active.
 
 ## Compact recording prompts
 
