@@ -67,7 +67,12 @@ export async function publish(
   const mode = process.env.RELEASE_CHANNEL || "stable";
   const pairedMain = mode === "paired-main" || mode === "latest-main";
   const channel = pairedMain ? "main" : mode;
-  if (channel !== "main" && channel !== "mac-main" && channel !== "stable")
+  if (
+    channel !== "main" &&
+    channel !== "mac-main" &&
+    channel !== "mac-nightly" &&
+    channel !== "stable"
+  )
     throw Error("Invalid publication channel");
   const manifests = await restore(
     runId,
@@ -164,7 +169,9 @@ export async function publish(
         ? "Paired Main"
         : channel === "main"
           ? "Linux Main"
-          : "Mac Main";
+          : channel === "mac-nightly"
+            ? "Mac Nightly"
+            : "Mac Main";
   const notes = prerelease
     ? `${previewName} candidate ${candidate.sourceSha}\nProducer ${repository}/actions/runs/${runId}/attempts/${attempt}\n\n${JSON.stringify(manifests)}`
     : `Paired stable candidate ${candidate.sourceSha}\nProducer ${repository}/actions/runs/${runId}/attempts/${attempt}\nChannel stable; fork Mac Preview identity and preview Sparkle feed retained.\n\n${JSON.stringify(manifests)}`;
@@ -185,7 +192,7 @@ export async function publish(
       tag_name: candidate.tag,
       target_commitish: candidate.sourceSha,
       name: prerelease
-        ? `Apparent ${channel === "mac-main" ? "Mac Main" : "Main"} ${candidate.version} (${candidate.sourceSha.slice(0, 12)})`
+        ? `Apparent ${channel === "mac-main" ? "Mac Main" : channel === "mac-nightly" ? "Mac Nightly" : "Main"} ${candidate.version} (${candidate.sourceSha.slice(0, 12)})`
         : `Apparent ${candidate.version}`,
       body: notes,
       draft: true,

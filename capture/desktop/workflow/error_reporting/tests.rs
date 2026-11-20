@@ -188,27 +188,8 @@ fn finalization_audio_report_projects_wav_variants_and_wrapped_os_errors_without
     }
 }
 
-#[test]
-fn finalization_report_identifies_real_empty_frame_failure_without_private_content() {
-    let scratch = Scratch::new();
-    let target = serde_json::from_value(json!({"mode":"display","displayId":0,"frame":{"x":0,"y":0,"width":32,"height":32,"scale":1}})).unwrap();
-    let error = crate::capture::engine::bundle::bundle_processing::finalize_capture_bundle(
-        &scratch.0, target,
-        crate::capture::engine::runtime::ScreenRecording {
-            frames: vec![], video: Some(scratch.0.join("private-recording-canary.mp4")),
-            duration_ms: 100, video_offset_ms: 0, video_ink: None,
-        }, vec![], vec![], None, None, Default::default(), None,
-    ).unwrap_err();
-    let report = Report::finalization(&error, std::panic::Location::caller(), Consent { generation: "private-generation-canary".into() });
-    let payload = report.payload("phc_synthetic").unwrap();
-    let stages = payload["properties"]["finalization"]["stages"].as_array().expect("structured finalization stages");
-    assert!(stages.iter().any(|frame| frame["stage"] == "no_safe_frames"));
-    assert!(stages.iter().any(|frame| frame["file"] == "capture/engine/bundle/bundle_processing.rs" && frame["line"].as_u64().unwrap() > 0));
-    let serialized = payload.to_string();
-    for private in ["private-recording-canary", "private-generation-canary", scratch.0.to_str().unwrap(), "No screen frames were captured"] {
-        assert!(!serialized.contains(private), "leaked {private}");
-    }
-}
+#[path = "../../../../engine/diagnostics/sampling_test.rs"]
+mod sampling_test;
 
 #[test]
 fn finalization_bounds_provenance_keeps_specific_cause_and_does_not_format_unknown_errors() {

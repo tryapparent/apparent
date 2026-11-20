@@ -31,7 +31,7 @@ if (process.argv[1]?.endsWith("/inputs.ts")) {
     readFileSync("Cargo.toml", "utf8"),
     execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
   );
-  if (process.env.RELEASE_CHANNEL === "main")
+  if (["main", "mac-nightly"].includes(process.env.RELEASE_CHANNEL ?? ""))
     assert(
       existsSync("composition/settings/about/mac-updates.bend"),
       "The admitted source predates Mac Nightly support",

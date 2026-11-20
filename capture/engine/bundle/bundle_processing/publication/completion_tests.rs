@@ -101,7 +101,7 @@ fn dispatch(result: CaptureResult, success: bool) {
 #[test]
 fn completion_whiteboard_success_is_checked_after_append_and_then_admitted() {
     let fixture = Fixture::new();
-    let result = complete_bundle(&fixture.0, &board(), || fixture.build());
+    let result = complete_bundle(&fixture.0, &board(), None, || fixture.build());
     let (dir, bundle, summary) = result.as_ref().unwrap();
     assert_eq!(
         bundle.keyframes.last().unwrap().reason,

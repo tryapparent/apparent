@@ -1,5 +1,6 @@
 //! Allowlisted projection of native provenance; never Display/Debug an error.
 use crate::capture::engine::runtime::recording::diagnostics::{Failure, Stage};
+use crate::capture::engine::runtime::recording::diagnostics::sampling::Sampling;
 
 #[derive(Clone, serde::Serialize)]
 pub(super) struct Diagnostics {
@@ -7,6 +8,8 @@ pub(super) struct Diagnostics {
     io_kind: Option<&'static str>,
     os_error_code: Option<i32>,
     wav_error_kind: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    screen_sampling: Option<Sampling>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -22,9 +25,11 @@ impl Diagnostics {
         let mut io_kind = None;
         let mut os_error_code = None;
         let mut wav_error_kind = None;
+        let mut screen_sampling = None;
         // Also bound traversal for unexpected/cyclic dependency error chains.
         for cause in error.chain().take(64) {
             if let Some(failure) = cause.downcast_ref::<Failure>() {
+                screen_sampling = screen_sampling.or(failure.sampling);
                 if stages.len() == 8 {
                     stages.remove(0);
                 }
@@ -74,11 +79,13 @@ impl Diagnostics {
                 }
             }
         }
+        let no_safe_frames = stages.last().is_some_and(|frame| matches!(frame.stage, Stage::NoSafeFrames));
         Self {
             stages,
             io_kind,
             os_error_code,
             wav_error_kind,
+            screen_sampling: screen_sampling.filter(|_| no_safe_frames),
         }
     }
 
