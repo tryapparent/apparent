@@ -1,6 +1,6 @@
 {
   "delay": 350,
   "eligible": [false, false, true, false],
-  "cycle": [[1, false], [2, false], [0, true]],
+  "cycle": [[1, true], [0, false]],
   "ended": [[false, false, false], [false, false, false], [false, true, false]]
 }
