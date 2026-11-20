@@ -194,8 +194,8 @@ mod frog_nudge {
     include!(concat!(env!("OUT_DIR"), "/frog-nudge.rs"));
 
     const APPS: [(&str, &str); 2] = [
-        ("com.electron.wispr-flow", "dictationFrogSessions"),
-        ("com.superduper.superwhisper", "superwhisperFrogSessions"),
+        ("com.electron.wispr-flow", "dictationFrogAlternation"),
+        ("com.superduper.superwhisper", "superwhisperFrogAlternation"),
     ];
 
     use objc2::rc::autoreleasepool;
@@ -289,8 +289,9 @@ mod frog_nudge {
             let onboarding = config.as_object_mut().unwrap().entry("onboarding")
                 .or_insert_with(|| serde_json::json!({}));
             let onboarding = onboarding.as_object_mut().ok_or_else(|| anyhow::anyhow!("Invalid onboarding"))?;
-            let previous = onboarding.get(count).and_then(|v| v.as_u64()).filter(|&n| n < 3).unwrap_or(0);
-            let (next, wave) = CYCLE[previous as usize];
+            let previous = onboarding.get(count).and_then(|v| v.as_u64()).unwrap_or(0);
+            let (next, wave) = usize::try_from(previous).ok()
+                .and_then(|index| CYCLE.get(index)).copied().unwrap_or(CYCLE[0]);
             onboarding.insert(count.into(), next.into());
             due = wave;
             Ok(())

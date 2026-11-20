@@ -92,6 +92,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   const frog = page.getByRole('switch', {name:'Frog after dictation'});
   if (process.platform === 'darwin') {
    await expect(frog).toHaveAttribute('aria-checked','false');
+   await expect(frog).toHaveAccessibleDescription(/after the first session and every other session after that/);
    await page.getByRole('button',{name:'Preview frog'}).click();
    const animation = page.locator('.dictation-frog-preview img');
    await expect.poll(() => animation.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(240);

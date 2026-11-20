@@ -53,7 +53,8 @@ export function FrogNudgePreference({
         />
       </div>
       <p id="dictation-frog-help">
-        Show a frog after every third session in Wispr Flow or Superwhisper.
+        In Wispr Flow and Superwhisper, the frog appears after the first session
+        and every other session after that.
         Uses microphone activity only. Off by default.
       </p>
       <Button
