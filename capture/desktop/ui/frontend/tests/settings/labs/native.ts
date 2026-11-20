@@ -50,7 +50,7 @@ try{
   assert.equal(saved.experiments.localStreamingTranscription,on);assert.equal(saved.experiments.other,true);assert.equal(saved.secret,'private');
   await page.reload();await expect(toggle).toBeEnabled();await expect(toggle).toHaveAttribute('aria-checked',String(on));
  }
- const t3=page.getByRole('switch',{name:'Send recordings to T3'});
+ const t3=page.getByRole('switch',{name:'Enable sending to T3'});
  await expect(t3).toHaveAttribute('aria-checked','false');
  for(const on of [true,false]){
   await t3.click();await expect(t3).toHaveAttribute('aria-checked',String(on));

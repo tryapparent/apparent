@@ -29,9 +29,12 @@ package and a new consented occurrence; historical reports cannot be enriched.
 
 ## Recording
 
-Recording starts with a task index for capture setup, voice and notes,
-and sending or exporting. Its links open the existing preference and
-focus its heading. Agents links to the T3 preference in Labs. The parent
+Recording starts with a compact task index for setup, during recording,
+and after recording, with a direct Permissions link. Its links open the
+owning preference and focus its heading. The Record shortcut value stays
+in General, where the parent admits shortcut readback. Agents links to
+the T3 preference in Labs, which shows the connection, sending opt-in
+and recording-pill steps together. The parent
 still admits each page and the existing owner loads and saves its settings.
 Reverting the index and heading links restores the previous navigation
 without a preference migration.

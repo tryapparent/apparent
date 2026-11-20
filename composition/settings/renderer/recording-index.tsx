@@ -4,24 +4,23 @@ type RecordingDestination = "General" | "Recording" | "Labs" | "Permissions";
 
 const stages = [
   {
-    title: "Before recording",
+    title: "Setup",
     links: [
-      ["Record shortcut", "General", "general-shortcuts"],
+      ["Change record shortcut", "General", "general-shortcuts"],
       ["Screen selection", "Labs", "recording-start"],
-      ["Fix permissions", "Permissions", "settings-permissions"],
     ],
   },
   {
-    title: "Voice & notes",
+    title: "During",
     links: [
-      ["Transcription", "Recording", "recording-transcription"],
       ["Live transcription", "Labs", "local-stream-label"],
-      ["Notes gesture", "Labs", "double-shift-notes-label"],
+      ["Double-tap Shift for notes", "Labs", "double-shift-notes-label"],
     ],
   },
   {
-    title: "Send & export",
+    title: "After",
     links: [
+      ["Transcription after recording", "Recording", "recording-transcription"],
       ["Send to T3", "Labs", "agent-t3-label"],
       ["Public links", "Labs", "public-sharing-label"],
       ["Auto paste", "Labs", "auto-paste-label"],
@@ -38,13 +37,22 @@ export function RecordingIndex({
   navigate: (pane: RecordingDestination, section: string) => Promise<void>;
 }) {
   return (
-    <nav
-      aria-label="Recording preferences"
-      className="settings-recording-index"
-    >
+    <nav aria-labelledby="recording-jumps" className="settings-recording-index">
+      <div className="settings-recording-index-heading">
+        <h2 id="recording-jumps">Jump to a setting</h2>
+        <Button
+          className="settings-task-link"
+          variant="link"
+          type="button"
+          disabled={disabled}
+          onClick={() => void navigate("Permissions", "settings-permissions")}
+        >
+          Fix permissions
+        </Button>
+      </div>
       {stages.map(({ title, links }) => (
-        <section key={title}>
-          <h2>{title}</h2>
+        <div className="settings-recording-index-row" key={title}>
+          <h3>{title}</h3>
           <ul>
             {links.map(([label, pane, section]) => (
               <li key={section}>
@@ -60,7 +68,7 @@ export function RecordingIndex({
               </li>
             ))}
           </ul>
-        </section>
+        </div>
       ))}
     </nav>
   );

@@ -55,6 +55,10 @@ test("staged Recording opens directly, receives native facts and saves only on i
   const actions: Record<string, unknown>[] = [];
   let pickerSupported = false;
   let heldT3: unknown;
+  const disconnected = { saved: null, t3Saved: false, t3Configured: false };
+  let t3Facts: typeof disconnected & {
+    t3Connections?: { origin: string; expiresAt: number }[];
+  } = disconnected;
   createInterface({ input: child.stdout }).on("line", (line) => {
     const action = JSON.parse(line);
     actions.push(action);
@@ -117,7 +121,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
         send({
           type: "agents-result",
           request: action.request,
-          facts: { saved: null, t3Saved: false, t3Configured: false },
+          facts: t3Facts,
         });
       }
     }
@@ -266,7 +270,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
 
     const proof = process.env.APPARENT_RECORDING_PROOF;
     const index = page.getByRole("navigation", {
-      name: "Recording preferences",
+      name: "Jump to a setting",
     });
     async function screenshot(name: string) {
       if (proof) await page.screenshot({ path: join(proof, `${name}.png`) });
@@ -319,9 +323,15 @@ test("staged Recording opens directly, receives native facts and saves only on i
         await expect(videoJump).toBeEnabled();
         await expect(videoJump).toBeInViewport();
         await expect(videoJump).toHaveCSS("opacity", "1");
+        await expect(input).toBeInViewport({ ratio: 1 });
+        const jumps = await index.getByRole("button").all();
+        for (const jump of jumps) {
+          const bounds = await jump.boundingBox();
+          assert.ok(bounds && bounds.width >= 24 && bounds.height >= 36);
+        }
         await screenshot(`index-${variant}`);
 
-        await openTask("Record shortcut", "Keyboard shortcuts");
+        await openTask("Change record shortcut", "Keyboard shortcuts");
         await page.keyboard.press("Tab");
         await expect(
           page.getByRole("button", {
@@ -342,12 +352,36 @@ test("staged Recording opens directly, receives native facts and saves only on i
         await openRecording();
 
         await openTask("Send to T3", "Send recordings to T3");
-        const t3 = page.getByRole("switch", { name: "Send recordings to T3" });
+        const t3 = page.getByRole("switch", { name: "Enable sending to T3" });
         await expect(t3).toBeEnabled();
         await expect(
           page.getByRole("button", { name: "Connect T3", exact: true }),
         ).toBeEnabled();
+        const steps = page.locator(".settings-t3-steps").getByRole("listitem");
+        await expect(steps).toHaveText([
+          /Connect a computer/,
+          /Enable sending to T3/,
+          /Choose a thread.*recording pill/,
+        ]);
+        await expect(t3).not.toBeChecked();
         await screenshot(`send-${variant}`);
+        await openRecording();
+
+        t3Facts = {
+          ...disconnected,
+          t3Configured: true,
+          t3Connections: [
+            { origin: "https://studio.example", expiresAt: 4_000_000_000_000 },
+            { origin: "https://expired.example", expiresAt: 0 },
+          ],
+        };
+        await openTask("Send to T3", "Send recordings to T3");
+        await expect(
+          page.getByRole("button", { name: "Add computer", exact: true }),
+        ).toBeEnabled();
+        await expect(page.getByText("expired.example · Expired")).toBeVisible();
+        await expect(t3).not.toBeChecked();
+        await screenshot(`send-connected-off-${variant}`);
         heldT3 = undefined;
         await t3.press("Space");
         await expect.poll(() => heldT3).toBeDefined();
@@ -373,6 +407,15 @@ test("staged Recording opens directly, receives native facts and saves only on i
         await expect(t3).toBeEnabled();
         await expect(t3).toBeFocused();
         await screenshot(`send-recovered-${variant}`);
+        heldT3 = undefined;
+        await t3.press("Space");
+        await expect.poll(() => heldT3).toBeDefined();
+        t3Facts = { ...t3Facts, t3Saved: true };
+        send({ type: "agents-result", request: heldT3, facts: t3Facts });
+        await expect(t3).toBeChecked();
+        await steps.last().scrollIntoViewIfNeeded();
+        await screenshot(`send-connected-on-${variant}`);
+        t3Facts = disconnected;
         await openRecording();
 
         await openTask("Fix permissions", "Permissions");
@@ -381,23 +424,28 @@ test("staged Recording opens directly, receives native facts and saves only on i
         ).toBeVisible();
         await screenshot(`permissions-${variant}`);
         await openRecording();
-      }
 
-    for (const [label, heading] of [
-      ["Transcription", "Transcription"],
-      ["Live transcription", "Live local transcription"],
-      ["Notes gesture", "Double-tap Shift for notes"],
-      ["Public links", "Public sharing links"],
-      ["Auto paste", "Auto paste"],
-      ["Video export", "Export"],
-    ]) {
-      await openTask(label, heading);
-      if (label === "Auto paste") {
-        await expect(page.getByRole("switch", { name: label })).toBeDisabled();
-        await screenshot("auto-paste-unavailable-640-dark");
+        for (const [label, heading, name] of [
+          ["Transcription after recording", "Transcription", "transcription"],
+          [
+            "Live transcription",
+            "Live local transcription",
+            "transcription-live",
+          ],
+          ["Double-tap Shift for notes", "Double-tap Shift for notes", "notes"],
+          ["Public links", "Public sharing links", "public-links"],
+          ["Auto paste", "Auto paste", "auto-paste-unavailable"],
+          ["Video export", "Export", "video-export"],
+        ]) {
+          await openTask(label, heading);
+          if (label === "Auto paste")
+            await expect(
+              page.getByRole("switch", { name: label }),
+            ).toBeDisabled();
+          await screenshot(`${name}-${variant}`);
+          await openRecording();
+        }
       }
-      await openRecording();
-    }
     await navigate("Agents");
     await page
       .getByRole("button", { name: "Send recordings to T3", exact: true })
