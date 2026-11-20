@@ -269,7 +269,7 @@ notarizeBundle(installer, join(dist, "installer-notary.zip"));
 const name = `Apparent-Preview-${version}-arm64.dmg`;
 const dmg = join(dist, name);
 rmSync(dmg, { force: true });
-createDmg(app, installer, dmg, version, build);
+createDmg(installer, dmg, version, build);
 run("hdiutil", ["verify", dmg]);
 if (notarize === "true") {
   run("codesign", [...sign, dmg]);

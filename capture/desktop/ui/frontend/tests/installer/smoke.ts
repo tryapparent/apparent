@@ -18,11 +18,11 @@ for (const route of ['frog', 'app', 'drag', 'replace', 'reduced', 'delayed-obser
 const {app,BrowserWindow,ipcMain}=require('electron');
 app.setPath('userData',${JSON.stringify(root)});let calls=[];global.fixtureCalls=calls;
 ipcMain.handle('fixture:action',(_event,request)=>{calls.push(request);if(request.action==='status')return {version:'0.1.1',needsReplacement:${replace}};if(request.action==='install')return {installed:true,destination:'/Applications/Apparent Preview.app'};return {opened:true};});
-app.whenReady().then(()=>{const window=new BrowserWindow({width:720,height:560,webPreferences:{preload:${JSON.stringify(preload)},contextIsolation:true,sandbox:true,nodeIntegration:false}});window.loadFile(${JSON.stringify(path.resolve(import.meta.dirname,'../../dist/src/installer/index.html'))});});
+app.whenReady().then(()=>{const window=new BrowserWindow({width:${route==='reduced'?560:720},height:${route==='reduced'?520:560},webPreferences:{preload:${JSON.stringify(preload)},contextIsolation:true,sandbox:true,nodeIntegration:false}});window.loadFile(${JSON.stringify(path.resolve(import.meta.dirname,'../../dist/src/installer/index.html'))});});
 app.on('window-all-closed',()=>app.quit());`);
   application = await electron.launch({args:[host,...(process.platform==='linux'?['--no-sandbox']:[])],env:{...process.env,APPARENT_UI_PROFILE:root}});
   const page = await application.firstWindow();
-  await expect(page.getByRole('heading',{name:'A little hop to Applications.'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Install apparent'})).toBeVisible();
   await expect(page.getByRole('button',{name:'Install apparent in Applications',exact:true})).toBeEnabled();
   assert.equal(await page.getByRole('button',{name:'Install apparent',exact:true}).count(),0,'no duplicate install button');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight>innerHeight),false,'initial installer fits its real window');

@@ -7,7 +7,7 @@ function failStartup(error: unknown) {
   try {
     console.error('Installer startup failed:', error);
     dialog.showErrorBox('Installer could not open',
-      'Drag apparent to Applications in Finder.');
+      'Close and reopen Install apparent.');
   } finally {
     // A failed, windowless installer must not intercept future Finder launches.
     app.exit(1);
@@ -63,7 +63,9 @@ function startInstaller() {
           });
         });
         if (value.action === 'open' && result.opened) {busy = false; app.quit();}
-        return result;
+        return {result};
+      } catch (error) {
+        return {error: error instanceof Error ? error.message : 'Installation failed.'};
       } finally { busy = false; }
     });
     await window.loadURL(page);

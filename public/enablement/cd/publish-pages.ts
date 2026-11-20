@@ -168,11 +168,11 @@ export async function verify(sha: string, packagePath: string, deps: PublisherDe
     paths.push(['brand/index.html', '/brand/'])
     for (const name of Object.keys(manifest.files)) if (/^dist-apparent\/brand\/assets\/[^/]+\.(?:js|css)$/.test(name)) { const path = name.slice('dist-apparent/'.length); paths.push([path, '/' + path]) }
   }
-  const origins = [...new Set([deployment.url, 'https://app.tryapparent.com', ...(hasBrand ? ['https://tryapparent.com'] : [])])]
+  const origins = [...new Set([deployment.url, 'https://app.tryapparent.com'])]
   for (let oi = 0; oi < origins.length; oi++) {
     const origin = origins[oi], mismatch = (message: string) => oi ? new CanonicalPropagationPending(message) : new Error(message)
     for (const [path, route] of paths) {
-      const response = await fetcher(origin + route, { headers: { 'Cache-Control': 'no-cache', 'User-Agent': 'Apparent-CD/1.0' }, signal: AbortSignal.timeout(60_000) })
+      const response = await fetcher(origin + route, { redirect: 'manual', headers: { 'Cache-Control': 'no-cache', 'User-Agent': 'Apparent-CD/1.0' }, signal: AbortSignal.timeout(60_000) })
       if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), { status: response.status })
       const body = new Uint8Array(await response.arrayBuffer()), headers = response.headers
       const responseMetaValue = responseMeta(headers, ['Content-Encoding', 'Content-Type', 'CF-Cache-Status', 'Age', 'CF-Ray'])
@@ -185,7 +185,7 @@ export async function verify(sha: string, packagePath: string, deps: PublisherDe
       }
     }
     const media = manifest.movie
-    const response = await fetcher(origin + media.path, { headers: { 'Cache-Control': 'no-cache', 'User-Agent': 'Apparent-CD/1.0' }, signal: AbortSignal.timeout(60_000) })
+    const response = await fetcher(origin + media.path, { redirect: 'manual', headers: { 'Cache-Control': 'no-cache', 'User-Agent': 'Apparent-CD/1.0' }, signal: AbortSignal.timeout(60_000) })
     if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), { status: response.status })
     const meta = { status: response.status, ...responseMeta(response.headers, ['Content-Length', 'Content-Range', 'Content-Encoding', 'CF-Cache-Status', 'Age', 'CF-Ray']) }
     if (response.headers.get('Content-Type') !== 'video/mp4') throw new Error('Pages movie is unavailable')

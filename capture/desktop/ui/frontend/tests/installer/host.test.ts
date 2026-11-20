@@ -26,11 +26,11 @@ function load(adapter:string, linked=false) {
 }
 test('installer host rejects an arbitrary absolute adapter before startup',()=>{
   const fixture=load('/tmp/other-executable');
-  fixture.run();assert.match(fixture.diagnostics[0],/bundled Mac adapter/);assert.match(fixture.failures[0],/Drag apparent/);assert.deepEqual(fixture.exits,[1]);assert.equal(fixture.started(),0);
+  fixture.run();assert.match(fixture.diagnostics[0],/bundled Mac adapter/);assert.match(fixture.failures[0],/Close and reopen Install apparent/);assert.deepEqual(fixture.exits,[1]);assert.equal(fixture.started(),0);
 });
 test('installer host admits only its fixed regular bundled adapter',()=>{
   const fixture=load(expected);fixture.run();assert.equal(fixture.started(),1);
-  const link=load(expected,true);link.run();assert.match(link.diagnostics[0],/regular bundled executable/);assert.match(link.failures[0],/Drag apparent/);assert.deepEqual(link.exits,[1]);assert.equal(link.started(),0);
+  const link=load(expected,true);link.run();assert.match(link.diagnostics[0],/regular bundled executable/);assert.match(link.failures[0],/Close and reopen Install apparent/);assert.deepEqual(link.exits,[1]);assert.equal(link.started(),0);
 });
 test('installer actual host binds requests to its page and closes only after successful native Open', async()=>{
   let ready:()=>Promise<void>, invoke:(event:any,request:any)=>Promise<any>, close:(event:any)=>void;
@@ -58,7 +58,7 @@ test('installer actual host binds requests to its page and closes only after suc
       if(name==='node:fs')return{realpathSync:(file:string)=>file,lstatSync:()=>({isFile:()=>true,isSymbolicLink:()=>false})};
       if(name==='node:child_process')return{execFile:(binary:string,args:string[],_options:any,callback:any)=>{
         assert.equal(binary,expected);assert.equal(args[0],'--request');const request=JSON.parse(args[1]);calls.push(request);
-        callback(null,JSON.stringify(request.action==='open'?{opened:true}:{needsReplacement:false}));
+        callback(null,JSON.stringify(request.action==='open'?{opened:true}:request.action==='install'?{error:'Finish recording and quit apparent, then check again.'}:{needsReplacement:false}));
       }};
       return require(name);
     }};
@@ -67,10 +67,13 @@ test('installer actual host binds requests to its page and closes only after suc
   await assert.rejects(invoke!({...event,senderFrame:{url:frame.url}},{action:'status'}),/Forbidden/);
   await assert.rejects(invoke!(event,{action:'install',source:'/tmp/other.app'}),/Invalid/);
   assert.equal(calls.length,0);
-  const status=await invoke!(event,{action:'status'});assert.equal(status.needsReplacement,false);
+  const status=await invoke!(event,{action:'status'});assert.equal(status.result.needsReplacement,false);
+  const refusal=await invoke!(event,{action:'install'});
+  assert.equal(refusal.error,'Finish recording and quit apparent, then check again.');
+  assert.equal(quit,false);
   await invoke!(event,{action:'open'});
   assert.equal(quit,true);assert.equal(blocked,false,'successful Open must release the busy close guard');
-  assert.deepEqual(calls,[{action:'status'},{action:'open'}]);
+  assert.deepEqual(calls,[{action:'status'},{action:'install'},{action:'open'}]);
 });
 
 // Use the real filesystem to cover macOS parent-path aliases, not only mocked paths.
@@ -157,7 +160,7 @@ for (const phase of ['window', 'load', 'dialog', 'activate']) test(`installer st
     assert.deepEqual(exits, []);
   } else {
     assert.equal(errors.length, 1, 'startup failure must show a visible recovery message');
-    assert.match(errors[0][1], /Drag apparent to Applications/);
+    assert.match(errors[0][1], /Close and reopen Install apparent/);
     assert.doesNotMatch(errors[0][1], /fixture|ERR_|file:/, 'technical startup errors stay out of the recovery instructions');
     assert.deepEqual(exits, [1], 'failed startup must exit even if the native dialog fails');
   }
