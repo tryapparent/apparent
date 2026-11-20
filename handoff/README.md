@@ -36,6 +36,19 @@ On Hyprland, the native adapter returns focus to the previously active window
 after the picker releases it. The adapter acts only while the compositor still
 reports the admitted picker as active.
 
+### Pairing from a terminal
+
+On the target T3 environment, use the CLI that matches the running server
+to create a short-lived pairing link. Where supported, select only
+`orchestration:read` and `orchestration:operate`. On the computer running
+Apparent, give the full link to `apparent t3 pair` on stdin. Keep the link out
+of chat and shell arguments.
+
+`apparent t3 status` lists the saved origins. To replace a credential in place,
+pair again with the same origin. To remove one computer first, pass its exact
+origin to `apparent t3 forget <origin>`. Running `forget` without an origin
+removes all local T3 credentials. Server-side sessions expire normally.
+
 ## Compact recording prompts
 
 Settings › Labs › Compact recording prompts is off by default. Turning it

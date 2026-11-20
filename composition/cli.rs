@@ -613,10 +613,13 @@ enum Command {
 enum T3Command {
     /// Read a one-time T3 pairing link from stdin. Requires Node 22.23+.
     Pair,
-    /// Show the configured server without exposing its credential.
+    #[command(about = "List saved T3 server addresses without exposing credentials.")]
     Status,
-    /// Forget this app's T3 connection; existing server sessions expire normally.
-    Forget,
+    #[command(about = "Forget a saved T3 server by origin, or all servers when no origin is given.")]
+    Forget {
+        #[arg(help = "Exact server origin shown by apparent t3 status")]
+        origin: Option<String>,
+    },
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -649,11 +652,21 @@ fn t3_command(command: T3Command) -> Result<()> {
                 .and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or(serde_json::json!({}));
             if let Some(origin) = value.pointer("/t3/origin").and_then(|v| v.as_str()) {
                 println!("T3 server: {origin}");
+                if let Some(connections) = value.pointer("/t3/connections").and_then(|v| v.as_array()) {
+                    for origin in connections.iter().filter_map(|connection| connection.get("origin")?.as_str()) {
+                        println!("T3 server: {origin}");
+                    }
+                }
             } else { println!("T3 is not connected. Run apparent t3 pair."); }
         }
-        T3Command::Forget => {
-            crate::capture::desktop::settings::persist_t3_connection(&config, None, None)?;
-            println!("All T3 connections forgotten. Existing confirmed handoffs remain recorded locally.");
+        T3Command::Forget { origin } => {
+            let forget_all = origin.is_none();
+            crate::capture::desktop::settings::persist_t3_connection(&config, None, origin)?;
+            if forget_all {
+                println!("All T3 connections forgotten. Existing confirmed handoffs remain recorded locally.");
+            } else {
+                println!("Local T3 connection cleared. Existing server sessions expire normally.");
+            }
         }
     }
     Ok(())
