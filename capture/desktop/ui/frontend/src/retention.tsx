@@ -34,7 +34,7 @@ export function Retention({ effectivePath, settings = false }: { effectivePath: 
   const [scannedAt, setScannedAt] = useState<string>();
   const controller = useRef<RetentionController | undefined>(undefined);
   const refresh = useRef<HTMLButtonElement>(null);
-  const {result, usage, preset, busy, scanning, submission, operation} = state;
+  const {result, usage, preset, busy, scanning, submission, operation, previousSaved, readback} = state;
   const {phase, canReset, hasDraft} = retentionFeedback(state);
   const request = (operation: RetentionOperation) => controller.current?.request(operation);
   const commit = (operation: 'save' | 'reset') => {
@@ -65,6 +65,7 @@ export function Retention({ effectivePath, settings = false }: { effectivePath: 
           <RefreshCw aria-hidden="true" />{showRefreshLabel && 'Refresh'}
         </Button>
       </div>
+      {previousSaved && <p className="settings-metadata">Previously saved · {retentionLabel(previousSaved)}</p>}
       <p role="status">
         {phase === 'submitting' && `${submission?.operation === 'reset' ? 'Resetting' : 'Saving'}… ${submittedLabel}`}
         {phase === 'checking' && <span className="block">Checking saved limits…</span>}
@@ -75,7 +76,10 @@ export function Retention({ effectivePath, settings = false }: { effectivePath: 
       </p>
       {issue && <p role="alert">{issue}</p>}
       {snapshot && <>
-        <p id="retention-saved" className="settings-metadata" role="status">Saved · {retentionLabel(snapshot.retention.effective)}</p>
+        <div role="status" className="settings-metadata">
+          <p id="retention-saved">Saved · {retentionLabel(snapshot.retention.effective)}</p>
+          {readback && <p>{readback.operation === 'reset' ? 'Requested reset' : 'Requested save'} · {retentionLabel(readback.policy)}</p>}
+        </div>
         <div className="flex items-baseline gap-2">
           {hasDraft && <span id="retention-draft" className="settings-metadata shrink-0">Draft</span>}
           <NativeSelect aria-labelledby="retention-label" aria-describedby={hasDraft ? 'retention-draft retention-saved' : 'retention-saved'}
@@ -90,7 +94,7 @@ export function Retention({ effectivePath, settings = false }: { effectivePath: 
           ? `Reset to default · ${retentionLabel(snapshot.defaults)}`
           : 'Update Apparent to preview and reset the default limits.'}</p>}
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Button aria-describedby="retention-cleanup" disabled={busy || scanning || !hasDraft} onClick={() => commit('save')}>Save retention</Button>
+          <Button className="hover:bg-primary transition-none" aria-describedby="retention-cleanup" disabled={busy || scanning || !hasDraft} onClick={() => commit('save')}>Save retention</Button>
           <Button variant="secondary" aria-describedby={snapshot.custom ? 'retention-defaults retention-cleanup' : 'retention-cleanup'}
             disabled={busy || scanning || !canReset} onClick={() => commit('reset')}>Reset retention</Button>
         </div>

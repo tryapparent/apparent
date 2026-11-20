@@ -13,6 +13,8 @@ export type RetentionState = {
   result?: RetentionResult; usage?: UsageResult; preset: RetentionPreset | ''; busy: boolean; scanning: boolean;
   operation?: RetentionOperation;
   submission?: {operation: 'save' | 'reset'; policy: RetentionPolicy};
+  previousSaved?: RetentionPolicy;
+  readback?: RetentionState['submission'];
 };
 
 export function retentionFeedback({result, submission, busy, operation, preset}: RetentionState) {
@@ -47,7 +49,7 @@ export class RetentionController {
   }
   select(preset: string) {
     if (!this.#closed && !this.#state.busy && !this.#state.scanning &&
-        ['week', 'month', 'forever'].includes(preset)) this.#publish({preset: preset as RetentionPreset});
+        ['week', 'month', 'forever'].includes(preset)) this.#publish({preset: preset as RetentionPreset, readback: undefined});
   }
   async measure(): Promise<void> {
     if (this.#closed || this.#state.busy) return;
@@ -71,18 +73,25 @@ export class RetentionController {
     const policy = operation === 'save' ? retentionForPreset(preset as RetentionPreset)
       : operation === 'reset' && this.#state.result?.status === 'connected' ? this.#state.result.defaults : undefined;
     const submission = operation === 'read' ? this.#state.submission : policy && {operation, policy};
+    const previousSaved = operation === 'read' ? this.#state.previousSaved :
+      this.#state.result?.status === 'connected' ? this.#state.result.retention.effective : undefined;
     const generation = ++this.#generation;
     this.#mutating = operation !== 'read';
     const current = () => !this.#closed && generation === this.#generation;
     this.#usageGeneration++;
-    this.#publish({busy: true, scanning: false, usage: undefined, result: undefined, operation, submission});
+    this.#publish({busy: true, scanning: false, usage: undefined, result: undefined, operation, submission,
+      previousSaved, readback: undefined});
     try {
       const raw = operation === 'read' ? await this.#ports.read() : operation === 'reset' ? await this.#ports.reset() : await this.#ports.save(policy!);
       if (!current()) return;
       const result: RetentionResult = raw.status !== 'connected' ? raw : isStoredRetention(raw.policy)
         ? {status: 'connected', defaults: raw.defaults, ...retentionView(raw.policy, raw.custom, raw.defaults)}
         : {status: 'error', code: operation === 'read' ? 'invalid_response' : 'outcome_unknown'};
+      const saved = result.status === 'connected' ? result.retention.effective : undefined;
+      const showDifference = feedback.show_readback_difference(operation === 'read', !!submission, !!saved,
+        submission?.policy.mediaDays === saved?.mediaDays, submission?.policy.bundleDays === saved?.bundleDays);
       this.#publish({result, preset: result.status === 'connected' ? result.retention.preset ?? '' : '',
+        previousSaved: saved ? undefined : previousSaved, readback: showDifference ? submission : undefined,
         submission: feedback.keep_submission(!!submission, result.status === 'connected') ? submission : undefined});
     } catch { if (current()) this.#publish({preset: '', result: {status: 'error', code: operation === 'read' ? 'bridge_failed' : 'outcome_unknown'}}); }
     finally { if (current()) { this.#mutating = false; this.#publish({busy: false}); void this.measure(); } }
