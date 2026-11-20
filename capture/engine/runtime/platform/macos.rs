@@ -1643,6 +1643,21 @@ fn spawn_key_tap(telemetry: Arc<SharedCaptureTelemetry>) {
     }
 }
 
+const MACOS_LEGACY_POWER_KEY_CODE: u16 = 127;
+
+fn another_key_is_held(
+    gesture_keycode: u16,
+    option_only: bool,
+    combined_key_down: impl Fn(u16) -> bool,
+    hid_key_down: impl Fn(u16) -> bool,
+) -> bool {
+    (0_u16..128).any(|key| {
+        key != gesture_keycode
+            && (combined_key_down(key)
+                || ((!option_only || key != MACOS_LEGACY_POWER_KEY_CODE) && hid_key_down(key)))
+    })
+}
+
 /// Key presses in any app, from the key tap. Always returns the event unchanged.
 unsafe extern "C" fn key_tap_callback(
     _proxy: *mut c_void,
@@ -1684,10 +1699,15 @@ unsafe extern "C" fn key_tap_callback(
         let fn_down = flags & gesture_flag != 0;
         let other_modifiers = (option && !gesture_key) || flags & ((FLAG_COMMAND | FLAG_CONTROL | FLAG_ALTERNATE | FLAG_SHIFT | FLAG_SECONDARY_FN) & !gesture_flag) != 0;
         let fn_event = gesture_key && record.is_standalone_modifier();
-        let other_key = fn_event && ((option && (0_u32..5).any(|button| unsafe { CGEventSourceButtonState(0, button) || CGEventSourceButtonState(1, button) })) || (0_u16..128).any(|key| {
-            key != keycode
-                && unsafe { CGEventSourceKeyState(0, key) || CGEventSourceKeyState(1, key) }
-        }));
+        let other_key = fn_event
+            && ((option && (0_u32..5).any(|button| unsafe {
+                CGEventSourceButtonState(0, button) || CGEventSourceButtonState(1, button)
+            })) || another_key_is_held(
+                keycode,
+                option,
+                |key| unsafe { CGEventSourceKeyState(0, key) },
+                |key| unsafe { CGEventSourceKeyState(1, key) },
+            ));
         let (candidate, trigger) = fn_gesture_transition(
             telemetry.fn_candidate.load(Ordering::Acquire),
             fn_event,
