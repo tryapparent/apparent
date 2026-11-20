@@ -1,16 +1,3 @@
-//! Hyprland: Apparent's shortcuts as runtime binds that run `apparent shortcut record|paste`, which
-//! hand the press to the running app (`super::ipc`), like GNOME's custom keybindings do. The
-//! compositor consumes the chord, so it doesn't also reach the app in front, and nothing needs
-//! the `input` group.
-//!
-//! Hyprland's GlobalShortcuts portal can't stand in: `xdg-desktop-portal` refuses an app without
-//! an app id, and `xdg-desktop-portal-hyprland` only fires shortcuts the user bound by hand with
-//! `bind = …, global, <app id>:<name>`.
-//!
-//! A config reload drops runtime binds, so `watch_reloads` tells Apparent to bind them again.
-//! Hyprland 0.55+ can read its config as Lua (Omarchy 4 does), where binds are added with
-//! `hyprctl eval`; the older hyprlang config takes `hyprctl keyword`. `Syntax` tells them apart.
-
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
@@ -534,14 +521,33 @@ fn run(command: &str) -> Result<()> {
     }
 }
 
-/// XWayland's override-redirect keeps the capsule above windows, but Hyprland still
-/// assigns it to one workspace. Pin only the exact capsule, never the whole app.
+pub fn release_pill_focus(xid: u32, pid: u32) -> Result<()> {
+    let syntax = syntax()?;
+    let title = pill_title(xid);
+    let active: serde_json::Value = serde_json::from_str(&request("j/activewindow")?)?;
+    if active["pid"].as_u64() != Some(u64::from(pid))
+        || active["xwayland"].as_bool() != Some(true)
+        || active["title"].as_str() != Some(title.as_str())
+    {
+        return Ok(());
+    }
+    match syntax {
+        Syntax::Lua => {
+            let address = active["address"].as_str().context("Pill has no address")?;
+            let address = address.strip_prefix("0x").context("Invalid pill address")?;
+            let address = u64::from_str_radix(address, 16).context("Invalid pill address")?;
+            run(&format!(
+                "eval local w = hl.get_active_window(); if w and w.address == '0x{address:x}' and w.pid == {pid} and w.title == '{title}' then hl.dispatch(hl.dsp.focus({{ last = true }})) end"
+            ))
+        }
+        Syntax::Hyprlang => run("dispatch focuscurrentorlast"),
+    }
+}
+
 pub fn pin_pill(xid: u32) -> Result<()> {
     pin_pill_for_process(xid, std::process::id(), || true)
 }
 
-/// The Electron presentation has its own parent-owned process, with the same
-/// XID-specific title and exact compositor identity contract as the native pill.
 pub fn pin_pill_for_process(xid: u32, pid: u32, still_current: impl FnOnce() -> bool) -> Result<()> {
     if let Some(command) = pill_pin_command(
         &request("j/clients")?,
@@ -563,8 +569,6 @@ pub fn pill_title(xid: u32) -> String {
     format!("Apparent Recording Controls {xid:x}")
 }
 
-/// Install before the hidden Electron window maps. The exact XID title scopes
-/// this runtime rule to this child; no user configuration is changed.
 pub fn prepare_pill_motion(xid: u32, pid: u32) -> Result<bool> {
     if !matches!(syntax()?, Syntax::Lua) { return Ok(false); }
     let key = format!("apparent_pill_motion_{pid}_{xid:x}");
