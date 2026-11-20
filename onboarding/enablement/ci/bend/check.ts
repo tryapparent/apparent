@@ -32,7 +32,12 @@ await bendScratch(async (scratch) => {
   const frog = frogTable(production);
   assert.deepEqual(JSON.parse(frog), {
     delay: 350,
-    eligible: [false, false, false, false, true, false, false, false],
+    eligible: [false, false, true, false],
+    cycle: [
+      [1, false],
+      [2, false],
+      [0, true],
+    ],
     ended: [
       [false, false, false],
       [false, false, false],
