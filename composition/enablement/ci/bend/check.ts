@@ -22,9 +22,12 @@ await bendScratch(async (destination) => {
       `
     import assert from "node:assert/strict";
     import policy from "./mac-updates.mjs";
+    import actions from "./release-action.mjs";
     for (const mac of [false, true])
       for (const nightly of [false, true])
         assert.equal(policy.show_nightly_download(mac, nightly), mac && !nightly);
+    assert.equal(actions.release_action(true), "Install latest channel release");
+    assert.equal(actions.release_action(false), "Check for updates");
   `,
     ],
     { cwd: destination, stdio: "inherit" },

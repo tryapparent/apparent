@@ -12,6 +12,11 @@ worker with the repository outside its working directory. The About Electron
 smoke exercises the installed entry and preload with a synthetic parent.
 Native update execution and package acceptance remain platform checks.
 
+On Linux, About warns that installing the selected channel's release may
+install an earlier version. After installation, the updater reports whether
+a restart is required. About shows the running build identity because the
+restart receipt carries no target version. macOS opens the Sparkle check.
+
 On Apple silicon, Stable About includes a secondary **Download Nightly** action
 under App updates. The host resolves the latest installer from the Nightly
 appcast and opens the exact GitHub release asset. The separate Nightly bundle

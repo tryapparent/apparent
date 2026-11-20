@@ -5,6 +5,7 @@ import {
   Copy,
   ExternalLink,
   LoaderCircle,
+  RotateCw,
   Star,
 } from "lucide-react";
 import { Button } from "@apparent/ui/button";
@@ -16,8 +17,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@apparent/ui/tooltip";
-import { channelUpdateHint } from "../update-policy";
 import macUpdates from "../about/mac-updates.mjs";
+import updateAction from "../about/release-action.mjs";
 import "./about.css";
 
 type UpdateProgress =
@@ -45,7 +46,7 @@ const updateFailures = {
     "Couldn’t install the update",
     "Check that your AppImage folder is writable and has free space, then try again.",
   ],
-  restart: ["Couldn’t restart Apparent", "Try restarting again."],
+  restart: ["Couldn’t restart Apparent", "Apparent is still running."],
 } as const;
 
 export interface AboutState {
@@ -169,6 +170,11 @@ export function About({
   }
   const result = state?.updateCheck.result;
   const checking = state?.updateCheck.checking;
+  const failure = state?.updateCheck.failure;
+  const restart = result === "available" && !checking;
+  const failedRestart = result === "failed" && failure === "restart";
+  const installWarning =
+    state?.linux && state.updates && !checking && !restart && !failedRestart;
   const progress = checking ? state?.updateCheck.progress : undefined;
   const downloading = progress?.phase === "downloading";
   const percent =
@@ -177,7 +183,6 @@ export function About({
     progress.downloadedBytes <= progress.totalBytes
       ? Math.floor((100 * progress.downloadedBytes) / progress.totalBytes)
       : undefined;
-  const failure = state?.updateCheck.failure;
   const [failureTitle, failureDescription] = failure
     ? updateFailures[failure]
     : ["Update check failed", "Your current version is still running."];
@@ -192,7 +197,7 @@ export function About({
     : !state?.updates
       ? "Updates unavailable"
       : result === "available"
-        ? "Update available"
+        ? "Restart required"
         : result === "current"
           ? "No update available"
           : null;
@@ -263,7 +268,9 @@ export function About({
                   <label htmlFor="update-channel">Update channel</label>
                   <NativeSelect
                     id="update-channel"
-                    aria-describedby="update-channel-hint"
+                    aria-describedby={
+                      installWarning ? "update-channel-hint" : undefined
+                    }
                     value={state.updateChannel}
                     disabled={checking}
                     onChange={(event) => void changeChannel(event.target.value)}
@@ -276,9 +283,6 @@ export function About({
                     </NativeSelectOption>
                   </NativeSelect>
                 </div>
-                <p id="update-channel-hint" className="settings-metadata">
-                  {channelUpdateHint}
-                </p>
               </div>
             )}
             <div className="settings-update-flow">
@@ -299,6 +303,8 @@ export function About({
                             className="settings-spin"
                             aria-hidden="true"
                           />
+                        ) : restart ? (
+                          <RotateCw aria-hidden="true" />
                         ) : (
                           result && (
                             <CheckCircle2
@@ -335,44 +341,52 @@ export function About({
                       : "Updates work in the installed Apparent.app."}
                   </p>
                 )}
-                {result === "available" && (
-                  <p className="settings-metadata">
-                    Restart Apparent to finish updating.
+                {installWarning && (
+                  <p id="update-channel-hint" className="settings-metadata">
+                    This may install an earlier version.
                   </p>
                 )}
-                {(!checking || !progress) && (
+                {restart && (
+                  <p className="settings-metadata">
+                    The channel release is installed.
+                  </p>
+                )}
+                {!failedRestart && (!checking || !progress) && (
                   <div className="settings-actions">
                     {checking ? (
                       <Button disabled variant="outline">
                         Checking…
                       </Button>
-                    ) : result === "available" ? (
+                    ) : restart ? (
                       <>
                         <Button
                           onClick={() => void act({ action: "update-now" })}
                         >
-                          Update now
+                          Restart now
                         </Button>
                         <Button
                           variant="outline"
                           className="settings-decision-alternative"
                           onClick={() => void act({ action: "update-later" })}
                         >
-                          Update later
+                          Restart later
                         </Button>
                       </>
                     ) : (
                       <Button
                         disabled={!state.updates}
+                        aria-describedby={
+                          installWarning ? "update-channel-hint" : undefined
+                        }
                         onClick={() =>
                           void act({ action: "check-for-updates" })
                         }
                       >
                         {result === "failed"
                           ? "Try again"
-                          : result
+                          : result && !state.linux
                             ? "Check again"
-                            : "Check for updates"}
+                            : updateAction.release_action(state.linux)}
                       </Button>
                     )}
                   </div>
@@ -468,7 +482,7 @@ export function About({
         title={failureTitle}
         description={failureDescription}
         artwork={<img src={artwork.failed} alt="" />}
-        recoveryLabel="Try again"
+        recoveryLabel={failedRestart ? "Retry restart" : "Try again"}
         onRecover={() =>
           void act({
             action: failure === "restart" ? "update-now" : "check-for-updates",
