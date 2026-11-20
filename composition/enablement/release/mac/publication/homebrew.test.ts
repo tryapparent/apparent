@@ -43,6 +43,7 @@ const sum = `${checksum}  ${name}\n`;
 test("cask pins the published DMG while preserving the preview identity and Sparkle updates", () => {
   const cask = verifiedCask(tag, release, sum, checksum);
   assert.equal(cask, homebrewCask(version, checksum));
+  assert.match(cask, /^  homepage "https:\/\/app\.tryapparent\.com\/"$/m);
   assert.match(cask, /app "Apparent Preview.app"/);
   assert.match(cask, /auto_updates true/);
   assert.match(cask, /depends_on arch: :arm64/);
