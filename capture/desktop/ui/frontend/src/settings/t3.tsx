@@ -79,7 +79,7 @@ export function T3Settings() {
           <div className="settings-t3-connection">
             {disconnecting&&<p role="status">Disconnecting…</p>}
             {(facts?.t3Connections??(facts?.t3Origin?[{origin:facts.t3Origin,expiresAt:facts.t3ExpiresAt??0}]:[])).map(computer=><div key={computer.origin} className="settings-t3-computer">
-              <p>{new URL(computer.origin).host}{computer.expiresAt<=Date.now()?' · Expired':''}</p>
+              <p>{new URL(computer.origin).host}{computer.expiresAt<=Date.now()?' · Expired. Use Add computer to pair it again.':''}</p>
               <Button variant="secondary" disabled={busy||connecting} aria-label={`Disconnect ${new URL(computer.origin).host}`} onClick={()=>void connect(true,computer.origin)}>Disconnect</Button>
             </div>)}
             <Button disabled={busy||!facts||Boolean(facts.error)||connecting} onClick={openSetup}>{facts?.t3Configured?'Add computer':'Connect T3'}</Button>
@@ -88,10 +88,13 @@ export function T3Settings() {
         </li>
         <li>
           <div className="agent-preference-row">
-            <p><strong id="agent-t3-enable">Enable sending to T3</strong></p>
+            <div>
+              <p><strong id="agent-t3-enable">Enable sending to T3</strong></p>
+              <span role="status" className={busy && operation==='save'?'settings-metadata':'sr-only'}>{busy?(operation==='save'?'Saving the T3 sending preference…':'Reading the T3 sending preference…'):''}</span>
+            </div>
             <Switch id="agent-t3-control" className="agent-switch" checked={t3Enabled??false} aria-labelledby="agent-t3-enable" aria-describedby="agent-t3-help" aria-busy={busy&&setting==='t3'} disabled={busy||t3Enabled===undefined||connecting} onCheckedChange={value=>void request(value,'t3')} />
           </div>
-          <p id="agent-t3-help">Applies to your next recording. You choose what to send.</p>
+          <p id="agent-t3-help">Pair a computer to send. Applies from your next recording. You choose what to send.</p>
         </li>
         <li>
           <p><strong>Choose a thread</strong></p>
@@ -113,7 +116,6 @@ export function T3Settings() {
       <div className="settings-t3-dialog-actions">{preview&&<Button disabled={connecting} onClick={()=>void connect()}>Connect</Button>}<Button variant={preview?'outline':'default'} className={preview?'settings-decision-alternative':undefined} disabled={connecting} onClick={()=>void pasteLink()}>{preview?'Paste another':'Paste link or code'}</Button><Button variant="outline" className="settings-decision-alternative" disabled={connecting} onClick={closeSetup}>Cancel</Button></div>
     </dialog>}
 
-    <span role="status" className="sr-only">{busy?(operation==='save'?'Saving the T3 sending preference…':'Reading the T3 sending preference…'):''}</span>
     {(!facts||facts.error)&&!busy&&!error&&<Button id="agent-refresh" variant="secondary" onClick={()=>void request()}>Refresh T3 sending</Button>}
     <ErrorDialog open={!!error} title={!facts?'T3 sending preference unconfirmed':facts.error==='config_read_failed'?'Unable to read T3 sending preference':'Unable to save T3 sending preference'} description={refreshSending} artwork={<img src={frog} alt=""/>} recoveryLabel="Refresh T3 sending" busy={busy}
       restoreFocus={()=>{const control=document.getElementById(`agent-${setting}-control`) as HTMLButtonElement|null;(control&&!control.disabled?control:document.getElementById('agent-refresh'))?.focus();}}

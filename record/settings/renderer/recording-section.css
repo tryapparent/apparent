@@ -95,8 +95,21 @@
   color: inherit;
 }
 
-.settings-content .recording-language button:enabled:hover {
+.settings-content .recording-language button:enabled {
   background: var(--apparent-lilac);
+  color: var(--apparent-carbon);
+}
+
+.settings-content .recording-language button:enabled:hover {
+  background: var(--apparent-stock);
+}
+
+.recording-language input[aria-invalid="true"] {
+  border-color: var(--apparent-failed);
+}
+
+.recording-language .recording-note[data-invalid="true"] {
+  color: var(--apparent-failed);
 }
 
 .settings-content .recording-language button:disabled {

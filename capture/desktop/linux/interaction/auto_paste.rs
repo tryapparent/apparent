@@ -4,6 +4,12 @@ use anyhow::{ensure, Context, Result};
 use std::path::Path;
 use std::time::Duration;
 
+pub(crate) fn available() -> bool {
+    super::super::wayland_session()
+        && super::hyprland::running()
+        && super::hyprland::targeted_paste_supported().is_ok()
+}
+
 /// Window identity is necessary, but not sufficient: this cannot check the editor.
 pub fn window_matches(original: &FocusedWindow, current: &FocusedWindow) -> bool {
     original == current
@@ -12,7 +18,7 @@ pub fn window_matches(original: &FocusedWindow, current: &FocusedWindow) -> bool
 /// This is a user-directed trial, not an editor or attachment observer. Keep the
 /// completed paper visible: dispatching paste never proves that the app accepted it.
 pub fn preflight(original: &FocusedWindow) -> Result<()> {
-    super::hyprland::targeted_paste_supported(original)?;
+    super::hyprland::targeted_paste_supported()?;
     super::hyprland::check_window(original)?;
     ensure!(
         window_matches(original, &super::hyprland::focused_window()?)

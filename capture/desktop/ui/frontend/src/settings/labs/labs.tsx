@@ -16,7 +16,8 @@ export type NoteExperiment = ComponentType<{
   id: string; checked: boolean; disabled: boolean; saving: boolean;
   onCheckedChange: (value: boolean) => void;
 }>;
-export function Labs({noteExperiment: DoubleShiftNotes, frogExperiment: FrogNudge}: {noteExperiment?: NoteExperiment; frogExperiment?: NoteExperiment}) {
+export type AutoPasteExperiment = ComponentType<React.ComponentProps<NoteExperiment> & {supported: boolean}>;
+export function Labs({noteExperiment: DoubleShiftNotes, frogExperiment: FrogNudge, autoPasteExperiment: AutoPaste}: {noteExperiment?: NoteExperiment; frogExperiment?: NoteExperiment; autoPasteExperiment?: AutoPasteExperiment}) {
   const [facts, setFacts] = useState<LabsFacts>();
   const [busy, setBusy] = useState(true), [error, setError] = useState('');
   const [setting, setSetting] = useState<LabsSetting>('streaming'), [operation, setOperation] = useState<'read' | 'save'>('read');
@@ -84,15 +85,9 @@ export function Labs({noteExperiment: DoubleShiftNotes, frogExperiment: FrogNudg
       <p id="local-stream-help">See your words below the recording controls as you speak. Transcribes English on this computer with Parakeet.</p>
       <p id="local-stream-ready">Enabling downloads a speech model if needed. Live text starts with your next recording once it is ready. Recording continues if live text is unavailable.</p>
     </section>
-    <section className="agent-preference">
-      <div className="agent-preference-row"><h2 className="settings-preference-label" id="auto-paste-label" tabIndex={-1}>Auto paste</h2>
-        <Switch id={controls.autoPaste} className="agent-switch" checked={autoPaste ?? false} aria-labelledby="auto-paste-label" aria-describedby="auto-paste-help auto-paste-limits" aria-busy={busy && setting === 'autoPaste'}
-          disabled={busy || autoPaste === undefined || !autoPasteSupported.current} onCheckedChange={value => void request(value, 'autoPaste')} /></div>
-      <p id="auto-paste-help">After processing, Apparent pastes the image and text into the focused composer and automatically presses Enter. Your app may reject the attachment or leave the message unsent.</p>
-      <p id="auto-paste-limits">{facts?.autoPasteSupported === false
-        ? 'Unavailable on this computer. Auto paste requires Linux with Hyprland.'
-        : 'Linux with Hyprland only. Starting with your next recording, keep your composer focused until processing finishes.'}</p>
-    </section>
+    {AutoPaste && <AutoPaste id={controls.autoPaste} checked={autoPaste ?? false} supported={autoPasteSupported.current}
+      disabled={busy || autoPaste === undefined} saving={busy && setting === 'autoPaste'}
+      onCheckedChange={value => void request(value, 'autoPaste')} />}
     <section className="agent-preference">
       <div className="agent-preference-row"><h2 className="settings-preference-label" id="public-sharing-label" tabIndex={-1}>Public sharing links</h2>
         <Switch id={controls.sharing} className="agent-switch" checked={sharing ?? false} aria-labelledby="public-sharing-label" aria-describedby="public-sharing-help public-sharing-limits" aria-busy={busy && setting === 'sharing'}

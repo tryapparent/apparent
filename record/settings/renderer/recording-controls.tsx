@@ -253,10 +253,15 @@ function HexLanguage({
           </Button>
         </div>
       </div>
-      <p id={`${id}-help`} className="recording-note">
+      <p
+        id={`${id}-help`}
+        className="recording-note"
+        data-invalid={!valid}
+        aria-live="polite"
+      >
         {valid
           ? "Use a language code such as en, nl or auto. Some Hex models ignore this preference."
-          : "Enter a language code of up to 35 letters, digits or hyphens, starting with a letter."}
+          : "Invalid code. Start with a letter and use up to 35 letters, digits or hyphens."}
       </p>
     </form>
   );

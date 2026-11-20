@@ -1,56 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
-import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
-import { recordingFixture } from "./recording-fixture.ts";
-
-const frontend = fileURLToPath(
-  new URL("../../../capture/desktop/ui/frontend/", import.meta.url),
-);
-const loadFrontendDependency = createRequire(join(frontend, "package.json"));
-const { chromium, expect } = loadFrontendDependency("@playwright/test");
+import {
+  expect,
+  launchRecording,
+  recordingFixture,
+} from "./recording-fixture.ts";
 
 test("staged Recording opens directly, receives native facts and saves only on its active route", {
   timeout: 60_000,
 }, async () => {
-  const home = await mkdtemp(join(tmpdir(), "recording-pane-"));
-  const stage = process.env.APPARENT_RECORDING_STAGE;
-  const runtime = stage
-    ? join(
-        stage,
-        process.platform === "darwin"
-          ? "runtime/Electron.app/Contents/MacOS/Electron"
-          : "runtime/electron",
-      )
-    : loadFrontendDependency("electron");
-  const child = spawn(
-    runtime,
-    [
-      "--no-sandbox",
-      stage ? join(stage, "app") : frontend,
-      "--settings-storage",
-      "--settings-recording",
-      "--settings-parent",
-      "--remote-debugging-port=0",
-    ],
-    {
-      env: {
-        ...process.env,
-        HOME: home,
-        XDG_CONFIG_HOME: join(home, "config"),
-        ELECTRON_RUN_AS_NODE: "",
-      },
-      stdio: "pipe",
-    },
-  );
-  const exited = new Promise((resolve) => child.once("exit", resolve));
-  const send = (message: object) =>
-    child.stdin.write(JSON.stringify(message) + "\n");
+  const { child, send, open, close } = await launchRecording();
   const fixture = recordingFixture(send);
   const actions: Record<string, unknown>[] = [];
   let heldT3: unknown;
@@ -74,23 +36,8 @@ test("staged Recording opens directly, receives native facts and saves only on i
     }
     fixture.receive(action);
   });
-  let browser: Awaited<ReturnType<typeof chromium.connectOverCDP>> | undefined;
   try {
-    const endpoint = await new Promise<string>((resolve, reject) => {
-      let stderr = "";
-      child.stderr.on("data", (chunk) => {
-        stderr += String(chunk);
-        const match = stderr.match(
-          /DevTools listening on (ws:\/\/127\.0\.0\.1:\d+\/devtools\/browser\/[^\s]+)/,
-        );
-        if (match) resolve(match[1]);
-      });
-      child.once("error", reject);
-      child.once("exit", (code) =>
-        reject(Error(`Settings exited ${code}: ${stderr.slice(-1000)}`)),
-      );
-    });
-    browser = await chromium.connectOverCDP(endpoint);
+    const browser = await open();
     const context = browser.contexts()[0];
     const page = context.pages()[0];
     const proof = process.env.APPARENT_RECORDING_PROOF;
@@ -196,6 +143,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
         await language.focus();
         await expect(apply).toBeDisabled();
         await expect(apply).toBeInViewport({ ratio: 1 });
+        await expect(apply).toHaveCSS("background-color", "rgb(245, 240, 232)");
         assert.notEqual(
           await apply.evaluate((el) => getComputedStyle(el).color),
           await apply.evaluate((el) => getComputedStyle(el).backgroundColor),
@@ -203,11 +151,13 @@ test("staged Recording opens directly, receives native facts and saves only on i
         await screenshot(`hex-disabled-${width}-${theme}`);
         await language.fill("9");
         await expect(language).toHaveAttribute("aria-invalid", "true");
+        await expect(page.getByText(/^Invalid code\./)).toBeInViewport();
         await expect(apply).toBeDisabled();
         await screenshot(`hex-invalid-${width}-${theme}`);
         await language.fill("nl");
         await page.keyboard.press("Tab");
         await expect(apply).toBeEnabled();
+        await expect(apply).toHaveCSS("background-color", "rgb(183, 165, 216)");
         await expect(apply).toBeFocused();
         await expect(apply).toHaveCSS("outline-style", "solid");
         await screenshot(`hex-apply-focus-${width}-${theme}`);
@@ -335,6 +285,9 @@ test("staged Recording opens directly, receives native facts and saves only on i
         await openTask("Send to T3", "Send recordings to T3");
         const t3 = page.getByRole("switch", { name: "Enable sending to T3" });
         await expect(t3).toBeEnabled();
+        await expect(t3).toHaveAccessibleDescription(
+          /Pair a computer to send.*You choose what to send/,
+        );
         await expect(
           page.getByRole("button", { name: "Connect T3", exact: true }),
         ).toBeEnabled();
@@ -360,7 +313,21 @@ test("staged Recording opens directly, receives native facts and saves only on i
         await expect(
           page.getByRole("button", { name: "Add computer", exact: true }),
         ).toBeEnabled();
-        await expect(page.getByText("expired.example · Expired")).toBeVisible();
+        await expect(
+          page.getByText(
+            "expired.example · Expired. Use Add computer to pair it again.",
+          ),
+        ).toBeVisible();
+        await page
+          .getByRole("button", { name: "Add computer", exact: true })
+          .press("Enter");
+        await expect(
+          page.getByRole("dialog", { name: "Connect T3" }),
+        ).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(
+          page.getByRole("dialog", { name: "Connect T3" }),
+        ).toHaveCount(0);
         await expect(t3).not.toBeChecked();
         await screenshot(`send-connected-off-${variant}`);
         heldT3 = undefined;
@@ -372,7 +339,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
           page.getByRole("status").filter({
             hasText: "Saving the T3 sending preference…",
           }),
-        ).toHaveCount(1);
+        ).toBeInViewport();
         await expect(t3).not.toBeChecked();
         await screenshot(`send-pending-${variant}`);
         send({
@@ -434,7 +401,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
               page.getByRole("switch", { name: label }),
             ).toBeDisabled();
             await expect(
-              page.getByText("Unavailable on this computer.", { exact: false }),
+              page.getByText("Unavailable in this session.", { exact: false }),
             ).toBeVisible();
             await expect(
               page.getByText(
@@ -444,6 +411,35 @@ test("staged Recording opens directly, receives native facts and saves only on i
           }
           await screenshot(`${name}-${variant}`);
           await openRecording();
+          if (label === "Auto paste") {
+            fixture.autoPasteSaved = true;
+            await openTask(label, heading);
+            const autoPaste = page.getByRole("switch", { name: label });
+            await expect(autoPaste).toBeChecked();
+            await expect(autoPaste).toBeEnabled();
+            await expect(autoPaste).toHaveAccessibleDescription(
+              /Paste on the saved recording.*submit it yourself/,
+            );
+            await screenshot(`auto-paste-unavailable-saved-${variant}`);
+            await autoPaste.press("Space");
+            await expect(autoPaste).not.toBeChecked();
+            await expect(autoPaste).toBeDisabled();
+            await openRecording();
+
+            fixture.autoPasteSupported = true;
+            await openTask(label, heading);
+            await expect(autoPaste).toBeEnabled();
+            await autoPaste.press("Space");
+            await expect(autoPaste).toBeChecked();
+            await expect(autoPaste).toHaveAccessibleDescription(
+              /automatically presses Enter.*supported Hyprland/,
+            );
+            await screenshot(`auto-paste-supported-${variant}`);
+            await autoPaste.press("Space");
+            await expect(autoPaste).not.toBeChecked();
+            fixture.autoPasteSupported = false;
+            await openRecording();
+          }
         }
       }
     await navigate("Agents");
@@ -455,16 +451,6 @@ test("staged Recording opens directly, receives native facts and saves only on i
     ).toBeFocused();
     assert.equal(page.url(), startUrl);
   } finally {
-    await browser?.close().catch(() => {});
-    child.stdin.end();
-    await Promise.race([
-      exited,
-      new Promise((resolve) => setTimeout(resolve, 3000)),
-    ]);
-    if (child.exitCode === null) {
-      child.kill("SIGKILL");
-      await exited;
-    }
-    await rm(home, { recursive: true, force: true });
+    await close();
   }
 });

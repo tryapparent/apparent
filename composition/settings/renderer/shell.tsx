@@ -7,6 +7,10 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 import {
+  AutoPaste,
+  type AutoPasteProps,
+} from "../../../handoff/settings/auto-paste";
+import {
   FrogNudgePreference,
   type FrogNudgePreferenceProps,
 } from "../../../onboarding/renderer/frog-nudge/preview";
@@ -80,6 +84,7 @@ declare module "react" {
         HTMLElement
       > & {
         pane: string;
+        autoPasteExperiment?: ComponentType<AutoPasteProps>;
         noteExperiment?: ComponentType<DoubleShiftNotesProps>;
         frogExperiment?: ComponentType<FrogNudgePreferenceProps>;
       };
@@ -293,6 +298,7 @@ function Settings() {
         ) : (
           <apparent-settings-pane
             pane={current}
+            autoPasteExperiment={current === "Labs" ? AutoPaste : undefined}
             noteExperiment={current === "Labs" ? DoubleShiftNotes : undefined}
             frogExperiment={
               current === "Labs" ? FrogNudgePreference : undefined

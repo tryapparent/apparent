@@ -65,8 +65,9 @@ try{
   assert.equal(saved.experiments.other,true);assert.equal(saved.secret,'private');
   await page.reload();await expect(sharing).toBeEnabled();await expect(sharing).toHaveAttribute('aria-checked',String(on));
  }
- if(process.platform==='linux'){
-  const autoPaste=page.getByRole('switch',{name:'Auto paste',exact:true});
+ const autoPaste=page.getByRole('switch',{name:'Auto paste',exact:true});
+ await expect(autoPaste).toHaveAccessibleDescription(/supported Hyprland|Unavailable in this session/);
+ if(await autoPaste.isEnabled()){
   for(const on of [true,false]){
    await autoPaste.click();await expect(autoPaste).toHaveAttribute('aria-checked',String(on));
    const saved=JSON.parse(await fs.readFile(process.argv[2],'utf8'));
@@ -74,7 +75,7 @@ try{
    assert.equal(saved.experiments.other,true);assert.equal(saved.secret,'private');
    await page.reload();await expect(autoPaste).toBeEnabled();await expect(autoPaste).toHaveAttribute('aria-checked',String(on));
   }
- }else await expect(page.getByRole('switch',{name:'Auto paste',exact:true})).toBeDisabled();
+ }else await expect(autoPaste).not.toBeChecked();
  const wispr=page.getByRole('switch',{name:'Dictation app conflicts',exact:true});
  await expect(wispr).toHaveAttribute('aria-checked','false');
  if(process.platform==='darwin'){
