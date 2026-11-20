@@ -22,7 +22,7 @@ export function markElectronAccessory(runtime: string) {
 }
 
 export function macProduct(channel: string | undefined) {
-  const nightly = channel === "main";
+  const nightly = channel === "main" || channel === "mac-nightly";
   return {
     nightly,
     name: nightly ? "Apparent Nightly" : "Apparent Preview",

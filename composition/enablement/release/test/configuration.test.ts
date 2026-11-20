@@ -38,6 +38,7 @@ test("distribution recovery cannot publish while stable publication retains prod
           linux: { result: linux },
           macos: { outputs: { ready: mac ? "true" : "" } },
           publish: { result: linux },
+          "publish-nightly": { result: mac ? "success" : "skipped" },
         },
         { repository: "tryapparent/apparent", ref: "refs/heads/main" },
         () => cancelled,
@@ -60,9 +61,14 @@ test("distribution recovery cannot publish while stable publication retains prod
           enabled("publish", "stable", retry, result, mac, "success", true),
           false,
         );
+        assert.equal(enabled("publish", "main", retry, result, mac), false);
         assert.equal(
-          enabled("publish", "main", retry, result, mac),
-          retry || (mac && result === "success"),
+          enabled("publish-linux", "main", retry, result, mac),
+          result === "success",
+        );
+        assert.equal(
+          enabled("publish-nightly", "main", retry, result, mac),
+          mac,
         );
         assert.equal(
           enabled("publish", "mac-main", retry, result, mac),
@@ -88,7 +94,7 @@ test("distribution recovery cannot publish while stable publication retains prod
           assert.equal(
             enabled(job, mode, retry, result, true),
             (mode === "distribution" && retry) ||
-              (job === "feed" && mode === "main" && result === "success"),
+              (job === "feed" && mode === "main"),
           );
     }
 });
@@ -99,7 +105,7 @@ test("actual Linux readiness command rejects invalid signing configuration befor
     .split(
       "      - name: Check signing configuration before scarce allocation",
     )[1]
-    .split("\n  linux:")[0];
+    .split("\n  macos:")[0];
   const script = block
     .split("        run: |\n")[1]
     .split("\n")
@@ -143,7 +149,12 @@ test("Latest Main and Stable admit both platform jobs", () => {
   const workflow = readFileSync(".github/workflows/verification.yml", "utf8");
   for (const platform of ["linux", "macos"]) {
     const job = workflow.split(`\n  ${platform}:\n`)[1].split(/\n  [a-z]+:/)[0];
-    assert.match(job, /^    needs: admit$/m);
+    assert.match(
+      job,
+      platform === "linux"
+        ? /^    needs: admit$/m
+        : /^    needs: \[admit, mac-signing\]$/m,
+    );
     assert.ok(
       job.includes(
         platform === "linux"
@@ -153,8 +164,10 @@ test("Latest Main and Stable admit both platform jobs", () => {
     );
   }
   assert.match(workflow, /publish:\n    needs: \[admit, linux, macos\]/);
+  assert.match(workflow, /publish-linux:\n    needs: \[admit, linux\]/);
+  assert.match(workflow, /publish-nightly:\n    needs: \[admit, macos\]/);
   assert.match(workflow, /name: Release\n/);
   assert.match(workflow, /default: main/);
-  assert.match(workflow, /if: steps.candidate.outputs.sha != ''/);
+  assert.match(workflow, /mac-signing:\n    needs: admit/);
   assert.match(workflow, /cancel-in-progress: false/);
 });

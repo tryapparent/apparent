@@ -133,20 +133,20 @@ fn pcm_waveform(samples: &[f32]) -> [f32; 24] {
 #[derive(Clone, Debug)]
 pub struct RecordedAudio {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    pub streaming: crate::capture::engine::runtime::audio::transcription::parakeet_stream::Slot,
+    pub streaming: bool,
     pub sample_count: usize,
     pub duration_ms: u64,
     pub wav_bytes: Vec<u8>,
     pub saved_lease: Option<Arc<super::persistence::Lease>>,
-    /// The transcription that ran while recording, if one did (`live_transcribe`).
     pub live: crate::capture::engine::runtime::audio::transcription::live_transcribe::Slot,
     #[cfg(target_os = "linux")]
     pub pause: crate::capture::engine::runtime::audio::transcription::pause_transcribe::Slot,
 }
 
 pub struct AudioRecorder {
+    local_streaming: bool,
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    streaming: Option<crate::capture::engine::runtime::audio::transcription::parakeet_stream::Live>,
+    streaming: Option<crate::capture::engine::runtime::audio::transcription::speech_preview::Live>,
     worker: Option<std::thread::JoinHandle<Result<()>>>,
     stop_sender: Option<std::sync::mpsc::Sender<()>>,
     samples: Arc<Mutex<Samples>>,
@@ -215,7 +215,7 @@ impl AudioRecorder {
         let trial = admit.is_some();
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         let streaming = admit.and_then(|admit| {
-            crate::capture::engine::runtime::audio::transcription::parakeet_stream::Live::start(samples.clone(), admit).ok()
+            crate::capture::engine::runtime::audio::transcription::speech_preview::Live::start(samples.clone(), admit).ok()
         });
         let live = (!trial && crate::capture::engine::runtime::audio::transcription::live_transcribe::wanted())
             .then(|| crate::capture::engine::runtime::audio::transcription::live_transcribe::Live::start(Arc::clone(&samples)))
@@ -238,6 +238,7 @@ impl AudioRecorder {
                 result.inspect_err(|error| crate::capture::engine::runtime::apparent_log(format!("Pause transcription: {error:#}"))).ok()
             });
         Ok(Self {
+            local_streaming: trial,
             #[cfg(any(target_os = "linux", target_os = "macos"))]
             streaming,
             worker: Some(worker),
@@ -258,7 +259,7 @@ impl AudioRecorder {
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    pub fn streaming_preview(&self) -> Option<crate::capture::engine::runtime::audio::transcription::parakeet_stream::Preview> {
+    pub fn streaming_preview(&self) -> Option<crate::capture::engine::runtime::audio::transcription::speech_preview::Preview> {
         self.streaming.as_ref().map(|stream| stream.preview())
     }
 
@@ -405,6 +406,8 @@ impl AudioRecorder {
     }
 
     pub fn stop(mut self) -> Result<RecordedAudio> {
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        drop(self.streaming.take());
         // Joining drops the stream and stops its callback before taking the buffer,
         // including a stop requested while the device was still being initialized.
         let input_result = self.join_worker();
@@ -430,14 +433,13 @@ impl AudioRecorder {
         }
         self.samples.lock().map_err(|_| anyhow!("Microphone buffer lock poisoned"))
             .stage(Stage::AudioSampleState)?.clear();
-        // An overload, or a device unplugged partway, keeps what was heard before it.
         if let Some(error) = error {
             crate::capture::engine::runtime::apparent_log(format!("Microphone: {error}; keeping what it heard"));
         }
         let duration_ms = sample_count as u64 * 1_000 / SAMPLE_RATE as u64;
         Ok(RecordedAudio {
             #[cfg(any(target_os = "linux", target_os = "macos"))]
-            streaming: crate::capture::engine::runtime::audio::transcription::parakeet_stream::Slot::new(self.streaming.take()),
+            streaming: self.local_streaming,
             sample_count,
             duration_ms,
             wav_bytes,
@@ -544,7 +546,7 @@ pub fn recorded_audio_from_wav(wav_bytes: Vec<u8>) -> Result<RecordedAudio> {
         saved_lease: None,
         live: Default::default(),
         #[cfg(any(target_os = "linux", target_os = "macos"))]
-        streaming: Default::default(),
+        streaming: false,
         #[cfg(target_os = "linux")]
         pause: Default::default(),
     })
@@ -785,6 +787,7 @@ mod tests {
             writer: None, error: Arc::new(Mutex::new(None)),
             health: Arc::new(Mutex::new(InputHealth::new(now))),
             live: None, word_probe: None,
+            local_streaming: false,
             #[cfg(any(target_os = "linux", target_os = "macos"))]
             streaming: None,
             #[cfg(target_os = "linux")]
@@ -830,6 +833,7 @@ mod tests {
             health: Arc::new(Mutex::new(InputHealth::new(Instant::now()))),
             live: None,
             word_probe: None,
+            local_streaming: false,
             #[cfg(any(target_os = "linux", target_os = "macos"))]
             streaming: None,
             #[cfg(target_os = "linux")]
@@ -857,6 +861,7 @@ mod tests {
             health: Arc::new(Mutex::new(InputHealth::new(Instant::now()))),
             live: None,
             word_probe: None,
+            local_streaming: false,
             #[cfg(any(target_os = "linux", target_os = "macos"))]
             streaming: None,
             #[cfg(target_os = "linux")]
@@ -882,6 +887,7 @@ mod tests {
             health: Arc::new(Mutex::new(InputHealth::new(Instant::now()))),
             live: None,
             word_probe: None,
+            local_streaming: false,
             #[cfg(any(target_os = "linux", target_os = "macos"))]
             streaming: None,
             #[cfg(target_os = "linux")]

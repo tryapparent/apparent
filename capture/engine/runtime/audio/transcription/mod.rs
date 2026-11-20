@@ -6,7 +6,8 @@ pub(crate) mod live_word_warning;
 pub(crate) mod pause_transcribe;
 pub(crate) mod speech;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-pub(crate) mod parakeet_stream;
+#[path = "../../../../../engine/recording/speech_preview.rs"]
+pub(crate) mod speech_preview;
 pub(crate) mod speech_model;
 pub(crate) mod transcribe;
 #[cfg(target_os = "linux")]

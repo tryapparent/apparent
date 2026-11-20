@@ -7,6 +7,9 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use super::super::{MAX_CAPTURE_SCALE, platform};
+#[cfg(any(test, target_os = "macos"))]
+use super::diagnostics::sampling::{Rejection, Route};
+use super::diagnostics::sampling::Sampling;
 use crate::shared::model::{RgbaFrame, TargetInfo};
 
 #[path = "../../../../engine/recording/start.rs"]
@@ -47,6 +50,7 @@ pub struct CandidateBuffer {
     cap: usize,
     budget: usize,
     interval: Duration,
+    sampling: Option<Sampling>,
 }
 
 impl CandidateBuffer {
@@ -56,12 +60,26 @@ impl CandidateBuffer {
             cap: 0,
             budget: budget_bytes,
             interval: FRAME_SAMPLE_INTERVAL,
+            sampling: None,
         }
     }
 
     /// How often to sample now.
     pub fn interval(&self) -> Duration {
         self.interval
+    }
+
+    #[cfg(any(test, target_os = "macos"))]
+    pub(crate) fn set_sampling_route(&mut self, route: Route) {
+        self.sampling = Some(Sampling { route, last_rejection: None });
+    }
+
+    #[cfg(any(test, target_os = "macos"))]
+    pub(crate) fn reject_sample(frames: &Mutex<Self>, rejection: Rejection) {
+        let mut buffer = frames.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if buffer.frames.is_empty() && let Some(sampling) = &mut buffer.sampling {
+            sampling.last_rejection = Some(rejection);
+        }
     }
 
     #[cfg(test)]
@@ -193,15 +211,16 @@ pub(crate) fn sample_real_candidate(
     real_frame_seen: &AtomicBool,
     startup_failed: &AtomicBool,
     urgent: bool,
-    sample: impl FnOnce() -> std::result::Result<RgbaFrame, String>,
+    sample: impl FnOnce() -> std::result::Result<RgbaFrame, Rejection>,
 ) {
     if startup_failed.load(Ordering::Acquire) {
         return;
     }
     // Individual acquisition/decode errors are not classified terminal source errors.
     // Skip this sample and let the sampler try again, including before its first frame.
-    if let Ok(frame) = sample() {
-        push_candidate(frames, real_frame_seen, frame, urgent, true);
+    match sample() {
+        Ok(frame) => push_candidate(frames, real_frame_seen, frame, urgent, true),
+        Err(rejection) => CandidateBuffer::reject_sample(frames, rejection),
     }
 }
 
@@ -251,7 +270,15 @@ impl ScreenCaptureSession {
         let started_at = Instant::now();
         let stopping = Arc::new(AtomicBool::new(false));
         let urgent_snapshot = Arc::new(AtomicBool::new(true));
-        let frames = Arc::new(Mutex::new(CandidateBuffer::new(CANDIDATE_BUDGET_BYTES)));
+        let candidate_buffer = CandidateBuffer::new(CANDIDATE_BUDGET_BYTES);
+        #[cfg(target_os = "macos")]
+        let candidate_buffer = {
+            let mut buffer = candidate_buffer;
+            let route = if prepared_source.is_some() { Route::SystemPicker } else { Route::Screenshot };
+            buffer.set_sampling_route(route);
+            buffer
+        };
+        let frames = Arc::new(Mutex::new(candidate_buffer));
         let real_frame_seen = Arc::new(AtomicBool::new(false));
         let startup_failed = Arc::new(AtomicBool::new(false));
         let video_offset_ms = Arc::new(AtomicU64::new(0));
@@ -344,7 +371,11 @@ impl ScreenCaptureSession {
                 || self.sampler_thread.as_ref().is_none_or(JoinHandle::is_finished))
     }
 
-    pub fn stop(mut self) -> ScreenRecording {
+    pub fn stop(self) -> ScreenRecording {
+        self.stop_with_sampling().0
+    }
+
+    pub(crate) fn stop_with_sampling(mut self) -> (ScreenRecording, Option<Sampling>) {
         let duration_ms = self.elapsed_ms();
         self.stopping.store(true, Ordering::Release);
         let video_path = self
@@ -362,6 +393,7 @@ impl ScreenCaptureSession {
                 .unwrap_or_else(std::sync::PoisonError::into_inner),
             CandidateBuffer::new(0),
         );
+        let sampling = buffer.sampling.filter(|_| buffer.frames.is_empty());
         let collected = buffer.into_frames();
         let valid_video =
             video_path.filter(|path| path.exists() && path.metadata().is_ok_and(|m| m.len() > 0));
@@ -369,13 +401,14 @@ impl ScreenCaptureSession {
         let video_ink = valid_video.as_ref().and_then(|_| platform::screen_video_ink());
         #[cfg(not(target_os = "linux"))]
         let video_ink = None;
-        ScreenRecording {
+        let recording = ScreenRecording {
             frames: collected,
             video: valid_video,
             duration_ms: duration_ms.max(100),
             video_offset_ms: self.video_offset_ms.load(Ordering::Acquire),
             video_ink,
-        }
+        };
+        (recording, sampling)
     }
 }
 

@@ -9,7 +9,7 @@ import {
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-export type Channel = "main" | "mac-main" | "stable";
+export type Channel = "main" | "mac-main" | "mac-nightly" | "stable";
 export type Manifest = {
   schemaVersion: 1;
   repository: string;
@@ -40,6 +40,7 @@ export function releaseTag(
   if (channel === "stable") return `v${version}`;
   if (channel === "main") return `linux-main-v2-${source}`;
   if (channel === "mac-main") return `mac-main-v2-${source}`;
+  if (channel === "mac-nightly") return `mac-nightly-v2-${source}`;
   throw Error("Unsupported release channel");
 }
 export const linuxTargets = [
@@ -99,7 +100,8 @@ export function identity(manifest: Manifest): void {
     names.add(file.name);
   }
   const macAsset =
-    manifest.channel === "main" && names.has("mac-update.json")
+    manifest.channel === "mac-nightly" ||
+    (manifest.channel === "main" && names.has("mac-update.json"))
       ? "Apparent-Nightly"
       : "Apparent-Preview";
   const base =
@@ -109,6 +111,8 @@ export function identity(manifest: Manifest): void {
   if (
     !names.has(base) ||
     !names.has(`${base}.sha256`) ||
+    (manifest.channel === "mac-nightly" &&
+      (manifest.platform !== "macos" || !names.has("mac-update.json"))) ||
     (manifest.platform === "macos" &&
       !names.has(`${macAsset}-${manifest.version}-arm64.zip`))
   )

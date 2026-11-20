@@ -16,7 +16,7 @@ export function distribution(
   const version = env.APPARENT_VERSION;
   assert.match(version ?? "", /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/);
   const channel = env.RELEASE_CHANNEL ?? "stable";
-  assert(["main", "stable"].includes(channel));
+  assert(["main", "mac-nightly", "stable"].includes(channel));
   const product = macProduct(channel);
   assert.equal(
     env.RELEASE_TAG,
