@@ -23,7 +23,7 @@ mod foreground;
 mod activity;
 pub use foreground::foreground_progress;
 pub mod settings;
-use settings::{SafeError, hosted_failure};
+use settings::{SafeError, cancelled, hosted_failure};
 
 /// Application-owned preferences and browser mechanics. Implementations must
 /// perform fresh reads, preserve unrelated config, and serialize each write.
@@ -1290,7 +1290,7 @@ impl Client {
             route.starts_with("/v1/") && !route.contains(['\r', '\n', '"']),
             "Invalid API route"
         );
-        ensure!(allowed(), "cancelled");
+        ensure!(allowed(), cancelled());
         let mut config = format!(
             "url = \"{}\"\nrequest = \"{method}\"\n",
             config_escape(&format!("{server}{route}"))?
@@ -1354,16 +1354,18 @@ impl Client {
         if input_result.is_err() {
             let _ = child.kill();
             let _ = child.wait();
+            ensure!(allowed(), cancelled());
             bail!(hosted_failure(SafeError::Offline, "Hosted transport input failed"));
         }
         let deadline = Instant::now() + timeout + Duration::from_millis(250);
         let status = loop {
             #[cfg(any(test, feature = "test-support"))]
             test_support::run_hook("transport_poll", body.unwrap_or(output));
-            if !allowed() || Instant::now() > deadline {
+            let active = allowed();
+            if !active || Instant::now() > deadline {
                 let _ = child.kill();
                 let _ = child.wait();
-                ensure!(allowed(), "cancelled");
+                ensure!(active && allowed(), cancelled());
                 bail!(hosted_failure(SafeError::Offline, "Hosted request timed out"));
             }
             if let Some(status) = child.try_wait()? {
@@ -1378,6 +1380,7 @@ impl Client {
             .context("Missing curl stdout")?
             .take(16)
             .read_to_string(&mut code)?;
+        ensure!(allowed(), cancelled());
         #[cfg(test)]
         if !status.success() {
             // Numeric evidence only; config, paths, stderr and response text
@@ -1440,7 +1443,7 @@ impl Client {
             };
             bail!(hosted_failure(kind, format!("Hosted API: {safe}")));
         }
-        ensure!(allowed(), "cancelled");
+        ensure!(allowed(), cancelled());
         Ok(())
     }
     fn json_request(
@@ -1524,7 +1527,7 @@ impl Client {
         on_approval: &dyn Fn(settings::Approval),
         cli: bool,
     ) -> Result<()> {
-        ensure!(allowed(), "cancelled");
+        ensure!(allowed(), cancelled());
         let server = server_url(server)?;
         ensure!(matches!(scope, "upload" | "read"), "Invalid scope");
         ensure!(!self.named_reader || scope == "read", "Named readers require --scope read");
@@ -1549,7 +1552,7 @@ impl Client {
             )?;
             ensure!(
                 allowed() && !self.revocation_pending() && self.cancellation()? == cancellation,
-                "cancelled"
+                cancelled()
             );
             atomic_json(&login_path, &login_id)?;
         }
@@ -1628,19 +1631,20 @@ impl Client {
                     || b"\\\"'".contains(&b)),
             "Invalid verification URI"
         );
-        ensure!(allowed(), "cancelled");
+        ensure!(allowed(), cancelled());
         on_approval(settings::Approval {
             verification_uri: uri.into(),
             user_code: user_code.into(),
         });
-        ensure!(allowed(), "cancelled");
+        ensure!(allowed(), cancelled());
         let deadline = Instant::now()
             + Duration::from_secs(start["expiresIn"].as_u64().unwrap_or(300).min(900));
         let interval = Duration::from_secs(start["interval"].as_u64().unwrap_or(5).clamp(1, 30));
         let credential = loop {
-            ensure!(allowed(), "cancelled");
+            ensure!(allowed(), cancelled());
             ensure!(Instant::now() < deadline, hosted_failure(SafeError::Expired, "Device authorization expired"));
             std::thread::sleep(interval.min(deadline.saturating_duration_since(Instant::now())));
+            ensure!(allowed(), cancelled());
             ensure!(Instant::now() < deadline, hosted_failure(SafeError::Expired, "Device authorization expired"));
             let issued = now();
             let reply = self.json_request(
@@ -1698,7 +1702,7 @@ impl Client {
             (!cli).then(|| Instant::now() + Duration::from_secs(3)),
         )?;
         // Read-only login must not silently enable upload or switch an active uploader's server.
-        ensure!(allowed(), "cancelled");
+        ensure!(allowed(), cancelled());
         #[cfg(any(test, feature = "test-support"))]
         test_support::run_hook("login_snapshot", &self.config);
         if !self.named_reader {
@@ -1718,10 +1722,10 @@ impl Client {
                 settings.server = server;
             }
             self.provider.set_cloud_allowed(&settings, allowed).map_err(|error| {
-                if allowed() { error } else { hosted_failure(SafeError::Cancelled, "cancelled") }
+                if allowed() { error } else { cancelled() }
             })?;
         }
-        ensure!(allowed(), "cancelled");
+        ensure!(allowed(), cancelled());
         self.clear_renewal(scope)?;
         atomic_json(&self.state.join(format!("{scope}.credential")), &credential)?;
         fs::remove_file(login_path)?;

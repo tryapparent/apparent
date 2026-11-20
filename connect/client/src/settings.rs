@@ -62,6 +62,9 @@ impl std::error::Error for HostedFailure {}
 pub(super) fn hosted_failure(kind: SafeError, message: impl Into<String>) -> anyhow::Error {
     HostedFailure { kind, message: message.into() }.into()
 }
+pub(super) fn cancelled() -> anyhow::Error {
+    hosted_failure(SafeError::Cancelled, "cancelled")
+}
 
 fn safe_error(error: &anyhow::Error, allowed: &dyn Fn() -> bool) -> SafeError {
     if !allowed() {
