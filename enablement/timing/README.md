@@ -55,9 +55,20 @@ nested shell phases have no separate timing rows. Asynchronous launches are
 excluded from the short-call subtotal because a quick return does not establish
 a quick build. Poll/wait time
 is separate; it can overlap the same build and is not additive CPU work.
-`correlatedProcesses` joins unbatched launches to terminal polls when a numeric
-session ID survives in both records. Its observed span is an upper bound that
-includes time before the terminal poll; hidden/dynamic IDs remain uncorrelated.
+`correlatedProcesses` joins unbatched launches to observed terminal polls. A
+stored ID can be linked within one rollout when a single awaited
+`exec_command` uses a literal command template, stores the result's
+`session_id` under a literal key and prints that result. The producer may
+store the same result's trimmed stdout under a different literal key.
+Subsequent wrappers must print one read-only `write_stdin` using `load("key")`.
+The census validates compact structured results, including matching IDs on
+running polls and an actual exit code on the terminal poll. Unexpected scripts,
+overlapping execution, damaged records and conflicting receipts invalidate the
+binding. The collector reads only recorded source and receipts.
+
+The span ends at terminal observation and is an upper bound that includes time
+between polls. Recovering an endpoint preserves envelope timing and the launch's
+operation classification, including mixed intent.
 
 Elapsed times pair call/result timestamps, including transport and service
 overhead. Completed durations are clipped to the window. Missing results are

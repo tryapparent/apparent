@@ -47,12 +47,14 @@ export async function readRollout(path: string, accept: (workspace: string) => b
   for await (const line of lines) {
     lineNumber++
     let row: Row
-    try { row = JSON.parse(line) } catch { malformed++; continue }
+    try { row = JSON.parse(line) } catch { yieldedPolls.invalidateStored(); malformed++; continue }
     if (!row || typeof row !== 'object' || (row.payload != null && (typeof row.payload !== 'object' || Array.isArray(row.payload)))) {
+      yieldedPolls.invalidateStored()
       malformed++; continue
     }
     const p = row.payload ?? {}
     if (row.type === 'session_meta') {
+      yieldedPolls.invalidateStored()
       session = String(p.id ?? p.session_id ?? '')
       workspace = String(p.cwd ?? '')
       if (!accept(workspace)) { lines.close(); break }
@@ -60,9 +62,9 @@ export async function readRollout(path: string, accept: (workspace: string) => b
     if (!session || row.type !== 'response_item') continue
     const original = p.internal_chat_message_metadata_passthrough?.create_time
     const time = typeof original === 'number' && Number.isFinite(original) ? original * 1000 : Date.parse(row.timestamp ?? '')
-    if (!Number.isFinite(time)) continue
+    if (!Number.isFinite(time)) { yieldedPolls.invalidateStored(); continue }
     if (p.type === 'function_call' || p.type === 'custom_tool_call') {
-      if (typeof p.call_id !== 'string' || calls.has(p.call_id)) continue
+      if (typeof p.call_id !== 'string' || calls.has(p.call_id)) { yieldedPolls.invalidateStored(); continue }
       const tool = [p.namespace, p.name].filter(Boolean).join('.')
       const source = String(p.arguments ?? p.input ?? '')
       const inspected = describe(tool,source);
@@ -77,8 +79,8 @@ export async function readRollout(path: string, accept: (workspace: string) => b
       yieldedPolls.start(call, source, p.type, processes)
     } else if (p.type === 'function_call_output' || p.type === 'custom_tool_call_output') {
       const call = calls.get(p.call_id)
-      if (!call) { orphanResults++; continue }
-      if (call.end !== undefined) continue
+      if (!call) { yieldedPolls.invalidateStored(); orphanResults++; continue }
+      if (call.end !== undefined) { yieldedPolls.invalidateStored(); continue }
       // A returned session/cell means this interval ends before the underlying work.
       const output = outputText(p.output)
       call.asynchronous = /session_id["\s]*[:=]\s*\d+|Session ID:|Script running with cell ID|Process running with session ID/.test(output)
