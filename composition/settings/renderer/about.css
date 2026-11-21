@@ -58,6 +58,10 @@
 .settings-update-flow[data-pond] .settings-actions {
   margin-top: 0;
 }
+.settings-update-flow[data-pond] .settings-actions .settings-update-primary {
+  width: 100%;
+  min-height: 48px;
+}
 .settings-restart-trigger {
   display: inline-flex;
   max-width: 100%;
@@ -143,10 +147,10 @@
 }
 .settings-channel select {
   max-width: 100%;
+  background: var(--color-background);
   transition: none;
 }
 .settings-channel select:disabled {
-  background: var(--color-background);
   color: var(--color-foreground);
 }
 .settings-channel [data-slot="native-select-wrapper"]:has(select:disabled) {
