@@ -12,6 +12,8 @@ export interface Env {
  BETTER_AUTH_SECRET: string;
  OAUTH_DISCOVERY_URL?: string;
  SHARING_ENABLED?: string;
+ SUPPORT_REPORT_RECIPIENT?: string;
+ SUPPORT_REPORT_READ_TOKEN?: string;
  POSTHOG_ENABLED?: string;
  POSTHOG_PROJECT_TOKEN?: string;
  POSTHOG_HOST?: string;

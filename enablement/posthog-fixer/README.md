@@ -162,3 +162,20 @@ note and GitHub URL, preserving human decisions. Resolve only delivered, verifie
 repairs. Diagnostics-only work stays active. Report missing error_tracking:write
 access without broadening credentials. Creation happens on fix admission;
 immediate creation for every queued issue would need separate durable handling.
+
+## Private desktop recordings
+
+Configure these three absolute paths together to accept recorded desktop
+reports: `SUPPORT_REPORT_EXECUTABLE` (installed Apparent with the support
+archive reader), `SUPPORT_REPORT_TOKEN_FILE` (Connect support read token) and
+`SUPPORT_REPORT_KEY_FILE` (the dedicated age identity). Both credential files
+must be private and owned by the fixer service account. Do not store either
+credential in PostHog or the T3 thread.
+
+The fixer resolves the report ID from the PostHog issue, downloads ciphertext
+from the fixed Connect origin and decrypts the recording in its private state
+directory before launching the thread. The configured T3 environment must run
+under the same trusted local account with read access to that directory. The
+fix thread sees the private bundle path. Once it settles, the worker removes
+that local bundle. If retrieval or decryption fails, the job follows the
+existing context retry and hold policy.

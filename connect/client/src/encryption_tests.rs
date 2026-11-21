@@ -849,3 +849,27 @@ fn per_file_native_producer_roundtrip_and_vector() {
     let media=index.files.iter().find(|e|e.path=="recording.mp4").unwrap();fs::remove_file(f.spool.join(&media.object)).unwrap();
     assert!(v2::open_index(&f.spool,&files,&f.context,&f.reader,&f.sender_peer()).is_ok());
 }
+
+#[test]
+fn support_report_encrypts_for_support_and_requires_the_expected_report_id() {
+    let fixture = Fixture::new();
+    let recipient = fixture.reader.age.to_public().to_string();
+    let wrong_key = fixture.root.join("wrong.age-key");
+    let support_key = fixture.root.join("support.age-key");
+    for (path, key) in [(&wrong_key, &fixture.sender.age), (&support_key, &fixture.reader.age)] {
+        new_private_file(path).unwrap().write_all(key.to_string().expose_secret().as_bytes()).unwrap();
+    }
+    let report = fixture.root.join("report.age");
+    let output = fixture.root.join("submitted.apparent");
+    let origin = &fixture.context.origin;
+    let id = &fixture.context.capture_id;
+    support::seal(&fixture.stage, &report, origin, id, &recipient).unwrap();
+    let ciphertext = fs::read(&report).unwrap();
+    assert!(ciphertext.starts_with(b"age-encryption.org/v1\n"));
+    assert!(!ciphertext.windows(17).any(|part| part == b"private synthetic"));
+    assert!(support::open(&report, &output, origin, id, &wrong_key).is_err());
+    assert!(support::open(&report, &output, origin, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", &support_key).is_err());
+    assert!(!output.exists());
+    support::open(&report, &output, origin, id, &support_key).unwrap();
+    assert_eq!(fs::read(output.join("summary.md")).unwrap(), fs::read(fixture.stage.join("summary.md")).unwrap());
+}

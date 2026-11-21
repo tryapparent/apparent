@@ -243,3 +243,12 @@ function microphoneEnabled(home, enabled, timeoutMs = 3500) {
   }, 4096, timeoutMs, { status: 'error', code: enabled === undefined ? 'timeout' : 'outcome_unknown' });
 }
 module.exports.microphoneEnabled = microphoneEnabled;
+
+module.exports.supportCapture = (home, operation, id) => {
+  if (!['start-report', 'inspect', 'cancel'].includes(operation) || !/^[a-f0-9]{32}$/.test(id))
+    return { status: 'error' };
+  const deadline = process.hrtime.bigint() / 1000000n + 2900n;
+  const args = operation === 'start-report' ? `${operation} ${id} ${deadline}\n` : `${operation} ${id}\n`;
+  return exchange(home, args, reply => reply?.capture_id === id ? reply : { status: 'error' },
+    32768, 3500, { status: 'unconfirmed' });
+};

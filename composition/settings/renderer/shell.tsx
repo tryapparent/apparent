@@ -11,6 +11,8 @@ import {
   type AutoPasteProps,
 } from "../../../handoff/settings/auto-paste";
 import { T3Settings } from "../../../handoff/settings/t3";
+import { BugReport } from "../../../handoff/feedback/report-dialog";
+import type { FeedbackBridge } from "../../../handoff/feedback/contract";
 import {
   FrogNudgePreference,
   type FrogNudgePreferenceProps,
@@ -105,6 +107,7 @@ declare global {
 declare global {
   interface Window {
     apparentAbout: AboutBridge;
+    apparentFeedback?: FeedbackBridge;
     apparentRecording: RecordingBridge;
     apparentPermissions: PermissionBridge;
   }
@@ -215,6 +218,7 @@ function Settings() {
             }
           </DisclosureMenu>
         </nav>
+        <BugReport bridge={window.apparentFeedback} frog={availableFrog} />
       </aside>
       <main className="settings-content" ref={content}>
         <header className="settings-page-heading">

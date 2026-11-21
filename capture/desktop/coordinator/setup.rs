@@ -15,6 +15,7 @@ impl ApparentCoordinator {
             capture_generation: 0,
             completion_pending: None,
             capture_local_practice: false,
+            report_capture: false,
             recording_activity_attempted: false,
             pending_finalizers: 0,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -334,7 +335,7 @@ impl ApparentCoordinator {
             && let Some(id) = &before.capture_id {
             self.agent_captures.set(id, "recording", None, None);
         }
-        if let Some((Action::Start, id)) = &request.action {
+        if let Some((action @ (Action::Start | Action::StartReport), id)) = &request.action {
             let occupied = self.lab || self.active_recording.is_some()
                 || self.is_selecting() || self.is_processing()
                 || self.iphone_preview.is_some() || self.agent_capture_id.is_some()
@@ -342,10 +343,12 @@ impl ApparentCoordinator {
             let occupied = occupied || display_selection::pending();
             if self.agent_captures.admit(id, occupied, request.expired()) {
                 self.agent_capture_id = Some(id.clone());
+                self.report_capture = *action == Action::StartReport;
                 self.publish_capture_busy();
                 self.record_screen_now(cx);
                 if self.active_recording.is_none() {
                     self.agent_capture_id = None;
+                    self.report_capture = false;
                     self.agent_captures.set(id, "failed", None, Some("start_failed"));
                 }
             }
@@ -1053,6 +1056,7 @@ impl ApparentCoordinator {
     }
 
     pub fn switch_recording(&mut self, mode: SelectionMode, cx: &mut Context<Self>) {
+        if self.report_capture { return; }
         #[cfg(target_os = "linux")]
         if !self.lab && mode != SelectionMode::Screen {
             return;
@@ -1102,6 +1106,7 @@ impl ApparentCoordinator {
         if let Some(id) = self.agent_capture_id.take() {
             self.agent_captures.set(&id, "cancelled", None, None);
         }
+        self.report_capture = false;
         let rec = self.active_recording.take()?;
         self.note_ui = None;
         let _ = self.telemetry.finish_session();

@@ -64,6 +64,15 @@ contextBridge.exposeInMainWorld('apparent', Object.freeze({
   navigateSettings: (pane) => ipcRenderer.invoke('apparent:navigate-settings', pane),
 }));
 
+contextBridge.exposeInMainWorld('apparentFeedback', Object.freeze({
+  available: () => ipcRenderer.invoke('apparent:feedback-available'),
+  recordingAvailable: () => ipcRenderer.invoke('apparent:feedback-capture-available'),
+  startRecording: () => ipcRenderer.invoke('apparent:feedback-capture-start'),
+  discardRecording: () => ipcRenderer.invoke('apparent:feedback-capture-discard'),
+  sendRecording: () => ipcRenderer.invoke('apparent:feedback-capture-send'),
+  sendWritten: (description, id) => ipcRenderer.invoke('apparent:feedback-send-written', description, id),
+}));
+
 contextBridge.exposeInMainWorld('apparentAbout', Object.freeze({
   read: () => ipcRenderer.invoke('apparent:about-read'),
   copyVersion: () => ipcRenderer.invoke('apparent:about-copy-version'),

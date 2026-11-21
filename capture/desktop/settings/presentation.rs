@@ -180,6 +180,15 @@ fn command(runtime: PathBuf, app: PathBuf) -> Command {
     let mut command = renderer_command(runtime, app);
     command.env("APPARENT_MODELS_DIR", crate::capture::engine::runtime::audio::transcription::speech::own_models_dir());
     command.env("APPARENT_CONFIG", crate::shared::handoff::default_config_path());
+    command.env_remove("APPARENT_MANUAL_REPORT_TOKEN");
+    if !cfg!(debug_assertions) && let Some(token) = option_env!("APPARENT_POSTHOG_TOKEN") {
+        command.env("APPARENT_MANUAL_REPORT_TOKEN", token);
+    }
+    command.env("APPARENT_MANUAL_REPORT_BUILD", env!("APPARENT_VERSION_LABEL"));
+    command.env("APPARENT_MANUAL_REPORT_ENVIRONMENT", env!("APPARENT_REPORTING_ENVIRONMENT"));
+    if let Ok(executable) = std::env::current_exe() {
+        command.env("APPARENT_REPORT_EXECUTABLE", executable);
+    }
     command.arg("--settings-storage").arg("--settings-parent");
     command
 }

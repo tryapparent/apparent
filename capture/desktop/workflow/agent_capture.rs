@@ -46,6 +46,7 @@ pub fn state_response(state: &State) -> serde_json::Value {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
     Start,
+    StartReport,
     Inspect,
     Stop,
     Cancel,
@@ -507,6 +508,7 @@ fn parse_capture_request(line: &str) -> Option<(Option<(Action, String)>, u64)> 
     }
     let action = match parts[0] {
         "start" if parts.len() == 3 => Action::Start,
+        "start-report" if parts.len() == 3 => Action::StartReport,
         "inspect" => Action::Inspect,
         "stop" => Action::Stop,
         "cancel" => Action::Cancel,
@@ -517,9 +519,12 @@ fn parse_capture_request(line: &str) -> Option<(Option<(Action, String)>, u64)> 
     } else {
         clock_ms() + 3000
     };
+    let deadline = if action == Action::StartReport {
+        clock_ms() + deadline.saturating_sub(storage_clock_ms()).min(3000)
+    } else { deadline.min(clock_ms() + 3000) };
     Some((
         Some((action, parts[1].into())),
-        deadline.min(clock_ms() + 3000),
+        deadline,
     ))
 }
 
@@ -939,6 +944,7 @@ fn command_at(
             "{} {id} {deadline_ms}",
             match action {
                 Action::Start => "start",
+                Action::StartReport => bail!("Support capture requires the Settings bridge"),
                 Action::Inspect => "inspect",
                 Action::Stop => "stop",
                 Action::Cancel => "cancel",
@@ -1973,80 +1979,8 @@ mod tests {
         std::fs::remove_dir(dir).unwrap();
     }
 
-    #[test]
-    fn only_the_matching_capture_can_be_stopped_or_cancelled() {
-        for phase in [Phase::Starting, Phase::Recording] {
-            let state = State {
-                phase: phase.clone(),
-                capture_id: Some("capture-a".into()),
-            };
-            assert_eq!(
-                decide(&state, Action::Cancel, "capture-b"),
-                Outcome::WrongCapture
-            );
-            assert_eq!(
-                decide(&state, Action::Stop, "capture-b"),
-                Outcome::WrongCapture
-            );
-            assert_eq!(
-                decide(&state, Action::Cancel, "capture-a"),
-                Outcome::Cancelled
-            );
-            assert_eq!(
-                decide(&state, Action::Stop, "capture-a"),
-                if phase == Phase::Recording {
-                    Outcome::Stopping
-                } else {
-                    Outcome::NotReady
-                }
-            );
-        }
-        for phase in [
-            Phase::Idle,
-            Phase::Selecting,
-            Phase::Processing,
-            Phase::Completed,
-        ] {
-            let state = State {
-                phase,
-                capture_id: None,
-            };
-            assert_eq!(
-                decide(&state, Action::Stop, "capture-a"),
-                Outcome::AlreadyEnded
-            );
-            assert_eq!(
-                decide(&state, Action::Cancel, "capture-a"),
-                Outcome::AlreadyEnded
-            );
-        }
-    }
-
-    #[test]
-    fn ids_are_opaque_fresh_and_command_ids_are_strict() {
-        let first = new_id().unwrap();
-        let second = new_id().unwrap();
-        assert!(valid_id(&first));
-        assert!(valid_id(&second));
-        assert_ne!(first, second);
-        for invalid in [
-            "",
-            "capture-a",
-            "0\nstop 00000000000000000000000000000000",
-            "g0000000000000000000000000000000",
-        ] {
-            assert!(!valid_id(invalid));
-            assert!(command(Some((Action::Cancel, invalid))).is_err());
-        }
-    }
-
-    #[test]
-    fn response_phase_and_outcome_are_machine_readable() {
-        let response = serde_json::json!({
-            "state": State { phase: Phase::Starting, capture_id: Some("id".into()) },
-            "outcome": Outcome::NotReady,
-        });
-        assert_eq!(response["state"]["phase"], "starting");
-        assert_eq!(response["outcome"], "not_ready");
-    }
 }
+
+#[cfg(test)]
+#[path = "../../../record/capture-request/native-control-tests.rs"]
+mod native_control_tests;

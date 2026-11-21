@@ -8,6 +8,7 @@ import {renderShare,shareViewScript,shareViewStyles,shareWordmark,shareFont} fro
 import {flushAnalytics} from './analytics.ts';
 import {cleanupProductActivity,queueProductActivity} from './reporting/product-activity.ts';
 import {bearer,body} from './common.ts';
+import {cleanupSupportReports,supportRoutes} from './support/reports.ts';
 import {cleanupDailyActivity} from './reporting/aggregate-dau.ts';
 
 export default {
@@ -32,7 +33,7 @@ export default {
     if(Object.keys(data).length)fail('invalid_request');
     queueProductActivity(env,context,request,account.account_id,'desktop');
     response=Response.json({ok:true});
-   }else response=await mcpRoutes(request,env,url)||await authRoutes(request,env,url)||await shareRoutes(request,env,url,renderShare,context)||await captureRoutes(request,env,url,context);
+   }else response=await supportRoutes(request,env,url)||await mcpRoutes(request,env,url)||await authRoutes(request,env,url)||await shareRoutes(request,env,url,renderShare,context)||await captureRoutes(request,env,url,context);
    if(!response)fail('not_found',404);
   }catch(e){response=Response.json({error:{code:e instanceof ApiError?e.code:'internal_error',message:e instanceof ApiError?e.message:'Request failed'}},{status:e instanceof ApiError?e.status:500});}
   const headers=new Headers(response.headers);
@@ -43,6 +44,6 @@ export default {
   return new Response(response.body,{status:response.status,headers});
  },
  async scheduled(_controller: ScheduledController,env: Env) {
-  await Promise.all([(async()=>{await cleanup(env);await flushAnalytics(env);})(),cleanupDailyActivity(env),cleanupProductActivity(env)]);
+  await Promise.all([(async()=>{await cleanup(env);await flushAnalytics(env);})(),cleanupDailyActivity(env),cleanupProductActivity(env),cleanupSupportReports(env)]);
  }
 };
