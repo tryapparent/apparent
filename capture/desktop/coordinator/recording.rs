@@ -34,6 +34,11 @@ impl ApparentCoordinator {
             // the clipboard, replace the current review, or finish a newer practice.
             self.capture_generation = self.capture_generation.wrapping_add(1);
         }
+        if matches!(phase, IslandPhase::Hidden | IslandPhase::Dismissing)
+            && self.active_recording.is_none()
+        {
+            self.report_capture = false;
+        }
         if matches!(phase, IslandPhase::Recording) && !matches!(self.island_phase, IslandPhase::Recording) {
             self.recording_activity_attempted = false;
             self.capture_local_practice = self.onboarding.as_ref().is_some_and(|session| session.local_practice());
@@ -1488,6 +1493,7 @@ impl ApparentCoordinator {
         let bundle_dir = rec.bundle_dir;
         let target = rec.target;
         let source = rec.source;
+        let report = self.report_capture;
         // Drop the Metal overlay immediately on the main thread so the screen frame clears,
         // and morph the Dynamic Island into the compact spinning "Processing…" state while
         // media teardown, transcription, and PNG encoding run on a background worker.
@@ -1523,7 +1529,6 @@ impl ApparentCoordinator {
         }
         // Freeze practice policy with the worker, independent of window/UI lifetime.
         let local_practice = self.capture_local_practice;
-        let report = std::mem::take(&mut self.report_capture);
         cx.notify();
         if matches!(source, CaptureSource::Lab) {
             cx.defer(whiteboard::close);
