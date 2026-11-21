@@ -18,16 +18,19 @@ function contains(point,bounds){
 // Regions come from main's own trusted document measurement, never an IPC size.
 function regionShape(regions){
  return regions.flatMap(rect=>Array.from({length:Math.ceil(rect.height)},(_,row)=>{
-  const edge=inset(row,rect.width,rect.height,rect.radius);
-  return {x:Math.ceil(rect.x+edge),y:Math.floor(rect.y+row),width:Math.max(1,Math.floor(rect.width-2*edge)),height:1};
+  const left=inset(row,rect.width,rect.height,rect.radius);
+  const right=inset(row,rect.width,rect.height,rect.rightRadius??rect.radius);
+  return {x:Math.ceil(rect.x+left),y:Math.floor(rect.y+row),width:Math.max(1,Math.floor(rect.width-left-right)),height:1};
  }));
 }
 function containsRegions(point,regions){
  return regions.some(rect=>{
   const x=point.x-rect.x,y=point.y-rect.y;
   if(y<0||y>=rect.height)return false;
-  const edge=inset(Math.floor(y),rect.width,rect.height,rect.radius);
-  return x>=edge&&x<rect.width-edge;
+  const row=Math.floor(y);
+  const left=inset(row,rect.width,rect.height,rect.radius);
+  const right=inset(row,rect.width,rect.height,rect.rightRadius??rect.radius);
+  return x>=left&&x<rect.width-right;
  });
 }
 function clamp(bounds,area){
@@ -46,7 +49,8 @@ function measureContents(contents,limit,reserve){
    const row=element.dataset.phase==='recording'?document.querySelector('.pill-row')?.getBoundingClientRect():null;
    const selector = live || background ? '.pill-row,.live-caption,.pill-notes-layer,.pill-background-layer,.pill-background-detail' : '.destination-assembly,.destination-notification,.public-share-confirmation';
    const regions=live || background || document.querySelector('.destination-assembly')?[...document.querySelectorAll(selector)].map(element=>{
-     const r=element.getBoundingClientRect();return {x:r.x-rect.x,y:r.y-rect.y,width:r.width,height:r.height,radius:parseFloat(getComputedStyle(element).borderTopLeftRadius)||0};
+     const r=element.getBoundingClientRect(),style=getComputedStyle(element);
+     return {x:r.x-rect.x,y:r.y-rect.y,width:r.width,height:r.height,radius:parseFloat(style.borderTopLeftRadius)||0,rightRadius:parseFloat(style.borderTopRightRadius)||0};
    }):[];
    return {recordingCenter:row?row.x-rect.x+row.width/2:null,width:Math.ceil(rect.width),height:Math.ceil(rect.height),revision:Number(element.dataset.revision),regions};
  })()`);
