@@ -33,7 +33,7 @@
 
 .record-permission-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) fit-content(68%);
   align-items: start;
   gap: 8px 12px;
   padding: 12px 16px;
@@ -65,11 +65,22 @@
   margin-block-start: 4px;
 }
 
-.record-permission-status {
+.record-permission-description p + p {
+  margin-block-start: 4px;
+}
+
+.record-permission-controls-end {
   display: flex;
+  flex-wrap: wrap;
   align-self: center;
   align-items: center;
   justify-content: end;
+  gap: 4px 12px;
+}
+
+.record-permission-status {
+  display: flex;
+  align-items: center;
   gap: 6px;
 }
 
@@ -77,18 +88,15 @@
   color: var(--apparent-failed);
 }
 
-.record-permission-action,
+.record-permission-guidance,
 .record-permission-feedback {
   grid-column: 2 / -1;
 }
 
-.record-permission-action {
-  display: grid;
-  justify-items: start;
-  gap: 8px;
-}
-
-.record-permission-action button {
+.record-permission-controls-end .record-permission-action {
+  min-inline-size: var(--apparent-control-minimum, 44px);
+  max-inline-size: 100%;
+  height: auto;
   color: var(--apparent-carbon);
   border-color: var(--apparent-carbon);
   background: var(--apparent-paper);
@@ -124,13 +132,8 @@
   margin-block-start: 4px;
 }
 
-@container (max-width: 340px) {
+@container (max-width: 520px) {
   .record-permission-row {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .record-permission-status {
-    grid-column: 2;
-    justify-content: start;
+    grid-template-columns: auto minmax(0, 1fr) fit-content(48%);
   }
 }

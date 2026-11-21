@@ -279,32 +279,33 @@ function PermissionItem({
       <div className="record-permission-description">
         <h3 tabIndex={-1}>{name}</h3>
         <p>{description}</p>
+        {!unknown && label && row.required && <p>Required to record.</p>}
       </div>
-      <div className="record-permission-status">
-        {allowed ? (
-          <CircleCheck role="img" aria-label="Allowed" />
-        ) : (
-          <>
-            {!unknown && (
-              <CircleAlert
-                className="record-permission-warning"
-                aria-hidden="true"
-              />
-            )}
-            <span>
-              {unknown
-                ? "Unknown"
-                : row.relaunch
-                  ? "Reopen required"
-                  : "Access needed"}
-            </span>
-          </>
-        )}
-      </div>
-      {!unknown && label && (
-        <div className="record-permission-action">
-          {row.required && <p>Required to record.</p>}
+      <div className="record-permission-controls-end">
+        <div className="record-permission-status">
+          {allowed ? (
+            <CircleCheck role="img" aria-label="Allowed" />
+          ) : (
+            <>
+              {!unknown && (
+                <CircleAlert
+                  className="record-permission-warning"
+                  aria-hidden="true"
+                />
+              )}
+              <span>
+                {unknown
+                  ? "Unknown"
+                  : row.relaunch
+                    ? "Reopen required"
+                    : "Access needed"}
+              </span>
+            </>
+          )}
+        </div>
+        {!unknown && label && (
           <Button
+            className="record-permission-action"
             variant="outline"
             aria-disabled={pending}
             aria-label={`${label} · ${name}`}
@@ -316,10 +317,12 @@ function PermissionItem({
           >
             {label}
           </Button>
-          {repair === "copy-input" && (
-            <p>Run it in a terminal, then log out and back in.</p>
-          )}
-        </div>
+        )}
+      </div>
+      {!unknown && label && repair === "copy-input" && (
+        <p className="record-permission-guidance">
+          Run it in a terminal, then log out and back in.
+        </p>
       )}
       {feedback && (
         <p

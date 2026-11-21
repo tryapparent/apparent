@@ -185,7 +185,7 @@ test("Permissions shares the Recording window and recovers from refused actions"
     });
     const session = await context.newCDPSession(page);
     await page.evaluate(() => document.fonts.ready);
-    for (const width of [720, 640]) {
+    for (const width of [920, 720, 640]) {
       for (const colorScheme of ["light", "dark"]) {
         await session.send("Emulation.setDeviceMetricsOverride", {
           width,
@@ -194,6 +194,7 @@ test("Permissions shares the Recording window and recovers from refused actions"
           mobile: false,
         });
         await page.emulateMedia({ colorScheme });
+        assert.equal(await page.evaluate(() => innerWidth), width);
         await expect(recheck).toHaveCount(0);
         if (width > 700)
           await expect(
@@ -202,6 +203,42 @@ test("Permissions shares the Recording window and recovers from refused actions"
         await page.getByRole("heading", { name: "App access" }).focus();
         await page.keyboard.press("Tab");
         await expect(reopen).toBeFocused();
+        for (const action of [reopen, microphone, accessibility]) {
+          const placement = await action.evaluate((button) => {
+            const row = button.closest(".record-permission-row")!;
+            const bounds = button.getBoundingClientRect();
+            const description = row
+              .querySelector(".record-permission-description")!
+              .getBoundingClientRect();
+            const status = row
+              .querySelector(".record-permission-status")!
+              .getBoundingClientRect();
+            const rightInset = parseFloat(getComputedStyle(row).paddingRight);
+            return {
+              rightAligned:
+                Math.abs(
+                  row.getBoundingClientRect().right - rightInset - bounds.right,
+                ) < 1,
+              clearsDescription: bounds.left >= description.right,
+              targetFits:
+                bounds.height >= 44 && button.scrollWidth <= button.clientWidth,
+              besideStatus:
+                status.right <= bounds.left &&
+                Math.abs(
+                  (status.top + status.bottom - bounds.top - bounds.bottom) / 2,
+                ) < 1,
+              belowStatus: status.bottom <= bounds.top,
+            };
+          });
+          assert.ok(
+            placement.rightAligned &&
+              placement.clearsDescription &&
+              placement.targetFits,
+          );
+          assert.ok(
+            placement.besideStatus || (width === 720 && placement.belowStatus),
+          );
+        }
         assert.equal(
           await page.evaluate(
             () =>
