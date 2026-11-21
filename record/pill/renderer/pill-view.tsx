@@ -113,6 +113,7 @@ export function PillSurface({
   const pasteStart = useRef<[number, number] | null>(null);
   const uploading = view.shareIndicator === "uploading";
   const uploadStopped = view.shareIndicator === "retry";
+  const microphoneInput = view.phase === "recording" ? view.inputWaveform : null;
   const isClose = (id: string) => id === "cancel" || id === "dismiss";
   const controls = view.actions
     .filter((action) => action.id !== "notes")
@@ -152,7 +153,17 @@ export function PillSurface({
                   void onBeginDrag?.().catch(() => {});
               }}
             >
-              <span className={`indicator-slot ${view.phase}`}>
+              <span
+                className={`indicator-slot ${view.phase}`}
+                data-bloom={microphoneInput !== null}
+              >
+                {microphoneInput !== null && (
+                  <InputMeter
+                    input={microphoneInput}
+                    receivedAt={receivedAt}
+                    reduced={view.reducedMotion || reduced}
+                  />
+                )}
                 {uploading ? (
                   <LoaderCircle
                     aria-hidden="true"
@@ -193,13 +204,6 @@ export function PillSurface({
                     : view.label}
               </span>
             </div>
-          )}
-          {view.inputWaveform !== null && view.phase === "recording" && (
-            <InputMeter
-              input={view.inputWaveform}
-              receivedAt={receivedAt}
-              reduced={view.reducedMotion || reduced}
-            />
           )}
           {view.warning && view.warning !== view.label && (
             <span className="warning" role="status">

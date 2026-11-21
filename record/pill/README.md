@@ -25,6 +25,20 @@ use the existing renderer paths. The renderer's transport revision admits only
 current controls and never renews a hold from a dead renderer. A renderer exit
 leaves the policy instance and its capture untouched.
 
+## Microphone activity
+
+The Electron recording pill shows Soft Bloom around the recording dot when
+the capture supplies microphone history. The newest captured sample drives
+its size. Quiet and expired samples hold the last size. Reduced Motion uses
+a fixed halo and shows sound with side ticks. Microphone warnings still
+come from the capture, and the renderer exposes the current activity to
+assistive technology.
+
+The desktop renderer build bundles the generated `soft-bloom.mjs` policy.
+The Glass and GPUI fallbacks continue using the native waveform. Reverting
+the renderer and its build wiring restores the previous meter without a
+settings or capture migration.
+
 ## Native fields and boundaries
 
 - `active_recording`, pending finalizer count, capture/selection generations and

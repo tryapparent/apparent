@@ -1,5 +1,5 @@
-import { useCallback, useSyncExternalStore } from "react";
-import { waveformLevels, waveformHeight } from "./meter-policy";
+import { useCallback, useId, useState, useSyncExternalStore } from "react";
+import policy from "./soft-bloom.mjs";
 
 export function InputMeter({
   input,
@@ -10,43 +10,88 @@ export function InputMeter({
   receivedAt: number;
   reduced: boolean;
 }) {
+  const gradient = useId();
+  const deadline = receivedAt + policy.freshness_ms();
   const subscribe = useCallback(
     (update: () => void) => {
-      const remaining = receivedAt + 310 - performance.now();
-      if (remaining <= 0) return () => {};
-      const timer = setTimeout(update, remaining);
+      const delay = deadline - performance.now();
+      if (delay <= 0) return () => {};
+      const timer = setTimeout(update, Math.ceil(delay));
       return () => clearTimeout(timer);
     },
-    [receivedAt],
+    [deadline],
   );
   const expired = useSyncExternalStore(
     subscribe,
-    () => performance.now() - receivedAt >= 300,
+    () => performance.now() >= deadline,
   );
-  const levels = waveformLevels(
-    input,
+  const [sample, setSample] = useState({
+    input: null as readonly number[] | null,
     receivedAt,
-    receivedAt + (expired ? 300 : 0),
-  );
-  const latest = levels.at(-1) ?? 0;
+    reading: policy.bloom(0, 0, false),
+  });
+  if (sample.input !== input || sample.receivedAt !== receivedAt) {
+    const latest = input.at(-1);
+    const valid =
+      input.length === 24 &&
+      latest !== undefined &&
+      Number.isFinite(latest) &&
+      latest >= 0 &&
+      latest <= 1;
+    const rms = valid ? Math.round(latest * 1000) : 0;
+    setSample({
+      input,
+      receivedAt,
+      reading: policy.bloom(sample.reading.level, rms, valid && !expired),
+    });
+  }
+
+  const reading = expired
+    ? policy.bloom(sample.reading.level, 0, false)
+    : sample.reading;
+  const level = reduced ? 0.62 : reading.level / 100;
+  const label = !reading.fresh
+    ? "Microphone level unavailable"
+    : reading.active
+      ? "Microphone input detected"
+      : "Microphone listening, quiet";
   return (
     <span
-      className="meter"
+      className="input-bloom"
       role="img"
-      aria-label="Captured microphone waveform"
-      data-active={latest > Math.pow(0.002, 0.55) * 1.15}
+      aria-label={label}
       data-reduced={reduced}
     >
-      {levels.map((level, index) => (
-        <i
-          aria-hidden="true"
-          key={index}
-          style={{
-            height: `${waveformHeight(level, reduced)}px`,
-            opacity: 0.35 + (0.65 * index) / 23,
-          }}
+      <svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
+        <defs>
+          <radialGradient id={gradient}>
+            <stop offset="34%" stopColor="currentColor" stopOpacity="0" />
+            <stop
+              offset="63%"
+              stopColor="currentColor"
+              stopOpacity={0.2 + 0.18 * level}
+            />
+            <stop offset="100%" stopColor="currentColor" stopOpacity="0.13" />
+          </radialGradient>
+        </defs>
+        <circle
+          className="input-bloom__ring"
+          cx="22"
+          cy="22"
+          r={10.5 + 5.2 * level}
+          fill={`url(#${gradient})`}
+          stroke="currentColor"
+          strokeWidth="1.3"
         />
-      ))}
+        {reduced && reading.active && (
+          <path
+            d="M4 22h3 M37 22h3"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+          />
+        )}
+      </svg>
     </span>
   );
 }
