@@ -1,4 +1,10 @@
-import { useCallback, useState, useSyncExternalStore } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { Sparkles } from "lucide-react";
 import afloat from "./pond-art/afloat.webp";
 import bob from "./pond-art/motion/afloat.mp4";
 import boat from "./pond-art/boat.webp";
@@ -94,6 +100,38 @@ function FoldReveal() {
   );
 }
 
+export function Frog({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  const [taps, setTaps] = useState(0);
+  return (
+    <button
+      type="button"
+      className={
+        className ? `settings-frog-button ${className}` : "settings-frog-button"
+      }
+      aria-label="Boop the frog"
+      onClick={() => setTaps((count) => count + 1)}
+    >
+      {children}
+      {taps > 0 && (
+        <span
+          key={taps}
+          className="settings-frog-sparkle"
+          data-side={taps % 2 === 1 ? "right" : "left"}
+          aria-hidden="true"
+        >
+          <Sparkles />
+        </span>
+      )}
+    </button>
+  );
+}
+
 export function UpdatePond({ scene }: { scene: PondScene }) {
   const reducedMotion = useSyncExternalStore(
     subscribeToMotion,
@@ -114,7 +152,7 @@ export function UpdatePond({ scene }: { scene: PondScene }) {
   }, []);
 
   return (
-    <div className="settings-update-pond" aria-hidden="true">
+    <Frog className="settings-update-pond">
       {visibleScene === "idle" && <img alt="" src={idle} />}
       {visibleScene === "checking" &&
         (reducedMotion ? (
@@ -140,6 +178,6 @@ export function UpdatePond({ scene }: { scene: PondScene }) {
         ) : (
           <BoatLaunch key={visibleScene} fromBox={visibleScene === "current"} />
         ))}
-    </div>
+    </Frog>
   );
 }

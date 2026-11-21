@@ -296,9 +296,6 @@
   .settings-content {
     padding-inline: 20px;
   }
-  .settings-frog {
-    width: 98px;
-  }
 }
 .settings-agents button {
   transition: none;
@@ -371,11 +368,6 @@ body:has(.settings-shell),
 .settings-content .settings-support a,
 .settings-content .settings-links a,
 .settings-content .settings-metadata {
-  color: inherit;
-}
-.settings-content .settings-decision-alternative {
-  background: transparent;
-  border: 1px solid var(--apparent-signal);
   color: inherit;
 }
 .settings-content select {

@@ -30,23 +30,18 @@
 }
 .settings-update-flow[data-pond] {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, min(49%, 14rem)) minmax(0, 1fr);
   grid-template-rows: min-content 1fr;
   align-items: start;
-  gap: 12px 20px;
+  gap: 8px 16px;
 }
 .settings-update-pond {
-  grid-row: span 2;
+  grid-column: 2;
+  grid-row: 1 / span 2;
   aspect-ratio: 1;
   overflow: hidden;
   border: 1px solid var(--color-border);
   background: #eadcf1;
-}
-.settings-update-pond > :is(img, video) {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 .settings-update-flow[data-pond] .settings-actions button {
   height: auto;
@@ -57,10 +52,6 @@
 }
 .settings-update-flow[data-pond] .settings-actions {
   margin-top: 0;
-}
-.settings-update-flow[data-pond] .settings-actions .settings-update-primary {
-  width: 100%;
-  min-height: 48px;
 }
 .settings-restart-trigger {
   display: inline-flex;
@@ -136,22 +127,26 @@
   color: var(--color-foreground);
 }
 .settings-frog {
-  width: 140px;
-  height: 105px;
+  width: min(38%, 176px);
+  aspect-ratio: 4 / 3;
   flex: none;
+}
+.settings-frog > img {
   object-fit: contain;
 }
 .settings-channel {
   min-width: 0;
   justify-self: start;
 }
-.settings-channel select {
+.settings-about .settings-channel select {
   max-width: 100%;
+  padding-inline: 8px 30px;
   background: var(--color-background);
+  color: var(--color-foreground);
   transition: none;
 }
-.settings-channel select:disabled {
-  color: var(--color-foreground);
+.settings-about .settings-channel select:disabled {
+  padding-inline-end: 8px;
 }
 .settings-channel [data-slot="native-select-wrapper"]:has(select:disabled) {
   opacity: 1;
@@ -172,7 +167,96 @@
     grid-template-rows: auto;
   }
   .settings-update-pond {
+    grid-column: auto;
     grid-row: auto;
     width: min(100%, 17rem);
   }
+}
+
+.settings-frog-button {
+  position: relative;
+  display: block;
+  padding: 0;
+  cursor: pointer;
+}
+
+.settings-about[data-dialog-open]
+  .settings-update-flow
+  > .settings-frog-button {
+  visibility: hidden;
+}
+
+.settings-frog-button:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 3px;
+}
+
+.settings-frog-button > :is(img, video) {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.settings-frog-sparkle {
+  position: absolute;
+  inset-block-start: 38%;
+  inset-inline-end: 12%;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  background: var(--apparent-paper);
+  color: var(--apparent-carbon);
+  border: 1px solid currentColor;
+  pointer-events: none;
+  animation: settings-frog-sparkle 360ms ease-out;
+}
+
+.settings-frog-sparkle[data-side="left"] {
+  inset-inline: 12% auto;
+}
+
+.settings-frog-sparkle svg {
+  width: 20px;
+  height: 20px;
+}
+
+@keyframes settings-frog-sparkle {
+  from {
+    transform: scale(0.65);
+  }
+
+  65% {
+    transform: scale(1.12);
+  }
+
+  to {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-frog-sparkle {
+    animation: none;
+  }
+}
+
+.settings-about .settings-frog-button.settings-update-pond > :is(img, video) {
+  object-fit: cover;
+}
+
+.settings-about dialog .error-artwork .settings-frog-button {
+  width: 100%;
+  height: 100%;
+}
+
+.settings-about dialog:has(.settings-frog-button) {
+  --apparent-error-dialog-inset: 20px;
+  --apparent-error-dialog-action-gap: 16px;
+}
+
+.settings-about dialog .error-artwork {
+  width: min(100%, 176px);
+  height: 132px;
+  margin-bottom: 8px;
 }
