@@ -48,6 +48,7 @@ test("Soft Bloom holds in silence and gives a static sound cue in reduced motion
   const sound = { inputWaveform: [...Array(23).fill(0), 0.18] };
   await publish({});
   await expect(ring).toBeVisible();
+  await expect(row.locator(".pill-doodles")).toHaveCount(0);
   await page.evaluate(() => window.apparentPill.layout(1));
   await page.clock.install();
   await page.clock.pauseAt(Date.now() + 60_000);
@@ -83,13 +84,23 @@ test("Soft Bloom holds in silence and gives a static sound cue in reduced motion
   await expect.poll(() => row.evaluate(el => el.getBoundingClientRect().width)).toBeLessThanOrEqual(320);
   for (const colorScheme of ["light", "dark"]) {
     await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
-    await publish(quiet);
+    await publish({...quiet, doodleInk: true});
     await expect(bloom).toHaveAttribute("data-reduced", "true");
+    const doodles = row.locator(".pill-doodles");
+    await expect(doodles).toBeVisible();
+    await expect(doodles).toHaveAttribute("aria-hidden", "true");
+    assert.equal(await doodles.evaluate(el => getComputedStyle(el).pointerEvents), "none");
+    assert.equal(await doodles.evaluate(el =>
+      el.getContext("2d").getImageData(0, 0, el.width, el.height).data.some((value, index) => index % 4 === 3 && value > 0)
+    ), true);
+    const ink = () => doodles.evaluate(el => el.toDataURL());
+    const still = await ink();
     const fixedRadius = await radius();
     await expect(bloom.locator("path")).toHaveCount(0);
-    await publish(sound);
+    await publish({...sound, doodleInk: true});
     await expect(bloom.locator("path")).toHaveCount(1);
     assert.equal(await radius(), fixedRadius);
+    assert.equal(await ink(), still);
     const finish = page.getByRole("button", { name: "Finish", exact: true });
     await finish.focus();
     await expect(finish).toBeFocused();
@@ -102,4 +113,5 @@ test("Soft Bloom holds in silence and gives a static sound cue in reduced motion
   await expect(page.locator(".indicator.recording")).toBeVisible();
   await publish({ revision: 3, phase: "processing", inputWaveform: null });
   await expect(bloom).toHaveCount(0);
+  await expect(row.locator(".pill-doodles")).toHaveCount(0);
 });

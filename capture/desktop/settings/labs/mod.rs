@@ -44,6 +44,7 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
         "wisprSaved": saved("onboardingWisprFlow"),
         "wisprSupported": cfg!(target_os = "macos"),
         "silentPromptSaved": saved("silentPrompt"),
+        "pillDoodlesSaved": saved(crate::capture::desktop::ui::electron_pill::PILL_DOODLES),
         "dictationFrogSaved": saved("dictationFrog"),
     })
 }
@@ -58,6 +59,7 @@ pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
         Some("pushToTalk") => Some((PUSH_TO_TALK, true)),
         Some("wisprFlow") => Some(("onboardingWisprFlow", cfg!(target_os = "macos"))),
         Some("silentPrompt") => Some(("silentPrompt", true)),
+        Some(name) if name == crate::capture::desktop::ui::electron_pill::PILL_DOODLES => Some((crate::capture::desktop::ui::electron_pill::PILL_DOODLES, true)),
         Some("dictationFrog") => Some(("dictationFrog", cfg!(target_os = "macos"))),
         _ => None,
     }
@@ -116,6 +118,20 @@ pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>, setting:
             let response = request(&path, 1, Some(enabled), Some("silentPrompt"));
             assert_eq!(response["facts"]["silentPromptSaved"], enabled);
             let config = crate::shared::handoff::load_config_from(&path);
+            assert!(crate::shared::handoff::experiment_enabled_in(&config, "other"));
+        }
+    }
+    #[test]
+    fn pill_doodles_are_opt_in_and_use_the_shared_writer() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("config.json");
+        std::fs::write(&path, r#"{"experiments":{"other":true}}"#).unwrap();
+        assert!(facts(&path)["pillDoodlesSaved"].is_null());
+        for enabled in [true, false] {
+            let response = request(&path, 1, Some(enabled), Some(crate::capture::desktop::ui::electron_pill::PILL_DOODLES));
+            assert_eq!(response["facts"]["pillDoodlesSaved"], enabled);
+            let config = crate::shared::handoff::load_config_from(&path);
+            assert_eq!(crate::shared::handoff::experiment_enabled_in(&config, crate::capture::desktop::ui::electron_pill::PILL_DOODLES), enabled);
             assert!(crate::shared::handoff::experiment_enabled_in(&config, "other"));
         }
     }

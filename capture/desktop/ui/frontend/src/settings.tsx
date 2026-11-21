@@ -26,6 +26,12 @@ class SettingsPane extends HTMLElement {
   }
 
   private renderPushToTalkExperiment?: PushToTalkExperiment;
+  private renderPillDoodlesExperiment?: LabsExperiment;
+
+  set pillDoodlesExperiment(component: LabsExperiment | undefined) {
+    this.renderPillDoodlesExperiment = component;
+    this.renderPane();
+  }
 
   set pushToTalkExperiment(component: PushToTalkExperiment | undefined) {
     this.renderPushToTalkExperiment = component;
@@ -52,7 +58,7 @@ class SettingsPane extends HTMLElement {
   private renderPane() {
     const pane = this.getAttribute("pane");
     this.root?.render(pane === "Agents" ? <Agents /> :
-      pane === "Labs" ? <Labs frogExperiment={this.renderFrogExperiment} agentContextExperiment={this.renderAgentContextExperiment} autoPasteExperiment={this.renderAutoPasteExperiment} pushToTalkExperiment={this.renderPushToTalkExperiment} /> : <Storage settings />);
+      pane === "Labs" ? <Labs frogExperiment={this.renderFrogExperiment} agentContextExperiment={this.renderAgentContextExperiment} autoPasteExperiment={this.renderAutoPasteExperiment} pushToTalkExperiment={this.renderPushToTalkExperiment} pillDoodlesExperiment={this.renderPillDoodlesExperiment} /> : <Storage settings />);
   }
 }
 
