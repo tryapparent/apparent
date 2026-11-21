@@ -2,7 +2,6 @@ import policy from '#bend/report-policy';
 import { DAY, bounded, fail, hash, hex, json, rate, stmt } from '../common.ts';
 import type { Env } from '../types.ts';
 
-const MAX_BYTES = 24 * 1024 * 1024;
 const TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 const RETENTION = 7 * DAY;
 const PENDING = 15 * 60 * 1000;
@@ -26,10 +25,11 @@ export async function supportRoutes(request: Request, env: Env, url: URL) {
   if (url.pathname !== '/v1/support-reports/key' && !url.pathname.startsWith('/v1/support-reports/')) return;
   const recipient = env.SUPPORT_REPORT_RECIPIENT;
   const readToken = env.SUPPORT_REPORT_READ_TOKEN;
+  const extended = env.SUPPORT_REPORT_EXTENDED_ARCHIVES === '1';
   if (!recipient || !/^age1[a-z0-9]{58}$/.test(recipient) || !readToken || !/^[a-f0-9]{64}$/.test(readToken))
     fail('support_unavailable', 503);
   if (url.pathname === '/v1/support-reports/key' && request.method === 'GET')
-    return json({ recipient, maxBytes: MAX_BYTES });
+    return json({ recipient, maxBytes: Number(policy.advertised_limit(extended, url.searchParams.get('archive') === '2')) });
 
   const id = /^\/v1\/support-reports\/([a-f0-9]{32})$/.exec(url.pathname)?.[1];
   if (!id) fail('not_found', 404);
@@ -50,7 +50,7 @@ export async function supportRoutes(request: Request, env: Env, url: URL) {
 
   const checksum = request.headers.get('X-Ciphertext-SHA256') ?? '';
   const size = Number(request.headers.get('Content-Length'));
-  if (!Number.isSafeInteger(size) || size < 0 || !policy.upload_size(size) || !/^[a-f0-9]{64}$/.test(checksum))
+  if (!Number.isSafeInteger(size) || size < 0 || !policy.upload_size(extended, size) || !/^[a-f0-9]{64}$/.test(checksum))
     fail('invalid_report');
   const uploadHash = await hash(credential);
   const now = Date.now();
