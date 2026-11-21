@@ -16,6 +16,14 @@ export function buildAdmission(destination: string): Promise<void> {
   return buildRecordModule(destination, "copy-admission.mjs");
 }
 
+export function buildBloom(destination: string): Promise<void> {
+  return buildRecordModule(
+    destination,
+    "soft-bloom.mjs",
+    "record/pill/soft-bloom.bend",
+  );
+}
+
 async function buildRecordModule(
   destination: string,
   module: string,
@@ -54,10 +62,10 @@ if (
   if (
     !destination ||
     extra.length ||
-    (mode && mode !== "media" && mode !== "captions")
+    (mode && mode !== "media" && mode !== "captions" && mode !== "bloom")
   )
     throw new Error(
-      "Usage: node record/enablement/ci/bend/build.ts <destination> [media|captions]",
+      "Usage: node record/enablement/ci/bend/build.ts <destination> [media|captions|bloom]",
     );
   if (mode === "media") await buildMedia(resolve(destination));
   else if (mode === "captions")
@@ -66,5 +74,6 @@ if (
       "caption-admission.mjs",
       "record/transcription/",
     );
+  else if (mode === "bloom") await buildBloom(resolve(destination));
   else await buildAdmission(resolve(destination));
 }
