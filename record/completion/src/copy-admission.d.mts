@@ -1,4 +1,4 @@
-import type { MayCopy } from "./policy.ts";
+import type { CopyPolicy } from "./policy.ts";
 
-declare const admission: { may_copy: MayCopy };
+declare const admission: CopyPolicy;
 export default admission;

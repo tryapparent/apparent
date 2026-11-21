@@ -14,3 +14,6 @@ law stale_cannot_copy:
 
 def stale_cannot_copy(saved, connected):
   {==}
+
+def copy_mode(local_screen: Bool, hyprland: Bool, wayland: Bool, draft: Bool, submit: Bool) -> U32:
+  Bool.pick(U32, Bool.and(local_screen, Bool.and(hyprland, wayland)), Bool.pick(U32, draft, 1, Bool.pick(U32, submit, 2, 0)), 0)

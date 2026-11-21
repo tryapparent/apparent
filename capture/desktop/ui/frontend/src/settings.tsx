@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { Agents } from './settings/agents/agents';
-import { Labs, type LabsExperiment, type AutoPasteExperiment } from './settings/labs/labs';
+import { Labs, type LabsExperiment, type AutoPasteExperiment, type PushToTalkExperiment } from './settings/labs/labs';
 import { Storage } from './storage';
 
 class SettingsPane extends HTMLElement {
@@ -25,6 +25,13 @@ class SettingsPane extends HTMLElement {
     this.renderPane();
   }
 
+  private renderPushToTalkExperiment?: PushToTalkExperiment;
+
+  set pushToTalkExperiment(component: PushToTalkExperiment | undefined) {
+    this.renderPushToTalkExperiment = component;
+    this.renderPane();
+  }
+
   private root?: ReturnType<typeof createRoot>;
 
   connectedCallback() {
@@ -45,7 +52,7 @@ class SettingsPane extends HTMLElement {
   private renderPane() {
     const pane = this.getAttribute("pane");
     this.root?.render(pane === "Agents" ? <Agents /> :
-      pane === "Labs" ? <Labs frogExperiment={this.renderFrogExperiment} agentContextExperiment={this.renderAgentContextExperiment} autoPasteExperiment={this.renderAutoPasteExperiment} /> : <Storage settings />);
+      pane === "Labs" ? <Labs frogExperiment={this.renderFrogExperiment} agentContextExperiment={this.renderAgentContextExperiment} autoPasteExperiment={this.renderAutoPasteExperiment} pushToTalkExperiment={this.renderPushToTalkExperiment} /> : <Storage settings />);
   }
 }
 

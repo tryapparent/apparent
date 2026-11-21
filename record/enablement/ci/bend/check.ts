@@ -15,6 +15,8 @@ import { assemblePill } from "./pill.ts";
 
 import { gestureTable, gestureTablePath } from "./note-gesture.ts";
 
+import { pushToTalkTable } from "./push-to-talk.ts";
+
 const root = fileURLToPath(new URL("../../../../", import.meta.url));
 const args = process.argv.slice(2);
 const update = args.length === 1 && args[0] === "--write-native-gesture";
@@ -39,6 +41,10 @@ await bendScratch(async (scratch) => {
   );
   const proofOutput = join(scratch, "proof");
   await buildBend(root, "record", proofOutput, options);
+  assert.deepEqual(pushToTalkTable(proofOutput), {
+    hold: 300,
+    actions: [1, 3, 0, 0, 1, 3, 2, 0, 4, 3, 4, 0, 4, 3, 4, 0],
+  });
   assert.deepEqual(
     JSON.parse(
       run(

@@ -4,6 +4,13 @@ use crate::shared::handoff::{AGENT_CONTEXT, Config};
 const KEY: &str = "localStreamingTranscription";
 const AUTO_PASTE: &str = "autoPasteDraft";
 
+#[cfg(target_os = "linux")]
+use crate::capture::desktop::settings::shortcut::{PUSH_TO_TALK, push_to_talk_supported};
+#[cfg(not(target_os = "linux"))]
+const PUSH_TO_TALK: &str = "pushToTalk";
+#[cfg(not(target_os = "linux"))]
+fn push_to_talk_supported() -> bool { false }
+
 fn auto_paste_supported() -> bool {
     #[cfg(target_os = "linux")]
     { crate::capture::desktop::linux::auto_paste::available() }
@@ -24,7 +31,21 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
     let agent_context = serde_json::from_value::<Config>(experiment_config)
         .ok()
         .and_then(|config| config.experiments.get(AGENT_CONTEXT).copied());
-    serde_json::json!({"saved":saved(KEY),"compactHandoffSaved":saved(crate::composition::frame_labels::EXPERIMENT),"transcriptOnlySaved":saved(crate::composition::transcript_handoff::EXPERIMENT),"agentContextSaved":agent_context,"sharingSaved":saved("hostedSharing"),"autoPasteSaved":saved(AUTO_PASTE),"autoPasteSupported":auto_paste_supported(),"wisprSaved":saved("onboardingWisprFlow"),"wisprSupported":cfg!(target_os = "macos"),"silentPromptSaved":saved("silentPrompt"),"dictationFrogSaved":saved("dictationFrog")})
+    serde_json::json!({
+        "saved": saved(KEY),
+        "compactHandoffSaved": saved(crate::composition::frame_labels::EXPERIMENT),
+        "transcriptOnlySaved": saved(crate::composition::transcript_handoff::EXPERIMENT),
+        "agentContextSaved": agent_context,
+        "sharingSaved": saved("hostedSharing"),
+        "autoPasteSaved": saved(AUTO_PASTE),
+        "autoPasteSupported": auto_paste_supported(),
+        "pushToTalkSaved": saved(PUSH_TO_TALK),
+        "pushToTalkSupported": push_to_talk_supported(),
+        "wisprSaved": saved("onboardingWisprFlow"),
+        "wisprSupported": cfg!(target_os = "macos"),
+        "silentPromptSaved": saved("silentPrompt"),
+        "dictationFrogSaved": saved("dictationFrog"),
+    })
 }
 pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
     match setting {
@@ -34,6 +55,7 @@ pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
         Some("agentContext") => Some((AGENT_CONTEXT, true)),
         Some("sharing") => Some(("hostedSharing", true)),
         Some("autoPaste") => Some((AUTO_PASTE, true)),
+        Some("pushToTalk") => Some((PUSH_TO_TALK, true)),
         Some("wisprFlow") => Some(("onboardingWisprFlow", cfg!(target_os = "macos"))),
         Some("silentPrompt") => Some(("silentPrompt", true)),
         Some("dictationFrog") => Some(("dictationFrog", cfg!(target_os = "macos"))),
@@ -44,7 +66,8 @@ pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>, setting:
     let Some((key, true)) = key(setting) else {
         return serde_json::json!({"type":"labs-result","request":request,"facts":{"error":"config_write_failed"}});
     };
-    let result = if key == AUTO_PASTE && enabled == Some(true) && !auto_paste_supported() {
+    let result = if enabled == Some(true) && (key == AUTO_PASTE && !auto_paste_supported()
+        || key == PUSH_TO_TALK && !push_to_talk_supported()) {
         serde_json::json!({"error":"config_write_failed"})
     } else if let Some(on) = enabled {
         match crate::shared::handoff::set_experiment_in(path, key, on) {

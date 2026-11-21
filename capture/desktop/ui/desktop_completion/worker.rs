@@ -25,6 +25,7 @@ pub(in crate::capture::desktop) struct Facts {
     pub source: String,
     pub agent_requested: bool,
     pub automatic_trial_enabled: bool,
+    pub paste_on_release: bool,
     pub lab: bool,
     pub hyprland: bool,
     pub wayland: bool,
@@ -61,7 +62,7 @@ pub(super) struct Notification { pub title: String, pub body: String }
 pub(super) enum Effect { Copy { capture: Capture, mode: CopyMode } }
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) enum CopyMode { Text, Bundle, AutoPasteAndSubmit }
+pub(super) enum CopyMode { Text, Bundle, AutoPasteDraft, AutoPasteAndSubmit }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Decision { pub state: State, pub effects: Vec<Effect> }
@@ -170,9 +171,14 @@ impl Worker {
             ensure!(*capture == self.facts.capture && matches!(self.outcome, Outcome::Saved { .. })
                 && state.current && state.copy_pending && observation.clipboard == Clipboard::NotRequested,
                 "Invalid Record copy capability");
-            if matches!(mode, CopyMode::AutoPasteAndSubmit) {
+            if matches!(mode, CopyMode::AutoPasteDraft | CopyMode::AutoPasteAndSubmit) {
                 ensure!(self.facts.platform == "linux" && self.facts.source == "screen"
-                    && self.facts.automatic_trial_enabled && !self.facts.agent_requested
+                    && !self.facts.agent_requested
+                    && match mode {
+                        CopyMode::AutoPasteDraft => self.facts.paste_on_release,
+                        CopyMode::AutoPasteAndSubmit => self.facts.automatic_trial_enabled && !self.facts.paste_on_release,
+                        _ => false,
+                    }
                     && !self.facts.lab && self.facts.hyprland && self.facts.wayland,
                     "Auto paste capability unavailable");
             }
@@ -227,7 +233,7 @@ mod tests {
         Facts {
             capture: Capture { generation: "9007199254740993".into(), capture_id: "synthetic-a".into(), request_id: Some("request-a".into()) },
             platform: if cfg!(target_os = "linux") { "linux" } else { "macos" }.into(),
-            source: "screen".into(), agent_requested: false, automatic_trial_enabled: false, lab: false,
+            source: "screen".into(), agent_requested: false, automatic_trial_enabled: false, paste_on_release: false, lab: false,
             hyprland: false, wayland: false, image_quality_warning: None,
         }
     }
@@ -259,6 +265,23 @@ mod tests {
         assert!(state.effects.is_empty());
         assert_eq!(state.state.status.as_deref(), Some("Capture failed"));
         failed.finish().unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "provider integration: requires built frontend and its locked Electron runtime"]
+    fn record_completion_electron_release_requests_only_a_draft() {
+        let mut facts = facts();
+        facts.hyprland = true;
+        facts.wayland = true;
+        facts.paste_on_release = true;
+        facts.automatic_trial_enabled = true;
+        let outcome = Outcome::Saved { bundle_path: "/synthetic/release.apparent".into() };
+        let mut worker = Worker::open(facts, outcome).unwrap();
+        let initial = worker.read().unwrap();
+        assert!(matches!(initial.effects.as_slice(), [Effect::Copy { mode: CopyMode::AutoPasteDraft, .. }]));
+        let completion = worker.complete(initial, Some("copied"));
+        assert_eq!(completion.state.unwrap().status.as_deref(), Some("Saved · paste dispatched"));
     }
 
     #[test]

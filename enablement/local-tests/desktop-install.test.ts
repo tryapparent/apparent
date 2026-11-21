@@ -125,6 +125,9 @@ test('actual installed pre-push hook and production runner perform one install a
   const hooks = join(dir, '.git/hooks');
   copyFileSync(join(root, '.githooks/pre-push'), join(hooks, 'pre-push')); git('config', 'core.hooksPath', hooks);
   git('add', '.'); git('commit', '-qm', 'installed runner');
+  git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'HEAD'));
+  writeFileSync(join(dir, desktopPackage, 'source.ts'), 'export const value = 2;\n');
+  git('add', '.'); git('commit', '-qm', 'first source change');
   const remote = join(dir, '.git/remote.git'); git('init', '--bare', '-q', remote); git('remote', 'add', 'origin', remote);
   const push = (name: string) => spawnSync('git', ['push', 'origin', `HEAD:refs/heads/${name}`], {cwd: dir, env, encoding: 'utf8'});
   const first = push('first'); assert.equal(first.status, 0, first.stderr);

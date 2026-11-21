@@ -1,4 +1,4 @@
 import admission from "./copy-admission.mjs";
 import { runCompletion } from "./session.ts";
 
-await runCompletion(admission.may_copy);
+await runCompletion(admission);

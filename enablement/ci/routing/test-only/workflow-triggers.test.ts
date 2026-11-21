@@ -98,6 +98,7 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
   const paths = [
     "record/completion/**",
     "record/pill/**",
+    "record/shortcuts/push-to-talk.bend",
     "record/enablement/ci/pill/**",
     "record/enablement/ci/bend/**",
     "shared/enablement/bend/**",

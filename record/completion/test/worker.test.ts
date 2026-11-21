@@ -8,7 +8,7 @@ import type {Decision} from '../src/policy.ts';
 const workerArgs = [
   '--experimental-strip-types', '--input-type=module', '-e',
   `import {runCompletion} from ${JSON.stringify(new URL('../src/session.ts', import.meta.url).href)};
-await runCompletion((saved, current, connected) => saved && current && connected);`,
+await runCompletion({may_copy: (saved, current, connected) => saved && current && connected, copy_mode: () => 0});`,
 ];
 
 const context = {capture:{generation:'7',captureId:'a',requestId:'request-a'},

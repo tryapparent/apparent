@@ -1,9 +1,24 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {begin, reduce as reduceWithAdmission} from '../src/policy.ts';
-import type {Context, Event, State} from '../src/policy.ts';
-const reduce = (state: State, event: Event) =>
-  reduceWithAdmission(state, event, (saved, current, connected) => saved && current && connected);
+import type {Context, CopyPolicy, Event, State} from '../src/policy.ts';
+import { run } from '../../../shared/enablement/bend/toolchain.ts';
+import { bendScratch } from '../../../shared/enablement/bend/build.ts';
+import { buildAdmission } from '../../enablement/ci/bend/build.ts';
+
+const modes: ReturnType<CopyPolicy['copy_mode']>[] = await bendScratch(async (directory) => {
+  await buildAdmission(directory);
+  return JSON.parse(run(process.execPath, ['--input-type=module', '-e', `
+    import admission from "./copy-admission.mjs";
+    console.log(JSON.stringify(Array.from({length: 32}, (_, mask) =>
+      admission.copy_mode(...[1, 2, 4, 8, 16].map(bit => Boolean(mask & bit))))));
+  `], directory));
+});
+const policy: CopyPolicy = {
+  may_copy: (saved, current, connected) => saved && current && connected,
+  copy_mode: (...facts) => modes[facts.reduce((mask, fact, index) => mask | (Number(fact) << index), 0)],
+};
+const reduce = (state: State, event: Event) => reduceWithAdmission(state, event, policy);
 const capture = {generation: '9007199254740993', captureId: 'capture-a', requestId: 'request-a'};
 const context: Context = {capture, platform:'linux', source:'screen', agentRequested:false,
   automaticTrialEnabled:false, lab:false, hyprland:true, wayland:true};
@@ -101,4 +116,16 @@ test('auto paste is opt-in and Linux Hyprland only; other paths keep bundle copy
   for(const change of [{agentRequested:true},{lab:true},{hyprland:false},{wayland:false},{source:'phone' as const},{platform:'macos' as const}]) {
     assert.equal(reduce(begin({...enabled,...change},true),saved).effects[0]?.mode,'bundle');
   }
+});
+
+test('release paste leaves a draft, takes precedence over submit, and requires a local screen capture', () => {
+  const release = {...context, pasteOnRelease:true, automaticTrialEnabled:true};
+  const started = reduce(begin(release,true),saved);
+  assert.deepEqual(started.effects,[{type:'copy',capture,mode:'autoPasteDraft'}]);
+  assert.equal(reduce(started.state,copied).state.status, 'Saved · paste dispatched');
+  assert.equal(reduce(started.state,{...copied,result:'failed'}).state.status, 'Saved · auto paste stopped');
+  for (const restriction of [{agentRequested:true}, {source:'phone'} as const, {lab:true}, {hyprland:false}, {wayland:false}, {platform:'macos'} as const]) {
+    assert.deepEqual(reduce(begin({...release,...restriction},true),saved).effects,[{type:'copy',capture,mode:'bundle'}]);
+  }
+  assert.deepEqual(reduce(begin(release,false),saved).effects,[]);
 });

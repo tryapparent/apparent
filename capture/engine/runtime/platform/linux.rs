@@ -176,18 +176,10 @@ fn from_devices() -> bool {
     linux::wayland_session() && input::held().is_some()
 }
 
-#[path = "../../../../engine/native/linux_input.rs"]
+#[path = "../../../../engine/native/input/snapshot.rs"]
 mod input_snapshot;
-use input_snapshot::held_from;
-
-fn held_now() -> Held {
-    held_from(input::held())
-}
-
-/// What the poller sees: like `held_now`, with presses too short to last until the next poll.
-fn held_polled() -> Held {
-    held_from(input::take_held())
-}
+use input_snapshot::{held_now, held_polled};
+pub(crate) use input_snapshot::{can_observe_record_shortcut, held_record_shortcut, HeldRecordShortcut};
 
 /// The Super, Ctrl, Alt and Shift keys held right now, as a bit mask.
 pub fn modifier_flags() -> u64 {

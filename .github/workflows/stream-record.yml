@@ -6,6 +6,7 @@ on:
     paths:
       - "record/completion/**"
       - "record/pill/**"
+      - "record/shortcuts/push-to-talk.bend"
       - "record/enablement/ci/pill/**"
       - "record/enablement/ci/bend/**"
       - "shared/enablement/bend/**"
@@ -15,6 +16,7 @@ on:
     paths:
       - "record/completion/**"
       - "record/pill/**"
+      - "record/shortcuts/push-to-talk.bend"
       - "record/enablement/ci/pill/**"
       - "record/enablement/ci/bend/**"
       - "shared/enablement/bend/**"

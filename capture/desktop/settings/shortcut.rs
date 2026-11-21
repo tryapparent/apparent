@@ -35,12 +35,19 @@ pub enum Action {
 pub struct Shortcut {
     /// ⌥⇧S went down and its modifiers aren't all up yet.
     pending: bool,
+    #[cfg(target_os = "linux")]
+    pub(crate) hold: Option<Hold>,
 }
 
 impl Shortcut {
     /// Whether ⌥⇧S went down and the recording waits for its keys to come up.
     pub fn is_pending(&self) -> bool {
-        self.pending
+        self.pending || {
+            #[cfg(target_os = "linux")]
+            { self.hold.is_some() }
+            #[cfg(not(target_os = "linux"))]
+            { false }
+        }
     }
 
     /// The shortcut went down.
@@ -139,5 +146,60 @@ mod tests {
         let mut s = Shortcut::default();
         assert_eq!(s.press(Activity::Picker), Action::RecordSelected);
         assert!(!s.is_pending());
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) use push_to_talk::{EXPERIMENT as PUSH_TO_TALK, Hold, HoldAction, supported as push_to_talk_supported};
+
+#[cfg(target_os = "linux")]
+mod push_to_talk {
+    use std::time::Instant;
+
+    use crate::capture::desktop::linux::{auto_paste, hyprland::FocusedWindow};
+    use crate::capture::engine::runtime::{self, SharedCaptureTelemetry};
+
+    pub(crate) const EXPERIMENT: &str = "pushToTalk";
+
+    pub(crate) fn supported() -> bool {
+        auto_paste::available() && runtime::can_observe_record_shortcut()
+    }
+
+    #[derive(Debug)]
+    pub(crate) struct Hold {
+        pub(crate) key: runtime::HeldRecordShortcut,
+        pub(crate) pressed: Instant,
+        pub(crate) generation: Option<u64>,
+        pub(crate) target: Option<FocusedWindow>,
+    }
+
+    #[derive(Clone, Copy)]
+    pub(crate) enum HoldAction {
+        Wait,
+        Tap,
+        Start,
+        Finish,
+        Cancel,
+    }
+
+    include!(concat!(env!("OUT_DIR"), "/push-to-talk.rs"));
+
+    impl Hold {
+        pub(crate) fn begin(telemetry: &SharedCaptureTelemetry) -> Option<Self> {
+            Some(Self {
+                key: runtime::held_record_shortcut(&telemetry.shortcuts().0)?,
+                pressed: Instant::now(),
+                generation: None,
+                target: None,
+            })
+        }
+
+        pub(crate) fn action(&self, held: bool, cancelled: bool) -> HoldAction {
+            let index = usize::from(self.generation.is_some())
+                | (usize::from(held) << 1)
+                | (usize::from(self.pressed.elapsed().as_millis() >= PUSH_TO_TALK_MS) << 2)
+                | (usize::from(cancelled) << 3);
+            PUSH_TO_TALK_ACTIONS[index]
+        }
     }
 }

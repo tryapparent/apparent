@@ -25,6 +25,8 @@ import { General } from "./general";
 import type { ComponentType } from "react";
 import {
   AgentContextPreference,
+  PushToTalk,
+  type PushToTalkProps,
   RecordingSection,
   type AgentContextPreferenceProps,
 } from "../../../record/settings/renderer/recording-section";
@@ -82,6 +84,7 @@ declare module "react" {
         HTMLElement
       > & {
         pane: string;
+        pushToTalkExperiment?: ComponentType<PushToTalkProps>;
         autoPasteExperiment?: ComponentType<AutoPasteProps>;
         frogExperiment?: ComponentType<FrogNudgePreferenceProps>;
         agentContextExperiment?: ComponentType<AgentContextPreferenceProps>;
@@ -229,6 +232,7 @@ function Settings() {
         ) : (
           <apparent-settings-pane
             pane={current}
+            pushToTalkExperiment={current === "Labs" ? PushToTalk : undefined}
             autoPasteExperiment={current === "Labs" ? AutoPaste : undefined}
             agentContextExperiment={AgentContextPreference}
             frogExperiment={

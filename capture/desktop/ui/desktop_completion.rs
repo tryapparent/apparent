@@ -30,6 +30,64 @@ pub(in crate::capture::desktop) fn connect_completed(dir: &std::path::Path) {
 }
 
 impl ApparentCoordinator {
+    pub(in crate::capture::desktop) fn capture_completion_facts(
+        &mut self,
+        finishing_id: Option<String>,
+        completion_source: &str,
+        agent_requested: bool,
+        released: bool,
+    ) -> Facts {
+        let generation = self.capture_generation;
+        #[cfg(target_os = "linux")]
+        use crate::capture::desktop::linux::{hyprland, wayland_session};
+        #[cfg(not(target_os = "linux"))]
+        let _ = released;
+        #[cfg(target_os = "linux")]
+        let hold = self.shortcut.hold.take().filter(|hold| hold.generation == Some(generation));
+        let completion_facts = Facts {
+            capture: Capture {
+                generation: generation.to_string(),
+                capture_id: finishing_id.clone().unwrap_or_default(),
+                request_id: finishing_id,
+            },
+            platform: if cfg!(target_os = "linux") { "linux" } else { "macos" }.into(),
+            source: completion_source.into(),
+            agent_requested,
+            automatic_trial_enabled: auto_paste_enabled(self.capture_local_practice)
+                && {
+                    #[cfg(target_os = "linux")]
+                    { hold.is_none() }
+                    #[cfg(not(target_os = "linux"))]
+                    { true }
+                },
+            #[cfg(target_os = "linux")]
+            paste_on_release: released && hold.is_some() && !self.capture_local_practice,
+            #[cfg(not(target_os = "linux"))]
+            paste_on_release: false,
+            image_quality_warning: None,
+            lab: self.lab,
+            #[cfg(target_os = "linux")]
+            hyprland: hyprland::running(),
+            #[cfg(not(target_os = "linux"))]
+            hyprland: false,
+            #[cfg(target_os = "linux")]
+            wayland: wayland_session(),
+            #[cfg(not(target_os = "linux"))]
+            wayland: false,
+        };
+        #[cfg(target_os = "linux")]
+        {
+            self.auto_paste_target = if completion_facts.paste_on_release {
+                hold.and_then(|hold| hold.target)
+                    .filter(|target| hyprland::focused_window().is_ok_and(|focused| focused == *target))
+                    .map(|target| (generation, target))
+            } else if completion_facts.automatic_trial_enabled && completion_facts.hyprland && completion_facts.wayland {
+                hyprland::focused_window().ok().map(|target| (generation, target))
+            } else { None };
+        }
+        completion_facts
+    }
+
     /// Dispatches a finalizer receipt separately from effects on the current capture UI.
     pub(in crate::capture::desktop) fn receive_capture_result(
         &mut self,
@@ -111,12 +169,15 @@ impl ApparentCoordinator {
                         let Ok((dir, _, _)) = &finalized else { return "revoked"; };
                         let result = match mode {
                             #[cfg(target_os = "linux")]
-                            CopyMode::AutoPasteAndSubmit => {
+                            CopyMode::AutoPasteDraft | CopyMode::AutoPasteAndSubmit => {
                                 // Establish manual recovery first. A paste dispatch is not
                                 // evidence that the receiving editor accepted an attachment.
                                 crate::shared::handoff::copy_bundle_text_to_clipboard(dir).and_then(|()| {
                                     let result = paste_target.as_ref().ok_or_else(|| anyhow::anyhow!("No focused target at Finish"))
-                                        .and_then(|target| crate::capture::desktop::linux::auto_paste::paste_bundle_and_submit_into(dir, target));
+                                        .and_then(|target| match mode {
+                                            CopyMode::AutoPasteAndSubmit => crate::capture::desktop::linux::auto_paste::paste_bundle_and_submit_into(dir, target),
+                                            _ => crate::capture::desktop::linux::auto_paste::paste_bundle_into(dir, target),
+                                        });
                                     if let Err(error) = &result {
                                         apparent_log(format!("Auto paste skipped: {error:#}"));
                                         crate::capture::desktop::linux::shell::notify("Auto paste stopped", "Keep your composer focused until processing finishes, or use Paste on the saved capture.");
@@ -125,7 +186,7 @@ impl ApparentCoordinator {
                                 })
                             }
                             #[cfg(not(target_os = "linux"))]
-                            CopyMode::AutoPasteAndSubmit => Err(anyhow::anyhow!("Auto paste is Linux-only")),
+                            CopyMode::AutoPasteDraft | CopyMode::AutoPasteAndSubmit => Err(anyhow::anyhow!("Auto paste is Linux-only")),
                             #[cfg(target_os = "linux")]
                             CopyMode::Text => crate::shared::handoff::copy_bundle_text_to_clipboard(dir),
                             #[cfg(not(target_os = "linux"))]
