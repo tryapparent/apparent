@@ -27,3 +27,6 @@ def setup_state(enabled: Bool, existing: Bool, supported: Bool) -> U32:
               2
             case False{}:
               3
+
+def finish_tail_ms() -> U32:
+  400

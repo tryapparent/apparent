@@ -183,6 +183,7 @@ await bendScratch(async (scratch) => {
     import captions from "./caption-admission.mjs";
     import lip from "./lip-policy.mjs";
     assert.equal(lip.clip_seconds(), 12);
+    assert.equal(lip.finish_tail_ms(), 400);
     assert.equal(lip.valid_size(0), false);
     assert.equal(lip.valid_size(1), true);
     assert.equal(lip.valid_size(8388608), true);
