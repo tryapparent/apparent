@@ -603,8 +603,8 @@ On Linux, Electron Settings › About uses **Release channel** to choose the sou
 for **Install latest release**. Installing may replace the running version with an
 earlier release on disk. During installation, About shows the native phase and
 measured download progress. **Restart now** launches the staged AppImage and
-reopens About. **Restart later** or Escape dismisses the offer. The restart action
-remains available after dismissal, reopening About and changing the channel,
+reopens About. You can leave Settings and restart later. The restart action
+remains available after reopening About and changing the channel,
 while the native status reports a staged image. The channel choice applies to
 the next install. The native fallback retains its compact result dialog. On
 macOS, **Check for updates** opens the Sparkle-managed update flow.
