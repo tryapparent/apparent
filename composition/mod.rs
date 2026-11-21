@@ -55,6 +55,9 @@ pub(crate) mod agent_range;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub(crate) mod assembly;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
+#[path = "../engine/native/record_media_policy.rs"]
+mod record_policy;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 pub(crate) mod issues;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub(crate) mod media_probe;

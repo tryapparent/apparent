@@ -8,6 +8,9 @@ pub(crate) mod speech;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[path = "../../../../../engine/recording/speech_preview.rs"]
 pub(crate) mod speech_preview;
+#[cfg(target_os = "linux")]
+#[path = "../../../../../engine/recording/parakeet_buffered.rs"]
+pub(crate) mod parakeet_buffered;
 pub(crate) mod speech_model;
 pub(crate) mod transcribe;
 #[cfg(target_os = "linux")]

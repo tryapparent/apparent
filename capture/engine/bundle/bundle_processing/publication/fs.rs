@@ -143,6 +143,20 @@ impl Directory {
     }
 
     pub fn write(&self, path: &str, bytes: &[u8]) -> Result<()> {
+        let (file, dir) = self.write_bytes(path, bytes)?;
+        file.sync_all()?;
+        dir.0.sync_all()?;
+        Ok(())
+    }
+
+    pub(in crate::capture::engine::bundle::bundle_processing) fn stage_artifact(
+        &self, path: &str, bytes: &[u8],
+    ) -> Result<()> {
+        self.write_bytes(path, bytes)?;
+        Ok(())
+    }
+
+    fn write_bytes(&self, path: &str, bytes: &[u8]) -> Result<(File, Self)> {
         let parts = relative(path)?;
         let mut dir = Self(self.0.try_clone()?);
         for part in &parts[..parts.len() - 1] {
@@ -151,9 +165,7 @@ impl Directory {
         let mut file = dir.leaf(parts[parts.len() - 1], true)?;
         file.set_len(0)?;
         file.write_all(bytes)?;
-        file.sync_all()?;
-        dir.0.sync_all()?;
-        Ok(())
+        Ok((file, dir))
     }
 
     fn managed_child(&self, name: &str, create: bool) -> Result<Self> {

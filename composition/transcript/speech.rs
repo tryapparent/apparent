@@ -24,6 +24,11 @@ pub(crate) fn plan(transcript: &TranscriptData) -> Result<SpeechInput<'_>> {
         words: transcript.words.iter().map(|word| word.text.as_str()).collect() };
     let bytes = serde_json::to_vec(&request)?;
     ensure!(bytes.len() <= MAX_BYTES, "Record speech input exceeds its resource limit");
+    if let Some(Ok(speech)) = crate::composition::record_policy::evaluate("nativeSpeechCues", &bytes, MAX_BYTES)
+        .map(|output| decode(output.as_bytes(), transcript))
+    {
+        return Ok(speech);
+    }
     let input = crate::composition::worker::private_input(&bytes)?;
     let (node, worker) = crate::composition::worker::policy_assets("Record speech", "record-media", "selection/worker.js")?;
     let output = crate::composition::worker::run_with_input(Command::new(node)

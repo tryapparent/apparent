@@ -336,34 +336,7 @@ pub fn finalize_capture_bundle(
         let has_wav = wav_path.exists();
         let wav_required = recorded_audio.is_some() || has_wav;
         publication::preflight_sources(bundle_dir, video_path.as_deref()).stage(Stage::SourcePreflight)?;
-        recover::write(
-            bundle_dir,
-            &recover::Unfinished {
-                context: recover::capture_context(bundle_dir)
-                    .context("Could not persist recovery journal").stage(Stage::RecoveryJournal)?,
-                target: target.clone(),
-                duration_ms,
-                video: video_path
-                    .as_ref()
-                    .and_then(|v| v.file_name())
-                    .map(|name| name.to_string_lossy().into_owned()),
-                video_offset_ms,
-                strokes: strokes.clone(),
-                events: events.clone(),
-                interaction_telemetry,
-                video_ink,
-                note: note.clone(),
-                windows: activity.windows.clone(),
-                cursor: activity.cursor.clone(),
-            },
-        ).stage(Stage::RecoveryJournal)?;
-        let crop_settings = (target.mode == CaptureMode::Display)
-            .then(autocrop::Settings::configured)
-            .flatten();
-        let assembly_plan = crate::composition::assembly::plan(duration_ms)?;
-        let limits = assembly_plan.limits(duration_ms)?;
-        let mut frames = SelectionFrames::from(frames);
-        let ((transcript, transcribe_ms), (predecoded, prepared)) = std::thread::scope(|scope| -> Result<_> {
+        let ((transcript, transcribe_ms), ((predecoded, prepared), frames, crop_settings, assembly_plan)) = std::thread::scope(|scope| -> Result<_> {
             let transcribe_handle = scope.spawn(|| {
                 let t0 = std::time::Instant::now();
                 let tr = transcribe::transcribe(
@@ -372,6 +345,29 @@ pub fn finalize_capture_bundle(
                 );
                 (tr, t0.elapsed().as_millis() as u64)
             });
+            recover::write(
+                bundle_dir,
+                &recover::Unfinished {
+                    context: recover::capture_context(bundle_dir).context("Could not persist recovery journal").stage(Stage::RecoveryJournal)?,
+                    target: target.clone(),
+                    duration_ms,
+                    video: video_path.as_deref().and_then(Path::file_name).map(|name| name.to_string_lossy().into_owned()),
+                    video_offset_ms,
+                    strokes: strokes.clone(),
+                    events: events.clone(),
+                    interaction_telemetry,
+                    video_ink,
+                    note: note.clone(),
+                    windows: activity.windows.clone(),
+                    cursor: activity.cursor.clone(),
+                },
+            ).stage(Stage::RecoveryJournal)?;
+            let crop_settings = (target.mode == CaptureMode::Display)
+                .then(autocrop::Settings::configured)
+                .flatten();
+            let assembly_plan = crate::composition::assembly::plan(duration_ms)?;
+            let limits = assembly_plan.limits(duration_ms)?;
+            let mut frames = SelectionFrames::from(frames);
             let pre = if let Some(ref movie) = video_path {
                 let mut preview_marks = marks_of(&strokes);
                 let preview = frames.select(
@@ -400,7 +396,7 @@ pub fn finalize_capture_bundle(
                         .then(|| {
                             prepare_visuals(
                                 merged,
-                                frames.first(),
+                                frames.first().as_ref(),
                                 crop_settings.as_ref(),
                                 &target,
                                 duration_ms,
@@ -419,7 +415,7 @@ pub fn finalize_capture_bundle(
             } else {
                 (Vec::new(), None)
             };
-            Ok((transcribe_handle.join().unwrap(), pre))
+            Ok((transcribe_handle.join().unwrap(), (pre, frames, crop_settings, assembly_plan)))
         })?;
 
         let built = build_bundle_from_parts(
@@ -625,7 +621,6 @@ pub fn build_bundle_from_parts(
         )?, &transcript)?;
         crate::composition::frame_labels::configured(&mut selected);
         let select_only_at = std::time::Instant::now();
-        let frames = frames.into_frames();
         let completion_warning = captured_ink_frame_warning(&selected, &marks, extras.video_ink);
         let matches_prepared = completion_warning.is_none() && extras.prepared.as_ref().is_some_and(|prep| {
             prep.video_ink == extras.video_ink && prep.keyframes.len() == selected.len()
@@ -672,11 +667,7 @@ pub fn build_bundle_from_parts(
                     BundleOutput::Prepared(prep),
                 )
             } else {
-                let baseline = {
-                    let mut frames = frames;
-                    frames.truncate(1);
-                    frames.pop()
-                };
+                let baseline = frames.into_first();
                 let selected = match &extras.full_frames {
                     Some(decode) if !selected.is_empty() => {
                         let times: Vec<u64> = selected.iter().map(|(k, _)| k.t).collect();
@@ -827,20 +818,20 @@ pub fn build_bundle_from_parts(
         match output {
             BundleOutput::Prepared(prep) => {
                 let root = publication::Directory::open(bundle_dir, true)?;
-                root.write(&bundle.contact_sheet, &prep.contact_sheet_png)?;
+                root.stage_artifact(&bundle.contact_sheet, &prep.contact_sheet_png)?;
                 for (rel, bytes) in &prep.frame_pngs {
-                    root.write(rel, bytes)?;
+                    root.stage_artifact(rel, bytes)?;
                 }
                 if let (Some(info), Some(full_sheet_png)) = (&bundle.autocrop, &prep.full_sheet_png)
                 {
-                    root.write(&info.full_contact_sheet, full_sheet_png)?;
+                    root.stage_artifact(&info.full_contact_sheet, full_sheet_png)?;
                     for (name, bytes) in &prep.full_frame_pngs {
-                        root.write(&format!("{}/{name}", info.full_frames), bytes)?;
+                        root.stage_artifact(&format!("{}/{name}", info.full_frames), bytes)?;
                     }
                 }
                 let manifest_bytes = serde_json::to_vec_pretty(&bundle)?;
-                root.write("apparent.json", &manifest_bytes)?;
-                root.write("summary.md", summary.as_bytes())?;
+                root.stage_artifact("apparent.json", &manifest_bytes)?;
+                root.stage_artifact("summary.md", summary.as_bytes())?;
             }
             BundleOutput::Rendered {
                 annotated,

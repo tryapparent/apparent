@@ -11,10 +11,11 @@ use super::super::{MAX_CAPTURE_SCALE, platform};
 use super::diagnostics::sampling::{Rejection, Route};
 use super::diagnostics::sampling::Sampling;
 use crate::shared::model::{RgbaFrame, TargetInfo};
+use crate::stored_frame::StoredFrame;
 
 #[path = "../../../../engine/recording/start.rs"]
 mod start;
-pub(crate) use start::StartError;
+pub(crate) use start::{StartError, prepare_screen_capture};
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 #[path = "../../../../engine/recording/selection.rs"]
 pub(crate) mod selection;
@@ -46,7 +47,7 @@ pub const CANDIDATE_BUDGET_BYTES: usize = 384 << 20;
 /// (keeping the first and the ones taken for a click, stroke or shortcut) and samples half as
 /// often from then on, so a long capture keeps its whole timeline, evenly, at a coarser step.
 pub struct CandidateBuffer {
-    frames: Vec<(RgbaFrame, bool)>,
+    frames: Vec<(StoredFrame, bool)>,
     cap: usize,
     budget: usize,
     interval: Duration,
@@ -91,7 +92,7 @@ impl CandidateBuffer {
         if self.cap == 0 {
             self.cap = (self.budget / frame.rgba.len().max(1)).clamp(60, 1_200);
         }
-        self.frames.push((frame, urgent));
+        self.frames.push((StoredFrame::from_capture(frame), urgent));
         if self.frames.len() >= self.cap {
             self.thin();
         }
@@ -99,7 +100,7 @@ impl CandidateBuffer {
 
     fn thin(&mut self) {
         let mut regular = 0_usize;
-        let mut kept: Vec<(RgbaFrame, bool)> = std::mem::take(&mut self.frames)
+        let mut kept: Vec<(StoredFrame, bool)> = std::mem::take(&mut self.frames)
             .into_iter()
             .enumerate()
             .filter(|(i, (_, urgent))| {
@@ -135,14 +136,18 @@ impl CandidateBuffer {
     }
 
     pub fn into_frames(self) -> Vec<RgbaFrame> {
-        self.frames.into_iter().map(|(f, _)| f).collect()
+        self.into_stored_frames().into_iter().map(StoredFrame::into_rgba).collect()
+    }
+
+    pub(crate) fn into_stored_frames(self) -> Vec<StoredFrame> {
+        self.frames.into_iter().map(|(frame, _)| frame).collect()
     }
 }
 
 /// What a finished screen capture leaves behind.
 pub struct ScreenRecording {
     /// Small candidate frames for keyframe selection (see `CANDIDATE_EDGE`).
-    pub frames: Vec<RgbaFrame>,
+    pub(crate) frames: Vec<StoredFrame>,
     pub video: Option<PathBuf>,
     pub duration_ms: u64,
     /// The capture time (on the frames' clock) of the video's start.
@@ -394,7 +399,7 @@ impl ScreenCaptureSession {
             CandidateBuffer::new(0),
         );
         let sampling = buffer.sampling.filter(|_| buffer.frames.is_empty());
-        let collected = buffer.into_frames();
+        let collected = buffer.into_stored_frames();
         let valid_video =
             video_path.filter(|path| path.exists() && path.metadata().is_ok_and(|m| m.len() > 0));
         #[cfg(target_os = "linux")]

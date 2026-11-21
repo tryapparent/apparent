@@ -1,4 +1,3 @@
-//! Read-only Record allocation; native code validates its rendering resource envelope.
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 use std::{process::Command, time::Duration};
@@ -33,9 +32,15 @@ fn decode(bytes: &[u8]) -> Result<SelectionLimits> {
 }
 
 pub(crate) fn plan(duration_ms: u64) -> Result<AssemblyPlan> {
+    let duration = duration_ms.to_string();
+    if let Some(limits) = super::record_policy::evaluate("nativeAssembly", duration.as_bytes(), 1024)
+        .and_then(|result| decode(result.as_bytes()).ok())
+    {
+        return Ok(AssemblyPlan {duration_ms, limits});
+    }
     let (node, worker) = super::worker::policy_assets("Record assembly", "record-media", "assembly-worker.js")?;
     let bytes = super::worker::run(Command::new(node).env("ELECTRON_RUN_AS_NODE", "1")
-        .arg(worker).arg(duration_ms.to_string()), Duration::from_secs(5), 1024)?;
+        .arg(worker).arg(duration), Duration::from_secs(5), 1024)?;
     Ok(AssemblyPlan {duration_ms, limits:decode(&bytes)?})
 }
 
@@ -58,7 +63,7 @@ mod tests {
 }
 
 pub(crate) mod scene {
-    use crate::shared::model::RgbaFrame;
+    use crate::composition::{record_policy, worker};
     use anyhow::{Context, Result, ensure};
     use serde::{Deserialize, Serialize, ser::SerializeSeq};
     use std::{process::Command, time::Duration};
@@ -70,7 +75,7 @@ pub(crate) mod scene {
         pub ordinary: bool,
         pub event: String,
     }
-    struct Times<'a>(&'a [&'a RgbaFrame]);
+    struct Times<'a>(&'a [u64]);
     impl Serialize for Times<'_> {
         fn serialize<S: serde::Serializer>(
             &self,
@@ -78,7 +83,7 @@ pub(crate) mod scene {
         ) -> std::result::Result<S::Ok, S::Error> {
             let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
             for frame in self.0 {
-                sequence.serialize_element(&frame.t_ms.to_string())?;
+                sequence.serialize_element(&frame.to_string())?;
             }
             sequence.end()
         }
@@ -115,13 +120,13 @@ pub(crate) mod scene {
         last_time: String,
         transitions: Vec<RawTransition>,
     }
-    fn decode(bytes: &[u8], frames: &[&RgbaFrame]) -> Result<Vec<Transition>> {
-        let reply: Reply = serde_json::from_slice(bytes).context("Invalid Record scene plan")?;
+    fn decode(bytes: &[u8], frames: &[u64]) -> Result<Vec<Transition>> {
+        let reply: Reply = serde_json::from_slice(bytes).context("Invalid scene plan")?;
         ensure!(
             reply.version == 1
                 && reply.frame_count == frames.len()
-                && reply.first_time == frames.first().map_or(0, |f| f.t_ms).to_string()
-                && reply.last_time == frames.last().map_or(0, |f| f.t_ms).to_string(),
+                && reply.first_time == frames.first().unwrap_or(&0).to_string()
+                && reply.last_time == frames.last().unwrap_or(&0).to_string(),
             "Record scene snapshot changed"
         );
         ensure!(
@@ -147,7 +152,7 @@ pub(crate) mod scene {
                 previous = value.frame;
                 Ok(Transition {
                     frame: value.frame,
-                    span: (frames[value.start_frame].t_ms, frames[value.frame].t_ms),
+                    span: (frames[value.start_frame], frames[value.frame]),
                     score: value.score,
                     ordinary: value.ordinary,
                     event: value.event,
@@ -156,7 +161,7 @@ pub(crate) mod scene {
             .collect()
     }
     pub(crate) fn plan(
-        frames: &[&RgbaFrame],
+        frames: &[u64],
         deltas: &[f32],
         drawing: &[(u64, u64)],
     ) -> Result<Vec<Transition>> {
@@ -174,18 +179,23 @@ pub(crate) mod scene {
             deltas: &'a [f32],
             drawing: Drawing<'a>,
         }
-        let input = super::super::worker::private_json(&Request {
+        let mut input = worker::private_json(&Request {
             version: 1,
             times: Times(frames),
             deltas,
             drawing: Drawing(drawing),
         })?;
-        let (node, worker) = super::super::worker::policy_assets(
+        if let Some(Ok(transitions)) = record_policy::evaluate_file(
+            "nativeScenes", &mut input, 16 * 1024 * 1024,
+        )?.map(|bytes| decode(bytes.as_bytes(), frames)) {
+            return Ok(transitions);
+        }
+        let (node, worker) = worker::policy_assets(
             "Record scene selection",
             "record-media",
             "selection/scene-worker.js",
         )?;
-        let bytes = super::super::worker::run_with_input(
+        let bytes = worker::run_with_input(
             Command::new(node)
                 .env("ELECTRON_RUN_AS_NODE", "1")
                 .arg(worker),
@@ -201,9 +211,7 @@ pub(crate) mod scene {
         use super::*;
         #[test]
         fn scene_reply_is_bound_to_native_indices_clocks_and_finite_measurements() {
-            let a = RgbaFrame::new(1, 1, 1, vec![0, 0, 0, 255]);
-            let b = RgbaFrame::new(u64::MAX, 1, 1, vec![255; 4]);
-            let frames = vec![&a, &b];
+            let frames = [1, u64::MAX];
             let value = serde_json::json!({"version":1,"frameCount":2,"firstTime":"1","lastTime":u64::MAX.to_string(),"transitions":[{"startFrame":0,"frame":1,"diff":0.5,"score":60,"ordinary":true,"event":"scene changed"}]});
             let good = serde_json::to_vec(&value).unwrap();
             assert_eq!(decode(&good, &frames).unwrap()[0].span, (1, u64::MAX));

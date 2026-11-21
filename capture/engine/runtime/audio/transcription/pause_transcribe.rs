@@ -204,28 +204,7 @@ fn merge(parts: Vec<TranscriptData>) -> TranscriptData {
     result
 }
 
-#[derive(Clone, Default)]
-pub struct Slot(Arc<Mutex<Option<Pause>>>);
-
-impl Slot {
-    pub fn new(pause: Option<Pause>) -> Self {
-        Self(Arc::new(Mutex::new(pause)))
-    }
-    pub fn take(&self) -> Option<Pause> {
-        self.0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take()
-    }
-}
-
-impl std::fmt::Debug for Slot {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("Slot")
-            .field(&self.0.lock().map(|v| v.is_some()).unwrap_or(false))
-            .finish()
-    }
-}
+pub use super::parakeet_buffered::Slot;
 
 #[cfg(test)]
 mod tests {
