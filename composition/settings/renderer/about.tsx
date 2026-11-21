@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Check,
   CheckCircle2,
@@ -19,6 +20,7 @@ import {
 } from "@apparent/ui/tooltip";
 import macUpdates from "../about/mac-updates.mjs";
 import updateAction from "../about/release-action.mjs";
+import { UpdatePond } from "./update-pond";
 import "./about.css";
 
 type UpdateProgress =
@@ -87,9 +89,11 @@ type AboutArtwork = { available: string; current: string; failed: string };
 export function About({
   bridge,
   artwork,
+  headingActions,
 }: {
   bridge: AboutBridge;
   artwork: AboutArtwork;
+  headingActions: HTMLElement | null;
 }) {
   const [state, setState] = useState<AboutState>();
   const [error, setError] = useState("");
@@ -207,6 +211,7 @@ export function About({
     state?.linux && state.updates && !checking && !restart && showReleaseAction;
   const progress = checking ? state?.updateCheck.progress : undefined;
   const downloading = progress?.phase === "downloading";
+  const showPond = state?.linux && state.updates;
   const percent =
     downloading &&
     progress.totalBytes > 0 &&
@@ -300,76 +305,96 @@ export function About({
             data-idle={!title || undefined}
             data-busy={checking || undefined}
           >
-            {state.linux && state.mainUpdates && state.updates && (
-              <div className="settings-channel-group">
-                <div className="settings-channel">
-                  <label htmlFor="update-channel">Next install source</label>
-                  <NativeSelect
-                    id="update-channel"
-                    aria-describedby="update-channel-description"
-                    value={state.updateChannel}
-                    disabled={checking}
-                    onChange={(event) => void changeChannel(event.target.value)}
-                  >
-                    <NativeSelectOption value="stable">
-                      Stable releases
-                    </NativeSelectOption>
-                    <NativeSelectOption value="main">
-                      Development builds
-                    </NativeSelectOption>
-                  </NativeSelect>
+            <div
+              className="settings-update-flow"
+              data-pond={showPond || undefined}
+            >
+              {showPond && (
+                <UpdatePond
+                  scene={
+                    checking
+                      ? downloading
+                        ? "folding"
+                        : progress
+                          ? "finishing"
+                          : "checking"
+                      : restart
+                        ? "ready"
+                        : result === "current"
+                          ? "current"
+                          : "idle"
+                  }
+                />
+              )}
+              {showPond && state.mainUpdates && (
+                <div className="settings-channel-group">
+                  <div className="settings-channel">
+                    <label htmlFor="update-channel">Next install source</label>
+                    <NativeSelect
+                      id="update-channel"
+                      aria-describedby="update-channel-description"
+                      value={state.updateChannel}
+                      disabled={checking}
+                      onChange={(event) => void changeChannel(event.target.value)}
+                    >
+                      <NativeSelectOption value="stable">
+                        Stable releases
+                      </NativeSelectOption>
+                      <NativeSelectOption value="main">
+                        Development builds
+                      </NativeSelectOption>
+                    </NativeSelect>
+                  </div>
+                  <p id="update-channel-description" className="settings-metadata">
+                    Stable is for everyday use.
+                    Development gets changes sooner and may be less reliable.
+                  </p>
                 </div>
-                <p id="update-channel-description" className="settings-metadata">
-                  Stable is for everyday use.
-                  Development gets changes sooner and may be less reliable.
-                </p>
-              </div>
-            )}
-            <div className="settings-update-flow">
+              )}
               <div className="settings-update-text">
-                <div className="settings-update-phase">
-                  <div
-                    className="settings-result"
-                    role="status"
-                    aria-atomic="true"
-                  >
-                    {title && (
-                      <>
-                        {checking && !downloading ? (
-                          <LoaderCircle
-                            className="settings-spin"
+                <div
+                  className="settings-result"
+                  role="status"
+                  aria-atomic="true"
+                >
+                  {title && (
+                    <>
+                      {checking && !downloading ? (
+                        <LoaderCircle
+                          className="settings-spin"
+                          aria-hidden="true"
+                        />
+                      ) : restart ? (
+                        <RotateCw aria-hidden="true" />
+                      ) : (
+                        result && (
+                          <CheckCircle2
+                            className="text-success"
                             aria-hidden="true"
                           />
-                        ) : restart ? (
-                          <RotateCw aria-hidden="true" />
-                        ) : (
-                          result && (
-                            <CheckCircle2
-                              className="text-success"
-                              aria-hidden="true"
-                            />
-                          )
-                        )}
-                        <h3>{title}</h3>
-                      </>
-                    )}
-                  </div>
-                  {percent !== undefined && (
-                    <span
-                      aria-hidden="true"
-                      className="settings-update-percent settings-metadata"
-                    >
-                      {percent}%
-                    </span>
+                        )
+                      )}
+                      <h3>{title}</h3>
+                    </>
                   )}
                 </div>
                 {downloading && (
-                  <progress
-                    className="settings-update-progress"
-                    aria-label="Update download"
-                    max={100}
-                    value={percent}
-                  />
+                  <div className="settings-update-transfer">
+                    <progress
+                      className="settings-update-progress"
+                      aria-label="Update download"
+                      max={100}
+                      value={percent}
+                    />
+                    {percent !== undefined && (
+                      <span
+                        aria-hidden="true"
+                        className="settings-update-percent settings-metadata"
+                      >
+                        {percent}%
+                      </span>
+                    )}
+                  </div>
                 )}
                 {!state.updates && (
                   <p className="settings-metadata">
@@ -449,7 +474,7 @@ export function About({
                   </div>
                 )}
               </div>
-              {(restart || (!checking && result === "current")) && (
+              {!showPond && (restart || (!checking && result === "current")) && (
                 <img
                   className="settings-frog"
                   src={restart ? artwork.available : artwork.current}
@@ -525,13 +550,12 @@ export function About({
           </a>
         </Button>
       </div>
-      <Button
-        variant="secondary"
-        className="settings-tour"
-        onClick={() => void act({ action: "tour" })}
-      >
-        {state?.resumeTour ? "Resume setup" : "Show welcome tour"}
-      </Button>
+      {headingActions && createPortal(
+        <Button variant="secondary" onClick={() => void act({ action: "tour" })}>
+          {state?.resumeTour ? "Resume setup" : "Show welcome tour"}
+        </Button>,
+        headingActions,
+      )}
       <ErrorDialog
         open={showFailure}
         title={failureTitle}

@@ -273,9 +273,6 @@
   flex-wrap: wrap;
   gap: 28px;
 }
-.settings-content .settings-tour {
-  margin-top: 18px;
-}
 .settings-spin {
   animation: settings-spin 0.9s linear infinite;
 }

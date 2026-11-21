@@ -12,10 +12,51 @@
 .settings-about .settings-links a {
   transition: none;
 }
+.settings-page-heading[data-about] {
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 12px;
+  flex-wrap: wrap;
+}
+.settings-page-heading[data-about] #settings-account:empty {
+  display: none;
+}
+.settings-about-heading-actions {
+  margin-inline-start: auto;
+}
 .settings-update-flow {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+.settings-update-flow[data-pond] {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  align-items: start;
+  gap: 16px 20px;
+}
+.settings-update-pond {
+  grid-row: span 2;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  background: #eadcf1;
+}
+.settings-update-pond > :is(img, video) {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.settings-update-flow[data-pond] .settings-actions button {
+  height: auto;
+  min-height: 44px;
+  max-width: 100%;
+  white-space: normal;
+  text-align: start;
+}
+.settings-update-flow[data-pond] .settings-update-text {
+  min-height: 9rem;
 }
 .settings-updates[data-busy] .settings-update-flow {
   align-items: flex-start;
@@ -30,12 +71,12 @@
   flex: 1;
   min-width: 0;
 }
-.settings-update-phase {
+.settings-update-transfer {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  column-gap: 12px;
+  min-height: 24px;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
 }
 .settings-update-percent {
   font-size: var(--apparent-type-body);
@@ -44,9 +85,9 @@
 .settings-update-progress {
   display: block;
   appearance: none;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   height: 10px;
-  margin-top: 8px;
   border: 1px solid currentColor;
   padding: 1px;
 }
@@ -95,9 +136,11 @@
   gap: 10px;
 }
 .settings-channel-group {
-  margin-bottom: 16px;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 12px;
 }
 .settings-channel select {
+  max-width: 100%;
   transition: none;
 }
 .settings-channel select:disabled {
@@ -115,5 +158,15 @@
 @media (max-width: 700px) {
   .settings-update-flow {
     gap: 4px;
+  }
+}
+@media (max-width: 520px) {
+  .settings-update-flow[data-pond] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+  }
+  .settings-update-pond {
+    grid-row: auto;
+    width: min(100%, 17rem);
   }
 }
