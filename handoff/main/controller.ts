@@ -1,3 +1,4 @@
+import order from "../pure/destination-order.mjs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { DestinationView } from "../pure/destinations.ts";
@@ -23,7 +24,9 @@ export class Controller {
   private enabled = false;
   private capture = "";
   private phase: "" | "recording" | "processing" | "completed" = "";
+  private recordingSince = 0;
   private pickerVisible = false;
+  private preferencesReady = true;
   private preferences?: Promise<PickerPreferences>;
   private choices: DestinationView["choices"] = [];
   private catalogue = new Map<
@@ -96,6 +99,9 @@ export class Controller {
   retry(capture: string) {
     return this.exclusive(capture, () => this.doRetry(capture));
   }
+  loadingPickerPreferences() {
+    return this.pickerVisible && !this.preferencesReady;
+  }
   view(): DestinationView | null {
     if (!this.enabled || !this.capture || !this.pickerVisible) return null;
     if (!this.config)
@@ -153,6 +159,33 @@ export class Controller {
       error: this.error || (job ? undefined : this.catalogueError || undefined),
     };
   }
+  background() {
+    if (this.phase !== "recording" || !this.capture.includes(":")) return null;
+    const boot = this.capture.slice(0, this.capture.lastIndexOf(":") + 1);
+    const phases = { armed: 0, sending: 1, sent: 2, error: 3, uncertain: 4 };
+    const jobs = [...this.jobs.values()].flatMap((job) => {
+      if (!job.capture.startsWith(boot) || job.capture === this.capture || job.phase === "cancelled") return [];
+      if (job.phase === "sent" && (job.sentAt ?? 0) < this.recordingSince) return [];
+      return [{ job, rank: order.handoff_status(phases[job.phase]) }];
+    }).sort((a, b) => b.rank - a.rank || b.job.createdAt - a.job.createdAt);
+    const latest = jobs[0];
+    if (!latest) return null;
+    return {
+      phase: latest.rank === 3 ? "attention" as const : latest.rank === 2 ? "processing" as const : "sent" as const,
+      count: Math.min(99, jobs.filter(({ rank }) => rank === 2).length),
+      title: latest.job.target.title,
+      retry: latest.rank === 3 && latest.job.text !== null ? latest.job.capture : null,
+    };
+  }
+
+  retryBackground(capture: string) {
+    return this.exclusive(capture, async () => {
+      if (this.background()?.retry !== capture) throw Error("Handoff changed");
+      const job = this.jobs.get(capture);
+      if (!job) throw Error("Handoff unavailable");
+      await this.send(job);
+    });
+  }
   text(capture: string) {
     const text = this.results.get(capture) ?? this.jobs.get(capture)?.text;
     if (
@@ -180,6 +213,8 @@ export class Controller {
       return;
     }
     const previousPhase = this.phase;
+    if (phase === "recording" && (previousPhase !== phase || capture !== this.capture))
+      this.recordingSince = Date.now();
     this.phase = phase;
     if (this.capture !== capture || !this.preferences) {
       return this.loadCatalogue(
@@ -211,6 +246,7 @@ export class Controller {
     const wasVisible = this.pickerVisible && this.enabled;
     this.capture = capture;
     this.preferences = preferences;
+    this.preferencesReady = false;
     this.enabled = false;
     this.config = null;
     this.pickerVisible = this.phase !== "recording";
@@ -221,6 +257,7 @@ export class Controller {
       this.initializing,
     ]);
     if (version !== this.version) return;
+    this.preferencesReady = true;
     this.enabled = enabled;
     this.config = configured[0] ?? null;
     this.catalogue.clear();
@@ -463,19 +500,19 @@ export class Controller {
       await this.store.save(job);
       if (job.capture === this.capture)
         this.error = "Reconnect the selected T3 environment before retrying.";
-      this.changed();
+      if (job.capture === this.capture || this.phase === "recording") this.changed();
       return;
     }
     this.connections.set(config.origin, config);
     const sending = this.delivery.submit(job);
-    this.changed();
+    if (job.capture === this.capture || this.phase === "recording") this.changed();
     await sending;
     if (job.capture === this.capture)
       this.error =
         job.phase === "uncertain"
           ? "T3 has not confirmed delivery. Retry reuses the same request."
           : "";
-    this.changed();
+    if (job.capture === this.capture || this.phase === "recording") this.changed();
   }
   private async doRetry(capture: string) {
     if (!this.pickerVisible || capture !== this.capture)

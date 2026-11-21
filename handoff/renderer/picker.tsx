@@ -172,6 +172,10 @@ export function T3DestinationPicker({
     try {
       const result = await onAction(action, id);
       if (action === "copy") setCopied(true);
+      if (action === "cancel") {
+        restore.current = true;
+        setOpen(false);
+      }
       if (action === "choose" || action === "dismiss") {
         setOpen(false);
         changeQuery("");
@@ -278,6 +282,16 @@ export function T3DestinationPicker({
                 </Button>
               )}
             </div>
+          ) : view.phase === "armed" && chosen ? (
+            <Button className="destination-trigger destination-confirmed" variant="secondary"
+              aria-expanded={open} title={location(chosen)} disabled={busy}
+              aria-label={[chosen.title, "Will send when ready", location(chosen)].filter(Boolean).join(", ")}
+              onClick={() => setOpen(!open)}>
+              <span key="confirmed" className="destination-label">
+                <span>{chosen.title}</span>
+                <small role="status">Will send when ready</small>
+              </span>
+            </Button>
           ) : (
             <Button
               ref={mountTrigger}
@@ -490,12 +504,11 @@ export function T3DestinationPicker({
             </div>
           </StatusCard>
         </div>
-      ) : view.phase === "armed" ? (
+      ) : view.phase === "armed" && open ? (
         <div
           className="destination-notification destination-receipt"
           role="status"
         >
-          Preparing recording
           <Button
             variant="ghost"
             disabled={busy}

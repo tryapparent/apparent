@@ -340,9 +340,11 @@ fn stopped_capture_without_real_frames_retains_sampling_diagnostics() {
     };
     session.frames.lock().unwrap().set_sampling_route(Route::SystemPicker);
     CandidateBuffer::reject_sample(&session.frames, Rejection::PickerStatusMissing);
-    let (recording, sampling) = session.stop_with_sampling();
-    assert!(recording.frames.is_empty());
-    let sampling = sampling.unwrap();
+    let stopped = session.stop_tracks(None, None);
+    assert!(stopped.recording.frames.is_empty());
+    assert!(stopped.audio.unwrap().is_none());
+    assert!(stopped.activity.stop_ms.is_some());
+    let sampling = stopped.sampling.unwrap();
     assert_eq!(sampling.route, Route::SystemPicker);
     assert_eq!(sampling.last_rejection, Some(Rejection::PickerStatusMissing));
 }

@@ -88,7 +88,7 @@ function directConsumers(path: string): readonly Owner[] {
   if (/^(hermes\/|\.github\/workflows\/hermes\.yml$)/.test(path)) return ['hermes'];
   if (linuxDrivers.has(path)) return ['capture-tools'];
   if (path.startsWith(frontend + 'src/hermes/')) return ['desktop', 'capture', 'hermes'];
-  if (/^(capture\/desktop\/ui\/frontend|composition\/quit)\//.test(path)) return ['desktop', 'capture'];
+  if (path.startsWith(frontend) || /^composition\/(quit|pill)\//.test(path)) return ['desktop', 'capture'];
   if (path.startsWith('capture/desktop/scripts/native/foreground/')) return ['capture', 'engine', 'desktop', 'capture-tools'];
   if (/^capture\/(desktop|agent)\/scripts\//.test(path)) return ['capture', 'engine', 'capture-tools'];
   if (path.startsWith('capture/desktop/')) return ['desktop', 'capture', 'engine', 'capture-tools'];
@@ -207,7 +207,7 @@ export function routeDecision(paths: string[] | null, workflowControls: string[]
 
 export function unownedPaths(paths: string[]): string[] {
   const files = new Set([...knownFiles, '.gitignore', 'CONTRIBUTING.md', 'LICENSE']);
-  return paths.filter(path => path.includes('/') ? ![...knownDirectories, 'handoff', 'onboarding'].includes(path.split('/')[0]) : !files.has(path));
+  return paths.filter(path => path.includes('/') ? !knownDirectories.concat('handoff', 'onboarding').includes(path.split('/')[0]) : !files.has(path));
 }
 export function routingProblems(decision: {paths: string[]; historyKnown: boolean; requiredStreams: Record<string, boolean>}): string[] {
   const problems = unownedPaths(decision.paths).map(path => 'Declare directory ownership for ' + path);

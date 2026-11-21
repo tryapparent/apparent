@@ -856,7 +856,7 @@ impl ApparentCoordinator {
             self.report_window_recording_disabled(cx);
             return;
         }
-        if self.is_recording() || self.is_processing() {
+        if self.is_recording() || self.source_is_stopping() {
             return;
         }
         if !self.ready_to_record(false) {
@@ -1006,7 +1006,7 @@ impl ApparentCoordinator {
             return false;
         }
         if crate::capture::desktop::workflow::shutdown::requested()
-            || self.is_recording() || self.is_processing()
+            || self.is_recording() || self.source_is_stopping()
         {
             return true;
         }
@@ -1031,7 +1031,7 @@ impl ApparentCoordinator {
         #[cfg(any(target_os="macos",target_os="linux"))]
         self.reconcile_electron_pill();
         if crate::capture::desktop::workflow::shutdown::requested() { return; }
-        if self.is_recording() || self.is_processing() {
+        if self.is_recording() || self.source_is_stopping() {
             return;
         }
         if !self.ready_to_record(prepared_source.is_some()) {
@@ -1280,7 +1280,7 @@ impl ApparentCoordinator {
     /// normalize straight into phone-screen coordinates (kept current as the window moves).
     pub fn start_recording_iphone(&mut self, cx: &mut Context<Self>) {
         if display_selection::pending() { return; }
-        if self.is_recording() || self.is_processing() {
+        if self.is_recording() || self.source_is_stopping() {
             return;
         }
         if let Ok(mut status) = CAPTURE_STATUS.lock() {
@@ -1550,6 +1550,18 @@ impl ApparentCoordinator {
 
         let final_whiteboard = whiteboard::finish_snapshot(&self.whiteboard, || whiteboard::close(cx));
 
+        self.stopping_source = Some(generation);
+        let (source_released, released) = flume::bounded(1);
+        cx.spawn(async move |entity, cx| {
+            let _ = released.recv_async().await;
+            let _ = entity.update(cx, |coord, cx| {
+                if coord.stopping_source == Some(generation) {
+                    coord.stopping_source = None;
+                    coord.apply_pill_event(PillEvent::SourceReleased);
+                    cx.notify();
+                }
+            });
+        }).detach();
         self.capture_finalizer_started();
         self.publish_capture_busy();
         cx.spawn(async move |entity, cx| {
@@ -1558,7 +1570,7 @@ impl ApparentCoordinator {
                 .spawn(async move {
 
                     recording_completion::finalize(
-                        source, target, bundle_dir, events, strokes, final_whiteboard, notes_finished,
+                        source, target, bundle_dir, events, strokes, final_whiteboard, notes_finished, source_released,
                     )
                 })
                 .await;
@@ -1566,7 +1578,7 @@ impl ApparentCoordinator {
             let _ = entity
                 .update(cx, |coord, cx| {
                     let (finalized, duration_ms) = result;
-                    if finalized.is_err() {
+                    if finalized.is_err() && coord.accepts_capture_result(generation) {
                         crate::capture::desktop::workflow::shutdown::clear_request();
                     }
                     // Release the worker even when its capsule was dismissed or
