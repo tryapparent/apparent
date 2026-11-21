@@ -96,6 +96,9 @@ function isGuardedPrObserver(source: string): boolean {
 }
 
 export function shellOperations(source: string): string[] {
+  if (/^[ \t]*npx -y @nomac\/cli job job_[A-Za-z0-9][\w-]* --wait [1-9]\d{0,8}(?: > \/tmp\/apparent-dev-[\w-][\w.-]*\/(?:[\w-][\w.-]*\/)*[\w-][\w.-]* 2>&1)?[ \t]*\n?$/.test(source)) {
+    return ['native job observation'];
+  }
   if (isGuardedPrObserver(source)) return ['CI observation'];
   const observer = source.match(/^[ \t]*timeout [1-9]\d* bash -c '([^'\n]+)'(?: > \/tmp\/(?:[\w-][\w.-]*\/)*[\w-][\w.-]* 2>&1)?[ \t]*\n?$/);
   if (observer && /^rc=0; for id in(?: [1-9]\d*)+; do gh run watch "\$id" -R [\w-]+\/[\w.-]+ --exit-status --compact --interval [1-9]\d* \|\| rc=1; done; exit "\$rc"$/.test(observer[1])) {
