@@ -5,7 +5,12 @@ import {
 } from "../../../../shared/enablement/bend/build.ts";
 import { run } from "../../../../shared/enablement/bend/toolchain.ts";
 
-export type PermissionTable = { repair: number[]; rows: number[] };
+export type PermissionTable = {
+  repair: number[];
+  rows: number[];
+  screenSelection: number[];
+  savePicker: boolean[];
+};
 
 export function repairTable(directory: string): PermissionTable {
   return JSON.parse(
@@ -23,7 +28,11 @@ export function repairTable(directory: string): PermissionTable {
           { $: statuses[index & 3] }, Boolean(index & 4), Boolean(index & 8), Boolean(index & 16)
         )
       ),
-      rows: ["macos", "wayland", "x11"].map(($) => policy.settings_rows({ $ }))
+      rows: ["macos", "wayland", "x11"].map(($) => policy.settings_rows({ $ })),
+      screenSelection: [false, true].flatMap(supported =>
+        ["unset", "picker", "full_display"].map($ => policy.screen_selection(supported, { $ }))
+      ),
+      savePicker: [false, true].map(skip => policy.save_picker(skip))
     }));
   `,
       ],

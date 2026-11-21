@@ -20,10 +20,13 @@ export type PermissionRow = {
 export type PermissionState = {
   platform: "macos" | "wayland" | "x11";
   rows: PermissionRow[];
+  accessChecked: boolean;
+  screenSelection: "unavailable" | "picker" | "full-display";
 };
 
 export type PermissionIntent =
   | { kind: "recheck" | "reopen" }
+  | { kind: "screen-selection"; skip: boolean }
   | { kind: "repair"; permission: Permission; repair: Repair };
 
 export type PermissionError =

@@ -26,7 +26,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
    const field=setting==='wisprFlow'?'wisprSaved':setting?`${setting}Saved`:'saved';
    saved[field]=message.enabled;
   }
-  application.stdin.write(JSON.stringify({type:'labs-result',request:message.request,facts:fail?{error:'config_write_failed'}:{...saved,autoPasteSupported:process.platform==='linux',wisprSupported:process.platform==='darwin',screenPickerSupported:true}})+'\n');
+  application.stdin.write(JSON.stringify({type:'labs-result',request:message.request,facts:fail?{error:'config_write_failed'}:{...saved,autoPasteSupported:process.platform==='linux',wisprSupported:process.platform==='darwin'}})+'\n');
  };
  createInterface({input:application.stdout}).on('line',line=>{
   try{const value=JSON.parse(line);messages.push(value);if(value.action==='agents-preference'){application.stdin.write(JSON.stringify({type:'agents-result',request:value.request,facts:{saved:null,t3Saved:false,t3Configured:false}})+'\n');}if(value.action==='labs-preference'){if(hold)held=value;else reply(value);}}catch{}
@@ -39,12 +39,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   browser=await chromium.connectOverCDP(url);const page=browser.contexts()[0].pages()[0];
   await expect(page).toHaveTitle('Apparent Settings — Labs');
   assert.deepEqual(await page.locator('.settings-navigation-wide button').allTextContents(),['General','Recording','Storage','Permissions','Agents','Labs','About']);
-  const recordingStart=page.getByRole("group",{name:"When you press Record"});
-  const startNow=recordingStart.getByRole("radio",{name:"Start screen recording right away"});
-  const chooseScreen=recordingStart.getByRole("radio",{name:"Choose a screen each time"});
-  await expect(startNow).toBeChecked();
-  await expect(chooseScreen).toBeDisabled();
-  await expect(chooseScreen).toHaveAccessibleDescription("Open the system picker before recording starts.");
+  await expect(page.getByRole("switch",{name:"Skip screen selection"})).toHaveCount(0);
   const toggle=page.getByRole('switch',{name:'Live local transcription'});
   const compact=page.getByRole('switch',{name:'Compact recording prompts'});
   const speech=page.getByRole('switch',{name:'Transcript-only handoff'});
@@ -62,14 +57,6 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   await page.reload();
   for(const trial of [compact,speech,agentContext])await expect(trial).toHaveAttribute('aria-checked','true');
   assert.equal(await toggle.locator('.apparent-switch-track').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(229, 229, 234)');
-  await expect(chooseScreen).toBeEnabled();
-  await startNow.focus();await page.keyboard.press("ArrowDown");
-  await expect(chooseScreen).toBeChecked();
-  await page.screenshot();
-  application.stdin.write(JSON.stringify({type:'show',pane:'labs'})+'\n');
-  await expect.poll(()=>page.evaluate(()=>document.hasFocus())).toBe(true);
-  await page.reload();await expect(chooseScreen).toBeChecked();
-  await startNow.check();await expect(startNow).toBeChecked();
   const track=toggle.locator('.apparent-switch-track');
   await expect(track).toHaveCSS('width','51px');
   await expect(track).toHaveCSS('height','31px');
@@ -159,7 +146,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
     await page.screenshot({path:path.join(process.env.APPARENT_LIVE_PROOF,`labs-${theme}-${width}-bottom.png`)});
     await toggle.scrollIntoViewIfNeeded();
    }
-   for(const id of ['recording-picker-help','compact-handoff-help','transcript-only-help','agent-context-limits','local-stream-ready','auto-paste-limits','public-sharing-limits','wispr-lab-help']){
+   for(const id of ['compact-handoff-help','transcript-only-help','agent-context-limits','local-stream-ready','auto-paste-limits','public-sharing-limits','wispr-lab-help']){
     const guidance=page.locator(`#${id}`);await guidance.evaluate(el=>el.scrollIntoView({block:'center'}));await expect(guidance).toBeInViewport();
     if((id==='compact-handoff-help' || id==='transcript-only-help' || id==='agent-context-limits') && process.env.APPARENT_LIVE_PROOF)
      await page.screenshot({path:path.join(process.env.APPARENT_LIVE_PROOF,`${id}-${theme}-${width}.png`)});

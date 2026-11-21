@@ -2,7 +2,6 @@
   "name": "@apparent/record-settings",
   "private": true,
   "exports": {
-    "./recording-start": "./renderer/recording-start.tsx",
     "./recording-section": "./renderer/recording-section.tsx",
     "./recording-contract": "./recording-contract.ts"
   },

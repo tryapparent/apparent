@@ -20,6 +20,8 @@ const { chromium, expect } = load("@playwright/test");
 
 const mac: PermissionState = {
   platform: "macos",
+  accessChecked: true,
+  screenSelection: "picker",
   rows: [
     {
       permission: "screen-recording",
@@ -53,6 +55,8 @@ const mac: PermissionState = {
 };
 const wayland: PermissionState = {
   platform: "wayland",
+  accessChecked: true,
+  screenSelection: "picker",
   rows: [
     {
       permission: "microphone",
@@ -113,6 +117,7 @@ test("Permissions shares the Recording window and recovers from refused actions"
   let facts = mac;
   let answer: string | null = null;
   let hold = false;
+  let publishSelection = true;
   const acknowledge = (request: number) =>
     send({ type: "permission-result", request, error: answer });
   createInterface({ input: child.stdout }).on("line", (line) => {
@@ -123,6 +128,17 @@ test("Permissions shares the Recording window and recovers from refused actions"
     }
     if (action.action === "permission-action") {
       replies.push(action);
+      if (
+        action.intent.kind === "screen-selection" &&
+        !answer &&
+        publishSelection
+      ) {
+        facts = {
+          ...facts,
+          screenSelection: action.intent.skip ? "full-display" : "picker",
+        };
+        publish(facts);
+      }
       if (!hold) acknowledge(action.request);
     }
   });
@@ -157,7 +173,7 @@ test("Permissions shares the Recording window and recovers from refused actions"
       .getByRole("button", { name: "Permissions", exact: true })
       .click();
     await expect(page).toHaveTitle("Apparent Settings — Permissions");
-    const recheck = page.getByRole("button", { name: "Recheck" });
+    const recheck = page.getByRole("button", { name: /Check again|Checking…/ });
     const reopen = page.getByRole("button", {
       name: "Reopen Apparent · Screen Recording",
     });
@@ -178,7 +194,12 @@ test("Permissions shares the Recording window and recovers from refused actions"
           mobile: false,
         });
         await page.emulateMedia({ colorScheme });
-        await recheck.focus();
+        await expect(recheck).toHaveCount(0);
+        if (width > 700)
+          await expect(
+            page.getByRole("button", { name: "Permissions", exact: true }),
+          ).toBeEnabled();
+        await page.getByRole("heading", { name: "App access" }).focus();
         await page.keyboard.press("Tab");
         await expect(reopen).toBeFocused();
         assert.equal(
@@ -191,17 +212,16 @@ test("Permissions shares the Recording window and recovers from refused actions"
         );
         const evidence = process.env.APPARENT_PERMISSIONS_EVIDENCE;
         if (evidence) {
-          await recheck.focus();
           await page.screenshot({
             path: join(evidence, `permissions-${width}-${colorScheme}.png`),
           });
         }
       }
     }
-    await expect(page.getByText("Denied", { exact: true })).toHaveCount(1);
-    await expect(
-      page.getByText("Checking access…", { exact: true }),
-    ).toHaveCount(1);
+    await expect(page.getByText("Access needed", { exact: true })).toHaveCount(
+      2,
+    );
+    await expect(page.getByText("Unknown", { exact: true })).toHaveCount(1);
     await assert.rejects(
       page.evaluate(() =>
         (
@@ -214,6 +234,15 @@ test("Permissions shares the Recording window and recovers from refused actions"
       ),
     );
     hold = true;
+    publish({ ...mac, accessChecked: false });
+    await expect(page.getByRole("alert")).toHaveText(
+      "Couldn’t check app access.",
+    );
+    const evidence = process.env.APPARENT_PERMISSIONS_EVIDENCE;
+    if (evidence)
+      await page.screenshot({
+        path: join(evidence, "permissions-check-failure.png"),
+      });
     await recheck.focus();
     await page.keyboard.press("Enter");
     await expect(recheck).toHaveAttribute("aria-disabled", "true");
@@ -221,8 +250,13 @@ test("Permissions shares the Recording window and recovers from refused actions"
     await expect.poll(() => replies.length).toBe(1);
     acknowledge(replies[0].request + 1);
     await expect(recheck).toHaveAttribute("aria-disabled", "true");
+    publish(mac);
     acknowledge(replies[0].request);
-    await expect(page.getByRole("status")).toHaveText("Access checked.");
+    await expect(recheck).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { name: "App access" }),
+    ).toBeFocused();
+    await expect(reopen).toBeEnabled();
     hold = false;
 
     answer = "capture-active";
@@ -255,7 +289,9 @@ test("Permissions shares the Recording window and recovers from refused actions"
     answer = "changed";
     acknowledge(replies.at(-1)!.request);
     await expect(page.getByRole("alert")).toContainText("Access changed");
-    await expect(recheck).toBeFocused();
+    await expect(
+      page.getByRole("heading", { name: "Accessibility" }),
+    ).toBeFocused();
 
     hold = false;
     answer = null;
@@ -270,7 +306,9 @@ test("Permissions shares the Recording window and recovers from refused actions"
           : row,
       ),
     });
-    await expect(recheck).toBeFocused();
+    await expect(
+      page.getByRole("heading", { name: "Accessibility" }),
+    ).toBeFocused();
 
     await page
       .getByRole("button", { name: "Settings pages, Permissions" })
@@ -296,15 +334,91 @@ test("Permissions shares the Recording window and recovers from refused actions"
     await page
       .getByRole("button", { name: "Permissions", exact: true })
       .press("Enter");
-    await expect(
-      page.getByText("Wayland asks what to share when you start recording."),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Screen Recording" }),
-    ).toHaveCount(0);
-    await page
-      .getByRole("button", { name: "Copy command · Input devices" })
-      .press("Enter");
+    const picker = page.getByRole("switch", { name: "Skip screen selection" });
+    const track = picker.locator(".apparent-switch-track");
+    await expect(picker).toBeEnabled();
+    await expect(picker).not.toBeChecked();
+    await expect(track).toHaveCSS("width", "51px");
+    await expect(track).toHaveCSS("height", "31px");
+    await expect(picker).toHaveAccessibleDescription(
+      /your system asks what to share/,
+    );
+    await expect(page.getByRole("img", { name: "Allowed" })).toHaveCount(1);
+    if (evidence) {
+      publish({
+        ...wayland,
+        rows: wayland.rows.map((row) => ({
+          ...row,
+          status: "granted",
+          repair: "none",
+        })),
+      });
+      await expect(page.getByRole("img", { name: "Allowed" })).toHaveCount(2);
+      for (const width of [720, 640]) {
+        for (const colorScheme of ["light", "dark"]) {
+          await session.send("Emulation.setDeviceMetricsOverride", {
+            width,
+            height: 530,
+            deviceScaleFactor: 1,
+            mobile: false,
+          });
+          await page.emulateMedia({ colorScheme });
+          await page.locator("main").evaluate((element) => {
+            element.scrollTop = 0;
+          });
+          await page.screenshot({
+            path: join(
+              evidence,
+              `permissions-wayland-${width}-${colorScheme}.png`,
+            ),
+          });
+        }
+      }
+      publish(wayland);
+      await expect(page.getByRole("img", { name: "Allowed" })).toHaveCount(1);
+      await page.screenshot({
+        path: join(evidence, "permissions-wayland-missing.png"),
+      });
+    }
+    await picker.press("Space");
+    await expect(picker).toBeChecked();
+    await expect(track).toHaveCSS("width", "51px");
+    await expect(track).toHaveCSS("height", "31px");
+    await expect(picker).toHaveAccessibleDescription(
+      /Record one entire display/,
+    );
+    await expect(picker).toBeFocused();
+    await expect(picker).toBeEnabled();
+    if (evidence)
+      await page.screenshot({
+        path: join(evidence, "permissions-wayland-switch-on.png"),
+      });
+    assert.deepEqual(replies.at(-1)?.intent, {
+      kind: "screen-selection",
+      skip: true,
+    });
+    answer = "failed";
+    await picker.press("Space");
+    await expect(page.getByRole("alert")).toHaveText(
+      "Couldn’t confirm screen selection. Try the switch again.",
+    );
+    await expect(picker).toBeChecked();
+    answer = null;
+    publishSelection = false;
+    await picker.press("Space");
+    await expect(page.getByRole("alert")).toHaveText(
+      "Couldn’t confirm screen selection. Try the switch again.",
+    );
+    await expect(picker).toBeChecked();
+    publishSelection = true;
+    await picker.press("Space");
+    await expect(picker).not.toBeChecked();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    const copy = page.getByRole("button", {
+      name: "Copy command · Input devices",
+    });
+    await expect(copy).toBeEnabled();
+    await copy.press("Enter");
     await expect(page.getByRole("status")).toContainText("Command copied");
     assert.deepEqual(replies.at(-1)?.intent, {
       kind: "repair",

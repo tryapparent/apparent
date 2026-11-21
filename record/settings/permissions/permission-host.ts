@@ -3,7 +3,7 @@ import {
   type PermissionError,
   type PermissionIntent,
   type PermissionState,
-} from "../../record/settings/permissions/permissions-contract.ts";
+} from "./permissions-contract.ts";
 
 export class PermissionHost {
   private state?: PermissionState;
@@ -82,6 +82,12 @@ function isIntent(value: unknown): value is PermissionIntent {
   if (!value || typeof value !== "object" || !("kind" in value)) return false;
   if (value.kind === "recheck" || value.kind === "reopen")
     return Object.keys(value).length === 1;
+  if (value.kind === "screen-selection")
+    return (
+      Object.keys(value).length === 2 &&
+      "skip" in value &&
+      typeof value.skip === "boolean"
+    );
   return (
     value.kind === "repair" &&
     Object.keys(value).length === 3 &&
