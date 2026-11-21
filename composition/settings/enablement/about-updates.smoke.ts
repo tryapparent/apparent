@@ -78,7 +78,7 @@ test("About makes channel installation, restart and recovery distinct", async ()
         .toBe(true);
     };
     const channel = page.getByRole("combobox", { name: "Next install source" });
-    const install = page.getByRole("button", { name: /^Install latest/ });
+    const install = page.getByRole("button", { name: "Update", exact: true });
     const restart = page.getByRole("button", { name: "Restart now" });
     const proof = process.env.APPARENT_SETTINGS_PROOF;
     if (proof) await mkdir(proof, { recursive: true });
@@ -105,8 +105,8 @@ test("About makes channel installation, restart and recovery distinct", async ()
         };
         await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
         await publish(idle);
-        await expect(install).toHaveAccessibleName("Install latest Stable release");
-        await expect(install).toHaveAccessibleDescription(warning);
+        await expect(install).toBeVisible();
+        await expect(page.getByText(warning)).toHaveCount(0);
         await expect(channel.locator("option[value=main]")).toHaveText("Development builds");
         await expect(channel).toHaveAccessibleDescription(channelDescription);
         await expect(page.locator("#update-channel-description")).toBeHidden();
@@ -118,9 +118,11 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await capture("idle");
         await page.getByRole("button", { name: "Copy version" }).focus();
         await page.keyboard.press("Tab");
+        await expect(install).toBeFocused();
+        await page.keyboard.press("Tab");
         await expect(channel).toBeFocused();
         await expect(page.getByRole("tooltip")).toContainText(channelDescription);
-        await page.keyboard.press("Tab");
+        await page.keyboard.press("Shift+Tab");
         await expect(install).toBeFocused();
         await pressForAction("check-for-updates");
 
@@ -150,7 +152,7 @@ test("About makes channel installation, restart and recovery distinct", async ()
         );
         assert.doesNotMatch(output.slice(currentStart), /dismiss-update-check|check-for-updates/);
         await publish(idle, { updateChannel: "main" });
-        await expect(install).toHaveAccessibleName("Install latest Development build");
+        await expect(install).toBeVisible();
         await install.focus();
         await pressForAction("check-for-updates");
 
@@ -171,7 +173,7 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await expect(install).toHaveCount(0);
         await capture("restart");
         const later = page.getByRole("button", { name: "Restart later" });
-        await channel.focus();
+        await page.getByRole("button", { name: "Copy version" }).focus();
         await page.keyboard.press("Tab");
         await expect(restart).toBeFocused();
         await expect(page.getByRole("tooltip")).toHaveText(stagedStable);
@@ -183,7 +185,7 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await expect(restart).toBeFocused();
         await expect(restart).toHaveAccessibleDescription(stagedStable);
         await capture("restart-later");
-        await page.keyboard.press("Shift+Tab");
+        await page.keyboard.press("Tab");
         await expect(channel).toBeFocused();
         const changeStart = output.length;
         if (process.platform === "linux") await page.keyboard.press("ArrowDown");
@@ -199,7 +201,7 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await expect(restart).toBeInViewport({ ratio: 1 });
         await expect(restart).toHaveAccessibleDescription(stagedStable);
         await capture("restart-after-channel-change");
-        await page.keyboard.press("Tab");
+        await page.keyboard.press("Shift+Tab");
         await expect(restart).toBeFocused();
         await pressForAction("update-now");
 
@@ -246,7 +248,7 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await publish(idle, { updateChannel: "main" });
         await expect(channel).toHaveValue("main");
         await expect(restart).toHaveCount(0);
-        await expect(install).toHaveAccessibleName("Install latest Development build");
+        await expect(install).toBeVisible();
         await capture("development");
         await publish(offered);
         await expect(channel).toHaveValue("stable");
@@ -256,16 +258,11 @@ test("About makes channel installation, restart and recovery distinct", async ()
           await publish(restartFailed, { updateChannel });
           await expect(restartError).toBeHidden();
           await expect(page.getByRole("alert")).toHaveText(unconfirmed);
-          const recovery = page.getByRole("button", {
-            name: updateChannel === "main"
-              ? "Install latest Development build"
-              : "Install latest Stable release",
-          });
-          await expect(recovery).toHaveAccessibleDescription(`${unconfirmed} ${warning}`);
+          await expect(install).toHaveAccessibleDescription(unconfirmed);
           await channel.focus();
-          await page.keyboard.press("Tab");
-          await expect(recovery).toBeFocused();
-          await expect(recovery).toBeInViewport({ ratio: 1 });
+          await page.keyboard.press("Shift+Tab");
+          await expect(install).toBeFocused();
+          await expect(install).toBeInViewport({ ratio: 1 });
           await capture(`restart-without-receipt-${updateChannel}`);
           await pressForAction("check-for-updates");
         }

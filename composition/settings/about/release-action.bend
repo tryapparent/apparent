@@ -1,15 +1,8 @@
 import Base
 
-def install_label(main: Bool, stable: Bool) -> String:
-  match main stable:
-    case True{} _: "Install latest Development build"
-    case False{} True{}: "Install latest Stable release"
-    case False{} False{}: "Install latest release"
-
-def release_action(linux: Bool, +selected_channel: String) -> String:
+def release_action(linux: Bool) -> String:
   match linux:
-    case True{}:
-      install_label(String.eq(selected_channel, "main"), String.eq(selected_channel, "stable"))
+    case True{}: "Update"
     case False{}: "Check for updates"
 
 def show_release_action(linux: Bool, current: Bool) -> Bool:

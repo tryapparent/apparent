@@ -47,7 +47,7 @@ export function UpdateChannel({
         </TooltipTrigger>
         <TooltipContent
           className="settings-help-content"
-          side="top"
+          side="bottom"
           align="start"
         >
           <strong className="block">Next install source</strong>

@@ -207,7 +207,7 @@ export function About({
     state?.linux === true,
     result === "current",
   );
-  const installWarning =
+  const showRecoveryHint =
     state?.linux && state.updates && !checking && !restart && showReleaseAction;
   const progress = checking ? state?.updateCheck.progress : undefined;
   const downloading = progress?.phase === "downloading";
@@ -326,13 +326,6 @@ export function About({
                   }
                 />
               )}
-              {showPond && state.mainUpdates && (
-                <UpdateChannel
-                  value={state.updateChannel}
-                  disabled={checking === true}
-                  onChange={(value) => void changeChannel(value)}
-                />
-              )}
               <div className="settings-update-text">
                 <div
                   className={restart && showPond ? "sr-only" : "settings-result"}
@@ -392,13 +385,8 @@ export function About({
                     role="alert"
                   >
                     Apparent couldn’t confirm an installed update.
-                    {installWarning &&
+                    {showRecoveryHint &&
                       " To try again, install from the selected channel."}
-                  </p>
-                )}
-                {installWarning && (
-                  <p id="update-channel-hint" className="settings-update-note">
-                    May install an earlier version.
                   </p>
                 )}
                 {restart && (
@@ -447,28 +435,27 @@ export function About({
                       <Button
                         ref={primaryAction}
                         disabled={!state.updates}
-                        aria-describedby={
-                          installWarning
-                            ? showUnstagedRestartFailure
-                              ? "restart-unconfirmed update-channel-hint"
-                              : "update-channel-hint"
-                            : undefined
-                        }
+                        className={showPond ? "settings-update-primary" : undefined}
+                        aria-describedby={showUnstagedRestartFailure ? "restart-unconfirmed" : undefined}
                         onClick={() =>
                           void act({ action: "check-for-updates" })
                         }
                       >
                         {result === "current" && !state.linux
                             ? "Check again"
-                            : updateAction.release_action(
-                                state.linux,
-                                state.updateChannel,
-                              )}
+                            : updateAction.release_action(state.linux)}
                       </Button>
                     )}
                   </div>
                 )}
               </div>
+              {showPond && state.mainUpdates && (
+                <UpdateChannel
+                  value={state.updateChannel}
+                  disabled={checking === true}
+                  onChange={(value) => void changeChannel(value)}
+                />
+              )}
               {!showPond && (restart || (!checking && result === "current")) && (
                 <img
                   className="settings-frog"
