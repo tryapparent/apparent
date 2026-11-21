@@ -1,14 +1,10 @@
 import Base
 
-def release_action(linux: Bool) -> String:
-  match linux:
-    case True{}: "Update"
-    case False{}: "Check for updates"
-
-def show_release_action(linux: Bool, current: Bool) -> Bool:
+def release_action(linux: Bool, current: Bool) -> String:
   match linux current:
-    case True{} True{}: False{}
-    case _ _: True{}
+    case _ True{}: "Check again"
+    case True{} False{}: "Update"
+    case False{} False{}: "Check for updates"
 
 def digits(text: String) -> Bool:
   match text:

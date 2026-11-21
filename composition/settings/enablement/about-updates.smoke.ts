@@ -79,6 +79,7 @@ test("About makes channel installation, restart and recovery distinct", async ()
     };
     const channel = page.getByRole("combobox", { name: "Next install source" });
     const install = page.getByRole("button", { name: "Update", exact: true });
+    const checkAgain = page.getByRole("button", { name: "Check again", exact: true });
     const restart = page.getByRole("button", { name: "Restart now" });
     const proof = process.env.APPARENT_SETTINGS_PROOF;
     if (proof) await mkdir(proof, { recursive: true });
@@ -140,7 +141,14 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await expect(install).toHaveCount(0);
         await expect(page.getByText(warning)).toHaveCount(0);
         await expect(channel).toBeEnabled();
+        await expect(checkAgain).toBeEnabled();
         await capture("current");
+        await checkAgain.focus();
+        await pressForAction("check-for-updates");
+        await publish(checking);
+        await expect(checkAgain).toHaveCount(0);
+        await publish({ checking: false, result: "current" });
+        await expect(checkAgain).toBeVisible();
         await channel.focus();
         await page.keyboard.press("Tab");
         await expect(page.getByRole("link", { name: "Star on GitHub" })).toBeFocused();
