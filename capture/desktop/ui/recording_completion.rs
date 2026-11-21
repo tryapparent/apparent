@@ -1,7 +1,6 @@
 //! In-process media teardown and bundle finalization, run only on the background executor.
 
 use std::path::PathBuf;
-use std::time::Instant;
 
 use super::super::CaptureSource;
 use super::whiteboard;
@@ -65,26 +64,13 @@ pub(in crate::capture::desktop) fn finalize(
             return (Err(anyhow::anyhow!("a lab recording has no bundle")), 0);
         }
     };
-    let stop_started = Instant::now();
-    let ((recording, sampling), recorded_audio, mut activity) = std::thread::scope(|s| {
-        let screen_handle = s.spawn(|| screen_session.stop_with_sampling());
-        let win_handle = s.spawn(|| {
-            window_log
-                .map(crate::shared::windows::WindowLogger::stop)
-                .unwrap_or_default()
-        });
-        let audio = crate::capture::engine::runtime::audio::audio::stop_optional(audio_recorder);
-        (
-            screen_handle.join().unwrap(),
-            audio,
-            win_handle.join().unwrap_or_default(),
-        )
-    });
+    let stopped = screen_session.stop_tracks(audio_recorder, window_log);
     let _ = source_released.send(());
-    activity.stop_started = Some(stop_started);
-    activity.stop_ms = Some(stop_started.elapsed().as_millis() as u64);
+    let recording = stopped.recording;
+    let sampling = stopped.sampling;
+    let activity = stopped.activity;
     let duration_ms = recording.duration_ms;
-    let recorded_audio = match recorded_audio {
+    let recorded_audio = match stopped.audio {
         Ok(audio) => audio,
         Err(error) => return (Err(error).stage(Stage::AudioStop), duration_ms),
     };

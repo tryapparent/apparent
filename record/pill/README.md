@@ -75,9 +75,10 @@ preferences, bundle format, or on-disk state requires migration.
 
 ## Overlapping captures
 
-Finish keeps one live recording at a time. The native finalizer signals source
-release after screen and microphone teardown, and the pill policy then permits
-the normal Record actions while the older bundle is still being built. The
+Finish keeps one live recording at a time. Engine stops the screen, microphone
+and window telemetry together. The finalizer signals source release when Engine
+returns, and the pill policy then permits the normal Record actions while the
+older bundle is still being built. The
 older capture keeps its own receipt and handoff identity. A late result cannot
 replace the newer pill or write its clipboard.
 
