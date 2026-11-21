@@ -235,8 +235,9 @@ impl ApparentCoordinator {
             .filter(|session| !session.has_completion(self.capture_generation))
             .and_then(|_| self.completed_handoff_bundle())
             .map(|(dir, bundle)| crate::shared::handoff::clipboard_summary(bundle, dir));
+        let t3_eligible = !self.capture_local_practice && !self.current_capture_is_report();
         if let Some(session) = &mut self.electron_pill {
-            session.set_t3_eligible(!self.capture_local_practice && !self.report_capture);
+            session.set_t3_eligible(t3_eligible);
             if let Some(text) = completion {
                 session.complete(self.capture_generation, Some(text));
             }

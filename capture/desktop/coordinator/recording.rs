@@ -34,11 +34,6 @@ impl ApparentCoordinator {
             // the clipboard, replace the current review, or finish a newer practice.
             self.capture_generation = self.capture_generation.wrapping_add(1);
         }
-        if matches!(phase, IslandPhase::Hidden | IslandPhase::Dismissing)
-            && self.active_recording.is_none()
-        {
-            self.report_capture = false;
-        }
         if matches!(phase, IslandPhase::Recording) && !matches!(self.island_phase, IslandPhase::Recording) {
             self.recording_activity_attempted = false;
             self.capture_local_practice = self.onboarding.as_ref().is_some_and(|session| session.local_practice());
@@ -1463,6 +1458,16 @@ impl ApparentCoordinator {
         false
     }
 
+    pub(in crate::capture::desktop) fn current_capture_is_report(&self) -> bool {
+        self.report_capture || self.report_finalizing_generation == Some(self.capture_generation)
+    }
+
+    fn seal_report_capture(&mut self) -> bool {
+        let report = std::mem::take(&mut self.report_capture);
+        self.report_finalizing_generation = report.then_some(self.capture_generation);
+        report
+    }
+
     pub fn finish_recording(&mut self, cx: &mut Context<Self>) {
         self.observe_recording_activity();
         #[cfg(target_os = "linux")]
@@ -1493,7 +1498,7 @@ impl ApparentCoordinator {
         let bundle_dir = rec.bundle_dir;
         let target = rec.target;
         let source = rec.source;
-        let report = self.report_capture;
+        let report = self.seal_report_capture();
         // Drop the Metal overlay immediately on the main thread so the screen frame clears,
         // and morph the Dynamic Island into the compact spinning "Processing…" state while
         // media teardown, transcription, and PNG encoding run on a background worker.

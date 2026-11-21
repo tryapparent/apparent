@@ -878,6 +878,7 @@ pub struct ApparentCoordinator {
     completion_pending: Option<u64>,
     capture_local_practice: bool,
     report_capture: bool,
+    report_finalizing_generation: Option<u64>,
     recording_activity_attempted: bool,
     /// Media workers outlive their capsule and still own unfinished bundles.
     pending_finalizers: usize,
