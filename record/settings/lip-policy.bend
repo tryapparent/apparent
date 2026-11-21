@@ -30,3 +30,13 @@ def setup_state(enabled: Bool, existing: Bool, supported: Bool) -> U32:
 
 def finish_tail_ms() -> U32:
   400
+
+def use_microphone(lips: Bool, microphone: Bool) -> Bool:
+  match lips:
+    case True{}:
+      False{}
+    case False{}:
+      microphone
+
+def queue_clip(+pending: U32) -> Bool:
+  (pending < 8 : U32)

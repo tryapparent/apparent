@@ -74,9 +74,13 @@ export class LipHost {
     return policy.admit(this.enabled, this.camera);
   }
 
+  async openDecoder() {
+    return await this.installed(false) ?? await this.installed(true);
+  }
+
   async begin() {
     const generation = this.generation;
-    const decoder = await this.installed(false) ?? await this.installed(true);
+    const decoder = await this.openDecoder();
     if (!decoder || !policy.admit(this.enabled, generation === this.generation && !this.trial && !this.camera))
       throw Error("Silent prompt unavailable");
     const model = await open(join(decoder.directory, "models", "face_landmarker.task"), constants.O_RDONLY | constants.O_NONBLOCK);
@@ -107,32 +111,11 @@ export class LipHost {
     this.camera = false;
     const trial = new AbortController();
     this.trial = trial;
-    let scratch: string | undefined;
     try {
-      scratch = await mkdtemp(join(tmpdir(), "apparent-dev-lip-prompt-"));
-      const clip = join(scratch, "prompt.webm");
-      await writeFile(clip, bytes, { mode: 0o600, signal: trial.signal });
-      const { stdout } = await run(decoder.program,
-        [...decoder.prefix, "file", clip, "--end", String(policy.clip_seconds()), "--cleanup", "none"], {
-          cwd: decoder.directory,
-          timeout: 90_000,
-          maxBuffer: 65536,
-          killSignal: "SIGKILL",
-          signal: trial.signal,
-          env: { ...process.env, HF_HUB_OFFLINE: "1", LIPFLOW_HOME: scratch },
-        });
-      const match = /^raw:[ \t]*(.*)$/m.exec(stdout);
-      if (!match || trial.signal.aborted) throw Error("Silent prompt unavailable");
-      this.lastText = match[1].trim();
+      this.lastText = await decodeLipClip(decoder, bytes, trial.signal);
       return this.lastText;
-    } catch {
-      throw Error("Lipflow could not read the clip");
     } finally {
-      try {
-        if (scratch) await rm(scratch, { recursive: true, force: true });
-      } finally {
-        if (this.trial === trial) this.trial = undefined;
-      }
+      if (this.trial === trial) this.trial = undefined;
     }
   }
 
@@ -146,5 +129,28 @@ export class LipHost {
   textToCopy() {
     if (!this.enabled || !this.lastText) throw Error("Silent prompt unavailable");
     return this.lastText;
+  }
+}
+
+export async function decodeLipClip(decoder: Decoder, bytes: Uint8Array, signal: AbortSignal) {
+  if (!policy.valid_size(bytes.byteLength)) throw Error("Invalid lip clip");
+  const scratch = await mkdtemp(join(tmpdir(), "apparent-dev-lip-prompt-"));
+  try {
+    const clip = join(scratch, "prompt.webm");
+    await writeFile(clip, bytes, { mode: 0o600, signal });
+    const { stdout } = await run(decoder.program,
+      [...decoder.prefix, "file", clip, "--end", String(policy.clip_seconds()), "--cleanup", "none"], {
+        cwd: decoder.directory,
+        timeout: 90_000,
+        maxBuffer: 65536,
+        killSignal: "SIGKILL",
+        signal,
+        env: { ...process.env, HF_HUB_OFFLINE: "1", LIPFLOW_HOME: scratch },
+      });
+    const match = /^raw:[ \t]*(.*)$/m.exec(stdout);
+    if (!match || signal.aborted) throw Error("Silent prompt unavailable");
+    return match[1].trim();
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
   }
 }

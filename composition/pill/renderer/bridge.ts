@@ -2,7 +2,8 @@ import type { DestinationView } from "../../../handoff/pure/destinations.ts";
 import type { PillView } from "../../../record/pill/renderer/view";
 import type { BackgroundHandoff } from "../../../record/pill/renderer/pill-view";
 export type { PillView } from "../../../record/pill/renderer/view";
-export interface PillBridge {
+import type { LipRecordingBridge } from "../../../record/pill/input/renderer";
+export interface PillBridge extends LipRecordingBridge {
   read: () => Promise<PillView | null>;
   retryBackgroundHandoff: (capture: string) => Promise<void>;
   backgroundHandoff: () => Promise<BackgroundHandoff | null>;

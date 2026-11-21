@@ -184,6 +184,10 @@ await bendScratch(async (scratch) => {
     import lip from "./lip-policy.mjs";
     assert.equal(lip.clip_seconds(), 12);
     assert.equal(lip.finish_tail_ms(), 400);
+    for (const lips of [false, true]) for (const mic of [false, true])
+      assert.equal(lip.use_microphone(lips, mic), !lips && mic);
+    assert.equal(lip.queue_clip(7), true);
+    assert.equal(lip.queue_clip(8), false);
     assert.equal(lip.valid_size(0), false);
     assert.equal(lip.valid_size(1), true);
     assert.equal(lip.valid_size(8388608), true);

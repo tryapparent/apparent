@@ -1,4 +1,4 @@
-import { useLayoutEffect, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { Button } from "@apparent/ui/button";
 import { StatusCard } from "@apparent/ui/status-card";
@@ -9,9 +9,16 @@ import { DestinationPicker } from "./destination-picker";
 import "../../../handoff/renderer/picker.css";
 import { PillSurface } from "../../../record/pill/renderer/pill-view";
 
+import { connectLipRecording, type LipStatus } from "../../../record/pill/input/renderer";
+
 const session = createPillSession(window.apparentPill);
 
 function Pill() {
+  const [lipStatus, setLipStatus] = useState<LipStatus | null>(null);
+  useEffect(() => {
+    const bridge = window.apparentPill;
+    if (bridge?.subscribeLip) return connectLipRecording(bridge, setLipStatus);
+  }, []);
   const {
     view,
     handoffLoaded,
@@ -121,6 +128,7 @@ function Pill() {
   return (
     <PillSurface
       view={view}
+      lipStatus={view.phase === "recording" ? lipStatus : null}
       backgroundHandoff={background}
       onRetryBackground={(key) =>
         window.apparentPill!.retryBackgroundHandoff(key)
