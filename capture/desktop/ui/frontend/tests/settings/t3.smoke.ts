@@ -150,8 +150,23 @@ test('switching panes cancels a queued T3 connection before the private native w
  hold=false;await send({type:'show',pane:'labs'});
  await expect(page).toHaveTitle('Apparent Settings — Labs');assert.deepEqual(await connecting,{reason:'cancelled'});assert.equal(writes,0);assert.equal(await queuedPreference,true);assert.equal(preferenceWrites,0);
  await reply(held!);await expect(page.getByRole('switch',{name:'Send recordings to T3 Code'})).toHaveCount(0);
+ await page.emulateMedia({reducedMotion:'no-preference'});
+ held=undefined;hold=true;
  await send({type:'show',pane:'agents'});await expect(page).toHaveTitle('Apparent Settings — Agents');
- await expect(page.getByRole('switch',{name:'Send recordings to T3 Code'})).toBeEnabled();await expect(page.getByRole('alertdialog')).toHaveCount(0);
+ await expect.poll(()=>Boolean(held)).toBe(true);
+ for (const id of ['#agent-video-control', '#agent-t3-control']) {
+  const toggle = page.locator(id);
+  await expect(toggle).toBeAttached();
+  await expect(toggle).toBeHidden();
+ }
+ hold=false;await reply(held!);
+ for (const name of ['Ask for video proof', 'Send recordings to T3 Code']) {
+  const toggle = page.getByRole('switch', {name});
+  await expect(toggle).toBeChecked();
+  await expect(toggle).toBeEnabled();
+  await expect(toggle.locator('.apparent-switch-thumb')).toHaveCSS('transition-duration', '0s');
+ }
+ await expect(page.getByRole('alertdialog')).toHaveCount(0);
  p.renew();await page.getByRole('button',{name:'Pair with a link',exact:true}).click();
  await app.evaluate(({clipboard},link)=>clipboard.writeText(link),p.link);
  await page.getByRole('dialog').getByRole('button',{name:'Paste link or code',exact:true}).click();

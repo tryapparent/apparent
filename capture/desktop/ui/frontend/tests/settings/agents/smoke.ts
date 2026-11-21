@@ -62,8 +62,8 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     const page = browser.contexts()[0].pages()[0];
     await expect(page).toHaveTitle('Apparent Settings — Agents');
     assert.equal(await page.evaluate(async()=>await window.apparentGeneral.read().then(()=>false,()=>true) && await window.apparentLabs.read().then(()=>false,()=>true) && await window.apparent!.readConnectSettings().then(()=>false,()=>true)),true);
-    const toggle = page.getByRole('switch', {name: 'Ask for video proof'});
-    await expect(toggle).toBeDisabled();
+    const toggle = page.locator('#agent-video-control');
+    await expect(toggle).toBeHidden();
     await expect(toggle).toHaveAttribute('aria-busy', 'true');
     await expect.poll(() => Boolean(held)).toBe(true);
     if (process.env.APPARENT_AGENTS_PROOF) {
