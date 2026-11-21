@@ -76,11 +76,6 @@
   color: var(--apparent-carbon);
 }
 
-.settings-t3-row-actions > button:last-child {
-  padding-inline: 8px;
-  min-width: 44px;
-}
-
 .settings-content .settings-t3 .t3-text-action {
   padding-inline: 0;
   color: inherit;

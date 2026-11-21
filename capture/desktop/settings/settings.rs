@@ -714,7 +714,7 @@ impl Panel {
             }
             Action::Grant { permission } => self.grant(permission),
             Action::Reopen => {
-                if self.screen_relaunch() {
+                if settings_permissions::screen_relaunch(self.grants.as_ref(), &host.config_path()) {
                     Effect::Relaunch
                 } else {
                     Effect::None
@@ -886,22 +886,12 @@ impl Panel {
             .map_or(Status::NotDetermined, |g| g.status(permission))
     }
 
-    fn screen_relaunch(&self) -> bool {
-        crate::permission_admission::screen_relaunch(self.grants.as_ref())
-    }
-
     /// Like onboarding: the first press asks macOS, later ones (or a denied one) open the
     /// System Settings pane.
     fn grant(&mut self, permission: Permission) -> Effect {
-        let repair = crate::permission_admission::repair(
-            self.status(permission), self.requested.contains(&permission), false, false,
-        );
-        match repair {
-            Repair::Request | Repair::OpenSettings => {
-                self.requested.insert(permission);
-                if repair == Repair::Request { Effect::Request(permission) }
-                else { Effect::OpenSettings(permission) }
-            }
+        match settings_permissions::legacy_repair(permission, self.status(permission), &mut self.requested) {
+            Repair::Request => Effect::Request(permission),
+            Repair::OpenSettings => Effect::OpenSettings(permission),
             Repair::None | Repair::CopyInput => Effect::None,
         }
     }
@@ -921,7 +911,6 @@ impl Panel {
             .map(|program| program.name());
         let policy = crate::capture::engine::bundle::retention::Policy::load_from(&host.config_path());
         let login = login_item();
-        let microphone = config.microphone_enabled.unwrap_or(true);
         View {
             version: env!("APPARENT_VERSION_LABEL").to_owned(),
             connect: self.connect.clone(),
@@ -981,9 +970,7 @@ impl Panel {
             captures_dir: CapturesDirView::new(&config),
             #[cfg(target_os = "linux")]
             storage: self.storage.view(&host.config_path()),
-            permissions: crate::permission_admission::project_rows(
-                settings_permissions::platform(), self.grants.as_ref(), &self.requested, microphone, &config, true,
-            ).collect(),
+            permissions: settings_permissions::rows(self.grants.as_ref(), &self.requested, &config, true).collect(),
             updates: updates_available(),
             update_check: self.update_check.clone(),
             update_channel: if config.update_channel.as_deref() == Some("main") {
@@ -1369,8 +1356,11 @@ impl Session {
                 Effect::None
             }
             Event::Action(Action::PermissionAction { request, intent }) => {
-                if self.presents_permissions() && let Err(error) = self.permissions.begin(request, intent) {
-                    self.permission_result(request, Some(error));
+                if self.presents_permissions()
+                    && let Some(Outcome::Reply(request, error)) = self.permissions.begin(request, intent, &host.config_path())
+                {
+                    self.sync_permissions(host);
+                    self.permission_result(request, error);
                 }
                 return Effect::None;
             }
@@ -1652,7 +1642,7 @@ impl Session {
     }
 
     fn permission_result(&mut self, request: u32, error: Option<&str>) {
-        self.send(&serde_json::json!({"type":"permission-result", "request":request, "error":error}));
+        self.send(&settings_permissions::reply(request, error));
     }
 
     fn sync_permissions(&mut self, host: &dyn Host) {

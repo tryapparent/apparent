@@ -189,8 +189,23 @@ impl Inventory {
                 fs::same(&artifact.metadata, &root.file(name)?.metadata()?),
                 "artifact replaced during validation: {name}"
             );
-            artifact.file.sync_all()?;
         }
+        let artifacts: Vec<_> = self.files.values().collect();
+        let batch_size = artifacts.len().div_ceil(4).max(1);
+        std::thread::scope(|scope| -> Result<()> {
+            let workers: Vec<_> = artifacts.chunks(batch_size)
+                .map(|batch| scope.spawn(move || -> Result<()> {
+                    for artifact in batch {
+                        artifact.file.sync_all()?;
+                    }
+                    Ok(())
+                }))
+                .collect();
+            for worker in workers {
+                worker.join().map_err(|_| anyhow::anyhow!("Artifact durability worker panicked"))??;
+            }
+            Ok(())
+        })?;
         // Deepest directories first, then the root. Check identities and the exact
         // complete inventory again, catching inserted/unlinked/replaced nested entries.
         for (name, (dir, before)) in self.directories.iter().rev() {

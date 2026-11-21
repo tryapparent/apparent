@@ -5,7 +5,17 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
-export const recordMediaFiles = ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'assembly-worker.js', 'assembly-policy.js', 'assembly/frame-limits.mjs', 'transcript/worker.js', 'export/worker.js', 'export/policy.js', 'export/quiet-export.mjs', 'export/parameters.json', 'transcript/policy.js', 'selection/worker.js', 'selection/cues.js', 'selection/scene-worker.js', 'selection/scene.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-media', 'native/apparent-engine-frames', 'native/apparent-engine-audio', 'native/manifest.json'];
+export const recordMediaFiles = [
+  'worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js',
+  'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js',
+  'assembly-worker.js', 'assembly-policy.js', 'assembly/frame-limits.mjs',
+  'transcript/worker.js', 'transcript/request.js', 'transcript/policy.js',
+  'selection/worker.js', 'selection/cues-request.js', 'selection/cues.js',
+  'selection/scene-worker.js', 'selection/scene-request.js', 'selection/scene.js',
+  'export/worker.js', 'export/policy.js', 'export/quiet-export.mjs', 'export/parameters.json',
+  'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js',
+  'native/apparent-engine-media', 'native/apparent-engine-frames', 'native/apparent-engine-audio', 'native/manifest.json',
+];
 
 export function checkElectron(root: string): string {
   const frontend = resolve(root, 'capture/desktop/ui/frontend');

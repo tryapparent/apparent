@@ -210,10 +210,10 @@ export function T3Settings({bridge, artwork}: {bridge: T3SettingsBridge; artwork
   return <section className="settings-t3 settings-agents" aria-labelledby="agent-t3-label">
     <div className="agent-preference-row" ref={preferenceRow}>
       <h2 id="agent-t3-label" tabIndex={-1}>Send recordings to T3 Code</h2>
-      <Switch id="agent-t3-control" className="agent-switch" checked={enabled}
+      <Switch id="agent-t3-control" className="agent-switch" checked={known ? enabled : undefined}
         aria-labelledby="agent-t3-label" aria-describedby="agent-t3-help"
         aria-busy={saving} aria-disabled={saving || connecting}
-        disabled={!known} onCheckedChange={value => {
+        onCheckedChange={value => {
           if (!saving && !connecting) void request(value);
         }} />
     </div>
@@ -223,7 +223,7 @@ export function T3Settings({bridge, artwork}: {bridge: T3SettingsBridge; artwork
       onClick={() => {restoreToggle.current = true; void request();}}>Refresh T3 sending</Button>}
     {enabled && <section className="settings-t3-computers" aria-labelledby="t3-computers-label">
       <h3 id="t3-computers-label">Computers</h3>
-      {computers.length ? <ul className="settings-t3-list">{computers.map(computer => {
+      {computers.length ? <ul className="settings-t3-list" data-apparent-surface="stock">{computers.map(computer => {
         const metadata = environments?.find(environment => environment.origin === computer.origin);
         const host = new URL(computer.origin).host;
         const name = metadata?.name || host;
@@ -234,7 +234,7 @@ export function T3Settings({bridge, artwork}: {bridge: T3SettingsBridge; artwork
           <div className="settings-t3-identity"><p>{name}</p><span>{statuses[status]}</span></div>
           <div className="settings-t3-row-actions">
             {status >= 2 && <Button variant="link" className="t3-text-action" disabled={connecting} aria-label={`Reconnect ${name}`} onClick={event => openSetup(event.currentTarget, computer.origin, name)}>Reconnect</Button>}
-            <Button variant="ghost" aria-label={`Manage ${name}`} aria-expanded={managedOrigin === computer.origin}
+            <Button variant="overflow" size="icon" aria-label={`Manage ${name}`} aria-expanded={managedOrigin === computer.origin}
               disabled={connecting} onClick={() => setManagedOrigin(managedOrigin === computer.origin ? undefined : computer.origin)}>
               <MoreHorizontal aria-hidden="true" />
             </Button>

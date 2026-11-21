@@ -2,7 +2,7 @@ export { settingsReportCapture } from "../../../../../../composition/settings/re
 export { settingsFeedbackHost } from "../../../../../../composition/settings/feedback-host.ts";
 export { bindAbout } from "../../../../../../composition/settings/about/host.ts";
 
-import { PermissionHost } from "../../../../../../composition/settings/permission-host.ts";
+import { PermissionHost } from "../../../../../../record/settings/permissions/permission-host.ts";
 import { RecordingHost } from "../../../../../../composition/settings/recording-host.ts";
 
 // Desktop's native presentation barrier. A DOM commit and an older first-paint

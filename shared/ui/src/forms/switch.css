@@ -14,6 +14,7 @@
 }
 
 .apparent-switch:disabled { cursor: default; opacity: .45; }
+.apparent-switch:not([aria-checked]) { visibility: hidden; }
 .apparent-switch[aria-busy=true] { cursor: wait; pointer-events: auto; opacity: 1; }
 .apparent-switch:focus-visible { outline: 2px solid var(--color-ring); outline-offset: 3px; }
 
@@ -45,10 +46,6 @@
 
 .apparent-switch[aria-checked=true] .apparent-switch-thumb {
   transform: translateX(20px);
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .apparent-switch-thumb { transition: transform 150ms ease; }
 }
 
 @media (forced-colors: active) {

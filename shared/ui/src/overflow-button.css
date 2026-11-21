@@ -1,0 +1,50 @@
+.apparent-overflow-button {
+  --overflow-hover-weight: 46%;
+  --overflow-open-weight: 68%;
+  --overflow-focus: var(--apparent-signal);
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: 44px;
+  min-block-size: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  transition: none;
+}
+
+.apparent-overflow-button svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .apparent-overflow-button {
+    --overflow-hover-weight: 25%;
+    --overflow-open-weight: 37%;
+    --overflow-focus: var(--apparent-lilac);
+  }
+
+  [data-apparent-surface="stock"] .apparent-overflow-button {
+    --overflow-hover-weight: 46%;
+    --overflow-open-weight: 68%;
+    --overflow-focus: var(--apparent-signal);
+  }
+}
+
+@media (hover: hover) {
+  .apparent-overflow-button:enabled:hover {
+    background-color: color-mix(in srgb, var(--apparent-lilac) var(--overflow-hover-weight), transparent);
+  }
+}
+
+.apparent-overflow-button:enabled[aria-expanded="true"] {
+  background-color: color-mix(in srgb, var(--apparent-lilac) var(--overflow-open-weight), transparent);
+}
+
+.apparent-overflow-button:focus-visible {
+  outline: 2px solid var(--overflow-focus);
+  outline-offset: 2px;
+  box-shadow: none;
+}

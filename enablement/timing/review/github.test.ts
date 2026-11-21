@@ -52,6 +52,45 @@ const job={id:501,run_id:90,run_attempt:2,head_sha:sha,name:'Signed build',runne
   steps:[{number:7,name:'Sign package',status:'completed',conclusion:'success',
     started_at:'2026-11-17T06:13:00Z',completed_at:'2026-11-17T06:33:00Z'}]};
 
+test('ordinary completions cover distinct heads across reserved and remaining slots before repeating',()=>{
+  const completed=([
+    [100,'a',59,'success'], [101,'a',34,'success'], [102,'a',28,'success'],
+    [103,'a',25,'success'], [104,'a',24,'success'], [105,'a',23,'success'],
+    [106,'a',22,'success'], [107,'b',21,'skipped'], [108,'b',18,'success'],
+    [110,'d',13,'success'], [109,'c',14,'failure'],
+  ] as const).map(([databaseId,letter,minute,conclusion])=>({databaseId,headSha:letter.repeat(40),attempt:1,
+    status:'completed',conclusion,name:'Verification',createdAt:'2026-11-17T06:01:00Z',
+    updatedAt:`2026-11-17T11:${minute}:00Z`}));
+  const queued=[4,3,2,1].map(databaseId=>({databaseId,headSha:'a'.repeat(40),attempt:1,
+    status:'queued',conclusion:null,name:'Queue',createdAt:`2026-11-16T0${databaseId}:00:00Z`,
+    updatedAt:`2026-11-16T0${databaseId}:00:00Z`}));
+  const running={...queued[0],databaseId:5,status:'in_progress',name:'Executing'};
+  for (const [runs, completions] of [
+    [completed,[100,107,109,110,101,102,103]],
+    [completed.filter(run=>run.headSha==='a'.repeat(40)),[100,101,102,103,104,105,106]],
+  ] as const) {
+    const lists:string[]=[], api:string[]=[];
+    const result=collectGitHub(repo,from,to,12,args=>{
+      if (args[0]==='run') {
+        const status=args[args.indexOf('--status')+1];
+        lists.push(status);
+        if (status==='queued') return queued;
+        if (status==='in_progress') return [running];
+        return status==='completed' ? runs : [];
+      }
+      assert.equal(args[0],'api');
+      api.push(args[1]);
+      return {total_count:0,jobs:[]};
+    });
+    const expected=[1,2,3,4,5,...completions];
+    assert.deepEqual(result.runs.map(run=>run.databaseId),expected);
+    assert.equal(result.coverage.selectedRuns,12);
+    assert.equal(result.coverage.runLimitReached,runs.length>completions.length);
+    assert.deepEqual(lists,['queued','in_progress','waiting','completed']);
+    assert.deepEqual(api,expected.map(id=>`repos/${repo}/actions/runs/${id}/attempts/1/jobs?per_page=100&page=1`));
+  }
+});
+
 function producer(options:{duplicate?:boolean; metadata?:Partial<typeof attempt>; missingMetadata?:boolean; jobs?:'partial'|'failed'}={}) {
   const api:string[]=[];
   const read=(args:string[])=>{

@@ -66,7 +66,7 @@ pub(crate) fn prepare() {
 
 fn prepare_models() -> Result<()> {
     if speech::installed_parakeet().is_none() {
-        speech::download(&speech::PARAKEET, &speech::own_models_dir(), &mut |_| {})?;
+        speech::download(speech::preferred_parakeet(), &speech::own_models_dir(), &mut |_| {})?;
     }
     if installed().is_none() {
         speech::download(&NEMOTRON, &preview_dir(), &mut |_| {})?;
@@ -302,7 +302,7 @@ mod tests {
         let duration_ms = audio.duration_ms;
         let recording = ScreenRecording {
             frames: (0..duration_ms).step_by(500)
-                .map(|t| RgbaFrame::new(t, 32, 32, vec![128; 32 * 32 * 4]))
+                .map(|t| RgbaFrame::new(t, 32, 32, vec![128; 32 * 32 * 4]).into())
                 .collect(),
             duration_ms,
             video: None,
@@ -317,7 +317,9 @@ mod tests {
         ensure!(std::fs::read(saved.join("audio.wav"))? == wav, "Saved audio differs from the full fixture");
         ensure!(!summary.is_empty() && !bundle.keyframes.is_empty(), "Missing bundle presentation");
         let transcript = bundle.transcript;
-        ensure!(transcript.source == "parakeet:parakeet-unified-en-0.6b-Q8_0", "Wrong final provider");
+        let model_path = speech::installed_parakeet().context("Final model unavailable")?;
+        let model = model_path.file_stem().and_then(|name| name.to_str()).context("Final model name unavailable")?;
+        ensure!(transcript.source == format!("parakeet:{model}"), "Wrong final provider");
         ensure!(transcript.text.to_lowercase().contains("microphone"), "Missing early speech");
         ensure!(transcript.text.to_lowercase().contains("cursor"), "Missing saved tail");
         ensure!(!transcript.words.is_empty() && !transcript.estimated, "Missing real word times");

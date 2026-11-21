@@ -44,7 +44,7 @@ objc2-quartz-core = { version = "0.3.2", features = ["CALayer"] }
 metal = "0.29.0"
 screencapturekit = { version = "=11.0.0", features = ["macos_15_0"] }
 sha2 = "0.10.9"
-transcribe-cpp = { version = "=0.2.4", default-features = false, features = ["metal"] }
+transcribe-cpp = { version = "=0.4.1", default-features = false, features = ["metal"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 ab_glyph = "0.2.32"
@@ -56,7 +56,7 @@ sha2 = "0.10.9"
 # ggml-cpu-skylakex.dll, ...) and the best one this CPU runs is loaded at run time. A static build
 # compiles it for the build machine (GGML_NATIVE): CI's AVX-512 runner, which crashed on CPUs
 # without AVX-512 (#58).
-transcribe-cpp = { version = "=0.2.4", default-features = false, features = ["dynamic-backends"] }
+transcribe-cpp = { version = "=0.4.1", default-features = false, features = ["dynamic-backends"] }
 tray-icon = { version = "0.24.1", default-features = false }
 windows = { version = "0.61.3", features = [
   "Wdk_System_SystemServices",
@@ -118,12 +118,13 @@ gpui = { version = "0.2.2", default-features = false, features = ["font-kit", "x
 gstreamer = "0.25"
 gstreamer-app = "0.25"
 gstreamer-video = "0.25"
+qoi = "=0.4.1"
 ksni = { version = "0.3", default-features = false, features = ["async-io", "blocking"] }
 lyon = "1.0.19"
 sha2 = "0.10.9"
 # Runtime CPU selection; never compile ggml for the CI runner's CPU (#82).
 # x86_64 gets one module per ISA tier; aarch64 gets a portable CPU module.
-transcribe-cpp = { version = "=0.2.4", default-features = false, features = ["dynamic-backends"] }
+transcribe-cpp = { version = "=0.4.1", default-features = false, features = ["dynamic-backends"] }
 x11rb = { version = "0.13.1", features = ["allow-unsafe-code", "randr", "shape", "xfixes", "xinput", "xtest", "res"] }
 zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
 

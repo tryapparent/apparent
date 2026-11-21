@@ -6,6 +6,27 @@ use std::collections::BTreeSet;
 
 include!(concat!(env!("OUT_DIR"), "/recording_permissions.rs"));
 
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Debug)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ScreenSelection {
+    Unavailable,
+    Picker,
+    FullDisplay,
+}
+
+pub(crate) fn screen_selection(supported: bool, saved: Option<bool>) -> ScreenSelection {
+    let saved = match saved {
+        None => 0,
+        Some(true) => 1,
+        Some(false) => 2,
+    };
+    SCREEN_SELECTION[usize::from(supported) * 3 + saved]
+}
+
+pub(crate) fn save_picker(skip: bool) -> bool {
+    SAVE_PICKER[usize::from(skip)]
+}
+
 #[derive(Clone, Copy)]
 pub(crate) enum ScreenAuthorization {
     ExistingGrant,
@@ -70,9 +91,9 @@ pub(crate) fn requires(
         .contains(&permission)
 }
 
-pub(crate) fn screen_relaunch(grants: Option<&Grants>) -> bool {
+pub(crate) fn screen_relaunch(grants: Option<&Grants>, config: &Config) -> bool {
     grants.is_some_and(|g| g.granted(Permission::ScreenRecording) && g.screen_needs_relaunch)
-        && !selection::requested()
+        && !selection::enabled_in(config)
 }
 
 pub(crate) fn check_for(
@@ -227,6 +248,7 @@ pub(crate) fn repair(
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub(crate) enum PermissionIntent {
     Recheck,
+    ScreenSelection { skip: bool },
     Repair {
         permission: Permission,
         repair: RepairIntent,
@@ -310,7 +332,7 @@ pub(crate) fn project_rows<'a>(
                 },
                 |grants| grants.status(permission),
             );
-            let relaunch = permission == Permission::ScreenRecording && screen_relaunch(grants);
+            let relaunch = permission == Permission::ScreenRecording && screen_relaunch(grants, config);
             let copy_input =
                 matches!(platform, Platform::Wayland) && permission == Permission::Accessibility;
             let repair = if matches!(platform, Platform::Macos) || copy_input {

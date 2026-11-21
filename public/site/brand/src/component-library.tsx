@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { MoreHorizontal } from 'lucide-react';
 import { Button } from '@apparent/ui/button';
 import { Switch } from '@apparent/ui/switch';
 import { ErrorDialog } from '@apparent/ui/error-dialog';
@@ -7,6 +8,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@apparent/ui/tabs';
 import { StatusCard, type StatusTone } from '@apparent/ui/status-card';
 import { NativeSelect, NativeSelectOption } from '@apparent/ui/native-select';
 import '@apparent/ui/status.css';
+import '@apparent/ui/overflow-button.css';
 
 const source = 'https://github.com/tryapparent/apparent/blob/main/shared/ui/src/';
 function Source({ file, example }: { file: string; example: string }) {
@@ -14,6 +16,7 @@ function Source({ file, example }: { file: string; example: string }) {
 }
 function Library() {
   const [count, setCount] = useState(0);
+  const [actionsOpen, setActionsOpen] = useState(false);
   const [tone, setTone] = useState<StatusTone>('neutral');
   const [name, setName] = useState('My little frog project');
   const [submitted, setSubmitted] = useState(false);
@@ -37,6 +40,19 @@ function Library() {
       </div><p role="status">{count ? `Button tried ${count} ${count === 1 ? 'time' : 'times'}.` : 'Try the button. This example does not start a recording.'}</p>
       <p>The unavailable button demonstrates a native disabled state. Hover and keyboard focus remain visible on available controls.</p>
       <Source file="button.tsx" example={'import { Button } from "@apparent/ui/button";\n<Button onClick={handleAction}>Start recording</Button>\n<Button variant="outline">Cancel</Button>\n<Button disabled>Unavailable</Button>'} />
+    </article>
+    <article>
+      <h3>Overflow actions</h3>
+      <p>Use the ellipsis for secondary actions on a specific item.</p>
+      <div className="bb-overflow-specimen" data-apparent-surface="stock">
+        <div className="bb-overflow-row">
+          <span>Work laptop</span>
+          <Button variant="overflow" size="icon" aria-label="Manage work laptop" aria-expanded={actionsOpen}
+            onClick={() => setActionsOpen(open => !open)}><MoreHorizontal aria-hidden="true" /></Button>
+        </div>
+        {actionsOpen && <p>Example actions for this computer would appear here.</p>}
+      </div>
+      <Source file="button.tsx" example={'<Button variant="overflow" size="icon" aria-label="Manage work laptop"\n  aria-expanded={open} onClick={toggleActions}>\n  <MoreHorizontal aria-hidden="true" />\n</Button>'} />
     </article>
     <article>
       <h3>Optional preference switch</h3>

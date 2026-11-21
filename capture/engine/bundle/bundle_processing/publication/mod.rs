@@ -242,11 +242,11 @@ pub(crate) fn write_artifacts(
 ) -> Result<()> {
     let root = Directory::open(path, true)?;
     for (key, frame) in frames {
-        root.write(&key.file, &crate::capture::engine::render::encode_png(frame)?)?;
+        root.stage_artifact(&key.file, &crate::capture::engine::render::encode_png(frame)?)?;
     }
-    root.write(&bundle.contact_sheet, &crate::capture::engine::render::encode_png(sheet)?)?;
-    root.write("apparent.json", &serde_json::to_vec_pretty(bundle)?)?;
-    root.write("summary.md", summary.as_bytes())
+    root.stage_artifact(&bundle.contact_sheet, &crate::capture::engine::render::encode_png(sheet)?)?;
+    root.stage_artifact("apparent.json", &serde_json::to_vec_pretty(bundle)?)?;
+    root.stage_artifact("summary.md", summary.as_bytes())
 }
 
 pub(crate) fn write_full(
@@ -262,12 +262,12 @@ pub(crate) fn write_full(
             .file_name()
             .and_then(|p| p.to_str())
             .context("bad full frame path")?;
-        root.write(
+        root.stage_artifact(
             &format!("{}/{leaf}", info.full_frames),
             &crate::capture::engine::render::encode_png(frame)?,
         )?;
     }
-    root.write(&info.full_contact_sheet, &crate::capture::engine::render::encode_png(sheet)?)
+    root.stage_artifact(&info.full_contact_sheet, &crate::capture::engine::render::encode_png(sheet)?)
 }
 
 #[cfg(test)]

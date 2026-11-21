@@ -22,10 +22,6 @@ import availableFrog from "../../../capture/desktop/assets/settings/frog-jump.pn
 import currentFrog from "../../../capture/desktop/assets/settings/frog-lounge.png";
 import failedFrog from "../../../capture/desktop/assets/settings/frog-puzzled.png";
 import { General } from "./general";
-import {
-  RecordingStartPreference,
-  recordingStartPreference,
-} from "../../../record/settings/renderer/recording-start";
 import type { ComponentType } from "react";
 import {
   AgentContextPreference,
@@ -118,12 +114,6 @@ const aboutArtwork = {
   current: currentFrog,
   failed: failedFrog,
 };
-
-const recordStart = recordingStartPreference({
-  read: () => window.apparentLabs.read(),
-  save: (selected) => window.apparentLabs.save(selected, "screenPicker"),
-  subscribe: (listener) => window.apparentLabs.subscribe(listener),
-});
 
 function Settings() {
   const [current, setCurrent] = useState(
@@ -226,9 +216,6 @@ function Settings() {
           <div id="settings-account" />
         </header>
         {error && <p role="alert">{error}</p>}
-        {current === "Labs" && (
-          <RecordingStartPreference preference={recordStart} />
-        )}
         {current === "General" ? (
           <General />
         ) : current === "Recording" ? (

@@ -76,7 +76,7 @@ fn publication_checks_wav_persistence_before_transcription_or_manifest() {
         &root,
         target(),
         capture::ScreenRecording {
-            frames: vec![RgbaFrame::new(0, 32, 32, vec![128; 32 * 32 * 4])],
+            frames: vec![RgbaFrame::new(0, 32, 32, vec![128; 32 * 32 * 4]).into()],
             video: None,
             duration_ms: 1,
             video_offset_ms: 0,
@@ -126,7 +126,7 @@ fn publication_screen_wrapper_checks_journal_and_keeps_required_audio() {
             &root,
             target,
             capture::ScreenRecording {
-                frames: vec![RgbaFrame::new(0, 32, 32, vec![128; 32 * 32 * 4])],
+                frames: vec![RgbaFrame::new(0, 32, 32, vec![128; 32 * 32 * 4]).into()],
                 video: None,
                 duration_ms: 1,
                 video_offset_ms: 0,
@@ -230,7 +230,7 @@ fn publication_finalizes_durable_typed_notes_with_matching_recovery_journal() {
         &root,
         target(),
         capture::ScreenRecording {
-            frames: vec![RgbaFrame::new(0, 32, 32, vec![128; 32 * 32 * 4])],
+            frames: vec![RgbaFrame::new(0, 32, 32, vec![128; 32 * 32 * 4]).into()],
             video: None,
             duration_ms: 1000,
             video_offset_ms: 0,

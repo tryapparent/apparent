@@ -17,16 +17,25 @@ for (const platform of ["macos", "macosPicker", "linux"] as const) {
   );
 }
 
-const { repair: table, rows }: { repair: number[]; rows: number[] } =
-  JSON.parse(
-    readFileSync(
-      new URL(
-        "../../settings/permissions/permission-policy.json",
-        import.meta.url,
-      ),
-      "utf8",
+const {
+  repair: table,
+  rows,
+  screenSelection,
+  savePicker,
+}: {
+  repair: number[];
+  rows: number[];
+  screenSelection: number[];
+  savePicker: boolean[];
+} = JSON.parse(
+  readFileSync(
+    new URL(
+      "../../settings/permissions/permission-policy.json",
+      import.meta.url,
     ),
-  );
+    "utf8",
+  ),
+);
 const actions = ["None", "Request", "OpenSettings", "CopyInput"];
 if (table.length !== 32 || table.some((index) => !actions[index]))
   throw Error("Invalid Bend permission repair table");
@@ -40,3 +49,19 @@ if (
 )
   throw Error("Invalid Bend permission rows");
 process.stdout.write(`const ROWS: [u32; 3] = [${rows.join(", ")}];\n`);
+
+const modes = ["Unavailable", "Picker", "FullDisplay"];
+if (
+  screenSelection.length !== 6 ||
+  screenSelection.some((index) => !modes[index])
+)
+  throw Error("Invalid Bend screen selection table");
+if (
+  savePicker.length !== 2 ||
+  savePicker.some((value) => typeof value !== "boolean")
+)
+  throw Error("Invalid Bend screen selection save table");
+process.stdout.write(
+  `const SCREEN_SELECTION: [ScreenSelection; 6] = [${screenSelection.map((index) => "ScreenSelection::" + modes[index]).join(", ")}];\n` +
+    `const SAVE_PICKER: [bool; 2] = [${savePicker.join(", ")}];\n`,
+);

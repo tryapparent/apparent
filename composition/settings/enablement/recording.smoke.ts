@@ -201,12 +201,12 @@ test("staged Recording opens directly, receives native facts and saves only on i
         await screenshot(`opening-${variant}`);
 
         fixture.pickerSupported = theme === "light";
-        await navigate("Labs");
-        const chooseScreen = page.getByRole("radio", {
-          name: "Choose a screen each time",
+        await navigate("Permissions");
+        const picker = page.getByRole("switch", {
+          name: "Skip screen selection",
         });
-        if (fixture.pickerSupported) await expect(chooseScreen).toBeEnabled();
-        else await expect(chooseScreen).toBeDisabled();
+        if (fixture.pickerSupported) await expect(picker).toBeEnabled();
+        else await expect(picker).toBeDisabled();
         await screenshot(`screen-selection-${variant}`);
         await navigate("Recording");
 
@@ -265,7 +265,10 @@ test("staged Recording opens directly, receives native facts and saves only on i
 
         await navigate("Permissions");
         await expect(
-          page.getByText("Input devices", { exact: true }),
+          page.getByRole("heading", {
+            name: fixture.pickerSupported ? "Input devices" : "Microphone",
+            exact: true,
+          }),
         ).toBeVisible();
         await screenshot(`permissions-${variant}`);
         await navigate("Recording");

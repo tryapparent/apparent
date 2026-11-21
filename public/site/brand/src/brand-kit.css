@@ -33,6 +33,9 @@
 .bb-library article { padding:2rem 0; border-top:1px solid var(--apparent-color-carbon); }
 .bb-library article > p { max-width:65ch; }
 .bb-control-row { display:flex; flex-wrap:wrap; align-items:center; gap:1rem; }
+.bb-overflow-specimen { max-width:26rem; padding:.5rem .75rem; background:var(--apparent-color-stock); color:var(--apparent-color-carbon); }
+.bb-overflow-row { display:flex; align-items:center; justify-content:space-between; gap:.75rem; }
+.bb-overflow-specimen p { margin:.25rem 0 .5rem; }
 .bb-library .bb-control { min-height:44px; padding:.5rem 1rem; font:inherit; font-weight:500; border:1px solid var(--apparent-color-signal); background:var(--apparent-color-signal); color:var(--apparent-color-paper); cursor:pointer; white-space:normal; border-radius:0; }
 .bb-library .bb-control:hover:not(:disabled) { text-decoration:underline; text-underline-offset:4px; }
 .bb-library .bb-secondary { color:var(--apparent-color-carbon); border-color:var(--apparent-color-carbon); background:transparent; }
@@ -79,6 +82,8 @@ body.brand-reading-route { color-scheme:normal; }
 .bb-library {
   --apparent-carbon:var(--apparent-color-carbon);
   --apparent-paper:var(--apparent-color-paper);
+  --apparent-lilac:var(--apparent-color-lilac);
+  --apparent-signal:var(--apparent-color-signal);
   --apparent-switch-on-track:var(--apparent-color-signal);
   --apparent-switch-edge:var(--apparent-desktop-settings-switch-edge);
   --apparent-switch-thumb:var(--apparent-desktop-settings-switch-thumb);

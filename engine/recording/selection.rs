@@ -42,11 +42,22 @@ pub(crate) fn supported() -> bool {
 }
 
 pub(crate) fn requested() -> bool {
-    supported() && crate::shared::handoff::experiment(PREFERENCE)
+    use crate::shared::handoff::{Config, default_config_path, load_config_from};
+    if cfg!(test) {
+        enabled_in(&Config::default())
+    } else {
+        enabled_in(&load_config_from(&default_config_path()))
+    }
 }
 
 pub(crate) fn enabled_in(config: &crate::shared::handoff::Config) -> bool {
-    supported() && crate::shared::handoff::experiment_enabled_in(config, PREFERENCE)
+    preference(config) == crate::permission_admission::ScreenSelection::Picker
+}
+
+pub(crate) fn preference(
+    config: &crate::shared::handoff::Config,
+) -> crate::permission_admission::ScreenSelection {
+    crate::permission_admission::screen_selection(supported(), config.experiments.get(PREFERENCE).copied())
 }
 
 pub(crate) struct DisplaySelection {

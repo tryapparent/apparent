@@ -68,8 +68,43 @@ test('Agents pairs multiple computers without exposing credentials, changing sen
  assert.equal(computers.length,2);
  const rows=await page.locator('.settings-t3-computer').all();assert.ok((await rows[1].boundingBox())!.y>(await rows[0].boundingBox())!.y,'Computers remain distinct rows');
  await page.reload();await expect(page.locator('.settings-t3-computer')).toHaveCount(2);
- for(const width of [920,640,320])for(const colorScheme of ['light','dark'] as const){await resize(width);await page.emulateMedia({colorScheme,reducedMotion:'reduce'});await toggle.scrollIntoViewIfNeeded();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await shot(`computers-${width}-${colorScheme}`);}
- await resize(920);await page.getByRole('button',{name:`Manage ${new URL(a.origin).host}`,exact:true}).click();await page.getByRole('button',{name:`Disconnect ${new URL(a.origin).host}`,exact:true}).click();await expect(page.locator('.settings-t3-computer')).toHaveCount(1);assert.equal(computers[0].origin,b.origin);
+ const manage=page.getByRole('button',{name:`Manage ${new URL(a.origin).host}`,exact:true});
+ const triggerStyle=()=>manage.evaluate(button=>{
+  const {backgroundColor,color,outlineStyle,outlineWidth}=getComputedStyle(button);
+  return {backgroundColor,color,outlineStyle,outlineWidth};
+ });
+ for (const width of [920,640,320]) for (const colorScheme of ['light','dark'] as const) {
+  await resize(width);
+  await page.emulateMedia({colorScheme,reducedMotion:'reduce'});
+  await page.mouse.move(0,0);
+  await manage.evaluate(button=>button.scrollIntoView({block:'center'}));
+  const rest=await triggerStyle();
+  await manage.hover();
+  await expect.poll(async()=>(await triggerStyle()).backgroundColor).not.toBe(rest.backgroundColor);
+  const hover=await triggerStyle();
+  assert.equal(hover.color,rest.color);
+  assert.equal(hover.outlineStyle,'none');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  await shot(`computers-hover-${width}-${colorScheme}`);
+  await page.mouse.move(0,0);
+  await manage.focus();
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');
+  await expect(manage).toBeFocused();
+  assert.equal((await triggerStyle()).outlineWidth,'2px');
+  await shot(`computers-focus-${width}-${colorScheme}`);
+  await page.keyboard.press('Enter');
+  await expect(manage).toHaveAttribute('aria-expanded','true');
+  const open=await triggerStyle();
+  assert.notEqual(open.backgroundColor,rest.backgroundColor);
+  assert.notEqual(open.backgroundColor,hover.backgroundColor);
+  assert.equal(open.color,rest.color);
+  await shot(`computers-open-${width}-${colorScheme}`);
+  await page.keyboard.press('Enter');
+  await expect(manage).toHaveAttribute('aria-expanded','false');
+  await toggle.focus();
+ }
+ await resize(920);await manage.click();await page.getByRole('button',{name:`Disconnect ${new URL(a.origin).host}`,exact:true}).click();await expect(page.locator('.settings-t3-computer')).toHaveCount(1);assert.equal(computers[0].origin,b.origin);
  assert.equal(await page.evaluate(()=>document.body.innerText.includes('private-fixture-token')),false);
  await page.getByRole('button',{name:'Pair with a link',exact:true}).click();await page.getByRole('dialog').getByText('Use a code instead',{exact:true}).click();
  await expect(page.getByRole('textbox',{name:'MCP URL or server address'})).toBeVisible();await expect(page.getByRole('textbox',{name:'MCP URL or server address'})).toHaveValue('');await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.getByRole('button',{name:'Pair with a link',exact:true})).toBeFocused();
@@ -115,8 +150,23 @@ test('switching panes cancels a queued T3 connection before the private native w
  hold=false;await send({type:'show',pane:'labs'});
  await expect(page).toHaveTitle('Apparent Settings — Labs');assert.deepEqual(await connecting,{reason:'cancelled'});assert.equal(writes,0);assert.equal(await queuedPreference,true);assert.equal(preferenceWrites,0);
  await reply(held!);await expect(page.getByRole('switch',{name:'Send recordings to T3 Code'})).toHaveCount(0);
+ await page.emulateMedia({reducedMotion:'no-preference'});
+ held=undefined;hold=true;
  await send({type:'show',pane:'agents'});await expect(page).toHaveTitle('Apparent Settings — Agents');
- await expect(page.getByRole('switch',{name:'Send recordings to T3 Code'})).toBeEnabled();await expect(page.getByRole('alertdialog')).toHaveCount(0);
+ await expect.poll(()=>Boolean(held)).toBe(true);
+ for (const id of ['#agent-video-control', '#agent-t3-control']) {
+  const toggle = page.locator(id);
+  await expect(toggle).toBeAttached();
+  await expect(toggle).toBeHidden();
+ }
+ hold=false;await reply(held!);
+ for (const name of ['Ask for video proof', 'Send recordings to T3 Code']) {
+  const toggle = page.getByRole('switch', {name});
+  await expect(toggle).toBeChecked();
+  await expect(toggle).toBeEnabled();
+  await expect(toggle.locator('.apparent-switch-thumb')).toHaveCSS('transition-duration', '0s');
+ }
+ await expect(page.getByRole('alertdialog')).toHaveCount(0);
  p.renew();await page.getByRole('button',{name:'Pair with a link',exact:true}).click();
  await app.evaluate(({clipboard},link)=>clipboard.writeText(link),p.link);
  await page.getByRole('dialog').getByRole('button',{name:'Paste link or code',exact:true}).click();
