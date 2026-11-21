@@ -153,7 +153,8 @@ test('a confirmed T3 send keeps its tab and stays centered on the next recording
  });
  const send=value=>app.evaluate((_electron,value)=>process.stdin.emit('data',JSON.stringify(value)+'\n'),value);
  const actions=[{id:'whiteboard',label:'Whiteboard',enabled:true,selected:false,primary:false},{id:'finish',label:'Finish',enabled:true,selected:false,primary:true},{id:'cancel',label:'Cancel',enabled:true,selected:false,primary:false}];
- const frame={type:'state',capture:'boot:1',t3Eligible:true,view:{revision:1,phase:'recording',clock:'0:04',label:'Recording',warning:null,notice:null,reducedMotion:true,draggable:false,inputWaveform:null,noteCount:0,actions}};
+ const waveform=[0,.04,.1,.3,.16,.08,.02,0,0,.08,.5,.7,.2,.08,.02,0,0,.03,.1,.3,.02,.1,.5,.8];
+ const frame={type:'state',capture:'boot:1',t3Eligible:true,view:{revision:1,phase:'recording',clock:'0:04',label:'Recording',warning:null,notice:null,reducedMotion:true,draggable:false,inputWaveform:waveform,noteCount:0,actions}};
  let page=await app.firstWindow();
  const center=()=>page.evaluate(()=>{
   const row=document.querySelector('.pill-row')?.getBoundingClientRect();
@@ -165,7 +166,7 @@ test('a confirmed T3 send keeps its tab and stays centered on the next recording
  await expect.poll(center).not.toBeNull();
  const original=await center();
  const picker=process.platform==='linux'?app.waitForEvent('window'):null;
- frame.view={...frame.view,revision:2,phase:'processing',actions:[]};
+ frame.view={...frame.view,revision:2,phase:'processing',inputWaveform:null,actions:[]};
  await send(frame);if(picker)page=await picker;
  const trigger=page.getByRole('combobox');await expect(trigger).toBeEnabled();
  await trigger.click();await page.getByRole('option',{name:/Chosen thread/}).click();
@@ -173,10 +174,12 @@ test('a confirmed T3 send keeps its tab and stays centered on the next recording
  await expect(page.getByRole('button',{name:'Cancel send'})).toHaveCount(0);
  assert.equal(f.calls.length,0);
  const replacement=process.platform==='linux'?app.waitForEvent('window'):null;
- frame.capture='boot:2';frame.view={...frame.view,revision:3,phase:'recording',actions};
+ frame.capture='boot:2';frame.view={...frame.view,revision:3,phase:'recording',inputWaveform:waveform,actions};
  await send(frame);if(replacement)page=await replacement;
  const tab=page.getByRole('button',{name:'1 previous recording processing'});
  await expect(tab).toBeVisible();
+ const meter=()=>page.getByRole('img',{name:'Captured microphone waveform'});
+ await expect(meter()).toBeVisible();
  assert.notEqual(original,null);
  await expect.poll(async()=>{const now=await center();return now!==null && Math.abs(now-original)<=2;}).toBe(true);
  for(const [theme,width] of [['light',1200],['dark',800]]){
@@ -188,7 +191,9 @@ test('a confirmed T3 send keeps its tab and stays centered on the next recording
  }
  await send({type:'handoff-ready',capture:'boot:1',text:'overlapping capture test'});
  const sent=page.getByRole('button',{name:'Sent to T3 Code',exact:true});
- await expect(sent).toBeVisible();await sent.click();
+ await expect(sent).toBeVisible();
+ await expect(meter().locator('i')).toHaveCount(24);
+ await sent.click();
  await expect(page.locator('.pill-background-detail')).toContainText('Chosen thread');
  await expect(page.getByRole('button',{name:'Finish',exact:true})).toBeVisible();
  assert.equal(f.accepted.size,1);assert.equal(f.calls[0].payload.threadId,'thread');
