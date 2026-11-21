@@ -189,7 +189,7 @@ test('installed About projects parent state and bounds actions', async () => {
     }
     await publish({ ...state, updates: false, restartPending: false, updateCheck: { checking: false, result: null } });
     await expect(page.getByRole('heading', { name: 'Updates unavailable' })).toBeVisible();
-    await expect(page.getByRole('button', { name: /^Install latest/ })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^Update$/ })).toBeDisabled();
     await expect(page.getByText('To install updates here, run Apparent from an AppImage.', {exact: true})).toBeVisible();
     if (process.env.APPARENT_SETTINGS_PROOF) await page.screenshot({path: path.join(process.env.APPARENT_SETTINGS_PROOF, 'about-unavailable.png')});
     await page.getByRole('button', { name: 'Copy version', exact: true }).click();
