@@ -10,6 +10,7 @@
     "pill/pill-state.bend",
     "pill/soft-bloom.bend",
     "notes/double-shift.bend",
+    "shortcuts/push-to-talk.bend",
     "transcription/src/caption-admission.bend",
     "storage/src/retention/feedback.bend"
   ],
@@ -20,6 +21,7 @@
     "pill/",
     "enablement/ci/pill/",
     "notes/",
+    "shortcuts/",
     "transcription/",
     "storage/"
   ]

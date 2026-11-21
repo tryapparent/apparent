@@ -6,15 +6,18 @@ mod build_version { include!("enablement/build_version.rs"); }
 #[path = "engine/diagnostics/build.rs"]
 mod sparkle_outcomes;
 
+#[path = "engine/native/input/shortcut_build.rs"]
+mod record_shortcut_build;
+
 fn main() {
     build_version::emit();
-    compile_record_shortcut_policy();
+    record_shortcut_build::compile();
     compile_onboarding_entry_policy();
     emit_recording_permissions();
-    emit_note_policy("record", "note-gesture", "notes/double-shift.json");
-    emit_note_policy("onboarding", "note-tip", "host/tips/note-tip.json");
+    emit_native_policy("record", "note-gesture", "notes/double-shift.json");
+    emit_native_policy("onboarding", "note-tip", "host/tips/note-tip.json");
     #[cfg(target_os = "macos")]
-    emit_note_policy("onboarding", "frog-nudge", "host/tips/frog-nudge.json");
+    emit_native_policy("onboarding", "frog-nudge", "host/tips/frog-nudge.json");
     compile_record_pill();
     record_media_build::compile_record_media();
     sparkle_outcomes::compile();
@@ -57,37 +60,18 @@ fn main() {
     }
 }
 
-fn emit_note_policy(owner: &str, name: &str, table: &str) {
+fn emit_native_policy(owner: &str, name: &str, table: &str) {
     let generator = format!("{owner}/enablement/ci/bend/{name}.ts");
     println!("cargo:rerun-if-changed={generator}");
     println!("cargo:rerun-if-changed={owner}/{table}");
     let output = Command::new("node")
         .args(["--experimental-strip-types", &generator])
         .output()
-        .expect("Node 22 is required to generate native note policy");
+        .expect("Node 22 is required to generate native policy");
     assert!(output.status.success(), "{name}: {}", String::from_utf8_lossy(&output.stderr));
     let out = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
     std::fs::write(out.join(format!("{name}.rs")), output.stdout)
-        .expect("write generated native note policy");
-}
-
-fn compile_record_shortcut_policy() {
-    let generator = "record/enablement/shortcuts/native.ts";
-    println!("cargo:rerun-if-changed={generator}");
-    println!("cargo:rerun-if-changed=record/shortcuts/policy.ts");
-    let target = std::env::var("CARGO_CFG_TARGET_OS").expect("Cargo target OS");
-    let generated = Command::new("node")
-        .args(["--experimental-strip-types", generator, &target])
-        .output()
-        .expect("Node 22 is required to compile Record shortcut policy");
-    assert!(
-        generated.status.success(),
-        "Unable to compile Record shortcut policy: {}",
-        String::from_utf8_lossy(&generated.stderr),
-    );
-    let output = PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo output directory"));
-    std::fs::write(output.join("record_shortcut_policy.rs"), generated.stdout)
-        .expect("write generated Record shortcut policy");
+        .expect("write generated native policy");
 }
 
 fn compile_onboarding_entry_policy() {

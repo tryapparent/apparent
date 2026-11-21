@@ -3,6 +3,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn report_finalization_does_not_inherit_into_an_overlapping_recording() {
+        let (sender, _receiver) = flume::unbounded();
+        let mut coord = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
+        coord.report_capture = true;
+        coord.apply_pill_event(PillEvent::CaptureStarted);
+        let report_generation = coord.capture_generation;
+        assert!(coord.current_capture_is_report());
+        assert!(coord.seal_report_capture());
+        coord.apply_pill_event(PillEvent::CaptureSealed);
+        coord.apply_pill_event(PillEvent::SourceReleased);
+        assert!(coord.current_capture_is_report());
+
+        coord.apply_pill_event(PillEvent::CaptureStarted);
+        assert_ne!(coord.capture_generation, report_generation);
+        assert!(!coord.current_capture_is_report());
+        assert!(!coord.seal_report_capture());
+        coord.apply_pill_event(PillEvent::CaptureSealed);
+        assert!(!coord.current_capture_is_report());
+    }
+
+    #[test]
     fn foreground_cancel_gives_retry_a_fresh_completed_presentation() {
         use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
         let (sender, _receiver) = flume::unbounded();

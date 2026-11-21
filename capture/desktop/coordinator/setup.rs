@@ -16,6 +16,7 @@ impl ApparentCoordinator {
             completion_pending: None,
             capture_local_practice: false,
             report_capture: false,
+            report_finalizing_generation: None,
             recording_activity_attempted: false,
             pending_finalizers: 0,
             stopping_source: None,
@@ -878,123 +879,9 @@ impl ApparentCoordinator {
             .on(crate::capture::desktop::settings::Action::CancelShortcut, &mut host);
     }
 
-    fn activity(&self) -> crate::capture::desktop::settings::shortcut::Activity {
-        use crate::capture::desktop::settings::shortcut::Activity;
-        if let Some(rec) = &self.active_recording {
-            Activity::Recording {
-                elapsed_ms: rec.started.elapsed().as_millis() as u64,
-            }
-        } else if self.source_is_stopping() {
-            Activity::Processing
-        } else if self.is_selecting() {
-            Activity::Picker
-        } else {
-            Activity::Free
-        }
-    }
-
     fn begin_playback(&mut self) {
         if !self.lab && self.playback.is_none() {
             self.playback = crate::capture::desktop::playback::Guard::start();
-        }
-    }
-
-    fn onboarding_shortcut_policy(&self) -> crate::capture::desktop::settings::onboarding::ShortcutPolicy {
-        use crate::capture::desktop::settings::onboarding::ShortcutPolicy;
-        if self.lab { return ShortcutPolicy::Record; }
-        self.onboarding.as_ref().map_or(ShortcutPolicy::Record, |s| s.shortcut_policy())
-    }
-
-    fn consume_setup_shortcut(&mut self) -> bool {
-        use crate::capture::desktop::settings::onboarding::{Input, ShortcutPolicy};
-        let policy = self.onboarding_shortcut_policy();
-        if policy == ShortcutPolicy::Record { return false; }
-        if let Some(session) = self.onboarding.as_mut() {
-            if policy == ShortcutPolicy::Trial { session.input(Input::ShortcutTriggered); }
-            session.show();
-        }
-        true
-    }
-
-    pub fn press_shortcut(&mut self, cx: &mut Context<Self>) {
-        #[cfg(target_os="linux")]
-        if let Some(session)=self.onboarding.as_mut().filter(|session|session.editing_shortcut()) {
-            session.desktop_shortcut_pressed();
-            return;
-        }
-        let activity = self.activity();
-        if self.gate.is_pending() {
-            return;
-        }
-        if !self.shortcut.is_pending() && activity == crate::capture::desktop::settings::shortcut::Activity::Free {
-            use crate::capture::desktop::settings::onboarding::{Input, ShortcutPolicy};
-            match self.onboarding_shortcut_policy() {
-                ShortcutPolicy::Block => {
-                    if let Some(session) = self.onboarding.as_mut() { session.show(); }
-                    return;
-                }
-                ShortcutPolicy::Trial => {
-                    if let Some(session) = self.onboarding.as_mut() { session.input(Input::ShortcutTrialStarted); }
-                    self.hold_mods = crate::capture::engine::runtime::modifier_flags();
-                    self.telemetry.take_escape();
-                    let action = self.shortcut.press(activity);
-                    self.apply_shortcut(action, cx);
-                    return;
-                }
-                ShortcutPolicy::Record => {}
-            }
-            let picker = display_selection::requested();
-            if !self.ready_to_record(picker) { return; }
-            if !picker { self.begin_playback(); }
-            self.hold_mods = crate::capture::engine::runtime::modifier_flags();
-            self.telemetry.take_escape();
-        }
-        let action = self.shortcut.press(activity);
-        self.apply_shortcut(action, cx);
-    }
-
-    pub fn tick_shortcut(&mut self, cx: &mut Context<Self>) {
-        if !self.shortcut.is_pending() {
-            return;
-        }
-        let action = if self.telemetry.take_escape() {
-            self.shortcut.escape()
-        } else {
-            let mods = crate::capture::engine::runtime::modifier_flags();
-            let held = self.hold_mods != 0 && mods & self.hold_mods == self.hold_mods;
-            self.shortcut.tick(held)
-        };
-        self.apply_shortcut(action, cx);
-    }
-
-    fn apply_shortcut(&mut self, action: crate::capture::desktop::settings::shortcut::Action, cx: &mut Context<Self>) {
-        use crate::capture::desktop::settings::shortcut::Action;
-        if action != Action::None {
-            apparent_log(format!("shortcut -> {action:?}"));
-        }
-        match action {
-            Action::None => {}
-            Action::Cancel => {
-                if let Some(session) = self.onboarding.as_mut() {
-                    session.input(crate::capture::desktop::settings::onboarding::Input::CaptureEnded { completed: false });
-                }
-                self.playback.take();
-            }
-            Action::RecordScreen => {
-                if self.consume_setup_shortcut() { return; }
-                if let Some(session) = self.onboarding.as_mut() {
-                    session.input(crate::capture::desktop::settings::onboarding::Input::ShortcutTriggered);
-                }
-                self.record_screen_now(cx);
-            }
-            Action::RecordSelected => {
-                if self.consume_setup_shortcut() { return; }
-                if let Some(session) = self.onboarding.as_mut() {
-                    session.input(crate::capture::desktop::settings::onboarding::Input::ShortcutTriggered);
-                }
-                self.record_selected_mode(cx);
-            }
-            Action::Finish => self.finish_recording(cx),
         }
     }
 
@@ -1419,3 +1306,5 @@ impl ApparentCoordinator {
     }
 
 }
+
+include!("../../../engine/native/input/record_shortcut.rs");
