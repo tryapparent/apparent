@@ -87,3 +87,9 @@ The extension keeps its square end underneath the rounded recording row and
 shares the Notes extension's color and button treatment. The tab shows pending
 work, a check after acknowledgement, or an attention state with a same-request
 retry when the saved handoff is available.
+
+The [Composition renderer](../../composition/pill/renderer/main.tsx) assembles
+Record's pill and Handoff's destination picker through the Desktop bridge.
+The [Composition smoke tests](../../composition/pill/enablement/) exercise the
+installed Electron entrypoint and loopback T3 transport together. Run them
+through the Desktop frontend's existing `test:pill` or `test:electron` command.

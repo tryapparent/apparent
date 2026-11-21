@@ -25,10 +25,11 @@ export default defineConfig({
     execFileSync(process.execPath, [fileURLToPath(new URL('../../../../composition/enablement/ci/bend/build.ts', import.meta.url))], { stdio: 'inherit' });
     execFileSync(process.execPath, [fileURLToPath(new URL('../../../../handoff/enablement/ci/bend/build.ts', import.meta.url))], { stdio: 'inherit' });
   } }, react(), {
-    name: 'settings-utility-sources',
+    name: 'composition-utility-sources',
     enforce: 'pre',
     transform(css, id) {
-      if (id !== fileURLToPath(new URL('../../../../composition/settings/renderer/base.css', import.meta.url))) return;
+      const styles = ['settings/renderer/base.css', 'pill/renderer/style.css'];
+      if (!styles.some(file => id === fileURLToPath(new URL(`../../../../composition/${file}`, import.meta.url)))) return;
       return css.concat(
         "\n@source '../../../capture/desktop/ui/frontend/node_modules/@apparent/ui/src';",
         "\n@source '.';",
