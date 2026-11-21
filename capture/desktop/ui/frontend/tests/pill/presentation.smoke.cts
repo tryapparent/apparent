@@ -6,11 +6,11 @@ const fs=require('node:fs/promises');
 const os=require('node:os');
 const {formatPillDiagnostic}=require('../../electron/pill/diagnostics.cjs');
 
-async function launchPill(t, prefix) {
+async function launchPill(t, prefix, extraEnvironment = {}) {
  const home = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
  const application = await electron.launch({
   args: [path.resolve(__dirname,'host.cjs'),'--no-sandbox'],
-  env: {...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config')},
+  env: {...process.env,...extraEnvironment,HOME:home,XDG_CONFIG_HOME:path.join(home,'config')},
  });
  t.after(async () => {
   await application.close().catch(() => {});
@@ -243,16 +243,18 @@ test('close stays at the trailing edge and progress rotates unless motion is red
 test('parent-state timeout reports its accepted epoch and readiness without extending the deadline',async t=>{
  const application=await launchPill(t,'pill-state-timeout-');
  const child=application.process(),stderr=[];child.stderr.on('data',chunk=>stderr.push(chunk.toString()));
- const closed=application.waitForEvent('close',{timeout:8000});
  const page=await application.firstWindow();
- await application.evaluate((_e,state)=>setTimeout(()=>process.stdin.emit('data',JSON.stringify({type:'state',view:state})+'\n'+JSON.stringify({type:'activate'})+'\n'),100),recording);
+ await page.waitForFunction(()=>window.apparentPill);
+ await application.evaluate((_e,state)=>process.stdin.emit('data',JSON.stringify({type:'state',view:state})+'\n'+JSON.stringify({type:'activate'})+'\n'),recording);
  await expect(page.getByRole('button',{name:'Finish',exact:true})).toBeVisible();
+ await expect.poll(()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0]?.isVisible())).toBe(true);
+ const closed=application.waitForEvent('close',{timeout:8000});
  await application.evaluate(()=>{const now=Date.now;Date.now=()=>now()+6000;});
  await closed;assert.equal(child.exitCode,1);
  const records=stderr.join('').split('\n').map(line=>{try{return JSON.parse(line);}catch{return null;}})
   .filter(record=>record?.kind==='apparent-pill-diagnostic');
  const diagnostic=records.find(record=>record.reason==='parent_state_timeout');
- assert.ok(diagnostic);
+ assert.ok(diagnostic,`Unexpected diagnostic reasons: ${records.map(record=>record.reason).join(', ')}`);
  assert.equal(diagnostic.phase,'recording');
  assert.equal(diagnostic.revision,2);
  assert.equal(diagnostic.activated,true);
@@ -263,11 +265,7 @@ test('parent-state timeout reports its accepted epoch and readiness without exte
 });
 
 test('a warm pill waits for its current layout and performs no sizing work for telemetry',async t=>{
- const home=await fs.mkdtemp(path.join(os.tmpdir(),'pill-presentation-'));
- const application=await electron.launch({args:[path.resolve(__dirname,'host.cjs'),'--no-sandbox'],
-  env:{...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config'),
-   ...(process.platform==='linux'?{XDG_CURRENT_DESKTOP:'Hyprland'}:{})}});
- t.after(async()=>{await application.close().catch(()=>{});await fs.rm(home,{recursive:true,force:true});});
+ const application=await launchPill(t,'pill-presentation-',process.platform==='linux'?{XDG_CURRENT_DESKTOP:'Hyprland'}:{});
  const page=await application.firstWindow();
  const publish=state=>application.evaluate((_e,state)=>process.stdin.emit('data',JSON.stringify({type:'state',view:state})+'\n'),state);
  await publish(hidden);
