@@ -14,19 +14,19 @@ import {PillSurface} from './pill-view';
 
 function Pill() {
   const [view,setView]=useState<PillView|null>(null);
+  const [handoffLoaded,setHandoffLoaded]=useState(false);
   const [destination,setDestination]=useState<DestinationView|null>(null);
-  useEffect(()=>{
-    const bridge=window.apparentPill;if(!bridge)return;
-    const unsubscribe=bridge.subscribeDestinations(setDestination);
-    void bridge.destinations().then(setDestination).catch(()=>{});return unsubscribe;
-  },[]);
   const [background,setBackground]=useState<BackgroundHandoff|null>(null);
   useEffect(()=>{
-    const bridge=window.apparentPill;
-    if(!bridge?.subscribeBackgroundHandoff)return;
-    const unsubscribe=bridge.subscribeBackgroundHandoff(setBackground);
-    void bridge.backgroundHandoff().then(setBackground).catch(()=>{});
-    return unsubscribe;
+    const bridge=window.apparentPill;if(!bridge)return;
+    let active=true;
+    const unsubscribeDestination=bridge.subscribeDestinations(setDestination);
+    const unsubscribeBackground=bridge.subscribeBackgroundHandoff?.(setBackground);
+    void Promise.allSettled([
+      bridge.destinations().then(value=>{if(active)setDestination(value);}),
+      bridge.backgroundHandoff?.().then(value=>{if(active)setBackground(value);}),
+    ]).then(()=>{if(active)setHandoffLoaded(true);});
+    return()=>{active=false;unsubscribeDestination();unsubscribeBackground?.();};
   },[]);
   const [receivedAt,setReceivedAt]=useState(0);
   const [systemReduced,setSystemReduced]=useState(false);
@@ -55,7 +55,7 @@ function Pill() {
     return ()=>{active=false;unsubscribe();};
   },[]);
   useLayoutEffect(()=>{
-    if(!view)return;
+    if(!view||!handoffLoaded)return;
     let active=true,last='';
     const report=()=>{
       if(!active)return;
@@ -73,7 +73,7 @@ function Pill() {
     return()=>{active=false;observer.disconnect();};
   // The destination snapshot can replace PillSurface after the same capture
   // revision. Observe the newly mounted main so tray expansion resizes its host.
-  },[view?.revision,view?.phase,showingDestination]);
+  },[view?.revision,view?.phase,showingDestination,handoffLoaded]);
   async function act(action:string,drop=false){
     const before=current.current;
     if(!before || busy.current)return;
@@ -92,7 +92,7 @@ function Pill() {
     window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);
   },[view,sharing]);
   if(!view)return <div role="status" className="pill connection">{error?'Recording controls unavailable':'Connecting…'}</div>;
-  if(view.phase==='hidden')return null;
+  if(view.phase==='hidden'||!handoffLoaded)return null;
   const confirmation=sharing===view.revision&&<section className="public-share-confirmation" aria-label="Confirm public sharing"><StatusCard tone="neutral" headline="Create a public link?" compact>
     <p>Anyone with this link can view this capture. Shared captures are not end-to-end encrypted.</p>
     <div className="public-share-actions"><Button variant="outline" disabled={pending} onClick={()=>void act('cancel-public-link')}>Cancel sharing</Button><Button disabled={pending} onClick={()=>void act('confirm-public-link')}>Create public link</Button></div>

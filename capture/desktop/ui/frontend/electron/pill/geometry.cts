@@ -6,7 +6,7 @@ function inset(y,width,height,radius=28){
  return edge>=r?0:Math.ceil(r-Math.sqrt(Math.max(0,r*r-(r-edge)**2)));
 }
 function shape(width,height){
- return Array.from({length:height},(_,y)=>{const x=inset(y,width,height);return {x,y,width:Math.max(1,width-2*x),height:1};});
+ return Array.from({length:height},(_,y)=>{const x=Math.max(0,inset(y,width,height)-1);return {x,y,width:Math.max(1,width-2*x),height:1};});
 }
 function contains(point,bounds){
  const x=point.x-bounds.x,y=point.y-bounds.y;
@@ -18,8 +18,8 @@ function contains(point,bounds){
 // Regions come from main's own trusted document measurement, never an IPC size.
 function regionShape(regions){
  return regions.flatMap(rect=>Array.from({length:Math.ceil(rect.height)},(_,row)=>{
-  const left=inset(row,rect.width,rect.height,rect.radius);
-  const right=inset(row,rect.width,rect.height,rect.rightRadius??rect.radius);
+  const left=Math.max(0,inset(row,rect.width,rect.height,rect.radius)-1);
+  const right=Math.max(0,inset(row,rect.width,rect.height,rect.rightRadius??rect.radius)-1);
   return {x:Math.ceil(rect.x+left),y:Math.floor(rect.y+row),width:Math.max(1,Math.floor(rect.width-left-right)),height:1};
  }));
 }

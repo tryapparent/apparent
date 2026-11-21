@@ -26,6 +26,7 @@ export class Controller {
   private phase: "" | "recording" | "processing" | "completed" = "";
   private recordingSince = 0;
   private pickerVisible = false;
+  private preferencesReady = true;
   private preferences?: Promise<PickerPreferences>;
   private choices: DestinationView["choices"] = [];
   private catalogue = new Map<
@@ -97,6 +98,9 @@ export class Controller {
   }
   retry(capture: string) {
     return this.exclusive(capture, () => this.doRetry(capture));
+  }
+  loadingPickerPreferences() {
+    return this.pickerVisible && !this.preferencesReady;
   }
   view(): DestinationView | null {
     if (!this.enabled || !this.capture || !this.pickerVisible) return null;
@@ -242,6 +246,7 @@ export class Controller {
     const wasVisible = this.pickerVisible && this.enabled;
     this.capture = capture;
     this.preferences = preferences;
+    this.preferencesReady = false;
     this.enabled = false;
     this.config = null;
     this.pickerVisible = this.phase !== "recording";
@@ -252,6 +257,7 @@ export class Controller {
       this.initializing,
     ]);
     if (version !== this.version) return;
+    this.preferencesReady = true;
     this.enabled = enabled;
     this.config = configured[0] ?? null;
     this.catalogue.clear();

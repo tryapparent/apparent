@@ -287,7 +287,7 @@ export function T3DestinationPicker({
               aria-expanded={open} title={location(chosen)} disabled={busy}
               aria-label={[chosen.title, "Will send when ready", location(chosen)].filter(Boolean).join(", ")}
               onClick={() => setOpen(!open)}>
-              <span className="destination-label">
+              <span key="confirmed" className="destination-label">
                 <span>{chosen.title}</span>
                 <small role="status">Will send when ready</small>
               </span>

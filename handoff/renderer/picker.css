@@ -21,7 +21,8 @@
 }
 .destination-assembly:has(
   .destination-trigger[role="combobox"],
-  .destination-search
+  .destination-search,
+  .destination-trigger.destination-confirmed
 ) {
   width: 342px;
 }
@@ -32,7 +33,7 @@
   align-items: center;
   gap: 4px;
   padding: 5px 6px;
-  min-height: 62px;
+  min-height: 56px;
   border: 1px solid var(--picker-line);
   border-radius: 28px;
   background: var(--picker-surface);
@@ -62,18 +63,18 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 52px;
-  min-height: 52px;
+  height: 44px;
+  min-height: 44px;
   min-width: 0;
   max-width: 280px;
-  padding: 4px 16px;
+  padding: 2px 16px;
   gap: 8px;
   border: 0;
   border-radius: 22px;
   background: var(--apparent-brand);
   color: var(--apparent-brand-foreground);
   font:
-    500 18px / 24px "Host Grotesk",
+    500 18px / 20px "Host Grotesk",
     sans-serif;
   box-shadow: none;
 }
@@ -285,7 +286,8 @@
 }
 .destination-assembly:has(.destination-share):has(
   .destination-trigger[role="combobox"],
-  .destination-search
+  .destination-search,
+  .destination-trigger.destination-confirmed
 ) {
   width: 482px;
 }
@@ -338,10 +340,11 @@
   flex: 1;
   align-items: center;
   min-width: 0;
-  min-height: 52px;
+  min-height: 44px;
   gap: 8px;
   padding-inline: 12px 2px;
-  border: 1px solid var(--picker-line);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--picker-line);
   border-radius: 22px;
   background: var(--picker-tray);
 }
@@ -403,4 +406,13 @@
   color: var(--apparent-muted-foreground);
 }
 
+.destination-trigger .destination-label > small { font-size:14px;line-height:17px; }
 .destination-trigger.destination-confirmed { flex:1;justify-content:flex-start;background:var(--apparent-brand);color:var(--apparent-brand-foreground);text-align:start; }
+
+
+@media (prefers-reduced-motion: no-preference) {
+  .pill:not([data-reduced="true"]) .destination-label,
+  .pill:not([data-reduced="true"]) .destination-tray {
+    animation: pill-content-in 160ms cubic-bezier(0.2,0,0,1) both;
+  }
+}
