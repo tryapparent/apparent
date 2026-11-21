@@ -61,42 +61,16 @@ fn merge_full_keyframes(
     (merged, matched)
 }
 
-/// Per-stage timing breakdown logged on every finish (`finish timings: ...`).
-#[derive(Clone, Copy, Debug, Default)]
-pub struct StageTimings {
-    pub started_at: Option<std::time::Instant>,
-    pub stop_ms: Option<u64>,
-    pub audio_ms: Option<u64>,
-    pub candidates_ms: Option<u64>,
-    pub transcribe_ms: Option<u64>,
-}
+#[path = "../../../engine/recording/lifecycle/finish_trace.rs"]
+mod finish_trace;
+use finish_trace::FinishTrace;
+pub use finish_trace::StageTimings;
 
-/// Local-only finish diagnostics. Parallel stages overlap; do not sum their durations.
-/// This contains no transcript, screen, filenames or window metadata.
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct FinishTrace {
-    version: u32,
-    stop_ms: Option<u64>,
-    audio_ms: Option<u64>,
-    candidates_ms: Option<u64>,
-    transcribe_ms: Option<u64>,
-    select_ms: u64,
-    decode_ms: u64,
-    autocrop_ms: u64,
-    sheet_ms: u64,
-    write_ms: u64,
-    total_ms: u64,
-    prepared_visuals: bool,
-}
-
-fn save_finish_trace(bundle_dir: &Path, trace: &FinishTrace) -> Result<()> {
-    publication::write(
-        bundle_dir,
+fn save_trace(bundle_dir: &Path, trace: &FinishTrace) -> Result<()> {
+    publication::Directory::open(bundle_dir, true)?.stage_artifact(
         "finish-trace.json",
         &serde_json::to_vec_pretty(trace)?,
-    )?;
-    Ok(())
+    )
 }
 
 /// Pre-rendered keyframe visuals and encoded PNGs computed while transcription is running.
@@ -336,6 +310,10 @@ pub fn finalize_capture_bundle(
         let has_wav = wav_path.exists();
         let wav_required = recorded_audio.is_some() || has_wav;
         publication::preflight_sources(bundle_dir, video_path.as_deref()).stage(Stage::SourcePreflight)?;
+        #[cfg(target_os = "linux")]
+        let speech_preview = recorded_audio.as_ref()
+            .filter(|audio| has_wav && video_path.is_some() && !audio.streaming)
+            .and_then(|audio| audio.pause.request_preview(audio.sample_count));
         let ((transcript, transcribe_ms), ((predecoded, prepared), frames, crop_settings, assembly_plan)) = std::thread::scope(|scope| -> Result<_> {
             let transcribe_handle = scope.spawn(|| {
                 let t0 = std::time::Instant::now();
@@ -370,11 +348,22 @@ pub fn finalize_capture_bundle(
             let mut frames = SelectionFrames::from(frames);
             let pre = if let Some(ref movie) = video_path {
                 let mut preview_marks = marks_of(&strokes);
+                let empty_transcript = TranscriptData::default();
+                #[cfg(target_os = "linux")]
+                let snapshot = speech_preview.and_then(|receive| {
+                    receive.recv_timeout(std::time::Duration::from_millis(120)).ok()
+                });
+                #[cfg(target_os = "linux")]
+                let speech = snapshot.as_ref()
+                    .and_then(|snapshot| crate::composition::transcript::speech::plan(snapshot).ok())
+                    .unwrap_or_else(|| crate::capture::engine::keyframes::SpeechInput::empty(&empty_transcript));
+                #[cfg(not(target_os = "linux"))]
+                let speech = crate::capture::engine::keyframes::SpeechInput::empty(&empty_transcript);
                 let preview = frames.select(
                     &strokes,
                     &mut preview_marks,
                     &events,
-                    &crate::capture::engine::keyframes::SpeechInput::empty(&TranscriptData::default()),
+                    &speech,
                     limits,
                     video_ink,
                 )?.frames;
@@ -910,7 +899,7 @@ pub fn build_bundle_from_parts(
             total_ms,
             prepared_visuals: matches_prepared,
         };
-        if let Err(error) = save_finish_trace(bundle_dir, &trace) {
+        if let Err(error) = save_trace(bundle_dir, &trace) {
             capture::apparent_log(format!("Could not save finish trace: {error:#}"));
         }
         if bench && !matches_prepared {
@@ -1220,7 +1209,7 @@ mod tests {
             prepared_visuals: false,
         };
         let path = dir.join("finish-trace.json");
-        save_finish_trace(&dir, &trace).unwrap();
+        save_trace(&dir, &trace).unwrap();
         let json: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(json["transcribeMs"], 40);

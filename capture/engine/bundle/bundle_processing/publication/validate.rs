@@ -191,7 +191,8 @@ impl Inventory {
             );
         }
         let artifacts: Vec<_> = self.files.values().collect();
-        let batch_size = artifacts.len().div_ceil(4).max(1);
+        let lanes = if cfg!(target_os = "linux") { 8 } else { 4 };
+        let batch_size = artifacts.len().div_ceil(lanes).max(1);
         std::thread::scope(|scope| -> Result<()> {
             let workers: Vec<_> = artifacts.chunks(batch_size)
                 .map(|batch| scope.spawn(move || -> Result<()> {
