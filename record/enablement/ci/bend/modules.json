@@ -8,6 +8,7 @@
     "settings/lip-policy.bend",
     "settings/permissions/permission-policy.bend",
     "pill/pill-state.bend",
+    "pill/soft-bloom.bend",
     "notes/double-shift.bend",
     "transcription/src/caption-admission.bend",
     "storage/src/retention/feedback.bend"

@@ -290,7 +290,7 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 9
   await expect(page.locator('.native-control')).toHaveAttribute('data-kind','whiteboard');
   await expect(page.locator('.native-pill-example .pill [data-action=whiteboard]')).toBeVisible();
   await expect(page.locator('.native-pill-example .pill [data-action=finish]')).toBeVisible();
-  await expect(page.locator('.native-pill-example .pill .meter')).toBeVisible();
+  await expect(page.locator('.native-pill-example .input-bloom')).toBeVisible();
   await expect.poll(()=>page.locator('.native-coach').evaluate(card=>{
     const pill=card.querySelector('.pill-row');if(!pill)return Infinity;
     return card.getBoundingClientRect().right-pill.getBoundingClientRect().right;

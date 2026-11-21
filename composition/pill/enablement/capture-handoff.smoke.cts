@@ -385,9 +385,8 @@ test("a confirmed T3 send keeps its tab and stays centered on the next recording
     name: "1 previous recording processing",
   });
   await expect(tab).toBeVisible();
-  const meter = () =>
-    page.getByRole("img", { name: "Captured microphone waveform" });
-  await expect(meter()).toBeVisible();
+  const bloom = () => page.locator(".input-bloom__ring");
+  await expect(bloom()).toBeVisible();
   assert.notEqual(original, null);
   await expect
     .poll(async () => {
@@ -430,7 +429,7 @@ test("a confirmed T3 send keeps its tab and stays centered on the next recording
     exact: true,
   });
   await expect(sent).toBeVisible();
-  await expect(meter().locator("i")).toHaveCount(24);
+  await expect(bloom()).toBeVisible();
   await sent.click();
   await expect(page.locator(".pill-background-detail")).toContainText(
     "Chosen thread",

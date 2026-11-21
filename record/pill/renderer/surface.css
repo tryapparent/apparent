@@ -21,7 +21,17 @@
 /* The complete target stays reserved, including before a warning arrives. */
 
 .pill .indicator { width:10px;height:10px;flex-shrink:0;border-radius:50%;background:var(--apparent-muted-foreground); }
-.pill .indicator.recording { background:var(--apparent-destructive); }
+.pill .indicator.recording { position:relative;background:var(--apparent-destructive); }
+.pill .input-bloom { position:absolute;left:50%;top:50%;width:44px;height:44px;transform:translate(-50%,-50%);pointer-events:none;color:#982721; }
+@media(prefers-color-scheme:dark) {
+  .pill .input-bloom { color:#ffb2ac; }
+}
+@media(prefers-reduced-motion:no-preference) {
+  .pill .input-bloom[data-reduced=false] .input-bloom__ring { transition:r 100ms ease-out!important; }
+}
+@media(forced-colors:active) {
+  .pill .input-bloom { color:CanvasText; }
+}
 .pill .indicator.processing { width:20px;height:20px;border-radius:0;background:transparent;color:var(--apparent-primary); }
 @keyframes pill-spin { to { transform:rotate(360deg); } }
 @media(prefers-reduced-motion:no-preference){
@@ -32,9 +42,6 @@
 .pill[data-phase=processing] .pill-row { padding-inline:16px; }
 .pill[data-phase=processing] .lead { padding:0; }
 .pill[data-phase=processing] .indicator-slot { width:24px; }
-.pill .meter { display:flex;align-items:center;justify-content:center;gap:.75px;width:66px;min-width:66px;height:28px; }
-.pill .meter[data-reduced=true][data-active=false] { opacity:.4; }
-.pill .meter i { width:2px;min-width:2px;border-radius:1px;background:var(--apparent-muted-foreground); }
 .pill.connection { color:var(--apparent-foreground);background:var(--apparent-background); }
 @media(prefers-reduced-motion:reduce){.pill * { animation:none!important;transition:none!important; }}
 .pill[data-reduced=true] * { animation:none!important;transition:none!important; }
@@ -77,9 +84,8 @@
 .pill[data-live=true] .pill-row { gap:8px;padding:5px 10px 5px 12px; }
 .pill[data-live=true] .lead { padding:0; }
 .pill[data-live=true] .indicator-slot { width:10px; }
+.pill[data-live=true] .indicator-slot[data-bloom=true] { width:44px; }
 .pill[data-live=true] .clock { min-width:42px; }
-.pill[data-live=true] .meter { width:54px;min-width:54px; }
-.pill[data-live=true] .meter i { background:var(--apparent-foreground); }
 .pill[data-live=true] .controls { gap:8px; }
 .live-caption { box-sizing:border-box;position:absolute;bottom:0;left:10px;right:82px;height:58px;padding:23px 22px 9px;border-radius:26px;background:var(--apparent-transcript-background);color:var(--apparent-transcript-foreground); }
 .live-caption__viewport { width:100%;height:26px;overflow:hidden; }

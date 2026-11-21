@@ -16,7 +16,7 @@ test('saved notes extension preserves controls, themes and keyboard activation',
  actions:['cancel','whiteboard','finish',...(count?['notes']:[])].map(id=>({id,label:{whiteboard:'Whiteboard',finish:'Finish',cancel:'Cancel',notes:'Open notes'}[id],enabled:true,selected:false,primary:id==='finish'}))};
  await app.evaluate((_e,state)=>process.stdin.emit('data',JSON.stringify({type:'state',view:state})+'\n'),state);
  await expect(page.locator('main')).toHaveAttribute('data-revision',String(revision));
- await expect(page.locator('.meter i')).toHaveCount(24);
+ await expect(page.locator('.input-bloom__ring')).toBeVisible();
  await page.evaluate(()=>document.fonts.ready);
  await page.evaluate(revision=>window.apparentPill.layout(revision),revision);
  };
