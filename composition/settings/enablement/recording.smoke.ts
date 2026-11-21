@@ -265,7 +265,10 @@ test("staged Recording opens directly, receives native facts and saves only on i
 
         await navigate("Permissions");
         await expect(
-          page.getByText("Input devices", { exact: true }),
+          page.getByRole("heading", {
+            name: fixture.pickerSupported ? "Input devices" : "Microphone",
+            exact: true,
+          }),
         ).toBeVisible();
         await screenshot(`permissions-${variant}`);
         await navigate("Recording");
