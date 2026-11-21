@@ -11,8 +11,9 @@ const frontend = fileURLToPath(
 );
 const load = createRequire(join(frontend, "package.json"));
 const { _electron: electron, expect } = load("@playwright/test");
-const warning =
-  "Installing can replace your current version with an earlier one.";
+const warning = "May install an earlier version.";
+const channelDescription =
+  "Stable is for everyday use. Development gets changes sooner and may be less reliable.";
 const stagedStable = "Restart to use Stable v2.0.0.";
 const unconfirmed =
   "Apparent couldn’t confirm an installed update. To try again, install from the selected channel.";
@@ -107,9 +108,8 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await expect(install).toHaveAccessibleName("Install latest Stable release");
         await expect(install).toHaveAccessibleDescription(warning);
         await expect(channel.locator("option[value=main]")).toHaveText("Development builds");
-        await expect(channel).toHaveAccessibleDescription(
-          "Stable is for everyday use. Development gets changes sooner and may be less reliable.",
-        );
+        await expect(channel).toHaveAccessibleDescription(channelDescription);
+        await expect(page.locator("#update-channel-description")).toBeHidden();
         await page.evaluate(() => document.fonts.ready.then(() => {}));
         await page.locator(".settings-content").evaluate((el) => {
           el.scrollTop = 0;
@@ -119,6 +119,7 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await page.getByRole("button", { name: "Copy version" }).focus();
         await page.keyboard.press("Tab");
         await expect(channel).toBeFocused();
+        await expect(page.getByRole("tooltip")).toContainText(channelDescription);
         await page.keyboard.press("Tab");
         await expect(install).toBeFocused();
         await pressForAction("check-for-updates");
@@ -161,9 +162,9 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await publish({ checking: false, result: "current" }, pending);
         await expect(restart).toBeVisible();
         await publish(offered, pending);
-        await expect(
-          page.getByRole("heading", { name: "Restart required" }),
-        ).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Restart required" })).toHaveCount(0);
+        await expect(page.getByRole("region", { name: "App updates" }).getByRole("status")).toHaveText("Restart required");
+        await expect(page.locator("#staged-release")).toBeHidden();
         await expect(restart).toHaveAccessibleDescription(stagedStable);
         await expect(page.getByText(version)).toBeVisible();
         await expect(page.getByText(warning)).toHaveCount(0);
@@ -173,6 +174,7 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await channel.focus();
         await page.keyboard.press("Tab");
         await expect(restart).toBeFocused();
+        await expect(page.getByRole("tooltip")).toHaveText(stagedStable);
         await page.keyboard.press("Tab");
         await expect(later).toBeFocused();
         await pressForAction("update-later");
@@ -328,6 +330,11 @@ test("About makes channel installation, restart and recovery distinct", async ()
     const pose = pond.locator("img");
     await expect(pose).toHaveAttribute("src", /\/idle-.*\.webp$/);
     await expect(page.locator("header").getByRole("button", { name: "Show welcome tour" })).toBeVisible();
+    await channel.hover();
+    await expect(page.getByRole("tooltip")).toContainText(channelDescription);
+    const hoverActionStart = output.length;
+    await install.click();
+    await expect.poll(() => output.slice(hoverActionStart)).toContain('"action":"check-for-updates"');
     await publish(checking);
     await expect(video).toHaveAttribute("src", /\/check-.*\.mp4$/);
     await expect.poll(() => video.evaluate((element: HTMLVideoElement) =>

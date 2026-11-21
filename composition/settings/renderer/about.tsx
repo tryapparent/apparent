@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { Button } from "@apparent/ui/button";
 import { ErrorDialog } from "@apparent/ui/error-dialog";
-import { NativeSelect, NativeSelectOption } from "@apparent/ui/native-select";
 import {
   Tooltip,
   TooltipContent,
@@ -20,6 +19,7 @@ import {
 } from "@apparent/ui/tooltip";
 import macUpdates from "../about/mac-updates.mjs";
 import updateAction from "../about/release-action.mjs";
+import { UpdateChannel } from "./update-channel";
 import { UpdatePond } from "./update-pond";
 import "./about.css";
 
@@ -327,37 +327,19 @@ export function About({
                 />
               )}
               {showPond && state.mainUpdates && (
-                <div className="settings-channel-group">
-                  <div className="settings-channel">
-                    <label htmlFor="update-channel">Next install source</label>
-                    <NativeSelect
-                      id="update-channel"
-                      aria-describedby="update-channel-description"
-                      value={state.updateChannel}
-                      disabled={checking}
-                      onChange={(event) => void changeChannel(event.target.value)}
-                    >
-                      <NativeSelectOption value="stable">
-                        Stable releases
-                      </NativeSelectOption>
-                      <NativeSelectOption value="main">
-                        Development builds
-                      </NativeSelectOption>
-                    </NativeSelect>
-                  </div>
-                  <p id="update-channel-description" className="settings-metadata">
-                    Stable is for everyday use.
-                    Development gets changes sooner and may be less reliable.
-                  </p>
-                </div>
+                <UpdateChannel
+                  value={state.updateChannel}
+                  disabled={checking === true}
+                  onChange={(value) => void changeChannel(value)}
+                />
               )}
               <div className="settings-update-text">
                 <div
-                  className="settings-result"
+                  className={restart && showPond ? "sr-only" : "settings-result"}
                   role="status"
                   aria-atomic="true"
                 >
-                  {title && (
+                  {restart && showPond ? title : title && (
                     <>
                       {checking && !downloading ? (
                         <LoaderCircle
@@ -416,11 +398,11 @@ export function About({
                 )}
                 {installWarning && (
                   <p id="update-channel-hint" className="settings-update-note">
-                    Installing can replace your current version with an earlier one.
+                    May install an earlier version.
                   </p>
                 )}
                 {restart && (
-                  <p id="staged-release" className="settings-update-note">
+                  <p id="staged-release" className="settings-update-note" hidden={showPond || undefined}>
                     {restartTarget}
                   </p>
                 )}
@@ -428,13 +410,26 @@ export function About({
                   <div className="settings-actions">
                     {restart ? (
                       <>
-                        <Button
-                          ref={primaryAction}
-                          aria-describedby="staged-release"
-                          onClick={() => void act({ action: "update-now" })}
-                        >
-                          Restart now
-                        </Button>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="settings-restart-trigger">
+                                <Button
+                                  ref={primaryAction}
+                                  aria-describedby="staged-release"
+                                  onClick={() => void act({ action: "update-now" })}
+                                >
+                                  Restart now
+                                </Button>
+                              </span>
+                            </TooltipTrigger>
+                            {showPond && (
+                              <TooltipContent className="settings-help-content" side="left" align="start">
+                                {restartTarget}
+                              </TooltipContent>
+                            )}
+                          </Tooltip>
+                        </TooltipProvider>
                         {restartOffer && (
                           <Button
                             variant="outline"
