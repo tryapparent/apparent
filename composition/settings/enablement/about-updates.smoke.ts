@@ -320,6 +320,46 @@ test("About makes channel installation, restart and recovery distinct", async ()
       page.getByRole("button", { name: "Check for updates" }),
     ).toBeVisible();
     await expect(page.getByText(warning)).toHaveCount(0);
+
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await publish(idle);
+    const pond = page.locator(".settings-update-pond");
+    const video = pond.locator("video");
+    const pose = pond.locator("img");
+    await expect(pose).toHaveAttribute("src", /\/idle-.*\.webp$/);
+    await expect(page.locator("header").getByRole("button", { name: "Show welcome tour" })).toBeVisible();
+    await publish(checking);
+    await expect(video).toHaveAttribute("src", /\/check-.*\.mp4$/);
+    await expect.poll(() => video.evaluate((element: HTMLVideoElement) =>
+      element.currentTime > 0 && element.videoWidth === 540 && element.textTracks.length === 0,
+    )).toBe(true);
+    await publish({ checking: false, result: "current" });
+    await expect(page.getByRole("heading", { name: "No update available" })).toBeVisible();
+    await expect(pose).toHaveAttribute("src", /\/boat-.*\.webp$/);
+    await expect(video).toHaveAttribute("src", /\/launch-.*\.mp4$/);
+    await expect(video).toHaveAttribute("src", /\/afloat-.*\.mp4$/);
+    await expect.poll(() => video.evaluate((element: HTMLVideoElement) =>
+      element.loop && element.currentTime > 0,
+    )).toBe(true);
+
+    await publish({
+      ...checking,
+      progress: { phase: "downloading", downloadedBytes: 42, totalBytes: 100 },
+    });
+    const bar = page.getByRole("progressbar", { name: "Update download" });
+    await expect(bar).toHaveAttribute("value", "42");
+    await expect(pose).toHaveAttribute("src", /\/fold-flat-.*\.webp$/);
+    await expect(pose).toHaveAttribute("src", /\/fold-(creased|pinched)-.*\.webp$/);
+    await expect(video).toHaveCount(0);
+    await publish({ ...checking, progress: { phase: "verifying" } });
+    await expect(bar).toHaveCount(0);
+    await expect(pose).toHaveAttribute("src", /\/fold-creased-.*\.webp$/);
+    await publish({ checking: false, result: "available" }, { restartPending: true });
+    await expect(restart).toBeVisible();
+    await expect(video).toHaveAttribute("src", /\/launch-.*\.mp4$/);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expect(video).toHaveCount(0);
+    await expect(pose).toHaveAttribute("src", /\/afloat-.*\.webp$/);
   } finally {
     await application.close();
     await rm(home, { recursive: true, force: true });

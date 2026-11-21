@@ -116,6 +116,7 @@ const aboutArtwork = {
 };
 
 function Settings() {
+  const [aboutActions, setAboutActions] = useState<HTMLDivElement | null>(null);
   const [current, setCurrent] = useState(
     () =>
       panes.find((pane) => location.hash === `#${pane.toLowerCase()}`) ??
@@ -211,8 +212,9 @@ function Settings() {
         <BugReport bridge={window.apparentFeedback} frog={availableFrog} />
       </aside>
       <main className="settings-content" ref={content}>
-        <header className="settings-page-heading">
+        <header className="settings-page-heading" data-about={current === "About" || undefined}>
           <h1>{current}</h1>
+          {current === "About" && <div className="settings-about-heading-actions" ref={setAboutActions} />}
           <div id="settings-account" />
         </header>
         {error && <p role="alert">{error}</p>}
@@ -223,7 +225,7 @@ function Settings() {
         ) : current === "Permissions" ? (
           <PermissionsSection bridge={window.apparentPermissions} />
         ) : current === "About" ? (
-          <About bridge={window.apparentAbout} artwork={aboutArtwork} />
+          <About bridge={window.apparentAbout} artwork={aboutArtwork} headingActions={aboutActions} />
         ) : (
           <apparent-settings-pane
             pane={current}

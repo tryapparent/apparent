@@ -255,8 +255,16 @@ test("Permissions shares the Recording window and recovers from refused actions"
         }
       }
     }
-    await expect(page.getByText("Access needed", { exact: true })).toHaveCount(
-      2,
+    await expect(
+      page.getByText("Required to record", { exact: true }),
+    ).toHaveCount(2);
+    await expect(
+      page.getByText("Reopen required", { exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("switch", { name: "Skip screen selection" }),
+    ).toHaveAccessibleDescription(
+      /Typed notes are unavailable when you use the system picker/,
     );
     await expect(page.getByText("Unknown", { exact: true })).toHaveCount(1);
     await assert.rejects(
@@ -378,7 +386,10 @@ test("Permissions shares the Recording window and recovers from refused actions"
     await expect(track).toHaveCSS("width", "51px");
     await expect(track).toHaveCSS("height", "31px");
     await expect(picker).toHaveAccessibleDescription(
-      /your system asks what to share/,
+      "When on, records the entire display. Your system may still ask for approval.",
+    );
+    await expect(page.getByText("Access needed", { exact: true })).toHaveCount(
+      1,
     );
     await expect(page.getByRole("img", { name: "Allowed" })).toHaveCount(1);
     if (evidence) {
@@ -422,7 +433,7 @@ test("Permissions shares the Recording window and recovers from refused actions"
     await expect(track).toHaveCSS("width", "51px");
     await expect(track).toHaveCSS("height", "31px");
     await expect(picker).toHaveAccessibleDescription(
-      /Record one entire display/,
+      "When on, records the entire display. Your system may still ask for approval.",
     );
     await expect(picker).toBeFocused();
     await expect(picker).toBeEnabled();

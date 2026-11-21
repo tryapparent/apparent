@@ -68,7 +68,7 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
   });
   const address = path.join(directory, 'capture.sock');
   await new Promise(resolve => server.listen(address, resolve)); await fs.chmod(address, 0o600);
-  const app = await electron.launch({ args: [path.join(__dirname, '..'), '--settings-storage'], env: { ...process.env, HOME: home, XDG_CONFIG_HOME: path.join(home, 'config') } });
+  const app = await electron.launch({ args: [path.join(__dirname, '..'), '--settings-storage'], env: { ...process.env, HOME: home, XDG_CONFIG_HOME: path.join(home, 'config'), APPARENT_MANUAL_REPORT_TOKEN: '' } });
   t.after(async () => {
     for (const c of clients) c.destroy();
     let timer;
@@ -202,6 +202,7 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
     'cancelConnectSettings', 'checkConnectConnection', 'disableConnectUploads', 'disconnectConnectSettings',
     'requestDisableConnectUploads', 'requestDisconnectConnectSettings', 'openConnectSharedLinks', 'openConnectBrowser',
   ].sort());
+  assert.equal(await page.evaluate(() => window.apparentFeedback.available()), false);
   // Even a direct main-process call from this legitimate frame must not reach
   // unrelated handlers. Check all registered non-Storage capabilities, not only
   // the bounded methods present in the persistent shared preload.
@@ -210,7 +211,8 @@ test('Retention save/reset/readback, failure, usage loading/error and stale resp
     const event = { sender, senderFrame: sender.mainFrame };
     const allowed = new Set(['read-capture-location', 'change-capture-location', 'reset-capture-location',
       'read-retention', 'save-retention', 'reset-retention', 'read-capture-usage', 'navigate-settings', 'show-capture-folder',
-      'settings-mounted', 'settings-frame-ready', 'settings-route']);
+      'settings-mounted', 'settings-frame-ready', 'settings-route', 'feedback-available', 'feedback-send-written',
+      'feedback-capture-available', 'feedback-capture-start', 'feedback-capture-discard', 'feedback-capture-send']);
     const rejected = [];
     for (const [channel, handler] of ipcMain._invokeHandlers) {
       if (!channel.startsWith('apparent:') || allowed.has(channel.slice('apparent:'.length))) continue;

@@ -26,6 +26,7 @@ function host(platform = 'linux', nativeWindowAccepted = true) {
     webContents = Object.assign(new EventEmitter(), {
       mainFrame: {url: ''},
       setWindowOpenHandler() {},
+      invalidate() {},
       send(_channel: string, state: {revision: number}) { revision = state.revision; },
       executeJavaScript: async () => ({width: 640, height: 58, revision}),
     });

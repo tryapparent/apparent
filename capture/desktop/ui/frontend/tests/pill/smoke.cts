@@ -45,8 +45,19 @@ test('shared pill renders authoritative states and isolates commands',async t=>{
  await expect.poll(()=>sent.filter(x=>x.action==='finish').length).toBe(1);
  assert.deepEqual(sent.find(x=>x.action==='finish'),{revision:1,action:'finish'});
  assert.equal(await page.evaluate(async()=>{try{await window.apparentPill.act(1,'paste');return false;}catch{return true;}}),true);
+ const center=()=>page.locator('.pill-row').evaluate(element=>{const r=element.getBoundingClientRect();return r.x+r.width/2;});
+ const recordingCenter=await center();
+ await application.evaluate(({BrowserWindow})=>{
+   const contents=BrowserWindow.getAllWindows()[0].webContents,execute=contents.executeJavaScript.bind(contents);
+   let release;
+   const gate=new Promise(resolve=>{release=resolve;});
+   contents.executeJavaScript=(code,...args)=>code.includes('--pill-limit')?gate.then(()=>execute(code,...args)):execute(code,...args);
+   globalThis.resumeProcessingLayout=()=>{contents.executeJavaScript=execute;release();};
+ });
  await publish({...base,revision:2,phase:'processing',label:'Processing recording…',draggable:false,actions:[]});
  await expect(page.getByText('Processing…',{exact:true})).toBeVisible();
+ assert.ok(Math.abs(await center()-recordingCenter)<=1,'Processing stays centered before the native resize');
+ await application.evaluate(()=>globalThis.resumeProcessingLayout());
  assert.equal(await page.getByRole('button').count(),0);
  await publish({...base,revision:3,warning:'Microphone input stopped; screen recording continues',actions:base.actions.map(a=>({...a,primary:false}))});
  await expect(page.getByRole('status')).toContainText('screen recording continues');
@@ -124,6 +135,7 @@ test('Linux native drag IPC checks its epoch and converts the OS press point', {
  application.process().stdout.on('data',chunk=>{buffer+=chunk;let end;while((end=buffer.indexOf('\n'))>=0){try{sent.push(JSON.parse(buffer.slice(0,end)));}catch{}buffer=buffer.slice(end+1);}});
  await application.evaluate((_e,state)=>{process.stdin.emit('data',JSON.stringify({type:'state',view:state})+'\n'+JSON.stringify({type:'activate'})+'\n');},base);
  await expect(page.getByRole('button',{name:'Finish',exact:true})).toBeVisible();
+ await expect.poll(()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible())).toBe(true);
  const lead=await page.locator('.lead').boundingBox();assert.ok(lead);
  const point=await application.evaluate(({BrowserWindow,screen},lead)=>{
   const bounds=BrowserWindow.getAllWindows()[0].getBounds();
