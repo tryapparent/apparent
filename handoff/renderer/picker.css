@@ -402,3 +402,5 @@
   display: block;
   color: var(--apparent-muted-foreground);
 }
+
+.destination-trigger.destination-confirmed { flex:1;justify-content:flex-start;background:var(--apparent-brand);color:var(--apparent-brand-foreground);text-align:start; }

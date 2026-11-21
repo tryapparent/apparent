@@ -42,11 +42,13 @@ function measureContents(contents,limit,reserve){
    if (${reserve} !== null && element.dataset.phase==='recording')
      document.documentElement.style.setProperty('--pill-recording-reserve', '${reserve}px');
    const live = document.querySelector('.pill[data-live=true]');
-   const selector = live ? '.pill-row,.live-caption,.pill-notes-layer' : '.destination-assembly,.destination-notification,.public-share-confirmation';
-   const regions=live || document.querySelector('.destination-assembly')?[...document.querySelectorAll(selector)].map(element=>{
+   const background=document.querySelector('.pill-background-layer');
+   const row=element.dataset.phase==='recording'?document.querySelector('.pill-row')?.getBoundingClientRect():null;
+   const selector = live || background ? '.pill-row,.live-caption,.pill-notes-layer,.pill-background-layer,.pill-background-detail' : '.destination-assembly,.destination-notification,.public-share-confirmation';
+   const regions=live || background || document.querySelector('.destination-assembly')?[...document.querySelectorAll(selector)].map(element=>{
      const r=element.getBoundingClientRect();return {x:r.x-rect.x,y:r.y-rect.y,width:r.width,height:r.height,radius:parseFloat(getComputedStyle(element).borderTopLeftRadius)||0};
    }):[];
-   return {width:Math.ceil(rect.width),height:Math.ceil(rect.height),revision:Number(element.dataset.revision),regions};
+   return {recordingCenter:row?row.x-rect.x+row.width/2:null,width:Math.ceil(rect.width),height:Math.ceil(rect.height),revision:Number(element.dataset.revision),regions};
  })()`);
 }
 module.exports={shape,contains,regionShape,containsRegions,clamp,measureContents};

@@ -1,8 +1,12 @@
 import type {DestinationView} from './destinations';
 import type { PillView } from '../../../../../../record/pill/renderer/view';
+import type { BackgroundHandoff } from '../../../../../../record/pill/renderer/pill-view';
 export type { PillView } from '../../../../../../record/pill/renderer/view';
 declare global { interface Window { apparentPill?: {
   read:()=>Promise<PillView|null>;
+  retryBackgroundHandoff:(capture:string)=>Promise<void>;
+  backgroundHandoff:()=>Promise<BackgroundHandoff|null>;
+  subscribeBackgroundHandoff:(callback:(state:BackgroundHandoff|null)=>void)=>()=>void;
   destinations:()=>Promise<DestinationView|null>;
   destinationAction:(capture:string,action:'choose'|'retry'|'cancel'|'dismiss'|'copy'|'setup',id?:string)=>Promise<DestinationView|null>;
   destinationFocus:(focused:boolean)=>Promise<void>;

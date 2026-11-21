@@ -25,6 +25,7 @@ pub(in crate::capture::desktop) fn finalize(
     strokes: Vec<Stroke>,
     final_whiteboard: whiteboard::Board,
     notes_finished: Option<flume::Receiver<crate::capture::desktop::workflow::notes::FinishResult>>,
+    source_released: flume::Sender<()>,
 ) -> (CaptureResult, u64) {
     #[cfg(target_os = "linux")]
     FinishPhase::StoppingSource.emit();
@@ -36,7 +37,9 @@ pub(in crate::capture::desktop) fn finalize(
         } => (session, audio, windows),
         CaptureSource::Phone(session) => {
             // Stop the producer before waiting for a possibly contended writer lease.
-            let finalized = session.stop().stage(Stage::PhoneStop).and_then(|recording| {
+            let stopped = session.stop().stage(Stage::PhoneStop);
+            let _ = source_released.send(());
+            let finalized = stopped.and_then(|recording| {
                 complete_bundle(&bundle_dir, &final_whiteboard, None, || {
                     crate::capture::engine::runtime::phone::finalize_live_capture(
                         &bundle_dir,
@@ -77,6 +80,7 @@ pub(in crate::capture::desktop) fn finalize(
             win_handle.join().unwrap_or_default(),
         )
     });
+    let _ = source_released.send(());
     activity.stop_started = Some(stop_started);
     activity.stop_ms = Some(stop_started.elapsed().as_millis() as u64);
     let duration_ms = recording.duration_ms;

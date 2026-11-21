@@ -72,3 +72,18 @@ macOS/Linux acceptance.
 Rollback is a revert of the cutover, including the embedded host, Rust event
 wiring and renderer protocol. Each app build embeds the matching policy; no
 preferences, bundle format, or on-disk state requires migration.
+
+## Overlapping captures
+
+Finish keeps one live recording at a time. The native finalizer signals source
+release after screen and microphone teardown, and the pill policy then permits
+the normal Record actions while the older bundle is still being built. The
+older capture keeps its own receipt and handoff identity. A late result cannot
+replace the newer pill or write its clipboard.
+
+An already confirmed T3 send appears in a compact left extension during the
+next recording. The recording row supplies the window's alignment point.
+The extension keeps its square end underneath the rounded recording row and
+shares the Notes extension's color and button treatment. The tab shows pending
+work, a check after acknowledgement, or an attention state with a same-request
+retry when the saved handoff is available.

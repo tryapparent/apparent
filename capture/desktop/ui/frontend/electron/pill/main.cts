@@ -15,7 +15,7 @@ const page=pathToFileURL(path.join(__dirname,'../../dist/pill/index.html')).href
 let sharingConfirmation=null;
 let window,current=null,buffer='',pending=false,loaded=false,placed=false,activated=false,pendingPlace=null;
 let lastInput=Date.now(),hovered=false,expected=null,rendererReady=false,readySent=false,renderDeadline=Date.now()+5000,pasteGesture=null,lastFrame='',lastRaise=0;
-let visibleWidth=0,layoutPhase=null;
+let visibleWidth=0,layoutPhase=null,recordingCenterOffset=null;
 let capture='',pickerDismissed='',pickerFocused=false,keyboardCapture='';
 let keyboardMode=false,createWindow=null,retiredWindows=[],admittedWindowId=null;
 function reconcileKeyboardWindow(view){
@@ -40,7 +40,8 @@ const destinations=require('./t3.cjs').createController(()=>{if(loaded&&window&&
   const view=destinations.view();
   if(reconcileKeyboardWindow(view))return;
   if(!view&&pickerFocused)focusPicker(false);
-  window.webContents.send('pill:destinations',view);void measurePicker();
+  window.webContents.send('pill:destinations',view);
+  window.webContents.send('pill:background-handoff',destinations.background());void measurePicker();
 }});
 async function measurePicker(){if(current)await requestLayout(current.revision);}
 let requestLayout=async()=>{};
@@ -65,7 +66,7 @@ function applyPlacement(point){
   const anchor=process.platform==='linux'?screen.screenToDipPoint(physical):physical;
   const area=screen.getDisplayNearestPoint(anchor).workArea;
   const bounds=window.getBounds();
-  position({x:Math.round(area.x+(area.width-(visibleWidth||bounds.width))/2),y:area.y+34});placed=true;
+  position({x:Math.round(area.x+area.width/2-(recordingCenterOffset??(visibleWidth||bounds.width)/2)),y:area.y+34});placed=true;
 }
 function emit(message){process.stdout.write(JSON.stringify(message)+'\n');}
 function setSharingConfirmation(revision){
@@ -125,8 +126,11 @@ process.stdin.on('data',chunk=>{
     try{
       const message=JSON.parse(line);
       if(message.type==='state'){
+        const changedCapture=capture!==message.capture || current?.phase!==message.view.phase;
         publish(message.view);
-        if(typeof message.capture==='string'&&message.capture.length<160){capture=message.capture;void destinations.update(capture,current.phase,message.t3Eligible===true).catch(()=>{});}
+        if(typeof message.capture==='string'&&message.capture.length<160){capture=message.capture;void destinations.update(capture,current.phase,message.t3Eligible===true).then(()=>{
+          if(changedCapture&&loaded&&window&&!window.isDestroyed())window.webContents.send('pill:background-handoff',destinations.background());
+        }).catch(()=>{});}
       }
       else if(message.type==='handoff-ready')void destinations.ready(message.capture,message.text).catch(()=>{});
       else if(message.type==='activate'){if(message.windowId!==undefined&&message.windowId!==admittedWindowId)continue;activated=true;if(loaded)visibility();emit({activated:true,windowId:admittedWindowId});}
@@ -157,6 +161,11 @@ app.whenReady().then(()=>{
   session.defaultSession.setPermissionCheckHandler(()=>false);
   session.defaultSession.webRequest.onBeforeRequest((details,reply)=>reply({cancel:!details.url.startsWith('file:')}));
   ipcMain.handle('pill:read',(event,...args)=>{valid(event,args);return current;});
+  ipcMain.handle('pill:retry-background-handoff',(event,key,...args)=>{
+    valid(event,args);if(current?.phase!=='recording'||typeof key!=='string'||key.length>160)throw Error('Handoff unavailable');
+    return destinations.retryBackground(key);
+  });
+  ipcMain.handle('pill:background-handoff',(event,...args)=>{valid(event,args);return destinations.background();});
   ipcMain.handle('pill:destinations',(event,...args)=>{valid(event,args);return destinations.view();});
   ipcMain.handle('pill:destination-action',async(event,key,action,id,...args)=>{
     valid(event,args);if(sharingConfirmation!==null||pending||key!==capture||!['processing','completed'].includes(current?.phase))throw Error('Recording changed');
@@ -232,7 +241,10 @@ app.whenReady().then(()=>{
       // Keep layout resizes mapped. Hyprland can lose a transparent XWayland
       // surface during hide/setBounds/showInactive even when Electron reports
       // it visible. Update its bounds and input shape in place, then repaint.
-      if(resized||phaseChanged)position({x:Math.round(before.x+(oldCenterWidth-newCenterWidth)/2),y:before.y,width,height});
+      const previousCenter=recordingCenterOffset??oldCenterWidth/2;
+      const nextCenter=size.recordingCenter??newCenterWidth/2;
+      if(resized||phaseChanged||recordingCenterOffset!==null&&previousCenter!==nextCenter)position({x:Math.round(before.x+previousCenter-nextCenter),y:before.y,width,height});
+      recordingCenterOffset=size.recordingCenter;
       visibleWidth=nextVisibleWidth;layoutPhase=current.phase;
       inputRegions=size.regions?.length?size.regions:null;
       if(process.platform==='linux'){

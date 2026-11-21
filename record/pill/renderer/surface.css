@@ -50,7 +50,8 @@
 .pill[data-phase=recording] .pill-row { max-width:calc(var(--pill-limit,1200px) - 72px); }
 .pill[data-phase=recording] .controls { min-width:0;max-width:100%;flex-shrink:1;flex-wrap:wrap; }
 .pill-notes-layer { position:absolute;inset:0 0 0 28px;border:1px solid var(--apparent-border);border-radius:28px;background:var(--apparent-brand);pointer-events:none; }
-.pill-notes { position:absolute;right:0;top:0;width:71px;height:100%;border-radius:0 28px 28px 0;background:transparent;color:var(--apparent-brand-foreground);justify-content:flex-start;padding:0 12px 0 8px;gap:6px;font-family:inherit;font-size:18px;font-weight:500;line-height:24px;font-variant-numeric:tabular-nums;pointer-events:auto; }
+.pill-extension { position:absolute;top:0;height:100%;background:transparent;color:var(--apparent-brand-foreground);font-family:inherit;font-weight:500;font-variant-numeric:tabular-nums;pointer-events:auto; }
+.pill-notes { right:0;width:71px;border-radius:0 28px 28px 0;justify-content:flex-start;padding:0 12px 0 8px;gap:6px;font-size:18px;line-height:24px; }
 .pill-notes:hover { background:var(--apparent-brand); }
 .pill-notes > svg { width:18px;height:18px; }
 .pill-notes > span { text-align:left; }
@@ -91,3 +92,16 @@
   .pill[data-live=true]:not([data-reduced=true]) .live-caption__caret { animation:transcript-cursor 1s steps(1,end) infinite; }
 }
 .pill[data-live=true] .pill-notes-layer { bottom:38px; }
+
+.pill[data-phase=recording] .pill-surface[data-background=true] { padding-left:44px; }
+.pill[data-phase=recording] .pill-surface[data-background=true] .pill-row { max-width:calc(var(--pill-limit,1200px) - 116px); }
+.pill-background-layer { position:absolute;inset:0 auto 0 0;width:76px;border:1px solid var(--apparent-border);border-radius:28px 0 0 28px;background:var(--apparent-brand); }
+.pill[data-live=true] .pill-background-layer { bottom:38px; }
+.pill-background { left:0;width:43px;border-radius:28px 0 0 28px;gap:4px;padding:0 0 0 3px;font-size:15px;line-height:20px; }
+.pill-background:hover { background:var(--apparent-brand); }
+.pill-background:focus-visible { outline:2px solid var(--apparent-brand-foreground);outline-offset:-4px; }
+.pill-background svg { width:14px;height:14px; }
+.pill-background-detail { position:relative;z-index:2;display:grid;gap:3px;width:max-content;max-width:min(280px,var(--pill-limit,1200px));margin-top:4px;padding:8px 12px;border:1px solid var(--apparent-border);border-radius:14px;background:var(--apparent-background);overflow-wrap:anywhere;font-size:15px; }
+@media(prefers-reduced-motion:no-preference) {
+  .pill:not([data-reduced=true]) .background-spinner { animation:pill-processing-spin 1s linear infinite!important; }
+}

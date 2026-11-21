@@ -559,7 +559,7 @@ pub fn run_app(
                         });
                     }
                     #[cfg(target_os = "linux")]
-                    platform::poll_controls(loop_coord.read(cx).is_recording() || loop_coord.read(cx).is_processing() || loop_coord.read(cx).is_selecting(), !onboarding_initialized || loop_coord.read(cx).onboarding.is_some(), loop_coord.read(cx).settings.is_some(), cx);
+                    platform::poll_controls(loop_coord.read(cx).is_recording() || loop_coord.read(cx).source_is_stopping() || loop_coord.read(cx).is_selecting(), !onboarding_initialized || loop_coord.read(cx).onboarding.is_some(), loop_coord.read(cx).settings.is_some(), cx);
                     #[cfg(any(target_os = "macos", target_os = "linux"))]
                     if let Some(ref rx) = agent_rx {
                         while let Ok(request) = rx.try_recv() {

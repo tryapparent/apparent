@@ -8,6 +8,7 @@ import '@apparent/ui/status.css';
 import {DestinationPicker} from './destination-picker';
 import type {DestinationView} from './destinations';
 import '../../../../../../handoff/renderer/picker.css';
+import type {BackgroundHandoff} from '../../../../../../record/pill/renderer/pill-view';
 import {PillSurface} from './pill-view';
 
 
@@ -18,6 +19,14 @@ function Pill() {
     const bridge=window.apparentPill;if(!bridge)return;
     const unsubscribe=bridge.subscribeDestinations(setDestination);
     void bridge.destinations().then(setDestination).catch(()=>{});return unsubscribe;
+  },[]);
+  const [background,setBackground]=useState<BackgroundHandoff|null>(null);
+  useEffect(()=>{
+    const bridge=window.apparentPill;
+    if(!bridge?.subscribeBackgroundHandoff)return;
+    const unsubscribe=bridge.subscribeBackgroundHandoff(setBackground);
+    void bridge.backgroundHandoff().then(setBackground).catch(()=>{});
+    return unsubscribe;
   },[]);
   const [receivedAt,setReceivedAt]=useState(0);
   const [systemReduced,setSystemReduced]=useState(false);
@@ -95,7 +104,7 @@ function Pill() {
     {error&&<div className="destination-notification"><StatusCard tone="failure" headline="Action not confirmed" compact><p>Try Public link again.</p></StatusCard></div>}
     {confirmation}
   </main>;
-  return <PillSurface view={view} pending={pending} controlsDisabled={sharing!==null} error={error} receivedAt={receivedAt} reduced={systemReduced} manualDrag={window.apparentPill?.manualDrag} onAction={(id,drop)=>void act(id,drop)} onBeginDrag={()=>window.apparentPill!.beginDrag(view.revision)} onBeginPaste={()=>window.apparentPill!.beginPaste(view.revision)} onCancelPaste={()=>void window.apparentPill?.cancelPaste()}>
+  return <PillSurface view={view} backgroundHandoff={background} onRetryBackground={(key)=>window.apparentPill!.retryBackgroundHandoff(key)} pending={pending} controlsDisabled={sharing!==null} error={error} receivedAt={receivedAt} reduced={systemReduced} manualDrag={window.apparentPill?.manualDrag} onAction={(id,drop)=>void act(id,drop)} onBeginDrag={()=>window.apparentPill!.beginDrag(view.revision)} onBeginPaste={()=>window.apparentPill!.beginPaste(view.revision)} onCancelPaste={()=>void window.apparentPill?.cancelPaste()}>
     {confirmation}
   </PillSurface>;
 }

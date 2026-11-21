@@ -18,6 +18,7 @@ impl ApparentCoordinator {
             report_capture: false,
             recording_activity_attempted: false,
             pending_finalizers: 0,
+            stopping_source: None,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             agent_capture_id: None,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -198,6 +199,10 @@ impl ApparentCoordinator {
         self.active_recording.is_some()
     }
 
+    fn source_is_stopping(&self) -> bool {
+        self.stopping_source.is_some() || (self.lab && self.is_processing())
+    }
+
     pub fn is_processing(&self) -> bool {
         matches!(self.island_phase, IslandPhase::Processing)
     }
@@ -337,7 +342,7 @@ impl ApparentCoordinator {
         }
         if let Some((action @ (Action::Start | Action::StartReport), id)) = &request.action {
             let occupied = self.lab || self.active_recording.is_some()
-                || self.is_selecting() || self.is_processing()
+                || self.is_selecting() || self.source_is_stopping()
                 || self.iphone_preview.is_some() || self.agent_capture_id.is_some()
                 || self.recording_shortcut_key || workflow::shutdown::requested();
             let occupied = occupied || display_selection::pending();
@@ -879,7 +884,7 @@ impl ApparentCoordinator {
             Activity::Recording {
                 elapsed_ms: rec.started.elapsed().as_millis() as u64,
             }
-        } else if self.is_processing() {
+        } else if self.source_is_stopping() {
             Activity::Processing
         } else if self.is_selecting() {
             Activity::Picker
@@ -998,7 +1003,7 @@ impl ApparentCoordinator {
             self.finish_recording(cx);
         } else if self.is_selecting() {
             self.record_selected_mode(cx);
-        } else if !self.is_processing() {
+        } else if !self.source_is_stopping() {
             self.record_screen_now(cx);
         }
     }
@@ -1239,7 +1244,7 @@ impl ApparentCoordinator {
     }
 
     pub fn preview_iphone(&mut self, cx: &mut Context<Self>) {
-        if self.is_recording() || self.is_processing() {
+        if self.is_recording() || self.source_is_stopping() {
             return;
         }
         apparent_log("preview_iphone invoked");
