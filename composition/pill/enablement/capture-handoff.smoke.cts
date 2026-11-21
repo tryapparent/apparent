@@ -34,6 +34,7 @@ test("enabled unpaired pill opens Labs through the native pipe and can copy the 
   let page = await app.firstWindow(),
     buffer = "",
     setup = false;
+  const readyWindows = new Set();
   app.process().stdout.on("data", (chunk) => {
     buffer += String(chunk);
     let end;
@@ -42,17 +43,7 @@ test("enabled unpaired pill opens Labs through the native pipe and can copy the 
       buffer = buffer.slice(end + 1);
       try {
         const value = JSON.parse(line);
-        if (value.ready)
-          void app
-            .evaluate(
-              (_electron, id) =>
-                process.stdin.emit(
-                  "data",
-                  JSON.stringify({ type: "activate", windowId: id }) + "\n",
-                ),
-              value.windowId,
-            )
-            .catch(() => {});
+        if (value.ready) readyWindows.add(value.windowId);
         if (value.action === "settings-labs") setup = true;
       } catch {}
     }
@@ -94,12 +85,31 @@ test("enabled unpaired pill opens Labs through the native pipe and can copy the 
   const heartbeat = setInterval(() => void publish().catch(() => {}), 500);
   t.after(() => clearInterval(heartbeat));
   if (next) page = await next;
-  await expect(
-    page.getByRole("button", { name: "Connect T3", exact: true }),
-  ).toBeVisible();
+  const connect = page.getByRole("button", { name: "Connect T3", exact: true });
+  await expect(connect).toBeVisible();
+  const nativeWindow = await app.browserWindow(page);
+  const windowId = await nativeWindow.evaluate((window) =>
+    Number(window.getMediaSourceId().split(":")[1]),
+  );
+  await expect.poll(() => readyWindows.has(windowId)).toBe(true);
+  assert.equal(
+    await nativeWindow.evaluate((window) => window.isVisible()),
+    false,
+  );
+  await app.evaluate(
+    (_electron, id) =>
+      process.stdin.emit(
+        "data",
+        JSON.stringify({ type: "activate", windowId: id }) + "\n",
+      ),
+    windowId,
+  );
+  await expect
+    .poll(() => nativeWindow.evaluate((window) => window.isVisible()))
+    .toBe(true);
   await expect(page.getByRole("combobox")).toHaveCount(0);
   assert.equal(f.reads, 0);
-  await page.getByRole("button", { name: "Connect T3", exact: true }).click();
+  await connect.click();
   await expect.poll(() => setup).toBe(true);
   await app.evaluate(() =>
     process.stdin.emit(
