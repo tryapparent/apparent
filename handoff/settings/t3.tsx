@@ -210,10 +210,10 @@ export function T3Settings({bridge, artwork}: {bridge: T3SettingsBridge; artwork
   return <section className="settings-t3 settings-agents" aria-labelledby="agent-t3-label">
     <div className="agent-preference-row" ref={preferenceRow}>
       <h2 id="agent-t3-label" tabIndex={-1}>Send recordings to T3 Code</h2>
-      <Switch id="agent-t3-control" className="agent-switch" checked={enabled}
+      <Switch id="agent-t3-control" className="agent-switch" checked={known ? enabled : undefined}
         aria-labelledby="agent-t3-label" aria-describedby="agent-t3-help"
         aria-busy={saving} aria-disabled={saving || connecting}
-        disabled={!known} onCheckedChange={value => {
+        onCheckedChange={value => {
           if (!saving && !connecting) void request(value);
         }} />
     </div>
