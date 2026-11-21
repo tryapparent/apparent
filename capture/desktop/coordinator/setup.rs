@@ -16,6 +16,7 @@ impl ApparentCoordinator {
             completion_pending: None,
             capture_local_practice: false,
             report_capture: false,
+            report_finalizing_generation: None,
             recording_activity_attempted: false,
             pending_finalizers: 0,
             stopping_source: None,

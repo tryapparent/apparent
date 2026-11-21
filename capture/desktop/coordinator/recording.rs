@@ -1458,6 +1458,16 @@ impl ApparentCoordinator {
         false
     }
 
+    pub(in crate::capture::desktop) fn current_capture_is_report(&self) -> bool {
+        self.report_capture || self.report_finalizing_generation == Some(self.capture_generation)
+    }
+
+    fn seal_report_capture(&mut self) -> bool {
+        let report = std::mem::take(&mut self.report_capture);
+        self.report_finalizing_generation = report.then_some(self.capture_generation);
+        report
+    }
+
     pub fn finish_recording(&mut self, cx: &mut Context<Self>) {
         self.observe_recording_activity();
         #[cfg(target_os = "linux")]
@@ -1488,6 +1498,7 @@ impl ApparentCoordinator {
         let bundle_dir = rec.bundle_dir;
         let target = rec.target;
         let source = rec.source;
+        let report = self.seal_report_capture();
         // Drop the Metal overlay immediately on the main thread so the screen frame clears,
         // and morph the Dynamic Island into the compact spinning "Processing…" state while
         // media teardown, transcription, and PNG encoding run on a background worker.
@@ -1523,7 +1534,6 @@ impl ApparentCoordinator {
         }
         // Freeze practice policy with the worker, independent of window/UI lifetime.
         let local_practice = self.capture_local_practice;
-        let report = std::mem::take(&mut self.report_capture);
         cx.notify();
         if matches!(source, CaptureSource::Lab) {
             cx.defer(whiteboard::close);
