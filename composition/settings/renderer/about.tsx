@@ -203,12 +203,8 @@ export function About({
     failedRestart && !checking,
     restart,
   );
-  const showReleaseAction = updateAction.show_release_action(
-    state?.linux === true,
-    result === "current",
-  );
   const showRecoveryHint =
-    state?.linux && state.updates && !checking && !restart && showReleaseAction;
+    state?.linux && state.updates && !checking && !restart;
   const progress = checking ? state?.updateCheck.progress : undefined;
   const downloading = progress?.phase === "downloading";
   const showPond = state?.linux && state.updates;
@@ -244,7 +240,7 @@ export function About({
     (section: HTMLElement | null) => {
       if (
         !section ||
-        (!restartOffer && !(result === "current" && showReleaseAction)) ||
+        (!restartOffer && !(result === "current" && !state?.linux)) ||
         copyStatus === "failed"
       )
         return;
@@ -255,7 +251,7 @@ export function About({
       window.addEventListener("keydown", listener);
       return () => window.removeEventListener("keydown", listener);
     },
-    [restartOffer, result, showReleaseAction, copyStatus, act],
+    [restartOffer, result, state?.linux, copyStatus, act],
   );
   return (
     <section
@@ -394,7 +390,7 @@ export function About({
                     {restartTarget}
                   </p>
                 )}
-                {!checking && (restart || showReleaseAction) && (
+                {!checking && (
                   <div className="settings-actions">
                     {restart ? (
                       <>
@@ -441,9 +437,7 @@ export function About({
                           void act({ action: "check-for-updates" })
                         }
                       >
-                        {result === "current" && !state.linux
-                            ? "Check again"
-                            : updateAction.release_action(state.linux)}
+                        {updateAction.release_action(state.linux, result === "current")}
                       </Button>
                     )}
                   </div>
