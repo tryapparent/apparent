@@ -1,3 +1,5 @@
+export { settingsReportCapture } from "../../../../../../composition/settings/report-capture.ts";
+export { settingsFeedbackHost } from "../../../../../../composition/settings/feedback-host.ts";
 export { bindAbout } from "../../../../../../composition/settings/about/host.ts";
 
 import { PermissionHost } from "../../../../../../record/settings/permissions/permission-host.ts";

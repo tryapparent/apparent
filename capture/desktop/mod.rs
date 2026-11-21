@@ -877,6 +877,7 @@ pub struct ApparentCoordinator {
     /// Prevent repeated publication callbacks from scheduling a second clipboard write.
     completion_pending: Option<u64>,
     capture_local_practice: bool,
+    report_capture: bool,
     recording_activity_attempted: bool,
     /// Media workers outlive their capsule and still own unfinished bundles.
     pending_finalizers: usize,

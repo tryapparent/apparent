@@ -42,6 +42,10 @@
     }
   },
   "imports": {
+    "#bend/report-policy": {
+      "types": "./src/support/report-policy.d.mts",
+      "default": "./dist/bend/report-policy.mjs"
+    },
     "#bend/activity-preference": {
       "types": "./src/reporting/activity-preference.d.mts",
       "default": "./dist/bend/activity-preference.mjs"

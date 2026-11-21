@@ -1,0 +1,11 @@
+[Unit]
+Description=Apparent support recording download socket
+
+[Socket]
+ListenStream=/run/apparent-posthog-support.sock
+SocketMode=0666
+FileDescriptorName=apparent-support
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

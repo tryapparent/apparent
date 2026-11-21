@@ -602,7 +602,7 @@ impl ApparentCoordinator {
     fn take_recording_start(&mut self) -> Option<bool> {
         if self.recording_activity_attempted || self.agent_state().phase != crate::capture::desktop::workflow::agent_capture::Phase::Recording { return None; }
         self.recording_activity_attempted = true;
-        Some(self.capture_local_practice)
+        if self.report_capture { None } else { Some(self.capture_local_practice) }
     }
 
     fn observe_recording_activity(&mut self) {
@@ -1523,6 +1523,7 @@ impl ApparentCoordinator {
         }
         // Freeze practice policy with the worker, independent of window/UI lifetime.
         let local_practice = self.capture_local_practice;
+        let report = std::mem::take(&mut self.report_capture);
         cx.notify();
         if matches!(source, CaptureSource::Lab) {
             cx.defer(whiteboard::close);
@@ -1569,14 +1570,18 @@ impl ApparentCoordinator {
                     coord.publish_capture_busy();
                     coord.receive_capture_result(
                         generation,
-                        !local_practice,
+                        !local_practice && !report,
                         #[cfg(any(target_os = "macos", target_os = "linux"))]
                         finishing_id.as_deref(),
                         finalized,
                         |dir| {
-                            if !local_practice { desktop_completion::connect_completed(dir); }
+                            if !local_practice && !report { desktop_completion::connect_completed(dir); }
                         },
                         |coord, finalized| {
+                            if report {
+                                coord.dismiss_island(cx);
+                                return;
+                            }
                             // receive_capture_result admits only this generation's active UI.
                             if finalized.is_ok() {
                                 if let Some(session) = coord.onboarding.as_mut() {

@@ -1,0 +1,123 @@
+.settings-sidebar:has(.bug-report) {
+  display: flex;
+  flex-direction: column;
+}
+.bug-report {
+  margin-top: auto;
+  padding-top: 24px;
+}
+.bug-report > button {
+  width: 100%;
+}
+.bug-report-dialog {
+  width: min(510px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  overflow: auto;
+  margin: auto;
+  padding: 24px;
+  border: 1px solid currentColor;
+  background: var(--color-background);
+  color: var(--color-foreground);
+}
+.bug-report-dialog::backdrop {
+  background: #020102a6;
+}
+.bug-report-dialog h2 {
+  margin-bottom: 12px;
+  font-size: var(--apparent-type-section);
+  font-weight: 500;
+}
+.settings-sidebar .bug-report-dialog button {
+  color: revert-layer;
+  padding: 0 12px;
+  font-weight: 500;
+}
+.bug-report-dialog label {
+  display: block;
+  margin-bottom: 4px;
+}
+.bug-report-dialog textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 8px;
+  border: 1px solid currentColor;
+  resize: vertical;
+}
+.bug-report-dialog p {
+  margin-top: 8px;
+}
+.bug-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.bug-report-receipt {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(88px, 158px);
+  align-items: center;
+  gap: 12px;
+}
+.bug-report-frog {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+.bug-report-frog p {
+  background: var(--apparent-stock);
+  color: var(--apparent-carbon);
+  padding: 4px 8px;
+  font-weight: 500;
+}
+.bug-report-frog img {
+  width: 100%;
+  height: auto;
+}
+@media (max-width: 700px) {
+  .settings-sidebar:has(.bug-report) {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .bug-report {
+    margin-left: auto;
+    padding-top: 0;
+  }
+}
+.bug-report-frog p {
+  position: relative;
+  border-radius: 6px;
+}
+.bug-report-frog p::after {
+  content: "";
+  position: absolute;
+  inset: auto auto -3px calc(50% - 4px);
+  width: 8px;
+  height: 8px;
+  transform: rotate(45deg);
+  background: inherit;
+}
+.bug-report-choices {
+  display: grid;
+  align-items: start;
+  justify-items: start;
+  gap: 8px;
+}
+.bug-report-dialog video {
+  display: block;
+  width: 100%;
+  max-height: min(36vh, 300px);
+  object-fit: contain;
+  background: var(--apparent-carbon);
+}
+.settings-sidebar .bug-report-dialog button svg {
+  color: currentColor;
+}
+.settings-sidebar .bug-report-dialog .bug-report-instead {
+  margin-inline-start: auto;
+  padding-inline: 0;
+  font-size: var(--apparent-type-caption, 14px);
+  color: var(--color-foreground);
+  text-decoration: underline;
+}

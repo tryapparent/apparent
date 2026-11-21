@@ -12,7 +12,8 @@ function legacyProfile(env: Env): ServiceEnv {
     env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET,
     env.TOKEN_ENCRYPTION_KEY, env.BETTER_AUTH_SECRET, env.OAUTH_DISCOVERY_URL,
     env.SHARING_ENABLED, env.POSTHOG_ENABLED, env.POSTHOG_PROJECT_TOKEN, env.POSTHOG_HOST,
-    env.POSTHOG_ENVIRONMENT, env.POSTHOG_EXCLUDED_ACCOUNT_IDS]
+    env.POSTHOG_ENVIRONMENT, env.POSTHOG_EXCLUDED_ACCOUNT_IDS,
+    env.SUPPORT_REPORT_RECIPIENT, env.SUPPORT_REPORT_READ_TOKEN]
   const cached = legacyProfiles.get(env)
   if (cached && inputs.every((value, index) => value === cached.inputs[index])) return cached.env
   const profile = { ...env, API_ORIGIN: "https://hosted.tryapparent.com" }

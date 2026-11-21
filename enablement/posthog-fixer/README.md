@@ -162,3 +162,36 @@ note and GitHub URL, preserving human decisions. Resolve only delivered, verifie
 repairs. Diagnostics-only work stays active. Report missing error_tracking:write
 access without broadening credentials. Creation happens on fix admission;
 immediate creation for every queued issue would need separate durable handling.
+
+## Private desktop recordings
+
+Configure these three absolute paths together to accept recorded desktop
+reports: `SUPPORT_REPORT_EXECUTABLE` (installed Apparent with the support
+archive reader), `SUPPORT_REPORT_TOKEN_FILE` (Connect support read token) and
+`SUPPORT_REPORT_KEY_FILE` (the dedicated age identity). Both credential files
+must be private and owned by the fixer service account. Do not store either
+credential in PostHog or the T3 thread.
+
+Use the shipped system-level service and socket units for recorded reports.
+The service runs as `apparent-fixer` with `PrivateTmp=true`, private queue
+state, and scoped T3 and PostHog credentials. The system socket owns
+`/run/apparent-posthog-support.sock`. Enable both units for the webhook and
+download listeners. The fixer refuses support configuration without the
+inherited, root-owned Unix socket. Keep the installed Apparent reader and its
+parent directories outside the agent's write access. The reader uses
+`/usr/bin/tar` on the fixer host.
+
+Run the T3 coding agent on the same host under a different unprivileged account
+without access to fixer state and credentials or a way to assume its identity.
+Set `SUPPORT_REPORT_AGENT_UID` to that account's UID. The native reader checks
+the kernel-provided Unix peer UID before fetching or decrypting any data. The
+fixer refuses its own UID and UID 0. The webhook's TCP listener cannot serve
+recordings. Do not forward the Unix socket through the webhook proxy.
+
+The fixer gives each job a random bearer to request its own report over the
+Unix socket. Downloads decrypt on demand and remove the fixer's temporary
+plaintext before returning the archive. The agent extracts the tar in a
+private temporary directory and removes its copy after inspection. The grant
+allows up to three attempts, expires within seven days, and is revoked on job
+settlement. Retrieval failures can be retried within that bound. No recording
+is stored in the T3 attachment vault or the launch payload.

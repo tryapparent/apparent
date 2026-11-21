@@ -2,6 +2,7 @@ import {readFileSync, lstatSync} from 'node:fs';
 import {isAbsolute} from 'node:path';
 
 export type Config = {
+  support?: { executable: string; tokenFile: string; keyFile: string; agentUid: number };
   projectId: number; t3ProjectId: string; t3Origin: string; t3TokenFile: string;
   webhookTokenFile: string; stateDirectory: string; posthogCommand: string;
   posthogOrigin: string; port: number; dailyLimit: number; queueLimit: number;
@@ -36,7 +37,14 @@ export function config(env: NodeJS.ProcessEnv): Config {
   const reasoning = env.T3_REASONING_EFFORT ?? (instanceId === 'codex' ? 'high' : undefined);
   if (reasoning !== undefined && (instanceId !== 'codex' || !['low','medium','high','xhigh','max','ultra'].includes(reasoning)))
     throw Error('Unsupported Codex reasoning effort');
-  return {projectId: integer('POSTHOG_PROJECT_ID', 329943, 2147483647), t3ProjectId: required('T3_PROJECT_ID'),
+  const supportKeys = ['SUPPORT_REPORT_EXECUTABLE', 'SUPPORT_REPORT_TOKEN_FILE', 'SUPPORT_REPORT_KEY_FILE', 'SUPPORT_REPORT_AGENT_UID'];
+  const support = supportKeys.some(key => env[key]) ? {
+    executable: path(supportKeys[0]), tokenFile: path(supportKeys[1]), keyFile: path(supportKeys[2]),
+    agentUid: integer(supportKeys[3], 0, 2147483647),
+  } : undefined;
+  if (support && (process.platform !== 'linux' || !process.getuid?.() || support.agentUid === process.getuid()))
+    throw Error('The support reader and its coding agent require separate non-root Linux accounts');
+  return {support, projectId: integer('POSTHOG_PROJECT_ID', 329943, 2147483647), t3ProjectId: required('T3_PROJECT_ID'),
     t3Origin: t3Origin.origin, posthogOrigin, t3TokenFile: path('T3_TOKEN_FILE'), webhookTokenFile: path('WEBHOOK_TOKEN_FILE'),
     stateDirectory: path('STATE_DIRECTORY'), posthogCommand: path('POSTHOG_COMMAND'),
     port: integer('PORT', 8646, 65535), dailyLimit: integer('DAILY_LIMIT', 10, 100), queueLimit: integer('QUEUE_LIMIT', 100, 1000),

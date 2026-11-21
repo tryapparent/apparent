@@ -148,6 +148,14 @@ fn recovery(error: anyhow::Error) -> anyhow::Error {
 pub fn command(command: ConnectCommand) -> Result<()> {
     let client = client();
     let result = (|| match command {
+        ConnectCommand::SealSupportReport { bundle, out, origin, id, recipient } =>
+            apparent_connect_client::seal_support_report(&bundle, &out, &origin, &id, &recipient)
+                .map_err(|_| anyhow::anyhow!("Could not seal the support report. The recording remains local.")),
+        ConnectCommand::OpenSupportReport { input, out, origin, id, key_file } =>
+            apparent_connect_client::open_support_report(&input, &out, &origin, &id, &key_file)
+                .map_err(|_| anyhow::anyhow!("Could not open the private support report.")),
+        #[cfg(target_os = "linux")]
+        ConnectCommand::CheckSupportPeer { uid } => apparent_connect_client::check_support_peer(uid),
         ConnectCommand::Files { id, reader } => {
             println!("{}",serde_json::to_string_pretty(&client.list_files(&id, reader.as_deref())?)?);
             Ok(())

@@ -83,7 +83,7 @@ if (process.env.APPARENT_DESKTOP_REPORTING === '1') {
 const {PublicShare} = require('./public-share.cjs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { readRuntimeState, storageLocation, errorReporting, captureReference, storagePreference, microphoneEnabled } = require('./runtime.cjs');
+const { readRuntimeState, storageLocation, errorReporting, captureReference, storagePreference, microphoneEnabled, supportCapture } = require('./runtime.cjs');
 const { LocationWorkflow } = require('./storage-owner/location-workflow.js');
 const { RetentionWorkflow } = require('./storage-owner/retention-workflow.js');
 const { isRetentionPolicy } = require('./storage-owner/policy.js');
@@ -271,6 +271,38 @@ app.whenReady().then(() => {
     platform: process.platform,
     openExternal: url => shell.openExternal(url),
   });
+  const feedback = frame.settingsFeedbackHost({
+    token: process.env.APPARENT_MANUAL_REPORT_TOKEN,
+    build: process.env.APPARENT_MANUAL_REPORT_BUILD,
+    environment: process.env.APPARENT_MANUAL_REPORT_ENVIRONMENT,
+  });
+  ipcMain.handle('apparent:feedback-available', (event, ...args) => {
+    validate(event, args);
+    return hasSettingsParent && !settingsClosing && feedback.available;
+  });
+  ipcMain.handle('apparent:feedback-send-written', (event, description, id, ...args) => {
+    validate(event, args);
+    if (!hasSettingsParent || settingsClosing) throw Error('Bug reporting unavailable');
+    return feedback.submit(description, id);
+  });
+  const reportCapture = frame.settingsReportCapture(
+    process.env.APPARENT_REPORT_EXECUTABLE,
+    (operation, id) => supportCapture(os.homedir(), operation, id),
+    show => { if (!settingsClosing && !window.isDestroyed()) show ? showSettings() : window.hide(); },
+    feedback.submitRecording,
+  );
+  for (const [name, operation] of [
+    ['available', reportCapture.available],
+    ['start', reportCapture.start],
+    ['discard', reportCapture.discard],
+    ['send', reportCapture.submit],
+  ]) {
+    ipcMain.handle(`apparent:feedback-capture-${name}`, (event, ...args) => {
+      validate(event, args);
+      if (!hasSettingsParent || settingsClosing || !feedback.available) throw Error('Support capture unavailable');
+      return operation();
+    });
+  }
   frame.bindAbout({
     handle: (name, listener) => ipcMain.handle(name, listener),
     validate, current: () => pane === 'about', read: () => aboutState,

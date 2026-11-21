@@ -115,3 +115,29 @@ test("failed or ambiguous ingestion does not return a success receipt or echo th
     assert.doesNotMatch(result.error ?? "", /private upstream error/);
   }
 });
+
+test("desktop feedback accepts a stable submission UUID and has its own PostHog source", async () => {
+  const id = "805c9840-3ee1-4fe2-b9dd-b409cd5766ef";
+  const events: Record<string, any>[] = [];
+  const send = (async (_url, init) => {
+    events.push(JSON.parse(String(init?.body)));
+    return Response.json({ status: "Ok" });
+  }) satisfies typeof fetch;
+  const report = {
+    kind: "bug" as const,
+    title: "Written bug report",
+    body: "Synthetic description.",
+    submit: true,
+    token: "phc_abcdefghijklmnop",
+    build: "fixture",
+    environment: "test",
+    desktop: { id },
+  };
+  await reportFeedback(report, send);
+  await reportFeedback(report, send);
+  assert.equal(events.length, 2);
+  assert.deepEqual(events[0], events[1]);
+  assert.equal(events[0].uuid, id);
+  assert.equal(events[0].properties.source, "desktop_feedback");
+  assert.equal(events[0].properties.feedback_body, report.body);
+});

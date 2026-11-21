@@ -4,7 +4,8 @@
     "settings/t3-settings.bend",
     "pure/destination-order.bend",
     "pure/transcript-only.bend",
-    "pure/worktree-base.bend"
+    "pure/worktree-base.bend",
+    "feedback/written-report.bend"
   ],
-  "inputs": ["main/", "pure/", "settings/"]
+  "inputs": ["main/", "pure/", "settings/", "feedback/"]
 }

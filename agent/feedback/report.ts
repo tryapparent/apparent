@@ -10,11 +10,14 @@ type Request = Report & {
   token: string | null;
   build: string;
   environment: string;
+  desktop?: { id: string; supportReport?: string };
 };
 
 function event(report: Request, id: string) {
   const issueName =
-    report.kind === "bug" ? "Apparent CLI bug report" : "Apparent CLI feedback";
+    report.desktop ? "Apparent desktop bug report" :
+      report.kind === "bug" ? "Apparent CLI bug report" : "Apparent CLI feedback";
+  const source = report.desktop ? "desktop_feedback" : "agent_cli_feedback";
   const fingerprint = createHash("sha256")
     .update(JSON.stringify([report.kind, report.title, report.body]))
     .digest("hex");
@@ -27,23 +30,26 @@ function event(report: Request, id: string) {
       $process_person_profile: false,
       $geoip_disable: true,
       $ip: null,
-      $lib: "apparent-cli",
-      component: "agent-cli",
-      source: "agent_cli_feedback",
+      $lib: report.desktop ? "apparent-desktop" : "apparent-cli",
+      component: report.desktop ? "desktop" : "agent-cli",
+      source,
       feedback_kind: report.kind,
       feedback_title: report.title,
-      feedback_body: report.body,
+      ...(report.desktop?.supportReport ? {
+        support_report_id: report.desktop.supportReport,
+        $issue_description: `apparent-support-report:${report.desktop.supportReport}`,
+      } : { feedback_body: report.body }),
       build: report.build,
       environment: report.environment,
       $os: process.platform,
       $issue_name: issueName,
       $exception_level: "error",
-      $exception_fingerprint: `agent-cli:${report.kind}:${fingerprint}`,
+      $exception_fingerprint: `${report.desktop ? "desktop-feedback" : "agent-cli"}:${report.kind}:${fingerprint}`,
       $exception_list: [
         {
           type:
-            report.kind === "bug" ? "AgentCliBugReport" : "AgentCliFeedback",
-          value: "See feedback_title and feedback_body on the exception event.",
+            report.desktop?.supportReport ? "DesktopRecordedBugReport" : report.desktop ? "DesktopBugReport" : report.kind === "bug" ? "AgentCliBugReport" : "AgentCliFeedback",
+          value: report.desktop?.supportReport ? "Recording submitted to Apparent Support." : "See feedback_title and feedback_body on the exception event.",
           mechanism: { type: "generic", handled: true, synthetic: true },
         },
       ],
@@ -73,7 +79,7 @@ export async function reportFeedback(report: Request, send = fetch) {
     };
   }
 
-  const id = randomUUID();
+  const id = report.desktop?.id ?? randomUUID();
   try {
     const response = await send(endpoint, {
       method: "POST",

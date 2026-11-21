@@ -1,6 +1,7 @@
 {
   "modules": [
     "service/src/reporting/activity-preference.bend",
+    "service/src/support/report-policy.bend",
     "client/typescript/src/reader/reader-route.bend",
     "client/typescript/src/account/account-status.bend"
   ],
