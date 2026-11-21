@@ -172,10 +172,21 @@ archive reader), `SUPPORT_REPORT_TOKEN_FILE` (Connect support read token) and
 must be private and owned by the fixer service account. Do not store either
 credential in PostHog or the T3 thread.
 
-The fixer resolves the report ID from the PostHog issue, downloads ciphertext
-from the fixed Connect origin and decrypts the recording in its private state
-directory before launching the thread. The configured T3 environment must run
-under the same trusted local account with read access to that directory. The
-fix thread sees the private bundle path. Once it settles, the worker removes
-that local bundle. If retrieval or decryption fails, the job follows the
-existing context retry and hold policy.
+Run the fixer under a dedicated unprivileged OS account with `PrivateTmp=true`,
+private queue state, and the existing scoped T3 and PostHog credentials. Run
+the T3 coding agent on the same host under a different unprivileged account
+without access to that state or credentials or a way to assume the fixer's
+identity. Keep the installed Apparent reader and its parent directories
+outside the agent's write access. Set `SUPPORT_REPORT_AGENT_UID`
+to the agent's actual UID and verify the process identity before enabling the
+support recipient. The fixer refuses its own UID and UID 0 for this setting.
+The archive reader uses `/usr/bin/tar` on the fixer host.
+
+The fixer gives the launched job a random bearer for its own loopback download.
+The public webhook proxy must expose only the webhook route described above.
+The download fetches and decrypts the one linked report on demand, then removes
+the fixer's temporary plaintext. The agent extracts the returned tar in a
+private temporary directory and removes its copy after inspection. The grant
+allows up to three attempts, expires within seven days, and is revoked on job
+settlement. Retrieval failures can be retried within that bound. No recording
+is stored in the T3 attachment vault or the launch payload.

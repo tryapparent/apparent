@@ -101,6 +101,67 @@ test('context failures back off and hold without launching', async t => {
   const now=Date.now();for(let n=0;n<4;n++)await worker.tick(now+n*60000);
   assert.equal(calls,0);assert.equal(f.store.jobs()[0].state,'held');assert.equal(f.store.dailyCount(now),0);
 });
+test('a recorded report grants only its fix job bounded loopback downloads and expires on settlement', {timeout:10000}, async t => {
+  const f = fixture(t);
+  f.c.support = {executable:'/synthetic/apparent', tokenFile:f.c.t3TokenFile, keyFile:f.c.t3TokenFile, agentUid:65534};
+  const report = '7'.repeat(32);
+  const archive = Buffer.from('synthetic tar body');
+  const downloads: string[] = [];
+  const loading = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  t.after(() => release.resolve());
+  const app = server(f.store, f.c, async (_config, id) => {
+    downloads.push(id);
+    if (downloads.length === 2) {loading.resolve(); await release.promise;}
+    return archive;
+  });
+  app.listen(0,'127.0.0.1'); await once(app,'listening');
+  t.after(() => app.close());
+  f.c.port = (app.address() as {port:number}).port;
+  f.store.enqueue(issue, 2); f.store.enqueue(second, 2);
+  let prompt = '';
+  const worker = new Worker(f.store, f.c, {
+    context:async () => JSON.stringify({description:`apparent-support-report:${report}`}),
+    call:async (tag, payload) => {
+      const p = payload as ReturnType<typeof launchPayload>;
+      if (tag === 'orchestration.launchThread') {
+        prompt = p.initialMessage.text;
+        return {threadId:p.threadId,projection:projected(p.threadId)};
+      }
+      return projected(p.threadId, true, 'completed');
+    },
+  });
+  await worker.tick();
+  const [job, other] = f.store.jobs();
+  const token = prompt.match(/^Authorization: Bearer ([a-f0-9]{64})$/m)?.[1];
+  assert.ok(token);
+  assert.ok(prompt.includes(`GET http://127.0.0.1:${f.c.port}/support/${job.thread}`));
+  assert.ok(!prompt.includes(f.c.stateDirectory));
+  assert.ok(!prompt.includes(f.c.support.keyFile));
+  const get = (thread: string, bearer: string | undefined = token) => fetch(`http://127.0.0.1:${f.c.port}/support/${thread}`, {
+    headers: bearer ? {Authorization:`Bearer ${bearer}`} : {}, redirect:'error',
+  });
+  assert.equal((await get(other.thread)).status, 404);
+  assert.equal((await get(job.thread, '')).status, 404);
+  assert.equal((await get(job.thread, '1'.repeat(64))).status, 404);
+  assert.deepEqual(downloads, []);
+  const res = await get(job.thread);
+  assert.equal(res.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(Buffer.from(await res.arrayBuffer()), archive);
+  f.store.db.prepare('UPDATE support_access SET expires_at=0 WHERE thread=?').run(job.thread);
+  assert.equal((await get(job.thread)).status, 404);
+  f.store.db.prepare('UPDATE support_access SET expires_at=? WHERE thread=?').run(Date.now()+60000, job.thread);
+  f.store.db.prepare('UPDATE support_access SET downloads=3 WHERE thread=?').run(job.thread);
+  assert.equal((await get(job.thread)).status, 404);
+  f.store.db.prepare('UPDATE support_access SET downloads=2 WHERE thread=?').run(job.thread);
+  const pending = get(job.thread);
+  await loading.promise;
+  await worker.tick();
+  release.resolve();
+  assert.equal((await pending).status, 404);
+  assert.equal((await get(job.thread)).status, 404);
+  assert.deepEqual(downloads, [report, report]);
+});
 test('malformed launch and active projections retain the only writer slot', async t => {
   const f=fixture(t);f.store.enqueue(issue,2);f.store.enqueue(second,2);let launches=0;
   const worker=new Worker(f.store,f.c,{context:async()=> 'context',call:async(tag,p:any)=>{
@@ -139,6 +200,10 @@ test('configuration supports full-access Codex reasoning and rejects invalid set
   assert.throws(()=>config({...env,T3_REASONING_EFFORT:'invalid'}));
   assert.throws(()=>config({...env,T3_PROVIDER_INSTANCE:'other',T3_REASONING_EFFORT:'high'}));
   assert.throws(()=>config({...env,QUEUE_LIMIT:'0'}));
+  const support = {...env, SUPPORT_REPORT_EXECUTABLE:'/synthetic/apparent',
+    SUPPORT_REPORT_TOKEN_FILE:f.c.t3TokenFile, SUPPORT_REPORT_KEY_FILE:f.c.t3TokenFile};
+  assert.throws(() => config(support));
+  assert.throws(() => config({...support, SUPPORT_REPORT_AGENT_UID:String(process.getuid?.() ?? 0)}));
   writeFileSync(join(f.c.stateDirectory,'public'),'x'.repeat(40),{mode:0o644});
   // Preserve the deliberately nonprivate fixture under a private caller umask.
   chmodSync(join(f.c.stateDirectory,'public'),0o644);

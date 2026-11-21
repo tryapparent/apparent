@@ -3,6 +3,7 @@ import {createHash, timingSafeEqual} from 'node:crypto';
 import {secret} from './config.ts';
 import type {Config} from './config.ts';
 import type {Store} from './store.ts';
+import {fetchSupportArchive} from './support-report.ts';
 
 export function notification(value: unknown, project: number): string | null {
   const input = value as {project_id?: unknown; event?: {event?: unknown; distinct_id?: unknown}};
@@ -13,10 +14,31 @@ export function notification(value: unknown, project: number): string | null {
     throw Error('Invalid issue');
   return issue.toLowerCase();
 }
-export function server(store: Store, c: Config) {
+export function server(store: Store, c: Config, loadSupportArchive = fetchSupportArchive) {
+  let loadingSupport = false;
   const app = createServer(async (req, res) => {
     const reply = (status: number, data: object) => {if (!res.destroyed) res.writeHead(status, {'Content-Type':'application/json', 'Cache-Control':'no-store'}).end(JSON.stringify(data));};
     if (req.url === '/health' && req.method === 'GET') return reply(200, {ok:true});
+    const support = /^\/support\/([a-f0-9-]{36})$/.exec(req.url ?? '');
+    if (support && req.method === 'GET' && c.support && req.headers.host === `127.0.0.1:${c.port}`) {
+      const token = /^Bearer ([a-f0-9]{64})$/.exec(req.headers.authorization ?? '')?.[1];
+      if (!token) return reply(404, {error:'not_found'});
+      if (loadingSupport) return reply(503, {error:'unavailable'});
+      try {
+        const digest = createHash('sha256').update(token).digest('hex');
+        const report = store.supportAccess(support[1], digest, Date.now());
+        if (!report) return reply(404, {error:'not_found'});
+        loadingSupport = true;
+        res.setTimeout(70000, () => res.destroy());
+        try {
+          const archive = await loadSupportArchive(c, report);
+          if (!store.supportAccessActive(support[1], Date.now())) return reply(404, {error:'not_found'});
+          if (!res.destroyed) res.writeHead(200, {'Content-Type':'application/x-tar',
+            'Content-Length':archive.length, 'Cache-Control':'no-store', 'X-Content-Type-Options':'nosniff'}).end(archive);
+        } finally {loadingSupport = false;}
+      } catch {reply(503, {error:'unavailable'});}
+      return;
+    }
     if (req.url !== '/webhooks/posthog' || req.method !== 'POST') return reply(404, {error:'not_found'});
     try {
       const expected = `Bearer ${secret(c.webhookTokenFile)}`;
