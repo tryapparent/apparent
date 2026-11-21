@@ -85,8 +85,7 @@ test('installed About projects parent state and bounds actions', async () => {
     }
     await publish(state);
     if (process.env.APPARENT_ABOUT_PROOF) await page.screenshot({ path: process.env.APPARENT_ABOUT_PROOF });
-    await page.getByRole('button', { name: 'Restart later', exact: true }).click();
-    await expect.poll(() => output.includes('"action":"update-later"')).toBe(true);
+    await expect(page.getByRole('button', { name: 'Restart later', exact: true })).toHaveCount(0);
     assert.equal(await page.evaluate(async () => {
       try { await window.apparentAbout.act({ action: 'set', key: 'capturesDir', value: '/bad' }); return false; }
       catch { return true; }
