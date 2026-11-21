@@ -93,10 +93,17 @@ export async function supportRoutes(request: Request, env: Env, url: URL) {
 
 export async function cleanupSupportReports(env: Env) {
   const now = Date.now();
-  const rows = await stmt(env, 'SELECT * FROM support_reports WHERE cleaned=0 AND expires_at<=? LIMIT 128', now).all<Report>();
-  for (const report of rows.results) {
-    await env.BUCKET.delete(objectKey(report));
-    await stmt(env, 'UPDATE support_reports SET cleaned=1 WHERE id=? AND expires_at=?', report.id, report.expires_at).run();
+  const rows = await stmt(env, 'SELECT id,digest FROM support_reports WHERE cleaned=0 AND expires_at<=? ORDER BY expires_at LIMIT 100', now)
+    .all<Pick<Report, 'id' | 'digest'>>().catch((error: unknown) => {
+      if (error instanceof Error && /no such table: support_reports\b/.test(error.message)) return null;
+      throw error;
+    });
+  if (!rows) return;
+  if (rows.results.length) {
+    await env.BUCKET.delete(rows.results.map(objectKey));
+    await stmt(env, `UPDATE support_reports SET cleaned=1
+      WHERE id IN (SELECT value FROM json_each(?)) AND expires_at<=?`,
+    JSON.stringify(rows.results.map(report => report.id)), now).run();
   }
   await stmt(env, 'DELETE FROM support_reports WHERE cleaned=1 AND expires_at<=?', now - DAY).run();
 }

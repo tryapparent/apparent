@@ -7,6 +7,8 @@ test('support reports accept one anonymous encrypted upload and require a suppor
  const reader='b'.repeat(64), writer='c'.repeat(64), id='d'.repeat(32);
  const f=await fixture({SUPPORT_REPORT_RECIPIENT:'age1'+'a'.repeat(58),SUPPORT_REPORT_READ_TOKEN:reader});
  t.after(f.close);
+ const worker=await f.mf.getWorker();
+ assert.equal((await worker.scheduled()).outcome,'ok');
  await f.db.exec((await readFile('.generated/migrations/0016.sql','utf8')).replaceAll('\n',' '));
  const route='/v1/support-reports/'+id;
  const content=Buffer.concat([Buffer.from('age-encryption.org/v1\n'),Buffer.alloc(60,37)]);
@@ -25,4 +27,7 @@ test('support reports accept one anonymous encrypted upload and require a suppor
  assert.deepEqual(Buffer.from(await response.arrayBuffer()),content);
  await f.db.prepare('UPDATE support_reports SET expires_at=0 WHERE id=?').bind(id).run();
  assert.equal((await f.call(route,{token:reader})).status,404);
+ assert.equal((await worker.scheduled()).outcome,'ok');
+ assert.equal(await f.bucket.head(`support-reports/${id}/${digest(content)}.age`),null);
+ assert.equal(await f.db.prepare('SELECT id FROM support_reports WHERE id=?').bind(id).first(),null);
 });
