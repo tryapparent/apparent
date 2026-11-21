@@ -8,7 +8,7 @@
 
 use std::collections::{HashSet, VecDeque};
 use std::os::fd::{AsRawFd, OwnedFd};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock, atomic::{AtomicBool, Ordering}};
 use std::time::{Duration, Instant};
 
 /// Linux input event codes (`linux/input-event-codes.h`).
@@ -28,6 +28,8 @@ pub mod code {
     pub const BTN_TOUCH: u16 = 0x14a;
 }
 
+const EV_SYN: u16 = 0x00;
+const SYN_DROPPED: u16 = 0x03;
 const EV_KEY: u16 = 0x01;
 const EV_REL: u16 = 0x02;
 const EV_ABS: u16 = 0x03;
@@ -112,6 +114,7 @@ impl Held {
 }
 
 struct Reader {
+    shortcut_state_lost: AtomicBool,
     held: Mutex<Held>,
     /// Keys and buttons that went down since the poller last looked (`take_held`): a click
     /// can be over before the next poll.
@@ -216,6 +219,7 @@ pub fn start() -> bool {
     }
     crate::capture::engine::runtime::apparent_log(format!("input devices: reading {}", fds.len()));
     READER.get_or_init(|| Reader {
+        shortcut_state_lost: AtomicBool::new(false),
         held: Mutex::new(Held::default()),
         pressed: Mutex::new(HashSet::new()),
     });
@@ -267,6 +271,12 @@ pub fn held() -> Option<Held> {
     })
 }
 
+pub(crate) fn held_record_shortcut_state() -> Option<Held> {
+    let reader = READER.get()?;
+    let held = held()?;
+    (!reader.shortcut_state_lost.load(Ordering::Acquire)).then_some(held)
+}
+
 fn event_instant(event: &[u8], clock: libc::clockid_t) -> (Instant, &'static str) {
     let received = Instant::now();
     let seconds = i64::from_ne_bytes(event[0..8].try_into().unwrap());
@@ -296,51 +306,7 @@ fn event_age(now_seconds: i64, now_nanos: i64, seconds: i64, micros: i64) -> Opt
         .checked_sub(Duration::new(seconds as u64, micros as u32 * 1000))
 }
 
-fn read_loop(fds: Vec<OwnedFd>) {
-    // struct input_event on 64-bit Linux: timeval (16), type (2), code (2), value (4).
-    // evdev defaults to realtime; request monotonic timestamps to avoid wall-clock
-    // adjustments. Preserve the default clock when an older device rejects it.
-    let clocks: Vec<_> = fds
-        .iter()
-        .map(|fd| {
-            let clock = libc::CLOCK_MONOTONIC;
-            // SAFETY: EVIOCSCLOCKID reads one initialized clockid_t from this pointer.
-            if unsafe { libc::ioctl(fd.as_raw_fd(), 0x400445a0_u64 as libc::c_ulong, &clock) } == 0
-            {
-                clock
-            } else {
-                libc::CLOCK_REALTIME
-            }
-        })
-        .collect();
-    let axes: Vec<Option<[(i32, i32); 2]>> = fds.iter().map(absolute_axes).collect();
-    let mut polls: Vec<libc::pollfd> = fds
-        .iter()
-        .map(|fd| libc::pollfd {
-            fd: fd.as_raw_fd(),
-            events: libc::POLLIN,
-            revents: 0,
-        })
-        .collect();
-    let mut pending = ReadBuffers::new(&clocks);
-    loop {
-        // SAFETY: `polls` outlives the call and its length is passed with it.
-        let timeout = if pending.queues.iter().all(VecDeque::is_empty) {
-            1_000
-        } else {
-            0
-        };
-        let ready = unsafe { libc::poll(polls.as_mut_ptr(), polls.len() as _, timeout) };
-        if ready < 0 {
-            std::thread::sleep(Duration::from_millis(100));
-            continue;
-        }
-        let events = read_ready_events(&mut polls, &axes, &clocks, &mut pending);
-        if let Some(reader) = READER.get() {
-            apply_events(reader, events);
-        }
-    }
-}
+include!("../../../../engine/native/input/reader.rs");
 
 struct ReadBuffers {
     queues: Vec<VecDeque<PendingEvent>>,
@@ -520,6 +486,7 @@ mod tests {
 
     fn reader() -> Reader {
         Reader {
+            shortcut_state_lost: AtomicBool::new(false),
             held: Mutex::new(Held::default()),
             pressed: Mutex::new(HashSet::new()),
         }

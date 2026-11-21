@@ -1426,6 +1426,8 @@ impl ApparentCoordinator {
 
     /// Cancellation must also work before a visible island or recording exists.
     fn cancel_capture_attempt(&mut self) {
+        #[cfg(target_os = "linux")]
+        { self.shortcut.hold = None; }
         display_selection::cancel();
         // dismiss_island is a no-op while Hidden: startup failure must revoke the
         // shortcut attempt here, not wait for a visible phase transition.
@@ -1459,6 +1461,10 @@ impl ApparentCoordinator {
     }
 
     pub fn finish_recording(&mut self, cx: &mut Context<Self>) {
+        self.finish_recording_with_release(false, cx);
+    }
+
+    fn finish_recording_with_release(&mut self, released: bool, cx: &mut Context<Self>) {
         self.observe_recording_activity();
         #[cfg(target_os = "linux")]
         if self.cancel_pending_screen_finish() {
@@ -1494,33 +1500,9 @@ impl ApparentCoordinator {
         drop(rec._metal_overlay);
         self.apply_pill_event(PillEvent::CaptureSealed);
         let generation = self.capture_generation;
-        let completion_facts = desktop_completion::Facts {
-            capture: desktop_completion::Capture {
-                generation: generation.to_string(),
-                capture_id: finishing_id.clone().unwrap_or_default(),
-                request_id: finishing_id.clone(),
-            },
-            platform: if cfg!(target_os = "linux") { "linux" } else { "macos" }.into(),
-            source: completion_source.into(),
-            agent_requested,
-            automatic_trial_enabled: desktop_completion::auto_paste_enabled(self.capture_local_practice),
-            image_quality_warning: None, // Filled from the finalizer's immutable result.
-            lab: self.lab,
-            #[cfg(target_os = "linux")]
-            hyprland: linux::hyprland::running(),
-            #[cfg(not(target_os = "linux"))]
-            hyprland: false,
-            #[cfg(target_os = "linux")]
-            wayland: crate::capture::desktop::linux::wayland_session(),
-            #[cfg(not(target_os = "linux"))]
-            wayland: false,
-        };
-        #[cfg(target_os = "linux")]
-        {
-            self.auto_paste_target = if completion_facts.automatic_trial_enabled && completion_facts.hyprland && completion_facts.wayland {
-                linux::hyprland::focused_window().ok().map(|target| (generation, target))
-            } else { None };
-        }
+        let completion_facts = self.capture_completion_facts(
+            finishing_id.clone(), completion_source, agent_requested, released,
+        );
         // Freeze practice policy with the worker, independent of window/UI lifetime.
         let local_practice = self.capture_local_practice;
         let report = std::mem::take(&mut self.report_capture);

@@ -4,6 +4,7 @@
   "desktopPaths": [
     "engine/permissions/",
     "engine/diagnostics/",
-    "engine/recording/model-cache/"
+    "engine/recording/model-cache/",
+    "engine/native/input/"
   ]
 }

@@ -107,3 +107,5 @@ export function RecordingSection({ bridge }: { bridge: RecordingBridge }) {
     </div>
   );
 }
+
+export { PushToTalk, type PushToTalkProps } from "./push-to-talk";

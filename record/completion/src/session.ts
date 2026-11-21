@@ -1,8 +1,8 @@
 import { begin, reduce } from "./policy.ts";
-import type { Context, MayCopy, Outcome } from "./policy.ts";
+import type { Context, CopyPolicy, Outcome } from "./policy.ts";
 import { createInterface } from "node:readline";
 
-export async function runCompletion(mayCopy: MayCopy): Promise<void> {
+export async function runCompletion(policy: CopyPolicy): Promise<void> {
   const lines = createInterface({ input: process.stdin, crlfDelay: Infinity })[
     Symbol.asyncIterator
   ]();
@@ -40,6 +40,8 @@ export async function runCompletion(mayCopy: MayCopy): Promise<void> {
       ) ||
       !["linux", "macos"].includes(context.platform) ||
       !["screen", "phone"].includes(context.source) ||
+      (context.pasteOnRelease !== undefined &&
+        typeof context.pasteOnRelease !== "boolean") ||
       [
         "agentRequested",
         "automaticTrialEnabled",
@@ -64,18 +66,18 @@ export async function runCompletion(mayCopy: MayCopy): Promise<void> {
     let decision = reduce(
       begin(context, input.current),
       { type: "finalized", capture: context.capture, outcome },
-      mayCopy,
+      policy,
     );
     emit(decision);
     if (decision.effects.length) {
       const reply = await read();
       if (reply.result === "revoked")
-        decision = reduce(decision.state, { type: "revoke" }, mayCopy);
+        decision = reduce(decision.state, { type: "revoke" }, policy);
       else if (reply.result === "copied" || reply.result === "failed") {
         decision = reduce(
           decision.state,
           { type: "clipboard", capture: context.capture, result: reply.result },
-          mayCopy,
+          policy,
         );
       } else throw Error("Invalid clipboard receipt");
       emit(decision);
