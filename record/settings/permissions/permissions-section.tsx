@@ -23,8 +23,8 @@ import { PermissionsFeed } from "./permissions-feed";
 import "./permissions-section.css";
 
 const descriptions = {
-  "screen-recording": "Capture what appears on your screen.",
-  microphone: "Record your voice.",
+  "screen-recording": null,
+  microphone: null,
   accessibility: "Use shortcuts, ink, and paste across apps.",
   camera: "Show a cabled iPhone.",
   "speech-recognition": "Transcribe your voice with Apple Speech.",
@@ -212,19 +212,13 @@ export function PermissionsSection({ bridge }: { bridge: PermissionBridge }) {
               </p>
             ) : selection === "unavailable" ? (
               <p>Screen selection is unavailable in this session.</p>
-            ) : fullDisplay ? (
-              <p>
-                Record one entire display. Your system may still ask for
-                approval.
-              </p>
             ) : (
               <>
-                <p>By default, your system asks what to share.</p>
                 <p>
-                  Your system may still ask for approval when you skip
-                  selection.
+                  When on, records the entire display. Your system may still ask
+                  for approval.
                 </p>
-                {state?.platform === "macos" && (
+                {!fullDisplay && state?.platform === "macos" && (
                   <p>
                     Typed notes are unavailable when you use the system picker.
                   </p>
@@ -278,28 +272,25 @@ function PermissionItem({
       <Icon className="record-permission-icon" aria-hidden="true" />
       <div className="record-permission-description">
         <h3 tabIndex={-1}>{name}</h3>
-        <p>{description}</p>
-        {!unknown && label && row.required && <p>Required to record.</p>}
+        {description && <p>{description}</p>}
       </div>
       <div className="record-permission-controls-end">
         <div className="record-permission-status">
           {allowed ? (
             <CircleCheck role="img" aria-label="Allowed" />
+          ) : unknown ? (
+            <span>Unknown</span>
           ) : (
             <>
-              {!unknown && (
-                <CircleAlert
-                  className="record-permission-warning"
-                  aria-hidden="true"
-                />
+              <CircleAlert
+                className="record-permission-warning"
+                aria-hidden="true"
+              />
+              {!row.relaunch && (
+                <span>
+                  {row.required ? "Required to record" : "Access needed"}
+                </span>
               )}
-              <span>
-                {unknown
-                  ? "Unknown"
-                  : row.relaunch
-                    ? "Reopen required"
-                    : "Access needed"}
-              </span>
             </>
           )}
         </div>
