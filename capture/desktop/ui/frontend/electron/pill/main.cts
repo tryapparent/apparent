@@ -211,25 +211,16 @@ app.whenReady().then(()=>{
     if(current?.phase!=='hidden' && Date.now()-lastInput>5000){fail('parent_state_timeout');return;}
     try{
       const area=screen.getDisplayMatching(window.getBounds()).workArea;
-      const size=await window.webContents.executeJavaScript(`(() => {
-        document.documentElement.style.setProperty('--pill-limit', '${area.width}px');
-        const element=document.querySelector('main'),rect=element?.getBoundingClientRect();
-        const live = document.querySelector('.pill[data-live=true]');
-        const selector = live ? '.pill-row,.live-caption,.pill-notes-layer' : '.destination-assembly,.destination-notification,.public-share-confirmation';
-        const regions=live || document.querySelector('.destination-assembly')?[...document.querySelectorAll(selector)].map(element=>{
-          const r=element.getBoundingClientRect();return {x:r.x-rect.x,y:r.y-rect.y,width:r.width,height:r.height,radius:parseFloat(getComputedStyle(element).borderTopLeftRadius)||0};
-        }):[];
-        return rect && {width:Math.ceil(rect.width),height:Math.ceil(rect.height),revision:Number(element.dataset.revision),regions};
-      })()`);
+      const reserve=current.phase==='recording'?(current.noteCount===0?72:0):null;
+      const size=await geometry.measureContents(window.webContents,area.width,reserve);
       // A newer parent state may arrive while the renderer answers. Never apply
       // geometry measured for an obsolete document.
       if(window!==measuredWindow||document!==documentGeneration||!loaded||revision!==current?.revision || size?.revision!==revision || !Number.isFinite(size.width)||!Number.isFinite(size.height))return false;
-      const bounds=window.getBounds();
       const width=Math.min(area.width,Math.max(100,Math.ceil(size.width)));
       const height=Math.min(area.height,Math.max(58,Math.ceil(size.height)));
       const before=window.getBounds();
       const resized=before.width!==width || before.height!==height;
-      const nextVisibleWidth=current.phase==='recording' && current.noteCount===0?width-72:width;
+      const nextVisibleWidth=width-(reserve??0);
       const nextLayoutKey=JSON.stringify([document,revision,width,height,size.regions]);
       if(nextLayoutKey!==layoutKey){layoutKey=nextLayoutKey;++layoutGeneration;}
       const measuredLayout=layoutGeneration;
@@ -245,8 +236,10 @@ app.whenReady().then(()=>{
       visibleWidth=nextVisibleWidth;layoutPhase=current.phase;
       inputRegions=size.regions?.length?size.regions:null;
       if(process.platform==='linux'){
-        if(resized)window.webContents.invalidate();
-        if(repaintResize)shapePaint=window.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))');
+        const paintBeforeShow=!window.isVisible()&&!rendererReady;
+        if(resized||paintBeforeShow)window.webContents.invalidate();
+        if(repaintResize||paintBeforeShow&&!shapePaint)
+          shapePaint=window.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))');
         const pendingPaint=shapePaint;
         if(pendingPaint)await pendingPaint;
         if(window!==measuredWindow||window.isDestroyed()||document!==documentGeneration||measuredLayout!==layoutGeneration||!loaded||revision!==current?.revision)return false;

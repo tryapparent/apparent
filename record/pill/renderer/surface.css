@@ -1,3 +1,9 @@
+.pill-viewport { display:flex;min-width:100vw; }
+.pill-viewport > main { flex:none; }
+.pill-viewport > main[data-phase="processing"] {
+  margin-inline:auto;
+  transform:translateX(clamp(calc(var(--pill-recording-reserve, 0px) / -2), calc((100% - 100vw) / 2), 0px));
+}
 .pill { width:max-content;max-width:var(--pill-limit,1200px);color:var(--apparent-foreground); }
 .pill * { animation:none;transition:none!important; }
 /* Preserve the native row footprint and four-point notification gap. */
