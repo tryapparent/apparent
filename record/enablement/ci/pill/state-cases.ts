@@ -53,6 +53,17 @@ test("picker, capture, processing and dismissal use observations from their live
   assert.equal(send("SurfaceHidden", 9).phase, "Hidden");
 });
 
+test("a processing capture releases the recording controls only after native teardown", () => {
+  const { send } = create();
+  send("CaptureStarted", 0);
+  send("CaptureSealed", 1);
+  assert.equal(send("CaptureStarted", 2).phase, "Processing");
+  assert.equal(send("PickerOpened", 3, { mode: "Screen" }).phase, "Processing");
+  assert.equal(send("SourceReleased", 4).phase, "Processing");
+  assert.equal(send("CaptureStarted", 5).phase, "Recording");
+  assert.equal(send("CaptureSaved", 6, { recovery: false }).phase, "Recording");
+});
+
 test("reveal deadlines preserve minimum visibility and hover linger across a clock rollover", () => {
   const { send, present } = create();
   const now = 0xffff_fff0;

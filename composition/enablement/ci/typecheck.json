@@ -3,6 +3,7 @@
     "config": "capture/desktop/ui/frontend/tsconfig.json",
     "inputs": [
       "composition/settings/renderer/",
+      "composition/pill/renderer/",
       "connect/settings/",
       "connect/client/typescript/src/account/protocol.ts",
       "composition/quit/view.tsx",

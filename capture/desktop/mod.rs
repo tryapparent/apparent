@@ -881,6 +881,7 @@ pub struct ApparentCoordinator {
     recording_activity_attempted: bool,
     /// Media workers outlive their capsule and still own unfinished bundles.
     pending_finalizers: usize,
+    stopping_source: Option<u64>,
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     agent_capture_id: Option<String>,
     #[cfg(any(target_os = "macos", target_os = "linux"))]

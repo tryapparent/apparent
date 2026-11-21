@@ -69,8 +69,8 @@ test("prefetch skips practice and off recordings and checks settings again at Fi
 test("confirmed processing handoff survives dismissal/reload and is dispatched once to exact thread", async (t) => {
   const f = await fixture(t),
     c = new Controller(() => {}, f.config);
-  await c.update("capture", "processing");
-  await c.confirm("capture", "thread");
+  await c.update("boot:1", "processing");
+  await c.confirm("boot:1", "thread");
   assert.equal(c.view()?.phase, "armed");
   assert.equal(f.calls.length, 0);
   const files = await readdir(path.join(f.home, "t3-handoffs"));
@@ -79,11 +79,17 @@ test("confirmed processing handoff survives dismissal/reload and is dispatched o
     0o600,
   );
   const restored = new Controller(() => {}, f.config);
-  await restored.update("capture", "processing");
+  await restored.update("boot:1", "processing");
   assert.equal(restored.view()?.selected, "thread");
-  await restored.update("new-capture", "recording");
-  await restored.ready("capture", "PRIVATE RECORDING HANDOFF");
-  await restored.ready("capture", "PRIVATE RECORDING HANDOFF");
+  await restored.update("boot:2", "recording");
+  assert.deepEqual(restored.background(), {
+    phase: "processing", count: 1, title: "Chosen thread", retry: null,
+  });
+  await restored.ready("boot:1", "PRIVATE RECORDING HANDOFF");
+  assert.deepEqual(restored.background(), {
+    phase: "sent", count: 0, title: "Chosen thread", retry: null,
+  });
+  await restored.ready("boot:1", "PRIVATE RECORDING HANDOFF");
   assert.equal(f.accepted.size, 1);
   assert.equal(f.calls[0].payload.threadId, "thread");
   assert.equal(f.calls[0].payload.deliveryIntent, "auto");

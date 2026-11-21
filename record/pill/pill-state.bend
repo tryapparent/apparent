@@ -24,7 +24,7 @@ type Phase is Data:
   Hidden{}
   Selecting{mode: Mode}
   Recording{reveal: Reveal}
-  Processing{}
+  Processing{released: Bool}
   Completed{result: Completion}
   Dismissing{}
 
@@ -33,6 +33,7 @@ type PillEvent is Data:
   ModeSelected{mode: Mode}
   CaptureStarted{}
   CaptureSealed{}
+  SourceReleased{}
   CaptureSaved{recovery: Bool}
   CaptureFailed{}
   Dismiss{}
@@ -125,7 +126,7 @@ def work_started(reveal: Reveal, activity: U32, +now: U32) -> Phase:
 def recording_event(event: PillEvent, reveal: Reveal, +now: U32) -> Phase:
   match event:
     case CaptureSealed{}:
-      Processing{}
+      Processing{False{}}
     case RevealOpened{activity}:
       Recording{Open{U32.add(now, 900), U32.add(now, 3500), now, False{}, False{}, activity}}
     case RevealClosed{}:
@@ -179,8 +180,10 @@ def phase_event(phase: Phase, event: PillEvent, now: U32) -> Phase:
           phase
     case Recording{reveal}:
       recording_event(event, reveal, now)
-    case Processing{}:
+    case Processing{released}:
       match event:
+        case SourceReleased{}:
+          Processing{True{}}
         case CaptureSaved{recovery}:
           Completed{Result{dismiss_after(now), recovery, False{}, False{}, Ordinary{}}}
         case other:
@@ -200,8 +203,8 @@ def idle_event(phase: Phase, requested: Phase) -> Phase:
   match phase:
     case Recording{reveal}:
       phase
-    case Processing{}:
-      phase
+    case Processing{released}:
+      Bool.pick(Phase, released, requested, Processing{False{}})
     case other:
       requested
 
@@ -227,8 +230,8 @@ def step(event: PillEvent, phase: Phase, now: U32) -> Phase:
       idle_event(phase, Selecting{mode})
     case CaptureStarted{}:
       match phase:
-        case Processing{}:
-          phase
+        case Processing{released}:
+          Bool.pick(Phase, released, Recording{Closed{}}, Processing{False{}})
         case other:
           Recording{Closed{}}
     case other:
@@ -312,7 +315,7 @@ def present(phase: Phase, facts: Facts) -> Surface:
       PickerSurface{mode, can_record(mode), phone}
     case Recording{reveal} Facts{phone, no_words, note_count, movable, paste, inspect, enabled, online, microphone_problem, audio_problem}:
       recording_surface(reveal, phone, no_words, note_count, movable, microphone_problem)
-    case Processing{} Facts{phone, no_words, note_count, movable, paste, inspect, enabled, online, microphone_problem, audio_problem}:
+    case Processing{released} Facts{phone, no_words, note_count, movable, paste, inspect, enabled, online, microphone_problem, audio_problem}:
       ProcessingSurface{}
     case Completed{result} Facts{phone, no_words, note_count, movable, paste, inspect, enabled, online, microphone_problem, audio_problem}:
       completed_surface(result, paste, inspect, enabled, online, audio_problem)

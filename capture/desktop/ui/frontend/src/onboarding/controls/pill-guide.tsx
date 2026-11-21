@@ -1,6 +1,6 @@
 import {useLayoutEffect,useRef,useState} from 'react';
 import {PillSurface} from '../../pill/pill-view';
-import type {PillView} from '../../pill/bridge';
+type PillView = React.ComponentProps<typeof PillSurface>['view'];
 import './pill-guide.css';
 
 /** Inert examples use the production pill's markup, icons, spacing and theme. */

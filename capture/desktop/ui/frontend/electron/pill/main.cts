@@ -15,12 +15,13 @@ const page=pathToFileURL(path.join(__dirname,'../../dist/pill/index.html')).href
 let sharingConfirmation=null;
 let window,current=null,buffer='',pending=false,loaded=false,placed=false,activated=false,pendingPlace=null;
 let lastInput=Date.now(),hovered=false,expected=null,rendererReady=false,readySent=false,renderDeadline=Date.now()+5000,pasteGesture=null,lastFrame='',lastRaise=0;
-let visibleWidth=0,layoutPhase=null;
+let visibleWidth=0,layoutPhase=null,recordingCenterOffset=null,recordingAnchorOffset=null;
 let capture='',pickerDismissed='',pickerFocused=false,keyboardCapture='';
+let staging=null,publishingState=false,retiringFor=null;
 let keyboardMode=false,createWindow=null,retiredWindows=[],admittedWindowId=null;
 function reconcileKeyboardWindow(view){
   const next=!!view;
-  if(process.platform!=='linux'||next===keyboardMode||!createWindow)return false;
+  if(process.platform!=='linux'||next===keyboardMode||!createWindow||!next&&destinations.loadingPickerPreferences())return false;
   keyboardMode=next;
   const bounds=window.getBounds();retiredWindows.push(window);
   loaded=false;rendererReady=false;readySent=false;activated=false;admittedWindowId=null;
@@ -36,11 +37,12 @@ function focusPicker(focused){
       emit({releasePickerFocus:admittedWindowId});
   }
 }
-const destinations=require('./t3.cjs').createController(()=>{if(loaded&&window&&!window.isDestroyed()){
+const destinations=require('./t3.cjs').createController(()=>{if(!staging&&!publishingState&&loaded&&window&&!window.isDestroyed()){
   const view=destinations.view();
   if(reconcileKeyboardWindow(view))return;
   if(!view&&pickerFocused)focusPicker(false);
-  window.webContents.send('pill:destinations',view);void measurePicker();
+  window.webContents.send('pill:destinations',view);
+  window.webContents.send('pill:background-handoff',destinations.background());void measurePicker();
 }});
 async function measurePicker(){if(current)await requestLayout(current.revision);}
 let requestLayout=async()=>{};
@@ -65,7 +67,7 @@ function applyPlacement(point){
   const anchor=process.platform==='linux'?screen.screenToDipPoint(physical):physical;
   const area=screen.getDisplayNearestPoint(anchor).workArea;
   const bounds=window.getBounds();
-  position({x:Math.round(area.x+(area.width-(visibleWidth||bounds.width))/2),y:area.y+34});placed=true;
+  position({x:Math.round(area.x+area.width/2-(recordingAnchorOffset??(visibleWidth||bounds.width)/2)),y:area.y+34});placed=true;
 }
 function emit(message){process.stdout.write(JSON.stringify(message)+'\n');}
 function setSharingConfirmation(revision){
@@ -83,31 +85,75 @@ function reportFrame(){
   const frame=[origin.x,origin.y,b.width*scale,b.height*scale],revision=current.revision,key=JSON.stringify({revision,frame});
   if(key!==lastFrame){lastFrame=key;emit({revision,frame});}
 }
-function publish(value){
-  const next=protocol.view(value);
+function publish(next){
   if(current && next.revision<current.revision)throw Error('Old pill state');
   if(!current || next.revision!==current.revision)pending=false;
   if(current && next.revision!==current.revision){pasteGesture=null;setSharingConfirmation(null);}
   if(!current || next.revision!==current.revision || next.phase!==current.phase){rendererReady=false;renderDeadline=Date.now()+5000;}
   if(next.phase==='hidden')layoutPhase=null;
   current=next;lastInput=Date.now();
-  if(loaded){window.webContents.send('pill:state',current);visibility();}
+}
+function commitState(message, next, prepared){
+  const changedCapture=capture!==message.capture || current?.phase!==next.phase;
+  capture=message.capture;
+  publish(next);
+  publishingState=true;
+  const update=prepared?Promise.resolve():destinations.update(capture,next.phase,message.t3Eligible===true);
+  publishingState=false;
+  if(loaded&&!reconcileKeyboardWindow(destinations.view())){
+    window.webContents.send('pill:state',current);
+    if(changedCapture){
+      window.webContents.send('pill:destinations',destinations.view());
+      window.webContents.send('pill:background-handoff',destinations.background());
+    }
+    visibility();
+  }
+  void update.catch(()=>{});
+}
+function receiveState(message){
+  const next=protocol.view(message.view);
+  if(current&&next.revision<current.revision)throw Error('Old pill state');
+  if(typeof message.capture!=='string'||message.capture.length>=160){
+    staging=null;
+    publish(next);
+    if(loaded){window.webContents.send('pill:state',current);visibility();}
+    return;
+  }
+  if(staging&&next.phase==='processing'&&next.revision===staging.next.revision&&message.capture===staging.message.capture){
+    staging.message=message;staging.next=next;lastInput=Date.now();return;
+  }
+  staging=null;
+  if(current?.phase==='recording'&&next.phase==='processing'&&capture===message.capture){
+    const transition={message,next};
+    staging=transition;lastInput=Date.now();
+    const prepared=destinations.update(message.capture,next.phase,message.t3Eligible===true).catch(()=>{});
+    void Promise.race([prepared,new Promise(resolve=>setTimeout(resolve,70))]).then(()=>{
+      if(staging!==transition)return;
+      staging=null;commitState(transition.message,transition.next,true);
+    });
+    return;
+  }
+  commitState(message,next,false);
 }
 function visibility(){
-  if(rendererReady&&activated){
-    for(const old of retiredWindows.splice(0)){if(!old.isDestroyed()){
-      const oldId=Number(old.getMediaSourceId().split(':')[1]);old.destroy();
-      if(Number.isSafeInteger(oldId))emit({retiredWindowId:oldId});
-    }}
-  }
   if(current?.phase==='hidden'||pickerDismissed&&pickerDismissed===capture){
     window.hide();for(const old of retiredWindows)if(!old.isDestroyed())old.hide();return;
   }
   if(!activated){window.hide();return;}
-  if(rendererReady && current){
-    if(!window.isVisible())window.showInactive();
+  if(!rendererReady||!current)return;
+  if(!window.isVisible())window.showInactive();
+  if(retiredWindows.length&&retiringFor!==window){
+    const incoming=window;
+    retiringFor=incoming;
+    void incoming.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(resolve))').then(()=>{
+      if(window!==incoming||incoming.isDestroyed())return;
+      for(const old of retiredWindows.splice(0)){if(!old.isDestroyed()){
+        const oldId=Number(old.getMediaSourceId().split(':')[1]);old.destroy();
+        if(Number.isSafeInteger(oldId))emit({retiredWindowId:oldId});
+      }}
+    }).catch(()=>{if(window===incoming&&!incoming.isDestroyed())fail('replacement_paint_failed');});
   }
-  if(rendererReady && window.isVisible() && destinations.view() && keyboardCapture!==capture){
+  if(destinations.view() && keyboardCapture!==capture){
     keyboardCapture=capture;focusPicker(true);
   }
 }
@@ -124,10 +170,7 @@ process.stdin.on('data',chunk=>{
     const line=buffer.slice(0,end);buffer=buffer.slice(end+1);
     try{
       const message=JSON.parse(line);
-      if(message.type==='state'){
-        publish(message.view);
-        if(typeof message.capture==='string'&&message.capture.length<160){capture=message.capture;void destinations.update(capture,current.phase,message.t3Eligible===true).catch(()=>{});}
-      }
+      if(message.type==='state')receiveState(message);
       else if(message.type==='handoff-ready')void destinations.ready(message.capture,message.text).catch(()=>{});
       else if(message.type==='activate'){if(message.windowId!==undefined&&message.windowId!==admittedWindowId)continue;activated=true;if(loaded)visibility();emit({activated:true,windowId:admittedWindowId});}
       else if(message.type==='place' && Array.isArray(message.point) && message.point.length===2 && message.point.every(Number.isFinite)){
@@ -157,6 +200,11 @@ app.whenReady().then(()=>{
   session.defaultSession.setPermissionCheckHandler(()=>false);
   session.defaultSession.webRequest.onBeforeRequest((details,reply)=>reply({cancel:!details.url.startsWith('file:')}));
   ipcMain.handle('pill:read',(event,...args)=>{valid(event,args);return current;});
+  ipcMain.handle('pill:retry-background-handoff',(event,key,...args)=>{
+    valid(event,args);if(current?.phase!=='recording'||typeof key!=='string'||key.length>160)throw Error('Handoff unavailable');
+    return destinations.retryBackground(key);
+  });
+  ipcMain.handle('pill:background-handoff',(event,...args)=>{valid(event,args);return destinations.background();});
   ipcMain.handle('pill:destinations',(event,...args)=>{valid(event,args);return destinations.view();});
   ipcMain.handle('pill:destination-action',async(event,key,action,id,...args)=>{
     valid(event,args);if(sharingConfirmation!==null||pending||key!==capture||!['processing','completed'].includes(current?.phase))throw Error('Recording changed');
@@ -183,7 +231,7 @@ app.whenReady().then(()=>{
   });
   ipcMain.handle('pill:act',async(event,revision,action,drop=false,...args)=>{
     valid(event,args);
-    if(pending)throw Error('Pill action pending');
+    if(pending||staging)throw Error('Pill action pending');
     if(typeof drop!=='boolean' || drop && action!=='paste')throw Error('Invalid paste gesture');
     const confirming=action==='confirm-public-link'||action==='cancel-public-link';
     const message=protocol.command(current,revision,confirming?'copy-link':action);
@@ -203,7 +251,6 @@ app.whenReady().then(()=>{
     pending=true;
     emit(message);
   });
-  // Renderer never chooses native dimensions or screen coordinates.
   // Parent's bounded state defines content; main measures its own trusted document.
   async function measure(revision){
     if(!loaded || window.isDestroyed())return;
@@ -225,14 +272,16 @@ app.whenReady().then(()=>{
       if(nextLayoutKey!==layoutKey){layoutKey=nextLayoutKey;++layoutGeneration;}
       const measuredLayout=layoutGeneration;
       const repaintResize=process.platform==='linux' && resized && window.isVisible();
-      if(repaintResize){window.setShape([{x:0,y:0,width:nextVisibleWidth,height}]);appliedShape=null;}
+      if(repaintResize&&(width>before.width||height>before.height)){window.setShape([{x:0,y:0,width:nextVisibleWidth,height}]);appliedShape=null;}
       const phaseChanged=layoutPhase!==current.phase;
-      const oldCenterWidth=phaseChanged && visibleWidth>0?visibleWidth:before.width;
-      const newCenterWidth=phaseChanged?nextVisibleWidth:width;
       // Keep layout resizes mapped. Hyprland can lose a transparent XWayland
       // surface during hide/setBounds/showInactive even when Electron reports
       // it visible. Update its bounds and input shape in place, then repaint.
-      if(resized||phaseChanged)position({x:Math.round(before.x+(oldCenterWidth-newCenterWidth)/2),y:before.y,width,height});
+      const previousCenter=phaseChanged?recordingAnchorOffset??(visibleWidth||before.width)/2:recordingCenterOffset??before.width/2;
+      const nextCenter=phaseChanged?size.recordingAnchor??nextVisibleWidth/2:size.recordingCenter??width/2;
+      if(resized||phaseChanged||previousCenter!==nextCenter)position({x:Math.round(before.x+previousCenter-nextCenter),y:before.y,width,height});
+      recordingCenterOffset=size.recordingCenter;
+      recordingAnchorOffset=size.recordingAnchor;
       visibleWidth=nextVisibleWidth;layoutPhase=current.phase;
       inputRegions=size.regions?.length?size.regions:null;
       if(process.platform==='linux'){
@@ -313,7 +362,7 @@ app.whenReady().then(()=>{
     if(process.platform==='darwin')window.setIgnoreMouseEvents(!inside && !pasteGesture,{forward:true});
   },16);
   createWindow=(focusable,bounds)=>{
-    const owned=new BrowserWindow({...(process.platform==='darwin'?{type:'panel',acceptFirstMouse:true}:{focusable}),width:640,height:58,show:false,frame:false,transparent:true,resizable:false,
+    const owned=new BrowserWindow({...(process.platform==='darwin'?{type:'panel',acceptFirstMouse:true}:{focusable}),width:640,height:58,show:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,
     fullscreenable:false,skipTaskbar:true,hasShadow:false,alwaysOnTop:true,title:'Apparent recording controls',
     paintWhenInitiallyHidden:true,
     webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,sandbox:true,nodeIntegration:false,webSecurity:true,spellcheck:false,backgroundThrottling:false}});

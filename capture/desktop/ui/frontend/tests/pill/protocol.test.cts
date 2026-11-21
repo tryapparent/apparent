@@ -24,6 +24,18 @@ test('pill input silhouette lets transparent corners through and clamps to negat
  assert.equal(shape.length,58);assert.ok(shape[0].x>0);assert.equal(shape[28].x,0);
  assert.deepEqual(geometry.clamp({...bounds,x:-2000,y:2000},{x:-1920,y:0,width:1920,height:1080}),{x:-1920,y:1022});
 });
+test('a flat tab under a rounded recording pill keeps the native silhouette joined',()=>{
+ const regions=[{x:0,y:0,width:76,height:56,radius:28,rightRadius:0},{x:44,y:0,width:400,height:56,radius:28}];
+ const shape=geometry.regionShape(regions);
+ for(const y of [0,55]){
+  assert.equal(geometry.containsRegions({x:0,y},regions),false);
+  for(let x=44;x<=72;x++){
+   assert.equal(geometry.containsRegions({x,y},regions),true);
+   assert.ok(shape.some(row=>row.y===y&&x>=row.x&&x<row.x+row.width));
+  }
+ }
+});
+
 test('separate recovery capsules keep their gap and outer corners click-through',()=>{
  const regions=[{x:30,y:0,width:280,height:56,radius:28},{x:0,y:60,width:340,height:180,radius:16}];
  assert.equal(geometry.containsRegions({x:170,y:58},regions),false);

@@ -2,6 +2,7 @@ type Stamp = { $: "Stamp"; hi: number; lo: number };
 type Runtime = { $: "Idle" | "Busy" | "Failed" | "Other" };
 
 declare const policy: {
+  handoff_status(phase: number): number;
   inbox_done(shelf: number, completed: boolean): boolean;
   reuse_destination(sameDestination: boolean, isNew: boolean): boolean;
   destination_rank(
