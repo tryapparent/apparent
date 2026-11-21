@@ -85,8 +85,7 @@ test('installed About projects parent state and bounds actions', async () => {
     }
     await publish(state);
     if (process.env.APPARENT_ABOUT_PROOF) await page.screenshot({ path: process.env.APPARENT_ABOUT_PROOF });
-    await page.getByRole('button', { name: 'Restart later', exact: true }).click();
-    await expect.poll(() => output.includes('"action":"update-later"')).toBe(true);
+    await expect(page.getByRole('button', { name: 'Restart later', exact: true })).toHaveCount(0);
     assert.equal(await page.evaluate(async () => {
       try { await window.apparentAbout.act({ action: 'set', key: 'capturesDir', value: '/bad' }); return false; }
       catch { return true; }
@@ -176,7 +175,7 @@ test('installed About projects parent state and bounds actions', async () => {
           await page.emulateMedia({ colorScheme });
           await expect(page.locator('.settings-shell')).toHaveCSS('--apparent-primary', '#7a58c7');
           await expect(page.locator('.settings-links a').first()).toHaveCSS('color',colorScheme==='dark'?'rgb(245, 240, 232)':'rgb(2, 1, 2)');
-          if(result==='failed') await page.getByRole('alertdialog').scrollIntoViewIfNeeded();
+          if(result==='failed') await expect(page.getByRole('alertdialog')).toBeInViewport();
           else await page.getByRole('button', { name: 'Show welcome tour', exact: true }).scrollIntoViewIfNeeded();
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
           assert.equal(await page.locator('.settings-sidebar').evaluate(element => element.scrollWidth <= element.clientWidth), true);

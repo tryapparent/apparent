@@ -1,4 +1,10 @@
-import { useCallback, useState, useSyncExternalStore } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { Sparkles } from "lucide-react";
 import afloat from "./pond-art/afloat.webp";
 import bob from "./pond-art/motion/afloat.mp4";
 import boat from "./pond-art/boat.webp";
@@ -101,7 +107,7 @@ function CheckingBox({
   finish,
 }: {
   waiting: boolean;
-  trackBox: (node: HTMLDivElement | null) => void | (() => void);
+  trackBox: (node: HTMLSpanElement | null) => void | (() => void);
   finish: () => void;
 }) {
   const [caught, setCaught] = useState(false);
@@ -124,7 +130,7 @@ function CheckingBox({
   );
 
   return (
-    <div ref={trackBox} className="settings-pond-box">
+    <span ref={trackBox} className="settings-pond-box">
       {caught && !waiting ? (
         <video
           key="opening"
@@ -150,7 +156,39 @@ function CheckingBox({
           onError={holdClosed}
         />
       )}
-    </div>
+    </span>
+  );
+}
+
+export function Frog({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  const [taps, setTaps] = useState(0);
+  return (
+    <button
+      type="button"
+      className={
+        className ? `settings-frog-button ${className}` : "settings-frog-button"
+      }
+      aria-label="Boop the frog"
+      onClick={() => setTaps((count) => count + 1)}
+    >
+      {children}
+      {taps > 0 && (
+        <span
+          key={taps}
+          className="settings-frog-sparkle"
+          data-side={taps % 2 === 1 ? "right" : "left"}
+          aria-hidden="true"
+        >
+          <Sparkles />
+        </span>
+      )}
+    </button>
   );
 }
 
@@ -163,7 +201,7 @@ export function UpdatePond({ scene }: { scene: PondScene }) {
   const visibleScene =
     catching && !reducedMotion && scene !== "idle" ? "checking" : scene;
 
-  const trackBox = useCallback((node: HTMLDivElement | null) => {
+  const trackBox = useCallback((node: HTMLSpanElement | null) => {
     if (!node) return;
     setCatching(true);
     return () => setCatching(false);
@@ -171,7 +209,7 @@ export function UpdatePond({ scene }: { scene: PondScene }) {
   const finishCatch = useCallback(() => setCatching(false), []);
 
   return (
-    <div className="settings-update-pond" aria-hidden="true">
+    <Frog className="settings-update-pond">
       {visibleScene === "idle" && <img alt="" src={idle} />}
       {visibleScene === "checking" &&
         (reducedMotion ? (
@@ -192,6 +230,6 @@ export function UpdatePond({ scene }: { scene: PondScene }) {
         ) : (
           <BoatLaunch key={visibleScene} fromBox={visibleScene === "current"} />
         ))}
-    </div>
+    </Frog>
   );
 }

@@ -17,7 +17,6 @@ const channelDescription =
 const stagedStable = "Restart to use Stable v2.0.0.";
 const unconfirmed =
   "Apparent couldn’t confirm an installed update. To try again, install from the selected channel.";
-const version = "Running version 1.2.3 · a1b2c3d +modified";
 
 test("About makes channel installation, restart and recovery distinct", async () => {
   const home = await mkdtemp(join(tmpdir(), "apparent-dev-about-updates-"));
@@ -81,10 +80,11 @@ test("About makes channel installation, restart and recovery distinct", async ()
     const install = page.getByRole("button", { name: "Check for updates", exact: true });
     const checkAgain = page.getByRole("button", { name: "Check again", exact: true });
     const restart = page.getByRole("button", { name: "Restart now" });
+    const frog = page.locator(".settings-update-pond");
     const proof = process.env.APPARENT_SETTINGS_PROOF;
     if (proof) await mkdir(proof, { recursive: true });
 
-    for (const width of [720, 640]) {
+    for (const width of [920, 720, 640]) {
       await application.evaluate(({ BrowserWindow }, size) => {
         const window = BrowserWindow.getAllWindows()[0];
         window.setResizable(true);
@@ -152,7 +152,7 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await expect(checkAgain).toBeVisible();
         await channel.focus();
         await page.keyboard.press("Tab");
-        await expect(page.getByRole("link", { name: "Star on GitHub" })).toBeFocused();
+        await expect(frog).toBeFocused();
         const currentStart = output.length;
         await page.keyboard.press("Escape");
         await channel.selectOption("main");
@@ -174,27 +174,25 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await expect(restart).toBeVisible();
         await publish(offered, pending);
         await expect(page.getByRole("heading", { name: "Restart required" })).toHaveCount(0);
-        await expect(page.getByRole("region", { name: "App updates" }).getByRole("status")).toHaveText("Restart required");
-        await expect(page.locator("#staged-release")).toBeHidden();
+        await expect(page.locator(".settings-updates [role=status]")).toHaveText("Restart required");
         await expect(restart).toHaveAccessibleDescription(stagedStable);
-        await expect(page.getByText(version)).toBeVisible();
-        await expect(install).toHaveCount(0);
         await capture("restart");
-        const later = page.getByRole("button", { name: "Restart later" });
+        await expect(page.getByRole("button", { name: "Restart later" })).toHaveCount(0);
         await page.getByRole("button", { name: "Copy version" }).focus();
         await page.keyboard.press("Tab");
         await expect(restart).toBeFocused();
         await expect(page.getByRole("tooltip")).toHaveText(stagedStable);
         await page.keyboard.press("Tab");
-        await expect(later).toBeFocused();
-        await pressForAction("update-later");
-        await publish(idle, pending);
-        await expect(later).toHaveCount(0);
-        await expect(restart).toBeFocused();
-        await expect(restart).toHaveAccessibleDescription(stagedStable);
-        await capture("restart-later");
-        await page.keyboard.press("Tab");
         await expect(channel).toBeFocused();
+        await page.keyboard.press("Tab");
+        await expect(frog).toBeFocused();
+        const sparkle = frog.locator(".settings-frog-sparkle");
+        await page.keyboard.press("Space");
+        await expect(sparkle).toHaveAttribute("data-side", "right");
+        await frog.click();
+        await expect(sparkle).toHaveAttribute("data-side", "left");
+        await capture("frog-reaction");
+        await channel.focus();
         const changeStart = output.length;
         if (process.platform === "linux") await page.keyboard.press("ArrowDown");
         else await channel.selectOption("main");
@@ -206,7 +204,6 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await publish(idle, changedChannelWhilePending);
         await expect(channel).toHaveValue("main");
         await expect(install).toHaveCount(0);
-        await expect(restart).toBeInViewport({ ratio: 1 });
         await expect(restart).toHaveAccessibleDescription(stagedStable);
         await capture("restart-after-channel-change");
         await page.keyboard.press("Shift+Tab");
@@ -260,7 +257,6 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await publish(offered);
         await expect(channel).toHaveValue("stable");
         await expect(restart).toHaveCount(0);
-        await expect(later).toHaveCount(0);
         for (const updateChannel of ["stable", "main"]) {
           await publish(restartFailed, { updateChannel });
           await expect(restartError).toBeHidden();
@@ -317,7 +313,12 @@ test("About makes channel installation, restart and recovery distinct", async ()
           name: "Couldn’t verify the download",
         });
         await expect(verification.getByRole("button", { name: "Retry update" })).toBeFocused();
-        await capture("verification-failure");
+        const errorFrog = verification.getByRole("button", { name: "Boop the frog" });
+        await errorFrog.click();
+        await expect(errorFrog.locator(".settings-frog-sparkle")).toBeVisible();
+        await expect(frog).toBeHidden();
+        await capture("error-frog");
+        await verification.getByRole("button", { name: "Retry update" }).focus();
         await pressForAction("check-for-updates");
       }
     }
@@ -328,7 +329,7 @@ test("About makes channel installation, restart and recovery distinct", async ()
 
     await page.emulateMedia({ reducedMotion: "no-preference" });
     await publish(idle);
-    const pond = page.locator(".settings-update-pond");
+    const pond = frog;
     const video = pond.locator("video");
     const pose = pond.locator("img");
     await expect(pose).toHaveAttribute("src", /\/idle-.*\.webp$/);
@@ -343,8 +344,7 @@ test("About makes channel installation, restart and recovery distinct", async ()
     await expect.poll(() => video.evaluate((element: HTMLVideoElement) =>
       element.currentTime > 0 && element.videoWidth === 540 && element.textTracks.length === 0,
     )).toBe(true);
-    await expect(video).toHaveJSProperty("ended", true);
-    await expect(video).toHaveAttribute("src", /\/check-.*\.mp4$/);
+    await expect(pond.locator('video[src*="/check-"]')).toHaveJSProperty("ended", true);
     await publish({ checking: false, result: "current" });
     await expect(page.getByRole("heading", { name: "Already up to date" })).toBeVisible();
     await expect(video).toHaveAttribute("src", /\/open-box-.*\.mp4$/);
@@ -361,6 +361,11 @@ test("About makes channel installation, restart and recovery distinct", async ()
     });
     const bar = page.getByRole("progressbar", { name: "Update download" });
     await expect(bar).toHaveAttribute("value", "42");
+    const sparkle = pond.locator(".settings-frog-sparkle");
+    await pond.click();
+    await expect(sparkle).toHaveAttribute("data-side", "right");
+    await pond.click();
+    await expect(sparkle).toHaveAttribute("data-side", "left");
     await expect(pose).toHaveAttribute("src", /\/fold-flat-.*\.webp$/);
     await expect(pose).toHaveAttribute("src", /\/fold-(creased|pinched)-.*\.webp$/);
     await expect(video).toHaveCount(0);

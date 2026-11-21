@@ -36,11 +36,9 @@ await bendScratch(async (destination) => {
       assert.equal(actions.staged_release_note("main", id), "Restart to use the installed Development build.");
     assert.equal(actions.staged_release_note("", "v2.0.0"), "Restart to use the installed update.");
     for (const pending of [false, true])
-      for (const checking of [false, true])
-        for (const offer of [false, true]) {
+      for (const checking of [false, true]) {
           const restart = actions.show_restart(pending, checking);
           assert.equal(restart, pending && !checking);
-          assert.equal(actions.show_restart_later(restart, offer), pending && !checking && offer);
           assert.equal(actions.show_failure(true, true, restart), restart);
           assert.equal(actions.show_unstaged_restart_failure(true, restart), !restart);
           assert.equal(actions.show_unstaged_restart_failure(false, restart), false);

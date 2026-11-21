@@ -20,7 +20,7 @@ import {
 import macUpdates from "../about/mac-updates.mjs";
 import updateAction from "../about/release-action.mjs";
 import { UpdateChannel } from "./update-channel";
-import { UpdatePond } from "./update-pond";
+import { Frog, UpdatePond } from "./update-pond";
 import "./about.css";
 
 type UpdateProgress =
@@ -189,10 +189,6 @@ export function About({
     state?.restartPending === true,
     checking === true,
   );
-  const restartOffer = updateAction.show_restart_later(
-    restart,
-    result === "available",
-  );
   const failedRestart = result === "failed" && failure === "restart";
   const showFailure = updateAction.show_failure(
     result === "failed" && !checking,
@@ -240,7 +236,7 @@ export function About({
     (section: HTMLElement | null) => {
       if (
         !section ||
-        (!restartOffer && !(result === "current" && !state?.linux)) ||
+        !(result === "current" && !state?.linux) ||
         copyStatus === "failed"
       )
         return;
@@ -251,13 +247,14 @@ export function About({
       window.addEventListener("keydown", listener);
       return () => window.removeEventListener("keydown", listener);
     },
-    [restartOffer, result, state?.linux, copyStatus, act],
+    [result, state?.linux, copyStatus, act],
   );
   return (
     <section
       ref={connect}
       aria-label="About Apparent"
       className="settings-about"
+      data-dialog-open={showFailure || copyStatus === "failed" || undefined}
     >
       {!state && <p role="status">Loading update status…</p>}
       {error && <p role="alert">{error}</p>}
@@ -266,7 +263,9 @@ export function About({
           <section className="settings-identity" aria-label="Build identity">
             {state.nightly && <h2>apparent Nightly</h2>}
             <div className="settings-version">
-              <span className="select-text">Running version {state.version}</span>
+              <span className="select-text">
+                Running version {state.version}
+              </span>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -305,49 +304,36 @@ export function About({
               className="settings-update-flow"
               data-pond={showPond || undefined}
             >
-              {showPond && (
-                <UpdatePond
-                  scene={
-                    checking
-                      ? downloading
-                        ? "folding"
-                        : progress
-                          ? "finishing"
-                          : "checking"
-                      : restart
-                        ? "ready"
-                        : result === "current"
-                          ? "current"
-                          : "idle"
-                  }
-                />
-              )}
               <div className="settings-update-text">
                 <div
-                  className={restart && showPond ? "sr-only" : "settings-result"}
+                  className={
+                    restart && showPond ? "sr-only" : "settings-result"
+                  }
                   role="status"
                   aria-atomic="true"
                 >
-                  {restart && showPond ? title : title && (
-                    <>
-                      {checking && !downloading ? (
-                        <LoaderCircle
-                          className="settings-spin"
-                          aria-hidden="true"
-                        />
-                      ) : restart ? (
-                        <RotateCw aria-hidden="true" />
-                      ) : (
-                        result && (
-                          <CheckCircle2
-                            className="text-success"
-                            aria-hidden="true"
-                          />
-                        )
+                  {restart && showPond
+                    ? title
+                    : title && (
+                        <>
+                          {checking && !downloading ? (
+                            <LoaderCircle
+                              className="settings-spin"
+                              aria-hidden="true"
+                            />
+                          ) : restart ? (
+                            <RotateCw aria-hidden="true" />
+                          ) : (
+                            result && (
+                              <CheckCircle2
+                                className="text-success"
+                                aria-hidden="true"
+                              />
+                            )
+                          )}
+                          <h3>{title}</h3>
+                        </>
                       )}
-                      <h3>{title}</h3>
-                    </>
-                  )}
                 </div>
                 {downloading && (
                   <div className="settings-update-transfer">
@@ -386,7 +372,11 @@ export function About({
                   </p>
                 )}
                 {restart && (
-                  <p id="staged-release" className="settings-update-note" hidden={showPond || undefined}>
+                  <p
+                    id="staged-release"
+                    className="settings-update-note"
+                    hidden={showPond || undefined}
+                  >
                     {restartTarget}
                   </p>
                 )}
@@ -401,38 +391,35 @@ export function About({
                                 <Button
                                   ref={primaryAction}
                                   aria-describedby="staged-release"
-                                  onClick={() => void act({ action: "update-now" })}
+                                  onClick={() =>
+                                    void act({ action: "update-now" })
+                                  }
                                 >
                                   Restart now
                                 </Button>
                               </span>
                             </TooltipTrigger>
                             {showPond && (
-                              <TooltipContent className="settings-help-content" side="left" align="start">
+                              <TooltipContent
+                                className="settings-help-content"
+                                side="left"
+                                align="start"
+                              >
                                 {restartTarget}
                               </TooltipContent>
                             )}
                           </Tooltip>
                         </TooltipProvider>
-                        {restartOffer && (
-                          <Button
-                            variant="outline"
-                            className="settings-decision-alternative"
-                            onClick={() => {
-                              primaryAction.current?.focus();
-                              void act({ action: "update-later" });
-                            }}
-                          >
-                            Restart later
-                          </Button>
-                        )}
                       </>
                     ) : (
                       <Button
                         ref={primaryAction}
                         disabled={!state.updates}
-                        className={showPond ? "settings-update-primary" : undefined}
-                        aria-describedby={showUnstagedRestartFailure ? "restart-unconfirmed" : undefined}
+                        aria-describedby={
+                          showUnstagedRestartFailure
+                            ? "restart-unconfirmed"
+                            : undefined
+                        }
                         onClick={() =>
                           void act({ action: "check-for-updates" })
                         }
@@ -450,13 +437,32 @@ export function About({
                   onChange={(value) => void changeChannel(value)}
                 />
               )}
-              {!showPond && (restart || (!checking && result === "current")) && (
-                <img
-                  className="settings-frog"
-                  src={restart ? artwork.available : artwork.current}
-                  alt=""
+              {showPond && (
+                <UpdatePond
+                  scene={
+                    checking
+                      ? downloading
+                        ? "folding"
+                        : progress
+                          ? "finishing"
+                          : "checking"
+                      : restart
+                        ? "ready"
+                        : result === "current"
+                          ? "current"
+                          : "idle"
+                  }
                 />
               )}
+              {!showPond &&
+                (restart || (!checking && result === "current")) && (
+                  <Frog className="settings-frog">
+                    <img
+                      src={restart ? artwork.available : artwork.current}
+                      alt=""
+                    />
+                  </Frog>
+                )}
             </div>
             {macUpdates.show_nightly_download(
               state.mac === true,
@@ -526,12 +532,16 @@ export function About({
           </a>
         </Button>
       </div>
-      {headingActions && createPortal(
-        <Button variant="secondary" onClick={() => void act({ action: "tour" })}>
-          {state?.resumeTour ? "Resume setup" : "Show welcome tour"}
-        </Button>,
-        headingActions,
-      )}
+      {headingActions &&
+        createPortal(
+          <Button
+            variant="secondary"
+            onClick={() => void act({ action: "tour" })}
+          >
+            {state?.resumeTour ? "Resume setup" : "Show welcome tour"}
+          </Button>,
+          headingActions,
+        )}
       <ErrorDialog
         open={showFailure}
         title={failureTitle}
@@ -540,7 +550,11 @@ export function About({
             ? `${restartTarget} ${failureDescription}`
             : failureDescription
         }
-        artwork={<img src={artwork.failed} alt="" />}
+        artwork={
+          <Frog>
+            <img src={artwork.failed} alt="" />
+          </Frog>
+        }
         recoveryLabel={failureRecovery ?? "Try again"}
         onRecover={() =>
           void act({
@@ -554,7 +568,11 @@ export function About({
         open={copyStatus === "failed"}
         title="Unable to copy version"
         description="Unable to copy. Try again."
-        artwork={<img src={artwork.failed} alt="" />}
+        artwork={
+          <Frog>
+            <img src={artwork.failed} alt="" />
+          </Frog>
+        }
         recoveryLabel="Try again"
         onRecover={() => void copyVersion()}
         onClose={() => setCopyStatus("idle")}
