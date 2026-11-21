@@ -52,14 +52,24 @@ On the target macOS or Linux host run `node capture/agent/scripts/provision-narr
 
 When approved private listening is supported, listen to the full final narration in sync with the video. Check intelligibility, pronunciation, pacing, clipping and caption alignment.
 
-Without confirmed audio input, keep audio local and return only text and video frames from QA tools. Set `movie` to the exact final private export. Require a successful end-to-end decode of both streams:
+Check stream timing on the final narrated MP4 (`movie`), including direct FFmpeg renders:
+
+```sh
+ffprobe -v error -show_entries stream=codec_type,start_time,duration -of json "$movie"
+```
+
+Require finite start times near zero and durations matching the plan for both streams, allowing for frame rounding and AAC padding. Include pauses as silence. Container duration and decode success can hide damaged audio timing.
+
+Decode both streams end to end:
 
 ```sh
 ffmpeg -hide_banner -nostdin -xerror -i "$movie" -map 0:v:0 -map 0:a:0 \
   -af silencedetect=noise=-45dB:d=0.2,astats=metadata=0:reset=0 -f null -
 ```
 
-From the text diagnostics, compare non-silent intervals with cue windows and check peak levels for possible clipping. Adjust the silence threshold if needed. Inspect cue-boundary frames for caption and action timing. If local transcription is available, compare it with the script and cue times. Review the whole video visually. Keep audio bytes and base64 out of model input. Disclose the private listening and playback quality gap and any native proof gap. Deliver the playable file via the supported route below.
+Check for signal in every cue window and clipping in the peak levels. Adjust the silence threshold as needed. If a mix loses cues or breaks timing, render retimed cues separately, mix to PCM from zero through the planned duration, and encode AAC when muxing. Repeat both checks.
+
+Inspect cue-boundary frames for caption and action timing. Compare any available local transcript with the script and cues. Without confirmed audio input, keep audio bytes and base64 local, return only QA text and frames, and disclose listening, playback and native proof gaps.
 
 If the context rejects input after an audio attempt, record the error and failed step, then stop retrying there. Use a supported fresh context to resume from the exact retained local movie, cue sheet and available QA outputs. Carry forward completed checks and their limits.
 
@@ -113,7 +123,7 @@ If export works on this host, use `--fps 30` (or `--fps 60` on explicit request)
 apparent export /absolute/private/path/walkthrough.apparent --out /absolute/private/path/walkthrough.mp4 --fps 30
 ```
 
-Do not invent a frame-rate flag for `apparent record`; set it during export or browser encoding without changing real-time duration. Check installed `export --help` before using the flags: older builds require `--zoom` to opt in, whereas current builds use `--no-zoom` to opt out. Compare the exported video to the source and watch it end-to-end too. If no camera motion appears, inspect the interaction telemetry rather than claiming the default flag guarantees motion. Browser-only recordings bypass Apparent's camera planner; prefer an Apparent capture of the browser when polished interaction zoom is required, and disclose an unpolished fallback rather than calling it equivalent. Apparent export supplies crop/zoom and recorded audio (or explicit generated narration via `--narration`), **not** burned explanatory captions or speed cues. Use an available editor to burn the required explanatory captions into a separate MP4; check every caption's timing against the visible state and keep the original. If no captioning route is available, report that production blocker. Never promise captioning or fast-forward as built-in Apparent flags. Do not silently speed through a state transition or overlay a success claim before the result exists. Check the final file opens in the intended player; use `ffprobe` to verify frame rate and duration, but not truth or privacy. A browser WebM may need an approved MP4 conversion for its destination; do not re-encode reflexively. Missing source media blocks live proof; use the workflow routing above before considering a conceptual supplement. For an explicit live-proof request, disclose the missing media and give truthful partial evidence without calling it the requested video.
+Set frame rate during export or browser encoding and preserve real-time duration. Check installed `export --help`: older builds opt in with `--zoom`; current builds opt out with `--no-zoom`. Compare the entire export with the source. If motion is missing, check interaction telemetry. Browser-only recordings bypass Apparent’s camera planner. Prefer Apparent browser capture for interaction zoom and disclose a simpler fallback. Use a separate editor to burn explanatory captions or add cuts and speed cues, verify their timing, and retain the original. Check playback, frame rate and duration on the final file. Re-encode browser WebM only if the destination needs it. If missing media or captioning blocks live proof, report the blocker and any verified partial evidence.
 
 ## Hand it back
 
