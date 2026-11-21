@@ -132,11 +132,34 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await expect(restart).toHaveCount(0);
         await capture("checking");
 
+        await publish({ checking: false, result: "current" });
+        await expect(page.getByRole("heading", { name: "No update available" })).toBeVisible();
+        await expect(install).toHaveCount(0);
+        await expect(page.getByText(warning)).toHaveCount(0);
+        await expect(channel).toBeEnabled();
+        await capture("current");
+        await channel.focus();
+        await page.keyboard.press("Tab");
+        await expect(page.getByRole("link", { name: "Star on GitHub" })).toBeFocused();
+        const currentStart = output.length;
+        await page.keyboard.press("Escape");
+        await channel.selectOption("main");
+        await expect.poll(() => output.slice(currentStart)).toContain(
+          '"action":"set","key":"updateChannel","value":"main"',
+        );
+        assert.doesNotMatch(output.slice(currentStart), /dismiss-update-check|check-for-updates/);
+        await publish(idle, { updateChannel: "main" });
+        await expect(install).toHaveAccessibleName("Install latest Development build");
+        await install.focus();
+        await pressForAction("check-for-updates");
+
         const offered = { checking: false, result: "available" };
         const pending = {
           restartPending: true,
           stagedRelease: { channel: "stable", id: "v2.0.0" },
         };
+        await publish({ checking: false, result: "current" }, pending);
+        await expect(restart).toBeVisible();
         await publish(offered, pending);
         await expect(
           page.getByRole("heading", { name: "Restart required" }),

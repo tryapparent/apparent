@@ -63,7 +63,7 @@ export function RecordingSection({ bridge }: { bridge: RecordingBridge }) {
     <div className="recording-settings">
       {state === "unavailable" ? (
         <div role="status">
-          <p tabIndex={-1} data-settings-section-fallback>
+          <p>
             Recording settings unavailable.
           </p>
           <Button variant="outline" onClick={feed.refresh}>

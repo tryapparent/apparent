@@ -29,7 +29,7 @@ The installed Settings sidebar delegates **Recording** to Record’s public
 `RecordingSection`. Composition supplies the `RecordingBridge`. It carries
 projected device, transcriber and playback facts plus acknowledgements from the
 existing Settings config transaction. The renderer has no config file or device
-access. **Screen selection** in the Recording index links to Permissions.
+access.
 
 | Control | Saved value and effect |
 | --- | --- |

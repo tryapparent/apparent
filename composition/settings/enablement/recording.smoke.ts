@@ -157,9 +157,11 @@ test("staged Recording opens directly, receives native facts and saves only on i
 
     const startUrl = page.url();
     const navigate = async (pane: string) => {
-      await page
-        .getByRole("button", { name: /^Settings pages,/ })
-        .press("Enter");
+      if (await page.locator(".settings-navigation-compact").isVisible()) {
+        await page
+          .getByRole("button", { name: /^Settings pages,/ })
+          .press("Enter");
+      }
       await page
         .getByRole("button", { name: pane, exact: true })
         .press("Enter");
@@ -184,32 +186,6 @@ test("staged Recording opens directly, receives native facts and saves only on i
     assert.equal(page.url(), startUrl);
     await expect(video).toBeChecked();
 
-    const index = page.getByRole("navigation", {
-      name: "Jump to",
-    });
-    async function openTask(label: string, heading: string) {
-      await index
-        .getByRole("button", { name: label, exact: true })
-        .press("Enter");
-      const target = page
-        .getByText(heading, { exact: true })
-        .and(page.locator("h1, h2, legend"));
-      await expect(target).toBeFocused();
-      await expect(target).toBeInViewport();
-    }
-    async function openRecording() {
-      const compact = page.locator(".settings-navigation-compact");
-      if (await compact.isVisible())
-        await compact
-          .getByRole("button", { name: /^Settings pages,/ })
-          .press("Enter");
-      await page
-        .getByRole("button", { name: "Recording", exact: true })
-        .press("Enter");
-      await expect(index).toBeVisible();
-      await expect(page.locator("h1")).toBeInViewport();
-    }
-
     for (const width of [720, 640])
       for (const theme of ["light", "dark"] as const) {
         const variant = `${width}-${theme}`;
@@ -220,46 +196,28 @@ test("staged Recording opens directly, receives native facts and saves only on i
             .evaluate((el) => el.scrollWidth <= el.clientWidth),
           true,
         );
-        const videoJump = index.getByRole("button", { name: "Video export" });
-        await expect(videoJump).toBeEnabled();
-        await expect(videoJump).toBeInViewport();
-        await expect(videoJump).toHaveCSS("opacity", "1");
+        await expect(page.getByRole("navigation", { name: "Jump to" })).toHaveCount(0);
         await expect(input).toBeInViewport({ ratio: 1 });
-        const jumps = await index.getByRole("button").all();
-        for (const jump of jumps) {
-          const bounds = await jump.boundingBox();
-          assert.ok(bounds && bounds.width >= 24 && bounds.height >= 36);
-        }
-        await screenshot(`index-${variant}`);
-
-        await openTask("Change record shortcut", "Keyboard shortcuts");
-        await page.keyboard.press("Tab");
-        await expect(
-          page.getByRole("button", {
-            name: "Change Record shortcut, currently F1",
-          }),
-        ).toBeFocused();
-        await screenshot(`shortcut-${variant}`);
-        await openRecording();
+        await screenshot(`opening-${variant}`);
 
         fixture.pickerSupported = theme === "light";
-        await openTask("Screen selection", "Screen recording");
+        await navigate("Permissions");
         const picker = page.getByRole("switch", {
           name: "Skip screen selection",
         });
         if (fixture.pickerSupported) await expect(picker).toBeEnabled();
         else await expect(picker).toBeDisabled();
         await screenshot(`screen-selection-${variant}`);
-        await openRecording();
+        await navigate("Recording");
 
-        await openTask("Send to T3", "Send recordings to T3 Code");
+        await navigate("Agents");
         const t3 = page.getByRole("switch", { name: "Send recordings to T3 Code" });
         await expect(t3).toBeEnabled();
         await expect(t3).toHaveAccessibleDescription(/Choose a T3 Code thread/);
         await expect(t3).not.toBeChecked();
         await expect(page.getByRole("heading", { name: "Computers" })).toHaveCount(0);
         await screenshot(`send-${variant}`);
-        await openRecording();
+        await navigate("Recording");
 
         t3Facts = {
           ...disconnected,
@@ -269,7 +227,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
             { origin: "https://expired.example", expiresAt: 0 },
           ],
         };
-        await openTask("Send to T3", "Send recordings to T3 Code");
+        await navigate("Agents");
         await expect(t3).not.toBeChecked();
         await expect(page.getByRole("button", { name: "Pair with a link" })).toHaveCount(0);
         heldT3 = undefined;
@@ -303,32 +261,29 @@ test("staged Recording opens directly, receives native facts and saves only on i
         await expect(t3).toBeFocused();
         assert.equal(heldT3, undefined);
         t3Facts = disconnected;
-        await openRecording();
+        await navigate("Recording");
 
-        await openTask("Fix permissions", "Permissions");
-        await expect(page.getByRole("listitem")).toBeVisible();
+        await navigate("Permissions");
+        await expect(
+          page.getByText("Input devices", { exact: true }),
+        ).toBeVisible();
         await screenshot(`permissions-${variant}`);
-        await openRecording();
+        await navigate("Recording");
 
-        for (const [label, heading, name] of [
-          [
-            "Transcription after recording",
-            "Transcription after recording",
-            "transcription",
-          ],
-          [
-            "Live transcription",
-            "Live local transcription",
-            "transcription-live",
-          ],
-          ["How to add notes", "Notes", "notes"],
-          ["Public links", "Public sharing links", "public-links"],
-          ["Auto paste", "Auto paste", "auto-paste-unavailable"],
-          ["Video export", "Export", "video-export"],
+        for (const [pane, heading, name] of [
+          ["Recording", "Transcription after recording", "transcription"],
+          ["Labs", "Live local transcription", "transcription-live"],
+          ["Recording", "Notes", "notes"],
+          ["Recording", "Export", "video-export"],
+          ["Labs", "Public sharing links", "public-links"],
+          ["Labs", "Auto paste", "auto-paste-unavailable"],
         ]) {
-          await openTask(label, heading);
+          if (pane !== "Recording") await navigate(pane);
+          const target = page
+            .getByText(heading, { exact: true })
+            .and(page.locator("h1, h2, legend"));
+          await target.scrollIntoViewIfNeeded();
           if (name === "notes") {
-            await expect(page).toHaveTitle("Apparent Settings — Recording");
             await expect(
               page.getByText(/tap Shift twice quickly.*open the note editor/),
             ).toBeInViewport();
@@ -341,9 +296,9 @@ test("staged Recording opens directly, receives native facts and saves only on i
               page.getByText(/live preview of your English speech/),
             ).toBeInViewport();
           }
-          if (label === "Auto paste") {
+          if (heading === "Auto paste") {
             await expect(
-              page.getByRole("switch", { name: label }),
+              page.getByRole("switch", { name: heading }),
             ).toBeDisabled();
             await expect(
               page.getByText("Unavailable in this session.", { exact: false }),
@@ -355,15 +310,11 @@ test("staged Recording opens directly, receives native facts and saves only on i
             ).toBeVisible();
           }
           await screenshot(`${name}-${variant}`);
-          if (name === "notes") {
-            await page.keyboard.press("Tab");
-            await expect(video).toBeFocused();
-          }
-          await openRecording();
-          if (label === "Auto paste") {
+          if (pane !== "Recording") await navigate("Recording");
+          if (heading === "Auto paste") {
             fixture.autoPasteSaved = true;
-            await openTask(label, heading);
-            const autoPaste = page.getByRole("switch", { name: label });
+            await navigate("Labs");
+            const autoPaste = page.getByRole("switch", { name: heading });
             await expect(autoPaste).toBeChecked();
             await expect(autoPaste).toBeEnabled();
             await expect(autoPaste).toHaveAccessibleDescription(
@@ -373,10 +324,10 @@ test("staged Recording opens directly, receives native facts and saves only on i
             await autoPaste.press("Space");
             await expect(autoPaste).not.toBeChecked();
             await expect(autoPaste).toBeDisabled();
-            await openRecording();
+            await navigate("Recording");
 
             fixture.autoPasteSupported = true;
-            await openTask(label, heading);
+            await navigate("Labs");
             await expect(autoPaste).toBeEnabled();
             await autoPaste.press("Space");
             await expect(autoPaste).toBeChecked();
@@ -387,15 +338,14 @@ test("staged Recording opens directly, receives native facts and saves only on i
             await autoPaste.press("Space");
             await expect(autoPaste).not.toBeChecked();
             fixture.autoPasteSupported = false;
-            await openRecording();
+            await navigate("Recording");
           }
         }
       }
     await navigate("Agents");
     await expect(page.getByRole("heading", { name: "Send recordings to T3 Code" })).toBeVisible();
     assert.equal(page.url(), startUrl);
-    await openRecording();
-    await openTask("How to add notes", "Notes");
+    await navigate("Recording");
     assert.equal(
       await page.evaluate(async () => {
         try {

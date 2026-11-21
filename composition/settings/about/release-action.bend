@@ -12,6 +12,11 @@ def release_action(linux: Bool, +selected_channel: String) -> String:
       install_label(String.eq(selected_channel, "main"), String.eq(selected_channel, "stable"))
     case False{}: "Check for updates"
 
+def show_release_action(linux: Bool, current: Bool) -> Bool:
+  match linux current:
+    case True{} True{}: False{}
+    case _ _: True{}
+
 def digits(text: String) -> Bool:
   match text:
     case SNil{}: True{}

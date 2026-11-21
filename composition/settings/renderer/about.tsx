@@ -199,8 +199,12 @@ export function About({
     failedRestart && !checking,
     restart,
   );
+  const showReleaseAction = updateAction.show_release_action(
+    state?.linux === true,
+    result === "current",
+  );
   const installWarning =
-    state?.linux && state.updates && !checking && !restart;
+    state?.linux && state.updates && !checking && !restart && showReleaseAction;
   const progress = checking ? state?.updateCheck.progress : undefined;
   const downloading = progress?.phase === "downloading";
   const percent =
@@ -235,7 +239,7 @@ export function About({
     (section: HTMLElement | null) => {
       if (
         !section ||
-        (!restartOffer && result !== "current") ||
+        (!restartOffer && !(result === "current" && showReleaseAction)) ||
         copyStatus === "failed"
       )
         return;
@@ -246,7 +250,7 @@ export function About({
       window.addEventListener("keydown", listener);
       return () => window.removeEventListener("keydown", listener);
     },
-    [restartOffer, result, copyStatus, act],
+    [restartOffer, result, showReleaseAction, copyStatus, act],
   );
   return (
     <section
@@ -395,7 +399,7 @@ export function About({
                     {restartTarget}
                   </p>
                 )}
-                {!checking && (
+                {!checking && (restart || showReleaseAction) && (
                   <div className="settings-actions">
                     {restart ? (
                       <>

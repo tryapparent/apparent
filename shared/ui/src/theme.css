@@ -1,5 +1,6 @@
 @import "./tokens.css";
 @import "./keyboard/keycap.css";
+@import "./overflow-button.css";
 
 /* Register canonical tokens as Tailwind utilities; values live in tokens.css. */
 @theme inline {

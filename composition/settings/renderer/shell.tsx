@@ -34,7 +34,6 @@ import "./settings.css";
 import wordmark from "../../../shared/assets/brand/apparent-wordmark.svg";
 import { Button } from "@apparent/ui/button";
 import { DisclosureMenu } from "@apparent/ui/disclosure-menu";
-import { RecordingIndex } from "./recording-index";
 
 const panes = [
   "General",
@@ -120,19 +119,11 @@ function Settings() {
       "Storage",
   );
   const content = useRef<HTMLElement>(null);
-  const destination = useRef<{ pane: Pane; section?: string }>(null);
-  const [section, setSection] = useState<string>();
   useLayoutEffect(
     () =>
       window.apparentSettingsRoute?.((pane) => {
         const selected = panes.find((value) => value.toLowerCase() === pane);
         if (selected) {
-          setSection(
-            destination.current?.pane === selected
-              ? destination.current.section
-              : undefined,
-          );
-          destination.current = null;
           setCurrent(selected);
           setError("");
         }
@@ -144,51 +135,15 @@ function Settings() {
     content.current?.scrollTo(0, 0);
   }, [current]);
   useLayoutEffect(() => {
-    const root = content.current;
-    if (!section || !root) return;
-
-    const focusSection = () => {
-      const target =
-        document.getElementById(section) ??
-        root.querySelector<HTMLElement>("[data-settings-section-fallback]");
-      if (!target || !root.contains(target)) return;
-      cancel();
-      target.focus({ preventScroll: true });
-      target.scrollIntoView({ block: "start" });
-    };
-    function cancel() {
-      observer.disconnect();
-      setSection(undefined);
-    }
-    const observer = new MutationObserver(focusSection);
-    observer.observe(root, { childList: true, subtree: true });
-    focusSection();
-    document.addEventListener("keydown", cancel);
-    document.addEventListener("pointerdown", cancel);
-    return () => {
-      observer.disconnect();
-      document.removeEventListener("keydown", cancel);
-      document.removeEventListener("pointerdown", cancel);
-    };
-  }, [current, section]);
-  useLayoutEffect(() => {
     void window.apparentSettingsMounted?.().catch(() => {});
   }, []);
   const [error, setError] = useState("");
   const [navigating, setNavigating] = useState(false);
-  async function navigate(pane: Pane, section?: string) {
-    if (pane === current) {
-      setError("");
-      setSection(section);
-      return;
-    }
-    destination.current = { pane, section };
-    setSection(undefined);
+  async function navigate(pane: Pane) {
     setNavigating(true);
     try {
       await window.apparent?.navigateSettings(pane.toLowerCase());
     } catch {
-      destination.current = null;
       setError("Unable to open that Settings page. Please try again.");
     } finally {
       setNavigating(false);
@@ -253,22 +208,14 @@ function Settings() {
       </aside>
       <main className="settings-content" ref={content}>
         <header className="settings-page-heading">
-          <h1
-            id={current === "Permissions" ? "settings-permissions" : undefined}
-            tabIndex={current === "Permissions" ? -1 : undefined}
-          >
-            {current}
-          </h1>
+          <h1>{current}</h1>
           <div id="settings-account" />
         </header>
         {error && <p role="alert">{error}</p>}
         {current === "General" ? (
           <General />
         ) : current === "Recording" ? (
-          <>
-            <RecordingIndex disabled={navigating} navigate={navigate} />
-            <RecordingSection bridge={window.apparentRecording} />
-          </>
+          <RecordingSection bridge={window.apparentRecording} />
         ) : current === "Permissions" ? (
           <PermissionsSection bridge={window.apparentPermissions} />
         ) : current === "About" ? (
