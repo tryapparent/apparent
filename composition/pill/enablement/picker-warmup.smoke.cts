@@ -139,19 +139,41 @@ test("picker warms both computers during recording and keeps the waiting state a
   if (next) page = await next;
   const trigger = page.getByRole("combobox");
   await expect(trigger).toBeEnabled();
+  const setWorkArea = async (width) => {
+    await app.evaluate(({ screen }, width) => {
+      screen.__pickerDisplay ??= screen.getDisplayMatching.bind(screen);
+      screen.getDisplayMatching = (bounds) => ({
+        ...screen.__pickerDisplay(bounds),
+        workArea: { x: 0, y: 0, width, height: 800 },
+      });
+    }, width);
+    const revision = ++frame.view.revision;
+    await send(frame);
+    await expect(page.locator("main")).toHaveAttribute(
+      "data-revision",
+      String(revision),
+    );
+    const measuredLimit = await page.evaluate(async (revision) => {
+      await window.apparentPill.layout(revision);
+      return document.documentElement.style.getPropertyValue("--pill-limit");
+    }, revision);
+    assert.equal(measuredLimit, `${width}px`);
+  };
   const proof = async (name) => {
     await page.evaluate(() => document.fonts.ready);
     await expect
-      .poll(() =>
-        page.evaluate(() => {
-          const r = document.querySelector("main").getBoundingClientRect();
-          return (
-            innerWidth === Math.ceil(r.width) &&
-            innerHeight === Math.max(58, Math.ceil(r.height))
-          );
-        }),
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const r = document.querySelector("main").getBoundingClientRect();
+            return [
+              innerWidth - Math.ceil(r.width),
+              innerHeight - Math.max(58, Math.ceil(r.height)),
+            ];
+          }),
+        { message: `${name} window matches the rendered picker` },
       )
-      .toBe(true);
+      .toEqual([0, 0]);
     if (process.env.APPARENT_T3_PROOF)
       await page.screenshot({
         path: path.join(process.env.APPARENT_T3_PROOF, name + ".png"),
@@ -173,6 +195,7 @@ test("picker warms both computers during recording and keeps the waiting state a
     )
     .toBe(6);
   assert.deepEqual([a.reads, b.reads], [1, 1]);
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
   await trigger.click();
   await proof("friendly-selecting");
   await page
@@ -191,19 +214,7 @@ test("picker warms both computers during recording and keeps the waiting state a
   await expect(confirmed).toHaveAttribute("title", "Clanker · Apparent");
   for (const theme of ["light", "dark"])
     for (const width of [1200, 320]) {
-      await app.evaluate(({ screen }, width) => {
-        screen.__pickerDisplay ??= screen.getDisplayMatching.bind(screen);
-        screen.getDisplayMatching = (b) => ({
-          ...screen.__pickerDisplay(b),
-          workArea: { x: 0, y: 0, width, height: 800 },
-        });
-      }, width);
-      ++frame.view.revision;
-      await send(frame);
-      await page.evaluate(
-        (revision) => window.apparentPill.layout(revision),
-        frame.view.revision,
-      );
+      await setWorkArea(width);
       await page.emulateMedia({ colorScheme: theme });
       await proof("friendly-waiting-" + theme + "-" + width);
     }
@@ -215,19 +226,7 @@ test("picker warms both computers during recording and keeps the waiting state a
   assert.equal(b.calls.length, 0);
   for (const theme of ["light", "dark"])
     for (const width of [1200, 320]) {
-      await app.evaluate(({ screen }, width) => {
-        screen.__pickerDisplay ??= screen.getDisplayMatching.bind(screen);
-        screen.getDisplayMatching = (b) => ({
-          ...screen.__pickerDisplay(b),
-          workArea: { x: 0, y: 0, width, height: 800 },
-        });
-      }, width);
-      ++frame.view.revision;
-      await send(frame);
-      await page.evaluate(
-        (revision) => window.apparentPill.layout(revision),
-        frame.view.revision,
-      );
+      await setWorkArea(width);
       await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
       await proof("friendly-collapsed-" + theme + "-" + width);
       const collapsed = await pickerGeometry(app, page);
@@ -274,12 +273,7 @@ test("picker warms both computers during recording and keeps the waiting state a
   );
   for (const theme of ["light", "dark"])
     for (const width of [1200, 320]) {
-      await app.evaluate(({ screen }, width) => {
-        screen.getDisplayMatching = (b) => ({
-          ...screen.__pickerDisplay(b),
-          workArea: { x: 0, y: 0, width, height: 800 },
-        });
-      }, width);
+      await setWorkArea(width);
       await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
       await proof("remembered-collapsed-" + theme + "-" + width);
       await trigger.press("ArrowDown");
