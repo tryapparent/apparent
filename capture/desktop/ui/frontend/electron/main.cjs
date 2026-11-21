@@ -74,7 +74,7 @@ function startControls() {
 
 if(process.argv.includes('--controls')) { startControls(); }
 else if(process.argv.includes('--onboarding')) { require('./onboarding.cjs'); } else {
-const { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, nativeTheme, clipboard } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, nativeTheme, clipboard, screen } = require('electron');
 const os = require('node:os');
 let exitWithReports = code => app.exit(code);
 if (process.env.APPARENT_DESKTOP_REPORTING === '1') {
@@ -200,7 +200,25 @@ app.whenReady().then(() => {
   followWindowTheme(nativeTheme, window);
   window.removeMenu();
   const page = pathToFileURL(path.join(__dirname, settings ? '../dist/settings.html' : '../dist/index.html')).href;
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  let lipWindow;
+  window.webContents.setWindowOpenHandler(details => {
+    if (details.url !== 'about:blank' || details.frameName !== 'apparent-silent-prompt' ||
+        !canUseLip() || !lip.enabled || lipWindow) return { action: 'deny' };
+    const work = screen.getDisplayMatching(window.getBounds()).workArea;
+    const width = Math.min(work.width, 480), height = Math.min(work.height, 200);
+    return { action: 'allow', overrideBrowserWindowOptions: {
+      width, height, x: Math.round(work.x + (work.width - width) / 2),
+      y: work.y + work.height - height - 24, frame: false, alwaysOnTop: true,
+      resizable: false, skipTaskbar: true, backgroundColor: 'transparent', transparent: true,
+      webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, preload: undefined },
+    } };
+  });
+  window.webContents.on('did-create-window', child => {
+    lipWindow = child;
+    child.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    child.webContents.on('will-navigate', (event) => event.preventDefault());
+    child.once('closed', () => { lipWindow = undefined; lip.cancel(); });
+  });
   window.webContents.on('will-navigate', (event) => event.preventDefault());
   window.webContents.on('will-attach-webview', (event) => event.preventDefault());
   let pending;
@@ -226,10 +244,21 @@ app.whenReady().then(() => {
     return handle(...args);
   });
   bindLip('prepare', 0, () => lip.prepare());
-  bindLip('begin', 0, () => lip.begin());
+  bindLip('begin', 0, async () => {
+    if (!lipWindow) throw Error('Silent prompt pill unavailable');
+    const [capture, wasm] = await Promise.all([
+      lip.begin(),
+      require('node:fs/promises').readFile(path.join(__dirname, '../dist/assets/lip-vision.wasm')),
+    ]);
+    return { ...capture, wasm };
+  });
   bindLip('decode', 1, bytes => lip.decode(bytes));
   bindLip('cancel', 0, () => lip.cancel());
-  bindLip('copy', 0, () => clipboard.writeText(lip.textToCopy()));
+  bindLip('copy', 0, async () => {
+    const text = lip.textToCopy();
+    await clipboard.writeText(text);
+    if (await clipboard.readText() !== text) throw Error('Copy not confirmed');
+  });
   const validateFoundation = (event, args) => {
     if (settings) throw new Error('Unavailable in Storage Settings');
     validate(event, args);

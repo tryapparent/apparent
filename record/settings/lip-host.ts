@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, lstat, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { access, lstat, mkdtemp, open, realpath, rm, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -77,12 +77,26 @@ export class LipHost {
   async begin() {
     const generation = this.generation;
     const decoder = await this.installed(false) ?? await this.installed(true);
-    if (!policy.admit(this.enabled, !!decoder && generation === this.generation && !this.trial && !this.camera))
+    if (!decoder || !policy.admit(this.enabled, generation === this.generation && !this.trial && !this.camera))
+      throw Error("Silent prompt unavailable");
+    const model = await open(join(decoder.directory, "models", "face_landmarker.task"), constants.O_RDONLY | constants.O_NONBLOCK);
+    let trackingModel;
+    try {
+      const info = await model.stat();
+      if (!info.isFile() || !policy.valid_size(info.size)) throw Error("Lip tracking model unavailable");
+      const buffer = Buffer.alloc(info.size);
+      const result = await model.read(buffer);
+      if (result.bytesRead !== buffer.length) throw Error("Lip tracking model unavailable");
+      trackingModel = buffer;
+    } finally {
+      await model.close();
+    }
+    if (!policy.admit(this.enabled, generation === this.generation && !this.camera))
       throw Error("Silent prompt unavailable");
     this.decoder = decoder;
     this.camera = true;
     this.lastText = "";
-    return policy.clip_seconds();
+    return { seconds: policy.clip_seconds(), tailMs: policy.finish_tail_ms(), trackingModel };
   }
 
   async decode(bytes: unknown) {
