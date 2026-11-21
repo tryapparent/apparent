@@ -205,25 +205,7 @@ pub fn capture_context(bundle_dir: &Path) -> Result<std::collections::BTreeMap<S
 /// Protect a new screen recording before its movie can be written. Refuse occupied directories:
 /// an old orphan's recovery could already be in flight and must not decode the new movie.
 pub fn begin_screen_capture(bundle_dir: &Path) -> Result<()> {
-    // Create private capture state; reject unsafe existing directories rather than repairing them.
-    let _root = crate::capture::engine::bundle::bundle_processing::publication::Directory::open(
-        bundle_dir, true,
-    )?;
-    anyhow::ensure!(
-        std::fs::read_dir(bundle_dir)?.next().is_none(),
-        "{} is not empty; use a new output directory for a screen capture",
-        bundle_dir.display()
-    );
-    use std::io::Write;
-    let mut marker = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(bundle_dir.join(UNSAFE_VIDEO))
-        .with_context(|| format!("Could not protect raw video in {}", bundle_dir.display()))?;
-    marker.write_all(b"No safe screenshots; do not recover movie frames\n")?;
-    marker.sync_all()?;
-    std::fs::File::open(bundle_dir)?.sync_all()?;
-    Ok(())
+    crate::capture::engine::runtime::recording::recorder::prepare_screen_capture(bundle_dir)?.commit()
 }
 
 pub fn mark_unsafe_video(bundle_dir: &Path) -> Result<()> {

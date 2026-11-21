@@ -4,11 +4,11 @@ use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 use std::{
     ffi::CString,
-    fs::{File, OpenOptions},
+    fs::File,
     io::Read,
     os::{
         fd::{AsRawFd, FromRawFd},
-        unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
+        unix::fs::MetadataExt,
     },
     path::Path,
     process::Command,
@@ -53,6 +53,9 @@ pub(crate) fn record(
     edge: u32,
 ) -> Result<Vec<RgbaFrame>> {
     adaptive_batches_from(times, 12, |batch| {
+        if let Some(movie_times) = record_movie_times(batch, offset) {
+            return direct_record(movie, batch, &movie_times, edge);
+        }
         frames(
             "Record media",
             "record-media",
@@ -64,6 +67,10 @@ pub(crate) fn record(
         )
     })
 }
+
+#[path = "../engine/native/record_frame_transport.rs"]
+mod record_transport;
+use record_transport::{direct_record, record_movie_times, run_frame_command};
 
 pub(crate) fn agent_range(movie: &Path, times: &[u64], offset: u64) -> Result<Vec<RgbaFrame>> {
     adaptive_batches_from(times, 4, |batch| {
@@ -218,38 +225,17 @@ pub(super) fn timed_frame_response(
 ) -> Result<(tempfile::TempDir, File, Vec<u8>)> {
     let (node, worker, engine) =
         super::worker::assets(label, package, "apparent-engine-frames", worker_file)?;
-    let movie = std::fs::canonicalize(movie).context("Could not locate movie")?;
-    let alias = if movie.to_str().is_none() {
-        Some(super::worker::private_movie_alias(&movie)?)
-    } else {
-        None
-    };
-    let input = alias
-        .as_ref()
-        .map(|a| a.path().join("movie.mp4"))
-        .unwrap_or(movie);
-    let output = tempfile::Builder::new()
-        .prefix("apparent-frames-")
-        .permissions(std::fs::Permissions::from_mode(0o700))
-        .tempdir()?;
-    let directory = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
-        .open(output.path())?;
-    let bytes = super::worker::run(
-        Command::new(node)
+    run_frame_command(movie, timeout, |input, output| {
+        let mut command = Command::new(node);
+        command
             .env("ELECTRON_RUN_AS_NODE", "1")
             .arg(worker)
             .arg(engine)
             .arg(input)
-            .arg(output.path())
-            .args(arguments),
-        timeout,
-        // A full 480-frame periodic reply exceeds the metadata envelope. Keep
-        // a finite transport cap; record counts and pixels are validated below.
-        128 * 1024,
-    )?;
-    Ok((output, directory, bytes))
+            .arg(output)
+            .args(arguments);
+        command
+    })
 }
 
 fn read_frames(
@@ -349,7 +335,7 @@ pub(super) fn read_reply(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::symlink;
+    use std::os::unix::fs::{PermissionsExt, symlink};
 
     #[test]
     fn candidate_clock_is_actual_unique_and_bounded_before_reading_pixels() {
@@ -463,6 +449,7 @@ mod tests {
             requested
         );
         assert!(assembled.iter().all(|f| (f.width, f.height) == (320, 240)));
+        record_transport::assert_matches_packaged(&movie, &requested, &assembled);
         let decoded = agent(&movie, &times, 500, 900).unwrap();
         assert_eq!(decoded.len(), times.len());
         for (frame, time) in decoded.iter().zip(times) {

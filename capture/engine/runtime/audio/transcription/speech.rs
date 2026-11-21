@@ -4,7 +4,6 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use transcribe_cpp::{Model, RunOptions, TimestampKind};
 
-use crate::capture::desktop::helper::SpeechModelLine;
 use crate::shared::model::{TranscriptData, TranscriptSegment, WordTiming};
 
 const KHZ: u64 = 16;
@@ -15,19 +14,10 @@ pub(super) use parakeet::{Incremental, RecognitionPhase};
 
 /// The model Apparent downloads when Hex hasn't installed one: the same file, revision and
 /// checksum as Hex's `PARAKEET_UNIFIED_ENGLISH_ARTIFACT`.
-pub struct Artifact {
-    pub filename: &'static str,
-    pub url: &'static str,
-    pub bytes: u64,
-    pub sha256: &'static str,
-}
-
-pub const PARAKEET: Artifact = Artifact {
-    filename: "parakeet-unified-en-0.6b-Q8_0.gguf",
-    url: "https://huggingface.co/handy-computer/parakeet-unified-en-0.6b-gguf/resolve/7e948f21b7bdbac698d3318db9d350f1096f3b6c/parakeet-unified-en-0.6b-Q8_0.gguf",
-    bytes: 731_357_568,
-    sha256: "4b50b6dd862bf6e346929aaf4f5eaacec003bfa3f56462d6c874b41ef2f38795",
-};
+#[path = "../../../../../engine/recording/model-cache/artifacts.rs"]
+mod artifacts;
+pub use artifacts::{Artifact, PARAKEET};
+pub(super) use artifacts::preferred_parakeet;
 
 fn models_dir() -> PathBuf {
     crate::shared::hex::support_dir().join("models")
@@ -82,7 +72,10 @@ pub(super) fn verified_in(dir: &Path) -> Vec<PathBuf> {
 /// then the one Apparent downloaded.
 pub fn installed_models() -> Vec<PathBuf> {
     let mut models = hex_models();
-    models.extend(verified_in(&own_models_dir()));
+    let preferred = preferred_parakeet().filename;
+    let mut own = verified_in(&own_models_dir());
+    own.sort_by_key(|path| path.file_name().is_none_or(|name| name != preferred));
+    models.extend(own);
     models
 }
 
@@ -137,7 +130,7 @@ pub fn transcribe(audio: &Path) -> Result<TranscriptData> {
 
 pub(super) fn installed_parakeet() -> Option<PathBuf> {
     installed_models().into_iter().find(|path| {
-        path.file_name().is_some_and(|name| name == PARAKEET.filename)
+        path.file_name().is_some_and(|name| name == preferred_parakeet().filename || name == PARAKEET.filename)
     })
 }
 
@@ -238,25 +231,7 @@ pub(super) fn init_backends() -> Result<()> {
 /// Makes sure a model is on disk: `installed` when Hex's or Apparent's own is there, else downloads
 /// `PARAKEET` into `own_models_dir()`, reporting progress, and keeps it only if its SHA-256
 /// matches. The same lines as macOS's `apparent-helper speech-model --install`.
-pub fn install(mut line: impl FnMut(SpeechModelLine)) -> Result<()> {
-    let report = |status: &str, progress: Option<f64>, error: Option<String>| SpeechModelLine {
-        status: status.into(),
-        engine: Some("Parakeet".into()),
-        locale: Some("en".into()),
-        locales: None,
-        progress,
-        error,
-    };
-    if installed_models().is_empty() {
-        let mut progress = |done: f64| line(report("downloading", Some(done), None));
-        if let Err(error) = download(&PARAKEET, &own_models_dir(), &mut progress) {
-            line(report("failed", None, Some(format!("{error:#}"))));
-            return Ok(());
-        }
-    }
-    line(report("installed", Some(1.0), None));
-    Ok(())
-}
+pub use artifacts::install;
 
 #[path = "../../../../../engine/recording/model-cache/download.rs"]
 mod model_cache;

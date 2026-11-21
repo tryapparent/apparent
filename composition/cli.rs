@@ -1188,7 +1188,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
                     let offset = old.video_offset_ms;
                     let probe = crate::composition::media_probe::bundle_probe(&video)?;
                     let raw_candidates = crate::composition::screen_frames::candidates(&video, probe.duration_ms, offset, "benchmark")?;
-                    let mut candidate_buf = crate::capture::engine::runtime::CandidateBuffer::new(
+                    let mut buffer = crate::capture::engine::runtime::CandidateBuffer::new(
                         crate::capture::engine::runtime::CANDIDATE_BUDGET_BYTES,
                     );
                     for frame in raw_candidates {
@@ -1201,9 +1201,9 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
                                 InteractionEvent::Drag { t1, .. } => t1.abs_diff(frame.t_ms) <= 150,
                                 _ => false,
                             });
-                        candidate_buf.push(frame, urgent);
+                        buffer.push(frame, urgent);
                     }
-                    let candidates = candidate_buf.into_frames();
+                    let frames = buffer.into_stored_frames();
                     let wav_bytes = old
                         .audio
                         .as_ref()
@@ -1213,7 +1213,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
                         .transpose()?;
                     for i in 0..iters {
                         let (iter_out, linked) = prep_iter(i)?;
-                        let iter_frames = candidates.clone();
+                        let iter_frames = frames.clone();
                         let iter_strokes = old.strokes.clone();
                         let iter_events = old.events.clone();
                         let iter_target = old.target.clone();

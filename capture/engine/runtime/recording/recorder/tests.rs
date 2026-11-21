@@ -263,7 +263,7 @@ fn screen_stop_joins_worker_before_collecting_its_final_media() {
     let frames = recording.frames;
     assert_eq!(frames.len(), 1);
     assert_eq!(frames[0].t_ms, 42);
-    assert_eq!(frames[0].rgba, vec![1, 2, 3, 255]);
+    assert_eq!(frames[0].to_rgba().rgba, vec![1, 2, 3, 255]);
     assert_eq!(recording.video.as_ref(), Some(&path));
     assert_eq!(recording.video_offset_ms, 120);
     std::fs::remove_file(path).unwrap();

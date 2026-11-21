@@ -37,6 +37,11 @@ pub(crate) fn assign(times: &[u64], anchors: &[u64], transcript: &TranscriptData
     };
     let bytes = serde_json::to_vec(&request)?;
     ensure!(bytes.len() <= MAX_BYTES, "Record transcript request exceeds its resource limit");
+    if let Some(Ok(said)) = super::record_policy::evaluate("nativeTranscript", &bytes, MAX_BYTES)
+        .map(|output| decode(output.as_bytes(), times.len()))
+    {
+        return Ok(said);
+    }
     let input = super::worker::private_input(&bytes)?;
     let (node, worker) = super::worker::policy_assets("Record transcript", "record-media", "transcript/worker.js")?;
     let output = super::worker::run_with_input(Command::new(node)

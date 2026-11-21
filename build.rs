@@ -16,6 +16,7 @@ fn main() {
     #[cfg(target_os = "macos")]
     emit_note_policy("onboarding", "frog-nudge", "host/tips/frog-nudge.json");
     compile_record_pill();
+    record_media_build::compile_record_media();
     sparkle_outcomes::compile();
     println!("cargo:rerun-if-env-changed=APPARENT_POSTHOG_TOKEN");
     println!("cargo:rerun-if-env-changed=APPARENT_POSTHOG_RELEASE_ID");
@@ -132,6 +133,9 @@ fn compile_record_pill() {
         String::from_utf8_lossy(&result.stderr),
     );
 }
+
+#[path = "engine/native/record_media_build.rs"]
+mod record_media_build;
 
 fn emit_recording_permissions() {
     let generator = "record/enablement/permissions/native.ts";

@@ -1,4 +1,5 @@
 use crate::shared::model::*;
+use crate::stored_frame::StoredFrame;
 use crate::capture::engine::sketch::{describe_event, describe_mark, settled_events};
 
 #[path = "../../engine/native/src/frames/scene_pixels.rs"]
@@ -125,15 +126,44 @@ struct Candidate {
     cursor: Option<[f32; 2]>,
 }
 
-fn nearest_frame(frames: &[&RgbaFrame], t: u64) -> usize {
-    let after = frames.partition_point(|frame| frame.t_ms < t);
+#[derive(Clone, Copy)]
+enum FrameRef<'a> {
+    Raw(&'a RgbaFrame),
+    Stored(&'a StoredFrame),
+}
+
+impl FrameRef<'_> {
+    fn time(self) -> u64 {
+        match self {
+            Self::Raw(frame) => frame.t_ms,
+            Self::Stored(frame) => frame.t_ms,
+        }
+    }
+
+    fn with_rgba<T>(self, read: impl FnOnce(&RgbaFrame) -> T) -> T {
+        match self {
+            Self::Raw(frame) => read(frame),
+            Self::Stored(frame) => frame.with_rgba(read),
+        }
+    }
+
+    fn to_rgba(self) -> RgbaFrame {
+        match self {
+            Self::Raw(frame) => frame.clone(),
+            Self::Stored(frame) => frame.to_rgba(),
+        }
+    }
+}
+
+fn nearest_frame(frames: &[FrameRef<'_>], t: u64) -> usize {
+    let after = frames.partition_point(|frame| frame.time() < t);
     if after == 0 {
         return 0;
     }
     if after == frames.len() {
         return after - 1;
     }
-    if frames[after].t_ms.abs_diff(t) < frames[after - 1].t_ms.abs_diff(t) {
+    if frames[after].time().abs_diff(t) < frames[after - 1].time().abs_diff(t) {
         after
     } else {
         after - 1
@@ -160,7 +190,7 @@ const COVERAGE_MS: f32 = 35_000.0;
 /// (`actions`, sorted times) between them; then neighbouring groups merge until they fit `budget`,
 /// same-screen pairs with the least ink first, else the most alike. Flags stay on their own.
 fn group_marks(
-    frames: &[&RgbaFrame],
+    frames: &[FrameRef<'_>],
     marks: &[Mark],
     actions: &[u64],
     budget: usize,
@@ -177,7 +207,7 @@ fn group_marks(
             .chunks(drawn.len().div_ceil(6).max(1))
             .map(|chunk| {
                 scope.spawn(move || -> Vec<_> {
-                    chunk.iter().map(|&f| (f, luma_grid(frames[f]))).collect()
+                    chunk.iter().map(|&f| (f, frames[f].with_rgba(luma_grid))).collect()
                 })
             })
             .collect();
@@ -326,58 +356,10 @@ fn select_visual_keyframes(
     ).unwrap().frames
 }
 
-#[derive(Default)]
-struct SceneAnalysis {
-    thumbnails: Option<Vec<[f32; THUMB_PIXELS]>>,
-    transitions: Option<SceneTransitions>,
-}
-
-struct SceneTransitions {
-    drawing: Vec<(u64, u64)>,
-    transitions: Vec<crate::composition::assembly::scene::Transition>,
-}
-
-pub(crate) struct SelectionFrames {
-    frames: Vec<RgbaFrame>,
-    analysis: SceneAnalysis,
-}
-
-impl From<Vec<RgbaFrame>> for SelectionFrames {
-    fn from(frames: Vec<RgbaFrame>) -> Self {
-        Self { frames, analysis: SceneAnalysis::default() }
-    }
-}
-
-impl SelectionFrames {
-    pub(crate) fn first(&self) -> Option<&RgbaFrame> {
-        self.frames.first()
-    }
-
-    pub(crate) fn into_frames(self) -> Vec<RgbaFrame> {
-        self.frames
-    }
-
-    pub(crate) fn select(
-        &mut self,
-        strokes: &[Stroke],
-        marks: &mut [Mark],
-        events: &[InteractionEvent],
-        speech: &SpeechInput<'_>,
-        limits: SelectionLimits,
-        video_ink: Option<VideoInk>,
-    ) -> anyhow::Result<SelectedFrames> {
-        select_with_analysis(
-            &self.frames,
-            strokes,
-            marks,
-            events,
-            speech,
-            limits,
-            video_ink,
-            &mut self.analysis,
-        )
-    }
-}
+#[path = "../../engine/recording/selection_frames.rs"]
+mod selection_frames;
+pub(crate) use selection_frames::SelectionFrames;
+use selection_frames::{SceneAnalysis, SceneTransitions};
 
 pub(crate) fn select_keyframes_with_limits(
     frames: &[RgbaFrame],
@@ -389,7 +371,7 @@ pub(crate) fn select_keyframes_with_limits(
     video_ink: Option<VideoInk>,
 ) -> anyhow::Result<SelectedFrames> {
     select_with_analysis(
-        frames,
+        frames.iter().map(FrameRef::Raw).collect(),
         strokes,
         marks,
         events,
@@ -402,7 +384,7 @@ pub(crate) fn select_keyframes_with_limits(
 
 #[allow(clippy::too_many_arguments)]
 fn select_with_analysis(
-    frames: &[RgbaFrame],
+    mut frames: Vec<FrameRef<'_>>,
     strokes: &[Stroke],
     marks: &mut [Mark],
     events: &[InteractionEvent],
@@ -419,8 +401,7 @@ fn select_with_analysis(
     if frames.is_empty() || max_keyframes == 0 {
         return Ok(SelectedFrames { frames: Vec::new(), anchors: Vec::new() });
     }
-    let mut frames: Vec<_> = frames.iter().collect();
-    frames.sort_by_key(|frame| frame.t_ms);
+    frames.sort_by_key(|frame| frame.time());
     let thumbnails = analysis.thumbnails.get_or_insert_with(|| {
         if frames.len() >= 128 {
             let chunk_size = frames.len().div_ceil(6).max(1);
@@ -429,7 +410,7 @@ fn select_with_analysis(
                     .chunks(chunk_size)
                     .map(|chunk| {
                         scope.spawn(move || -> Vec<[f32; THUMB_PIXELS]> {
-                            chunk.iter().map(|frame| luma_thumbnail(frame)).collect()
+                            chunk.iter().map(|frame| frame.with_rgba(luma_thumbnail)).collect()
                         })
                     })
                     .collect();
@@ -440,7 +421,7 @@ fn select_with_analysis(
                 out
             })
         } else {
-            frames.iter().map(|frame| luma_thumbnail(frame)).collect()
+            frames.iter().map(|frame| frame.with_rgba(luma_thumbnail)).collect()
         }
     });
     let settled = settled_events(events);
@@ -472,10 +453,10 @@ fn select_with_analysis(
                         // Input delivery precedes presentation. Use the same settling
                         // interval as clicks, then retain an actual captured sample.
                         let settled = end.saturating_add(ACTION_SETTLE_MS);
-                        frames.partition_point(|frame| frame.t_ms < settled).min(frames.len() - 1)
+                        frames.partition_point(|frame| frame.time() < settled).min(frames.len() - 1)
                     } else { nearest_frame(&frames, last.t1) }
                 },
-                    |t| frames.partition_point(|frame| frame.t_ms <= t).saturating_sub(1)),
+                    |t| frames.partition_point(|frame| frame.time() <= t).saturating_sub(1)),
                 span: (first.t0, last.t1),
                 score: 100.0,
                 reason: KeyframeReason::Mark,
@@ -500,11 +481,11 @@ fn select_with_analysis(
                     _ => *t,
                 };
                 let before = frames
-                    .partition_point(|frame| frame.t_ms < *t)
+                    .partition_point(|frame| frame.time() < *t)
                     .saturating_sub(1);
                 // A short delay captures the result of the action rather than the
                 // mouse-down state. Prefer an actual post-action frame when present.
-                let first_after = frames.partition_point(|frame| frame.t_ms < end);
+                let first_after = frames.partition_point(|frame| frame.time() < end);
                 let after = nearest_frame(&frames, end.saturating_add(ACTION_SETTLE_MS))
                     .max(first_after.min(frames.len() - 1));
                 let delta = thumbnail_diff(&thumbnails[before], &thumbnails[after]);
@@ -560,7 +541,8 @@ fn select_with_analysis(
             .windows(2)
             .map(|pair| scene_transition_diff(&pair[0], &pair[1]))
             .collect();
-        let transitions = crate::composition::assembly::scene::plan(&frames, &deltas, &drawing)?;
+        let times: Vec<_> = frames.iter().map(|frame| frame.time()).collect();
+        let transitions = crate::composition::assembly::scene::plan(&times, &deltas, &drawing)?;
         analysis.transitions = Some(SceneTransitions { drawing, transitions });
     }
     let transitions = &analysis.transitions.as_ref().unwrap().transitions;
@@ -615,7 +597,7 @@ fn select_with_analysis(
     }
     if candidates.is_empty() {
         let mid = frames.len() / 2;
-        let t = frames[mid].t_ms;
+        let t = frames[mid].time();
         candidates.push(Candidate {
             frame: mid,
             span: (t, t),
@@ -636,16 +618,16 @@ fn select_with_analysis(
             .cmp(&b.marks.is_empty())
             .then_with(|| a_unsnapped_speech.cmp(&b_unsnapped_speech))
             .then_with(|| b.score.total_cmp(&a.score))
-            .then_with(|| frames[a.frame].t_ms.cmp(&frames[b.frame].t_ms))
+            .then_with(|| frames[a.frame].time().cmp(&frames[b.frame].time()))
     });
     let admissible = |candidate: &Candidate, selected: &[Candidate]| {
         if !candidate.marks.is_empty() {
             return true;
         }
         // Too close to a chosen frame, or among the marks drawn into one, whose screen it repeats.
-        let t = frames[candidate.frame].t_ms;
+        let t = frames[candidate.frame].time();
         if selected.iter().any(|other| {
-            frames[other.frame].t_ms.abs_diff(t) < FRAME_GAP_MS
+            frames[other.frame].time().abs_diff(t) < FRAME_GAP_MS
                 || (other.marks.len() > 1 && other.span.0 <= t && t <= other.span.1)
         }) {
             return false;
@@ -700,10 +682,10 @@ fn select_with_analysis(
             });
         }
     }
-    selected.sort_by_key(|candidate| frames[candidate.frame].t_ms);
+    selected.sort_by_key(|candidate| frames[candidate.frame].time());
     let anchors: Vec<u64> = selected
         .iter()
-        .map(|c| c.span.0.min(frames[c.frame].t_ms))
+        .map(|c| c.span.0.min(frames[c.frame].time()))
         .collect();
     let out: Vec<_> = selected
         .into_iter()
@@ -719,7 +701,7 @@ fn select_with_analysis(
             (
                 Keyframe {
                     index,
-                    t: frame.t_ms,
+                    t: frame.time(),
                     display_time: None,
                     reason: candidate.reason,
                     file,
@@ -728,7 +710,7 @@ fn select_with_analysis(
                     mark_id,
                     cursor: candidate.cursor,
                 },
-                frame.clone(),
+                frame.to_rgba(),
             )
         })
         .collect();
@@ -744,7 +726,7 @@ fn cover_long_stretches(
     selected: &mut Vec<Candidate>,
     pending: &mut [Option<Candidate>],
     max_keyframes: usize,
-    frames: &[&RgbaFrame],
+    frames: &[FrameRef<'_>],
     transcript: &TranscriptData,
     admissible: &dyn Fn(&Candidate, &[Candidate]) -> bool,
 ) {
@@ -771,7 +753,7 @@ fn cover_long_stretches(
         .collect();
     let end = frames
         .last()
-        .map_or(0, |f| f.t_ms)
+        .map_or(0, |f| f.time())
         .max(words.last().map_or(0, |w| w.0))
         + 1;
     let size = |(a, b): (u64, u64)| {
@@ -795,7 +777,7 @@ fn cover_long_stretches(
             .map(size)
             .fold(0.0, f32::max)
     };
-    let anchor = |c: &Candidate| c.span.0.min(frames[c.frame].t_ms);
+    let anchor = |c: &Candidate| c.span.0.min(frames[c.frame].time());
     // The best-ranked frame goes first, as it would without coverage.
     if selected.is_empty()
         && let Some(slot) = pending

@@ -1083,19 +1083,10 @@ impl ApparentCoordinator {
         self.hovered_window = None;
         self.animated_window_rect = None;
         let id = crate::shared::ids::make_bundle_id();
-        let root = std::env::var_os("APPARENT_BENCH_START")
-            .map(PathBuf::from)
-            .unwrap_or_else(crate::shared::handoff::default_captures_dir);
-        let bundle_dir = root.join(format!("{id}.apparent"));
-        if let Err(error) = crate::capture::engine::bundle::recover::begin_screen_capture(&bundle_dir) {
-            apparent_log(format!("Capture could not protect raw video: {error:#}"));
-            workflow::error_reporting::report(workflow::error_reporting::Failure::ProtectRecording);
-            self.cancel_recording(cx);
-            if let Ok(mut status) = CAPTURE_STATUS.lock() {
-                *status = Some("Capture failed — could not protect raw video".into());
-            }
-            return;
-        }
+        let bundle_dir = crate::shared::handoff::default_captures_dir().join(format!("{id}.apparent"));
+        let microphone_enabled = self.admitted_microphone.take().unwrap_or_else(crate::capture::engine::runtime::audio::mic::enabled);
+        let Ok(preparation) = ScreenCaptureSession::prepare_start(&bundle_dir, microphone_enabled)
+            .inspect_err(|error| self.refuse_raw_protection(error, cx)) else { return; };
         self.telemetry.set_capture_mode(target.mode);
         self.telemetry.reset_for_session(target.frame);
         #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -1117,9 +1108,6 @@ impl ApparentCoordinator {
             platform::picker_window_number(),
         );
         let stage = Instant::now();
-        // Reuse the continuous 120Hz Metal overlay opened in `begin_target_selection` so the
-        // cutout and border never swap windows or jump a single pixel when recording starts.
-        // It moves to the target's display if that's another one (a window picked there).
         let (target_rect, display_rect, centre) = ScreenCaptureSession::placement(target.frame);
         self.display_rect = display_rect;
         if let Some(pill) = &self.native_pill {
@@ -1166,14 +1154,16 @@ impl ApparentCoordinator {
             } else { None }
         );
         start_metric("metal_open_ms", stage);
+        let Ok(preparation) = preparation.protect(&bundle_dir).inspect_err(|error| self.refuse_raw_protection(error, cx)) else { return; };
         self.publish_capture_busy();
-        let microphone_enabled = self.admitted_microphone.take().unwrap_or_else(crate::capture::engine::runtime::audio::mic::enabled);
         let stream_admission = crate::shared::handoff::experiment("localStreamingTranscription")
             .then(workflow::local_transcription::admission);
         let allow_notes = cfg!(target_os = "linux") || prepared_source.is_none();
         use crate::capture::engine::runtime::recording::recorder::StartError;
         let (screen_session, audio_recorder, window_log) = match ScreenCaptureSession::start_tracks(
             &target, &bundle_dir, &self.telemetry, microphone_enabled, stream_admission,
+            #[cfg(target_os = "linux")]
+            preparation.audio,
             prepared_source,
         ) {
             Ok(tracks) => tracks,
@@ -1216,6 +1206,15 @@ impl ApparentCoordinator {
         });
         self.present_recording_island(cx);
         start_metric("recording_start_ms", started);
+    }
+
+    fn refuse_raw_protection(&mut self, error: &anyhow::Error, cx: &mut Context<Self>) {
+        apparent_log(format!("Capture could not protect raw video: {error:#}"));
+        workflow::error_reporting::report(workflow::error_reporting::Failure::ProtectRecording);
+        self.cancel_recording(cx);
+        if let Ok(mut status) = CAPTURE_STATUS.lock() {
+            *status = Some("Capture failed — could not protect raw video".into());
+        }
     }
 
     /// The island turns into the recording pill: from the picker it morphs, from nothing it opens
