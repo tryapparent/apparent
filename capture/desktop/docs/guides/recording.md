@@ -178,7 +178,7 @@ windows run through XWayland.
   and ink show in the recording (no Linux desktop lets an app leave its windows out).
 - **Window recording:** temporarily disabled on both platforms. Use Screen or Area.
   On KDE Wayland, desktop ink hides when Shift is released so clicks reach the app; the bundle keeps it.
-- **Not on Linux:** the cabled iPhone, `agentContext` and Sparkle updates.
+- **Hyprland:** Agent Context can name marked controls.
 - **Video export on Linux:** requires `ffmpeg` and `ffprobe`; see the [export guide](../../../engine/docs/guides/processing.md#export-as-video).
 
 See [capture/desktop/docs/linux/linux.md](../linux/linux.md) for how it works and how to build it.

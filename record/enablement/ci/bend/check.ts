@@ -148,6 +148,29 @@ await bendScratch(async (scratch) => {
       "utf8",
     ),
   );
+  assert.deepEqual(
+    JSON.parse(
+      readFileSync(
+        join(root, "record/media/src/assembly/focused-mark.json"),
+        "utf8",
+      ),
+    ),
+    JSON.parse(
+      run(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `
+      import policy from "./focused-mark.mjs";
+      console.log(JSON.stringify(Array.from({length: 16}, (_, bits) =>
+        policy.admit_focused_mark(...[1, 2, 4, 8].map(flag => Boolean(bits & flag))))));
+    `,
+        ],
+        proofOutput,
+      ),
+    ),
+  );
   assert.deepEqual(repairTable(proofOutput), repair);
   run(
     process.execPath,

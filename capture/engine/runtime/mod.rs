@@ -1441,6 +1441,9 @@ fn track_shift_ink(
             .unwrap_or_else(PoisonError::into_inner);
         let stroke = guard.get_or_insert_with(|| {
             telemetry.window_log_request.store(true, Ordering::Release);
+            if telemetry.probing() {
+                crate::capture::engine::accessibility::mark_started(t_ms);
+            }
             Stroke {
                 color: Some(crate::shared::handoff::pen::rgb()),
                 t0: t_ms,
@@ -1478,9 +1481,7 @@ fn track_shift_ink(
                     .target_frame
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner);
-                if let Some((x, y)) = crate::capture::engine::accessibility::ax::stroke_probe_point(&stroke, frame) {
-                    crate::capture::engine::accessibility::ax::Prober::shared().probe(crate::capture::engine::accessibility::ax::Target::Stroke(stroke.t0), x, y);
-                }
+                crate::capture::engine::accessibility::probe_stroke(&stroke, frame);
             }
             telemetry
                 .strokes

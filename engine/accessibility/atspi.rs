@@ -1,0 +1,213 @@
+use std::time::Duration;
+
+use zbus::blocking::connection::Builder;
+use zbus::blocking::fdo::DBusProxy;
+use zbus::blocking::{Connection, Proxy};
+use zbus::names::BusName;
+use zbus::proxy::CacheProperties;
+use zbus::zvariant::OwnedObjectPath;
+
+const REQUEST: Duration = Duration::from_millis(65);
+const ROOT: &str = "/org/a11y/atspi/accessible/root";
+const REGISTRY: &str = "org.a11y.atspi.Registry";
+const ACCESSIBLE: &str = "org.a11y.atspi.Accessible";
+const COMPONENT: &str = "org.a11y.atspi.Component";
+const ACTIVE: u32 = 1 << 1;
+const DEFUNCT: u32 = 1 << 6;
+const EDITABLE: u32 = 1 << 7;
+const SHOWING: u32 = 1 << 25;
+const VISIBLE: u32 = 1 << 30;
+
+#[derive(Debug, PartialEq, Eq, serde::Deserialize, zbus::zvariant::Type)]
+pub struct Object(String, OwnedObjectPath);
+
+pub struct Bus(Connection);
+
+impl Bus {
+    pub fn open() -> Option<Self> {
+        let desktop = Builder::session()
+            .ok()?
+            .method_timeout(REQUEST)
+            .build()
+            .ok()?;
+        let address: String = Proxy::new(&desktop, "org.a11y.Bus", "/org/a11y/bus", "org.a11y.Bus")
+            .ok()?
+            .call("GetAddress", &())
+            .ok()?;
+        let connection = Builder::address(address.as_str())
+            .ok()?
+            .method_timeout(REQUEST)
+            .build()
+            .ok()?;
+        let registry =
+            Proxy::new(&connection, REGISTRY, "/org/a11y/atspi/registry", REGISTRY).ok()?;
+        let daemon = DBusProxy::new(&connection).ok()?;
+        let rule = zbus::MatchRule::builder()
+            .msg_type(zbus::message::Type::Signal)
+            .interface("org.a11y.atspi.Event.Window")
+            .ok()?
+            .build();
+        daemon.add_match_rule(rule).ok()?;
+        for event in [
+            "window:activate",
+            "window:deactivate",
+            "object:state-changed:active",
+        ] {
+            registry
+                .call::<_, _, ()>("RegisterEvent", &(event, Vec::<String>::new(), ""))
+                .ok()?;
+        }
+        Some(Self(connection))
+    }
+
+    fn proxy<'a>(&'a self, object: &'a Object, interface: &'static str) -> Option<Proxy<'a>> {
+        zbus::blocking::proxy::Builder::new(&self.0)
+            .destination(object.0.as_str())
+            .ok()?
+            .path(object.1.as_str())
+            .ok()?
+            .interface(interface)
+            .ok()?
+            .cache_properties(CacheProperties::No)
+            .build()
+            .ok()
+    }
+
+    fn state(&self, object: &Object) -> Option<u32> {
+        let states: Vec<u32> = self.proxy(object, ACCESSIBLE)?.call("GetState", &()).ok()?;
+        states.first().copied()
+    }
+
+    pub fn is_active(&self, object: &Object) -> bool {
+        self.state(object).is_some_and(|state| {
+            state & (ACTIVE | VISIBLE | SHOWING | DEFUNCT) == ACTIVE | VISIBLE | SHOWING
+        })
+    }
+
+    pub fn active_tree(&self, pid: u32) -> Option<Object> {
+        let desktop = Object(REGISTRY.into(), OwnedObjectPath::try_from(ROOT).ok()?);
+        let apps: Vec<Object> = self
+            .proxy(&desktop, ACCESSIBLE)?
+            .call("GetChildren", &())
+            .ok()?;
+        let daemon = DBusProxy::new(&self.0).ok()?;
+        let mut active = None;
+        for app in apps.iter().take(64) {
+            let name = BusName::try_from(app.0.as_str()).ok()?;
+            if daemon.get_connection_unix_process_id(name).ok() != Some(pid) {
+                continue;
+            }
+            let windows: Vec<Object> =
+                self.proxy(app, ACCESSIBLE)?.call("GetChildren", &()).ok()?;
+            if windows.len() > 64 {
+                return None;
+            }
+            for tree in windows {
+                if tree.0 != app.0 || !self.is_active(&tree) {
+                    continue;
+                }
+                let role: String = self
+                    .proxy(&tree, ACCESSIBLE)?
+                    .call("GetRoleName", &())
+                    .ok()?;
+                if !matches!(role.as_str(), "frame" | "window" | "dialog") {
+                    continue;
+                }
+                if active.replace(tree).is_some() {
+                    return None;
+                }
+            }
+        }
+        if apps.len() > 64 {
+            return None;
+        }
+        active
+    }
+
+    pub fn label_at(&self, tree: &Object, (x, y): (i32, i32)) -> Option<String> {
+        let mut object: Object = self
+            .proxy(tree, COMPONENT)?
+            .call("GetAccessibleAtPoint", &(x, y, 1_u32))
+            .ok()?;
+        let mut candidate = None;
+        for _ in 0..16 {
+            if object == *tree {
+                let (target, role): (Object, &str) = candidate?;
+                let name: String = self.proxy(&target, ACCESSIBLE)?.get_property("Name").ok()?;
+                return label(role, &name);
+            }
+            if object.0 != tree.0
+                || object.1.as_str() == "/org/a11y/atspi/null"
+                || self.state(&object)? & (DEFUNCT | EDITABLE) != 0
+            {
+                return None;
+            }
+            let accessible = self.proxy(&object, ACCESSIBLE)?;
+            let role: String = accessible.call("GetRoleName", &()).ok()?;
+            if matches!(
+                role.as_str(),
+                "password text" | "entry" | "text" | "terminal"
+            ) {
+                return None;
+            }
+            let (bus, path) = accessible
+                .get_property::<(String, OwnedObjectPath)>("Parent")
+                .ok()?;
+            drop(accessible);
+            if let Some(kind) = label_role(&role) {
+                if kind != "text" || candidate.is_none() {
+                    candidate = Some((object, kind));
+                }
+            }
+            object = Object(bus, path);
+        }
+        None
+    }
+}
+
+fn label_role(role: &str) -> Option<&'static str> {
+    Some(match role {
+        "button" | "push button" | "toggle button" | "push button menu" => "button",
+        "label" | "static" => "text",
+        "check box" => "checkbox",
+        "radio button" => "radio button",
+        "page tab" => "tab",
+        "menu item" | "check menu item" | "radio menu item" => "menu item",
+        "link" => "link",
+        "heading" => "heading",
+        _ => return None,
+    })
+}
+
+fn label(role: &str, name: &str) -> Option<String> {
+    let single_line = name.split_whitespace().collect::<Vec<_>>().join(" ");
+    if single_line.is_empty() {
+        return None;
+    }
+    let mut clipped: String = single_line.chars().take(60).collect();
+    if clipped.len() < single_line.len() {
+        clipped.pop();
+        clipped.push('…');
+    }
+    Some(format!("{role} “{clipped}”"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exposed_names_are_bounded_and_input_roles_are_excluded() {
+        assert_eq!(
+            label(label_role("push button").unwrap(), "  Save\n now ").as_deref(),
+            Some("button “Save now”")
+        );
+        assert_eq!(label_role("password text"), None);
+        assert_eq!(label_role("entry"), None);
+        assert_eq!(label("button", " "), None);
+        assert_eq!(
+            label("button", &"目".repeat(61)).unwrap(),
+            format!("button “{}…”", "目".repeat(59))
+        );
+    }
+}
