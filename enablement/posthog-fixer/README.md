@@ -172,20 +172,25 @@ archive reader), `SUPPORT_REPORT_TOKEN_FILE` (Connect support read token) and
 must be private and owned by the fixer service account. Do not store either
 credential in PostHog or the T3 thread.
 
-Run the fixer under a dedicated unprivileged OS account with `PrivateTmp=true`,
-private queue state, and the existing scoped T3 and PostHog credentials. Run
-the T3 coding agent on the same host under a different unprivileged account
-without access to that state or credentials or a way to assume the fixer's
-identity. Keep the installed Apparent reader and its parent directories
-outside the agent's write access. Set `SUPPORT_REPORT_AGENT_UID`
-to the agent's actual UID and verify the process identity before enabling the
-support recipient. The fixer refuses its own UID and UID 0 for this setting.
-The archive reader uses `/usr/bin/tar` on the fixer host.
+Use the shipped system-level service and socket units for recorded reports.
+The service runs as `apparent-fixer` with `PrivateTmp=true`, private queue
+state, and scoped T3 and PostHog credentials. The system socket owns
+`/run/apparent-posthog-support.sock`. Enable both units for the webhook and
+download listeners. The fixer refuses support configuration without the
+inherited, root-owned Unix socket. Keep the installed Apparent reader and its
+parent directories outside the agent's write access. The reader uses
+`/usr/bin/tar` on the fixer host.
 
-The fixer gives the launched job a random bearer for its own loopback download.
-The public webhook proxy must expose only the webhook route described above.
-The download fetches and decrypts the one linked report on demand, then removes
-the fixer's temporary plaintext. The agent extracts the returned tar in a
+Run the T3 coding agent on the same host under a different unprivileged account
+without access to fixer state and credentials or a way to assume its identity.
+Set `SUPPORT_REPORT_AGENT_UID` to that account's UID. The native reader checks
+the kernel-provided Unix peer UID before fetching or decrypting any data. The
+fixer refuses its own UID and UID 0. The webhook's TCP listener cannot serve
+recordings. Do not forward the Unix socket through the webhook proxy.
+
+The fixer gives each job a random bearer to request its own report over the
+Unix socket. Downloads decrypt on demand and remove the fixer's temporary
+plaintext before returning the archive. The agent extracts the tar in a
 private temporary directory and removes its copy after inspection. The grant
 allows up to three attempts, expires within seven days, and is revoked on job
 settlement. Retrieval failures can be retried within that bound. No recording

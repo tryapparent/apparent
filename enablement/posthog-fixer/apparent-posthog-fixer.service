@@ -5,8 +5,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/Projects/github.com/tryapparent/apparent
-EnvironmentFile=%h/.config/apparent-posthog-fixer/environment
+User=apparent-fixer
+Group=apparent-fixer
+WorkingDirectory=/home/apparent-fixer/Projects/github.com/tryapparent/apparent
+EnvironmentFile=/home/apparent-fixer/.config/apparent-posthog-fixer/environment
 ExecStart=/usr/bin/env node --experimental-strip-types enablement/posthog-fixer/main.ts
 Restart=on-failure
 RestartSec=15
@@ -16,7 +18,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=%h/.local/state/apparent-posthog-fixer
+ReadWritePaths=/home/apparent-fixer/.local/state/apparent-posthog-fixer
 
 [Install]
 WantedBy=default.target

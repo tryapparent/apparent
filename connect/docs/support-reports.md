@@ -30,7 +30,8 @@ After Connect acknowledges the ciphertext, Desktop creates a PostHog Error
 Tracking entry containing the opaque report ID, app build and platform. It
 sends no recording content, paths or credentials to PostHog. The fixing
 worker gives the fix thread access to this report through a revocable
-loopback download. The worker retrieves and decrypts the recording on demand.
+Unix-socket download with an OS peer check. The worker retrieves and decrypts
+the recording on demand.
 [Fix queue configuration](../../enablement/posthog-fixer/README.md).
 
 ## Activation and rollback

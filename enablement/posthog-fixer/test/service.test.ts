@@ -6,9 +6,11 @@ import {join} from 'node:path';
 import {once} from 'node:events';
 import {spawn} from 'node:child_process';
 import {createServer} from 'node:net';
+import {request} from 'node:http';
 import {Store} from '../store.ts';
 import {Worker, launchPayload} from '../worker.ts';
 import {server, notification} from '../http.ts';
+import {activatedSupportFd, supportServer, supportSocket} from '../support-socket.ts';
 import {config, secret} from '../config.ts';
 import type {Config} from '../config.ts';
 
@@ -101,23 +103,26 @@ test('context failures back off and hold without launching', async t => {
   const now=Date.now();for(let n=0;n<4;n++)await worker.tick(now+n*60000);
   assert.equal(calls,0);assert.equal(f.store.jobs()[0].state,'held');assert.equal(f.store.dailyCount(now),0);
 });
-test('a recorded report grants only its fix job bounded loopback downloads and expires on settlement', {timeout:10000}, async t => {
+test('a recorded report requires its fix job credential and authorized Unix peer until settlement', {timeout:10000}, async t => {
   const f = fixture(t);
   f.c.support = {executable:'/synthetic/apparent', tokenFile:f.c.t3TokenFile, keyFile:f.c.t3TokenFile, agentUid:65534};
   const report = '7'.repeat(32);
   const archive = Buffer.from('synthetic tar body');
   const downloads: string[] = [];
+  const socketPath = join(f.c.stateDirectory, 'report.sock');
+  let peer = 1000;
   const loading = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
   t.after(() => release.resolve());
-  const app = server(f.store, f.c, async (_config, id) => {
+  const app = supportServer(f.store, f.c, async (_config, id) => {
     downloads.push(id);
     if (downloads.length === 2) {loading.resolve(); await release.promise;}
     return archive;
-  });
-  app.listen(0,'127.0.0.1'); await once(app,'listening');
-  t.after(() => app.close());
-  f.c.port = (app.address() as {port:number}).port;
+  }, async (_executable, _socket, uid) => peer === uid);
+  app.listen(socketPath); await once(app,'listening');
+  const tcp = server(f.store, f.c);
+  tcp.listen(0, '127.0.0.1'); await once(tcp,'listening');
+  t.after(() => {app.close(); tcp.close();});
   f.store.enqueue(issue, 2); f.store.enqueue(second, 2);
   let prompt = '';
   const worker = new Worker(f.store, f.c, {
@@ -135,19 +140,30 @@ test('a recorded report grants only its fix job bounded loopback downloads and e
   const [job, other] = f.store.jobs();
   const token = prompt.match(/^Authorization: Bearer ([a-f0-9]{64})$/m)?.[1];
   assert.ok(token);
-  assert.ok(prompt.includes(`GET http://127.0.0.1:${f.c.port}/support/${job.thread}`));
+  assert.ok(prompt.includes(`GET http://localhost/support/${job.thread} through Unix socket ${supportSocket}`));
   assert.ok(!prompt.includes(f.c.stateDirectory));
   assert.ok(!prompt.includes(f.c.support.keyFile));
-  const get = (thread: string, bearer: string | undefined = token) => fetch(`http://127.0.0.1:${f.c.port}/support/${thread}`, {
-    headers: bearer ? {Authorization:`Bearer ${bearer}`} : {}, redirect:'error',
+  const get = (thread: string, bearer: string | undefined = token) => new Promise<{status: number; cache: string | undefined; bytes: Buffer}>((resolve, reject) => {
+    const req = request({socketPath, path:`/support/${thread}`, headers:bearer ? {Authorization:`Bearer ${bearer}`} : {}}, async res => {
+      try {
+        const chunks: Buffer[] = [];
+        for await (const chunk of res) chunks.push(chunk);
+        resolve({status:res.statusCode!, cache:res.headers['cache-control'], bytes:Buffer.concat(chunks)});
+      } catch (error) {reject(error);}
+    });
+    req.on('error', reject).end();
   });
+  const origin = `http://127.0.0.1:${(tcp.address() as {port:number}).port}`;
+  assert.equal((await fetch(origin+`/support/${job.thread}`, {headers:{Authorization:`Bearer ${token}`}})).status, 404);
+  assert.equal((await get(job.thread)).status, 404);
+  peer = f.c.support.agentUid;
   assert.equal((await get(other.thread)).status, 404);
   assert.equal((await get(job.thread, '')).status, 404);
   assert.equal((await get(job.thread, '1'.repeat(64))).status, 404);
   assert.deepEqual(downloads, []);
   const res = await get(job.thread);
-  assert.equal(res.headers.get('cache-control'), 'no-store');
-  assert.deepEqual(Buffer.from(await res.arrayBuffer()), archive);
+  assert.equal(res.cache, 'no-store');
+  assert.deepEqual(res.bytes, archive);
   f.store.db.prepare('UPDATE support_access SET expires_at=0 WHERE thread=?').run(job.thread);
   assert.equal((await get(job.thread)).status, 404);
   f.store.db.prepare('UPDATE support_access SET expires_at=? WHERE thread=?').run(Date.now()+60000, job.thread);
@@ -204,6 +220,7 @@ test('configuration supports full-access Codex reasoning and rejects invalid set
     SUPPORT_REPORT_TOKEN_FILE:f.c.t3TokenFile, SUPPORT_REPORT_KEY_FILE:f.c.t3TokenFile};
   assert.throws(() => config(support));
   assert.throws(() => config({...support, SUPPORT_REPORT_AGENT_UID:String(process.getuid?.() ?? 0)}));
+  assert.throws(() => activatedSupportFd({}));
   writeFileSync(join(f.c.stateDirectory,'public'),'x'.repeat(40),{mode:0o644});
   // Preserve the deliberately nonprivate fixture under a private caller umask.
   chmodSync(join(f.c.stateDirectory,'public'),0o644);

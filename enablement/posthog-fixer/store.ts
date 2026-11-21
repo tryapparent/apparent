@@ -61,9 +61,9 @@ export class Store {
       RETURNING report`).get(thread, digest, now);
     return claim?.report as string | undefined;
   }
-  supportAccessActive(thread: string, now: number): boolean {
+  supportAccessActive(thread: string, now: number, digest: string): boolean {
     return Boolean(this.db.prepare(`SELECT 1 FROM support_access JOIN jobs USING (thread)
-      WHERE thread=? AND expires_at>? AND state IN ('launching','active')`).get(thread, now));
+      WHERE thread=? AND expires_at>? AND digest=? AND state IN ('launching','active')`).get(thread, now, digest));
   }
   update(issue: string, state: Job['state'], attempts = 0, next = 0): void {
     if (state === 'done') this.db.prepare('DELETE FROM support_access WHERE thread=(SELECT thread FROM jobs WHERE issue=?)').run(issue);

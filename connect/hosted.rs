@@ -154,6 +154,8 @@ pub fn command(command: ConnectCommand) -> Result<()> {
         ConnectCommand::OpenSupportReport { input, out, origin, id, key_file } =>
             apparent_connect_client::open_support_report(&input, &out, &origin, &id, &key_file)
                 .map_err(|_| anyhow::anyhow!("Could not open the private support report.")),
+        #[cfg(target_os = "linux")]
+        ConnectCommand::CheckSupportPeer { uid } => apparent_connect_client::check_support_peer(uid),
         ConnectCommand::Files { id, reader } => {
             println!("{}",serde_json::to_string_pretty(&client.list_files(&id, reader.as_deref())?)?);
             Ok(())

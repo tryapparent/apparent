@@ -23,6 +23,10 @@ use policy::*;
 mod encryption;
 mod foreground;
 mod activity;
+#[cfg(target_os = "linux")]
+mod support_peer;
+#[cfg(target_os = "linux")]
+pub use support_peer::check_support_peer;
 pub use foreground::foreground_progress;
 pub mod settings;
 use settings::{SafeError, cancelled, hosted_failure};
@@ -85,6 +89,9 @@ pub enum ConnectCommand {
     SealSupportReport { bundle: PathBuf, out: PathBuf, origin: String, id: String, recipient: String },
     #[command(hide = true)]
     OpenSupportReport { input: PathBuf, out: PathBuf, origin: String, id: String, key_file: PathBuf },
+    #[cfg(target_os = "linux")]
+    #[command(hide = true)]
+    CheckSupportPeer { uid: u32 },
     /// Sign in through a device code. Upload requires explicit --consent-upload.
     Login {
         #[arg(long)]
