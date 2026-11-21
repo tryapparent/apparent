@@ -7,6 +7,10 @@ pub(crate) fn microphone_enabled(lips: bool, microphone: bool) -> bool {
     USE_MICROPHONE[usize::from(lips) * 2 + usize::from(microphone)]
 }
 
+pub(crate) fn preserve(transcript: &TranscriptData) -> Option<TranscriptData> {
+    (transcript.source == "lipflow").then(|| transcript.clone())
+}
+
 #[derive(serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Frame {

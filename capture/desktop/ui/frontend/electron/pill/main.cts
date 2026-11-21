@@ -74,6 +74,20 @@ function emit(message){process.stdout.write(JSON.stringify(message)+'\n');}
 const lips=new LipRecordingHost(process.env.APPARENT_MODELS_DIR,emit,control=>{
   if(window && !window.isDestroyed())window.webContents.send('pill:lip-control',control);
 });
+let deferredLip=null,lipListener=null;
+function receiveLip(message){
+  if(message.action==='start' && (!window || lipListener!==window.webContents.id)){
+    if(deferredLip)emit({lipCapture:deferredLip.message.capture,lipResult:{kind:'failed'}});
+    deferredLip={message,received:performance.now()};
+    return;
+  }
+  if(message.action!=='start' && deferredLip?.message.capture===message.capture){
+    deferredLip=null;
+    emit({lipCapture:message.capture,lipResult:{kind:'failed'}});
+    return;
+  }
+  void lips.control(message,window?.webContents.id??0);
+}
 function setSharingConfirmation(revision){
   const previous=sharingConfirmation;
   if(previous===revision)return;
@@ -176,7 +190,7 @@ process.stdin.on('data',chunk=>{
     try{
       const message=JSON.parse(line);
       if(message.type==='state')receiveState(message);
-      else if(message.type==='lip-control')void lips.control(message,window?.webContents.id??0);
+      else if(message.type==='lip-control')receiveLip(message);
       else if(message.type==='handoff-ready')void destinations.ready(message.capture,message.text).catch(()=>{});
       else if(message.type==='activate'){if(message.windowId!==undefined&&message.windowId!==admittedWindowId)continue;activated=true;if(loaded)visibility();emit({activated:true,windowId:admittedWindowId});}
       else if(message.type==='place' && Array.isArray(message.point) && message.point.length===2 && message.point.every(Number.isFinite)){
@@ -213,6 +227,13 @@ app.whenReady().then(()=>{
     if(args.length || event.senderFrame!==event.sender.mainFrame || event.senderFrame.url!==page)
       throw Error('Forbidden lip bridge request');
   };
+  ipcMain.handle('pill:lip-listening',(event,...args)=>{
+    valid(event,args);
+    lipListener=event.sender.id;
+    const pending=deferredLip;
+    deferredLip=null;
+    if(pending)receiveLip({...pending.message,elapsed:pending.message.elapsed+performance.now()-pending.received});
+  });
   ipcMain.handle('pill:lip-clip',(event,capture,start,end,bytes,...args)=>{
     validLip(event,args);lips.clip(event.sender.id,capture,start,end,bytes);
   });

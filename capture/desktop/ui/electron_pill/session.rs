@@ -114,9 +114,6 @@ impl Session {
     }
 
     pub fn begin_lips(&self, generation: u64, elapsed: u64) -> crate::lip_input::Input {
-        if !self.ready() {
-            return crate::lip_input::Input::Unavailable;
-        }
         let (sender, receipt) = flume::bounded(2048);
         let key = Self::capture_key(generation);
         self.lip_frames.lock().unwrap().insert(key, sender);

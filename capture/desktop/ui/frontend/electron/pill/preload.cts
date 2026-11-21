@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('apparentPill', Object.freeze({
   subscribeLip: callback => {
     const listener=(_event,control)=>callback(control);
     ipcRenderer.on('pill:lip-control',listener);
+    void ipcRenderer.invoke('pill:lip-listening').catch(()=>{});
     return ()=>ipcRenderer.removeListener('pill:lip-control',listener);
   },
   lipClip: (capture,start,end,bytes) => ipcRenderer.invoke('pill:lip-clip',capture,start,end,bytes),
