@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
@@ -28,7 +28,7 @@ export function supportTransport(executable: string | undefined, request: typeof
     async available() { try { return Boolean(await getKey()); } catch { return false; } },
     async seal(bundle: string, id: string) {
       if (!executable || !recipient) throw Error("Support encryption unavailable");
-      const directory = await mkdtemp(join(tmpdir(), "apparent-support-"));
+      const directory = await mkdtemp(join(await realpath(tmpdir()), "apparent-support-"));
       const output = join(directory, "report.age");
       try {
         await run(executable, ["connect", "seal-support-report", bundle, output, origin, id, recipient],

@@ -154,7 +154,7 @@ export function BugReport({ bridge, frog }: { bridge?: FeedbackBridge; frog: str
             {preview ? <video controls playsInline src={preview} aria-label="Preview your recording" /> : (
               <p>Preview unavailable. The recording is saved on this device.</p>
             )}
-            <p>Your recording, including any microphone audio, app version and OS will be shared with the Apparent team.</p>
+            <p>Your capture, including any audio, transcript and interactions, will go to Apparent Support with your app version and OS.</p>
             {message && <p role="alert">{message}</p>}
             <div className="bug-report-actions">
               <Button type="button" disabled={sending || !preview} onClick={() => {

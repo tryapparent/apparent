@@ -861,7 +861,7 @@ fn support_report_encrypts_for_support_and_requires_the_expected_report_id() {
     }
     let report = fixture.root.join("report.age");
     let output = fixture.root.join("submitted.apparent");
-    let origin = &fixture.context.origin;
+    let origin = "https://app.tryapparent.com/connect";
     let id = &fixture.context.capture_id;
     support::seal(&fixture.stage, &report, origin, id, &recipient).unwrap();
     let ciphertext = fs::read(&report).unwrap();

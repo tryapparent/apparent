@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { lstat, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { type Config, secret } from './config.ts';
@@ -15,7 +15,8 @@ export function supportReportId(context: string): string | undefined {
 }
 
 function evidencePath(config: Config, issue: string) {
-  return join(config.stateDirectory, 'support-' + issue + '.apparent');
+  if (!/^[a-f0-9-]{36}$/.test(issue)) throw Error('Invalid support issue identity');
+  return join(config.stateDirectory, 'support-' + issue);
 }
 
 export async function fetchSupportReport(config: Config, issue: string, id: string, request = fetch) {
@@ -23,7 +24,12 @@ export async function fetchSupportReport(config: Config, issue: string, id: stri
   const { executable, keyFile, tokenFile } = config.support;
   const token = secret(tokenFile);
   if (!/^[a-f0-9]{64}$/.test(token)) throw Error('Invalid private support token');
-  const result = evidencePath(config, issue);
+  if (!/^[a-f0-9]{32}$/.test(id)) throw Error('Invalid private report identity');
+  const directory = evidencePath(config, issue);
+  await mkdir(directory, { mode: 0o700 }).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'EEXIST') throw error; });
+  const root = await lstat(directory);
+  if (!root.isDirectory() || (root.mode & 0o077) !== 0 || root.uid !== process.getuid?.()) throw Error('Unsafe private evidence directory');
+  const result = join(directory, id + '.apparent');
   const previous = await lstat(result).catch((error: NodeJS.ErrnoException) => {
     if (error.code !== 'ENOENT') throw error;
   });

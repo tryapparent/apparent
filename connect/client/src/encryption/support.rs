@@ -5,7 +5,7 @@ const LIMIT: u64 = 24 * 1024 * 1024;
 
 fn report_context(origin: &str, id: &str) -> Result<Context> {
     let context = Context {
-        origin: origin.to_owned(),
+        origin: origin.strip_suffix("/connect").unwrap_or(origin).to_owned(),
         account_id: "apparent-support".into(),
         capture_id: id.to_owned(),
         sender_grant_id: "explicit-report".into(),
