@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+  closeSync,
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -54,11 +56,61 @@ function assertStagedModes(out: string) {
   assert.equal(lstatSync(join(native, "LICENSE")).mode & 0o777, 0o644);
 }
 
-test("stages a cold pinned runtime under umask 077 and reuses it offline", (t) => {
-  const out = join(job(t), "out");
+test("stages runnable Record workers with a cold pinned runtime and reuses it offline", (t) => {
+  const root = job(t);
+  const out = join(root, "out");
   const cold = stagePrivately(out);
   assert.equal(cold.status, 0, cold.stderr);
   assertStagedModes(out);
+
+  const examples = [
+    {
+      worker: "selection/worker.js",
+      request: { version: 1, estimated: false, words: ["Look!"] },
+      reply: {
+        version: 1,
+        cues: [{ index: 0, cue: "look", score: 58, strong: true }],
+      },
+    },
+    {
+      worker: "selection/scene-worker.js",
+      request: { version: 1, times: ["0", "1000"], deltas: [0], drawing: [] },
+      reply: {
+        version: 1,
+        frameCount: 2,
+        firstTime: "0",
+        lastTime: "1000",
+        transitions: [],
+      },
+    },
+    {
+      worker: "transcript/worker.js",
+      request: {
+        version: 1,
+        times: ["0"],
+        anchors: [],
+        transcript: { text: "Look!", words: [], segments: [] },
+      },
+      reply: { version: 1, said: ["Look!"] },
+    },
+  ];
+  const input = join(root, "request.json");
+  for (const { worker, request, reply } of examples) {
+    writeFileSync(input, JSON.stringify(request), { mode: 0o600 });
+    const fd = openSync(input, "r");
+    try {
+      const result = spawnSync(process.execPath, [join(out, worker)], {
+        stdio: [fd, "pipe", "pipe"],
+        encoding: "utf8",
+        timeout: 5000,
+      });
+      assert.ifError(result.error);
+      assert.equal(result.status, 0, worker + "\n" + result.stderr);
+      assert.deepEqual(JSON.parse(result.stdout), reply, worker);
+    } finally {
+      closeSync(fd);
+    }
+  }
 
   const reused = stagePrivately(out, offline);
   assert.equal(reused.status, 0, reused.stderr);
