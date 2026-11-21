@@ -39,7 +39,7 @@ pub fn running() -> bool {
     *RUNNING.get_or_init(|| instance_dir().is_some_and(|dir| dir.join(".socket.sock").exists()))
 }
 
-fn instance_dir() -> Option<PathBuf> {
+pub(crate) fn instance_dir() -> Option<PathBuf> {
     let signature = std::env::var("HYPRLAND_INSTANCE_SIGNATURE")
         .ok()
         .filter(|s| !s.is_empty())?;
@@ -146,7 +146,7 @@ fn normalize_binds_snapshot(before: &str, text: &str, after: &str) -> Result<Vec
     Ok(normalized)
 }
 
-fn request_with_timeout(command: &str, timeout: Duration) -> Result<String> {
+pub(crate) fn request_with_timeout(command: &str, timeout: Duration) -> Result<String> {
     let dir = instance_dir().context("Not a Hyprland session")?;
     let mut stream = UnixStream::connect(dir.join(".socket.sock")).context("Hyprland socket")?;
     stream.set_read_timeout(Some(timeout))?;
@@ -842,7 +842,7 @@ pub fn bind(id: &'static str, chord: Option<(u32, &str)>) -> Result<()> {
 /// A monitor as `hyprctl monitors` reports it: where it sits in Hyprland's layout, in layout
 /// pixels (the size is in physical pixels, so it takes the scale to cover its layout area).
 #[derive(Clone, Debug, serde::Deserialize)]
-struct Monitor {
+pub(crate) struct Monitor {
     name: String,
     x: f64,
     y: f64,
@@ -867,9 +867,8 @@ impl Monitor {
     }
 }
 
-/// Notes and X11 use root pixels; compositor dispatchers use layout coordinates.
 /// Match the output by name, since XWayland can arrange outputs differently.
-fn note_rect_in_layout(
+pub(crate) fn note_rect_in_layout(
     rect: [i32; 4],
     layout: &[Monitor],
     x_monitors: &[(String, [f64; 4])],

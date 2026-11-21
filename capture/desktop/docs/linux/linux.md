@@ -483,7 +483,7 @@ for lifecycle and same-process replay limits.
 
 ## Not on Linux
 
-The cabled iPhone, OS element lookups for `agentContext` (`ax_other.rs`), Sparkle (Linux instead updates AppImages itself) and the dev-site tab URL (`/sdk.js` registrations still route). With `agentContext` on, an unnamed Linux click says `clicked` and a mark receives no OS-derived element label. AT-SPI cannot securely join an accessible top-level to the X11 window where the action occurred; matching PID, title and bounds do not rule out a stale window. Registered dev pages can still supply their own context. See `capture/engine/docs/keyframes-and-text.md`.
+The cabled iPhone, Sparkle and the dev-site tab URL are macOS features. Linux updates AppImages directly and supports registered Apparent SDK pages. On Hyprland, the Agent Context experiment adds AT-SPI names to eligible Shift marks. See [keyframes and text](../../../engine/docs/keyframes-and-text.md#experiment-agentcontext-srcagent_proofcontextrs).
 
 ## Packaging
 

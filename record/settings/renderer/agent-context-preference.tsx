@@ -37,8 +37,9 @@ export function AgentContextPreference({
         Start a new recording to collect extra context.
       </p>
       <p id="agent-context-limits">
-        Native control names require macOS Accessibility. Component and source
-        details require a local dev page using the Apparent SDK.
+        Supported apps can name marked controls on Hyprland. macOS requires
+        Accessibility permission. Component and source details require a local
+        dev page using the Apparent SDK.
       </p>
     </section>
   );

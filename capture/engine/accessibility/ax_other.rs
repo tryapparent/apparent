@@ -2,22 +2,29 @@
 //! `agentContext` experiment). Elsewhere clicks and marks are recorded without it; these keep the
 //! same items so the capture code is the same everywhere.
 
+#[cfg(not(target_os = "linux"))]
 use std::collections::HashMap;
 
+#[cfg(not(target_os = "linux"))]
 use crate::shared::model::{InteractionEvent, Stroke, TargetFrame};
 
+#[cfg(not(target_os = "linux"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Target {
     Pointer(u64),
     Stroke(u64),
 }
 
+#[cfg(not(target_os = "linux"))]
 pub struct Hit;
 
+#[cfg(not(target_os = "linux"))]
 pub struct Prober;
 
+#[cfg(not(target_os = "linux"))]
 static PROBER: Prober = Prober;
 
+#[cfg(not(target_os = "linux"))]
 impl Prober {
     pub fn shared() -> &'static Prober {
         &PROBER
@@ -32,8 +39,10 @@ impl Prober {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
 pub fn apply(_hits: &HashMap<Target, Hit>, _events: &mut [InteractionEvent], _strokes: &mut [Stroke]) {}
 
+#[cfg(not(target_os = "linux"))]
 pub fn stroke_probe_point(_stroke: &Stroke, _frame: TargetFrame) -> Option<(f64, f64)> {
     None
 }
