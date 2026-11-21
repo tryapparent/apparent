@@ -27,7 +27,15 @@ for (const [file, expected] of Object.entries(pin.sdkFiles)) {
   assert(lstatSync(join(sdk, file)).isFile());
   assert.equal(checksum(join(sdk, file)), expected, `Pinned SDK differs: ${file}`);
 }
-const workerFiles = ['worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js', 'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js', 'assembly-worker.js', 'assembly-policy.js', 'assembly/frame-limits.mjs', 'transcript/worker.js', 'transcript/policy.js', 'selection/worker.js', 'selection/cues.js', 'selection/scene-worker.js', 'selection/scene.js', 'export/worker.js', 'export/policy.js', 'export/quiet-export.mjs'];
+const workerFiles = [
+  'worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js',
+  'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js',
+  'assembly-worker.js', 'assembly-policy.js', 'assembly/frame-limits.mjs',
+  'transcript/worker.js', 'transcript/request.js', 'transcript/policy.js',
+  'selection/worker.js', 'selection/cues-request.js', 'selection/cues.js',
+  'selection/scene-worker.js', 'selection/scene-request.js', 'selection/scene.js',
+  'export/worker.js', 'export/policy.js', 'export/quiet-export.mjs',
+];
 for (const file of workerFiles) assert(lstatSync(join(root, 'dist', file)).isFile());
 const temporary = mkdtempSync(join(tmpdir(), 'apparent-dev-record-media-'));
 try {
