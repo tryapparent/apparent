@@ -30,6 +30,10 @@ pub(super) fn asset_path(path: &str) -> bool {
     }
 }
 pub(super) fn validate_assets(files: &[Asset]) -> Result<()> {
+    validate_assets_with_limit(files, MAX_FILE_BYTES)
+}
+
+pub(super) fn validate_assets_with_limit(files: &[Asset], asset_limit: u64) -> Result<()> {
     ensure!(
         !files.is_empty() && files.len() <= MAX_FILES,
         "invalid_manifest: file count"
@@ -38,8 +42,8 @@ pub(super) fn validate_assets(files: &[Asset]) -> Result<()> {
     let mut size = 0u64;
     for file in files {
         ensure!(
-            file.size <= MAX_FILE_BYTES,
-            "file_too_large: an asset exceeds the v1 90,000,000-byte per-file limit; no files were omitted"
+            file.size <= asset_limit,
+            "file_too_large: an asset exceeds the transfer limit; no files were omitted"
         );
         ensure!(
             asset_path(&file.path) && hex_digest(&file.sha256) && names.insert(file.path.clone()),
@@ -340,10 +344,10 @@ pub(super) fn digest_file(path: &Path) -> Result<String> {
 }
 
 pub(super) fn snapshot(bundle: &Path, stage: &Path) -> Result<Vec<Asset>> {
-    snapshot_bounded(bundle, stage, MAX_BYTES)
+    snapshot_bounded(bundle, stage, MAX_FILE_BYTES)
 }
 
-pub(super) fn snapshot_bounded(bundle: &Path, stage: &Path, total_limit: u64) -> Result<Vec<Asset>> {
+pub(super) fn snapshot_bounded(bundle: &Path, stage: &Path, asset_limit: u64) -> Result<Vec<Asset>> {
     no_symlinks(bundle)?;
     trusted_directory_tree(bundle, false)?;
     private_dir(stage)?;
@@ -408,14 +412,14 @@ pub(super) fn snapshot_bounded(bundle: &Path, stage: &Path, total_limit: u64) ->
         let metadata = source.metadata()?;
         ensure!(metadata.is_file(), "Non-regular asset refused");
         ensure!(
-            metadata.len() <= MAX_FILE_BYTES,
-            "file_too_large: an asset exceeds the v1 90,000,000-byte per-file limit; no files were omitted"
+            metadata.len() <= asset_limit,
+            "file_too_large: an asset exceeds the transfer limit; no files were omitted"
         );
         total = total
             .checked_add(metadata.len())
             .context("Asset size overflow")?;
         ensure!(
-            total <= total_limit,
+            total <= MAX_BYTES,
             "quota_exceeded: bundle exceeds transfer limit"
         );
         let target = stage.join(&path);
@@ -434,7 +438,7 @@ pub(super) fn snapshot_bounded(bundle: &Path, stage: &Path, total_limit: u64) ->
             sha256: digest_file(&target)?,
         });
     }
-    validate_assets(&files)?;
+    validate_assets_with_limit(&files, asset_limit)?;
     validate_bundle_references(stage, &files)?;
     Ok(files)
 }

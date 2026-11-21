@@ -1,101 +1,76 @@
-import policy from '#bend/report-policy';
-import { DAY, bounded, fail, hash, hex, json, rate, stmt } from '../common.ts';
-import type { Env } from '../types.ts';
+import { DAY, bearer, fail, json, stmt } from '../common.ts';
+import { captureRoutes, supportCapture } from '../captures.ts';
+import { getObject } from '../storage.ts';
+import type { Env, FileRow } from '../types.ts';
 
-const TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
-const RETENTION = 7 * DAY;
-const PENDING = 15 * 60 * 1000;
 const timing = crypto.subtle as SubtleCrypto & { timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean };
-const AGE_HEADER = new TextEncoder().encode('age-encryption.org/v1\n');
-
-type Report = {
-  id: string;
-  upload_hash: string;
-  digest: string;
-  bytes: number;
-  ready: number;
-  expires_at: number;
-};
-
-const objectKey = (report: Pick<Report, 'id' | 'digest'>) => `support-reports/${report.id}/${report.digest}.age`;
-const authorization = (request: Request) => /^Bearer ([a-f0-9]{64})$/.exec(request.headers.get('Authorization') ?? '')?.[1];
-const load = (env: Env, id: string) => stmt(env, 'SELECT * FROM support_reports WHERE id=?', id).first<Report>();
+const encoder = new TextEncoder();
+const objectKey = (report: {id: string; digest: string}) => `support-reports/${report.id}/${report.digest}.age`;
+const unavailableLegacy = (error: unknown) => error instanceof Error && /no such table: support_reports\b/.test(error.message);
+const legacyReport = (env: Env, id: string) => stmt(env,'SELECT id,digest,bytes,ready,expires_at FROM support_reports WHERE id=?',id)
+  .first<{id: string; digest: string; bytes: number; ready: number; expires_at: number}>().catch((error: unknown) => {
+    if (unavailableLegacy(error)) return null;
+    throw error;
+  });
+const readyReport = (env: Env, id: string) => stmt(env,`SELECT id FROM captures WHERE id=? AND ${supportCapture} AND status='ready' AND expires_at>?`,id,Date.now()).first();
 
 export async function supportRoutes(request: Request, env: Env, url: URL) {
-  if (url.pathname !== '/v1/support-reports/key' && !url.pathname.startsWith('/v1/support-reports/')) return;
+  const prefix = '/v1/support-reports/';
+  if (!url.pathname.startsWith(prefix)) return;
   const recipient = env.SUPPORT_REPORT_RECIPIENT;
   const readToken = env.SUPPORT_REPORT_READ_TOKEN;
-  const extended = env.SUPPORT_REPORT_EXTENDED_ARCHIVES === '1';
   if (!recipient || !/^age1[a-z0-9]{58}$/.test(recipient) || !readToken || !/^[a-f0-9]{64}$/.test(readToken))
     fail('support_unavailable', 503);
-  if (url.pathname === '/v1/support-reports/key' && request.method === 'GET')
-    return json({ recipient, maxBytes: Number(policy.advertised_limit(extended, url.searchParams.get('archive') === '2')) });
-
-  const id = /^\/v1\/support-reports\/([a-f0-9]{32})$/.exec(url.pathname)?.[1];
-  if (!id) fail('not_found', 404);
-  const credential = authorization(request);
-  if (!credential) fail('unauthorized', 401);
-  if (request.method === 'GET') {
-    if (!timing.timingSafeEqual(new TextEncoder().encode(credential), new TextEncoder().encode(readToken)))
-      fail('unauthorized', 401);
-    const report = await load(env, id);
-    if (!report?.ready || report.expires_at <= Date.now()) fail('not_found', 404);
-    const object = await env.BUCKET.get(objectKey(report));
-    if (!object) fail('not_found', 404);
-    return new Response(object.body, {
-      headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': String(report.bytes) },
-    });
+  if (url.pathname === prefix+'key' && request.method === 'GET') {
+    await bearer(request, env, true);
+    return json({ recipient });
   }
-  if (request.method !== 'PUT') fail('not_found', 404);
-
-  const checksum = request.headers.get('X-Ciphertext-SHA256') ?? '';
-  const size = Number(request.headers.get('Content-Length'));
-  if (!Number.isSafeInteger(size) || size < 0 || !policy.upload_size(extended, size) || !/^[a-f0-9]{64}$/.test(checksum))
-    fail('invalid_report');
-  const uploadHash = await hash(credential);
-  const now = Date.now();
-  let report = await load(env, id);
-  if (!report) {
-    const source = request.headers.get('CF-Connecting-IP') ?? 'unknown';
-    await rate(env, 'support-report-source:' + await hash(readToken + source), 5);
-    await rate(env, 'support-report-global', 30);
-    await stmt(env, `INSERT INTO support_reports(id,upload_hash,digest,bytes,expires_at)
-      SELECT ?,?,?,?,? WHERE (SELECT COALESCE(SUM(bytes),0) FROM support_reports WHERE expires_at>?) <= ?
-      ON CONFLICT(id) DO NOTHING`, id, uploadHash, checksum, size, now + PENDING, now, TOTAL_BYTES - size).run();
-    report = await load(env, id);
+  const match = /^\/v1\/support-reports\/([a-f0-9]{32})(.*)$/.exec(url.pathname);
+  if (!match) fail('not_found', 404);
+  const [,id,route] = match;
+  if ((request.method==='POST' && (route==='/capture' || route==='/capture/complete')) ||
+      (request.method==='PUT' && /^\/capture\/files\/support\/part-[0-5]\.age$/.test(route))) {
+    if (route==='/capture') {
+      await bearer(request, env, true);
+      if (await legacyReport(env,id)) fail('report_conflict',409);
+    }
+    const capture = new URL(url);
+    capture.pathname = '/v1/captures/'+id+route.slice('/capture'.length);
+    return captureRoutes(request, env, capture, undefined, true);
   }
-  if (!report) fail('support_capacity', 503);
-  if (report.upload_hash !== uploadHash || report.digest !== checksum || report.bytes !== size)
-    fail('report_conflict', 409);
-  if (report.expires_at <= Date.now()) fail('report_expired', 410);
-  if (report.ready) return json({ id, ready: true });
-  await rate(env, 'support-report-bytes', 48);
-  await rate(env, 'support-report-id:' + id, 6);
-
-  const ciphertext = await bounded(request, size);
-  if (ciphertext.byteLength !== size || !AGE_HEADER.every((byte, index) => ciphertext[index] === byte))
-    fail('invalid_ciphertext');
-  if (hex(new Uint8Array(await crypto.subtle.digest('SHA-256', ciphertext))) !== checksum)
-    fail('hash_mismatch');
-  const key = objectKey(report);
-  await env.BUCKET.put(key, ciphertext);
-  const clock = Date.now();
-  const ready = await stmt(env, `UPDATE support_reports SET ready=1,expires_at=?
-    WHERE id=? AND ready=0 AND expires_at>? RETURNING id`, clock + RETENTION, id, clock).first();
-  if (!ready) {
-    const current = await load(env, id);
-    if (current?.ready && current.expires_at > clock) return json({ id, ready: true });
-    await env.BUCKET.delete(key);
-    fail('report_expired', 410);
+  if (request.method !== 'GET') fail('not_found', 404);
+  const credential = /^Bearer ([a-f0-9]{64})$/.exec(request.headers.get('Authorization') ?? '')?.[1];
+  if (!credential || !timing.timingSafeEqual(encoder.encode(credential),encoder.encode(readToken)))
+    fail('unauthorized',401);
+  const part = /^\/archive\/(part-[0-5]\.age)$/.exec(route);
+  if (route === '/archive' || part) {
+    if (!await readyReport(env,id)) fail('not_found',404);
+    const {results} = await stmt(env,'SELECT path,size,object_key FROM files WHERE capture_id=? ORDER BY path',id)
+      .all<Pick<FileRow,'path'|'size'|'object_key'>>();
+    if (!part) return json({parts:results.map(({path,size})=>({name:path.slice('support/'.length),size}))});
+    const file = results.find(({path})=>path==='support/'+part[1]);
+    if (!file) fail('not_found',404);
+    const object = await getObject(env,file.object_key);
+    if (!object) fail('not_found',404);
+    if (!await readyReport(env,id)) {
+      await object.body.cancel();
+      fail('not_found',404);
+    }
+    return new Response(object.body,{headers:{'Content-Type':'application/octet-stream','Content-Length':String(file.size)}});
   }
-  return json({ id, ready: true });
+  if (route !== '') fail('not_found',404);
+  const report = await legacyReport(env,id);
+  if (!report?.ready || report.expires_at<=Date.now()) fail('not_found',404);
+  const object=await env.BUCKET.get(objectKey(report));
+  if (!object) fail('not_found',404);
+  return new Response(object.body,{headers:{'Content-Type':'application/octet-stream','Content-Length':String(report.bytes)}});
 }
 
 export async function cleanupSupportReports(env: Env) {
   const now = Date.now();
   const rows = await stmt(env, 'SELECT id,digest FROM support_reports WHERE cleaned=0 AND expires_at<=? ORDER BY expires_at LIMIT 100', now)
-    .all<Pick<Report, 'id' | 'digest'>>().catch((error: unknown) => {
-      if (error instanceof Error && /no such table: support_reports\b/.test(error.message)) return null;
+    .all<{id: string; digest: string}>().catch((error: unknown) => {
+      if (unavailableLegacy(error)) return null;
       throw error;
     });
   if (!rows) return;

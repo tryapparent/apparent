@@ -148,6 +148,9 @@ fn recovery(error: anyhow::Error) -> anyhow::Error {
 pub fn command(command: ConnectCommand) -> Result<()> {
     let client = client();
     let result = (|| match command {
+        ConnectCommand::SupportReportAvailable => client.support_report_available(),
+        ConnectCommand::SubmitSupportReport { bundle, archive, id } =>
+            client.submit_support_report(&bundle, &archive, &id),
         ConnectCommand::SealSupportReport { bundle, out, origin, id, recipient } =>
             apparent_connect_client::seal_support_report(&bundle, &out, &origin, &id, &recipient)
                 .map_err(|_| anyhow::anyhow!("Could not seal the support report. The recording remains local.")),

@@ -5,27 +5,25 @@ bundle and returns the owned capture's receipt to Settings. It skips normal
 completion clipboard, Connect sync and agent delivery. Choosing the written
 route or closing the review leaves the bundle local. Explicit Send seals the
 bundle for the Apparent Support X25519 recipient and sends it through Connect.
-This flow neither signs in to a Connect account nor changes the recording
-computer's upload preferences.
+An active Apparent Connect sign-in is required for recorded reports. The
+existing upload grant identifies the account without changing its automatic
+upload preferences. Written reports remain available without sign-in.
 
-The Connect API advertises the support public key only when
-`SUPPORT_REPORT_RECIPIENT` and `SUPPORT_REPORT_READ_TOKEN` are configured. It
-stores a single bounded age stream with the existing archive descriptor
-and assets inside. The report ID and upload receipt secret are randomly
-generated on the device. The receipt secret authorizes an identical retry
-only. Downloads require the separate support read token. The decryption key
-is never sent to Connect. The sealed bundle binds the report ID and origin
-inside its authenticated ciphertext, and the reader validates paths, sizes,
-hashes and bundle references before publishing a local directory.
+The Connect API returns the support public key to authorized clients when
+`SUPPORT_REPORT_RECIPIENT` and `SUPPORT_REPORT_READ_TOKEN` are configured.
+Desktop's native client seals the recording to a private age file, splits
+it into ordinary Connect upload parts and streams them using its existing
+grant. The upload uses the account's existing 500 MB quota. A new report
+requires free quota and cannot evict an existing capture on admission.
+The report is unavailable through regular capture and share routes.
 
-The transport accepts up to 24 MiB of ciphertext by default. Updated clients
-request the 32 MiB limit with `?archive=2`. Source, report and global
-rate limits cap anonymous uploads, with a 2 GiB live reservation ceiling.
-Incomplete reservations expire in fifteen minutes. Ready reports expire in
-seven days and are removed by the existing Connect cleanup schedule. A report
-keeps the original local bundle even if preview, encryption, upload or
-PostHog ingestion fails. An open draft retries with the same upload secret,
-ciphertext and PostHog event ID.
+The report ID and PostHog event ID are generated on the device. An open
+draft retains the same ciphertext for an identical retry. Downloads
+require the separate Support read token. The decryption key stays with
+the private reader. The sealed bundle binds the report ID and origin, and
+the reader verifies paths, sizes, hashes and bundle references before
+serving the completed archive. Ready reports use ordinary Connect cleanup.
+Legacy reports remain readable until they expire.
 
 After Connect acknowledges the ciphertext, Desktop creates a PostHog Error
 Tracking entry containing the opaque report ID, app build and platform. It
@@ -45,12 +43,8 @@ Apparent binary and configure the existing fixer with the paired private key
 before advertising the public key. Drain or retain access to unexpired
 reports when replacing the key.
 
-After deploying the fixer and native archive reader that support 32 MiB, set
-`SUPPORT_REPORT_EXTENDED_ARCHIVES=1` on the Worker. Older clients continue to
-receive a 24 MiB limit.
-
-The public key endpoint returns unavailable before this setup. Desktop then
-offers written reports, and no local capture is started via the recorded
-route. Removing the advertised public key stops new desktop report sessions.
-Use a controlled synthetic fixture to validate the complete setup before
-accepting real media.
+Install the multipart-capable fixer and native reader before enabling the
+new desktop release. The reader also accepts the legacy ciphertext route.
+Clients that implemented anonymous recording reports continue to offer
+written reports. They need a desktop update for recorded submission.
+Use a controlled synthetic fixture to validate the complete setup.

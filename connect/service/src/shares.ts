@@ -1,7 +1,7 @@
 import type {Env, ShareRow, ShareState, ShareModel, CaptureRow, FileRow} from './types.ts';
 import {random,hash,envelope,stmt,bearer,session,csrf,json,fail,body,isRecord,apiBase} from './common.ts';
 import {getObject} from './storage.ts';
-import {validPath} from './captures.ts';
+import {validPath,supportCapture} from './captures.ts';
 import {queueDailyActivity} from './reporting/aggregate-dau.ts';
 
 // Capture lifetime, not a second link-retention policy. Check on every read,
@@ -44,7 +44,7 @@ export async function shareRoutes(request: Request,env: Env,url: URL,render: (mo
   // Deployment switch controls new grants; revocation and existing reads remain
   // available if an operator turns it off. Desktop opt-in is separate.
   const a=await bearer(request,env,true),id=create[1];
-  const c=await stmt(env,"SELECT * FROM captures WHERE id=? AND account_id=? AND status!='deleted' AND expires_at>? AND (status='ready' OR pending_until>?)",id,a.account_id,Date.now(),Date.now()).first<CaptureRow>();if(!c)fail('not_found',404);
+  const c=await stmt(env,`SELECT * FROM captures WHERE id=? AND account_id=? AND NOT (${supportCapture}) AND status!='deleted' AND expires_at>? AND (status='ready' OR pending_until>?)`,id,a.account_id,Date.now(),Date.now()).first<CaptureRow>();if(!c)fail('not_found',404);
   plaintext(c);
   if(env.SHARING_ENABLED!=='true')fail('sharing_disabled',403);
   if(create[2]) {
