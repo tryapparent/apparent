@@ -78,7 +78,7 @@ test("About makes channel installation, restart and recovery distinct", async ()
         .toBe(true);
     };
     const channel = page.getByRole("combobox", { name: "Next install source" });
-    const install = page.getByRole("button", { name: "Update", exact: true });
+    const install = page.getByRole("button", { name: "Check for updates", exact: true });
     const checkAgain = page.getByRole("button", { name: "Check again", exact: true });
     const restart = page.getByRole("button", { name: "Restart now" });
     const proof = process.env.APPARENT_SETTINGS_PROOF;
@@ -116,6 +116,7 @@ test("About makes channel installation, restart and recovery distinct", async ()
           el.scrollTop = 0;
         });
         await expect(install).toBeInViewport({ ratio: 1 });
+        assert.equal((await install.boundingBox())?.width, (await channel.boundingBox())?.width);
         await capture("idle");
         await page.getByRole("button", { name: "Copy version" }).focus();
         await page.keyboard.press("Tab");
@@ -137,11 +138,11 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await capture("checking");
 
         await publish({ checking: false, result: "current" });
-        await expect(page.getByRole("heading", { name: "No update available" })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Already up to date" })).toBeVisible();
         await expect(install).toHaveCount(0);
-        await expect(page.getByText(warning)).toHaveCount(0);
         await expect(channel).toBeEnabled();
         await expect(checkAgain).toBeEnabled();
+        assert.equal((await checkAgain.boundingBox())?.width, (await channel.boundingBox())?.width);
         await capture("current");
         await checkAgain.focus();
         await pressForAction("check-for-updates");
@@ -177,7 +178,6 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await expect(page.locator("#staged-release")).toBeHidden();
         await expect(restart).toHaveAccessibleDescription(stagedStable);
         await expect(page.getByText(version)).toBeVisible();
-        await expect(page.getByText(warning)).toHaveCount(0);
         await expect(install).toHaveCount(0);
         await capture("restart");
         const later = page.getByRole("button", { name: "Restart later" });
@@ -228,7 +228,6 @@ test("About makes channel installation, restart and recovery distinct", async ()
         await expect(restartError).toHaveAccessibleDescription(
           `${stagedStable} After closing, use Restart now in About.`,
         );
-        await expect(page.getByText(warning)).toHaveCount(0);
         await capture("restart-failure");
         await pressForAction("update-now");
         if (width === 640) {
@@ -326,7 +325,6 @@ test("About makes channel installation, restart and recovery distinct", async ()
     await expect(
       page.getByRole("button", { name: "Check for updates" }),
     ).toBeVisible();
-    await expect(page.getByText(warning)).toHaveCount(0);
 
     await page.emulateMedia({ reducedMotion: "no-preference" });
     await publish(idle);
@@ -345,8 +343,11 @@ test("About makes channel installation, restart and recovery distinct", async ()
     await expect.poll(() => video.evaluate((element: HTMLVideoElement) =>
       element.currentTime > 0 && element.videoWidth === 540 && element.textTracks.length === 0,
     )).toBe(true);
+    await expect(video).toHaveJSProperty("ended", true);
+    await expect(video).toHaveAttribute("src", /\/check-.*\.mp4$/);
     await publish({ checking: false, result: "current" });
-    await expect(page.getByRole("heading", { name: "No update available" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Already up to date" })).toBeVisible();
+    await expect(video).toHaveAttribute("src", /\/open-box-.*\.mp4$/);
     await expect(pose).toHaveAttribute("src", /\/boat-.*\.webp$/);
     await expect(video).toHaveAttribute("src", /\/launch-.*\.mp4$/);
     await expect(video).toHaveAttribute("src", /\/afloat-.*\.mp4$/);

@@ -7,7 +7,8 @@ import creased from "./pond-art/fold-creased.webp";
 import flat from "./pond-art/fold-flat.webp";
 import idle from "./pond-art/idle.webp";
 import launch from "./pond-art/motion/launch.mp4";
-import open from "./pond-art/open.webp";
+import openBox from "./pond-art/motion/open-box.mp4";
+import closed from "./pond-art/closed.webp";
 import paper from "./pond-art/paper.webp";
 import pinched from "./pond-art/fold-pinched.webp";
 
@@ -94,6 +95,65 @@ function FoldReveal() {
   );
 }
 
+function CheckingBox({
+  waiting,
+  trackBox,
+  finish,
+}: {
+  waiting: boolean;
+  trackBox: (node: HTMLDivElement | null) => void | (() => void);
+  finish: () => void;
+}) {
+  const [caught, setCaught] = useState(false);
+  const holdClosed = useCallback(() => setCaught(true), []);
+  const trackFall = useCallback(
+    (video: HTMLVideoElement | null) => {
+      if (!video) return;
+      const timeout = window.setTimeout(holdClosed, 3000);
+      return () => window.clearTimeout(timeout);
+    },
+    [holdClosed],
+  );
+  const trackOpening = useCallback(
+    (video: HTMLVideoElement | null) => {
+      if (!video) return;
+      const timeout = window.setTimeout(finish, 1100);
+      return () => window.clearTimeout(timeout);
+    },
+    [finish],
+  );
+
+  return (
+    <div ref={trackBox} className="settings-pond-box">
+      {caught && !waiting ? (
+        <video
+          key="opening"
+          ref={trackOpening}
+          src={openBox}
+          poster={closed}
+          autoPlay
+          muted
+          playsInline
+          onEnded={finish}
+          onError={finish}
+        />
+      ) : (
+        <video
+          key="falling"
+          ref={trackFall}
+          src={check}
+          poster={idle}
+          autoPlay
+          muted
+          playsInline
+          onEnded={holdClosed}
+          onError={holdClosed}
+        />
+      )}
+    </div>
+  );
+}
+
 export function UpdatePond({ scene }: { scene: PondScene }) {
   const reducedMotion = useSyncExternalStore(
     subscribeToMotion,
@@ -103,32 +163,24 @@ export function UpdatePond({ scene }: { scene: PondScene }) {
   const visibleScene =
     catching && !reducedMotion && scene !== "idle" ? "checking" : scene;
 
-  const startCatch = useCallback((video: HTMLVideoElement | null) => {
-    if (!video) return;
+  const trackBox = useCallback((node: HTMLDivElement | null) => {
+    if (!node) return;
     setCatching(true);
-    const timer = window.setTimeout(() => setCatching(false), 2400);
-    return () => {
-      window.clearTimeout(timer);
-      setCatching(false);
-    };
+    return () => setCatching(false);
   }, []);
+  const finishCatch = useCallback(() => setCatching(false), []);
 
   return (
     <div className="settings-update-pond" aria-hidden="true">
       {visibleScene === "idle" && <img alt="" src={idle} />}
       {visibleScene === "checking" &&
         (reducedMotion ? (
-          <img alt="" src={open} />
+          <img alt="" src={closed} />
         ) : (
-          <video
-            ref={startCatch}
-            src={check}
-            poster={idle}
-            autoPlay
-            muted
-            playsInline
-            onError={() => setCatching(false)}
-            onEnded={() => setCatching(false)}
+          <CheckingBox
+            waiting={scene === "checking"}
+            trackBox={trackBox}
+            finish={finishCatch}
           />
         ))}
       {visibleScene === "folding" &&

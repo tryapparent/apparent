@@ -164,7 +164,7 @@ test('installed About projects parent state and bounds actions', async () => {
     await expect.poll(() => output.slice(actionStart).includes('"action":"dismiss-update-check"')).toBe(true);
     for (const result of ['current', 'failed', null] as const) {
       await publish({ ...state, linux: false, mainUpdates: false, restartPending: false, updateCheck: { checking: false, result } });
-      if (result) await expect(page.getByRole('heading', { name: result === 'current' ? 'No update available' : 'Update check failed', exact: true })).toBeVisible();
+      if (result) await expect(page.getByRole('heading', { name: result === 'current' ? /^Already up to date$/ : /^Update check failed$/ })).toBeVisible();
       else {
         await expect(page.getByRole('heading', { name: 'Check for updates', exact: true })).toHaveCount(0);
         await expect(page.getByRole('button', { name: 'Check for updates', exact: true })).toBeVisible();
@@ -179,7 +179,7 @@ test('installed About projects parent state and bounds actions', async () => {
           if(result==='failed') await page.getByRole('alertdialog').scrollIntoViewIfNeeded();
           else await page.getByRole('button', { name: 'Show welcome tour', exact: true }).scrollIntoViewIfNeeded();
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-          assert.equal(await page.locator('.settings-sidebar').evaluate(element => element.scrollWidth <= element.clientWidth), true, 'sidebar viewport fits');
+          assert.equal(await page.locator('.settings-sidebar').evaluate(element => element.scrollWidth <= element.clientWidth), true);
           if (process.env.APPARENT_SETTINGS_PROOF) {
             await fs.mkdir(process.env.APPARENT_SETTINGS_PROOF, { recursive: true });
             await page.screenshot({ animations: 'disabled', path: path.join(process.env.APPARENT_SETTINGS_PROOF, `about-${result ?? 'idle'}-${size[0]}-${colorScheme}.png`) });
@@ -189,7 +189,7 @@ test('installed About projects parent state and bounds actions', async () => {
     }
     await publish({ ...state, updates: false, restartPending: false, updateCheck: { checking: false, result: null } });
     await expect(page.getByRole('heading', { name: 'Updates unavailable' })).toBeVisible();
-    await expect(page.getByRole('button', { name: /^Update$/ })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /^Check for updates$/ })).toBeDisabled();
     await expect(page.getByText('To install updates here, run Apparent from an AppImage.', {exact: true})).toBeVisible();
     if (process.env.APPARENT_SETTINGS_PROOF) await page.screenshot({path: path.join(process.env.APPARENT_SETTINGS_PROOF, 'about-unavailable.png')});
     await page.getByRole('button', { name: 'Copy version', exact: true }).click();

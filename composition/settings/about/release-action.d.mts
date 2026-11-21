@@ -1,5 +1,5 @@
 declare const policy: {
-  release_action(linux: boolean, current: boolean): string;
+  release_action(current: boolean): string;
   staged_release_note(channel: string, id: string): string;
   show_restart(pending: boolean, checking: boolean): boolean;
   show_restart_later(restart: boolean, offer: boolean): boolean;

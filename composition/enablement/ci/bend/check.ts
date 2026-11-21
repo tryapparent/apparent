@@ -26,10 +26,8 @@ await bendScratch(async (destination) => {
     for (const mac of [false, true])
       for (const nightly of [false, true])
         assert.equal(policy.show_nightly_download(mac, nightly), mac && !nightly);
-    assert.equal(actions.release_action(true, false), "Update");
-    assert.equal(actions.release_action(false, false), "Check for updates");
-    for (const linux of [false, true])
-      assert.equal(actions.release_action(linux, true), "Check again");
+    assert.equal(actions.release_action(false), "Check for updates");
+    assert.equal(actions.release_action(true), "Check again");
     assert.equal(actions.staged_release_note("stable", "v2.0.0"), "Restart to use Stable v2.0.0.");
     for (const id of ["", "v", "v.2.0", "v2.0.", "v2..0", "v2.0.0-dev", "v" + "1".repeat(100)])
       assert.equal(actions.staged_release_note("stable", id), "Restart to use the installed Stable release.");
