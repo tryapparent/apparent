@@ -230,7 +230,7 @@ export function About({
       : restart
         ? "Restart required"
         : result === "current"
-          ? "No update available"
+          ? "Already up to date"
           : null;
   const listenForDismissal = useCallback(
     (section: HTMLElement | null) => {
@@ -424,10 +424,7 @@ export function About({
                           void act({ action: "check-for-updates" })
                         }
                       >
-                        {updateAction.release_action(
-                          state.linux,
-                          result === "current",
-                        )}
+                        {updateAction.release_action(result === "current")}
                       </Button>
                     )}
                   </div>
