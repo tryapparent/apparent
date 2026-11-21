@@ -15,7 +15,7 @@ const page=pathToFileURL(path.join(__dirname,'../../dist/pill/index.html')).href
 let sharingConfirmation=null;
 let window,current=null,buffer='',pending=false,loaded=false,placed=false,activated=false,pendingPlace=null;
 let lastInput=Date.now(),hovered=false,expected=null,rendererReady=false,readySent=false,renderDeadline=Date.now()+5000,pasteGesture=null,lastFrame='',lastRaise=0;
-let visibleWidth=0,layoutPhase=null,recordingCenterOffset=null;
+let visibleWidth=0,layoutPhase=null,recordingCenterOffset=null,recordingAnchorOffset=null;
 let capture='',pickerDismissed='',pickerFocused=false,keyboardCapture='';
 let staging=null,publishingState=false,retiringFor=null;
 let keyboardMode=false,createWindow=null,retiredWindows=[],admittedWindowId=null;
@@ -67,7 +67,7 @@ function applyPlacement(point){
   const anchor=process.platform==='linux'?screen.screenToDipPoint(physical):physical;
   const area=screen.getDisplayNearestPoint(anchor).workArea;
   const bounds=window.getBounds();
-  position({x:Math.round(area.x+area.width/2-(recordingCenterOffset??(visibleWidth||bounds.width)/2)),y:area.y+34});placed=true;
+  position({x:Math.round(area.x+area.width/2-(recordingAnchorOffset??(visibleWidth||bounds.width)/2)),y:area.y+34});placed=true;
 }
 function emit(message){process.stdout.write(JSON.stringify(message)+'\n');}
 function setSharingConfirmation(revision){
@@ -251,7 +251,6 @@ app.whenReady().then(()=>{
     pending=true;
     emit(message);
   });
-  // Renderer never chooses native dimensions or screen coordinates.
   // Parent's bounded state defines content; main measures its own trusted document.
   async function measure(revision){
     if(!loaded || window.isDestroyed())return;
@@ -275,15 +274,14 @@ app.whenReady().then(()=>{
       const repaintResize=process.platform==='linux' && resized && window.isVisible();
       if(repaintResize&&(width>before.width||height>before.height)){window.setShape([{x:0,y:0,width:nextVisibleWidth,height}]);appliedShape=null;}
       const phaseChanged=layoutPhase!==current.phase;
-      const oldCenterWidth=phaseChanged && visibleWidth>0?visibleWidth:before.width;
-      const newCenterWidth=phaseChanged?nextVisibleWidth:width;
       // Keep layout resizes mapped. Hyprland can lose a transparent XWayland
       // surface during hide/setBounds/showInactive even when Electron reports
       // it visible. Update its bounds and input shape in place, then repaint.
-      const previousCenter=recordingCenterOffset??oldCenterWidth/2;
-      const nextCenter=size.recordingCenter??newCenterWidth/2;
-      if(resized||phaseChanged||recordingCenterOffset!==null&&previousCenter!==nextCenter)position({x:Math.round(before.x+previousCenter-nextCenter),y:before.y,width,height});
+      const previousCenter=phaseChanged?recordingAnchorOffset??(visibleWidth||before.width)/2:recordingCenterOffset??before.width/2;
+      const nextCenter=phaseChanged?size.recordingAnchor??nextVisibleWidth/2:size.recordingCenter??width/2;
+      if(resized||phaseChanged||previousCenter!==nextCenter)position({x:Math.round(before.x+previousCenter-nextCenter),y:before.y,width,height});
       recordingCenterOffset=size.recordingCenter;
+      recordingAnchorOffset=size.recordingAnchor;
       visibleWidth=nextVisibleWidth;layoutPhase=current.phase;
       inputRegions=size.regions?.length?size.regions:null;
       if(process.platform==='linux'){
