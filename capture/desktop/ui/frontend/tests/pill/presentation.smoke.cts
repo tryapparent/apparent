@@ -6,6 +6,19 @@ const fs=require('node:fs/promises');
 const os=require('node:os');
 const {formatPillDiagnostic}=require('../../electron/pill/diagnostics.cjs');
 
+async function launchPill(t, prefix) {
+ const home = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+ const application = await electron.launch({
+  args: [path.resolve(__dirname,'host.cjs'),'--no-sandbox'],
+  env: {...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config')},
+ });
+ t.after(async () => {
+  await application.close().catch(() => {});
+  await fs.rm(home,{recursive:true,force:true});
+ });
+ return application;
+}
+
 test('pill diagnostics retain bounded facts and exclude caller-supplied exception or frame text',()=>{
  const secret='private-capture-path-and-frame-secret';
  const line=formatPillDiagnostic('renderer_gone',{pid:123,phase:'recording',revision:17,rendererReady:true,
@@ -27,10 +40,7 @@ test('pill diagnostics retain bounded facts and exclude caller-supplied exceptio
 });
 
 test('malformed parent frames log only a bounded failure classification',async t=>{
- const home=await fs.mkdtemp(path.join(os.tmpdir(),'pill-diagnostics-'));
- const application=await electron.launch({args:[path.resolve(__dirname,'host.cjs'),'--no-sandbox'],
-  env:{...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config')}});
- t.after(async()=>{await application.close().catch(()=>{});await fs.rm(home,{recursive:true,force:true});});
+ const application=await launchPill(t,'pill-diagnostics-');
  const child=application.process(),stderr=[];child.stderr.on('data',chunk=>stderr.push(chunk.toString()));
  const closed=application.waitForEvent('close',{timeout:8000});
  const secret='private-capture-path-and-frame-secret';
@@ -53,10 +63,7 @@ const recording={...hidden,revision:2,phase:'recording',inputWaveform:Array(24).
  {id:'cancel',label:'Cancel',enabled:true,selected:false,primary:false}]};
 
 test('Linux mapped resize waits for paint and rejects superseded rounded geometry',{skip:process.platform!=='linux'},async t=>{
- const home=await fs.mkdtemp(path.join(os.tmpdir(),'pill-shape-paint-'));
- const application=await electron.launch({args:[path.resolve(__dirname,'host.cjs'),'--no-sandbox'],
-  env:{...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config')}});
- t.after(async()=>{await application.close().catch(()=>{});await fs.rm(home,{recursive:true,force:true});});
+ const application=await launchPill(t,'pill-shape-paint-');
  const page=await application.firstWindow();
  const publish=async view=>{
   await application.evaluate((_e,view)=>process.stdin.emit('data',JSON.stringify({type:'state',view})+'\n'+JSON.stringify({type:'activate'})+'\n'),view);
@@ -72,11 +79,11 @@ test('Linux mapped resize waits for paint and rejects superseded rounded geometr
  });
  // Hold actual renderer paint callbacks, including concurrent layout requests.
  // Neither a duplicate request nor an obsolete revision may restore the clip.
- await page.evaluate(()=>{window.__paintFrames=[];window.requestAnimationFrame=callback=>window.__paintFrames.push(callback);});
- await publish({...hidden,revision:3,phase:'processing',draggable:false,label:'Processing recording…'});
+ await page.evaluate(()=>{window.__paintFrames=[];window.__requestFrame=window.requestAnimationFrame;window.requestAnimationFrame=callback=>window.__paintFrames.push(callback);});
+ await publish({...hidden,revision:3,phase:'processing',draggable:false,notice:'Preparing the captured screen and audio for handoff.'});
  await expect.poll(()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].__shapes.length)).toBeGreaterThan(0);
  await page.evaluate(()=>{window.__oldLayout=window.apparentPill.layout(3);});
- await publish({...hidden,revision:4,phase:'completed',draggable:false,label:'Recording saved and ready to hand off'});
+ await publish({...hidden,revision:4,phase:'completed',draggable:false,label:'Recording and transcript saved. The screen recording, audio, and bundle are ready to hand off.'});
  await expect.poll(()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].__shapes.length)).toBeGreaterThan(1);
  assert.ok(await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].__shapes.every(shape=>shape.length===1)),
   'The rounded clip must stay removed while the resized surface has not painted');
@@ -95,18 +102,22 @@ test('Linux mapped resize waits for paint and rejects superseded rounded geometr
  assert.equal(rounded.length,1,'Only the current revision may restore rounded geometry');
  assert.equal(Math.max(...rounded[0].map(r=>r.x+r.width)),result.bounds.width);
  assert.deepEqual(result.mapping,[],'Resizing must keep the XWayland surface mapped');
+ await page.evaluate(()=>{window.requestAnimationFrame=window.__requestFrame;});
  await publish({...recording,revision:5});
- await expect.poll(()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].__shapes.length)).toBeGreaterThan(result.shapes.length);
+ await page.evaluate(()=>window.apparentPill.layout(5));
+ const shrink=await application.evaluate(({BrowserWindow})=>{
+  const w=BrowserWindow.getAllWindows()[0];return {shapes:w.__shapes,bounds:w.getBounds(),mapping:w.__mapping};
+ });
+ assert.ok(shrink.bounds.width<result.bounds.width);
+ assert.deepEqual(shrink.shapes.slice(result.shapes.length).map(shape=>shape.length>1),[true]);
+ assert.deepEqual(shrink.mapping,[]);
  await page.reload();
  await expect(page.getByRole('button',{name:'Finish',exact:true})).toBeVisible();
  await page.evaluate(()=>window.apparentPill.layout(5));
 });
 
 test('recording, processing and completion retain the visible center',async t=>{
- const home=await fs.mkdtemp(path.join(os.tmpdir(),'pill-center-'));
- const application=await electron.launch({args:[path.resolve(__dirname,'host.cjs'),'--no-sandbox'],
-  env:{...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config')}});
- t.after(async()=>{await application.close().catch(()=>{});await fs.rm(home,{recursive:true,force:true});});
+ const application=await launchPill(t,'pill-center-');
  const page=await application.firstWindow();
  let revision=0;
  const publish=async state=>{
@@ -170,10 +181,7 @@ test('recording, processing and completion retain the visible center',async t=>{
 });
 
 test('close stays at the trailing edge and progress rotates unless motion is reduced',async t=>{
- const home=await fs.mkdtemp(path.join(os.tmpdir(),'pill-close-motion-'));
- const application=await electron.launch({args:[path.resolve(__dirname,'host.cjs'),'--no-sandbox'],
-  env:{...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config')}});
- t.after(async()=>{await application.close().catch(()=>{});await fs.rm(home,{recursive:true,force:true});});
+ const application=await launchPill(t,'pill-close-motion-');
  const page=await application.firstWindow();
  let revision=0;
  const publish=async state=>{
@@ -233,10 +241,7 @@ test('close stays at the trailing edge and progress rotates unless motion is red
 });
 
 test('parent-state timeout reports its accepted epoch and readiness without extending the deadline',async t=>{
- const home=await fs.mkdtemp(path.join(os.tmpdir(),'pill-state-timeout-'));
- const application=await electron.launch({args:[path.resolve(__dirname,'host.cjs'),'--no-sandbox'],
-  env:{...process.env,HOME:home,XDG_CONFIG_HOME:path.join(home,'config')}});
- t.after(async()=>{await application.close().catch(()=>{});await fs.rm(home,{recursive:true,force:true});});
+ const application=await launchPill(t,'pill-state-timeout-');
  const child=application.process(),stderr=[];child.stderr.on('data',chunk=>stderr.push(chunk.toString()));
  const closed=application.waitForEvent('close',{timeout:8000});
  const page=await application.firstWindow();

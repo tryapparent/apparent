@@ -32,7 +32,7 @@ test('shared pill renders authoritative states and isolates commands',async t=>{
  }
  assert.equal(await page.evaluate(()=>typeof window.require),'undefined');
  assert.equal(await page.evaluate(()=>typeof window.process),'undefined');
- assert.deepEqual(await page.evaluate(()=>Object.keys(window.apparentPill)),['read','destinations','destinationAction','destinationFocus','subscribeDestinations','layout','manualDrag','beginDrag','beginPaste','cancelPaste','act','subscribe']);
+ assert.deepEqual(await page.evaluate(()=>Object.keys(window.apparentPill)),['read','retryBackgroundHandoff','backgroundHandoff','subscribeBackgroundHandoff','destinations','destinationAction','destinationFocus','subscribeDestinations','layout','manualDrag','beginDrag','beginPaste','cancelPaste','act','subscribe']);
  assert.equal(await page.evaluate(async()=>{try{await window.apparentPill.beginDrag(0);return false;}catch{return true;}}),true);
  const controls=page.getByRole('group',{name:'Recording controls'}).getByRole('button');
  assert.equal(await controls.last().getAttribute('aria-label'),'Cancel');

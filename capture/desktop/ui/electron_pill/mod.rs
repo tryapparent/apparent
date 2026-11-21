@@ -19,6 +19,7 @@ pub(crate) enum Event {
     ModeSelected { mode: Mode },
     CaptureStarted,
     CaptureSealed,
+    SourceReleased,
     CaptureSaved { recovery: bool, text: Option<String>, frame_count: usize, duration_ms: u64 },
     CaptureFailed,
     Dismiss,

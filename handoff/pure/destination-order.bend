@@ -110,3 +110,6 @@ def inbox_done(shelf: U32, completed: Bool) -> Bool:
 
 def reuse_destination(same_destination: Bool, is_new: Bool) -> Bool:
   Bool.and(same_destination, Bool.not(is_new))
+
+def handoff_status(+phase: U32) -> U32:
+  Bool.pick(U32, U32.is_lt(phase, 2), 2, Bool.pick(U32, U32.is_lt(phase, 3), 1, 3))

@@ -15,6 +15,8 @@ use crate::stored_frame::StoredFrame;
 
 #[path = "../../../../engine/recording/start.rs"]
 mod start;
+#[path = "../../../../engine/recording/lifecycle/stop.rs"]
+mod stop;
 pub(crate) use start::{StartError, prepare_screen_capture};
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 #[path = "../../../../engine/recording/selection.rs"]

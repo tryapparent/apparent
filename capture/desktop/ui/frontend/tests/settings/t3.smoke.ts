@@ -175,9 +175,8 @@ test('switching panes cancels a queued T3 connection before the private native w
 });
 
 test('T3 pairing permits loopback and rejects insecure remote addresses', async t => {
- const {fixture}=await import('../pill/t3/testing/server.ts');
  const {pair}=await import('../../../../workflow/t3/pair.ts');
- const f=await fixture(t);
- assert.equal((await pair(f.origin+'/pair?token=one-time')).origin,f.origin);
+ const p=await provider(t);
+ assert.equal((await pair(p.origin+'/pair?token='+p.code)).origin,p.origin);
  await assert.rejects(pair('http://remote.example/pair?token=one-time'),/HTTPS/);
 });

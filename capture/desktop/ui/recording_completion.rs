@@ -1,7 +1,6 @@
 //! In-process media teardown and bundle finalization, run only on the background executor.
 
 use std::path::PathBuf;
-use std::time::Instant;
 
 use super::super::CaptureSource;
 use super::whiteboard;
@@ -25,6 +24,7 @@ pub(in crate::capture::desktop) fn finalize(
     strokes: Vec<Stroke>,
     final_whiteboard: whiteboard::Board,
     notes_finished: Option<flume::Receiver<crate::capture::desktop::workflow::notes::FinishResult>>,
+    source_released: flume::Sender<()>,
 ) -> (CaptureResult, u64) {
     #[cfg(target_os = "linux")]
     FinishPhase::StoppingSource.emit();
@@ -36,7 +36,9 @@ pub(in crate::capture::desktop) fn finalize(
         } => (session, audio, windows),
         CaptureSource::Phone(session) => {
             // Stop the producer before waiting for a possibly contended writer lease.
-            let finalized = session.stop().stage(Stage::PhoneStop).and_then(|recording| {
+            let stopped = session.stop().stage(Stage::PhoneStop);
+            let _ = source_released.send(());
+            let finalized = stopped.and_then(|recording| {
                 complete_bundle(&bundle_dir, &final_whiteboard, None, || {
                     crate::capture::engine::runtime::phone::finalize_live_capture(
                         &bundle_dir,
@@ -62,25 +64,13 @@ pub(in crate::capture::desktop) fn finalize(
             return (Err(anyhow::anyhow!("a lab recording has no bundle")), 0);
         }
     };
-    let stop_started = Instant::now();
-    let ((recording, sampling), recorded_audio, mut activity) = std::thread::scope(|s| {
-        let screen_handle = s.spawn(|| screen_session.stop_with_sampling());
-        let win_handle = s.spawn(|| {
-            window_log
-                .map(crate::shared::windows::WindowLogger::stop)
-                .unwrap_or_default()
-        });
-        let audio = crate::capture::engine::runtime::audio::audio::stop_optional(audio_recorder);
-        (
-            screen_handle.join().unwrap(),
-            audio,
-            win_handle.join().unwrap_or_default(),
-        )
-    });
-    activity.stop_started = Some(stop_started);
-    activity.stop_ms = Some(stop_started.elapsed().as_millis() as u64);
+    let stopped = screen_session.stop_tracks(audio_recorder, window_log);
+    let _ = source_released.send(());
+    let recording = stopped.recording;
+    let sampling = stopped.sampling;
+    let activity = stopped.activity;
     let duration_ms = recording.duration_ms;
-    let recorded_audio = match recorded_audio {
+    let recorded_audio = match stopped.audio {
         Ok(audio) => audio,
         Err(error) => return (Err(error).stage(Stage::AudioStop), duration_ms),
     };

@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Button } from "@apparent/ui/button";
 import { StickyNote } from "@apparent/ui/icons";
 import type { PillView } from "./view";
@@ -38,8 +38,39 @@ const actionIcons: Record<string, LucideIcon> = {
   dismiss: X,
 };
 
+export type BackgroundHandoff = {
+  phase: "processing" | "sent" | "attention";
+  count: number;
+  title: string;
+  retry: string | null;
+};
+
+function backgroundLabel(handoff: BackgroundHandoff) {
+  return handoff.phase === "processing" ? "Preparing recording for T3 Code"
+    : handoff.phase === "sent" ? "Sent to T3 Code"
+    : handoff.retry ? "T3 delivery needs attention" : "Recording could not be prepared";
+}
+
+function BackgroundTab({ handoff, open, toggle }: { handoff: BackgroundHandoff; open: boolean; toggle: () => void }) {
+  const processing = handoff.phase === "processing";
+  const label = backgroundLabel(handoff);
+  return (
+    <div className="pill-background-layer">
+      <span className="sr-only" role="status">{label}</span>
+      <Button className="pill-extension pill-background" variant="ghost"
+        aria-label={processing ? `${handoff.count} previous ${handoff.count === 1 ? "recording" : "recordings"} processing` : label}
+        aria-expanded={open} onClick={toggle}>
+        {processing ? <><LoaderCircle aria-hidden="true" className="background-spinner" /><span>{handoff.count}</span></>
+          : handoff.phase === "sent" ? <Check aria-hidden="true" /> : <CircleAlert aria-hidden="true" />}
+      </Button>
+    </div>
+  );
+}
+
 type Props = {
   view: PillView;
+  onRetryBackground?: (capture: string) => Promise<void>;
+  backgroundHandoff?: BackgroundHandoff | null;
   pending?: boolean;
   controlsDisabled?: boolean;
   children?: ReactNode;
@@ -54,6 +85,8 @@ type Props = {
 };
 export function PillSurface({
   view,
+  backgroundHandoff,
+  onRetryBackground,
   pending = false,
   controlsDisabled = false,
   children,
@@ -66,6 +99,17 @@ export function PillSurface({
   onBeginPaste,
   onCancelPaste,
 }: Props) {
+  const [backgroundOpen, setBackgroundOpen] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState(false);
+  async function retryBackground(capture: string) {
+    if (!onRetryBackground || retrying) return;
+    setRetrying(true);
+    setRetryError(false);
+    try { await onRetryBackground(capture); }
+    catch { setRetryError(true); }
+    finally { setRetrying(false); }
+  }
   const pasteStart = useRef<[number, number] | null>(null);
   const uploading = view.shareIndicator === "uploading";
   const uploadStopped = view.shareIndicator === "retry";
@@ -90,7 +134,8 @@ export function PillSurface({
       data-warning={view.warning !== null}
       data-live={view.phase === "recording" && !!view.transcript}
     >
-      <div className="pill-surface">
+      <div className="pill-surface" data-background={view.phase === "recording" && !!backgroundHandoff}>
+        {view.phase === "recording" && backgroundHandoff && <BackgroundTab handoff={backgroundHandoff} open={backgroundOpen} toggle={() => setBackgroundOpen(!backgroundOpen)} />}
         <div className="pill-row">
           {view.phase !== "selecting" && (
             <div
@@ -258,7 +303,7 @@ export function PillSurface({
         {view.phase === "recording" && view.noteCount > 0 && (
           <div className="pill-notes-layer">
             <Button
-              className="pill-notes"
+              className="pill-extension pill-notes"
               variant="ghost"
               aria-label={`${view.noteCount} saved ${view.noteCount === 1 ? "note" : "notes"}. Open notes`}
               disabled={
@@ -273,6 +318,13 @@ export function PillSurface({
           </div>
         )}
       </div>
+      {view.phase === "recording" && backgroundHandoff && backgroundOpen &&
+        <div className="pill-background-detail" role="status">
+          <strong>{backgroundHandoff.title}</strong><span>{backgroundLabel(backgroundHandoff)}</span>
+          {backgroundHandoff.retry && <Button variant="outline" disabled={retrying}
+            onClick={() => void retryBackground(backgroundHandoff.retry!)}>Retry same send</Button>}
+          {retryError && <span role="alert">Retry could not be confirmed.</span>}
+        </div>}
       {children}
     </main>
   );
