@@ -24,6 +24,14 @@ export function buildBloom(destination: string): Promise<void> {
   );
 }
 
+export function buildInk(destination: string): Promise<void> {
+  return buildRecordModule(
+    destination,
+    "doodle-ink.mjs",
+    "record/pill/doodle-ink.bend",
+  );
+}
+
 async function buildRecordModule(
   destination: string,
   module: string,
@@ -62,10 +70,14 @@ if (
   if (
     !destination ||
     extra.length ||
-    (mode && mode !== "media" && mode !== "captions" && mode !== "bloom")
+    (mode &&
+      mode !== "media" &&
+      mode !== "captions" &&
+      mode !== "bloom" &&
+      mode !== "ink")
   )
     throw new Error(
-      "Usage: node record/enablement/ci/bend/build.ts <destination> [media|captions|bloom]",
+      "Usage: node record/enablement/ci/bend/build.ts <destination> [media|captions|bloom|ink]",
     );
   if (mode === "media") await buildMedia(resolve(destination));
   else if (mode === "captions")
@@ -75,5 +87,6 @@ if (
       "record/transcription/",
     );
   else if (mode === "bloom") await buildBloom(resolve(destination));
+  else if (mode === "ink") await buildInk(resolve(destination));
   else await buildAdmission(resolve(destination));
 }

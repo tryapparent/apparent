@@ -10,6 +10,7 @@
     "settings/permissions/permission-policy.bend",
     "pill/pill-state.bend",
     "pill/soft-bloom.bend",
+    "pill/doodle-ink.bend",
     "notes/double-shift.bend",
     "shortcuts/push-to-talk.bend",
     "transcription/src/caption-admission.bend",
