@@ -873,3 +873,26 @@ fn support_report_encrypts_for_support_and_requires_the_expected_report_id() {
     support::open(&report, &output, origin, id, &support_key).unwrap();
     assert_eq!(fs::read(output.join("summary.md")).unwrap(), fs::read(fixture.stage.join("summary.md")).unwrap());
 }
+
+#[test]
+fn support_report_round_trips_a_bundle_above_the_previous_limit() {
+    let fixture = Fixture::new();
+    let support_key = fixture.root.join("support.age-key");
+    new_private_file(&support_key)
+        .unwrap()
+        .write_all(fixture.reader.age.to_string().expose_secret().as_bytes())
+        .unwrap();
+    let video_size = 29 * 1024 * 1024;
+    new_private_file(&fixture.stage.join("recording.mp4"))
+        .unwrap()
+        .set_len(video_size)
+        .unwrap();
+    let report = fixture.root.join("report.age");
+    let output = fixture.root.join("submitted.apparent");
+    let origin = "https://app.tryapparent.com/connect";
+    let id = &fixture.context.capture_id;
+    support::seal(&fixture.stage, &report, origin, id, &fixture.reader.age.to_public().to_string()).unwrap();
+    assert!(fs::metadata(&report).unwrap().len() > video_size);
+    support::open(&report, &output, origin, id, &support_key).unwrap();
+    assert_eq!(fs::metadata(output.join("recording.mp4")).unwrap().len(), video_size);
+}

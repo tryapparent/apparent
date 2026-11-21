@@ -6,8 +6,8 @@ import { promisify } from 'node:util';
 import { type Config, secret } from './config.ts';
 
 const origin = 'https://app.tryapparent.com/connect';
-const maxBytes = 24 * 1024 * 1024;
-const maxArchiveBytes = 26 * 1024 * 1024;
+const maxBytes = 32 * 1024 * 1024;
+const maxArchiveBytes = 34 * 1024 * 1024;
 const run = promisify(execFile);
 
 export function supportReportId(context: string): string | undefined {

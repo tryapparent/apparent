@@ -14,6 +14,7 @@ export interface Env {
  SHARING_ENABLED?: string;
  SUPPORT_REPORT_RECIPIENT?: string;
  SUPPORT_REPORT_READ_TOKEN?: string;
+ SUPPORT_REPORT_EXTENDED_ARCHIVES?: string;
  POSTHOG_ENABLED?: string;
  POSTHOG_PROJECT_TOKEN?: string;
  POSTHOG_HOST?: string;

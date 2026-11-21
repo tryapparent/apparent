@@ -1,7 +1,7 @@
 use super::*;
 use crate::{Scratch, publish_noreplace, snapshot_bounded};
 
-const LIMIT: u64 = 24 * 1024 * 1024;
+const LIMIT: u64 = 32 * 1024 * 1024;
 
 fn report_context(origin: &str, id: &str) -> Result<Context> {
     let context = Context {

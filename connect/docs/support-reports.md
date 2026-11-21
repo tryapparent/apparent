@@ -18,7 +18,8 @@ is never sent to Connect. The sealed bundle binds the report ID and origin
 inside its authenticated ciphertext, and the reader validates paths, sizes,
 hashes and bundle references before publishing a local directory.
 
-The transport accepts up to 24 MiB of ciphertext. Source, report and global
+The transport accepts up to 24 MiB of ciphertext by default. Updated clients
+request the 32 MiB limit with `?archive=2`. Source, report and global
 rate limits cap anonymous uploads, with a 2 GiB live reservation ceiling.
 Incomplete reservations expire in fifteen minutes. Ready reports expire in
 seven days and are removed by the existing Connect cleanup schedule. A report
@@ -43,6 +44,10 @@ additive migration before enabling the configuration. Install the decrypting
 Apparent binary and configure the existing fixer with the paired private key
 before advertising the public key. Drain or retain access to unexpired
 reports when replacing the key.
+
+After deploying the fixer and native archive reader that support 32 MiB, set
+`SUPPORT_REPORT_EXTENDED_ARCHIVES=1` on the Worker. Older clients continue to
+receive a 24 MiB limit.
 
 The public key endpoint returns unavailable before this setup. Desktop then
 offers written reports, and no local capture is started via the recorded
