@@ -22,6 +22,7 @@ import availableFrog from "../../../capture/desktop/assets/settings/frog-jump.pn
 import currentFrog from "../../../capture/desktop/assets/settings/frog-lounge.png";
 import failedFrog from "../../../capture/desktop/assets/settings/frog-puzzled.png";
 import { General } from "./general";
+import { ConnectCard, useConnectSettings } from "./connect";
 import type { ComponentType } from "react";
 import {
   AgentContextPreference,
@@ -128,6 +129,7 @@ function Settings() {
       "Storage",
   );
   const content = useRef<HTMLElement>(null);
+  const connect = useConnectSettings(current === "General");
   useLayoutEffect(
     () =>
       window.apparentSettingsRoute?.((pane) => {
@@ -224,7 +226,7 @@ function Settings() {
         </header>
         {error && <p role="alert">{error}</p>}
         {current === "General" ? (
-          <General />
+          <General connect={<ConnectCard flow={connect} />} />
         ) : current === "Recording" ? (
           <RecordingSection bridge={window.apparentRecording} />
         ) : current === "Permissions" ? (

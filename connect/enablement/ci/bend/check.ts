@@ -115,6 +115,20 @@ await bendScratch(async (scratch) => {
       ["WaitlistCard", "Retry"],
       ["LocalError", "Refresh"],
     ]);
+    const startup = run(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `import policy from "./account-status.mjs";
+        const states = [false, true];
+        console.log(JSON.stringify(
+          states.flatMap(opened => states.map(available => policy.check_on_open(opened, available))),
+        ));`,
+      ],
+      directory,
+    );
+    assert.deepEqual(JSON.parse(startup), [false, true, false, false]);
     const routes = run(
       process.execPath,
       [
