@@ -37,6 +37,7 @@ pub(crate) struct View {
     pub location: Option<Location>,
     pub retention_revision: Option<String>,
     pub retention_custom: bool,
+    pub retention_maximum_mb: Option<u32>,
     pub usage: Option<Usage>,
     pub error: Option<String>,
     pub usage_error: Option<String>,
@@ -91,6 +92,7 @@ impl State {
         if let Ok(retention) = storage_preferences::read(config) {
             view.retention_revision = retention["revision"].as_str().map(str::to_owned);
             view.retention_custom = retention["custom"].as_bool().unwrap_or(false);
+            view.retention_maximum_mb = serde_json::from_value(retention["maximumMb"].clone()).ok().flatten();
         }
         view
     }

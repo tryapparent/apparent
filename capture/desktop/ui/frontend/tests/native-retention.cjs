@@ -15,6 +15,8 @@ module.exports = async function verifyRetention(page, {config, captures, output}
   await page.reload();
   await expect(usage).toHaveText('0.001 GB');
   await expect(field).toBeEnabled();
+  await expect(field).toHaveValue('1');
+  await expect(page.getByText('0.999 GB below the 1 GB limit')).toBeVisible();
   await field.fill('12.5');
   await field.press('Enter');
   await expect(page.getByText('Storage limit saved.')).toBeVisible();

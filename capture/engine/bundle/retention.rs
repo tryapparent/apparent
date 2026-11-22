@@ -109,21 +109,6 @@ impl Preset {
     }
 }
 
-pub(crate) const MAX_STORAGE_MB: u32 = 99_999_999;
-
-pub(crate) fn storage_limit(config: &serde_json::Value) -> Option<u32> {
-    config.get("retention")?.get("maximumMb")?.as_u64()
-        .and_then(|value| u32::try_from(value).ok()).filter(|value| *value <= MAX_STORAGE_MB)
-}
-
-fn configured_storage_limit(path: &Path) -> Result<Option<u32>> {
-    let raw = crate::shared::handoff::capture_location::read_raw(path)?;
-    if raw.get("retention").and_then(|retention| retention.get("maximumMb")).is_none() {
-        return Ok(None);
-    }
-    Ok(Some(storage_limit(&raw).context("Invalid saved storage limit")?))
-}
-
 impl Policy {
     pub fn preset(&self) -> Option<Preset> {
         Preset::ALL.into_iter().find(|p| p.policy() == *self)
@@ -728,6 +713,7 @@ pub fn run_pass(
 fn run_configured_pass(
     captures: &Path, policy: &Policy, dry_run: bool, ahead: Duration, shrink: bool, use_current_folder: bool,
 ) -> Result<(Vec<Action>, Report)> {
+    use crate::composition::retention::configured_storage_limit;
     let now = SystemTime::now();
     let config = crate::shared::handoff::default_config_path();
     let maximum_mb = configured_storage_limit(&config)?;

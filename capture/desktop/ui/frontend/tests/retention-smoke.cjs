@@ -11,7 +11,7 @@ test('Storage Settings reads usage and confirms only explicitly saved limits', {
   const directory = path.join(home, '.config/apparent/agent-control');
   await fs.mkdir(directory, {recursive:true, mode:0o700});
   const address = path.join(directory, 'capture.sock');
-  let maximumMb = 20000;
+  let maximumMb = 1000;
   let revision = 'a'.repeat(16);
   let unknown = false;
   let usageFailed = false;
@@ -33,7 +33,7 @@ test('Storage Settings reads usage and confirms only explicitly saved limits', {
         case 'probelocation': return send({probe:{available:true}});
         case 'usage': {
           if (usageFailed) return send({error:'usage_unavailable'});
-          const reply = () => send({usage:{effectivePath:'/captures', displayPath:'/captures', formatted:'12.4 GB', bytes:'12400000000'}});
+          const reply = () => send({usage:{effectivePath:'/captures', displayPath:'/captures', formatted:'0.124 GB', bytes:'124000000'}});
           if (releaseUsage === undefined) {releaseUsage = reply; return;}
           return reply();
         }
@@ -68,8 +68,8 @@ test('Storage Settings reads usage and confirms only explicitly saved limits', {
   await expect.poll(() => typeof releaseUsage).toBe('function');
   await shot('storage-loading');
   releaseUsage();
-  await expect(page.getByText('7.6 GB below the 20 GB limit')).toBeVisible();
-  await expect(field).toHaveValue('20');
+  await expect(page.getByText('0.876 GB below the 1 GB limit')).toBeVisible();
+  await expect(field).toHaveValue('1');
   await expect(page.getByRole('button',{name:'Refresh usage'})).toHaveCount(0);
   await expect(page.getByText('Keep recordings', {exact:true})).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Show folder'})).toBeEnabled();
@@ -89,17 +89,17 @@ test('Storage Settings reads usage and confirms only explicitly saved limits', {
   await expect(page.getByText('Use 0 GB or more.')).toBeVisible();
   await expect(save).toBeDisabled();
   await shot('storage-invalid');
-  await field.fill('10');
-  await expect(page.getByText('7.6 GB below the saved 20 GB limit')).toBeVisible();
+  await field.fill('0.1');
+  await expect(page.getByText('0.876 GB below the saved 1 GB limit')).toBeVisible();
   await expect(page.getByText('Cleanup may move the oldest captures to the Trash to meet this limit.')).toBeVisible();
   await field.press('Escape');
-  await expect(field).toHaveValue('20');
+  await expect(field).toHaveValue('1');
   assert.equal(requests.filter(request => request.storage === 'savelimit').length,0);
-  await field.fill('10');
+  await field.fill('0.1');
   await field.press('Tab');
   await expect(save).toBeFocused();
   await save.press('Enter');
-  await expect(page.getByText('2.4 GB over the 10 GB limit')).toBeVisible();
+  await expect(page.getByText('0.024 GB over the 0.1 GB limit')).toBeVisible();
   await expect(field).toBeFocused();
   await shot('storage-over-limit');
   unknown = true;
@@ -107,7 +107,7 @@ test('Storage Settings reads usage and confirms only explicitly saved limits', {
   await save.click();
   await expect(page.getByText('Could not confirm the save.', {exact:false})).toBeVisible();
   await expect(field).toBeDisabled();
-  await expect(page.getByText('2.4 GB over the saved 10 GB limit')).toBeVisible();
+  await expect(page.getByText('0.024 GB over the saved 0.1 GB limit')).toBeVisible();
   await shot('storage-unconfirmed');
   await page.getByRole('button',{name:'Check saved limit'}).click();
   await expect(field).toBeEnabled();
@@ -119,5 +119,5 @@ test('Storage Settings reads usage and confirms only explicitly saved limits', {
   await expect(page.getByText('Could not measure folder usage.')).toBeVisible();
   usageFailed = false;
   await page.getByRole('button',{name:'Retry usage scan'}).click();
-  await expect(page.getByText('12.4 GB',{exact:true})).toBeVisible();
+  await expect(page.getByText('0.124 GB',{exact:true})).toBeVisible();
 });

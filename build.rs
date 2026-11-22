@@ -15,6 +15,7 @@ fn main() {
     compile_onboarding_entry_policy();
     emit_recording_permissions();
     emit_native_policy("record", "lip-input", "settings/lip-policy.bend");
+    emit_native_policy("record/storage", "storage-default", "src/retention/capacity.bend");
     emit_native_policy("record", "note-gesture", "notes/double-shift.json");
     emit_native_policy("onboarding", "note-tip", "host/tips/note-tip.json");
     #[cfg(target_os = "macos")]
