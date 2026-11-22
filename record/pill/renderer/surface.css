@@ -9,6 +9,11 @@
 /* Preserve the native row footprint and four-point notification gap. */
 .pill-row { box-sizing:border-box;display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-height:56px;width:max-content;max-width:var(--pill-limit,1200px);padding:3px;border:1px solid var(--apparent-border);border-radius:28px;background:var(--apparent-background);color:var(--apparent-foreground);user-select:none;overflow:hidden; }
 .pill .lead { display:flex;align-items:center;gap:8px;flex-shrink:0;padding-inline:8px; }
+.pill-row[data-doodles=true] { isolation:isolate; }
+.pill-doodles { position:absolute;inset:0;width:100%;height:100%;opacity:.55;pointer-events:none; }
+.pill-row[data-doodles=true] > :not(.pill-doodles) { z-index:1; }
+.pill-row[data-doodles=true] :is(.clock,button:not([data-primary=true])) { text-shadow:0 0 2px var(--apparent-background),0 0 4px var(--apparent-background); }
+.pill-row[data-doodles=true] button[data-action=finish] { background-color:color-mix(in srgb,var(--apparent-primary) 90%,transparent); }
 .pill .movable { -webkit-app-region:drag;cursor:grab; }
 .pill .manual-drag { -webkit-app-region:no-drag; }
 .pill .clock { font-size:18px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap; }

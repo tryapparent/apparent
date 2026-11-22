@@ -1,9 +1,9 @@
-import { useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useRef, useState, type ReactNode } from "react";
 import { Button } from "@apparent/ui/button";
 import { StickyNote } from "@apparent/ui/icons";
 import type { PillView } from "./view";
 import type { LipStatus } from "../input/renderer";
-import { InputMeter } from "./input-meter";
+import { InputMeter } from "./ink/input-meter";
 import { LiveCaption } from "./live-caption";
 import {
   Check,
@@ -22,6 +22,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import "./surface.css";
+const Doodles = lazy(() => import("./ink/doodles"));
 const actionIcons: Record<string, LucideIcon> = {
   "select-area": Scan,
   "switch-area": Scan,
@@ -140,7 +141,16 @@ export function PillSurface({
     >
       <div className="pill-surface" data-background={view.phase === "recording" && !!backgroundHandoff}>
         {view.phase === "recording" && backgroundHandoff && <BackgroundTab handoff={backgroundHandoff} open={backgroundOpen} toggle={() => setBackgroundOpen(!backgroundOpen)} />}
-        <div className="pill-row">
+        <div className="pill-row" data-doodles={view.phase === "recording" && view.doodleInk === true}>
+          {view.phase === "recording" && view.doodleInk === true && (
+            <Suspense fallback={null}>
+              <Doodles
+                reduced={view.reducedMotion || reduced}
+                sample={microphoneInput?.at(-1) ?? 0}
+                receivedAt={receivedAt}
+              />
+            </Suspense>
+          )}
           {view.phase !== "selecting" && (
             <div
               className={`lead ${view.draggable ? "movable" : ""} ${manualDrag ? "manual-drag" : ""}`}

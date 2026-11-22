@@ -44,18 +44,19 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   const compact=page.getByRole('switch',{name:'Compact recording prompts'});
   const speech=page.getByRole('switch',{name:'Transcript-only handoff'});
   const agentContext=page.getByRole('switch',{name:'Recording context for agents'});
+  const doodles=page.getByRole('switch',{name:'Recording pill doodles'});
   await expect(agentContext).toBeDisabled();
   await expect(agentContext).toHaveAccessibleDescription(/local dev page using the Apparent SDK/);
   await expect(compact).toBeDisabled();await expect(speech).toBeDisabled();
   await expect(toggle).toBeDisabled();await expect.poll(()=>Boolean(held)).toBe(true);
   reply(held!);hold=false;await expect(toggle).toBeEnabled();await expect(toggle).toHaveAttribute('aria-checked','false');
-  for(const trial of [compact,speech,agentContext]){
+  for(const trial of [compact,speech,agentContext,doodles]){
    await expect(trial).toHaveAttribute('aria-checked','false');
    await trial.focus();await page.keyboard.press('Space');
    await expect(trial).toHaveAttribute('aria-checked','true');await expect(trial).toBeFocused();
   }
   await page.reload();
-  for(const trial of [compact,speech,agentContext])await expect(trial).toHaveAttribute('aria-checked','true');
+  for(const trial of [compact,speech,agentContext,doodles])await expect(trial).toHaveAttribute('aria-checked','true');
   assert.equal(await toggle.locator('.apparent-switch-track').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(229, 229, 234)');
   const track=toggle.locator('.apparent-switch-track');
   await expect(track).toHaveCSS('width','51px');
@@ -157,7 +158,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   await expect(silentPrompt).toHaveAttribute('aria-checked','false');
   await expect(retryLipflow).toHaveCount(0);
   const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setDeviceMetricsOverride',{width:640,height:530,deviceScaleFactor:1,mobile:false});
-  const recoveries: [string,typeof toggle][]=[['streaming',toggle],['compactHandoff',compact],['transcriptOnly',speech],['agentContext',agentContext]];
+  const recoveries: [string,typeof toggle][]=[['streaming',toggle],['compactHandoff',compact],['transcriptOnly',speech],['agentContext',agentContext],['pillDoodles',doodles]];
   if(process.platform==='linux')recoveries.push(['autoPaste',autoPaste]);
   recoveries.push(['sharing',sharing]);
   if(process.platform==='darwin')recoveries.push(['wisprFlow',wispr]);

@@ -160,6 +160,7 @@ impl ApparentCoordinator {
             clock: snapshot.clock,
             reduced_motion: snapshot.reduced_motion,
             input_waveform: snapshot.input_waveform,
+            doodle_ink: false,
             transcript: None,
             notice: None,
             note_tip: None,

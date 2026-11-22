@@ -85,11 +85,6 @@ fn assets() -> Option<(PathBuf, PathBuf)> {
 }
 
 impl Session {
-    fn capture_key(generation: u64) -> String {
-        static BOOT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-        format!("{}:{generation}", BOOT.get_or_init(crate::shared::ids::make_bundle_id))
-    }
-
     pub fn set_t3_eligible(&mut self, eligible: bool) { self.t3_eligible = eligible; }
 
     pub fn has_completion(&self, generation: u64) -> bool {
@@ -142,7 +137,8 @@ impl Session {
         true
     }
 
-    pub fn open(view: View, generation: u64, selection: Selection) -> anyhow::Result<Self> {
+    pub fn open(mut view: View, generation: u64, selection: Selection) -> anyhow::Result<Self> {
+        view.read_doodles(None);
         let (app, runtime) =
             assets().ok_or_else(|| anyhow::anyhow!("Packaged recording pill unavailable"))?;
         let mut launch = Command::new(&runtime);
@@ -535,6 +531,7 @@ impl Session {
             && self.view.admits_sharing_confirmation(*self.sharing_confirmation.lock().unwrap())
     }
     pub fn update(&mut self, mut view: View, generation: u64, selection: Selection) {
+        view.read_doodles((self.generation == generation).then_some(&self.view));
         #[cfg(target_os = "linux")]
         {
             let position = self.drag_position.lock().unwrap().take();
@@ -672,6 +669,7 @@ mod native_tests {
             reduced_motion: true,
             transcript: None,
             input_waveform: None,
+            doodle_ink: false,
             presentation: super::super::Presentation {
                 phase: "recording".into(),
                 ..Default::default()

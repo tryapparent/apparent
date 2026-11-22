@@ -24,10 +24,10 @@ export default defineConfig({
   resolve: { alias: { '@lip-runtime': fileURLToPath(new URL('.', mediaPipe)).slice(0, -1) }, dedupe: ['react', 'react-dom', '@apparent/ui', 'lucide-react'] },
   plugins: [{ name: 'recording-settings-policy', buildStart() {
     execFileSync(process.execPath, [fileURLToPath(new URL('../../../../record/settings/build.ts', import.meta.url))], { stdio: 'inherit' });
-    execFileSync(process.execPath, [
+    for (const mode of ['bloom', 'ink']) execFileSync(process.execPath, [
       fileURLToPath(new URL('../../../../record/enablement/ci/bend/build.ts', import.meta.url)),
-      fileURLToPath(new URL('../../../../record/pill/renderer', import.meta.url)),
-      'bloom',
+      fileURLToPath(new URL('../../../../record/pill/renderer/ink', import.meta.url)),
+      mode,
     ], { stdio: 'inherit' });
     execFileSync(process.execPath, [fileURLToPath(new URL('../../../../composition/enablement/ci/bend/build.ts', import.meta.url))], { stdio: 'inherit' });
     execFileSync(process.execPath, [fileURLToPath(new URL('../../../../handoff/enablement/ci/bend/build.ts', import.meta.url))], { stdio: 'inherit' });
