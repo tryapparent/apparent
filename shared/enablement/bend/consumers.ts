@@ -1,3 +1,4 @@
+import { declaredConsumers } from "./routing/load.ts";
 import { sharedBendInput } from "./manifest.ts";
 
 export const sparklePolicySource = "shared/analytics/sparkle-outcomes.bend";
@@ -14,13 +15,8 @@ export function bendConsumers(path: string) {
     (path.startsWith(sparklePolicyBuild) && !path.endsWith("/check.ts"))
   )
     return ["capture", "desktop"] as const;
-  if (
-    path === ".github/workflows/stream-handoff.yml" ||
-    path === "handoff/enablement/ci/bend/check.ts"
-  )
-    return [];
-  if (/^(handoff|composition\/handoff)\//.test(path) && !path.endsWith(".md"))
-    return ["capture", "desktop"] as const;
+  const declared = declaredConsumers(path);
+  if (declared) return declared;
   if (sharedBendInput(path))
     return ["capture", "desktop", "service", "onboarding"] as const;
   if (
@@ -32,7 +28,9 @@ export function bendConsumers(path: string) {
     return ["capture", "desktop"] as const;
   if (
     path.startsWith("record/notes/") ||
-    path === "record/enablement/ci/bend/note-gesture.ts"
+    path === "record/enablement/ci/bend/note-gesture.ts" ||
+    path === "record/storage/enablement/ci/bend/storage-default.ts" ||
+    path === "record/storage/src/retention/capacity.bend"
   )
     return ["capture", "desktop"] as const;
   if (path.startsWith("record/pill/renderer/"))
@@ -51,11 +49,7 @@ export function bendConsumers(path: string) {
       : [];
   if (path.startsWith("record/completion/") && path.endsWith(".bend"))
     return ["capture", "desktop", "onboarding"] as const;
-  if (
-    path === ".github/workflows/stream-record.yml" ||
-    path === "connect/enablement/ci/bend/check.ts"
-  )
-    return [];
+  if (path === ".github/workflows/stream-record.yml") return [];
   if (
     path.startsWith("onboarding/host/traversal/") ||
     path.startsWith("onboarding/host/tips/") ||
@@ -71,13 +65,4 @@ export function bendConsumers(path: string) {
     path === "onboarding/enablement/ci/pack.ts"
   )
     return ["onboarding"] as const;
-  if (
-    path === "connect/enablement/ci/bend/settings.ts" ||
-    path === "connect/client/typescript/src/account/account-status.bend"
-  )
-    return ["capture", "desktop", "onboarding"] as const;
-  if (path === "connect/enablement/ci/bend/modules.json")
-    return ["capture", "desktop", "onboarding", "service"] as const;
-  if (path.startsWith("connect/enablement/ci/bend/"))
-    return ["service"] as const;
 }

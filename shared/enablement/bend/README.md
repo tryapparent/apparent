@@ -36,6 +36,15 @@ when the runtime supports it.
    declarations for all consumers of the source, owner build and shared compiler.
    Pre-push discovers registered owners and runs their check for affected paths.
 
+Handoff and Connect declare suite consumers in `consumers.json` beside
+`modules.json`. Each key is a repository-relative path. An exact match wins,
+then the longest directory prefix for non-Markdown files. Every registered
+module needs a nonempty route. The proof entrypoint and stream workflow may
+declare an empty route when they only verify. Manifest edits select the union
+of module consumers. Routing declaration edits widen to all supported targets,
+including consumers removed by the edit. The hook checks declarations against
+staged modules. CI and pre-push use the same routes for suites and packaging.
+
 The staged hook reads Git blobs offline. It requires regular non-executable
 manifests, sources and owner entrypoints, enforces the 4,000-token source budget
 and comment rule, and permits only `import Base`. The compiler isolates each

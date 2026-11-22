@@ -1,5 +1,6 @@
 // The real packaged CLI must adopt the worker, not merely ship unused files.
 import assert from 'node:assert/strict';
+import {verifyZoomNarration} from '../../../../agent/enablement/ci/zoom-package.ts';
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
@@ -137,6 +138,7 @@ try {
     const files=output.trim().split('\n').filter(Boolean);assert.equal(files.length,count);
     if(count)assert.equal(files[0],join(saved,'frames/frame-002.png'));
   }
+  verifyZoomNarration(binary, bundle, env);
   const before= readdirSync(join(bundle,'zoom/range-0-2500')).sort();
   for(const [from,to,fps,message] of [['2.5','0',4,'Frame range ends before it starts'],
     ['0','2.5',0,'FPS must be between 1 and 240'],['0','2.5',241,'FPS must be between 1 and 240']] as const) {

@@ -118,16 +118,17 @@ acceptance gates for this slice.
 
 The shared Electron Storage pane shows capture-folder usage when it opens. Its
 single size preference accepts decimal GB to three decimal places. The native
-config transaction writes `retention.maximumMb` as decimal MB. Zero keeps
-captures without a size limit. A successful save nudges the existing cleanup
-worker.
+config transaction writes `retention.maximumMb` as decimal MB. Profiles with
+no `retention` setting default to 1 GB. Zero keeps captures without a size limit.
+A successful save nudges the existing cleanup worker.
 
-The presence of this field selects size-based cleanup. An existing config with
-no field keeps the former age policy until the first size-limit save. The save
-retains the previous age keys and any unrecognized preferences. The legacy
-retention controls can explicitly switch back to age-based cleanup. To restore
-the previous age policy through config, remove only `retention.maximumMb`. The
-worker rereads the config on its next pass.
+An existing `retention` object without `maximumMb` keeps its age policy until
+the first size-limit save. The save retains the previous age keys and any
+unrecognized preferences. The legacy
+retention controls can explicitly switch back to age-based cleanup by choosing
+a preset. Removing only `retention.maximumMb` from the config restores age-based
+cleanup. Removing the entire `retention` setting restores the 1 GB default.
+The worker rereads the config on its next pass.
 
 Size-based passes measure the effective capture folder's logical bytes.
 Bend selects settled, finalized captures from oldest to newest, up to the

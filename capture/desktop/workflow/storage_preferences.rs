@@ -41,6 +41,38 @@ impl SavePolicy {
     }
 }
 
+pub(in crate::capture::desktop) fn retention_note(
+    policy: &crate::capture::engine::bundle::retention::Policy, maximum_mb: Option<u32>,
+) -> String {
+    match maximum_mb {
+        Some(0) => return "No size limit.".into(),
+        Some(limit) => return format!("Storage limit is {} GB. Cleanup moves the oldest eligible captures to the Trash to meet this limit.", f64::from(limit) / 1000.0),
+        None => {}
+    }
+    let days = |n: u32| {
+        if n == 1 {
+            "1 day".to_owned()
+        } else {
+            format!("{n} days")
+        }
+    };
+    let bin = if cfg!(target_os = "windows") {
+        "Recycle Bin"
+    } else {
+        "Trash"
+    };
+    match (policy.media_days, policy.bundle_days) {
+        (None, None) => String::new(),
+        (Some(media), Some(bundle)) => format!(
+            "Video and audio go to the {bin} after {}, the rest of each capture after {}.",
+            days(media),
+            days(bundle)
+        ),
+        (Some(media), None) => format!("Video and audio go to the {bin} after {}.", days(media)),
+        (None, Some(bundle)) => format!("Captures go to the {bin} after {}.", days(bundle)),
+    }
+}
+
 pub(in crate::capture::desktop) fn read(config: &Path) -> Result<serde_json::Value, &'static str> {
     let raw = capture_location::read_raw(config).map_err(|_| "config_read_failed")?;
     let stored = raw.get("retention").cloned().and_then(|value| serde_json::from_value::<crate::capture::engine::bundle::retention::Policy>(value).ok());
@@ -59,7 +91,7 @@ pub(in crate::capture::desktop) fn read(config: &Path) -> Result<serde_json::Val
         "retention": {"mediaDays":media_days,"bundleDays":bundle_days},
         "defaults": crate::capture::engine::bundle::retention::Policy::default(),
         "revision": revision(&raw),
-        "maximumMb": crate::capture::engine::bundle::retention::storage_limit(&raw),
+        "maximumMb": crate::composition::retention::storage_limit(&raw),
         "custom": custom,
     }))
 }
@@ -101,7 +133,7 @@ fn update_policy(
     expected: &str,
     admit: impl Fn() -> bool,
 ) -> Result<serde_json::Value, &'static str> {
-    if policy.is_some_and(|p| !p.valid()) || maximum_mb.is_some_and(|mb| mb > crate::capture::engine::bundle::retention::MAX_STORAGE_MB) {
+    if policy.is_some_and(|p| !p.valid()) || maximum_mb.is_some_and(|mb| mb > crate::composition::retention::MAX_STORAGE_MB) {
         return Err("invalid_request");
     }
     let mut refusal = None;
@@ -205,6 +237,16 @@ pub(in crate::capture::desktop) fn usage(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unset_storage_limit_reads_one_gigabyte() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = tmp.path().join("config.json");
+        assert_eq!(read(&config).unwrap()["maximumMb"], 1000);
+        assert!(!config.exists());
+        std::fs::write(&config, r#"{"storageFixture":true}"#).unwrap();
+        assert_eq!(read(&config).unwrap()["maximumMb"], 1000);
+    }
+
     #[test]
     fn malformed_known_retention_values_use_week_defaults_without_echoing_them() {
         let root = std::env::temp_dir().join(format!("retention-{}", crate::shared::ids::make_bundle_id()));

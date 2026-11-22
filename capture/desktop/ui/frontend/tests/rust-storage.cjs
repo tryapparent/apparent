@@ -53,10 +53,12 @@ async function main() {
   assert.deepEqual(raw.experiments, { electronCaptureLocation: false, other: true });
   assert.deepEqual(await storageLocation(home, 'reset', { expected: first.revision }), { status: 'error', code: 'conflict' });
   const policy = await storagePreference(home, 'retention');
+  assert.equal(policy.maximumMb, 1000);
   assert.deepEqual(policy.policy, { mediaDays: { present: false, value: null }, bundleDays: { present: false, value: null } });
   assert.deepEqual(policy.defaults, { mediaDays: 7, bundleDays: 30 });
   const changedPolicy = await storagePreference(home, 'saveretention', { expected: policy.revision,
     policy: { mediaDays: 30, bundleDays: 90 } });
+  assert.equal(changedPolicy.maximumMb, null);
   assert.deepEqual(changedPolicy.policy, { mediaDays: { present: true, value: 30 }, bundleDays: { present: true, value: 90 } });
   assert.deepEqual(await storagePreference(home, 'retention'), changedPolicy);
   assert.deepEqual(await storagePreference(home, 'saveretention', { expected: policy.revision,
@@ -64,6 +66,7 @@ async function main() {
   await fs.writeFile(path.join(selected, 'synthetic.bin'), Buffer.alloc(1_000_000));
   assert.equal((await storagePreference(home, 'usage')).usage.formatted, '1 MB');
   const defaultPolicy = await storagePreference(home, 'resetretention', { expected: changedPolicy.revision });
+  assert.equal(defaultPolicy.maximumMb, 1000);
   assert.deepEqual(defaultPolicy.policy, { mediaDays: { present: false, value: null }, bundleDays: { present: false, value: null } });
   assert.equal(defaultPolicy.custom, false);
   assert.deepEqual(defaultPolicy.defaults, policy.defaults);

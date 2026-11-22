@@ -395,37 +395,12 @@ pub(crate) fn preset_id(preset: crate::capture::engine::bundle::retention::Prese
     }
 }
 
-pub(crate) fn retention_view(policy: &crate::capture::engine::bundle::retention::Policy) -> RetentionView {
+pub(crate) fn retention_view(policy: &crate::capture::engine::bundle::retention::Policy, maximum_mb: Option<u32>) -> RetentionView {
     RetentionView {
-        preset: policy.preset().map(preset_id),
+        preset: if maximum_mb.is_none() { policy.preset().map(preset_id) } else { None },
         options: crate::capture::engine::bundle::retention::Preset::ALL.into_iter()
             .map(|p| OptionView { id: preset_id(p), label: p.label() }).collect(),
-        note: retention_note(policy),
-    }
-}
-
-fn retention_note(policy: &crate::capture::engine::bundle::retention::Policy) -> String {
-    let days = |n: u32| {
-        if n == 1 {
-            "1 day".to_owned()
-        } else {
-            format!("{n} days")
-        }
-    };
-    let bin = if cfg!(target_os = "windows") {
-        "Recycle Bin"
-    } else {
-        "Trash"
-    };
-    match (policy.media_days, policy.bundle_days) {
-        (None, None) => String::new(),
-        (Some(media), Some(bundle)) => format!(
-            "Video and audio go to the {bin} after {}, the rest of each capture after {}.",
-            days(media),
-            days(bundle)
-        ),
-        (Some(media), None) => format!("Video and audio go to the {bin} after {}.", days(media)),
-        (None, Some(bundle)) => format!("Captures go to the {bin} after {}.", days(bundle)),
+        note: crate::capture::desktop::workflow::storage_preferences::retention_note(policy, maximum_mb),
     }
 }
 
@@ -908,6 +883,7 @@ impl Panel {
             .ok()
             .map(|program| program.name());
         let policy = crate::capture::engine::bundle::retention::Policy::load_from(&host.config_path());
+        let maximum_mb = crate::composition::retention::configured_storage_limit(&host.config_path()).ok().flatten();
         let login = login_item();
         View {
             version: env!("APPARENT_VERSION_LABEL").to_owned(),
@@ -963,7 +939,7 @@ impl Panel {
                 command,
             },
             video_export: config.video_export_enabled(),
-            retention: retention_view(&policy),
+            retention: retention_view(&policy, maximum_mb),
             captures_size: self.captures_size.map(crate::capture::engine::bundle::retention::format_bytes),
             captures_dir: CapturesDirView::new(&config),
             permissions: settings_permissions::rows(self.grants.as_ref(), &self.requested, &config, true).collect(),

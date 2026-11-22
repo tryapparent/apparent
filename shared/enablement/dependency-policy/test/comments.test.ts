@@ -50,18 +50,12 @@ function fixture(t: any) {
       'jobs:\n  check:\n    steps:\n      - run: "true"\n',
     );
   }
-  put(
+  for (const file of [
     ".githooks/pre-commit",
-    readFileSync(path.join(root, ".githooks/pre-commit"), "utf8"),
-  );
-  chmodSync(path.join(dir, ".githooks/pre-commit"), 0o755);
-  put(
     "enablement/directory-width/check.py",
-    readFileSync(
-      path.join(root, "enablement/directory-width/check.py"),
-      "utf8",
-    ),
-  );
+  ])
+    put(file, readFileSync(path.join(root, file), "utf8"));
+  chmodSync(path.join(dir, ".githooks/pre-commit"), 0o755);
   mkdirSync(path.join(dir, "shared/enablement"), { recursive: true });
   symlinkSync(
     tool,
@@ -69,16 +63,8 @@ function fixture(t: any) {
     "dir",
   );
   git("config", "core.hooksPath", ".githooks");
-  git("add", "-A");
-  git(
-    "-c",
-    "core.hooksPath=/dev/null",
-    "commit",
-    "-qm",
-    "trusted tool fixture",
-  );
   const stage = () => git("add", "-A");
-  const baseline = () => {
+  const baseline = (message = "legacy baseline") => {
     stage();
     git(
       "-c",
@@ -86,9 +72,10 @@ function fixture(t: any) {
       "commit",
       "--allow-empty",
       "-qm",
-      "legacy baseline",
+      message,
     );
   };
+  baseline("trusted tool fixture");
   const check = (pattern?: RegExp) => {
     const r = spawnSync("sh", [".githooks/pre-commit"], {
       cwd: dir,
@@ -429,6 +416,12 @@ test("Bend comment and import rules examine staged source and accept quoted hash
   rmSync(path.join(f.dir, "capture/label.bend"));
   f.put("handoff/label.bend", valid);
   manifest("handoff", "label.bend");
+  f.stage();
+  f.check(/Missing regular consumer declaration/);
+  f.put(
+    "handoff/enablement/ci/bend/consumers.json",
+    '{"handoff/": ["desktop"]}',
+  );
   f.stage();
   f.check();
 });

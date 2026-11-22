@@ -1,0 +1,6 @@
+{
+  ".github/workflows/stream-handoff.yml": [],
+  "handoff/enablement/ci/bend/check.ts": [],
+  "handoff/": ["capture", "desktop"],
+  "composition/handoff/": ["capture", "desktop"]
+}
