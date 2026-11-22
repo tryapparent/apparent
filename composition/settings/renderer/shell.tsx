@@ -26,6 +26,7 @@ import { ConnectCard, useConnectSettings } from "./connect";
 import type { ComponentType } from "react";
 import {
   AgentContextPreference,
+  CircleLabelsPreference,
   PillDoodles,
   PushToTalk,
   type PushToTalkProps,
@@ -90,6 +91,7 @@ declare module "react" {
         pillDoodlesExperiment?: typeof PillDoodles;
         autoPasteExperiment?: ComponentType<AutoPasteProps>;
         frogExperiment?: ComponentType<FrogNudgePreferenceProps>;
+        circleLabelsExperiment?: typeof CircleLabelsPreference;
         agentContextExperiment?: ComponentType<AgentContextPreferenceProps>;
       };
     }
@@ -240,6 +242,7 @@ function Settings() {
             pillDoodlesExperiment={current === "Labs" ? PillDoodles : undefined}
             autoPasteExperiment={current === "Labs" ? AutoPaste : undefined}
             agentContextExperiment={AgentContextPreference}
+            circleLabelsExperiment={CircleLabelsPreference}
             frogExperiment={
               current === "Labs" ? FrogNudgePreference : undefined
             }

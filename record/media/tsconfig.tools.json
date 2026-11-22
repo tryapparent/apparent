@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.json",
-  "compilerOptions": {"rootDir": "..", "noEmit": true, "allowImportingTsExtensions": true},
-  "include": ["stage.ts", "test/**/*.ts"]
+  "compilerOptions": {"rootDir": "..", "lib": ["ES2022","DOM","DOM.AsyncIterable"], "noEmit": true, "allowImportingTsExtensions": true},
+  "include": ["stage.ts", "test/**/*.ts", "circle-ocr/**/*.ts", "circle-vision/**/*.ts", "../enablement/media/circle-providers.mts"]
 }

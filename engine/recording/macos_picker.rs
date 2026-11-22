@@ -19,7 +19,7 @@ use screencapturekit::recording_output::{
 use screencapturekit::stream::content_filter::SCShareableContentStyle;
 use screencapturekit::stream::delegate_trait::ErrorHandler;
 
-use super::{CANDIDATE_EDGE, CandidateBuffer, Sampler};
+use super::{CandidateBuffer, Sampler};
 use crate::capture::engine::runtime::recording::diagnostics::sampling::Rejection;
 use crate::capture::engine::runtime::{
     apparent_log, capture_size, recording::recorder::push_candidate, screens,
@@ -210,7 +210,7 @@ fn record(
     let stopping = Arc::clone(&sampler.stopping);
     let started = sampler.started_at;
     let last = std::sync::Mutex::new(None::<Instant>);
-    let (candidate_width, candidate_height) = capture_size(&sampler.target, CANDIDATE_EDGE);
+    let (candidate_width, candidate_height) = candidate_frames.lock().unwrap_or_else(std::sync::PoisonError::into_inner).sampling_size(&sampler.target, true);
     stream.add_output_handler(
         move |sample: CMSampleBuffer, kind| {
             if kind != SCStreamOutputType::Screen || stopping.load(Ordering::Acquire) {
