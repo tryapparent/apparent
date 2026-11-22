@@ -177,8 +177,8 @@ function captureReference(home, operation = 'read', expected, timeoutMs = 3500) 
 }
 
 function storagePreference(home, operation, fields = {}, timeoutMs = 3500) {
-  if (!['retention', 'saveretention', 'resetretention', 'usage'].includes(operation)) throw new Error('Invalid preference operation');
-  const mutation = ['saveretention', 'resetretention'].includes(operation);
+  if (!['retention', 'saveretention', 'resetretention', 'savelimit', 'usage'].includes(operation)) throw new Error('Invalid preference operation');
+  const mutation = ['saveretention', 'resetretention', 'savelimit'].includes(operation);
   const request = { storage: operation, deadline: Number(process.hrtime.bigint() / 1000000n) + Math.min(timeoutMs, 3000) };
   if (mutation) {
     if (!/^[a-f0-9]{16}$/.test(fields.expected)) throw new Error('Invalid revision');
@@ -190,21 +190,27 @@ function storagePreference(home, operation, fields = {}, timeoutMs = 3500) {
       throw new Error('Invalid retention policy');
     request.policy = { mediaDays: policy.mediaDays, bundleDays: policy.bundleDays };
   }
+  const { storageLimitValid } = require('./storage-owner/retention/size-limit.js');
+  if (operation === 'savelimit') {
+    if (!storageLimitValid(fields.maximumMb)) throw new Error('Invalid storage limit');
+    request.maximumMb = fields.maximumMb;
+  }
   return exchange(home, JSON.stringify(request) + '\n', (value) => {
     if (value?.error) return decodeStorage(value);
     if (operation === 'usage') {
       const u = value?.usage;
       return u && text(u.effectivePath) && text(u.displayPath) && text(u.formatted)
-        ? { status: 'connected', usage: { effectivePath: u.effectivePath, displayPath: u.displayPath, formatted: u.formatted } }
+        ? { status: 'connected', usage: { effectivePath: u.effectivePath, displayPath: u.displayPath, formatted: u.formatted, ...(typeof u.bytes === 'string' && /^(0|[1-9][0-9]{0,19})$/.test(u.bytes) && BigInt(u.bytes) <= 0xffffffffffffffffn ? {bytes: u.bytes} : {}) } }
         : { status: 'error', code: 'invalid_response' };
     }
     const r = value?.retention;
     const field = v => v && typeof v.present === 'boolean' &&
       (v.value === null || (Number.isInteger(v.value) && v.value >= 0 && v.value <= 0xffffffff));
-    if (!r || !field(r.mediaDays) || !field(r.bundleDays) || typeof value.custom !== 'boolean' ||
+    if ((value?.maximumMb != null && !storageLimitValid(value.maximumMb)) || !r || !field(r.mediaDays) || !field(r.bundleDays) || typeof value.custom !== 'boolean' ||
         !/^[a-f0-9]{16}$/.test(value.revision)) return { status: 'error', code: 'invalid_response' };
     return { status: 'connected', policy: { mediaDays: { present: r.mediaDays.present, value: r.mediaDays.value },
       bundleDays: { present: r.bundleDays.present, value: r.bundleDays.value } }, custom: value.custom, revision: value.revision,
+      ...(Object.hasOwn(value, 'maximumMb') && {maximumMb: value.maximumMb}),
       ...(require('./storage-owner/policy.js').isRetentionPolicy(value.defaults) ? { defaults: value.defaults } : {}) };
   }, 16384, timeoutMs, { status: 'error', code: mutation ? 'outcome_unknown' : 'timeout' });
 }

@@ -15,7 +15,8 @@
     "shortcuts/push-to-talk.bend",
     "transcription/src/caption-admission.bend",
     "storage/src/retention/feedback.bend",
-    "pill/whiteboard/whiteboard-edit.bend"
+    "pill/whiteboard/whiteboard-edit.bend",
+    "storage/src/retention/capacity.bend"
   ],
   "inputs": [
     "completion/",

@@ -54,12 +54,13 @@ try {
 } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
 await mkdir(workflow, {recursive: true});
 await cp(temporary, workflow, {recursive: true});
+await copyFile(path.join(packageRoot, 'dist', 'retention/capacity.mjs'), path.join(workflow, 'retention/capacity.mjs'));
 await writeFile(path.join(workflow, 'package.json'), '{"type":"commonjs"}\n');
 // Native cleanup consumes the owner's compiled ESM policy worker. Keep Node
 // filesystem imports outside the browser/CommonJS controller compilation graph.
 const cleanup = path.join(workflow, 'cleanup-policy');
 await mkdir(path.join(cleanup, 'retention'), {recursive: true});
-for (const relative of ['policy.js', 'retention/policy.js', 'retention/worker.js']) {
+for (const relative of ['policy.js', 'retention/policy.js', 'retention/worker.js', 'retention/size-limit.js', 'retention/capacity.mjs']) {
   await copyFile(path.join(packageRoot, 'dist', relative), path.join(cleanup, relative));
 }
 await writeFile(path.join(cleanup, 'package.json'), '{"type":"module"}\n');

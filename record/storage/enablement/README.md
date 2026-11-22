@@ -22,8 +22,8 @@ both pointer and keyboard. Record the compositor window ID, Electron PID,
 position, dimensions and focused window at every transition. Move and resize
 the Settings window before repeating the sequence. Check the visible nav
 selection and Tab continuation. At 720×530 and the supported 640×530 minimum,
-inspect light and dark themes, complete retention option labels, scroll access
-to usage, focus styling, and loading, disabled, error and recovery states.
+inspect light and dark themes, the usage overview, the maximum GB field and
+its focus and validation, and loading, disabled, error and recovery states.
 
 Exercise `experiments.electronCaptureLocation: false` and recover from an
 Electron failure while on Storage using the existing native Settings fallback.
@@ -38,22 +38,25 @@ read the same fixture config and that recovery does not dispatch a mutation.
   unrelated values after each mutation.
 - Use the actual parented chooser to Cancel and then Change. Compare config
   bytes after Cancel, check the new saved and effective folder after Change,
-  and confirm Reset removes the saved leaf. Verify that the original files
+  and confirm the existing location transaction can reset the saved leaf. Verify that the original files
   stay in place. Repeat with `APPARENT_CAPTURES_DIR` set at app launch and
   verify the override stays effective through both writes.
-- Save the Month preset and reset to Week. Read back the persisted leaves and
-  verify that Reset preserves unrelated nested retention keys. Refresh usage
-  with a known byte count. Verify that a failed scan does not show a stale total
-  and that Refresh usage recovers when the folder is readable again.
-- Refuse a write through the real provider and recover through Refresh. Exercise
+- Seed known logical usage, confirm the automatically scanned total, then save
+  a cap and verify the saved byte threshold through native readback. Save zero
+  and verify the usage meter gives way to the unlimited state. Retained legacy
+  age settings, unrelated preferences and synthetic captures must survive.
+- Exercise a scan failure and recovery with Retry usage scan. Failed scans must
+  clear the stale total. Exercise the registered Record worker against synthetic
+  capped, recently changed, busy and pinned bundles in the installed runtime.
+- Refuse a write through the real provider and recover through Check saved limit. Exercise
   uncertain publication and conflict through the existing fault/transport
   suites when the guest cannot reliably induce them. Record the mutation count
   and verify that another write requires fresh readback.
 
-Capture location takes effect for subsequent captures. Cleanup and transcript
-workers keep their startup directory until the app restarts. Retention saves
-nudge the existing cleanup worker, which rereads policy and defers during
-capture. Reuse matching native regression evidence for unchanged worker timing,
+Capture location takes effect for subsequent captures. Size-based cleanup
+rereads the effective location and limit for each pass. The legacy age cleanup
+and transcript workers retain their startup directory. Saving a limit nudges
+cleanup, which defers during capture. Reuse matching native regression evidence for unchanged worker timing,
 durability and live/busy capture protections. Record source and artifact inputs
 when reusing evidence. Label simulated socket replies separately from the
 installed chooser, native provider and compositor checks.

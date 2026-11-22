@@ -56,6 +56,7 @@ contextBridge.exposeInMainWorld('apparent', Object.freeze({
   readCaptureLocation: () => ipcRenderer.invoke('apparent:read-capture-location'),
   changeCaptureLocation: () => ipcRenderer.invoke('apparent:change-capture-location'),
   resetCaptureLocation: () => ipcRenderer.invoke('apparent:reset-capture-location'),
+  saveStorageLimit: maximumMb => ipcRenderer.invoke('apparent:limit-retention', maximumMb),
   readRetention: () => ipcRenderer.invoke('apparent:read-retention'),
   saveRetention: (preset) => ipcRenderer.invoke('apparent:save-retention', preset),
   resetRetention: () => ipcRenderer.invoke('apparent:reset-retention'),
