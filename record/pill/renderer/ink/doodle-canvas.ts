@@ -6,7 +6,7 @@ type Mark = {
   strokes: Point[][];
   length: number;
   drawn: number;
-  born: number;
+  finishedAt: number | null;
   pressure: number;
   offset: number;
   span: number;
@@ -17,6 +17,7 @@ export function mountDoodles(canvas: HTMLCanvasElement, reduced: boolean) {
   if (!context) return;
   const scheme = matchMedia("(prefers-color-scheme: dark)");
   const forcedColors = matchMedia("(forced-colors: active)");
+  const lifetime = policy.ink_lifetime_ms();
   let width = 0;
   let height = 0;
   let pixelRatio = 0;
@@ -29,49 +30,59 @@ export function mountDoodles(canvas: HTMLCanvasElement, reduced: boolean) {
   let frame = 0;
   let lastPaint = 0;
 
-  function nextMark(now: number, pressure: number): Mark {
+  function nextMark(pressure: number): Mark {
     const pose = policy.next_mark(seed, glyphs.length, previous);
     seed = pose.seed;
     previous = pose.glyph;
     const angle = (pose.turn - 50) / 175;
-    const scale = 0.76 + pose.size / 248;
-    const cos = Math.cos(angle) * scale;
-    const sin = Math.sin(angle) * scale;
-    const y =
-      height > 80
-        ? 24 + (pose.height * (height - 48)) / 100
-        : height / 2 + (pose.height - 50) / 5;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
     let left = Infinity;
     let right = -Infinity;
+    let top = Infinity;
+    let bottom = -Infinity;
     let length = 0;
     const strokes = glyphs[pose.glyph].strokes.map((stroke) => {
       let last: Point | undefined;
       return stroke.split(" ").map((pair) => {
         const [u, v] = pair.split(",").map(Number);
         const x = u * cos - v * sin;
-        const point = { x, y: y + u * sin + v * cos, distance: length };
+        const point = { x, y: u * sin + v * cos, distance: length };
         if (last) length += Math.hypot(x - last.x, point.y - last.y);
         point.distance = length;
         last = point;
         left = Math.min(x, left);
         right = Math.max(x, right);
+        top = Math.min(point.y, top);
+        bottom = Math.max(point.y, bottom);
         return point;
       });
     });
-    const span = right - left;
+    const placement = policy.ink_placement(
+      pose.size,
+      pose.height,
+      Math.floor(height),
+      Math.ceil(bottom - top),
+    );
+    const scale = placement.scale / 1000;
+    const span = (right - left) * scale;
     if (edge + span > width - 8) edge = 8;
     for (const stroke of strokes) {
-      for (const point of stroke) point.x += edge - left;
+      for (const point of stroke) {
+        point.x = edge + (point.x - left) * scale;
+        point.y = placement.top + (point.y - top) * scale;
+        point.distance *= scale;
+      }
     }
-    edge += span + 3;
+    edge += span + 2;
     return {
       strokes,
-      length,
+      length: length * scale,
       drawn: 0,
-      born: now,
+      finishedAt: null,
       pressure,
       offset: travel,
-      span: span + 3,
+      span: span + 2,
     };
   }
 
@@ -84,12 +95,12 @@ export function mountDoodles(canvas: HTMLCanvasElement, reduced: boolean) {
     context.lineJoin = "round";
     for (const mark of marks) {
       const age = policy.ink_age(
-        Math.round(now - mark.born),
+        Math.round(now - (mark.finishedAt ?? now)),
         Math.max(0, Math.round(travel - mark.offset)),
         Math.max(1, Math.round(width - 48)),
       );
       context.globalAlpha = policy.ink_alpha(age, mark.pressure) / 1000;
-      context.lineWidth = 1.7 + mark.pressure / 85;
+      context.lineWidth = policy.ink_width(mark.pressure) / 100;
       context.beginPath();
       for (const stroke of mark.strokes) {
         const first = stroke[0];
@@ -136,7 +147,7 @@ export function mountDoodles(canvas: HTMLCanvasElement, reduced: boolean) {
     marks = [];
     if (reduced && width > 20) {
       for (let i = 0; i < Math.max(1, Math.floor(width / 72)); i++) {
-        const mark = nextMark(0, 16);
+        const mark = nextMark(28);
         mark.drawn = mark.length;
         marks.push(mark);
         edge = (i + 1) * 72 + 8;
@@ -157,7 +168,7 @@ export function mountDoodles(canvas: HTMLCanvasElement, reduced: boolean) {
       active,
     );
     if (!current) {
-      current = nextMark(now, pressure);
+      current = nextMark(pressure);
       marks.push(current);
     }
     current.drawn = Math.min(
@@ -166,8 +177,11 @@ export function mountDoodles(canvas: HTMLCanvasElement, reduced: boolean) {
     );
     current.pressure = pressure;
     travel = current.offset + (current.span * current.drawn) / current.length;
-    marks = marks.filter((mark) => now - mark.born < 6500 || mark === current);
-    if (current.drawn >= current.length) current = undefined;
+    if (current.drawn >= current.length) {
+      current.finishedAt = now;
+      current = undefined;
+    }
+    marks = marks.filter((mark) => now - (mark.finishedAt ?? now) < lifetime);
     paint(now);
   }
 
