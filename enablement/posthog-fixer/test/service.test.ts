@@ -63,19 +63,28 @@ test('exclusive store ownership is crash-released SQLite locking; target changes
   assert.throws(()=>new Store(f.c.stateDirectory,'different'));
   // close() is safe to repeat, allowing cleanup after inspecting the closed store.
 });
-test('one active thread includes waiting and completed-but-unsettled work, and daily admission persists', async t => {
-  const f=fixture(t); f.store.enqueue(issue,2); f.store.enqueue(second,2); let launches=0; let done=false; let status='waiting';
+test('distinct issues launch while an earlier thread waits; deduplication and daily admission survive restart', async t => {
+  const f=fixture(t); f.c.dailyLimit=2;
+  const third='33333333-3333-4333-a333-333333333333';
+  for (const id of [issue,second,third]) f.store.enqueue(id,3);
+  const launches:string[]=[];
   const ports={context:async()=> 'synthetic details',call:async(tag:string,p:any)=> {
-    if(tag==='orchestration.launchThread'){launches++;return {threadId:p.threadId,projection:projected(p.threadId)};}
-    return projected(p.threadId,done,status);
+    if(tag==='orchestration.launchThread'){launches.push(p.threadId);return {threadId:p.threadId,projection:projected(p.threadId)};}
+    const waiting = p.threadId === launches[0];
+    return projected(p.threadId,!waiting,waiting?'waiting':'completed');
   }};
   const worker=new Worker(f.store,f.c,ports); const now=Date.UTC(2026,10,15,12);
-  await Promise.all([worker.tick(now),worker.tick(now)]); assert.equal(launches,1);
-  await worker.tick(now); assert.equal(f.store.jobs()[0].state,'active');
-  status='completed'; await worker.tick(now); assert.equal(f.store.jobs()[0].state,'active');
-  done=true; await worker.tick(now); assert.equal(f.store.jobs()[0].state,'done');
-  const restarted=new Worker(f.reopen(),f.c,ports); await restarted.tick(now); assert.equal(launches,1);
-  done=false; await restarted.tick(now+86400000); assert.equal(launches,2);
+  await Promise.all([worker.tick(now),worker.tick(now)]); assert.equal(launches.length,1);
+  await worker.tick(now);
+  assert.deepEqual(f.store.jobs().map(job=>job.state),['active','active','queued']);
+  const restarted=new Worker(f.reopen(),f.c,ports);
+  assert.equal(f.store.enqueue(issue,3),'duplicate');
+  await restarted.tick(now);
+  await restarted.tick(now);
+  assert.deepEqual(f.store.jobs().map(job=>job.state),['active','done','queued']);
+  assert.equal(launches.length,2);
+  await restarted.tick(now+86400000);
+  assert.equal(new Set(launches).size,3);
 });
 test('lost launch acknowledgement and restart reuse exact persisted IDs, prompt and reserved budget', async t => {
   const f=fixture(t); f.store.enqueue(issue,2); let fetched=0; const payloads:unknown[]=[];
@@ -90,13 +99,26 @@ test('lost launch acknowledgement and restart reuse exact persisted IDs, prompt 
   const payload=payloads[0] as any; assert.equal(payload.workspaceStrategy.baseRef,'origin/main');
   assert.equal(payload.workspaceStrategy.startFromOrigin,true);assert.equal(payload.runtimeMode,'auto-accept-edits');
 });
-test('three uncertain launches hold the slot; unavailable projections cannot release active work', async t => {
-  const f=fixture(t);f.store.enqueue(issue,2);f.store.enqueue(second,2);let calls=0;
-  const ports={context:async()=> 'context',call:async()=>{calls++;throw Error('offline');}};
+test('launch backoff and an exhausted launch do not block other issues', async t => {
+  const f=fixture(t); f.c.dailyLimit=3;
+  const third='33333333-3333-4333-a333-333333333333';
+  f.store.enqueue(issue,3); f.store.enqueue(second,3);
+  const initial=f.store.jobs()[0].thread;
+  let attempts=0;
+  const ports={context:async()=> 'context',call:async(tag:string,p:any)=>{
+    if(tag==='orchestration.launchThread' && p.threadId===initial) {attempts++;throw Error('offline');}
+    return tag==='orchestration.launchThread' ? {threadId:p.threadId,projection:projected(p.threadId)} : {};
+  }};
   const worker=new Worker(f.store,f.c,ports);const now=Date.now();
-  for(let n=0;n<4;n++)await worker.tick(now+n*60000);
-  assert.equal(calls,3);assert.equal(f.store.jobs()[0].state,'held');assert.equal(f.store.jobs()[1].state,'queued');
-  f.store.update(issue,'active');await worker.tick(now+300000);assert.equal(f.store.jobs()[0].state,'active');
+  await worker.tick(now);
+  await worker.tick(now+5000);
+  assert.deepEqual(f.store.jobs().map(job=>job.state),['launching','active']);
+  await worker.tick(now+60000);
+  await worker.tick(now+120000);
+  assert.equal(attempts,3);
+  f.store.enqueue(third,3);
+  await worker.tick(now+125000);
+  assert.deepEqual(f.store.jobs().map(job=>job.state),['held','active','active']);
 });
 test('context failures back off and hold without launching', async t => {
   const f=fixture(t);f.store.enqueue(issue,2);let calls=0;
@@ -179,14 +201,14 @@ test('a recorded report requires its fix job credential and authorized Unix peer
   assert.equal((await get(job.thread)).status, 404);
   assert.deepEqual(downloads, [report, report]);
 });
-test('malformed launch and active projections retain the only writer slot', async t => {
-  const f=fixture(t);f.store.enqueue(issue,2);f.store.enqueue(second,2);let launches=0;
+test('malformed launch and active projections remain attached to their own issues', async t => {
+  const f=fixture(t);f.c.dailyLimit=2;f.store.enqueue(issue,2);f.store.enqueue(second,2);let launches=0;
   const worker=new Worker(f.store,f.c,{context:async()=> 'context',call:async(tag,p:any)=>{
     if(tag==='orchestration.launchThread'){launches++;return {threadId:p.threadId,projection:{}};}
     return {};
   }});
   await worker.tick();assert.equal(f.store.jobs()[0].state,'launching');assert.equal(launches,1);
-  f.store.update(issue,'active');await worker.tick();assert.equal(f.store.jobs()[0].state,'active');assert.equal(launches,1);
+  f.store.update(issue,'active');await worker.tick();assert.equal(f.store.jobs()[0].state,'active');assert.equal(launches,2);assert.equal(f.store.jobs()[1].state,'launching');
 });
 test('configuration supports full-access Codex reasoning and rejects invalid settings and nonprivate secrets', t => {
   const f=fixture(t);const env={T3_ORIGIN:'http://127.0.0.1:3773',T3_PROJECT_ID:'synthetic', T3_TOKEN_FILE:f.c.t3TokenFile,

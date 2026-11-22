@@ -105,19 +105,19 @@ Sources: [webhook template](https://github.com/PostHog/posthog/blob/master/nodej
 
 ## Limits, recovery and rollback
 
-One service process owns each queue through a crash-released SQLite lock. At most
-one fix is launching/active. Waiting threads and terminal runs in unsettled
-threads retain that slot, including PR watches. The next job starts only once T3
-reports the prior thread settled with all runs terminal. Normal agent completion
-is not evidence of a merged fix. Existing repository delivery gates remain in
-force. If a failed/blocked thread will not continue, settle it deliberately in T3.
+One service process owns each queue through a crash-released SQLite lock.
+Each new PostHog issue gets a repair thread and worktree. Repeated notifications
+for the same issue reuse its durable record. Waiting and unsettled threads
+continue to be checked for completion while the fixer starts other issues.
+T3 settlement with all runs terminal completes the corresponding queue entry.
+Existing repository delivery gates still apply. Different issues can affect the
+same code, so each repair must reconcile with current main before merge.
 
 The UTC daily cap counts durable launch reservations, including uncertain launches.
 After an RPC failure the service retries the exact persisted command, thread ID
-and prompt, at most three attempts with one-minute backoff. It then holds the slot
-for operator reconciliation. Context-read failures retry separately, then hold
-the issue without consuming a launch slot. Unknown/malformed T3 status retains
-active work. Queue identity is bound to both origins and both projects; changing
+and prompt, at most three attempts with one-minute backoff. It then holds that
+issue for operator reconciliation. Context-read failures retry separately.
+Unknown or malformed T3 status preserves the affected issue's state. Queue identity is bound to both origins and both projects; changing
 targets requires a different state directory. Completed deduplication rows are
 retained; deleting them would permit old notifications to launch again.
 
