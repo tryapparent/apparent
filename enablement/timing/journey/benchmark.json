@@ -1,5 +1,5 @@
 {
-  "version": "apparent-full-journey-v3",
+  "version": "apparent-full-journey-v4",
   "weights": [
     [
       "first-success",
@@ -34,14 +34,8 @@
     [
       "live",
       "Start recording",
-      16,
+      19,
       "Record action to visible pill and the first valid screen frame and microphone sample"
-    ],
-    [
-      "picker",
-      "Start recording",
-      3,
-      "Open target picker to a selectable window or area"
     ],
     ["ink", "During recording", 2, "Pointer movement to visible ink"],
     [

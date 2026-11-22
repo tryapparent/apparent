@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { appendFileSync, readFileSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import type { InkEvidence } from "./ink.ts";
 type Qmp = {
   ready(deadline: number): Promise<void>;
   command(command: string, args: object, deadline: number): Promise<unknown>;
@@ -112,6 +113,7 @@ async function confirm(
   qmp: Qmp,
   signal: AbortSignal,
   at: (value: number) => void,
+  pressed?: (value: number) => void,
 ) {
   type Mouse = {
     name: string;
@@ -140,6 +142,7 @@ async function confirm(
   if (changed) await select(relative[0].index);
   try {
     signal.throwIfAborted();
+    pressed?.(performance.now());
     await input(qmp, [button(true)]);
     await sleep(35, undefined, { signal });
   } finally {
@@ -240,6 +243,12 @@ export async function observeShortcut(
   stage: () => string,
   signal: AbortSignal,
   ssh: GuestCommand,
+  armMedia?: () => {
+    connected: Promise<void>;
+    finished: Promise<{ screenAt: number; microphoneAt: number }>;
+    close(): void;
+  },
+  inkProbe?: (qmp: Qmp) => Promise<InkEvidence>,
 ) {
   const path = resolve(root, name + "-scan.ppm");
   const dump = () => captureFrame(qmp, path);
@@ -304,16 +313,44 @@ export async function observeShortcut(
     if (stage() !== "scenario" || !pickerVisible(confirmation))
       throw Error("Synthetic chooser disappeared before confirmation");
     let release = 0;
-    const [pill] = await Promise.all([
-      observe(
-        () => release,
-        (frame) => pillVisible(confirmation, frame),
-        "recording pill",
-      ),
-      confirm(qmp, signal, (at) => {
-        release = at;
-      }),
-    ]);
+    let press = 0;
+    const media = armMedia?.();
+    const [pill, arrival] = await (async () => {
+      try {
+        await media?.connected;
+        return await Promise.all([
+          observe(
+            () => release,
+            (frame) => pillVisible(confirmation, frame),
+            "recording pill",
+          ),
+          media?.finished,
+          confirm(
+            qmp,
+            signal,
+            (at) => {
+              release = at;
+            },
+            (at) => {
+              press = at;
+            },
+          ),
+        ]);
+      } finally {
+        media?.close();
+      }
+    })();
+    const live = arrival && {
+      screenMs: arrival.screenAt - press,
+      microphoneMs: arrival.microphoneAt - press,
+      pillMs: pill.ms + release - press,
+    };
+    if (live && !Object.values(live).every(measured))
+      throw Error("First media evidence preceded the selected source");
+    const ink = await inkProbe?.(qmp).catch((error) => {
+      console.error("Ink readiness for " + name + ": " + String(error));
+      return undefined;
+    });
     const receipt = {
       name,
       source: "qmp-framebuffer-v1",
@@ -322,6 +359,8 @@ export async function observeShortcut(
       confirmation,
       picker,
       pill,
+      live,
+      ink,
       ms: picker.ms + pill.ms,
     };
     if (!verifiedStart(receipt))
