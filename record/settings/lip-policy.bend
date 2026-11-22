@@ -40,3 +40,6 @@ def use_microphone(lips: Bool, microphone: Bool) -> Bool:
 
 def queue_clip(+pending: U32) -> Bool:
   (pending < 8 : U32)
+
+def decode_threads() -> U32:
+  4

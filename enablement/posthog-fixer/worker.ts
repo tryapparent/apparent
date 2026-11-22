@@ -59,32 +59,33 @@ export function launchPayload(c: Config, job: Job, context: string, recording?: 
 }
 export class Worker {
   busy = false;
+  private activeIndex = 0;
   readonly store: Store; readonly c: Config; readonly ports: Ports;
   constructor(store: Store, c: Config, ports: Ports) {this.store=store; this.c=c; this.ports=ports;}
   async tick(now = Date.now()): Promise<void> {
     if (this.busy) return;
     this.busy = true;
-    try {await this.step(now);} finally {this.busy = false;}
+    try {
+      const results = await Promise.allSettled([this.launch(now), this.reconcile()]);
+      for (const result of results) if (result.status === 'rejected') throw result.reason;
+    } finally {this.busy = false;}
   }
-  private async step(now: number): Promise<void> {
-    const jobs = this.store.jobs();
-    const active = jobs.find(job => job.state === 'active');
-    if (active) {
-      try {
-        const p = projection(await this.ports.call('orchestration.getThreadProjection', {threadId: active.thread}), active.thread, this.c.t3ProjectId);
-        if (settled(p)) {
-          this.store.update(active.issue, 'done');
-        }
-      } catch { /* Uncertain status retains the concurrency slot. */ }
+  private async reconcile(): Promise<void> {
+    const jobs = this.store.jobs().filter(job => job.state === 'active');
+    if (!jobs.length) return;
+    this.activeIndex %= jobs.length;
+    const active = jobs[this.activeIndex++];
+    try {
+      const p = projection(await this.ports.call('orchestration.getThreadProjection', {threadId: active.thread}), active.thread, this.c.t3ProjectId);
+      if (settled(p)) this.store.update(active.issue, 'done');
+    } catch {
       return;
     }
-    // An uncertain exhausted launch retains the slot too; operator reconciliation is required.
-    if (jobs.some(job => job.state === 'held' && job.reserved_at !== null)) return;
-    let job = jobs.find(job => job.state === 'launching');
-    if (!job) {
-      if (this.store.dailyCount(now) >= this.c.dailyLimit) return;
-      job = jobs.find(job => job.state === 'queued' && job.next_at <= now);
-      if (!job) return;
+  }
+  private async launch(now: number): Promise<void> {
+    let job = this.store.nextLaunch(now, this.c.dailyLimit);
+    if (!job) return;
+    if (job.state === 'queued') {
       try {
         const context = await this.ports.context(job.issue);
         const report = supportReportId(context);
@@ -100,7 +101,6 @@ export class Worker {
         return;
       }
     }
-    if (job.next_at > now) return;
     try {
       const value = await this.ports.call('orchestration.launchThread', JSON.parse(job.payload!)) as {threadId: string; projection: unknown};
       if (value.threadId !== job.thread) throw Error('Launch returned a different thread');

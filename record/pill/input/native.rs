@@ -17,6 +17,7 @@ pub(crate) enum Frame {
     Clip { start: u64, end: u64, text: String },
     Done,
     Failed,
+    TimedOut,
 }
 
 pub(crate) type Receipt = flume::Receiver<Frame>;
@@ -33,8 +34,10 @@ impl Input {
             estimated: true,
             ..Default::default()
         };
-        let completed = match self {
-            Self::Unavailable => false,
+        let timed_out = "Lipflow timed out before the transcript was ready.";
+        let failed = "The lip-reading transcript could not be completed. Check camera access and model setup in Settings.";
+        let problem = match self {
+            Self::Unavailable => Some(failed),
             Self::Pending(receipt) => {
                 let deadline = Instant::now() + Duration::from_secs(100);
                 loop {
@@ -45,24 +48,17 @@ impl Input {
                                 result.segments.push(TranscriptSegment { t0: start, t1: end, text });
                             }
                         }
-                        Ok(Frame::Done) => break true,
-                        Ok(Frame::Failed) | Err(_) => break false,
+                        Ok(Frame::Done) => break None,
+                        Ok(Frame::TimedOut) | Err(flume::RecvTimeoutError::Timeout) => break Some(timed_out),
+                        Ok(Frame::Failed) | Err(flume::RecvTimeoutError::Disconnected) => break Some(failed),
                     }
                 }
             }
         };
         result.text = result.segments.iter().map(|segment| segment.text.as_str())
             .collect::<Vec<_>>().join(" ");
-        if !completed || result.text.is_empty() {
-            result.missing = Some(MissingTranscript {
-                reason: if completed {
-                    "Lipflow did not recognize any words."
-                } else {
-                    "The lip-reading transcript could not be completed. Check camera access and model setup in Settings."
-                }.into(),
-                retry: false,
-            });
-        }
+        result.missing = problem.or_else(|| result.text.is_empty().then_some("Lipflow did not recognize any words."))
+            .map(|reason| MissingTranscript { reason: reason.into(), retry: false });
         result
     }
 }
@@ -70,6 +66,16 @@ impl Input {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn timeout_reports_decoder_and_keeps_completed_segments() {
+        let (sender, receipt) = flume::bounded(2);
+        sender.send(Frame::Clip { start: 100, end: 300, text: "First words".into() }).unwrap();
+        sender.send(serde_json::from_str(r#"{"kind":"timed_out"}"#).unwrap()).unwrap();
+        let transcript = Input::Pending(receipt).transcript(1000);
+        assert_eq!(transcript.text, "First words");
+        assert_eq!(transcript.missing.unwrap().reason, "Lipflow timed out before the transcript was ready.");
+    }
 
     #[test]
     fn regular_capture_keeps_lip_text_and_notes_with_no_wav() {

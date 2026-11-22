@@ -60,7 +60,7 @@ figcaption { color: var(--color-muted-foreground); }
   border: 1px solid var(--color-border);
   background: var(--color-surface);
 }
-.sample-save {
+.sample-target {
   padding: .1rem .6rem;
   outline: 2px solid var(--apparent-pen-coral);
   border-radius: 50%;
