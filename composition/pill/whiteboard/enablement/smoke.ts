@@ -192,6 +192,10 @@ test("the same staged window hosts practice and closes after accepted human ink"
   const { page, edits, reply } = await launch(t, true, blank);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(page.getByText("Your turn")).toBeVisible();
+  assert.equal(
+    await page.evaluate(() => document.documentElement.scrollHeight),
+    await page.evaluate(() => innerHeight),
+  );
   assert.deepEqual(edits(), []);
   const canvas = page.getByRole("img", { name: "Whiteboard drawing canvas" });
   await canvas.click({ position: { x: 60, y: 100 } });
