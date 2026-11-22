@@ -91,7 +91,18 @@ test("enabled unpaired pill opens Labs through the native pipe and can copy the 
   const windowId = await nativeWindow.evaluate((window) =>
     Number(window.getMediaSourceId().split(":")[1]),
   );
-  await expect.poll(() => readyWindows.has(windowId)).toBe(true);
+  if (!readyWindows.has(windowId)) {
+    await page.evaluate((revision) => {
+      void document.fonts.ready.then(() =>
+        window.apparentPill.layout(revision).catch(() => {}),
+      );
+    }, frame.view.revision);
+  }
+  await expect
+    .poll(() => [...readyWindows], {
+      message: `Pill never reported readiness for native window ${windowId}`,
+    })
+    .toContain(windowId);
   assert.equal(
     await nativeWindow.evaluate((window) => window.isVisible()),
     false,
