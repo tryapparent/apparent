@@ -1,4 +1,5 @@
 /** Static inspection only: never evaluate tool arguments or historical commands. */
+import { wholeShellOperation } from "./shell/launch-shapes.ts";
 type Token = {value: string; literal?: boolean; dynamic?: boolean};
 type ShellWord = {value: string; dynamic?: boolean};
 
@@ -99,27 +100,9 @@ function commandOperation(words: ShellWord[]): string {
   return 'unknown';
 }
 
-function isGuardedPrObserver(source: string): boolean {
-  const lines = source.split('\n', 7);
-  if (lines.length !== 6) return false;
-  const [setup, job, expected, before, watch, after] = lines;
-  if (setup !== 'set -e' || before !== after ||
-      !/^job=\/tmp\/apparent-dev-[A-Za-z0-9][\w.-]*$/.test(job) ||
-      !/^expected=[a-fA-F0-9]{40}$/.test(expected)) return false;
-  const guard = before.match(/^test "\$\(gh pr view (?<pr>[1-9]\d*) -R (?<repo>[\w-]+\/[\w.-]+) --json headRefOid --jq \.headRefOid\)" = "\$expected"$/)?.groups;
-  const observer = watch.match(/^timeout [1-9]\d{0,8} gh pr checks (?<pr>[1-9]\d*) -R (?<repo>[\w-]+\/[\w.-]+) --watch --interval [1-9]\d{0,8} --fail-fast > "\$job\/pr-\k<pr>-checks\.log" 2>&1$/)?.groups;
-  return !!guard && !!observer && guard.pr === observer.pr && guard.repo === observer.repo;
-}
-
 export function shellOperations(source: string): string[] {
-  if (/^[ \t]*npx -y @nomac\/cli job job_[A-Za-z0-9][\w-]* --wait [1-9]\d{0,8}(?: > \/tmp\/apparent-dev-[\w-][\w.-]*\/(?:[\w-][\w.-]*\/)*[\w-][\w.-]* 2>&1)?[ \t]*\n?$/.test(source)) {
-    return ['native job observation'];
-  }
-  if (isGuardedPrObserver(source)) return ['CI observation'];
-  const observer = source.match(/^[ \t]*timeout [1-9]\d* bash -c '([^'\n]+)'(?: > \/tmp\/(?:[\w-][\w.-]*\/)*[\w-][\w.-]* 2>&1)?[ \t]*\n?$/);
-  if (observer && /^rc=0; for id in(?: [1-9]\d*)+; do gh run watch "\$id" -R [\w-]+\/[\w.-]+ --exit-status --compact --interval [1-9]\d* \|\| rc=1; done; exit "\$rc"$/.test(observer[1])) {
-    return ['CI observation'];
-  }
+  const whole = wholeShellOperation(source);
+  if (whole) return [whole];
   const pending: Heredoc[] = [];
   const commands: {words:ShellWord[]; write:boolean}[] = [];
   const prelude = /[ \t]*(?:[A-Za-z_]\w*=\$\((mktemp) -d \/tmp\/apparent-dev-[A-Za-z0-9][\w-]*-XXXXXX\)|test "\$\(git rev-parse origin\/main\)" = "\$\(git rev-parse HEAD\^\)"|test -z "\$\(git status --porcelain\)")[ \t]*(?=\n|$)/y;

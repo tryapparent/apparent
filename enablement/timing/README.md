@@ -50,6 +50,19 @@ literal PR number and repository, positive decimal timeout and interval values
 of up to nine digits, and the observed `--watch --interval … --fail-fast` flag
 order. Its only redirection is `> "$job/pr-<number>-checks.log" 2>&1` with the
 same PR number. The guarded form identifies the observed purpose of the launch.
+Two exact-run CI observer envelopes use the installed `gh_owned_wait.py`
+helper with a literal run ID, repository, full SHA, attempt, finite timeout
+and interval. They route output to a log in a literal private job directory.
+One uses a subshell with `umask 077`. The other sets the same mask and reads
+one existing log from the job before starting the observer.
+
+The isolated VM Start proof label covers the observed surface-enabled Bash
+and TypeScript benchmark runners with literal packaged inputs and image
+checksum, one fresh job, and the same job's Start report and readback. The
+optional screenshot-absence check must be the observed literal guard. These
+whole-command forms describe one proof envelope even when it contains multiple
+stages. Free-form setup and mixed Connect smoke preparation remain unresolved.
+
 Attribution uses the existing exact process and cell links. Individual jobs and
 nested shell phases have no separate timing rows. Asynchronous launches are
 excluded from the short-call subtotal because a quick return does not establish
