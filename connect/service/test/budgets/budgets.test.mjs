@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
+import {readFile} from 'node:fs/promises';
 import {fixture,id,file} from '../helpers.mjs';
 
 // Count SQL statements, NOT merely batch RPCs. This is an audit seam around
@@ -11,7 +12,7 @@ const instrumented=await build({stdin:{resolveDir:process.cwd(),contents:`
  function counted(env,counts){
   const DB={prepare(sql){const wrap=s=>({bind(...args){if(args.length>100)throw new Error('D1 parameter budget exceeded');return wrap(s.bind(...args));},
    first(...args){counts.sql++;return s.first(...args);},all(...args){counts.sql++;return s.all(...args);},run(...args){counts.sql++;return s.run(...args);},sql,raw:s});return wrap(env.DB.prepare(sql));},
-   batch(items){counts.sql+=items.length;if(items.some(s=>s.sql.startsWith('UPDATE attempts SET cleaned_at'))){stampPages++;if(env.FAIL_STAMP&&!failedStamp&&stampPages===Number(env.FAIL_AT||1)){failedStamp=true;throw new Error('injected stamp failure');}}return env.DB.batch(items.map(s=>s.raw));}};
+   async batch(items){counts.sql+=items.length;if(items.some(s=>s.sql.startsWith('UPDATE attempts SET cleaned_at'))){stampPages++;if(env.FAIL_STAMP&&!failedStamp&&stampPages===Number(env.FAIL_AT||1)){failedStamp=true;throw new Error('injected stamp failure');}}const result=await env.DB.batch(items.map(s=>s.raw));if(env.LOSE_PUBLICATION_ACK&&items.some(s=>s.sql.startsWith('UPDATE files SET object_key')))throw new Error('lost publication receipt');return result;}};
   const BUCKET=new Proxy(env.BUCKET,{get(target,key){const value=target[key];return typeof value==='function'? async(...args)=>{counts.r2++;if(key==='delete'){if(env.PERSISTENT_DELETE_FAILURE&&args[0].includes('persistent-0150'))throw Error('persistent deletion failure');deletePages++;if(env.FAIL_DELETE&&!failedDelete&&deletePages===Number(env.FAIL_AT||1)){failedDelete=true;throw new Error('injected delete failure');}}const result=await value.apply(target,args);if(key==='put'&&env.TOMBSTONE_AFTER_PUT)await env.DB.prepare("UPDATE captures SET status='deleted'").run();return result;}:value;}});
   return {...env,DB,BUCKET};
  }
@@ -131,6 +132,21 @@ test('PUT success, duplicate, checksum failure, cap denial and lost-publication 
  }
  }finally{await f.close();}
  }
+});
+
+test('a lost publication receipt keeps the committed object available',async()=>{
+ const f=await fixture({LOSE_PUBLICATION_ACK:true}, {scriptPath:undefined,script:instrumented.outputFiles[0].text});try{
+  for(const migration of ['0014','0017','0018','0019'])await f.db.exec((await readFile('.generated/migrations/'+migration+'.sql','utf8')).replaceAll('\n',' '));
+  const a=await f.identity('put-ack'),capture=id(362),p='/v1/captures/'+capture;
+  assert.equal((await f.call(p,{token:a.token,method:'POST',body:{files:[file()]}})).status,200);
+  const response=await f.call(p+'/files/summary.md',{token:a.token,method:'PUT',raw:'hello'});
+  assert.equal(response.status,500);
+  assert.equal(Number(response.headers.get('X-Test-R2')),1);
+  const attempt=await f.db.prepare('SELECT key,terminal,published,released FROM attempts WHERE capture_id=?').bind(capture).first();
+  assert.deepEqual([attempt.terminal,attempt.published,attempt.released],[1,1,0]);
+  assert.equal((await f.call(p+'/complete',{token:a.token,method:'POST'})).status,200);
+  assert.equal(await (await f.call(p+'/files/summary.md',{token:a.read})).text(),'hello');
+ }finally{await f.close();}
 });
 
 for(const failure of ['FAIL_DELETE','FAIL_STAMP'])test(failure+' on cleanup page ten stays bounded and retries',async()=>{

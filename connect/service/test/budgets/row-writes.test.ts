@@ -45,6 +45,33 @@ const setup=async (bindings={},indexes=true)=>{
 };
 const sweep=async f=>{const r=await f.call('/sweep');assert.equal(r.status,200);return r.json();};
 
+test('under-quota capture admission skips the account history scan',async t=>{
+ const f=await setup();try{
+  const a=await f.identity('reservation-history'), now=Date.now(), future=now+86400000;
+  await f.db.exec((await readFile('.generated/migrations/0017.sql','utf8')).replaceAll('\n',' '));
+  await f.db.prepare("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<500) INSERT INTO captures(id,account_id,manifest,bytes,expires_at,pending_until,status) SELECT 'existing-'||i,?,'[]',?, ?,?,'ready' FROM n")
+   .bind(a.id,500000,future,future).run();
+  const insert=(key:string,bytes:number)=>f.db.prepare("INSERT INTO captures(id,account_id,manifest,bytes,expires_at,pending_until) VALUES(?,?,'[]',?,?,?)")
+   .bind(key,a.id,bytes,future,future).run();
+  const before=await insert('before',1000);
+  await f.db.exec((await readFile('.generated/migrations/0018.sql','utf8')).replaceAll('\n',' '));
+  const after=await insert('after',1000);
+  const reserved=async()=> (await f.db.prepare('SELECT bytes FROM capture_quota_reservations WHERE account_id=?').bind(a.id).first()).bytes;
+  t.diagnostic(`D1 rows read per reservation: ${before.meta.rows_read} before, ${after.meta.rows_read} after`);
+  assert.ok(before.meta.rows_read>=500);
+  assert.ok(after.meta.rows_read<=10,JSON.stringify(after.meta));
+  assert.equal(await reserved(),250002000);
+  await assert.rejects(insert('after',400000000));
+  assert.equal(await reserved(),250002000);
+  await f.db.prepare("UPDATE captures SET expires_at=? WHERE id='existing-1'").bind(now-1).run();
+  await insert('large',499999000);
+  assert.equal(await reserved(),500500000);
+  assert.deepEqual((await f.db.prepare("SELECT id FROM captures WHERE status!='deleted' ORDER BY reservation_seq").all()).results.map(r=>r.id),['existing-1','after','large']);
+  await sweep(f);
+  assert.equal(await reserved(),500000000);
+ }finally{await f.close();}
+});
+
 test('cleanup row reads do not scale with retired uploads',async t=>{
  const f=await setup({},false);try{
   const a=await f.identity('retired-history');
@@ -68,6 +95,41 @@ test('cleanup row reads do not scale with retired uploads',async t=>{
   t.diagnostic(`D1 rows read per sweep: ${beforeReads} before, ${afterReads} after`);
   assert.ok(beforeReads>12000);
   assert.ok(afterReads<100,JSON.stringify(after.reads));
+ }finally{await f.close();}
+});
+
+test('settled cleanup skips published live objects and finds late terminal work',async t=>{
+ const f=await setup();try{
+  const a=await f.identity('published-history'), live=id(957), deleted=id(958), now=Date.now(), future=now+86400000;
+  await f.db.batch([
+   ...[live,deleted].map(capture=>f.db.prepare("INSERT INTO captures(id,account_id,manifest,bytes,expires_at,pending_until,status) VALUES(?,?,'[]',0,?,?,'ready')").bind(capture,a.id,future,future)),
+   f.db.prepare("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<1200) INSERT INTO attempts(key,capture_id,created_at,terminal) SELECT printf('published-%04d',i),?,0,1 FROM n").bind(live),
+   f.db.prepare("INSERT INTO files(capture_id,path,size,sha256,object_key) SELECT capture_id,key,0,'',key FROM attempts WHERE capture_id=?").bind(live),
+   f.db.prepare("INSERT INTO attempts(key,capture_id,created_at) VALUES('late',?,?)").bind(deleted,now),
+  ]);
+  const before=await sweep(f);
+  await f.db.exec((await readFile('.generated/migrations/0019.sql','utf8')).replaceAll('\n',' '));
+  const after=await sweep(f);
+  const total=({reads}:{reads:{rows:number}[]})=>reads.reduce((sum,s)=>sum+s.rows,0);
+  t.diagnostic(`D1 rows read per sweep with live history: ${total(before)} before, ${total(after)} after`);
+  assert.ok(total(before)>1200);
+  assert.ok(total(after)<total(before)/20,JSON.stringify(after.reads));
+  assert.deepEqual(after.deletes,[]);
+  assert.equal(after.rows,0);
+  await f.db.prepare("UPDATE captures SET status='deleted' WHERE id=?").bind(deleted).run();
+  assert.deepEqual((await sweep(f)).deletes,['late']);
+  await f.bucket.put('late','arrived after uncertain cleanup');
+  await f.db.prepare("UPDATE attempts SET terminal=1 WHERE key='late'").run();
+  await f.db.prepare("INSERT INTO attempts(key,capture_id,created_at) VALUES('orphan',?,0)").bind(live).run();
+  await f.db.prepare("UPDATE attempts SET terminal=1 WHERE key='orphan'").run();
+  assert.deepEqual((await sweep(f)).deletes,['orphan','late']);
+  assert.equal(await f.bucket.head('late'),null);
+  assert.equal((await f.db.prepare("SELECT count(*) AS n FROM attempts WHERE released=1").first()).n,2);
+  assert.equal((await f.db.prepare("SELECT count(*) AS n FROM capture_cleanup_queue").first()).n,0);
+  await f.db.prepare("UPDATE captures SET status='deleted' WHERE id=?").bind(live).run();
+  assert.equal((await sweep(f)).deletes.length,1000);
+  assert.equal((await sweep(f)).deletes.length,200);
+  assert.deepEqual((await sweep(f)).deletes,[]);
  }finally{await f.close();}
 });
 

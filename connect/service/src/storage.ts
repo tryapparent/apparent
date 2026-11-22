@@ -56,9 +56,9 @@ export async function uploadAttempt(env: Env,capture: string,account: string,fil
  let used=false;
  return {key,put(stream: ReadableStream<Uint8Array>){if(used)throw new Error('used upload attempt');used=true;return env.BUCKET.put(key,stream,{sha256:file.sha256});}};
 }
-export async function settledAttempt(env: Env,key: string) {
+export function settledAttempt(env: Env,key: string) {
  // Only called after BOTH stream and unique provider PUT have settled.
- await stmt(env,'UPDATE attempts SET terminal=1 WHERE key=?',key).run();
+ return stmt(env,'UPDATE attempts SET terminal=1 WHERE key=? AND terminal=0',key);
 }
 // DeleteObject is free and must remain available at every spending cap.
 export async function deleteAttempts(env: Env,attempts: AttemptSnapshot[],now=Date.now()) {

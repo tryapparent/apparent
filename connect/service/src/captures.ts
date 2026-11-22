@@ -121,6 +121,7 @@ export async function captureRoutes(request: Request,env: Env,url: URL,context?:
   if(method==='PUT') {
    const attempt=await uploadAttempt(env,id,a.account_id,f),{key}=attempt;
    let terminal=0;
+   let streamsSettled=false,publicationUncertain=false;
    try {
     // R2 verifies SHA256 natively, including retries. Each attempt uses a new key;
     // a retry can never replace the original object, even before validation ends.
@@ -133,7 +134,7 @@ export async function captureRoutes(request: Request,env: Env,url: URL,context?:
     const put=Promise.resolve().then(()=>attempt.put(fixed.readable)).catch(e=>{cancel(e);throw e;});
     // allSettled keeps both promises observed when either stream end fails.
     const results=await Promise.allSettled([write,put]);
-    await settledAttempt(env,key);terminal=1;
+    streamsSettled=true;
     // Native piping may surface the length failure at either end of the pump.
     // Preserve the API's size error; runtime/provider text is never exported.
     for(const result of results)if(result.status==='rejected'&&result.reason instanceof Error&&/^(Attempt to write too many bytes through a FixedLengthStream|FixedLengthStream did not see all expected bytes before close\(\))/.test(result.reason.message))fail('size_mismatch');
@@ -144,11 +145,23 @@ export async function captureRoutes(request: Request,env: Env,url: URL,context?:
     }
     if(results[0].status==='rejected')throw results[0].reason;
     if(!verified(results[1].value,f))fail('hash_mismatch');
-    if(f.object_key||c.status==='ready') {await owned();await deleteAttempts(env,[{key,terminal}]);return json({ok:true});}
-    const changed=await stmt(env,`UPDATE files SET object_key=? WHERE capture_id=? AND path=? AND object_key IS NULL AND EXISTS(SELECT 1 FROM captures WHERE id=? AND status='pending' AND ${live})`,key,id,path,id,Date.now(),Date.now()).run();
+    if(f.object_key||c.status==='ready') {
+     await settledAttempt(env,key).run();terminal=1;
+     await owned();await deleteAttempts(env,[{key,terminal}]);return json({ok:true});
+    }
+    publicationUncertain=true;
+    const [changed]=await env.DB.batch([
+     stmt(env,`UPDATE files SET object_key=? WHERE capture_id=? AND path=? AND object_key IS NULL AND EXISTS(SELECT 1 FROM captures WHERE id=? AND status='pending' AND ${live})`,key,id,path,id,Date.now(),Date.now()),
+     settledAttempt(env,key),
+    ]);
+    publicationUncertain=false;terminal=1;
     if(!changed.meta.changes){await deleteAttempts(env,[{key,terminal}]);await owned();}
     return json({ok:true});
-   }catch(e){await deleteAttempts(env,[{key,terminal}]).catch(()=>{});throw e;}
+   }catch(e){
+    if(streamsSettled&&!terminal)terminal=await settledAttempt(env,key).run().then(()=>1,()=>0);
+    if(!publicationUncertain)await deleteAttempts(env,[{key,terminal}]).catch(()=>{});
+    throw e;
+   }
   }
  }
  fail('not_found',404);
@@ -162,8 +175,20 @@ export async function cleanup(env: Env) {
  // free R2 deletes on bounded circular pages, without stamping every old key.
  const eligible="(c.status='deleted' OR (f.object_key IS NULL AND a.created_at<?))";
  const select="SELECT a.key,a.terminal FROM attempts a JOIN captures c ON c.id=a.capture_id LEFT JOIN files f ON f.object_key=a.key WHERE "+eligible;
- const {results:terminal}=await stmt(env,select+" AND a.terminal=1 AND a.released!=1 ORDER BY a.cleaned_at,a.key LIMIT 1000",now-DAY).all<AttemptSnapshot>();
+ const queued=await stmt(env,"SELECT 1 FROM sqlite_schema WHERE type='table' AND name='capture_cleanup_queue'").first();
+ const terminalQuery=queued?`SELECT key,terminal FROM (
+  SELECT a.key,a.terminal,a.cleaned_at FROM capture_cleanup_queue AS q
+  CROSS JOIN attempts AS a INDEXED BY attempts_cleanup_terminal ON a.capture_id=q.capture_id
+  WHERE a.terminal=1 AND a.released!=1
+  UNION ALL
+  SELECT a.key,a.terminal,a.cleaned_at FROM attempts AS a INDEXED BY attempts_cleanup_orphan JOIN captures AS c ON c.id=a.capture_id
+  WHERE a.terminal=1 AND a.released!=1 AND a.published=0 AND a.created_at<? AND c.status!='deleted'
+ ) ORDER BY cleaned_at,key LIMIT 1000`:select+" AND a.terminal=1 AND a.released!=1 ORDER BY a.cleaned_at,a.key LIMIT 1000";
+ const {results:terminal}=await stmt(env,terminalQuery,now-DAY).all<AttemptSnapshot>();
  for(let i=0;i<terminal.length;i+=100)await deleteAttempts(env,terminal.slice(i,i+100),now);
+ if(queued)await stmt(env,`DELETE FROM capture_cleanup_queue WHERE NOT EXISTS (
+  SELECT 1 FROM attempts WHERE capture_id=capture_cleanup_queue.capture_id AND terminal=1 AND released!=1
+ )`).run();
  const capacity=1000-terminal.length;
  if(capacity){
   // The most recent uncertain marker is the durable cursor. It holds no
