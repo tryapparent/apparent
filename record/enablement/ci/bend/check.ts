@@ -11,6 +11,11 @@ import {
 import { run } from "../../../../shared/enablement/bend/toolchain.ts";
 import { repairTable } from "./permission-table.ts";
 import { admissionSource, buildAdmission } from "./build.ts";
+import {
+  buildCaptureAdmission,
+  captureAdmission,
+} from "./capture-request/capture-admission.ts";
+import { verifyCaptureAdmission } from "../../../capture-request/test/admission-cases.ts";
 import { assemblePill } from "./pill.ts";
 
 import { gestureTable, gestureTablePath } from "./note-gesture.ts";
@@ -105,6 +110,12 @@ await bendScratch(async (scratch) => {
     true, false, true, false, [1000, 0],
   ]);
 
+  const captureRequests = await buildCaptureAdmission();
+  assert.deepEqual(captureAdmission(proofOutput), captureRequests);
+  verifyCaptureAdmission(captureRequests);
+  console.log(
+    "Record capture-request production and proof tables agree on Start, Stop and Cancel",
+  );
   assert.deepEqual(pushToTalkTable(proofOutput), {
     hold: 300,
     actions: [1, 3, 0, 0, 1, 3, 2, 0, 4, 3, 4, 0, 4, 3, 4, 0],
