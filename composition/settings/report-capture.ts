@@ -1,5 +1,6 @@
 import { constants } from "node:fs";
-import { open, realpath } from "node:fs/promises";
+import { mkdtemp, open, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { randomBytes, randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -16,7 +17,7 @@ export function settingsReportCapture(
   submitted: (id: string, event: string) => Promise<WrittenResult>,
 ) {
   const support = supportTransport(executable);
-  let active: { id: string; token: string; event: string; bundle?: string; sealed?: Buffer } | undefined;
+  let active: { id: string; event: string; bundle?: string; scratch?: string } | undefined;
   let busy = false;
 
   return {
@@ -24,10 +25,11 @@ export function settingsReportCapture(
     async start(): Promise<CaptureResult> {
       if (active || busy) return { status: "unavailable" };
       busy = true;
-      const session = { id: randomBytes(16).toString("hex"), token: randomBytes(32).toString("hex"), event: randomUUID() };
+      const session = { id: randomBytes(16).toString("hex"), event: randomUUID() };
       active = session;
       let saved = false;
       try {
+        if (!await support.available()) return { status: "unavailable" };
         visibility(false);
         let reply = await native("start-report", session.id);
         const expiry = Date.now() + 60 * 60 * 1000;
@@ -63,21 +65,24 @@ export function settingsReportCapture(
         visibility(true);
       }
     },
-    discard() {
-      if (!busy) active = undefined;
+    async discard() {
+      if (busy) return;
+      const scratch = active?.scratch;
+      active = undefined;
+      if (scratch) await rm(scratch, { recursive: true, force: true });
     },
     async submit(): Promise<WrittenResult> {
       const capture = active;
       if (!capture?.bundle || busy) return "unavailable";
       busy = true;
       try {
-        if (!capture.sealed) {
-          try { capture.sealed = await support.seal(capture.bundle, capture.id); }
-          catch { return "attachment_unavailable"; }
-        }
-        if (!await support.put(capture.id, capture.token, capture.sealed)) return "unconfirmed";
+        capture.scratch ??= await mkdtemp(join(await realpath(tmpdir()), "apparent-support-"));
+        await support.submit(capture.bundle, join(capture.scratch, "report.age"), capture.id);
         const result = await submitted(capture.id, capture.event);
-        if (result === "sent") active = undefined;
+        if (result === "sent") {
+          active = undefined;
+          await rm(capture.scratch, { recursive: true, force: true }).catch(() => {});
+        }
         return result;
       } catch {
         return "unconfirmed";

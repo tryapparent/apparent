@@ -136,14 +136,14 @@ export function BugReport({ bridge, frog }: { bridge?: FeedbackBridge; frog: str
           <>
             <h2 id={title}>Report a bug</h2>
             <div className="bug-report-choices">
-              <Button ref={preferred} type="button" disabled={recordingAvailable !== true} onClick={start}>
+              <Button ref={preferred} type="button" variant={recordingAvailable === false ? "outline" : "default"} disabled={recordingAvailable !== true} onClick={start}>
                 <Monitor aria-hidden="true" /> Show it with Apparent
               </Button>
-              <Button ref={alternative} type="button" variant="outline" onClick={writeInstead}>
+              <Button ref={alternative} type="button" variant={recordingAvailable === false ? "default" : "outline"} onClick={writeInstead}>
                 <Pencil aria-hidden="true" /> Write a description
               </Button>
             </div>
-            {recordingAvailable === false && <p>Recording reports are currently unavailable.</p>}
+            {recordingAvailable === false && <p>Sign in to Apparent Connect to send a recording.</p>}
             {message && <p role="alert">{message}</p>}
           </>
         )}
@@ -157,7 +157,7 @@ export function BugReport({ bridge, frog }: { bridge?: FeedbackBridge; frog: str
             <p>Your capture, including any audio, transcript and interactions, will go to Apparent Support with your app version and OS.</p>
             {message && <p role="alert">{message}</p>}
             <div className="bug-report-actions">
-              <Button type="button" disabled={sending || !preview} onClick={() => {
+              <Button type="button" disabled={sending} onClick={() => {
                 if (bridge && !sending) void submit(() => bridge.sendRecording());
               }}>{sending ? "Sending…" : "Send report"}</Button>
               <Button type="button" variant="outline" disabled={sending} onClick={close}>Cancel</Button>

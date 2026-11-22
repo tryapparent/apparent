@@ -1,7 +1,9 @@
 use super::*;
-use crate::{Scratch, publish_noreplace, snapshot_bounded};
+use crate::{Client, Credential, MAX_BYTES, MAX_FILE_BYTES, Scratch, publish_noreplace, snapshot_bounded, validate_assets_with_limit};
+use std::time::Duration;
 
-const LIMIT: u64 = 32 * 1024 * 1024;
+const LIMIT: u64 = MAX_BYTES;
+const SUPPORT_ORIGIN: &str = "https://app.tryapparent.com/connect";
 
 fn report_context(origin: &str, id: &str) -> Result<Context> {
     let context = Context {
@@ -24,7 +26,7 @@ pub fn seal(bundle: &Path, output: &Path, origin: &str, id: &str, recipient: &st
     let inner = Inner { version: 1, context, files };
     let descriptor = Zeroizing::new(serde_json::to_vec(&inner)?);
     let size: u64 = inner.files.iter().map(|asset| asset.size).sum();
-    ensure!(descriptor.len() as u64 <= JSON_BYTES && size + descriptor.len() as u64 + 32768 <= LIMIT,
+    ensure!(descriptor.len() as u64 <= JSON_BYTES && size + descriptor.len() as u64 + 262144 <= LIMIT,
         "report_too_large");
     let ciphertext = scratch.0.join("report.age");
     let encryptor = age::Encryptor::with_recipients(std::iter::once(&key as &dyn age::Recipient))
@@ -68,7 +70,7 @@ pub fn open(input: &Path, output: &Path, origin: &str, id: &str, key_file: &Path
     source.read_exact(&mut descriptor)?;
     let inner: Inner = serde_json::from_slice(&descriptor)?;
     ensure!(inner.version == 1 && inner.context == context, "Wrong support report");
-    validate_assets(&inner.files)?;
+    validate_assets_with_limit(&inner.files, LIMIT)?;
     ensure!(inner.files.iter().map(|asset| asset.size).sum::<u64>() <= LIMIT, "Invalid support archive size");
     let scratch = Scratch::new_output(output.parent().context("Missing output directory")?)?;
     for asset in &inner.files {
@@ -84,4 +86,71 @@ pub fn open(input: &Path, output: &Path, origin: &str, id: &str, key_file: &Path
     validate_bundle_references(&scratch.0, &inner.files)?;
     File::open(&scratch.0)?.sync_all()?;
     publish_noreplace(&scratch.0, output)
+}
+
+impl Client {
+    fn support_credential(&self) -> Result<Credential> {
+        let server = self.settings().server;
+        ensure!(
+            server == SUPPORT_ORIGIN || server == crate::settings::DEFAULT_SERVER,
+            "Sign in to Apparent Connect to send a recording"
+        );
+        self.credential("upload", &server)
+    }
+
+    fn support_key(&self, credential: &Credential) -> Result<String> {
+        let key = self.json_request(
+            &credential.server, Some(credential), "GET", "/v1/support-reports/key",
+            None, Duration::from_secs(10), &|| true,
+        )?;
+        key["recipient"].as_str().map(str::to_owned).context("Support reporting unavailable")
+    }
+
+    pub fn support_report_available(&self) -> Result<()> {
+        self.support_key(&self.support_credential()?)?;
+        Ok(())
+    }
+
+    pub fn submit_support_report(&self, bundle: &Path, archive: &Path, id: &str) -> Result<()> {
+        report_context(SUPPORT_ORIGIN, id)?;
+        let credential = self.support_credential()?;
+        let key = self.support_key(&credential)?;
+        if !archive.try_exists()? {
+            seal(bundle, archive, SUPPORT_ORIGIN, id, &key)?;
+        }
+        let mut input = OpenOptions::new().read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(archive)?;
+        let metadata = input.metadata()?;
+        let size = metadata.len();
+        ensure!(metadata.is_file() && size > 0 && size <= LIMIT, "Invalid support archive");
+        let scratch = Scratch::new_output(archive.parent().context("Missing output directory")?)?;
+        let mut files = Vec::new();
+        for (index, remaining) in (0..size).step_by(MAX_FILE_BYTES as usize).enumerate() {
+            let path = format!("support/part-{index}.age");
+            let part = scratch.0.join(index.to_string());
+            let mut file = new_private_file(&part)?;
+            let expected = (size - remaining).min(MAX_FILE_BYTES);
+            ensure!(io::copy(&mut (&mut input).take(expected), &mut file)? == expected, "Incomplete support archive");
+            drop(file);
+            files.push(Asset { path, size: expected, sha256: digest_file(&part)? });
+        }
+        let server = &credential.server;
+        let route = format!("/v1/support-reports/{id}/capture");
+        let reply = self.json_request(server, Some(&credential), "POST", &route,
+            Some(serde_json::json!({"files": files})), Duration::from_secs(30), &|| true)?;
+        ensure!(reply["id"].as_str() == Some(id), "Invalid support reservation");
+        if reply["status"] == "ready" {
+            return Ok(());
+        }
+        ensure!(reply["status"] == "pending", "Support report unavailable");
+        for (index, file) in files.iter().enumerate() {
+            self.request(server, Some(&credential), "PUT", &format!("{route}/files/{}",file.path),
+                Some(&scratch.0.join(index.to_string())), &scratch.0.join(format!("ack-{index}")),
+                crate::JSON_LIMIT, Duration::from_secs(60), &|| true)?;
+        }
+        let reply = self.json_request(server, Some(&credential), "POST", &format!("{route}/complete"),
+            None, Duration::from_secs(30), &|| true)?;
+        ensure!(reply["id"].as_str() == Some(id) && reply["status"] == "ready", "Support report did not complete");
+        Ok(())
+    }
 }

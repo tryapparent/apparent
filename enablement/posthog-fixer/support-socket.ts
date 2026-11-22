@@ -1,3 +1,4 @@
+import {pipeline} from 'node:stream/promises';
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {fstatSync, lstatSync} from 'node:fs';
@@ -35,7 +36,9 @@ export function supportServer(store: Store, c: Config, loadArchive = fetchSuppor
   let loading = false;
   const app = createServer(async (req, res) => {
     const finish = (status: number) => {
-      if (!res.destroyed) res.writeHead(status, {'Cache-Control':'no-store'}).end();
+      if (res.destroyed) return;
+      if (res.headersSent) res.destroy();
+      else res.writeHead(status, {'Cache-Control':'no-store'}).end();
     };
     const thread = /^\/support\/([a-f0-9-]{36})$/.exec(req.url ?? '')?.[1];
     const token = /^Bearer ([a-f0-9]{64})$/.exec(req.headers.authorization ?? '')?.[1];
@@ -48,11 +51,18 @@ export function supportServer(store: Store, c: Config, loadArchive = fetchSuppor
       if (!await authorizePeer(support.executable, req.socket, support.agentUid)) return finish(404);
       const report = store.supportAccess(thread, digest, Date.now());
       if (!report) return finish(404);
-      res.setTimeout(70000, () => res.destroy());
+      res.setTimeout(900000, () => res.destroy());
       const archive = await loadArchive(c, report);
-      if (!store.supportAccessActive(thread, Date.now(), digest)) return finish(404);
-      if (!res.destroyed) res.writeHead(200, {'Content-Type':'application/x-tar', 'Content-Length':archive.length,
-        'Cache-Control':'no-store', 'X-Content-Type-Options':'nosniff'}).end(archive);
+      try {
+        if (!store.supportAccessActive(thread, Date.now(), digest)) return finish(404);
+        if (res.destroyed) return;
+        res.writeHead(200, {'Content-Type':'application/x-tar', 'Content-Length':archive.bytes,
+          'Cache-Control':'no-store', 'X-Content-Type-Options':'nosniff'});
+        await pipeline(archive.body, res);
+      } finally {
+        archive.body.destroy();
+        await archive.dispose();
+      }
     } catch {finish(503);}
     finally {loading = false;}
   });

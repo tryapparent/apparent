@@ -86,6 +86,10 @@ pub use encryption::support::{open as open_support_report, seal as seal_support_
 #[derive(Subcommand)]
 pub enum ConnectCommand {
     #[command(hide = true)]
+    SupportReportAvailable,
+    #[command(hide = true)]
+    SubmitSupportReport { bundle: PathBuf, archive: PathBuf, id: String },
+    #[command(hide = true)]
     SealSupportReport { bundle: PathBuf, out: PathBuf, origin: String, id: String, recipient: String },
     #[command(hide = true)]
     OpenSupportReport { input: PathBuf, out: PathBuf, origin: String, id: String, key_file: PathBuf },
@@ -1005,10 +1009,8 @@ impl Client {
             ));
         }
         if let Some(body) = body {
-            config.push_str(&format!(
-                "data-binary = \"@{}\"\n",
-                config_escape(&body.to_string_lossy())?
-            ));
+            let (option, prefix) = if method == "PUT" { ("upload-file", "") } else { ("data-binary", "@") };
+            config.push_str(&format!("{option} = \"{prefix}{}\"\n", config_escape(&body.to_string_lossy())?));
             config.push_str(if method == "PUT" {
                 "header = \"Content-Type: application/octet-stream\"\n"
             } else {

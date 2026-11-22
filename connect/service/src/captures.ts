@@ -1,9 +1,12 @@
+import reportPolicy from '#bend/report-policy';
 import {FILE_FORMAT,fileTransport} from '../../client/typescript/contracts.ts';
 import type {Env, CaptureRow, FileRow, ManifestFile, AttemptSnapshot} from './types.ts';
 import {DAY,hex,json,fail,stmt,body,bearer,usage,isRecord} from './common.ts';
 import {checkedHeads,getObject,uploadAttempt,settledAttempt,deleteAttempts} from './storage.ts';
 import {queueDailyActivity} from './reporting/aggregate-dau.ts';
 const live="status!='deleted' AND expires_at>? AND (status='ready' OR pending_until>?)";
+export const supportCapture="COALESCE(json_extract(manifest,'$[0].path')='support/part-0.age',0)";
+const supportPath=/^support\/part-[0-5]\.age$/;
 export function validPath(path: unknown): path is string {
  return typeof path==='string'&&path.length<=128&&/^(apparent\.json|notes\.json|summary\.md|contact-sheet(?:-full)?\.png|audio\.wav|recording\.(mp4|mov)|finish-trace\.json|timeline\.json|frames(?:-full)?\/frame-[0-9]+\.png)$/.test(path);
 }
@@ -19,15 +22,17 @@ export async function evidenceReady(env:Env,c:CaptureRow) {
  const row=await stmt(env,"SELECT count(*) total,sum(CASE WHEN object_key IS NULL THEN 1 ELSE 0 END) missing FROM files WHERE capture_id=? AND path LIKE 'evidence/%'",c.id).first<{total:number;missing:number}>();
  return !!row&&row.total>=2&&row.missing===0;
 }
-function manifest(input: unknown,format:CaptureRow['format'],grouped=false) {
+function manifest(input: unknown,format:CaptureRow['format'],grouped=false,support=false) {
  if(!Array.isArray(input)||input.length<1||input.length>(format===FILE_FORMAT?514:512))fail('invalid_manifest');
  const seen=new Set();let bytes=0;
  const files=input.map((f: unknown)=>{
-  if(!isRecord(f)||!transportPath(f.path,format,grouped))fail('invalid_path');
-  if(seen.has(f.path)||typeof f.size!=='number'||!Number.isSafeInteger(f.size)||f.size<0||typeof f.sha256!=='string'||! /^[a-f0-9]{64}$/.test(f.sha256))fail('invalid_manifest');
+  if(!isRecord(f)||!(support?typeof f.path==='string'&&supportPath.test(f.path):transportPath(f.path,format,grouped)))fail('invalid_path');
+  const path=f.path as string;
+  if(seen.has(path)||typeof f.size!=='number'||!Number.isSafeInteger(f.size)||f.size<0||typeof f.sha256!=='string'||! /^[a-f0-9]{64}$/.test(f.sha256))fail('invalid_manifest');
   if(f.size>90000000)fail('file_too_large');
-  seen.add(f.path);bytes+=f.size;return {path:f.path,size:f.size,sha256:f.sha256};
+  seen.add(path);bytes+=f.size;return {path,size:f.size,sha256:f.sha256};
  }).sort((a,b)=>a.path.localeCompare(b.path));
+ if(support&&!files.every((file,index)=>file.path===`support/part-${index}.age`&&reportPolicy.part(index,file.size)))fail('invalid_manifest');
  if(format===FILE_FORMAT){try{fileTransport(files);}catch{fail('invalid_manifest');}}
  if(bytes>500000000)fail('quota_exceeded',409);
  if(format==='apparent-encrypted-v1') {
@@ -41,51 +46,59 @@ function manifest(input: unknown,format:CaptureRow['format'],grouped=false) {
  }
  return {files,bytes,text:JSON.stringify(files)};
 }
-async function capture(env: Env,id: string,account: string) {
- const row=await stmt(env,`SELECT * FROM captures WHERE id=? AND account_id=? AND ${live}`,id,account,Date.now(),Date.now()).first<CaptureRow>();
+async function capture(env: Env,id: string,account: string,support=false) {
+ const row=await stmt(env,`SELECT * FROM captures WHERE id=? AND account_id=? AND (${supportCapture})=? AND ${live}`,id,account,Number(support),Date.now(),Date.now()).first<CaptureRow>();
  if(!row)fail('not_found',404);return row;
 }
 const info = async (env:Env,c: CaptureRow) => ({id:c.id,status:c.status,expiresAt:new Date(c.expires_at).toISOString(),...(c.format==='plaintext-v1'?{}:{format:c.format}),...(groupedDelivery(c)?{delivery:'evidence-first-v1',evidenceReady:await evidenceReady(env,c)}:{})});
-export async function captureRoutes(request: Request,env: Env,url: URL,context?:ExecutionContext) {
+export async function captureRoutes(request: Request,env: Env,url: URL,context?:ExecutionContext,support=false) {
  if(url.pathname==='/v1/account'&&request.method==='GET') {const a=await bearer(request,env);return json({beta:a.beta,quotaBytes:500000000,usedBytes:await usage(env,a.account_id)});}
  const match=/^\/v1\/captures\/([a-f0-9]{32})(?:\/(complete|files\/(.+)))?$/.exec(url.pathname);if(!match)return null;
  const [,id,action,encoded]=match,method=request.method;
  const a=await bearer(request,env,method!=='GET');
+ const owned=()=>capture(env,id,a.account_id,support);
  if(!action&&method==='POST') {
   // Validate the complete manifest before any database write/eviction.
   const input=await body(request),format=input.format===undefined?'plaintext-v1':input.format;
   if(format!=='plaintext-v1'&&format!=='apparent-encrypted-v1'&&format!==FILE_FORMAT)fail('unsupported_format');
   const grouped=input.delivery==='evidence-first-v1';
   if(input.delivery!==undefined&&(!grouped||format!=='apparent-encrypted-v1'))fail('unsupported_delivery');
-  const m=manifest(input.files,format,grouped);
+  if(support&&(format!=='plaintext-v1'||grouped))fail('unsupported_format');
+  const m=manifest(input.files,format,grouped,support);
   let existing=await stmt(env,'SELECT * FROM captures WHERE id=?',id).first<CaptureRow>();
   if(!existing) {
    const now=Date.now();
    try {
     // The insert trigger tombstones the oldest quota overflow in this same
     // transaction. A duplicate ID cannot run it, including concurrent retries.
-    await env.DB.batch([
-     stmt(env,'INSERT INTO captures(id,account_id,manifest,bytes,expires_at,pending_until,format) VALUES(?,?,?,?,?,?,?)',id,a.account_id,m.text,m.bytes,now+7*DAY,now+DAY,format),
+    const values=[id,a.account_id,m.text,m.bytes,now+7*DAY,now+DAY,format];
+    const insert='INSERT INTO captures(id,account_id,manifest,bytes,expires_at,pending_until,format)';
+    const result=await env.DB.batch([
+     support
+      ?stmt(env,`${insert} SELECT ?,?,?,?,?,?,? WHERE (SELECT COALESCE(sum(bytes),0) FROM captures WHERE account_id=? AND ${live})<=?`,...values,a.account_id,now,now,500000000-m.bytes)
+      :stmt(env,`${insert} VALUES(?,?,?,?,?,?,?)`,...values),
      // One set insertion, not one SQL statement per file. JSON keeps the full
      // 512-file manifest below D1's 100-bound-parameter limit as well.
-     stmt(env,"INSERT INTO files(capture_id,path,size,sha256) SELECT ?,json_extract(value,'$.path'),json_extract(value,'$.size'),json_extract(value,'$.sha256') FROM json_each(?)",id,m.text)
+     stmt(env,"INSERT INTO files(capture_id,path,size,sha256) SELECT ?,json_extract(value,'$.path'),json_extract(value,'$.size'),json_extract(value,'$.sha256') FROM json_each(?) WHERE changes()=1",id,m.text)
     ]);
+    if(!result[0].meta.changes)fail('quota_exceeded',409);
    }catch(error){
     existing=await stmt(env,'SELECT * FROM captures WHERE id=?',id).first<CaptureRow>();
     if(!existing)throw error;
    }
   }
-  const c=await capture(env,id,a.account_id);
+  const c=await owned();
   if(c.manifest!==m.text||c.format!==format)fail('manifest_conflict',409);
   return json(await info(env,c));
  }
  if(!action&&method==='DELETE') {
-  const c=await stmt(env,'SELECT account_id FROM captures WHERE id=?',id).first();if(!c||c.account_id!==a.account_id)fail('not_found',404);
+  const c=await stmt(env,`SELECT account_id FROM captures WHERE id=? AND (${supportCapture})=?`,id,Number(support)).first();
+  if(!c||c.account_id!==a.account_id)fail('not_found',404);
   await stmt(env,"UPDATE captures SET status='deleted' WHERE id=? AND account_id=?",id,a.account_id).run();
   // Tombstone is authoritative; cron retries any failed or late object removal.
   return json({ok:true});
  }
- const c=await capture(env,id,a.account_id);
+ const c=await owned();
  if(!action&&method==='GET')return json({...await info(env,c),files:JSON.parse(c.manifest)});
  if(action==='complete'&&method==='POST') {
   if(c.status==='ready')return json(await info(env,c));
@@ -93,17 +106,17 @@ export async function captureRoutes(request: Request,env: Env,url: URL,context?:
   await checkedHeads(env,files,verified);
   const completed=await stmt(env,`UPDATE captures SET status='ready' WHERE id=? AND account_id=? AND status='pending' AND ${live}
    RETURNING CAST(unixepoch('subsec')*1000 AS INTEGER) AS occurred_at`,id,a.account_id,Date.now(),Date.now()).first<{occurred_at:number}>();
-  if(completed)queueDailyActivity(env,context,request,a.account_id,completed.occurred_at,true);
-  const ready=await capture(env,id,a.account_id);if(ready.status!=='ready')fail('not_ready',409);return json(await info(env,ready));
+  if(completed&&!support)queueDailyActivity(env,context,request,a.account_id,completed.occurred_at,true);
+  const ready=await owned();if(ready.status!=='ready')fail('not_ready',409);return json(await info(env,ready));
  }
  if(encoded) {
   let path;try {path=encoded.split('/').map(segment=>{const decoded=decodeURIComponent(segment);if(decoded.includes('/')||decoded.includes('\\'))fail('invalid_path');return decoded;}).join('/');}catch{fail('invalid_path');}
-  if(!transportPath(path,c.format,groupedDelivery(c)))fail('invalid_path');
+  if(!(support?supportPath.test(path):transportPath(path,c.format,groupedDelivery(c))))fail('invalid_path');
   const f=await stmt(env,'SELECT * FROM files WHERE capture_id=? AND path=?',id,path).first<FileRow>();if(!f)fail('not_found',404);
   if(method==='GET') {
    if(c.status!=='ready'&&!(groupedDelivery(c)&&path.startsWith('evidence/')&&await evidenceReady(env,c)))fail('not_ready',409);
    const object=await getObject(env,f.object_key);if(!object)fail('not_found',404);
-   await capture(env,id,a.account_id);
+   await owned();
    return new Response(object.body,{headers:{'Content-Type':mime(path),'Content-Length':String(f.size),'Content-Disposition':'attachment; filename="'+path.split('/').at(-1)+'"','X-Content-Type-Options':'nosniff'}});
   }
   if(method==='PUT') {
@@ -132,9 +145,9 @@ export async function captureRoutes(request: Request,env: Env,url: URL,context?:
     }
     if(results[0].status==='rejected')throw results[0].reason;
     if(!verified(results[1].value,f))fail('hash_mismatch');
-    if(f.object_key||c.status==='ready') {await capture(env,id,a.account_id);await deleteAttempts(env,[{key,terminal}]);return json({ok:true});}
+    if(f.object_key||c.status==='ready') {await owned();await deleteAttempts(env,[{key,terminal}]);return json({ok:true});}
     const changed=await stmt(env,`UPDATE files SET object_key=? WHERE capture_id=? AND path=? AND object_key IS NULL AND EXISTS(SELECT 1 FROM captures WHERE id=? AND status='pending' AND ${live})`,key,id,path,id,Date.now(),Date.now()).run();
-    if(!changed.meta.changes){await deleteAttempts(env,[{key,terminal}]);await capture(env,id,a.account_id);}
+    if(!changed.meta.changes){await deleteAttempts(env,[{key,terminal}]);await owned();}
     return json({ok:true});
    }catch(e){await deleteAttempts(env,[{key,terminal}]).catch(()=>{});throw e;}
   }

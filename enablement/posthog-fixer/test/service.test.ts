@@ -1,3 +1,4 @@
+import {Readable} from 'node:stream';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {chmodSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
@@ -117,7 +118,7 @@ test('a recorded report requires its fix job credential and authorized Unix peer
   const app = supportServer(f.store, f.c, async (_config, id) => {
     downloads.push(id);
     if (downloads.length === 2) {loading.resolve(); await release.promise;}
-    return archive;
+    return {body:Readable.from([archive]),bytes:archive.length,dispose:async()=>{}};
   }, async (_executable, _socket, uid) => peer === uid);
   app.listen(socketPath); await once(app,'listening');
   const tcp = server(f.store, f.c);

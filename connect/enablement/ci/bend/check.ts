@@ -41,22 +41,14 @@ await bendScratch(async (scratch) => {
         "--input-type=module",
         "-e",
         `import policy from "./report-policy.mjs";
-        const flags = [false, true];
-        const bytes = [63, 64, 25165824, 25165825, 33554432, 33554433];
         console.log(JSON.stringify([
-          flags.flatMap(extended => flags.map(current => Number(policy.advertised_limit(extended, current)))),
-          flags.map(extended => bytes.map(size => policy.upload_size(extended, size))),
+          policy.part(0, 1), policy.part(5, 90000000),
+          policy.part(6, 1), policy.part(0, 0),
         ]));`,
       ],
       directory,
     );
-    assert.deepEqual(JSON.parse(reports), [
-      [25165824, 25165824, 25165824, 33554432],
-      [
-        [false, true, true, false, false, false],
-        [false, true, true, true, true, false],
-      ],
-    ]);
+    assert.deepEqual(JSON.parse(reports), [true, true, false, false]);
     const account = run(
       process.execPath,
       [
