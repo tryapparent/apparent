@@ -38,30 +38,25 @@ current snapshots). They also produce references; ordinary server notices and
 inherited copies do not. Classification still requires original context.
 Wait keywords produce leads only, never abandoned-owner classifications.
 
-The optional jobs input is an array of snapshots from
-`gh run view ID --json databaseId,headSha,attempt,jobs`, or the same metadata
-with `runId` plus REST `jobs`. Missing job creation timestamps leave queue time
-unknown. Never subtract workflow creation from job start and call it runner
-queue. Review individual step timestamps to distinguish install/build/test tails.
-REST queued jobs can already carry `started_at == created_at`, `runner_id:0`
-and empty steps. These placeholders are queue time, not runner execution.
-Cancellation before allocation ends the queue at completion; unknown allocation
-in incomplete CLI snapshots stays explicitly unknown. Zero-date completion
-placeholders do not make an unfinished job complete.
+`--jobs` accepts immutable `gh run view ID --json databaseId,headSha,attempt,jobs`
+snapshots or equivalent REST snapshots (`runId` accepted). Queue starts at job
+creation, ending at allocation or cutoff. REST `started_at == created_at` with
+`runner_id:0` and empty steps counts as queue time. Pre-allocation cancellation
+ends the queue at completion. Missing allocation or zero-date completion leaves
+the corresponding clock unknown. Inspect step clocks for install/build/test costs.
 
-Live reads use `--github-repo tryapparent/apparent` and `--ci-run-limit 12` (1–40).
-After pending reservations, completed sampling takes the newest run per head SHA
-before repeats in both reserved and spare completion slots. `--ci-exact-attempt
-RUN_ID/ATTEMPT/FULL_HEAD_SHA` reserves one slot even on failure, verifies metadata
-before paging jobs and excludes that route from discovery. Coverage reports caps,
-identity mismatch, cutoff and access gaps. The window clips measured time. Use
-`--jobs` for immutable historical snapshots and carried-job provenance.
+Live reads use `--github-repo tryapparent/apparent --ci-run-limit 12` (1–40).
+The oldest pre-window queued/waiting run per SHA keeps priority. Repeats fill
+spare slots after other pending runs and completions. Unsampled run/attempt/SHA
+identities have `listing-only` coverage and unknown job activity. Completions
+prefer the newest run per head before repeats. `--ci-exact-attempt
+RUN_ID/ATTEMPT/FULL_HEAD_SHA` reserves one slot even on failure, verifies attempt
+metadata and excludes that route from ordinary sampling. Coverage reports caps,
+identity mismatch, cutoff and access gaps. The window clips measured time.
 
-Zero-job records retain run/attempt/SHA, status, age and page coverage in
-`analysis.joblessSnapshots`. Missing clocks and coverage stay unknown. Creation
-age gives no evidence of live admission, runner demand or critical-path delay.
-Reports exclude these ages from costs, including older `preJobWaits` aggregates.
-The collector retains these records in its bounded sample.
+Detailed zero-job snapshots retain identity, status, age and page coverage in
+`analysis.joblessSnapshots`. Creation age supplies no admission, runner demand
+or critical-path evidence and stays out of costs, including legacy `preJobWaits`.
 
 `format` ranks observed operations and identified actions by **total** per
 clock, showing whether mixed/unresolved time could overturn the ranking.
@@ -151,6 +146,9 @@ Delivery starts with `benefit:unmeasured`; a later `benefit` receipt contains
 `before` and `after` Timing objects from `policy.ts`. Measurement need not show
 a speedup: retain null/negative results and distinguish changed coverage/cache
 or frequency from a controlled improvement. The tool checks arithmetic, not causality.
+Later CI comparisons record detail-bearing attempts, jobless and listing-only
+counts, list/job requests, and separate read and analysis times. Match windows,
+limits and exact focus. Retain null or negative results.
 
 Regression command:
 

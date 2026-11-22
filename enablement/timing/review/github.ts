@@ -25,7 +25,7 @@ function parseExactAttempt(value:string):ExactAttempt {
 export function collectGitHub(repo:string, from:string, to:string, limit=12, read:ReadGitHub=readGitHub, exact?:string) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw Error('Expected GitHub owner/repository');
   if (!Number.isInteger(limit) || limit < 1 || limit > 40) throw Error('CI run limit must be 1–40');
-  const end=Date.parse(to), fields='databaseId,headSha,attempt,status,conclusion,createdAt,updatedAt,name';
+  const start=Date.parse(from), end=Date.parse(to), fields='databaseId,headSha,attempt,status,conclusion,createdAt,updatedAt,name';
   const request=exact === undefined ? undefined : parseExactAttempt(exact);
   const exactAttempt=request && {...request,status:'metadata-unavailable' as ExactStatus};
   const isExactRoute=(run:ListedRun)=>!!request && run.databaseId===request.runId && run.attempt===request.attempt;
@@ -42,6 +42,14 @@ export function collectGitHub(repo:string, from:string, to:string, limit=12, rea
   const selected:ListedRun[]=[];
   const ordinaryLimit=limit-(request ? 1 : 0);
   const take=(rows:ListedRun[],count:number)=>{for(const r of rows)if(selected.length<ordinaryLimit && count>0 && !selected.includes(r)){selected.push(r);count--;}};
+  const oldQueueHeads=new Set<string>();
+  const deferredQueues=new Set<ListedRun>();
+  for (const run of ordered) {
+    if ((run.status!=='queued' && run.status!=='waiting') || !(Date.parse(run.createdAt)<start)) continue;
+    if (oldQueueHeads.has(run.headSha)) deferredQueues.add(run);
+    oldQueueHeads.add(run.headSha);
+  }
+  const pending=ordered.filter(run=>run.status!=='completed' && !deferredQueues.has(run));
   const completedHeads=new Set<string>();
   const distinctCompletions:ListedRun[]=[], repeatCompletions:ListedRun[]=[];
   for (const run of ordered) {
@@ -51,10 +59,15 @@ export function collectGitHub(repo:string, from:string, to:string, limit=12, rea
     completedHeads.add(run.headSha);
   }
   const completed=[...distinctCompletions,...repeatCompletions];
-  take(ordered.filter(r=>r.status!=='completed' && r.status!=='in_progress'),Math.max(1,Math.ceil(ordinaryLimit/2)));
-  take(ordered.filter(r=>r.status==='in_progress'),Math.floor(ordinaryLimit/4));
+  take(pending.filter(r=>r.status!=='in_progress'),Math.max(1,Math.ceil(ordinaryLimit/2)));
+  take(pending.filter(r=>r.status==='in_progress'),Math.floor(ordinaryLimit/4));
   take(completed,Math.floor(ordinaryLimit/4));
-  take([...ordered.filter(r=>r.status!=='completed'),...completed],ordinaryLimit-selected.length);
+  take([...pending,...completed],ordinaryLimit-selected.length);
+  take([...deferredQueues],ordinaryLimit-selected.length);
+  const unsampledPreWindowRepeats=[...deferredQueues].filter(run=>!selected.includes(run)).map(run=>({
+    runId:run.databaseId,attempt:run.attempt,headSha:run.headSha,status:run.status,createdAt:run.createdAt,
+    coverage:'listing-only' as const,
+  }));
   const ordinarySelected=selected.length;
   if (exactAttempt) {
     const {runId,attempt,headSha}=exactAttempt;
@@ -92,7 +105,8 @@ export function collectGitHub(repo:string, from:string, to:string, limit=12, rea
   }
   return {runs,coverage:{repository:repo,eligibleRunsCaptured:candidates.size,selectedRuns:ordinarySelected+(request ? 1 : 0),
     runLimit:limit,listCaps:lists.map(l=>({status:l.status,captured:l.rows.length,possiblyTruncated:l.rows.length===100})),
+    unsampledPreWindowRepeats,
     jobPages:runs.map(r=>({runId:r.databaseId,attempt:r.attempt,...r.snapshotCoverage})),
     runLimitReached:ordered.length>ordinarySelected,errors,...(exactAttempt ? {exactAttempt} : {}),
-    limitation:'Live snapshots, not historical state reconstruction. Old queued/running/waiting runs included regardless of creation age; completed-run discovery is creation-window bounded and can miss older runs completing in the window. Sampling reserves half for oldest queues, a quarter for running work and a quarter for recent completions. Unused slots go to pending work first, then completions. Completed sampling takes the most recently updated run per head SHA before adding repeats in update order. Listing and run caps are explicit; this sample does not establish a repository-wide critical path or majority of threads.'}};
+    limitation:'Live snapshots, not historical state reconstruction. Old queued/running/waiting runs included regardless of creation age; completed-run discovery is creation-window bounded and can miss older runs completing in the window. Sampling reserves half for oldest queues, a quarter for running work and a quarter for recent completions. Among pre-window queued/waiting runs, the oldest per head is eligible for reservations; repeats backfill only after other pending work and completions. Unsampled repeats have listing-only coverage and unknown job activity. Completed sampling takes the most recently updated run per head SHA before adding repeats in update order. Listing and run caps are explicit; this sample does not establish a repository-wide critical path or majority of threads.'}};
 }
