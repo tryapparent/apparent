@@ -11,7 +11,8 @@ def ink_level(magnitude: U32, fresh: Bool) -> U32:
   Bool.pick(U32, fresh, U32.div(U32.mul(signal, 100), 90), 0)
 
 def ink_speed(level: U32) -> U32:
-  U32.add(16, U32.mul(level, 5))
+  speed = U32.add(16, U32.mul(level, 5))
+  U32.max(16, U32.div(U32.add(U32.mul(speed, 2), 2), 5))
 
 def ink_width(level: U32) -> U32:
   U32.add(135, U32.mul(level, 2))
