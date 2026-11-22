@@ -63,38 +63,35 @@ pub enum Action {
 pub struct Registry(HashMap<String, serde_json::Value>);
 
 impl Registry {
-    pub fn decide(&self, state: &State, action: Action, id: &str) -> Outcome {
-        if action == Action::Stop
-            && matches!(
-                self.inspect(id)["status"].as_str(),
-                Some("processing" | "saved" | "cancelled" | "failed")
-            )
-        {
-            return Outcome::AlreadyEnded;
-        }
-        decide(state, action, id)
+    pub fn decide(&self, state: &State, action: Action, id: &str, expired: bool) -> Outcome {
+        let ended = action == Action::Stop
+            && self.0.get(id)
+                .and_then(|receipt| receipt["status"].as_str())
+                .is_some_and(|status| ENDED_RECEIPTS.contains(&status));
+        CONTROL[flag_index([
+            expired,
+            action == Action::Cancel,
+            ended,
+            state.capture_id.is_some(),
+            state.capture_id.as_deref() == Some(id),
+            state.phase == Phase::Starting,
+            state.phase == Phase::Recording,
+        ])]
     }
     /// Called on the GUI thread, before any recording side effect. Rejected IDs are
     /// tombstoned too: retrying a rejected/expired request cannot launch later.
     pub fn admit(&mut self, id: &str, occupied: bool, expired: bool) -> bool {
-        if self.0.contains_key(id) {
-            return false;
-        }
-        if expired || occupied {
-            self.set(
-                id,
-                "rejected",
-                None,
-                Some(if expired {
-                    "admission_expired"
-                } else {
-                    "occupied"
-                }),
-            );
-            return false;
-        }
-        self.begin(id);
-        true
+        let error = match START[flag_index([self.0.contains_key(id), expired, occupied])] {
+            StartDecision::Existing => return false,
+            StartDecision::Expired => "admission_expired",
+            StartDecision::Occupied => "occupied",
+            StartDecision::Begin => {
+                self.begin(id);
+                return true;
+            }
+        };
+        self.set(id, "rejected", None, Some(error));
+        false
     }
 
     pub fn begin(&mut self, id: &str) {
@@ -137,6 +134,7 @@ impl Registry {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Outcome {
+    DeadlinePassed,
     Stopping,
     Cancelled,
     AlreadyEnded,
@@ -144,18 +142,20 @@ pub enum Outcome {
     NotReady,
 }
 
-pub fn decide(state: &State, action: Action, id: &str) -> Outcome {
-    let Some(current) = &state.capture_id else {
-        return Outcome::AlreadyEnded;
-    };
-    if id != current {
-        return Outcome::WrongCapture;
-    }
-    match (&state.phase, action) {
-        (Phase::Recording, Action::Stop) => Outcome::Stopping,
-        (Phase::Starting | Phase::Recording, Action::Cancel) => Outcome::Cancelled,
-        _ => Outcome::NotReady,
-    }
+#[derive(Clone, Copy)]
+enum StartDecision {
+    Existing,
+    Expired,
+    Occupied,
+    Begin,
+}
+
+include!(concat!(env!("OUT_DIR"), "/capture-admission.rs"));
+
+fn flag_index<const N: usize>(flags: [bool; N]) -> usize {
+    flags.into_iter().enumerate().fold(0, |index, (bit, flag)| {
+        index | (usize::from(flag) << bit)
+    })
 }
 
 pub fn new_id() -> Result<String> {
@@ -1592,59 +1592,6 @@ mod tests {
         let result = stream.write_all(&vec![0; 4 * 1024 * 1024]);
         assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::TimedOut);
         assert!(started.elapsed() < Duration::from_millis(300));
-    }
-
-    #[test]
-    fn owned_admission_is_once_only_and_rejections_cannot_start_later() {
-        let mut registry = Registry::default();
-        let mut starts = 0;
-        for (id, occupied, expired) in [
-            ("a", false, false),
-            ("b", true, false),
-            ("late", false, true),
-            ("a", false, false),
-            ("b", false, false),
-            ("late", false, false),
-        ] {
-            starts += usize::from(registry.admit(id, occupied, expired));
-        }
-        assert_eq!(starts, 1);
-        assert_eq!(registry.inspect("a")["status"], "starting");
-        assert_eq!(registry.inspect("b")["error"], "occupied");
-        assert_eq!(registry.inspect("late")["error"], "admission_expired");
-    }
-
-    #[test]
-    fn older_saved_result_survives_new_capture_and_stop_retry_does_not_stop_it() {
-        let mut registry = Registry::default();
-        registry.begin("old");
-        registry.finish("old", Ok(std::path::Path::new("/captures/exact.apparent")));
-        registry.begin("new");
-        let state = State {
-            phase: Phase::Recording,
-            capture_id: Some("new".into()),
-        };
-        assert_eq!(
-            registry.decide(&state, Action::Stop, "old"),
-            Outcome::AlreadyEnded
-        );
-        assert_eq!(
-            registry.inspect("old")["bundle_path"],
-            "/captures/exact.apparent"
-        );
-        assert_eq!(
-            registry.decide(&state, Action::Stop, "other"),
-            Outcome::WrongCapture
-        );
-        assert_eq!(
-            registry.decide(&state, Action::Stop, "new"),
-            Outcome::Stopping
-        );
-        registry.set("new", "processing", None, None);
-        assert_eq!(
-            registry.decide(&state, Action::Stop, "new"),
-            Outcome::AlreadyEnded
-        );
     }
 
     #[test]

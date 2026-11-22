@@ -97,6 +97,7 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
   const record = workflow("stream-record.yml");
   const paths = [
     "record/completion/**",
+    "record/capture-request/**",
     "record/pill/**",
     "record/shortcuts/push-to-talk.bend",
     "record/enablement/ci/pill/**",
@@ -120,6 +121,7 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
     }).some(({ argv }) => argv.includes(entry));
   for (const path of [
     "record/completion/src/copy-admission.bend",
+    "record/capture-request/src/capture-admission.bend",
     "record/completion/src/policy.ts",
     "record/enablement/ci/bend/build.ts",
     "shared/enablement/bend/toolchain.ts",
@@ -130,6 +132,7 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
   }
   for (const path of [
     "record/completion/src/copy-admission.bend",
+    "record/capture-request/src/capture-admission.bend",
     "record/enablement/ci/bend/build.ts",
     "shared/enablement/bend/toolchain.ts",
   ]) {
