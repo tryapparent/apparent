@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {chmodSync,cpSync,lstatSync,mkdtempSync,mkdirSync,readFileSync,readdirSync,rmSync,writeFileSync} from 'node:fs';
+import {chmodSync,cpSync,lstatSync,mkdtempSync,mkdirSync,readFileSync,readdirSync,rmSync,truncateSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 
@@ -20,15 +20,16 @@ function snapshot(path:string):Record<string,unknown> {
   }
   return result;
 }
-const cases:Array<{name:string;days:number;policy?:unknown;pin?:boolean;expected:'none'|'media'|'bundle'}>=[
-  {name:'recent',days:0.1,expected:'none'},
-  {name:'default-media',days:7.1,expected:'media'},
-  {name:'default-bundle',days:30.1,expected:'bundle'},
+const cases:Array<{name:string;days:number;policy?:unknown;pin?:boolean;overLimit?:boolean;expected:'none'|'media'|'bundle'}>=[
+  {name:'default-under-limit',days:30.1,expected:'none'},
+  {name:'default-over-limit',days:0.02,overLimit:true,expected:'bundle'},
+  {name:'legacy-default-media',days:7.1,policy:{},expected:'media'},
+  {name:'legacy-default-bundle',days:30.1,policy:{},expected:'bundle'},
   {name:'forever',days:100,policy:{mediaDays:null,bundleDays:null},expected:'none'},
   {name:'zero-settling',days:0.5,policy:{mediaDays:0,bundleDays:null},expected:'none'},
   {name:'zero-minimum',days:1.1,policy:{mediaDays:0,bundleDays:null},expected:'media'},
   {name:'bundle-priority',days:1.1,policy:{mediaDays:0,bundleDays:0},expected:'bundle'},
-  {name:'pinned',days:100,pin:true,expected:'none'},
+  {name:'pinned',days:100,policy:{},pin:true,expected:'none'},
   {name:'partial-default',days:7.1,policy:{bundleDays:null},expected:'media'},
   {name:'invalid-leaf-default',days:30.1,policy:{mediaDays:'invalid',bundleDays:null},expected:'bundle'},
   {name:'unknown-extension',days:7.1,policy:{mediaDays:7,bundleDays:null,extension:'synthetic'},expected:'media'},
@@ -50,14 +51,23 @@ try {
     const config=join(directory,'config.json');writeFileSync(config,JSON.stringify({retention:value.policy,
       unrelated:{synthetic:'preserve'}}),{mode:0o600});
     const before=snapshot(captures),beforeConfig=hash(config);
+    const usageFixture=join(captures,'synthetic-usage');
+    if(value.overLimit) {
+      writeFileSync(usageFixture,'',{flag:'wx',mode:0o600});
+      truncateSync(usageFixture,1_000_000_000);
+    }
     const output=execFileSync(binary,['clean','--dry-run','--captures',captures,'--days-ahead',String(value.days)],{
       encoding:'utf8',timeout:15_000,env:{...process.env,HOME:home,CFFIXED_USER_HOME:home,APPARENT_CONFIG:config,
         XDG_CONFIG_HOME:join(home,'config'),XDG_DATA_HOME:join(home,'data'),XDG_CACHE_HOME:join(home,'cache'),
         XDG_RUNTIME_DIR:home,DISPLAY:'',WAYLAND_DISPLAY:'',DBUS_SESSION_BUS_ADDRESS:'',APPIMAGE_EXTRACT_AND_RUN:'1'}});
     const lines=output.trim().split('\n').filter(Boolean);
     assert.deepEqual(lines,value.expected==='none'?[]:[`trash ${value.expected==='media'?'media  ':'bundle '}${bundle}`],value.name);
+    if(value.overLimit) {
+      assert.equal(lstatSync(usageFixture).size,1_000_000_000);
+      rmSync(usageFixture);
+    }
     assert.deepEqual(snapshot(captures),before,'dry-run changed a producer bundle');assert.equal(hash(config),beforeConfig);
   }
   assert.deepEqual(snapshot(source),original,'qualification changed its original producer');
-  console.log('Packaged Record Storage retention planner: 12 real CLI cases, native exclusions and unchanged source/config verified; no cleanup executed.');
+  console.log(`Packaged Record Storage retention planner: ${cases.length} real CLI cases, native exclusions and unchanged source/config verified; no cleanup executed.`);
 } finally {rmSync(root,{recursive:true,force:true});}
