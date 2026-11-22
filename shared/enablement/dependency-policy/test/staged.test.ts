@@ -108,6 +108,28 @@ test("language additions use destination path; existing repairs remain permitted
   f.git("mv", "legacy.py", "new.py");
   assert.match((await f.check()).join(), /new Python/);
 });
+test("Connect can relocate the two exact Rust modules without admitting edits or other moves", async (t) => {
+  const f = fixture(t);
+  const src = "connect/client/src";
+  const moved = ["renewal", "test_support"];
+  for (const name of [...moved, "other"])
+    f.put(`${src}/${name}.rs`, `fn ${name}() {}\n`);
+  f.stage();
+  f.commit();
+  for (const name of moved) {
+    f.put(`${src}/${name}/mod.rs`, `fn ${name}() {}\n`);
+    f.git("rm", `${src}/${name}.rs`);
+  }
+  f.stage();
+  assert.deepEqual(await f.check(), []);
+  f.put(`${src}/renewal/mod.rs`, "fn edited() {}\n");
+  f.put(`${src}/other/mod.rs`, "fn other() {}\n");
+  f.git("rm", `${src}/other.rs`);
+  f.stage();
+  const errors = (await f.check()).join("\n");
+  assert.match(errors, /renewal\/mod\.rs: new Rust/);
+  assert.match(errors, /other\/mod\.rs: new Rust/);
+});
 test("Biome checks real blobs; lint ratchet and formatting scope are explicit", () => {
   assert.deepEqual(checkStyle("a.ts", "export const x = 1;\n"), []);
   assert.match(checkStyle("a.ts", "export const x=1;").join(), /format/);
