@@ -20,6 +20,7 @@ export class LipPreview {
     private readonly tracker: FaceLandmarker,
     private readonly onMotion: (levels: number[] | null) => void,
     private readonly onFailure: () => void,
+    private readonly showUntracked: boolean,
   ) {
     this.view = canvas.ownerDocument.defaultView ?? window;
     const theme = this.view.getComputedStyle(canvas);
@@ -28,13 +29,13 @@ export class LipPreview {
   }
 
   static async start(video: HTMLVideoElement, canvas: HTMLCanvasElement, model: Uint8Array, wasm: Uint8Array,
-      signal: AbortSignal, onMotion: (levels: number[] | null) => void, onFailure: () => void) {
+      signal: AbortSignal, onMotion: (levels: number[] | null) => void, onFailure: () => void, showUntracked = true) {
     const binary = URL.createObjectURL(new Blob([Uint8Array.from(wasm)], {type: "application/wasm"}));
     const tracker = await FaceLandmarker.createFromOptions({
       wasmLoaderPath: new URL(wasmLoader, document.baseURI).href,
       wasmBinaryPath: binary,
     }, { baseOptions: { modelAssetBuffer: model, delegate: "CPU" }, runningMode: "VIDEO", numFaces: 1 }).finally(() => URL.revokeObjectURL(binary));
-    const preview = new LipPreview(video, canvas, tracker, onMotion, onFailure);
+    const preview = new LipPreview(video, canvas, tracker, onMotion, onFailure, showUntracked);
     if (signal.aborted) {
       preview.stop();
       return;
@@ -69,6 +70,13 @@ export class LipPreview {
     context.translate(width, 0);
     context.scale(-1, 1);
     if (!points) {
+      if (!this.showUntracked) {
+        context.clearRect(0, 0, width, height);
+        context.restore();
+        this.motion.length = 0;
+        this.onMotion(null);
+        return;
+      }
       const zoom = Math.min(width / videoWidth, height / videoHeight);
       const w = videoWidth * zoom;
       const h = videoHeight * zoom;

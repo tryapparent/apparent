@@ -72,6 +72,7 @@ function BackgroundTab({ handoff, open, toggle }: { handoff: BackgroundHandoff; 
 type Props = {
   view: PillView;
   lipStatus?: LipStatus | null;
+  lipPreview?: ReactNode;
   onRetryBackground?: (capture: string) => Promise<void>;
   backgroundHandoff?: BackgroundHandoff | null;
   pending?: boolean;
@@ -89,6 +90,7 @@ type Props = {
 export function PillSurface({
   view,
   lipStatus,
+  lipPreview,
   backgroundHandoff,
   onRetryBackground,
   pending = false,
@@ -336,6 +338,7 @@ export function PillSurface({
           </div>
         )}
       </div>
+      {view.phase === "recording" && lipPreview}
       {view.phase === "recording" && backgroundHandoff && backgroundOpen &&
         <div className="pill-background-detail" role="status">
           <strong>{backgroundHandoff.title}</strong><span>{backgroundLabel(backgroundHandoff)}</span>

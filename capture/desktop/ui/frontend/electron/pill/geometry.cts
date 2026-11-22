@@ -46,10 +46,11 @@ function measureContents(contents,limit,reserve){
      document.documentElement.style.setProperty('--pill-recording-reserve', '${reserve}px');
    const live = document.querySelector('.pill[data-live=true]');
    const background=document.querySelector('.pill-background-layer');
+   const lip=document.querySelector('.pill-lip-preview:not([hidden])');
    const row=element.dataset.phase==='recording'?document.querySelector('.pill-row')?.getBoundingClientRect():null;
    const notes=row?document.querySelector('.pill-notes-layer')?.getBoundingClientRect():null;
-   const selector = live || background ? '.pill-row,.live-caption,.pill-notes-layer,.pill-background-layer,.pill-background-detail' : '.destination-assembly,.destination-notification,.public-share-confirmation';
-   const regions=live || background || document.querySelector('.destination-assembly')?[...document.querySelectorAll(selector)].map(element=>{
+   const selector = live || background || lip ? '.pill-row,.live-caption,.pill-notes-layer,.pill-background-layer,.pill-background-detail,.pill-lip-preview:not([hidden])' : '.destination-assembly,.destination-notification,.public-share-confirmation';
+   const regions=live || background || lip || document.querySelector('.destination-assembly')?[...document.querySelectorAll(selector)].map(element=>{
      const r=element.getBoundingClientRect(),style=getComputedStyle(element);
      return {x:r.x-rect.x,y:r.y-rect.y,width:r.width,height:r.height,radius:parseFloat(style.borderTopLeftRadius)||0,rightRadius:parseFloat(style.borderTopRightRadius)||0};
    }):[];

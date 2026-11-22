@@ -83,18 +83,7 @@ export class LipHost {
     const decoder = await this.openDecoder();
     if (!decoder || !policy.admit(this.enabled, generation === this.generation && !this.trial && !this.camera))
       throw Error("Silent prompt unavailable");
-    const model = await open(join(decoder.directory, "models", "face_landmarker.task"), constants.O_RDONLY | constants.O_NONBLOCK);
-    let trackingModel;
-    try {
-      const info = await model.stat();
-      if (!info.isFile() || !policy.valid_size(info.size)) throw Error("Lip tracking model unavailable");
-      const buffer = Buffer.alloc(info.size);
-      const result = await model.read(buffer);
-      if (result.bytesRead !== buffer.length) throw Error("Lip tracking model unavailable");
-      trackingModel = buffer;
-    } finally {
-      await model.close();
-    }
+    const trackingModel = await readLipTrackingModel(decoder);
     if (!policy.admit(this.enabled, generation === this.generation && !this.camera))
       throw Error("Silent prompt unavailable");
     this.decoder = decoder;
@@ -129,6 +118,20 @@ export class LipHost {
   textToCopy() {
     if (!this.enabled || !this.lastText) throw Error("Silent prompt unavailable");
     return this.lastText;
+  }
+}
+
+export async function readLipTrackingModel(decoder: Decoder) {
+  const model = await open(join(decoder.directory, "models", "face_landmarker.task"), constants.O_RDONLY | constants.O_NONBLOCK);
+  try {
+    const info = await model.stat();
+    if (!info.isFile() || !policy.valid_size(info.size)) throw Error("Lip tracking model unavailable");
+    const buffer = Buffer.alloc(info.size);
+    const result = await model.read(buffer);
+    if (result.bytesRead !== buffer.length) throw Error("Lip tracking model unavailable");
+    return buffer;
+  } finally {
+    await model.close();
   }
 }
 

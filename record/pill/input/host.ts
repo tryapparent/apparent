@@ -1,4 +1,4 @@
-import { LipHost, decodeLipClip } from "../../settings/lip-host.ts";
+import { LipHost, decodeLipClip, readLipTrackingModel } from "../../settings/lip-host.ts";
 import policy from "../../settings/lip-policy.mjs";
 
 type Control =
@@ -68,6 +68,16 @@ export class LipRecordingHost {
     }
     this.jobs.set(capture, { scope, decoder, owner, camera: true, queue: Promise.resolve(), pending: 0, lostClip: false, lastEnd: 0 });
     this.present(input);
+  }
+
+  async trackingModel(owner: number, capture: string) {
+    const job = this.jobs.get(capture);
+    if (!job || job.owner !== owner || !this.allowsCamera(owner) || this.active?.capture !== capture)
+      throw Error("Lip preview unavailable");
+    const model = await readLipTrackingModel(job.decoder);
+    job.scope.signal.throwIfAborted();
+    if (!job.camera) throw Error("Lip preview unavailable");
+    return model;
   }
 
   clip(owner: number, capture: string, start: number, end: number, bytes: Uint8Array) {

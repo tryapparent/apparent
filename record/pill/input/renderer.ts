@@ -5,7 +5,9 @@ export type LipControl =
   | { action: "start"; capture: string; elapsed: number }
   | { action: "finish" | "cancel" | "unavailable"; capture: string };
 export type LipStatus = "Opening camera…" | "Lip reading" | "Lip reading unavailable";
+export type LipCameraInput = { capture: string; stream: MediaStream };
 export interface LipRecordingBridge {
+  lipPreview: (capture: string) => Promise<{ trackingModel: Uint8Array; wasm: Uint8Array }>;
   subscribeLip: (callback: (control: LipControl) => void) => () => void;
   lipClip: (capture: string, start: number, end: number, bytes: Uint8Array) => Promise<void>;
   lipFinish: (capture: string, complete: boolean) => Promise<void>;
@@ -21,13 +23,17 @@ type Recording = {
   sends: Promise<void>;
 };
 
-export function connectLipRecording(bridge: LipRecordingBridge, status: (status: LipStatus | null) => void) {
+export function connectLipRecording(bridge: LipRecordingBridge, status: (status: LipStatus | null) => void,
+  showCamera: (input: LipCameraInput | null) => void) {
   let current: Recording | undefined;
 
   function release(recording: Recording) {
     window.clearTimeout(recording.timer);
     recording.stream?.getTracks().forEach(track => track.stop());
-    if (current === recording) current = undefined;
+    if (current === recording) {
+      current = undefined;
+      showCamera(null);
+    }
   }
 
   function fail(recording: Recording) {
@@ -86,6 +92,7 @@ export function connectLipRecording(bridge: LipRecordingBridge, status: (status:
         recording.stream = stream;
         stream.getVideoTracks().forEach(track => track.addEventListener("ended", () => fail(recording), { once: true }));
         record(recording, stream);
+        showCamera({ capture: recording.id, stream });
         status("Lip reading");
       }).catch(() => fail(recording));
       return;

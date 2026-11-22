@@ -9,15 +9,17 @@ import { DestinationPicker } from "./destination-picker";
 import "../../../handoff/renderer/picker.css";
 import { PillSurface } from "../../../record/pill/renderer/pill-view";
 
-import { connectLipRecording, type LipStatus } from "../../../record/pill/input/renderer";
+import { RecordingLipPreview } from "../../../record/pill/renderer/recording-lip-preview";
+import { connectLipRecording, type LipCameraInput, type LipStatus } from "../../../record/pill/input/renderer";
 
 const session = createPillSession(window.apparentPill);
 
 function Pill() {
+  const [lipCamera, setLipCamera] = useState<LipCameraInput | null>(null);
   const [lipStatus, setLipStatus] = useState<LipStatus | null>(null);
   useEffect(() => {
     const bridge = window.apparentPill;
-    if (bridge?.subscribeLip) return connectLipRecording(bridge, setLipStatus);
+    if (bridge?.subscribeLip) return connectLipRecording(bridge, setLipStatus, setLipCamera);
   }, []);
   const {
     view,
@@ -129,6 +131,8 @@ function Pill() {
     <PillSurface
       view={view}
       lipStatus={view.phase === "recording" ? lipStatus : null}
+      lipPreview={lipCamera && window.apparentPill && <RecordingLipPreview
+        key={lipCamera.capture} camera={lipCamera} load={window.apparentPill.lipPreview} />}
       backgroundHandoff={background}
       onRetryBackground={(key) =>
         window.apparentPill!.retryBackgroundHandoff(key)
