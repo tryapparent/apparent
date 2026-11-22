@@ -1,4 +1,5 @@
 import { Switch } from "@apparent/ui/switch";
+import ink from "../../pill/renderer/ink/doodle-ink.mjs";
 
 export function PillDoodles({
   id,
@@ -8,7 +9,7 @@ export function PillDoodles({
   onCheckedChange,
 }: {
   id: string;
-  checked: boolean;
+  checked: boolean | null | undefined;
   disabled: boolean;
   saving: boolean;
   onCheckedChange: (value: boolean) => void;
@@ -22,7 +23,7 @@ export function PillDoodles({
         <Switch
           id={id}
           className="agent-switch"
-          checked={checked}
+          checked={ink.doodles_enabled(checked === false)}
           aria-labelledby="pill-doodles-label"
           aria-describedby="pill-doodles-help"
           aria-busy={saving}

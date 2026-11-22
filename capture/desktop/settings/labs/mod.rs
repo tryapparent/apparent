@@ -33,14 +33,13 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
     };
     let saved = |key| value.get("experiments").and_then(|flags|flags.get(key)).and_then(|flag|flag.as_bool());
     let experiment_config = serde_json::json!({"experiments": value.get("experiments")});
-    let agent_context = serde_json::from_value::<Config>(experiment_config)
-        .ok()
-        .and_then(|config| config.experiments.get(AGENT_CONTEXT).copied());
+    let experiment_config = serde_json::from_value::<Config>(experiment_config).ok();
+    let normalized = |key| experiment_config.as_ref()?.experiments.get(key).copied();
     serde_json::json!({
         "saved": saved(KEY),
         "compactHandoffSaved": saved(crate::composition::frame_labels::EXPERIMENT),
         "transcriptOnlySaved": saved(crate::composition::transcript_handoff::EXPERIMENT),
-        "agentContextSaved": agent_context,
+        "agentContextSaved": normalized(AGENT_CONTEXT),
         "sharingSaved": saved("hostedSharing"),
         "autoPasteSaved": saved(AUTO_PASTE),
         "autoPasteSupported": auto_paste_supported(),
@@ -49,7 +48,7 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
         "wisprSaved": saved("onboardingWisprFlow"),
         "wisprSupported": cfg!(target_os = "macos"),
         "silentPromptSaved": saved("silentPrompt"),
-        "pillDoodlesSaved": saved(crate::capture::desktop::ui::electron_pill::PILL_DOODLES),
+        "pillDoodlesSaved": normalized(crate::capture::desktop::ui::electron_pill::PILL_DOODLES),
         "dictationFrogSaved": saved("dictationFrog"),
     })
 }
@@ -144,16 +143,18 @@ fn desktop_access(activate: bool) -> &'static str {
         }
     }
     #[test]
-    fn pill_doodles_are_opt_in_and_use_the_shared_writer() {
+    fn pill_doodles_keep_an_unset_choice_distinct_from_an_explicit_opt_out() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("config.json");
         std::fs::write(&path, r#"{"experiments":{"other":true}}"#).unwrap();
         assert!(facts(&path)["pillDoodlesSaved"].is_null());
+        std::fs::write(&path, r#"{"experiments":{"other":true,"pillDoodles":"off"}}"#).unwrap();
+        assert_eq!(facts(&path)["pillDoodlesSaved"], false);
         for enabled in [true, false] {
             let response = request(&path, 1, Some(enabled), Some(crate::capture::desktop::ui::electron_pill::PILL_DOODLES));
             assert_eq!(response["facts"]["pillDoodlesSaved"], enabled);
             let config = crate::shared::handoff::load_config_from(&path);
-            assert_eq!(crate::shared::handoff::experiment_enabled_in(&config, crate::capture::desktop::ui::electron_pill::PILL_DOODLES), enabled);
+            assert_eq!(config.experiments.get(crate::capture::desktop::ui::electron_pill::PILL_DOODLES), Some(&enabled));
             assert!(crate::shared::handoff::experiment_enabled_in(&config, "other"));
         }
     }

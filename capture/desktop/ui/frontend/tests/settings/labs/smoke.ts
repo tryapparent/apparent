@@ -50,7 +50,8 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   await expect(compact).toBeDisabled();await expect(speech).toBeDisabled();
   await expect(toggle).toBeDisabled();await expect.poll(()=>Boolean(held)).toBe(true);
   reply(held!);hold=false;await expect(toggle).toBeEnabled();await expect(toggle).toHaveAttribute('aria-checked','false');
-  for(const trial of [compact,speech,agentContext,doodles]){
+  await expect(doodles).toBeChecked();
+  for(const trial of [compact,speech,agentContext]){
    await expect(trial).toHaveAttribute('aria-checked','false');
    await trial.focus();await page.keyboard.press('Space');
    await expect(trial).toHaveAttribute('aria-checked','true');await expect(trial).toBeFocused();

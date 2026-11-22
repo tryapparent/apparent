@@ -26,7 +26,7 @@ function view(value) {
   });
   return {revision:value.revision,phase:value.phase,clock:value.clock,label:value.label,warning:value.warning,notice:value.notice??null,noteTip:value.noteTip??null,
     shareIndicator:value.shareIndicator??'none',reducedMotion:value.reducedMotion,draggable:value.draggable,inputWaveform:value.inputWaveform??null,noteCount:value.noteCount??0,
-    doodleInk:value.doodleInk===true,
+    doodleInk:value.doodleInk??null,
     transcript:value.transcript == null ? null : {state:value.transcript.state,text:value.transcript.text},actions:controls};
 }
 function command(current, revision, action) {
