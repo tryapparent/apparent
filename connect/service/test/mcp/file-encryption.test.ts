@@ -41,7 +41,7 @@ test('v2 admission rejects mixed, missing, sparse or duplicate objects without r
 });
 
 test('staged migration artifacts retain exact D1 ledger filenames and historical SQL bytes',async()=>{
-  const names=Array.from({length:17},(_,i)=>String(i+1).padStart(4,'0')+'.sql');
+  const names=Array.from({length:19},(_,i)=>String(i+1).padStart(4,'0')+'.sql');
   assert.deepEqual((await readdir('.generated/migrations')).sort(),names);
   for(const [i,name] of names.entries()){
     assert.deepEqual(await readFile('.generated/migrations/'+name),await readFile('migrations/'+(i<5?'baseline/':'')+name));
