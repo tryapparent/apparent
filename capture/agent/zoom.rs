@@ -3,11 +3,12 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, ensure};
+use crate::shared::model::parse_clock_ms;
+use anyhow::{Context, Result, bail, ensure};
+use serde::Deserialize;
+use std::{process::Command, time::Duration};
 
-use crate::shared::model::{
-    ApparentBundle, InteractionEvent, Keyframe, KeyframeReason, parse_clock_ms,
-};
+use crate::shared::model::{ApparentBundle, InteractionEvent, Keyframe, KeyframeReason};
 
 pub struct ZoomSheet {
     pub path: PathBuf,
@@ -19,102 +20,10 @@ pub struct ZoomSheet {
     pub said: String,
 }
 
-fn normalize(text: &str) -> String {
-    text.chars()
-        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
-        .collect::<String>()
-        .to_lowercase()
-}
-
-/// Where `phrase` starts in the narration: the first run of transcript words matching it, else
-/// the segment containing it.
-pub fn find_phrase_ms(bundle: &ApparentBundle, phrase: &str) -> Option<u64> {
-    let needle: Vec<String> = normalize(phrase)
-        .split_whitespace()
-        .map(str::to_owned)
-        .collect();
-    if needle.is_empty() {
-        return None;
-    }
-    let words = &bundle.transcript.words;
-    let tokens: Vec<String> = words
-        .iter()
-        .map(|w| normalize(&w.text).replace(' ', ""))
-        .collect();
-    let matched = (0..tokens.len()).find(|&i| {
-        needle
-            .iter()
-            .enumerate()
-            .all(|(j, n)| tokens.get(i + j).is_some_and(|t| t == n))
-    });
-    if let Some(i) = matched {
-        return Some(words[i].t0);
-    }
-    let joined = needle.join(" ");
-    bundle
-        .transcript
-        .segments
-        .iter()
-        .find(|s| {
-            normalize(&s.text)
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ")
-                .contains(&joined)
-        })
-        .map(|s| s.t0)
-}
-
-/// Resolves `--at`: a time (`0:12`, `12.5`) or a phrase from the narration.
-pub fn resolve_moment(bundle: &ApparentBundle, at: &str) -> Result<u64> {
-    parse_clock_ms(at)
-        .or_else(|| find_phrase_ms(bundle, at))
-        .with_context(|| format!("“{at}” is neither a time nor a phrase in the narration"))
-}
-
-/// The window around `at_ms`: a quarter before, the rest after, since what the narration points
-/// at usually happens as or just after it is said. Clamped to the recording.
-pub fn window(at_ms: u64, span_ms: u64, duration_ms: u64) -> (u64, u64) {
-    let span = span_ms.clamp(200, duration_ms.max(200));
-    let mut from = at_ms.saturating_sub(span / 4);
-    let mut to = from + span;
-    if to > duration_ms {
-        to = duration_ms;
-        from = to.saturating_sub(span);
-    }
-    (from, to)
-}
-
-/// The window centred on a mark drawn over `[t0, t1]`: at least `span_ms`, and the whole mark
-/// with half a second either side. Clamped to the recording.
-pub fn mark_window(t0: u64, t1: u64, span_ms: u64, duration_ms: u64) -> (u64, u64) {
-    let span = span_ms
-        .max(t1.saturating_sub(t0) + 1_000)
-        .clamp(200, duration_ms.max(200));
-    let mut from = ((t0 + t1) / 2).saturating_sub(span / 2);
-    let mut to = from + span;
-    if to > duration_ms {
-        to = duration_ms;
-        from = to.saturating_sub(span);
-    }
-    (from, to)
-}
-
 /// What to zoom into: a moment (`--at`) or one mark (`--mark`).
 pub enum Focus<'a> {
     At(&'a str),
     Mark(crate::capture::agent::context::MarkEntry<'a>),
-}
-
-/// Evenly spaced times across `[from, to]`, both ends included.
-pub fn sample_times(from: u64, to: u64, count: usize) -> Vec<u64> {
-    let count = count.clamp(1, 48);
-    if count == 1 || to <= from {
-        return vec![from];
-    }
-    (0..count)
-        .map(|i| from + (to - from) * i as u64 / (count - 1) as u64)
-        .collect()
 }
 
 /// How much of a gesture still under way a cell shows: the finger now and its recent path.
@@ -191,19 +100,6 @@ fn said_between(bundle: &ApparentBundle, from: u64, to: u64) -> String {
         .join(" ")
 }
 
-/// The auto-crop of the keyframe nearest `t` (keyframe crops meet halfway between keyframes).
-fn crop_at(
-    bundle: &ApparentBundle,
-    t: u64,
-) -> Option<crate::capture::engine::autocrop::autocrop::Rect> {
-    let (k, _) = bundle
-        .keyframes
-        .iter()
-        .enumerate()
-        .min_by_key(|(_, kf)| kf.t.abs_diff(t))?;
-    crop_of(bundle, k)
-}
-
 /// The auto-crop of the `k`th keyframe (0-based).
 fn crop_of(
     bundle: &ApparentBundle,
@@ -244,32 +140,22 @@ pub fn zoom(
                     .unwrap_or_else(|| "The bundle has no video to zoom into".to_owned())
             }
         })?;
-    let ((from_ms, to_ms), mark) = match &focus {
-        Focus::At(at) => {
-            let at_ms = resolve_moment(bundle, at)?;
-            ensure!(
-                at_ms <= bundle.duration_ms,
-                "{} is past the end ({})",
-                clock(at_ms),
-                clock(bundle.duration_ms)
-            );
-            (window(at_ms, span_ms, bundle.duration_ms), None)
-        }
-        Focus::Mark(entry) => (
-            mark_window(entry.mark.t0, entry.mark.t1, span_ms, bundle.duration_ms),
-            Some(entry),
-        ),
+    let plan = plan(bundle, &focus, span_ms, count, cropped)?;
+    let (from_ms, to_ms, times) = (plan.from, plan.to, plan.times);
+    let mark = match &focus {
+        Focus::Mark(entry) => Some(entry),
+        Focus::At(_) => None,
     };
     let mark_crop = mark
         .and_then(|e| e.keyframe)
         .and_then(|index| bundle.keyframes.iter().position(|k| k.index == index))
         .map(|k| crop_of(bundle, k));
-    let times = sample_times(from_ms, to_ms, count);
-    let crops: Vec<Option<crate::capture::engine::autocrop::autocrop::Rect>> = times
+    let crops: Vec<Option<crate::capture::engine::autocrop::autocrop::Rect>> = plan
+        .nearest
         .iter()
-        .map(|&t| {
+        .map(|&index| {
             mark_crop
-                .unwrap_or_else(|| crop_at(bundle, t))
+                .unwrap_or_else(|| index.checked_sub(1).and_then(|k| crop_of(bundle, k)))
                 .filter(|_| cropped)
         })
         .collect();
@@ -279,7 +165,7 @@ pub fn zoom(
         let mut out = Vec::with_capacity(times.len());
         for (chunk, rects) in times.chunks(6).zip(crops.chunks(6)) {
             let decoded =
-                crate::composition::movie_frames::agent(&video, chunk, bundle.video_offset_ms, 0)?;
+                crate::composition::movie_frames::record(&video, chunk, bundle.video_offset_ms, 0)?;
             for (frame, rect) in decoded.into_iter().zip(rects) {
                 let frame = match rect {
                     Some(r) => crate::capture::engine::autocrop::autocrop::crop_frame(&frame, *r),
@@ -292,7 +178,7 @@ pub fn zoom(
         }
         out
     } else {
-        crate::composition::movie_frames::agent(&video, &times, bundle.video_offset_ms, 900)?
+        crate::composition::movie_frames::record(&video, &times, bundle.video_offset_ms, 900)?
     };
     ensure!(!frames.is_empty(), "No frames could be decoded");
     let mut cells = Vec::with_capacity(frames.len());
@@ -356,62 +242,119 @@ pub fn zoom(
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::shared::model::{TranscriptData, WordTiming};
+struct Plan {
+    pub from: u64,
+    pub to: u64,
+    pub times: Vec<u64>,
+    pub nearest: Vec<usize>,
+}
 
-    fn bundle_with_words(words: &[(&str, u64)]) -> ApparentBundle {
-        let mut bundle: ApparentBundle = serde_json::from_value(serde_json::json!({
-            "version": 1, "id": "t", "createdAtMs": 0, "durationMs": 25_000,
-            "target": {"mode": "device", "displayId": 0,
-                "frame": {"x": 0.0, "y": 0.0, "width": 10.0, "height": 10.0, "scale": 1.0}},
-            "transcript": {"source": "test", "text": "", "segments": []},
-            "strokes": [], "marks": [], "events": [], "keyframes": [], "contactSheet": "c.png"
-        }))
-        .unwrap();
-        bundle.transcript = TranscriptData {
-            source: "test".into(),
-            words: words
+#[derive(Deserialize)]
+#[serde(tag = "status", rename_all = "lowercase", deny_unknown_fields)]
+enum Reply {
+    Missing,
+    Past {
+        at: String,
+    },
+    Plan {
+        from: String,
+        to: String,
+        times: Vec<String>,
+        nearest: Vec<usize>,
+    },
+}
+
+fn plan(
+    bundle: &ApparentBundle,
+    focus: &Focus<'_>,
+    span: u64,
+    count: usize,
+    cropped: bool,
+) -> Result<Plan> {
+    let (moment, phrase, mark) = match focus {
+        Focus::At(at) => match parse_clock_ms(at) {
+            Some(ms) => (Some(ms.to_string()), None, None),
+            None => (None, Some(*at), None),
+        },
+        Focus::Mark(entry) => (
+            None,
+            None,
+            Some([entry.mark.t0.to_string(), entry.mark.t1.to_string()]),
+        ),
+    };
+    let mut words = Vec::new();
+    let mut segments = Vec::new();
+    if phrase.is_some() {
+        words.extend(
+            bundle
+                .transcript
+                .words
                 .iter()
-                .map(|&(text, t0)| WordTiming {
-                    t0,
-                    t1: t0 + 200,
-                    text: text.into(),
-                })
-                .collect(),
-            ..Default::default()
-        };
-        bundle
+                .map(|w| (&w.text, w.t0.to_string())),
+        );
+        segments.extend(
+            bundle
+                .transcript
+                .segments
+                .iter()
+                .map(|s| (&s.text, s.t0.to_string())),
+        );
     }
-
-    #[test]
-    fn phrases_and_times_resolve() {
-        let bundle = bundle_with_words(&[
-            ("but,", 9_000),
-            ("the", 9_300),
-            ("Width", 9_500),
-            ("changes.", 9_800),
-        ]);
-        assert_eq!(resolve_moment(&bundle, "width changes").unwrap(), 9_500);
-        assert_eq!(resolve_moment(&bundle, "0:12").unwrap(), 12_000);
-        assert!(resolve_moment(&bundle, "tabular numbers").is_err());
-    }
-
-    #[test]
-    fn window_leans_after_the_moment_and_stays_inside() {
-        assert_eq!(window(10_000, 2_000, 25_000), (9_500, 11_500));
-        assert_eq!(window(200, 2_000, 25_000), (0, 2_000));
-        assert_eq!(window(24_800, 2_000, 25_000), (23_000, 25_000));
-        assert_eq!(sample_times(1_000, 2_000, 3), vec![1_000, 1_500, 2_000]);
-        assert_eq!(clock(61_234), "1:01.234");
-    }
-
-    #[test]
-    fn a_mark_window_is_centred_on_the_mark_and_holds_all_of_it() {
-        assert_eq!(mark_window(9_322, 10_908, 2_000, 13_400), (8_822, 11_408));
-        assert_eq!(mark_window(6_661, 7_182, 2_000, 13_400), (5_921, 7_921));
-        assert_eq!(mark_window(200, 400, 2_000, 13_400), (0, 2_000));
-        assert_eq!(mark_window(13_000, 13_300, 2_000, 13_400), (11_400, 13_400));
+    let keyframes: Vec<_> = bundle
+        .keyframes
+        .iter()
+        .filter(|_| cropped && bundle.autocrop.is_some())
+        .map(|k| k.t.to_string())
+        .collect();
+    let request = crate::composition::worker::private_json(&serde_json::json!({
+        "moment": moment, "phrase": phrase, "mark": mark, "duration": bundle.duration_ms.to_string(),
+        "span": span.to_string(), "count": count.to_string(), "words": words, "segments": segments, "keyframes": keyframes,
+    }))?;
+    let (node, worker) =
+        crate::composition::worker::policy_assets("Agent zoom", "agent-media", "zoom-worker.mjs")?;
+    let bytes = crate::composition::worker::run_with_input(
+        Command::new(node)
+            .env("ELECTRON_RUN_AS_NODE", "1")
+            .arg(worker),
+        request,
+        Duration::from_secs(30),
+        8192,
+    )?;
+    match serde_json::from_slice(&bytes).context("Invalid Agent zoom response")? {
+        Reply::Missing => bail!(
+            "“{}” is neither a time nor a phrase in the narration",
+            phrase.context("Unexpected phrase response")?
+        ),
+        Reply::Past { at } => bail!(
+            "{} is past the end ({})",
+            clock(at.parse()?),
+            clock(bundle.duration_ms)
+        ),
+        Reply::Plan {
+            from,
+            to,
+            times,
+            nearest,
+        } => {
+            let (from, to) = (from.parse()?, to.parse()?);
+            let times: Vec<u64> = times.iter().map(|t| t.parse()).collect::<Result<_, _>>()?;
+            ensure!(
+                from <= to
+                    && to <= bundle.duration_ms
+                    && (1..=48).contains(&times.len())
+                    && times.first() == Some(&from)
+                    && times.iter().all(|t| (from..=to).contains(t))
+                    && times.windows(2).all(|w| w[0] <= w[1])
+                    && times.len() == nearest.len()
+                    && nearest.iter().all(|i| *i <= keyframes.len()),
+                "Invalid Agent zoom plan"
+            );
+            Ok(Plan {
+                from,
+                to,
+                times,
+                nearest,
+            })
+        }
     }
 }

@@ -1,0 +1,4 @@
+{
+  "modules": ["zoom/zoom-plan.bend"],
+  "inputs": ["zoom/", "enablement/ci/bend/"]
+}

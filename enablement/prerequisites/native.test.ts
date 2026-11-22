@@ -8,6 +8,7 @@ import '../native-build/build.test.ts';
 import './source-identity/git-index.test.ts';
 import './targeted/run.test.ts';
 
+const agentMediaFiles = ['worker.js', 'policy.js', 'range-worker.js', 'range-policy.js', 'zoom-worker.mjs', 'zoom-plan.mjs', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json'];
 const completionFiles = ['worker.js', 'policy.js', 'session.js', 'copy-admission.mjs', 'package.json'];
 
 function fixture(t: any) {
@@ -34,7 +35,7 @@ function fixture(t: any) {
   for (const name of recordMediaFiles) {
     put(app + 'record-media/' + name);
   }
-  for (const name of ['worker.js', 'policy.js', 'range-worker.js', 'range-policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json']) {
+  for (const name of agentMediaFiles) {
     put(app + 'agent-media/' + name);
   }
   for (const name of ['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json', 'cleanup-policy/package.json', 'cleanup-policy/policy.js', 'cleanup-policy/retention/policy.js', 'cleanup-policy/retention/worker.js', 'cleanup-policy/retention/size-limit.js', 'cleanup-policy/retention/capacity.mjs', 'retention/size-limit.js', 'retention/capacity.mjs']) {
@@ -51,7 +52,7 @@ function generators(f: ReturnType<typeof fixture>, fail = '') {
     'updates': ['electron/settings/update-worker.cjs'],
     'pill': completionFiles.map(name => 'electron/record-completion/' + name),
     'record-media': recordMediaFiles.map(name => 'electron/record-media/' + name),
-    'agent-media': ['worker.js', 'policy.js', 'range-worker.js', 'range-policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json'].map(name => 'electron/agent-media/' + name),
+    'agent-media': agentMediaFiles.map(name => 'electron/agent-media/' + name),
   };
   outputs['connect-transport'].push('electron/settings/labs.cjs');
   outputs.pill.push('electron/notes/record-transcription.cjs');
@@ -151,7 +152,7 @@ for (const name of completionFiles) {
     assert.throws(() => checkNativeInputs(f.root, 'linux'), /ENOENT/);
   });
 }
-for (const name of ['range-worker.js','range-policy.js']) {
+for (const name of ['range-worker.js','range-policy.js','zoom-worker.mjs','zoom-plan.mjs']) {
   test(`missing generated Agent range ${name} fails before Cargo`, t => {
     const f = fixture(t);
     rmSync(resolve(f.root,'capture/desktop/ui/frontend/electron/agent-media/' + name));
