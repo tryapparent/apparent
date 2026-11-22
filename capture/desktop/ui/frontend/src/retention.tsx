@@ -25,7 +25,7 @@ function problem(result: RetentionResult | UsageResult | undefined, operation?: 
     return 'Storage is unavailable. Refresh when the Rust app is responsive.';
   }
   if (result.status === 'incompatible') return 'This Rust backend does not support retention and usage yet.';
-  if (result.status === 'disabled') return 'Experimental Storage is disabled in Rust.';
+  if (result.status === 'disabled') return 'Restart Apparent and reopen Settings to use Storage.';
   return 'Not connected to Rust. Open Apparent and refresh.';
 }
 

@@ -106,11 +106,6 @@ pub fn probe(path: &Path) -> bool {
         && std::fs::metadata(path).is_ok_and(|meta| meta.is_dir() && !meta.permissions().readonly())
 }
 
-pub fn enabled_in(path: &Path) -> Result<bool> {
-    let config = config_from_value(read_raw(path)?);
-    Ok(experiment_overridden("electronCaptureLocation") || experiment_enabled_in(&config, "electronCaptureLocation"))
-}
-
 pub(crate) fn experiment_in(path: &Path, name: &str) -> Result<bool> {
     // A failed read is not a successful read of a disabled flag.
     let config = config_from_value(read_raw(path)?);

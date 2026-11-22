@@ -25,10 +25,12 @@ selection and Tab continuation. At 720×530 and the supported 640×530 minimum,
 inspect light and dark themes, the usage overview, the maximum GB field and
 its focus and validation, and loading, disabled, error and recovery states.
 
-Exercise `experiments.electronCaptureLocation: false` and recover from an
-Electron failure while on Storage using the existing native Settings fallback.
-Use a new Settings session after restoring the flag. Verify both presentations
-read the same fixture config and that recovery does not dispatch a mutation.
+Repeat with absent, true and false legacy `experiments.electronCaptureLocation`
+values. Check that the shared Electron pane opens in each case and preserves
+the exact config bytes and fixture captures during navigation and reopen.
+Recover from an Electron failure on Storage using the native Settings fallback.
+Verify that it reads the same fixture config and that recovery does not dispatch
+a mutation.
 
 ## Real provider
 
