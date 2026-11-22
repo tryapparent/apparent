@@ -1,6 +1,59 @@
 //! Bounded private stdio/runtime mechanics shared by Connect TypeScript workflows.
 use super::*;
 
+pub trait ConfigProvider: Send + Sync {
+    fn config_path(&self) -> &Path;
+    fn cloud(&self) -> CloudConfig;
+    fn experiment(&self, name: &str) -> bool;
+    fn set_cloud(&self, value: &CloudConfig) -> Result<()>;
+    fn set_cloud_allowed(&self, value: &CloudConfig, allowed: &dyn Fn() -> bool) -> Result<()> {
+        ensure!(allowed(), "cancelled");
+        self.set_cloud(value)
+    }
+    fn set_experiment(&self, name: &str, enabled: bool) -> Result<()>;
+    fn open_browser(&self, _uri: &Path) {}
+    fn renewal_transition(&self, facts: RenewalFacts) -> Result<RenewalDecision> {
+        Client::standalone_renewal_transition(facts)
+    }
+}
+
+#[derive(Serialize)]
+#[serde(tag = "phase", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum RenewalFacts {
+    Request {
+        refresh_expired: bool,
+        access_seconds: u32,
+    },
+    Locked {
+        changed: bool,
+        force: bool,
+        access_seconds: u32,
+        has_refresh: bool,
+    },
+    Journal {
+        completed: bool,
+        refresh_expired: bool,
+    },
+    Transport {
+        rejected: bool,
+        can_retry: bool,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RenewalDecision {
+    Send,
+    Force,
+    Renew,
+    Reuse,
+    Reapprove,
+    ReadJournal,
+    Recover,
+    Exchange,
+    Return,
+}
+
 pub(super) fn shares_typescript_runtime() -> Result<(PathBuf, PathBuf, bool)> {
     connect_typescript_runtime("shares")
 }
@@ -286,14 +339,112 @@ impl Client {
     }
 }
 
+struct RenewalHost {
+    input: std::process::ChildStdin,
+    output: std::process::ChildStdout,
+    _child: PolicyChild,
+}
+
+thread_local! {
+    static RENEWAL_HOST: std::cell::RefCell<Option<RenewalHost>> = const { std::cell::RefCell::new(None) };
+}
+
+impl Credential {
+    fn access_seconds(&self, sampled: u64) -> u32 {
+        self.expires_at
+            .and_then(|expiry| u32::try_from(expiry.saturating_sub(sampled)).ok())
+            .unwrap_or(u32::MAX)
+    }
+
+    fn refresh_expired(&self, sampled: u64) -> bool {
+        self.refresh_expires_at
+            .is_some_and(|expiry| expiry <= sampled)
+    }
+}
+
 impl Client {
+    pub(super) fn request_renewal_decision(&self, current: &Credential) -> Result<RenewalDecision> {
+        let sampled = now();
+        self.provider.renewal_transition(RenewalFacts::Request {
+            refresh_expired: current.refresh_expired(sampled),
+            access_seconds: current.access_seconds(sampled),
+        })
+    }
+    pub(super) fn locked_renewal_decision(
+        &self,
+        current: &Credential,
+        expected: &Credential,
+        force: bool,
+    ) -> Result<RenewalDecision> {
+        self.provider.renewal_transition(RenewalFacts::Locked {
+            changed: current != expected,
+            force,
+            access_seconds: current.access_seconds(now()),
+            has_refresh: current.refresh_token.is_some(),
+        })
+    }
+    pub(super) fn resume_renewal_decision(
+        &self,
+        current: &Credential,
+        completed: bool,
+    ) -> Result<RenewalDecision> {
+        self.provider.renewal_transition(RenewalFacts::Journal {
+            completed,
+            refresh_expired: current.refresh_expired(now()),
+        })
+    }
+    pub(super) fn transport_decision(
+        &self,
+        error: &anyhow::Error,
+        can_retry: bool,
+    ) -> Result<RenewalDecision> {
+        let rejected = error
+            .downcast_ref::<settings::HostedFailure>()
+            .is_some_and(|failure| failure.kind == SafeError::AuthRequired);
+        self.provider.renewal_transition(RenewalFacts::Transport { rejected, can_retry })
+    }
+
+    pub(super) fn finish_transport_error(
+        &self,
+        error: &anyhow::Error,
+        credential: &Credential,
+        allowed: &dyn Fn() -> bool,
+        queue_deadline: Option<Instant>,
+    ) -> Result<()> {
+        match self.transport_decision(error, false)? {
+            RenewalDecision::Reapprove => self.mark_auth_required(credential, allowed, queue_deadline),
+            RenewalDecision::Return => Ok(()),
+            _ => bail!("Invalid Connect terminal transport decision"),
+        }
+    }
+
+    pub(super) fn standalone_renewal_transition(facts: RenewalFacts) -> Result<RenewalDecision> {
+        RENEWAL_HOST.with_borrow_mut(|slot| {
+            let result = (|| {
+                if slot.is_none() {
+                    let (child, input, output) = Self::open_public_policy("renewal/cli")?;
+                    *slot = Some(RenewalHost { input, output, _child: child });
+                }
+                let host = slot.as_mut().context("Connect renewal host is missing")?;
+                policy_write(&mut host.input, &serde_json::to_value(facts)?)?;
+                let line = policy_frame_bounded(&mut host.output, Duration::from_secs(3), 1024)?;
+                Ok(serde_json::from_str(&line)?)
+            })();
+            if result.is_err() {
+                *slot = None;
+            }
+            result
+        })
+    }
     pub(super) fn handoff_policy(request: Value) -> Result<Value> {
         Self::run_public_policy("handoff", request)
     }
     pub fn account_presentation(facts: Value) -> Result<Value> {
         Self::run_public_policy("account/cli", facts)
     }
-    fn run_public_policy(name: &str, request: Value) -> Result<Value> {
+    fn open_public_policy(
+        name: &str,
+    ) -> Result<(PolicyChild, std::process::ChildStdin, std::process::ChildStdout)> {
         let (runtime, module, electron) = connect_typescript_runtime(name)?;
         let mut command = Command::new(runtime);
         if electron { command.env("ELECTRON_RUN_AS_NODE", "1"); }
@@ -302,8 +453,12 @@ impl Client {
         }
         let mut child = PolicyChild(command.arg(module)
             .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?);
-        let mut input = child.stdin.take().context("Missing Connect policy input")?;
-        let mut output = child.stdout.take().context("Missing Connect policy output")?;
+        let input = child.stdin.take().context("Missing Connect policy input")?;
+        let output = child.stdout.take().context("Missing Connect policy output")?;
+        Ok((child, input, output))
+    }
+    fn run_public_policy(name: &str, request: Value) -> Result<Value> {
+        let (mut child, mut input, mut output) = Self::open_public_policy(name)?;
         policy_write(&mut input, &request)?;
         drop(input);
         let line = policy_frame_bounded(&mut output, Duration::from_secs(3), 16_384)?;

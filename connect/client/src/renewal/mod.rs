@@ -164,7 +164,7 @@ impl Client {
         check()?;
         Ok(lock)
     }
-    fn mark_auth_required(
+    pub(super) fn mark_auth_required(
         &self,
         expected: &Credential,
         allowed: &dyn Fn() -> bool,
@@ -226,17 +226,14 @@ impl Client {
         );
         // A different process has already renewed this exact access incarnation.
         let cancellation = self.cancellation()?;
-        if current != *expected
-            || (!force
-                && current
-                    .expires_at
-                    .is_none_or(|t| t > now().saturating_add(30)))
-        {
-            return Ok(current);
-        }
-        if current.refresh_token.is_none() {
-            self.mark_auth_required(&current, allowed, queue_deadline)?;
-            bail!(reapproval());
+        match self.locked_renewal_decision(&current, expected, force)? {
+            RenewalDecision::Reuse => return Ok(current),
+            RenewalDecision::Reapprove => {
+                self.mark_auth_required(&current, allowed, queue_deadline)?;
+                bail!(reapproval());
+            }
+            RenewalDecision::ReadJournal => (),
+            _ => bail!("Invalid Connect renewal decision under lock"),
         }
         let journal = self.state.join(format!("{}.renewal", current.scope));
         let response = self.state.join(format!("{}.response", current.scope));
@@ -263,16 +260,18 @@ impl Client {
             atomic_json(&journal, &record)?;
             record
         };
-        let mut reply = if record.completed {
-            Some(self.renewal_reply(&response, &current, allowed, queue_deadline)?)
+        let decision = self.resume_renewal_decision(&current, record.completed)?;
+        let reply = if matches!(decision, RenewalDecision::Recover) {
+            self.renewal_reply(&response, &current, allowed, queue_deadline)?
         } else {
-            None
-        };
-        if reply.is_none() {
             ensure!(allowed(), "cancelled");
-            if current.refresh_expires_at.is_some_and(|t| t <= now()) {
-                self.mark_auth_required(&current, allowed, queue_deadline)?;
-                bail!(reapproval());
+            match decision {
+                RenewalDecision::Reapprove => {
+                    self.mark_auth_required(&current, allowed, queue_deadline)?;
+                    bail!(reapproval());
+                }
+                RenewalDecision::Exchange => (),
+                _ => bail!("Invalid Connect renewal journal decision"),
             }
             {
                 let _queue = self.renewal_queue(allowed, queue_deadline)?;
@@ -312,9 +311,7 @@ impl Client {
                 },
             );
             if let Err(error) = result {
-                if error.to_string().contains("auth_required") {
-                    self.mark_auth_required(&current, allowed, queue_deadline)?;
-                }
+                self.finish_transport_error(&error, &current, allowed, queue_deadline)?;
                 if !self.same_login(&current) {
                     let _queue = self.renewal_queue(allowed, queue_deadline)?;
                     self.clear_renewal(&current.scope)?;
@@ -334,15 +331,11 @@ impl Client {
                 );
                 atomic_json(&journal, &record)?;
             }
-            reply = Some(self.renewal_reply(&response, &current, allowed, queue_deadline)?);
-        }
+            self.renewal_reply(&response, &current, allowed, queue_deadline)?
+        };
         #[cfg(any(test, feature = "test-support"))]
         test_support::run_hook("renewal_response_persisted", &response);
-        let applied = current.apply_reply(
-            &reply.context("Invalid credential renewal response")?,
-            record.issued,
-            true,
-        );
+        let applied = current.apply_reply(&reply, record.issued, true);
         if applied.is_err() {
             self.mark_auth_required(&record.base, allowed, queue_deadline)?;
             bail!(hosted_failure(SafeError::AuthRequired, format!("{AUTH_REQUIRED}: invalid renewal response")));
@@ -432,13 +425,14 @@ impl Client {
         ensure!(allowed(), "cancelled");
         let deadline = queue_deadline.unwrap_or_else(|| Instant::now() + timeout);
         let mut current = self.current_credential(expected)?;
-        let refresh_expired = current.refresh_expires_at.is_some_and(|t| t <= now());
-        if refresh_expired
-            || current
-                .expires_at
-                .is_some_and(|t| t <= now().saturating_add(30))
-        {
-            current = self.renew(&current, refresh_expired, allowed, deadline, queue_deadline)?;
+        let decision = self.request_renewal_decision(&current)?;
+        match decision {
+            RenewalDecision::Force | RenewalDecision::Renew => {
+                let force = matches!(decision, RenewalDecision::Force);
+                current = self.renew(&current, force, allowed, deadline, queue_deadline)?;
+            }
+            RenewalDecision::Send => (),
+            _ => bail!("Invalid Connect request renewal decision"),
         }
         let active = || allowed() && self.same_login(expected);
         let result = self.raw_request(
@@ -452,11 +446,12 @@ impl Client {
             deadline.saturating_duration_since(Instant::now()),
             &active,
         );
-        if result
-            .as_ref()
-            .err()
-            .is_some_and(|e| e.to_string().contains("auth_required"))
-        {
+        if let Err(error) = &result {
+            match self.transport_decision(error, true)? {
+                RenewalDecision::Renew => (),
+                RenewalDecision::Return => return result,
+                _ => bail!("Invalid Connect initial transport decision"),
+            }
             let renewed = self.renew(&current, true, allowed, deadline, queue_deadline)?;
             ensure!(active(), "cancelled");
             fs::remove_file(output)?;
@@ -471,12 +466,8 @@ impl Client {
                 deadline.saturating_duration_since(Instant::now()),
                 &active,
             );
-            if retry
-                .as_ref()
-                .err()
-                .is_some_and(|e| e.to_string().contains("auth_required"))
-            {
-                self.mark_auth_required(&renewed, allowed, queue_deadline)?;
+            if let Err(error) = &retry {
+                self.finish_transport_error(error, &renewed, allowed, queue_deadline)?;
             }
             retry
         } else {

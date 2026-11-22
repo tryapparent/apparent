@@ -20,8 +20,16 @@ fn main() {
     emit_native_policy("onboarding", "note-tip", "host/tips/note-tip.json");
     #[cfg(target_os = "macos")]
     emit_native_policy("onboarding", "frog-nudge", "host/tips/frog-nudge.json");
-    compile_record_pill();
-    compile_record_whiteboard();
+    compile_embedded_policy("record/enablement/ci/bend/pill.ts", &[
+        "record/pill/pill-state.bend", "record/pill/host.ts", "record/pill/presentation.ts",
+        "record/enablement/ci/bend/modules.json",
+    ], "record-pill.mjs");
+    compile_embedded_policy("record/pill/whiteboard/build.ts", &[
+        "record/pill/whiteboard", "record/enablement/ci/bend/modules.json",
+    ], "record-whiteboard.mjs");
+    compile_embedded_policy("connect/enablement/ci/bend/renewal.ts", &[
+        "connect/client/typescript/src/renewal", "connect/enablement/ci/bend/modules.json",
+    ], "credential-renewal.mjs");
     record_media_build::compile_record_media();
     sparkle_outcomes::compile();
     println!("cargo:rerun-if-env-changed=APPARENT_POSTHOG_TOKEN");
@@ -97,41 +105,17 @@ fn compile_onboarding_entry_policy() {
         .expect("write generated Onboarding entry policy");
 }
 
-fn compile_record_whiteboard() {
-    for input in ["record/pill/whiteboard", "record/enablement/ci/bend/modules.json", "shared/enablement/bend"] {
+fn compile_embedded_policy(generator: &str, sources: &[&str], module: &str) {
+    for input in [generator, "shared/enablement/bend"].into_iter().chain(sources.iter().copied()) {
         println!("cargo:rerun-if-changed={input}");
     }
     let output = PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo output directory"));
     let result = Command::new("node")
-        .arg("record/pill/whiteboard/build.ts")
-        .arg(output.join("record-whiteboard.mjs"))
+        .arg(generator)
+        .arg(output.join(module))
         .output()
-        .expect("Node 22 is required to compile Record whiteboard policy");
-    assert!(result.status.success(), "Compile Record whiteboard policy: {}", String::from_utf8_lossy(&result.stderr));
-}
-
-fn compile_record_pill() {
-    for input in [
-        "record/pill/pill-state.bend",
-        "record/pill/host.ts",
-        "record/pill/presentation.ts",
-        "record/enablement/ci/bend/pill.ts",
-        "record/enablement/ci/bend/modules.json",
-        "shared/enablement/bend",
-    ] {
-        println!("cargo:rerun-if-changed={input}");
-    }
-    let output = PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo output directory"));
-    let result = Command::new("node")
-        .arg("record/enablement/ci/bend/pill.ts")
-        .arg(output.join("record-pill.mjs"))
-        .output()
-        .expect("Node 22 is required to compile Record pill policy");
-    assert!(
-        result.status.success(),
-        "Unable to compile Record pill policy: {}",
-        String::from_utf8_lossy(&result.stderr),
-    );
+        .expect("Node 22 is required to compile embedded policy");
+    assert!(result.status.success(), "Compile {module}: {}", String::from_utf8_lossy(&result.stderr));
 }
 
 #[path = "engine/native/record_media_build.rs"]

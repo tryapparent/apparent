@@ -49,6 +49,45 @@ await bendScratch(async (scratch) => {
       directory,
     );
     assert.deepEqual(JSON.parse(reports), [true, true, false, false]);
+    const renewal = run(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `import policy from "./credential-renewal.mjs";
+        console.log(JSON.stringify([
+          policy.before_request(false, 31),
+          policy.before_request(false, 30),
+          policy.before_request(true, 4294967295),
+          policy.under_renewal_lock(true, true, 0, false),
+          policy.under_renewal_lock(false, false, 31, true),
+          policy.under_renewal_lock(false, true, 31, false),
+          policy.under_renewal_lock(false, false, 30, true),
+          policy.resume_renewal(true, true),
+          policy.resume_renewal(false, true),
+          policy.resume_renewal(false, false),
+          policy.after_transport(false, true),
+          policy.after_transport(true, true),
+          policy.after_transport(true, false),
+        ]));`,
+      ],
+      directory,
+    );
+    assert.deepEqual(JSON.parse(renewal), [
+      "send",
+      "renew",
+      "force",
+      "reuse",
+      "reuse",
+      "reapprove",
+      "readJournal",
+      "recover",
+      "reapprove",
+      "exchange",
+      "return",
+      "renew",
+      "reapprove",
+    ]);
     const account = run(
       process.execPath,
       [
