@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import {
   cpSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -39,7 +40,18 @@ const run = (program: string, args: string[], cwd = work, env = process.env) =>
     maxBuffer: 16 * 1024 * 1024,
   });
 const job = mkdtempSync(join(work, "cli-"));
-const env = { ...process.env, TMPDIR: job };
+const home = join(job, "home");
+mkdirSync(home, { mode: 0o700 });
+const env = {
+  ...process.env,
+  HOME: home,
+  XDG_CONFIG_HOME: join(home, "config"),
+  XDG_CACHE_HOME: join(home, "cache"),
+  XDG_DATA_HOME: join(home, "data"),
+  APPARENT_CONFIG: join(home, "config/apparent/config.json"),
+  APPARENT_DESKTOP_REPORTING: "0",
+  TMPDIR: job,
+};
 const version = run(binary, ["--version"], job, env).trim();
 const waits: Record<string, { ms: number; verified: true }> = {};
 

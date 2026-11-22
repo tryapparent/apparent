@@ -61,6 +61,7 @@ type Resources = {
   bundleBytes: number;
   peakScratchBytes: number;
   outputVerified: true;
+  wordErrorRate?: number;
 };
 export type Receipt = {
   contractHash: string;
@@ -121,6 +122,8 @@ export function audit(receipt: Receipt) {
       entry?.outputVerified === true &&
       positive(entry.bundleBytes) &&
       number(entry.peakScratchBytes) &&
+      (contract.captureFixtures[id].audio !== "spoken" ||
+        number(entry.wordErrorRate)) &&
       ["recording", "finalization"].every((phase) =>
         phaseFields.every((field) =>
           number(entry[phase as "recording" | "finalization"]?.[field]),
@@ -230,6 +233,18 @@ function guard(
   for (const id of resourceIds) {
     const observed = receipt.resources[id];
     const [a, b] = reference.map((row) => row.resources[id]);
+    if (
+      relative &&
+      contract.captureFixtures[id].audio === "spoken" &&
+      !policy.within_budget(
+        u32(observed.wordErrorRate! * 10000),
+        u32(median(a.wordErrorRate!, b.wordErrorRate!) * 10000),
+        u32(limits.wordErrorTolerance * 10000),
+        0,
+      )
+    ) {
+      fail(id, "transcript word error regression");
+    }
     if (observed.recording.p95Millicores > limits.recordingP95Millicores)
       fail(id, "recording CPU p95");
     if (observed.recording.saturationMs >= limits.recordingSaturationMs)

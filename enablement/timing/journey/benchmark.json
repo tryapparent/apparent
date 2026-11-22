@@ -153,9 +153,9 @@
       "inspect-first",
       "inspect-cached",
       "fetch-full-first",
-      "fetch-full-cached",
+      "fetch-full-repeat",
       "fetch-selected-first",
-      "fetch-selected-cached"
+      "fetch-selected-repeat"
     ]
   },
   "stopControls": ["threshold-39", "threshold-41", "long-narration"],
@@ -167,6 +167,7 @@
     "availableMemoryMiB": 1024,
     "guestStealPercent": 5,
     "relativeTolerancePercent": 10,
+    "wordErrorTolerance": 0.02,
     "clipboardToleranceMs": 100,
     "mediumClipboardMs": 3000,
     "stressClipboardMs": 2321,

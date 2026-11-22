@@ -1,3 +1,4 @@
+import { assemble } from "../../timing/journey/assemble.ts";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -53,6 +54,7 @@ await bendScratch(async (directory) => {
           bundleBytes: 1024,
           peakScratchBytes: 1024,
           outputVerified: true as const,
+          wordErrorRate: 0,
         },
       ]),
   );
@@ -71,6 +73,29 @@ await bendScratch(async (directory) => {
     resources: structuredClone(resources),
   });
   const reference = [make("ref1"), make("ref2")];
+  const measurement = { ms: 1, verified: true as const };
+  const stamp = "apparent 0.22.14 · 1111111";
+  const fromParts = assemble(reference[0], [
+    { version: stamp, waits: { pill: measurement } },
+    { version: stamp, waits: { copy: measurement } },
+  ]);
+  assert.deepEqual(Object.keys(fromParts.receipt.waits), ["pill", "copy"]);
+  assert.equal(fromParts.coverage.complete, false);
+  assert.throws(
+    () =>
+      assemble(reference[0], [
+        { version: stamp, waits: { pill: measurement } },
+        { version: stamp, waits: { pill: measurement } },
+      ]),
+    /Conflicting wait/,
+  );
+  assert.throws(
+    () =>
+      assemble(reference[0], [
+        { version: "apparent 0.22.14 · 2222222", waits: { pill: measurement } },
+      ]),
+    /different or modified/,
+  );
   const absent = make("missing");
   delete absent.waits.captions;
   delete absent.resources["review-dense"];
@@ -119,6 +144,7 @@ await bendScratch(async (directory) => {
 
   const regression = make("c1", "4", 0.8);
   regression.waits["paste/review-dense"].ms = 5110;
+  regression.resources["review-dense"].wordErrorRate = 0.03;
   regression.resources["review-dense"].bundleBytes += 24 * 1024 * 1024;
   regression.resources["review-dense"].recording.p95Millicores = 3800;
   regression.resources["review-dense"].finalization.p95Millicores = 4000;
@@ -134,6 +160,7 @@ await bendScratch(async (directory) => {
   assert.ok("failures" in failed);
   assert.deepEqual(failed.failures, [
     "c1 paste/review-dense clipboard regression",
+    "c1 review-dense transcript word error regression",
     "c1 review-dense recording CPU p95",
     "c1 review-dense saved bundle growth",
   ]);

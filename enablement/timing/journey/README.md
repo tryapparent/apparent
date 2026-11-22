@@ -39,7 +39,7 @@ The contract command prints the SHA-256 to embed in each receipt. Set `runner` t
 
 The ledger is a JSON object with `reference` containing two receipts at the same exact control revision and `attempts` containing each experiment in execution order. Each attempt has a stable `hypothesis`, active effort in `seconds`, and either `runs` containing two matched receipts or an `outcome` describing a failed or discarded attempt. Count implementation and benchmark time. Reuse the same hypothesis ID for retries. Use separate IDs for genuinely different ideas.
 
-The evaluator requires complete verified evidence. A v2 receipt uses different endpoints and cannot establish a v3 baseline. Local inspect, zoom, frames, and export have a native collector. The remaining desktop, clipboard and isolated Connect timings must come from their owner probes. Supply proven journeys at the documented boundaries, including the physical Finish event and actual screen and mic samples. The audit identifies the missing fields before evaluation.
+The evaluator requires complete verified evidence. A v2 receipt uses different endpoints and cannot establish a v3 baseline. Local inspect, zoom, frames, and export have a native collector. The desktop, clipboard and isolated Connect timings come from their owner probes. Supply proven journeys at the documented boundaries, including the physical Finish event and actual screen and mic samples. The audit identifies the missing fields before evaluation.
 
 ## Collect CLI and disk evidence
 
@@ -49,7 +49,7 @@ node enablement/timing/journey/storage.ts bundle /absolute/path/capture.apparent
 node enablement/timing/journey/storage.ts scratch /absolute/path/private-scratch -- workload arg
 ```
 
-The CLI fixture manifest maps `short`, `ink`, and `long` to clean synthetic bundle paths. Use the 8-second spoken take, 17-second take with nine strokes, and five-minute take from the corpus. The collector copies bundles to an isolated directory and verifies emitted summaries and decodable images or media before emitting timings. Use those verified waits in the run receipt. Run clipboard probes only against an isolated compositor. Run Connect on an isolated service with authorized synthetic captures and measure first retrieval and cached access separately.
+The CLI fixture manifest maps `short`, `ink`, and `long` to clean synthetic bundle paths. Use the 8-second spoken take, 17-second take with nine strokes, and five-minute take from the corpus. The collector copies bundles to an isolated directory and verifies emitted summaries and decodable images or media before emitting timings. Use those verified waits in the run receipt. Run clipboard probes only against an isolated compositor. Run Connect on an isolated service with synthetic captures. Measure fresh retrieval, repeat retrieval into a new directory, and reuse of the local bundle separately.
 
 The storage collector reports bundle logical bytes and video, audio, image, and other bytes. The scratch sampler reports the highest additional allocated bytes observed at 100 ms cadence. Pass the workload's dedicated temporary directory so the sample excludes previous outputs and unrelated files. Sub-sample peaks can be missed. Keep the storage observer cadence the same across builds.
 
@@ -58,3 +58,38 @@ The storage collector reports bundle logical bytes and video, audio, image, and 
 The speed index is the weighted sum of candidate-to-control wait ratios. The control scores 100, and lower is better. The inverse shown for climbing is `100 / score`. Accept a candidate only if both matches clear the CPU, memory, storage, output and latency guards. Recording may use up to 3.5 vCPUs at p95, with less than 500 ms of consecutive saturation at 3.9 vCPUs. Finalization may use all four. The report shows CPU-seconds by phase, peak PSS, saved bytes and peak scratch bytes. A resource increase within budget can accompany a verified speed gain. If speed is within the repeat noise, a candidate can win the resource tiebreak by improving one reported cost without increasing another. This preserves the speed progress count.
 
 The early pace is the mean inverse-speed gain per hour in the first two complete one-hour effort windows, frozen thereafter. A speed gain requires both matched repeats and the pooled score to improve by more than the baseline pair's inverse-speed spread. The evaluator recommends stopping when the last two complete windows are at or below 20% of early pace, at least five distinct hypotheses have been tested since the last verified gain, and the incumbent passes the guards. A verified gain resets the count. Exact limits and report fields come from the versioned contract.
+
+## Assemble run evidence
+
+Supply the run identity and the producer fragments. Each fragment contains
+the measured executable's `apparent --version` string, `waits`, and, where
+applicable, `resources`. Duplicate checkpoints and mismatched revisions are
+rejected. The command prints the coverage audit to stderr and the receipt to
+stdout.
+
+```sh
+node enablement/timing/journey/run.ts assemble identity.json recording.json cli-waits.json connect-cli-waits.json > run.json
+```
+
+Use the [native recording probe](../../../record/enablement/performance/README.md)
+and [isolated Connect probes](../../../connect/enablement/benchmark/README.md)
+for those phases. The Record guide includes a separate Settings run on the same native environment. Spoken recording fixtures also include `wordErrorRate`,
+which the scorer compares with the matched reference. A complete receipt
+requires the remaining visible desktop and handoff events as well as remote
+readiness and playback evidence.
+
+## Desktop handoff
+
+Use the exact extracted AppImage and the frontend's locked Playwright package.
+Start a dedicated Xvfb display and clear the active desktop's Wayland and
+session-bus variables. Set `APPARENT_BENCH_HANDOFF_ROOT` to the private
+extracted AppImage and `APPARENT_BENCH_RESULTS` to the private results path.
+
+```sh
+env -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS xvfb-run -a   node --test composition/pill/enablement/handoff-timing.ts
+```
+
+This producer feeds a synthetic completed take into the packaged pill and
+uses the shipped picker and T3 transport with a local receiver. It verifies
+the selected destination, exact draft text, independent receiver acceptance,
+and visible confirmation. The fixture has no live T3 account or workspace.
