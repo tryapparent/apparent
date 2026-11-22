@@ -469,14 +469,17 @@ impl Session {
     }
     pub fn practice_note_saved(&mut self,_saved:bool) {}
     pub fn practice_anchor(&mut self,anchor:Option<[f32;4]>) {self.anchor=anchor;}
-    pub fn practice_board(&mut self, frame: Option<[f32;4]>) {
-        self.practice_board=frame;
-        self.practice_events(vec![serde_json::json!({"type":"whiteboard-visible","visible":frame.is_some()})],false);
+    #[cfg(test)]
+    pub fn practice_board_closed(&mut self) {
+        self.practice_board=None;
+        self.practice_events(vec![serde_json::json!({"type":"whiteboard-visible","visible":false})],false);
     }
-    pub fn board_id(&mut self, id: Option<String>) { self.board_id = id; }
+    pub fn board_id(&mut self,id:Option<String>) {self.board_id=id;}
     pub fn practice_active(&self)->bool {self.practice.is_some() && self.flow.step()==Step::TryIt}
     pub fn practice_locating(&self)->bool {self.practice.as_ref().is_some_and(|p|p.locating)}
+    #[cfg(test)]
     pub fn practice_desktop_stage(&self)->bool {self.practice.as_ref().is_some_and(|p|p.desktop_stage)}
+    #[cfg(test)]
     pub fn practice_whiteboard(&mut self) {self.practice_events(vec![serde_json::json!({"type":"whiteboard"})],false);self.sync();}
     pub(crate) fn practice_completion(
         &mut self, generation: u64, capture_id: &str, request_id: Option<&str>,

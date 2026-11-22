@@ -650,9 +650,7 @@ impl ApparentCoordinator {
     }
 
     pub(in crate::capture::desktop) fn tick_onboarding_practice(&mut self,cx:&mut Context<Self>) {
-        if self.whiteboard.borrow_mut().tick(cx) {
-            self.request_immediate_frame();
-        }
+        whiteboard::tick(self, cx);
         if let Some(session) = self.onboarding.as_mut() {
             session.observe_shortcut_modifiers(crate::capture::engine::runtime::modifier_flags());
         }

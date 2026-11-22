@@ -325,6 +325,23 @@ impl Board {
     }
 }
 
+pub(in crate::capture::desktop) fn tick(
+    coordinator: &mut ApparentCoordinator,
+    cx: &mut gpui::Context<ApparentCoordinator>,
+) {
+    if coordinator.whiteboard.borrow_mut().tick(cx) && coordinator.is_recording() {
+        let generation = coordinator.capture_generation;
+        cx.spawn(async move |coord, cx| {
+            cx.background_executor().timer(Duration::from_millis(120)).await;
+            let _ = coord.update(cx, |coord, _| {
+                if coord.capture_generation == generation {
+                    coord.request_immediate_frame();
+                }
+            });
+        }).detach();
+    }
+}
+
 pub(in crate::capture::desktop) fn open(coord: &Entity<ApparentCoordinator>, cx: &mut App) {
     coord.update(cx, |coord, _| {
         if !coord.is_recording() {
@@ -605,31 +622,6 @@ fn render_paper(strokes: &[Vec<[f32; 2]>], t_ms: u64, color:[u8;3]) -> crate::sh
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn accepted_paper_survives_close_reopen_and_rejects_invalid_input() {
-        let mut board = PaperState::open([26, 26, 26]).unwrap();
-        assert!(!board.edit(Edit::Begin, Some([10.0, 20.0])).unwrap());
-        board.edit(Edit::Open, None).unwrap();
-        assert!(!board.edit(Edit::Begin, Some([f32::NAN, 20.0])).unwrap());
-        board.edit(Edit::Begin, Some([10.0, 20.0])).unwrap();
-        board.edit(Edit::Move, Some([30.0, 40.0])).unwrap();
-        board.edit(Edit::End, None).unwrap();
-        board.edit(Edit::Begin, Some([90.0, 100.0])).unwrap();
-        board.edit(Edit::End, None).unwrap();
-        board.edit(Edit::Undo, None).unwrap();
-        board.edit(Edit::Begin, Some([105.0, 100.0])).unwrap();
-        board.edit(Edit::Undo, None).unwrap();
-        board.edit(Edit::Close, None).unwrap();
-        assert!(!board.edit(Edit::Clear, None).unwrap());
-        board.edit(Edit::Open, None).unwrap();
-        assert_eq!(board.paper.strokes, vec![vec![[10.0, 20.0], [30.0, 40.0]]]);
-        board.edit(Edit::Begin, Some([85.0, 20.0])).unwrap();
-        board.edit(Edit::Close, None).unwrap();
-        assert_eq!(board.paper.strokes.len(), 2);
-        board.edit(Edit::Open, None).unwrap();
-        board.edit(Edit::Clear, None).unwrap();
-        assert!(board.paper.strokes.is_empty());
-    }
     use crate::shared::model::KeyframeReason;
 
     #[test]

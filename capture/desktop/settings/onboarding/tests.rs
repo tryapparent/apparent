@@ -72,13 +72,13 @@ mod tests {
                 std::fs::write(&path,br#"{"secret":"synthetic","unrelated":{"nested":7},"microphoneEnabled":false}"#).unwrap();
                 let mut s=coached_session();let (tx,_rx)=flume::unbounded();s.transport=Transport::InProcess(Some(tx));
                 s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);s.practice_whiteboard();
-                s.observe_practice(true,0,false,None);s.practice_board(None);s.observe_practice(false,1,false,None);
+                s.observe_practice(true,0,false,None);s.practice_board_closed();s.observe_practice(false,1,false,None);
                 s.observe_practice(false,0,true,Some(true));s.input(Input::CaptureEnded{completed:true});
                 s.action("practice-review");
                 assert_eq!(s.action("practice-finish"),Effect::None);
                 assert!(!s.flow.first_capture_completed);
                 s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);s.practice_whiteboard();
-                s.observe_practice(true,0,false,None);s.practice_board(None);s.observe_practice(false,1,false,None);
+                s.observe_practice(true,0,false,None);s.practice_board_closed();s.observe_practice(false,1,false,None);
                 let bundle=Path::new("/synthetic/finished.apparent");
                 s.practice_completion(7,"capture",Some("request"),Some(bundle),Some(true));
                 s.input(Input::CaptureEnded{completed:true});s.action("practice-review");
@@ -258,7 +258,7 @@ mod tests {
         s.input(Input::CaptureStarted);
         assert!(s.practice_bundle.is_none());
         s.practice_whiteboard();
-        s.observe_practice(true, 0, false, None);s.practice_board(None);
+        s.observe_practice(true, 0, false, None);s.practice_board_closed();
         s.practice_note_saved(true);s.observe_practice(false, 0, false, None);
         s.observe_practice(false, 1, true, Some(true));
         s.practice_completion(8,"other",None,Some(other),Some(true));
@@ -285,7 +285,7 @@ mod tests {
     fn menu_bar_lesson_remains_after_paste_and_requires_opening_own_capture() {
         let mut s=coached_session();
         s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
-        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_board(None);s.practice_note_saved(false);s.observe_practice(false,0,false,None);s.observe_practice(false,1,true,Some(true));
+        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_board_closed();s.practice_note_saved(false);s.observe_practice(false,0,false,None);s.observe_practice(false,1,true,Some(true));
         s.practice_completion(7,"lesson",None,Some(Path::new("/synthetic/lesson.apparent")),Some(true));s.input(Input::CaptureEnded{completed:true});
         assert!(!s.practice_locating());
         s.action("practice-paste");assert!(!s.practice_locating());
@@ -297,7 +297,7 @@ mod tests {
     #[test]
     fn coaching_finishes_after_completion_pill_dismissal() {
         let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
-        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_board(None);s.practice_note_saved(false);
+        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_board_closed();s.practice_note_saved(false);
         s.observe_practice(false,0,false,None);s.observe_practice(false,1,false,None);s.observe_practice(false,0,true,Some(true));s.practice_completion(7,"lesson",None,Some(Path::new("/synthetic/lesson.apparent")),Some(true));s.input(Input::CaptureEnded{completed:true});
         assert!(!s.flow.practice_recording);assert!(!s.flow.hidden);
         s.input(Input::CaptureEnded{completed:false});
@@ -309,7 +309,7 @@ mod tests {
         let mut s=coached_session();s.input(Input::ShortcutTriggered);s.input(Input::CaptureStarted);
         s.observe_practice(false,0,true,Some(true));s.input(Input::CaptureEnded{completed:true});
         s.input(Input::CaptureStarted);
-        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_board(None);s.practice_note_saved(false);s.observe_practice(false,0,false,None);s.observe_practice(false,1,true,Some(true));
+        s.practice_whiteboard();s.observe_practice(true,0,false,None);s.practice_board_closed();s.practice_note_saved(false);s.observe_practice(false,0,false,None);s.observe_practice(false,1,true,Some(true));
         s.input(Input::CaptureEnded{completed:true});s.action("practice-paste");s.action("practice-pasted");s.practice_latest();
         assert_eq!(s.action("practice-finish"),Effect::None);assert!(!s.flow.first_capture_completed);
     }

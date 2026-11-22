@@ -203,7 +203,10 @@ export function start(capabilities: Capabilities) {
     ipcMain.handle("onboarding:action", (e, ...args: unknown[]) => {
       if (!valid(e) || args.length !== 1)
         throw Error("Forbidden onboarding action");
-      return channel.send(parseAction(args[0]));
+      const action = parseAction(args[0]);
+      if (action.action === "board")
+        throw Error("Forbidden onboarding command");
+      return channel.send(action);
     });
     window.webContents.on("render-process-gone", () => shutdown(1));
     window.webContents.on("did-finish-load", () => present());
