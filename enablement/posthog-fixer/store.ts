@@ -44,6 +44,11 @@ export class Store {
     return 'accepted';
   }
   jobs(): Job[] {return this.db.prepare('SELECT * FROM jobs ORDER BY rowid').all() as Job[];}
+  nextLaunch(now: number, limit: number): Job | undefined {
+    return this.db.prepare(`SELECT * FROM jobs WHERE next_at<=? AND
+      (state='launching' OR (state='queued' AND ?))
+      ORDER BY state='queued', rowid LIMIT 1`).get(now, Number(this.dailyCount(now) < limit)) as Job | undefined;
+  }
   reserve(job: Job, payload: string, now: number, access?: SupportAccess): void {
     this.db.exec('BEGIN');
     try {
