@@ -22,6 +22,8 @@ test("installed General renders Connect facts with keyboard recovery and redacte
   const address = join(directory, "capture.sock");
   const clients = new Set<net.Socket>();
   const commands: unknown[] = [];
+  let holdRead = false;
+  let releaseRead: (() => void) | undefined;
   const canary = "synthetic-private-canary";
   const base = {
     activity: "Idle",
@@ -78,7 +80,10 @@ test("installed General renders Connect facts with keyboard recovery and redacte
           return;
         }
         if (request.command) commands.push(request.command);
-        socket.write(`${JSON.stringify({ accountFacts: facts })}\n`);
+        const answer = () =>
+          socket.write(`${JSON.stringify({ accountFacts: facts })}\n`);
+        if (holdRead && request.connect === "read") releaseRead = answer;
+        else answer();
       }
     });
   });
@@ -123,21 +128,43 @@ test("installed General renders Connect facts with keyboard recovery and redacte
   await expect(
     card.getByRole("button", { name: "Connect with Google" }),
   ).toBeEnabled();
-  await app.evaluate(({ BrowserWindow }) => {
-    BrowserWindow.getAllWindows()[0].webContents.send(
-      "apparent:general-state",
-      {
-        type: "general-state",
-        platform: process.platform === "darwin" ? "macos" : "linux",
-        login: { on: false, available: true, needsApproval: false },
-        shortcuts: [],
-        errorReporting: false,
-      },
-    );
-  });
+  const projectGeneral = () =>
+    app.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0].webContents.send(
+        "apparent:general-state",
+        {
+          type: "general-state",
+          platform: process.platform === "darwin" ? "macos" : "linux",
+          login: { on: false, available: true, needsApproval: false },
+          shortcuts: [],
+          errorReporting: false,
+        },
+      );
+    });
+  await projectGeneral();
   await expect(
     page.getByRole("switch", { name: "Launch at login" }),
   ).toBeVisible();
+  facts = { ...base, uploadsEnabled: true };
+  const ready = card.getByRole("heading", { name: "Connect ready" });
+  await expect(ready).toBeVisible();
+  const showPane = (pane: string) =>
+    app.evaluate(({ BrowserWindow }, pane) => {
+      BrowserWindow.getAllWindows()[0].webContents.send(
+        "apparent:settings-route",
+        pane,
+      );
+    }, pane);
+  await showPane("about");
+  await expect(card).toHaveCount(0);
+  holdRead = true;
+  await showPane("general");
+  await expect(page).toHaveTitle("Apparent Settings — General");
+  await projectGeneral();
+  await expect.poll(() => Boolean(releaseRead)).toBe(true);
+  await expect(ready).toBeVisible();
+  holdRead = false;
+  releaseRead?.();
   const evidence = process.env.CONNECT_EVIDENCE;
   if (evidence) await mkdir(evidence, { recursive: true });
   for (const theme of ["light", "dark"]) {
@@ -156,6 +183,37 @@ test("installed General renders Connect facts with keyboard recovery and redacte
           ),
         )
         .toBe(theme === "dark");
+      facts = { ...base, uploadsEnabled: true };
+      await expect(ready).toBeVisible();
+      for (const zoom of [1, 2]) {
+        await app.evaluate(({ BrowserWindow }, zoom) => {
+          BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(zoom);
+        }, zoom);
+        const account = page.getByRole("button", { name: "Connect account" });
+        await account.press("Enter");
+        await page
+          .getByRole("button", { name: "Activity counts" })
+          .press("Enter");
+        const dialog = page.getByRole("dialog", { name: "Activity counts" });
+        const title = dialog.getByRole("heading", { name: "Activity counts" });
+        await expect(title).toBeFocused();
+        await expect(title).toBeInViewport();
+        await expect(dialog.getByText(/pseudonymous account ID/)).toBeVisible();
+        if (evidence)
+          await page.screenshot({
+            path: join(evidence, `activity-${theme}-${width}-${zoom}.png`),
+          });
+        await page.keyboard.press("Tab");
+        await expect(
+          dialog.getByRole("button", { name: "Close" }),
+        ).toBeFocused();
+        await page.keyboard.press("Escape");
+        await expect(dialog).toBeHidden();
+        await expect(account).toBeFocused();
+      }
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1);
+      });
       for (const [outcome, headline, action] of [
         [null, "Connection needs a refresh.", "Check connection"],
         ["Offline", "Connect is offline.", "Check connection"],
