@@ -31,6 +31,7 @@ const workerFiles = [
   'worker.js', 'policy.js', 'frames-worker.js', 'frames-policy.js',
   'phone-worker.js', 'phone-policy.js', 'screen-worker.js', 'screen-policy.js',
   'assembly-worker.js', 'assembly-policy.js', 'assembly/frame-limits.mjs',
+  'circle/worker.js', 'circle/recognition.js', 'circle/circle-label.mjs',
   'transcript/worker.js', 'transcript/request.js', 'transcript/policy.js',
   'selection/worker.js', 'selection/cues-request.js', 'selection/cues.js',
   'selection/scene-worker.js', 'selection/scene-request.js', 'selection/scene.js',
@@ -86,6 +87,11 @@ try {
   }
   const prepared = join(temporary, 'prepared'); mkdirSync(prepared, {mode: 0o700});
   cpSync(native, join(prepared, 'native'), {recursive: true});
+  for (const name of ["ocr", "vision"]) {
+    const provider = join(root, "dist/circle", name);
+    assert(lstatSync(join(provider, "index.mjs")).isFile());
+    cpSync(provider, join(prepared, "circle", name), {recursive: true});
+  }
   for (const file of workerFiles) {
     const target = join(prepared, file);
     mkdirSync(dirname(target), {recursive: true, mode: 0o700});

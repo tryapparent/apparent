@@ -19,7 +19,7 @@ use gstreamer as gst;
 use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 
-use crate::capture::engine::runtime::{CANDIDATE_EDGE, CANDIDATE_EDGE_NO_VIDEO, Sampler, apparent_log};
+use crate::capture::engine::runtime::{Sampler, apparent_log};
 use crate::shared::model::{CaptureMode, RgbaFrame};
 
 const FPS: u32 = 30;
@@ -618,12 +618,8 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
     };
     let out = crate::capture::engine::runtime::capture_size(&target, long_edge);
     let movie = video_output_path.as_deref().filter(|_| can_record_video());
-    let edge = if movie.is_some() {
-        CANDIDATE_EDGE
-    } else {
-        CANDIDATE_EDGE_NO_VIDEO
-    };
-    let candidate = crate::capture::engine::runtime::capture_size(&target, edge);
+    let candidate = frames.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        .sampling_size(&target, movie.is_some());
     let source = prepared_source.map_or_else(|| super::portal::source_for(&target, &stopping), Ok);
     let recorder = source.and_then(|source| {
         Recorder::new(&source, out, candidate, movie, started_at)

@@ -3,6 +3,10 @@ use serde::Deserialize;
 use std::{process::Command, time::Duration};
 use crate::capture::engine::{keyframes::SelectionLimits, render::MAX_SHEET_TILES};
 
+#[path = "../engine/recognition/worker.rs"]
+mod circle;
+pub(crate) use circle::circle_label;
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Plan {

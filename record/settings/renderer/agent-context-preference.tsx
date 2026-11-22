@@ -58,3 +58,36 @@ export function AgentContextPreference({
     </section>
   );
 }
+
+export function CircleLabelsPreference({
+  id,
+  checked,
+  disabled,
+  saving,
+  onCheckedChange,
+}: AgentContextPreferenceProps) {
+  return (
+    <section className="agent-preference">
+      <div className="agent-preference-row">
+        <h2 className="settings-preference-label" id="circle-labels-label">
+          Label circled items
+        </h2>
+        <Switch
+          id={id}
+          className="agent-switch"
+          checked={checked}
+          disabled={disabled}
+          aria-busy={saving}
+          aria-labelledby="circle-labels-label"
+          aria-describedby="circle-labels-help"
+          onCheckedChange={onCheckedChange}
+        />
+      </div>
+      <p id="circle-labels-help">
+        Read English text and recognize objects you circle on screen. Available
+        labels appear in the handoff. Runs on this device starting with your
+        next recording.
+      </p>
+    </section>
+  );
+}

@@ -37,6 +37,7 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
     let normalized = |key| experiment_config.as_ref()?.experiments.get(key).copied();
     serde_json::json!({
         "saved": saved(KEY),
+        "circleLabelsSaved": normalized("circleLabels"),
         "agentContextSaved": normalized(AGENT_CONTEXT),
         "sharingSaved": saved("hostedSharing"),
         "autoPasteSaved": saved(AUTO_PASTE),
@@ -53,6 +54,7 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
 pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
     match setting {
         None | Some("streaming") => Some((KEY, true)),
+        Some("circleLabels") => Some(("circleLabels", true)),
         Some("agentContext") => Some((AGENT_CONTEXT, true)),
         Some("sharing") => Some(("hostedSharing", true)),
         Some("autoPaste") => Some((AUTO_PASTE, true)),

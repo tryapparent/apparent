@@ -7,10 +7,10 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "build": "tsc && node --experimental-strip-types ../enablement/ci/bend/build.ts dist media",
+    "build": "tsc && node --experimental-strip-types ../enablement/ci/bend/build.ts dist media && node --experimental-strip-types ../enablement/media/circle-providers.mts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.tools.json",
     "pretest": "npm run build",
-    "test": "node --experimental-strip-types --test test/policy.test.ts test/frames.test.ts test/phone.test.ts test/screen.test.ts test/assembly.test.ts test/transcript/policy.test.ts test/selection/cues.test.ts test/selection/scene.test.ts test/export/quiet.test.ts",
+    "test": "node --experimental-strip-types --test test/policy.test.ts test/frames.test.ts test/phone.test.ts test/screen.test.ts test/assembly.test.ts test/transcript/policy.test.ts test/selection/cues.test.ts test/selection/scene.test.ts test/export/quiet.test.ts test/circle/recognition.test.ts && node --experimental-strip-types circle-ocr/provider.test.ts dist/circle/ocr",
     "test:native": "node --experimental-strip-types --test test/native.test.ts test/stage.test.ts"
   },
   "dependencies": {
@@ -18,6 +18,8 @@
   },
   "devDependencies": {
     "@types/node": "22.19.0",
+    "@types/pngjs": "6.0.5",
+    "pngjs": "7.0.0",
     "typescript": "5.9.3"
   }
 }
