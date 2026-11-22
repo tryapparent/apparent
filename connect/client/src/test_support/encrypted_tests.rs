@@ -13,12 +13,12 @@ fn foreground_typescript_real_transport_has_no_queue_and_preserves_encryption() 
     let before = fs::read(&f.client.config).unwrap();
     let link = f.client.prepare_foreground_link(&bundle, false, &|| true).unwrap();
     assert!(link.authorized());
-    assert!(server.state.lock().unwrap().ready);
+    assert!(ready(&server));
     assert_eq!(server.state.lock().unwrap().shares, 1);
-    let requests = server.state.lock().unwrap().requests;
+    let requests = request_count(&server);
     let recopied = f.client.prepare_foreground_link(&bundle, false, &|| true).unwrap();
     assert_eq!(recopied.text, link.text);
-    assert_eq!(server.state.lock().unwrap().requests, requests, "Recopy must not upload again");
+    assert_eq!(request_count(&server), requests, "Recopy must not upload again");
     assert!(f.client.jobs().unwrap().is_empty());
     assert_eq!(fs::read(&f.client.config).unwrap(), before);
     assert!(super::super::foreground_progress().is_none());
@@ -26,9 +26,7 @@ fn foreground_typescript_real_transport_has_no_queue_and_preserves_encryption() 
     f.client.disable(false).unwrap();
     assert!(!link.authorized());
 
-    let encrypted_fixture = Fixture::new();
-    let encrypted_server = encryption_server("");
-    pair(&encrypted_fixture, &encrypted_server);
+    let (encrypted_fixture, encrypted_server) = paired("");
     let original = encrypted_fixture.bundle();
     let id = encrypted_fixture.client.upload_foreground(&original, &|| true).unwrap();
     assert!(encrypted_fixture.client.jobs().unwrap().is_empty());
@@ -47,7 +45,7 @@ fn foreground_typescript_real_transport_has_no_queue_and_preserves_encryption() 
     let queued = legacy.client.enqueue(&legacy_bundle).unwrap();
     let queued_before = fs::read(legacy.client.state.join(format!("{queued}.job"))).unwrap();
     assert!(legacy.client.upload_foreground(&legacy_bundle, &|| true).unwrap_err().to_string().contains("legacy_uploads_pending"));
-    assert_eq!(legacy_server.state.lock().unwrap().requests, 0);
+    assert_eq!(request_count(&legacy_server), 0);
     assert_eq!(fs::read(legacy.client.state.join(format!("{queued}.job"))).unwrap(), queued_before);
     assert!(legacy.client.upload_foreground(&legacy_bundle, &|| false).is_err());
 
@@ -70,7 +68,7 @@ fn foreground_typescript_real_transport_has_no_queue_and_preserves_encryption() 
     active.store(false, Ordering::SeqCst);
     gate.release.store(true, Ordering::SeqCst);
     assert!(worker.join().unwrap().is_err());
-    assert!(!cancelled_server.state.lock().unwrap().ready);
+    assert!(!ready(&cancelled_server));
     assert_eq!(cancelled_server.state.lock().unwrap().shares, 0);
     assert!(cancelled.client.jobs().unwrap().is_empty());
     assert!(super::super::foreground_progress().is_none());
@@ -80,6 +78,31 @@ fn encryption_server(mode: &str) -> Server {
     let server = Server::new(mode);
     server.state.lock().unwrap().encryption = Some(EncryptionState::default());
     server
+}
+
+fn request_count(server: &Server) -> usize {
+    server.state.lock().unwrap().requests
+}
+
+fn ready(server: &Server) -> bool {
+    server.state.lock().unwrap().ready
+}
+
+fn uploads_enabled(f: &Fixture) -> bool {
+    f.client.settings_snapshot().unwrap().uploads_enabled
+}
+
+fn encrypted_fixture(mode: &str) -> (Fixture, Server) {
+    let fixture = Fixture::new();
+    encrypted(&fixture);
+    (fixture, encryption_server(mode))
+}
+
+fn paired(mode: &str) -> (Fixture, Server) {
+    let fixture = Fixture::new();
+    let server = encryption_server(mode);
+    pair(&fixture, &server);
+    (fixture, server)
 }
 
 fn encrypted(f: &Fixture) {
@@ -95,7 +118,7 @@ fn encrypted_upgrade_requires_fresh_approval_and_never_reports_plaintext_grants_
     let f = Fixture::new();
     let server = encryption_server("");
     f.authorize(&server.url);
-    assert!(f.client.settings_snapshot().unwrap().uploads_enabled);
+    assert!(uploads_enabled(&f));
     let bundle = f.bundle();
     let plaintext_id = f.client.enqueue(&bundle).unwrap();
     let queued_before = fs::read(f.client.state.join(format!("{plaintext_id}.job"))).unwrap();
@@ -107,7 +130,7 @@ fn encrypted_upgrade_requires_fresh_approval_and_never_reports_plaintext_grants_
     f.client.process_once().unwrap();
     assert!(f.client.retry_capture(&plaintext_id).is_err());
     assert_eq!(fs::read(f.client.state.join(format!("{plaintext_id}.job"))).unwrap(), queued_before);
-    assert_eq!(server.state.lock().unwrap().requests, 0);
+    assert_eq!(request_count(&server), 0);
     // A newly approved endpoint is usable, but losing its key fails closed again.
     pair(&f, &server);
     let snapshot = f.client.settings_snapshot().unwrap();
@@ -123,48 +146,7 @@ fn encrypted_upgrade_requires_fresh_approval_and_never_reports_plaintext_grants_
     f.client.provider.set_experiment(HOSTED_ENCRYPTION, false).unwrap();
     let snapshot = f.client.settings_snapshot().unwrap();
     assert!(snapshot.uploads_enabled && !snapshot.reauthorization_required);
-    assert_eq!(server.state.lock().unwrap().requests, 0);
-}
-
-// Worker-path cases start with synthetic credentials but real generated endpoint
-// identities. The separate login test below exercises actual approval admission.
-fn pair(f: &Fixture, server: &Server) {
-    f.authorize(&server.url);
-    encrypted(f);
-    for scope in ["upload", "read"] {
-        let identity_id = random_id().unwrap();
-        let identity = encryption::load_or_create_identity(
-            &f.client.state.join(format!("{identity_id}.identity")),
-        )
-        .unwrap();
-        let mut credential = f.client.credential(scope, &server.url).unwrap();
-        credential.encryption_identity = Some(identity_id);
-        credential
-            .apply_reply(
-                &json!({"scope":scope,
-            "accessToken":format!("synthetic-{scope}-secret"),
-            "refreshToken":format!("synthetic-refresh-{scope}"),
-            "grantId":format!("opaque-approved-{scope}-grant"),
-            "expiresIn":3600,"refreshExpiresIn":86400}),
-                now(),
-                false,
-            )
-            .unwrap();
-        atomic_json(
-            &f.client.state.join(format!("{scope}.credential")),
-            &credential,
-        )
-        .unwrap();
-        server
-            .state
-            .lock()
-            .unwrap()
-            .encryption
-            .as_mut()
-            .unwrap()
-            .devices
-            .push(json!({"grantId":credential.grant_id,"scope":scope,"key":identity.public_key()}));
-    }
+    assert_eq!(request_count(&server), 0);
 }
 
 fn job(f: &Fixture) -> Job {
@@ -186,13 +168,18 @@ fn assert_ready(f: &Fixture) {
         panic!("encrypted worker positive control not ready; direct upload error: {error:?}");
     }
 }
+fn complete(f: &Fixture, bundle: &Path) -> String {
+    let id = f.client.enqueue(bundle).unwrap();
+    f.client.process_once().unwrap();
+    assert_ready(f);
+    id
+}
+
 fn upload(f: &Fixture, server: &Server) -> (PathBuf, String) {
     pair(f, server);
     let bundle = f.bundle();
-    let id = f.client.enqueue(&bundle).unwrap();
-    f.client.process_once().unwrap();
-    assert_ready(f);
-    assert!(server.state.lock().unwrap().ready);
+    let id = complete(f, &bundle);
+    assert!(ready(server));
     (bundle, id)
 }
 fn no_media(server: &Server) {
@@ -238,9 +225,7 @@ fn fetch_refused(f: &Fixture, id: &str, name: &str, expected: &str) {
 
 #[test]
 fn encrypted_login_binds_public_key_before_approval_and_read_never_enables_upload() {
-    let f = Fixture::new();
-    let server = encryption_server("");
-    encrypted(&f);
+    let (f, server) = encrypted_fixture("");
     let gate = Arc::new(MediaGate::default());
     server.state.lock().unwrap().media_gate = Some(gate.clone());
     let client = f.client.clone();
@@ -289,13 +274,9 @@ fn encrypted_login_binds_public_key_before_approval_and_read_never_enables_uploa
     assert!(!f.client.state.join("upload.credential").exists());
     assert!(f.client.enqueue(&f.bundle()).is_err());
     no_media(&server);
-    // Normal explicit upload approval on the same endpoint; no synthetic worker
-    // credential shortcut in this positive round trip.
     f.client.login(&server.url, "upload", true, false).unwrap();
     let bundle = f.root.join("test.apparent");
-    let id = f.client.enqueue(&bundle).unwrap();
-    f.client.process_once().unwrap();
-    assert_ready(&f);
+    let id = complete(&f, &bundle);
     let out = f.root.join("login-roundtrip.apparent");
     f.client.fetch(&id, &out, 0).unwrap();
     assert_bundle(&bundle, &out);
@@ -303,9 +284,7 @@ fn encrypted_login_binds_public_key_before_approval_and_read_never_enables_uploa
 
 #[test]
 fn encrypted_settings_approval_preserves_endpoint_enrollment_and_roundtrip() {
-    let f = Fixture::new();
-    let server = encryption_server("");
-    encrypted(&f);
+    let (f, server) = encrypted_fixture("");
     for scope in ["read", "upload"] {
         let presented = std::cell::Cell::new(false);
         f.client
@@ -354,15 +333,13 @@ fn encrypted_settings_approval_preserves_endpoint_enrollment_and_roundtrip() {
         drop(state);
         if scope == "read" {
             assert!(!f.client.enabled());
-            assert!(!f.client.settings_snapshot().unwrap().uploads_enabled);
+            assert!(!uploads_enabled(&f));
             no_media(&server);
         }
     }
-    assert!(f.client.settings_snapshot().unwrap().uploads_enabled);
+    assert!(uploads_enabled(&f));
     let bundle = f.bundle();
-    let id = f.client.enqueue(&bundle).unwrap();
-    f.client.process_once().unwrap();
-    assert_ready(&f);
+    let id = complete(&f, &bundle);
     let out = f.root.join("settings-encrypted-roundtrip.apparent");
     f.client.fetch(&id, &out, 0).unwrap();
     assert_bundle(&bundle, &out);
@@ -370,9 +347,7 @@ fn encrypted_settings_approval_preserves_endpoint_enrollment_and_roundtrip() {
 
 #[test]
 fn encrypted_settings_future_capture_restart_retry_and_disconnect() {
-    let f = Fixture::new();
-    let server = encryption_server("");
-    encrypted(&f);
+    let (f, server) = encrypted_fixture("");
     // A completed capture predates consent. Merely connecting or reading Settings
     // must never discover it, even when it is beside subsequent captures.
     let history = f.root.join("history.apparent");
@@ -381,13 +356,13 @@ fn encrypted_settings_future_capture_restart_retry_and_disconnect() {
         f.client.login_with_approval(&server.url, scope, scope == "upload", &|| true, &|_| ()).unwrap();
     }
     let config_before = fs::read(&f.client.config).unwrap();
-    let requests_before = server.state.lock().unwrap().requests;
+    let requests_before = request_count(&server);
     for _ in 0..3 {
-        assert!(f.client.settings_snapshot().unwrap().uploads_enabled);
+        assert!(uploads_enabled(&f));
     }
     Client::new(provider(f.client.config.clone())).process_once().unwrap();
     assert_eq!(fs::read(&f.client.config).unwrap(), config_before);
-    assert_eq!(server.state.lock().unwrap().requests, requests_before);
+    assert_eq!(request_count(&server), requests_before);
     assert!(f.client.jobs().unwrap().is_empty());
     no_media(&server);
 
@@ -402,7 +377,7 @@ fn encrypted_settings_future_capture_restart_retry_and_disconnect() {
     server.state.lock().unwrap().mode = "fail-file".into();
     f.client.process_once().unwrap();
     assert_ne!(job(&f).status, "ready");
-    assert!(!server.state.lock().unwrap().ready);
+    assert!(!ready(&server));
     let spool = job(&f).files.clone();
     // Construct a new client from durable state, as desktop startup does.
     let restarted = Client::new(provider(f.client.config.clone()));
@@ -428,16 +403,16 @@ fn encrypted_settings_future_capture_restart_retry_and_disconnect() {
     restarted.settings_disable(false).unwrap();
     assert!(restarted.stored_credential("upload").is_ok());
     let disabled = Client::new(provider(f.client.config.clone()));
-    let requests_before = server.state.lock().unwrap().requests;
+    let requests_before = request_count(&server);
     assert!(!disabled.settings_snapshot().unwrap().uploads_enabled);
     assert!(disabled.retry().is_err());
     disabled.process_once().unwrap();
-    assert_eq!(server.state.lock().unwrap().requests, requests_before);
+    assert_eq!(request_count(&server), requests_before);
     disabled.login_with_approval(&server.url, "upload", true, &|| true, &|_| ()).unwrap();
-    let requests_after_approval = server.state.lock().unwrap().requests;
+    let requests_after_approval = request_count(&server);
     disabled.retry().unwrap();
     disabled.process_once().unwrap();
-    assert_eq!(server.state.lock().unwrap().requests, requests_after_approval);
+    assert_eq!(request_count(&server), requests_after_approval);
     assert_eq!(disabled.jobs().unwrap().iter().find(|j| j.id == cancelled_id).unwrap().status, "cancelled");
     disabled.settings_disable(true).unwrap();
     let disconnected = Client::new(provider(f.client.config.clone()));
@@ -450,9 +425,7 @@ fn encrypted_settings_future_capture_restart_retry_and_disconnect() {
 #[test]
 fn encrypted_settings_expired_approval_never_polls_or_publishes_credentials() {
     for scope in ["read", "upload"] {
-        let f = Fixture::new();
-        let server = encryption_server("expired-device");
-        encrypted(&f);
+        let (f, server) = encrypted_fixture("expired-device");
         let config_before = fs::read(&f.client.config).unwrap();
         let presented = std::cell::Cell::new(false);
         let result = f.client.login_with_approval(
@@ -470,9 +443,7 @@ fn encrypted_settings_expired_approval_never_polls_or_publishes_credentials() {
 
 #[test]
 fn encrypted_settings_cancelled_approval_never_publishes_credentials_or_media() {
-    let f = Fixture::new();
-    let server = encryption_server("");
-    encrypted(&f);
+    let (f, server) = encrypted_fixture("");
     let allowed = std::cell::Cell::new(true);
     let result =
         f.client
@@ -559,9 +530,7 @@ fn encrypted_roundtrip_has_only_opaque_wire_assets_and_no_plaintext_metadata() {
 #[test]
 fn encrypted_snapshot_failures_preserve_actionable_asset_errors() {
     for (asset, expected) in [("unexpected.svg", "unsupported_asset"), ("audio.wav", "file_too_large")] {
-        let f = Fixture::new();
-        let server = encryption_server("");
-        pair(&f, &server);
+        let (f, server) = paired("");
         let bundle = f.bundle();
         let file = File::create(bundle.join(asset)).unwrap();
         if asset == "audio.wav" {
@@ -578,9 +547,7 @@ fn encrypted_snapshot_failures_preserve_actionable_asset_errors() {
 
 #[test]
 fn encrypted_waits_for_reader_without_reservation_then_disable_wins() {
-    let f = Fixture::new();
-    let server = encryption_server("");
-    pair(&f, &server);
+    let (f, server) = paired("");
     server
         .state
         .lock()
@@ -609,16 +576,14 @@ fn encrypted_waits_for_reader_without_reservation_then_disable_wins() {
 
 #[test]
 fn encrypted_restart_reuses_committed_ciphertext_despite_original_mutation() {
-    let f = Fixture::new();
-    let server = encryption_server("fail-file");
-    pair(&f, &server);
+    let (f, server) = paired("fail-file");
     let bundle = f.bundle();
     let original_summary = fs::read(bundle.join("summary.md")).unwrap();
     let id = f.client.enqueue(&bundle).unwrap();
     f.client.process_once().unwrap();
     let first = job(&f);
     assert!(!first.files.is_empty() && first.encryption.is_some());
-    assert!(!server.state.lock().unwrap().ready);
+    assert!(!ready(&server));
     let spool = f.client.state.join(format!("{id}.sealed"));
     let first_bytes: Vec<_> = first
         .files
@@ -645,9 +610,7 @@ fn encrypted_restart_reuses_committed_ciphertext_despite_original_mutation() {
 #[test]
 fn encrypted_missing_key_lost_spool_and_toggle_cannot_fall_back_to_plaintext() {
     for fault in ["missing-key", "lost-spool", "toggle"] {
-        let f = Fixture::new();
-        let server = encryption_server("fail-file");
-        pair(&f, &server);
+        let (f, server) = paired("fail-file");
         f.client.enqueue(&f.bundle()).unwrap();
         if fault != "missing-key" {
             f.client.process_once().unwrap();
@@ -670,7 +633,7 @@ fn encrypted_missing_key_lost_spool_and_toggle_cannot_fall_back_to_plaintext() {
                 .set_experiment(HOSTED_ENCRYPTION, false)
                 .unwrap(),
         }
-        let requests = server.state.lock().unwrap().requests;
+        let requests = request_count(&server);
         let routes = server.state.lock().unwrap().request_routes.len();
         server.state.lock().unwrap().mode.clear();
         f.client.retry().unwrap();
@@ -688,16 +651,14 @@ fn encrypted_missing_key_lost_spool_and_toggle_cannot_fall_back_to_plaintext() {
         );
         drop(state);
         if fault == "toggle" {
-            assert_eq!(server.state.lock().unwrap().requests, requests);
+            assert_eq!(request_count(&server), requests);
         }
     }
 }
 
 #[test]
 fn encrypted_disable_during_real_snapshot_cancels_before_any_media() {
-    let f = Fixture::new();
-    let server = encryption_server("");
-    pair(&f, &server);
+    let (f, server) = paired("");
     f.client.enqueue(&f.bundle()).unwrap();
     let client = f.client.clone();
     let triggered = Arc::new(AtomicBool::new(false));
@@ -717,9 +678,7 @@ fn encrypted_disable_during_real_snapshot_cancels_before_any_media() {
 
 #[test]
 fn encrypted_peer_revoked_between_requests_stops_remaining_sends_and_completion() {
-    let f = Fixture::new();
-    let server = encryption_server("");
-    pair(&f, &server);
+    let (f, server) = paired("");
     server
         .state
         .lock()
@@ -837,7 +796,7 @@ fn encrypted_public_sharing_has_no_outbound_and_fetch_refuses_unknown_or_legacy_
     let f = Fixture::new();
     let server = encryption_server("");
     let (_, id) = upload(&f, &server);
-    let before = server.state.lock().unwrap().requests;
+    let before = request_count(&server);
     let error = f
         .client
         .prepare_link(&f.root.join("test.apparent"), &|| true)
@@ -845,7 +804,7 @@ fn encrypted_public_sharing_has_no_outbound_and_fetch_refuses_unknown_or_legacy_
         .unwrap()
         .to_string();
     assert!(error.contains("encrypted_sharing_unsupported"));
-    assert_eq!(server.state.lock().unwrap().requests, before);
+    assert_eq!(request_count(&server), before);
     for format in [Some("future-encryption-v9"), Some("plaintext-v1"), None] {
         server.state.lock().unwrap().format = format.map(str::to_owned);
         fetch_refused(
@@ -897,15 +856,15 @@ fn explicit_public_copy_preserves_private_identity_and_reuses_only_public_intent
     assert!(!state.data.keys().any(|p| p.ends_with(".identity") || p.starts_with("sealed/")));
     drop(state);
     assert_eq!(restarted.sharing_progress(&bundle), "Link copied · ready");
-    let requests = server.state.lock().unwrap().requests;
+    let requests = request_count(&server);
     assert!(restarted.prepare_public_link(&bundle, &|| false).is_err());
-    assert_eq!(server.state.lock().unwrap().requests, requests);
+    assert_eq!(request_count(&server), requests);
     restarted.disable(false).unwrap();
-    let disabled_requests = server.state.lock().unwrap().requests;
+    let disabled_requests = request_count(&server);
     assert!(!prepared.authorized());
     assert!(restarted.prepare_public_link(&bundle, &|| true).is_err());
     restarted.process_once().unwrap();
-    assert_eq!(server.state.lock().unwrap().requests, disabled_requests);
+    assert_eq!(request_count(&server), disabled_requests);
 }
 
 #[test]
@@ -920,7 +879,7 @@ fn public_intent_cannot_resurrect_cancelled_jobs_or_relabel_private_jobs() {
     f.client.process_once().unwrap();
     f.client.retry().unwrap();
     f.client.process_once().unwrap();
-    assert_eq!(server.state.lock().unwrap().requests, 0);
+    assert_eq!(request_count(&server), 0);
     let link = f.client.prepare_public_link(&bundle, &|| true).unwrap();
     assert_eq!(link.job.id, staged_id);
     let private_id = f.client.enqueue(&bundle).unwrap();
@@ -980,7 +939,7 @@ fn per_file_notes_follow_the_shared_asset_contract() {
     let f=Fixture::new();let server=encryption_server("");pair(&f,&server);
     let bundle=f.bundle();let notes=b"{\"version\":1,\"notes\":[\"synthetic note\"]}";
     fs::write(bundle.join("notes.json"),notes).unwrap();
-    let id=f.client.enqueue(&bundle).unwrap();f.client.process_once().unwrap();assert_ready(&f);
+    let id = complete(&f, &bundle);
     let out=f.root.join("selected-notes");
     f.client.fetch_selected(&id,&out,0,Some(&["notes.json".into()])).unwrap();
     assert_eq!(fs::read(out.join("notes.json")).unwrap(),notes);
@@ -991,22 +950,20 @@ fn per_file_notes_follow_the_shared_asset_contract() {
 
 #[test]
 fn settings_resume_validates_live_upload_grant_without_reviving_cancelled_jobs() {
-    let f = Fixture::new();
-    let server = encryption_server("");
-    pair(&f, &server);
+    let (f, server) = paired("");
     let id = f.client.enqueue(&f.bundle()).unwrap();
     f.client.settings_disable(false).unwrap();
     assert!(f.client.settings_snapshot().unwrap().reusable_upload_grant);
     let credential = fs::read(f.client.state.join("upload.credential")).unwrap();
     let cancelled = fs::read(f.client.state.join(format!("{id}.job"))).unwrap();
     f.client.settings_resume(&server.url, &|| true).unwrap();
-    assert!(f.client.settings_snapshot().unwrap().uploads_enabled);
+    assert!(uploads_enabled(&f));
     assert_eq!(fs::read(f.client.state.join("upload.credential")).unwrap(), credential);
     assert_eq!(fs::read(f.client.state.join(format!("{id}.job"))).unwrap(), cancelled);
     f.client.settings_disable(false).unwrap();
     server.state.lock().unwrap().encryption.as_mut().unwrap().devices.clear();
     assert!(f.client.settings_resume(&server.url, &|| true).is_err());
-    assert!(!f.client.settings_snapshot().unwrap().uploads_enabled);
+    assert!(!uploads_enabled(&f));
 }
 
 #[test]
@@ -1020,7 +977,7 @@ fn settings_resume_cannot_erase_a_later_disable_or_disconnect() {
         set_hook(move |point,_| { if point=="resume_before_commit" { client.settings_disable(logout).unwrap(); } });
         assert!(f.client.settings_resume(&server.url,&|| true).is_err());
         clear_hook();
-        assert!(!f.client.settings_snapshot().unwrap().uploads_enabled);
+        assert!(!uploads_enabled(&f));
     }
 }
 
@@ -1042,6 +999,58 @@ fn settings_resume_rejects_expired_wrong_server_read_only_and_unknown_grants() {
         let before=fs::read(&f.client.config).unwrap();
         assert!(f.client.settings_resume(&server.url,&|| true).is_err(),"{case}");
         assert_eq!(fs::read(&f.client.config).unwrap(),before,"{case}");
-        assert_eq!(server.state.lock().unwrap().requests,0,"{case}");
+        assert_eq!(request_count(&server),0,"{case}");
     }
+}
+
+fn pair(f: &Fixture, server: &Server) {
+    f.authorize(&server.url);
+    encrypted(f);
+    for scope in ["upload", "read"] {
+        let identity_id = random_id().unwrap();
+        let identity = encryption::load_or_create_identity(
+            &f.client.state.join(format!("{identity_id}.identity")),
+        )
+        .unwrap();
+        let mut credential = f.client.credential(scope, &server.url).unwrap();
+        credential.encryption_identity = Some(identity_id);
+        credential
+            .apply_reply(
+                &json!({"scope":scope,
+            "accessToken":format!("synthetic-{scope}-secret"),
+            "refreshToken":format!("synthetic-refresh-{scope}"),
+            "grantId":format!("opaque-approved-{scope}-grant"),
+            "expiresIn":3600,"refreshExpiresIn":86400}),
+                now(),
+                false,
+            )
+            .unwrap();
+        atomic_json(
+            &f.client.state.join(format!("{scope}.credential")),
+            &credential,
+        )
+        .unwrap();
+        server
+            .state
+            .lock()
+            .unwrap()
+            .encryption
+            .as_mut()
+            .unwrap()
+            .devices
+            .push(json!({"grantId":credential.grant_id,"scope":scope,"key":identity.public_key()}));
+    }
+}
+
+#[test]
+#[ignore]
+fn benchmark_connect_cli() {
+    let source = PathBuf::from(std::env::var_os("APPARENT_BENCH_CONNECT_BUNDLE").unwrap());
+    let (fixture, server) = paired("");
+    let id = fixture.client.upload_foreground(&source, &|| true).unwrap();
+    assert_eq!(server.state.lock().unwrap().format.as_deref(), Some("apparent-encrypted-v2"));
+    fs::remove_file(fixture.client.state.join("upload.credential")).unwrap();
+    atomic_json(&fixture.client.config, &json!({"cloud":{"server":server.url}})).unwrap();
+    let collector = Path::new(env!("CARGO_MANIFEST_DIR")).join("../enablement/benchmark/cli.ts");
+    assert!(std::process::Command::new("node").arg(collector).arg(&fixture.client.config).arg(id).status().unwrap().success());
 }

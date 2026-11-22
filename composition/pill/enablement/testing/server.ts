@@ -115,6 +115,7 @@ export async function fixture(t: { after: (fn: () => Promise<void>) => void }) {
   });
   const sockets = new WebSocketServer({ server });
   sockets.on("connection", (socket: FixtureSocket, req: IncomingMessage) => {
+    assert.ok(req.url);
     assert.equal(
       new URL(req.url, "http://localhost").searchParams.get(
         "orchestrationProtocol",

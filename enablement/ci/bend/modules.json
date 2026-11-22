@@ -1,0 +1,4 @@
+{
+  "modules": ["timing/journey/journey-scoring.bend"],
+  "inputs": ["timing/journey/"]
+}

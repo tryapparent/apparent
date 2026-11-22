@@ -4,7 +4,10 @@ export const sparklePolicySource = "shared/analytics/sparkle-outcomes.bend";
 export const sparklePolicyBuild = "shared/enablement/ci/bend/";
 
 export function bendConsumers(path: string) {
-  if (path === "shared/enablement/bend/consumers.ts")
+  if (
+    path === "shared/enablement/bend/consumers.ts" ||
+    /^enablement\/ci\/bend\/(?:build\.ts|check\.ts|modules\.json)$/.test(path)
+  )
     return ["tooling"] as const;
   if (
     path === sparklePolicySource ||

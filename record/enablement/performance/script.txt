@@ -1,0 +1,5 @@
+First, open the project settings and look at the title in the top left.
+The summary below it needs more room. Scroll down and check the preview.
+Here is the part that changes when the report loads. Keep the current layout.
+Move the confirmation to the second row. Check that the label is still visible.
+When you finish, compare the empty and filled states. Then save the new draft.
