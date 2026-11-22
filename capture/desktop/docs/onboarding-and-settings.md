@@ -558,9 +558,9 @@ Storage uses the Record workflows for folder and retention preferences. The
 native provider runs the chooser and usage scan and saves through the existing
 config transaction. Retention changes schedule the existing cleanup worker for
 about five seconds later, deferred while recording. File edits are read on the
-next pass, normally hourly. Set `experiments.electronCaptureLocation=false` and
-reopen Settings to use native Storage. Missing packaged assets or an Electron
-crash also restore native Storage. See the [Storage contract](../ui/frontend/README.md#storage-retention-and-usage-291).
+next pass, normally hourly. Settings ignores the legacy
+`experiments.electronCaptureLocation` value. Missing packaged assets or an
+Electron crash restore native Storage. See the [Storage contract](../ui/frontend/README.md#storage-retention-and-usage-291).
 
 Recording › Language shows under Transcription while it's Apple Speech: Automatic, then the helper's supported `locales` by name. It writes `appleLocale` (Automatic removes the key) and returns `Effect::SpeechModel`, which restarts the model check for the new language (see `capture/engine/docs/keyframes-and-text.md`).
 

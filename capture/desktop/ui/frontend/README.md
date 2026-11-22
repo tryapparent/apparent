@@ -224,10 +224,7 @@ the owned generated-fixture windows and stay outside git.
 
 ## Storage retention and usage (#291)
 
-Installed Storage uses the shared Electron Settings window by default on Linux
-and macOS. Set `experiments.electronCaptureLocation=false` and reopen Settings
-to use native Storage. This also provides a rollback without changing saved
-preferences.
+Installed Linux and macOS Storage uses the shared Electron Settings window.
 
 The headless `record/storage` TypeScript package owns Electron location precedence,
 normalization, fallback presentation, retention defaults, labels, validation,
@@ -400,13 +397,13 @@ fixture, not a failed recording. The guest and queue ticket were cleaned up.
 These are shell/bridge checks, not capture, overlay, permission, updater,
 physical-device or performance acceptance.
 
-## Storage routing opt-out
+## Storage routing and compatibility
 
-The Electron Storage bridge is on unless `experiments.electronCaptureLocation`
-is explicitly false in the app's `~/.config/apparent/config.json`. File edits
-apply to the bridge at the next request. Reopen Settings to apply the routing
-opt-out on either platform. Native Storage uses the same persisted preferences.
-The separate `npm start` window is a developer harness.
+Settings and its socket ignore `experiments.electronCaptureLocation` for absent,
+true and false. Opening preserves config bytes. Saves preserve the key for
+rollback to older builds. Native Storage still recovers from missing assets and
+renderer exits. Retire it after verifying both failure cases on both platforms.
+`npm start` is a developer harness.
 
 `readCaptureLocation()`, `changeCaptureLocation()` and `resetCaptureLocation()`
 accept no path, revision, dialog options or other arguments. Main reads the

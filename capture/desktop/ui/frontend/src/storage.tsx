@@ -40,9 +40,11 @@ export function Storage({ settings = false }: { settings?: boolean }) {
         <div className="storage-location-actions">
           <Button variant="outline" disabled={busy || result.status !== 'connected'} onClick={() => void request('change')}>Change…</Button>
           <Button variant="outline" disabled={busy || result.status !== 'connected'} onClick={() => void controller.current?.show()}>Show folder</Button>
+          {snapshot?.custom && <Button variant="outline" disabled={busy || result.status !== 'connected'} onClick={() => void request('reset')}>Reset location</Button>}
         </div>
       </div>
       {busy && <p role="status">Waiting for capture location…</p>}
+      {snapshot?.savedPath && snapshot.savedPath !== snapshot.effectivePath && <p className="storage-detail break-all">Saved preference: {snapshot.savedPath}</p>}
       {snapshot?.source === 'environment' && <p className="storage-detail">APPARENT_CAPTURES_DIR overrides the saved location for this session.</p>}
       {snapshot?.source === 'fallback' && <p className="storage-detail">The saved folder is unavailable. Captures use the default folder.</p>}
       {result.status === 'error' && <p role="alert">{errors[result.code] ?? 'Could not access the capture folder.'}</p>}
@@ -71,7 +73,7 @@ export function Storage({ settings = false }: { settings?: boolean }) {
       </>}
       {result.status === 'disconnected' && <p>Not connected to Rust. Open the current Apparent app and refresh. This window never starts it.</p>}
       {result.status === 'incompatible' && <p>This Rust backend does not support capture location. Update it before using this card.</p>}
-      {!busy && result.status === 'disabled' && <p>Storage is disabled in your configuration. Close this window and reopen Settings to use the fallback.</p>}
+      {!busy && result.status === 'disabled' && <p>Restart Apparent and reopen Settings to use Storage.</p>}
       {result.status === 'error' && <p>{errors[result.code] ?? 'Unable to read capture location. Refresh when the Rust app is responsive.'}</p>}
     </div>
     {!settings && <p className="text-sm text-muted-foreground">New captures use this location. Existing captures stay where they are. Nothing is moved.</p>}
