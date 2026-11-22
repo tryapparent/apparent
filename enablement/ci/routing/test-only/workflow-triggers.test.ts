@@ -121,8 +121,9 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
     }).some(({ argv }) => argv.includes(entry));
   for (const path of [
     "record/completion/src/copy-admission.bend",
-    "record/capture-request/src/capture-admission.bend",
     "record/completion/src/policy.ts",
+    "record/capture-request/src/capture-admission.bend",
+    "record/enablement/ci/bend/capture-request/capture-admission.ts",
     "record/enablement/ci/bend/build.ts",
     "shared/enablement/bend/toolchain.ts",
     ".github/workflows/stream-record.yml",
@@ -132,7 +133,6 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
   }
   for (const path of [
     "record/completion/src/copy-admission.bend",
-    "record/capture-request/src/capture-admission.bend",
     "record/enablement/ci/bend/build.ts",
     "shared/enablement/bend/toolchain.ts",
   ]) {
@@ -145,6 +145,14 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
         : ["capture", "desktop", "onboarding"],
       path,
     );
+  }
+  for (const path of [
+    "record/capture-request/src/capture-admission.bend",
+    "record/enablement/ci/bend/capture-request/capture-admission.ts",
+  ]) {
+    const route = routeDecision([path]);
+    assert.equal(route.installer, true, path);
+    assert.deepEqual(route.selected, ["capture", "desktop"], path);
   }
   assert.equal(
     routeDecision(["record/enablement/ci/bend/check.ts"]).installer,

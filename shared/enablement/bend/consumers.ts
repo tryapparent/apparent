@@ -45,6 +45,11 @@ export function bendConsumers(path: string) {
   )
     return ["capture", "desktop"] as const;
   if (path.startsWith("record/enablement/ci/pill/")) return [] as const;
+  if (
+    path === "record/capture-request/src/capture-admission.bend" ||
+    path === "record/enablement/ci/bend/capture-request/capture-admission.ts"
+  )
+    return ["capture", "desktop"] as const;
   if (path.startsWith("record/enablement/ci/bend/"))
     return /\/(?:build\.ts|modules\.json)$/.test(path)
       ? (["capture", "desktop", "onboarding"] as const)
