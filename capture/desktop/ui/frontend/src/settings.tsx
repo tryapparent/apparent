@@ -26,9 +26,9 @@ class SettingsPane extends HTMLElement {
   }
 
   private renderPushToTalkExperiment?: PushToTalkExperiment;
-  private renderPillDoodlesExperiment?: LabsExperiment;
+  private renderPillDoodlesExperiment?: LabsExperiment<boolean | null | undefined>;
 
-  set pillDoodlesExperiment(component: LabsExperiment | undefined) {
+  set pillDoodlesExperiment(component: LabsExperiment<boolean | null | undefined> | undefined) {
     this.renderPillDoodlesExperiment = component;
     this.renderPane();
   }

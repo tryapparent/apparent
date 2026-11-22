@@ -39,8 +39,8 @@ The Glass and GPUI fallbacks continue using the native waveform. Reverting
 the renderer and its build wiring restores the previous meter without a
 settings or capture migration.
 
-**Recording pill doodles** is off by default in Labs. The saved preference
-is sampled at the next recording start. The shared Electron pill paints
+**Recording pill doodles** is on by default. The pill samples the saved Labs
+preference at the next recording start. The shared Electron pill paints
 the optional art behind the controls with capped opacity. Reduce Motion
 uses still artwork. The native microphone indicator retains its own status.
 

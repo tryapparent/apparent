@@ -6,6 +6,9 @@ type Pose is Data:
 type Placement is Data:
   Fit{scale: U32, top: U32}
 
+def doodles_enabled(opted_out: Bool) -> Bool:
+  Bool.not(opted_out)
+
 def ink_level(magnitude: U32, fresh: Bool) -> U32:
   signal = U32.sub(U32.min(104, U32.max(magnitude, 14)), 14)
   Bool.pick(U32, fresh, U32.div(U32.mul(signal, 100), 90), 0)

@@ -4,6 +4,7 @@ import { StickyNote } from "@apparent/ui/icons";
 import type { PillView } from "./view";
 import type { LipStatus } from "../input/renderer";
 import { InputMeter } from "./ink/input-meter";
+import ink from "./ink/doodle-ink.mjs";
 import { LiveCaption } from "./live-caption";
 import {
   Check,
@@ -131,6 +132,8 @@ export function PillSurface({
       controls[inspectIndex],
       controls[pasteIndex],
     ];
+  const showDoodles =
+    view.phase === "recording" && ink.doodles_enabled(view.doodleInk === false);
   return (
     <main
       data-revision={view.revision}
@@ -143,8 +146,8 @@ export function PillSurface({
     >
       <div className="pill-surface" data-background={view.phase === "recording" && !!backgroundHandoff}>
         {view.phase === "recording" && backgroundHandoff && <BackgroundTab handoff={backgroundHandoff} open={backgroundOpen} toggle={() => setBackgroundOpen(!backgroundOpen)} />}
-        <div className="pill-row" data-doodles={view.phase === "recording" && view.doodleInk === true}>
-          {view.phase === "recording" && view.doodleInk === true && (
+        <div className="pill-row" data-doodles={showDoodles}>
+          {showDoodles && (
             <Suspense fallback={null}>
               <Doodles
                 reduced={view.reducedMotion || reduced}

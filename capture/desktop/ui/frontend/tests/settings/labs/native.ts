@@ -24,6 +24,16 @@ try{
   app.once('error',reject);app.once('exit',code=>reject(Error(`Labs exited ${code}: ${stderr.slice(-600)}`)));
  });
  browser=await chromium.connectOverCDP(url);const page=browser.contexts()[0].pages()[0];
+ const doodles=page.getByRole('switch',{name:'Recording pill doodles'});
+ await expect(doodles).toBeEnabled();
+ await expect(doodles).toBeChecked();
+ await doodles.click();
+ await expect(doodles).toHaveAttribute('aria-checked','false');
+ const savedDoodles=JSON.parse(await fs.readFile(process.argv[2],'utf8'));
+ assert.equal(savedDoodles.experiments.pillDoodles,false);
+ await page.reload();
+ await expect(doodles).toBeEnabled();
+ await expect(doodles).toHaveAttribute('aria-checked','false');
  const agentContext=page.getByRole('switch',{name:'Recording context for agents'});
  await expect(agentContext).toHaveAttribute('aria-checked','false');
  for(const on of [true,false]){

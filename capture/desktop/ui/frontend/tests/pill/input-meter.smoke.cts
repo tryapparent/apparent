@@ -20,7 +20,7 @@ test("Soft Bloom holds in silence and gives a static sound cue in reduced motion
   const view = {
     revision: 1, phase: "recording", clock: "00:12", label: "Recording",
     warning: null, notice: null, reducedMotion: false, draggable: false,
-    noteCount: 0, inputWaveform: Array(24).fill(0),
+    noteCount: 0, inputWaveform: Array(24).fill(0), doodleInk: false,
     actions: [
       { id: "whiteboard", label: "Whiteboard", enabled: true, selected: false, primary: false },
       { id: "finish", label: "Finish", enabled: true, selected: false, primary: true },
@@ -46,6 +46,8 @@ test("Soft Bloom holds in silence and gives a static sound cue in reduced motion
   };
   const quiet = { inputWaveform: [...Array(23).fill(0.8), 0] };
   const sound = { inputWaveform: [...Array(23).fill(0), 0.18] };
+  await publish({doodleInk: null});
+  await expect(row.locator(".pill-doodles")).toBeVisible();
   await publish({});
   await expect(ring).toBeVisible();
   await expect(row.locator(".pill-doodles")).toHaveCount(0);
@@ -93,6 +95,9 @@ test("Soft Bloom holds in silence and gives a static sound cue in reduced motion
     assert.equal(await doodles.evaluate(el =>
       el.getContext("2d").getImageData(0, 0, el.width, el.height).data.some((value, index) => index % 4 === 3 && value > 0)
     ), true);
+    await page.evaluate(() => new Promise(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve))
+    ));
     const ink = () => doodles.evaluate(el => el.toDataURL());
     const still = await ink();
     const fixedRadius = await radius();
