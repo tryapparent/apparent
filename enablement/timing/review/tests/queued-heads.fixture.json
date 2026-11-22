@@ -1,0 +1,1146 @@
+[
+  {
+    "label": "prior",
+    "from": "2026-11-03T06:00:00Z",
+    "to": "2026-11-03T12:00:00Z",
+    "lists": {
+      "queued": [
+        {
+          "databaseId": 20,
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "attempt": 2,
+          "status": "queued",
+          "conclusion": null,
+          "createdAt": "2026-11-03T06:00:00Z",
+          "updatedAt": "2026-11-03T06:30:00Z",
+          "name": "Synthetic workflow 20"
+        },
+        {
+          "databaseId": 9,
+          "headSha": "dddddddddddddddddddddddddddddddddddddddd",
+          "attempt": 1,
+          "status": "queued",
+          "conclusion": null,
+          "createdAt": "2026-11-03T00:09:00Z",
+          "updatedAt": "2026-11-03T06:30:00Z",
+          "name": "Synthetic workflow 9"
+        },
+        {
+          "databaseId": 8,
+          "headSha": "cccccccccccccccccccccccccccccccccccccccc",
+          "attempt": 2,
+          "status": "queued",
+          "conclusion": null,
+          "createdAt": "2026-11-03T00:08:00Z",
+          "updatedAt": "2026-11-03T06:30:00Z",
+          "name": "Synthetic workflow 8"
+        },
+        {
+          "databaseId": 5,
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "attempt": 1,
+          "status": "queued",
+          "conclusion": null,
+          "createdAt": "2026-11-03T00:05:00Z",
+          "updatedAt": "2026-11-03T06:30:00Z",
+          "name": "Synthetic workflow 5"
+        },
+        {
+          "databaseId": 4,
+          "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "attempt": 1,
+          "status": "queued",
+          "conclusion": null,
+          "createdAt": "2026-11-03T00:04:00Z",
+          "updatedAt": "2026-11-03T06:30:00Z",
+          "name": "Synthetic workflow 4"
+        },
+        {
+          "databaseId": 1,
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "attempt": 1,
+          "status": "queued",
+          "conclusion": null,
+          "createdAt": "2026-11-03T00:01:00Z",
+          "updatedAt": "2026-11-03T06:30:00Z",
+          "name": "Synthetic workflow 1"
+        }
+      ],
+      "in_progress": [
+        {
+          "databaseId": 32,
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "attempt": 1,
+          "status": "in_progress",
+          "conclusion": null,
+          "createdAt": "2026-11-03T06:04:00Z",
+          "updatedAt": "2026-11-03T06:30:00Z",
+          "name": "Synthetic workflow 32"
+        },
+        {
+          "databaseId": 31,
+          "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "attempt": 1,
+          "status": "in_progress",
+          "conclusion": null,
+          "createdAt": "2026-11-03T00:10:00Z",
+          "updatedAt": "2026-11-03T06:30:00Z",
+          "name": "Synthetic workflow 31"
+        },
+        {
+          "databaseId": 30,
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "attempt": 1,
+          "status": "in_progress",
+          "conclusion": null,
+          "createdAt": "2026-11-03T06:02:00Z",
+          "updatedAt": "2026-11-03T06:30:00Z",
+          "name": "Synthetic workflow 30"
+        }
+      ],
+      "waiting": [
+        {
+          "databaseId": 21,
+          "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "attempt": 1,
+          "status": "waiting",
+          "conclusion": null,
+          "createdAt": "2026-11-03T06:01:00Z",
+          "updatedAt": "2026-11-03T06:30:00Z",
+          "name": "Synthetic workflow 21"
+        },
+        {
+          "databaseId": 7,
+          "headSha": "cccccccccccccccccccccccccccccccccccccccc",
+          "attempt": 1,
+          "status": "waiting",
+          "conclusion": null,
+          "createdAt": "2026-11-03T00:07:00Z",
+          "updatedAt": "2026-11-03T06:30:00Z",
+          "name": "Synthetic workflow 7"
+        },
+        {
+          "databaseId": 6,
+          "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "attempt": 3,
+          "status": "waiting",
+          "conclusion": null,
+          "createdAt": "2026-11-03T00:06:00Z",
+          "updatedAt": "2026-11-03T06:30:00Z",
+          "name": "Synthetic workflow 6"
+        },
+        {
+          "databaseId": 3,
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "attempt": 2,
+          "status": "waiting",
+          "conclusion": null,
+          "createdAt": "2026-11-03T00:03:00Z",
+          "updatedAt": "2026-11-03T06:30:00Z",
+          "name": "Synthetic workflow 3"
+        },
+        {
+          "databaseId": 2,
+          "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "attempt": 1,
+          "status": "waiting",
+          "conclusion": null,
+          "createdAt": "2026-11-03T00:02:00Z",
+          "updatedAt": "2026-11-03T06:30:00Z",
+          "name": "Synthetic workflow 2"
+        }
+      ],
+      "completed": [
+        {
+          "databaseId": 43,
+          "headSha": "0000000000000000000000000000000000000000",
+          "attempt": 1,
+          "status": "completed",
+          "conclusion": "success",
+          "createdAt": "2026-11-03T06:08:00Z",
+          "updatedAt": "2026-11-03T06:40:00Z",
+          "name": "Synthetic workflow 43"
+        },
+        {
+          "databaseId": 42,
+          "headSha": "ffffffffffffffffffffffffffffffffffffffff",
+          "attempt": 1,
+          "status": "completed",
+          "conclusion": "success",
+          "createdAt": "2026-11-03T06:07:00Z",
+          "updatedAt": "2026-11-03T06:45:00Z",
+          "name": "Synthetic workflow 42"
+        },
+        {
+          "databaseId": 41,
+          "headSha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "attempt": 2,
+          "status": "completed",
+          "conclusion": "success",
+          "createdAt": "2026-11-03T06:06:00Z",
+          "updatedAt": "2026-11-03T06:50:00Z",
+          "name": "Synthetic workflow 41"
+        },
+        {
+          "databaseId": 40,
+          "headSha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "attempt": 1,
+          "status": "completed",
+          "conclusion": "success",
+          "createdAt": "2026-11-03T06:05:00Z",
+          "updatedAt": "2026-11-03T06:55:00Z",
+          "name": "Synthetic workflow 40"
+        }
+      ]
+    },
+    "jobs": {
+      "1/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1001,
+            "run_id": 1,
+            "run_attempt": 1,
+            "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "name": "Synthetic job 1",
+            "status": "queued",
+            "conclusion": null,
+            "created_at": "2026-11-03T00:02:00Z",
+            "started_at": "2026-11-03T00:02:00Z",
+            "completed_at": "0001-01-01T00:00:00Z",
+            "runner_id": 0,
+            "labels": ["synthetic-linux"],
+            "steps": []
+          }
+        ]
+      },
+      "2/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1002,
+            "run_id": 2,
+            "run_attempt": 1,
+            "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "name": "Synthetic job 2",
+            "status": "queued",
+            "conclusion": null,
+            "created_at": "2026-11-03T00:03:00Z",
+            "started_at": "2026-11-03T00:03:00Z",
+            "completed_at": "0001-01-01T00:00:00Z",
+            "runner_id": 0,
+            "labels": ["synthetic-linux"],
+            "steps": []
+          }
+        ]
+      },
+      "3/2": { "total_count": 0, "jobs": [] },
+      "4/1": { "total_count": 0, "jobs": [] },
+      "5/1": { "total_count": 0, "jobs": [] },
+      "6/3": { "total_count": 0, "jobs": [] },
+      "7/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1007,
+            "run_id": 7,
+            "run_attempt": 1,
+            "head_sha": "cccccccccccccccccccccccccccccccccccccccc",
+            "name": "Synthetic job 7",
+            "status": "in_progress",
+            "conclusion": null,
+            "created_at": "2026-11-03T00:08:00Z",
+            "started_at": "2026-11-03T06:14:00Z",
+            "completed_at": "0001-01-01T00:00:00Z",
+            "runner_id": 77,
+            "labels": ["synthetic-linux"],
+            "steps": [
+              {
+                "number": 3,
+                "name": "Verify fixture",
+                "status": "in_progress",
+                "conclusion": null,
+                "started_at": "2026-11-03T06:15:00Z",
+                "completed_at": "0001-01-01T00:00:00Z"
+              }
+            ]
+          }
+        ]
+      },
+      "8/2": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1008,
+            "run_id": 8,
+            "run_attempt": 2,
+            "head_sha": "cccccccccccccccccccccccccccccccccccccccc",
+            "name": "Synthetic job 8",
+            "status": "in_progress",
+            "conclusion": null,
+            "created_at": "2026-11-03T00:09:00Z",
+            "started_at": "2026-11-03T06:14:00Z",
+            "completed_at": "0001-01-01T00:00:00Z",
+            "runner_id": 78,
+            "labels": ["synthetic-linux"],
+            "steps": [
+              {
+                "number": 3,
+                "name": "Verify fixture",
+                "status": "in_progress",
+                "conclusion": null,
+                "started_at": "2026-11-03T06:15:00Z",
+                "completed_at": "0001-01-01T00:00:00Z"
+              }
+            ]
+          }
+        ]
+      },
+      "9/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1009,
+            "run_id": 9,
+            "run_attempt": 1,
+            "head_sha": "dddddddddddddddddddddddddddddddddddddddd",
+            "name": "Synthetic job 9",
+            "status": "queued",
+            "conclusion": null,
+            "created_at": "2026-11-03T00:10:00Z",
+            "started_at": "2026-11-03T00:10:00Z",
+            "completed_at": "0001-01-01T00:00:00Z",
+            "runner_id": 0,
+            "labels": ["synthetic-linux"],
+            "steps": []
+          }
+        ]
+      },
+      "20/2": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1020,
+            "run_id": 20,
+            "run_attempt": 2,
+            "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "name": "Synthetic job 20",
+            "status": "queued",
+            "conclusion": null,
+            "created_at": "2026-11-03T06:01:00Z",
+            "started_at": "2026-11-03T06:01:00Z",
+            "completed_at": "0001-01-01T00:00:00Z",
+            "runner_id": 0,
+            "labels": ["synthetic-linux"],
+            "steps": []
+          }
+        ]
+      },
+      "21/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1021,
+            "run_id": 21,
+            "run_attempt": 1,
+            "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "name": "Synthetic job 21",
+            "status": "waiting",
+            "conclusion": null,
+            "created_at": "2026-11-03T06:02:00Z",
+            "started_at": "2026-11-03T06:02:00Z",
+            "completed_at": "0001-01-01T00:00:00Z",
+            "runner_id": 0,
+            "labels": ["synthetic-linux"],
+            "steps": []
+          }
+        ]
+      },
+      "30/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1030,
+            "run_id": 30,
+            "run_attempt": 1,
+            "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "name": "Synthetic job 30",
+            "status": "in_progress",
+            "conclusion": null,
+            "created_at": "2026-11-03T06:03:00Z",
+            "started_at": "2026-11-03T06:14:00Z",
+            "completed_at": "0001-01-01T00:00:00Z",
+            "runner_id": 100,
+            "labels": ["synthetic-linux"],
+            "steps": [
+              {
+                "number": 3,
+                "name": "Verify fixture",
+                "status": "in_progress",
+                "conclusion": null,
+                "started_at": "2026-11-03T06:15:00Z",
+                "completed_at": "0001-01-01T00:00:00Z"
+              }
+            ]
+          }
+        ]
+      },
+      "31/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1031,
+            "run_id": 31,
+            "run_attempt": 1,
+            "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "name": "Synthetic job 31",
+            "status": "in_progress",
+            "conclusion": null,
+            "created_at": "2026-11-03T00:11:00Z",
+            "started_at": "2026-11-03T06:14:00Z",
+            "completed_at": "0001-01-01T00:00:00Z",
+            "runner_id": 101,
+            "labels": ["synthetic-linux"],
+            "steps": [
+              {
+                "number": 3,
+                "name": "Verify fixture",
+                "status": "in_progress",
+                "conclusion": null,
+                "started_at": "2026-11-03T06:15:00Z",
+                "completed_at": "0001-01-01T00:00:00Z"
+              }
+            ]
+          }
+        ]
+      },
+      "32/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1032,
+            "run_id": 32,
+            "run_attempt": 1,
+            "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "name": "Synthetic job 32",
+            "status": "in_progress",
+            "conclusion": null,
+            "created_at": "2026-11-03T06:05:00Z",
+            "started_at": "2026-11-03T06:14:00Z",
+            "completed_at": "0001-01-01T00:00:00Z",
+            "runner_id": 102,
+            "labels": ["synthetic-linux"],
+            "steps": [
+              {
+                "number": 3,
+                "name": "Verify fixture",
+                "status": "in_progress",
+                "conclusion": null,
+                "started_at": "2026-11-03T06:15:00Z",
+                "completed_at": "0001-01-01T00:00:00Z"
+              }
+            ]
+          }
+        ]
+      },
+      "40/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1040,
+            "run_id": 40,
+            "run_attempt": 1,
+            "head_sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "name": "Synthetic job 40",
+            "status": "completed",
+            "conclusion": "success",
+            "created_at": "2026-11-03T06:06:00Z",
+            "started_at": "2026-11-03T06:14:00Z",
+            "completed_at": "2026-11-03T06:55:00Z",
+            "runner_id": 110,
+            "labels": ["synthetic-linux"],
+            "steps": [
+              {
+                "number": 3,
+                "name": "Verify fixture",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-11-03T06:15:00Z",
+                "completed_at": "2026-11-03T06:55:00Z"
+              }
+            ]
+          }
+        ]
+      },
+      "41/2": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1041,
+            "run_id": 41,
+            "run_attempt": 2,
+            "head_sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "name": "Synthetic job 41",
+            "status": "completed",
+            "conclusion": "success",
+            "created_at": "2026-11-03T06:07:00Z",
+            "started_at": "2026-11-03T06:14:00Z",
+            "completed_at": "2026-11-03T06:50:00Z",
+            "runner_id": 111,
+            "labels": ["synthetic-linux"],
+            "steps": [
+              {
+                "number": 3,
+                "name": "Verify fixture",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-11-03T06:15:00Z",
+                "completed_at": "2026-11-03T06:50:00Z"
+              }
+            ]
+          }
+        ]
+      },
+      "42/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1042,
+            "run_id": 42,
+            "run_attempt": 1,
+            "head_sha": "ffffffffffffffffffffffffffffffffffffffff",
+            "name": "Synthetic job 42",
+            "status": "completed",
+            "conclusion": "success",
+            "created_at": "2026-11-03T06:08:00Z",
+            "started_at": "2026-11-03T06:14:00Z",
+            "completed_at": "2026-11-03T06:45:00Z",
+            "runner_id": 112,
+            "labels": ["synthetic-linux"],
+            "steps": [
+              {
+                "number": 3,
+                "name": "Verify fixture",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-11-03T06:15:00Z",
+                "completed_at": "2026-11-03T06:45:00Z"
+              }
+            ]
+          }
+        ]
+      },
+      "43/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1043,
+            "run_id": 43,
+            "run_attempt": 1,
+            "head_sha": "0000000000000000000000000000000000000000",
+            "name": "Synthetic job 43",
+            "status": "completed",
+            "conclusion": "success",
+            "created_at": "2026-11-03T06:09:00Z",
+            "started_at": "2026-11-03T06:14:00Z",
+            "completed_at": "2026-11-03T06:40:00Z",
+            "runner_id": 113,
+            "labels": ["synthetic-linux"],
+            "steps": [
+              {
+                "number": 3,
+                "name": "Verify fixture",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-11-03T06:15:00Z",
+                "completed_at": "2026-11-03T06:40:00Z"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "exact": {
+      "id": 8,
+      "run_attempt": 2,
+      "head_sha": "cccccccccccccccccccccccccccccccccccccccc",
+      "status": "queued",
+      "conclusion": null,
+      "created_at": "2026-11-03T00:08:00Z",
+      "updated_at": "2026-11-03T06:30:00Z",
+      "name": "Synthetic workflow 8"
+    }
+  },
+  {
+    "label": "current",
+    "from": "2026-11-03T12:00:00Z",
+    "to": "2026-11-03T18:00:00Z",
+    "lists": {
+      "queued": [
+        {
+          "databaseId": 120,
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "attempt": 2,
+          "status": "queued",
+          "conclusion": null,
+          "createdAt": "2026-11-03T12:00:00Z",
+          "updatedAt": "2026-11-03T12:30:00Z",
+          "name": "Synthetic workflow 120"
+        },
+        {
+          "databaseId": 9,
+          "headSha": "dddddddddddddddddddddddddddddddddddddddd",
+          "attempt": 1,
+          "status": "queued",
+          "conclusion": null,
+          "createdAt": "2026-11-03T00:09:00Z",
+          "updatedAt": "2026-11-03T12:30:00Z",
+          "name": "Synthetic workflow 9"
+        },
+        {
+          "databaseId": 8,
+          "headSha": "cccccccccccccccccccccccccccccccccccccccc",
+          "attempt": 2,
+          "status": "queued",
+          "conclusion": null,
+          "createdAt": "2026-11-03T00:08:00Z",
+          "updatedAt": "2026-11-03T12:30:00Z",
+          "name": "Synthetic workflow 8"
+        },
+        {
+          "databaseId": 5,
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "attempt": 1,
+          "status": "queued",
+          "conclusion": null,
+          "createdAt": "2026-11-03T00:05:00Z",
+          "updatedAt": "2026-11-03T12:30:00Z",
+          "name": "Synthetic workflow 5"
+        },
+        {
+          "databaseId": 4,
+          "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "attempt": 1,
+          "status": "queued",
+          "conclusion": null,
+          "createdAt": "2026-11-03T00:04:00Z",
+          "updatedAt": "2026-11-03T12:30:00Z",
+          "name": "Synthetic workflow 4"
+        },
+        {
+          "databaseId": 1,
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "attempt": 1,
+          "status": "queued",
+          "conclusion": null,
+          "createdAt": "2026-11-03T00:01:00Z",
+          "updatedAt": "2026-11-03T12:30:00Z",
+          "name": "Synthetic workflow 1"
+        }
+      ],
+      "in_progress": [
+        {
+          "databaseId": 132,
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "attempt": 1,
+          "status": "in_progress",
+          "conclusion": null,
+          "createdAt": "2026-11-03T12:04:00Z",
+          "updatedAt": "2026-11-03T12:30:00Z",
+          "name": "Synthetic workflow 132"
+        },
+        {
+          "databaseId": 31,
+          "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "attempt": 1,
+          "status": "in_progress",
+          "conclusion": null,
+          "createdAt": "2026-11-03T00:10:00Z",
+          "updatedAt": "2026-11-03T12:30:00Z",
+          "name": "Synthetic workflow 31"
+        },
+        {
+          "databaseId": 130,
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "attempt": 1,
+          "status": "in_progress",
+          "conclusion": null,
+          "createdAt": "2026-11-03T12:02:00Z",
+          "updatedAt": "2026-11-03T12:30:00Z",
+          "name": "Synthetic workflow 130"
+        }
+      ],
+      "waiting": [
+        {
+          "databaseId": 121,
+          "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "attempt": 1,
+          "status": "waiting",
+          "conclusion": null,
+          "createdAt": "2026-11-03T12:01:00Z",
+          "updatedAt": "2026-11-03T12:30:00Z",
+          "name": "Synthetic workflow 121"
+        },
+        {
+          "databaseId": 7,
+          "headSha": "cccccccccccccccccccccccccccccccccccccccc",
+          "attempt": 1,
+          "status": "waiting",
+          "conclusion": null,
+          "createdAt": "2026-11-03T00:07:00Z",
+          "updatedAt": "2026-11-03T12:30:00Z",
+          "name": "Synthetic workflow 7"
+        },
+        {
+          "databaseId": 6,
+          "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "attempt": 3,
+          "status": "waiting",
+          "conclusion": null,
+          "createdAt": "2026-11-03T00:06:00Z",
+          "updatedAt": "2026-11-03T12:30:00Z",
+          "name": "Synthetic workflow 6"
+        },
+        {
+          "databaseId": 3,
+          "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "attempt": 2,
+          "status": "waiting",
+          "conclusion": null,
+          "createdAt": "2026-11-03T00:03:00Z",
+          "updatedAt": "2026-11-03T12:30:00Z",
+          "name": "Synthetic workflow 3"
+        },
+        {
+          "databaseId": 2,
+          "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "attempt": 1,
+          "status": "waiting",
+          "conclusion": null,
+          "createdAt": "2026-11-03T00:02:00Z",
+          "updatedAt": "2026-11-03T12:30:00Z",
+          "name": "Synthetic workflow 2"
+        }
+      ],
+      "completed": [
+        {
+          "databaseId": 143,
+          "headSha": "0000000000000000000000000000000000000000",
+          "attempt": 1,
+          "status": "completed",
+          "conclusion": "success",
+          "createdAt": "2026-11-03T12:08:00Z",
+          "updatedAt": "2026-11-03T12:40:00Z",
+          "name": "Synthetic workflow 143"
+        },
+        {
+          "databaseId": 142,
+          "headSha": "ffffffffffffffffffffffffffffffffffffffff",
+          "attempt": 1,
+          "status": "completed",
+          "conclusion": "success",
+          "createdAt": "2026-11-03T12:07:00Z",
+          "updatedAt": "2026-11-03T12:45:00Z",
+          "name": "Synthetic workflow 142"
+        },
+        {
+          "databaseId": 141,
+          "headSha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "attempt": 2,
+          "status": "completed",
+          "conclusion": "success",
+          "createdAt": "2026-11-03T12:06:00Z",
+          "updatedAt": "2026-11-03T12:50:00Z",
+          "name": "Synthetic workflow 141"
+        },
+        {
+          "databaseId": 140,
+          "headSha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "attempt": 1,
+          "status": "completed",
+          "conclusion": "success",
+          "createdAt": "2026-11-03T12:05:00Z",
+          "updatedAt": "2026-11-03T12:55:00Z",
+          "name": "Synthetic workflow 140"
+        }
+      ]
+    },
+    "jobs": {
+      "1/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1001,
+            "run_id": 1,
+            "run_attempt": 1,
+            "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "name": "Synthetic job 1",
+            "status": "queued",
+            "conclusion": null,
+            "created_at": "2026-11-03T00:02:00Z",
+            "started_at": "2026-11-03T00:02:00Z",
+            "completed_at": "0001-01-01T00:00:00Z",
+            "runner_id": 0,
+            "labels": ["synthetic-linux"],
+            "steps": []
+          }
+        ]
+      },
+      "2/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1002,
+            "run_id": 2,
+            "run_attempt": 1,
+            "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "name": "Synthetic job 2",
+            "status": "queued",
+            "conclusion": null,
+            "created_at": "2026-11-03T00:03:00Z",
+            "started_at": "2026-11-03T00:03:00Z",
+            "completed_at": "0001-01-01T00:00:00Z",
+            "runner_id": 0,
+            "labels": ["synthetic-linux"],
+            "steps": []
+          }
+        ]
+      },
+      "3/2": { "total_count": 0, "jobs": [] },
+      "4/1": { "total_count": 0, "jobs": [] },
+      "5/1": { "total_count": 0, "jobs": [] },
+      "6/3": { "total_count": 0, "jobs": [] },
+      "7/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1007,
+            "run_id": 7,
+            "run_attempt": 1,
+            "head_sha": "cccccccccccccccccccccccccccccccccccccccc",
+            "name": "Synthetic job 7",
+            "status": "in_progress",
+            "conclusion": null,
+            "created_at": "2026-11-03T00:08:00Z",
+            "started_at": "2026-11-03T12:14:00Z",
+            "completed_at": "0001-01-01T00:00:00Z",
+            "runner_id": 77,
+            "labels": ["synthetic-linux"],
+            "steps": [
+              {
+                "number": 3,
+                "name": "Verify fixture",
+                "status": "in_progress",
+                "conclusion": null,
+                "started_at": "2026-11-03T12:15:00Z",
+                "completed_at": "0001-01-01T00:00:00Z"
+              }
+            ]
+          }
+        ]
+      },
+      "8/2": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1008,
+            "run_id": 8,
+            "run_attempt": 2,
+            "head_sha": "cccccccccccccccccccccccccccccccccccccccc",
+            "name": "Synthetic job 8",
+            "status": "in_progress",
+            "conclusion": null,
+            "created_at": "2026-11-03T00:09:00Z",
+            "started_at": "2026-11-03T12:14:00Z",
+            "completed_at": "0001-01-01T00:00:00Z",
+            "runner_id": 78,
+            "labels": ["synthetic-linux"],
+            "steps": [
+              {
+                "number": 3,
+                "name": "Verify fixture",
+                "status": "in_progress",
+                "conclusion": null,
+                "started_at": "2026-11-03T12:15:00Z",
+                "completed_at": "0001-01-01T00:00:00Z"
+              }
+            ]
+          }
+        ]
+      },
+      "9/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1009,
+            "run_id": 9,
+            "run_attempt": 1,
+            "head_sha": "dddddddddddddddddddddddddddddddddddddddd",
+            "name": "Synthetic job 9",
+            "status": "queued",
+            "conclusion": null,
+            "created_at": "2026-11-03T00:10:00Z",
+            "started_at": "2026-11-03T00:10:00Z",
+            "completed_at": "0001-01-01T00:00:00Z",
+            "runner_id": 0,
+            "labels": ["synthetic-linux"],
+            "steps": []
+          }
+        ]
+      },
+      "120/2": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1120,
+            "run_id": 120,
+            "run_attempt": 2,
+            "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "name": "Synthetic job 120",
+            "status": "queued",
+            "conclusion": null,
+            "created_at": "2026-11-03T12:01:00Z",
+            "started_at": "2026-11-03T12:01:00Z",
+            "completed_at": "0001-01-01T00:00:00Z",
+            "runner_id": 0,
+            "labels": ["synthetic-linux"],
+            "steps": []
+          }
+        ]
+      },
+      "121/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1121,
+            "run_id": 121,
+            "run_attempt": 1,
+            "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "name": "Synthetic job 121",
+            "status": "waiting",
+            "conclusion": null,
+            "created_at": "2026-11-03T12:02:00Z",
+            "started_at": "2026-11-03T12:02:00Z",
+            "completed_at": "0001-01-01T00:00:00Z",
+            "runner_id": 0,
+            "labels": ["synthetic-linux"],
+            "steps": []
+          }
+        ]
+      },
+      "130/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1130,
+            "run_id": 130,
+            "run_attempt": 1,
+            "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "name": "Synthetic job 130",
+            "status": "in_progress",
+            "conclusion": null,
+            "created_at": "2026-11-03T12:03:00Z",
+            "started_at": "2026-11-03T12:14:00Z",
+            "completed_at": "0001-01-01T00:00:00Z",
+            "runner_id": 200,
+            "labels": ["synthetic-linux"],
+            "steps": [
+              {
+                "number": 3,
+                "name": "Verify fixture",
+                "status": "in_progress",
+                "conclusion": null,
+                "started_at": "2026-11-03T12:15:00Z",
+                "completed_at": "0001-01-01T00:00:00Z"
+              }
+            ]
+          }
+        ]
+      },
+      "31/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1031,
+            "run_id": 31,
+            "run_attempt": 1,
+            "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "name": "Synthetic job 31",
+            "status": "in_progress",
+            "conclusion": null,
+            "created_at": "2026-11-03T00:11:00Z",
+            "started_at": "2026-11-03T12:14:00Z",
+            "completed_at": "0001-01-01T00:00:00Z",
+            "runner_id": 101,
+            "labels": ["synthetic-linux"],
+            "steps": [
+              {
+                "number": 3,
+                "name": "Verify fixture",
+                "status": "in_progress",
+                "conclusion": null,
+                "started_at": "2026-11-03T12:15:00Z",
+                "completed_at": "0001-01-01T00:00:00Z"
+              }
+            ]
+          }
+        ]
+      },
+      "132/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1132,
+            "run_id": 132,
+            "run_attempt": 1,
+            "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "name": "Synthetic job 132",
+            "status": "in_progress",
+            "conclusion": null,
+            "created_at": "2026-11-03T12:05:00Z",
+            "started_at": "2026-11-03T12:14:00Z",
+            "completed_at": "0001-01-01T00:00:00Z",
+            "runner_id": 202,
+            "labels": ["synthetic-linux"],
+            "steps": [
+              {
+                "number": 3,
+                "name": "Verify fixture",
+                "status": "in_progress",
+                "conclusion": null,
+                "started_at": "2026-11-03T12:15:00Z",
+                "completed_at": "0001-01-01T00:00:00Z"
+              }
+            ]
+          }
+        ]
+      },
+      "140/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1140,
+            "run_id": 140,
+            "run_attempt": 1,
+            "head_sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "name": "Synthetic job 140",
+            "status": "completed",
+            "conclusion": "success",
+            "created_at": "2026-11-03T12:06:00Z",
+            "started_at": "2026-11-03T12:14:00Z",
+            "completed_at": "2026-11-03T12:55:00Z",
+            "runner_id": 210,
+            "labels": ["synthetic-linux"],
+            "steps": [
+              {
+                "number": 3,
+                "name": "Verify fixture",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-11-03T12:15:00Z",
+                "completed_at": "2026-11-03T12:55:00Z"
+              }
+            ]
+          }
+        ]
+      },
+      "141/2": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1141,
+            "run_id": 141,
+            "run_attempt": 2,
+            "head_sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "name": "Synthetic job 141",
+            "status": "completed",
+            "conclusion": "success",
+            "created_at": "2026-11-03T12:07:00Z",
+            "started_at": "2026-11-03T12:14:00Z",
+            "completed_at": "2026-11-03T12:50:00Z",
+            "runner_id": 211,
+            "labels": ["synthetic-linux"],
+            "steps": [
+              {
+                "number": 3,
+                "name": "Verify fixture",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-11-03T12:15:00Z",
+                "completed_at": "2026-11-03T12:50:00Z"
+              }
+            ]
+          }
+        ]
+      },
+      "142/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1142,
+            "run_id": 142,
+            "run_attempt": 1,
+            "head_sha": "ffffffffffffffffffffffffffffffffffffffff",
+            "name": "Synthetic job 142",
+            "status": "completed",
+            "conclusion": "success",
+            "created_at": "2026-11-03T12:08:00Z",
+            "started_at": "2026-11-03T12:14:00Z",
+            "completed_at": "2026-11-03T12:45:00Z",
+            "runner_id": 212,
+            "labels": ["synthetic-linux"],
+            "steps": [
+              {
+                "number": 3,
+                "name": "Verify fixture",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-11-03T12:15:00Z",
+                "completed_at": "2026-11-03T12:45:00Z"
+              }
+            ]
+          }
+        ]
+      },
+      "143/1": {
+        "total_count": 1,
+        "jobs": [
+          {
+            "id": 1143,
+            "run_id": 143,
+            "run_attempt": 1,
+            "head_sha": "0000000000000000000000000000000000000000",
+            "name": "Synthetic job 143",
+            "status": "completed",
+            "conclusion": "success",
+            "created_at": "2026-11-03T12:09:00Z",
+            "started_at": "2026-11-03T12:14:00Z",
+            "completed_at": "2026-11-03T12:40:00Z",
+            "runner_id": 213,
+            "labels": ["synthetic-linux"],
+            "steps": [
+              {
+                "number": 3,
+                "name": "Verify fixture",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-11-03T12:15:00Z",
+                "completed_at": "2026-11-03T12:40:00Z"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "exact": {
+      "id": 8,
+      "run_attempt": 2,
+      "head_sha": "cccccccccccccccccccccccccccccccccccccccc",
+      "status": "queued",
+      "conclusion": null,
+      "created_at": "2026-11-03T00:08:00Z",
+      "updated_at": "2026-11-03T12:30:00Z",
+      "name": "Synthetic workflow 8"
+    }
+  }
+]

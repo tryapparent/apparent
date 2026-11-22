@@ -65,9 +65,9 @@ test('ordinary completions cover distinct heads across reserved and remaining sl
     status:'queued',conclusion:null,name:'Queue',createdAt:`2026-11-16T0${databaseId}:00:00Z`,
     updatedAt:`2026-11-16T0${databaseId}:00:00Z`}));
   const running={...queued[0],databaseId:5,status:'in_progress',name:'Executing'};
-  for (const [runs, completions] of [
-    [completed,[100,107,109,110,101,102,103]],
-    [completed.filter(run=>run.headSha==='a'.repeat(40)),[100,101,102,103,104,105,106]],
+  for (const [runs, remaining] of [
+    [completed,[100,107,109,110,101,102,103,104,105,106]],
+    [completed.filter(run=>run.headSha==='a'.repeat(40)),[100,101,102,103,104,105,106,2,3,4]],
   ] as const) {
     const lists:string[]=[], api:string[]=[];
     const result=collectGitHub(repo,from,to,12,args=>{
@@ -82,10 +82,10 @@ test('ordinary completions cover distinct heads across reserved and remaining sl
       api.push(args[1]);
       return {total_count:0,jobs:[]};
     });
-    const expected=[1,2,3,4,5,...completions];
+    const expected=[1,5,...remaining];
     assert.deepEqual(result.runs.map(run=>run.databaseId),expected);
     assert.equal(result.coverage.selectedRuns,12);
-    assert.equal(result.coverage.runLimitReached,runs.length>completions.length);
+    assert.equal(result.coverage.runLimitReached,runs.length+queued.length+1>expected.length);
     assert.deepEqual(lists,['queued','in_progress','waiting','completed']);
     assert.deepEqual(api,expected.map(id=>`repos/${repo}/actions/runs/${id}/attempts/1/jobs?per_page=100&page=1`));
   }
@@ -146,7 +146,7 @@ test('the live CLI fits a known attempt in the capped sample and reports exact j
 
   const ordinary=producer();
   const baseline=collectGitHub(repo,from,to,2,ordinary.read);
-  assert.deepEqual(baseline.runs.map(run=>run.databaseId),[1,2]);
+  assert.deepEqual(baseline.runs.map(run=>run.databaseId),[1,90]);
   assert.equal(ordinary.api.length,2);
   assert.ok(!('exactAttempt' in baseline.coverage));
   await assert.rejects(main([...args,'--jobs',input,'--ci-exact-attempt',exact],()=>assert.fail()),/requires --github-repo/);
