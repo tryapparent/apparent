@@ -47,6 +47,10 @@ scan files after success and retains the last frame when detection fails.
 node record/enablement/performance/start-report.ts "$job/vm" > "$job/start.json"
 ```
 
+Set `APPARENT_BENCH_MEDIA=1` with the surface probe to measure first live capture. It combines the same real visible pill check with the first valid screen frame at the encoder input and the first captured microphone samples. The report adds the wait to the chooser to the longest of the three waits after source selection. Input and receipt observation share the host monotonic clock; the fixed guest transport and polling cadence contribute to observed latency.
+
+`APPARENT_BENCH_INK=1` adds Shift-held physical mouse motion on the owned synthetic scene. Two successive frames must show a line outside the cursor, and the same saved take must contain the stroke. `APPARENT_BENCH_DETAIL=1` adds the local caption, note editor, Cancel and Paste Last probes. The detail lane uses loopback inspection of the packaged Electron windows and a disposable draft. Supply the pinned `nemotron-speech-streaming-en-0.6b-Q8_0.gguf` using `APPARENT_BENCH_PREVIEW_MODEL`. The runner verifies SHA-256 `90d8c89714cd31efc88be62a40c6b2bea57e0cc2063af1ffe2c28f1a228ca110` before copying the model into the guest. The regular recording corpus keeps its existing speech settings and resource guards.
+
 The interval excludes time spent choosing a source. Visible Start and first
 valid screen and microphone samples have their own endpoints.
 

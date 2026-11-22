@@ -5,14 +5,13 @@ import {
   spawn,
   type ChildProcess,
 } from "node:child_process";
-import { closeSync, openSync } from "node:fs";
+import { closeSync, existsSync, openSync } from "node:fs";
 import {
   copyFile,
   mkdir,
   readFile,
   rename,
   stat,
-  unlink,
   writeFile,
   appendFile,
 } from "node:fs/promises";
@@ -48,7 +47,7 @@ const put = (name: string, value: string) =>
   writeFile(artifact(name), value + "\n");
 const append = (name: string, values: (number | string)[]) =>
   appendFile(artifact(name), values.join("\t") + "\n");
-const asJson = (value: unknown) => JSON.stringify(value);
+const asJson = JSON.stringify;
 const metric = (name: string, id: string, ms: number) =>
   append("spans.tsv", [name, id, "measured", ms]);
 const phase = (name: string) => put("current-phase", name);
@@ -153,7 +152,7 @@ async function until<T>(ms: number, probe: () => Promise<T | undefined>) {
   }
   throw Error("Guest checkpoint timed out");
 }
-async function configFor(speech: boolean) {
+async function configFor(speech: boolean, streaming = false) {
   const pending = config + ".benchmark";
   await writeFile(
     pending,
@@ -163,6 +162,7 @@ async function configFor(speech: boolean) {
       autoPasteDraft: false,
       errorReporting: false,
       microphoneEnabled: speech,
+      experiments: { localStreamingTranscription: streaming },
       microphone: { id: "pulse:" + source, name: "Synthetic English fixture" },
     }),
   );
@@ -185,15 +185,13 @@ async function seedClipboard(value: string) {
     stdio: ["pipe", "ignore", "ignore"],
   });
 }
+const clipboard = () =>
+  exec("wl-paste", ["--no-newline", "--type", "text"], 700);
 
 async function watchClipboard(name: string, sentinel: string, stop: number) {
   for (const end = stop + 120000; (await now()) < end; ) {
     abort.signal.throwIfAborted();
-    const text = await exec(
-      "wl-paste",
-      ["--no-newline", "--type", "text"],
-      700,
-    ).catch(() => "");
+    const text = await clipboard().catch(() => "");
     if (
       text !== sentinel &&
       text.includes("apparent inspect ") &&
@@ -219,41 +217,17 @@ const speak = (name: string) =>
     name + "-player.log",
   );
 const log = () => readFile(artifact("application.log"), "utf8");
+const launch = (args: string[]) =>
+  background(app, args, "application.log", {
+    ...process.env,
+    TMPDIR: runScratch,
+  });
 
 try {
   await configFor(false);
-  if (mode === "local-cli") {
-    const bundleRoot = join(scratch, "cli-fixtures");
-    await mkdir(bundleRoot);
-    await exec("tar", ["-C", bundleRoot, "-xf", files("cli-fixtures")], 120000);
-    const f = Object.fromEntries(
-      ["short", "ink", "long"].map((key) => [
-        key,
-        join(bundleRoot, key + ".apparent"),
-      ]),
-    );
-    const manifest = join(scratch, "cli-fixtures.json");
-    await writeFile(manifest, asJson(f));
-    const path = await exec(
-      process.execPath,
-      [files("local-cli.ts"), app, scratch, manifest],
-      300000,
-    );
-    assert(path.startsWith(scratch + "/"));
-    await copyFile(path, artifact("cli-waits.json"));
-  } else if (mode === "settings") {
-    await exec(process.execPath, [files("settings.ts"), appDir, out], 80000);
-  } else {
-    assert(mode === "draw" || mode === "surface");
-    module = await exec("pactl", [
-      "load-module",
-      "module-null-sink",
-      "sink_name=" + sink,
-      "rate=16000",
-      "channels=1",
-    ]);
-    assert.match(module, /^\d+$/);
-    const scene = background(
+  let scene: ChildProcess | undefined;
+  if (["onboarding", "surface", "draw"].includes(mode)) {
+    scene = background(
       "python3",
       [files("scene"), "--scene", artifact("scene.json")],
       "scene.log",
@@ -264,10 +238,58 @@ try {
         .catch(() => undefined),
     );
     await writeFile(join(scratch, "output-path"), root + "\n");
-    const recorder = background(app, ["app"], "application.log", {
-      ...process.env,
-      TMPDIR: runScratch,
-    });
+  }
+  if (mode === "local-cli") {
+    await exec(
+      process.execPath,
+      [
+        join(
+          scratch,
+          "collector/enablement/timing/journey/native/local-cli-guest.ts",
+        ),
+        app,
+        scratch,
+        out,
+        libs,
+      ],
+      430000,
+    );
+  } else if (mode === "settings") {
+    await exec(process.execPath, [files("settings.ts"), appDir, out], 80000);
+  } else if (mode === "onboarding") {
+    await exec(
+      process.execPath,
+      [
+        join(scratch, "collector/onboarding/enablement/performance.ts"),
+        appDir,
+        config,
+        captures,
+        out,
+      ],
+      120000,
+    );
+    await phase("done");
+  } else {
+    assert((mode === "draw" || mode === "surface") && scene);
+    module = await exec("pactl", [
+      "load-module",
+      "module-null-sink",
+      "sink_name=" + sink,
+      "rate=16000",
+      "channels=1",
+    ]);
+    assert.match(module, /^\d+$/);
+    const surface =
+      mode === "surface" ? await import("./surface.ts") : undefined;
+    const detail = existsSync(files("detail"));
+    if (detail && surface)
+      await surface.enableSurfaceObservers(
+        appDir,
+        out,
+        models,
+        files("preview-model"),
+      );
+    const recorder = launch(["app"]);
     await until(24000, async () =>
       (await captureState().catch(() => undefined))?.value.state?.phase ===
       "idle"
@@ -441,33 +463,38 @@ try {
         await metric(name, "cli-copy", copied.at - started);
       }
     }
-    if (mode === "surface") {
-      await pause(16000);
-      for (const label of ["shortcut-first", "shortcut-repeat"]) {
-        await configFor(true);
-        await put("shortcut-request", label);
-        const active = await until(72000, async () => {
-          const state = await captureState().catch(() => undefined);
-          return state?.value.state?.phase === "recording" ? state : undefined;
-        });
-        const id = active.value.state?.capture_id;
-        assert(typeof id === "string" && /^[a-f0-9]{32}$/.test(id));
-        owned = id;
-        await put(label + "-state.json", active.text);
-        const player = speak(label);
-        await pause(3000);
-        player.kill("SIGTERM");
-        const stopped = await commands(
-          ["capture", "stop", id, "--wait", "--timeout", "15"],
-          20000,
-        );
-        const saved = JSON.parse(stopped) as Status;
-        assert(saved.capture_id === id && saved.status === "saved");
-        await put(label + "-stop.json", stopped);
-        owned = undefined;
-        await unlink(artifact("shortcut-request"));
-        await pause(16000);
-      }
+    if (surface) {
+      await surface.surfaceRecipe({
+        detail,
+        appDir,
+        out,
+        scratch,
+        audio,
+        sink,
+        files,
+        put,
+        configFor,
+        phase,
+        speaker: speak,
+        background,
+        pause,
+        commands,
+        exec,
+        active: async () => {
+          const active = await until(72000, async () => {
+            const state = await captureState().catch(() => undefined);
+            return state?.value.state?.phase === "recording"
+              ? state
+              : undefined;
+          });
+          const id = active.value.state?.capture_id;
+          assert(typeof id === "string" && /^[a-f0-9]{32}$/.test(id));
+          return { text: active.text, id };
+        },
+        own: (id) => {
+          owned = id;
+        },
+      });
     }
     await pause(8000);
     assert(sampler.exitCode === null, "Resource sampler exited early");

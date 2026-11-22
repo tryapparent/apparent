@@ -1,7 +1,7 @@
 import type { Receipt } from "./score.ts";
 import { audit, contractHash } from "./score.ts";
 
-type Part = Partial<Pick<Receipt, "waits" | "resources">> & {
+export type Part = Partial<Pick<Receipt, "waits" | "resources">> & {
   version: string;
 };
 
