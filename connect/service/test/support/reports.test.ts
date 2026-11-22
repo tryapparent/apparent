@@ -55,6 +55,9 @@ test('reports and ordinary captures have independent allowances', async t => {
   await f.db.exec(migration.replaceAll('\n',' '));
   assert.equal((await reserve(report,[{...entry,path:'support/part-1.age'}])).status,400);
   assert.equal((await reserve(report,[entry])).status,200);
+  await f.db.exec((await readFile('.generated/migrations/0018.sql','utf8')).replaceAll('\n',' '));
+  const reserved = () => f.db.prepare('SELECT bytes FROM capture_quota_reservations WHERE account_id=?').bind(owner.id).first();
+  assert.equal((await reserved())?.bytes,480_000_000);
   const excess = '/v1/support-reports/'+'4'.repeat(32)+'/capture';
   assert.equal((await reserve(excess,files.map((part,index)=>({...part,path:`support/part-${index}.age`})))).status,409);
   const account = await f.call('/v1/account',{token:owner.token});
@@ -65,6 +68,7 @@ test('reports and ordinary captures have independent allowances', async t => {
   assert.equal((await reserve(next,[{...entry,path:'recording.mp4'}])).status,200);
   assert.equal((await f.call(existing,{token:owner.token})).status,404);
   assert.equal((await f.db.prepare('SELECT status FROM captures WHERE id=?').bind('2'.repeat(32)).first())?.status,'pending');
+  assert.equal((await reserved())?.bytes,37_000_000);
 });
 
 test('Support can retrieve and expire previously submitted reports', async t => {

@@ -119,3 +119,18 @@ for `0012.sql` and `0013.sql`. Applying migrations is a separate authorized step
 `0014.sql` indexes cleanup and device key lookup queries. Check remaining D1 read
 and write allowance before applying it. Compare query reads in D1 Insights before
 and after. Roll back by dropping only the new indexes and preserving the ledger.
+
+Migration `0018.sql` seeds a per-account quota total from non-deleted library captures.
+The total includes expired captures until cleanup tombstones them. When that
+upper bound fits, admission skips the eviction scan. Otherwise the existing
+live-capture and oldest-prefix rules decide eviction inside the same transaction.
+Old Workers can use the replacement trigger.
+
+Migration `0019.sql` indexes settled cleanup by unpublished attempts and
+captures queued at tombstone time. New Workers use the previous cleanup query
+until the migration is present. Successful upload publication and terminal
+settlement commit together, so successful objects enter neither cleanup workset
+until tombstoned. An unacknowledged publication is left for normal cleanup if the
+file never became visible. Apply migrations separately after checking daily D1
+headroom for both backfills. A Worker rollback can still use the original cleanup
+query against the migrated database.
