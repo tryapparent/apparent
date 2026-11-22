@@ -6,7 +6,7 @@ import {
 } from "react";
 import { Sparkles } from "lucide-react";
 import afloat from "./pond-art/afloat.webp";
-import bob from "./pond-art/motion/afloat.mp4";
+import bob from "./pond-art/motion/afloat-loop.webp";
 import boat from "./pond-art/boat.webp";
 import check from "./pond-art/motion/check.mp4";
 import creased from "./pond-art/fold-creased.webp";
@@ -76,7 +76,7 @@ function BoatLaunch({ fromBox }: { fromBox: boolean }) {
 
   if (stage === "reveal") return <TimedPose src={boat} advance={startLaunch} />;
   if (stage === "afloat") {
-    return <video src={bob} poster={afloat} autoPlay muted playsInline loop />;
+    return <img src={bob} alt="" />;
   }
   return (
     <video

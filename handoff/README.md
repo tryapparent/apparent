@@ -51,16 +51,13 @@ removes all local T3 credentials. Server-side sessions expire normally.
 
 ## Compact recording prompts
 
-Settings › Labs › Compact recording prompts is off by default. Turning it
-on sets `experiments.compactHandoff` in the standard config. The setting is
-read during bundle finalization. Copy, paste and T3 send use the format saved
-with the bundle, so the prompt still matches its images after a toggle.
+New recordings save timestamp labels with their keyframes. Copy, paste and T3
+send use those labels in compact prompts so the timestamps match the images.
 
 The format puts the timeline before the inspection command, with one line
 per timestamp. It keeps the setup link at the GitHub repository root and
 honors the Agents video preference. Local paths keep a short transfer cue.
-Existing recordings keep their original format. Turn off the Labs switch to
-return to numbered handoffs for newly saved recordings.
+Existing recordings keep their original frame labels.
 
 Record stores one display label per frame and uses it for the full and cropped
 images, contact sheets and detailed inspection. Frames in the same second use
@@ -77,7 +74,6 @@ visible. The raw timeline remains available through `apparent inspect --json`.
 
 ## Transcript-only handoff
 
-The separate Labs switch is off by default and applies when a handoff is prepared.
 A recording with speech and no detected visual activity sends the transcript
 by itself. Pointer movement, clicks, scrolling, ink, notes and scene changes
 keep the full handoff. A missing transcript or a timed CLI capture without

@@ -19,6 +19,9 @@
       {
         "config": "record/storage/tsconfig.json",
         "package": "@apparent/record-storage"
+      },
+      {
+        "config": "record/storage/tsconfig.json"
       }
     ]
   },

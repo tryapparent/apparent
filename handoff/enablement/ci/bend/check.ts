@@ -52,7 +52,10 @@ await bendScratch(async (scratch) => {
   );
   assert.deepEqual(
     JSON.parse(
-      readFileSync(join(root, "handoff/pure/transcript-only.json"), "utf8"),
+      readFileSync(
+        join(root, "handoff/pure/transcript/transcript-only.json"),
+        "utf8",
+      ),
     ),
     JSON.parse(
       run(
@@ -62,8 +65,8 @@ await bendScratch(async (scratch) => {
           "-e",
           `
       import policy from "./transcript-only.mjs";
-      console.log(JSON.stringify(Array.from({length: 8}, (_, bits) =>
-        policy.transcript_only(...[1, 2, 4].map(flag => Boolean(bits & flag))))));
+      console.log(JSON.stringify(Array.from({length: 4}, (_, bits) =>
+        policy.transcript_only(...[1, 2].map(flag => Boolean(bits & flag))))));
     `,
         ],
         scratch,
