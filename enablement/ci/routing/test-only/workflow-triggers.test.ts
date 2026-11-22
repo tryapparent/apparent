@@ -121,7 +121,6 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
   for (const path of [
     "record/completion/src/copy-admission.bend",
     "record/completion/src/policy.ts",
-    "record/pill/whiteboard/whiteboard-edit.bend",
     "record/enablement/ci/bend/build.ts",
     "shared/enablement/bend/toolchain.ts",
     ".github/workflows/stream-record.yml",

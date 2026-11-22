@@ -30,6 +30,11 @@
     "capture/desktop/ui/frontend/src/onboarding/wispr/motion.ts"
   ],
   "paths": [
+    "onboarding/enablement/ci/inputs.json",
+    "onboarding/host/actions.ts",
+    "onboarding/host/projection.ts",
+    "composition/onboarding/src/host.ts",
+    "composition/onboarding/src/place.ts",
     "onboarding/renderer/package.json",
     "onboarding/host/wispr.ts",
     "onboarding/host/wispr-native.ts",

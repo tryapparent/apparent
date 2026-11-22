@@ -14,8 +14,6 @@ const targets: Target[] = [
       "enablement/build_version.rs",
       "enablement/native-build/",
       "record/shortcuts/",
-      "record/pill/whiteboard/whiteboard-edit.bend",
-      "record/pill/whiteboard/build.ts",
       "record/enablement/shortcuts/",
       "engine/native/input/",
       "record/enablement/ci/bend/push-to-talk.ts",
