@@ -23,6 +23,31 @@ await bendScratch(async (destination) => {
     import assert from "node:assert/strict";
     import policy from "./mac-updates.mjs";
     import actions from "./release-action.mjs";
+    import updates from "./linux-updates.mjs";
+    const list = items => items.reduceRight((tail, head) => ({ $: "Con", head, tail }), { $: "Nil" });
+    const release = (index, tag, version, arch, prerelease = false, date = "2026-11-01") => {
+      const name = "Apparent-" + version + "-linux-" + arch + ".AppImage";
+      return {
+        $: "Release", index, tag, draft: false, prerelease, published: { $: "Some", value: date },
+        assets: list([{ $: "Asset", index: 0, name }, { $: "Asset", index: 1, name: name + ".sha256" }]),
+      };
+    };
+    const tag = byte => "linux-main-v2-" + byte.repeat(40);
+    const history = list([
+      release(0, "v2.9.0", "2.9.0", "x86_64"),
+      release(1, "v2.10.0", "2.10.0", "x86_64"),
+      release(2, "v3.0.0", "3.0.0", "aarch64"),
+      release(3, "v4294967296.0.0", "4294967296.0.0", "x86_64"),
+      release(4, tag("a"), "2.10.0", "aarch64", true, "2026-11-03"),
+      release(5, tag("b"), "3.0.0", "aarch64", true, "2026-11-02"),
+      release(6, tag("g"), "2.10.0", "aarch64", true, "2026-11-04"),
+    ]);
+    assert.deepEqual(updates.select_release("stable", "x86_64", history).value,
+      { $: "Selection", release: 1, image: 0, checksum: 1 });
+    assert.equal(updates.select_release("stable", "aarch64", history).value.release, 2);
+    assert.equal(updates.select_release("main", "aarch64", history).value.release, 4);
+    assert.equal(updates.select_release("main", "x86_64", history).$, "None");
+    assert.equal(updates.needs_channel_release("stable", "v2.10.0", true, "main", "v2.10.0", "", false), true);
     for (const mac of [false, true])
       for (const nightly of [false, true])
         assert.equal(policy.show_nightly_download(mac, nightly), mac && !nightly);
