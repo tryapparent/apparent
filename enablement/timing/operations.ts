@@ -1,5 +1,6 @@
 /** Static inspection only: never evaluate tool arguments or historical commands. */
 type Token = {value: string; literal?: boolean; dynamic?: boolean};
+type ShellWord = {value: string; dynamic?: boolean};
 
 function tokens(source: string): Token[] {
   const out: Token[] = [];
@@ -59,19 +60,34 @@ function heredocEnd(source: string, start: number, {delimiter, quoted, stripTabs
   return -1;
 }
 
-function commandOperation(words: string[]): string {
-  while (words.length && (/^[\w]+=.*/.test(words[0]) || /^(env|sudo|command|exec|timeout)$/.test(words[0]) || /^\d+[smh]?$/.test(words[0]))) words = words.slice(1);
-  const name = (words[0] ?? '').split('/').pop() ?? '', args = words.slice(1);
+function commandOperation(words: ShellWord[]): string {
+  while (words.length && /^(?:\w+=|(?:env|sudo|command|exec|timeout|\d+[smh]?)$)/.test(words[0].value)) words = words.slice(1);
+  const [command, ...args] = words;
+  const name = command?.value.split('/').pop() ?? '';
   if (!name || /^(then|do|done|fi|else|true|false|set|export|umask)$/.test(name)) return 'shell control';
-  if (name === 'git') return args[0] === 'push' ? 'verification/push' : /^(commit|merge|rebase|cherry-pick|switch|checkout|add|restore|reset)$/.test(args[0]) ? 'Git integration/editing' : 'Git inspection';
-  if (name === 'gh') return args[0] === 'run' && args[1] === 'watch' ? 'CI observation' : 'CI/PR operations';
+  if (name === 'git') {
+    let index = 0;
+    while (args[index]?.value === '-c') {
+      const setting = args[index + 1];
+      if (args[index].dynamic || setting?.dynamic ||
+          !/^[a-z0-9-]+\.(?:[^\0\r\n=]*\.)?[a-z][a-z0-9-]*=/i.test(setting?.value ?? '')) return 'unknown';
+      index += 2;
+    }
+    const {value: verb = '', dynamic} = args[index] ?? {};
+    if (index && (dynamic || !/^[a-z][a-z0-9-]*$/.test(verb))) return 'unknown';
+    if (verb === 'push') return 'verification/push';
+    if (/^(commit|merge|rebase|cherry-pick|switch|checkout|add|restore|reset)$/.test(verb)) return 'Git integration/editing';
+    return 'Git inspection';
+  }
+  if (name === 'gh') return args[0]?.value === 'run' && args[1]?.value === 'watch' ? 'CI observation' : 'CI/PR operations';
   if (name === 'cargo') return 'Rust build/test';
   if (name === 't3-build') return 'build/test runner';
   if (/^(node|bun|npm|npx|pnpm|yarn|python3?|bash|sh)$/.test(name)) {
-    if (args.some(a => /local-tests\/execution\/push\.[cm]?ts$|pre-push/.test(a))) return 'verification/push';
-    if (args.some(a => /gh_owned_wait|main-watch/.test(a))) return 'CI observation';
-    if (args.some(a => /verification\.py$/.test(a)) && args.includes('--run')) return 'verification/push';
-    if (args.some(a => /^(test|build|ci|install|--test)$/.test(a))) return 'JavaScript/package build/test';
+    const values = args.map(({value}) => value);
+    if (values.some(a => /local-tests\/execution\/push\.[cm]?ts$|pre-push/.test(a))) return 'verification/push';
+    if (values.some(a => /gh_owned_wait|main-watch/.test(a))) return 'CI observation';
+    if (values.some(a => /verification\.py$/.test(a)) && values.includes('--run')) return 'verification/push';
+    if (values.some(a => /^(test|build|ci|install|--test)$/.test(a))) return 'JavaScript/package build/test';
     return 'script execution (purpose unresolved)';
   }
   if (/^(rg|grep|sed|cat|head|tail|cut|sort|uniq|awk|less|jq|wc|find|ls|stat|du|readlink|sha256sum|shasum|file|which|pwd)$/.test(name)) return 'source/artifact inspection';
@@ -104,29 +120,40 @@ export function shellOperations(source: string): string[] {
   if (observer && /^rc=0; for id in(?: [1-9]\d*)+; do gh run watch "\$id" -R [\w-]+\/[\w.-]+ --exit-status --compact --interval [1-9]\d* \|\| rc=1; done; exit "\$rc"$/.test(observer[1])) {
     return ['CI observation'];
   }
-  // Quotes are words, not executable source. Shell operators delimit actual commands.
   const pending: Heredoc[] = [];
-  const commands: {words:string[]; write:boolean}[] = [];
+  const commands: {words:ShellWord[]; write:boolean}[] = [];
   const prelude = /[ \t]*(?:[A-Za-z_]\w*=\$\((mktemp) -d \/tmp\/apparent-dev-[A-Za-z0-9][\w-]*-XXXXXX\)|test "\$\(git rev-parse origin\/main\)" = "\$\(git rev-parse HEAD\^\)"|test -z "\$\(git status --porcelain\)")[ \t]*(?=\n|$)/y;
-  let words: string[] = [], word = '', quote = '', write = false;
-  const flushWord = () => {if (word) {words.push(word); word = '';}};
+  let words: ShellWord[] = [], word = '', quote = '', write = false;
+  let dynamic = false, quoted = false;
+  const flushWord = () => {
+    if (word || quoted) words.push({value: word, dynamic});
+    word = '';
+    dynamic = false;
+    quoted = false;
+  };
   const flush = () => {flushWord(); if (words.length) commands.push({words,write}); words = []; write = false;};
   for (let i = 0; i < source.length; i++) {
-    if (!quote && !word && !words.length && (i === 0 || source[i - 1] === '\n')) {
+    if (!quote && !word && !quoted && !words.length && (i === 0 || source[i - 1] === '\n')) {
       prelude.lastIndex = i;
       const match = prelude.exec(source);
       if (match) {
-        commands.push({words: [match[1] ?? 'git'], write: false});
+        commands.push({words: [{value: match[1] ?? 'git'}], write: false});
         i = prelude.lastIndex - 1;
         continue;
       }
     }
     const c = source[i];
-    if (c === '\\' && quote !== "'") {word += source[++i] ?? ''; continue;}
+    if (c === '\\' && quote !== "'") {
+      const escaped = source[++i];
+      if (escaped === undefined || escaped === '\n' || (quote === '"' && !'$`"\\'.includes(escaped))) dynamic = true;
+      word += escaped ?? '';
+      continue;
+    }
     if (quote !== "'" && (c === '`' || (c === '$' && /^\$(?:\\\n)*\(/.test(source.slice(i))))) return ['unknown'];
+    if ((c === '$' && quote !== "'") || (!quote && '*?[{}~()'.includes(c))) dynamic = true;
     if (quote) {if (c === quote) quote = ''; else word += c; continue;}
-    if (c === '"' || c === "'") {quote = c; continue;}
-    if (c === '#' && !word) {while (i + 1 < source.length && source[i + 1] !== '\n') i++; continue;}
+    if (c === '"' || c === "'") {quote = c; quoted = true; continue;}
+    if (c === '#' && !word && !quoted) {while (i + 1 < source.length && source[i + 1] !== '\n') i++; continue;}
     if (c === '\n' && pending.length) {
       flush();
       for (const heredoc of pending) {
@@ -138,7 +165,7 @@ export function shellOperations(source: string): string[] {
     }
     if (c === '>' || c === '<') {
       if (c === '>') write = true;
-      if (/^\d+$/.test(word)) word = ''; else flushWord();
+      if (/^\d+$/.test(word) && !quoted) word = ''; else flushWord();
       if (source.startsWith('<<', i) && !source.startsWith('<<<', i)) {
         const header = source.slice(i).match(/^<<(-?)[ \t]*(['"]?)([\w-]+)\2(?=[ \t\n;|&<>]|$)/);
         if (!header) return ['unknown'];
@@ -146,7 +173,6 @@ export function shellOperations(source: string): string[] {
         i += header[0].length - 1;
         continue;
       }
-      // Redirection destinations and descriptor duplication are not commands.
       const redirection = source.slice(i).match(/^[<>]+-?[ \t]*(&\d+|"(?:\\[^\n]|[^"\\\n])*"|'[^'\n]*'|[^\s;&|'"]+)?/);
       if (redirection) {
         const target = redirection[1] ?? '';
@@ -161,7 +187,7 @@ export function shellOperations(source: string): string[] {
   }
   flush();
   if (quote || pending.length) return ['unknown'];
-  return commands.map(({words,write}) => write && /^(cat|printf|echo)$/.test(words[0]) ? 'file/artifact management' : commandOperation(words));
+  return commands.map(({words,write}) => write && /^(cat|printf|echo)$/.test(words[0].value) ? 'file/artifact management' : commandOperation(words));
 }
 
 export function operations(tool: string, source: string): {operations:string[]; batched:boolean} {
