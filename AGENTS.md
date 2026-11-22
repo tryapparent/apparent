@@ -50,6 +50,7 @@ Use authenticated `gh` and the [issue traceability contract](shared/enablement/i
 
 ## Safety and resources
 
+- Draft `apparent feedback` for even minor friction or workarounds, continue the task, and ask once at handoff before sending the sanitized drafts.
 - Keep private captures, transcripts, credentials and personal data out of public artifacts. Use synthetic or sanitized evidence. Preserve real data and other writers’ work. Clean up only identified test artifacts. Ask before ambiguous or destructive deletion, provider-setting changes or contacting people.
 - Use `apparent copy <bundle>` for clipboard handoff. Sending a capture to a person, organization or session requires permission. Search existing issues before filing reports.
 - Never reset Kit’s real TCC grants, wake or flash Studio displays, record or benchmark its real screen, play test audio on Kit’s Macs or post tests to a real OpenCode session. Use approved isolated environments and the [screen safety gate](capture/desktop/scripts/perf/screen-guard.sh).
