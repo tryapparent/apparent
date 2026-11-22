@@ -18,7 +18,16 @@ const read = (command: string, args: string[]) =>
 const base =
   "public.ecr.aws/amazonlinux/amazonlinux@sha256:3f018977be7a3473a0a473ed105b244b8bdec8683ecb24962f675db23017137b";
 const toolchain = "1.99.1";
-const recipe = String.raw`FROM ${base}
+const recipe = String.raw`FROM ${base} AS rust
+
+ENV CARGO_HOME=/opt/cargo RUSTUP_HOME=/opt/rustup
+ENV PATH=/opt/cargo/bin:$PATH
+RUN curl -fsS https://sh.rustup.rs -o /tmp/rustup-init.sh \
+    && sh /tmp/rustup-init.sh -y --profile minimal --default-toolchain ${toolchain} --no-modify-path \
+    && chmod -R a+rX /opt/rustup /opt/cargo \
+    && rm /tmp/rustup-init.sh
+
+FROM ${base}
 
 RUN dnf -y --setopt=install_weak_deps=False install \
     gcc gcc-c++ clang cmake ninja-build make pkgconf-pkg-config git tar gzip xz unzip zip \
@@ -27,13 +36,10 @@ RUN dnf -y --setopt=install_weak_deps=False install \
     dbus-devel gstreamer1-devel gstreamer1-plugins-base-devel nodejs22 patchelf \
     && dnf clean all \
     && ln -s "$(command -v node-22 || command -v node)" /usr/local/bin/node
-
+COPY --from=rust /opt/cargo /opt/cargo
+COPY --from=rust /opt/rustup /opt/rustup
 ENV CARGO_HOME=/opt/cargo RUSTUP_HOME=/opt/rustup
 ENV PATH=/opt/cargo/bin:$PATH
-RUN curl -fsS https://sh.rustup.rs -o /tmp/rustup-init.sh \
-    && sh /tmp/rustup-init.sh -y --profile minimal --default-toolchain ${toolchain} --no-modify-path \
-    && chmod -R a+rX /opt/rustup /opt/cargo \
-    && rm /tmp/rustup-init.sh
 `;
 
 const [directory, appImage] = process.argv.slice(2);
