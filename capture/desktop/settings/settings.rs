@@ -1172,17 +1172,18 @@ impl Session {
                 Err(error) => crate::capture::engine::runtime::apparent_log(format!("Settings fallback: {error:#}")),
             }
         }
-        let transport = if cfg!(not(target_os = "macos")) {
+        #[cfg(not(target_os = "macos"))]
+        let transport = {
             let (sender, receiver) = flume::unbounded();
-            crate::capture::desktop::settings::settings_window::request_open(receiver, pane, events);
+            super::settings_window::request_open(receiver, pane, events);
             Transport::InProcess(Some(sender))
-        } else {
-            Self::spawn_helper(pane, events)?
         };
+        #[cfg(target_os = "macos")]
+        let transport = Self::spawn_helper(pane, events)?;
         Ok((transport, false))
     }
 
-    /// `apparent-helper settings`, reading its actions off stdout.
+    #[cfg(target_os = "macos")]
     fn spawn_helper(
         pane: Option<Pane>,
         events: std::sync::Arc<dyn Fn(Event) + Send + Sync>,
