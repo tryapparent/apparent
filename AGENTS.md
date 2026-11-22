@@ -9,7 +9,7 @@ Apparent records screen, voice, cursor, clicks and ink so a human can point, tal
 - Persist user settings and feature flags in `~/.config/apparent/config.json`, preserving unrelated keys and secrets. Document when file edits take effect, reconcile OS-owned effects, and discover active capture state before restart/change. A saved preference alone does not prove an OS permission or registration applied.
 - Share user-facing behavior across macOS and Linux; adapters supply OS mechanics. Inspect both consumers when changing shared behavior and document real platform differences.
 - Desktop is a fast capture-and-handoff tool: no desktop review workspace; conventional UI belongs mainly in Settings. The recording-sharing workspace belongs in Connect. Minimize stop-to-paste and stop-to-watch delays; distinguish a copied link from a recording ready to watch.
-- Ship new user-facing features enabled by default unless explicitly asked for an opt-in experiment. Preserve consent and permission gates; this does not enable existing experiments.
+- Implement new ideas and feature explorations as default-off features in Settings → Labs. Preserve consent and permission gates.
 
 ## Architecture and migration
 
