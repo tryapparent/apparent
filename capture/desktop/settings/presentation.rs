@@ -126,7 +126,6 @@ pub(super) fn admits(pane: Pane, action: &Action) -> bool {
             matches!(action, Action::RecordingMeter { .. })
             || matches!(action, Action::RecordingPreference { key, value, .. } if super::recording_key(key, value)))
         || pane == Pane::Permissions && matches!(action, Action::PermissionAction { request, .. } if *request > 0)
-        || pane == Pane::Storage && matches!(action, Action::ShowCaptures)
         || pane == Pane::General && (
             matches!(action, Action::RecordShortcut { .. } | Action::Shortcut { .. } | Action::CancelShortcut | Action::ResetShortcut { .. } | Action::ClearShortcut { .. })
             || matches!(action, Action::Set { key, value }
@@ -320,7 +319,6 @@ mod capability_tests {
     fn pane_actions_keep_their_owner_after_general_labs_integration() {
         let panes = [Pane::General, Pane::Recording, Pane::Storage, Pane::Permissions, Pane::Agents, Pane::Labs, Pane::About];
         for (wire, owners) in [
-            (r#"{"action":"show-captures"}"#, vec![Pane::Storage]),
             (r#"{"action":"check-for-updates"}"#, vec![Pane::About]),
             (r#"{"action":"labs-preference","request":1,"setting":"t3","enabled":true}"#, vec![]),
             (r#"{"action":"set","key":"launchAtLogin","value":true}"#, vec![Pane::General]),
