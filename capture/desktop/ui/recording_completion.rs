@@ -121,7 +121,9 @@ pub(in crate::capture::desktop) fn finalize(
             None,
             activity,
             None,
-            lip_input.map(|input| input.transcript(duration_ms)),
+            lip_input.map(|input| {
+                input.transcript(duration_ms, crate::capture::desktop::workflow::error_reporting::report_lipflow_timeout)
+            }),
         )
     });
     (finalized, duration_ms)
