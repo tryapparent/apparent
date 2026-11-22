@@ -27,6 +27,7 @@ export const linuxDrivers = new Set(['capture-smoke.py', 'gui-vm.py', 'gui-vm-re
 const webAssets = new Set(['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.png',
   'hosted/agent-reading-v4.png', 'fonts/HostGrotesk-Variable.ttf', 'brand/apparent-wordmark.svg']
   .map(path => 'public/site/public/assets/' + path));
+const platformOwners = owners.filter(owner => owner !== 'engine-media');
 const frontend = 'capture/desktop/ui/frontend/';
 const onboarding = JSON.parse(readFileSync(new URL('../../../onboarding/enablement/ci/inputs.json', import.meta.url), 'utf8')) as {
   pure: string[]; legacy: string[]; retired: string[]; paths: string[]; prefix: string;
@@ -53,18 +54,16 @@ export function onboardingInput(path: string): boolean {
 }
 function directConsumers(path: string): readonly Owner[] {
   if (documentationOnlyPath(path)) return [];
-  if (branchCleanupInput(path)) return ['tooling'];
-  if (admissionTooling(path)) return ['tooling'];
+  if (branchCleanupInput(path) || admissionTooling(path)) return ['tooling'];
   if (desktopPackagingInputs.has(path)) return ['capture', 'engine', 'desktop', 'capture-tools', 'client-foreground'];
   if (path.startsWith('engine/diagnostics/')) return ['capture'];
   if (desktopPaths.some(prefix => path.startsWith(prefix))) return ['capture', 'engine', 'desktop'];
   if (path.startsWith('engine/')) return affectsEngine(path) ? ['engine-media'] : [];
   if (independent.includes('!' + path)) return ['tooling'];
-  if (independentInputs.has(path)) return owners.filter(owner => owner !== 'engine-media');
+  if (independentInputs.has(path)) return platformOwners;
   if (path.startsWith('enablement/ci/') || path === 'enablement/local-tests/run.ts' || path.startsWith('.github/actions/ubuntu-apt/')) return owners;
   if (portableForegroundInputs.has(path)) return ['client-foreground'];
-  if (onboardingPureInputs.has(path) || onboardingRendererTestInputs.has(path)) return ['desktop', 'onboarding'];
-  if (shortcutConflictInput(path)) return ['desktop', 'onboarding'];
+  if (onboardingPureInputs.has(path) || onboardingRendererTestInputs.has(path) || shortcutConflictInput(path)) return ['desktop', 'onboarding'];
   if (path.startsWith(frontend + 'tests/onboarding/') &&
       (/\.test\.ts$/.test(path) || ['package.json','package-lock.json','tsconfig.json'].some(name => path.endsWith('/' + name)))) return ['onboarding'];
   if (/^(capture\/desktop\/ui\/frontend\/src\/onboarding|onboarding\/renderer)\/.*\.(tsx|css)$/.test(path) ||
@@ -73,12 +72,12 @@ function directConsumers(path: string): readonly Owner[] {
   if (publicMarkdown.has(path) && path !== 'capture/agent/skills/apparent/SKILL.md') return ['public'];
   if (path === 'hermes/skills/recordings/SKILL.md') return ['hermes'];
   if (path === 'capture/agent/skills/apparent/SKILL.md') return ['capture', 'engine', 'public'];
-  if (/(^|\/)(AGENTS|SKILL|CLAUDE|GEMINI)\.md$/i.test(path) && !['capture/', 'connect/', 'public/', 'hermes/', 'record/'].some(root => path.startsWith(root))) return owners.filter(owner => owner !== 'engine-media');
+  if (/(^|\/)(AGENTS|SKILL|CLAUDE|GEMINI)\.md$/i.test(path) && !['capture/', 'connect/', 'public/', 'hermes/', 'record/'].some(root => path.startsWith(root))) return platformOwners;
   const native = /\.(rs|swift|metal|c|cc|cpp|h|mm)$/.test(path) || /(^|\/)Cargo\.(toml|lock)$/.test(path);
   if (/^record\/(?:storage|completion|capture-request|transcription)\/(?:src\/.*\.ts|test\/.*\.test\.ts|package(?:-lock)?\.json|tsconfig(?:\.build)?\.json)$/.test(path) ||
       path === 'record/storage/build.ts') return ['desktop', 'capture'];
-  if (path === hostedBrowserFixture) return ['public', 'web'];
-  if (path.startsWith('public/')) return webAssets.has(path) ? ['public', 'web'] : ['public'];
+  if (path === hostedBrowserFixture || webAssets.has(path)) return ['public', 'web'];
+  if (path.startsWith('public/')) return ['public'];
   const connect = connectConsumers(path, native);
   if (connect) return connect;
   if (path.startsWith('capture/agent/setup/')) return ['capture', 'engine', 'hermes'];
@@ -88,7 +87,8 @@ function directConsumers(path: string): readonly Owner[] {
   if (/^(hermes\/|\.github\/workflows\/hermes\.yml$)/.test(path)) return ['hermes'];
   if (linuxDrivers.has(path)) return ['capture-tools'];
   if (path.startsWith(frontend + 'src/hermes/')) return ['desktop', 'capture', 'hermes'];
-  if (path.startsWith(frontend) || /^composition\/(quit|pill)\//.test(path)) return ['desktop', 'capture'];
+  if (path.startsWith(frontend) || /^composition\/(quit|pill)\//.test(path) ||
+      /^agent\/(zoom\/|enablement\/ci\/bend\/(build\.ts|modules\.json)$)/.test(path)) return ['desktop', 'capture'];
   if (path.startsWith('capture/desktop/scripts/native/foreground/')) return ['capture', 'engine', 'desktop', 'capture-tools'];
   if (/^capture\/(desktop|agent)\/scripts\//.test(path)) return ['capture', 'engine', 'capture-tools'];
   if (path.startsWith('capture/desktop/')) return ['desktop', 'capture', 'engine', 'capture-tools'];
@@ -119,7 +119,7 @@ export function consumers(path: string): readonly Owner[] {
   return owners.filter(owner => selected.includes(owner) && (owner !== 'engine-media' || affectsEngine(path)));
 }
 export function selectedOwners(paths: string[] | null): Owner[] {
-  if (!paths?.length) return owners.filter(owner => owner !== 'engine-media');
+  if (!paths?.length) return platformOwners;
   const selected = new Set(paths.flatMap(path => [...consumers(path)]));
   return owners.filter(owner => selected.has(owner));
 }

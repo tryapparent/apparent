@@ -63,6 +63,8 @@ export function checkNativeInputs(root: string, platform = process.platform): st
     'capture/desktop/ui/frontend/electron/record-completion/package.json',
     ...recordMediaFiles.map(name => 'capture/desktop/ui/frontend/electron/record-media/' + name),
     'capture/desktop/ui/frontend/electron/agent-media/worker.js',
+    'capture/desktop/ui/frontend/electron/agent-media/zoom-worker.mjs',
+    'capture/desktop/ui/frontend/electron/agent-media/zoom-plan.mjs',
     'capture/desktop/ui/frontend/electron/agent-media/policy.js',
     'capture/desktop/ui/frontend/electron/agent-media/range-worker.js',
     'capture/desktop/ui/frontend/electron/agent-media/range-policy.js',

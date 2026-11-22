@@ -1530,6 +1530,7 @@ impl ApparentCoordinator {
         let note_receipt = self.note_ui.as_ref().map(workflow::notes::Session::saved_note_receipt);
         let notes_finished = self.note_ui.take().map(workflow::notes::Session::finish);
         let (events, strokes) = self.telemetry.finish_session();
+        let paper_time = rec.elapsed_ms();
         let bundle_dir = rec.bundle_dir;
         let target = rec.target;
         let source = rec.source;
@@ -1548,7 +1549,6 @@ impl ApparentCoordinator {
         cx.notify();
         if matches!(source, CaptureSource::Lab) {
             self.whiteboard.borrow_mut().close();
-            let duration_ms = rec.started.elapsed().as_millis() as u64;
             let wait = Duration::from_secs_f32(lab::PROCESSING_S / motion::time_scale());
             cx.spawn(async move |entity, cx| {
                 cx.background_executor().timer(wait).await;
@@ -1556,7 +1556,7 @@ impl ApparentCoordinator {
                     if !coord.accepts_capture_result(generation) {
                         return;
                     }
-                    coord.apply_pill_event(PillEvent::CaptureSaved { recovery: false, text: None, frame_count: 6, duration_ms });
+                    coord.apply_pill_event(PillEvent::CaptureSaved { recovery: false, text: None, frame_count: 6, duration_ms: paper_time });
                     cx.notify();
                 });
             })
@@ -1564,7 +1564,7 @@ impl ApparentCoordinator {
             return;
         }
 
-        let final_whiteboard = self.whiteboard.borrow_mut().finish(cx);
+        let final_whiteboard = self.whiteboard.borrow_mut().finish(cx, paper_time);
 
         self.stopping_source = Some(generation);
         let (source_released, released) = flume::bounded(1);

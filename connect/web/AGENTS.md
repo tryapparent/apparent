@@ -1,24 +1,22 @@
 # Connect web ownership
 
-This package owns browser account, auth entry, device consent and their presentation.
-Only edit `connect/web/**` for the extraction slice. Do not change the running app,
-legacy site, API service, deployment composition or native capture code.
+This package owns the browser account, sign-in entry, device consent and shared
+link management. The Connect Worker serves its production routes. CI composes
+the route artifact with Public for integration checks. Follow the
+[route and composition contract](../docs/hosted-web.md#browser-entry-ownership)
+and the [API contract](../docs/hosted-api.md).
 
-- This is named **migration staging**: legacy `public/site/src/hosted` is still live.
-  Keep copies behavior-identical until integration tests the composed artifact,
-  switches routing, and removes legacy implementation in one reversible change.
-- Browser/backend contract: `../../connect/docs/hosted-api.md`; selected visuals:
-  `../../public/site/docs/hosted-design.md`. No redesign or shared marketing CSS.
-- Run `bun install --frozen-lockfile`, then `npm test`. `bun run build` also works.
-  Use maintained dependencies and the generated Bun lock, not a fabricated npm lock.
-- `dist` is production route-only output. `dist-test` uses an explicitly synthetic
-  loopback API. Never deploy it. Keep test receipts/screenshots outside git via
-  `CONNECT_EVIDENCE=$TMPDIR/<unique-name>`.
-- Never fetch account data during SSR, store credentials in browser storage,
-  serialize CSRF into HTML/props, or log API bodies. Explicit separate consent,
-  credentialed fetch, CSRF and mutation readback must remain intact.
-- Build copies only five approved canonical assets from `../../public/site/public/assets`.
-  Runtime/SSR must never import site implementation. Do not add a root page,
-  sitemap or discovery link. Integration owns the origin router and 404 behavior.
-- Run the artifact and browser checks after every behavior change. Preserve
-  production `dist` when testing. No deployment or live OAuth claim from fixtures.
+- Preserve canonical `/connect` routes, legacy `/hosted` compatibility and device
+  approval queries. Composition owns the origin router and 404 behavior. Keep
+  the artifact route-only with no marketing root, sitemap or discovery link.
+- Use Shared appearance tokens and the five approved Public assets. Keep
+  runtime and SSR independent of Public implementation and marketing CSS.
+- Keep SSR loading-only. Never fetch private account data during SSR, store
+  credentials in browser storage, serialize CSRF into HTML/props or log API
+  bodies. Preserve separate consent, credentialed requests, CSRF and mutation
+  readback.
+- After behavior changes, run `bun install --frozen-lockfile` and `npm test`
+  for artifact and browser checks. Keep the Bun lock authoritative. Follow the
+  [package guide](README.md) for production builds, synthetic test artifacts and
+  evidence. Keep `dist-test` out of deployment. Verify real providers and
+  composed routing separately when affected.
