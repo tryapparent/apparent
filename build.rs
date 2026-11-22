@@ -14,6 +14,9 @@ fn main() {
     record_shortcut_build::compile();
     compile_onboarding_entry_policy();
     emit_recording_permissions();
+    println!("cargo:rerun-if-changed=record/enablement/ci/bend/modules.json");
+    println!("cargo:rerun-if-changed=shared/enablement/bend");
+    emit_native_policy("record", "capture-request/capture-admission", "capture-request/src/capture-admission.bend");
     emit_native_policy("record", "lip-input", "settings/lip-policy.bend");
     emit_native_policy("record", "note-gesture", "notes/double-shift.json");
     emit_native_policy("onboarding", "note-tip", "host/tips/note-tip.json");
@@ -71,7 +74,8 @@ fn emit_native_policy(owner: &str, name: &str, table: &str) {
         .expect("Node 22 is required to generate native policy");
     assert!(output.status.success(), "{name}: {}", String::from_utf8_lossy(&output.stderr));
     let out = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
-    std::fs::write(out.join(format!("{name}.rs")), output.stdout)
+    let file = name.rsplit('/').next().unwrap();
+    std::fs::write(out.join(format!("{file}.rs")), output.stdout)
         .expect("write generated native policy");
 }
 

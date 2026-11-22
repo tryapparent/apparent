@@ -1,5 +1,6 @@
 {
   "modules": [
+    "capture-request/src/capture-admission.bend",
     "completion/src/copy-admission.bend",
     "media/src/assembly/frame-limits.bend",
     "media/src/assembly/frame-label.bend",
@@ -18,6 +19,7 @@
     "storage/src/retention/capacity.bend"
   ],
   "inputs": [
+    "capture-request/",
     "completion/",
     "media/",
     "settings/",

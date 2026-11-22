@@ -367,14 +367,10 @@ impl ApparentCoordinator {
             let _ = request.reply.send(self.agent_captures.inspect(id).to_string());
             return;
         }
-        if request.action.is_some() && request.expired() {
-            let _ = request.reply.send(serde_json::json!({"error": "admission_expired", "state": before}).to_string());
-            return;
-        }
         let outcome = request
             .action
             .as_ref()
-            .map(|(action, id)| self.agent_captures.decide(&before, *action, id));
+            .map(|(action, id)| self.agent_captures.decide(&before, *action, id, request.expired()));
         match (&request.action, outcome) {
             (Some((Action::Stop, _)), Some(Outcome::Stopping)) => {
                 #[cfg(target_os = "linux")]
@@ -385,6 +381,7 @@ impl ApparentCoordinator {
             _ => {}
         }
         let response = match outcome {
+            Some(Outcome::DeadlinePassed) => serde_json::json!({"error": "admission_expired", "state": before}),
             Some(outcome) => {
                 let mut response = self.agent_captures.inspect(&request.action.as_ref().unwrap().1);
                 response["outcome"] = serde_json::json!(outcome);
