@@ -241,7 +241,18 @@ app.whenReady().then(()=>{
     validLip(event,args);lips.finish(event.sender.id,capture,complete===true);
     visibility();
   });
-  session.defaultSession.webRequest.onBeforeRequest((details,reply)=>reply({cancel:!details.url.startsWith('file:')}));
+  ipcMain.handle('pill:lip-preview',async(event,capture,...args)=>{
+    valid(event,args);
+    const [trackingModel,wasm]=await Promise.all([
+      lips.trackingModel(event.sender.id,capture),
+      require('node:fs/promises').readFile(path.join(__dirname,'../../dist/assets/lip-vision.wasm')),
+    ]);
+    return {trackingModel,wasm};
+  });
+  session.defaultSession.webRequest.onBeforeRequest((details,reply)=>{
+    const localLipBlob=details.url.startsWith('blob:') && lips.ownsCamera(details.webContentsId);
+    reply({cancel:!details.url.startsWith('file:')&&!localLipBlob});
+  });
   ipcMain.handle('pill:read',(event,...args)=>{valid(event,args);return current;});
   ipcMain.handle('pill:retry-background-handoff',(event,key,...args)=>{
     valid(event,args);if(current?.phase!=='recording'||typeof key!=='string'||key.length>160)throw Error('Handoff unavailable');

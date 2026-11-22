@@ -127,3 +127,15 @@
     animation:pill-content-in 160ms cubic-bezier(0.2,0,0,1) both;
   }
 }
+
+.pill-lip-camera { position:absolute;width:1px;height:1px;opacity:0;pointer-events:none; }
+.pill-lip-preview:not([hidden]) {
+  display:block;
+  margin:8px auto 0;
+  transform:translateX(-36px);
+  border:1px solid var(--apparent-lilac);
+  border-radius:12px;
+  background:var(--apparent-carbon);
+  pointer-events:none;
+}
+.pill:has(.pill-surface[data-background=true]) .pill-lip-preview { transform:translateX(-14px); }
