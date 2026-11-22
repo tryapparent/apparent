@@ -175,8 +175,10 @@ test("staged Whiteboard renders accepted ink and puts editing behind the parent 
         });
     }
   }
-  await undo.focus();
-  await page.keyboard.press("Enter");
+  await expect(page.getByRole("main")).toBeFocused();
+  await page.keyboard.press(
+    process.platform === "darwin" ? "Meta+z" : "Control+z",
+  );
   await expect(undo).toBeDisabled();
   await reply("undo", blank);
   await expect(canvas.locator("polyline")).toHaveCount(0);

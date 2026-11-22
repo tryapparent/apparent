@@ -43,7 +43,9 @@ function PracticeLesson({ drawing, hasInk, close }: Parameters<Lesson>[0]) {
 }
 
 function ready(node: HTMLElement | null) {
-  if (node) window.apparentWhiteboard.ready();
+  if (!node) return;
+  node.focus({ preventScroll: true });
+  window.apparentWhiteboard.ready();
 }
 
 function Surface({ paper, practice }: { paper: Paper; practice: boolean }) {

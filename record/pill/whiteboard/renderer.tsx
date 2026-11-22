@@ -108,6 +108,7 @@ export function Whiteboard({
   return (
     <main
       ref={ready}
+      tabIndex={-1}
       className="whiteboard"
       style={pen}
       onKeyDown={(event) => {
@@ -156,6 +157,8 @@ export function Whiteboard({
               failed.current
             )
               return;
+            event.preventDefault();
+            event.currentTarget.closest("main")?.focus({ preventScroll: true });
             pointer.current = event.pointerId;
             event.currentTarget.setPointerCapture(event.pointerId);
             draw("begin", event);
