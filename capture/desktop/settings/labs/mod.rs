@@ -3,6 +3,11 @@ use std::path::Path;
 use crate::shared::handoff::{AGENT_CONTEXT, Config};
 const KEY: &str = "localStreamingTranscription";
 const AUTO_PASTE: &str = "autoPasteDraft";
+const ACTIVATE_CONTEXT: [bool; 4] = include!("../../../../record/settings/permissions/agent-context-activation.json");
+
+#[cfg(not(test))]
+#[path = "../../../../engine/accessibility/desktop_access.rs"]
+mod native_access;
 
 #[cfg(target_os = "linux")]
 use crate::capture::desktop::settings::shortcut::{PUSH_TO_TALK, push_to_talk_supported};
@@ -68,7 +73,7 @@ pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>, setting:
     let Some((key, true)) = key(setting) else {
         return serde_json::json!({"type":"labs-result","request":request,"facts":{"error":"config_write_failed"}});
     };
-    let result = if enabled == Some(true) && (key == AUTO_PASTE && !auto_paste_supported()
+    let mut result = if enabled == Some(true) && (key == AUTO_PASTE && !auto_paste_supported()
         || key == PUSH_TO_TALK && !push_to_talk_supported()) {
         serde_json::json!({"error":"config_write_failed"})
     } else if let Some(on) = enabled {
@@ -76,7 +81,18 @@ pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>, setting:
             Ok(()) => facts(path), Err(_) => serde_json::json!({"error":"config_write_failed"}),
         }
     } else {facts(path)};
+    if result["agentContextSaved"] == true {
+        let index = usize::from(enabled == Some(true)) | (usize::from(key == AGENT_CONTEXT) << 1);
+        result["agentContextAccess"] = serde_json::json!(desktop_access(ACTIVATE_CONTEXT[index]));
+    }
     serde_json::json!({"type":"labs-result","request":request,"facts":result})
+}
+
+#[cfg(not(test))]
+use native_access::desktop_access;
+#[cfg(test)]
+fn desktop_access(activate: bool) -> &'static str {
+    if activate { "activation_requested" } else { "read_only" }
 }
 #[cfg(test)] mod tests {
     use super::*;
@@ -100,6 +116,12 @@ pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>, setting:
         for enabled in [false, true] {
             let response = request(&path, 1, Some(enabled), Some(AGENT_CONTEXT));
             assert_eq!(response["facts"]["agentContextSaved"], enabled);
+            if enabled {
+                assert_eq!(response["facts"]["agentContextAccess"], "activation_requested");
+                assert_eq!(request(&path, 2, None, None)["facts"]["agentContextAccess"], "read_only");
+            } else {
+                assert!(response["facts"].get("agentContextAccess").is_none());
+            }
             assert!(!response.to_string().contains("private"));
             let stored = std::fs::read_to_string(&path).unwrap();
             let saved: serde_json::Value = serde_json::from_str(&stored).unwrap();

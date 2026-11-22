@@ -5,6 +5,7 @@ export type AgentContextPreferenceProps = {
   checked: boolean;
   disabled: boolean;
   saving: boolean;
+  access?: "enabled" | "approval_required" | "disabled" | "unavailable";
   onCheckedChange: (value: boolean) => void;
 };
 
@@ -13,6 +14,7 @@ export function AgentContextPreference({
   checked,
   disabled,
   saving,
+  access,
   onCheckedChange,
 }: AgentContextPreferenceProps) {
   return (
@@ -28,7 +30,7 @@ export function AgentContextPreference({
           disabled={disabled}
           aria-busy={saving}
           aria-labelledby="agent-context-label"
-          aria-describedby="agent-context-help agent-context-limits"
+          aria-describedby="agent-context-help agent-context-limits agent-context-access"
           onCheckedChange={onCheckedChange}
         />
       </div>
@@ -37,9 +39,21 @@ export function AgentContextPreference({
         Start a new recording to collect extra context.
       </p>
       <p id="agent-context-limits">
-        Supported apps can name marked controls on Hyprland. macOS requires
-        Accessibility permission. Component and source details require a local
-        dev page using the Apparent SDK.
+        On Linux, this enables desktop accessibility. It stays on when you turn
+        this switch off. Some apps may need a restart. On macOS, approve
+        Apparent in System Settings. Component and source details require a
+        local dev page using the Apparent SDK.
+      </p>
+      <p
+        id="agent-context-access"
+        role="status"
+        hidden={!checked || access === undefined || access === "enabled"}
+      >
+        {access === "approval_required"
+          ? "Allow Apparent under Privacy & Security → Accessibility to name controls."
+          : access === "disabled" || access === "unavailable"
+            ? "Desktop accessibility is off or unavailable. Visual marks still work."
+            : null}
       </p>
     </section>
   );

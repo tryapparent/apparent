@@ -1,5 +1,8 @@
 import Base
 
+def activate_agent_context(explicit_enable: Bool, context_switch: Bool) -> Bool:
+  Bool.and(explicit_enable, context_switch)
+
 type Status is Data:
   undetermined{}
   denied{}

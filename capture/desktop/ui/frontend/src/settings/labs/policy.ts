@@ -1,10 +1,12 @@
 // Desktop owns which trials are exposed. Native persists only this allowlist.
 export type LabsSetting = 'streaming' | 'autoPaste' | 'pushToTalk' | 'sharing' | 'wisprFlow' | 'dictationFrog' | 'compactHandoff' | 'transcriptOnly' | 'silentPrompt' | 'agentContext' | 'pillDoodles';
+type AgentContextAccess = 'enabled' | 'approval_required' | 'disabled' | 'unavailable';
 type Preferences = {
   saved: boolean | null;
   compactHandoffSaved?: boolean | null;
   transcriptOnlySaved?: boolean | null;
   agentContextSaved?: boolean | null;
+  agentContextAccess?: AgentContextAccess;
   sharingSaved?: boolean | null;
   autoPasteSaved?: boolean | null;
   autoPasteSupported?: boolean;
@@ -22,6 +24,7 @@ export type LabsFacts = Preferences | {
   compactHandoffSaved?: never;
   transcriptOnlySaved?: never;
   agentContextSaved?: never;
+  agentContextAccess?: never;
   pillDoodlesSaved?: never;
   pushToTalkSaved?: never;
   pushToTalkSupported?: never;
@@ -34,6 +37,8 @@ export function facts(value: unknown): LabsFacts {
   if (input.error === 'config_read_failed' || input.error === 'config_write_failed') return {error: input.error};
   if (!savedFlag(input.saved)) throw Error('Invalid Labs preference');
   const result: Preferences = {saved: input.saved};
+  const access = input.agentContextAccess;
+  if (access === 'enabled' || access === 'approval_required' || access === 'disabled' || access === 'unavailable') result.agentContextAccess = access;
   for (const key of ['autoPasteSaved', 'pushToTalkSaved', 'sharingSaved', 'wisprSaved', 'dictationFrogSaved', 'compactHandoffSaved', 'silentPromptSaved','transcriptOnlySaved', 'agentContextSaved', 'pillDoodlesSaved'] as const) {
     if (input[key] === undefined) continue;
     if (!savedFlag(input[key])) throw Error('Invalid Labs preference');

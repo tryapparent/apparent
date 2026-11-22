@@ -26,7 +26,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
    const field=setting==='wisprFlow'?'wisprSaved':setting?`${setting}Saved`:'saved';
    saved[field]=message.enabled;
   }
-  application.stdin.write(JSON.stringify({type:'labs-result',request:message.request,facts:fail?{error:'config_write_failed'}:{...saved,autoPasteSupported:process.platform==='linux',wisprSupported:process.platform==='darwin'}})+'\n');
+  application.stdin.write(JSON.stringify({type:'labs-result',request:message.request,facts:fail?{error:'config_write_failed'}:{...saved,agentContextAccess:'approval_required',autoPasteSupported:process.platform==='linux',wisprSupported:process.platform==='darwin'}})+'\n');
  };
  createInterface({input:application.stdout}).on('line',line=>{
   try{const value=JSON.parse(line);messages.push(value);if(value.action==='agents-preference'){application.stdin.write(JSON.stringify({type:'agents-result',request:value.request,facts:{saved:null,t3Saved:false,t3Configured:false}})+'\n');}if(value.action==='labs-preference'){if(hold)held=value;else reply(value);}}catch{}
@@ -55,6 +55,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
    await trial.focus();await page.keyboard.press('Space');
    await expect(trial).toHaveAttribute('aria-checked','true');await expect(trial).toBeFocused();
   }
+  await expect(page.locator('#agent-context-access')).toContainText('Allow Apparent');
   await page.reload();
   for(const trial of [compact,speech,agentContext,doodles])await expect(trial).toHaveAttribute('aria-checked','true');
   assert.equal(await toggle.locator('.apparent-switch-track').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(229, 229, 234)');

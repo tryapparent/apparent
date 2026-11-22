@@ -14,6 +14,7 @@ declare global {interface Window {apparentLabs: {
 const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', compactHandoff: 'compact-handoff-toggle', transcriptOnly: 'transcript-only-toggle', silentPrompt: 'silent-prompt-toggle', agentContext: 'agent-context-toggle', pillDoodles: 'pill-doodles-toggle'};
 export type LabsExperiment = ComponentType<{
   id: string; checked: boolean; disabled: boolean; saving: boolean;
+  access?: LabsFacts['agentContextAccess'];
   onCheckedChange: (value: boolean) => void;
 }>;
 export type AutoPasteExperiment = ComponentType<React.ComponentProps<LabsExperiment> & {supported: boolean}>;
@@ -85,6 +86,7 @@ export function Labs({frogExperiment: FrogNudge, agentContextExperiment: AgentCo
       <p id="transcript-only-help">Send just the transcript when no screen activity is detected.</p>
     </section>
     {AgentContext && <AgentContext id={controls.agentContext} checked={facts?.agentContextSaved === true}
+      access={facts?.agentContextAccess}
       disabled={busy || !facts || !!facts.error} saving={busy && setting === 'agentContext'}
       onCheckedChange={value => void request(value, 'agentContext')} />}
     <section className="agent-preference">
