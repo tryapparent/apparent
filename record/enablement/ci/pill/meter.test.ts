@@ -56,9 +56,9 @@ test("doodle ink keeps a quiet crawl and fits speech-weight marks inside the pil
     assert.equal(ink.ink_level(200, false), quiet);
     assert.equal(ink.ink_level(200, true), 100);
     assert.equal(ink.ink_speed(quiet), 16);
-    assert.equal(ink.ink_speed(1), 17);
-    assert.equal(ink.ink_speed(speech), 217);
-    assert.equal(ink.ink_speed(100), 413);
+    assert.equal(ink.ink_speed(1), 16);
+    assert.equal(ink.ink_speed(speech), 108);
+    assert.equal(ink.ink_speed(100), 206);
     assert.ok(ink.ink_width(speech) > ink.ink_width(quiet));
     assert.ok(ink.ink_alpha(0, speech) > ink.ink_alpha(0, quiet));
     assert.equal(ink.ink_alpha(ink.ink_lifetime_ms(), speech), 0);
