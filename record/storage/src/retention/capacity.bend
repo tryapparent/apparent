@@ -39,5 +39,8 @@ def choose(+used: Bytes, cap: Bytes, age: Bytes, unchanged: Bytes, +size: Bytes)
 def constrain(max_mb: U32) -> Bool:
   U32.is_le(max_mb, 99999999)
 
+def default_limit_mb(has_retention: Bool) -> U32:
+  Bool.pick(U32, has_retention, 0, 1000)
+
 def warn(has_saved: Bool, +saved: U32, +next: U32) -> Bool:
   Bool.and(Bool.not(U32.is_eq(next, 0)), Bool.or(Bool.not(has_saved), Bool.or(U32.is_eq(saved, 0), U32.is_lt(next, saved))))

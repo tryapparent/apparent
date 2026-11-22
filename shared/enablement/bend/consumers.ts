@@ -32,7 +32,9 @@ export function bendConsumers(path: string) {
     return ["capture", "desktop"] as const;
   if (
     path.startsWith("record/notes/") ||
-    path === "record/enablement/ci/bend/note-gesture.ts"
+    path === "record/enablement/ci/bend/note-gesture.ts" ||
+    path === "record/storage/enablement/ci/bend/storage-default.ts" ||
+    path === "record/storage/src/retention/capacity.bend"
   )
     return ["capture", "desktop"] as const;
   if (path.startsWith("record/pill/renderer/"))

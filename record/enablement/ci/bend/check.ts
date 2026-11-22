@@ -97,11 +97,12 @@ await bendScratch(async (scratch) => {
       capacity.choose(used, limit, old, bytes(0, 599999), size),
       capacity.constrain(99999999), capacity.constrain(100000000),
       capacity.warn(true, 2000, 1000), capacity.warn(true, 1000, 0),
+      [false, true].map(value => capacity.default_limit_mb(value)),
     ]));
   `], proofOutput)), [
     {$:"Choice", trash:true, remaining:{$:"Bytes", hi:0, lo:4294467297}},
     {$:"Choice", trash:false, remaining:{$:"Bytes", hi:1, lo:1}},
-    true, false, true, false,
+    true, false, true, false, [1000, 0],
   ]);
 
   assert.deepEqual(pushToTalkTable(proofOutput), {

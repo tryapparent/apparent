@@ -2,7 +2,26 @@
 use crate::capture::engine::bundle::retention::Policy;
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
-use std::{process::Command, time::Duration};
+use std::{path::Path, process::Command, time::Duration};
+
+pub(crate) const MAX_STORAGE_MB: u32 = 99_999_999;
+include!(concat!(env!("OUT_DIR"), "/storage-default.rs"));
+
+pub(crate) fn storage_limit(config: &serde_json::Value) -> Option<u32> {
+    let retention = config.get("retention");
+    match retention.and_then(|settings| settings.get("maximumMb")) {
+        Some(value) => value.as_u64().and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value <= MAX_STORAGE_MB),
+        None => DEFAULT_STORAGE_LIMIT_MB[usize::from(retention.is_some())],
+    }
+}
+
+pub(crate) fn configured_storage_limit(path: &Path) -> Result<Option<u32>> {
+    let raw = crate::shared::handoff::capture_location::read_raw(path)?;
+    let limit = storage_limit(&raw);
+    ensure!(limit.is_some() || raw["retention"].get("maximumMb").is_none(), "Invalid saved storage limit");
+    Ok(limit)
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
