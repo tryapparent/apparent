@@ -11,6 +11,9 @@ From `public/site`, run `bun install --cwd .. --frozen-lockfile` and `npm run ve
 lockfile. Dependencies resolve from `public/node_modules` for both the site and
 its sibling tooling. No Rust/Connect installation is part of Public verification.
 
+Public CI also uses FFmpeg and FFprobe to render and decode the
+[standalone tutorial](site-build/tutorial/README.md).
+
 `cd/ci/inputs.ts` supplies Public's embedded Markdown, cross-stream fixture and local
 verification command to the existing repository routing/local runner. The central
 router remains the only selection decision. Both workflow entrypoints call the
