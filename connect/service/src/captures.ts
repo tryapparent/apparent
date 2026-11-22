@@ -175,7 +175,7 @@ export async function cleanup(env: Env) {
  // free R2 deletes on bounded circular pages, without stamping every old key.
  const eligible="(c.status='deleted' OR (f.object_key IS NULL AND a.created_at<?))";
  const select="SELECT a.key,a.terminal FROM attempts a JOIN captures c ON c.id=a.capture_id LEFT JOIN files f ON f.object_key=a.key WHERE "+eligible;
- const queued=await stmt(env,"SELECT 1 FROM sqlite_schema WHERE type='table' AND name='capture_cleanup_queue'").first();
+ const queued=await stmt(env,"SELECT 1 FROM pragma_table_info('capture_cleanup_queue') LIMIT 1").first();
  const terminalQuery=queued?`SELECT key,terminal FROM (
   SELECT a.key,a.terminal,a.cleaned_at FROM capture_cleanup_queue AS q
   CROSS JOIN attempts AS a INDEXED BY attempts_cleanup_terminal ON a.capture_id=q.capture_id
