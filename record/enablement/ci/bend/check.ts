@@ -49,14 +49,16 @@ await bendScratch(async (scratch) => {
       `
   import assert from "node:assert/strict";
   import whiteboard from "./whiteboard-edit.mjs";
-  const edit = (action, options = {}) => whiteboard.edit(
+  const effect = (action, options = {}) => whiteboard.edit(
     { $: "Board" + action },
     options.visible ?? true,
     options.active ?? false,
     options.point ?? false,
     options.strokes ?? 0,
     options.points ?? 0,
-  ).$;
+    options.revisions ?? 0,
+  );
+  const edit = (action, options) => effect(action, options).$;
   assert.equal(edit("Open", { visible: false }), "Show");
   assert.equal(edit("Begin", { point: true }), "Start");
   assert.equal(edit("Begin", { point: true, visible: false }), "Ignore");
@@ -69,9 +71,14 @@ await bendScratch(async (scratch) => {
   assert.equal(edit("Move", { active: true }), "Ignore");
   assert.equal(edit("End", { active: true }), "Commit");
   assert.equal(edit("Cancel", { active: true }), "Discard");
-  assert.equal(edit("Undo", { active: true }), "Discard");
-  assert.equal(edit("Undo"), "RemoveLast");
-  assert.equal(edit("Clear", { active: true }), "Erase");
+  assert.equal(edit("Undo", { active: true }), "UndoDraft");
+  assert.equal(edit("Undo", { strokes: 1 }), "UndoStroke");
+  assert.equal(edit("Undo"), "Ignore");
+  assert.equal(edit("Clear", { active: true }), "ClearPaper");
+  assert.equal(edit("Clear", { strokes: 1, visible: false }), "Ignore");
+  assert.equal(edit("Clear"), "Ignore");
+  assert.deepEqual(effect("Undo", { strokes: 2, revisions: 11 }), { $: "UndoStroke", evict: false });
+  assert.deepEqual(effect("Clear", { strokes: 1, revisions: 12 }), { $: "ClearPaper", evict: true });
   assert.equal(edit("Close", { active: true }), "CommitAndHide");
   assert.equal(edit("Close"), "Hide");
   `,

@@ -175,8 +175,6 @@ pub struct View {
     /// How much the captures folder takes, once measured.
     pub captures_size: Option<String>,
     pub captures_dir: CapturesDirView,
-    #[cfg(target_os = "linux")]
-    pub storage: super::storage::View,
     pub permissions: Vec<crate::permission_admission::Row>,
     pub updates: bool,
     pub update_check: UpdateCheck,
@@ -968,8 +966,6 @@ impl Panel {
             retention: retention_view(&policy),
             captures_size: self.captures_size.map(crate::capture::engine::bundle::retention::format_bytes),
             captures_dir: CapturesDirView::new(&config),
-            #[cfg(target_os = "linux")]
-            storage: self.storage.view(&host.config_path()),
             permissions: settings_permissions::rows(self.grants.as_ref(), &self.requested, &config, true).collect(),
             updates: updates_available(),
             update_check: self.update_check.clone(),
@@ -1110,10 +1106,6 @@ fn initial_settings_pane(pane: Option<Pane>) -> Option<Pane> {
     Some(pane.unwrap_or(Pane::General))
 }
 
-pub(super) fn electron_storage(pane: Option<Pane>, enabled: bool) -> bool {
-    enabled && pane == Some(Pane::Storage)
-}
-
 impl Session {
     pub fn open(
         pane: Option<Pane>,
@@ -1149,7 +1141,7 @@ impl Session {
                     }
                 }
                 #[cfg(target_os = "linux")]
-                if n == 0 {
+                if n == 0 && !electron {
                     let result = crate::capture::desktop::workflow::storage_preferences::usage(
                         &crate::shared::handoff::default_config_path(),
                         || alive.load(Ordering::Acquire) && scan.load(Ordering::Acquire) == 0);
@@ -1417,6 +1409,10 @@ impl Session {
                     self.electron = electron;
                     self.last_view.clear();
                     super::presentation::retire(std::mem::replace(&mut self.transport, transport));
+                    #[cfg(target_os = "linux")]
+                    if self.pane == Some(Pane::Storage) {
+                        self.measure_storage(host);
+                    }
                     self.sync(host);
                     return Effect::None;
                 }
@@ -1608,6 +1604,10 @@ impl Session {
             return;
         }
         let mut view = serde_json::to_value(self.panel.view(host)).unwrap_or_default();
+        #[cfg(target_os = "linux")]
+        {
+            view["storage"] = serde_json::to_value(self.panel.storage.view(&host.config_path())).unwrap_or_default();
+        }
         view["type"] = "state".into();
         // Switched from Hex to Apple Speech: get its model now, not at the first capture.
         let speech = crate::capture::engine::runtime::audio::transcription::speech_model::current();

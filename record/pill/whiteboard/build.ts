@@ -16,8 +16,8 @@ export function assembleWhiteboard(compiled: string, destination: string) {
     destination,
     kernel.replace("export default {", "const kernel = {") +
       `
-export function whiteboardEdit(event, visible, active, point, strokes, points) {
-  return JSON.stringify(kernel.edit({ $: "Board" + event }, visible, active, point, strokes, points));
+export function whiteboardEdit(event, visible, active, point, strokes, points, revisions) {
+  return JSON.stringify(kernel.edit({ $: "Board" + event }, visible, active, point, strokes, points, revisions));
 }
 `,
   );

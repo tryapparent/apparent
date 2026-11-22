@@ -17,8 +17,9 @@ type EditEffect is Data:
   Append{}
   Commit{}
   Discard{}
-  RemoveLast{}
-  Erase{}
+  UndoDraft{evict: Bool}
+  UndoStroke{evict: Bool}
+  ClearPaper{evict: Bool}
   Hide{}
   CommitAndHide{}
   CommitAndStart{}
@@ -28,7 +29,7 @@ def begin(+active: Bool, +point: Bool, +strokes: U32) -> EditEffect:
   replace = Bool.pick(EditEffect, U32.is_lt(strokes, 499), CommitAndStart{}, Ignore{})
   Bool.pick(EditEffect, point, Bool.pick(EditEffect, active, replace, fresh), Ignore{})
 
-def drawing(event: Edit, +active: Bool, +point: Bool, +strokes: U32, +points: U32) -> EditEffect:
+def drawing(event: Edit, +active: Bool, +point: Bool, +strokes: U32, +points: U32, +revisions: U32) -> EditEffect:
   match event:
     case BoardBegin{}:
       begin(active, point, strokes)
@@ -40,17 +41,22 @@ def drawing(event: Edit, +active: Bool, +point: Bool, +strokes: U32, +points: U3
     case BoardCancel{}:
       Discard{}
     case BoardUndo{}:
-      Bool.pick(EditEffect, active, Discard{}, RemoveLast{})
+      match active:
+        case True{}:
+          UndoDraft{Bool.not(U32.is_lt(revisions, 12))}
+        case False{}:
+          Bool.pick(EditEffect, U32.is_lt(0, strokes), UndoStroke{Bool.not(U32.is_lt(revisions, 12))}, Ignore{})
     case BoardClear{}:
-      Erase{}
+      evict = Bool.not(U32.is_lt(revisions, 12))
+      Bool.pick(EditEffect, Bool.or(active, U32.is_lt(0, strokes)), ClearPaper{evict}, Ignore{})
     case _:
       Ignore{}
 
-def edit(event: Edit, +visible: Bool, +active: Bool, +point: Bool, +strokes: U32, +points: U32) -> EditEffect:
+def edit(event: Edit, +visible: Bool, +active: Bool, +point: Bool, +strokes: U32, +points: U32, +revisions: U32) -> EditEffect:
   match event:
     case BoardOpen{}:
       Show{}
     case BoardClose{}:
       Bool.pick(EditEffect, active, CommitAndHide{}, Hide{})
     case other:
-      Bool.pick(EditEffect, visible, drawing(other, active, point, strokes, points), Ignore{})
+      Bool.pick(EditEffect, visible, drawing(other, active, point, strokes, points, revisions), Ignore{})
