@@ -232,6 +232,8 @@ pub(crate) fn capture_exclusion_ready(window: Option<u32>, applied: &[u32], scre
     !screen_capture || window.is_some_and(|id| id > 0 && applied.contains(&id))
 }
 
+pub(in crate::capture::desktop) const PILL_DOODLES: &str = "pillDoodles";
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct View {
@@ -244,6 +246,7 @@ pub(crate) struct View {
     pub note_tip: Option<&'static str>,
     pub reduced_motion: bool,
     pub input_waveform: Option<[f32; 24]>,
+    pub doodle_ink: bool,
 }
 
 impl std::ops::Deref for View {
@@ -254,7 +257,19 @@ impl std::ops::Deref for View {
     }
 }
 
+impl Session {
+    fn capture_key(generation: u64) -> String {
+        static BOOT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        format!("{}:{generation}", BOOT.get_or_init(crate::shared::ids::make_bundle_id))
+    }
+}
+
 impl View {
+    fn read_doodles(&mut self, previous: Option<&Self>) {
+        self.doodle_ink = self.phase == "recording" && previous
+            .filter(|view| view.phase == "recording")
+            .map_or_else(|| crate::shared::handoff::experiment(PILL_DOODLES), |view| view.doodle_ink);
+    }
     fn admits_sharing_confirmation(&self, revision: Option<u64>) -> bool {
         self.phase == "completed" && revision == Some(self.revision)
             && self.share_indicator != ShareIndicator::Uploading

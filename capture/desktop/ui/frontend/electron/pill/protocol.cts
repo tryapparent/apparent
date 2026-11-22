@@ -15,6 +15,7 @@ function view(value) {
       !(value.notice == null || typeof value.notice === 'string' && value.notice.length<=120) ||
       !(value.transcript == null || value.phase === 'recording' && ['starting','streaming','failed'].includes(value.transcript.state) && typeof value.transcript.text === 'string' && value.transcript.text.length <= 16384) ||
       typeof value.reducedMotion !== 'boolean' || typeof value.draggable !== 'boolean' ||
+      !(value.doodleInk == null || typeof value.doodleInk === 'boolean') ||
       !Array.isArray(value.actions) || value.actions.length > 10) throw Error('Invalid pill state');
   const seen = new Set();
   const controls = value.actions.map(a => {
@@ -25,6 +26,7 @@ function view(value) {
   });
   return {revision:value.revision,phase:value.phase,clock:value.clock,label:value.label,warning:value.warning,notice:value.notice??null,noteTip:value.noteTip??null,
     shareIndicator:value.shareIndicator??'none',reducedMotion:value.reducedMotion,draggable:value.draggable,inputWaveform:value.inputWaveform??null,noteCount:value.noteCount??0,
+    doodleInk:value.doodleInk===true,
     transcript:value.transcript == null ? null : {state:value.transcript.state,text:value.transcript.text},actions:controls};
 }
 function command(current, revision, action) {

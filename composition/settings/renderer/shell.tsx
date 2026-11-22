@@ -25,6 +25,7 @@ import { General } from "./general";
 import type { ComponentType } from "react";
 import {
   AgentContextPreference,
+  PillDoodles,
   PushToTalk,
   type PushToTalkProps,
   RecordingSection,
@@ -85,6 +86,7 @@ declare module "react" {
       > & {
         pane: string;
         pushToTalkExperiment?: ComponentType<PushToTalkProps>;
+        pillDoodlesExperiment?: typeof PillDoodles;
         autoPasteExperiment?: ComponentType<AutoPasteProps>;
         frogExperiment?: ComponentType<FrogNudgePreferenceProps>;
         agentContextExperiment?: ComponentType<AgentContextPreferenceProps>;
@@ -233,6 +235,7 @@ function Settings() {
           <apparent-settings-pane
             pane={current}
             pushToTalkExperiment={current === "Labs" ? PushToTalk : undefined}
+            pillDoodlesExperiment={current === "Labs" ? PillDoodles : undefined}
             autoPasteExperiment={current === "Labs" ? AutoPaste : undefined}
             agentContextExperiment={AgentContextPreference}
             frogExperiment={
