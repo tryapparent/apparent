@@ -34,7 +34,6 @@ impl InputWarning {
     }
 }
 
-/// Actual captured samples drive health warnings independently of presentation.
 struct InputHealth {
     started: Instant,
     last_sample: Option<Instant>,
@@ -57,7 +56,9 @@ impl InputHealth {
     }
 
     fn sample(&mut self, now: Instant, peak: f32) {
-        self.last_sample = Some(now);
+        if self.last_sample.replace(now).is_none() {
+            crate::capture::desktop::start_metric("microphone_first_sample_ms", self.started);
+        }
         if peak > 0.005 {
             self.last_audible = now;
         }
@@ -185,15 +186,12 @@ enum InputStream {
 }
 
 impl AudioRecorder {
-    /// A read-only view of recorded samples. A repeated count means no new input arrived.
     pub fn input_activity(&self) -> Option<(usize, f32)> {
         let samples = self.samples.try_lock().ok()?;
         let fresh = self.health.try_lock().ok()?.last_sample
             .is_some_and(|last| last.elapsed() < Duration::from_millis(250));
         Some((samples.len(), if fresh { input_level(&samples) } else { 0.0 }))
     }
-    /// Native signal reduction of the captured PCM: 24 overlapping 80 ms RMS
-    /// windows at 40 ms spacing, oldest first. No presentation clock or stream.
     pub fn input_waveform(&self) -> Option<[f32; 24]> {
         let samples = self.samples.try_lock().ok()?;
         let fresh = self.health.try_lock().ok()?.last_sample
@@ -370,12 +368,13 @@ impl AudioRecorder {
         health: Arc<Mutex<InputHealth>>,
     ) -> Result<InputStream> {
         let stream = crate::capture::desktop::linux::microphone::Stream::start(source, move |data| {
-            if let Ok(mut output) = samples.lock() {
+            if !data.is_empty() && let Ok(mut output) = samples.lock() {
                 output.extend_from_slice(data);
-            }
-            let peak = data.iter().map(|value| value.abs()).fold(0.0_f32, f32::max);
-            if let Ok(mut health) = health.lock() {
-                health.sample(Instant::now(), peak);
+                drop(output);
+                let peak = data.iter().map(|value| value.abs()).fold(0.0_f32, f32::max);
+                if let Ok(mut health) = health.lock() {
+                    health.sample(Instant::now(), peak);
+                }
             }
         })?;
         Ok(InputStream::Pulse(stream))

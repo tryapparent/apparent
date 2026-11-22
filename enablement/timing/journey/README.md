@@ -39,7 +39,18 @@ The contract command prints the SHA-256 to embed in each receipt. Set `runner` t
 
 The ledger is a JSON object with `reference` containing two receipts at the same exact control revision and `attempts` containing each experiment in execution order. Each attempt has a stable `hypothesis`, active effort in `seconds`, and either `runs` containing two matched receipts or an `outcome` describing a failed or discarded attempt. Count implementation and benchmark time. Reuse the same hypothesis ID for retries. Use separate IDs for genuinely different ideas.
 
-The evaluator requires complete verified evidence. A v2 receipt uses different endpoints and cannot establish a v3 baseline. Local inspect, zoom, frames, and export have a native collector. The desktop, clipboard and isolated Connect timings come from their owner probes. Supply proven journeys at the documented boundaries, including the physical Finish event and actual screen and mic samples. The audit identifies the missing fields before evaluation.
+The evaluator requires complete verified evidence for the current contract. V4 puts the former window-or-area picker weight into verified live recording. The display chooser is measured inside visible Start and first-live. Earlier contract receipts cannot establish a v4 baseline.
+
+For automatic collection on Clanker, run `node enablement/timing/journey/suite.ts PLAN.json PRIVATE_JOB`. Use a clean checkout at the pinned `revision`, an empty private `/tmp/apparent-dev-…` job, and a pinned plan with these fields.
+
+| Plan fields | Inputs |
+| --- | --- |
+| `revision`, `appImage`, `appImageSha256` | Full Git SHA, absolute AppImage path, and its SHA-256 |
+| `template`, `user` | Qualified Omarchy VM template directory and its test SSH user |
+| `model`, `previewModel` | Pinned local English Parakeet Q4 and Nemotron Q8 files from the Record probe |
+| `chromium`, `connectTarget` | Absolute Chromium executable and private, existing Cargo target directory |
+
+Install frontend and Connect dependencies from their lockfiles. Keep other CPU-heavy work off Clanker. Use a bounded foreground user service. The suite runs serially and saves `recipe.json`, fragments and coverage. Two complete runs produce `ledger.json` and `baseline.log`.
 
 ## Collect CLI and disk evidence
 

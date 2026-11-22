@@ -33,6 +33,8 @@ the full Linux capture/draw/finish/paste/completion sequence, and the actual cha
 Electron build in both themes at normal/minimum sizes with keyboard recovery.
 The former x64 macOS proof under Rosetta is not ARM-native acceptance.
 
+Run the local journey benchmark with `APPARENT_BENCH_ONBOARDING=1` for the first-use checkpoint. It resumes a private profile at the real practice lesson, completes the whiteboard and screen strokes, and verifies an owned saved bundle and its clipboard text. Timing starts at **Finish setup** and ends when the native app has persisted first-capture success and closed the coach. The pinned Clanker VM and receipt assembly are documented in the [journey benchmark](../../enablement/timing/journey/README.md).
+
 ## Tour traversal
 
 `host/traversal/tour-traversal.bend` owns forward and backward traversal, primary-button

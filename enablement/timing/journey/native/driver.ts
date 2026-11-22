@@ -7,12 +7,16 @@ import {
   observeShortcut,
   qualifyPortal,
 } from "../../../../record/enablement/performance/start.ts";
+import { observeInk } from "../../../../record/enablement/performance/ink.ts";
 import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, lstatSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { guestCursor } from "./cursor.ts";
+import { observeFirstMedia } from "./media-observer.ts";
+import { physicalInteraction, type Gesture } from "./physical-interactions.ts";
 
-const [rootArg, keyArg, mode] = process.argv.slice(2);
+const [rootArg, keyArg, mode, ...probes] = process.argv.slice(2);
 const root = resolve(rootArg);
 const key = resolve(keyArg);
 const resultFile = resolve(root, "result.json");
@@ -67,7 +71,64 @@ function ssh(command: string) {
     stdio: ["ignore", "pipe", "pipe"],
   }).trim();
 }
-function clipboardObserver(path: string) {
+async function nativeInk(label: string, qmp: Pick<Qmp, "command">) {
+  const { place, position } = guestCursor(ssh);
+  const original = position();
+  const path = resolve(root, label + "-ink-scan.ppm");
+  const native = (events: object[]) =>
+    qmp.command("input-send-event", { events }, performance.now() + 1000);
+  const shift = (down: boolean) =>
+    native([
+      { type: "key", data: { down, key: { type: "qcode", data: "shift" } } },
+    ]);
+  const move = (x: number, y: number) =>
+    native([
+      { type: "rel", data: { axis: "x", value: x } },
+      { type: "rel", data: { axis: "y", value: y } },
+    ]);
+  try {
+    const mice = (await qmp.command(
+      "query-mice",
+      {},
+      performance.now() + 1000,
+    )) as { name: string; current: boolean; absolute: boolean }[];
+    if (
+      !mice.some(
+        (mouse) =>
+          mouse.current &&
+          !mouse.absolute &&
+          /^QEMU (USB|HID) Mouse$/.test(mouse.name),
+      )
+    )
+      throw Error("Ink probe requires the qualified relative mouse");
+    await sleep(350, undefined, { signal: abort.signal });
+    return await observeInk(
+      path,
+      () =>
+        qmp.command("screendump", { filename: path }, performance.now() + 1000),
+      place,
+      async (first) => {
+        try {
+          await shift(true);
+          await sleep(60, undefined, { signal: abort.signal });
+          first();
+          for (const dx of [12, 16, 16, 13, 12]) {
+            await move(dx, 0);
+            await sleep(92, undefined, { signal: abort.signal });
+          }
+          await sleep(65, undefined, { signal: abort.signal });
+        } finally {
+          await shift(false);
+        }
+      },
+      abort.signal,
+    );
+  } finally {
+    place(original);
+  }
+}
+
+function fileObserver(path: string, timeoutMs = 125000) {
   const command =
     'printf "armed\\n"; while ! test -s ' +
     path +
@@ -82,8 +143,8 @@ function clipboardObserver(path: string) {
   const finished = new Promise<number>((resolve, reject) => {
     const timer = setTimeout(() => {
       child.kill();
-      reject(new Error("Native clipboard observer timed out"));
-    }, 125000);
+      reject(new Error("Native result observer timed out"));
+    }, timeoutMs);
     let buffer = "";
     child.stdout.on("data", (chunk: Buffer) => {
       buffer += chunk.toString("utf8");
@@ -102,13 +163,13 @@ function clipboardObserver(path: string) {
     });
     child.once("close", (code) => {
       clearTimeout(timer);
-      reject(new Error("Native clipboard observer closed: " + code));
+      reject(new Error("Native result observer closed: " + code));
     });
   });
   return { child, connected, finished };
 }
-if (mode !== "draw" && mode !== "surface")
-  throw Error("Expected the draw or surface probe");
+if (!["draw", "surface", "onboarding"].includes(mode))
+  throw Error("Unknown isolated physical input probe");
 let out: string | undefined;
 const known = new Set<string>();
 const finished = new Set<string>();
@@ -128,6 +189,53 @@ while (performance.now() < deadline) {
       "cat " + out + "/artifacts/current-phase 2>/dev/null || true",
     );
     if (phase === "done") break;
+    if (mode === "onboarding") {
+      if (
+        !known.has(phase) &&
+        /^practice (record|screen-ink|finish)$/.test(phase)
+      ) {
+        known.add(phase);
+        const scene = JSON.parse(ssh("cat " + out + "/artifacts/scene.json"));
+        if (scene.title !== "Apparent capture smoke - SYNTHETIC")
+          throw Error("Expected the owned onboarding scene");
+        if (phase === "practice screen-ink") {
+          const actions: Action[] = [
+            { kind: "key", code: "shift", down: true },
+            { kind: "wait", ms: 80 },
+          ];
+          for (const [x, y] of [
+            [16, 6],
+            [16, 10],
+            [13, -4],
+            [12, -8],
+          ])
+            actions.push({ kind: "relative", x, y }, { kind: "wait", ms: 65 });
+          actions.push({ kind: "key", code: "shift", down: false });
+          await sendPlan(
+            new Qmp(qmpPath),
+            { profile: "mouse", actions },
+            5000,
+            abort.signal,
+          );
+        } else {
+          await physicalInteraction(new Qmp(qmpPath), "record", abort.signal);
+          if (phase === "practice record") {
+            await qualifyPortal(
+              root,
+              new Qmp(qmpPath),
+              () =>
+                ssh("cat " + out + "/artifacts/current-phase") === phase
+                  ? "start portal-warmup"
+                  : "done",
+              abort.signal,
+              ssh,
+            );
+          }
+        }
+      }
+      await sleep(200, undefined, { signal: abort.signal });
+      continue;
+    }
     if (!warmupHandled && /^(start|recording) portal-warmup$/.test(phase)) {
       warmupHandled = true;
       const fixture = JSON.parse(ssh("cat " + out + "/artifacts/scene.json"));
@@ -142,11 +250,41 @@ while (performance.now() < deadline) {
       );
     }
     if (mode === "surface") {
+      const interaction = /^interaction (note|paste-last)$/.exec(phase);
+      if (interaction && !known.has(phase)) {
+        known.add(phase);
+        const name = interaction[1] as Gesture;
+        const observed = fileObserver(
+          out + "/artifacts/" + name + "-verified.json",
+          name === "note" ? 10500 : 13000,
+        );
+        observed.finished.catch(() => {});
+        try {
+          await Promise.race([observed.connected, observed.finished]);
+          if (name === "note") guestCursor(ssh).placeInDraft();
+          const [at, started] = await Promise.all([
+            observed.finished,
+            physicalInteraction(new Qmp(qmpPath), name, abort.signal),
+          ]);
+          if (!started || !(at > started))
+            throw Error("Readback preceded physical input");
+          appendFileSync(
+            resolve(root, "physical-interactions.jsonl"),
+            JSON.stringify({ name, ms: at - started }) + "\n",
+            { mode: 0o600 },
+          );
+        } catch (error) {
+          console.error(name, error);
+        } finally {
+          observed.child.kill();
+        }
+      }
       const label = ssh(
         "cat " + out + "/artifacts/shortcut-request 2>/dev/null || true",
       );
       if (/^shortcut-(first|repeat)$/.test(label) && !known.has(label)) {
         known.add(label);
+        const recorderLog = out + "/artifacts/application.log";
         await observeShortcut(
           label,
           root,
@@ -154,6 +292,16 @@ while (performance.now() < deadline) {
           () => result().stage,
           abort.signal,
           ssh,
+          probes.includes("media")
+            ? () =>
+                observeFirstMedia(recorderLog, (command) =>
+                  spawn("ssh", sshArgs(command), {
+                    signal: abort.signal,
+                    stdio: ["ignore", "pipe", "ignore"],
+                  }),
+                )
+            : undefined,
+          probes.includes("ink") ? (qmp) => nativeInk(label, qmp) : undefined,
         );
       }
       await sleep(250, undefined, { signal: abort.signal });
@@ -183,7 +331,7 @@ while (performance.now() < deadline) {
         { kind: "key", code: "alt", down: false },
       ];
       let pressed = 0;
-      const observed = clipboardObserver(
+      const observed = fileObserver(
         out + "/artifacts/" + id + "-clipboard-at.txt",
       );
       try {
