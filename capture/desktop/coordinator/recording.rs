@@ -624,7 +624,7 @@ impl ApparentCoordinator {
         }
         #[cfg(target_os = "linux")]
         if self.discard_failed_screen_start() {
-            cx.defer(whiteboard::close);
+            self.whiteboard.borrow_mut().close();
             self.dismiss_island(cx);
             return;
         }
@@ -1049,7 +1049,7 @@ impl ApparentCoordinator {
             self.cancel_recording(cx);
             return;
         }
-        whiteboard::reset_for_capture(&self.whiteboard);
+        self.whiteboard.borrow_mut().reset();
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
             let Ok(id) = self.agent_capture_id.clone().map_or_else(crate::capture::desktop::workflow::agent_capture::new_id, Ok) else {
@@ -1275,7 +1275,7 @@ impl ApparentCoordinator {
     /// `apparent lab pill`: a pretend recording with no capture, microphone, files or overlay, so
     /// the capsule goes through exactly the states a real one does.
     fn start_lab_recording(&mut self, target: TargetInfo, cx: &mut Context<Self>) {
-        whiteboard::reset_for_capture(&self.whiteboard);
+        self.whiteboard.borrow_mut().reset();
         if let IslandPhase::Selecting { mode } = self.island_phase {
             motion::trace_event(format!("record:{}", mode.label()));
         }
@@ -1314,7 +1314,7 @@ impl ApparentCoordinator {
             self.cancel_recording(cx);
             return;
         }
-        whiteboard::reset_for_capture(&self.whiteboard);
+        self.whiteboard.borrow_mut().reset();
         self.begin_playback();
         self.remember_mode(SelectionMode::Iphone);
         #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -1444,7 +1444,7 @@ impl ApparentCoordinator {
 
     fn present_capture_cancellation(&mut self, cx: &mut Context<Self>) {
         if self.is_recording() { return; }
-        cx.defer(whiteboard::close);
+        self.whiteboard.borrow_mut().close();
         self.dismiss_island(cx);
     }
 
@@ -1547,7 +1547,7 @@ impl ApparentCoordinator {
         let local_practice = self.capture_local_practice;
         cx.notify();
         if matches!(source, CaptureSource::Lab) {
-            cx.defer(whiteboard::close);
+            self.whiteboard.borrow_mut().close();
             let duration_ms = rec.started.elapsed().as_millis() as u64;
             let wait = Duration::from_secs_f32(lab::PROCESSING_S / motion::time_scale());
             cx.spawn(async move |entity, cx| {
@@ -1564,7 +1564,7 @@ impl ApparentCoordinator {
             return;
         }
 
-        let final_whiteboard = whiteboard::finish_snapshot(&self.whiteboard, || whiteboard::close(cx));
+        let final_whiteboard = self.whiteboard.borrow_mut().finish(cx);
 
         self.stopping_source = Some(generation);
         let (source_released, released) = flume::bounded(1);

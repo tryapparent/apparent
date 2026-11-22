@@ -20,6 +20,7 @@ fn main() {
     #[cfg(target_os = "macos")]
     emit_native_policy("onboarding", "frog-nudge", "host/tips/frog-nudge.json");
     compile_record_pill();
+    compile_record_whiteboard();
     record_media_build::compile_record_media();
     sparkle_outcomes::compile();
     println!("cargo:rerun-if-env-changed=APPARENT_POSTHOG_TOKEN");
@@ -93,6 +94,19 @@ fn compile_onboarding_entry_policy() {
     let output = PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo output directory"));
     std::fs::write(output.join("onboarding_entry_policy.rs"), generated.stdout)
         .expect("write generated Onboarding entry policy");
+}
+
+fn compile_record_whiteboard() {
+    for input in ["record/pill/whiteboard", "record/enablement/ci/bend/modules.json", "shared/enablement/bend"] {
+        println!("cargo:rerun-if-changed={input}");
+    }
+    let output = PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo output directory"));
+    let result = Command::new("node")
+        .arg("record/pill/whiteboard/build.ts")
+        .arg(output.join("record-whiteboard.mjs"))
+        .output()
+        .expect("Node 22 is required to compile Record whiteboard policy");
+    assert!(result.status.success(), "Compile Record whiteboard policy: {}", String::from_utf8_lossy(&result.stderr));
 }
 
 fn compile_record_pill() {

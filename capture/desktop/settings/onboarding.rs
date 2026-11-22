@@ -914,7 +914,6 @@ pub fn launch_plan(progress: &Progress, grants: &Grants, offer_tour: bool, missi
 
 #[derive(Clone, Debug)]
 pub enum Event {
-    Board(serde_json::Value),
     Practice(serde_json::Value),
     /// Grants read at launch, to decide whether onboarding opens (`launch_plan`).
     Launch(Grants),
@@ -995,7 +994,7 @@ pub struct Session {
     practice: Option<super::practice::Practice>,
     anchor: Option<[f32;4]>,
     practice_board: Option<[f32;4]>,
-    board_view: Option<serde_json::Value>,
+    board_id: Option<String>,
     practice_completed: bool,
     practice_bundle: Option<std::path::PathBuf>,
     practice_receipt: Option<(u64, String, Option<String>)>,

@@ -39,14 +39,6 @@ const rgb = (value: unknown): value is [number, number, number] =>
   value.every((n) => Number.isInteger(n) && n >= 0 && n <= 255);
 const rect = (value: unknown): value is Rect =>
   Array.isArray(value) && value.length === 4 && value.every(Number.isFinite);
-const point = (value: unknown): value is [number, number] =>
-  Array.isArray(value) &&
-  value.length === 2 &&
-  value.every(Number.isFinite) &&
-  value[0] >= 0 &&
-  value[0] < 1600 &&
-  value[1] >= 0 &&
-  value[1] < 1100;
 export function project(value: unknown) {
   if (!record(value)) return null;
   const v = value;
@@ -77,19 +69,6 @@ export function project(value: unknown) {
       relaunch: r.relaunch === true,
     });
   }
-  const b = v.boardView;
-  const boardView =
-    record(b) &&
-    typeof b.id === "string" &&
-    /^[a-zA-Z0-9-]{1,80}$/.test(b.id) &&
-    Array.isArray(b.strokes) &&
-    b.strokes.length <= 500 &&
-    b.strokes.every(
-      (s) => Array.isArray(s) && s.length <= 2000 && s.every(point),
-    ) &&
-    rgb(b.color)
-      ? { id: b.id, strokes: b.strokes as [number, number][][], color: b.color }
-      : null;
   const editor = v.shortcutEditor;
   const suggestedFn = record(editor) ? editor.suggestedFn : null;
   return {
@@ -109,7 +88,6 @@ export function project(value: unknown) {
     shortcutChosen: v.shortcutChosen === true,
     shortcutTested: v.shortcutTested === true,
     shortcutSelectionReleased: v.shortcutSelectionReleased === true,
-    boardView,
     penSaveId: typeof v.penSaveId === "string" ? v.penSaveId : undefined,
     penPicker: v.penPicker === true,
     penSelected: v.penSelected === true,

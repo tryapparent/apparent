@@ -34,7 +34,10 @@ export class Placement {
   present(value: Projection, activate = false) {
     const window = this.window;
     if (window.isDestroyed()) return;
-    if (value.step === "try-it" && value.practice === "preparing") {
+    if (
+      value.step === "try-it" &&
+      (value.practice === "preparing" || value.practiceBoard)
+    ) {
       window.hide();
       return;
     }
@@ -48,7 +51,6 @@ export class Placement {
         : value;
     const coach =
       v.step === "try-it" && v.practice !== null && v.practice !== "start";
-    const board = !!v.boardView && !!v.practiceBoard;
     const focal = v.practiceBoard || v.anchor;
     const target = focal
       ? screen.getDisplayMatching({
@@ -60,36 +62,24 @@ export class Placement {
       : screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     const area = target.workArea;
     const shortcut = v.step === "shortcut" || (v.step === "try-it" && !coach);
-    const { width, height } = board
-      ? { width: Math.min(area.width, 720), height: Math.min(area.height, 540) }
-      : coach
-        ? coachDimensions(area, v.practice!)
-        : setupDimensions(area, shortcut);
-    const mode = `${board}:${coach}:${width}:${height}`;
+    const { width, height } = coach
+      ? coachDimensions(area, v.practice!)
+      : setupDimensions(area, shortcut);
+    const mode = `${coach}:${width}:${height}`;
     if (this.lastMode !== mode) {
-      window.setAlwaysOnTop(coach || board, "floating");
+      window.setAlwaysOnTop(coach, "floating");
       window.setHasShadow(!coach);
       window.setMaximumSize(0, 0);
       window.setMinimumSize(width, height);
       window.setMaximumSize(width, height);
       window.setSize(width, height, false);
-      window.setVisibleOnAllWorkspaces(coach || board, {
-        visibleOnFullScreen: coach || board,
+      window.setVisibleOnAllWorkspaces(coach, {
+        visibleOnFullScreen: coach,
       });
       this.lastMode = mode;
       this.lastPlacement = "";
     }
-    if (board && v.boardView && v.practiceBoard) {
-      if (this.lastPlacement !== v.boardView.id) {
-        window.setPosition(
-          Math.round(v.practiceBoard[0]),
-          Math.round(v.practiceBoard[1]),
-          false,
-        );
-        window.focus();
-        this.lastPlacement = v.boardView.id;
-      }
-    } else if (coach) {
+    if (coach) {
       const placement = coachPosition(
         area,
         v.anchor,

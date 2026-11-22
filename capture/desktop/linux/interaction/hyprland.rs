@@ -736,11 +736,11 @@ fn owned_pin_command(clients: &str, pid: u32, title: &str, syntax: Syntax) -> Re
 
 /// A normal GPUI window is tiled by Hyprland. Float only the whiteboard, not Apparent's
 /// picker or capsule, so the browser can stay beside a movable, resizable paper window.
-pub fn float_whiteboard() -> Result<()> {
+pub fn float_whiteboard(pid: u32) -> Result<()> {
     let clients: Vec<serde_json::Value> = serde_json::from_str(&request("j/clients")?)?;
     let Some(board) = clients.iter().find(|client| {
         client["title"].as_str() == Some("Apparent Whiteboard")
-            && client["pid"].as_u64() == Some(u64::from(std::process::id()))
+            && client["pid"].as_u64() == Some(u64::from(pid))
     }) else {
         bail!("Whiteboard window not mapped yet");
     };

@@ -23,7 +23,7 @@ impl Session {
             practice: None,
             anchor: None,
             practice_board: None,
-            board_view: None,
+            board_id: None,
             practice_completed:false,practice_bundle:None,practice_receipt:None,editor:None,pen_picker: false,pen_selected:false,pen_error:false,pen_save_id:None,
         }
     }
@@ -120,7 +120,7 @@ impl Session {
             practice: shell.then(super::practice::Practice::default),
             anchor: None,
             practice_board: None,
-            board_view: None,
+            board_id: None,
             practice_completed:false,practice_bundle:None,practice_receipt:None,editor:None,pen_picker: false,pen_selected:false,pen_error:false,pen_save_id:None,
         };
         session.shortcut_changed(shortcut);
@@ -473,8 +473,7 @@ impl Session {
         self.practice_board=frame;
         self.practice_events(vec![serde_json::json!({"type":"whiteboard-visible","visible":frame.is_some()})],false);
     }
-    pub fn board_view(&mut self, view: Option<serde_json::Value>) { self.board_view=view; }
-    pub fn electron_practice(&self)->bool { self.practice_active() && self.fallback.is_some() && !self.fallback_pending }
+    pub fn board_id(&mut self, id: Option<String>) { self.board_id = id; }
     pub fn practice_active(&self)->bool {self.practice.is_some() && self.flow.step()==Step::TryIt}
     pub fn practice_locating(&self)->bool {self.practice.as_ref().is_some_and(|p|p.locating)}
     pub fn practice_desktop_stage(&self)->bool {self.practice.as_ref().is_some_and(|p|p.desktop_stage)}
@@ -505,7 +504,7 @@ impl Session {
 
     fn practice_events(&mut self, events:Vec<serde_json::Value>, intent:bool)->Effect {
         if self.fallback_pending {return Effect::None;}
-        let board=self.board_view.as_ref().and_then(|v|v["id"].as_str()).map(str::to_owned);
+        let board = self.board_id.clone();
         let Some(p)=self.practice.as_mut() else {return Effect::None;};
         if !intent && p.repeats_pending_poll(self.source,self.transport_generation,board.as_deref(),&events) {
             return Effect::None;
@@ -565,7 +564,6 @@ impl Session {
         view["shortcutEditor"]=serde_json::json!(self.editor);
         view["anchor"]=serde_json::json!(self.anchor);
         view["practiceBoard"]=serde_json::json!(self.practice_board);
-        view["boardView"]=serde_json::json!(self.board_view);
         view["testInstance"]=false.into();
         view["penSaveId"]=serde_json::json!(self.pen_save_id);
         view["penPicker"]=self.pen_picker.into();view["penSelected"]=self.pen_selected.into();view["penError"]=self.pen_error.into();

@@ -210,15 +210,7 @@ export function start(capabilities: Capabilities) {
     window.on("close", (event) => {
       if (closing) return;
       event.preventDefault();
-      if (state?.boardView) {
-        channel.send({
-          action: "board",
-          id: state.boardView.id,
-          operation: "close",
-        });
-      } else {
-        channel.send("close");
-      }
+      channel.send("close");
     });
     window.on("closed", () => {
       shutdown();

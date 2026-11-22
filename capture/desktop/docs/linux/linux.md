@@ -345,7 +345,7 @@ XWayland sees the pointer only over X11 windows and keeps the last place it saw 
 The clipboard goes through `wl-copy`, as on KDE Wayland.
 
 On Linux, the recording controls offer **Whiteboard** by default.
-It opens a separate native window over the ongoing display capture: draw without holding ⇧,
+It opens a separate Electron window over the ongoing display capture: draw without holding ⇧,
 use Undo or Clear, and close/reopen it without losing the current session's strokes. Resizing
 reveals more of the fixed paper instead of scaling marks. On Hyprland the window is floated
 after it maps so it can move and resize without tiling the browser; the recording remains
