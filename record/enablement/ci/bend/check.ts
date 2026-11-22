@@ -172,6 +172,27 @@ await bendScratch(async (scratch) => {
     ),
   );
   assert.deepEqual(repairTable(proofOutput), repair);
+  assert.deepEqual(
+    JSON.parse(
+      readFileSync(
+        join(root, "record/settings/permissions/agent-context-activation.json"),
+        "utf8",
+      ),
+    ),
+    JSON.parse(
+      run(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `import policy from "./permission-policy.mjs";
+        console.log(JSON.stringify(Array.from({length: 4}, (_, bits) =>
+          policy.activate_agent_context(Boolean(bits & 1), Boolean(bits & 2)))));`,
+        ],
+        proofOutput,
+      ),
+    ),
+  );
   run(
     process.execPath,
     [
