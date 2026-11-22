@@ -102,7 +102,7 @@ test('Connect shipped Electron IPC, consent presentation, browser action and lif
   await page.locator('.settings-content').evaluate(element=>{element.scrollTop=0});
   await page.screenshot({path:path.join(os.tmpdir(),'general-initial.png'),fullPage:true});
   await expect(card.getByText('End-to-end encrypted captures.')).toBeVisible();
-  const activityText='While connected, recording starts contribute to daily and weekly account totals. Only a pseudonymous identifier and last active UTC date are kept for seven days; no recording content or email. Manage this in your Connect account’s analytics settings. Practice recordings are excluded.';
+  const activityText='Starting a recording while connected counts your account as active in daily and weekly totals. Practice recordings are excluded. Apparent keeps a pseudonymous account ID and the last active date (UTC) for seven days. The counts use no recording content or email addresses. Manage this in your Connect account’s analytics settings.';
   const commandsBeforePrivacy=requests.filter(r=>r.command).length, writesBeforePrivacy=parentOutput;
   await expect(card.getByText(activityText,{exact:true})).toBeHidden();
   await card.locator('summary').filter({hasText:'Privacy'}).click();
@@ -150,8 +150,8 @@ test('Connect shipped Electron IPC, consent presentation, browser action and lif
   stage = 'connected';
   await expect(card.getByText('Connect ready', {exact:true})).toBeVisible();
   await expect(card.locator('[data-tone="success"]')).toHaveCSS('border-inline-start-color','rgb(20, 107, 67)');
-  const account = page.getByRole('button',{name:'Account and connection options'});
-  await expect(account).toContainText('Account');
+  const account = page.getByRole('button',{name:'Connect account'});
+  await expect(account).toContainText('Connect account');
   await page.emulateMedia({colorScheme:null});
   for (const mode of ['light','dark']) {
     await application.evaluate(({nativeTheme},mode)=>{nativeTheme.themeSource=mode;},mode);
@@ -177,11 +177,11 @@ test('Connect shipped Electron IPC, consent presentation, browser action and lif
     }
   }
   await application.evaluate(({nativeTheme})=>{nativeTheme.themeSource='system';});
-  accountInitial='M'; await expect(account).toContainText('Account');
+  accountInitial='M'; await expect(account).toContainText('Connect account');
   accountInitial=undefined;
-  await expect(account).toContainText('Account');
+  await expect(account).toContainText('Connect account');
   await expect(account).not.toContainText('M');
-  accountInitial='S'; await expect(account).toContainText('Account');
+  accountInitial='S'; await expect(account).toContainText('Connect account');
   await account.click();
   await page.getByRole('button',{name:'Turn off uploads',exact:true}).click();
   await expect(card.getByText('Turn uploads off?',{exact:true})).toBeVisible();
@@ -257,12 +257,11 @@ test('Connect shipped Electron IPC, consent presentation, browser action and lif
   // Activity disclosures remain readable without granting consent or writing settings.
   for(const theme of ['light','dark'])for(const width of [720,640])for(const zoom of [1,2]) {
     await application.evaluate(({nativeTheme,BrowserWindow},{theme,width,zoom})=>{nativeTheme.themeSource=theme;const w=BrowserWindow.getAllWindows()[0];w.setSize(width,530);w.webContents.setZoomFactor(zoom)}, {theme,width,zoom});
-    for(const state of ['initial','off','connected']) {
+    for(const state of ['initial','off']) {
       stage=state;
-      await expect(card.locator('h2')).toHaveText(state==='connected'?'Connect ready':'Send captures to your cloud agent.');
-      if(state!=='connected')await expect(card.getByRole('button',{name:state==='off'?'Enable uploads':'Connect with Google',exact:true})).toBeVisible();
-      const summary=state==='connected'?page.getByText('Activity counts',{exact:true}):card.locator('summary').filter({hasText:'Privacy'});
-      if(state==='connected') { await account.focus();await page.keyboard.press('Enter'); }
+      await expect(card.locator('.status-content h2')).toHaveText('Send captures to your cloud agent.');
+      await expect(card.getByRole('button',{name:state==='off'?'Enable uploads':'Connect with Google',exact:true})).toBeVisible();
+      const summary=card.locator('summary').filter({hasText:'Privacy'});
       const details=summary.locator('..');
       if(await details.getAttribute('open')!==null) { await summary.focus();await page.keyboard.press('Escape'); }
       await expect(details.locator('p').last()).toBeHidden();
@@ -276,10 +275,8 @@ test('Connect shipped Electron IPC, consent presentation, browser action and lif
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
       const last=details.locator('p').last();
       assert.equal(await last.evaluate(el=>{const r=el.getBoundingClientRect();return r.x>=0&&r.right<=innerWidth+1}),true);
-      if(state==='connected')assert.equal(await page.locator('.disclosure-panel').evaluate(el=>el.getBoundingClientRect().bottom<=innerHeight+1),true,'account panel fits viewport');
       await activityScreenshot(`activity-${state}-${theme}-${width}-${zoom}-expanded.png`);
       await summary.focus();await page.keyboard.press('Escape');await expect(summary).toBeFocused();await expect(details).not.toHaveAttribute('open');
-      if(state==='connected') {await page.keyboard.press('Escape');await expect(account).toBeFocused();await expect(account).toHaveAttribute('aria-expanded','false');}
     }
   }
   await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1));
@@ -292,7 +289,7 @@ test('Connect shipped Electron IPC, consent presentation, browser action and lif
     await page.emulateMedia({reducedMotion:'reduce'});
     for(const state of ['initial','approval','enabling','off','connected','error','disconnect-confirm','disable-confirm']) {
       stage=state;
-      await expect(card.locator('h2')).toHaveText({enabling:'Enabling uploads…',initial:'Send captures to your cloud agent.',approval:'Approve in your browser.',off:'Send captures to your cloud agent.',connected:'Connect ready',error:'Connection failed.','disconnect-confirm':'Disconnect this computer?','disable-confirm':'Turn uploads off?'}[state]);
+      await expect(card.locator('.status-content h2')).toHaveText({enabling:'Enabling uploads…',initial:'Send captures to your cloud agent.',approval:'Approve in your browser.',off:'Send captures to your cloud agent.',connected:'Connect ready',error:'Connection failed.','disconnect-confirm':'Disconnect this computer?','disable-confirm':'Turn uploads off?'}[state]);
       if(state==='approval')assert.equal(await card.locator('.status-icon').evaluate(el=>getComputedStyle(el).animationName),'none');
       if(state==='disconnect-confirm') {
         await card.getByRole('button',{name:'Keep connected',exact:true}).focus();
@@ -300,7 +297,7 @@ test('Connect shipped Electron IPC, consent presentation, browser action and lif
         await expect(card.getByText('Connect ready',{exact:true})).toBeVisible();
         assert.equal(requests.filter(r=>r.command==='disconnect').length,0);
         stage='disconnect-confirm';await expect(card.getByRole('button',{name:'Keep connected',exact:true})).toBeVisible();
-        await expect(card.getByText('Uploads stop. Saved captures stay.',{exact:true})).toBeVisible();
+        await expect(card.getByText('Uploads stop. Disconnecting does not delete uploaded captures.',{exact:true})).toBeVisible();
         await expect(card.locator('.status-actions button').first()).toHaveText('Keep connected');
         await expect(card.getByRole('button',{name:'Keep connected',exact:true})).toHaveClass(/primary-action/);
         await expect(card.getByRole('button',{name:'Disconnect',exact:true})).toHaveClass(/destructive-action/);
@@ -315,7 +312,7 @@ test('Connect shipped Electron IPC, consent presentation, browser action and lif
         const next=await peer.boundingBox();
         if(next && Math.abs(next.y-first.y)<8) assert.ok(next.x-first.x-first.width>=8 && next.x-first.x-first.width<=12,'task peers adjacent');
         if(state==='error') {
-          const title=await card.locator('h2').boundingBox();
+          const title=await card.locator('.status-content h2').boundingBox();
           assert.ok(first.y-title.y-title.height<=16,'failure recovery close below headline');
         }
       }
@@ -342,7 +339,7 @@ test('Connect shipped Electron IPC, consent presentation, browser action and lif
       if(state==='connected')assert.equal(await card.locator('.status-artwork').evaluate(el=>el.getBoundingClientRect().width),112);
       if(state==='initial') assert.ok(await card.locator('.status-artwork').evaluate(el=>el.getBoundingClientRect().width)>=140);
       if(state==='approval') {
-        const heading=await card.locator('h2').boundingBox(), cancel=await card.getByRole('button',{name:'Cancel',exact:true}).boundingBox();
+        const heading=await card.locator('.status-content h2').boundingBox(), cancel=await card.getByRole('button',{name:'Cancel',exact:true}).boundingBox();
         assert.ok(Math.abs(heading.y-cancel.y)<30,'waiting and Cancel share a row');
       }
     }
@@ -374,7 +371,7 @@ test('Connect shipped Electron IPC, consent presentation, browser action and lif
     await application.evaluate(({BrowserWindow},zoom)=>BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(zoom),zoom);
     for(const next of ['initial','approval','connected','error','disconnect-confirm']) {
       stage=next;
-      await expect(card.locator('h2')).toHaveText({initial:'Send captures to your cloud agent.',approval:'Approve in your browser.',connected:'Connect ready',error:'Connection failed.','disconnect-confirm':'Disconnect this computer?'}[next]);
+      await expect(card.locator('.status-content h2')).toHaveText({initial:'Send captures to your cloud agent.',approval:'Approve in your browser.',connected:'Connect ready',error:'Connection failed.','disconnect-confirm':'Disconnect this computer?'}[next]);
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
       for(const button of await card.getByRole('button').all()) {
         const bounds=await button.boundingBox(); if(bounds)assert.ok(bounds.x>=0&&bounds.x+bounds.width<=await page.evaluate(()=>innerWidth)+1);

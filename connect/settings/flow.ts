@@ -127,9 +127,14 @@ class ConnectFlow {
   };
 }
 
-export function useConnectFlow(bridge: ConnectBridge) {
+const subscribeInactive = () => () => {};
+
+export function useConnectFlow(bridge: ConnectBridge, active = true) {
   const flow = useMemo(() => new ConnectFlow(bridge), [bridge]);
-  const snapshot = useSyncExternalStore(flow.subscribe, flow.snapshot);
+  const snapshot = useSyncExternalStore(
+    active ? flow.subscribe : subscribeInactive,
+    flow.snapshot,
+  );
   return {
     ...snapshot,
     view:

@@ -57,6 +57,7 @@ export type Recovery =
   | "Refresh"
   | "NoRecovery";
 declare const policy: {
+  check_on_open(opened: boolean, checkAvailable: boolean): boolean;
   account_status(
     grant: Tag<Grant>,
     uploads: boolean,
