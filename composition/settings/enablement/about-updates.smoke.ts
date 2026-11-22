@@ -350,10 +350,8 @@ test("About makes channel installation, restart and recovery distinct", async ()
     await expect(video).toHaveAttribute("src", /\/open-box-.*\.mp4$/);
     await expect(pose).toHaveAttribute("src", /\/boat-.*\.webp$/);
     await expect(video).toHaveAttribute("src", /\/launch-.*\.mp4$/);
-    await expect(video).toHaveAttribute("src", /\/afloat-.*\.mp4$/);
-    await expect.poll(() => video.evaluate((element: HTMLVideoElement) =>
-      element.loop && element.currentTime > 0,
-    )).toBe(true);
+    await expect(pose).toHaveAttribute("src", /\/afloat-loop-.*\.webp$/);
+    await pose.evaluate((element: HTMLImageElement) => element.decode());
 
     await publish({
       ...checking,
