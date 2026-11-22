@@ -870,6 +870,8 @@ pub struct ApparentCoordinator {
     telemetry: Arc<SharedCaptureTelemetry>,
     note_ui: Option<workflow::notes::Session>,
     admitted_microphone: Option<bool>,
+    admitted_lips: bool,
+    active_lips: Option<crate::lip_input::Input>,
     whiteboard: Rc<RefCell<whiteboard::Board>>,
     active_recording: Option<ActiveRecording>,
     /// Identifies the recording whose finalization may update the current UI.

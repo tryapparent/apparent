@@ -26,6 +26,7 @@ struct Mailbox {
 pub type Selection = (Option<PathBuf>, Option<PathBuf>);
 
 pub struct Session {
+    lip_frames: Arc<Mutex<std::collections::HashMap<String, flume::Sender<crate::lip_input::Frame>>>>,
     completion_generations: std::collections::HashSet<u64>,
     t3_eligible: bool,
     mailbox: Arc<(Mutex<Mailbox>, Condvar)>,
@@ -107,6 +108,35 @@ impl Session {
         wake.notify_one();
     }
 
+    pub fn begin_lips(&self, generation: u64, elapsed: u64) -> crate::lip_input::Input {
+        let (sender, receipt) = flume::bounded(2048);
+        let key = Self::capture_key(generation);
+        self.lip_frames.lock().unwrap().insert(key, sender);
+        if self.lip_control(generation, "start", elapsed) {
+            crate::lip_input::Input::Pending(receipt)
+        } else {
+            crate::lip_input::Input::Unavailable
+        }
+    }
+
+    pub fn lip_control(&self, generation: u64, action: &str, elapsed: u64) -> bool {
+        let key = Self::capture_key(generation);
+        if action == "cancel" {
+            self.lip_frames.lock().unwrap().remove(&key);
+        }
+        let (lock, wake) = &*self.mailbox;
+        let mut pending = lock.lock().unwrap();
+        if pending.closed || pending.completions.len() >= 64 {
+            self.lip_frames.lock().unwrap().remove(&key);
+            return false;
+        }
+        pending.completions.push_back(serde_json::json!({
+            "type":"lip-control", "capture":key, "action":action, "elapsed":elapsed,
+        }));
+        wake.notify_one();
+        true
+    }
+
     pub fn open(mut view: View, generation: u64, selection: Selection) -> anyhow::Result<Self> {
         view.read_doodles(None);
         let (app, runtime) =
@@ -117,6 +147,7 @@ impl Session {
             launch.arg("--ozone-platform=x11");
             launch.arg(format!("--force-device-scale-factor={}", crate::capture::desktop::linux::x11::ui_scale()));
         }
+        launch.env("APPARENT_MODELS_DIR", crate::capture::engine::runtime::audio::transcription::speech::own_models_dir());
         launch.arg(app.join("electron/pill/main.cjs"));
         crate::capture::desktop::workflow::electron::configure_sandbox(&mut launch, &runtime)?;
         let mut child = launch
@@ -216,6 +247,10 @@ impl Session {
         let reading = alive.clone();
         let read_observation = observation.clone();
         let mounted = ready.clone();
+        let lip_frames = Arc::new(Mutex::new(std::collections::HashMap::<
+            String, flume::Sender<crate::lip_input::Frame>,
+        >::new()));
+        let lip_readback = lip_frames.clone();
         std::thread::spawn(move || {
             let mut reader = std::io::BufReader::new(stdout);
             #[cfg(target_os = "linux")]
@@ -230,6 +265,18 @@ impl Session {
                         Ok(value) => value,
                         Err(_) => break ReaderStop::InvalidJson,
                     };
+                    if let Some(key) = value.get("lipCapture").and_then(|key| key.as_str()) {
+                        if let Some(frame) = value.get("lipResult").and_then(|value| serde_json::from_value(value.clone()).ok()) {
+                            let mut receipts = lip_readback.lock().unwrap();
+                            let terminal = !matches!(frame, crate::lip_input::Frame::Clip { .. });
+                            if let Some(sender) = receipts.get(key)
+                                && (sender.try_send(frame).is_err() || terminal)
+                            {
+                                receipts.remove(key);
+                            }
+                        }
+                        continue;
+                    }
                     #[cfg(target_os = "linux")]
                     if let Some(id) = value.get("releasePickerFocus").and_then(|v| v.as_u64()) {
                         let current = identified.load(Ordering::Acquire);
@@ -341,6 +388,7 @@ impl Session {
                     Err(flume::TrySendError::Disconnected(_)) => break ReaderStop::ActionQueueClosed,
                 }
             };
+            lip_readback.lock().unwrap().clear();
             read_observation.lock().unwrap().reader_stop = Some(stopped);
             reading.store(false, Ordering::Release);
             #[cfg(target_os = "linux")]
@@ -351,6 +399,7 @@ impl Session {
             }
         });
         let mut session = Self {
+            lip_frames,
             completion_generations: Default::default(),
             t3_eligible: false,
             mailbox,

@@ -129,7 +129,7 @@ export function Labs({frogExperiment: FrogNudge, agentContextExperiment: AgentCo
           disabled={busy || !facts || !!facts.error}
           onCheckedChange={value => void request(value, 'silentPrompt')} />
       </div>
-      <p id="silent-prompt-help">Mouth a short prompt and copy the text. Turning this on downloads the research model and runtime. The camera starts only when you ask, and the microphone stays off.</p>
+      <p id="silent-prompt-help">Use lip reading for transcripts in screen recordings. The camera opens when recording starts, and the microphone stays off. Turning this on downloads the model and runtime.</p>
       {facts?.silentPromptSaved && <SilentPrompt />}
     </section>
     <span role="status" className="sr-only">{busy ? operation === 'save' ? 'Saving preference' : 'Reading saved preference' : ''}</span>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { LipPill } from "../../pill/renderer/lip-pill";
+import { openLipCamera, recordLipCamera } from "../../pill/input/camera";
 import { LipPreview } from "../../pill/renderer/lip-preview";
 import { Button } from "@apparent/ui/button";
 import { LoaderCircle } from "lucide-react";
@@ -111,10 +112,7 @@ export function SilentPrompt() {
       const { seconds, tailMs, trackingModel, wasm } = await bridge.begin();
       capture.tailMs = tailMs;
       if (active.current !== capture) return;
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { width: { ideal: 640, max: 640 }, height: { ideal: 480, max: 480 }, frameRate: { ideal: 25, max: 30 } },
-      });
+      const stream = await openLipCamera();
       if (active.current !== capture) {
         stream.getTracks().forEach(track => track.stop());
         return;
@@ -138,7 +136,7 @@ export function SilentPrompt() {
         setNotice("Lip tracking stopped. Try again.");
       });
       if (active.current !== capture) return;
-      const recorder = new MediaRecorder(stream, { mimeType: "video/webm;codecs=vp8", videoBitsPerSecond: 1_000_000 });
+      const recorder = recordLipCamera(stream);
       capture.recorder = recorder;
       recorder.ondataavailable = async ({ data }) => {
         if (active.current !== capture) return;

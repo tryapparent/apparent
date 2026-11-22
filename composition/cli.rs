@@ -33,7 +33,7 @@ use crate::shared::{handoff, hex, model, windows};
 
 use crate::capture::desktop::demo::generate_demo_bundle;
 use crate::capture::engine::bundle::bundle_processing::{
-    finalize_capture_bundle, rebuild_screen_bundle,
+    finalize_capture_bundle, finalize_capture_bundle_with_transcript, rebuild_screen_bundle,
 };
 use crate::capture::engine::runtime::audio::audio::AudioRecorder;
 use crate::capture::engine::runtime::{ScreenCaptureSession, discover_target, record_target};
@@ -1131,6 +1131,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
                 handoff::enable_experiment(name);
             }
             let (dir, old) = handoff::load_bundle(&bundle)?;
+            let lip_transcript = crate::lip_input::preserve(&old.transcript);
             let video = old
                 .video
                 .as_ref()
@@ -1255,7 +1256,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
                             });
                         iter_activity.stop_started = Some(t0);
                         iter_activity.stop_ms = Some(t0.elapsed().as_millis() as u64);
-                        finalize_capture_bundle(
+                        finalize_capture_bundle_with_transcript(
                             &iter_out,
                             iter_target,
                             crate::capture::engine::runtime::ScreenRecording {
@@ -1271,6 +1272,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
                             iter_note,
                             iter_activity,
                             old.interaction_telemetry,
+                            lip_transcript.clone(),
                         )?;
                         let _ = handoff::copy_bundle_to_clipboard(&iter_out);
                         runs_ms.push(t0.elapsed().as_secs_f64() * 1_000.0);
@@ -1344,6 +1346,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
                         windows: old.windows,
                         cursor: old.cursor,
                     },
+                    lip_transcript,
                 )?
             };
             print!("{summary}");

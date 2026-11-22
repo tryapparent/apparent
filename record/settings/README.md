@@ -76,11 +76,17 @@ Regenerate the table with
 
 ## Silent prompts
 
-Enable **Settings → Labs → Silent prompts** to try camera-only dictation. The
-switch is off by default and uses the existing config writer
+Enable **Settings → Labs → Silent prompts** to use lip reading for
+screen-recording transcripts. The switch is off by default and uses the existing config writer
 (`experiments.silentPrompt`). Apparent automatically prepares the local runtime
 and downloads the visual model on first use. Keep Settings open during setup.
-Once ready, select **Start camera** to open the floating pill. The preview below
+Once ready, start a screen recording as usual. Apparent captures the screen and
+uses the camera as transcript input with the microphone off. Finish saves that
+text with the recording and offers the usual handoff. Camera clips are decoded
+locally and removed after use. Turning the switch off restores the configured
+microphone input for the next recording.
+
+To test Lipflow before a recording, select **Start camera** to open the floating pill. The preview below
 it follows your mouth, and the bars show mouth movement. Silently mouth a short
 prompt, then select **Finish**. The camera stops automatically after 12 seconds.
 Review the raw result, then select **Copy prompt** or **New prompt**. **Escape**
