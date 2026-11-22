@@ -20,3 +20,9 @@ Send in one call with `--submit` when ready to share with Apparent. If you're se
 The command sends the supplied title and body with the report category, build and platform. Keep credentials and private capture content out of the text. The command does not read recordings or attach logs. Submission uses the publishable PostHog token in packaged builds. The command uses the bundled runtime or Node.js 22.23+ on PATH.
 
 In PostHog Error Tracking, look for **Apparent CLI bug report** or **Apparent CLI feedback**. Filter exception events by `source = agent_cli_feedback` and `feedback_kind`. The event properties `feedback_title` and `feedback_body` contain the exact text. The CLI returns the event UUID as `report_id` after PostHog acknowledges ingestion. Matching category, title and body group together. A new group enters the existing T3 fix queue.
+
+## Speaking-style examples
+
+Enable **Match my speaking style** in Settings → Labs to request examples for newly queued private, encrypted Connect recordings. It defaults off. Editing `experiments.speakingStyle` applies to the next upload admission without a restart. Turning it off affects future uploads. Earlier opted-in recordings retain their request until they expire or are deleted.
+
+Ordinary inspection of an opted-in capture includes a command hint. Run `apparent inspect <connect-id> --style-examples` with the same reader to retrieve up to 1,024 cl100k_base tokens from the 12 most recently reserved eligible recordings before that capture. Only encrypted v2 metadata is selected. Empty transcripts and copies of the current recording contribute no text. The fetch ends at the token budget or the end of that list. A share link alone cannot retrieve examples.

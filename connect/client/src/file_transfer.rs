@@ -15,109 +15,7 @@ impl Client {
             262144,
         )?)?)
     }
-    pub(super) fn fetch_files_v2(
-        &self,
-        id: &str,
-        server: &str,
-        credential: &Credential,
-        manifest: &Value,
-        spool: &Path,
-        out: &Path,
-        parent: &Path,
-        selection: Option<&[String]>,
-    ) -> Result<PathBuf> {
-        let files: Vec<Asset> = serde_json::from_value(manifest["files"].clone())?;
-        v2::validate_transport(&files)?;
-        let identity = self.endpoint_identity(credential)?;
-        let peers = self.encryption_peers(credential, &|| true)?;
-        let download = |name: &str| -> Result<()> {
-            let file = files
-                .iter()
-                .find(|f| f.path == name)
-                .context("invalid_encryption_manifest")?;
-            let destination = spool.join(name);
-            private_dir(destination.parent().context("invalid_path")?)?;
-            self.request(
-                server,
-                Some(credential),
-                "GET",
-                &format!("/v1/captures/{id}/files/{name}"),
-                None,
-                &destination,
-                file.size.max(1),
-                Duration::from_secs(60),
-                &|| true,
-            )?;
-            ensure!(
-                fs::metadata(&destination)?.len() == file.size
-                    && digest_file(&destination)? == file.sha256,
-                "encrypted_transport_integrity_mismatch"
-            );
-            Ok(())
-        };
-        download("envelope.json")?;
-        download("sealed/index.age")?;
-        let context = v2::context(spool)?;
-        ensure!(
-            context.origin == server
-                && context.account_id == peers.account_id
-                && context.capture_id == id,
-            "encryption_context_mismatch"
-        );
-        let sender = peers
-            .devices
-            .iter()
-            .find(|p| p.scope == "upload" && p.grant_id == context.sender_grant_id)
-            .context("encryption_sender_revoked_or_unapproved")?;
-        let index = v2::open_index(spool, &files, &context, &identity, sender)?;
-        let listing = selection.is_some_and(|s| s.is_empty());
-        let entries = Self::file_transfer_plan(
-            &index,
-            &context,
-            &files,
-            if listing { None } else { selection },
-        )?;
-        let plain = Scratch::new_output(parent)?;
-        if !listing {
-            for entry in &entries {
-                download(&entry.object)?;
-                v2::unpack_file(spool, &plain.0, entry, &files, &identity)?;
-            }
-        }
-        if selection.is_none() {
-            let ordinary: Vec<Asset> = entries
-                .iter()
-                .map(|e| Asset {
-                    path: e.path.clone(),
-                    size: e.size,
-                    sha256: e.sha256.clone(),
-                })
-                .collect();
-            validate_assets(&ordinary)?;
-            validate_bundle_references(&plain.0, &ordinary)?;
-        } else {
-            ensure!(
-                out.extension().is_none_or(|s| s != "apparent"),
-                "selected_evidence_requires_extraction_directory"
-            );
-            atomic_json(
-                &plain.0.join(".connect-extraction.json"),
-                &json!({"format":"apparent-extraction-v1","captureId":id,"completeBundle":false,"files":entries}),
-            )?;
-        }
-        let latest = self.encryption_peers(credential, &|| true)?;
-        ensure!(
-            latest.account_id == peers.account_id
-                && latest.devices.iter().any(|p| p.scope == "upload"
-                    && p.grant_id == sender.grant_id
-                    && p.key == sender.key),
-            "encryption_sender_revoked_or_unapproved"
-        );
-        publish_noreplace(&plain.0, out)?;
-        File::open(parent)?.sync_all()?;
-        Ok(out.to_path_buf())
-    }
-    fn file_transfer_plan(
+    pub(crate) fn file_transfer_plan(
         index: &v2::Index,
         context: &CryptoContext,
         files: &[Asset],
@@ -239,7 +137,7 @@ impl Client {
                     .unwrap_or(error)
             })
     }
-    fn fetch_inner(
+    pub(super) fn fetch_inner(
         &self,
         id: &str,
         out: &Path,
@@ -416,5 +314,188 @@ impl Client {
         publish_noreplace(&stage.0, &out)?;
         File::open(&parent)?.sync_all()?;
         Ok(out)
+    }
+}
+
+struct Reader {
+    client: Client,
+    credential: Credential,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "$")]
+enum ReaderRoute {
+    Use { index: usize },
+    Report { index: usize },
+    Retry,
+    Unavailable,
+}
+
+impl Client {
+    pub(super) fn resolve_reader(
+        &self,
+        base: &str,
+        wait: u64,
+        deadline: Instant,
+    ) -> Result<Option<(Client, Credential, Value)>> {
+        let profiles = self.reader_profiles()?;
+        if profiles.is_empty() {
+            return Ok(None);
+        }
+        let configured = self.settings().server;
+        let server = if configured.is_empty() {
+            settings::DEFAULT_SERVER
+        } else {
+            configured.as_str()
+        };
+        let server = server_url(server)?;
+        let mut readers = Vec::new();
+        for (_, client) in profiles {
+            if let Ok(credential) = client.read_credential()
+                && credential.server == server
+            {
+                readers.push(Reader { client, credential });
+            }
+        }
+        if readers.is_empty() {
+            return Ok(None);
+        }
+        if let Ok(credential) = self.credential("read", &server) {
+            readers.insert(
+                0,
+                Reader {
+                    client: self.clone(),
+                    credential,
+                },
+            );
+        }
+        let lookup_deadline = if wait == 0 {
+            Instant::now() + Duration::from_secs(30)
+        } else {
+            deadline
+        };
+        loop {
+            let mut probes = Vec::new();
+            for reader in &readers {
+                let timeout = lookup_deadline.saturating_duration_since(Instant::now());
+                if timeout.is_zero() {
+                    break;
+                }
+                probes.push(reader.client.json_request(
+                    &reader.credential.server,
+                    Some(&reader.credential),
+                    "GET",
+                    base,
+                    None,
+                    timeout.min(Duration::from_secs(5)),
+                    &|| true,
+                ));
+            }
+            let outcomes: Vec<_> = probes
+                .iter()
+                .map(|probe| match probe {
+                    Ok(_) => "found",
+                    Err(error) if error.to_string() == "Hosted API: not_found" => "missing",
+                    Err(_) => "failed",
+                })
+                .collect();
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let route: ReaderRoute = serde_json::from_value(Self::handoff_policy(json!({
+                "operation": "readerRoute", "outcomes": outcomes, "canWait": !remaining.is_zero()
+            }))?)?;
+            match route {
+                ReaderRoute::Use { index } => {
+                    let reader = readers.get(index).context("Invalid Connect reader route")?;
+                    let manifest = probes
+                        .into_iter()
+                        .nth(index)
+                        .context("Invalid Connect reader result")??;
+                    return Ok(Some((
+                        reader.client.clone(),
+                        reader.credential.clone(),
+                        manifest,
+                    )));
+                }
+                ReaderRoute::Report { index } => {
+                    return Err(probes
+                        .into_iter()
+                        .nth(index)
+                        .and_then(Result::err)
+                        .context("Invalid Connect reader failure")?);
+                }
+                ReaderRoute::Unavailable => bail!("Hosted API: not_found"),
+                ReaderRoute::Retry => {
+                    std::thread::sleep(Duration::from_millis(500).min(remaining));
+                    if Instant::now() >= deadline {
+                        bail!("Hosted API: not_found");
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
+impl Client {
+    pub fn style_source(&self, bundle: &Path) -> Option<String> {
+        if let Ok(bytes) = read_private(&bundle.join(".connect-style.json"), 256) {
+            let receipt: Value = serde_json::from_slice(&bytes).ok()?;
+            return receipt["captureId"].as_str().filter(|id| valid_id(id)).map(str::to_owned);
+        }
+        if !self.provider.experiment("speakingStyle") || !self.enabled() {
+            return None;
+        }
+        let path = bundle.canonicalize().ok()?;
+        let job = self.jobs().ok()?.into_iter().find(|job| {
+            job.bundle == path && job.speaking_style && job.encrypted && self.active(job)
+        })?;
+        Some(job.id)
+    }
+
+    pub fn visit_style_transcripts(&self, id: &str, profile: Option<&str>, local: Option<&Path>, mut visit: impl FnMut(&str, usize) -> Result<bool>) -> Result<()> {
+        ensure!(valid_id(id), "Expected a Connect capture ID");
+        let base = format!("/v1/captures/{id}");
+        let reader = match profile {
+            Some("default") => self.clone(),
+            Some(name) => self.named_reader(name)?,
+            None => self.resolve_reader(&base, 0, Instant::now())?
+                .map(|(client, _, _)| client).unwrap_or_else(|| self.clone()),
+        };
+        let credential = reader.read_credential()?;
+        let current = || reader.read_credential().is_ok_and(|c| c.generation == credential.generation && c.server == credential.server);
+        let response = reader.json_request(&credential.server, Some(&credential), "GET",
+            &format!("{base}/style-history"), None, Duration::from_secs(15), &current)?;
+        let budget = response["tokenBudget"].as_u64().filter(|n| (1..=1024).contains(n))
+            .context("Invalid Connect transcript budget")? as usize;
+        let ids: Vec<String> = serde_json::from_value(response["ids"].clone())?;
+        ensure!(ids.len() <= 12 && ids.iter().all(|other| valid_id(other) && other != id), "Invalid Connect history");
+        let read = |source: &str| -> Result<Value> {
+            ensure!(current(), "Connect reader changed");
+            let scratch = Scratch::new(&reader.state)?;
+            let out = scratch.0.join("transcript");
+            reader.fetch_inner(source, &out, 0, Some(&["apparent.json".into()]), false)?;
+            ensure!(current(), "Connect reader changed");
+            let metadata = out.join("apparent.json");
+            if source == id && let Some(path) = local {
+                ensure!(digest_file(&metadata)? == digest_file(&path.join("apparent.json"))?, "Local recording does not match this Connect capture");
+            }
+            Ok(serde_json::from_reader(File::open(metadata)?)?)
+        };
+        if ids.is_empty() { return Ok(()); }
+        let anchor = read(id)?;
+        let current_id = anchor["id"].as_str().context("Missing recording ID")?;
+        for candidate in ids {
+            let manifest = match read(&candidate) {
+                Ok(value) => value,
+                Err(error) if matches!(error.to_string().as_str(), "Hosted API: not_found" | "encryption_decrypt_failed" | "encryption_sender_revoked_or_unapproved") => continue,
+                Err(error) => return Err(error),
+            };
+            let recording = manifest["id"].as_str().context("Missing recording ID")?;
+            if recording != current_id && let Some(text) = manifest["transcript"]["text"].as_str() && visit(text, budget)? {
+                break;
+            }
+        }
+        Ok(())
     }
 }

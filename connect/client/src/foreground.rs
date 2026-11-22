@@ -45,6 +45,18 @@ impl Drop for ProgressGuard {
 }
 
 impl Client {
+    pub fn pointer(&self, bundle: &Path) -> Option<String> {
+        if !self.enabled() || !self.state.is_dir() {
+            return None;
+        }
+        let job = self.jobs().ok()?.into_iter().find(|j| {
+            !j.public_copy && j.bundle == bundle && self.active(j) && j.status != "cancelled"
+        })?;
+        let result = Self::handoff_policy(json!({"job":{"id":job.id,"status":job.status}})).ok()?;
+        if !self.active(&job) { return None; }
+        result.as_str().map(str::to_owned)
+    }
+
     pub fn foreground_enabled(&self) -> bool {
         self.provider.experiment(FOREGROUND_UPLOAD)
     }
@@ -164,6 +176,7 @@ impl Client {
             files: Vec::new(),
             shared: share,
             public_copy,
+            speaking_style: !public_copy && self.provider.experiment("speakingStyle"),
             encrypted: !public_copy && self.provider.experiment(HOSTED_ENCRYPTION),
             encryption: None,
             encryption_version: 2,
@@ -322,7 +335,11 @@ impl Client {
                     "POST",
                     &base,
                     Some(if job.encrypted {
-                        json!({"format":format,"files":job.files})
+                        let mut reservation = json!({"format":format,"files":job.files});
+                        if job.speaking_style {
+                            reservation["styleHistory"] = json!(true);
+                        }
+                        reservation
                     } else {
                         json!({"files":job.files})
                     }),

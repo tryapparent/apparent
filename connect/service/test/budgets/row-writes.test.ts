@@ -237,11 +237,11 @@ test('unchanged account admission and same-day analytics maintenance do not writ
   await f.db.prepare("UPDATE auth_user SET email='changed@example.com' WHERE id='no-change'").run();
   assert.equal((await(await f.call('/admit?user=no-change')).json()).rows,1);
   assert.equal((await f.db.prepare('SELECT email FROM accounts WHERE id=?').bind(a.id).first()).email,'changed@example.com');
-  await f.db.exec((await readFile('migrations/0006.sql','utf8')).replaceAll('\n',' '));
+  await f.db.exec((await readFile('migrations/baseline/0006.sql','utf8')).replaceAll('\n',' '));
   await f.db.prepare('UPDATE analytics_control SET enabled=1').run();
-  assert.equal((await(await f.call('/analytics')).json()).rows,1,'first UTC-day checkpoint persists');
-  assert.equal((await(await f.call('/analytics')).json()).rows,0,'same-day empty maintenance is read-only');
-  await f.db.exec((await readFile('migrations/0009.sql','utf8')).replaceAll('\n',' '));
+  assert.equal((await(await f.call('/analytics')).json()).rows,1,'checkpoint persists');
+  assert.equal((await(await f.call('/analytics')).json()).rows,0,'maintenance is read-only');
+  await f.db.exec((await readFile('migrations/baseline/0009.sql','utf8')).replaceAll('\n',' '));
   await f.db.prepare('UPDATE aggregate_dau_state SET as_of_ms=0').run();
   assert.equal((await(await f.call('/activity')).json()).rows,1,'stale aggregate checkpoint advances');
   // Fix the watermark beyond this quarter to avoid a boundary-clock flake.
