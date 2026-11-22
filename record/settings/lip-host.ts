@@ -135,12 +135,15 @@ export async function readLipTrackingModel(decoder: Decoder) {
   }
 }
 
+export class LipDecodeTimeout extends Error {}
+
 export async function decodeLipClip(decoder: Decoder, bytes: Uint8Array, signal: AbortSignal) {
   if (!policy.valid_size(bytes.byteLength)) throw Error("Invalid lip clip");
   const scratch = await mkdtemp(join(tmpdir(), "apparent-dev-lip-prompt-"));
   try {
     const clip = join(scratch, "prompt.webm");
     await writeFile(clip, bytes, { mode: 0o600, signal });
+    const threads = String(policy.decode_threads());
     const { stdout } = await run(decoder.program,
       [...decoder.prefix, "file", clip, "--end", String(policy.clip_seconds()), "--cleanup", "none"], {
         cwd: decoder.directory,
@@ -148,7 +151,18 @@ export async function decodeLipClip(decoder: Decoder, bytes: Uint8Array, signal:
         maxBuffer: 65536,
         killSignal: "SIGKILL",
         signal,
-        env: { ...process.env, HF_HUB_OFFLINE: "1", LIPFLOW_HOME: scratch },
+        env: {
+          ...process.env,
+          HF_HUB_OFFLINE: "1",
+          LIPFLOW_HOME: scratch,
+          OMP_NUM_THREADS: threads,
+          MKL_NUM_THREADS: threads,
+          OPENBLAS_NUM_THREADS: threads,
+        },
+      }).catch((error: unknown) => {
+        if (!signal.aborted && error instanceof Error && "killed" in error && error.killed === true &&
+          "signal" in error && error.signal === "SIGKILL") throw new LipDecodeTimeout("Lipflow timed out");
+        throw error;
       });
     const match = /^raw:[ \t]*(.*)$/m.exec(stdout);
     if (!match || signal.aborted) throw Error("Silent prompt unavailable");

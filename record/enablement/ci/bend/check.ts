@@ -223,6 +223,7 @@ await bendScratch(async (scratch) => {
     import captions from "./caption-admission.mjs";
     import lip from "./lip-policy.mjs";
     assert.equal(lip.clip_seconds(), 12);
+    assert.equal(lip.decode_threads(), 4);
     assert.equal(lip.finish_tail_ms(), 400);
     for (const lips of [false, true]) for (const mic of [false, true])
       assert.equal(lip.use_microphone(lips, mic), !lips && mic);
