@@ -14,6 +14,7 @@ import flat from "./pond-art/fold-flat.webp";
 import idle from "./pond-art/idle.webp";
 import launch from "./pond-art/motion/launch.mp4";
 import openBox from "./pond-art/motion/open-box.mp4";
+import shakeBox from "./pond-art/motion/shake-box.mp4";
 import closed from "./pond-art/closed.webp";
 import paper from "./pond-art/paper.webp";
 import pinched from "./pond-art/fold-pinched.webp";
@@ -115,7 +116,7 @@ function CheckingBox({
   const trackFall = useCallback(
     (video: HTMLVideoElement | null) => {
       if (!video) return;
-      const timeout = window.setTimeout(holdClosed, 3000);
+      const timeout = window.setTimeout(holdClosed, 2000);
       return () => window.clearTimeout(timeout);
     },
     [holdClosed],
@@ -131,7 +132,17 @@ function CheckingBox({
 
   return (
     <span ref={trackBox} className="settings-pond-box">
-      {caught && !waiting ? (
+      {caught && waiting ? (
+        <video
+          key="shaking"
+          src={shakeBox}
+          poster={closed}
+          autoPlay
+          muted
+          playsInline
+          loop
+        />
+      ) : caught ? (
         <video
           key="opening"
           ref={trackOpening}

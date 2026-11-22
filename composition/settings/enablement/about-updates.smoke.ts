@@ -344,7 +344,7 @@ test("About makes channel installation, restart and recovery distinct", async ()
     await expect.poll(() => video.evaluate((element: HTMLVideoElement) =>
       element.currentTime > 0 && element.videoWidth === 540 && element.textTracks.length === 0,
     )).toBe(true);
-    await expect(pond.locator('video[src*="/check-"]')).toHaveJSProperty("ended", true);
+    await expect(pond.locator("video[loop]")).toHaveAttribute("src", /\/shake-box-.*\.mp4$/);
     await publish({ checking: false, result: "current" });
     await expect(page.getByRole("heading", { name: "Already up to date" })).toBeVisible();
     await expect(video).toHaveAttribute("src", /\/open-box-.*\.mp4$/);
