@@ -68,21 +68,25 @@ test("independent stable attachment is retired and paired coordinator owns publi
 });
 
 test("the Amazon Linux CLI is verified on the x86-64 candidate before sealing", () => {
-  const build = job("linux");
-  const verification = build.indexOf(
-    "Build and verify the Amazon Linux 2023 CLI",
-  );
-  const seal = build.indexOf("Seal checked Linux candidate");
-  assert.ok(verification >= 0 && verification < seal);
-  assert.match(build.slice(verification, seal), /matrix\.arch == 'x86_64'/);
+  const compile = job("cli");
+  assert.ok(compile.includes("needs: admit"));
+  assert.ok(compile.includes("build.ts dist --compile-only"));
+  const seal = job("seal-x86");
+  assert.ok(seal.includes("name: Linux x86_64"));
+  assert.ok(seal.includes("needs: [admit, linux, cli]"));
+  for (const [artifact, producer] of [
+    ["x86-appimage", job("linux")],
+    ["amazon-cli", compile],
+  ]) {
+    const name = "name: " + artifact + "-${{ github.run_attempt }}";
+    assert.ok(producer.includes(name));
+    assert.ok(seal.includes(name));
+  }
+  const verification = seal.indexOf("amazon-linux-cli/verify.ts");
+  assert.ok(verification >= 0);
   assert.ok(
-    build
-      .slice(verification, seal)
-      .includes("PRODUCER_APPIMAGE: dist/${{ steps.package.outputs.name }}"),
-  );
-  assert.match(
-    build.slice(verification, seal),
-    /amazon-linux-cli\/build\.ts dist "\$PRODUCER_APPIMAGE"/,
+    verification <
+      seal.indexOf("manifest.ts create candidate/dist linux x86_64"),
   );
 });
 
