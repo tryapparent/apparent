@@ -118,9 +118,10 @@ The recording Whiteboard opens the packaged Electron window assembled by
 Composition. Onboarding injects its drawing lesson into the same window.
 The Record Bend policy supplies editing decisions to the native capture session,
 which owns the accepted paper across close, reopen and renderer loss. The
-native bundle writer publishes a Whiteboard keyframe at capture end using the
-same staged writes and rollback as before. The practice example stays in the
-renderer and never enters that paper.
+native bundle writer publishes timestamped Whiteboard keyframes for the paper
+visible before Undo or Clear removes ink, plus a separate final image if ink
+remains at Finish. The capture retains the latest 12 pre-edit snapshots. The
+practice example stays in the renderer and never enters those images.
 
 Both pill implementations request the same surface. The desktop package stages
 `dist/whiteboard` beside its other popup assets and uses the installed shared

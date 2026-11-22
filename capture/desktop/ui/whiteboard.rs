@@ -4,8 +4,10 @@ use serde_json::json;
 
 use super::super::ApparentCoordinator;
 use std::{
+    collections::VecDeque,
     io::{BufRead, BufReader, Read, Write},
     process::{Command, Stdio},
+    sync::Arc,
     sync::mpsc::{Receiver, SyncSender, TryRecvError, sync_channel},
     time::{Duration, Instant},
 };
@@ -111,15 +113,44 @@ impl Drop for Window {
 }
 use serde::{Deserialize, Serialize};
 
+use crate::capture::engine::{bundle::bundle_processing::publication, render, sketch};
 use crate::embedded_policy::EmbeddedPolicy;
+use crate::shared::model::ApparentBundle;
 
-pub(crate) const PAPER_WIDTH: f32 = 1600.0;
-pub(crate) const PAPER_HEIGHT: f32 = 1100.0;
+#[path = "../../../engine/recording/whiteboard/pixels.rs"]
+mod pixels;
+use pixels::{PAPER_HEIGHT, PAPER_WIDTH, contact_sheet, render_paper};
+
+type Stroke = Arc<Vec<[f32; 2]>>;
 
 #[derive(Clone, Default, Serialize)]
 pub(in crate::capture::desktop) struct Paper {
     pub color: [u8; 3],
-    pub strokes: Vec<Vec<[f32; 2]>>,
+    #[serde(serialize_with = "serialize_strokes")]
+    pub strokes: Vec<Stroke>,
+}
+
+fn serialize_strokes<S: serde::Serializer>(strokes: &[Stroke], serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(strokes.iter().map(Arc::as_ref))
+}
+
+struct Revision {
+    t: u64,
+    edit: &'static str,
+    paper: Paper,
+}
+
+#[derive(Default)]
+pub(in crate::capture::desktop) struct SavedBoard {
+    paper: Paper,
+    revisions: VecDeque<Revision>,
+}
+
+#[cfg(test)]
+impl From<Paper> for SavedBoard {
+    fn from(paper: Paper) -> Self {
+        Self { paper, ..Self::default() }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -145,24 +176,25 @@ enum Effect {
     Append,
     Commit,
     Discard,
-    RemoveLast,
-    Erase,
+    UndoDraft { evict: bool },
+    UndoStroke { evict: bool },
+    ClearPaper { evict: bool },
     Hide,
     CommitAndHide,
     CommitAndStart,
 }
 
 struct PaperState {
-    pub paper: Paper,
+    saved: SavedBoard,
     visible: bool,
-    active: Option<Vec<[f32; 2]>>,
+    active: Option<Stroke>,
     policy: EmbeddedPolicy,
 }
 
 impl PaperState {
     pub(crate) fn open(color: [u8; 3]) -> Result<Self> {
         Ok(Self {
-            paper: Paper { color, strokes: Vec::new() },
+            saved: SavedBoard { paper: Paper { color, strokes: Vec::new() }, ..SavedBoard::default() },
             visible: false,
             active: None,
             policy: EmbeddedPolicy::open(
@@ -173,7 +205,7 @@ impl PaperState {
         })
     }
 
-    pub(crate) fn edit(&mut self, event: Edit, point: Option<[f32; 2]>) -> Result<bool> {
+    pub(crate) fn edit(&mut self, event: Edit, point: Option<[f32; 2]>, t: u64) -> Result<bool> {
         let point = point.filter(|[x, y]| {
             (0.0..PAPER_WIDTH).contains(x) && (0.0..PAPER_HEIGHT).contains(y)
         });
@@ -182,24 +214,33 @@ impl PaperState {
             self.visible,
             self.active.is_some(),
             point.is_some(),
-            self.paper.strokes.len() as u32,
+            self.saved.paper.strokes.len() as u32,
             self.active.as_ref().map_or(0, |stroke| stroke.len() as u32),
+            self.saved.revisions.len() as u32,
         ))?;
         match serde_json::from_str(&output)? {
             Effect::Ignore => return Ok(false),
             Effect::Show => self.visible = true,
             Effect::Hide => self.visible = false,
-            Effect::Start => self.active = point.map(|p| vec![p]),
+            Effect::Start => self.active = point.map(|p| Arc::new(vec![p])),
             Effect::Append => {
                 if let (Some(active), Some(point)) = (&mut self.active, point) {
-                    active.push(point);
+                    Arc::make_mut(active).push(point);
                 }
             }
             Effect::Discard => self.active = None,
-            Effect::RemoveLast => { self.paper.strokes.pop(); }
-            Effect::Erase => {
+            Effect::UndoDraft { evict } => {
+                self.remember(t, "before Undo", evict);
                 self.active = None;
-                self.paper.strokes.clear();
+            }
+            Effect::UndoStroke { evict } => {
+                self.remember(t, "before Undo", evict);
+                self.saved.paper.strokes.pop();
+            }
+            Effect::ClearPaper { evict } => {
+                self.remember(t, "before Clear", evict);
+                self.active = None;
+                self.saved.paper.strokes.clear();
             }
             Effect::Commit => self.commit(),
             Effect::CommitAndHide => {
@@ -208,14 +249,21 @@ impl PaperState {
             }
             Effect::CommitAndStart => {
                 self.commit();
-                self.active = point.map(|p| vec![p]);
+                self.active = point.map(|p| Arc::new(vec![p]));
             }
         }
         Ok(true)
     }
 
     fn commit(&mut self) {
-        self.paper.strokes.extend(self.active.take());
+        self.saved.paper.strokes.extend(self.active.take());
+    }
+
+    fn remember(&mut self, t: u64, edit: &'static str, evict: bool) {
+        if evict { self.saved.revisions.pop_front(); }
+        let mut paper = self.saved.paper.clone();
+        paper.strokes.extend(self.active.iter().cloned());
+        self.saved.revisions.push_back(Revision { t, edit, paper });
     }
 }
 #[derive(Default)]
@@ -249,9 +297,9 @@ impl Board {
         command.arg(entry);
         let window = Window::launch(
             command,
-            id, practice, &board.paper,
+            id, practice, &board.saved.paper,
         )?;
-        board.edit(Edit::Open, None)?;
+        board.edit(Edit::Open, None, 0)?;
         self.window = Some(window);
         Ok(())
     }
@@ -266,20 +314,20 @@ impl Board {
     }
 
     pub fn has_ink(&self) -> bool {
-        self.board.as_ref().is_some_and(|board| !board.paper.strokes.is_empty())
+        self.board.as_ref().is_some_and(|board| !board.saved.paper.strokes.is_empty())
     }
 
     pub fn close(&mut self) {
         self.window.take();
         if let Some(board) = &mut self.board
-            && let Err(error) = board.edit(Edit::Close, None)
+            && let Err(error) = board.edit(Edit::Close, None, 0)
         {
             crate::capture::engine::runtime::apparent_log(format!("Whiteboard close: {error:#}"));
         }
     }
 
-    pub fn tick(&mut self, cx: &mut App) -> bool {
-        match self.drain(cx) {
+    pub fn tick(&mut self, cx: &mut App, t: u64) -> bool {
+        match self.drain(cx, t) {
             Ok(changed) => changed,
             Err(error) => {
                 self.close();
@@ -289,7 +337,7 @@ impl Board {
         }
     }
 
-    fn drain(&mut self, cx: &mut App) -> Result<bool> {
+    fn drain(&mut self, cx: &mut App, t: u64) -> Result<bool> {
         let (Some(window), Some(board)) = (&mut self.window, &mut self.board) else { return Ok(false) };
         let mut changed = false;
         for _ in 0..512 {
@@ -300,7 +348,7 @@ impl Board {
                     super::linux::float_whiteboard(window.pid(), cx);
                 }
                 Some(Event::Edit { sequence, operation, point }) if window.frame.is_some() => {
-                    changed |= board.edit(operation, point)?
+                    changed |= board.edit(operation, point, t)?
                         && matches!(operation, Edit::End | Edit::Undo | Edit::Clear | Edit::Close);
                     match operation {
                         Edit::Begin | Edit::Move => {}
@@ -308,7 +356,7 @@ impl Board {
                             self.window.take();
                             return Ok(changed);
                         }
-                        _ => window.send(json!({"type": "paper", "sequence": sequence, "paper": board.paper}))?,
+                        _ => window.send(json!({"type": "paper", "sequence": sequence, "paper": board.saved.paper}))?,
                     }
                 }
                 Some(_) => anyhow::bail!("Invalid Whiteboard event"),
@@ -318,10 +366,10 @@ impl Board {
         Ok(changed)
     }
 
-    pub fn finish(&mut self, cx: &mut App) -> Paper {
-        self.tick(cx);
+    pub fn finish(&mut self, cx: &mut App, t: u64) -> SavedBoard {
+        self.tick(cx, t);
         self.close();
-        self.board.take().map_or_else(Paper::default, |board| board.paper)
+        self.board.take().map_or_else(SavedBoard::default, |board| board.saved)
     }
 }
 
@@ -329,7 +377,8 @@ pub(in crate::capture::desktop) fn tick(
     coordinator: &mut ApparentCoordinator,
     cx: &mut gpui::Context<ApparentCoordinator>,
 ) {
-    if coordinator.whiteboard.borrow_mut().tick(cx) && coordinator.is_recording() {
+    let t = coordinator.active_recording.as_ref().map_or(0, |recording| recording.elapsed_ms());
+    if coordinator.whiteboard.borrow_mut().tick(cx, t) && coordinator.is_recording() {
         let generation = coordinator.capture_generation;
         cx.spawn(async move |coord, cx| {
             cx.background_executor().timer(Duration::from_millis(120)).await;
@@ -357,136 +406,115 @@ pub(in crate::capture::desktop) fn open(coord: &Entity<ApparentCoordinator>, cx:
 /// A paper export is optional. Never turn a finished screen recording into a failed capture.
 pub(in crate::capture::desktop) fn finish_handoff(
     dir: &std::path::Path,
-    bundle: crate::shared::model::ApparentBundle,
+    bundle: ApparentBundle,
     summary: String,
-    board: &Paper,
-) -> (crate::shared::model::ApparentBundle, String) {
+    board: &SavedBoard,
+) -> (ApparentBundle, String) {
     finish_handoff_with(dir, bundle, summary, board, |_| Ok(()))
 }
 
 pub(in crate::capture::desktop) fn finish_handoff_with(
     dir: &std::path::Path,
-    mut bundle: crate::shared::model::ApparentBundle,
+    mut bundle: ApparentBundle,
     summary: String,
-    board: &Paper,
+    board: &SavedBoard,
     before_publish: impl FnMut(usize) -> anyhow::Result<()>,
-) -> (crate::shared::model::ApparentBundle, String) {
+) -> (ApparentBundle, String) {
     if let Err(error) = append_to_bundle_with(dir, &mut bundle, board, before_publish) {
         crate::capture::engine::runtime::apparent_log(format!(
             "Whiteboard handoff skipped: {error:#}"
         ));
         return (bundle, summary);
     }
-    let summary = crate::capture::engine::sketch::summary_markdown(&bundle, dir);
+    let summary = sketch::summary_markdown(&bundle, dir);
     (bundle, summary)
 }
 
-/// Keep the whole finished sketch legible even if the window was closed or resized at stop.
 fn append_to_bundle_with(
     dir: &std::path::Path,
-    bundle: &mut crate::shared::model::ApparentBundle,
-    board: &Paper,
+    bundle: &mut ApparentBundle,
+    board: &SavedBoard,
     before_publish: impl FnMut(usize) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
     use crate::shared::model::{Keyframe, KeyframeCrop, KeyframeReason};
     use std::io::BufReader;
 
-    if board.strokes.is_empty() {
+
+    let final_paper = (!board.paper.strokes.is_empty()).then_some(Revision {
+        t: bundle.duration_ms,
+        edit: "final state",
+        paper: board.paper.clone(),
+    });
+    if board.revisions.is_empty() && final_paper.is_none() {
         return Ok(());
     }
-    let root = crate::capture::engine::bundle::bundle_processing::publication::Directory::open(
+    let root = publication::Directory::open(
         dir, false,
     )?;
-    let read = |path: &str| -> anyhow::Result<crate::shared::model::RgbaFrame> {
-        crate::capture::engine::render::decode_png(BufReader::new(root.file(path)?))
+    let read = |key: &Keyframe, path: &str| -> Result<_> {
+        Ok((key.clone(), render::decode_png(BufReader::new(root.file(path)?))?))
     };
-    let mut frames: Vec<_> = bundle
-        .keyframes
-        .iter()
-        .map(|key| Ok((key.clone(), read(&key.file)?)))
-        .collect::<anyhow::Result<_>>()?;
-    let index = frames.len() + 1;
-    let count = board.strokes.len();
-    let event = format!(
-        "whiteboard drawing ({count} stroke{}; final state)",
-        if count == 1 { "" } else { "s" }
-    );
-    let key = Keyframe {
-        index,
-        t: bundle.duration_ms,
-        display_time: crate::composition::frame_labels::appended(&bundle.keyframes, bundle.duration_ms),
-        reason: KeyframeReason::Whiteboard,
-        file: format!("frames/frame-{index:02}.png"),
-        event,
-        said: None,
-        mark_id: None,
-        cursor: None,
+    let mut frames = bundle.keyframes.iter().map(|key| read(key, &key.file)).collect::<Result<Vec<_>>>()?;
+    let full_path = |folder: &str, key: &Keyframe| -> String {
+        let name = std::path::Path::new(&key.file).file_name().unwrap_or_default();
+        format!("{folder}/{}", name.to_string_lossy())
     };
-    let paper = render_paper(&board.strokes, bundle.duration_ms, board.color);
-    frames.push((key.clone(), paper.clone()));
-    let sheet = crate::capture::engine::render::render_contact_sheet_for_duration(
-        bundle.duration_ms,
-        &frames,
-    );
-    let mut stamped = vec![(key.clone(), paper)];
-    crate::capture::engine::render::stamp_keyframe_badges(&mut stamped);
-    let png = crate::capture::engine::render::encode_png(&stamped[0].1)?;
-    let full_sheet = if let Some(crop) = &bundle.autocrop {
-        let mut full: Vec<_> = bundle
-            .keyframes
-            .iter()
-            .map(|key| {
-                let name = std::path::Path::new(&key.file).file_name().unwrap();
-                let path = format!("{}/{}", crop.full_frames, name.to_string_lossy());
-                Ok((key.clone(), read(&path)?))
-            })
-            .collect::<anyhow::Result<_>>()?;
-        full.push((key.clone(), stamped[0].1.clone()));
-        Some(
-            crate::capture::engine::render::render_contact_sheet_for_duration(
-                bundle.duration_ms,
-                &full,
-            ),
-        )
-    } else {
-        None
-    };
-
+    let mut full = bundle.autocrop.as_ref().map(|crop| {
+        bundle.keyframes.iter().map(|key| read(key, &full_path(&crop.full_frames, key))).collect::<Result<Vec<_>>>()
+    }).transpose()?;
     let mut next = bundle.clone();
-    let mut writes = vec![
-        (key.file.clone(), png.clone()),
-        (
-            bundle.contact_sheet.clone(),
-            crate::capture::engine::render::encode_png(&sheet)?,
-        ),
-    ];
-    if let (Some(crop), Some(full)) = (&mut next.autocrop, full_sheet) {
-        let name = std::path::Path::new(&key.file).file_name().unwrap();
-        writes.push((
-            format!("{}/{}", crop.full_frames, name.to_string_lossy()),
-            png,
-        ));
-        writes.push((
-            crop.full_contact_sheet.clone(),
-            crate::capture::engine::render::encode_png(&full)?,
-        ));
-        crop.crops.push(KeyframeCrop {
+    let mut writes = Vec::new();
+    let keep_final = final_paper.is_some();
+    let first_index = bundle.keyframes.iter().map(|frame| frame.index).max().unwrap_or(0) + 1;
+    for (offset, revision) in board.revisions.iter().chain(final_paper.iter()).enumerate() {
+        let index = first_index + offset;
+        let count = revision.paper.strokes.len();
+        let t = revision.t.min(bundle.duration_ms);
+        let key = Keyframe {
             index,
-            x: 0.0,
-            y: 0.0,
-            width: bundle.target.frame.width,
-            height: bundle.target.frame.height,
-            kind: crate::capture::engine::autocrop::autocrop::CropKind::Full,
-            reason: "whiteboard paper (not a screen crop)".into(),
-            apps: Vec::new(),
-        });
-        crop.changes.push(Vec::new());
+            t,
+            display_time: crate::composition::frame_labels::appended(&next.keyframes, t),
+            reason: KeyframeReason::Whiteboard,
+            file: format!("frames/frame-{index:02}.png"),
+            event: format!("whiteboard drawing ({count} stroke{}; {})", if count == 1 { "" } else { "s" }, revision.edit),
+            said: None,
+            mark_id: None,
+            cursor: None,
+        };
+        let position = next.keyframes.partition_point(|frame| frame.t <= t);
+        let mut paper = render_paper(&revision.paper.strokes, t, revision.paper.color);
+        frames.insert(position, (key.clone(), paper.clone()));
+        render::stamp_keyframe_badge_in_place(&mut paper, &key);
+        let png = crate::capture::engine::render::encode_png(&paper)?;
+        writes.push((key.file.clone(), png.clone()));
+        if let (Some(crop), Some(full)) = (&mut next.autocrop, &mut full) {
+            writes.push((full_path(&crop.full_frames, &key), png));
+            full.insert(position, (key.clone(), paper));
+            crop.crops.insert(position, KeyframeCrop {
+                index,
+                x: 0.0,
+                y: 0.0,
+                width: bundle.target.frame.width,
+                height: bundle.target.frame.height,
+                kind: crate::capture::engine::autocrop::autocrop::CropKind::Full,
+                reason: "whiteboard paper (not a screen crop)".into(),
+                apps: Vec::new(),
+            });
+            if !crop.changes.is_empty() {
+                crop.changes.insert(position, Vec::new());
+            }
+        }
+        next.keyframes.insert(position, key);
     }
-    next.keyframes.push(key);
+    let sheet = |frames| contact_sheet(bundle.duration_ms, frames, keep_final);
+    writes.push((bundle.contact_sheet.clone(), sheet(frames)?));
+    if let (Some(crop), Some(full)) = (&next.autocrop, full) {
+        writes.push((crop.full_contact_sheet.clone(), sheet(full)?));
+    }
     writes.push(("apparent.json".into(), serde_json::to_vec_pretty(&next)?));
     writes.push((
         "summary.md".into(),
-        crate::capture::engine::sketch::summary_markdown(&next, dir).into_bytes(),
+        sketch::summary_markdown(&next, dir).into_bytes(),
     ));
     publish_artifacts(dir, &writes, before_publish)?;
     *bundle = next;
@@ -502,7 +530,7 @@ fn publish_artifacts(
 ) -> anyhow::Result<()> {
     use anyhow::Context;
 
-    let root = crate::capture::engine::bundle::bundle_processing::publication::Directory::open(
+    let root = publication::Directory::open(
         dir, false,
     )?;
     let stage_name = format!(".whiteboard-{}", crate::shared::ids::make_bundle_id());
@@ -568,69 +596,19 @@ fn publish_artifacts(
     result
 }
 
-fn render_paper(strokes: &[Vec<[f32; 2]>], t_ms: u64, color:[u8;3]) -> crate::shared::model::RgbaFrame {
-    use crate::shared::model::RgbaFrame;
-
-    let (mut x0, mut y0, mut x1, mut y1) = (PAPER_WIDTH, PAPER_HEIGHT, 0.0f32, 0.0f32);
-    for point in strokes.iter().flatten() {
-        x0 = x0.min(point[0]);
-        y0 = y0.min(point[1]);
-        x1 = x1.max(point[0]);
-        y1 = y1.max(point[1]);
-    }
-    let width = (x1 - x0 + 100.0).max(400.0).min(PAPER_WIDTH);
-    let height = (y1 - y0 + 100.0).max(300.0).min(PAPER_HEIGHT);
-    let left = ((x0 + x1 - width) / 2.0).clamp(0.0, PAPER_WIDTH - width);
-    let top = ((y0 + y1 - height) / 2.0).clamp(0.0, PAPER_HEIGHT - height);
-    let (w, h) = (width.ceil() as u32, height.ceil() as u32);
-    let mut image = RgbaFrame::new(t_ms, w, h, vec![255; w as usize * h as usize * 4]);
-    let dot = |image: &mut RgbaFrame, x: f32, y: f32| {
-        let (x, y) = (x.round() as i32, y.round() as i32);
-        for dy in -2..=2 {
-            for dx in -2..=2 {
-                if dx * dx + dy * dy > 5 {
-                    continue;
-                }
-                let (px, py) = (x + dx, y + dy);
-                if px >= 0 && py >= 0 && px < image.width as i32 && py < image.height as i32 {
-                    let at = (py as usize * image.width as usize + px as usize) * 4;
-                    image.rgba[at..at + 3].copy_from_slice(&color);
-                }
-            }
-        }
-    };
-    for stroke in strokes {
-        for point in stroke {
-            dot(&mut image, point[0] - left, point[1] - top);
-        }
-        for pair in stroke.windows(2) {
-            let (a, b) = (pair[0], pair[1]);
-            let steps = ((b[0] - a[0]).hypot(b[1] - a[1]) * 2.0).ceil() as usize;
-            for i in 0..=steps.max(1) {
-                let f = i as f32 / steps.max(1) as f32;
-                dot(
-                    &mut image,
-                    a[0] + (b[0] - a[0]) * f - left,
-                    a[1] + (b[1] - a[1]) * f - top,
-                );
-            }
-        }
-    }
-    image
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::shared::model::KeyframeReason;
 
-    #[test]
+    fn demo() -> (std::path::PathBuf, ApparentBundle, String) {
+        let root = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
+        crate::capture::desktop::demo::generate_demo_bundle(Some(root.join("demo.apparent"))).unwrap()
+    }
+
     #[test]
     fn finished_whiteboard_is_a_legible_handoff_frame_and_text() {
-        let root = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
-        let (dir, mut bundle, _) =
-            crate::capture::desktop::demo::generate_demo_bundle(Some(root.join("demo.apparent")))
-                .unwrap();
+        let (dir, mut bundle, _) = demo();
         let sheet_before = std::fs::read(dir.join("contact-sheet.png")).unwrap();
         let full_dir = dir.join("frames-full");
         std::fs::create_dir(&full_dir).unwrap();
@@ -670,24 +648,38 @@ mod tests {
                 .collect(),
             changes: vec![vec![]; bundle.keyframes.len()],
         });
-        let board = Paper { color: [26, 26, 26], strokes: vec![vec![[40.0, 40.0], [420.0, 310.0]]] };
-        append_to_bundle_with(&dir, &mut bundle, &board, |_| Ok(())).unwrap();
+        let mut state = PaperState::open([20, 90, 210]).unwrap();
+        state.edit(Edit::Open, None, 0).unwrap();
+        for point in [[40.0, 40.0], [420.0, 310.0]] {
+            state.edit(Edit::Begin, Some(point), 100).unwrap();
+            state.edit(Edit::End, None, 150).unwrap();
+        }
+        state.edit(Edit::Undo, None, 300).unwrap();
+        state.edit(Edit::Clear, None, 600).unwrap();
+        assert!(!state.edit(Edit::Clear, None, 650).unwrap());
+        state.edit(Edit::Begin, Some([200.0, 200.0]), 700).unwrap();
+        state.edit(Edit::End, None, 750).unwrap();
+        append_to_bundle_with(&dir, &mut bundle, &state.saved, |_| Ok(())).unwrap();
+        assert!(bundle.keyframes.is_sorted_by_key(|key| key.t));
+        let history: Vec<_> = bundle.keyframes.iter().filter(|key| key.reason == KeyframeReason::Whiteboard).collect();
+        assert_eq!(history.iter().map(|key| key.t).collect::<Vec<_>>(), [300, 600, bundle.duration_ms]);
+        assert!(history[0].event.contains("2 strokes; before Undo"));
+        assert!(history[1].event.contains("1 stroke; before Clear"));
+        for compact in [false, true] {
+            let text = sketch::summary_markdown_with(&bundle, &dir, compact);
+            assert!(history.iter().all(|key| text.contains(&key.event)));
+        }
+        let crop = bundle.autocrop.as_ref().unwrap();
+        assert!(crop.crops.iter().zip(&bundle.keyframes).all(|(crop, key)| crop.index == key.index));
+        assert_eq!(crop.changes.len(), bundle.keyframes.len());
         let frame = bundle.keyframes.last().unwrap();
         assert_eq!(frame.reason, KeyframeReason::Whiteboard);
-        assert!(
-            crate::capture::engine::sketch::summary_markdown_with(&bundle, &dir, false)
-                .contains("whiteboard drawing (1 stroke; final state)")
-        );
-        assert!(
-            crate::capture::engine::sketch::summary_markdown_with(&bundle, &dir, true)
-                .contains("whiteboard drawing (1 stroke; final state)")
-        );
         assert!(dir.join(&frame.file).is_file());
-        let image = crate::capture::engine::render::decode_png(std::io::BufReader::new(
+        let image = render::decode_png(std::io::BufReader::new(
             std::fs::File::open(dir.join(&frame.file)).unwrap(),
         ))
         .unwrap();
-        assert!(image.rgba.chunks_exact(4).any(|p| p[0] < 100 && p[1] < 100));
+        assert!(image.rgba.chunks_exact(4).any(|p| p[..3] == [20, 90, 210]));
         assert_ne!(
             std::fs::read(dir.join("contact-sheet.png")).unwrap(),
             sheet_before
@@ -705,40 +697,43 @@ mod tests {
             std::fs::read(dir.join("contact-sheet-full.png")).unwrap(),
             sheet_before
         );
-        let saved: crate::shared::model::ApparentBundle =
+        let saved: ApparentBundle =
             serde_json::from_slice(&std::fs::read(dir.join("apparent.json")).unwrap()).unwrap();
         assert_eq!(saved.keyframes, bundle.keyframes);
         assert_eq!(
             std::fs::read_to_string(dir.join("summary.md")).unwrap(),
-            crate::capture::engine::sketch::summary_markdown(&bundle, &dir)
+            sketch::summary_markdown(&bundle, &dir)
         );
-        std::fs::remove_dir_all(root).unwrap();
+        std::fs::remove_dir_all(dir.parent().unwrap()).unwrap();
     }
 
     #[test]
-    fn empty_or_cleared_paper_does_not_add_a_handoff_tile() {
-        let root = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
-        let (dir, mut bundle, _) =
-            crate::capture::desktop::demo::generate_demo_bundle(Some(root.join("demo.apparent")))
-                .unwrap();
+    fn cleared_paper_preserves_history_without_a_final_tile() {
+        let (dir, mut bundle, _) = demo();
         let before = std::fs::read(dir.join("contact-sheet.png")).unwrap();
         let keys = bundle.keyframes.len();
-        let board = Paper::default();
+        let board = SavedBoard::default();
         append_to_bundle_with(&dir, &mut bundle, &board, |_| Ok(())).unwrap();
         assert_eq!(bundle.keyframes.len(), keys);
         assert_eq!(
             std::fs::read(dir.join("contact-sheet.png")).unwrap(),
             before
         );
-        std::fs::remove_dir_all(root).unwrap();
+        let mut state = PaperState::open([20, 90, 210]).unwrap();
+        state.edit(Edit::Open, None, 0).unwrap();
+        state.edit(Edit::Begin, Some([100.0, 100.0]), 100).unwrap();
+        state.edit(Edit::Clear, None, 200).unwrap();
+        append_to_bundle_with(&dir, &mut bundle, &state.saved, |_| Ok(())).unwrap();
+        let history: Vec<_> = bundle.keyframes.iter().filter(|key| key.reason == KeyframeReason::Whiteboard).collect();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].t, 200);
+        assert!(history[0].event.contains("1 stroke; before Clear"));
+        std::fs::remove_dir_all(dir.parent().unwrap()).unwrap();
     }
 
     #[test]
     fn failed_paper_publish_keeps_the_original_capture_and_clipboard_text() {
-        let root = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
-        let (dir, bundle, summary) =
-            crate::capture::desktop::demo::generate_demo_bundle(Some(root.join("demo.apparent")))
-                .unwrap();
+        let (dir, bundle, summary) = demo();
         let manifest = std::fs::read(dir.join("apparent.json")).unwrap();
         let sheet = std::fs::read(dir.join("contact-sheet.png")).unwrap();
         let text = std::fs::read(dir.join("summary.md")).unwrap();
@@ -746,7 +741,7 @@ mod tests {
             "frames/frame-{:02}.png",
             bundle.keyframes.len() + 1
         ));
-        let board = Paper { color: [26, 26, 26], strokes: vec![vec![[40.0, 40.0], [420.0, 310.0]]] };
+        let board = SavedBoard::from(Paper { color: [26, 26, 26], strokes: vec![vec![[40.0, 40.0], [420.0, 310.0]].into()] });
 
         // Fail after the sheet, then again after the manifest, and restore all originals.
         for fail_at in [2, 3] {
@@ -771,16 +766,12 @@ mod tests {
                     .starts_with(".whiteboard-")
             }));
         }
-        std::fs::remove_dir_all(root).unwrap();
+        std::fs::remove_dir_all(dir.parent().unwrap()).unwrap();
     }
     #[test]
     fn cleanup_failure_retains_stage_and_blocks_fallback_publication() {
-        use crate::capture::engine::bundle::bundle_processing::publication;
-        let root = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
-        let (dir, bundle, summary) =
-            crate::capture::desktop::demo::generate_demo_bundle(Some(root.join("demo.apparent")))
-                .unwrap();
-        let board = Paper { color: [26, 26, 26], strokes: vec![vec![[40.0, 40.0], [420.0, 310.0]]] };
+        let (dir, bundle, summary) = demo();
+        let board = SavedBoard::from(Paper { color: [26, 26, 26], strokes: vec![vec![[40.0, 40.0], [420.0, 310.0]].into()] });
         let result = publication::publish_after(&dir, || {
             let (fallback, text) =
                 finish_handoff_with(&dir, bundle.clone(), summary.clone(), &board, |index| {
@@ -803,6 +794,6 @@ mod tests {
                 .starts_with(".whiteboard-")
         }));
         assert!(publication::checked(&dir, &bundle, &summary).is_err());
-        std::fs::remove_dir_all(root).unwrap();
+        std::fs::remove_dir_all(dir.parent().unwrap()).unwrap();
     }
 }

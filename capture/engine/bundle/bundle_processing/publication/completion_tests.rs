@@ -41,11 +41,11 @@ impl Drop for Fixture {
     }
 }
 
-fn board() -> whiteboard::Paper {
+fn board() -> whiteboard::SavedBoard {
     whiteboard::Paper {
         color: [26, 26, 26],
-        strokes: vec![vec![[40.0, 40.0], [420.0, 310.0]]],
-    }
+        strokes: vec![vec![[40.0, 40.0], [420.0, 310.0]].into()],
+    }.into()
 }
 
 fn dispatch(result: CaptureResult, success: bool) {
