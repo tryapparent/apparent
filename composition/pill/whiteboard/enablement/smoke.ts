@@ -158,7 +158,7 @@ test("staged Whiteboard renders accepted ink and puts editing behind the parent 
   for (const width of [720, 320]) {
     await session.send("Emulation.setDeviceMetricsOverride", {
       width,
-      height: 280,
+      height: width === 720 ? 540 : 280,
       deviceScaleFactor: 1,
       mobile: false,
     });

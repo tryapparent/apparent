@@ -14,6 +14,9 @@
     "capture/desktop/ui/frontend/tests/onboarding/wispr/smoke.ts"
   ],
   "retired": [
+    "capture/desktop/ui/frontend/src/onboarding/board/whiteboard.css",
+    "capture/desktop/ui/frontend/src/onboarding/board/whiteboard.tsx",
+    "capture/desktop/ui/frontend/tests/onboarding/board-completion.test.ts",
     "capture/desktop/settings/onboarding/account.rs",
     "capture/desktop/ui/frontend/electron/onboarding/account.ts",
     "capture/desktop/ui/frontend/tests/onboarding/account.test.ts",
