@@ -1,11 +1,11 @@
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 pub(crate) mod ax;
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(not(target_os = "macos"))]
 pub(crate) mod ax_other;
 #[cfg(target_os = "linux")]
 #[path = "../../../engine/accessibility/linux.rs"]
 pub(crate) mod ax;
-#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub(crate) use ax_other as ax;
 
 use crate::shared::model::{Stroke, TargetFrame};

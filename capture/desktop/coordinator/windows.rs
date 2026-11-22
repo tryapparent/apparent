@@ -538,8 +538,6 @@ pub fn run_app(
                     settings::onboarding_window::poll(cx);
                     #[cfg(any(target_os = "macos", target_os = "linux"))]
                     workflow::electron::poll_windows(cx);
-                    #[cfg(target_os = "windows")]
-                    settings::settings_window::poll(cx);
                     #[cfg(any(target_os = "macos", target_os = "linux"))]
                     if workflow::launch_instance::take_open(onboarding_initialized) {
                         loop_coord.update(cx, |coord, cx| {

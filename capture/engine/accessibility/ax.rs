@@ -350,13 +350,6 @@ pub fn hit_test(x: f64, y: f64) -> Option<Hit> {
     Some(hit)
 }
 
-/// The element at a global point (physical pixels) from UI Automation, looking past Apparent's own
-/// windows. Blocking; call it off the main thread.
-#[cfg(target_os = "windows")]
-pub fn hit_test(x: f64, y: f64) -> Option<Hit> {
-    crate::capture::engine::runtime::platform::legacy_windows::capture::uia::hit_test(x, y, LOOKUP_BUDGET)
-}
-
 /// `file:///Users/kit/main.rs` → `main.rs`.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn document_name(url: &str) -> Option<String> {

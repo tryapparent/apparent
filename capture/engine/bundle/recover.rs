@@ -457,12 +457,6 @@ pub fn start() {
                 .stdin(std::process::Stdio::null())
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null());
-            #[cfg(target_os = "windows")]
-            {
-                use std::os::windows::process::CommandExt;
-                const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-                command.creation_flags(CREATE_NO_WINDOW);
-            }
             match command.status() {
                 Ok(status) => apparent_log(format!("recover: finished ({status})")),
                 Err(error) => apparent_log(format!("recover: could not start: {error}")),
@@ -837,9 +831,6 @@ mod tests {
             .collect();
         let video = dir.join(VIDEO);
         let _ = std::fs::remove_file(&video);
-        #[cfg(target_os = "windows")]
-        crate::win::media::write_test_movie(&video, W, H, &frames).unwrap();
-        #[cfg(not(target_os = "windows"))]
         {
             let _ = &frames;
             let made = std::process::Command::new("ffmpeg")

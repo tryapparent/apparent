@@ -715,11 +715,6 @@ pub(crate) fn key_code(key: &str) -> Option<u32> {
     crate::capture::engine::runtime::key_code_for_char(ch).map(u32::from)
 }
 
-#[cfg(target_os = "windows")]
-fn open_privacy_settings(permission: Permission) {
-    crate::capture::engine::runtime::platform::legacy_windows::platform::privacy::open_settings(permission);
-}
-
 #[cfg(target_os = "linux")]
 fn open_privacy_settings(permission: Permission) {
     crate::capture::desktop::linux::privacy::open_settings(permission);
@@ -2421,13 +2416,6 @@ fn caption_buttons(theme: Theme) -> Option<Div> {
     if !WINDOWS {
         return None;
     }
-    #[cfg(target_os = "windows")]
-    let glyphs = if crate::capture::engine::runtime::platform::legacy_windows::platform::shell::windows_11() {
-        "Segoe Fluent Icons"
-    } else {
-        "Segoe MDL2 Assets"
-    };
-    #[cfg(not(target_os = "windows"))]
     let glyphs = ".SystemUIFont";
     let control = |id: &'static str, area: WindowControlArea, glyph: &'static str, close: bool| {
         div()

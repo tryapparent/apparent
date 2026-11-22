@@ -1152,7 +1152,6 @@ impl SharedCaptureTelemetry {
     }
 
     /// The helper process whose window is the capture target (the iPhone mirror).
-    #[cfg_attr(target_os = "windows", allow(dead_code))]
     pub fn set_capture_source_pid(&self, pid: u32) {
         self.capture_source_pid
             .store(i32::try_from(pid).unwrap_or(0), Ordering::Release);

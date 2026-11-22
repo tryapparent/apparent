@@ -14,7 +14,6 @@ mod permission_admission;
 mod lip_input;
 #[path = "engine/permissions/native.rs"]
 mod permission_native;
-#[cfg(not(windows))]
 #[path = "engine/permissions/relaunch.rs"]
 mod permission_relaunch;
 #[cfg(any(target_os = "macos", target_os = "linux"))]

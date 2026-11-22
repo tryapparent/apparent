@@ -362,67 +362,8 @@ pub fn raw_windows() -> Vec<RawWindow> {
     out
 }
 
-/// Reads the visible top-level windows (front to back). Like CGWindowList: the taskbar is the
-/// `Dock` (layer 20), always-on-top and tool windows sit above layer 0, and cloaked (on another
-/// virtual desktop) or minimized windows have no alpha.
-#[cfg(target_os = "windows")]
-pub fn raw_windows() -> Vec<RawWindow> {
-    let mut names: HashMap<u32, String> = HashMap::new();
-    crate::capture::engine::runtime::platform::legacy_windows::top_level_windows()
-        .into_iter()
-        .map(|w| {
-            let taskbar = matches!(w.class.as_str(), "Shell_TrayWnd" | "Shell_SecondaryTrayWnd");
-            let owner = if taskbar {
-                "Dock".to_owned()
-            } else {
-                names
-                    .entry(w.pid)
-                    .or_insert_with(|| {
-                        crate::capture::engine::runtime::platform::legacy_windows::app_identity(w.pid)
-                            .map(|(name, _)| name)
-                            .unwrap_or_default()
-                    })
-                    .clone()
-            };
-            let layer = if taskbar {
-                20
-            } else if w.is_app_window() && !w.topmost() {
-                0
-            } else {
-                3
-            };
-            RawWindow {
-                id: w.hwnd as u32,
-                pid: w.pid as i32,
-                owner,
-                title: w.title.clone(),
-                bounds: w.rect,
-                layer,
-                alpha: if w.on_screen() { 1.0 } else { 0.0 },
-            }
-        })
-        .collect()
-}
-
-#[cfg(target_os = "windows")]
-fn app_meta_of(pid: i32) -> AppMeta {
-    let id = crate::capture::engine::runtime::platform::legacy_windows::app_identity(pid as u32).map(|(_, id)| id);
-    let regular = crate::capture::engine::runtime::platform::legacy_windows::top_level_windows()
-        .iter()
-        .any(|w| w.pid == pid as u32 && w.is_app_window());
-    AppMeta {
-        bundle_id: id,
-        regular,
-    }
-}
-
-/// The taskbar's strip on the display at `frame` (global pixels): the difference between the
-/// display and its work area.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub fn dock_rect(frame: TargetFrame) -> Option<[f64; 4]> {
-    #[cfg(target_os = "windows")]
-    use crate::win as os;
-    #[cfg(target_os = "linux")]
     use crate::capture::desktop::linux as os;
     let monitor = os::monitors().into_iter().find(|m| {
         let [x, y, w, h] = m.rect;

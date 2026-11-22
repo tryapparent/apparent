@@ -86,10 +86,6 @@ pub fn configured_captures_dir(value: &str) -> Option<PathBuf> {
 
 /// Opens a file, folder or URL with its default app (Finder, Explorer, the browser).
 pub fn open_path(target: &Path) -> Result<()> {
-    #[cfg(target_os = "windows")]
-    {
-        crate::capture::engine::runtime::platform::legacy_windows::platform::shell::open(target)
-    }
     #[cfg(target_os = "linux")]
     {
         crate::capture::desktop::linux::shell::open(target)
@@ -104,10 +100,6 @@ pub fn open_path(target: &Path) -> Result<()> {
 
 /// Shows a file selected in Finder, Explorer or the Linux file manager.
 pub fn reveal_path(target: &Path) -> Result<()> {
-    #[cfg(target_os = "windows")]
-    {
-        crate::capture::engine::runtime::platform::legacy_windows::platform::shell::reveal(target)
-    }
     #[cfg(target_os = "linux")]
     {
         crate::capture::desktop::linux::shell::reveal(target)
@@ -272,12 +264,6 @@ fn copy_png_and_text_to_clipboard(png_bytes: &[u8], text: &str) -> Result<bool> 
     Ok(true)
 }
 
-#[cfg(target_os = "windows")]
-fn copy_png_and_text_to_clipboard(png_bytes: &[u8], text: &str) -> Result<bool> {
-    crate::capture::engine::runtime::platform::legacy_windows::platform::clipboard::set_png_and_text(png_bytes, Some(text))?;
-    Ok(true)
-}
-
 #[cfg(target_os = "linux")]
 fn copy_png_and_text_to_clipboard(png_bytes: &[u8], text: &str) -> Result<bool> {
     if !crate::capture::desktop::linux::clipboard::combined_offer_supported() {
@@ -285,16 +271,6 @@ fn copy_png_and_text_to_clipboard(png_bytes: &[u8], text: &str) -> Result<bool> 
     }
     crate::capture::desktop::linux::clipboard::set_png_and_text(png_bytes, text)?;
     Ok(true)
-}
-
-#[cfg(target_os = "windows")]
-pub fn copy_string_to_clipboard(content: &str) -> Result<()> {
-    crate::capture::engine::runtime::platform::legacy_windows::platform::clipboard::set_text(content)
-}
-
-#[cfg(target_os = "windows")]
-pub fn copy_png_to_clipboard(png_bytes: &[u8]) -> Result<()> {
-    crate::capture::engine::runtime::platform::legacy_windows::platform::clipboard::set_png(png_bytes)
 }
 
 #[cfg(target_os = "linux")]

@@ -266,29 +266,13 @@ pub fn pointer() -> Option<[f64; 2]> {
     crate::capture::engine::runtime::current_mouse_screen().map(|[x, y]| [f64::from(x), f64::from(y)])
 }
 
-/// Every display, the primary first, in global pixels. Linux IDs are RandR output-name atoms;
-/// Windows IDs are list indices (`TargetInfo::display_id`).
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub fn displays() -> Vec<Screen> {
-    #[cfg(target_os = "linux")]
     use crate::capture::desktop::linux as os;
-    #[cfg(target_os = "windows")]
-    use crate::win as os;
     os::monitors()
         .into_iter()
-        .enumerate()
-        .map(|(i, m)| Screen {
-            id: {
-                #[cfg(target_os = "linux")]
-                {
-                    let _ = i;
-                    os::monitor_id(&m)
-                }
-                #[cfg(target_os = "windows")]
-                {
-                    i as u32
-                }
-            },
+        .map(|m| Screen {
+            id: os::monitor_id(&m),
             frame: m.rect,
             visible: m.work,
             scale: m.scale,
@@ -297,15 +281,9 @@ pub fn displays() -> Vec<Screen> {
         .collect()
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
 pub fn current() -> Vec<Screen> {
     displays()
-}
-
-/// The global pointer, physical pixels.
-#[cfg(target_os = "windows")]
-pub fn pointer() -> Option<[f64; 2]> {
-    crate::capture::engine::runtime::platform::legacy_windows::cursor_position().map(|(x, y)| [x, y])
 }
 
 /// The global pointer, X root-window pixels (on Wayland, where XWayland last saw it).

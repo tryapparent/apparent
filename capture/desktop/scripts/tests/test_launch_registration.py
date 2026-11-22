@@ -2,6 +2,7 @@
 import pathlib
 import plistlib
 import re
+import json
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
@@ -28,7 +29,7 @@ class LaunchRegistration(unittest.TestCase):
                 }])
 
     def test_appimage_desktop_dispatches_one_url_without_shell(self):
-        text = (ROOT / 'capture/desktop/packaging/linux/dev.kitlangton.apparent.desktop').read_text()
+        text = '\n'.join(json.loads((ROOT / 'composition/enablement/release/linux/dev.kitlangton.apparent.desktop.json').read_text())) + '\n'
         self.assertIn('\nMimeType=x-scheme-handler/apparent;\n', text)
         self.assertIn('\nExec=apparent launch %u\n', text)
 

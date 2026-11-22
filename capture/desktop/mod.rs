@@ -39,8 +39,6 @@ use gpui::{
 // Desktop UI implementation and its platform adapters.
 #[cfg(target_os = "macos")]
 use ui::macos as platform;
-#[cfg(target_os = "windows")]
-use ui::windows as platform;
 #[cfg(target_os = "linux")]
 use ui::linux as platform;
 use ui::{desktop_completion, lab, motion, pill_theme, recording_completion, whiteboard};
@@ -50,8 +48,6 @@ use platform::{
     PillChrome, install_status_bar, pointer_on_hud_pill, reduce_motion, set_status_inbox_count,
     set_status_text,
 };
-#[cfg(target_os = "windows")]
-pub(crate) use platform::{gpui_display_for, hwnd_of, set_app_icon};
 
 use crate::capture::engine::runtime::audio::audio::{AudioRecorder, InputWarning};
 use crate::capture::engine::runtime::{
@@ -68,8 +64,6 @@ use crate::capture::desktop::linux::overlay::InkOverlay as LaserOverlay;
 use crate::shared::model::{ApparentBundle, CaptureMode, TargetFrame, TargetInfo, format_clock};
 use crate::capture::engine::runtime::phone::PhoneSession;
 use crate::capture::engine::sketch::timeline;
-#[cfg(target_os = "windows")]
-use crate::capture::engine::runtime::platform::legacy_windows::capture::overlay::InkOverlay as LaserOverlay;
 
 const SIDEBAR_BG: u32 = 0x111111;
 const CANVAS_BG: u32 = 0x161616;

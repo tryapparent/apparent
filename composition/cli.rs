@@ -822,8 +822,6 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
         Some(command) => command,
         // `apparent` typed in a terminal (on PATH through Settings › Agents or Homebrew) would
         // start a second menu-bar app. macOS opens the app with stdin on /dev/null.
-        // On Windows `apparent.exe` is a console program and Explorer gives it a console too, so a
-        // bare launch always starts the app. Linux desktops start `apparent app` (apparent.desktop).
         None if cfg!(any(target_os = "macos", target_os = "linux"))
             && std::io::IsTerminal::is_terminal(&std::io::stdin()) =>
         {
@@ -930,11 +928,6 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
             Ok(())
         }
         Command::App { record, iphone } => {
-            #[cfg(target_os = "windows")]
-            {
-                win::shell::release_own_console();
-                win::shell::wait_for_relauncher();
-            }
             #[cfg(target_os = "linux")]
             if linux::ipc::running() {
                 linux::ipc::send(if record { "shortcut record" } else { "open" })?;
@@ -942,11 +935,6 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
             }
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             return run_owned_app(record, iphone, false);
-            #[cfg(target_os = "windows")]
-            {
-                ui::run_app(None, record, iphone, None);
-                Ok(())
-            }
         }
         #[cfg(target_os = "linux")]
         Command::Update { command } => {
