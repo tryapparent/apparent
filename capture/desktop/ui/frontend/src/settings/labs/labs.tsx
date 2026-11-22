@@ -11,7 +11,7 @@ declare global {interface Window {apparentLabs: {
   read(): Promise<LabsFacts>; save(value: boolean, setting?: LabsSetting): Promise<LabsFacts>;
   subscribe(callback: (facts: LabsFacts) => void): () => void;
 };}}
-const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', compactHandoff: 'compact-handoff-toggle', transcriptOnly: 'transcript-only-toggle', silentPrompt: 'silent-prompt-toggle', agentContext: 'agent-context-toggle', pillDoodles: 'pill-doodles-toggle'};
+const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', silentPrompt: 'silent-prompt-toggle', agentContext: 'agent-context-toggle', pillDoodles: 'pill-doodles-toggle'};
 export type LabsExperiment<Checked = boolean> = ComponentType<{
   id: string; checked: Checked; disabled: boolean; saving: boolean;
   access?: LabsFacts['agentContextAccess'];
@@ -71,20 +71,6 @@ export function Labs({frogExperiment: FrogNudge, agentContextExperiment: AgentCo
   const sharing = facts && sharingEnabled(facts);
   const wispr = facts && wisprEnabled(facts);
   return <section className="settings-labs" aria-label="Experimental features">
-    <section className="agent-preference">
-      <div className="agent-preference-row"><h2 className="settings-preference-label" id="compact-handoff-label">Compact recording prompts</h2>
-        <Switch id={controls.compactHandoff} className="agent-switch" checked={facts?.compactHandoffSaved ?? false}
-          aria-labelledby="compact-handoff-label" aria-describedby="compact-handoff-help" aria-busy={busy && setting === 'compactHandoff'}
-          disabled={busy || !facts || !!facts.error} onCheckedChange={value => void request(value, 'compactHandoff')} /></div>
-      <p id="compact-handoff-help">Send a shorter prompt with timestamps that match the images. Applies to newly saved recordings.</p>
-    </section>
-    <section className="agent-preference">
-      <div className="agent-preference-row"><h2 className="settings-preference-label" id="transcript-only-label">Transcript-only handoff</h2>
-        <Switch id={controls.transcriptOnly} className="agent-switch" checked={facts?.transcriptOnlySaved ?? false}
-          aria-labelledby="transcript-only-label" aria-describedby="transcript-only-help" aria-busy={busy && setting === 'transcriptOnly'}
-          disabled={busy || !facts || !!facts.error} onCheckedChange={value => void request(value, 'transcriptOnly')} /></div>
-      <p id="transcript-only-help">Send just the transcript when no screen activity is detected.</p>
-    </section>
     {AgentContext && <AgentContext id={controls.agentContext} checked={facts?.agentContextSaved === true}
       access={facts?.agentContextAccess}
       disabled={busy || !facts || !!facts.error} saving={busy && setting === 'agentContext'}

@@ -126,7 +126,7 @@ pub fn prepare_visuals(
     if selected.is_empty() {
         return None;
     }
-    crate::composition::frame_labels::configured(&mut selected);
+    crate::composition::frame_labels::stamp(&mut selected);
     let (mut annotated_frames, mut cropped) = autocrop::annotate_and_crop(
         selected,
         baseline,
@@ -664,7 +664,7 @@ pub fn build_bundle_from_parts(
             limits,
             extras.video_ink,
         )?, &transcript)?;
-        crate::composition::frame_labels::configured(&mut selected);
+        crate::composition::frame_labels::stamp(&mut selected);
         let select_only_at = std::time::Instant::now();
         let completion_warning = captured_ink_frame_warning(&selected, &marks, extras.video_ink);
         let matches_prepared = completion_warning.is_none() && extras.prepared.as_ref().is_some_and(|prep| {
