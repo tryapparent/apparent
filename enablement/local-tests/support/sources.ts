@@ -33,7 +33,7 @@ export function copyRunnerSources(destination: string, source = root): void {
     }
   }
   for (const owner of sourceOwners) copy(owner);
-  const bendDeclarations = bendOwners.map(owner => bendDirectory(owner) + '/modules.json')
+  const bendDeclarations = bendOwners.flatMap(owner => ['modules.json', 'consumers.json'].map(file => bendDirectory(owner) + '/' + file))
     .filter(path => regularFile(origin, path));
   const declarations = ['engine/enablement/ci/inputs.json', 'onboarding/enablement/ci/inputs.json', ...bendDeclarations];
   for (const declaration of declarations) {

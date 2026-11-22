@@ -149,6 +149,20 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
   );
   assert.equal(check("connect/service/src/example.ts"), false);
   assert.equal(check(".github/workflows/stream-agent.yml"), false);
+  for (const [owner, path] of [
+    ["handoff", "handoff/pure/transcript-only.bend"],
+    ["connect", "connect/client/typescript/src/reader/reader-route.bend"],
+    ["connect", "connect/client/typescript/src/account/account-status.bend"],
+  ]) {
+    assert.equal(
+      check(path, true, owner + "/enablement/ci/bend/check.ts"),
+      true,
+      path,
+    );
+    const route = routeDecision([path]);
+    assert.equal(route.plan.desktop, true, path);
+    assert.equal(route.installer, true, path);
+  }
   const connect = "connect/enablement/ci/bend/check.ts";
   for (const path of [
     "connect/service/src/reporting/activity-preference.bend",

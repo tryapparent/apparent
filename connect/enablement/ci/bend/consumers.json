@@ -1,0 +1,40 @@
+{
+  "connect/enablement/ci/bend/check.ts": [],
+  "connect/enablement/ci/bend/settings.ts": [
+    "capture",
+    "desktop",
+    "client",
+    "onboarding"
+  ],
+  "connect/enablement/ci/build-client.ts": [
+    "capture",
+    "desktop",
+    "client",
+    "onboarding"
+  ],
+  "connect/client/typescript/src/account/account-status.bend": [
+    "capture",
+    "desktop",
+    "client",
+    "onboarding"
+  ],
+  "connect/client/typescript/src/reader/reader-route.bend": [
+    "capture",
+    "desktop",
+    "client"
+  ],
+  "connect/service/src/reporting/activity-preference.bend": [
+    "capture",
+    "client",
+    "web",
+    "service"
+  ],
+  "connect/service/src/support/report-policy.bend": [
+    "capture",
+    "client",
+    "web",
+    "service"
+  ],
+  "connect/enablement/ci/bend/README.md": ["service"],
+  "connect/enablement/ci/bend/": ["service"]
+}
