@@ -13,8 +13,9 @@ The Connect API returns the support public key to authorized clients when
 `SUPPORT_REPORT_RECIPIENT` and `SUPPORT_REPORT_READ_TOKEN` are configured.
 Desktop's native client seals the recording to a private age file, splits
 it into ordinary Connect upload parts and streams them using its existing
-grant. The upload uses the account's existing 500 MB quota. A new report
-requires free quota and cannot evict an existing capture on admission.
+grant. Each account has a separate 500 MB allowance for reports. Report uploads
+and ordinary captures cannot evict one another and both use Connect's
+shared storage budget.
 The report is unavailable through regular capture and share routes.
 
 The report ID and PostHog event ID are generated on the device. An open
@@ -38,7 +39,8 @@ the recording on demand.
 Use existing Connect D1 and the private bucket. Provision a dedicated support
 read token (64 lowercase hex characters) as a Worker secret and advertise the
 matching support age public key as `SUPPORT_REPORT_RECIPIENT`. Apply the
-additive migration before enabling the configuration. Install the decrypting
+additive migrations before enabling the configuration. The Worker uses the
+combined allowance until the quota isolation migration is applied. Install the decrypting
 Apparent binary and configure the existing fixer with the paired private key
 before advertising the public key. Drain or retain access to unexpired
 reports when replacing the key.

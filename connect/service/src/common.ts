@@ -55,7 +55,9 @@ export async function bearer(request: Request,env: Env,write=false) {
  const row=await stmt(env,'SELECT t.token AS hash,g.id AS grant_id,g.account_id,g.scope,t.expiresAt AS expires_at,a.beta FROM oauthAccessToken t JOIN auth_grants g ON g.client_id=t.clientId AND g.user_id=t.userId JOIN accounts a ON a.id=g.account_id WHERE t.token=? AND t.expiresAt>? AND t.revoked IS NULL AND g.revoked_at IS NULL',await hash(token),new Date().toISOString()).first<TokenRow>();
  if(!row)fail('reauthorization_required',401);if(row.beta!=='active')fail('beta_required',403);if(write&&row.scope!=='upload')fail('forbidden',403);return row;
 }
-export async function usage(env: Env,account: string) {return (await stmt(env,"SELECT COALESCE(sum(bytes),0) AS bytes FROM captures WHERE account_id=? AND status!='deleted' AND expires_at>? AND (status='ready' OR pending_until>?)",account,Date.now(),Date.now()).first<{bytes: number}>())!.bytes;}
+export const supportCapture="COALESCE(json_extract(manifest,'$[0].path')='support/part-0.age',0)";
+export const separateReportQuota="EXISTS(SELECT 1 FROM sqlite_schema WHERE type='trigger' AND name='capture_library_quota_evict')";
+export async function usage(env: Env,account: string) {return (await stmt(env,`SELECT COALESCE(sum(bytes),0) AS bytes FROM captures WHERE account_id=? AND (NOT ${separateReportQuota} OR NOT ${supportCapture}) AND status!='deleted' AND expires_at>? AND (status='ready' OR pending_until>?)`,account,Date.now(),Date.now()).first<{bytes: number}>())!.bytes;}
 export async function slots(env: Env) {const {used}=(await stmt(env,"SELECT count(*) AS used FROM accounts WHERE beta='active'").first<{used: number}>())!;return {used,limit:20,remaining:Math.max(0,20-used)};}
 export async function rate(env: Env,key: string,max=30) {
  const window=Math.floor(Date.now()/3600000);

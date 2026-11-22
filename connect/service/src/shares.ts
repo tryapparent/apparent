@@ -1,7 +1,7 @@
 import type {Env, ShareRow, ShareState, ShareModel, CaptureRow, FileRow} from './types.ts';
-import {random,hash,envelope,stmt,bearer,session,csrf,json,fail,body,isRecord,apiBase} from './common.ts';
+import {random,hash,envelope,stmt,bearer,session,csrf,json,fail,body,isRecord,apiBase,supportCapture} from './common.ts';
 import {getObject} from './storage.ts';
-import {validPath,supportCapture} from './captures.ts';
+import {validPath} from './captures.ts';
 import {queueDailyActivity} from './reporting/aggregate-dau.ts';
 
 // Capture lifetime, not a second link-retention policy. Check on every read,

@@ -39,7 +39,7 @@ test('signed-in reports stream beyond the former archive limit and remain availa
   assert.equal((await f.call(route+'/archive/part-0.age',{token:reader})).status,404);
 });
 
-test('a support report cannot evict an existing capture to make room', async t => {
+test('reports and ordinary captures have independent allowances', async t => {
   const f = await fixture(config);
   t.after(f.close);
   const owner = await f.identity('reporter');
@@ -49,11 +49,22 @@ test('a support report cannot evict an existing capture to make room', async t =
   const digestValue = 'a'.repeat(64);
   const files = Array.from({length:6},(_,index)=>({path:`frames/frame-${index}.png`,size:80_000_000,sha256:digestValue}));
   assert.equal((await reserve(existing,files)).status,200);
-  const entry = {path:'support/part-0.age',size:30_000_000,sha256:digestValue};
-  assert.equal((await reserve(report,[{...entry,path:'support/part-1.age'}])).status,400);
+  const entry = {path:'support/part-0.age',size:37_000_000,sha256:digestValue};
   assert.equal((await reserve(report,[entry])).status,409);
+  const migration = await readFile('.generated/migrations/0017.sql','utf8');
+  await f.db.exec(migration.replaceAll('\n',' '));
+  assert.equal((await reserve(report,[{...entry,path:'support/part-1.age'}])).status,400);
+  assert.equal((await reserve(report,[entry])).status,200);
+  const excess = '/v1/support-reports/'+'4'.repeat(32)+'/capture';
+  assert.equal((await reserve(excess,files.map((part,index)=>({...part,path:`support/part-${index}.age`})))).status,409);
+  const account = await f.call('/v1/account',{token:owner.token});
+  assert.equal((await account.json()).usedBytes,480_000_000);
   const result = await f.call(existing,{token:owner.token});
   assert.equal((await result.json()).status,'pending');
+  const next = '/v1/captures/'+'3'.repeat(32);
+  assert.equal((await reserve(next,[{...entry,path:'recording.mp4'}])).status,200);
+  assert.equal((await f.call(existing,{token:owner.token})).status,404);
+  assert.equal((await f.db.prepare('SELECT status FROM captures WHERE id=?').bind('2'.repeat(32)).first())?.status,'pending');
 });
 
 test('Support can retrieve and expire previously submitted reports', async t => {

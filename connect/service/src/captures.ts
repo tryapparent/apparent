@@ -1,11 +1,10 @@
 import reportPolicy from '#bend/report-policy';
 import {FILE_FORMAT,fileTransport} from '../../client/typescript/contracts.ts';
 import type {Env, CaptureRow, FileRow, ManifestFile, AttemptSnapshot} from './types.ts';
-import {DAY,hex,json,fail,stmt,body,bearer,usage,isRecord} from './common.ts';
+import {DAY,hex,json,fail,stmt,body,bearer,usage,isRecord,supportCapture,separateReportQuota} from './common.ts';
 import {checkedHeads,getObject,uploadAttempt,settledAttempt,deleteAttempts} from './storage.ts';
 import {queueDailyActivity} from './reporting/aggregate-dau.ts';
 const live="status!='deleted' AND expires_at>? AND (status='ready' OR pending_until>?)";
-export const supportCapture="COALESCE(json_extract(manifest,'$[0].path')='support/part-0.age',0)";
 const supportPath=/^support\/part-[0-5]\.age$/;
 export function validPath(path: unknown): path is string {
  return typeof path==='string'&&path.length<=128&&/^(apparent\.json|notes\.json|summary\.md|contact-sheet(?:-full)?\.png|audio\.wav|recording\.(mp4|mov)|finish-trace\.json|timeline\.json|frames(?:-full)?\/frame-[0-9]+\.png)$/.test(path);
@@ -75,7 +74,7 @@ export async function captureRoutes(request: Request,env: Env,url: URL,context?:
     const insert='INSERT INTO captures(id,account_id,manifest,bytes,expires_at,pending_until,format)';
     const result=await env.DB.batch([
      support
-      ?stmt(env,`${insert} SELECT ?,?,?,?,?,?,? WHERE (SELECT COALESCE(sum(bytes),0) FROM captures WHERE account_id=? AND ${live})<=?`,...values,a.account_id,now,now,500000000-m.bytes)
+      ?stmt(env,`${insert} SELECT ?,?,?,?,?,?,? WHERE (SELECT COALESCE(sum(bytes),0) FROM captures WHERE account_id=? AND (NOT ${separateReportQuota} OR ${supportCapture}) AND ${live})<=?`,...values,a.account_id,now,now,500000000-m.bytes)
       :stmt(env,`${insert} VALUES(?,?,?,?,?,?,?)`,...values),
      // One set insertion, not one SQL statement per file. JSON keeps the full
      // 512-file manifest below D1's 100-bound-parameter limit as well.
