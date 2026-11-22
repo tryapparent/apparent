@@ -141,9 +141,8 @@ fn update_failure(error: &anyhow::Error) -> Option<UpdateFailure> {
 
 fn electron_pane(pane: Option<Pane>) -> bool {
     settings::electron_general(pane)
-        || matches!(pane, Some(Pane::About | Pane::Agents | Pane::Labs | Pane::Recording))
+        || matches!(pane, Some(Pane::About | Pane::Agents | Pane::Labs | Pane::Recording | Pane::Storage))
         || cfg!(any(target_os = "linux", target_os = "macos")) && pane == Some(Pane::Permissions)
-        || settings::electron_storage(pane, crate::shared::handoff::experiment("electronCaptureLocation"))
 }
 
 fn recording_key(key: &str, value: &serde_json::Value) -> bool {

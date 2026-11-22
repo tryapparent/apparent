@@ -347,7 +347,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     await fs.mkdir(selected, { mode: 0o700 });
     await fs.mkdir(builtin, { recursive: true, mode: 0o700 });
     await fs.writeFile(sentinel, sentinelText, { mode: 0o600, flag: 'wx' });
-    await fs.writeFile(config, JSON.stringify({ experiments: { electronCaptureLocation: true },
+    await fs.writeFile(config, JSON.stringify({ experiments: { electronCaptureLocation: false },
       onboarding: { seen: true }, storageNativeFixture: unknown }), { mode: 0o600, flag: 'wx' });
     // Match the native reference fixture: do not hold normal app presentation
     // behind unrelated onboarding initialization. Rust still polls real grants
@@ -596,7 +596,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
       if (savedPath === null) assert.equal(Object.hasOwn(raw, 'capturesDir'), false);
       else assert.equal(raw.capturesDir, savedPath);
       assert.deepEqual(raw.storageNativeFixture, unknown);
-      assert.equal(raw.experiments.electronCaptureLocation, true);
+      assert.equal(raw.experiments.electronCaptureLocation, false);
       assert.equal(await fs.readFile(sentinel, 'utf8'), sentinelText);
       await assert.rejects(fs.stat(path.join(selected, 'existing-file.txt')), { code: 'ENOENT' });
       return { capturesDir: savedPath, keyAbsent: !Object.hasOwn(raw, 'capturesDir'),

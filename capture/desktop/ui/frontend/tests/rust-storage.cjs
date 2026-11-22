@@ -19,12 +19,14 @@ async function readLocation() {
 }
 async function main() {
   const selected = path.join(home, 'selected é captures');
-  const enabled = { experiments: { electronCaptureLocation: true }, privateFixture: 'keep' };
-  // Storage now defaults on; exercise the explicit opt-out before enabling it.
-  assert.equal((await captureLocation(home)).status, 'connected');
-  await fs.writeFile(config, JSON.stringify({ experiments: { electronCaptureLocation: false } }));
-  assert.deepEqual(await captureLocation(home), { status: 'disabled' });
-  await fs.writeFile(config, JSON.stringify(enabled));
+  assert.equal((await readLocation()).status, 'connected');
+  for (const electronCaptureLocation of [true, false]) {
+    const legacy = JSON.stringify({ experiments: { electronCaptureLocation, other: true }, privateFixture: 'keep' });
+    await fs.writeFile(config, legacy);
+    assert.equal((await readLocation()).status, 'connected');
+    assert.equal((await storagePreference(home, 'retention')).status, 'connected');
+    assert.equal(await fs.readFile(config, 'utf8'), legacy);
+  }
   assert.deepEqual(await errorReporting(home), { status: 'connected', enabled: true });
   assert.deepEqual(await errorReporting(home, false), { status: 'connected', enabled: false });
   const revoked = JSON.parse(await fs.readFile(config, 'utf8'));
@@ -48,6 +50,7 @@ async function main() {
   const raw = JSON.parse(await fs.readFile(config, 'utf8'));
   assert.equal(raw.privateFixture, 'keep');
   assert.equal(raw.capturesDir, selected);
+  assert.deepEqual(raw.experiments, { electronCaptureLocation: false, other: true });
   assert.deepEqual(await storageLocation(home, 'reset', { expected: first.revision }), { status: 'error', code: 'conflict' });
   const policy = await storagePreference(home, 'retention');
   assert.deepEqual(policy.policy, { mediaDays: { present: false, value: null }, bundleDays: { present: false, value: null } });

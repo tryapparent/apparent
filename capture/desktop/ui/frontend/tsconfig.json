@@ -11,6 +11,9 @@
     "allowImportingTsExtensions": true,
     "types": ["vite/client"],
     "paths": {
+      "@apparent/record-storage": [
+        "./node_modules/@apparent/record-storage/dist/index.d.ts"
+      ],
       "react": ["./node_modules/@types/react"],
       "react-dom": ["./node_modules/@types/react-dom"],
       "react-dom/*": ["./node_modules/@types/react-dom/*"],

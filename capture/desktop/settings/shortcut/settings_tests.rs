@@ -25,13 +25,6 @@ mod tests {
 
 
     #[test]
-    fn storage_electron_route_respects_the_opt_out() {
-        assert!(electron_storage(Some(Pane::Storage), true));
-        assert!(!electron_storage(Some(Pane::Storage), false));
-        assert!(!electron_storage(Some(Pane::General), true));
-    }
-
-    #[test]
     fn about_projection_reads_channel_without_exposing_other_panes_or_writing_config() {
         let dir = TempDir::new("about-projection");
         let path = dir.0.join("config.json");

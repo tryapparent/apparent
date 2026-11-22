@@ -73,6 +73,7 @@ test('Storage Settings reads usage and confirms only explicitly saved limits', {
   await expect(page.getByRole('button',{name:'Refresh usage'})).toHaveCount(0);
   await expect(page.getByText('Keep recordings', {exact:true})).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Show folder'})).toBeEnabled();
+  assert.ok(!requests.some(request => /save|reset/.test(request.storage)));
   for (const width of [720, 640]) for (const theme of ['light','dark']) {
     const session = await page.context().newCDPSession(page);
     await session.send('Emulation.setDeviceMetricsOverride', {width,height:530,deviceScaleFactor:1,mobile:false});
