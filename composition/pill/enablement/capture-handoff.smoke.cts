@@ -33,8 +33,12 @@ test("enabled unpaired pill opens Labs through the native pipe and can copy the 
   });
   let page = await app.firstWindow(),
     buffer = "",
-    setup = false;
+    setup = false,
+    diagnostics = "";
   const readyWindows = new Set();
+  app.process().stderr.on("data", (chunk) => {
+    diagnostics = (diagnostics + String(chunk)).slice(-2048);
+  });
   app.process().stdout.on("data", (chunk) => {
     buffer += String(chunk);
     let end;
@@ -74,7 +78,12 @@ test("enabled unpaired pill opens Labs through the native pipe and can copy the 
       ],
     },
   };
-  const next = process.platform === "linux" ? app.waitForEvent("window") : null;
+  const linux = process.platform === "linux";
+  if (linux) {
+    await page.clock.install();
+    await page.clock.pauseAt(Date.now() + 1000);
+  }
+  const next = linux ? app.waitForEvent("window") : null;
   const publish = () =>
     app.evaluate(
       (_electron, value) =>
@@ -91,18 +100,23 @@ test("enabled unpaired pill opens Labs through the native pipe and can copy the 
   const windowId = await nativeWindow.evaluate((window) =>
     Number(window.getMediaSourceId().split(":")[1]),
   );
-  if (!readyWindows.has(windowId)) {
-    await page.evaluate((revision) => {
-      void document.fonts.ready.then(() =>
-        window.apparentPill.layout(revision).catch(() => {}),
-      );
-    }, frame.view.revision);
+  try {
+    await expect
+      .poll(
+        async () => {
+          if (linux && !readyWindows.has(windowId)) await page.clock.runFor(64);
+          return [...readyWindows];
+        },
+        {
+          message: `Pill never reported readiness for native window ${windowId}`,
+        },
+      )
+      .toContain(windowId);
+  } catch (error) {
+    t.diagnostic(diagnostics);
+    throw error;
   }
-  await expect
-    .poll(() => [...readyWindows], {
-      message: `Pill never reported readiness for native window ${windowId}`,
-    })
-    .toContain(windowId);
+  if (linux) await page.clock.resume();
   assert.equal(
     await nativeWindow.evaluate((window) => window.isVisible()),
     false,
