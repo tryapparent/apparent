@@ -6,6 +6,7 @@
   },
   "name": "@apparent/onboarding-renderer",
   "exports": {
-    "./frog-nudge": "./frog-nudge/preview.tsx"
+    "./frog-nudge": "./frog-nudge/preview.tsx",
+    "./board-lesson": "./board-lesson.tsx"
   }
 }

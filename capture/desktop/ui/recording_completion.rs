@@ -22,7 +22,7 @@ pub(in crate::capture::desktop) fn finalize(
     bundle_dir: PathBuf,
     events: Vec<InteractionEvent>,
     strokes: Vec<Stroke>,
-    final_whiteboard: whiteboard::Board,
+    final_whiteboard: whiteboard::Paper,
     notes_finished: Option<flume::Receiver<crate::capture::desktop::workflow::notes::FinishResult>>,
     source_released: flume::Sender<()>,
     lip_input: Option<crate::lip_input::Input>,
@@ -141,7 +141,7 @@ fn after_publication(
 /// the surviving capture before Desktop can see any successful result.
 fn complete_bundle(
     path: &std::path::Path,
-    board: &whiteboard::Board,
+    board: &whiteboard::Paper,
     sampling: Option<Sampling>,
     build: impl FnOnce() -> CaptureResult,
 ) -> CaptureResult {

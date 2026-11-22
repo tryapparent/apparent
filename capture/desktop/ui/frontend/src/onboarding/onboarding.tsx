@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import {useCallback} from "react";
 import { Button } from '@apparent/ui/button';
 import {Keycap} from '@apparent/ui/keycap';
-import { Whiteboard, type BoardView } from './board/whiteboard';
 import { recordKeys } from './shortcut/keys';
 import {ShortcutSuggestions} from './shortcut/suggestions';
 import frog from '../../../../assets/onboarding/frog.png';
@@ -17,9 +16,9 @@ import { OptionShortcutGesture, desktopShortcutSelection, fnSelectionActions, su
 import {useWisprFlow,WisprPrompt,type WisprRequest} from './wispr/scene';
 import { PermissionRepairFooter, Permissions, type PermissionRow as Row } from '../../../../../../onboarding/renderer/permissions';
 import type { ConnectAction, ConnectSettings } from '../bridge';
-type Action=string|{action:'board';id:string;operation:string;point?:number[]}|({action:'shortcut';kind:'record';reserved:false}&ShortcutCapture);
+type Action=string|({action:'shortcut';kind:'record';reserved:false}&ShortcutCapture);
 type Editor={recording:boolean;externallyManaged:boolean;suggestedFn?:ShortcutCapture|null;error:string|null};
-type State={wisprFlowEnabled?:boolean;boardView?:BoardView|null;tutorial:'skipped'|'watched'|'practiced'|null;platform:'macos'|'linux';shortcutEditor:Editor|null;step:string;ready:boolean;fix:boolean;rows:Row[];index:number;count:number;shortcut:string;shortcutEditing:boolean;shortcutChosen:boolean;shortcutTested:boolean;practice:string|null;firstCaptureRequired:boolean;penSaveId?:string;penPicker:boolean;penSelected:boolean;penError:boolean;penRgb:number[];testInstance:boolean;coachArrow?:number;coachPointsUp?:boolean};
+type State={wisprFlowEnabled?:boolean;tutorial:'skipped'|'watched'|'practiced'|null;platform:'macos'|'linux';shortcutEditor:Editor|null;step:string;ready:boolean;fix:boolean;rows:Row[];index:number;count:number;shortcut:string;shortcutEditing:boolean;shortcutChosen:boolean;shortcutTested:boolean;practice:string|null;firstCaptureRequired:boolean;penSaveId?:string;penPicker:boolean;penSelected:boolean;penError:boolean;penRgb:number[];testInstance:boolean;coachArrow?:number;coachPointsUp?:boolean};
 declare global {interface Window {nativeOnboarding?:{readState:()=>Promise<State|null>;wispr?:WisprRequest;readConnect:()=>Promise<ConnectSettings>;connect:(action:ConnectAction)=>Promise<ConnectSettings>;closeConnect:()=>void;action:(action:Action)=>Promise<boolean>;onState:(listener:(state:State)=>void)=>()=>void;onDesktopShortcut?:(listener:(key:unknown)=>void)=>()=>void}}}
 export function NativeOnboarding(){
   const [wideCoach,setWideCoach]=useState(window.innerWidth>=700);
@@ -139,7 +138,6 @@ export function NativeOnboarding(){
   const trackpadHint=practiceStage==='screen-ink';
   const helper=<aside className="native-trackpad-helper" aria-label="Trackpad drawing hint"><div className="native-trackpad-helper-content"><strong>Pressing down on your trackpad?</strong><p>No need. Just hold Shift and glide.</p></div></aside>;
   document.title=state.testInstance?'apparent onboarding preview 9':'apparent setup';
-  if(state.boardView)return <Whiteboard key={state.boardView.id} board={state.boardView} action={sendAction}/>;
   if(practice){
     const content:Record<string,{title:string;text:string;button?:string;action?:string}>={
       start:{title:'One more time.',text:''},

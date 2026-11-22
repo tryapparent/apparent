@@ -97,8 +97,7 @@ pub(in crate::capture::desktop) fn move_picker_window(frame: [f64; 4], cx: &mut 
 /// The picker takes the keys itself (`configure_picker_window`).
 pub(in crate::capture::desktop) fn take_keys(_cx: &mut App) {}
 
-/// Hyprland tiles ordinary GPUI windows; float the mapped paper without changing its UI.
-pub(in crate::capture::desktop) fn float_whiteboard(cx: &mut App) {
+pub(super) fn float_whiteboard(pid: u32, cx: &mut App) {
     if !crate::capture::desktop::linux::hyprland::running() {
         return;
     }
@@ -106,12 +105,13 @@ pub(in crate::capture::desktop) fn float_whiteboard(cx: &mut App) {
         let mut last_error = None;
         for _ in 0..8 {
             cx.background_executor().timer(Duration::from_millis(120)).await;
-            match crate::capture::desktop::linux::hyprland::float_whiteboard() {
+            if !crate::capture::ui_process::owns(pid as i32) { return; }
+            match crate::capture::desktop::linux::hyprland::float_whiteboard(pid) {
                 Ok(()) => return,
                 Err(error) => last_error = Some(error),
             }
         }
-        crate::capture::engine::runtime::apparent_log(format!("Whiteboard: could not float Hyprland window: {last_error:?}"));
+        crate::capture::engine::runtime::apparent_log(format!("Whiteboard float failed: {last_error:?}"));
     })
     .detach();
 }

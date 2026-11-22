@@ -14,6 +14,9 @@
     "capture/desktop/ui/frontend/tests/onboarding/wispr/smoke.ts"
   ],
   "retired": [
+    "capture/desktop/ui/frontend/src/onboarding/board/whiteboard.css",
+    "capture/desktop/ui/frontend/src/onboarding/board/whiteboard.tsx",
+    "capture/desktop/ui/frontend/tests/onboarding/board-completion.test.ts",
     "capture/desktop/settings/onboarding/account.rs",
     "capture/desktop/ui/frontend/electron/onboarding/account.ts",
     "capture/desktop/ui/frontend/tests/onboarding/account.test.ts",
@@ -27,6 +30,9 @@
     "capture/desktop/ui/frontend/src/onboarding/wispr/motion.ts"
   ],
   "paths": [
+    "onboarding/enablement/ci/inputs.json",
+    "composition/onboarding/src/host.ts",
+    "composition/onboarding/src/place.ts",
     "onboarding/renderer/package.json",
     "onboarding/host/wispr.ts",
     "onboarding/host/wispr-native.ts",

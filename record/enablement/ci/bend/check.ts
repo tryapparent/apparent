@@ -41,6 +41,43 @@ await bendScratch(async (scratch) => {
   );
   const proofOutput = join(scratch, "proof");
   await buildBend(root, "record", proofOutput, options);
+  run(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+  import assert from "node:assert/strict";
+  import whiteboard from "./whiteboard-edit.mjs";
+  const edit = (action, options = {}) => whiteboard.edit(
+    { $: "Board" + action },
+    options.visible ?? true,
+    options.active ?? false,
+    options.point ?? false,
+    options.strokes ?? 0,
+    options.points ?? 0,
+  ).$;
+  assert.equal(edit("Open", { visible: false }), "Show");
+  assert.equal(edit("Begin", { point: true }), "Start");
+  assert.equal(edit("Begin", { point: true, visible: false }), "Ignore");
+  assert.equal(edit("Begin", { point: true, active: true }), "CommitAndStart");
+  assert.equal(edit("Begin", { point: true, strokes: 500 }), "Ignore");
+  assert.equal(edit("Begin", { point: true, active: true, strokes: 499 }), "Ignore");
+  assert.equal(edit("Move", { point: true }), "Ignore");
+  assert.equal(edit("Move", { point: true, active: true, points: 1999 }), "Append");
+  assert.equal(edit("Move", { point: true, active: true, points: 2000 }), "Ignore");
+  assert.equal(edit("Move", { active: true }), "Ignore");
+  assert.equal(edit("End", { active: true }), "Commit");
+  assert.equal(edit("Cancel", { active: true }), "Discard");
+  assert.equal(edit("Undo", { active: true }), "Discard");
+  assert.equal(edit("Undo"), "RemoveLast");
+  assert.equal(edit("Clear", { active: true }), "Erase");
+  assert.equal(edit("Close", { active: true }), "CommitAndHide");
+  assert.equal(edit("Close"), "Hide");
+  `,
+    ],
+    proofOutput,
+  );
   assert.deepEqual(JSON.parse(run(process.execPath, ["--input-type=module", "-e", `
     import capacity from "./capacity.mjs";
     const bytes = (hi, lo) => ({$: "Bytes", hi, lo});

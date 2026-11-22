@@ -180,10 +180,6 @@ pub(super) fn read_actions(stdout: std::process::ChildStdout, events: impl Fn(su
                         continue;
                     };
                     if value["type"]=="practice-disposition" {events(super::Event::Practice(value));continue;}
-                    if value.get("action").and_then(|v| v.as_str()) == Some("board") {
-                        events(super::Event::Board(value));
-                        continue;
-                    }
                     let Some(action) = value.get("action").and_then(|v| v.as_str()) else {
                         continue;
                     };
