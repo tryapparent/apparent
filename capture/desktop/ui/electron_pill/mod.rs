@@ -246,7 +246,7 @@ pub(crate) struct View {
     pub note_tip: Option<&'static str>,
     pub reduced_motion: bool,
     pub input_waveform: Option<[f32; 24]>,
-    pub doodle_ink: bool,
+    pub doodle_ink: Option<bool>,
 }
 
 impl std::ops::Deref for View {
@@ -266,9 +266,17 @@ impl Session {
 
 impl View {
     fn read_doodles(&mut self, previous: Option<&Self>) {
-        self.doodle_ink = self.phase == "recording" && previous
-            .filter(|view| view.phase == "recording")
-            .map_or_else(|| crate::shared::handoff::experiment(PILL_DOODLES), |view| view.doodle_ink);
+        if self.phase == "recording" {
+            self.doodle_ink = previous
+                .filter(|view| view.phase == "recording")
+                .map_or_else(|| {
+                    use crate::shared::handoff::{default_config_path, load_config_from};
+                    if cfg!(test) {
+                        return None;
+                    }
+                    load_config_from(&default_config_path()).experiments.get(PILL_DOODLES).copied()
+                }, |view| view.doodle_ink);
+        }
     }
     fn admits_sharing_confirmation(&self, revision: Option<u64>) -> bool {
         self.phase == "completed" && revision == Some(self.revision)

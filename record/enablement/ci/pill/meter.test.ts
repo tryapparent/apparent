@@ -50,6 +50,8 @@ test("doodle ink keeps a quiet crawl and fits speech-weight marks inside the pil
         `
     import assert from "node:assert/strict";
     import ink from "./doodle-ink.mjs";
+    assert.equal(ink.doodles_enabled(false), true);
+    assert.equal(ink.doodles_enabled(true), false);
     const quiet = ink.ink_level(13, true);
     const speech = ink.ink_level(60, true);
     assert.equal(quiet, 0);

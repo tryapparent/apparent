@@ -669,7 +669,7 @@ mod native_tests {
             reduced_motion: true,
             transcript: None,
             input_waveform: None,
-            doodle_ink: false,
+            doodle_ink: None,
             presentation: super::super::Presentation {
                 phase: "recording".into(),
                 ..Default::default()

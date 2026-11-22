@@ -12,8 +12,8 @@ declare global {interface Window {apparentLabs: {
   subscribe(callback: (facts: LabsFacts) => void): () => void;
 };}}
 const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', compactHandoff: 'compact-handoff-toggle', transcriptOnly: 'transcript-only-toggle', silentPrompt: 'silent-prompt-toggle', agentContext: 'agent-context-toggle', pillDoodles: 'pill-doodles-toggle'};
-export type LabsExperiment = ComponentType<{
-  id: string; checked: boolean; disabled: boolean; saving: boolean;
+export type LabsExperiment<Checked = boolean> = ComponentType<{
+  id: string; checked: Checked; disabled: boolean; saving: boolean;
   access?: LabsFacts['agentContextAccess'];
   onCheckedChange: (value: boolean) => void;
 }>;
@@ -24,7 +24,7 @@ export function Labs({frogExperiment: FrogNudge, agentContextExperiment: AgentCo
   agentContextExperiment?: LabsExperiment;
   autoPasteExperiment?: AutoPasteExperiment;
   pushToTalkExperiment?: PushToTalkExperiment;
-  pillDoodlesExperiment?: LabsExperiment;
+  pillDoodlesExperiment?: LabsExperiment<boolean | null | undefined>;
 }) {
   const [facts, setFacts] = useState<LabsFacts>();
   const [busy, setBusy] = useState(true), [error, setError] = useState('');
@@ -99,7 +99,7 @@ export function Labs({frogExperiment: FrogNudge, agentContextExperiment: AgentCo
     {PushToTalk && <PushToTalk id={controls.pushToTalk} checked={facts?.pushToTalkSaved === true}
       supported={facts?.pushToTalkSupported} disabled={busy || !facts || !!facts.error}
       saving={busy && setting === 'pushToTalk'} onCheckedChange={value => void request(value, 'pushToTalk')} />}
-    {PillDoodles && <PillDoodles id={controls.pillDoodles} checked={facts?.pillDoodlesSaved === true}
+    {PillDoodles && <PillDoodles id={controls.pillDoodles} checked={facts?.pillDoodlesSaved}
       disabled={busy || !facts || !!facts.error} saving={busy && setting === 'pillDoodles'}
       onCheckedChange={value => void request(value, 'pillDoodles')} />}
     {AutoPaste && <AutoPaste id={controls.autoPaste} checked={autoPaste ?? false} supported={autoPasteSupported.current}
