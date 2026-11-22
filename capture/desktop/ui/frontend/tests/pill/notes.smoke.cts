@@ -21,6 +21,14 @@ test('saved notes extension preserves controls, themes and keyboard activation',
  await page.evaluate(revision=>window.apparentPill.layout(revision),revision);
  };
  const rectangles=()=>page.locator('.controls button').evaluateAll(elements=>elements.map(el=>{const r=el.getBoundingClientRect();return [r.x,r.y,r.width,r.height];}));
+ await publish(0);
+ const visible = await app.evaluate(({BrowserWindow}) => {
+   const pill = BrowserWindow.getAllWindows()[0];
+   const windowId = Number(pill.getMediaSourceId().split(':')[1]);
+   process.stdin.emit('data', JSON.stringify({type:'activate', windowId})+'\n');
+   return pill.isVisible();
+ });
+ assert.equal(visible,true,'the parent activates the ready notes window');
  for(const theme of ['light','dark']){
  await page.emulateMedia({colorScheme:theme});
  await publish(0);
