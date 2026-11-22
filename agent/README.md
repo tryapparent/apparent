@@ -20,3 +20,17 @@ Send in one call with `--submit` when ready to share with Apparent. If you're se
 The command sends the supplied title and body with the report category, build and platform. Keep credentials and private capture content out of the text. The command does not read recordings or attach logs. Submission uses the publishable PostHog token in packaged builds. The command uses the bundled runtime or Node.js 22.23+ on PATH.
 
 In PostHog Error Tracking, look for **Apparent CLI bug report** or **Apparent CLI feedback**. Filter exception events by `source = agent_cli_feedback` and `feedback_kind`. The event properties `feedback_title` and `feedback_body` contain the exact text. The CLI returns the event UUID as `report_id` after PostHog acknowledges ingestion. Matching category, title and body group together. A new group enters the existing T3 fix queue.
+
+## Zoom planning
+
+The packaged CLI resolves clock literals and mark IDs, then calls Agent's staged
+zoom worker to match narration and select the window, cell times and nearest
+crop keyframes. The worker receives text over private stdin. Agent builds the
+policy declared in `enablement/ci/bend/modules.json`. Record's explicit-frame
+adapter decodes the requested bundle times. The native sheet renderer applies
+the existing mark overrides and overlays, writes the PNG and prints its path.
+
+Run `node agent/enablement/ci/bend/check.ts` for the standalone policy and worker
+checks. Revert the CLI bridge, owner policy and staging change together to roll
+back. Remove the bridge when a successor handles the packaged zoom caller and
+passes the same synthetic recording checks.

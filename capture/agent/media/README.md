@@ -20,9 +20,8 @@ Application composition's `movie_frames.rs` hosts the worker in its packaged Ele
 Node mode enabled. Its shared finite-worker resource helper retains bounded
 output, a deadline and process-group cleanup. The frame adapter holds an output
 directory descriptor across execution, rejects links and unexpected identities,
-reads only bounded private pixels, then removes its temporary output. Both
-`apparent zoom` paths use this adapter: full frames and chunked native-size crops.
-The native `apparent frames` fallback also uses it when FFmpeg is absent.
+reads only bounded private pixels, then removes its temporary output. The native `apparent frames` fallback uses this adapter when FFmpeg is absent.
+Zoom uses Record’s explicit-frame adapter for full frames and chunked native-size crops.
 Every `apparent frames` request first calls Agent's `range-worker.js`: TypeScript
 owns the default 4 FPS, rate/range validation, native sampling step and saved-frame
 selection margin. Decimal clocks preserve the full native `u64` range. Composition
