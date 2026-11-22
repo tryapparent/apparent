@@ -1561,7 +1561,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
                     retention::Action::TrashMedia { bundle, .. } => {
                         format!("trash media  {}", bundle.display())
                     }
-                    retention::Action::TrashBundle(bundle) => {
+                    retention::Action::TrashBundle(bundle) | retention::Action::TrashForCapacity {bundle, ..} => {
                         format!("trash bundle {}", bundle.display())
                     }
                     retention::Action::Shrink { video, .. } => {

@@ -14,7 +14,8 @@
     "notes/double-shift.bend",
     "shortcuts/push-to-talk.bend",
     "transcription/src/caption-admission.bend",
-    "storage/src/retention/feedback.bend"
+    "storage/src/retention/feedback.bend",
+    "storage/src/retention/capacity.bend"
   ],
   "inputs": [
     "completion/",

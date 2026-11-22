@@ -37,7 +37,7 @@ function fixture(t: any) {
   for (const name of ['worker.js', 'policy.js', 'range-worker.js', 'range-policy.js', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json']) {
     put(app + 'agent-media/' + name);
   }
-  for (const name of ['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json', 'cleanup-policy/package.json', 'cleanup-policy/policy.js', 'cleanup-policy/retention/policy.js', 'cleanup-policy/retention/worker.js']) {
+  for (const name of ['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json', 'cleanup-policy/package.json', 'cleanup-policy/policy.js', 'cleanup-policy/retention/policy.js', 'cleanup-policy/retention/worker.js', 'cleanup-policy/retention/size-limit.js', 'cleanup-policy/retention/capacity.mjs', 'retention/size-limit.js', 'retention/capacity.mjs']) {
     put(app + 'storage-owner/' + name);
   }
   return { root, put, electron };
@@ -46,7 +46,7 @@ function fixture(t: any) {
 function generators(f: ReturnType<typeof fixture>, fail = '') {
   const outputs = {
     'record-capture-request': ['node_modules/@apparent/record-capture-request/dist/lifecycle.js'],
-    'storage-policy': ['electron/storage-policy.cjs', ...['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json', 'cleanup-policy/package.json', 'cleanup-policy/policy.js', 'cleanup-policy/retention/policy.js', 'cleanup-policy/retention/worker.js'].map(name => 'electron/storage-owner/' + name)],
+    'storage-policy': ['electron/storage-policy.cjs', ...['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json', 'cleanup-policy/package.json', 'cleanup-policy/policy.js', 'cleanup-policy/retention/policy.js', 'cleanup-policy/retention/worker.js', 'cleanup-policy/retention/size-limit.js', 'cleanup-policy/retention/capacity.mjs', 'retention/size-limit.js', 'retention/capacity.mjs'].map(name => 'electron/storage-owner/' + name)],
     'connect-transport': ['electron/connect.cjs', 'electron/settings/agents.cjs'],
     'updates': ['electron/settings/update-worker.cjs'],
     'pill': completionFiles.map(name => 'electron/record-completion/' + name),
@@ -132,7 +132,7 @@ test('missing generated capture request package fails before Cargo', t => {
   rmSync(resolve(f.root, 'capture/desktop/ui/frontend/node_modules/@apparent/record-capture-request/dist/lifecycle.js'));
   assert.throws(() => checkNativeInputs(f.root, 'linux'), /ENOENT/);
 });
-for (const name of ['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json', 'cleanup-policy/package.json', 'cleanup-policy/policy.js', 'cleanup-policy/retention/policy.js', 'cleanup-policy/retention/worker.js']) {
+for (const name of ['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json', 'cleanup-policy/package.json', 'cleanup-policy/policy.js', 'cleanup-policy/retention/policy.js', 'cleanup-policy/retention/worker.js', 'cleanup-policy/retention/size-limit.js', 'cleanup-policy/retention/capacity.mjs', 'retention/size-limit.js', 'retention/capacity.mjs']) {
   test(`missing generated Storage workflow ${name} fails before Cargo`, t => {
     const f = fixture(t);
     rmSync(resolve(f.root, 'capture/desktop/ui/frontend/electron/storage-owner/' + name));

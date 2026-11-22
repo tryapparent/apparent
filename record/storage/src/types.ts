@@ -5,7 +5,7 @@ export type CaptureLocation = Unavailable | {status: 'connected'; storage: Locat
 export type RetentionPreset = 'week' | 'month' | 'forever';
 export type RetentionPolicy = {mediaDays: number | null; bundleDays: number | null};
 export type RetentionView = {preset: RetentionPreset | null; options: {id: RetentionPreset; label: string}[]; note: string; effective: RetentionPolicy};
-export type NativeRetentionResult = Unavailable | {status: 'connected'; custom: boolean; defaults?: RetentionPolicy;
+export type NativeRetentionResult = Unavailable | {status: 'connected'; custom: boolean; defaults?: RetentionPolicy; maximumMb?: number | null;
   policy: {mediaDays: {present: boolean; value: number | null}; bundleDays: {present: boolean; value: number | null}}};
 export type RetentionResult = Unavailable | {status: 'connected'; custom: boolean; defaults?: RetentionPolicy; retention: RetentionView};
-export type UsageResult = Unavailable | {status: 'connected'; usage: {effectivePath: string; displayPath: string; formatted: string}};
+export type UsageResult = Unavailable | {status: 'connected'; usage: {effectivePath: string; displayPath: string; formatted: string; bytes?: string}};
