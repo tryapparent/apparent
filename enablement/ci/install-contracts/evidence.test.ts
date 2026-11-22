@@ -68,7 +68,7 @@ test('hosted producer and both platform plans keep parallel native execution and
   assert.ok(!checks.jobs.linux.needs.includes('fixture-mac'));
   for (const name of ['macos-admission','tree-evidence']) assert.ok(checks.jobs[name].needs.includes('fixture-mac'));
   assert.equal(checks.jobs.macos.with.plan, '${{ needs.select.outputs.mac_plan }}');
-  assert.equal(checks.jobs.linux.with.plan, '${{ needs.select.outputs.plan }}');
+  assert.equal(checks.jobs.linux.with.plan, '${{ needs.reuse.outputs.linux_pending_plan || needs.select.outputs.plan }}');
   const steps = checks.jobs['fixture-mac'].steps;
   assert.equal(steps.find((s: any) => s.name === fixtureStep).run, 'node --experimental-strip-types enablement/local-tests/run.ts --fixture-mac');
   assert.equal(steps.at(-1).with.name, 'mac-install-contracts-${{ github.run_attempt }}');

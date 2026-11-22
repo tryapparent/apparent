@@ -67,13 +67,17 @@ test('real GitHub lookup authenticates the merged PR/run/artifact and falls back
     git('config','user.email','fixture@example.invalid');
     mkdirSync('enablement');
     writeFileSync('enablement/producer', 'trusted');
+    mkdirSync('enablement/prerequisites');
+    const picker = 'enablement/prerequisites/mac-picker.ts';
+    writeFileSync(picker, 'original');
     git('add','.');
     git('commit','-qm','producer');
     const parent=git('rev-parse','HEAD');
     writeFileSync('product','change');
     git('add','product');
     git('commit','-qm','product');
-    const main=git('rev-parse','HEAD'), tree=git('rev-parse','HEAD^{tree}');
+    const main=git('rev-parse','HEAD');
+    let tree=git('rev-parse','HEAD^{tree}');
     Object.assign(process.env,{GITHUB_EVENT_NAME:'push',GITHUB_REF:'refs/heads/main',GITHUB_REPOSITORY:'test/repo',GITHUB_SHA:main,GH_TOKEN:'synthetic',VERIFICATION_PLAN:JSON.stringify(full),MAC_VERIFICATION_PLAN:JSON.stringify(full)});
     let mode='valid', calls=0;
     globalThis.fetch=(async (url: any, options: any) => {
@@ -82,9 +86,9 @@ test('real GitHub lookup authenticates the merged PR/run/artifact and falls back
       const path=String(url).replace('https://api.github.com/repos/test/repo/','');
       if(mode==='denied')return new Response('{}',{status:403});
       let value: any;
-      if(path==='git/commits/'+record.sha)value={tree:{sha:mode==='false-commit'?'wrong':tree}};
+      if(path==='git/commits/'+record.sha)value={tree:{sha:mode==='false-commit'?'wrong':tree},parents:[{sha:mode==='wrong-base'?parent:main},{sha:record.head}]};
       else if(path.includes('/attempts/'))value={total_count:10,jobs:['contracts','select','tree-evidence','linux / select','linux / rust (ubuntu-24.04)','linux / desktop-ui (ubuntu-24.04)','linux / connect-client (ubuntu-24.04)','macos / select','macos / Native acceptance (macos-15-intel)','macos / rust (macos-15-intel)','macos / desktop-ui (macos-15-intel)','macos / connect-client (macos-15-intel)','portable','Hermes inspection (ubuntu-24.04)','Hermes inspection (macos-15-intel)'].map(name=>({name,status:'completed',conclusion:mode==='forged-results'?'skipped':'success'}))};
-      else if(path.includes('/pulls?'))value=[{merged_at:'now',merge_commit_sha:process.env.GITHUB_SHA,number:1,base:{repo:{full_name:'test/repo'}},head:{sha:record.head,repo:{full_name:mode==='fork'?'other/repo':'test/repo'}}}];
+      else if(path.includes('/pulls?'))value=[{merged_at:'now',merge_commit_sha:process.env.GITHUB_SHA,number:1,base:{ref:'main',repo:{full_name:'test/repo'}},head:{sha:record.head,repo:{full_name:mode==='fork'?'other/repo':'test/repo'}}}];
       else if(path.includes('/runs?'))value={workflow_runs:[{id:42,run_attempt:2,path:'.github/workflows/checks.yml',event:'pull_request',head_sha:record.head,head_repository:{full_name:'test/repo'},repository:{full_name:'test/repo'},status:'completed',conclusion:mode==='cancelled'?'cancelled':'success'}]};
       else if(path.includes('/artifacts?'))value={artifacts:[{id:5,name:'ci-tree-evidence-2',expired:mode==='expired',size_in_bytes:1000}]};
       else if(path==='actions/artifacts/5/zip') {
@@ -112,6 +116,47 @@ test('real GitHub lookup authenticates the merged PR/run/artifact and falls back
       process.env.GITHUB_SHA=git('rev-parse','HEAD');
       calls=0;
       assert.ok(!Object.values(await reuse()).some(Boolean),change);
+      assert.equal(calls,0);
+    }
+    git('reset','--hard',main);
+    writeFileSync(picker,'updated');
+    git('commit','-qam','picker');
+    const candidate = git('rev-parse','HEAD');
+    tree = git('rev-parse','HEAD^{tree}');
+    process.env.GITHUB_SHA = candidate;
+    process.env.GITHUB_EVENT_PATH = dir+'/push.json';
+    writeFileSync(process.env.GITHUB_EVENT_PATH, JSON.stringify({before:main,after:candidate}));
+    mode = 'valid';
+    const partial = await reuse();
+    assert.deepEqual(Object.entries(partial).filter(([,passed]) => passed), [['linux_pending_plan',JSON.stringify({...full,client:false})]]);
+    for (mode of ['wrong-base','expired','false-commit','tree-changed','forged-results','cancelled','fork'])
+      assert.ok(!Object.values(await reuse()).some(Boolean),mode);
+    mode = 'valid';
+    for (const plan of [{...full,client:false},{...full,engineMedia:undefined},{...full,tooling:'true'}]) {
+      process.env.VERIFICATION_PLAN = JSON.stringify(plan);
+      assert.ok(!Object.values(await reuse()).some(Boolean));
+    }
+    process.env.VERIFICATION_PLAN = JSON.stringify(full);
+    writeFileSync(process.env.GITHUB_EVENT_PATH, JSON.stringify({before:parent,after:candidate}));
+    assert.ok(!Object.values(await reuse()).some(Boolean),'multi-commit push');
+    writeFileSync(process.env.GITHUB_EVENT_PATH, JSON.stringify({before:main,after:candidate}));
+    rmSync(picker);
+    symlinkSync('another-file',picker);
+    git('add',picker);
+    git('commit','--amend','--no-edit','-q');
+    process.env.GITHUB_SHA=git('rev-parse','HEAD');
+    calls=0;
+    assert.ok(!Object.values(await reuse()).some(Boolean),'picker symlink');
+    assert.equal(calls,0);
+    for (const path of ['.npmrc','connect/client/build.rs','enablement/ci/select.ts','shared/enablement/bend/toolchain.ts']) {
+      git('reset','--hard',candidate);
+      mkdirSync(path.slice(0,Math.max(0,path.lastIndexOf('/'))) || '.',{recursive:true});
+      writeFileSync(path,'changed');
+      git('add','.');
+      git('commit','--amend','--no-edit','-q');
+      process.env.GITHUB_SHA=git('rev-parse','HEAD');
+      calls=0;
+      assert.ok(!Object.values(await reuse()).some(Boolean),path);
       assert.equal(calls,0);
     }
     git('reset','--hard',main);

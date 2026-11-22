@@ -34,6 +34,27 @@ function trustedProducer(before: string, after: string): boolean {
   return original.length > 0 && original.length === candidate.length &&
     original.every((entry, index) => entry === candidate[index]);
 }
+const macPickerFiles = new Set([
+  'capture/desktop/ui/frontend/tests/mac-storage-native.cjs',
+  'enablement/prerequisites/mac-picker.test.ts',
+  'enablement/prerequisites/mac-picker.ts',
+]);
+
+function onlyMacPickerEdits(before: string, after: string): boolean {
+  const entries = git('diff-tree', '--no-commit-id', '--no-renames', '--ignore-submodules=none',
+    '--no-ext-diff', '--no-textconv', '--raw', '--no-abbrev', '-r', '-z', before, after, '--').split('\0');
+  if (entries.pop() !== '' || !entries.length || entries.length % 2) return false;
+  for (let i = 0; i < entries.length; i += 2) {
+    if (!/^:100644 100644 [a-f0-9]{40} [a-f0-9]{40} M$/.test(entries[i]) || !macPickerFiles.has(entries[i + 1])) return false;
+  }
+  return true;
+}
+function matchingClientPlan(recorded: Plan, raw: string): boolean {
+  const main = JSON.parse(raw);
+  const fields = Object.keys(parsePlan(undefined)) as (keyof Plan)[];
+  return main?.client === true && fields.length === Object.keys(main).length && fields.length === Object.keys(recorded).length &&
+    fields.every(key => typeof main[key] === 'boolean' && main[key] === recorded[key]);
+}
 export function authenticatedSuites(jobs: {name: string; status: string; conclusion: string | null}[], plan: Plan, macPlan: Plan) {
   const passed = new Set(jobs.filter(job => job.status === 'completed' && job.conclusion === 'success').map(job => job.name));
   const common = passed.has('contracts') && passed.has('select') && passed.has('tree-evidence');
@@ -74,7 +95,8 @@ export async function reuse() {
     if (!/^[a-f0-9]{40}$/.test(sha) || git('rev-parse', 'HEAD').trim() !== sha ||
         git('rev-parse', '--is-shallow-repository').trim() !== 'false') return none;
     const before = git('rev-parse', '--verify', sha+'^1').trim(), tree = git('rev-parse', '--verify', sha+'^{tree}').trim();
-    if (!trustedProducer(before,sha)) {console.log('Verification definitions changed; fresh main suites required.');return none;}
+    const trusted = trustedProducer(before, sha);
+    if (!trusted && !onlyMacPickerEdits(before, sha)) {console.log('Verification definitions changed; fresh main suites required.');return none;}
     const prs = await (await api(`commits/${sha}/pulls?per_page=100`)).json() as any[];
     for (const pr of prs.filter(pr => pr.merged_at && pr.merge_commit_sha === sha && pr.base?.repo?.full_name === repo && pr.head?.repo?.full_name === repo)) {
       const runs = await (await api(`actions/workflows/checks.yml/runs?event=pull_request&head_sha=${pr.head.sha}&per_page=20`)).json() as any;
@@ -99,6 +121,15 @@ export async function reuse() {
           if (!Array.isArray(inventory.jobs) || inventory.jobs.length < inventory.total_count) continue;
           const authentic = authenticatedSuites(inventory.jobs,evidence.plan,evidence.macPlan);
           for (const key of Object.keys(result) as (keyof typeof result)[]) result[key] = result[key] && authentic[key];
+          if (!trusted) {
+            const push = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH!, 'utf8'));
+            const parents = sourceCommit.parents;
+            if (push.before !== before || push.after !== sha || pr.base.ref !== 'main' ||
+                !Array.isArray(parents) || parents.length !== 2 || parents[0].sha !== before || parents[1].sha !== pr.head.sha ||
+                !result.linux || !matchingClientPlan(evidence.plan, process.env.VERIFICATION_PLAN!)) continue;
+            console.log(`Reusing Linux Connect client from PR #${pr.number}, run ${run.id}, attempt ${run.run_attempt}, tree ${tree}`);
+            return {...none, linux_pending_plan: JSON.stringify({...parsePlan(process.env.VERIFICATION_PLAN), client: false})};
+          }
           if (Object.values(result).some(Boolean)) {
             console.log(`Reusing PR #${pr.number}, run ${run.id}, attempt ${run.run_attempt}, exact tree ${evidence.tree}`);
             return result;
