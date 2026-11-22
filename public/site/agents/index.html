@@ -44,20 +44,21 @@
       </section>
 
       <section aria-labelledby="example">
-        <h2 id="example">What the agent receives</h2>
-        <p>A <code>.apparent</code> bundle contains annotated keyframes, a timed transcript, and an interaction timeline. This example shows how the pieces fit together for a UI bug.</p>
+        <h2 id="example">When a screenshot misses a UI bug</h2>
+        <p>A marked-up screenshot can show which button needs to move. If a menu closes while you move toward Rename, a screenshot taken afterward only shows the closed menu. Record the sequence and say what you expected to happen while pointing at the item.</p>
         <figure class="example">
-          <figcaption>Illustrative capture of a disabled Save button</figcaption>
+          <figcaption>Illustrative agent handoff for a menu that closes before you reach Rename</figcaption>
           <dl>
-            <dt>Annotated keyframe</dt>
-            <dd><span class="sample-window"><span>Profile settings</span><span class="sample-save">Save</span></span></dd>
+            <dt>Keyframes</dt>
+            <dd><span class="sample-window"><span><time datetime="PT7S">0:07</time> File actions open</span><span class="sample-target">Rename</span></span></dd>
+            <dd><span class="sample-window"><span><time datetime="PT8S">0:08</time> File actions closed</span></span></dd>
             <dt>Transcript</dt>
-            <dd><time datetime="PT8S">0:08</time> “I changed the display name, but Save is still disabled.”</dd>
+            <dd><time datetime="PT8S">0:08</time> “The menu closes before I reach Rename. It should stay open so I can click it.”</dd>
             <dt>Interaction timeline</dt>
-            <dd><time datetime="PT8S">0:08</time> Pin placed on Save.</dd>
+            <dd><time datetime="PT7S">0:07</time> Click on File actions, then a pin on Rename.</dd>
           </dl>
         </figure>
-        <p>For a local bundle, run <code>apparent inspect &lt;bundle&gt;</code> to read the summary and <code>apparent zoom &lt;bundle&gt; --at 0:08</code> to look closer. <a href="https://github.com/tryapparent/apparent/blob/main/capture/agent/docs/usage.md">See the CLI guide</a>.</p>
+        <p>The recording gives the agent the before and after frames, the expected behavior in your own words, and the click that opened the menu. For a local <code>.apparent</code> bundle, run <code>apparent inspect &lt;bundle&gt;</code> to read the summary and <code>apparent zoom &lt;bundle&gt; --at 0:08</code> to look closer. <a href="https://github.com/tryapparent/apparent/blob/main/capture/agent/docs/usage.md">See the CLI guide</a>.</p>
       </section>
     </main>
     <footer class="shell"><a href="/llms.txt">Agent documentation index (plain text)</a></footer>
