@@ -16,7 +16,10 @@ test('Storage Settings reads usage and confirms only explicitly saved limits', {
   let unknown = false;
   let usageFailed = false;
   let releaseUsage;
+  let savedLocation = '/captures';
   const requests = [];
+  const location = () => ({location:{saved:savedLocation ? {kind:'string',value:savedLocation} : {kind:'absent'},
+    environment:{present:false,value:null}, homePath:home, builtinPath:'/captures', revision:'d'.repeat(16)}});
   const server = net.createServer(socket => {
     socket.once('data', data => {
       if (data.toString() === 'state\n') return socket.end('{"state":{"phase":"idle"}}\n');
@@ -28,8 +31,11 @@ test('Storage Settings reads usage and confirms only explicitly saved limits', {
         mediaDays:{present:true,value:7}, bundleDays:{present:true,value:30},
       }});
       switch (request.storage) {
-        case 'locationfacts': return send({location:{saved:{kind:'absent'}, environment:{present:false,value:null},
-          homePath:home, builtinPath:'/captures', revision:'d'.repeat(16)}});
+        case 'locationfacts': return send(location());
+        case 'resetlocation':
+          assert.equal(request.expected, 'd'.repeat(16));
+          savedLocation = null;
+          return send(location());
         case 'probelocation': return send({probe:{available:true}});
         case 'usage': {
           if (usageFailed) return send({error:'usage_unavailable'});
@@ -121,4 +127,8 @@ test('Storage Settings reads usage and confirms only explicitly saved limits', {
   usageFailed = false;
   await page.getByRole('button',{name:'Retry usage scan'}).click();
   await expect(page.getByText('12.4 GB',{exact:true})).toBeVisible();
+  const resetLocation = page.getByRole('button',{name:'Reset location'});
+  await resetLocation.click();
+  await expect(resetLocation).toHaveCount(0);
+  assert.equal(requests.filter(request => request.storage === 'resetlocation').length,1);
 });
