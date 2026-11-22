@@ -1,17 +1,20 @@
 import { createPortal } from "react-dom";
+import { useId, useRef } from "react";
 import { Button } from "@apparent/ui/button";
 import { StatusCard } from "@apparent/ui/status-card";
 import { DisclosureMenu } from "@apparent/ui/disclosure-menu";
 import "@apparent/ui/status.css";
 import "./card.css";
 import frogs from "../../shared/assets/brand/connect-frogs.png";
-import { useConnectFlow, type ConnectBridge } from "./flow";
+import type { useConnectFlow } from "./flow";
 import {
   connectPresentation,
   connectActionRole,
   uploadDisclosure,
   activityDisclosure,
 } from "./presentation";
+
+export { useConnectFlow } from "./flow";
 
 function closeDisclosure(event: React.KeyboardEvent<HTMLDetailsElement>) {
   if (event.key === "Escape" && event.currentTarget.open) {
@@ -21,8 +24,14 @@ function closeDisclosure(event: React.KeyboardEvent<HTMLDetailsElement>) {
   }
 }
 
-export function ConnectCard({ bridge }: { bridge: ConnectBridge }) {
-  const { result, busy, request, browserFailed } = useConnectFlow(bridge);
+export function ConnectCard({
+  flow,
+}: {
+  flow: ReturnType<typeof useConnectFlow>;
+}) {
+  const { result, busy, request, browserFailed } = flow;
+  const activity = useRef<HTMLDialogElement>(null);
+  const activityTitle = useId();
 
   if (result.status === "disabled") return null;
   const view = result.status === "connected" ? result.view : undefined;
@@ -70,7 +79,7 @@ export function ConnectCard({ bridge }: { bridge: ConnectBridge }) {
     );
   }
   const account = p?.accountMenu && (
-    <DisclosureMenu label="Account and connection options" trigger="Account">
+    <DisclosureMenu label="Connect account" trigger="Connect account">
       {(close) => (
         <>
           <p className="menu-context">
@@ -83,15 +92,18 @@ export function ConnectCard({ bridge }: { bridge: ConnectBridge }) {
             )}
           </p>
           {controls.map((button) => renderButton(button, close))}
-          <div className="menu-context">
-            <details className="connect-info" onKeyDown={closeDisclosure}>
-              <summary>Activity counts</summary>
-              <p>{activityDisclosure}</p>
-            </details>
-          </div>
-          <p className="menu-context">
-            Disconnecting does not delete uploaded captures.
-          </p>
+          <Button
+            variant="ghost"
+            aria-haspopup="dialog"
+            onClick={() => {
+              close();
+              const dialog = activity.current;
+              dialog?.showModal();
+              dialog?.querySelector("h2")?.focus();
+            }}
+          >
+            Activity counts
+          </Button>
         </>
       )}
     </DisclosureMenu>
@@ -112,6 +124,22 @@ export function ConnectCard({ bridge }: { bridge: ConnectBridge }) {
         ) : (
           <div className="flex justify-end pb-4">{account}</div>
         ))}
+      {account && (
+        <dialog
+          className="connect-activity-dialog"
+          aria-labelledby={activityTitle}
+          aria-describedby={`${activityTitle}-detail`}
+          ref={activity}
+        >
+          <h2 id={activityTitle} tabIndex={-1}>
+            Activity counts
+          </h2>
+          <p id={`${activityTitle}-detail`}>{activityDisclosure}</p>
+          <Button variant="outline" onClick={() => activity.current?.close()}>
+            Close
+          </Button>
+        </dialog>
+      )}
 
       <StatusCard
         tone={p?.tone ?? (view ? "neutral" : busy ? "progress" : "failure")}

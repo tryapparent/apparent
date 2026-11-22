@@ -172,3 +172,8 @@ law expired_access_never_presents_ready:
 
 def expired_access_never_presents_ready():
   {==}
+
+def check_on_open(opened: Bool, check_available: Bool) -> Bool:
+  match opened check_available:
+    case False{} True{}: True{}
+    case _ _: False{}

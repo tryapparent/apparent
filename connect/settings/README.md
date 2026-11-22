@@ -16,8 +16,10 @@ opening still requires a matching action on the current native session.
 The native client retains credential and encryption material, consent
 publication, renewal locks and journals, and upload admission. A status card
 never grants access. Local reads do not renew access. An explicit connection
-check can renew through the existing native provider. A changed local config
-is read again on the next admitted request.
+check can renew through the existing native provider. An open Settings window
+checks a saved connection on its first General visit and keeps the last status
+visible on return while it reads local facts. Polling pauses outside General.
+The Connect account menu keeps the manual check available.
 
 `apparent connect status` and `apparent connect readers` retain their existing
 machine-readable diagnostic fields, including renewal deadlines and CLI
