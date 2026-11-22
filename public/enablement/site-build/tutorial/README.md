@@ -30,11 +30,12 @@ rejects an existing destination. Set `CHROME_PATH` to use an installed Chromium.
 Public CI decodes the generated movie and checks the scene sequence
 and soundtrack against the authoring inputs.
 
-The three site movie paths have separate provenance:
+Public video provenance
 
 | Asset | Provenance |
 | --- | --- |
-| `Apparent-ghost-demo-v4-lilac.mp4` and poster | The approved recording from PR #148. The site packages the checked-in export and Pages serves it through the prepared-movie worker. |
+| Homepage demo slot | [`HermesVideo.tsx`](../../../site/src/components/home/HermesVideo.tsx) embeds the Hermes Agent submission from YouTube. |
+| `Apparent-ghost-demo-v4-lilac.mp4` and poster | The approved export from [PR #148](https://github.com/tryapparent/apparent/pull/148) powered the earlier homepage player. Public packages the checked-in export and Pages serves it through the prepared-movie worker. |
 | `apparent-demo-pi.mp4` and poster | The archived browser capture described in the [Pi cut notes](../../../site/docs/apparent-demo-pi.md). |
 | `og.mp4` | The silent loop from [the Open Graph renderer](../../og-video/capture.mjs) and `npm run generate:og-video`. |
 
