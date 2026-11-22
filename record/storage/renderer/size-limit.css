@@ -1,0 +1,36 @@
+.storage-settings {display:grid;gap:16px}
+.storage-usage-overview {padding:12px 16px;background:var(--apparent-stock);color:var(--apparent-carbon)}
+.settings-content .storage-usage-overview h2,
+.settings-content .storage-location-heading {font-size:var(--apparent-type-body);line-height:1.5}
+.storage-used {font-size:2.5rem;line-height:1.1;font-weight:700;margin:4px 0 12px;font-variant-numeric:tabular-nums}
+.storage-detail {font-size:1rem;line-height:1.5}
+.storage-usage-overview meter {display:block;appearance:none;width:100%;height:16px;margin-bottom:6px}
+.storage-usage-overview meter::-webkit-meter-bar {background:var(--apparent-paper);border:1px solid currentColor;border-radius:0}
+.storage-usage-overview meter::-webkit-meter-optimum-value {background:var(--apparent-signal)}
+.storage-limit-form {display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:start}
+.storage-limit-label label {font-weight:500}
+.storage-limit-control {width:132px}
+.storage-limit-field {min-height:44px;display:flex;align-items:center;gap:4px;padding-inline-end:10px;border:1px solid currentColor}
+.storage-limit-field input {border:0;min-height:42px;min-width:0}
+.storage-limit-field:focus-within {outline:2px solid var(--color-ring);outline-offset:2px}
+.storage-limit-field input:focus-visible {outline:0}
+.storage-limit-field:has([aria-invalid=true]) {border-color:var(--color-destructive)}
+.storage-limit-field span {font-size:1rem}
+.storage-limit-actions {grid-column:1/-1;display:flex;align-items:center;gap:12px;justify-content:space-between}
+.storage-limit-actions button {flex:none;margin-inline-start:auto}
+.storage-limit-legacy,.storage-limit-feedback {grid-column:1/-1}
+.storage-limit-feedback:empty {display:none}
+.storage-location-summary {display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.storage-location-summary > div:first-child {min-width:0}
+.storage-location-actions {display:flex;gap:8px;flex-wrap:wrap}
+@media(prefers-color-scheme:dark) {
+  .storage-usage-overview {color:var(--apparent-paper);background:color-mix(in srgb,var(--apparent-carbon) 84%,var(--apparent-stock))}
+  .storage-usage-overview meter::-webkit-meter-bar {background:var(--apparent-carbon)}
+}
+@media(max-width:400px) {
+  .storage-limit-form {grid-template-columns:minmax(0,1fr)}
+  .storage-limit-actions {flex-wrap:wrap}
+}
+.storage-limit-field span {flex:none;white-space:nowrap}
+.settings-content .storage-location-actions button {background:transparent;border-color:currentColor;color:inherit;transition:none}
+.settings-content .storage-location-actions button:hover:not(:disabled) {background:var(--apparent-lilac);color:var(--apparent-carbon)}

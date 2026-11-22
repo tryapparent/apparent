@@ -37,6 +37,7 @@ declare global {
       openConnectSharedLinks: () => Promise<ConnectSettings>;
       openConnectBrowser: () => Promise<ConnectSettings>;
       readRetention: () => Promise<NativeRetentionResult>;
+      saveStorageLimit?: (maximumMb: number) => Promise<NativeRetentionResult>;
       saveRetention: (policy: RetentionPolicy) => Promise<NativeRetentionResult>;
       resetRetention: () => Promise<NativeRetentionResult>;
       readCaptureUsage: () => Promise<UsageResult>;

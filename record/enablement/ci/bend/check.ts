@@ -41,6 +41,25 @@ await bendScratch(async (scratch) => {
   );
   const proofOutput = join(scratch, "proof");
   await buildBend(root, "record", proofOutput, options);
+  assert.deepEqual(JSON.parse(run(process.execPath, ["--input-type=module", "-e", `
+    import capacity from "./capacity.mjs";
+    const bytes = (hi, lo) => ({$: "Bytes", hi, lo});
+    const old = bytes(0, 600000);
+    const size = bytes(0, 500000);
+    const used = bytes(1, 1);
+    const limit = bytes(0, 4294967290);
+    console.log(JSON.stringify([
+      capacity.choose(used, limit, old, old, size),
+      capacity.choose(used, limit, old, bytes(0, 599999), size),
+      capacity.constrain(99999999), capacity.constrain(100000000),
+      capacity.warn(true, 2000, 1000), capacity.warn(true, 1000, 0),
+    ]));
+  `], proofOutput)), [
+    {$:"Choice", trash:true, remaining:{$:"Bytes", hi:0, lo:4294467297}},
+    {$:"Choice", trash:false, remaining:{$:"Bytes", hi:1, lo:1}},
+    true, false, true, false,
+  ]);
+
   assert.deepEqual(pushToTalkTable(proofOutput), {
     hold: 300,
     actions: [1, 3, 0, 0, 1, 3, 2, 0, 4, 3, 4, 0, 4, 3, 4, 0],

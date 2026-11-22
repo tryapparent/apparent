@@ -86,6 +86,7 @@ const { pathToFileURL } = require('node:url');
 const { readRuntimeState, storageLocation, errorReporting, captureReference, storagePreference, microphoneEnabled, supportCapture } = require('./runtime.cjs');
 const { LocationWorkflow } = require('./storage-owner/location-workflow.js');
 const { RetentionWorkflow } = require('./storage-owner/retention-workflow.js');
+const { storageLimitValid } = require('./storage-owner/retention/size-limit.js');
 const { isRetentionPolicy } = require('./storage-owner/policy.js');
 const { ConnectSettings, actions, admitConnect } = require('./connect.cjs');
 const followWindowTheme = require('@apparent/ui/window-theme');
@@ -471,7 +472,7 @@ app.whenReady().then(() => {
   let referencePending;
   const retention = new RetentionWorkflow({
     read: () => storagePreference(os.homedir(), 'retention'),
-    write: (operation, fields) => storagePreference(os.homedir(), `${operation}retention`, fields),
+    write: (operation, fields) => storagePreference(os.homedir(), operation === 'limit' ? 'savelimit' : `${operation}retention`, fields),
     usage: () => storagePreference(os.homedir(), 'usage'),
   });
   const invalidate = () => { generation += 1; storageVersion += 1; reference = undefined; retention.invalidate(); connect.close(); publicShare.close(); };
@@ -602,10 +603,12 @@ app.whenReady().then(() => {
     const version = storageVersion;
     return retention.measure(() => version === storageVersion);
   });
-  for (const operation of ['save', 'reset']) {
+  for (const operation of ['save', 'reset', 'limit']) {
     ipcMain.handle(`apparent:${operation}-retention`, async (event, ...args) => {
-      const policy = operation === 'save' ? args[0] : undefined;
-      validate(event, operation === 'save' && args.length === 1 ? [] : args);
+      const policy = args[0];
+      if (operation !== 'reset' && args.length !== 1) throw new Error('Invalid retention request');
+      validate(event, operation === 'reset' ? args : []);
+      if (operation === 'limit' && (!settings || !storageLimitValid(policy))) throw new Error('Invalid storage limit');
       if (settings && pane !== 'storage') throw new Error('Unavailable outside Storage Settings');
       if (operation === 'save' && !isRetentionPolicy(policy)) {
         throw new Error('Invalid retention policy');

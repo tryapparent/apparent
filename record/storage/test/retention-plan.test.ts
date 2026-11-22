@@ -5,7 +5,7 @@ import {closeSync,mkdtempSync,openSync,rmSync,truncateSync,writeFileSync} from '
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {planRetention,retentionForPreset,type RetentionFacts} from '../dist/index.js';
+import {planRetention,retentionForPreset,parseStorageLimit,selectCapacityCaptures,storageLimitWarn,type RetentionFacts} from '../dist/index.js';
 const day=86_400_000n;
 const facts=(age:bigint,extra:Partial<RetentionFacts>={}):RetentionFacts=>({ageMs:age,unchangedMs:age,
   source:null,capture:null,durationMs:0n,videoBytes:null,heavyMedia:true,...extra});
@@ -34,6 +34,24 @@ test('u64 observations retain native saturating multiplication without Number ro
   assert.throws(()=>planRetention(retentionForPreset('week'),[facts(-1n)]));
   assert.throws(()=>planRetention(retentionForPreset('week'),[facts(max+1n)]));
 });
+test('size limit accepts decimal GB and selects only enough settled bytes, oldest first',()=>{
+  assert.equal(parseStorageLimit('12.405'),12405);
+  assert.equal(parseStorageLimit('0'),0);
+  for (const value of ['', '-1', '9e3', '0.0001', '100000']) assert.equal(parseStorageLimit(value),undefined);
+  assert.equal(storageLimitWarn(null,20),true);
+  assert.equal(storageLimitWarn(20,30),false);
+  assert.equal(storageLimitWarn(20,10),true);
+  assert.equal(storageLimitWarn(20,0),false);
+  const rows=[
+    {ageMs:day, unchangedMs:day, size:4_000_000_000n},
+    {ageMs:4n*day, unchangedMs:0n, size:8_000_000_000n},
+    {ageMs:3n*day, unchangedMs:day, size:5_000_000_000n},
+    {ageMs:2n*day, unchangedMs:day, size:2_000_000_000n},
+  ];
+  assert.deepEqual([...selectCapacityCaptures(12000,19_000_000_000n,rows)],[2,3]);
+  assert.deepEqual([...selectCapacityCaptures(19000,19_000_000_000n,rows)],[]);
+  assert.deepEqual([...selectCapacityCaptures(0,19_000_000_000n,rows)],[]);
+});
 test('compiled worker consumes finite private stdin and rejects invalid fields without disclosure',()=>{
   const root=mkdtempSync(join(tmpdir(),'apparent-dev-retention-wire-')),path=join(root,'request.json');
   const worker=fileURLToPath(new URL('../dist/retention/worker.js',import.meta.url));
@@ -48,6 +66,11 @@ test('compiled worker consumes finite private stdin and rejects invalid fields w
   try {
     const result=run(request);assert.equal(result.status,0);assert.equal(result.stderr,'');
     assert.deepEqual(JSON.parse(result.stdout),{version:1,actions:[{index:0,kind:'trashMedia'}]});
+    const cap = (maximumMb:number) => run({...request,capacity:{maximumMb,total:'2000000',sizes:['2000000']}});
+    assert.deepEqual(JSON.parse(cap(1).stdout),{version:1,actions:[{index:0,kind:'trashBundle'}]});
+    assert.deepEqual(JSON.parse(cap(0).stdout),{version:1,actions:[]});
+    assert.equal(cap(-1).status,1);
+
     for(const value of [{...request,mode:'unknown'},{...request,extra:'PRIVATE SENTINEL'},
       {...request,observations:[{...request.observations[0],ageMs:'18446744073709551616'}]},
       {...request,observations:[{...request.observations[0],ageMs:8}]},'PRIVATE SENTINEL']) {

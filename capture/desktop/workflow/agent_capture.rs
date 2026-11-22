@@ -249,6 +249,7 @@ enum Storage {
     Retention { deadline: u64 },
     SaveRetention { policy: super::storage_preferences::SavePolicy, expected: String, deadline: u64 },
     ResetRetention { expected: String, deadline: u64 },
+    SaveLimit { #[serde(rename = "maximumMb")] maximum_mb: u32, expected: String, deadline: u64 },
     Usage { deadline: u64 },
 }
 
@@ -259,7 +260,7 @@ impl Storage {
             | Self::LocationFacts { deadline } | Self::ProbeLocation { deadline, .. }
             | Self::SetLocation { deadline, .. } | Self::ResetLocation { deadline, .. }
             | Self::Retention { deadline } | Self::SaveRetention { deadline, .. }
-            | Self::ResetRetention { deadline, .. } | Self::Usage { deadline } => *deadline,
+            | Self::ResetRetention { deadline, .. } | Self::SaveLimit { deadline, .. } | Self::Usage { deadline } => *deadline,
         }
     }
 
@@ -276,6 +277,7 @@ impl Storage {
             Self::Retention { .. } => Some(super::storage_preferences::read(config)),
             Self::SaveRetention { policy, expected, .. } => Some(super::storage_preferences::save_policy(config, Some(policy), expected, || storage_clock_ms() < deadline)),
             Self::ResetRetention { expected, .. } => Some(super::storage_preferences::save_policy(config, None, expected, || storage_clock_ms() < deadline)),
+            Self::SaveLimit { maximum_mb, expected, .. } => Some(super::storage_preferences::save_limit(config, *maximum_mb, expected, || storage_clock_ms() < deadline)),
             Self::Usage { .. } => Some(super::storage_preferences::usage(config, || storage_clock_ms() < deadline)),
             _ => None,
         };
@@ -457,7 +459,7 @@ fn parse_request(line: &str) -> Option<Wire> {
             Storage::SetLocation { path, expected, .. } if path.is_empty() || path.len() > 4096 || path.contains('\0') || !std::path::Path::new(path).is_absolute() || !valid_revision(expected) => return None,
             Storage::ResetLocation { expected, .. } if !valid_revision(expected) => return None,
             Storage::SaveRetention { policy, expected, .. } if !policy.valid() || !valid_revision(expected) => return None,
-            Storage::ResetRetention { expected, .. } if !valid_revision(expected) => return None,
+            Storage::ResetRetention { expected, .. } | Storage::SaveLimit { expected, .. } if !valid_revision(expected) => return None,
             _ => {}
         }
         Some(Wire::Storage(storage))
