@@ -401,3 +401,7 @@ impl Client {
         Ok(out.to_path_buf())
     }
 }
+
+pub(super) fn snapshot(bundle: &Path, stage: &Path) -> Result<Vec<Asset>> {
+    snapshot_bounded(bundle, stage, MAX_FILE_BYTES)
+}

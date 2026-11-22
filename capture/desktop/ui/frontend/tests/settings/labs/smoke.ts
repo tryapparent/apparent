@@ -71,6 +71,10 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   await expect(toggle).toHaveAttribute('aria-checked','true');
   await expect(toggle).toBeFocused();
   await expect(toggle.locator('.apparent-switch-thumb')).toHaveCSS('transform','matrix(1, 0, 0, 1, 20, 0)');
+  const speaking=page.getByRole('switch',{name:'Match my speaking style'});
+  await expect(speaking).not.toBeChecked();
+  await speaking.focus();await page.keyboard.press('Space');await expect(speaking).toBeChecked();
+  await page.reload();await expect(speaking).toBeChecked();
   const sharing=page.getByRole('switch',{name:'Public sharing links'});
   await expect(sharing).toHaveAttribute('aria-checked','false');
   await sharing.focus();await page.keyboard.press('Space');await expect(sharing).toHaveAttribute('aria-checked','true');await expect(sharing).toBeFocused();
@@ -147,9 +151,9 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
     await page.screenshot({path:path.join(process.env.APPARENT_LIVE_PROOF,`labs-${theme}-${width}-bottom.png`)});
     await toggle.scrollIntoViewIfNeeded();
    }
-   for(const id of ['agent-context-limits','local-stream-ready','auto-paste-limits','public-sharing-limits','wispr-lab-help']){
+   for(const id of ['speaking-style-help','agent-context-limits','local-stream-ready','auto-paste-limits','public-sharing-limits','wispr-lab-help']){
     const guidance=page.locator(`#${id}`);await guidance.evaluate(el=>el.scrollIntoView({block:'center'}));await expect(guidance).toBeInViewport();
-    if(id==='agent-context-limits' && process.env.APPARENT_LIVE_PROOF)
+    if((id==='agent-context-limits'||id==='speaking-style-help') && process.env.APPARENT_LIVE_PROOF)
      await page.screenshot({path:path.join(process.env.APPARENT_LIVE_PROOF,`${id}-${theme}-${width}.png`)});
    }
    await cdp.detach();
@@ -158,7 +162,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   await expect(silentPrompt).toHaveAttribute('aria-checked','false');
   await expect(retryLipflow).toHaveCount(0);
   const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setDeviceMetricsOverride',{width:640,height:530,deviceScaleFactor:1,mobile:false});
-  const recoveries: [string,typeof toggle][]=[['streaming',toggle],['agentContext',agentContext],['pillDoodles',doodles]];
+  const recoveries: [string,typeof toggle][]=[['streaming',toggle],['agentContext',agentContext],['pillDoodles',doodles],['speakingStyle',speaking]];
   if(process.platform==='linux')recoveries.push(['autoPaste',autoPaste]);
   recoveries.push(['sharing',sharing]);
   if(process.platform==='darwin')recoveries.push(['wisprFlow',wispr]);

@@ -34,3 +34,9 @@ Run `node agent/enablement/ci/bend/check.ts` for the standalone policy and worke
 checks. Revert the CLI bridge, owner policy and staging change together to roll
 back. Remove the bridge when a successor handles the packaged zoom caller and
 passes the same synthetic recording checks.
+
+## Speaking-style examples
+
+Enable **Match my speaking style** in Settings → Labs to request examples for newly queued private, encrypted Connect recordings. It defaults off. Editing `experiments.speakingStyle` applies to the next upload admission without a restart. Turning it off affects future uploads. Earlier opted-in recordings retain their request until they expire or are deleted.
+
+Ordinary inspection of an opted-in capture includes a command hint. Run `apparent inspect <connect-id> --style-examples` with the same reader to retrieve up to 1,024 cl100k_base tokens from the 12 most recently reserved eligible recordings before that capture. Only encrypted v2 metadata is selected. Empty transcripts and copies of the current recording contribute no text. The fetch ends at the token budget or the end of that list. A share link alone cannot retrieve examples.

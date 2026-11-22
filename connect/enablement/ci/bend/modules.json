@@ -1,5 +1,6 @@
 {
   "modules": [
+    "service/src/captures/style-history.bend",
     "service/src/reporting/activity-preference.bend",
     "service/src/support/report-policy.bend",
     "client/typescript/src/reader/reader-route.bend",
