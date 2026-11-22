@@ -2,6 +2,7 @@ import { lazy, Suspense, useRef, useState, type ReactNode } from "react";
 import { Button } from "@apparent/ui/button";
 import { StickyNote } from "@apparent/ui/icons";
 import type { PillView } from "./view";
+import type { LipStatus } from "../input/renderer";
 import { InputMeter } from "./ink/input-meter";
 import { LiveCaption } from "./live-caption";
 import {
@@ -70,6 +71,7 @@ function BackgroundTab({ handoff, open, toggle }: { handoff: BackgroundHandoff; 
 
 type Props = {
   view: PillView;
+  lipStatus?: LipStatus | null;
   onRetryBackground?: (capture: string) => Promise<void>;
   backgroundHandoff?: BackgroundHandoff | null;
   pending?: boolean;
@@ -86,6 +88,7 @@ type Props = {
 };
 export function PillSurface({
   view,
+  lipStatus,
   backgroundHandoff,
   onRetryBackground,
   pending = false,
@@ -215,6 +218,7 @@ export function PillSurface({
               </span>
             </div>
           )}
+          {lipStatus && <span className="notice" role="status">{lipStatus}</span>}
           {view.warning && view.warning !== view.label && (
             <span className="warning" role="status">
               {view.warning}

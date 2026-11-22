@@ -1,5 +1,7 @@
 declare const policy: {
   clip_seconds(): number;
+  use_microphone(lips: boolean, microphone: boolean): boolean;
+  queue_clip(pending: number): boolean;
   finish_tail_ms(): number;
   admit(enabled: boolean, prepared: boolean): boolean;
   valid_size(size: number): boolean;

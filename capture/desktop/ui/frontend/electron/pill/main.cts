@@ -5,6 +5,7 @@ const path=require('node:path');
 const {pathToFileURL}=require('node:url');
 const protocol=require('./protocol.cjs');
 const geometry=require('./geometry.cjs');
+const {LipRecordingHost}=require('./lip-recording.cjs');
 if(!['linux','darwin'].includes(process.platform))process.exit(1);
 if(process.platform==='darwin')app.setActivationPolicy('accessory');
 const hyprland=process.platform==='linux' && (Boolean(process.env.HYPRLAND_INSTANCE_SIGNATURE) || (process.env.XDG_CURRENT_DESKTOP||'').toLowerCase().split(':').includes('hyprland'));
@@ -70,6 +71,23 @@ function applyPlacement(point){
   position({x:Math.round(area.x+area.width/2-(recordingAnchorOffset??(visibleWidth||bounds.width)/2)),y:area.y+34});placed=true;
 }
 function emit(message){process.stdout.write(JSON.stringify(message)+'\n');}
+const lips=new LipRecordingHost(process.env.APPARENT_MODELS_DIR,emit,control=>{
+  if(window && !window.isDestroyed())window.webContents.send('pill:lip-control',control);
+});
+let deferredLip=null,lipListener=null;
+function receiveLip(message){
+  if(message.action==='start' && (!window || lipListener!==window.webContents.id)){
+    if(deferredLip)emit({lipCapture:deferredLip.message.capture,lipResult:{kind:'failed'}});
+    deferredLip={message,received:performance.now()};
+    return;
+  }
+  if(message.action!=='start' && deferredLip?.message.capture===message.capture){
+    deferredLip=null;
+    emit({lipCapture:message.capture,lipResult:{kind:'failed'}});
+    return;
+  }
+  void lips.control(message,window?.webContents.id??0);
+}
 function setSharingConfirmation(revision){
   const previous=sharingConfirmation;
   if(previous===revision)return;
@@ -148,6 +166,7 @@ function visibility(){
     void incoming.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(resolve))').then(()=>{
       if(window!==incoming||incoming.isDestroyed())return;
       for(const old of retiredWindows.splice(0)){if(!old.isDestroyed()){
+        if(lips.ownsCamera(old.webContents.id)){retiredWindows.push(old);retiringFor=null;continue;}
         const oldId=Number(old.getMediaSourceId().split(':')[1]);old.destroy();
         if(Number.isSafeInteger(oldId))emit({retiredWindowId:oldId});
       }}
@@ -171,6 +190,7 @@ process.stdin.on('data',chunk=>{
     try{
       const message=JSON.parse(line);
       if(message.type==='state')receiveState(message);
+      else if(message.type==='lip-control')receiveLip(message);
       else if(message.type==='handoff-ready')void destinations.ready(message.capture,message.text).catch(()=>{});
       else if(message.type==='activate'){if(message.windowId!==undefined&&message.windowId!==admittedWindowId)continue;activated=true;if(loaded)visibility();emit({activated:true,windowId:admittedWindowId});}
       else if(message.type==='place' && Array.isArray(message.point) && message.point.length===2 && message.point.every(Number.isFinite)){
@@ -193,11 +213,34 @@ process.stdin.on('data',chunk=>{
 });
 process.stdin.on('end',()=>{if(buffer.length)note('invalid_parent_frame',{frameCode:'truncated'});else note('parent_stream_end');app.quit();});
 process.stdin.on('error',()=>{note('parent_stream_error');app.quit();});
+app.on('before-quit',()=>lips.dispose());
 app.whenReady().then(()=>{
   let appliedShape=null,shapePaint=null,documentGeneration=0,inputRegions=null,layoutGeneration=0,layoutKey='';
   Menu.setApplicationMenu(null);
-  session.defaultSession.setPermissionRequestHandler((_contents,_permission,reply)=>reply(false));
-  session.defaultSession.setPermissionCheckHandler(()=>false);
+  const camera=(contents,permission,details)=>permission==='media' && contents===window?.webContents &&
+    details.isMainFrame===true && details.requestingUrl===page && lips.allowsCamera(contents.id);
+  session.defaultSession.setPermissionRequestHandler((contents,permission,reply,details)=>
+    reply(camera(contents,permission,details) && details.mediaTypes?.length===1 && details.mediaTypes[0]==='video'));
+  session.defaultSession.setPermissionCheckHandler((contents,permission,_origin,details)=>
+    camera(contents,permission,details) && details.mediaType==='video');
+  const validLip=(event,args)=>{
+    if(args.length || event.senderFrame!==event.sender.mainFrame || event.senderFrame.url!==page)
+      throw Error('Forbidden lip bridge request');
+  };
+  ipcMain.handle('pill:lip-listening',(event,...args)=>{
+    valid(event,args);
+    lipListener=event.sender.id;
+    const pending=deferredLip;
+    deferredLip=null;
+    if(pending)receiveLip({...pending.message,elapsed:pending.message.elapsed+performance.now()-pending.received});
+  });
+  ipcMain.handle('pill:lip-clip',(event,capture,start,end,bytes,...args)=>{
+    validLip(event,args);lips.clip(event.sender.id,capture,start,end,bytes);
+  });
+  ipcMain.handle('pill:lip-finish',(event,capture,complete,...args)=>{
+    validLip(event,args);lips.finish(event.sender.id,capture,complete===true);
+    visibility();
+  });
   session.defaultSession.webRequest.onBeforeRequest((details,reply)=>reply({cancel:!details.url.startsWith('file:')}));
   ipcMain.handle('pill:read',(event,...args)=>{valid(event,args);return current;});
   ipcMain.handle('pill:retry-background-handoff',(event,key,...args)=>{

@@ -300,6 +300,25 @@ pub fn finalize_capture_bundle(
     activity: windows::ActivityLog,
     interaction_telemetry: Option<model::InteractionTelemetry>,
 ) -> Result<(PathBuf, ApparentBundle, String)> {
+    finalize_capture_bundle_with_transcript(
+        bundle_dir, target, recording, strokes, events, recorded_audio, note,
+        activity, interaction_telemetry, None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn finalize_capture_bundle_with_transcript(
+    bundle_dir: &Path,
+    target: TargetInfo,
+    recording: capture::ScreenRecording,
+    strokes: Vec<Stroke>,
+    events: Vec<InteractionEvent>,
+    recorded_audio: Option<RecordedAudio>,
+    note: Option<String>,
+    activity: windows::ActivityLog,
+    interaction_telemetry: Option<model::InteractionTelemetry>,
+    transcript: Option<TranscriptData>,
+) -> Result<(PathBuf, ApparentBundle, String)> {
     publication::publish_after(bundle_dir, || {
         let mut events = events;
         merge_capture_notes(bundle_dir, &mut events).stage(Stage::NotesRead)?;
@@ -337,12 +356,14 @@ pub fn finalize_capture_bundle(
         let wav_required = recorded_audio.is_some() || has_wav;
         publication::preflight_sources(bundle_dir, video_path.as_deref()).stage(Stage::SourcePreflight)?;
         let ((transcript, transcribe_ms), ((predecoded, prepared), frames, crop_settings, assembly_plan)) = std::thread::scope(|scope| -> Result<_> {
-            let transcribe_handle = scope.spawn(|| {
+            let wav_path = &wav_path;
+            let recorded_audio = &recorded_audio;
+            let transcribe_handle = scope.spawn(move || {
                 let t0 = std::time::Instant::now();
-                let tr = transcribe::transcribe(
+                let tr = transcript.unwrap_or_else(|| transcribe::transcribe(
                     has_wav.then_some(wav_path.as_path()),
                     recorded_audio.as_ref(),
-                );
+                ));
                 (tr, t0.elapsed().as_millis() as u64)
             });
             recover::write(
@@ -418,6 +439,13 @@ pub fn finalize_capture_bundle(
             Ok((transcribe_handle.join().unwrap(), (pre, frames, crop_settings, assembly_plan)))
         })?;
 
+        let mut context = std::collections::BTreeMap::new();
+        if transcript.source == "lipflow" {
+            context.insert("microphoneCapture".into(), "off".into());
+            if let Some(missing) = &transcript.missing {
+                context.insert("Lip reading".into(), missing.reason.clone());
+            }
+        }
         let built = build_bundle_from_parts(
             bundle_dir,
             target,
@@ -429,6 +457,7 @@ pub fn finalize_capture_bundle(
             video_path.clone(),
             note,
             SourceExtras {
+                context,
                 activity,
                 interaction_telemetry,
                 video_ink,
@@ -457,8 +486,12 @@ pub fn finalize_capture_bundle(
 
 /// Builds a Screen capture's bundle in `out`, which holds its video and `audio.wav`, from them
 /// and what the recording logged: `apparent reprocess` and `apparent recover`.
-pub fn rebuild_screen_bundle(out: &Path, old: recover::Unfinished) -> Result<String> {
-    rebuild_screen_bundle_with(out, old, None, &recover::Media::SYSTEM)
+pub fn rebuild_screen_bundle(
+    out: &Path,
+    old: recover::Unfinished,
+    transcript: Option<TranscriptData>,
+) -> Result<String> {
+    rebuild_screen_bundle_from(out, old, None, &recover::Media::SYSTEM, transcript)
 }
 
 /// `autocrop` as in `SourceExtras`: `None` follows the config, `Some(None)` keeps the whole frame.
@@ -467,6 +500,16 @@ pub fn rebuild_screen_bundle_with(
     old: recover::Unfinished,
     autocrop: Option<Option<autocrop::Settings>>,
     media: &recover::Media,
+) -> Result<String> {
+    rebuild_screen_bundle_from(out, old, autocrop, media, None)
+}
+
+fn rebuild_screen_bundle_from(
+    out: &Path,
+    old: recover::Unfinished,
+    autocrop: Option<Option<autocrop::Settings>>,
+    media: &recover::Media,
+    transcript: Option<TranscriptData>,
 ) -> Result<String> {
     let _coordination = publication::coordinate(out)?;
     let mut old = old;
@@ -496,7 +539,9 @@ pub fn rebuild_screen_bundle_with(
             (res, t0.elapsed().as_millis() as u64)
         });
         let t0 = std::time::Instant::now();
-        let tr = (media.transcribe)(recorded.as_ref().map(|_| wav.as_path()), recorded.as_ref());
+        let tr = transcript.unwrap_or_else(|| {
+            (media.transcribe)(recorded.as_ref().map(|_| wav.as_path()), recorded.as_ref())
+        });
         ((tr, t0.elapsed().as_millis() as u64), frames.join())
     });
     let (frames, candidates_ms) = joined.map_err(|_| anyhow::anyhow!("Frame decoding panicked"))?;
