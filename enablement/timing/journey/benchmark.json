@@ -1,0 +1,271 @@
+{
+  "version": "apparent-full-journey-v3",
+  "weights": [
+    [
+      "first-success",
+      "First use",
+      2,
+      "Finish guided practice to a usable success state"
+    ],
+    [
+      "launch",
+      "Open and Settings",
+      6,
+      "Cold launch to responsive entry surface"
+    ],
+    [
+      "settings",
+      "Open and Settings",
+      2,
+      "Open Settings to a responsive first panel"
+    ],
+    [
+      "settings-section",
+      "Open and Settings",
+      1,
+      "Select a Settings section to responsive controls"
+    ],
+    [
+      "pill",
+      "Start recording",
+      10,
+      "Physical shortcut to visible picker plus source confirmation to visible pill"
+    ],
+    [
+      "live",
+      "Start recording",
+      16,
+      "Record action to visible pill and the first valid screen frame and microphone sample"
+    ],
+    [
+      "picker",
+      "Start recording",
+      3,
+      "Open target picker to a selectable window or area"
+    ],
+    ["ink", "During recording", 2, "Pointer movement to visible ink"],
+    [
+      "note",
+      "During recording",
+      1,
+      "Note gesture to focused editor accepting input"
+    ],
+    [
+      "captions",
+      "During recording",
+      1,
+      "Known spoken cue to visible provisional caption"
+    ],
+    [
+      "cancel",
+      "During recording",
+      1,
+      "Cancel to quiescent capture and responsive foreground"
+    ],
+    [
+      "paste",
+      "Stop and clipboard",
+      24,
+      "Physical Finish to verified clipboard across the original seven takes"
+    ],
+    [
+      "paste-22-to-33",
+      "Stop and clipboard",
+      10,
+      "Physical Finish to verified clipboard at 22, 27 and 33 seconds"
+    ],
+    [
+      "paste-last",
+      "Hand off",
+      3,
+      "Paste last to expected text in the focused draft"
+    ],
+    [
+      "destinations",
+      "Hand off",
+      2,
+      "Open destination picker to selectable rows"
+    ],
+    ["send", "Hand off", 3, "Send to matching isolated receiver receipt"],
+    [
+      "remote-ready",
+      "Remote readiness and playback",
+      5,
+      "Share to independently fetchable manifest"
+    ],
+    [
+      "play",
+      "Remote readiness and playback",
+      2,
+      "Open ready link to advancing decoded playback"
+    ],
+    [
+      "inspect-local",
+      "Agent CLI",
+      2,
+      "Local inspect to summary and readable referenced evidence"
+    ],
+    [
+      "extract",
+      "Agent CLI",
+      1,
+      "Zoom and frames to independently decodable evidence"
+    ],
+    [
+      "inspect-remote",
+      "Agent CLI",
+      1,
+      "Remote inspect and fetch to validated local evidence"
+    ],
+    ["copy", "Agent CLI", 1, "CLI copy to independently verified clipboard"],
+    ["export", "Agent CLI", 1, "CLI export to published and decodable video"]
+  ],
+  "diagnostics": [
+    ["saved", "Finish to verified saved bundle"],
+    [
+      "cli-start",
+      "CLI start to first valid screen frame and microphone sample"
+    ],
+    ["cli-stop", "CLI stop to a verified saved bundle"],
+    ["silent-prompt", "Read my lips to text ready to copy"]
+  ],
+  "cases": {
+    "paste": [
+      "quick-silent",
+      "quick-voice",
+      "editor-clean",
+      "editor-two-strokes",
+      "editor-nine-strokes",
+      "moving-screen",
+      "review-dense"
+    ],
+    "paste-22-to-33": ["threshold-22", "threshold-27", "threshold-33"],
+    "inspect-local": ["quick-voice", "editor-nine-strokes", "long-narration"],
+    "extract": [
+      "zoom-short",
+      "zoom-ink",
+      "zoom-long",
+      "frames-short",
+      "frames-ink",
+      "frames-long"
+    ],
+    "inspect-remote": [
+      "inspect-first",
+      "inspect-cached",
+      "fetch-full-first",
+      "fetch-full-cached",
+      "fetch-selected-first",
+      "fetch-selected-cached"
+    ]
+  },
+  "stopControls": ["threshold-39", "threshold-41", "long-narration"],
+  "limits": {
+    "vcpus": 4,
+    "recordingP95Millicores": 3500,
+    "saturatedMillicores": 3900,
+    "recordingSaturationMs": 500,
+    "availableMemoryMiB": 1024,
+    "guestStealPercent": 5,
+    "relativeTolerancePercent": 10,
+    "clipboardToleranceMs": 100,
+    "mediumClipboardMs": 3000,
+    "stressClipboardMs": 2321,
+    "appPssToleranceMiB": 128,
+    "bundleToleranceMiB": 16,
+    "scratchToleranceMiB": 32
+  },
+  "hillClimb": {
+    "windowSeconds": 3600,
+    "earlyWindows": 2,
+    "slowRatePercent": 20,
+    "slowWindows": 2,
+    "hypothesesSinceGain": 5,
+    "matchedRepeats": 2
+  },
+  "captureFixtures": {
+    "portal-warmup": {
+      "seconds": 3,
+      "audio": "off",
+      "scene": "static",
+      "strokes": 0
+    },
+    "quick-silent": {
+      "seconds": 6,
+      "audio": "off",
+      "scene": "static",
+      "strokes": 0
+    },
+    "quick-voice": {
+      "seconds": 8,
+      "audio": "spoken",
+      "scene": "static",
+      "strokes": 0
+    },
+    "editor-clean": {
+      "seconds": 17,
+      "audio": "spoken",
+      "scene": "editor",
+      "strokes": 0
+    },
+    "editor-two-strokes": {
+      "seconds": 17,
+      "audio": "spoken",
+      "scene": "editor",
+      "strokes": 2
+    },
+    "editor-nine-strokes": {
+      "seconds": 17,
+      "audio": "spoken",
+      "scene": "editor",
+      "strokes": 9
+    },
+    "moving-screen": {
+      "seconds": 35,
+      "audio": "off",
+      "scene": "motion",
+      "strokes": 0
+    },
+    "review-dense": {
+      "seconds": 65,
+      "audio": "spoken",
+      "scene": "motion",
+      "strokes": 12
+    },
+    "threshold-22": {
+      "seconds": 22,
+      "audio": "spoken",
+      "scene": "static",
+      "strokes": 0
+    },
+    "threshold-27": {
+      "seconds": 27,
+      "audio": "spoken",
+      "scene": "editor",
+      "strokes": 2
+    },
+    "threshold-33": {
+      "seconds": 33,
+      "audio": "spoken",
+      "scene": "editor",
+      "strokes": 9
+    },
+    "threshold-39": {
+      "seconds": 39,
+      "audio": "spoken",
+      "scene": "static",
+      "strokes": 0
+    },
+    "threshold-41": {
+      "seconds": 41,
+      "audio": "spoken",
+      "scene": "static",
+      "strokes": 0
+    },
+    "long-narration": {
+      "seconds": 300,
+      "audio": "spoken",
+      "scene": "editor",
+      "strokes": 3
+    }
+  }
+}
