@@ -30,7 +30,7 @@ The existing manual Mac preview workflow remains a recovery path. The frozen pac
 
 ## Amazon Linux CLI
 
-Linux Main and Stable also publish an `Apparent-CLI-VERSION-amazon-linux-2023-x86_64.zip` and checksum from the x86-64 candidate. It builds the same `apparent` command against glibc 2.34 and inspects an annotated bundle from the candidate AppImage in a clean Amazon Linux 2023 container before sealing. The ZIP is for headless reading. Use the AppImage for desktop capture and bundled media plugins. Sources predating the CLI builder retain their historical payloads.
+Linux Main and Stable also publish an `Apparent-CLI-VERSION-amazon-linux-2023-x86_64.zip` and checksum from the x86-64 candidate. It builds the same `apparent` command against glibc 2.34 and inspects an annotated bundle from the candidate AppImage in a clean Amazon Linux 2023 container before sealing. The ZIP is for headless reading. Use the AppImage for desktop capture and bundled media plugins. The CLI compiles alongside AppImage packaging. The x86-64 producer checks both artifacts from the same workflow attempt together before sealing. For an incomplete set of intermediate artifacts, rerun all jobs. Older candidate sources with the original builder compile during this final check. Sources predating the CLI builder retain their historical payloads.
 
 Download the ZIP and its `.sha256` from the same release. Run `sha256sum -c <archive>.sha256`, then `unzip <archive>` in a fresh directory. Run `./apparent-cli/apparent inspect ./capture.apparent`, and keep the binary beside its `lib/` directory. Fetching a hosted capture still requires outbound HTTPS and read approval.
 
