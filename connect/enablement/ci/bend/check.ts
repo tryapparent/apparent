@@ -35,6 +35,18 @@ await bendScratch(async (scratch) => {
       [true, false, false, false],
       [0, 1],
     ]);
+    const style = run(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `import policy from "./style-history.mjs";
+      console.log(JSON.stringify([policy.scan_limit(), policy.token_budget(), policy.available(true,true,true),
+        policy.available(false,true,true), policy.available(true,false,true), policy.available(true,true,false)]));`,
+      ],
+      directory,
+    );
+    assert.deepEqual(JSON.parse(style), [12, 1024, true, false, false, false]);
     const reports = run(
       process.execPath,
       [

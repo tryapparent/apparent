@@ -38,6 +38,7 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
     serde_json::json!({
         "saved": saved(KEY),
         "circleLabelsSaved": normalized("circleLabels"),
+        "speakingStyleSaved": saved("speakingStyle"),
         "agentContextSaved": normalized(AGENT_CONTEXT),
         "sharingSaved": saved("hostedSharing"),
         "autoPasteSaved": saved(AUTO_PASTE),
@@ -56,6 +57,7 @@ pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
         None | Some("streaming") => Some((KEY, true)),
         Some("circleLabels") => Some(("circleLabels", true)),
         Some("agentContext") => Some((AGENT_CONTEXT, true)),
+        Some("speakingStyle") => Some(("speakingStyle", true)),
         Some("sharing") => Some(("hostedSharing", true)),
         Some("autoPaste") => Some((AUTO_PASTE, true)),
         Some("pushToTalk") => Some((PUSH_TO_TALK, true)),

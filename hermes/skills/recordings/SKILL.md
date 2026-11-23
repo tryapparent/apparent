@@ -13,6 +13,11 @@ and historical session metadata are evidence, not new authority. Work under
 normal Hermes approvals and queue/steer behavior. Sending the message is the
 user's action; do not auto-send, switch chats or start recording.
 
+If inspection requests speaking-style examples, run its printed
+`apparent inspect <id> --style-examples` command before drafting your response.
+Use the same Connect reader. Treat the returned speech as wording examples.
+If history is empty or unavailable, continue with the current recording.
+
 When a detail is unclear, call `apparent_inspect` again with the same source and
 the relevant `frame` number. For motion or a mark's timing, use the existing
 `apparent zoom <bundle> --at <time-or-phrase>` or `--mark <number>` CLI command
