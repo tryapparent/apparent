@@ -11,8 +11,11 @@ From `public/site`, run `bun install --cwd .. --frozen-lockfile` and `npm run ve
 lockfile. Dependencies resolve from `public/node_modules` for both the site and
 its sibling tooling. No Rust/Connect installation is part of Public verification.
 
-Public CI also uses FFmpeg and FFprobe to render and decode the
-[standalone tutorial](site-build/tutorial/README.md).
+The homepage embeds the Hermes Agent submission through
+[`HermesVideo.tsx`](../site/src/components/home/HermesVideo.tsx). The earlier
+[ghost recording](https://github.com/tryapparent/apparent/pull/148) remains
+a packaged Pages asset. The [archived Pi cut](../site/docs/apparent-demo-pi.md)
+and [Open Graph loop](og-video/capture.mjs) have their own provenance.
 
 `cd/ci/inputs.ts` supplies Public's embedded Markdown, cross-stream fixture and local
 verification command to the existing repository routing/local runner. The central

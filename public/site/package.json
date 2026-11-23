@@ -10,8 +10,6 @@
     "test:video": "node --test ../enablement/browser-proof/test-video-demo.ts",
     "test:try-button": "node ../enablement/pages/test-try-button-browser.ts",
     "test:hosted": "node ../enablement/browser-proof/test-hosted-browser.mjs",
-    "generate:tutorial": "node ../enablement/site-build/tutorial/render.ts",
-    "test:tutorial": "node --test ../enablement/site-build/tutorial/render.test.ts",
     "generate:og-video": "node ../enablement/og-video/capture.mjs",
     "verify": "node ../enablement/site-build/verify.mjs",
     "build:pages-worker": "esbuild lib/pages-worker.ts --bundle --platform=browser --format=esm --outfile=dist-apparent/_worker.js"

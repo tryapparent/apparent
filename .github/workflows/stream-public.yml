@@ -164,10 +164,6 @@ jobs:
       - name: Verify Public source, browsers, shared inputs and prepared movie worker
         working-directory: public/site
         run: npm run verify
-      - name: Provide the tutorial encoder and probe
-        run: command -v ffmpeg >/dev/null && command -v ffprobe >/dev/null || sudo apt-get install -y ffmpeg
-      - name: Render and decode the standalone tutorial
-        run: node --test public/enablement/site-build/tutorial/render.test.ts
       - name: Seal the checked Public-only Pages artifact
         run: node public/enablement/cd/publish-pages.ts seal "$GITHUB_SHA"
       - uses: actions/upload-artifact@v4
