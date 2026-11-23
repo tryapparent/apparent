@@ -17,6 +17,7 @@ import {
   FrogNudgePreference,
   type FrogNudgePreferenceProps,
 } from "../../../onboarding/renderer/frog-nudge/preview";
+import { SpeakingStyle } from "../../../agent/settings/speaking-style";
 import { About, type AboutBridge } from "./about";
 import availableFrog from "../../../capture/desktop/assets/settings/frog-jump.png";
 import currentFrog from "../../../capture/desktop/assets/settings/frog-lounge.png";
@@ -90,6 +91,7 @@ declare module "react" {
         pushToTalkExperiment?: ComponentType<PushToTalkProps>;
         pillDoodlesExperiment?: typeof PillDoodles;
         autoPasteExperiment?: ComponentType<AutoPasteProps>;
+        speakingStyleExperiment?: typeof SpeakingStyle;
         frogExperiment?: ComponentType<FrogNudgePreferenceProps>;
         circleLabelsExperiment?: typeof CircleLabelsPreference;
         agentContextExperiment?: ComponentType<AgentContextPreferenceProps>;
@@ -238,6 +240,7 @@ function Settings() {
         ) : (
           <apparent-settings-pane
             pane={current}
+            speakingStyleExperiment={current === "Labs" ? SpeakingStyle : undefined}
             pushToTalkExperiment={current === "Labs" ? PushToTalk : undefined}
             pillDoodlesExperiment={current === "Labs" ? PillDoodles : undefined}
             autoPasteExperiment={current === "Labs" ? AutoPaste : undefined}

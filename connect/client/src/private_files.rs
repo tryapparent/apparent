@@ -343,9 +343,6 @@ pub(super) fn digest_file(path: &Path) -> Result<String> {
     Ok(digest.to_owned())
 }
 
-pub(super) fn snapshot(bundle: &Path, stage: &Path) -> Result<Vec<Asset>> {
-    snapshot_bounded(bundle, stage, MAX_FILE_BYTES)
-}
 
 pub(super) fn snapshot_bounded(bundle: &Path, stage: &Path, asset_limit: u64) -> Result<Vec<Asset>> {
     no_symlinks(bundle)?;
@@ -358,7 +355,7 @@ pub(super) fn snapshot_bounded(bundle: &Path, stage: &Path, asset_limit: u64) ->
             .file_name()
             .into_string()
             .map_err(|_| anyhow::anyhow!("Invalid asset name"))?;
-        if matches!(name.as_str(), ".publication.lock" | "notes-ui.log") {
+        if matches!(name.as_str(), ".publication.lock" | "notes-ui.log" | ".connect-style.json") {
             let metadata = fs::symlink_metadata(entry.path())?;
             ensure!(
                 metadata.is_file()
