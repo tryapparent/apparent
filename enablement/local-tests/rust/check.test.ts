@@ -36,6 +36,13 @@ test("native manifests, shared inputs and producer feature builds select their r
   ]);
   assert.deepEqual(packages(["connect/web/src/main.ts"]), []);
   assert(rustAffected(["record/enablement/permissions/native.ts"]));
+  for (const input of [
+    "record/capture-request/src/capture-admission.bend",
+    "record/enablement/ci/bend/capture-request/capture-admission.ts",
+  ]) {
+    assert(rustAffected([input]));
+    assert.deepEqual(packages([input]), ["apparent"]);
+  }
   assert(diagnosticsPlan(["public/site/video-demo/main.rs"]).demo);
   assert(
     diagnosticsPlan(["engine/native/Cargo.lock"]).selected[0].args.includes(

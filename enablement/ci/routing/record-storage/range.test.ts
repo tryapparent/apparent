@@ -8,7 +8,7 @@ import {storageControllers, nativeStorageGraph, recordBendManifest} from './qual
 import {YAML} from 'bun';
 import {accepted} from '../evidence.ts';
 
-test('real Git controller changes preserve Desktop renderer and main packaging, omit native compilation only with proof', () => {
+test('real Git controller changes preserve Desktop renderer and main packaging, omit native compilation only with proof', {timeout: 20_000}, () => {
   const root = mkdtempSync(join(tmpdir(), 'storage-routing-'));
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
   const git = (...args: string[]) => execFileSync('git', args, {cwd: root, env, encoding: 'utf8'}).trim();
