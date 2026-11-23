@@ -49,12 +49,10 @@ export async function startFixture(
     return {
       live,
       start,
-      async prepareStop() {
-        await delay(
-          Math.max(0, deadline - (warmup ? 0 : 2000) - (await now())),
-          undefined,
-          { signal },
-        );
+      async prepareStop(leadMs = warmup ? 0 : 2000) {
+        await delay(Math.max(0, deadline - leadMs - (await now())), undefined, {
+          signal,
+        });
       },
       async waitUntilDue() {
         await delay(Math.max(0, deadline - (await now())), undefined, {

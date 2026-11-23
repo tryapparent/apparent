@@ -41,6 +41,33 @@ isolated temporary directory. Keep the probe cadence identical across builds.
 For a bounded transport smoke, set `APPARENT_BENCH_PROBE` to a single
 fixture ID such as `quick-silent`. A smoke reports partial coverage.
 
+### Profile Stop locally
+
+Pass `--profile` and the path to a trusted Linux x86-64 Perfetto `tracebox`
+executable. The runner stages it in the disposable VM, where the test user
+needs passwordless sudo for kernel scheduling and stack collection.
+
+```sh
+node enablement/timing/journey/native/run.ts "$template" scrawl "$image" "$sha256" "$model" "$job" --profile "$tracebox"
+```
+
+This runs the portal warmup and the five-minute `long-narration` take.
+Perfetto samples recorder call stacks and captures scheduling events in a
+25-second window starting shortly before Finish. Open
+`vm/artifacts/artifacts/long-narration.perfetto-trace` in Perfetto and use
+`phase-finish.tsv` and `perfetto-window.json` to locate the saved and clipboard
+observations. Those files use milliseconds since guest boot. For stripped
+packages, point Perfetto Trace Processor at the matching build's unstripped
+binary to resolve function names.
+
+```sh
+trace_processor bundle --symbol-paths "$symbols" "$trace" "$job/symbolized.tar"
+```
+
+The trace and raw timing receipts stay in the private job directory.
+Profiling changes benchmark overhead, so the recording report rejects the
+profiled run for scoring.
+
 Set `APPARENT_BENCH_SURFACE=1` and use a fresh job to collect visible Start.
 The observer measures two successive qualifying framebuffer samples for each
 milestone. It records the first timestamp, sample gap, pixel markers and

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { contract } from "../score.ts";
 import { storage } from "../storage.ts";
@@ -9,6 +9,10 @@ const [root, ...extra] = process.argv.slice(2);
 if (!root || extra.length)
   throw new Error("Usage: report.ts RETAINED_VM_DIRECTORY");
 const artifacts = resolve(root, "artifacts/artifacts");
+if (existsSync(resolve(artifacts, "profile.json")))
+  throw new Error(
+    "Profiled timings are diagnostic and cannot produce a scoring receipt",
+  );
 const read = (name: string) =>
   readFileSync(resolve(artifacts, name), "utf8").trimEnd();
 const rows = (name: string, header = false) =>
