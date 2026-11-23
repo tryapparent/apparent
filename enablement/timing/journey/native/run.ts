@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 
 const [templateArg, user, imageArg, expected, modelArg, jobArg, ...extra] =
   process.argv.slice(2);
+const profile = extra.length === 1 && extra[0] === "--profile";
 assert(
   templateArg &&
     user &&
@@ -23,8 +24,8 @@ assert(
     expected &&
     modelArg &&
     jobArg &&
-    !extra.length,
-  "Usage: native/run.ts TEMPLATE_DIR SSH_USER APPIMAGE SHA256 MODEL PRIVATE_JOB",
+    (!extra.length || profile),
+  "Usage: native/run.ts TEMPLATE_DIR SSH_USER APPIMAGE SHA256 MODEL PRIVATE_JOB [--profile]",
 );
 const [template, image, model, job] = [
   templateArg,
@@ -94,7 +95,13 @@ const mode = surface
 const manifest = await import("../benchmark.json", {
   with: { type: "json" },
 }).then((result) => result.default);
-const selection = process.env.APPARENT_BENCH_PROBE;
+const requested = process.env.APPARENT_BENCH_PROBE;
+assert(
+  !profile ||
+    (mode === "draw" && (!requested || requested === "long-narration")),
+  "--profile requires the long-narration recording probe",
+);
+const selection = profile ? "long-narration" : requested;
 assert(
   !selection ||
     (selection !== "portal-warmup" &&
@@ -117,6 +124,7 @@ await Promise.all([
   stageFile(model, "model"),
   stageFile(model + ".verified.json", "receipt"),
   source("record/enablement/performance/guest.ts"),
+  source("record/enablement/performance/clipboard/guest.ts"),
   source("record/enablement/performance/fixture-clock.ts"),
   stageFile(join(kit, "sample.ts"), "sample.ts"),
   stageFile(
@@ -124,6 +132,11 @@ await Promise.all([
     "scene",
   ),
 ]);
+if (profile) {
+  await writeFile(join(staged, "libbench.so.profile"), "1", { mode: 0o600 });
+  await source("record/enablement/performance/profile/config.ts");
+  await source("record/enablement/performance/profile/trace.ts");
+}
 if (surface || onboarding)
   await source("shared/enablement/performance/electron-observer.ts");
 if (surface)
@@ -282,6 +295,7 @@ try {
       "wl-copy",
       "--require-command",
       "wl-paste",
+      ...(profile ? ["--require-command", "sudo"] : []),
       "--scenario-timeout",
       "900",
       "--job-timeout",

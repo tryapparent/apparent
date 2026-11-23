@@ -115,6 +115,7 @@
 .pond-cover-frog:hover:not(:disabled), .pond-lounging-frog:hover { filter: drop-shadow(0 0 8px #7a58c766); }
 
 .pond-download { pointer-events: auto; margin-top: 45px; }
+.pond-download:has(> .download-meta) { flex-direction: column; align-items: flex-start; gap: 8px; }
 .pond-download .download-meta { color: var(--color-muted-foreground); }
 .pond-download .download-more { color: var(--color-muted-foreground); }
 .pond-download .platforms { background: var(--color-muted); box-shadow: inset 0 0 0 1px var(--color-border); }

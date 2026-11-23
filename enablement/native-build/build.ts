@@ -11,7 +11,7 @@ const helperSources = [
   'capture/engine/native/PlaybackVolume.swift', 'capture/engine/native/ScreenProbe.swift',
   'capture/desktop/native/Onboarding.swift', 'capture/desktop/native/OnboardingBrand.swift',
   'capture/desktop/native/OnboardingDemo.swift', 'capture/desktop/native/PermissionPanel.swift',
-  'capture/desktop/native/Settings.swift', 'capture/desktop/native/ShortcutKeys.swift',
+  'capture/desktop/native/ShortcutKeys.swift',
   'shared/native/main.swift',
 ].sort((a, b) => {
   const left = a.slice(a.lastIndexOf('/') + 1), right = b.slice(b.lastIndexOf('/') + 1);

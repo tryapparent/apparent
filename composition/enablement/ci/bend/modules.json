@@ -1,6 +1,7 @@
 {
   "modules": [
     "settings/about/mac-updates.bend",
+    "settings/about/linux-updates.bend",
     "settings/about/release-action.bend"
   ],
   "inputs": ["settings/", "enablement/ci/bend/"]

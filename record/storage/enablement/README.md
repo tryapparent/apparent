@@ -7,8 +7,7 @@ or place the image under the disposable guest account and use its normal
 `launch` entry. Keep the network isolated and use private fixture data and
 processes. Inspect the real Settings window in the guest.
 
-The desktop launcher calls `apparent launch`. The native Settings session
-selects the presentation and sends pane changes to its existing Electron child.
+The desktop launcher calls `apparent launch`. The Settings session launches Electron and sends pane changes to its existing child.
 Settings routes Storage to the shipped React screen and its scoped preload.
 The Record workflows supply location and retention intent. The Electron host
 supplies its parented chooser and operation lifetime. Native Storage provides
@@ -29,9 +28,9 @@ Repeat with absent, true and false legacy `experiments.electronCaptureLocation`
 values. Check that the shared Electron pane opens in each case and preserves
 the exact config bytes and fixture captures during navigation and reopen.
 Exercise both a missing Settings asset at startup and an Electron exit on
-Storage. Native General should open without Storage controls or a preference
-mutation. Restore the packaged assets and reopen Settings to verify that Electron
-Storage still reads the original fixture.
+Storage. The failed session should leave no Settings window or preference
+mutation. Reopen after the exit, and again after restoring the missing asset,
+to verify that the Electron window still reads the original fixture.
 
 ## Real provider
 

@@ -1,7 +1,7 @@
 //! AppImage updates. The running inode remains in use; the new image starts on the next launch.
 //! Never replace a debug build, a symlink, or somebody else's /opt installation.
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::{Read, Seek, Write};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::fd::AsRawFd;
 
@@ -21,7 +21,7 @@ macro_rules! ensure_update {
         }
     };
 }
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 const REPO: &str = "tryapparent/apparent";
@@ -288,7 +288,7 @@ exit 1"#)
 
 // Main previews are published from main as GitHub releases.
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct Release {
     tag_name: String,
     #[serde(default)]
@@ -299,11 +299,12 @@ struct Release {
     assets: Vec<ReleaseAsset>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct ReleaseAsset {
     name: String,
+    #[serde(skip_serializing)]
     browser_download_url: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     size: u64,
 }
 
@@ -315,83 +316,90 @@ struct Candidate {
     size: u64,
 }
 
-fn arch() -> Option<&'static str> {
-    match std::env::consts::ARCH {
-        "x86_64" => Some("x86_64"),
-        "aarch64" => Some("aarch64"),
-        _ => None,
-    }
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+enum Selection {
+    Unsupported,
+    NoRelease,
+    Selected { release: usize, image: usize, checksum: usize },
 }
 
-fn main_candidate(release: &Release, arch: &str, checksum: &str) -> Result<Candidate> {
-    let sha = release.tag_name.strip_prefix("linux-main-v2-").context("not a main preview")?;
-    ensure_update!(sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit()), "invalid main revision");
-    let suffix = format!("-linux-{arch}.AppImage");
-    let image = release.assets.iter().find(|asset| asset.name.starts_with("Apparent-") && asset.name.ends_with(&suffix))
-        .context("main preview has no AppImage for this CPU")?;
-    let version = image.name.strip_prefix("Apparent-").and_then(|name| name.strip_suffix(&suffix)).unwrap();
-    ensure_update!(!version.is_empty() && version.bytes().all(|b| b.is_ascii_digit() || b == b'.'), "invalid main AppImage version");
-    let checksum_asset = release.assets.iter().find(|asset| asset.name == format!("{}.sha256", image.name))
-        .context("main preview has no checksum")?;
+#[derive(Serialize)]
+struct SelectionRequest<'a> {
+    operation: &'static str,
+    channel: &'static str,
+    arch: &'a str,
+    releases: &'a [Release],
+}
+
+fn candidate_from_history(
+    releases: &[Release],
+    channel: &'static str,
+    arch: &str,
+    fetch: &impl Fn(&str) -> Result<Vec<u8>>,
+) -> Result<Option<Candidate>> {
+    let selection = run_update_policy(&SelectionRequest {
+        operation: "selectRelease",
+        channel,
+        arch,
+        releases,
+    }).stage(Stage::Policy)?;
+    let (release, image, checksum) = match selection {
+        Selection::Unsupported => return Err(anyhow::anyhow!("no AppImage for this CPU")).stage(Stage::Target),
+        Selection::NoRelease => return Ok(None),
+        Selection::Selected { release, image, checksum } => {
+            let release = releases.get(release).context("invalid selected release").stage(Stage::PolicyResponse)?;
+            let image = release.assets.get(image).context("invalid selected image").stage(Stage::PolicyResponse)?;
+            let checksum = release.assets.get(checksum).context("invalid selected checksum").stage(Stage::PolicyResponse)?;
+            (release, image, checksum)
+        }
+    };
+    candidate_from_selection(release, image, checksum, channel, arch, fetch).map(Some)
+}
+
+fn candidate_from_selection(
+    release: &Release,
+    image: &ReleaseAsset,
+    checksum: &ReleaseAsset,
+    channel: &'static str,
+    arch: &str,
+    fetch: &impl Fn(&str) -> Result<Vec<u8>>,
+) -> Result<Candidate> {
+    let id = if channel == "main" {
+        let sha = release.tag_name.strip_prefix("linux-main-v2-").context("not a main preview")?;
+        ensure_update!(sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit()), "invalid main revision");
+        let suffix = format!("-linux-{arch}.AppImage");
+        let version = image.name.strip_prefix("Apparent-").and_then(|name| name.strip_suffix(&suffix))
+            .context("main preview has no AppImage for this CPU")?;
+        ensure_update!(!version.is_empty() && version.bytes().all(|b| b.is_ascii_digit() || b == b'.'), "invalid main AppImage version");
+        sha
+    } else {
+        let version = release.tag_name.strip_prefix('v').context("not a stable release")?;
+        ensure_update!(image.name == format!("Apparent-{version}-linux-{arch}.AppImage"), "unexpected stable AppImage name");
+        &release.tag_name
+    };
+    ensure_update!(checksum.name == format!("{}.sha256", image.name), "unexpected release checksum asset");
     let prefix = format!("https://github.com/{REPO}/releases/download/{}/", release.tag_name);
     ensure_update!(image.browser_download_url == format!("{prefix}{}", image.name)
-        && checksum_asset.browser_download_url == format!("{prefix}{}", checksum_asset.name), "unexpected main preview asset URL");
-    let (hash, name) = checksum.trim().split_once(char::is_whitespace).context("invalid main preview checksum")?;
+        && checksum.browser_download_url == format!("{prefix}{}", checksum.name), "unexpected release asset URL");
+    let body = fetch(&checksum.browser_download_url).stage(Stage::ChecksumFetch)?;
+    let text = std::str::from_utf8(&body).stage(Stage::ChecksumParse)?;
+    let (hash, name) = text.trim().split_once(char::is_whitespace).context("invalid release checksum").stage(Stage::ChecksumParse)?;
     ensure_update!(name.trim() == image.name, "checksum refers to another file");
-    validate_hash(hash)?;
-    Ok(Candidate { id: sha.to_owned(), channel: "main", url: image.browser_download_url.clone(), sha256: hash.to_owned(), size: image.size })
-}
-
-fn main_releases(releases: Vec<Release>, arch: &str) -> Vec<Release> {
-    let suffix = format!("-linux-{arch}.AppImage");
-    let mut releases: Vec<_> = releases.into_iter().filter(|release| {
-        release.prerelease && !release.draft && release.published_at.is_some()
-            && release.tag_name.strip_prefix("linux-main-v2-").is_some_and(|sha| {
-                sha.len() == 40 && sha.bytes().all(|b| b.is_ascii_hexdigit())
-            })
-            && release.assets.iter().any(|asset| {
-                asset.name.starts_with("Apparent-") && asset.name.ends_with(&suffix)
-                    && release.assets.iter().any(|sum| sum.name == format!("{}.sha256", asset.name))
-            })
-    }).collect();
-    releases.sort_by(|a, b| b.published_at.cmp(&a.published_at));
-    releases
-}
-
-fn candidate_from_release(release: &Release, arch: &str, fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<Candidate> {
-    let suffix = format!("-linux-{arch}.AppImage.sha256");
-    let checksum = release.assets.iter().find(|asset| asset.name.starts_with("Apparent-") && asset.name.ends_with(&suffix))
-        .context("main preview has no checksum for this CPU")?;
-    let prefix = format!("https://github.com/{REPO}/releases/download/{}/", release.tag_name);
-    ensure_update!(checksum.browser_download_url == format!("{prefix}{}", checksum.name), "unexpected main preview checksum URL");
-    let text = fetch(&checksum.browser_download_url).stage(Stage::ChecksumFetch)?;
-    main_candidate(&release, arch, std::str::from_utf8(&text).stage(Stage::ChecksumParse)?).stage(Stage::ChecksumParse)
-}
-
-fn newest_main_candidate(releases: Vec<Release>, arch: &str, fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<Option<Candidate>> {
-    main_releases(releases, arch).first()
-        .map(|release| candidate_from_release(release, arch, fetch))
-        .transpose()
-}
-
-fn latest_main_candidate(arch: &str) -> Result<Candidate> {
-    latest_main_candidate_with(arch, &|url| get(url, None))
-}
-
-fn latest_main_candidate_with(arch: &str, fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<Candidate> {
-    // Release lists include Mac previews, old Scrawl assets and stable releases.
-    // GitHub pages by creation date, not publication date: inspect all pages before choosing.
-    newest_main_candidate(release_history(fetch)?, arch, fetch)?
-        .context("no published Linux main preview yet")
-}
-
-fn validate_hash(hash: &str) -> Result<()> {
     ensure_update!(hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()), "invalid SHA-256");
-    Ok(())
+    Ok(Candidate { id: id.to_owned(), channel, url: image.browser_download_url.clone(), sha256: hash.to_owned(), size: image.size })
 }
 
-fn stable_candidate(arch: &str) -> Result<Option<Candidate>> {
-    stable_candidate_with(arch, &|url| get(url, None))
+fn latest_candidate_with(
+    channel: &'static str,
+    arch: &str,
+    fetch: &impl Fn(&str) -> Result<Vec<u8>>,
+) -> Result<Option<Candidate>> {
+    let candidate = candidate_from_history(&release_history(fetch)?, channel, arch, fetch)?;
+    if channel == "main" {
+        return candidate.context("no published Linux main preview yet").map(Some);
+    }
+    Ok(candidate)
 }
 
 fn release_history(fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<Vec<Release>> {
@@ -418,35 +426,6 @@ fn release_history(fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<Vec<Relea
     Ok(releases)
 }
 
-fn stable_candidate_with(arch: &str, fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<Option<Candidate>> {
-    let releases = release_history(fetch)?;
-
-    // GitHub's /latest can name a standalone component instead of the desktop app.
-    // Only published versioned desktop releases belong to the Stable channel.
-    let mut releases: Vec<_> = releases.into_iter().filter_map(|release| {
-        if release.draft || release.prerelease || release.published_at.is_none() { return None; }
-        let version = release.tag_name.strip_prefix('v')?.split('.')
-            .map(str::parse::<u32>).collect::<Result<Vec<_>, _>>().ok()?;
-        let name = format!("Apparent-{}-linux-{arch}.AppImage", &release.tag_name[1..]);
-        (release.assets.iter().any(|asset| asset.name == name)
-            && release.assets.iter().any(|asset| asset.name == format!("{name}.sha256")))
-            .then_some((version, release))
-    }).collect();
-    releases.sort_by(|a, b| b.0.cmp(&a.0));
-    let Some((_, release)) = releases.into_iter().next() else { return Ok(None); };
-    let name = format!("Apparent-{}-linux-{arch}.AppImage", &release.tag_name[1..]);
-    let image = release.assets.iter().find(|a| a.name == name).context("no Linux AppImage in the stable release yet")?;
-    let checksum = release.assets.iter().find(|a| a.name == format!("{name}.sha256")).context("stable release has no checksum")?;
-    let prefix = format!("https://github.com/{REPO}/releases/download/{}/", release.tag_name);
-    ensure_update!(image.browser_download_url == format!("{prefix}{name}") && checksum.browser_download_url == format!("{prefix}{name}.sha256"), "unexpected release asset URL");
-    let body = fetch(&checksum.browser_download_url).stage(Stage::ChecksumFetch)?;
-    let text = std::str::from_utf8(&body).stage(Stage::ChecksumParse)?;
-    let (hash, file) = text.trim().split_once(char::is_whitespace).context("invalid release checksum").stage(Stage::ChecksumParse)?;
-    ensure_update!(file.trim() == name, "checksum refers to another file");
-    validate_hash(hash)?;
-    Ok(Some(Candidate { id: release.tag_name, channel: "stable", url: image.browser_download_url.clone(), sha256: hash.to_owned(), size: image.size }))
-}
-
 fn installed_id(image: &Path) -> Option<(String, String)> {
     update_id(&image.with_extension("AppImage.apparent-update.json"))
 }
@@ -460,19 +439,23 @@ fn previously_failed(marker: &Path, candidate: &Candidate) -> bool {
     update_id(marker) == Some((candidate.channel.to_owned(), candidate.id.clone()))
 }
 
-/// TypeScript owns channel convergence; native code owns discovery validation,
-/// locks, downloads, atomic replacement and recovery. Also used by CLI/hourly checks.
 fn needs_channel_release(candidate: &Candidate, installed: Option<(String, String)>) -> Result<bool> {
-    let (runtime, script) = update_policy_assets().context("packaged update policy is unavailable").stage(Stage::PolicyAssets)?;
-    let facts = serde_json::json!({
+    run_update_policy(&serde_json::json!({
+        "operation": "needsChannelRelease",
         "candidate": {"channel": candidate.channel, "id": candidate.id},
         "installed": installed.map(|(channel, id)| serde_json::json!({"channel":channel,"id":id})),
         "revision": env!("APPARENT_COMMIT_SHA"),
         "modified": env!("APPARENT_BUILD_MODIFIED") == "true",
-    });
+    }))
+}
+
+fn run_update_policy<T: serde::de::DeserializeOwned>(facts: &impl Serialize) -> Result<T> {
+    let (runtime, script) = update_policy_assets().context("packaged update policy is unavailable").stage(Stage::PolicyAssets)?;
+    let mut input = tempfile::tempfile().stage(Stage::PolicyLaunch)?;
+    serde_json::to_writer(&mut input, facts).stage(Stage::PolicyLaunch)?;
+    input.rewind().stage(Stage::PolicyLaunch)?;
     let mut child = Command::new(runtime).env("ELECTRON_RUN_AS_NODE", "1")
-        .arg(script).arg(serde_json::to_string(&facts)?)
-        .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped())
+        .arg(script).stdin(input).stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null()).spawn().stage(Stage::PolicyLaunch)?;
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
@@ -481,7 +464,8 @@ fn needs_channel_release(candidate: &Candidate, installed: Option<(String, Strin
                 return Err(updates::command_failure(updates::Process::Policy, status, updates::Http::default(), anyhow::anyhow!("update policy failed")));
             }
             let mut output = String::new();
-            child.stdout.take().context("missing update policy output").stage(Stage::PolicyResponse)?.take(16).read_to_string(&mut output).stage(Stage::PolicyResponse)?;
+            child.stdout.take().context("missing update policy output").stage(Stage::PolicyResponse)?.take(129).read_to_string(&mut output).stage(Stage::PolicyResponse)?;
+            ensure_update!(output.len() <= 128, "oversized update policy response");
             return serde_json::from_str(&output).context("invalid update policy decision").stage(Stage::PolicyResponse);
         }
         if Instant::now() >= deadline {
@@ -696,13 +680,13 @@ fn check_attempt(attempt: &mut updates::Attempt, progress: &dyn Fn(UpdateProgres
     let status = status().stage(Stage::Config)?;
     let installed = installed_id(&image);
     attempt.selected(status["channel"].as_str().unwrap_or("unknown"), installed.as_ref());
-    let arch = arch().context("no AppImage for this CPU").stage(Stage::Target)?;
-    let candidate = if status["channel"] == "main" {
-        latest_main_candidate(arch).stage(Stage::MainRelease)?
+    let (channel, stage) = if status["channel"] == "main" {
+        ("main", Stage::MainRelease)
     } else {
-        let Some(candidate) = stable_candidate(arch).stage(Stage::StableRelease)? else { return Ok(false); };
-        candidate
+        ("stable", Stage::StableRelease)
     };
+    let Some(candidate) = latest_candidate_with(channel, std::env::consts::ARCH, &|url| get(url, None)).stage(stage)?
+        else { return Ok(false); };
     attempt.candidate(candidate.channel, &candidate.id, installed.as_ref(), env!("APPARENT_COMMIT_SHA"));
     let name = image.file_name().context("AppImage has no name")?.to_string_lossy();
     let failed = image.with_file_name(format!(".{name}.failed-update.json"));
@@ -895,7 +879,7 @@ mod tests {
             "tag_name":"private-tag", "published_at":null, "assets":[]
         }); 100]).unwrap();
         let calls = std::cell::Cell::new(0);
-        let error = latest_main_candidate_with("x86_64", &|_| {
+        let error = latest_candidate_with("main", "x86_64", &|_| {
             calls.set(calls.get() + 1);
             if calls.get() == 1 { Ok(first_page.clone()) }
             else { anyhow::bail!("private-url-and-response") }
@@ -911,7 +895,7 @@ mod tests {
 
     #[test]
     fn actual_release_parse_checksum_and_file_errors_have_distinct_reported_boundaries() {
-        let malformed = latest_main_candidate_with("x86_64", &|_| Ok(b"{private-bad-json".to_vec())).err().unwrap();
+        let malformed = latest_candidate_with("main", "x86_64", &|_| Ok(b"{private-bad-json".to_vec())).err().unwrap();
         let payload = error_reporting::update_payload_for_test(&malformed, Trigger::User);
         assert_eq!(payload["properties"]["updater"]["json_error_kind"], "data");
         assert_eq!(payload["properties"]["$exception_list"][0]["type"], "update_release_list_parse_failed");
@@ -1018,7 +1002,7 @@ mod tests {
             release(format!("linux-main-{}", "a".repeat(40)), "2099-01-01T00:00:00Z"),
             release(format!("linux-main-v2-{}", "b".repeat(40)), "2026-11-04T00:00:00Z"),
         ];
-        let candidate = newest_main_candidate(releases, "x86_64", &|_| {
+        let candidate = candidate_from_history(&releases, "main", "x86_64", &|_| {
             Ok(format!("{}  {image}", "c".repeat(64)).into_bytes())
         }).unwrap().unwrap();
         assert_eq!(candidate.id, "b".repeat(40));
@@ -1034,13 +1018,13 @@ mod tests {
                 browser_download_url: format!("https://github.com/{REPO}/releases/download/{tag}/{name}"), name, size: 0,
             }).collect(),
         };
-        assert!(newest_main_candidate(vec![release()], "x86_64", &|_| panic!("foreign architecture must not fetch")).unwrap().is_none());
+        assert!(candidate_from_history(&[release()], "main", "x86_64", &|_| panic!("foreign architecture must not fetch")).unwrap().is_none());
         let mut draft = release();
         draft.draft = true;
         let mut unpublished = release();
         unpublished.published_at = None;
-        assert!(newest_main_candidate(vec![draft, unpublished], "aarch64", &|_| panic!("private releases must not fetch")).unwrap().is_none());
-        let candidate = newest_main_candidate(vec![release()], "aarch64", &|_| Ok(format!("{}  {image}", "c".repeat(64)).into_bytes())).unwrap().unwrap();
+        assert!(candidate_from_history(&[draft, unpublished], "main", "aarch64", &|_| panic!("private releases must not fetch")).unwrap().is_none());
+        let candidate = candidate_from_history(&[release()], "main", "aarch64", &|_| Ok(format!("{}  {image}", "c".repeat(64)).into_bytes())).unwrap().unwrap();
         assert!(candidate.url.ends_with("-linux-aarch64.AppImage"));
     }
 
@@ -1055,7 +1039,7 @@ mod tests {
 
     #[test]
     fn stable_discovers_desktop_versions_after_component_release_pages() {
-        let candidate = stable_candidate_with("x86_64", &|url| {
+        let candidate = latest_candidate_with("stable", "x86_64", &|url| {
             if url.ends_with("?per_page=100&page=1") {
                 return Ok(serde_json::to_vec(&vec![stable_release_fixture("recipient-component", "x86_64"); 100])?);
             }
@@ -1089,7 +1073,7 @@ mod tests {
             stable_release_fixture("v0.3.15", "aarch64"),
             stable_release_fixture("preview-mac-12-2", "x86_64"),
             stable_release_fixture("recipient-component", "x86_64")];
-        assert!(stable_candidate_with("x86_64", &|url| {
+        assert!(latest_candidate_with("stable", "x86_64", &|url| {
             assert!(url.ends_with("?per_page=100&page=1"), "no checksum or download may be requested");
             Ok(serde_json::to_vec(&releases)?)
         }).unwrap().is_none());
@@ -1097,10 +1081,10 @@ mod tests {
 
     #[test]
     fn stable_network_metadata_and_integrity_failures_remain_errors() {
-        assert!(stable_candidate_with("x86_64", &|_| anyhow::bail!("offline")).is_err());
-        assert!(stable_candidate_with("x86_64", &|_| Ok(b"not JSON".to_vec())).is_err());
+        assert!(latest_candidate_with("stable", "x86_64", &|_| anyhow::bail!("offline")).is_err());
+        assert!(latest_candidate_with("stable", "x86_64", &|_| Ok(b"not JSON".to_vec())).is_err());
         for checksum in ["invalid".to_owned(), format!("{}  unrelated.AppImage", "c".repeat(64))] {
-            assert!(stable_candidate_with("x86_64", &|url| {
+            assert!(latest_candidate_with("stable", "x86_64", &|url| {
                 if url.contains("/releases?") {
                     Ok(serde_json::to_vec(&vec![stable_release_fixture("v0.3.14", "x86_64")])?)
                 } else { Ok(checksum.clone().into_bytes()) }
@@ -1108,11 +1092,11 @@ mod tests {
         }
         let mut foreign = stable_release_fixture("v0.3.14", "x86_64");
         foreign["assets"][0]["browser_download_url"] = "https://untrusted.example/app.AppImage".into();
-        assert!(stable_candidate_with("x86_64", &|url| {
+        assert!(latest_candidate_with("stable", "x86_64", &|url| {
             assert!(url.contains("/releases?"), "foreign asset must be rejected before fetching");
             Ok(serde_json::to_vec(&vec![foreign.clone()])?)
         }).is_err());
-        assert!(stable_candidate_with("x86_64", &|_| {
+        assert!(latest_candidate_with("stable", "x86_64", &|_| {
             Ok(serde_json::to_vec(&vec![stable_release_fixture("recipient-component", "x86_64"); 100])?)
         }).is_err(), "incomplete discovery cannot be reported as no update");
     }
@@ -1122,7 +1106,7 @@ mod tests {
         let release = |tag: &str, date: &str, draft: bool, name: &str| Release {
             tag_name: tag.into(), prerelease: true, draft, published_at: Some(date.into()),
             assets: [name.to_owned(), format!("{name}.sha256")].into_iter().map(|name| ReleaseAsset {
-                browser_download_url: format!("https://example.org/{name}"), name, size: 0,
+                browser_download_url: format!("https://github.com/{REPO}/releases/download/{tag}/{name}"), name, size: 0,
             }).collect(),
         };
         let apparent = "Apparent-0.3.13-linux-x86_64.AppImage";
@@ -1134,9 +1118,12 @@ mod tests {
             release(&format!("linux-main-v2-{}", "d".repeat(40)), "2026-10-30T01:00:00Z", false,
                 "Scrawl-0.3.13-linux-x86_64.AppImage"),
         ];
-        assert_eq!(main_releases(releases, "x86_64")[0].tag_name,
-            "linux-main-v2-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
-        assert!(main_releases(Vec::new(), "x86_64").is_empty());
+        let candidate = candidate_from_history(&releases, "main", "x86_64", &|url| {
+            assert!(url.contains(&format!("linux-main-v2-{}", "b".repeat(40))));
+            Ok(format!("{}  {apparent}", "c".repeat(64)).into_bytes())
+        }).unwrap().unwrap();
+        assert_eq!(candidate.id, "b".repeat(40));
+        assert!(candidate_from_history(&[], "main", "x86_64", &|_| panic!("empty history")).unwrap().is_none());
     }
 
     #[test]
@@ -1156,7 +1143,7 @@ mod tests {
             release("a", "2026-10-28T01:00:00Z"),
             release("b", "2026-10-29T01:00:00Z"),
         ];
-        let result = newest_main_candidate(releases, "x86_64", &|url| {
+        let result = candidate_from_history(&releases, "main", "x86_64", &|url| {
             assert!(url.contains(&format!("linux-main-v2-{}", "b".repeat(40))));
             Ok(b"invalid checksum".to_vec())
         });
@@ -1175,7 +1162,7 @@ mod tests {
                 "assets":assets})
         };
         // A later page can contain a later publication when GitHub orders by tag creation.
-        let candidate = latest_main_candidate_with("x86_64", &|url| {
+        let candidate = latest_candidate_with("main", "x86_64", &|url| {
             if url.ends_with("?per_page=100&page=1") {
                 return Ok(serde_json::to_vec(&vec![release("a", "2026-10-28T01:00:00Z"); 100])?);
             }
@@ -1184,9 +1171,9 @@ mod tests {
             }
             assert!(url.ends_with(".sha256"), "stop after the final partial page");
             Ok(format!("{}  {image}", "c".repeat(64)).into_bytes())
-        }).unwrap();
+        }).unwrap().unwrap();
         assert_eq!(candidate.id, "b".repeat(40));
-        assert!(latest_main_candidate_with("x86_64", &|url| {
+        assert!(latest_candidate_with("main", "x86_64", &|url| {
             assert!(url.contains("/releases?per_page=100&page="));
             Ok(serde_json::to_vec(&vec![stable_release_fixture("recipient-component", "x86_64"); 100])?)
         }).is_err(), "incomplete history must fail before fetching an asset");
@@ -1204,14 +1191,19 @@ mod tests {
             }).collect(),
         };
         let checksum = format!("{}  {expected}", "b".repeat(64));
-        assert!(main_candidate(&release("other.AppImage"), "x86_64", &checksum).is_err());
-        assert!(main_candidate(&release(&expected), "x86_64", "invalid").is_err());
-        let candidate = main_candidate(&release(&expected), "x86_64", &checksum).unwrap();
+        let selected = |release: &Release, text: &str| {
+            candidate_from_selection(release, &release.assets[0], &release.assets[1], "main", "x86_64",
+                &|_| Ok(text.as_bytes().to_vec()))
+        };
+        assert!(selected(&release("other.AppImage"), &checksum).is_err());
+        assert!(selected(&release(&expected), "invalid").is_err());
+        let candidate = selected(&release(&expected), &checksum).unwrap();
         assert!(candidate.url.contains("linux-main-v2-"));
-        assert!(main_candidate(&release(&expected), "x86_64", &format!("{}  other.AppImage", "b".repeat(64))).is_err());
+        assert!(selected(&release(&expected), &format!("{}  other.AppImage", "b".repeat(64))).is_err());
         let mut foreign = release(&expected);
         foreign.assets[1].browser_download_url = "https://example.org/checksum".into();
-        assert!(main_candidate(&foreign, "x86_64", &checksum).is_err());
+        assert!(candidate_from_selection(&foreign, &foreign.assets[0], &foreign.assets[1], "main", "x86_64",
+            &|_| panic!("foreign URL must not be fetched")).is_err());
         assert!(!needs_channel_release(&candidate, Some(("main".into(), "a".repeat(40)))).unwrap());
         assert!(needs_channel_release(&candidate, Some(("stable".into(), "v0.3.13".into()))).unwrap());
     }

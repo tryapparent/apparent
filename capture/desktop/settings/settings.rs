@@ -1,4 +1,3 @@
-use super::connect::sync_native;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -160,7 +159,6 @@ pub const SKILL_COMMAND: &str = "bunx skills add https://github.com/tryapparent/
 #[serde(rename_all = "camelCase")]
 pub struct View {
     pub version: String,
-    pub connect: Option<super::connect::View>,
     pub hosted: Option<crate::connect::hosted::AccountView>,
     pub login: LoginView,
     pub error_reporting: bool,
@@ -401,7 +399,6 @@ pub enum Action {
     AgentsPreference { request: u32, enabled: Option<bool>, #[serde(default)] setting: Option<String> },
     AgentsConnection { request: u32, connection: Option<super::agents::Connection>, #[serde(default)] disconnect: Option<String> },
     LabsPreference { request: u32, enabled: Option<bool>, #[serde(default)] setting: Option<String> },
-    Connect { command: super::connect::Command },
     RecordingPreference { request: u32, key: String, value: serde_json::Value },
     RecordingMeter { visible: bool },
     PermissionAction { request: u32, intent: PermissionIntent },
@@ -484,7 +481,6 @@ pub trait Host {
 /// The window's own state: what it's recording, what failed, what was asked for.
 #[derive(Debug, Default)]
 pub struct Panel {
-    connect: Option<super::connect::View>,
     recording: Option<ShortcutKind>,
     error: Option<(ShortcutKind, String)>,
     /// Why the last Install or Uninstall failed.
@@ -540,7 +536,7 @@ impl Panel {
     pub fn on(&mut self, action: Action, host: &mut dyn Host) -> Effect {
         match action {
             // Session owns the asynchronous controller; forged actions cannot bypass it.
-            Action::Connect { .. } | Action::RecordingPreference { .. } | Action::RecordingMeter { .. } | Action::PermissionAction { .. } => Effect::None,
+            Action::RecordingPreference { .. } | Action::RecordingMeter { .. } | Action::PermissionAction { .. } => Effect::None,
             Action::ConnectHosted => Effect::ConnectHosted,
             Action::ManageSharedLinks => Effect::ManageSharedLinks,
             Action::Set { key, value } => self.set(&key, &value, host),
@@ -772,7 +768,6 @@ impl Panel {
         let login = login_item();
         View {
             version: env!("APPARENT_VERSION_LABEL").to_owned(),
-            connect: self.connect.clone(),
             hosted: crate::shared::handoff::experiment_enabled_in(&config, crate::connect::hosted::HOSTED_SHARING)
                 .then(|| crate::connect::hosted::account_view_in(&host.config_path())),
             login: LoginView {
@@ -899,7 +894,6 @@ impl Host for AppHost<'_> {
 #[derive(Clone, Debug)]
 pub enum Event {
     Presentation { generation: u64, event: Box<Event> },
-    Connect(super::connect::Event),
     Action(Action),
     Grants(Grants),
     Microphones(crate::capture::engine::runtime::audio::mic::Inputs),
@@ -926,11 +920,9 @@ impl Event {
 /// The open Settings window.
 pub struct Session {
     generation: u64,
-    electron: bool,
     pane: Option<Pane>,
     panel: Panel,
-    connect: Option<super::connect::Controller>,
-    transport: Transport,
+    transport: Option<Transport>,
     polling: std::sync::Arc<std::sync::atomic::AtomicBool>,
     events: std::sync::Arc<dyn Fn(Event) + Send + Sync>,
     last_view: String,
@@ -939,11 +931,6 @@ pub struct Session {
     meter_serial: u64,
     meter: Option<(String, super::RecordingMeter)>,
     _microphones: crate::capture::engine::runtime::audio::mic::Watch,
-}
-
-// Presentation is independent of Connect visibility and never grants consent.
-pub(super) fn electron_general(pane: Option<Pane>) -> bool {
-    pane == Some(Pane::General)
 }
 
 fn initial_settings_pane(pane: Option<Pane>) -> Option<Pane> {
@@ -961,7 +948,11 @@ impl Session {
         let events: std::sync::Arc<dyn Fn(Event) + Send + Sync> = std::sync::Arc::new(events);
         let pane = initial_settings_pane(pane);
         let generation = super::presentation::generation();
-        let (transport, electron, pane) = Self::open_presentation(pane, generation, &events, true)?;
+        let target = events.clone();
+        let transport = super::presentation::open(
+            pane.unwrap_or(Pane::General),
+            std::sync::Arc::new(move |event| target(Event::Presentation { generation, event: Box::new(event) })),
+        )?;
 
         let polling = std::sync::Arc::new(AtomicBool::new(true));
         let alive = std::sync::Arc::clone(&polling);
@@ -988,11 +979,9 @@ impl Session {
         }
         Ok(Self {
             generation,
-            electron,
             pane,
             panel,
-            connect: None,
-            transport,
+            transport: Some(transport),
             polling,
             events,
             last_view: String::new(),
@@ -1004,84 +993,13 @@ impl Session {
         })
     }
 
-    fn open_presentation(
-        pane: Option<Pane>, generation: u64,
-        events: &std::sync::Arc<dyn Fn(Event) + Send + Sync>,
-        allow_electron: bool,
-    ) -> anyhow::Result<(Transport, bool, Option<Pane>)> {
-        let target = events.clone();
-        let events: std::sync::Arc<dyn Fn(Event) + Send + Sync> = std::sync::Arc::new(move |event| {
-            target(Event::Presentation { generation, event: Box::new(event) });
-        });
-        if allow_electron && super::electron_pane(pane) {
-            match super::presentation::open(pane.unwrap_or(Pane::General), events.clone()) {
-                Ok(transport) => return Ok((transport, true, pane)),
-                Err(error) => crate::capture::engine::runtime::apparent_log(format!("Settings fallback: {error:#}")),
-            }
-        }
-        let pane = if pane == Some(Pane::Storage) { Some(Pane::General) } else { pane };
-        #[cfg(not(target_os = "macos"))]
-        let transport = {
-            let (sender, receiver) = flume::unbounded();
-            super::settings_window::request_open(receiver, pane, events);
-            Transport::InProcess(Some(sender))
-        };
-        #[cfg(target_os = "macos")]
-        let transport = Self::spawn_helper(pane, events)?;
-        Ok((transport, false, pane))
-    }
-
-    #[cfg(target_os = "macos")]
-    fn spawn_helper(
-        pane: Option<Pane>,
-        events: std::sync::Arc<dyn Fn(Event) + Send + Sync>,
-    ) -> anyhow::Result<Transport> {
-        use std::io::BufRead;
-        use std::process::{Command, Stdio};
-
-        let mut command = Command::new(crate::capture::desktop::helper::path()?);
-        command.arg("settings");
-        if let Some(serde_json::Value::String(pane)) = pane.map(serde_json::to_value).transpose()? {
-            command.args(["--pane", &pane]);
-        }
-        let dev_icon = concat!(env!("CARGO_MANIFEST_DIR"), "/shared/assets/brand/apparent-a.png");
-        if Path::new(dev_icon).is_file() {
-            command.args(["--icon", dev_icon]);
-        }
-        let mut child = command
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()?;
-        let stdin = child.stdin.take();
-        let stdout = child.stdout.take();
-
-        std::thread::spawn(move || {
-            if let Some(stdout) = stdout {
-                for line in std::io::BufReader::new(stdout)
-                    .lines()
-                    .map_while(Result::ok)
-                {
-                    match serde_json::from_str::<Action>(&line) {
-                        Ok(action) => events(Event::Action(action)),
-                        Err(error) => {
-                            crate::capture::engine::runtime::apparent_log(format!("settings: {error}: {line}"))
-                        }
-                    }
-                }
-            }
-            events(Event::Exited);
-        });
-        Ok(Transport::Helper { child: crate::capture::ui_process::UiChild::new(child), stdin })
-    }
-
     /// Feeds an event in, redraws, and returns what the app must do (`Relaunch`, `Tour`,
     /// `Close`); the rest is done here.
     /// Filter retired windows before coordinator safety/permission checks too.
     pub fn current_event(&self, event: Event) -> Option<Event> {
         let presentation = matches!(&event, Event::Presentation { .. });
         let event = event.for_presentation(self.generation)?;
-        if presentation && self.electron
+        if presentation
             && let Event::Action(action) = &event
             && !self.pane.is_some_and(|pane| super::presentation::admits(pane, action))
         { return None; }
@@ -1098,7 +1016,7 @@ impl Session {
                 Effect::None
             }
             Event::Action(Action::RecordingPreference { request, key, value }) => {
-                if self.electron && self.pane == Some(Pane::Recording) {
+                if self.pane == Some(Pane::Recording) {
                     let result = if super::recording_key(&key, &value)
                         && (cfg!(target_os = "macos") || !matches!(key.as_str(), "appleLocale" | "hexLanguage"))
                     {
@@ -1117,31 +1035,31 @@ impl Session {
                 return Effect::None;
             }
             Event::Action(Action::RecordingMeter { visible }) => {
-                if self.electron && self.pane == Some(Pane::Recording) {
+                if self.pane == Some(Pane::Recording) {
                     self.meter_visible = visible;
                 }
                 Effect::None
             }
             Event::RecordingLevel { meter, level } => {
-                if self.electron && self.pane == Some(Pane::Recording) && self.meter.is_some() && meter == self.meter_serial {
+                if self.pane == Some(Pane::Recording) && self.meter.is_some() && meter == self.meter_serial {
                     self.send(&serde_json::json!({"type":"recording-level","level":level}));
                 }
                 return Effect::None;
             }
             Event::Action(Action::AgentsPreference { request, enabled, setting }) => {
-                if self.electron && self.pane == Some(Pane::Agents) {
+                if self.pane == Some(Pane::Agents) {
                     self.send(&super::agents::request_for(&host.config_path(), request, enabled, setting.as_deref()));
                 }
                 Effect::None
             }
             Event::Action(Action::AgentsConnection { request, connection, disconnect }) => {
-                if self.electron && self.pane == Some(Pane::Agents) {
+                if self.pane == Some(Pane::Agents) {
                     self.send(&super::agents::connection_request(&host.config_path(), request, connection, disconnect));
                 }
                 Effect::None
             }
             Event::Action(Action::LabsPreference { request, enabled, setting }) => {
-                if self.electron && self.pane == Some(Pane::Labs) {
+                if self.pane == Some(Pane::Labs) {
                     let reply = super::labs::request(&host.config_path(), request, enabled, setting.as_deref());
                     #[cfg(any(target_os = "linux", target_os = "macos"))]
                     if setting.as_deref().is_none_or(|name| name == "streaming")
@@ -1150,20 +1068,6 @@ impl Session {
                         else { crate::capture::engine::runtime::audio::transcription::speech_preview::release_cache(); }
                     }
                     self.send(&reply);
-                }
-                Effect::None
-            }
-            Event::Connect(event) => {
-                if self.connect.as_mut().is_some_and(|controller| controller.receive(event)) {
-                    crate::connect::hosted::start_worker();
-                }
-                Effect::None
-            }
-            Event::Action(Action::Connect { command }) => {
-                if let Some(controller) = &mut self.connect {
-                    if let Some(uri) = controller.command(command) {
-                        let _ = crate::shared::handoff::open_path(Path::new(&uri));
-                    }
                 }
                 Effect::None
             }
@@ -1213,38 +1117,12 @@ impl Session {
                 }
                 Effect::None
             }
-            Event::Exited if self.electron => {
-                self.permissions = Default::default();
-                self.meter_visible = false;
-                self.meter = None;
-                // EOF without a normal Close means Electron crashed or failed to
-                // launch. Keep Settings usable without touching saved policy.
-                let generation = super::presentation::generation();
-                if let Ok((transport, electron, pane)) = Self::open_presentation(self.pane, generation, &self.events, false) {
-                    self.generation = generation;
-                    self.electron = electron;
-                    self.pane = pane;
-                    self.last_view.clear();
-                    super::presentation::retire(std::mem::replace(&mut self.transport, transport));
-                    self.sync_connect(true);
-                    self.sync(host);
-                    return Effect::None;
-                }
-                return Effect::Close;
-            }
             Event::Exited => {
-                if let Some(controller) = &mut self.connect { controller.close(); }
+                crate::capture::engine::runtime::apparent_log("Electron Settings exited unexpectedly");
                 self.panel.on(Action::Close, host);
                 return Effect::Close;
             }
         };
-        self.sync_connect(effect != Effect::Close);
-        if let Some(controller) = &mut self.connect {
-            controller.refresh();
-            if let Some(view) = controller.native_view() {
-                self.panel.connect = view;
-            }
-        }
         let result = match effect {
             // Attributed to whichever process asks, so Apparent itself asks.
             Effect::Request(Permission::ScreenRecording) => {
@@ -1304,93 +1182,49 @@ impl Session {
         result
     }
 
-    fn sync_connect(&mut self, active: bool) {
-        sync_native(&mut self.connect, active && !self.electron && self.pane == Some(Pane::General), &self.events);
-        if self.connect.is_none() { self.panel.connect = None; }
-    }
-
-    pub fn show(&mut self, mut pane: Option<Pane>) {
-        if let Some(requested) = pane {
-            if self.pane != Some(requested) {
-                self.permissions = Default::default();
-            }
-            let electron = super::electron_pane(Some(requested));
-            // Every adopted pane uses settings.html and the same restricted bridge.
-            // Native-only destinations still replace the presentation.
-            if electron != self.electron && !(matches!(requested, Pane::Recording | Pane::Permissions) && self.pane == Some(requested)) {
-                let generation = super::presentation::generation();
-                match Self::open_presentation(Some(requested), generation, &self.events, true) {
-                    Ok((transport, electron, resolved)) => {
-                        self.send(&serde_json::json!({"type": "close"}));
-                        self.generation = generation;
-                        self.electron = electron;
-                        pane = resolved;
-                        self.last_view.clear();
-                        super::presentation::retire(std::mem::replace(&mut self.transport, transport));
-                    }
-                    Err(error) => {
-                        crate::capture::engine::runtime::apparent_log(format!("Settings navigation failed: {error:#}"));
-                        return;
-                    }
-                }
-            }
-        }
+    pub fn show(&mut self, pane: Option<Pane>) {
         if pane.is_some() {
             if self.pane != pane {
+                self.permissions = Default::default();
                 self.last_view.clear();
                 self.meter_visible = false;
                 self.meter = None;
             }
             self.pane = pane;
         }
-        self.sync_connect(true);
         self.send(&serde_json::json!({"type": "show", "pane": pane}));
     }
 
     pub fn sync(&mut self, host: &dyn Host) {
         // Storage reads its narrow projected socket contract. Do not forward the
         // other pages' state to a renderer which does not present those pages.
-        if self.electron {
-            if self.pane == Some(Pane::Recording) {
-                self.sync_recording(host);
-            }
-            if self.pane == Some(Pane::Permissions) {
-                self.sync_permissions(host);
-            }
-            if self.pane == Some(Pane::General) {
-                let view = self.panel.view(host);
-                self.send_state(serde_json::json!({"type":"general-state",
-                    "platform": if cfg!(target_os="macos") {"macos"} else {"linux"},
-                    "login":view.login,"shortcuts":view.shortcuts,"errorReporting":view.error_reporting}));
-            }
-            if self.pane == Some(Pane::Labs) {
-                let message = serde_json::json!({"type":"labs-state","facts":super::labs::facts(&host.config_path())});
-                self.send_state(message);
-            }
-            if self.pane == Some(Pane::About) {
-                self.send_state(self.panel.about_state(&host.config_path()));
-            }
-            if self.pane == Some(Pane::Agents) {
-                let facts = super::agents::facts(&host.config_path());
-                self.send_state(serde_json::json!({"type": "agents-state", "facts": facts}));
-            }
-            return;
+        if self.pane == Some(Pane::Recording) {
+            self.sync_recording(host);
         }
-        let mut view = serde_json::to_value(self.panel.view(host)).unwrap_or_default();
-        view["type"] = "state".into();
-        // Switched from Hex to Apple Speech: get its model now, not at the first capture.
-        let speech = crate::capture::engine::runtime::audio::transcription::speech_model::current();
-        if view["transcriber"]["engine"] == "apple"
-            && speech.state == crate::capture::engine::runtime::audio::transcription::speech_model::State::Unknown
-        {
-            crate::capture::engine::runtime::audio::transcription::speech_model::ensure();
+        if self.pane == Some(Pane::Permissions) {
+            self.sync_permissions(host);
         }
-        view["transcriber"]["speech"] = serde_json::to_value(speech).unwrap_or_default();
-        self.send_state(view);
+        if self.pane == Some(Pane::General) {
+            let view = self.panel.view(host);
+            self.send_state(serde_json::json!({"type":"general-state",
+                "platform": if cfg!(target_os="macos") {"macos"} else {"linux"},
+                "login":view.login,"shortcuts":view.shortcuts,"errorReporting":view.error_reporting}));
+        }
+        if self.pane == Some(Pane::Labs) {
+            let message = serde_json::json!({"type":"labs-state","facts":super::labs::facts(&host.config_path())});
+            self.send_state(message);
+        }
+        if self.pane == Some(Pane::About) {
+            self.send_state(self.panel.about_state(&host.config_path()));
+        }
+        if self.pane == Some(Pane::Agents) {
+            let facts = super::agents::facts(&host.config_path());
+            self.send_state(serde_json::json!({"type": "agents-state", "facts": facts}));
+        }
     }
 
     fn presents_permissions(&self) -> bool {
-        self.electron && self.pane == Some(Pane::Permissions)
+        self.pane == Some(Pane::Permissions)
     }
 
     pub(crate) fn note_grants(&mut self, grants: Grants, changed: bool) -> Option<Event> {
@@ -1448,7 +1282,9 @@ impl Session {
     }
 
     fn send(&mut self, message: &serde_json::Value) {
-        self.transport.send(message);
+        if let Some(transport) = &mut self.transport {
+            transport.send(message);
+        }
     }
 }
 
@@ -1457,8 +1293,9 @@ impl Drop for Session {
         self.polling
             .store(false, std::sync::atomic::Ordering::Release);
         self.send(&serde_json::json!({"type": "close"}));
-        let transport = std::mem::replace(&mut self.transport, Transport::InProcess(None));
-        super::presentation::retire(transport);
+        if let Some(transport) = self.transport.take() {
+            super::presentation::retire(transport);
+        }
     }
 }
 

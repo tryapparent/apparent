@@ -44,7 +44,12 @@ export function LatestDownload({ nav = false }: { nav?: boolean }) {
     }
   }
 
-  return <a className={className} href={RELEASES} onClick={download} data-download-platform={platform.kind} aria-busy={busy}>
-    {busy ? "Finding download…" : label} {!nav && <span aria-hidden="true">↓</span>}
-  </a>
+  return (
+    <>
+      <a className={className} href={RELEASES} onClick={download} data-download-platform={platform.kind} aria-busy={busy}>
+        {busy ? "Finding download…" : label} {!nav && <span aria-hidden="true">↓</span>}
+      </a>
+      {!nav && platform.kind === "linux" && <p className="download-meta">Ubuntu Desktop is unsupported.</p>}
+    </>
+  )
 }

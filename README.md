@@ -25,7 +25,8 @@ Less “the thing next to the other thing.” More “oh, *that*.”
 
 **[Download a release for macOS or Linux](https://github.com/tryapparent/apparent/releases)**,
 launch Apparent, and follow the permission setup. Linux main builds are previews;
-choose the release for your platform. Windows is unsupported.
+choose the release for your platform. Ubuntu Desktop and Windows are unsupported.
+[Ubuntu support via a .deb](https://github.com/tryapparent/apparent/issues/1774) is deferred.
 
 Prefer to let your agent handle installation? Paste this into its chat:
 
