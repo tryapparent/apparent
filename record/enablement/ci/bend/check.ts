@@ -11,6 +11,7 @@ import {
 import { run } from "../../../../shared/enablement/bend/toolchain.ts";
 import { repairTable } from "./permission-table.ts";
 import { admissionSource, buildAdmission } from "./build.ts";
+import { checkCaptureAdmission } from "./capture-request/check.ts";
 import { assemblePill } from "./pill.ts";
 
 import { gestureTable, gestureTablePath } from "./note-gesture.ts";
@@ -148,6 +149,7 @@ await bendScratch(async (scratch) => {
     true, false, true, false, [1000, 0],
   ]);
 
+  await checkCaptureAdmission(proofOutput);
   assert.deepEqual(pushToTalkTable(proofOutput), {
     hold: 300,
     actions: [1, 3, 0, 0, 1, 3, 2, 0, 4, 3, 4, 0, 4, 3, 4, 0],

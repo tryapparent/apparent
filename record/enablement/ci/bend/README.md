@@ -32,3 +32,18 @@ Rust retains candidate geometry, capture-point rounding, pixel extraction,
 annotation and storage of full frames. When the publication plan is absent or
 the embedded evaluation fails, the native writer returns the annotated full
 frames through its existing fallback.
+
+## Capture admission
+
+Capture admission uses the same Bend compiler. Cargo runs
+`capture-request/capture-admission.ts` to evaluate the Start, Stop and Cancel
+table during the build and embeds its typed output in the native control
+adapter. The installed CLI sends the existing request to the desktop socket.
+The GUI thread reads current identity, observed phase and deadline, looks up
+the decision, and records the receipt or starts the effect within the original
+serialized request. The table adds no runtime process, files or IPC.
+
+The Record check compares the production table with the proof build and
+exercises retries and terminal receipts without Rust tools. Roll back by
+reverting the table and its native consumer together and rebuilding the desktop
+package. Existing clients and in-memory receipts use the same wire contract.
