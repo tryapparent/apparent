@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { join, isAbsolute } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  type MeasuredWait,
+  measuredWait,
+} from "../../../shared/enablement/performance/measurement.ts";
 
 const service = new URL("../../service/", import.meta.url);
 const requireService = createRequire(new URL("package.json", service));
@@ -149,13 +153,13 @@ try {
   assert.ok(received.ok);
   const proof = await received.text();
   assert.ok(proof.includes("apparent.json") && proof.includes("recording.mp4"));
-  const readyMs = performance.now() - started;
+  const ready = measuredWait(started, performance.now());
 
   const browser = await chromium.launch({
     executablePath: chrome,
     headless: true,
   });
-  let playMs: number;
+  let play: MeasuredWait;
   try {
     const page = await browser.newPage({
       viewport: { width: 1280, height: 900 },
@@ -196,7 +200,7 @@ try {
         element.requestVideoFrameCallback(observe);
       });
     });
-    playMs = performance.now() - opened;
+    play = measuredWait(opened, performance.now());
   } finally {
     await browser.close();
   }
@@ -207,8 +211,8 @@ try {
       {
         version: "apparent worker · " + revision,
         waits: {
-          "remote-ready": { ms: readyMs, verified: true },
-          play: { ms: playMs, verified: true },
+          "remote-ready": ready,
+          play,
         },
       },
       null,

@@ -1,20 +1,24 @@
-import {
-  Qmp,
-  sendPlan,
-  type Action,
-} from "../../../../capture/desktop/scripts/linux/gui/input/qmp.ts";
-import {
-  observeShortcut,
-  qualifyPortal,
-} from "../../../../record/enablement/performance/start.ts";
-import { observeInk } from "../../../../record/enablement/performance/ink.ts";
 import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, lstatSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import {
+  type Action,
+  Qmp,
+  sendPlan,
+} from "../../../../capture/desktop/scripts/linux/gui/input/qmp.ts";
+import { observeInk } from "../../../../record/enablement/performance/ink.ts";
+import {
+  observeShortcut,
+  qualifyPortal,
+} from "../../../../record/enablement/performance/start.ts";
+import {
+  interval,
+  measuredWait,
+} from "../../../../shared/enablement/performance/measurement.ts";
 import { guestCursor } from "./cursor.ts";
 import { observeFirstMedia } from "./media-observer.ts";
-import { physicalInteraction, type Gesture } from "./physical-interactions.ts";
+import { type Gesture, physicalInteraction } from "./physical-interactions.ts";
 
 const [rootArg, keyArg, mode, ...probes] = process.argv.slice(2);
 const root = resolve(rootArg);
@@ -270,7 +274,8 @@ while (performance.now() < deadline) {
             throw Error("Readback preceded physical input");
           appendFileSync(
             resolve(root, "physical-interactions.jsonl"),
-            JSON.stringify({ name, ms: at - started }) + "\n",
+            JSON.stringify({ name, ...measuredWait(started, at, "host") }) +
+              "\n",
             { mode: 0o600 },
           );
         } catch (error) {
@@ -357,6 +362,7 @@ while (performance.now() < deadline) {
             id,
             owned,
             waitMs: clipboardAt - pressed,
+            interval: interval(pressed, clipboardAt, "host"),
             pollIntervalMs: 20,
             source: "physical-record-shortcut",
           }) + "\n",

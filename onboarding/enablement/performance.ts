@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-
 import { execFile, spawn } from "node:child_process";
+import { readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import * as observer from "../../shared/enablement/performance/electron-observer.ts";
+import { measuredWait } from "../../shared/enablement/performance/measurement.ts";
 
 const [appDir, config, captures, output, ...extra] = process.argv.slice(2);
 assert(!extra.length && appDir && config && captures && output);
@@ -176,7 +176,7 @@ async function measurePractice() {
           ? true
           : undefined;
       }, "durable success and closed coach");
-      const ms = performance.now() - started;
+      const success = measuredWait(started, performance.now());
       const version = (
         await readFile(join(output, "version.txt"), "utf8")
       ).trim();
@@ -185,7 +185,7 @@ async function measurePractice() {
         JSON.stringify({
           version,
           capture,
-          waits: { "first-success": { ms, verified: true } },
+          waits: { "first-success": success },
         }) + "\n",
         { flag: "wx", mode: 0o600 },
       );

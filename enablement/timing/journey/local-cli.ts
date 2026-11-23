@@ -3,11 +3,15 @@ import {
   cpSync,
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   writeFileSync,
 } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import {
+  type MeasuredWait,
+  measuredWait,
+} from "../../../shared/enablement/performance/measurement.ts";
 
 const [binary, work, manifest, ...extra] = process.argv.slice(2);
 if (
@@ -53,7 +57,7 @@ const env = {
   TMPDIR: job,
 };
 const version = run(binary, ["--version"], job, env).trim();
-const waits: Record<string, { ms: number; verified: true }> = {};
+const waits: Record<string, MeasuredWait> = {};
 
 function benchmark(
   id: string,
@@ -62,9 +66,9 @@ function benchmark(
 ) {
   const start = performance.now();
   const stdout = run(binary, args, job, env);
-  const elapsed = performance.now() - start;
+  const end = performance.now();
   verify(stdout);
-  waits[id] = { ms: elapsed, verified: true };
+  waits[id] = measuredWait(start, end);
 }
 
 function decode(path: string) {

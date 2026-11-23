@@ -1,7 +1,12 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, resolve } from "node:path";
+import {
+  type Interval,
+  type MeasuredWait,
+} from "../../../shared/enablement/performance/measurement.ts";
+import { type InkEvidence, verifiedInk } from "./ink.ts";
 import { verifiedStart } from "./start.ts";
-import { verifiedInk, type InkEvidence } from "./ink.ts";
+
 const [root, ...extra] = process.argv.slice(2);
 if (!root || extra.length)
   throw Error("Usage: start-report.ts RETAINED_VM_DIRECTORY");
@@ -28,6 +33,9 @@ let ms = 0;
 const live: number[] = [];
 const ink: number[] = [];
 const owned = new Set<string>();
+const pillIntervals: Interval[][] = [];
+const liveIntervals: Interval[][] = [];
+const inkIntervals: Interval[][] = [];
 for (const name of names) {
   const row = rows.find((row) => row.name === name);
   if (!row || !verifiedStart(row))
@@ -55,6 +63,7 @@ for (const name of names) {
   }
   owned.add(state.capture_id);
   ms += row.ms / names.length;
+  if (row.intervals?.pill) pillIntervals.push(row.intervals.pill);
   if (row.ink !== undefined) {
     if (
       !verifiedInk(row.ink as InkEvidence) ||
@@ -63,6 +72,7 @@ for (const name of names) {
     )
       throw Error("Visible ink was not followed by one saved stroke");
     ink.push(row.ink.ms);
+    if (row.ink.interval) inkIntervals.push([row.ink.interval]);
   }
   if (row.live !== undefined) {
     const milestones = [
@@ -76,6 +86,7 @@ for (const name of names) {
     )
       throw Error("Unqualified first media observation");
     live.push(row.picker.ms + Math.max(...milestones));
+    if (row.intervals?.live) liveIntervals.push(row.intervals.live);
   }
 }
 if (live.length && live.length !== names.length)
@@ -83,7 +94,7 @@ if (live.length && live.length !== names.length)
 if (ink.length && ink.length !== names.length)
   console.error("Visible ink proof is missing on one of the trials");
 const version = read("artifacts/artifacts/version.txt").trim();
-const interactions: Record<string, { ms: number; verified: true }> = {};
+const interactions: Record<string, MeasuredWait> = {};
 const detailPath = "artifacts/artifacts/interaction-waits.json";
 if (existsSync(resolve(root, detailPath))) {
   const detail = JSON.parse(read(detailPath));
@@ -110,7 +121,7 @@ if (existsSync(resolve(root, detailPath))) {
   const timingFile = "physical-interactions.jsonl";
   if (existsSync(resolve(root, timingFile))) {
     for (const line of read(timingFile).trim().split("\n")) {
-      const { name, ms } = JSON.parse(line);
+      const { name, ms, intervals } = JSON.parse(line);
       if (
         !["note", "paste-last"].includes(name) ||
         interactions[name] ||
@@ -133,7 +144,7 @@ if (existsSync(resolve(root, detailPath))) {
           read("artifacts/artifacts/shortcut-repeat-expected.txt").trimEnd()
       )
         throw Error("Focused draft differs from the saved clipboard payload");
-      interactions[name] = { ms, verified: true };
+      interactions[name] = { ms, verified: true, intervals };
     }
   }
 }
@@ -142,12 +153,13 @@ console.log(
     {
       version,
       waits: {
-        pill: { ms, verified: true },
+        pill: { ms, verified: true, intervals: pillIntervals },
         ...interactions,
         ...(ink.length === names.length
           ? {
               ink: {
                 ms: ink.reduce((sum, value) => sum + value, 0) / ink.length,
+                intervals: inkIntervals,
                 verified: true,
               },
             }
@@ -156,6 +168,7 @@ console.log(
           ? {
               live: {
                 ms: live.reduce((sum, value) => sum + value, 0) / live.length,
+                intervals: liveIntervals,
                 verified: true,
               },
             }

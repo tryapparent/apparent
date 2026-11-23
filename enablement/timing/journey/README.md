@@ -1,6 +1,6 @@
 # Apparent journey performance benchmark
 
-This local Enablement benchmark compares two matched executions per build. It scores verified waits against a pinned control and reports resource costs independently. The contract covers desktop, recording, handoff, Connect, and the agent CLI. It preserves v2 as historical evidence under its original denominator.
+This local Enablement benchmark compares two matched executions per build. It scores verified waits against a pinned control and reports resource costs independently. The contract covers desktop, recording, handoff, Connect, and the agent CLI. It preserves the earlier scores as historical evidence under their original measurement contracts.
 
 | Phase                         |  Points |
 | ----------------------------- | ------: |
@@ -14,16 +14,16 @@ This local Enablement benchmark compares two matched executions per build. It sc
 | Agent CLI                     |       6 |
 | **Total**                     | **100** |
 
-The [contract](benchmark.json) defines the endpoints, fixture groups and provisional limits. Visible Start and the 22–33-second clipboard component each receive ten points. Clipboard cases in the original corpus each have an equal share of their component. The medium component uses the slowest per-fixture median. The 39-second, 41-second, and five-minute cases also have guards. The 65-second review is both scored and guarded.
+The [contract](benchmark.json) lists timing endpoints, fixture groups, and limits. The medium clipboard component uses the slowest fixture median.
 
 ## Run
 
-Use Node 22 on the isolated native runner. Select and record the exact main revision, local English speech model, OS image, vCPU and RAM allocation, stimuli, capture mode and sampling configuration before measuring. Use the same scenario data and timing boundary for both builds. Keep CPU-heavy work off the host during matched runs and retain the raw evidence separately from Git.
+Use Node 22 on an isolated runner. Match the image, models, VM allocation, fixtures, and collectors across builds.
 
 ```sh
 node enablement/timing/journey/run.ts contract
 node enablement/timing/journey/run.ts audit /absolute/path/run.json
-node enablement/timing/journey/run.ts evaluate /absolute/path/ledger.json
+node enablement/timing/journey/run.ts evaluate /absolute/path/ledger.json /absolute/path/trace_processor
 node enablement/ci/bend/check.ts
 ```
 
@@ -32,6 +32,7 @@ The contract command prints the SHA-256 to embed in each receipt. Set `runner` t
 | Field                                                                    | Meaning                                                                                                                                                                                              |
 | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `contractHash`, `revision`, `runner`, `runId`, `vcpus`                   | Contract digest, full Git SHA, frozen environment identity, unique execution ID, and guest vCPUs                                                                                                     |
+| `measurementEvidence`                                                    | Scoreable Perfetto trace paths, clocks, and SHA-256 digests bound to the run identity.                                                                                                               |
 | `waits`                                                                  | Map of checkpoint IDs to `{ "ms": 123, "verified": true }`. Use `checkpoint/fixture` for a checkpoint with named cases and `paste/fixture` for the Stop controls.                                    |
 | `resources`                                                              | Map of recording fixture IDs to the resource fields below. Record every clipboard fixture, including the controls.                                                                                   |
 | `resources[fixture].recording`, `.finalization`                          | Each has `p95Millicores`, `saturationMs`, `cpuSeconds`, `availableMemoryMiB`, `appPssMiB`, and `guestStealPercent`. Measure the longest continuous saturation duration and minimum available memory. |
@@ -39,18 +40,20 @@ The contract command prints the SHA-256 to embed in each receipt. Set `runner` t
 
 The ledger is a JSON object with `reference` containing two receipts at the same exact control revision and `attempts` containing each experiment in execution order. Each attempt has a stable `hypothesis`, active effort in `seconds`, and either `runs` containing two matched receipts or an `outcome` describing a failed or discarded attempt. Count implementation and benchmark time. Reuse the same hypothesis ID for retries. Use separate IDs for genuinely different ideas.
 
-The evaluator requires complete verified evidence for the current contract. V4 puts the former window-or-area picker weight into verified live recording. The display chooser is measured inside visible Start and first-live. Earlier contract receipts cannot establish a v4 baseline.
+The evaluator reads all scoring durations and resource values from the retained Perfetto spans and counters. It checks the trace digests and rejects missing, duplicate, or mismatched measurements. The producer fragments still provide output and endpoint verification. V5 retains the v4 weight and guard definitions and requires newly matched trace-backed runs. V4 uses its original evaluator from the pinned v4 checkout.
 
 For automatic collection on Clanker, run `node enablement/timing/journey/suite.ts PLAN.json PRIVATE_JOB`. Use a clean checkout at the pinned `revision`, an empty private `/tmp/apparent-dev-…` job, and a pinned plan with these fields.
 
-| Plan fields | Inputs |
-| --- | --- |
-| `revision`, `appImage`, `appImageSha256` | Full Git SHA, absolute AppImage path, and its SHA-256 |
-| `template`, `user` | Qualified Omarchy VM template directory and its test SSH user |
-| `model`, `previewModel` | Pinned local English Parakeet Q4 and Nemotron Q8 files from the Record probe |
-| `chromium`, `connectTarget` | Absolute Chromium executable and private, existing Cargo target directory |
+| Plan fields                              | Inputs                                                                            |
+| ---------------------------------------- | --------------------------------------------------------------------------------- |
+| `revision`, `appImage`, `appImageSha256` | Full Git SHA, absolute AppImage path, and its SHA-256                             |
+| `template`, `user`                       | Qualified Omarchy VM template directory and its test SSH user                     |
+| `model`, `previewModel`                  | Pinned local English Parakeet Q4 and Nemotron Q8 files from the Record probe      |
+| `chromium`, `connectTarget`              | Absolute Chromium executable and private, existing Cargo target directory         |
+| `traceProcessor`                         | Absolute Perfetto Trace Processor CLI executable                                  |
+| `applicationRevision`                    | Full SHA of the packaged build when it differs from the pinned benchmark checkout |
 
-Install frontend and Connect dependencies from their lockfiles. Keep other CPU-heavy work off Clanker. Use a bounded foreground user service. The suite runs serially and saves `recipe.json`, fragments and coverage. Two complete runs produce `ledger.json` and `baseline.log`.
+Install frontend and Connect dependencies from their lockfiles. Keep other CPU-heavy work off Clanker. Use a bounded foreground user service. The suite runs serially and saves `recipe.json`, fragments and coverage. Two complete runs produce `ledger.json` and `baseline.log`. Retain the per-producer `*.trace.json` files with the ledger. Each trace uses one host or guest clock. Start spans preserve the separate picker and confirmed-source intervals. The recording resource windows carry the existing sampler's reported counters for CPU, RAM, disk and transcript quality.
 
 ## Collect CLI and disk evidence
 
@@ -60,9 +63,9 @@ node enablement/timing/journey/storage.ts bundle /absolute/path/capture.apparent
 node enablement/timing/journey/storage.ts scratch /absolute/path/private-scratch -- workload arg
 ```
 
-The CLI fixture manifest maps `short`, `ink`, and `long` to clean synthetic bundle paths. Use the 8-second spoken take, 17-second take with nine strokes, and five-minute take from the corpus. The collector copies bundles to an isolated directory and verifies emitted summaries and decodable images or media before emitting timings. Use those verified waits in the run receipt. Run clipboard probes only against an isolated compositor. Run Connect on an isolated service with synthetic captures. Measure fresh retrieval, repeat retrieval into a new directory, and reuse of the local bundle separately.
+Supply the 8-second spoken take, 17-second nine-stroke take, and five-minute take as `short`, `ink`, and `long`. Run clipboard probes against an isolated compositor and Connect against an isolated service.
 
-The storage collector reports bundle logical bytes and video, audio, image, and other bytes. The scratch sampler reports the highest additional allocated bytes observed at 100 ms cadence. Pass the workload's dedicated temporary directory so the sample excludes previous outputs and unrelated files. Sub-sample peaks can be missed. Keep the storage observer cadence the same across builds.
+Storage reports logical bundle bytes and peak additional scratch bytes at 100 ms cadence.
 
 ## Decisions
 

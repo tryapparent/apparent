@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 const contractText = readFileSync(
   new URL("benchmark.json", import.meta.url),
@@ -69,6 +69,7 @@ export type Receipt = {
   runner: string;
   runId: string;
   vcpus: number;
+  measurementEvidence?: import("./profile/measurements.ts").MeasurementEvidence;
   waits: Record<string, Measurement>;
   resources: Record<string, Resources>;
 };
@@ -81,7 +82,7 @@ const stopIds = scoredIds
   .filter((id) => id.startsWith("paste/") || id.startsWith("paste-22-to-33/"))
   .concat(controls);
 const resourceIds = stopIds.map((id) => id.split("/")[1]);
-const phaseFields: (keyof Phase)[] = [
+export const phaseFields: (keyof Phase)[] = [
   "p95Millicores",
   "saturationMs",
   "cpuSeconds",

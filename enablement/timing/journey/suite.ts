@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
 import {
   mkdir,
   mkdtemp,
@@ -10,14 +9,19 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { basename, dirname, join, relative } from "node:path";
+import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assemble, type Part } from "./assemble.ts";
-import { JourneyProfiles } from "./profile/index.ts";
 import {
   startLaneProfile,
   verifyProfiler,
 } from "../../../record/enablement/performance/profile/trace.ts";
+import { assemble, type Part, type RunIdentity } from "./assemble.ts";
+import { JourneyProfiles } from "./profile/index.ts";
+import { hash, hashInputs } from "./profile/inputs.ts";
+import {
+  readMeasurements,
+  writeMeasurementTraces,
+} from "./profile/measurements.ts";
 import { contract, contractHash, type Receipt } from "./score.ts";
 
 const repo = fileURLToPath(new URL("../../../", import.meta.url));
@@ -52,15 +56,12 @@ assert.match(job, /^\/tmp\/apparent-dev-[a-zA-Z0-9_-]+$/);
 assert.equal(permissions.uid, process.getuid?.());
 assert.equal(permissions.mode & 0o777, 0o700);
 process.umask(0o077);
-const traceProcessor =
-  profile && config.traceProcessor
-    ? await realpath(config.traceProcessor)
-    : undefined;
+assert(
+  config.traceProcessor && isAbsolute(config.traceProcessor),
+  "The benchmark plan needs an absolute traceProcessor path",
+);
+const traceProcessor = await realpath(config.traceProcessor);
 if (profile) {
-  assert(
-    traceProcessor,
-    "The profiling plan needs an absolute traceProcessor path",
-  );
   assert.equal(
     config.isolatedProfileHost,
     true,
@@ -78,8 +79,7 @@ const git = (args: string[]) =>
   execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" }).trim();
 assert.match(config.revision, /^[a-f0-9]{40}$/);
 assert.equal(config.revision, git(["rev-parse", "HEAD"]));
-const applicationRevision =
-  (profile && config.applicationRevision) || config.revision;
+const applicationRevision = config.applicationRevision ?? config.revision;
 assert.match(applicationRevision, /^[a-f0-9]{40}$/);
 assert.equal(git(["status", "--porcelain"]), "", "Use a clean pinned checkout");
 const user = config.user;
@@ -102,11 +102,6 @@ const save = (file: string, value: unknown) =>
     flag: "wx",
     mode: 0o600,
   });
-async function hash(file: string) {
-  const digest = createHash("sha256");
-  for await (const bytes of createReadStream(file)) digest.update(bytes);
-  return digest.digest("hex");
-}
 assert.equal(
   await hash(image),
   config.appImageSha256,
@@ -214,22 +209,6 @@ const compiled = test
   );
 assert(compiled?.executable, "No pinned Connect fixture executable");
 
-const paths = git([
-  "ls-files",
-  "enablement/timing/journey",
-  "record/enablement/performance",
-  "shared/enablement/performance",
-  "onboarding/enablement/performance.ts",
-  "composition/settings/enablement/performance.ts",
-  "composition/pill/enablement/handoff-timing.ts",
-  "connect/enablement/benchmark",
-  "capture/desktop/scripts/linux/gui",
-]);
-const inputHashes = Object.fromEntries(
-  await Promise.all(
-    paths.split("\n").map(async (file) => [file, await hash(join(repo, file))]),
-  ),
-);
 const recipe = {
   contractHash,
   vcpus: contract.limits.vcpus,
@@ -241,10 +220,11 @@ const recipe = {
   previewModel: await hash(preview),
   chromium: await hash(chrome),
   node: await hash(node),
+  traceProcessor: await hash(traceProcessor),
   host: (await readFile("/etc/machine-id", "utf8")).trim(),
   hostKernel: (await readFile("/proc/sys/kernel/osrelease", "utf8")).trim(),
   qemu: await command(job, "qemu-version", "qemu-system-x86_64", ["--version"]),
-  inputHashes,
+  inputHashes: await hashInputs(repo),
 };
 const runner =
   "clanker-omarchy-" +
@@ -263,14 +243,16 @@ async function execute(index: number) {
   const lane = join(job, "run-" + index);
   await mkdir(lane);
   const manifest: Record<string, string> = {};
-  const parts: Part[] = [];
-  const traces = traceProcessor
-    ? new JourneyProfiles(traceProcessor)
-    : undefined;
+  const fragments: { label: string; part: Part; scope: "host" | "guest" }[] =
+    [];
+  const traces = profile ? new JourneyProfiles(traceProcessor) : undefined;
   async function collect(label: string, file: string, traceLane = label) {
     const part = await read<Part>(file);
     traces?.cover(traceLane, part, relative(lane, file));
-    parts.push(part);
+    const scope = ["connect-cli", "handoff", "recipient"].includes(traceLane)
+      ? "host"
+      : "guest";
+    fragments.push({ label, part, scope });
     manifest[label] = relative(lane, file);
     await writeFile(
       join(lane, "fragments.json"),
@@ -476,27 +458,41 @@ async function execute(index: number) {
   );
   await collect("recipient", recipient);
 
+  const identity: RunIdentity = {
+    revision: applicationRevision,
+    runner,
+    runId: basename(job) + "-" + index,
+    vcpus: recipe.vcpus,
+  };
   const { receipt, coverage } = assemble(
-    {
-      revision: applicationRevision,
-      runner,
-      runId: basename(job) + "-" + index,
-      vcpus: recipe.vcpus,
-    },
-    parts,
+    identity,
+    fragments.map(({ part }) => part),
     profile,
+    config.revision,
   );
-  if (!traces) {
-    await save(join(lane, "run.json"), receipt);
-  }
   await save(join(lane, "coverage.json"), coverage);
   assert(
     coverage.complete,
     "Journey coverage is incomplete: " + JSON.stringify(coverage),
   );
-  if (traces)
-    await save(join(lane, "profiles.json"), traces.index(lane, receipt.waits));
-  return receipt;
+  const measurementEvidence = await writeMeasurementTraces(
+    lane,
+    identity,
+    fragments,
+  );
+  if (traces) {
+    await save(join(lane, "profiles.json"), {
+      ...traces.index(lane, receipt.waits),
+      measurementEvidence,
+    });
+    return receipt;
+  }
+  const measured = await readMeasurements(
+    { ...receipt, measurementEvidence },
+    traceProcessor,
+  );
+  await save(join(lane, "run.json"), measured);
+  return measured;
 }
 if (profile) {
   await execute(1);
@@ -509,6 +505,7 @@ if (profile) {
     join(journey, "run.ts"),
     "evaluate",
     ledger,
+    traceProcessor,
   ]);
   console.log(join(job, "baseline.log"));
 }

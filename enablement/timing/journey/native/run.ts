@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   closeSync,
   createReadStream,
@@ -9,7 +10,6 @@ import {
   statSync,
 } from "node:fs";
 import { chmod, copyFile, mkdir, writeFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
 import { basename, dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -125,6 +125,7 @@ await Promise.all([
   stageFile(model, "model"),
   stageFile(model + ".verified.json", "receipt"),
   source("record/enablement/performance/guest.ts"),
+  source("shared/enablement/performance/measurement.ts"),
   source("record/enablement/performance/clipboard/guest.ts"),
   source("record/enablement/performance/fixture-clock.ts"),
   stageFile(join(kit, "sample.ts"), "sample.ts"),
@@ -162,7 +163,14 @@ if (detail) {
   await stageFile(previewFile, "preview-model");
 }
 await chmod(join(staged, "libbench.so.node"), 0o700);
-if (settings) await stageFile(realpathSync(settings), "settings.ts");
+if (settings) {
+  const destination = join(
+    archive,
+    "composition/settings/enablement/performance.ts",
+  );
+  await mkdir(dirname(destination), { recursive: true });
+  await copyFile(realpathSync(settings), destination);
+}
 if (cli) {
   await source("enablement/timing/journey/native/local-cli-guest.ts");
   const fixtures = JSON.parse(

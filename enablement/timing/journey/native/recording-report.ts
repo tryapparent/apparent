@@ -1,9 +1,15 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
+import {
+  type Interval,
+  interval,
+  type MeasuredWait,
+  measuredWait,
+} from "../../../../shared/enablement/performance/measurement.ts";
+import type { Receipt } from "../score.ts";
 import { contract } from "../score.ts";
 import { storage } from "../storage.ts";
-import type { Receipt } from "../score.ts";
 
 const [root, ...extra] = process.argv.slice(2);
 const profileLane = extra.length === 1 && extra[0] === "--profile-lane";
@@ -160,6 +166,7 @@ type Physical = {
   id: string;
   owned: string;
   waitMs: number;
+  interval?: Interval;
   pollIntervalMs: number;
   source: string;
 };
@@ -181,7 +188,11 @@ for (const line of readFileSync(resolve(root, "physical-finish.jsonl"), "utf8")
   physical.set(row.id, row);
 }
 
-const waits: Receipt["waits"] = {};
+const waits: Record<string, MeasuredWait> = {};
+const resourceIntervals: Record<
+  string,
+  { recording: Interval; finalization: Interval }
+> = {};
 const resources: Receipt["resources"] = {};
 const fixtureIds = Object.keys(contract.captureFixtures).filter(
   (id) => id !== "portal-warmup",
@@ -293,10 +304,19 @@ for (const id of fixtureIds) {
   const group = contract.cases["paste-22-to-33"].includes(id)
     ? "paste-22-to-33"
     : "paste";
-  waits[group + "/" + id] = { ms: measurement.waitMs, verified: true };
+  waits[group + "/" + id] = {
+    ms: measurement.waitMs,
+    verified: true,
+    intervals: measurement.interval ? [[measurement.interval]] : undefined,
+  };
+  const end = Math.max(saved, clipboard);
+  resourceIntervals[id] = {
+    recording: interval(live, stop, "guest-boottime"),
+    finalization: interval(stop, end, "guest-boottime"),
+  };
   resources[id] = {
     recording: phase(live, stop),
-    finalization: phase(stop, Math.max(saved, clipboard)),
+    finalization: phase(stop, end),
     bundleBytes: storage(bundle).logicalBytes,
     peakScratchBytes: Math.max(...scratch) - scratch[0],
     outputVerified: true,
@@ -308,13 +328,22 @@ for (const id of fixtureIds) {
   };
 }
 const copyMs = measured("quick-silent", "cli-copy");
-if (copyMs > 0) waits.copy = { ms: copyMs, verified: true };
+if (copyMs > 0) {
+  const bounds = spanData
+    .find(([id, key]) => id === "quick-silent" && key === "cli-copy")
+    ?.slice(4);
+  waits.copy =
+    bounds?.length === 2
+      ? measuredWait(Number(bounds[0]), Number(bounds[1]), "guest-boottime")
+      : { ms: copyMs, verified: true };
+}
 console.log(
   JSON.stringify(
     {
       version: read("version.txt"),
       waits,
       resources,
+      resourceIntervals,
       ...(profileLane ? { diagnostic: true } : {}),
     },
     null,
