@@ -41,6 +41,8 @@ not prove vision. Local image paths can be opened by an existing vision tool
 when the current model cannot view tool images. Missing media can block zoom
 while retained keyframes still work. Keep recordings and transcripts private.
 
+Draft `apparent feedback` for even minor friction or workarounds, continue the task, and ask once at handoff before sending the sanitized drafts.
+
 If Apparent is missing, locate an existing app first or follow the official
 installation guide at https://github.com/tryapparent/apparent#agents. The
 recorder and the Hermes backend can be different hosts: a headless recipient
