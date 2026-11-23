@@ -72,6 +72,20 @@ pub fn parse_url(url: &str) -> Option<WebUrl> {
     })
 }
 
+pub fn browser_page_url(raw: &str) -> Option<String> {
+    let location = raw.split(['?', '#']).next()?;
+    if location.len() > 2048 || location.bytes().any(|b| b <= b' ' || b >= 127 || b == b'\\') {
+        return None;
+    }
+    let url = parse_url(location)?;
+    let (_, rest) = location.split_once("://")?;
+    let (authority, path) = rest.split_once('/').unwrap_or((rest, ""));
+    if authority.contains('@') {
+        return None;
+    }
+    Some(format!("{}/{}", url.origin(), path))
+}
+
 /// `localhost`, `*.localhost`, `127.0.0.0/8`, `::1`, and `0.0.0.0` (which browsers send to this
 /// machine).
 pub fn is_loopback_host(host: &str) -> bool {
@@ -89,6 +103,17 @@ pub fn is_loopback_host(host: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn browser_context_drops_unshareable_url_components() {
+        assert_eq!(
+            browser_page_url("https://Example.COM/settings/billing?secret=x#token").as_deref(),
+            Some("https://example.com/settings/billing")
+        );
+        assert!(browser_page_url("https://user:pass@example.com/private").is_none());
+        assert!(browser_page_url("file:///tmp/private").is_none());
+        assert!(browser_page_url("https://example.com/line\nbreak").is_none());
+    }
 
     #[test]
     fn urls_parse_to_origins() {

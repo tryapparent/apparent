@@ -32,7 +32,7 @@ pub(super) fn track_shift_ink(
                 session.begin_mark(t_ms);
             }
             if telemetry.probing() {
-                crate::capture::engine::accessibility::mark_started(t_ms);
+                crate::capture::engine::accessibility::mark_started(t_ms, x, y);
             }
             Stroke {
                 color: Some(crate::shared::handoff::pen::rgb()),

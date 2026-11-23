@@ -15,6 +15,8 @@ pub struct Window {
     address: String,
     stable_id: String,
     pub pid: u32,
+    #[serde(default)]
+    class: String,
     at: [i32; 2],
     size: [i32; 2],
     workspace: Workspace,
@@ -33,6 +35,8 @@ struct Client {
     size: [i32; 2],
     workspace: Workspace,
     mapped: bool,
+    #[serde(default)]
+    title: String,
     hidden: bool,
     pinned: bool,
 }
@@ -75,6 +79,27 @@ pub fn layout_rect(rect: [i32; 4]) -> Option<[i32; 4]> {
 }
 
 impl Window {
+    pub fn browser_attribute(&self) -> Option<&'static str> {
+        match self.class.as_str() {
+            "chromium" | "Chromium" | "google-chrome" | "Google-chrome" | "google-chrome-stable" => Some("URI"),
+            "firefox" | "Firefox" | "org.mozilla.firefox" => Some("DocURL"),
+            _ => None,
+        }
+    }
+
+    pub fn unique_browser_client(&self) -> Option<([i32; 2], String)> {
+        let clients = read::<Vec<Client>>("j/clients")?;
+        let mut windows = clients.iter().filter(|client| client.pid == self.pid && client.mapped);
+        let only = windows.next()?;
+        (only.address == self.address && windows.next().is_none())
+            .then(|| (self.size, only.title.clone()))
+    }
+
+    pub fn point(&self, x: f64, y: f64) -> Option<([i32; 4], (i32, i32))> {
+        let rect = layout_rect([x.floor() as i32, y.floor() as i32, 1, 1])?;
+        self.contains(rect).then(|| (rect, (rect[0] - self.at[0], rect[1] - self.at[1])))
+    }
+
     pub fn contains(&self, rect: [i32; 4]) -> bool {
         let [x, y, w, h] = rect.map(i64::from);
         let [left, top] = self.at.map(i64::from);
@@ -232,6 +257,7 @@ mod tests {
             address: "0xabc".into(),
             stable_id: "42".into(),
             pid: 101,
+            class: String::new(),
             at: [647, 38],
             size: [621, 750],
             workspace: Workspace { id: 1 },

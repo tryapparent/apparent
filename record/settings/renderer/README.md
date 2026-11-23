@@ -15,4 +15,12 @@ or grant remains available to accessibility tools. A local dev page using
 the Apparent SDK can also supply React component and source details.
 See the [bundle guide](../../../capture/engine/docs/keyframes-and-text.md).
 
-The **Label circled items** Labs switch persists `experiments.circleLabels` and applies to the next desktop recording. It defaults to off. Local English OCR and ImageNet classification use the captured pixels from before the stroke. Existing app-provided labels take priority. Missing or uncertain results leave the timestamp and frame available for inspection.
+The same switch enables local English OCR and object recognition for circles.
+Recognition uses pixels captured before the stroke and gives app-provided
+labels priority. A previous circle-only preference does not opt in to the
+combined feature.
+
+When native accessibility resolves a browser page, clicks and marks can include
+its HTTP or HTTPS URL. Credentials, queries and fragments are excluded. Page
+paths may appear in the handoff. Availability depends on the browser exposing
+its accessibility tree and Apparent identifying the interaction’s window.

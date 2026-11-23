@@ -280,6 +280,14 @@ await bendScratch(async (scratch) => {
       ),
     ),
   );
+  assert.deepEqual(
+    JSON.parse(readFileSync(join(root, "record/media/src/assembly/browser-page.json"), "utf8")),
+    JSON.parse(run(process.execPath, ["--input-type=module", "-e", `
+      import policy from "./focused-mark.mjs";
+      console.log(JSON.stringify(Array.from({length: 8}, (_, bits) =>
+        policy.admit_browser_page(...[1, 2, 4].map(flag => Boolean(bits & flag))))));
+    `], proofOutput)),
+  );
   assert.deepEqual(repairTable(proofOutput), repair);
   assert.deepEqual(
     JSON.parse(

@@ -7,6 +7,10 @@
 use core_foundation::base::{CFType, CFTypeRef, TCFType};
 #[cfg(target_os = "macos")]
 use core_foundation::string::{CFString, CFStringRef};
+#[path = "../../../engine/accessibility/macos_browser.rs"]
+mod browser;
+pub use browser::apply;
+
 use std::collections::HashMap;
 #[cfg(target_os = "macos")]
 use std::ffi::c_void;
@@ -63,6 +67,7 @@ pub struct Hit {
     pub identifier: Option<String>,
     /// The file name of the document the element's window shows (`AXDocument`).
     pub document: Option<String>,
+    browser_page: Option<(u32, String)>,
 }
 
 impl Hit {
@@ -153,6 +158,13 @@ fn cell_child_label<'a>(
 
 #[cfg(target_os = "macos")]
 fn window_owner_at(raw: &[crate::shared::windows::RawWindow], x: f64, y: f64, own: i32) -> Option<i32> {
+    window_at(raw, x, y, own).map(|window| window.pid)
+}
+
+#[cfg(target_os = "macos")]
+fn window_at(
+    raw: &[crate::shared::windows::RawWindow], x: f64, y: f64, own: i32,
+) -> Option<&crate::shared::windows::RawWindow> {
     raw.iter()
         .filter(|w| {
             let [wx, wy, ww, wh] = w.bounds;
@@ -167,7 +179,6 @@ fn window_owner_at(raw: &[crate::shared::windows::RawWindow], x: f64, y: f64, ow
                 && y <= wy + wh
         })
         .find(|w| w.pid != own)
-        .map(|w| w.pid)
 }
 
 /// Owns a CoreFoundation value returned under the create rule.
@@ -273,8 +284,8 @@ pub fn hit_test(x: f64, y: f64) -> Option<Hit> {
     let system = Owned(unsafe { AXUIElementCreateSystemWide() });
     unsafe { AXUIElementSetMessagingTimeout(system.0, MESSAGE_TIMEOUT_S) };
     let mut element = element_at(system.0, x, y)?;
+    let raw = objc2::rc::autoreleasepool(|_| crate::shared::windows::raw_windows());
     if pid_of(element.0) == Some(own) {
-        let raw = objc2::rc::autoreleasepool(|_| crate::shared::windows::raw_windows());
         let pid = window_owner_at(&raw, x, y, own)?;
         let app = Owned(unsafe { AXUIElementCreateApplication(pid) });
         unsafe { AXUIElementSetMessagingTimeout(app.0, MESSAGE_TIMEOUT_S) };
@@ -283,7 +294,6 @@ pub fn hit_test(x: f64, y: f64) -> Option<Hit> {
             return None;
         }
     } else {
-        let raw = objc2::rc::autoreleasepool(|_| crate::shared::windows::raw_windows());
         if let Some(pid) = window_owner_at(&raw, x, y, own)
             && pid_of(element.0) != Some(pid)
         {
@@ -347,6 +357,14 @@ pub fn hit_test(x: f64, y: f64) -> Option<Hit> {
             .and_then(|url| document_name(&url))
             .and_then(|s| clip(&s));
     }
+    hit.browser_page = window_at(&raw, x, y, own)
+        .filter(|window| window.layer == 0 && Some(window.pid) == pid_of(element.0))
+        .and_then(|window| {
+            let url = browser::browser_page(element.0, window.pid, started)?;
+            let after = objc2::rc::autoreleasepool(|_| crate::shared::windows::raw_windows());
+            (window_at(&after, x, y, own).map(|window| window.id) == Some(window.id))
+                .then_some((window.id, url))
+        });
     Some(hit)
 }
 
@@ -387,9 +405,10 @@ pub enum Target {
     Pointer(u64),
     /// The stroke that began at this capture time.
     Stroke(u64),
+    StrokeStart(u64),
 }
 
-type Job = (u64, Target, f64, f64);
+type Job = (u64, Target, f64, f64, Instant);
 
 /// Runs lookups for one capture at a time on a background thread and keeps their results until
 /// the capture finishes.
@@ -419,14 +438,17 @@ impl Prober {
         let _ = std::thread::Builder::new()
             .name("apparent-ax".into())
             .spawn(move || {
-                for (job_session, target, x, y) in queue {
+                for (job_session, target, x, y, queued_at) in queue {
                     if job_session == worker_session.load(Ordering::Acquire)
-                        && let Some(hit) = lookup(x, y)
+                        && let Some(mut hit) = lookup(x, y)
                     {
-                        worker_hits
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .insert(target, hit);
+                        if queued_at.elapsed() > LOOKUP_BUDGET {
+                            hit.browser_page = None;
+                        }
+                        let mut hits = worker_hits.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                        if job_session == worker_session.load(Ordering::Acquire) {
+                            hits.insert(target, hit);
+                        }
                     }
                     worker_pending.fetch_sub(1, Ordering::AcqRel);
                 }
@@ -453,7 +475,7 @@ impl Prober {
         self.pending.fetch_add(1, Ordering::AcqRel);
         if self
             .jobs
-            .send((self.session.load(Ordering::Acquire), target, x, y))
+            .send((self.session.load(Ordering::Acquire), target, x, y, Instant::now()))
             .is_err()
         {
             self.pending.fetch_sub(1, Ordering::AcqRel);
@@ -472,36 +494,6 @@ impl Prober {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner),
         )
-    }
-}
-
-/// Puts lookup results on the clicks, drags and strokes they were for.
-pub fn apply(
-    hits: &HashMap<Target, Hit>,
-    events: &mut [crate::shared::model::InteractionEvent],
-    strokes: &mut [crate::shared::model::Stroke],
-) {
-    use crate::shared::model::InteractionEvent;
-    for event in events.iter_mut() {
-        match event {
-            InteractionEvent::Click { t, label, role, .. } => {
-                if let Some(hit) = hits.get(&Target::Pointer(*t)) {
-                    *role = Some(hit.role.clone());
-                    *label = hit.label_text().or(label.take());
-                }
-            }
-            InteractionEvent::Drag { t, label, .. } => {
-                if let Some(text) = hits.get(&Target::Pointer(*t)).and_then(Hit::on_text) {
-                    *label = Some(text);
-                }
-            }
-            _ => {}
-        }
-    }
-    for stroke in strokes.iter_mut().filter(|s| !s.laser && s.on.is_none()) {
-        if let Some(text) = hits.get(&Target::Stroke(stroke.t0)).and_then(Hit::on_text) {
-            stroke.on = Some(text);
-        }
     }
 }
 
@@ -548,6 +540,7 @@ mod tests {
             label: Some("New Tab".into()),
             identifier: Some("tab-new".into()),
             document: Some("main.rs".into()),
+            browser_page: None,
         };
         assert_eq!(
             hit.label_text().as_deref(),

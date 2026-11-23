@@ -12,12 +12,6 @@ class SettingsPane extends HTMLElement {
   }
   private renderFrogExperiment?: LabsExperiment;
   private renderAgentContextExperiment?: LabsExperiment;
-  private renderCircleLabelsExperiment?: LabsExperiment;
-
-  set circleLabelsExperiment(component: LabsExperiment | undefined) {
-    this.renderCircleLabelsExperiment = component;
-    this.renderPane();
-  }
 
   set frogExperiment(component: LabsExperiment | undefined) {
     this.renderFrogExperiment = component;
@@ -69,7 +63,7 @@ class SettingsPane extends HTMLElement {
   private renderPane() {
     const pane = this.getAttribute("pane");
     this.root?.render(pane === "Agents" ? <Agents /> :
-      pane === "Labs" ? <Labs speakingStyleExperiment={this.renderSpeakingStyleExperiment} circleLabelsExperiment={this.renderCircleLabelsExperiment} frogExperiment={this.renderFrogExperiment} agentContextExperiment={this.renderAgentContextExperiment} autoPasteExperiment={this.renderAutoPasteExperiment} pushToTalkExperiment={this.renderPushToTalkExperiment} pillDoodlesExperiment={this.renderPillDoodlesExperiment} /> : <Storage settings />);
+      pane === "Labs" ? <Labs speakingStyleExperiment={this.renderSpeakingStyleExperiment} frogExperiment={this.renderFrogExperiment} agentContextExperiment={this.renderAgentContextExperiment} autoPasteExperiment={this.renderAutoPasteExperiment} pushToTalkExperiment={this.renderPushToTalkExperiment} pillDoodlesExperiment={this.renderPillDoodlesExperiment} /> : <Storage settings />);
   }
 }
 

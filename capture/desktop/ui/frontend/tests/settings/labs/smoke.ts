@@ -47,22 +47,17 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   await expect(page.getByText('Transcript-only handoff',{exact:true})).toHaveCount(0);
   const agentContext=page.getByRole('switch',{name:'Recording context for agents'});
   const doodles=page.getByRole('switch',{name:'Recording pill doodles'});
-  const circles=page.getByRole('switch',{name:'Label circled items'});
-  await expect(circles).toBeDisabled();
+  await expect(page.getByRole('switch',{name:'Label circled items'})).toHaveCount(0);
   await expect(agentContext).toBeDisabled();
   await expect(agentContext).toHaveAccessibleDescription(/local dev page using the Apparent SDK/);
   await expect(toggle).toBeDisabled();await expect.poll(()=>Boolean(held)).toBe(true);
   reply(held!);hold=false;await expect(toggle).toBeEnabled();await expect(toggle).toHaveAttribute('aria-checked','false');
   await expect(doodles).toBeChecked();
   await expect(agentContext).toHaveAttribute('aria-checked','false');
-  await expect(circles).not.toBeChecked();
-  await circles.focus();await page.keyboard.press('Space');
-  await expect(circles).toBeChecked();await expect(circles).toBeFocused();
   await agentContext.focus();await page.keyboard.press('Space');
   await expect(agentContext).toHaveAttribute('aria-checked','true');await expect(agentContext).toBeFocused();
   await expect(page.locator('#agent-context-access')).toContainText('Allow Apparent');
   await page.reload();
-  await expect(circles).toBeChecked();
   await expect(agentContext).toBeChecked();
   await expect(doodles).toBeChecked();
   assert.equal(await toggle.locator('.apparent-switch-track').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(229, 229, 234)');
@@ -155,15 +150,15 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
     await page.screenshot({path:path.join(process.env.APPARENT_LIVE_PROOF,`labs-${theme}-${width}-bottom.png`)});
     await toggle.scrollIntoViewIfNeeded();
    }
-   for(const id of ['speaking-style-help','agent-context-limits','circle-labels-help','local-stream-ready','auto-paste-help','public-sharing-limits','wispr-lab-help']){
+   for(const id of ['speaking-style-help','agent-context-limits','local-stream-ready','auto-paste-help','public-sharing-limits','wispr-lab-help']){
     const guidance=page.locator(`#${id}`);await guidance.evaluate(el=>el.scrollIntoView({block:'center'}));await expect(guidance).toBeInViewport();
-    if(['circle-labels-help','agent-context-limits','speaking-style-help'].includes(id) && process.env.APPARENT_LIVE_PROOF)
+    if(['agent-context-limits','speaking-style-help'].includes(id) && process.env.APPARENT_LIVE_PROOF)
      await page.screenshot({path:path.join(process.env.APPARENT_LIVE_PROOF,`${id}-${theme}-${width}.png`)});
    }
    await cdp.detach();
   }
   const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setDeviceMetricsOverride',{width:640,height:530,deviceScaleFactor:1,mobile:false});
-  const recoveries: [string,typeof toggle][]=[['streaming',toggle],['agentContext',agentContext],['speakingStyle',speaking],['circleLabels',circles],['pillDoodles',doodles]];
+  const recoveries: [string,typeof toggle][]=[['streaming',toggle],['agentContext',agentContext],['speakingStyle',speaking],['pillDoodles',doodles]];
   recoveries.push(['autoPaste',autoPaste]);
   recoveries.push(['sharing',sharing]);
   if(process.platform==='darwin')recoveries.push(['wisprFlow',wispr]);

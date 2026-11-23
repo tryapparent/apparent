@@ -124,6 +124,104 @@ impl Bus {
         active
     }
 
+    pub fn browser_page(
+        &self,
+        pid: u32,
+        size: [i32; 2],
+        title: &str,
+        point: (i32, i32),
+        attribute: &str,
+    ) -> Option<String> {
+        let desktop = Object(REGISTRY.into(), OwnedObjectPath::try_from(ROOT).ok()?);
+        let apps: Vec<Object> = self.proxy(&desktop, ACCESSIBLE)?.call("GetChildren", &()).ok()?;
+        let daemon = DBusProxy::new(&self.0).ok()?;
+        let mut frames = Vec::new();
+        let mut named_frames = Vec::new();
+        for app in apps.iter().take(64) {
+            if daemon.get_connection_unix_process_id(BusName::try_from(app.0.as_str()).ok()?).ok() != Some(pid) {
+                continue;
+            }
+            let children: Vec<Object> = self.proxy(app, ACCESSIBLE)?.call("GetChildren", &()).ok()?;
+            if children.len() > 16 {
+                return None;
+            }
+            for frame in children {
+                if frame.0 != app.0 {
+                    continue;
+                }
+                let accessible = self.proxy(&frame, ACCESSIBLE)?;
+                let role: String = accessible.call("GetRoleName", &()).ok()?;
+                if !matches!(role.as_str(), "frame" | "window") {
+                    continue;
+                }
+                let (_, _, width, height): (i32, i32, i32, i32) =
+                    self.proxy(&frame, COMPONENT)?.call("GetExtents", &(1_u32,)).ok()?;
+                let name: String = accessible.get_property("Name").ok()?;
+                drop(accessible);
+                if !title.is_empty() && name == title && width > 0 && height > 0 {
+                    named_frames.push(frame);
+                } else if [width, height] == size {
+                    frames.push(frame);
+                }
+            }
+        }
+        let candidates = if named_frames.is_empty() { &mut frames } else { &mut named_frames };
+        if apps.len() > 64 || candidates.len() != 1 {
+            return None;
+        }
+        let frame = candidates.pop()?;
+        self.document_at(&frame, point, attribute)
+    }
+
+    fn document_at(&self, frame: &Object, (x, y): (i32, i32), attribute: &str) -> Option<String> {
+        let mut hit: Object = self.proxy(frame, COMPONENT)?
+            .call("GetAccessibleAtPoint", &(x, y, 1_u32)).ok()?;
+        let mut page = None;
+        for _ in 0..20 {
+            if hit == *frame {
+                break;
+            }
+            if hit.0 != frame.0 || hit.1.as_str() == "/org/a11y/atspi/null" {
+                return None;
+            }
+            let accessible = self.proxy(&hit, ACCESSIBLE)?;
+            let role: String = accessible.call("GetRoleName", &()).ok()?;
+            if role == "document web" {
+                page = self.document_url(&hit, attribute).or(page);
+            }
+            let (bus, path) = accessible.get_property::<(String, OwnedObjectPath)>("Parent").ok()?;
+            drop(accessible);
+            hit = Object(bus, path);
+        }
+        if hit != *frame {
+            return None;
+        }
+        if page.is_some() {
+            return page;
+        }
+        let relations: Vec<(u32, Vec<Object>)> =
+            self.proxy(frame, ACCESSIBLE)?.call("GetRelationSet", &()).ok()?;
+        let mut embedded = relations.into_iter().filter(|(kind, _)| *kind == 13)
+            .flat_map(|(_, targets)| targets);
+        let document = embedded.next()?;
+        if embedded.next().is_some() || document.0 != frame.0 {
+            return None;
+        }
+        let (left, top, width, height): (i32, i32, i32, i32) =
+            self.proxy(&document, COMPONENT)?.call("GetExtents", &(1_u32,)).ok()?;
+        if x < left || y < top || x >= left.saturating_add(width) || y >= top.saturating_add(height) {
+            return None;
+        }
+        self.document_url(&document, attribute)
+    }
+
+    fn document_url(&self, document: &Object, attribute: &str) -> Option<String> {
+        let raw: String = self.proxy(document, "org.a11y.atspi.Document")?
+            .call("GetAttributeValue", &(attribute,)).ok()?;
+        crate::shared::routing::parse_url(&raw)?;
+        Some(raw)
+    }
+
     pub fn label_at(&self, tree: &Object, (x, y): (i32, i32)) -> Option<String> {
         let mut object: Object = self
             .proxy(tree, COMPONENT)?
