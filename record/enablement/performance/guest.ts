@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
+import { clipboardObserver, seedClipboard } from "./clipboard/guest.ts";
 import { now, startFixture } from "./fixture-clock.ts";
-import {
-  execFile,
-  execFileSync,
-  spawn,
-  type ChildProcess,
-} from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { closeSync, existsSync, openSync } from "node:fs";
 import {
   copyFile,
@@ -114,10 +110,14 @@ type Status = {
 };
 const commands = (args: string[], timeout?: number) => exec(app, args, timeout);
 const mode = (await readFile(files("mode"), "utf8")).trim();
+const profile = existsSync(files("profile"))
+  ? await import("./profile/trace.ts")
+  : undefined;
 const sink = "journey_" + process.pid;
 const source = sink + ".monitor";
 const dedicated: ChildProcess[] = [];
 const abort = new AbortController();
+const watchClipboard = clipboardObserver(captures, put, abort.signal);
 let owned: string | undefined;
 let module: string | undefined;
 
@@ -175,34 +175,6 @@ async function captureStatus(id: string) {
   return { text, value: JSON.parse(text) as Status };
 }
 
-async function seedClipboard(value: string) {
-  execFileSync("wl-copy", ["--type", "text/plain"], {
-    input: value,
-    timeout: 5000,
-    stdio: ["pipe", "ignore", "ignore"],
-  });
-}
-const clipboard = () =>
-  exec("wl-paste", ["--no-newline", "--type", "text"], 700);
-
-async function watchClipboard(name: string, sentinel: string, stop: number) {
-  for (const end = stop + 120000; (await now()) < end; ) {
-    abort.signal.throwIfAborted();
-    const text = await clipboard().catch(() => "");
-    if (
-      text !== sentinel &&
-      text.includes("apparent inspect ") &&
-      text.includes(captures + "/")
-    ) {
-      await put(name + "-clipboard.txt", text);
-      const at = await now();
-      await put(name + "-clipboard-at.txt", String(at));
-      return { at, text };
-    }
-    await pause(40);
-  }
-  throw Error("Verified clipboard did not arrive");
-}
 const speak = (name: string) =>
   background(
     "pw-play",
@@ -222,6 +194,9 @@ const launch = (args: string[]) =>
 
 try {
   await configFor(false);
+  if (profile) {
+    await profile.verifyProfiler(out, exec);
+  }
   let scene: ChildProcess | undefined;
   if (["onboarding", "surface", "draw"].includes(mode)) {
     scene = background(
@@ -354,6 +329,11 @@ try {
       const player = fixture.audio === "spoken" ? speak(name) : undefined;
       await put(name + "-draw-request", String(fixture.strokes));
       await phase("recording " + name);
+      let captureProfile;
+      if (profile && name === "long-narration") {
+        await clock.prepareStop(5000);
+        captureProfile = await profile.startProfile(out, abort.signal);
+      }
       await clock.prepareStop();
       const sentinel = "apparent-journey-sentinel-" + id;
       await seedClipboard(sentinel);
@@ -423,6 +403,7 @@ try {
       assert(clipboard.text.includes(bundle));
       await metric(name, "paste", clipboard.at - stop);
       await append("phase-finish.tsv", [name, saved, clipboard.at]);
+      await captureProfile?.finish(clipboard.at);
       const evidence = JSON.parse(
         await readFile(join(bundle, "apparent.json"), "utf8"),
       );
