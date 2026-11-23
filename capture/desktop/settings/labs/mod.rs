@@ -1,6 +1,8 @@
 //! Persistence mechanism only. The Labs catalogue/defaults belong to Desktop TS.
 use std::path::Path;
 use crate::shared::handoff::{AGENT_CONTEXT, Config};
+use crate::capture::desktop::workflow::performance::{GENERATION, SETTING, generation};
+
 const KEY: &str = "localStreamingTranscription";
 const AUTO_PASTE: &str = "autoPasteDraft";
 const ACTIVATE_CONTEXT: [bool; 4] = include!("../../../../record/settings/permissions/agent-context-activation.json");
@@ -31,6 +33,7 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
     let normalized = |key| experiment_config.as_ref()?.experiments.get(key).copied();
     serde_json::json!({
         "saved": saved(KEY),
+        "recordingPerformanceSaved": generation(&value).is_some(),
         "circleLabelsSaved": normalized("circleLabels"),
         "speakingStyleSaved": saved("speakingStyle"),
         "agentContextSaved": normalized(AGENT_CONTEXT),
@@ -49,6 +52,7 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
 pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
     match setting {
         None | Some("streaming") => Some((KEY, true)),
+        Some(SETTING) => Some((SETTING, true)),
         Some("circleLabels") => Some(("circleLabels", true)),
         Some("agentContext") => Some((AGENT_CONTEXT, true)),
         Some("speakingStyle") => Some(("speakingStyle", true)),
@@ -69,7 +73,17 @@ pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>, setting:
     let mut result = if enabled == Some(true) && key == PUSH_TO_TALK && !push_to_talk_supported() {
         serde_json::json!({"error":"config_write_failed"})
     } else if let Some(on) = enabled {
-        match crate::shared::handoff::set_experiment_in(path, key, on) {
+        let saved = if key == SETTING {
+            crate::shared::handoff::update_config_in(path, |config| {
+                let flags = config.as_object_mut().unwrap().entry("experiments").or_insert_with(|| serde_json::json!({}));
+                flags.as_object_mut().ok_or_else(|| anyhow::anyhow!("Invalid experiments"))?.insert(SETTING.to_owned(), on.into());
+                config[GENERATION] = crate::shared::ids::make_bundle_id().into();
+                Ok(())
+            })
+        } else {
+            crate::shared::handoff::set_experiment_in(path, key, on)
+        };
+        match saved {
             Ok(()) => facts(path), Err(_) => serde_json::json!({"error":"config_write_failed"}),
         }
     } else {facts(path)};
@@ -88,6 +102,23 @@ fn desktop_access(activate: bool) -> &'static str {
 }
 #[cfg(test)] mod tests {
     use super::*;
+    #[test]
+    fn performance_consent_is_off_and_rotates_on_reenable() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("config.json");
+        std::fs::write(&path, r#"{"errorReporting":true,"experiments":{"other":true}}"#).unwrap();
+        assert_eq!(facts(&path)["recordingPerformanceSaved"], false);
+        assert_eq!(request(&path, 1, Some(true), Some(SETTING))["facts"]["recordingPerformanceSaved"], true);
+        let read = || serde_json::from_slice::<serde_json::Value>(&std::fs::read(&path).unwrap()).unwrap();
+        let before = read();
+        assert_eq!(before["experiments"]["other"], true);
+        assert_eq!(before["errorReporting"], true);
+        assert_eq!(request(&path, 2, Some(false), Some(SETTING))["facts"]["recordingPerformanceSaved"], false);
+        assert!(generation(&read()).is_none());
+        assert_eq!(request(&path, 3, Some(true), Some(SETTING))["facts"]["recordingPerformanceSaved"], true);
+        assert_ne!(generation(&before), generation(&read()));
+    }
+
     #[test]
     fn labs_cannot_change_the_retired_note_experiment() {
         let dir = tempfile::tempdir().unwrap();

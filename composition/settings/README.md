@@ -100,3 +100,38 @@ helper handles microphone, camera, speech and the System Settings drag guide.
 Reopening uses the guarded application restart and refuses while a capture is
 active. On Wayland the command repairs input-device access, and screen
 authorization stays with the capture-time portal.
+
+## Optional recording performance
+
+Labs offers **Share recording performance**, off by default and independent
+of error reporting. It takes effect for new screen recordings. In sampled
+recordings that reach finalization, Start measures native recording setup
+through the first observed live frame. Finish measures the native Finish
+request through the bundle publication result. A failed finalizer is tagged
+as a failure. Set the switch off to invalidate that recording's previous
+consent and any pending reports. A request already admitted may finish.
+
+Release builds configured with Apparent's PostHog project token send duration
+histograms and a few timing spans over OTLP HTTP to the EU project. Reports
+include the build, operating system, length bucket, outcome, and timing
+timestamps. Trace IDs are random and scoped to Start or Finish. The capture
+content, paths, account identifiers, and consent revision stay local.
+PostHog receives ordinary network metadata for each request.
+
+Enable Application Metrics in the PostHog project to ingest histograms.
+Use `recording.start.duration` and `recording.finish.duration` with
+`service.version`, `os.type`, and `outcome` to compare p50 and p95. Include
+the sample count when comparing releases. In distributed tracing, filter
+by `apparent-desktop` to see the Finish span and finalizer time beneath it.
+The local Perfetto benchmark remains available for stack-level diagnosis.
+
+For example, query Finish p95 after filtering to successful bundles.
+
+```promql
+histogram_quantile(
+  0.95,
+  sum by (le, service_version, os_type) (
+    rate({__name__="recording.finish.duration_bucket",outcome="success"}[24h])
+  )
+)
+```
