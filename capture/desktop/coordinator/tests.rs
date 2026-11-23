@@ -445,6 +445,7 @@ mod tests {
         let mut coordinator = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
         let (session, _failed, seen) = ScreenCaptureSession::test_pending_start();
         coordinator.active_recording = Some(ActiveRecording {
+            performance: None,
             started: Instant::now(), target: region_target(0.0,0.0,64.0,64.0,&[]),
             bundle_dir: PathBuf::from("synthetic-unused.apparent"),
             source: CaptureSource::Screen {session,audio:None,windows:None},
@@ -479,6 +480,7 @@ mod tests {
             coordinator.agent_captures.begin("current");
             coordinator.agent_capture_id = Some("current".into());
             coordinator.active_recording = Some(ActiveRecording {
+                performance: None,
                 started: Instant::now(),
                 target: region_target(0.0, 0.0, 64.0, 64.0, &[]),
                 bundle_dir: dir.clone(), source: CaptureSource::Screen { session, audio: None, windows: None },
@@ -529,6 +531,7 @@ mod tests {
             coordinator.agent_captures.begin("current");
             coordinator.agent_capture_id = Some("current".into());
             coordinator.active_recording = Some(ActiveRecording {
+                performance: None,
                 started: Instant::now(),
                 target: region_target(0.0, 0.0, 64.0, 64.0, &[]),
                 bundle_dir: dir.clone(), source: CaptureSource::Screen { session, audio: None, windows: None },
@@ -579,8 +582,6 @@ mod tests {
 
     #[test]
     fn picker_exclusion_survives_session_reset_until_deferred_close() {
-        // reset_for_session clears the prior session's IDs before the initial
-        // ScreenCaptureKit filter is built, while the picker is still open.
         let mut excluded = Vec::new();
         restore_picker_exclusion(&mut excluded, Some(41));
         restore_picker_exclusion(&mut excluded, Some(41));

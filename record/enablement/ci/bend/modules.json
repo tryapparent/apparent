@@ -10,6 +10,7 @@
     "media/src/export/quiet-export.bend",
     "settings/recording-policy.bend",
     "settings/lip-policy.bend",
+    "settings/permissions/performance-policy.bend",
     "settings/permissions/permission-policy.bend",
     "pill/pill-state.bend",
     "pill/soft-bloom.bend",

@@ -45,9 +45,17 @@ pub(crate) fn native_payload(
 }
 
 pub(crate) fn send(endpoint: &str, body: &Value) -> std::io::Result<bool> {
-    let mut child = Command::new("curl")
+    send_json(endpoint, body, None)
+}
+
+pub(crate) fn send_json(endpoint: &str, body: &Value, authorization: Option<&str>) -> std::io::Result<bool> {
+    let mut command = Command::new("curl");
+    command.arg("--disable");
+    if let Some(value) = authorization {
+        command.args(["--header", value]);
+    }
+    let mut child = command
         .args([
-            "--disable",
             "--silent",
             "--fail",
             "--noproxy",

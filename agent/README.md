@@ -16,7 +16,7 @@ Send in one call with `--submit` when ready to share with Apparent. Omit `--subm
 
 The command sends the supplied title and body with the report category, build and platform. Keep credentials and private capture content out of the text. The command does not read recordings or attach logs. Submission uses the publishable PostHog token in packaged builds. The command uses the bundled runtime or Node.js 22.23+ on PATH.
 
-In PostHog Error Tracking, look for **Apparent CLI bug report** or **Apparent CLI feedback**. Filter exception events by `source = agent_cli_feedback` and `feedback_kind`. The event properties `feedback_title` and `feedback_body` contain the exact text. The CLI returns the event UUID as `report_id` after PostHog acknowledges ingestion. Matching category, title and body group together. A new group enters the existing T3 fix queue.
+In PostHog Error Tracking, the issue title is the submitted CLI feedback title. Filter exception events by `source = agent_cli_feedback` and `feedback_kind`. The event properties `feedback_title` and `feedback_body` contain the exact text. The CLI returns the event UUID as `report_id` after PostHog acknowledges ingestion. Matching category, title and body group together. A new group enters the existing T3 fix queue.
 
 ## Zoom planning
 

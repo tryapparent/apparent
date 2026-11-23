@@ -830,6 +830,7 @@ enum CaptureSource {
 }
 
 struct ActiveRecording {
+    performance: Option<workflow::performance::RecordingPerformance>,
     started: Instant,
     target: TargetInfo,
     bundle_dir: PathBuf,
@@ -868,7 +869,6 @@ pub struct ApparentCoordinator {
     active_lips: Option<crate::lip_input::Input>,
     whiteboard: Rc<RefCell<whiteboard::Board>>,
     active_recording: Option<ActiveRecording>,
-    /// Identifies the recording whose finalization may update the current UI.
     capture_generation: u64,
     /// Prevent repeated publication callbacks from scheduling a second clipboard write.
     completion_pending: Option<u64>,
