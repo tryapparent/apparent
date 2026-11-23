@@ -175,9 +175,6 @@ app.whenReady().then(() => {
         settingsMounted = true;
         showSettings();
       }).catch(() => {
-        // A rejected snapshot can precede render-process-gone. Let that native
-        // event admit its crash report before exiting; otherwise the existing
-        // startup deadline restores the fallback. Never reveal a failed frame.
         settingsFrame = undefined;
       });
       return settingsFrame;
@@ -188,7 +185,6 @@ app.whenReady().then(() => {
   };
   if (settings) {
     // First paint alone can be an empty document with a missing entry module.
-    // Require the React surface too, or release the parent into native fallback.
     startupTimer = setTimeout(failSettings, 15000);
     startupTimer.unref();
     window.once('ready-to-show', () => {
@@ -456,7 +452,6 @@ app.whenReady().then(() => {
       settingsClosing = true;
       resetPreferences();
       clearTimeout(startupTimer);
-      // Failure is not user dismissal: Rust must be allowed to restore Storage.
       if (userDismissed) process.stdout.write(`${JSON.stringify({ action: 'close' })}\n`);
     });
     window.webContents.on('did-fail-load', failSettings);

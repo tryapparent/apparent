@@ -1,17 +1,3 @@
-//! Shared Connect Settings policy; native renderers only draw `View` and send `Command`.
-//!
-//! The parent gates construction/rendering with the default-on `connectSettings` flag.
-//! An explicit false hides the controls without changing upload consent. A Session
-//! owns one controller and routes emitted events back to that same controller on its UI
-//! thread. Call `refresh()` on Settings Tick for fresh **local-only** state; it never
-//! probes the network. `Check` alone starts a background health request. Call `close()`
-//! when the window closes (Drop also cancels); create a new controller on reopen.
-//!
-//! `receive()` authorizes the parent's existing upload worker exactly once, only for
-//! the current login after an authoritative local read verifies the committed state.
-//! It does not upload, scan old captures, create shares, write config, or open browsers.
-//! `command(OpenBrowser)` returns a URI only while its owning login is current. The
-//! Session must open it synchronously as that user action, not queue it for later.
 
 use std::sync::{
     Arc,
@@ -19,10 +5,6 @@ use std::sync::{
 };
 
 use serde::{Deserialize, Serialize};
-
-mod presentation;
-pub use presentation::{Presentation, Tone};
-pub(super) use presentation::sync_native;
 
 pub const CONNECT_SETTINGS: &str = "connectSettings";
 
@@ -40,37 +22,6 @@ pub enum Command {
     RequestDisable,
     RequestDisconnect,
     OpenSharedLinks,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Button {
-    pub command: Command,
-    pub title: String,
-    pub enabled: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct View {
-    #[serde(default)]
-    pub reusable_upload_grant: bool,
-    #[serde(default)]
-    pub encryption: Option<bool>,
-    #[serde(default)]
-    pub phase: String,
-    #[serde(default)]
-    pub local_ready: bool,
-    pub title: String,
-    pub status: String,
-    pub detail: String,
-    pub server: Option<String>,
-    pub verification_uri: Option<String>,
-    pub user_code: Option<String>,
-    pub buttons: Vec<Button>,
-    pub note: String,
-    #[serde(default)]
-    pub presentation: Presentation,
 }
 
 pub use apparent_connect_client::settings::{Approval, Health, SafeError, Snapshot, DEFAULT_SERVER};
@@ -192,8 +143,6 @@ pub struct Controller {
     retry_disable: Option<bool>,
     confirmation: Option<bool>,
     resume_failed: bool,
-    native_facts: Option<AccountFacts>,
-    native_retry: Option<std::time::Instant>,
 }
 
 impl Controller {
@@ -212,20 +161,8 @@ impl Controller {
             retry_disable: None,
             confirmation: None,
             resume_failed: false,
-            native_facts: None,
-            native_retry: None,
         };
         controller.refresh();
-        controller
-    }
-
-    /// Compatibility entry for the native Settings window. Electron owns its
-    /// opening check in TypeScript; this path remains until that pane is replaced.
-    pub fn open(backend: Arc<dyn Backend>, emit: Arc<dyn Fn(Event) + Send + Sync>) -> Self {
-        let mut controller = Self::new(backend, emit);
-        if controller.snapshot.as_ref().is_some_and(|snapshot| snapshot.connected) {
-            controller.command(Command::Check);
-        }
         controller
     }
 

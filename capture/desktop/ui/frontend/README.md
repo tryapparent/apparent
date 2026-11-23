@@ -289,7 +289,7 @@ Storage worker stays busy rather than spawning unbounded scans.
 The Rust Settings session owns navigation and the Electron child on Linux and
 macOS. Storage opens in the shared Electron window. Retired windows cannot
 send commands or close the current page. Closing Settings cancels the session.
-An Electron startup failure or crash on Storage opens native General.
+An Electron startup failure or crash closes Settings. Opening it again starts a new session.
 
 The shared Settings window supports a 640×530 minimum and follows the system
 theme. macOS centers after applying its inset titlebar and accepts the first
@@ -318,8 +318,7 @@ installer/release packages. Installed packages contain no development dashboard 
 synthetic examples. Node/npm are build prerequisites, not runtime dependencies.
 macOS stages and signs nested Electron code before the enclosing app is signed.
 Both platforms stage the same Storage renderer and compiled Record workflows.
-Remove the native fallback only after applicable native acceptance and a
-deliberate retirement of its recovery contract. The
+The
 [installed Linux Storage checks](../../../../record/storage/enablement/README.md)
 cover the real route, window continuity and provider behavior.
 
@@ -399,8 +398,8 @@ physical-device or performance acceptance.
 
 Settings and its socket ignore `experiments.electronCaptureLocation` for absent,
 true and false. Opening preserves config bytes. Saves preserve the key for
-rollback to older builds. Missing assets or a renderer exit open native General.
-Storage remains available in Electron on the next successful Settings launch.
+rollback to older builds. Reopen Settings after a child exit. Missing assets
+require repairing the installation.
 `npm start` is a developer harness.
 
 `readCaptureLocation()`, `changeCaptureLocation()` and `resetCaptureLocation()`

@@ -13,15 +13,64 @@
 //   apparent-helper sck-probe [--watch SECONDS]           can this process capture with ScreenCaptureKit (ScreenProbe.swift)
 //   apparent-helper permission-panel --permission P [--from X,Y,W,H]   drag-to-allow card (PermissionPanel.swift)
 //   apparent-helper onboarding [--shortcut L] [--render DIR]   the welcome window (Onboarding.swift)
-//   apparent-helper settings [--pane P] [--render DIR]         the Settings window (Settings.swift)
 //
 // Every timestamp in the output is integer milliseconds. Apparent drives the long-running
 // `mirror` command over stdin (`stop`, `cancel`) and reads its events from stdout.
 
 import AppKit
+import AVFoundation
 import Combine
 import CoreImage
 import Foundation
+
+final class MicMeter: NSObject, ObservableObject, AVCaptureAudioDataOutputSampleBufferDelegate {
+  @Published var level: Float = 0
+  private var device: String?
+  private var session: AVCaptureSession?
+  private var output: AVCaptureAudioDataOutput?
+  private var timer: Timer?
+  private let queue = DispatchQueue(label: "dev.kitlangton.apparent.helper.meter")
+  private static let floor: Float = -50
+  private static let release: Float = 0.035
+
+  func meter(_ id: String?) {
+    guard id != device else { return }
+    device = id
+    timer?.invalidate()
+    timer = nil
+    output = nil
+    if let old = session {
+      queue.async { old.stopRunning() }
+      session = nil
+    }
+    level = 0
+    guard let id, AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { return }
+    let session = AVCaptureSession()
+    let output = AVCaptureAudioDataOutput()
+    output.setSampleBufferDelegate(self, queue: queue)
+    self.session = session
+    self.output = output
+    queue.async {
+      guard let device = AVCaptureDevice(uniqueID: id), let input = try? AVCaptureDeviceInput(device: device) else { return }
+      session.beginConfiguration()
+      if session.canAddInput(input) { session.addInput(input) }
+      if session.canAddOutput(output) { session.addOutput(output) }
+      session.commitConfiguration()
+      session.startRunning()
+    }
+    timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in self?.tick() }
+  }
+
+  private func tick() {
+    let channels = output?.connections.first?.audioChannels ?? []
+    let db = channels.map(\.averagePowerLevel).max() ?? -160
+    let target = max(0, min(1, (db - Self.floor) / -Self.floor))
+    let next = target >= level ? target : max(target, level - Self.release)
+    if next != level { level = next }
+  }
+
+  func captureOutput(_: AVCaptureOutput, didOutput _: CMSampleBuffer, from _: AVCaptureConnection) {}
+}
 
 func renderQR(_ message: String) -> String? {
   guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
@@ -159,7 +208,7 @@ case "settings":
     withExtendedLifetime((meter, subscription)) { RunLoop.main.run() }
     exit(0)
   }
-  SettingsWindow.run(arguments: arguments)
+  fail("settings needs --input-level UID")
 case "qr":
   guard arguments.count >= 2, let qr = renderQR(arguments[1]) else {
     fail("qr needs a text argument")

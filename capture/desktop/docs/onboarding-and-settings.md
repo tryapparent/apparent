@@ -32,19 +32,13 @@ renderer slice restores the earlier presentation without migrating stored progre
 
 Opening Apparent from the macOS or Linux app picker opens Settings on About,
 including when the app is already running. The shared Electron Settings shell
-provides the sidebar to General, Recording, Storage, Permissions, Agents and Labs;
-panes without an accepted Electron replacement retain their native presentation.
-This launch slice reuses that presentation contract and its existing config writer;
-it does not add a second preferences writer. Missing Electron assets or a failed
-presentation retain the existing native Settings fallback. Removing that fallback
-still requires acceptance of the remaining panes on both platforms.
+provides the sidebar to General, Recording, Storage, Permissions, Agents and Labs.
+The session owns the existing config writer. If Electron exits unexpectedly,
+reopen Settings to start a fresh session. Repair the installation if its
+packaged assets are missing. See the [Settings routing and rollback contract](../../../composition/settings/README.md#installed-routes-and-recovery).
 
-On Linux, both the Electron Settings shell and retained native panes request a
-managed floating dialog at 720×530, including when navigation replaces the window.
-Tiling compositors can otherwise expand each replacement across the workspace,
-discarding a manually floated window's state. This is a window-manager hint, not
-an always-on-top overlay or a saved size preference; explicit compositor rules
-remain authoritative. Existing pane routing and native fallback are unchanged.
+On Linux, Settings requests a managed floating dialog at 720×530. Explicit
+compositor rules remain authoritative. Pane navigation retains the same window.
 
 Setup takes priority on an unfinished installation. Launching during selection,
 recording or processing leaves the capture unchanged and does not queue a recording.
@@ -138,14 +132,13 @@ candidate's status item in Light and Dark mode, in full-screen and normal window
 a live transition without restarting the app, and an
 open menu. An asset check or successful build alone is not that proof.
 
-Read this before changing `capture/desktop/settings/onboarding.rs`, `capture/desktop/settings/settings.rs`, `composition/command_line.rs` or the helper's `Onboarding.swift`, `PermissionPanel.swift` and `Settings.swift`.
+Read this before changing `capture/desktop/settings/onboarding.rs`, `capture/desktop/settings/settings.rs`, `composition/command_line.rs` or the helper's `Onboarding.swift` and `PermissionPanel.swift`.
 
 ## Technical error reporting
 
 General’s **Send technical error reports** defaults on.
 Electron General mirrors readback and toggles through the
-native parent bridge; Rust remains authoritative. Native Settings remains the
-missing-assets/startup/crash fallback.
+native parent bridge; Rust remains authoritative.
 `errorReporting: false` in `~/.config/apparent/config.json` disables it without a
 restart. Corrupt/unreadable config fails closed for reporting. The shared config
 writer preserves unrelated keys and rotates private `errorReportingGeneration`
@@ -357,7 +350,7 @@ unfinished, so it resumes on the next launch. `onboarding.shortcutChosen` and
 clears `resume` immediately. `onboarding.firstCaptureCompleted` separately tracks
 the guided capture lesson. Permission-repair windows retain their existing behavior.
 
-## Settings (`capture/desktop/settings/settings.rs`, `capture/desktop/native/Settings.swift`)
+## Settings (`composition/settings`)
 
 ### Labs
 
@@ -372,17 +365,13 @@ background. On Linux and macOS, Nemotron supplies the live text below the pill.
 Finish cancels the preview and Parakeet transcribes the saved audio with word
 timings. Recording can finish during model preparation. This experiment overrides
 the ordinary Apple live/pause worker for that recording;
-disabling restores the existing path on the next recording. Missing Electron
-assets leave an explicit unavailable message in native Labs, with other Settings
-pages still reachable. Record's policy/bridge contract is in
+disabling restores the existing path on the next recording. Record's policy/bridge contract is in
 `record/transcription/README.md`; native inference remains in Engine.
 
 ### Agents
 
 Agents and About share one live Electron window. Parent-admitted navigation changes
-the React pane and main-process capability checks without reloading the document;
-other panes retain the existing presentation replacement and fallback. Reverting
-this routing restores the previous child-per-pane path. No donor is removed.
+the React pane and main-process capability checks without reloading the document.
 The accepted design uses compact command-copy/help controls, Stock-off/Lilac-on
 switches, a wait cursor during acknowledged saves and shared ErrorDialog popups.
 Error actions are left aligned with recovery first and Close second. Unknown
@@ -400,11 +389,7 @@ command only after a successful main-process call; it never runs the command.
 The switch waits for persistence acknowledgement. Failed or uncertain writes
 offer Refresh preference before another edit. File edits appear on the existing
 Settings refresh and affect subsequent handoffs without restarting. Changing it
-does not interrupt recording. Missing assets, spawn failure or renderer loss restores
-the same native Agents page. Retain that fallback until installed navigation,
-clipboard, persistence and failure recovery are accepted on both platforms.
-Rollback reverts the paired routing and bridge; the existing config key and
-bundle readers remain compatible.
+does not interrupt recording.
 
 **Agents → Send recordings to T3 Code** is off by default. Only an explicit
 `experiments.t3DestinationPicker: true` enables it for subsequent recordings.
@@ -451,14 +436,9 @@ After building the frontend, run its `tests/settings/agents/smoke.ts`, `tests/se
 exercises the real writer with the built renderer; it is separate from installed
 desktop/compositor acceptance.
 
-Native sidebar Agents dispatches the same presentation navigation as About;
-opening Agents from General must reach the shared page, not merely its retained
-native fallback. Agents uses a resizable 920×600 default with a 640×530 minimum.
-Its brand scope retains the selected Host Grotesk tiers, five-color palette,
-216px sidebar, title rule, functional switches and inline command copying. At
-zoomed/narrow widths the same navigation becomes horizontally scrollable and
-content remains independently scrollable. Other panes retain their existing
-window and migration policy.
+Agents uses the shared sidebar and independently scrollable content. Its brand
+scope retains the selected Host Grotesk tiers, five-color palette, title rule,
+functional switches and inline command copying.
 
 ### Apparent Connect (experiment)
 
@@ -489,8 +469,8 @@ If a disable/disconnect could not finish because local state was busy, uploads
 remain blocked across restart. Use Disable uploads or Disconnect again to finish;
 do not delete the client's pending revocation files. Failed state writes are not
 presented as successful sign-out.
-Native renderers only display the shared controller's view and emit commands;
-raw errors, tokens and device secrets never enter its presentation contract.
+The Electron renderer receives bounded facts and emits commands. Raw errors,
+tokens and device secrets stay outside its presentation contract.
 
 Connect uses the accepted Paper card and the shared frog artwork, without a separate
 section heading. The invitation reads “Help others see what you mean.”; successful
@@ -502,8 +482,7 @@ it does not revoke or cancel anything. Confirmed commands retain the existing
 revocation and pending-login cancellation semantics. Shared-link management is
 available only through its existing feature gate and validated credential site.
 
-Rust supplies typed presentation and action placement to GPUI, SwiftUI and Electron;
-renderers do not infer success from status copy or browser approval. Success uses
+Electron uses typed facts from Rust for presentation and action placement. Success uses
 #146B43, progress #7A58C7, preventive caution #FFBE2E with Carbon, and failures and
 destructive actions #B42318. Each status has a label plus icon/bar; disabled controls
 use Carbon at 45%, while explanations stay readable. The source for the reused art
@@ -550,7 +529,7 @@ Recording without speech: `microphoneEnabled` in `~/.config/apparent/config.json
 
 Double-tap Shift for a note at the pointer. Hold Shift to draw. Enter/Attach saves, Shift+Enter inserts a newline, and empty Enter closes without saving or erasing a saved note. Escape or clicking outside closes while keeping a draft for this capture. The counter follows the recording capsule, opens the compact notes list, and counts only durable saves. Notes can be edited or deleted from the list. Finish waits for already submitted saves; a failed receipt retains recording assets for recovery. Drafts are not exported as note metadata or summary text. Linux display video includes the popup while visible, including text not yet attached. This notes surface uses Electron by default; the existing capture controls and platform input adapters remain in use. Packaging includes its runtime. Removing this routing requires restoring an accepted notes surface, not silently dropping typed feedback. See the frontend README for routing and native acceptance gates.
 
-Recording › Microphone (`capture/engine/runtime/audio/mic.rs`): `"microphone": {"id","name"}` holds an input id in `~/.config/apparent/config.json`; the name only labels a missing device. Absent = System default. Mac uses CoreAudio UIDs (also `AVCaptureDevice.uniqueID`). Linux with a PulseAudio-compatible server (including PipeWire) and `pactl` lists source names as `pulse:<name>`; `capture/desktop/linux/microphone.rs` opens the chosen source with GStreamer's `pulsesrc`, converting it to 16 kHz mono samples for the same capture buffer and Settings meter. A new capture waits for its first sample before accepting the source; a disconnected or unopenable choice falls back to the Pulse default shown in Settings, then to CPAL only if that default cannot open. It never changes the system default. Linux without a working Pulse server / `pactl` falls back to CPAL's available inputs; this may expose only the shared `default` or `pipewire` device, so distinct microphones cannot be selected there. Windows is unsupported; retained code is not a parity target. `mic::Watch` re-lists inputs while Settings is open: CoreAudio listeners on Mac, one-second checks elsewhere. `AudioRecorder` opens the chosen input on its worker thread, otherwise the current system default; a disconnected or unopenable choice remains saved but does not stop a new capture (`mic::Pick` explains the fallback in Settings and `note_pick` logs once). An error partway through a capture keeps samples heard so far. Mac's helper `MicMeter` uses AVCaptureSession; Linux GPUI Settings starts a separate input stream, stops it when leaving Recording, and expires stale level readings after 300 ms. The meter shows input samples, not recognized words or speaker identity; #16 owns no-transcript messaging. `apparent mic list|set <id|default>|watch` reports and changes the same saved selection.
+Recording › Microphone (`capture/engine/runtime/audio/mic.rs`): `"microphone": {"id","name"}` holds an input id in `~/.config/apparent/config.json`; the name only labels a missing device. Absent = System default. Mac uses CoreAudio UIDs (also `AVCaptureDevice.uniqueID`). Linux with a PulseAudio-compatible server (including PipeWire) and `pactl` lists source names as `pulse:<name>`; `capture/desktop/linux/microphone.rs` opens the chosen source with GStreamer's `pulsesrc`, converting it to 16 kHz mono samples for the same capture buffer and Settings meter. A new capture waits for its first sample before accepting the source; a disconnected or unopenable choice falls back to the Pulse default shown in Settings, then to CPAL only if that default cannot open. It never changes the system default. Linux without a working Pulse server / `pactl` falls back to CPAL's available inputs; this may expose only the shared `default` or `pipewire` device, so distinct microphones cannot be selected there. Windows is unsupported; retained code is not a parity target. `mic::Watch` re-lists inputs while Settings is open: CoreAudio listeners on Mac, one-second checks elsewhere. `AudioRecorder` opens the chosen input on its worker thread, otherwise the current system default; a disconnected or unopenable choice remains saved but does not stop a new capture (`mic::Pick` explains the fallback in Settings and `note_pick` logs once). An error partway through a capture keeps samples heard so far. Mac's helper `MicMeter` uses AVCaptureSession; the Linux adapter starts a separate input stream, stops it when leaving Recording, and expires stale level readings after 300 ms. The meter shows input samples, not recognized words or speaker identity; #16 owns no-transcript messaging. `apparent mic list|set <id|default>|watch` reports and changes the same saved selection.
 
 Storage uses the Record pane in the shared Electron Settings window. Change…
 opens the platform folder picker and Reset removes `capturesDir` through the
@@ -560,37 +539,21 @@ falls back to the built-in one. Existing captures stay in their original folders
 Age-based cleanup and transcript workers keep their startup folder. Size-based
 cleanup reads the effective folder and limit on each pass.
 
-Settings ignores the legacy `experiments.electronCaptureLocation` value. If
-Storage cannot start or Electron exits unexpectedly, Settings opens native
-General. Reopen Settings to retry Electron after restoring the packaged app.
+Settings ignores the legacy `experiments.electronCaptureLocation` value.
 See the [Storage contract](../ui/frontend/README.md#storage-retention-and-usage-291).
 
 Recording › Language shows under Transcription while it's Apple Speech: Automatic, then the helper's supported `locales` by name. It writes `appleLocale` (Automatic removes the key) and returns `Effect::SpeechModel`, which restarts the model check for the new language (see `capture/engine/docs/keyframes-and-text.md`).
 
-The sidebar is the helper's alone: a row selects on mouse-down and its pane replaces the last on the next frame, with no transition (keep it that way; a fade read as lag; the level meter starts after the Recording pane has drawn). Rust's `state` never carries the pane (only `show` does, when Settings is opened again), so a reply can't move the selection.
-
 The Electron Settings shell waits for a committed React surface, initial paint
 readiness and a hidden compositor snapshot before showing its window. The
-TypeScript Desktop adapter discards that snapshot in memory; it is never saved
-or sent. Startup still has the existing 15-second deadline and falls back to the
-native Settings if presentation fails.
-
-About shows the package version and the running binary's build-time commit, for example `Version 0.3.13 · ad8d4b1`. Tracked local edits add `+modified`; builds without Git metadata or a valid CI revision say `build unknown`. This identifies the compiled build, not the selected update channel or an update staged for the next launch. Both the Mac helper and Linux GPUI Settings use the same label.
-
-About has a Star on GitHub button below the update control. Its heading, action and caption share one box in the Mac helper and Linux GPUI Settings. It opens `https://github.com/tryapparent/apparent` in the browser; starring remains the user's choice on GitHub.
-
-Settings follows system light or dark appearance without storing a preference. The Mac helper resolves the SwiftUI theme from its environment and the titlebar background from a dynamic AppKit color; an open window updates when macOS appearance changes. Linux reads the desktop portal before opening, then watches its color-scheme revision and repaints the open GPUI window. Hovered buttons and menu items use black on light lilac (`#c4a9e6`) in light mode, and cream on dark lilac (`#302442`) in dark mode; the selected sidebar always has cream text. The Linux update result panel also follows the palette, including its secondary actions.
-
+TypeScript Desktop adapter discards that snapshot in memory. Startup has a
+15-second deadline.
 
 Settings › About includes a **Copy version** button that copies the displayed version
 and Git SHA as plain text (for example, `Apparent 0.3.13 · 6885bac`). The Electron
 version text can also be selected. Copying does not send anything.
 Unsupported installations show **Updates unavailable**, with installation guidance,
 rather than a disabled check action that could be mistaken for ongoing work.
-The installed Electron About presentation and Linux native fallback use the same
-parent version and update availability; routing and fallback remain unchanged.
-The Mac legacy fallback retains its existing presentation until packaged Electron
-About is accepted on both platforms.
 
 On Linux, Electron Settings › About uses **Release channel** to choose the source
 for **Install latest release**. Installing may replace the running version with an
@@ -599,8 +562,7 @@ measured download progress. **Restart now** launches the staged AppImage and
 reopens About. You can leave Settings and restart later. The restart action
 remains available after reopening About and changing the channel,
 while the native status reports a staged image. The channel choice applies to
-the next install. The native fallback retains its compact result dialog. On
-macOS, **Check for updates** opens the Sparkle-managed update flow.
+the next install. On macOS, **Check for updates** opens the Sparkle-managed update flow.
 
 Restart admission uses the shared coordinator's `capture_busy()` decision, including admitted
 captures and detached finalizers whose capsule was dismissed. Settings/onboarding relaunches,
@@ -632,7 +594,7 @@ Agents › Command-line tool (`composition/command_line.rs`) links the app's own
 
 Agents › Ask for a Apparent video on complex changes toggles `"experiments": {"agentDemoVideo": true|false}`. Absent is on; set it to false to disable. Settings preserves other experiment flags and config keys; the next copy or paste reads the file without a restart. It adds a conditional request to the copied/pasted agent prompt, not the archived `summary.md`; automatic session delivery has been removed. The agent should only demonstrate a result it can actually see and report if recording is unavailable.
 
-Render every pane (dark, light, each shortcut state: held, listening, partial, refused, accepted, custom; microphone chosen/missing/not allowed) with `apparent-helper settings --render DIR`, and one take on the shortcuts as 60 fps PNGs for a video with `--render DIR --shortcut-clip [--light]`; test with `cargo test settings::`.
+Inspect the installed Electron Settings in light and dark appearance. Exercise the shortcut editor and microphone states on their owning platforms. Run the Settings Electron smoke suite and `cargo test settings::`.
 
 ## Lower other audio while recording (`capture/desktop/playback.rs`, `capture/engine/native/PlaybackVolume.swift`)
 
@@ -868,9 +830,7 @@ Connect uses the existing same-user socket controller, shared TypeScript consent
 admission/session hook and native credential transport. TypeScript owns its stage
 copy, progress and browser-open ownership/recovery. Browser errors retain the
 approval card and offer an explicit retry; polling never launches another browser.
-Missing assets and startup/renderer failure preserve the native fallback.
-Rollback reverts default General routing together with its initial-pane normalization;
-the native donor stays packaged and usable. Native capture does not depend on the renderer's polling.
+Native capture does not depend on the renderer's polling.
 
 Enable uploads is explicit local consent. TypeScript chooses resume only from the
 native upload-specific reusable-grant receipt; generic sign-in and account initials
@@ -885,12 +845,6 @@ Encryption copy consumes the native config provider's typed mode projection thro
 the Settings socket and restricted IPC. False or unavailable mode never claims
 E2EE. This describes new private captures only; ordinary local originals and older
 uploads are unchanged. Optional upload details retain the separate reader approval.
-
-Donor removal requires installed macOS and
-isolated Linux acceptance, packaged fallback/navigation proof, and shortcut/OS
-registration checks (including macOS reserved chords and Linux desktop-owned
-Copilot). The renderer candidate's shared letter/number recorder is not proof of
-those platform effects. Keep the native donor until these gates are satisfied.
 
 General follows [shared content-card actions](../../../shared/ui/actions.md):
 recommended actions lead adjacent alternatives, with Privacy/Details after them

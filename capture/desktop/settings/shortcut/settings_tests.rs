@@ -1381,10 +1381,8 @@ mod general_routing_tests {
     #[test]
     fn default_general_preserves_explicit_app_launch_and_navigation_panes() {
         assert_eq!(initial_settings_pane(None), Some(Pane::General));
-        assert!(electron_general(initial_settings_pane(None)));
         for pane in [Pane::General, Pane::Recording, Pane::Storage, Pane::Permissions, Pane::Agents, Pane::Labs, Pane::About] {
             assert_eq!(initial_settings_pane(Some(pane)), Some(pane));
-            assert_eq!(electron_general(Some(pane)), pane == Pane::General);
         }
     }
 }
