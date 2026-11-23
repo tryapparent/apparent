@@ -3,7 +3,6 @@ import test from 'node:test';
 import {build} from 'esbuild';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
-import os from 'node:os';
 import {randomBytes} from 'node:crypto';
 import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
@@ -13,6 +12,8 @@ import {fixture,digest} from '../helpers.mjs';
 import {initEndpoint,acceptEndpoint,nextEndpoint,fetchEndpoint,revokeEndpoint,cancelEndpoint} from '../../../client/typescript/dist/mcp-endpoint.js';
 import {generateAgeIdentity,encryptAge,encodeArchive,signEnvelope} from '../../../client/typescript/dist/index.js';
 import {getPublicKeyAsync} from '../../../client/typescript/node_modules/@noble/ed25519/index.js';
+import {clientFixture} from './client-imports.ts';
+import {makeMcpScratch,verifyClientIsolation} from './client-fixture.ts';
 
 async function rpc(f:any,name:string,args:unknown) {
   const r=await f.call('/mcp',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json, text/event-stream'},
@@ -82,9 +83,10 @@ async function upload(f:any,account:any,uploader:any,reader:any,captureId:string
 
 // Model-free host bridge: only opaque requests and progress leave the reader;
 // complete, recording-sized MCP replies go directly into its stdin.
-async function pipeTransfer(t:test.TestContext,f:any,directory:string,id:string,out:string,inspection:boolean,files?:string[]) {
+async function pipeTransfer(t:test.TestContext,f:Awaited<ReturnType<typeof fixture>>,directory:string,id:string,out:string,inspection:boolean,files?:string[],client=clientFixture) {
   const started=performance.now();
-  const child=spawn(process.execPath,['--experimental-strip-types','--import',fileURLToPath(new URL('./no-network.ts',import.meta.url)),fileURLToPath(new URL('../../../client/typescript/dist/mcp-cli.js',import.meta.url)),'run','--state',directory,'--id',id,'--out',out,'--mode',files?'files':inspection?'inspection':'bundle',...(files?.flatMap(name=>['--file',name])??[])],{stdio:['pipe','pipe','pipe']});
+  const clientCli=fileURLToPath(new URL('dist/mcp-cli.js',client));
+  const child=spawn(process.execPath,['--experimental-strip-types','--import',fileURLToPath(new URL('./no-network.ts',import.meta.url)),clientCli,'run','--state',directory,'--id',id,'--out',out,'--mode',files?'files':inspection?'inspection':'bundle',...(files?.flatMap(name=>['--file',name])??[])],{stdio:['pipe','pipe','pipe']});
   t.after(()=>{if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');});
   let stderr='';child.stderr.on('data',chunk=>{stderr+=chunk;});
   const exited=new Promise<number|null>((resolve,reject)=>{child.once('error',reject);child.once('close',resolve);});
@@ -114,7 +116,7 @@ async function pipeTransfer(t:test.TestContext,f:any,directory:string,id:string,
 }
 
 for(const grouped of [false,true])test(`recording-sized ${grouped?'grouped':'legacy'} transfer: 33 MiB via lossless CLI pipe, with images first when independently encrypted`,async t=>{
-  const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'apparent-dev-mcp-large-'));await fs.chmod(root,0o700);
+  const root=await makeMcpScratch('large');
   const f=await fixture();try {
     const account=await f.identity('mcp-large-'+grouped),directory=path.join(root,'reader');
     const reader=await endpoint(f,account,directory),uploader=await sender(f,account),id='9'.repeat(32);
@@ -139,7 +141,7 @@ for(const grouped of [false,true])test(`recording-sized ${grouped?'grouped':'leg
 });
 
 test('real Worker relay: browser read approval, ciphertext ranges, offline decryption, final authorization and revocation',async()=>{
-  const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'apparent-dev-mcp-roundtrip-'));await fs.chmod(root,0o700);
+  const root=await makeMcpScratch('roundtrip');
   const f=await fixture();try {
     const account=await f.identity('mcp-roundtrip'),directory=path.join(root,'reader');
     const reader=await endpoint(f,account,directory),uploader=await sender(f,account);
@@ -166,7 +168,7 @@ test('real Worker relay: browser read approval, ciphertext ranges, offline decry
 });
 
 test('deployed grouped layout relays both streams and preserves notes, frames and media in one verified output',async()=>{
-  const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'apparent-dev-mcp-grouped-'));await fs.chmod(root,0o700);
+  const root=await makeMcpScratch('grouped');
   const f=await fixture();try {
     const account=await f.identity('mcp-grouped'),directory=path.join(root,'reader');
     const reader=await endpoint(f,account,directory),uploader=await sender(f,account),id='1'.repeat(32);
@@ -179,7 +181,7 @@ test('deployed grouped layout relays both streams and preserves notes, frames an
 });
 
 test('decrypted archive paths are validated before publication and never escape staging',async()=>{
-  const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'apparent-dev-mcp-malicious-'));await fs.chmod(root,0o700);
+  const root=await makeMcpScratch('malicious');
   const f=await fixture();try {
     const account=await f.identity('mcp-malicious'),directory=path.join(root,'reader');
     const reader=await endpoint(f,account,directory),uploader=await sender(f,account),id='b'.repeat(32);
@@ -217,7 +219,7 @@ test('sealed channel rejects upload authority, other accounts, plaintext capture
 });
 
 test('range negotiation preserves old readers and rejects invalid or oversized requests',async()=>{
-  const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'apparent-dev-mcp-ranges-'));await fs.chmod(root,0o700);
+  const root=await makeMcpScratch('ranges');
   const f=await fixture();try {
     const account=await f.identity('mcp-ranges'),directory=path.join(root,'reader');
     const reader=await endpoint(f,account,directory),uploader=await sender(f,account),id='8'.repeat(32);
@@ -242,7 +244,7 @@ test('range negotiation preserves old readers and rejects invalid or oversized r
 });
 
 for(const inspection of [false,true])test(`${inspection?'inspection':'full'} sender revocation after local decryption prevents publication; cancel removes only the staged transfer`,async()=>{
-  const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'apparent-dev-mcp-revoked-'));await fs.chmod(root,0o700);
+  const root=await makeMcpScratch('revoked');
   const f=await fixture();try {
     const account=await f.identity('mcp-revoked'),directory=path.join(root,'reader');
     const reader=await endpoint(f,account,directory),uploader=await sender(f,account),id='f'.repeat(32);
@@ -264,7 +266,7 @@ for(const inspection of [false,true])test(`${inspection?'inspection':'full'} sen
 });
 
 test('waitlisted readers receive eligibility guidance rather than credentials or a false approval',async()=>{
-  const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'apparent-dev-mcp-waitlist-'));await fs.chmod(root,0o700);
+  const root=await makeMcpScratch('waitlist');
   const f=await fixture();try {
     const account=await f.identity('mcp-waitlist','waitlist'),directory=path.join(root,'reader');
     const opening=await initEndpoint(directory,'https://api.example');
@@ -285,7 +287,7 @@ test('waitlisted readers receive eligibility guidance rather than credentials or
 test('v2 MCP selectively retrieves transcript and image; listing and extraction never read video',async t=>{
   const {signedFileBytes}=await import('../../../client/typescript/dist/transfer/contract.js');
   const {signAsync}=await import('../../../client/typescript/node_modules/@noble/ed25519/index.js');
-  const root=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'apparent-dev-mcp-files-'));await fs.chmod(root,0o700);
+  const root=await makeMcpScratch('files');
   const observed=await build({stdin:{resolveDir:process.cwd(),contents:`
    import worker from './src/worker.ts';const gets=[];
    export default {fetch(request,env,context){
@@ -318,7 +320,9 @@ test('v2 MCP selectively retrieves transcript and image; listing and extraction 
     const listing=await drive(await fetchEndpoint(directory,id,path.join(root,'unused'),{listOnly:true}));
     assert.equal(listing.state,'listed');assert.equal(listing.files.length,4);
     assert.deepEqual((await reads()).slice(before).sort(),[...descriptors].sort(),'listing reads only envelope and encrypted index');
-    const out=path.join(root,'evidence'),extracted=(await pipeTransfer(t,f,directory,id,out,false,['apparent.json','contact-sheet.png'])).terminal;
+    const out=path.join(root,'evidence'), selection=['apparent.json','contact-sheet.png'];
+    const {terminal:extracted}=await verifyClientIsolation(t,clientFixture,client =>
+      pipeTransfer(t,f,directory,id,out,false,selection,client));
     assert.equal(extracted.state,'ready');assert.equal(extracted.completeBundle,false);assert.equal(extracted.bundle,undefined);
     assert.deepEqual((await reads()).slice(before+2).sort(),[...descriptors,...objects(['apparent.json','contact-sheet.png'])].sort(),'extraction reads exactly the descriptors and requested files');
     for(const name of ['apparent.json','contact-sheet.png'])assert.deepEqual(await fs.readFile(path.join(out,name)),original.get(name));
