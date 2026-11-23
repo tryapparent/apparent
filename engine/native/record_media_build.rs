@@ -6,7 +6,7 @@ pub(crate) fn compile_record_media() {
         generator,
         "record/enablement/ci/bend/modules.json",
         "record/media/src/assembly-policy.ts",
-        "record/media/src/assembly/frame-limits.bend",
+        "record/media/src/assembly",
         "record/media/src/frames-policy.ts",
         "record/media/src/selection",
         "record/media/src/transcript",

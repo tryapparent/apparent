@@ -1549,30 +1549,6 @@ pub fn compute(input: &Input, settings: &Settings) -> Vec<Crop> {
     out
 }
 
-/// The summary's name for what the capture was cropped to (no window titles).
-pub fn label(crops: &[Crop]) -> Option<String> {
-    let cropped: Vec<&Crop> = crops.iter().filter(|c| c.kind != CropKind::Full).collect();
-    if cropped.is_empty() {
-        return None;
-    }
-    let mut apps: Vec<&str> = Vec::new();
-    for c in &cropped {
-        for a in &c.apps {
-            if !apps.contains(&a.as_str()) {
-                apps.push(a);
-            }
-        }
-    }
-    let focus = cropped
-        .iter()
-        .all(|c| matches!(c.kind, CropKind::Focus | CropKind::Activity));
-    Some(match (apps.is_empty(), focus) {
-        (true, _) => "the activity".to_owned(),
-        (false, true) => format!("the activity in {}", apps.join(" + ")),
-        (false, false) => apps.join(" + "),
-    })
-}
-
 // ---------------------------------------------------------------------------------------------
 // Applying a crop
 // ---------------------------------------------------------------------------------------------
@@ -1823,12 +1799,10 @@ pub fn annotate_and_crop(
                 compute(&input, settings)
             }))
             .ok()?;
-            crops
-                .iter()
-                .any(|c| c.kind != CropKind::Full)
-                .then_some((crops, changes))
+            let publication = crate::composition::screen_frames::crop_publication(&crops)?;
+            Some((crops, changes, publication))
         });
-    let Some((crops, changes)) = plan else {
+    let Some((crops, changes, publication)) = plan else {
         let frames = std::thread::scope(|scope| {
             let workers: Vec<_> = selected
                 .into_iter()
@@ -1850,10 +1824,10 @@ pub fn annotate_and_crop(
     let results: Vec<_> = std::thread::scope(|scope| {
         let workers: Vec<_> = selected
             .into_iter()
-            .zip(&crops)
-            .map(|((kf, mut raw), crop)| {
+            .zip(crops.iter().zip(&publication.regions))
+            .map(|((kf, mut raw), (crop, &region))| {
                 scope.spawn(move || {
-                    let out = if crop.kind == CropKind::Full {
+                    let out = if !region {
                         annotate_keyframe_marks_in_place(&mut raw, &kf, strokes, marks, events, replay_ink);
                         raw.clone()
                     } else {
@@ -1893,7 +1867,7 @@ pub fn annotate_and_crop(
         full.push(full_pair);
     }
     let info = crate::shared::model::AutocropInfo {
-        label: label(&crops).unwrap_or_else(|| "the activity".into()),
+        label: publication.label,
         full_frames: "frames-full".into(),
         full_contact_sheet: "contact-sheet-full.png".into(),
         crops: infos,
@@ -1936,6 +1910,7 @@ pub fn write_full_frames(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::composition::screen_frames::crop_publication;
     use crate::shared::model::{CaptureMode, KeyframeReason, TargetInfo};
     use crate::shared::windows::WindowEntry;
 
@@ -2272,7 +2247,7 @@ mod tests {
         let crops = compute(&input, &Settings::default());
         assert_eq!(crops[0].kind, CropKind::Window);
         assert_eq!(crops[0].apps, ["Browser"]);
-        assert_eq!(label(&crops).as_deref(), Some("Browser"));
+        assert_eq!(crop_publication(&crops).unwrap().label, "Browser");
     }
 
     #[test]
@@ -2298,7 +2273,7 @@ mod tests {
         };
         let crops = compute(&input, &settings);
         assert!(crops[0].apps.is_empty(), "{crops:?}");
-        assert_eq!(label(&crops).as_deref(), Some("the activity"));
+        assert_eq!(crop_publication(&crops).unwrap().label, "the activity");
     }
 
     #[test]
