@@ -117,6 +117,7 @@ await Promise.all([
   stageFile(model, "model"),
   stageFile(model + ".verified.json", "receipt"),
   source("record/enablement/performance/guest.ts"),
+  source("record/enablement/performance/fixture-clock.ts"),
   stageFile(join(kit, "sample.ts"), "sample.ts"),
   stageFile(
     join(repo, "capture/desktop/scripts/linux/gui/capture-smoke.py"),
