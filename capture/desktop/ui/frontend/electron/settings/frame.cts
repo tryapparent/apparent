@@ -31,15 +31,16 @@ export function initialSettingsPane(args: string[]) {
   if (args.includes('--settings-storage')) return destinations.find(pane => args.includes(`--settings-${pane}`));
 }
 
-export function settingsWindowOptions(platform: string, agents = false) {
+export function settingsWindowOptions(platform: string) {
   return {
-    width: agents ? 920 : 720, height: agents ? 600 : 530, minWidth: 640, minHeight: 530,
+    width: 740, height: 580, useContentSize: true,
+    resizable: false, maximizable: false, fullscreenable: false,
     ...(platform === 'linux' ? {
       // A normal XWayland window is tiled, even when given initial bounds.
-      type: 'dialog' as const, resizable: true, maximizable: true, fullscreenable: true,
+      type: 'dialog' as const,
     } : {}),
     ...(platform === 'darwin' ? {
-      titleBarStyle: 'hiddenInset' as const, resizable: true, fullscreenable: true,
+      titleBarStyle: 'hiddenInset' as const,
       acceptFirstMouse: true,
     } : {}),
   };
