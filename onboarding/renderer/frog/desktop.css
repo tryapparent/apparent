@@ -1,0 +1,146 @@
+@font-face {
+  font-family: Host Grotesk;
+  src: url("host-grotesk.ttf");
+  font-display: swap;
+}
+:root {
+  color-scheme: light dark;
+  font:
+    13px "Host Grotesk",
+    system-ui,
+    sans-serif;
+}
+body {
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+}
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+button:focus-visible {
+  outline: 2px solid #a281ee;
+  outline-offset: 2px;
+}
+.desktop-frog {
+  position: relative;
+  width: 148px;
+  height: 94px;
+}
+.desktop-frog-pet {
+  position: absolute;
+  inset: 22px 32px auto;
+  width: 84px;
+  height: 64px;
+  padding: 0;
+  border: 0;
+  border-radius: 30%;
+  background: none;
+  cursor: grab;
+  touch-action: none;
+}
+.desktop-frog[data-dragging] .desktop-frog-pet {
+  cursor: grabbing;
+}
+.desktop-frog-pet canvas {
+  pointer-events: none;
+  position: absolute;
+  width: 84px;
+  inset: 0;
+  image-rendering: pixelated;
+}
+.desktop-frog-lily {
+  position: absolute;
+  pointer-events: none;
+  width: 49px;
+  left: 49.5px;
+  top: 63px;
+  image-rendering: pixelated;
+}
+.desktop-frog[data-dragging] .desktop-frog-lily {
+  animation: pad-fold 130ms ease-in forwards;
+}
+@keyframes pad-fold {
+  to {
+    opacity: 0;
+    scale: 0.35 0.15;
+  }
+}
+.desktop-frog-record {
+  position: absolute;
+  top: 28px;
+  right: 8px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  opacity: 0;
+  pointer-events: none;
+}
+.desktop-frog:not([data-dragging]):has(
+    .desktop-frog-pet:hover,
+    .desktop-frog-record:hover
+  )
+  .desktop-frog-record,
+.desktop-frog-pet:focus-visible ~ .desktop-frog-record,
+.desktop-frog-record:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.desktop-frog-dot {
+  display: block;
+  width: 11px;
+  height: 11px;
+  border-radius: 100%;
+  background: #c64250;
+  box-shadow: 0 0 0 1px #f5f0e8;
+}
+.desktop-frog-tip {
+  position: absolute;
+  top: -21px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+  visibility: hidden;
+  pointer-events: none;
+  color: light-dark(#201c24, #f5f0e8);
+  text-shadow:
+    0 0 3px light-dark(#f5f0e8, #201c24),
+    0 0 5px light-dark(#f5f0e8, #201c24);
+}
+.desktop-frog-record:hover .desktop-frog-tip,
+.desktop-frog-record:focus-visible .desktop-frog-tip {
+  visibility: visible;
+}
+.desktop-frog-tip strong {
+  background: light-dark(#d4c4eb, #5c4183);
+  padding-inline: 2px;
+}
+.desktop-frog-tip kbd {
+  font: inherit;
+  padding-inline: 3px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  background: light-dark(#f5f0e8, #201c24);
+}
+.desktop-frog-flight canvas {
+  position: absolute;
+  inset: 0 auto auto 0;
+  translate: -50% -50%;
+  image-rendering: pixelated;
+}
+@media (prefers-reduced-motion: reduce) {
+  .desktop-frog[data-dragging] .desktop-frog-lily {
+    animation: none;
+    opacity: 0;
+  }
+}

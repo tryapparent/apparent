@@ -730,6 +730,10 @@ pub struct Progress {
     /// A shortcut-started practice recording produced a completed local capture.
     #[serde(default)]
     pub first_capture_completed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frog_name: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub frog_adopted: bool,
 }
 
 impl Progress {
@@ -820,8 +824,8 @@ impl Progress {
     /// Replace only this schema's leaves through the shared durable writer.
     /// Future onboarding fields and unrelated config retain their exact values.
     pub fn save_to(&self, path: &Path) -> anyhow::Result<()> {
-        const KEYS: [&str; 11] = ["tourRevision", "seen", "deferred", "resume", "granted", "relaunchedAt",
-            "reopenFix", "tutorial", "shortcutChosen", "shortcutTestedFor", "firstCaptureCompleted"];
+        const KEYS: [&str; 13] = ["tourRevision", "seen", "deferred", "resume", "granted", "relaunchedAt",
+            "reopenFix", "tutorial", "shortcutChosen", "shortcutTestedFor", "firstCaptureCompleted", "frogName", "frogAdopted"];
         let value = serde_json::to_value(self)?;
         crate::shared::handoff::update_config_in(path, |config| {
             let root = config.as_object_mut().ok_or_else(|| anyhow::anyhow!("Invalid config"))?;
@@ -897,6 +901,9 @@ pub(crate) fn prepare_launch(grants: &Grants, missing: &[Permission]) -> Option<
 enum Launch { Quiet, Tour, Repair }
 
 include!(concat!(env!("OUT_DIR"), "/onboarding_entry_policy.rs"));
+pub(in crate::capture::desktop) mod frog_policy {
+    include!(concat!(env!("OUT_DIR"), "/desktop-frog.rs"));
+}
 
 pub fn launch_plan(progress: &Progress, grants: &Grants, offer_tour: bool, missing: &[Permission]) -> Option<Flow> {
     match launch_intent(progress.seen, progress.deferred, progress.reopen_fix, offer_tour) {
@@ -915,6 +922,8 @@ pub fn launch_plan(progress: &Progress, grants: &Grants, offer_tour: bool, missi
 #[derive(Clone, Debug)]
 pub enum Event {
     Practice(serde_json::Value),
+    FrogName(String),
+    FrogTakeoff([f64; 3]),
     /// Grants read at launch, to decide whether onboarding opens (`launch_plan`).
     Launch(Grants),
     Grants(Grants),
@@ -990,6 +999,11 @@ pub struct Session {
     saved_shortcut_chosen: bool,
     saved_shortcut_tested_for: Option<String>,
     saved_first_capture_completed: bool,
+    frog_enabled: bool,
+    frog_revealed: bool,
+    frog_name: Option<String>,
+    frog_error: bool,
+    frog_takeoff: Option<[f64; 3]>,
     clock: std::time::Instant,
     practice: Option<super::practice::Practice>,
     anchor: Option<[f32;4]>,
@@ -1072,44 +1086,7 @@ pub use crate::permission_relaunch::relaunch;
 
 include!("onboarding/tests.rs");
 
-/// Runs on the transport reader, never on the GUI thread. Missing native evidence rejects.
-#[cfg(target_os = "macos")]
-fn native_shortcut_reserved(key: u32, modifiers: u32) -> bool {
-    use std::{process::Command, time::Duration};
-    // Fn is observed without suppressing it; any macOS Fn/Globe action remains active too.
-    if matches!(key, crate::capture::engine::runtime::MACOS_FN_KEY_CODE | 58 | 61) && modifiers == 0 { return false; }
-    if key > 127 || modifiers & !0x1b00 != 0 { return true; }
-    let Ok(path) = crate::capture::desktop::helper::path() else { return true; };
-    let mut command = Command::new(path);
-    command.args(["onboarding", "--validate-shortcut", &key.to_string(), &modifiers.to_string()]);
-    query_shortcut_reservation(&mut command, Duration::from_secs(2))
-}
-
-#[cfg(any(target_os = "macos", test))]
-fn query_shortcut_reservation(command: &mut std::process::Command, timeout: std::time::Duration) -> bool {
-    use std::{io::Read, process::Stdio, time::{Duration, Instant}};
-    let Ok(mut child) = command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn() else { return true; };
-    let stdout = child.stdout.take();
-    let mut child = crate::capture::ui_process::UiChild::new(child);
-    let deadline = Instant::now() + timeout;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) if status.success() => break,
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
-            _ => { let _ = child.kill(); let _ = child.wait(); return true; }
-        }
-    }
-    let mut bytes = Vec::new();
-    let Some(stdout) = stdout else { return true; };
-    if stdout.take(33).read_to_end(&mut bytes).is_err() { return true; }
-    shortcut_reservation_projection(&bytes)
-}
-
-#[cfg(any(target_os = "macos", test))]
-fn shortcut_reservation_projection(bytes: &[u8]) -> bool {
-    if bytes.len() > 32 { return true; }
-    serde_json::from_slice::<bool>(bytes).unwrap_or(true)
-}
+include!(concat!(env!("CARGO_MANIFEST_DIR"), "/engine/native/input/shortcut_reservation.rs"));
 
 #[test]
 fn shortcut_native_projection_fails_closed() {

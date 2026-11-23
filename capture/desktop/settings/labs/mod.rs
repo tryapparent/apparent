@@ -50,6 +50,7 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
         "silentPromptSaved": saved("silentPrompt"),
         "pillDoodlesSaved": normalized(crate::capture::desktop::ui::electron_pill::PILL_DOODLES),
         "dictationFrogSaved": saved("dictationFrog"),
+        "desktopFrogSaved": saved("desktopFrog"),
     })
 }
 pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
@@ -64,6 +65,7 @@ pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
         Some("wisprFlow") => Some(("onboardingWisprFlow", cfg!(target_os = "macos"))),
         Some("silentPrompt") => Some(("silentPrompt", true)),
         Some(name) if name == crate::capture::desktop::ui::electron_pill::PILL_DOODLES => Some((crate::capture::desktop::ui::electron_pill::PILL_DOODLES, true)),
+        Some("desktopFrog") => Some(("desktopFrog", cfg!(target_os = "macos"))),
         Some("dictationFrog") => Some(("dictationFrog", cfg!(target_os = "macos"))),
         _ => None,
     }

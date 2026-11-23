@@ -63,6 +63,7 @@ export default defineConfig({
     await build({ entryPoints: ['electron/onboarding/wispr.ts'],
       bundle: true, platform: 'node', format: 'cjs', outfile: 'dist/onboarding-wispr.cjs' });
     cpSync('../../../../composition/onboarding/dist/frog-nudge', 'dist/frog-nudge', { recursive: true });
+    cpSync('../../../../composition/onboarding/dist/desktop-frog', 'dist/desktop-frog', { recursive: true });
   }}, {
     name: 'desktop-reporting-policy',
     apply: 'build',
