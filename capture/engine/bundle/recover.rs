@@ -115,7 +115,6 @@ pub fn abandon_start(dir: &Path, stop_producers: impl FnOnce()) -> Result<()> {
     delete_cancelled(dir)
 }
 
-/// A journal younger than this may belong to a build still running in another process.
 const SETTLE: Duration = Duration::from_secs(15);
 /// Video and audio without a journal are left alone until nothing in the bundle changed for this
 /// long.
@@ -140,6 +139,8 @@ pub struct Unfinished {
     pub strokes: Vec<Stroke>,
     #[serde(default)]
     pub events: Vec<InteractionEvent>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub action_context: Vec<crate::shared::model::ActionContext>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interaction_telemetry: Option<crate::shared::model::InteractionTelemetry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -280,12 +281,10 @@ pub fn pending(captures: &Path, now: SystemTime) -> Vec<PathBuf> {
     dirs
 }
 
-/// What an orphaned bundle's build would have been given: its whole video as a Screen capture.
 pub fn orphan_recipe(
     video: &crate::composition::media_probe::BundleProbe,
     audio_ms: Option<u64>,
 ) -> Unfinished {
-    // The audio runs from the start of the capture, the movie from its first frame.
     let offset = audio_ms
         .map_or(0, |audio| audio.saturating_sub(video.duration_ms))
         .min(MAX_VIDEO_OFFSET_MS);
@@ -311,6 +310,7 @@ pub fn orphan_recipe(
         video_offset_ms: offset,
         strokes: Vec::new(),
         events: Vec::new(),
+        action_context: Vec::new(),
         interaction_telemetry: None,
         video_ink: None,
         note: None,

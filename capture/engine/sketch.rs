@@ -766,6 +766,7 @@ fn summary_markdown_formatted(
     agent_context: bool,
     clipboard_hosted: Option<bool>,
 ) -> String {
+    let agent_texts = agent_context.then(|| crate::capture::agent::context::keyframe_texts(bundle)).flatten();
     let mut target = bundle
         .target
         .app
@@ -820,18 +821,18 @@ fn summary_markdown_formatted(
         } else {
             &dest.title
         };
-        out.push_str(&format!("For session: {title} ({})", dest.session));
+        out += &format!("For session: {title} ({})", dest.session);
         if let Some(url) = &dest.url {
-            out.push_str(&format!(" · page {url}"));
+            out += &format!(" · page {url}");
         }
         out.push('\n');
     }
     if clipboard_hosted.is_none() && !bundle.keyframes.is_empty() {
-        out.push_str(if bundle.has_screen_click() {
+        out += if agent_texts.is_none() && bundle.has_screen_click() {
             LOOK_AT_IMAGES
         } else {
             OPTIONAL_IMAGES
-        });
+        };
         out.push('\n');
     }
     // The screen at the start and the app's own values, on one line.
@@ -847,27 +848,27 @@ fn summary_markdown_formatted(
         )
         .collect();
     if !context.is_empty() {
-        out.push_str(&context.join(" · "));
+        out += &context.join(" · ");
         out.push('\n');
     }
     if let Some(note) = &bundle.note
         && !note.trim().is_empty()
     {
-        out.push_str(&format!("Note: {}\n", note.trim()));
+        out += &format!("Note: {}\n", note.trim());
     }
     if bundle.interaction_telemetry == Some(crate::shared::model::InteractionTelemetry::VideoOnly) {
         out.push_str("Interaction context: timed CLI video only; clicks and Shift ink were not collected. A visible click in the video will not appear in events, marks or click keyframes. Use the app's recording shortcut for interaction context.\n");
     }
     if let Some(warning) = &bundle.image_quality_warning {
-        out.push_str(&format!("Image quality: {warning}\n"));
+        out += &format!("Image quality: {warning}\n");
     }
     if clipboard_hosted.is_none()
         && let Some(crop) = &bundle.autocrop
     {
-        out.push_str(&format!(
+        out += &format!(
             "Cropped to: {} (full frames in {}/)\n",
             crop.label, crop.full_frames
-        ));
+        );
     }
     if bundle.source.as_deref() != Some("iphone") && !bundle.context.get("microphoneCapture").is_some_and(|v| v == "off") {
         if !bundle.has_microphone_samples(bundle_dir) {
@@ -884,7 +885,6 @@ fn summary_markdown_formatted(
             out.push_str("No words transcribed. Your audio was saved—check it or try again closer to the microphone.\n");
         }
     }
-    // App events and context changes nest under the keyframe on screen when they happened.
     let mut app_events: Vec<(u64, String)> = bundle
         .events
         .iter()
@@ -911,10 +911,9 @@ fn summary_markdown_formatted(
         }
     }
     app_events.sort_by_key(|(t, _)| *t);
-    if agent_context && !bundle.keyframes.is_empty() {
-        let texts = crate::capture::agent::context::keyframe_texts(bundle);
+    let frames = || {
         let mut shown_screen = start_screen;
-        for (frame, text) in bundle.keyframes.iter().zip(texts) {
+        bundle.keyframes.iter().map(move |frame| {
             let screen = bundle.screen_at(frame.t);
             let screen_marker = match screen {
                 Some(name) if screen != shown_screen => format!(" ⟨{}⟩", context_value(name)),
@@ -926,16 +925,22 @@ fn summary_markdown_formatted(
                 .as_ref()
                 .and_then(|id| bundle.marks.iter().find(|m| &m.id == id))
                 .is_some_and(|m| m.shape == Shape::Flag);
+            (frame, screen_marker, flag)
+        })
+    };
+    if let Some(texts) = agent_texts {
+        out += crate::capture::agent::context::window_observation_notice(bundle);
+        for ((frame, screen_marker, flag), text) in frames().zip(texts) {
             let flag_marker = if flag { " ⚑" } else { "" };
-            let head = if text.head.is_empty() {
-                String::new()
-            } else {
-                format!(" {}", text.head)
-            };
             let prefix = crate::composition::frame_labels::prefix(frame);
-            out.push_str(&format!("{prefix}{screen_marker}{flag_marker}{head}\n"));
+            out += &format!("{prefix}{screen_marker}{flag_marker}");
+            if !text.head.is_empty() {
+                out.push(' ');
+                out += &text.head;
+            }
+            out.push('\n');
             for line in text.lines {
-                out.push_str(&format!("  {line}\n"));
+                out += &format!("  {line}\n");
             }
         }
     } else if !bundle.keyframes.is_empty() {
@@ -945,20 +950,8 @@ fn summary_markdown_formatted(
                 out.push_str(&format!("  · {} {label}\n", format_clock(*t)));
             }
         }
-        let mut shown_screen = start_screen;
-        for (i, frame) in bundle.keyframes.iter().enumerate() {
+        for (i, (frame, screen_marker, flag)) in frames().enumerate() {
             let prefix = crate::composition::frame_labels::prefix(frame);
-            let screen = bundle.screen_at(frame.t);
-            let screen_marker = match screen {
-                Some(name) if screen != shown_screen => format!(" ⟨{}⟩", context_value(name)),
-                _ => String::new(),
-            };
-            shown_screen = screen;
-            let flag = frame
-                .mark_id
-                .as_ref()
-                .and_then(|id| bundle.marks.iter().find(|m| &m.id == id))
-                .is_some_and(|m| m.shape == Shape::Flag);
             let flag_marker = if flag { " ⚑" } else { "" };
             match frame
                 .said
@@ -2111,6 +2104,7 @@ mod tests {
                 t: 4000,
                 shortcut: "⌘K".into(),
             }],
+            action_context: vec![],
             interaction_telemetry: None,
             video_ink: None,
             keyframes: vec![Keyframe {
@@ -2131,10 +2125,10 @@ mod tests {
             source: None,
             device: None,
             context: Default::default(),
-            context_changes: Vec::new(),
-            screens: Vec::new(),
-            windows: Vec::new(),
-            cursor: Vec::new(),
+            context_changes: vec![],
+            screens: vec![],
+            windows: vec![],
+            cursor: vec![],
             autocrop: None,
             destination: None,
             image_quality_warning: None,
@@ -2144,18 +2138,21 @@ mod tests {
         assert!(tl.find("0:04 · pressed").unwrap() < tl.find("0:05 ✎").unwrap());
         assert!(tl.contains("— frame #1"));
 
-        let summary = summary_markdown_with(&bundle, std::path::Path::new("/recordings/test"), false);
+        let summary = summary_markdown_with(&bundle, "/recordings/test".as_ref(), false);
         assert!(summary.starts_with("[apparent 0:14 · App “Window” · /recordings/test]"));
         assert!(summary.contains("Note: Simplify it."));
         assert!(!summary.contains(LOOK_AT_IMAGES));
         assert!(summary.contains("apparent zoom"));
         assert!(summary.contains("- #1 (0:05) “This row is too dense.”"));
         assert!(!summary.contains("No transcript"));
+        let pasted = summary_markdown_formatted(&bundle, std::path::Path::new("/b"), true, Some(false));
+        assert!(pasted.contains("\n  0:04 Action: pressed ⌘K\n"));
+        assert!(pasted.contains("\n  0:05 Said: “This row is too dense.”\n"));
 
         let mut text_only = bundle.clone();
         text_only.keyframes.clear();
         for context in [false, true] {
-            let summary = summary_markdown_with(&text_only, std::path::Path::new("/tmp"), context);
+            let summary = summary_markdown_with(&text_only, "/tmp".as_ref(), context);
             assert!(summary.ends_with("“This row is too dense.”\n"));
             assert!(!summary.contains("· 0:03"));
         }

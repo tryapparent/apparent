@@ -15,6 +15,10 @@ pub struct Window {
     address: String,
     stable_id: String,
     pub pid: u32,
+    #[serde(default)]
+    pub class: String,
+    #[serde(default)]
+    pub title: String,
     at: [i32; 2],
     size: [i32; 2],
     workspace: Workspace,
@@ -35,14 +39,21 @@ struct Client {
     mapped: bool,
     hidden: bool,
     pinned: bool,
+    #[serde(default)]
+    title: String,
 }
 
 pub fn focused() -> Option<Window> {
+    let window = action_focused()?;
+    (window.pid != std::process::id()).then_some(window)
+}
+
+pub fn action_focused() -> Option<Window> {
     let window = read::<Window>("j/activewindow")?;
     if window.address.is_empty()
         || window.stable_id.is_empty()
         || window.pid == 0
-        || window.pid == std::process::id()
+        || window.is_ink()
     {
         return None;
     }
@@ -75,6 +86,25 @@ pub fn layout_rect(rect: [i32; 4]) -> Option<[i32; 4]> {
 }
 
 impl Window {
+    fn is_ink(&self) -> bool {
+        self.pid == std::process::id() && self.title.starts_with("Apparent Ink ")
+    }
+
+    pub fn action_id(&self) -> String {
+        format!("hyprland:{}:{}", self.pid, self.stable_id)
+    }
+
+    pub fn overlaps(&self, rect: [i32; 4]) -> bool {
+        overlaps(rect, [self.at[0], self.at[1], self.size[0], self.size[1]])
+    }
+
+    pub fn action_uncovered(&self, rect: [i32; 4]) -> Option<bool> {
+        self.uncovered(rect, |client| {
+            client.pid == std::process::id() && client.title.starts_with("Apparent Ink ")
+        })
+    }
+
+
     pub fn contains(&self, rect: [i32; 4]) -> bool {
         let [x, y, w, h] = rect.map(i64::from);
         let [left, top] = self.at.map(i64::from);
@@ -88,6 +118,10 @@ impl Window {
             region[1] = rect[1].checked_sub(8)?;
             region[3] = rect[3].checked_add(8)?;
         }
+        self.uncovered(region, |client| client.pid == std::process::id())
+    }
+
+    fn uncovered(&self, region: [i32; 4], ignore: impl Fn(&Client) -> bool) -> Option<bool> {
         let clients = read::<Vec<Client>>("j/clients")?;
         if !clients
             .iter()
@@ -97,7 +131,7 @@ impl Window {
         }
         let covered = clients.iter().any(|client| {
             client.address != self.address
-                && client.pid != std::process::id()
+                && !ignore(client)
                 && client.mapped
                 && !client.hidden
                 && (client.workspace == self.workspace || client.pinned)
@@ -135,6 +169,7 @@ pub struct Events {
     partial: Vec<u8>,
     ink_title_prefix: String,
     ink_focused: bool,
+    watch_title: bool,
 }
 
 impl Events {
@@ -150,7 +185,15 @@ impl Events {
             partial: Vec::new(),
             ink_title_prefix: format!("Apparent,Apparent Ink {} ", std::process::id()),
             ink_focused: false,
+            watch_title: false,
         }
+    }
+
+    pub fn drain_action(&mut self, window: &Window) -> Option<bool> {
+        self.watch_title = true;
+        let changed = self.drain(Some(window));
+        self.watch_title = false;
+        changed
     }
 
     pub fn drain(&mut self, window: Option<&Window>) -> Option<bool> {
@@ -184,7 +227,12 @@ impl Events {
                 } else if let Some(active) = event.strip_prefix(b"activewindowv2>>") {
                     changed |= !std::mem::take(&mut self.ink_focused) && Some(active) != address;
                 } else {
-                    changed |= changes_layout(event);
+                    changed |= changes_layout(event) || (self.watch_title && address.is_some_and(|address| {
+                        event.strip_prefix(b"windowtitlev2>>")
+                            .and_then(|rest| rest.split(|&c| c == b',').next()) == Some(address)
+                        || event.strip_prefix(b"windowtitle>>") == Some(address)
+                        || event.strip_prefix(b"closewindow>>") == Some(address)
+                    }));
                 }
                 self.partial.clear();
             }
@@ -227,11 +275,23 @@ mod tests {
     }
 
     #[test]
+    fn action_witness_rejects_tab_title_changes_and_closed_windows() {
+        let (stream, _) = UnixStream::pair().unwrap();
+        let mut events = Events::new(stream);
+        events.watch_title = true;
+        assert!(!events.record(b"windowtitlev2>>21,Other tab\n", Some(b"18")));
+        assert!(events.record(b"windowtitlev2>>18,New tab\n", Some(b"18")));
+        assert!(events.record(b"closewindow>>18\n", Some(b"18")));
+    }
+
+    #[test]
     fn marked_stroke_stays_inside_focus_and_underline_probes_above_ink() {
         let window = Window {
             address: "0xabc".into(),
             stable_id: "42".into(),
             pid: 101,
+            class: String::new(),
+            title: String::new(),
             at: [647, 38],
             size: [621, 750],
             workspace: Workspace { id: 1 },

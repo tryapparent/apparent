@@ -3,12 +3,73 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import {
   bendScratch,
+  buildBend,
   proofOptions,
 } from "../../../../shared/enablement/bend/build.ts";
-import { stageZoom } from "./build.ts";
+import { assembleHandoffLine, assembleZoom, root } from "./build.ts";
 
 await bendScratch(async (directory) => {
-  await stageZoom(directory, proofOptions(process.argv.slice(2)));
+  await buildBend(
+    root,
+    "agent",
+    directory,
+    proofOptions(process.argv.slice(2)),
+  );
+  assembleZoom(directory);
+  const embedded = join(directory, "agent-handoff-line.mjs");
+  assembleHandoffLine(directory, embedded);
+  const browser = { id: "browser", app: "Firefox", title: "Quick picks" };
+  const rendered = execFileSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `import { handoffLine, windowSuffix } from "./agent-handoff-line.mjs";
+import { readFileSync } from "node:fs";
+const { lines, windows } = JSON.parse(readFileSync(0, "utf8"));
+console.log(JSON.stringify({
+  lines: lines.map(args => handoffLine(...args)),
+  windows: windows.map(observations => windowSuffix(JSON.stringify(observations))),
+}));`,
+    ],
+    {
+      cwd: directory,
+      encoding: "utf8",
+      input: JSON.stringify({
+        lines: [
+          ["Circle", "0:20", "", "", ""],
+          ["Circle", "0:20", "②", "“Save”", " (2 strokes)"],
+          ["Speech", "0:20", "", "Try this.", ""],
+          ["Action", "0:20", "", "clicked", ""],
+        ],
+        windows: [
+          [],
+          [browser],
+          [browser, browser],
+          [browser, null],
+          [browser, { ...browser, title: "Listen again" }],
+          [browser, { ...browser, id: "other" }],
+          [{ id: "settings", app: "Apparent" }],
+        ],
+      }),
+    },
+  );
+  const { lines, windows } = JSON.parse(rendered);
+  assert.deepEqual(lines, [
+    "0:20 Circled: target unidentified",
+    "0:20 Circled: ② “Save” (2 strokes)",
+    "0:20 Said: “Try this.”",
+    "0:20 Action: clicked",
+  ]);
+  assert.deepEqual(windows, [
+    " · Window: unknown",
+    " · Nearby window: Firefox — Quick picks",
+    " · Nearby window: Firefox — Quick picks",
+    " · Window: unknown",
+    " · Window: unknown",
+    " · Window: unknown",
+    " · Nearby window: Apparent",
+  ]);
   function run(overrides: object) {
     const request = {
       moment: "10000",

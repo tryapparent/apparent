@@ -1523,19 +1523,7 @@ fn mouse_event(
             let dx =
                 unsafe { CGEventGetIntegerValueField(event, SCROLL_WHEEL_DELTA_AXIS_2) } as f32;
             if (dx.abs() > 0.0 || dy.abs() > 0.0) && !on_apparent(loc.x, loc.y) {
-                let (nx, ny, _, _) = telemetry.normalize_point(loc.x, loc.y);
-                telemetry
-                    .events
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .push(InteractionEvent::Scroll {
-                        t: t_ms,
-                        x: nx,
-                        y: ny,
-                        dx,
-                        dy,
-                        label: None,
-                    });
+                telemetry.record_scroll(t_ms, loc.x, loc.y, dx, dy);
             }
         }
         _ => {}
@@ -1753,6 +1741,7 @@ unsafe extern "C" fn key_tap_callback(
             }
             chord.push_str(&key_name);
             telemetry.window_log_request.store(true, Ordering::Release);
+            telemetry.observe_key_context(t_ms);
             telemetry
                 .events
                 .lock()

@@ -285,6 +285,15 @@ fn publication_recovery_reconciles_only_durable_typed_notes_before_journal_valid
         video_offset_ms: 0,
         strokes: vec![],
         events: vec![click.clone()],
+        action_context: vec![model::ActionContext {
+            kind: model::ActionKind::Pointer,
+            t: 100,
+            window: model::ActionWindow {
+                id: "x11:23:404".into(),
+                app: "Firefox".into(),
+                title: Some("Invoice preview".into()),
+            },
+        }],
         interaction_telemetry: None,
             video_ink: None,
         note: Some("Unrelated capture note".into()),
@@ -314,6 +323,15 @@ fn publication_recovery_reconciles_only_durable_typed_notes_before_journal_valid
     let bundle: ApparentBundle =
         serde_json::from_slice(&std::fs::read(root.join("apparent.json")).unwrap()).unwrap();
     assert_eq!(bundle.events[0], click);
+    assert_eq!(
+        bundle.window_observed_near_action(model::ActionKind::Pointer, 100).unwrap().title.as_deref(),
+        Some("Invoice preview")
+    );
+    assert!(bundle.window_observed_near_action(model::ActionKind::Pointer, 250).is_none());
+    let mut old_manifest = serde_json::to_value(&bundle).unwrap();
+    old_manifest.as_object_mut().unwrap().remove("actionContext");
+    let old: ApparentBundle = serde_json::from_value(old_manifest).unwrap();
+    assert!(old.action_context.is_empty());
     assert!(
         matches!(&bundle.events[1], InteractionEvent::Note { pin: 1, t: 250, text, .. } if text == "Recovered typed note")
     );
