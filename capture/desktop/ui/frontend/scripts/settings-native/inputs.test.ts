@@ -31,7 +31,7 @@ test('the independent surface excludes only the audited consumer owners', () => 
   for (const file of ['record/storage/src/policy.ts', 'record/storage/test/new.test.ts',
     'capture/desktop/ui/frontend/src/storage.tsx', 'capture/desktop/ui/frontend/tests/rust-storage.cjs']) assert.equal(consumerInput(file), true, file);
   for (const file of ['build.rs', 'Cargo.lock', '.cargo/config.toml', 'shared/handoff/config_store.rs',
-    'capture/desktop/native/Settings.swift', 'capture/desktop/assets/settings/frog.png',
+    'capture/desktop/native/ShortcutKeys.swift', 'capture/desktop/assets/settings/frog.png',
     'enablement/native-build/build.ts', 'public/site/new-unknown-input.ts', 'connect/hosted.rs',
     'record/storage/native.rs', 'record/storage/Cargo.toml', 'capture/desktop/ui/frontend/new.metal',
     'record/storage/native.S', 'record/storage/native.asm', 'capture/desktop/ui/frontend/native.inc',

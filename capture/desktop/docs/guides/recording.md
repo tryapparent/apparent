@@ -96,8 +96,7 @@ narration uses the same microphone. From the terminal, `apparent mic list` shows
 one recordings will use, `apparent mic set <id|default>` chooses, and `apparent mic watch` prints the
 list again on every change.
 
-Preview every pane, dark and light, with the recorder listening and a combination turned down:
-`target/debug/apparent-helper settings --render /tmp/settings --icon capture/desktop/assets/app-icon.png`.
+Inspect the installed Electron Settings in dark and light appearance with the shortcut recorder listening.
 
 ## Capture Controls
 

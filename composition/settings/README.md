@@ -24,32 +24,21 @@ About share one sidebar and window. The native session filters actions against
 the active pane and passes native effects and preference writes to their
 existing owners.
 
-If the packaged renderer cannot launch or its connection exits unexpectedly,
-Linux can open the in-process GPUI window and macOS can open the Swift Settings
-helper. macOS builds no longer include or poll the GPUI Settings presenter.
-Both platforms still use the native key-code translation for onboarding. The
-Swift helper's own keyboard handling continues to exercise the macOS shortcut
-adapter.
+Settings has one Electron presentation on Linux and macOS. A child exit closes
+the session, releases the Recording meter and shortcut editor, and allows the
+next Settings request to launch a new child. When package resources are missing
+or Chromium cannot start in its sandbox, Settings is unavailable until the
+runtime or installation is repaired. The Linux launcher uses the same sandbox
+setup as the installed recording pill. OS permission prompts, device reads,
+folder selection, updates and the authoritative config writer remain native.
 
-Recording and Permissions are active recovery routes. In particular, the
-installed [Permissions verification](https://github.com/tryapparent/apparent/pull/1573)
-observed the native route on Ubuntu GNOME when Chromium could not start with a
-sandbox. That fallback lets users change recording preferences and repair
-permissions without weakening the sandbox. In the fallback sidebars, entries
-that ask the parent retry the packaged window. The others stay in the native
-window.
+Restore the previous presenters with a Git revert of the retirement change.
+Existing config files need no rollback migration.
 
-| Pane | Linux GPUI sidebar | macOS Swift sidebar |
-| --- | --- | --- |
-| General | Parent | Parent |
-| Recording | Parent | Parent |
-| Permissions | Local | Local |
-| Agents | Parent | Local |
-| Labs | Parent | Parent |
-| About | Parent | Parent |
-
-Storage and Labs need the packaged renderer. If Storage cannot open in
-Electron, the session opens native General.
+Ubuntu Desktop is outside the supported AppImage platforms. On stock Ubuntu
+24.04 GNOME, AppArmor prevents the packaged Electron sandbox from starting.
+[Ubuntu support via a .deb](https://github.com/tryapparent/apparent/issues/1774)
+is deferred.
 
 On Linux, the channel preference selects the source named by the separate
 install action, which may install an earlier version. When the check finds no
@@ -85,14 +74,10 @@ shortcut is in General, T3 sending is in Agents, and experimental preferences
 are in Labs.
 
 Recording joins General, About, Agents, Labs and Storage in
-the same Electron document. The native Permissions sidebar routes Recording
-through that Settings session. The session chooses the presenter, filters its
-actions, and owns the existing config transaction. The Electron
-host clears Recording facts and cancels pending acknowledgements on a route
-change. A lost acknowledgement leaves the saved value uncertain until the
-native state arrives. The native presenter remains available on missing or
-failed Electron assets. It is the rollback path until the supported platform
-and package checks qualify deletion of the legacy Recording presentation.
+the same Electron document. The native session filters actions and owns the
+existing config transaction. The Electron host clears Recording facts and
+cancels pending acknowledgements on a route change. A lost acknowledgement
+leaves the saved value uncertain until the native state arrives.
 
 After the ordinary frontend bootstrap, run `npm run build` in
 `capture/desktop/ui/frontend` to rebuild the installed Settings renderer and
@@ -115,9 +100,3 @@ helper handles microphone, camera, speech and the System Settings drag guide.
 Reopening uses the guarded application restart and refuses while a capture is
 active. On Wayland the command repairs input-device access, and screen
 authorization stays with the capture-time portal.
-
-The native pane remains the rollback when the Electron assets fail to open.
-Retire the native presentation after installed macOS and Linux package
-acceptance covers both routes, native prompt and recovery behavior and fallback
-on the supported packages. The underlying native observations and effects
-remain in use.

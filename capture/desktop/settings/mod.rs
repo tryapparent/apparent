@@ -6,8 +6,6 @@ pub(crate) mod onboarding;
 pub(crate) mod onboarding_window;
 pub(crate) mod settings;
 pub(in crate::capture::desktop) mod presentation;
-#[cfg(not(target_os = "macos"))]
-pub(crate) mod settings_window;
 pub(crate) mod shortcut;
 
 pub(crate) use settings::*;
@@ -85,17 +83,6 @@ pub enum UpdateResult {
     Failed,
 }
 
-#[cfg(not(target_os = "macos"))]
-impl UpdateResult {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Available => "Update available",
-            Self::Current => "No update available",
-            Self::Failed => "Update check failed",
-        }
-    }
-}
-
 impl UpdateCheck {
     #[cfg(target_os = "linux")]
     pub(super) fn finish(&mut self, result: Result<&'static str, (String, Option<UpdateFailure>)>) {
@@ -137,12 +124,6 @@ fn update_failure(error: &anyhow::Error) -> Option<UpdateFailure> {
     } else {
         None
     }
-}
-
-fn electron_pane(pane: Option<Pane>) -> bool {
-    settings::electron_general(pane)
-        || matches!(pane, Some(Pane::About | Pane::Agents | Pane::Labs | Pane::Recording | Pane::Storage))
-        || cfg!(any(target_os = "linux", target_os = "macos")) && pane == Some(Pane::Permissions)
 }
 
 fn recording_key(key: &str, value: &serde_json::Value) -> bool {
@@ -349,35 +330,18 @@ fn recording_preferences_use_one_durable_config_mutation_and_keep_unrelated_valu
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "invalid config");
 }
 
-pub(super) enum Transport {
-    Helper {
-        child: crate::capture::ui_process::UiChild,
-        stdin: Option<std::process::ChildStdin>,
-    },
-    InProcess(Option<flume::Sender<serde_json::Value>>),
+pub(super) struct Transport {
+    child: crate::capture::ui_process::UiChild,
+    stdin: Option<std::process::ChildStdin>,
 }
-
 
 impl Transport {
     pub(super) fn send(&mut self, message: &serde_json::Value) {
         use std::io::Write;
-        match self {
-            Transport::Helper { stdin, .. } => {
-                if let Some(pipe) = stdin.as_mut()
-                    && writeln!(pipe, "{message}")
-                        .and_then(|()| pipe.flush())
-                        .is_err()
-                {
-                    *stdin = None;
-                }
-            }
-            Transport::InProcess(sender) => {
-                if let Some(channel) = sender.as_ref()
-                    && channel.send(message.clone()).is_err()
-                {
-                    *sender = None;
-                }
-            }
+        if let Some(pipe) = self.stdin.as_mut()
+            && writeln!(pipe, "{message}").and_then(|()| pipe.flush()).is_err()
+        {
+            self.stdin = None;
         }
     }
 }

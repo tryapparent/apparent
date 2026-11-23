@@ -1,4 +1,4 @@
-use std::{path::PathBuf, process::{Command, Stdio}, sync::Arc};
+use std::{io::BufRead, path::PathBuf, process::{Command, Stdio}, sync::Arc};
 use super::settings::{Action, Event, Transport, Pane};
 
 #[cfg(test)]
@@ -137,9 +137,9 @@ pub(super) fn admits(pane: Pane, action: &Action) -> bool {
 }
 
 pub(super) fn open(pane: Pane, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyhow::Result<Transport> {
-    use std::io::BufRead;
     let (app, runtime) = assets().ok_or_else(|| anyhow::anyhow!("Packaged Settings unavailable"))?;
-    let mut launch = command(runtime, app);
+    let mut launch = command(runtime.clone(), app);
+    crate::capture::desktop::workflow::electron::configure_sandbox(&mut launch, &runtime)?;
     if let serde_json::Value::String(pane) = serde_json::to_value(pane)? {
         launch.arg(format!("--settings-{pane}"));
     }
@@ -161,7 +161,7 @@ pub(super) fn open(pane: Pane, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyh
         }
         events(Event::Exited);
     });
-    Ok(Transport::Helper { child, stdin })
+    Ok(Transport { child, stdin })
 }
 
 fn renderer_command(runtime: PathBuf, app: PathBuf) -> Command {
@@ -188,7 +188,7 @@ fn command(runtime: PathBuf, app: PathBuf) -> Command {
     if let Ok(executable) = std::env::current_exe() {
         command.env("APPARENT_REPORT_EXECUTABLE", executable);
     }
-    command.arg("--settings-storage").arg("--settings-parent");
+    command.args(["--settings-storage", "--settings-parent"]);
     command
 }
 
@@ -295,22 +295,17 @@ mod tests {
 }
 
 pub(super) fn retire(transport: Transport) {
-    match transport {
-        Transport::InProcess(sender) => drop(sender),
-        Transport::Helper { mut child, stdin } => {
-            drop(stdin);
-            std::thread::spawn(move || {
-                for _ in 0..20 {
-                    if !matches!(child.try_wait(), Ok(None)) { return; }
-                    std::thread::sleep(std::time::Duration::from_millis(50));
-                }
-                let _ = child.kill();
-                let _ = child.wait();
-            });
+    let Transport { mut child, stdin } = transport;
+    drop(stdin);
+    std::thread::spawn(move || {
+        for _ in 0..20 {
+            if !matches!(child.try_wait(), Ok(None)) { return; }
+            std::thread::sleep(std::time::Duration::from_millis(50));
         }
-    }
+        let _ = child.kill();
+        let _ = child.wait();
+    });
 }
-
 
 #[cfg(test)]
 mod capability_tests {

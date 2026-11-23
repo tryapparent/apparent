@@ -125,7 +125,7 @@ test('native outputs: cold build, verified reuse, restaging and per-artifact inv
   assert.deepEqual(swift.slice(0, 6), ['-O', '-swift-version', '5', '-target', 'x86_64-apple-macos15.0', join(f.root, 'capture/engine/native/Export.swift')]);
   assert.deepEqual(swift.filter(arg => arg.endsWith('.swift')).map(arg => arg.slice(arg.lastIndexOf('/') + 1)),
     ['Export.swift', 'LiveTranscribe.swift', 'Media.swift', 'Mirror.swift', 'Onboarding.swift', 'OnboardingBrand.swift',
-      'OnboardingDemo.swift', 'PermissionPanel.swift', 'PlaybackVolume.swift', 'ScreenProbe.swift', 'Settings.swift', 'ShortcutKeys.swift', 'main.swift']);
+      'OnboardingDemo.swift', 'PermissionPanel.swift', 'PlaybackVolume.swift', 'ScreenProbe.swift', 'ShortcutKeys.swift', 'main.swift']);
   assert.deepEqual(swift.slice(-8, -1), ['-Xlinker', '-sectcreate', '-Xlinker', '__TEXT', '-Xlinker', '__info_plist', '-Xlinker']);
   rmSync(join(f.root, 'target/debug/apparent-helper'));
   assert.equal(f.run().status, 0);

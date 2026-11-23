@@ -107,7 +107,7 @@ function meta(platform: Platform): string {
     case "other":
       return "Apparent runs on Mac and Linux."
     case "linux":
-      return LINUX_DOWNLOAD ? `Preview ${RELEASE.version} · x86_64 AppImage · Ubuntu 24.04+ · X11 or GNOME/KDE Wayland` : "Linux is on the way."
+      return LINUX_DOWNLOAD ? `Preview ${RELEASE.version} · x86_64 AppImage · Ubuntu unsupported` : "Linux is on the way."
     case "mobile":
       return "Apparent runs on Mac and Linux."
   }
@@ -123,7 +123,7 @@ function LinuxNotes() {
     <div className="linux-notes">
       <p>On Wayland, enable clicks and Shift ink, then log out and back in:</p>
       <div className="platform-brew"><code>{command}</code><Copy text={command} /></div>
-      <p>If the AppImage asks for libfuse.so.2, install <code>libfuse2t64</code> on Ubuntu 24.04, or run it with <code>--appimage-extract-and-run</code>.</p>
+      <p>If the AppImage asks for libfuse.so.2, run it with <code>--appimage-extract-and-run</code>.</p>
     </div>
   )
 }
@@ -150,7 +150,7 @@ export function Platforms({ brew }: { brew: boolean }) {
       <li>
         <div className="platform-row">
           <span className="platform-name">Linux</span>
-          <span className="platform-detail">x86_64 AppImage, preview</span>
+          <span className="platform-detail">x86_64 AppImage, preview. Ubuntu unsupported.</span>
           {LINUX_DOWNLOAD ? <a className="platform-action" href={LINUX_DOWNLOAD}>Download</a> : <Soon />}
         </div>
       </li>

@@ -536,8 +536,6 @@ pub fn run_app(
                     loop_coord.read(cx).publish_capture_busy();
                     platform::poll_status_bar();
                     settings::onboarding_window::poll(cx);
-                    #[cfg(not(target_os = "macos"))]
-                    settings::settings_window::poll(cx);
                     #[cfg(any(target_os = "macos", target_os = "linux"))]
                     workflow::electron::poll_windows(cx);
                     #[cfg(any(target_os = "macos", target_os = "linux"))]
