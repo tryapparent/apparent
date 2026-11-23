@@ -552,35 +552,28 @@ Double-tap Shift for a note at the pointer. Hold Shift to draw. Enter/Attach sav
 
 Recording › Microphone (`capture/engine/runtime/audio/mic.rs`): `"microphone": {"id","name"}` holds an input id in `~/.config/apparent/config.json`; the name only labels a missing device. Absent = System default. Mac uses CoreAudio UIDs (also `AVCaptureDevice.uniqueID`). Linux with a PulseAudio-compatible server (including PipeWire) and `pactl` lists source names as `pulse:<name>`; `capture/desktop/linux/microphone.rs` opens the chosen source with GStreamer's `pulsesrc`, converting it to 16 kHz mono samples for the same capture buffer and Settings meter. A new capture waits for its first sample before accepting the source; a disconnected or unopenable choice falls back to the Pulse default shown in Settings, then to CPAL only if that default cannot open. It never changes the system default. Linux without a working Pulse server / `pactl` falls back to CPAL's available inputs; this may expose only the shared `default` or `pipewire` device, so distinct microphones cannot be selected there. Windows is unsupported; retained code is not a parity target. `mic::Watch` re-lists inputs while Settings is open: CoreAudio listeners on Mac, one-second checks elsewhere. `AudioRecorder` opens the chosen input on its worker thread, otherwise the current system default; a disconnected or unopenable choice remains saved but does not stop a new capture (`mic::Pick` explains the fallback in Settings and `note_pick` logs once). An error partway through a capture keeps samples heard so far. Mac's helper `MicMeter` uses AVCaptureSession; Linux GPUI Settings starts a separate input stream, stops it when leaving Recording, and expires stale level readings after 300 ms. The meter shows input samples, not recognized words or speaker identity; #16 owns no-transcript messaging. `apparent mic list|set <id|default>|watch` reports and changes the same saved selection.
 
-Storage › Location (`CapturesDirView`): Change… opens the helper's folder picker and sends `set capturesDir` with an absolute path; Reset sends `""`, which removes the key. `handoff::default_captures_dir` reads it on every call (`APPARENT_CAPTURES_DIR` wins, then `"capturesDir"`, then `builtin_captures_dir`; `~` expands, a relative path is logged and skipped; tests never read the config). New captures and fresh CLI/size lookups use the new location; already-running retention/transcript workers keep their startup directory until the Rust app restarts. Captures already made aren't moved. The default Electron Storage route, native fallback and its proof limits are documented in `capture/desktop/ui/frontend/README.md`. A folder that can't be created or written falls back to the built-in one (logged once). State kept beside the captures (`inbox.json`, `last-mode`, legacy `config.json`) stays under `builtin_captures_dir`'s parent. The legacy config path stays under `builtin_captures_dir`.
+Storage uses the Record pane in the shared Electron Settings window. Change…
+opens the platform folder picker and Reset removes `capturesDir` through the
+same native config transaction. New captures use the effective location.
+`APPARENT_CAPTURES_DIR` overrides the saved folder, and an unavailable saved folder
+falls back to the built-in one. Existing captures stay in their original folders.
+Age-based cleanup and transcript workers keep their startup folder. Size-based
+cleanup reads the effective folder and limit on each pass.
 
-Storage uses the Record workflows for folder and retention preferences. The
-native provider runs the chooser and usage scan and saves through the existing
-config transaction. Retention changes schedule the existing cleanup worker for
-about five seconds later, deferred while recording. File edits are read on the
-next pass, normally hourly. Settings ignores the legacy
-`experiments.electronCaptureLocation` value. Missing packaged assets or an
-Electron crash restore native Storage. See the [Storage contract](../ui/frontend/README.md#storage-retention-and-usage-291).
+Settings ignores the legacy `experiments.electronCaptureLocation` value. If
+Storage cannot start or Electron exits unexpectedly, Settings opens native
+General. Reopen Settings to retry Electron after restoring the packaged app.
+See the [Storage contract](../ui/frontend/README.md#storage-retention-and-usage-291).
 
 Recording › Language shows under Transcription while it's Apple Speech: Automatic, then the helper's supported `locales` by name. It writes `appleLocale` (Automatic removes the key) and returns `Effect::SpeechModel`, which restarts the model check for the new language (see `capture/engine/docs/keyframes-and-text.md`).
 
 The sidebar is the helper's alone: a row selects on mouse-down and its pane replaces the last on the next frame, with no transition (keep it that way; a fade read as lag; the level meter starts after the Recording pane has drawn). Rust's `state` never carries the pane (only `show` does, when Settings is opened again), so a reply can't move the selection.
 
-On Linux, Storage shares the Electron window with General, Agents, Labs and
-About. Navigation among these panes keeps the window open. The Record workflows
-use the native folder picker, the existing preference transaction and bounded
-usage scans. Picker Cancel writes nothing. An environment override or unusable
-saved folder is shown explicitly. A folder change affects new captures. An
-active capture keeps its original destination, and cleanup keeps its startup
-directory until Apparent restarts. Linux and macOS retain native Storage for
-opt-out and presentation recovery.
-
 The Electron Settings shell waits for a committed React surface, initial paint
 readiness and a hidden compositor snapshot before showing its window. The
 TypeScript Desktop adapter discards that snapshot in memory; it is never saved
 or sent. Startup still has the existing 15-second deadline and falls back to the
-native pane if presentation fails. This does not change pane routing, settings
-writes, the Storage opt-out or the native fallback's removal condition.
+native Settings if presentation fails.
 
 About shows the package version and the running binary's build-time commit, for example `Version 0.3.13 · ad8d4b1`. Tracked local edits add `+modified`; builds without Git metadata or a valid CI revision say `build unknown`. This identifies the compiled build, not the selected update channel or an update staged for the next launch. Both the Mac helper and Linux GPUI Settings use the same label.
 

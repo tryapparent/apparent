@@ -54,17 +54,12 @@ gate for mutations. Invalidation retires pending replies independently; failed o
 uncertain writes require fresh authoritative readback, including when a read
 completed while the write was pending. Both renderer and native transport guards
 consume Record's same bounded retention-policy validator.
-Installed Linux Settings uses the existing Electron Storage surface in the
-shared Settings window. The native fallback retains its controller and preset
-menu. Both routes persist recognized retention leaves through the same native
-Storage executor, preserving unknown nested keys. The fallback obtains a fresh
-owner revision before saving; a concurrent change is refused without replay.
-Engine no longer supplies a whole-object retention writer;
-capture-time default resolution, native preset presentation and the cleanup
-scheduler remain compatibility debt. This package's headless checks prove its policy and
-controller loop. The [installed Linux checks](enablement/README.md)
+Installed Linux and macOS Settings use the Record Storage pane in the shared
+Electron Settings window. The native transaction persists recognized preference
+leaves and preserves unknown nested keys. The headless checks prove the package's
+policy and controller loop. The [installed Linux checks](enablement/README.md)
 cover native GUI acceptance. This package does not establish whole-Settings
-build independence. Routing and fallback/removal gates remain in the frontend README.
+build independence. Routing and recovery are documented in the frontend README.
 
 ## Renderer controller verification boundary
 
@@ -110,9 +105,7 @@ run the actual CLI over copied producer bundles in dry-run mode, preserving all
 source/config bytes; they do not prove destructive cleanup or live capture.
 Rollback restores planner routing, native donor decisions and staged assets
 together, preserving the accepted native video admission and mutation guards.
-Remove remaining native defaults/presets only with all their consumers
-and persistence contracts adopted. Mac, AppImage and exact-main delivery remain
-acceptance gates for this slice.
+Native defaults still apply to existing age-based profiles.
 
 ## Maximum storage
 
@@ -124,10 +117,8 @@ A successful save nudges the existing cleanup worker.
 
 An existing `retention` object without `maximumMb` keeps its age policy until
 the first size-limit save. The save retains the previous age keys and any
-unrecognized preferences. The legacy
-retention controls can explicitly switch back to age-based cleanup by choosing
-a preset. Removing only `retention.maximumMb` from the config restores age-based
-cleanup. Removing the entire `retention` setting restores the 1 GB default.
+unrecognized preferences. Removing only `retention.maximumMb` from the config
+restores age-based cleanup. Removing the entire `retention` setting restores the 1 GB default.
 The worker rereads the config on its next pass.
 
 Size-based passes measure the effective capture folder's logical bytes.
@@ -139,5 +130,5 @@ a background cleanup threshold. Usage can exceed it while recording or when
 protected captures and unrelated files account for the excess.
 
 Record packages the compiled capacity module with both the Settings workflow
-and the cleanup worker. The existing native fallback retains its older
-location and retention controls while the shared Electron pane owns the cap UI.
+and the cleanup worker. The shared Electron pane owns location and retention
+controls.
