@@ -6,3 +6,6 @@ pub(crate) mod keyframes;
 pub(crate) mod render;
 pub(crate) mod runtime;
 pub(crate) mod sketch;
+
+#[path = "../../engine/native/input/draft_paste.rs"]
+pub(crate) mod draft_paste;

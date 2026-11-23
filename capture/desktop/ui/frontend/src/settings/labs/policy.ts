@@ -52,7 +52,7 @@ export function facts(value: unknown): LabsFacts {
   return result;
 }
 export function enabled(value: LabsFacts): boolean | undefined {return value.error ? undefined : value.saved ?? false;}
-export function autoPasteEnabled(value: LabsFacts): boolean | undefined {return value.error ? undefined : value.autoPasteSaved ?? false;}
+export function autoPasteEnabled(value: LabsFacts): boolean | undefined {return value.error ? undefined : value.autoPasteSaved ?? true;}
 export function sharingEnabled(value: LabsFacts): boolean | undefined {return value.error ? undefined : value.sharingSaved ?? false;}
 export function wisprEnabled(value: LabsFacts): boolean | undefined {return value.error ? undefined : value.wisprSaved ?? false;}
 export class LabsPreferences {

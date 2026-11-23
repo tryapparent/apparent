@@ -304,11 +304,11 @@ test("staged Recording opens directly, receives native facts and saves only on i
               page.getByRole("switch", { name: heading }),
             ).toBeDisabled();
             await expect(
-              page.getByText("Unavailable in this session.", { exact: false }),
+              page.getByText("Auto paste is unavailable on this platform.", { exact: false }),
             ).toBeVisible();
             await expect(
               page.getByText(
-                /Apparent pastes.*automatically presses Enter.*leave the message unsent/,
+                /Keep the same draft field focused.*You decide when to send/,
               ),
             ).toBeVisible();
           }
@@ -321,7 +321,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
             await expect(autoPaste).toBeChecked();
             await expect(autoPaste).toBeEnabled();
             await expect(autoPaste).toHaveAccessibleDescription(
-              /Paste on the saved recording.*submit it yourself/,
+              /use Paste on the saved recording/,
             );
             await screenshot(`auto-paste-unavailable-saved-${variant}`);
             await autoPaste.press("Space");
@@ -335,7 +335,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
             await autoPaste.press("Space");
             await expect(autoPaste).toBeChecked();
             await expect(autoPaste).toHaveAccessibleDescription(
-              /automatically presses Enter.*supported Hyprland/,
+              /Keep the same draft field focused.*You decide when to send/,
             );
             await screenshot(`auto-paste-supported-${variant}`);
             await autoPaste.press("Space");

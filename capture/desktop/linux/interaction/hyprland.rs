@@ -233,16 +233,6 @@ pub fn paste_into_focused(original: &FocusedWindow, terminal: bool) -> Result<()
     ))
 }
 
-pub fn enter_into_focused(original: &FocusedWindow) -> Result<()> {
-    targeted_paste_supported()?;
-    check_window(original)?;
-    anyhow::ensure!(focused_window()? == *original, "Paste target lost focus");
-    run(&format!(
-        "dispatch hl.dsp.send_shortcut({{ mods = \"\", key = \"Return\", window = \"address:{}\" }})",
-        target_address(original)?
-    ))
-}
-
 fn syntax() -> Result<Syntax> {
     let mut cached = SYNTAX
         .lock()

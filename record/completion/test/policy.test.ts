@@ -10,8 +10,8 @@ const modes: ReturnType<CopyPolicy['copy_mode']>[] = await bendScratch(async (di
   await buildAdmission(directory);
   return JSON.parse(run(process.execPath, ['--input-type=module', '-e', `
     import admission from "./copy-admission.mjs";
-    console.log(JSON.stringify(Array.from({length: 32}, (_, mask) =>
-      admission.copy_mode(...[1, 2, 4, 8, 16].map(bit => Boolean(mask & bit))))));
+    console.log(JSON.stringify(Array.from({length: 8}, (_, mask) =>
+      admission.copy_mode(...[1, 2, 4].map(bit => Boolean(mask & bit))))));
   `], directory));
 });
 const policy: CopyPolicy = {
@@ -21,7 +21,7 @@ const policy: CopyPolicy = {
 const reduce = (state: State, event: Event) => reduceWithAdmission(state, event, policy);
 const capture = {generation: '9007199254740993', captureId: 'capture-a', requestId: 'request-a'};
 const context: Context = {capture, platform:'linux', source:'screen', agentRequested:false,
-  automaticTrialEnabled:false, lab:false, hyprland:true, wayland:true};
+  autoPasteEnabled:false, lab:false, pasteTargetAvailable:true};
 const saved: Event = {type:'finalized',capture,outcome:{kind:'saved',bundlePath:'/synthetic/a.apparent'}};
 const copied: Event = {type:'clipboard',capture,result:'copied'};
 
@@ -53,9 +53,9 @@ test('saved image warnings preserve finalized facts without implying decoder or 
   const copiedState = reduce(decision.state,copied).state;
   assert.equal(copiedState.status,'Saved · copied');
   assert.deepEqual(copiedState.notifications,decision.state.notifications);
-  const manual = reduce(reduce(begin({...withWarning,automaticTrialEnabled:true},true),saved).state,copied);
+  const manual = reduce(reduce(begin({...withWarning,autoPasteEnabled:true},true),saved).state,copied);
   assert.deepEqual(manual.state.notifications[0],decision.state.notifications[0]);
-  assert.equal(manual.state.notifications[1]?.title,'Auto paste');
+  assert.equal(manual.state.notifications.length,1);
   for (const state of [begin(withWarning,false), begin({...withWarning,platform:'macos'},true),
     reduce(begin(withWarning,true),{type:'disconnect'}).state]) {
     assert.deepEqual(reduce(state,saved).state.notifications,[]);
@@ -103,29 +103,22 @@ test('disconnect/reconnect replays facts without repeating a potentially complet
   const disconnected = reduce(begin(context,true),{type:'disconnect'}).state;
   assert.deepEqual(reduce(disconnected,saved).effects,[]);
 });
-test('auto paste is opt-in and Linux Hyprland only; other paths keep bundle copy',()=>{
-  const enabled = {...context,automaticTrialEnabled:true};
-  const manual = reduce(begin(enabled,true),saved);
-  assert.deepEqual(manual.effects,[{type:'copy',capture,mode:'autoPasteAndSubmit'}]);
-  assert.equal(reduce(manual.state,copied).state.status,'Saved · Enter pressed');
-  const stopped = reduce(manual.state,{...copied,result:'failed'});
-  assert.equal(stopped.state.status,'Saved · auto paste stopped');
-  assert.match(stopped.state.notifications.at(-1)!.body,/Check your composer before retrying/);
-  assert.deepEqual(reduce(stopped.state,saved).effects,[]);
-  assert.deepEqual(reduce(stopped.state,{type:'reconnect'}).effects,[]);
-  for(const change of [{agentRequested:true},{lab:true},{hyprland:false},{wayland:false},{source:'phone' as const},{platform:'macos' as const}]) {
-    assert.equal(reduce(begin({...enabled,...change},true),saved).effects[0]?.mode,'bundle');
+test('auto paste only dispatches a draft to an available target on both platforms', () => {
+  for (const platform of ['linux', 'macos'] as const) {
+    const enabled = {...context, platform, autoPasteEnabled:true};
+    const started = reduce(begin(enabled,true),saved);
+    assert.deepEqual(started.effects,[{type:'copy',capture,mode:'autoPasteDraft'}]);
+    assert.equal(reduce(started.state,copied).state.status, 'Saved · paste dispatched');
+    const stopped = reduce(started.state,{...copied,result:'failed'});
+    assert.equal(stopped.state.status, 'Saved · auto paste stopped');
+    assert.match(stopped.state.notifications.at(-1)!.body,/Check your composer before retrying/);
+    assert.deepEqual(reduce(stopped.state,{type:'reconnect'}).effects,[]);
+    for (const restriction of [
+      {agentRequested:true}, {source:'phone'} as const, {lab:true},
+      {pasteTargetAvailable:false}, {autoPasteEnabled:false},
+    ]) {
+      assert.deepEqual(reduce(begin({...enabled,...restriction},true),saved).effects,[{type:'copy',capture,mode:'bundle'}]);
+    }
+    assert.deepEqual(reduce(begin(enabled,false),saved).effects,[]);
   }
-});
-
-test('release paste leaves a draft, takes precedence over submit, and requires a local screen capture', () => {
-  const release = {...context, pasteOnRelease:true, automaticTrialEnabled:true};
-  const started = reduce(begin(release,true),saved);
-  assert.deepEqual(started.effects,[{type:'copy',capture,mode:'autoPasteDraft'}]);
-  assert.equal(reduce(started.state,copied).state.status, 'Saved · paste dispatched');
-  assert.equal(reduce(started.state,{...copied,result:'failed'}).state.status, 'Saved · auto paste stopped');
-  for (const restriction of [{agentRequested:true}, {source:'phone'} as const, {lab:true}, {hyprland:false}, {wayland:false}, {platform:'macos'} as const]) {
-    assert.deepEqual(reduce(begin({...release,...restriction},true),saved).effects,[{type:'copy',capture,mode:'bundle'}]);
-  }
-  assert.deepEqual(reduce(begin(release,false),saved).effects,[]);
 });

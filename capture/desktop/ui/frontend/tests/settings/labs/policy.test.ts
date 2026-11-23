@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {LabsPreferences, enabled, autoPasteEnabled, sharingEnabled, wisprEnabled, facts} from '../../../src/settings/labs/policy.ts';
-test('Labs defaults off and accepts only acknowledged, bounded preferences', async () => {
+test('Labs applies preference defaults and only accepts acknowledged, bounded preferences', async () => {
   assert.equal(enabled(facts({saved:null})),false);
   assert.equal(enabled(facts({error:'config_read_failed'})),undefined);
   assert.throws(()=>facts({saved:'true'}));
@@ -15,7 +15,7 @@ test('Labs defaults off and accepts only acknowledged, bounded preferences', asy
   assert.deepEqual(await saved,{saved:true});
   const closed=bridge.request();bridge.close();await assert.rejects(closed,/closed/);
   await assert.rejects(bridge.request('true'));
-  assert.equal(autoPasteEnabled(facts({saved:true,autoPasteSaved:null,autoPasteSupported:true})),false);
+  assert.equal(autoPasteEnabled(facts({saved:true,autoPasteSaved:null,autoPasteSupported:true})),true);
   assert.throws(()=>facts({saved:false,autoPasteSaved:'true'}));
   assert.throws(()=>facts({saved:false,autoPasteSupported:1}));
   await assert.rejects(bridge.request(true,'unknown' as never));
