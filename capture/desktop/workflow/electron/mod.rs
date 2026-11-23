@@ -145,7 +145,6 @@ pub(crate) fn confirm_quit(cx: &mut gpui::App) -> bool {
 pub(crate) fn poll_windows(cx: &mut gpui::App) {
     #[cfg(target_os = "macos")]
     frog_nudge::poll(cx);
-    crate::capture::desktop::settings::settings_window::poll(cx);
     let prompt = cx.default_global::<QuitPrompt>();
     let Some(dialog) = prompt.0.as_mut() else { return };
     use crate::composition::worker::quit::Event;

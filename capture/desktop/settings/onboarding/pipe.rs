@@ -198,7 +198,7 @@ pub(super) fn read_actions(stdout: std::process::ChildStdout, events: impl Fn(su
                     if action=="shortcut-key" {
                         if let (Some(key),Some(modifiers))=(value["key"].as_str(),value["modifiers"].as_u64()) {
                             if key.len()<=32 && modifiers & !0x1b00 == 0 {
-                                if let Some(key_code)=crate::capture::desktop::settings::settings_window::key_code(key) {
+                                if let Some(key_code)=crate::capture::desktop::settings::shortcut::key_code(key) {
                                     events(super::Event::Shortcut(crate::capture::desktop::settings::Action::Shortcut {
                                         kind:crate::capture::engine::runtime::ShortcutKind::Record,
                                         pressed:crate::capture::desktop::settings::Pressed {key_code,modifiers:modifiers as u32,key:key.to_owned(),reserved:false},

@@ -1238,7 +1238,7 @@ impl Render for OnboardingWindow {
                 let key = &event.keystroke.key;
                 if key == "escape" {
                     (view.events)(Event::Shortcut(crate::capture::desktop::settings::Action::CancelShortcut));
-                } else if let Some(key_code) = crate::capture::desktop::settings::settings_window::key_code(key) {
+                } else if let Some(key_code) = crate::capture::desktop::settings::shortcut::key_code(key) {
                     let m = event.keystroke.modifiers;
                     let modifiers = [
                         (m.platform, crate::capture::engine::runtime::CARBON_CMD_KEY),
