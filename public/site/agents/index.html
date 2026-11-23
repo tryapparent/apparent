@@ -44,21 +44,21 @@
       </section>
 
       <section aria-labelledby="example">
-        <h2 id="example">When a screenshot misses a UI bug</h2>
-        <p>A marked-up screenshot can show which button needs to move. If a menu closes while you move toward Rename, a screenshot taken afterward only shows the closed menu. Record the sequence and say what you expected to happen while pointing at the item.</p>
+        <h2 id="example">Send a screen recording to Claude Code or Codex</h2>
+        <p>A marked screenshot can show which button needs to move. When a menu closes before you can click an item, record the pointer movement that triggers it. Say what you expected while you reproduce the bug.</p>
+        <p>Stop the capture and paste it into your agent chat. For a local capture, the agent needs access to the <code>.apparent</code> bundle and the Apparent CLI.</p>
         <figure class="example">
-          <figcaption>Illustrative agent handoff for a menu that closes before you reach Rename</figcaption>
-          <dl>
-            <dt>Keyframes</dt>
-            <dd><span class="sample-window"><span><time datetime="PT7S">0:07</time> File actions open</span><span class="sample-target">Rename</span></span></dd>
-            <dd><span class="sample-window"><span><time datetime="PT8S">0:08</time> File actions closed</span></span></dd>
-            <dt>Transcript</dt>
-            <dd><time datetime="PT8S">0:08</time> “The menu closes before I reach Rename. It should stay open so I can click it.”</dd>
-            <dt>Interaction timeline</dt>
-            <dd><time datetime="PT7S">0:07</time> Click on File actions, then a pin on Rename.</dd>
-          </dl>
+          <video src="/feature-demos/handoff/.local-media/menu-demo.mp4" width="540" height="340" controls playsinline preload="metadata" poster="/feature-demos/handoff/.local-media/menu-demo-poster.webp" aria-label="Apparent recording of a disappearing Rename menu">
+            <track kind="captions" src="data:text/vtt,WEBVTT%0A%0A00%3A00%3A06.289%20--%3E%2000%3A00%3A12.328%0AWhen%20I%20move%20from%20File%20actions%20toward%20Rename%2C%20the%20menu%20closes.%0AIt%20should%20stay%20open%20until%20I%20reach%20Rename.%0A" srclang="en" label="English" />
+          </video>
+          <figcaption>Apparent capture of a simulated UI bug, cropped to the file menu. The narration uses a generated voice.</figcaption>
         </figure>
-        <p>The recording gives the agent the before and after frames, the expected behavior in your own words, and the click that opened the menu. For a local <code>.apparent</code> bundle, run <code>apparent inspect &lt;bundle&gt;</code> to read the summary and <code>apparent zoom &lt;bundle&gt; --at 0:08</code> to look closer. <a href="https://github.com/tryapparent/apparent/blob/main/capture/agent/docs/usage.md">See the CLI guide</a>.</p>
+        <p>The pointer opens File actions and moves down toward Rename. The menu closes before the pointer gets there. The narrator says it should stay open until they reach Rename.</p>
+        <h3>What the agent can inspect</h3>
+        <p>Ask your agent to inspect the bundle and check the relevant moment. Substitute the path and timestamp from your recording.</p>
+        <pre><code>apparent inspect ./menu-bug.apparent
+apparent zoom ./menu-bug.apparent --at 0:20</code></pre>
+        <p>The transcript renders “File actions” as “fellow action.” The zoom frames show the File actions label and the open Rename menu at 0:19.500. At 0:21.136 the pointer is below File actions and the menu is gone. The agent can use those frames to investigate what closes the menu. <a href="https://github.com/tryapparent/apparent/blob/main/capture/agent/docs/usage.md">See the CLI guide</a>.</p>
       </section>
     </main>
     <footer class="shell"><a href="/llms.txt">Agent documentation index (plain text)</a></footer>
