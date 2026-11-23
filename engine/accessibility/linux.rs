@@ -183,13 +183,14 @@ impl Work {
             return None;
         }
         self.events.drain(None)?;
-        let window = window::focused()?;
+        let rect = window::layout_rect([x.floor() as i32, y.floor() as i32, 1, 1])?;
+        let window = window::focused_for_mark(rect)?;
         let tree = self.accessibility.active_tree(window.pid);
-        let page = window.point(x, y).and_then(|(rect, point)| {
-            window.is_uncovered(rect)?.then_some(())?;
+        let page = window.mark_point(rect).and_then(|point| {
+            (window.is_uncovered(rect)? && window::share_picker_clear(rect)?).then_some(())?;
             self.page(&window, point)
         });
-        if self.events.drain(Some(&window))? || window::focused().as_ref() != Some(&window) {
+        if self.events.drain(Some(&window))? || window::focused_for_mark(rect).as_ref() != Some(&window) {
             return None;
         }
         Some(Witness { time, window, tree, page })
@@ -209,11 +210,12 @@ impl Work {
         let window = window::focused()?;
         window.browser_attribute()?;
         let (rect, point) = window.point(x, y)?;
-        if !window.is_uncovered(rect)? {
+        if !window.is_uncovered(rect)? || !window::share_picker_clear(rect)? {
             return None;
         }
         let page = self.page(&window, point)?;
-        if self.events.drain(Some(&window))? || window::focused().as_ref() != Some(&window) {
+        if self.events.drain(Some(&window))? || window::focused().as_ref() != Some(&window)
+            || !window::share_picker_clear(rect)? {
             return None;
         }
         Some(page)
@@ -227,8 +229,8 @@ impl Work {
         if at.elapsed() > FRESHNESS || self.events.drain(Some(&witness.window))? {
             return None;
         }
-        let window = window::focused()?;
         let rect = window::layout_rect(mark.bounds)?;
+        let window = window::focused_for_mark(rect)?;
         let tree = self.accessibility.active_tree(window.pid);
         let inside = window.contains(rect);
         let clear = window.is_uncovered(rect)?;
@@ -241,11 +243,12 @@ impl Work {
             .and_then(|tree| self.accessibility.label_at(tree, point))
             .filter(|_| tree.as_ref().is_some_and(|tree| self.accessibility.is_active(tree)));
         let page = witness.page.and_then(|start| {
+            window::share_picker_clear(rect)?.then_some(())?;
             let end = self.page(&window, point);
             super::admit_browser_page(end.is_some(), true, end.as_ref() == Some(&start))
                 .then_some(start)
         });
-        let still_focused = window::focused().as_ref() == Some(&window);
+        let still_focused = window::focused_for_mark(rect).as_ref() == Some(&window);
         let still_clear = window.is_uncovered(rect)?;
         if self.events.drain(Some(&window))?
             || !admit(inside, still_clear, still_focused, true)

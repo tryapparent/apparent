@@ -17,6 +17,8 @@ pub struct Window {
     pub pid: u32,
     #[serde(default)]
     class: String,
+    #[serde(default)]
+    title: String,
     at: [i32; 2],
     size: [i32; 2],
     workspace: Workspace,
@@ -28,8 +30,13 @@ struct Workspace {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Client {
     address: String,
+    #[serde(default)]
+    stable_id: String,
+    #[serde(default)]
+    class: String,
     pid: u32,
     at: [i32; 2],
     size: [i32; 2],
@@ -42,15 +49,60 @@ struct Client {
 }
 
 pub fn focused() -> Option<Window> {
-    let window = read::<Window>("j/activewindow")?;
-    if window.address.is_empty()
-        || window.stable_id.is_empty()
-        || window.pid == 0
-        || window.pid == std::process::id()
-    {
+    read::<Window>("j/activewindow").filter(Window::external)
+}
+
+pub fn focused_for_mark(rect: [i32; 4]) -> Option<Window> {
+    let active: Window = read("j/activewindow")?;
+    if active.external() {
+        return Some(active);
+    }
+    let owned_ink = active.pid == std::process::id() && active.class == "Apparent"
+        && active.title.starts_with(&format!("Apparent Ink {} ", active.pid))
+        && active.title.ends_with(" Draw");
+    if !owned_ink {
         return None;
     }
-    Some(window)
+    let clients: Vec<Client> = read("j/clients")?;
+    let mut underlay = clients.into_iter()
+        .filter(|client| client.mapped && !client.hidden && client.workspace == active.workspace)
+        .map(|client| Window {
+            address: client.address,
+            stable_id: client.stable_id,
+            pid: client.pid,
+            class: client.class,
+            title: client.title,
+            at: client.at,
+            size: client.size,
+            workspace: client.workspace,
+        })
+        .filter(|window| window.external() && window.contains(rect));
+    let window = underlay.next()?;
+    (underlay.next().is_none() && window.is_uncovered(rect)?).then_some(window)
+}
+
+pub fn share_picker_clear(rect: [i32; 4]) -> Option<bool> {
+    #[derive(Deserialize)]
+    struct Layer {
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+        namespace: String,
+    }
+    #[derive(Deserialize)]
+    struct Output {
+        levels: std::collections::HashMap<String, Vec<Layer>>,
+    }
+    let outputs: std::collections::HashMap<String, Output> = read("j/layers")?;
+    Some(!outputs.values().any(|output| {
+        ["2", "3"].into_iter().filter_map(|level| output.levels.get(level))
+            .flatten().any(|layer| {
+                matches!(layer.namespace.as_str(),
+                    "ch.wysbd.hyprland-preview-share-picker" | "xdg-desktop-portal-hyprland")
+                    && overlaps(rect, [layer.x, layer.y, layer.w, layer.h])
+            })
+    }))
 }
 
 fn read<T: serde::de::DeserializeOwned>(request: &str) -> Option<T> {
@@ -79,6 +131,11 @@ pub fn layout_rect(rect: [i32; 4]) -> Option<[i32; 4]> {
 }
 
 impl Window {
+    fn external(&self) -> bool {
+        !self.address.is_empty() && !self.stable_id.is_empty()
+            && self.pid != 0 && self.pid != std::process::id()
+    }
+
     pub fn browser_attribute(&self) -> Option<&'static str> {
         match self.class.as_str() {
             "chromium" | "Chromium" | "google-chrome" | "Google-chrome" | "google-chrome-stable" => Some("URI"),
@@ -258,6 +315,7 @@ mod tests {
             stable_id: "42".into(),
             pid: 101,
             class: String::new(),
+            title: String::new(),
             at: [647, 38],
             size: [621, 750],
             workspace: Workspace { id: 1 },
