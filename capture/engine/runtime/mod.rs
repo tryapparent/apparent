@@ -679,6 +679,8 @@ pub struct SharedCaptureTelemetry {
     /// The `agentContext` experiment was on when this capture started: clicks and strokes are
     /// looked up in the Accessibility tree (`crate::ax`, macOS only).
     agent_context: AtomicBool,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    pub(crate) circle_session: Mutex<Option<Arc<crate::circle_recognition::Session>>>,
     /// A ⇧-press inside the target: when, where (global points) and on which frame.
     shift_press: Mutex<Option<(u64, f64, f64, TargetFrame)>>,
     note_tap_epoch: AtomicU64,
@@ -746,6 +748,8 @@ impl SharedCaptureTelemetry {
             fn_candidate: AtomicBool::new(false),
             drag_start: Mutex::new(None),
             agent_context: AtomicBool::new(false),
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            circle_session: Mutex::default(),
             shift_press: Mutex::new(None),
             note_tap_epoch: AtomicU64::new(0),
             #[cfg(target_os = "linux")]
@@ -926,6 +930,12 @@ impl SharedCaptureTelemetry {
         self.window_log_request.store(false, Ordering::Release);
         let agent_context = crate::shared::handoff::experiment(crate::shared::handoff::AGENT_CONTEXT);
         self.agent_context.store(agent_context, Ordering::Release);
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        {
+            *self.circle_session.lock().unwrap_or_else(PoisonError::into_inner) =
+                (self.capture_mode.load(Ordering::Acquire) != 3 && crate::shared::handoff::experiment(crate::circle_recognition::SETTING))
+                .then(|| crate::circle_recognition::Session::start(crate::composition::assembly::circle_label)).flatten();
+        }
         if agent_context {
             crate::capture::engine::accessibility::ax::Prober::shared().begin();
         }
@@ -1152,7 +1162,6 @@ impl SharedCaptureTelemetry {
     }
 
     /// The helper process whose window is the capture target (the iPhone mirror).
-    #[cfg_attr(target_os = "windows", allow(dead_code))]
     pub fn set_capture_source_pid(&self, pid: u32) {
         self.capture_source_pid
             .store(i32::try_from(pid).unwrap_or(0), Ordering::Release);
@@ -1310,6 +1319,10 @@ impl SharedCaptureTelemetry {
             .take()
             && ink.pts.len() >= 3
         {
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            if let Some(session) = self.circle_session.lock().unwrap_or_else(PoisonError::into_inner).as_ref() {
+                session.end_mark(&ink);
+            }
             self.strokes
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -1337,6 +1350,8 @@ impl SharedCaptureTelemetry {
                 crate::capture::desktop::workflow::page::apply(&page, start, &mut events, &mut strokes);
             }
         }
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        self.circle_session.lock().unwrap_or_else(PoisonError::into_inner).take();
         (events, strokes)
     }
 }
@@ -1424,76 +1439,9 @@ fn same_target_frame(a: TargetFrame, b: TargetFrame) -> bool {
         && (a.height - b.height).abs() <= 0.5
 }
 
-fn track_shift_ink(
-    telemetry: &SharedCaptureTelemetry,
-    (x, y): (f64, f64),
-    pure_shift: bool,
-    prev_shift_ink: bool,
-) {
-    if pure_shift && !telemetry.notes_editing.load(Ordering::Acquire) && telemetry.contains_screen_point(x, y) {
-        telemetry.shift_held.store(true, Ordering::Release);
-        let t_ms = telemetry.elapsed_ms();
-        let (nx, ny, fw, fh) = telemetry.normalize_point(x, y);
-        let [sx, sy] = [nx, ny].map(|v| (v * SCALE as f32).round() as i32);
-        let mut guard = telemetry
-            .live_ink
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        let stroke = guard.get_or_insert_with(|| {
-            telemetry.window_log_request.store(true, Ordering::Release);
-            if telemetry.probing() {
-                crate::capture::engine::accessibility::mark_started(t_ms);
-            }
-            Stroke {
-                color: Some(crate::shared::handoff::pen::rgb()),
-                t0: t_ms,
-                t1: t_ms,
-                fw,
-                fh,
-                on: None,
-                pin: None,
-                laser: false,
-                pts: Vec::new(),
-            }
-        });
-        let dt = t_ms.saturating_sub(stroke.t0) as i32;
-        let should_push = stroke.pts.chunks_exact(3).last().is_none_or(|prev| {
-            let dx = (sx - prev[0]) as f32 / SCALE as f32 * fw as f32;
-            let dy = (sy - prev[1]) as f32 / SCALE as f32 * fh as f32;
-            dx.hypot(dy) >= 1.5
-        });
-        if should_push && stroke.pts.len() / 3 < 2_400 {
-            stroke.pts.extend_from_slice(&[sx, sy, dt]);
-            stroke.t1 = t_ms;
-        }
-    } else if !pure_shift && prev_shift_ink {
-        telemetry.shift_held.store(false, Ordering::Release);
-        if let Some(stroke) = telemetry
-            .live_ink
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-            // Ignore stationary Shift taps (e.g. typing a capital letter without moving the mouse).
-            && is_real_ink(&stroke)
-        {
-            if telemetry.probing() {
-                let frame = *telemetry
-                    .target_frame
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner);
-                crate::capture::engine::accessibility::probe_stroke(&stroke, frame);
-            }
-            telemetry
-                .strokes
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(stroke);
-            let _ = telemetry
-                .ui_sender
-                .try_send(LiveOverlayEvent::RequestSnapshot);
-        }
-    }
-}
+#[path = "../../../engine/native/input/shift_ink.rs"]
+mod shift_ink;
+use shift_ink::track_shift_ink;
 
 pub fn is_frontmost_terminal() -> bool {
     let Some((_pid, app, bundle_id)) = frontmost_app_info() else {

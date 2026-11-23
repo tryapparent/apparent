@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "record/completion/**"
+      - "record/capture-request/**"
+      - "record/media/src/assembly/crop-publication*"
       - "record/pill/**"
       - "record/shortcuts/push-to-talk.bend"
       - "record/enablement/ci/pill/**"
@@ -15,6 +17,8 @@ on:
     branches: [main]
     paths:
       - "record/completion/**"
+      - "record/capture-request/**"
+      - "record/media/src/assembly/crop-publication*"
       - "record/pill/**"
       - "record/shortcuts/push-to-talk.bend"
       - "record/enablement/ci/pill/**"

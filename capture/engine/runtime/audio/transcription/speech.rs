@@ -31,11 +31,6 @@ pub fn own_models_dir() -> PathBuf {
         .unwrap_or_else(default_models_dir)
 }
 
-#[cfg(target_os = "windows")]
-fn default_models_dir() -> PathBuf {
-    crate::capture::engine::runtime::platform::legacy_windows::local_dir().join("models")
-}
-
 #[cfg(target_os = "linux")]
 fn default_models_dir() -> PathBuf {
     dirs::data_dir()
@@ -270,27 +265,6 @@ const CURL_ARGS: [&str; 9] = [
     "-",
     "--output",
 ];
-
-/// Windows' own `curl.exe` (in System32 since Windows 10 1803), without a console window.
-#[cfg(target_os = "windows")]
-fn spawn_fetch(url: &str, partial: &Path) -> Result<(String, std::process::Child)> {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let curl = std::env::var_os("SystemRoot")
-        .map_or_else(|| PathBuf::from(r"C:\Windows"), PathBuf::from)
-        .join(r"System32\curl.exe");
-    let child = std::process::Command::new(&curl)
-        .args(CURL_ARGS)
-        .arg(partial)
-        .arg(url)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .creation_flags(CREATE_NO_WINDOW)
-        .spawn()
-        .with_context(|| format!("Could not run {}", curl.display()))?;
-    Ok(("curl".into(), child))
-}
 
 /// macOS supplies curl; Linux can also use wget when curl is unavailable.
 #[cfg(any(target_os = "linux", target_os = "macos"))]

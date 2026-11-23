@@ -12,6 +12,45 @@ worker with the repository outside its working directory. The About Electron
 smoke exercises the installed entry and preload with a synthetic parent.
 Native update execution and package acceptance remain platform checks.
 
+## Installed routes and recovery
+
+The native coordinator opens General from the menu bar, Linux tray and
+controls, app shortcut, and the final onboarding action. Reopening an
+existing Settings session from those entry points raises its current pane.
+The launch request for an already configured app and the post-update reopen
+target About. The recording pill can open Agents directly. In the installed
+Electron window, General, Recording, Storage, Permissions, Agents, Labs and
+About share one sidebar and window. The native session filters actions against
+the active pane and passes native effects and preference writes to their
+existing owners.
+
+If the packaged renderer cannot launch or its connection exits unexpectedly,
+Linux can open the in-process GPUI window and macOS can open the Swift Settings
+helper. macOS builds no longer include or poll the GPUI Settings presenter.
+Both platforms still use the native key-code translation for onboarding. The
+Swift helper's own keyboard handling continues to exercise the macOS shortcut
+adapter.
+
+Recording and Permissions are active recovery routes. In particular, the
+installed [Permissions verification](https://github.com/tryapparent/apparent/pull/1573)
+observed the native route on Ubuntu GNOME when Chromium could not start with a
+sandbox. That fallback lets users change recording preferences and repair
+permissions without weakening the sandbox. In the fallback sidebars, entries
+that ask the parent retry the packaged window. The others stay in the native
+window.
+
+| Pane | Linux GPUI sidebar | macOS Swift sidebar |
+| --- | --- | --- |
+| General | Parent | Parent |
+| Recording | Parent | Parent |
+| Permissions | Local | Local |
+| Agents | Parent | Local |
+| Labs | Parent | Parent |
+| About | Parent | Parent |
+
+Storage and Labs need the packaged renderer. If Storage cannot open in
+Electron, the session opens native General.
+
 On Linux, the channel preference selects the source named by the separate
 install action, which may install an earlier version. When the check finds no
 update, About shows the result without an install action. Selecting a different
@@ -45,7 +84,7 @@ Recording opens directly to its microphone and recording controls. The Record
 shortcut is in General, T3 sending is in Agents, and experimental preferences
 are in Labs.
 
-Recording joins General, About, Agents, Labs and eligible Storage routes in
+Recording joins General, About, Agents, Labs and Storage in
 the same Electron document. The native Permissions sidebar routes Recording
 through that Settings session. The session chooses the presenter, filters its
 actions, and owns the existing config transaction. The Electron

@@ -478,8 +478,6 @@ pub fn reconcile_login_item() {
 
 #[cfg(target_os = "macos")]
 fn login_command_stale() -> bool { false }
-#[cfg(target_os = "windows")]
-fn login_command_stale() -> bool { crate::capture::engine::runtime::platform::legacy_windows::platform::login::command_stale() }
 #[cfg(target_os = "linux")]
 fn login_command_stale() -> bool { crate::capture::desktop::linux::login::command_stale() }
 
@@ -572,25 +570,6 @@ mod login {
             assert_eq!(login_item_from_status(99), LoginItem::Off);
         }
     }
-}
-
-#[cfg(target_os = "windows")]
-pub fn login_item() -> LoginItem {
-    match crate::capture::engine::runtime::platform::legacy_windows::platform::login::status() {
-        (false, _) => LoginItem::Off,
-        (true, false) => LoginItem::On,
-        (true, true) => LoginItem::NeedsApproval,
-    }
-}
-
-#[cfg(target_os = "windows")]
-pub fn set_login_item(on: bool) -> anyhow::Result<()> {
-    crate::capture::engine::runtime::platform::legacy_windows::platform::login::set(on)
-}
-
-#[cfg(target_os = "windows")]
-fn open_login_items_settings() {
-    crate::capture::engine::runtime::platform::legacy_windows::platform::login::open_startup_settings();
 }
 
 #[cfg(target_os = "linux")]

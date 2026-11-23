@@ -14,14 +14,23 @@ fn main() {
     record_shortcut_build::compile();
     compile_onboarding_entry_policy();
     emit_recording_permissions();
+    emit_native_policy("record", "capture-request/capture-admission", "capture-request/src/capture-admission.bend");
     emit_native_policy("record", "lip-input", "settings/lip-policy.bend");
     emit_native_policy("record/storage", "storage-default", "src/retention/capacity.bend");
     emit_native_policy("record", "note-gesture", "notes/double-shift.json");
     emit_native_policy("onboarding", "note-tip", "host/tips/note-tip.json");
     #[cfg(target_os = "macos")]
     emit_native_policy("onboarding", "frog-nudge", "host/tips/frog-nudge.json");
-    compile_record_pill();
-    compile_record_whiteboard();
+    compile_embedded_policy("record/enablement/ci/bend/pill.ts", &[
+        "record/pill/pill-state.bend", "record/pill/host.ts", "record/pill/presentation.ts",
+        "record/enablement/ci/bend/modules.json",
+    ], "record-pill.mjs");
+    compile_embedded_policy("record/pill/whiteboard/build.ts", &[
+        "record/pill/whiteboard", "record/enablement/ci/bend/modules.json",
+    ], "record-whiteboard.mjs");
+    compile_embedded_policy("connect/enablement/ci/bend/renewal.ts", &[
+        "connect/client/typescript/src/renewal", "connect/enablement/ci/bend/modules.json",
+    ], "credential-renewal.mjs");
     record_media_build::compile_record_media();
     sparkle_outcomes::compile();
     println!("cargo:rerun-if-env-changed=APPARENT_POSTHOG_TOKEN");
@@ -38,11 +47,6 @@ fn main() {
         // cargo binaries and tests resolve the staged libraries beside themselves.
         // linuxdeploy rewrites this to the AppImage's usr/lib when packaging.
         println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN");
-    }
-    #[cfg(windows)]
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
-        embed_windows_resources();
-        stage_transcribe_dlls();
     }
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
         return;
@@ -73,7 +77,8 @@ fn emit_native_policy(owner: &str, name: &str, table: &str) {
         .expect("Node 22 is required to generate native policy");
     assert!(output.status.success(), "{name}: {}", String::from_utf8_lossy(&output.stderr));
     let out = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
-    std::fs::write(out.join(format!("{name}.rs")), output.stdout)
+    let file = name.rsplit('/').next().unwrap();
+    std::fs::write(out.join(format!("{file}.rs")), output.stdout)
         .expect("write generated native policy");
 }
 
@@ -97,41 +102,17 @@ fn compile_onboarding_entry_policy() {
         .expect("write generated Onboarding entry policy");
 }
 
-fn compile_record_whiteboard() {
-    for input in ["record/pill/whiteboard", "record/enablement/ci/bend/modules.json", "shared/enablement/bend"] {
+fn compile_embedded_policy(generator: &str, sources: &[&str], module: &str) {
+    for input in [generator, "shared/enablement/bend"].into_iter().chain(sources.iter().copied()) {
         println!("cargo:rerun-if-changed={input}");
     }
     let output = PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo output directory"));
     let result = Command::new("node")
-        .arg("record/pill/whiteboard/build.ts")
-        .arg(output.join("record-whiteboard.mjs"))
+        .arg(generator)
+        .arg(output.join(module))
         .output()
-        .expect("Node 22 is required to compile Record whiteboard policy");
-    assert!(result.status.success(), "Compile Record whiteboard policy: {}", String::from_utf8_lossy(&result.stderr));
-}
-
-fn compile_record_pill() {
-    for input in [
-        "record/pill/pill-state.bend",
-        "record/pill/host.ts",
-        "record/pill/presentation.ts",
-        "record/enablement/ci/bend/pill.ts",
-        "record/enablement/ci/bend/modules.json",
-        "shared/enablement/bend",
-    ] {
-        println!("cargo:rerun-if-changed={input}");
-    }
-    let output = PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo output directory"));
-    let result = Command::new("node")
-        .arg("record/enablement/ci/bend/pill.ts")
-        .arg(output.join("record-pill.mjs"))
-        .output()
-        .expect("Node 22 is required to compile Record pill policy");
-    assert!(
-        result.status.success(),
-        "Unable to compile Record pill policy: {}",
-        String::from_utf8_lossy(&result.stderr),
-    );
+        .expect("Node 22 is required to compile embedded policy");
+    assert!(result.status.success(), "Compile {module}: {}", String::from_utf8_lossy(&result.stderr));
 }
 
 #[path = "engine/native/record_media_build.rs"]
@@ -202,90 +183,6 @@ fn stage_transcribe_shared_objects() {
     }
 }
 
-/// transcribe.cpp's DLLs (`dynamic-backends`: `transcribe.dll`, `ggml*.dll`) beside `apparent.exe`
-/// and the test binaries, which load them at start. Its own build script copies them there too,
-/// but only when it runs, and a build restored from CI's cache skips it.
-#[cfg(windows)]
-fn stage_transcribe_dlls() {
-    println!("cargo:rerun-if-env-changed=DEP_TRANSCRIBE_CPP_RUNTIME_DIR");
-    let Some(runtime) = std::env::var_os("DEP_TRANSCRIBE_CPP_RUNTIME_DIR") else {
-        return;
-    };
-    let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
-    // OUT_DIR is <target>/<profile>/build/apparent-<hash>/out.
-    let Some(profile) = out_dir.ancestors().nth(3) else {
-        return;
-    };
-    let dlls: Vec<PathBuf> = std::fs::read_dir(&runtime)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| path.extension().is_some_and(|ext| ext == "dll"))
-        .collect();
-    for dir in [profile.to_path_buf(), profile.join("deps")] {
-        let _ = std::fs::create_dir_all(&dir);
-        for dll in &dlls {
-            if let Err(error) = std::fs::copy(dll, dir.join(dll.file_name().unwrap())) {
-                println!("cargo:warning=could not copy {}: {error}", dll.display());
-            }
-        }
-    }
-}
-
-/// The app icon (Explorer, the taskbar, Alt+Tab, and each window's title bar icon) and version
-/// info. GPUI's `windows-manifest` feature embeds the DPI-aware manifest, so none is added here.
-#[cfg(windows)]
-fn embed_windows_resources() {
-    let manifest_dir = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    let output_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
-    let icon = manifest_dir.join("capture/desktop/assets/Apparent.ico");
-    println!("cargo:rerun-if-changed={}", icon.display());
-    let version = std::env::var("CARGO_PKG_VERSION").unwrap();
-    let numeric = version
-        .split(['.', '-'])
-        .take(3)
-        .map(|part| part.parse::<u16>().unwrap_or(0).to_string())
-        .chain(std::iter::repeat("0".to_owned()))
-        .take(4)
-        .collect::<Vec<_>>()
-        .join(",");
-    let script = format!(
-        r#"#include <winver.h>
-1 ICON "{icon}"
-1 VERSIONINFO
-FILEVERSION {numeric}
-PRODUCTVERSION {numeric}
-FILEOS VOS_NT_WINDOWS32
-FILETYPE VFT_APP
-BEGIN
-  BLOCK "StringFileInfo"
-  BEGIN
-    BLOCK "040904B0"
-    BEGIN
-      VALUE "FileDescription", "Apparent"
-      VALUE "ProductName", "Apparent"
-      VALUE "FileVersion", "{version}"
-      VALUE "ProductVersion", "{version}"
-      VALUE "OriginalFilename", "apparent.exe"
-      VALUE "InternalName", "apparent"
-    END
-  END
-  BLOCK "VarFileInfo"
-  BEGIN
-    VALUE "Translation", 0x409, 1200
-  END
-END
-"#,
-        icon = icon.display().to_string().replace('\\', "/")
-    );
-    let resource = output_dir.join("apparent.rc");
-    std::fs::write(&resource, script).expect("write the Windows resource script");
-    embed_resource::compile(&resource, embed_resource::NONE)
-        .manifest_optional()
-        .expect("compile the Windows resources");
-}
-
 /// Track Desktop-owned build/runtime tools and packaging inputs after their physical move.
 fn watch_desktop_tooling() {
     for path in [
@@ -331,8 +228,8 @@ fn watch_desktop_tooling() {
         "capture/desktop/scripts/tests/test_preview_sparkle_setup.py",
         "capture/desktop/scripts/release/verify-preview-sparkle-key.swift",
         "capture/desktop/scripts/support/virtual-display.swift",
-        "capture/desktop/packaging/linux/dev.kitlangton.apparent.desktop",
-        "capture/desktop/packaging/linux/dev.kitlangton.apparent.png",
+        "composition/enablement/release/linux/dev.kitlangton.apparent.desktop.json",
+        "composition/enablement/release/linux/dev.kitlangton.apparent.png",
     ] {
         println!("cargo:rerun-if-changed={path}");
     }

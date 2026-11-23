@@ -87,11 +87,83 @@ impl Shortcut {
     }
 }
 
+pub(crate) fn key_code(key: &str) -> Option<u32> {
+    #[cfg(target_os = "linux")]
+    if ["fn", "wakeup", "xf86wakeup"].iter().any(|alias| key.eq_ignore_ascii_case(alias)) {
+        return Some(95);
+    }
+    #[cfg(target_os = "linux")]
+    if ["copilot", "f23", "XF86Assistant", "LaunchAssistant"]
+        .iter().any(|alias| key.eq_ignore_ascii_case(alias)) {
+        return Some(201);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let named: &[(&str, u32)] = &[
+        ("space", 0x20),
+        ("enter", 0x0D),
+        ("tab", 0x09),
+        ("backspace", 0x08),
+        ("delete", 0x2E),
+        ("left", 0x25),
+        ("up", 0x26),
+        ("right", 0x27),
+        ("down", 0x28),
+    ];
+    #[cfg(target_os = "macos")]
+    let named: &[(&str, u32)] = &[
+        ("space", 49),
+        ("enter", 36),
+        ("tab", 48),
+        ("backspace", 51),
+        ("delete", 117),
+        ("left", 123),
+        ("right", 124),
+        ("down", 125),
+        ("up", 126),
+    ];
+    if let Some((_, code)) = named.iter().find(|(name, _)| *name == key) {
+        return Some(*code);
+    }
+    if let Some(n) = key.strip_prefix('f').and_then(|n| n.parse::<u32>().ok())
+        && (1..=16).contains(&n)
+    {
+        #[cfg(not(target_os = "macos"))]
+        return Some(0x6F + n);
+        #[cfg(target_os = "macos")]
+        return Some([122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106][n as usize - 1]);
+    }
+    let mut chars = key.chars();
+    let ch = chars.next()?;
+    if chars.next().is_some() {
+        return None;
+    }
+    crate::capture::engine::runtime::key_code_for_char(ch).map(u32::from)
+}
+
 pub(crate) type Reveal = crate::capture::desktop::ui::electron_pill::Adapter;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn settings_recorder_recognizes_copilot_xkb_key_name() {
+        assert_eq!(key_code("Copilot"), Some(201));
+        assert_eq!(key_code("F23"), Some(201));
+        assert_eq!(key_code("XF86Assistant"), Some(201));
+        assert_eq!(key_code("LaunchAssistant"), Some(201));
+        assert_eq!(key_code("XF86TouchpadOff"), None);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn settings_shortcut_translation_uses_macos_virtual_key_codes() {
+        assert_eq!(key_code("enter"), Some(36));
+        assert_eq!(key_code("delete"), Some(117));
+        assert_eq!(key_code("f5"), Some(96));
+        assert_eq!(key_code("f17"), None);
+    }
 
     const FREE: Activity = Activity::Free;
 

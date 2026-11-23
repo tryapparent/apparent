@@ -1,8 +1,10 @@
 // Desktop owns which trials are exposed. Native persists only this allowlist.
-export type LabsSetting = 'streaming' | 'autoPaste' | 'pushToTalk' | 'sharing' | 'wisprFlow' | 'dictationFrog' | 'silentPrompt' | 'agentContext' | 'pillDoodles';
+export type LabsSetting = 'streaming' | 'autoPaste' | 'pushToTalk' | 'sharing' | 'wisprFlow' | 'dictationFrog' | 'silentPrompt' | 'agentContext' | 'pillDoodles' | 'circleLabels' | 'speakingStyle';
 type AgentContextAccess = 'enabled' | 'approval_required' | 'disabled' | 'unavailable';
 type Preferences = {
   saved: boolean | null;
+  circleLabelsSaved?: boolean | null;
+  speakingStyleSaved?: boolean | null;
   agentContextSaved?: boolean | null;
   agentContextAccess?: AgentContextAccess;
   sharingSaved?: boolean | null;
@@ -19,6 +21,8 @@ type Preferences = {
 };
 export type LabsFacts = Preferences | {
   error: 'config_read_failed' | 'config_write_failed';
+  circleLabelsSaved?: never;
+  speakingStyleSaved?: never;
   agentContextSaved?: never;
   agentContextAccess?: never;
   pillDoodlesSaved?: never;
@@ -35,7 +39,7 @@ export function facts(value: unknown): LabsFacts {
   const result: Preferences = {saved: input.saved};
   const access = input.agentContextAccess;
   if (access === 'enabled' || access === 'approval_required' || access === 'disabled' || access === 'unavailable') result.agentContextAccess = access;
-  for (const key of ['autoPasteSaved', 'pushToTalkSaved', 'sharingSaved', 'wisprSaved', 'dictationFrogSaved', 'silentPromptSaved', 'agentContextSaved', 'pillDoodlesSaved'] as const) {
+  for (const key of ['autoPasteSaved', 'pushToTalkSaved', 'sharingSaved', 'wisprSaved', 'dictationFrogSaved', 'silentPromptSaved', 'agentContextSaved', 'speakingStyleSaved', 'circleLabelsSaved', 'pillDoodlesSaved'] as const) {
     if (input[key] === undefined) continue;
     if (!savedFlag(input[key])) throw Error('Invalid Labs preference');
     result[key] = input[key];
@@ -63,7 +67,7 @@ export class LabsPreferences {
     return this.sendRequest(value, setting);
   }
   private sendRequest(value: unknown, setting: LabsSetting): Promise<LabsFacts> {
-    if (value !== undefined && typeof value !== 'boolean' || !['streaming','autoPaste','pushToTalk','sharing','wisprFlow','dictationFrog','silentPrompt','agentContext','pillDoodles'].includes(setting) || this.pending) return Promise.reject(Error('Invalid or pending Labs request'));
+    if (value !== undefined && typeof value !== 'boolean' || !['streaming','autoPaste','pushToTalk','sharing','wisprFlow','dictationFrog','silentPrompt','agentContext','speakingStyle','circleLabels','pillDoodles'].includes(setting) || this.pending) return Promise.reject(Error('Invalid or pending Labs request'));
     const request = ++this.next;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {this.pending = undefined; reject(Error('Labs acknowledgement timed out'));}, 3500);

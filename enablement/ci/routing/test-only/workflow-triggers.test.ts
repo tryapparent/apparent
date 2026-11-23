@@ -97,6 +97,8 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
   const record = workflow("stream-record.yml");
   const paths = [
     "record/completion/**",
+    "record/capture-request/**",
+    "record/media/src/assembly/crop-publication*",
     "record/pill/**",
     "record/shortcuts/push-to-talk.bend",
     "record/enablement/ci/pill/**",
@@ -121,6 +123,10 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
   for (const path of [
     "record/completion/src/copy-admission.bend",
     "record/completion/src/policy.ts",
+    "record/media/src/assembly/crop-publication.bend",
+    "record/media/src/assembly/crop-publication-request.ts",
+    "record/capture-request/src/capture-admission.bend",
+    "record/enablement/ci/bend/capture-request/capture-admission.ts",
     "record/enablement/ci/bend/build.ts",
     "shared/enablement/bend/toolchain.ts",
     ".github/workflows/stream-record.yml",
@@ -142,6 +148,14 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
         : ["capture", "desktop", "onboarding"],
       path,
     );
+  }
+  for (const path of [
+    "record/capture-request/src/capture-admission.bend",
+    "record/enablement/ci/bend/capture-request/capture-admission.ts",
+  ]) {
+    const route = routeDecision([path]);
+    assert.equal(route.installer, true, path);
+    assert.deepEqual(route.selected, ["capture", "desktop"], path);
   }
   assert.equal(
     routeDecision(["record/enablement/ci/bend/check.ts"]).installer,

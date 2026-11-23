@@ -35,7 +35,7 @@ SOURCES = {
     "capture/desktop/scripts/release/setup-sparkle.sh": ("Cargo.toml",),
     "capture/desktop/scripts/linux/appimage/appimage.sh": (
         "capture/desktop/scripts/support/apparent-restore-clipboard.py",
-        "capture/desktop/packaging/linux/dev.kitlangton.apparent.desktop",
+        "composition/enablement/release/linux/dev.kitlangton.apparent.desktop.json",
         "capture/desktop/scripts/linux/appimage/check-appimage-encoder.sh",
     ),
     "capture/desktop/scripts/linux/appimage/smoke-cpu.sh": ("Cargo.toml",),

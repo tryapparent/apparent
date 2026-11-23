@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { lstat, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { buildBend } from "../../../shared/enablement/bend/build.ts";
+import { buildRenewal } from "./bend/renewal.ts";
 
 const client = new URL("../../client/typescript/", import.meta.url);
 const output = new URL("dist", client);
@@ -31,3 +32,4 @@ await buildBend(
   undefined,
   "connect/client/typescript/src/account/",
 );
+await buildRenewal(fileURLToPath(new URL("dist/renewal", client)));

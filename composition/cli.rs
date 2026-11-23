@@ -37,7 +37,6 @@ use crate::capture::engine::bundle::bundle_processing::{
 };
 use crate::capture::engine::runtime::audio::audio::AudioRecorder;
 use crate::capture::engine::runtime::{ScreenCaptureSession, discover_target, record_target};
-use crate::capture::engine::sketch::summary_markdown;
 use crate::shared::clock::now_epoch_ms;
 use crate::shared::ids::make_bundle_id;
 use crate::shared::model::{CaptureMode, InteractionEvent, Shape, parse_clock_ms};
@@ -414,6 +413,8 @@ enum Command {
         /// was drawn on, and id, for `apparent zoom --mark`.
         #[arg(long)]
         marks: bool,
+        #[arg(long, conflicts_with_all = ["json", "marks"], help = "Read earlier transcript examples for a speaking-style handoff")]
+        style_examples: bool,
         /// Turn an experiment on for this summary (e.g. `agentContext`). Repeatable.
         #[arg(long = "experiment", value_name = "NAME")]
         experiments: Vec<String>,
@@ -822,8 +823,6 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
         Some(command) => command,
         // `apparent` typed in a terminal (on PATH through Settings › Agents or Homebrew) would
         // start a second menu-bar app. macOS opens the app with stdin on /dev/null.
-        // On Windows `apparent.exe` is a console program and Explorer gives it a console too, so a
-        // bare launch always starts the app. Linux desktops start `apparent app` (apparent.desktop).
         None if cfg!(any(target_os = "macos", target_os = "linux"))
             && std::io::IsTerminal::is_terminal(&std::io::stdin()) =>
         {
@@ -930,11 +929,6 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
             Ok(())
         }
         Command::App { record, iphone } => {
-            #[cfg(target_os = "windows")]
-            {
-                win::shell::release_own_console();
-                win::shell::wait_for_relauncher();
-            }
             #[cfg(target_os = "linux")]
             if linux::ipc::running() {
                 linux::ipc::send(if record { "shortcut record" } else { "open" })?;
@@ -942,11 +936,6 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
             }
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             return run_owned_app(record, iphone, false);
-            #[cfg(target_os = "windows")]
-            {
-                ui::run_app(None, record, iphone, None);
-                Ok(())
-            }
         }
         #[cfg(target_os = "linux")]
         Command::Update { command } => {
@@ -1520,32 +1509,10 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
             reader,
             json,
             marks,
+            style_examples,
             experiments,
         } => {
-            for name in &experiments {
-                handoff::enable_experiment(name);
-            }
-            #[cfg(any(target_os = "macos", target_os = "linux"))]
-            let bundle = hosted::inspect_source(&bundle, reader.as_deref())?;
-            let (dir, loaded) = handoff::load_bundle(&bundle)?;
-            if marks {
-                let entries = agent_context::mark_entries(&loaded);
-                if json {
-                    let list: Vec<_> = entries.iter().map(|e| e.json()).collect();
-                    println!("{}", serde_json::to_string_pretty(&list)?);
-                } else if entries.is_empty() {
-                    println!("No marks");
-                } else {
-                    for entry in &entries {
-                        println!("{}", entry.line());
-                    }
-                }
-            } else if json {
-                println!("{}", serde_json::to_string_pretty(&loaded)?);
-            } else {
-                print!("{}", summary_markdown(&loaded, &dir));
-            }
-            Ok(())
+            super::transcript::inspect(bundle, reader, json, marks, style_examples, experiments)
         }
         Command::Clean {
             dry_run,

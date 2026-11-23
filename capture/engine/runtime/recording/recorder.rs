@@ -15,6 +15,8 @@ use crate::stored_frame::StoredFrame;
 
 #[path = "../../../../engine/recording/start.rs"]
 mod start;
+#[path = "../../../../engine/recording/lifecycle/buffer.rs"]
+mod buffer;
 #[path = "../../../../engine/recording/lifecycle/stop.rs"]
 mod stop;
 pub(crate) use start::{StartError, prepare_screen_capture};
@@ -54,7 +56,14 @@ pub struct CandidateBuffer {
     budget: usize,
     interval: Duration,
     sampling: Option<Sampling>,
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    circle: Option<Arc<crate::circle_recognition::Session>>,
+    candidate_size: Option<(u32, u32)>,
 }
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[path = "../../../../engine/recognition/sampling.rs"]
+mod circle_sampling;
 
 impl CandidateBuffer {
     pub fn new(budget_bytes: usize) -> Self {
@@ -64,6 +73,9 @@ impl CandidateBuffer {
             budget: budget_bytes,
             interval: FRAME_SAMPLE_INTERVAL,
             sampling: None,
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            circle: None,
+            candidate_size: None,
         }
     }
 
@@ -90,46 +102,11 @@ impl CandidateBuffer {
         self.frames.len()
     }
 
-    pub fn push(&mut self, frame: RgbaFrame, urgent: bool) {
-        if self.cap == 0 {
-            self.cap = (self.budget / frame.rgba.len().max(1)).clamp(60, 1_200);
-        }
-        self.frames.push((StoredFrame::from_capture(frame), urgent));
-        if self.frames.len() >= self.cap {
-            self.thin();
-        }
-    }
-
-    fn thin(&mut self) {
-        let mut regular = 0_usize;
-        let mut kept: Vec<(StoredFrame, bool)> = std::mem::take(&mut self.frames)
-            .into_iter()
-            .enumerate()
-            .filter(|(i, (_, urgent))| {
-                let keep = *i == 0 || *urgent || regular.is_multiple_of(2);
-                if !urgent {
-                    regular += 1;
-                }
-                keep
-            })
-            .map(|(_, f)| f)
-            .collect();
-        // Mostly urgent frames (a storm of clicks): thin those too.
-        if kept.len() > self.cap * 3 / 4 {
-            kept = kept
-                .into_iter()
-                .enumerate()
-                .filter(|(i, _)| i.is_multiple_of(2))
-                .map(|(_, f)| f)
-                .collect();
-        }
-        self.frames = kept;
-        self.interval *= 2;
-    }
-
     /// Forgets frames taken after `t_ms`, except the first.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub fn drop_since(&mut self, t_ms: u64) {
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        if let Some(session) = self.circle.as_ref() { session.clear_samples(); }
         let mut index = 0;
         self.frames.retain(|(frame, _)| {
             index += 1;
@@ -202,10 +179,10 @@ pub(crate) fn push_candidate(
     urgent: bool,
     real: bool,
 ) {
-    frames
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .push(frame, urgent);
+    let mut buffer = frames.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    let frame = buffer.sample_for_circle(frame, real);
+    buffer.push(frame, urgent);
     if real {
         real_frame_seen.store(true, Ordering::Release);
     }
@@ -254,6 +231,8 @@ impl ScreenCaptureSession {
         excluded_window_ids: Arc<Mutex<Vec<u32>>>,
     ) -> anyhow::Result<Self> {
         Self::start_with_exclusion_receipt(target, video_output_path, excluded_window_ids,
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            None,
             #[cfg(target_os = "macos")]
             Arc::new(Mutex::new(Vec::new())),
             #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -261,10 +240,12 @@ impl ScreenCaptureSession {
         )
     }
 
-    pub fn start_with_exclusion_receipt(
+    pub(crate) fn start_with_exclusion_receipt(
         target: TargetInfo,
         video_output_path: Option<PathBuf>,
         excluded_window_ids: Arc<Mutex<Vec<u32>>>,
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        circle: Option<Arc<crate::circle_recognition::Session>>,
         #[cfg(target_os = "macos")]
         applied_excluded_window_ids: Arc<Mutex<Vec<u32>>>,
         #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -278,6 +259,8 @@ impl ScreenCaptureSession {
         let stopping = Arc::new(AtomicBool::new(false));
         let urgent_snapshot = Arc::new(AtomicBool::new(true));
         let candidate_buffer = CandidateBuffer::new(CANDIDATE_BUDGET_BYTES);
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        let candidate_buffer = CandidateBuffer { circle, ..candidate_buffer };
         #[cfg(target_os = "macos")]
         let candidate_buffer = {
             let mut buffer = candidate_buffer;

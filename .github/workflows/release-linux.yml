@@ -180,20 +180,15 @@ jobs:
       - name: CPU tiers contain only their declared instructions
         if: matrix.arch == 'x86_64'
         run: python3 capture/desktop/scripts/linux/appimage/check-cpu-tiers.py target/release
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-control
+          sparse-checkout: composition/enablement/release/linux
+          persist-credentials: false
       - name: Package
         id: package
-        run: |
-          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          if [[ -n "$TAG" && "$TAG" != "v$version" ]]; then
-            echo "Tag $TAG does not match Cargo.toml $version" >&2
-            exit 1
-          fi
-          ./capture/desktop/scripts/linux/appimage/appimage.sh target/release/apparent
-          name="Apparent-$version-linux-${{ matrix.arch }}.AppImage"
-          mkdir -p dist
-          cp "target/appimage/Apparent-${{ matrix.arch }}.AppImage" "dist/$name"
-          (cd dist && sha256sum "$name" > "$name.sha256")
-          echo "name=$name" >> "$GITHUB_OUTPUT"
+        run: node --experimental-strip-types "$GITHUB_WORKSPACE/.release-control/composition/enablement/release/linux/appimage.ts" ${{ matrix.arch }}
       - name: AppImage runs headless without FUSE
         run: APPIMAGE_EXTRACT_AND_RUN=1 "dist/${{ steps.package.outputs.name }}" --help
       - name: Bundled GStreamer decodes an H.264 MP4

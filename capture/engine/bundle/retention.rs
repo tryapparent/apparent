@@ -73,47 +73,11 @@ fn default_bundle_days() -> Option<u32> {
 
 impl Default for Policy {
     fn default() -> Self {
-        Preset::Week.policy()
-    }
-}
-
-/// The choices in the menu bar's Keep Recordings menu.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Preset {
-    Week,
-    Month,
-    Forever,
-}
-
-impl Preset {
-    pub const ALL: [Self; 3] = [Self::Week, Self::Month, Self::Forever];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Week => "Video for 7 Days",
-            Self::Month => "Video for 30 Days",
-            Self::Forever => "Forever",
-        }
-    }
-
-    pub fn policy(self) -> Policy {
-        let (media_days, bundle_days) = match self {
-            Self::Week => (Some(7), Some(30)),
-            Self::Month => (Some(30), Some(90)),
-            Self::Forever => (None, None),
-        };
-        Policy {
-            media_days,
-            bundle_days,
-        }
+        Self { media_days: Some(7), bundle_days: Some(30) }
     }
 }
 
 impl Policy {
-    pub fn preset(&self) -> Option<Preset> {
-        Preset::ALL.into_iter().find(|p| p.policy() == *self)
-    }
-
     pub fn load() -> Self {
         Self::load_from(&crate::shared::handoff::default_config_path())
     }
@@ -236,18 +200,6 @@ fn changed_ago(path: &Path, now: SystemTime) -> Option<Duration> {
     use std::os::unix::fs::MetadataExt;
     let meta = path.metadata().ok()?;
     let changed = UNIX_EPOCH + Duration::new(meta.ctime().max(0) as u64, meta.ctime_nsec() as u32);
-    Some(now.duration_since(changed).unwrap_or_default())
-}
-
-/// NTFS's change time for the folder (`ChangeTime`), which moves when an entry is added, removed
-/// or renamed, like the Unix ctime.
-#[cfg(windows)]
-fn changed_ago(path: &Path, now: SystemTime) -> Option<Duration> {
-    let changed =
-        crate::capture::engine::runtime::platform::legacy_windows::platform::shell::change_time(
-            path,
-        )
-        .or_else(|| path.metadata().ok()?.modified().ok())?;
     Some(now.duration_since(changed).unwrap_or_default())
 }
 
@@ -416,17 +368,6 @@ fn observe(
 
 /// Moves `path` to the Trash.
 pub type Trasher<'a> = &'a dyn Fn(&Path) -> Result<()>;
-
-#[cfg(windows)]
-pub fn trash(path: &Path) -> Result<()> {
-    crate::capture::engine::runtime::platform::legacy_windows::platform::shell::recycle(path)?;
-    ensure!(
-        !path.exists(),
-        "Could not move {} to the Recycle Bin",
-        path.display()
-    );
-    Ok(())
-}
 
 /// The freedesktop Trash (`~/.local/share/Trash`), as the file manager uses it.
 #[cfg(target_os = "linux")]
@@ -784,8 +725,6 @@ fn lower_priority() {
     unsafe {
         libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_UTILITY, 0);
     }
-    #[cfg(windows)]
-    crate::capture::engine::runtime::platform::legacy_windows::platform::shell::background_thread();
     // SAFETY: only lowers the calling thread's own priority.
     #[cfg(target_os = "linux")]
     unsafe {
@@ -1366,7 +1305,7 @@ mod tests {
     fn policy_reads_defaults_and_explicit_nulls() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("config.json");
-        assert_eq!(Policy::load_from(&path), Preset::Week.policy());
+        assert_eq!(Policy::load_from(&path), Policy { media_days: Some(7), bundle_days: Some(30) });
         std::fs::write(
             &path,
             r#"{"ingestToken":"abc","agentHost":"studio","retention":{"mediaDays":null}}"#,
@@ -1380,7 +1319,6 @@ mod tests {
                 bundle_days: Some(30)
             }
         );
-        assert_eq!(loaded.preset(), None);
         std::fs::write(
             &path,
             r#"{"retention":{"mediaDays":30,"bundleDays":90,"futurePolicy":42}}"#,
@@ -1419,7 +1357,7 @@ mod tests {
                 },
             ]
         );
-        assert!(planned(tmp.path(), &Preset::Forever.policy()).is_empty());
+        assert!(planned(tmp.path(), &Policy { media_days: None, bundle_days: None }).is_empty());
         // However short the policy, a day-old bundle is kept.
         let short = Policy {
             media_days: Some(0),

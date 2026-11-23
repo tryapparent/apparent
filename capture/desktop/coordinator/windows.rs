@@ -536,10 +536,10 @@ pub fn run_app(
                     loop_coord.read(cx).publish_capture_busy();
                     platform::poll_status_bar();
                     settings::onboarding_window::poll(cx);
+                    #[cfg(not(target_os = "macos"))]
+                    settings::settings_window::poll(cx);
                     #[cfg(any(target_os = "macos", target_os = "linux"))]
                     workflow::electron::poll_windows(cx);
-                    #[cfg(target_os = "windows")]
-                    settings::settings_window::poll(cx);
                     #[cfg(any(target_os = "macos", target_os = "linux"))]
                     if workflow::launch_instance::take_open(onboarding_initialized) {
                         loop_coord.update(cx, |coord, cx| {
@@ -552,8 +552,6 @@ pub fn run_app(
                             } else if let Some(session) = coord.onboarding.as_mut() {
                                 session.show();
                             } else {
-                                // About is the shared installed Electron Settings entry.
-                                // Its sidebar retains access to the native panes until migrated.
                                 coord.open_settings(Some(crate::capture::desktop::settings::Pane::About));
                             }
                         });

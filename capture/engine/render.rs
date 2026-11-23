@@ -1759,14 +1759,6 @@ mod native_text {
     use ab_glyph::{Font, FontVec, PxScale, ScaleFont};
     use std::sync::OnceLock;
 
-    #[cfg(target_os = "windows")]
-    fn load(bold: bool) -> Option<FontVec> {
-        let name = if bold { "arialbd.ttf" } else { "arial.ttf" };
-        let dir = std::env::var_os("WINDIR").unwrap_or_else(|| "C:\\Windows".into());
-        let bytes = std::fs::read(std::path::Path::new(&dir).join("Fonts").join(name)).ok()?;
-        FontVec::try_from_vec(bytes).ok()
-    }
-
     #[cfg(target_os = "linux")]
     fn load(bold: bool) -> Option<FontVec> {
         let (liberation, dejavu, noto) = if bold {

@@ -1,6 +1,9 @@
 pub(crate) use crate::permission_admission::repair as permission_repair;
 pub(crate) mod cli;
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+const FEEDBACK_HINT: &str = "Confusing behavior or workaround? Draft a note with `apparent feedback --help`.";
+
 pub(crate) fn run() -> anyhow::Result<()> {
     use crate::capture::desktop;
     use clap::Parser;
@@ -11,13 +14,21 @@ pub(crate) fn run() -> anyhow::Result<()> {
         desktop::run_start_benchmark();
         return Ok(());
     }
-    let cli = cli::Cli::parse();
+    let cli = cli::Cli::try_parse().unwrap_or_else(|error| {
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        if error.use_stderr() {
+            let _ = error.print();
+            eprintln!("\n{FEEDBACK_HINT}");
+            std::process::exit(error.exit_code());
+        }
+        error.exit()
+    });
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     let reading_capture = cli.reads_capture();
     let result = cli::run_cli(cli);
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     if reading_capture && let Err(error) = &result {
-        eprintln!("Error: {error:?}\n\nUnexpected error? Run `apparent feedback --help` to draft a report.");
+        eprintln!("Error: {error:?}\n\n{FEEDBACK_HINT}");
         std::process::exit(1);
     }
     result
@@ -93,7 +104,7 @@ pub(crate) mod feedback {
 
     #[derive(Args)]
     #[command(
-        after_help = "Send in one call with --submit. When sending on someone's\nbehalf, show them the exact title and body and get approval.\n\nOptional local preview:\n  apparent feedback --kind bug --title 'Zoom rejects 1:05' \\\n    --body 'Expected 65 seconds. Zoom rejected the timestamp.'\n\nInclude what you tried, what you expected, and what happened.\nOmit private paths, capture contents, and credentials."
+        after_help = "Send in one call with --submit.\n\nOptional local preview:\n  apparent feedback --kind bug --title 'Zoom rejects 1:05' \\\n    --body 'Expected 65 seconds. Zoom rejected the timestamp.'\n\nInclude what you tried, what you expected, and what happened.\nOmit private paths, capture contents, and credentials."
     )]
     pub(crate) struct FeedbackArgs {
         #[arg(long, value_enum, default_value = "feedback", help = "Report category")]

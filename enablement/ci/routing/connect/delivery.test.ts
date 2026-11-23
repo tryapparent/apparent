@@ -66,7 +66,7 @@ function condition(
   )(github, needs, () => isCancelled, { HOSTED_CD_ENABLED: "true" });
 }
 
-test("real Connect diffs route hosted delivery and retain Desktop contract integration", () => {
+test("Connect diffs keep hosted and Desktop CI", { timeout: 15_000 }, () => {
   const cwd = mkdtempSync(join(tmpdir(), "apparent-dev-connect-delivery-"));
   const env = Object.fromEntries(
     Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),

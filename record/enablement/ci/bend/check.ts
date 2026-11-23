@@ -11,6 +11,7 @@ import {
 import { run } from "../../../../shared/enablement/bend/toolchain.ts";
 import { repairTable } from "./permission-table.ts";
 import { admissionSource, buildAdmission } from "./build.ts";
+import { checkCaptureAdmission } from "./capture-request/check.ts";
 import { assemblePill } from "./pill.ts";
 
 import { gestureTable, gestureTablePath } from "./note-gesture.ts";
@@ -41,6 +42,49 @@ await bendScratch(async (scratch) => {
   );
   const proofOutput = join(scratch, "proof");
   await buildBend(root, "record", proofOutput, options);
+  copyFileSync(
+    new URL(
+      "../../../media/src/assembly/crop-publication-request.ts",
+      import.meta.url,
+    ),
+    join(proofOutput, "crop-publication-request.ts"),
+  );
+  run(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+  import assert from "node:assert/strict";
+  import cropPolicy from "./crop-publication.mjs";
+  import { cropPublicationRequest } from "./crop-publication-request.ts";
+  const cropPublication = cropPublicationRequest(cropPolicy.publish);
+  const publish = (rows) =>
+    JSON.parse(cropPublication(JSON.stringify(rows)));
+  assert.equal(publish([]), null);
+  assert.equal(publish([["full", ["Ignored"]]]), null);
+  assert.deepEqual(publish([["activity", []]]), {
+    label: "the activity",
+    regions: [true],
+  });
+  assert.deepEqual(
+    publish([
+      ["focus", ["Éditeur 📝", "終端"]],
+      ["full", ["Ignored"]],
+      ["activity", ["終端", "Éditeur 📝", "Browser"]],
+    ]),
+    { label: "the activity in Éditeur 📝 + 終端 + Browser", regions: [true, false, true] },
+  );
+  for (const kind of ["window", "windows", "fallback"]) {
+    assert.deepEqual(publish([["focus", ["Editor"]], [kind, [""]]]), {
+      label: "Editor + ",
+      regions: [true, true],
+    });
+  }
+  `,
+    ],
+    proofOutput,
+  );
   run(
     process.execPath,
     [
@@ -105,6 +149,7 @@ await bendScratch(async (scratch) => {
     true, false, true, false, [1000, 0],
   ]);
 
+  await checkCaptureAdmission(proofOutput);
   assert.deepEqual(pushToTalkTable(proofOutput), {
     hold: 300,
     actions: [1, 3, 0, 0, 1, 3, 2, 0, 4, 3, 4, 0, 4, 3, 4, 0],

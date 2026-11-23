@@ -1,5 +1,7 @@
 //! Finite page resources for Record's screen candidate workflow.
 use super::movie_frames::{Reply, read_reply, sampled_times, timed_frame_response};
+use crate::capture::engine::autocrop::autocrop::Crop;
+use crate::embedded_policy::EmbeddedPolicy;
 use crate::shared::model::RgbaFrame;
 use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
@@ -93,6 +95,31 @@ fn next_cursor(value: serde_json::Value, seen: &mut HashSet<String>) -> Result<O
         }
         _ => bail!("Invalid screen candidate cursor"),
     }
+}
+
+#[derive(Deserialize)]
+pub(crate) struct CropPublication {
+    pub label: String,
+    pub regions: Vec<bool>,
+}
+
+pub(crate) fn crop_publication(crops: &[Crop]) -> Option<CropPublication> {
+    let started = Instant::now();
+    let rows: Vec<_> = crops.iter().map(|crop| (crop.kind, &crop.apps)).collect();
+    let input = serde_json::to_string(&rows).ok()?;
+    if input.len() > 256 * 1024 {
+        return None;
+    }
+    let runtime = EmbeddedPolicy::open_with_deadline(
+        "record-crop-publication",
+        include_str!(concat!(env!("OUT_DIR"), "/record-crop-publication.mjs")),
+        &["cropPublication"],
+        started + Duration::from_millis(25),
+    )
+    .ok()?;
+    let output = runtime.call("cropPublication", (input,)).ok()?;
+    let plan: CropPublication = serde_json::from_str(&output).ok()?;
+    (plan.regions.len() == crops.len()).then_some(plan)
 }
 
 #[cfg(test)]

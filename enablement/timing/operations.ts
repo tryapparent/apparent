@@ -62,6 +62,14 @@ function heredocEnd(source: string, start: number, {delimiter, quoted, stripTabs
 }
 
 function commandOperation(words: ShellWord[]): string {
+  if (words[0]?.value === 'taskset') {
+    const [, option, affinity, executable, verb, remote, ref] = words.map(word => word.value);
+    return words.length === 7 &&
+      !words.some(word => word.dynamic) &&
+      option === '-c' && /^\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*$/.test(affinity) &&
+      executable === 'git' && verb === 'push' && remote === 'origin' && ref === 'HEAD'
+      ? 'verification/push' : 'unknown';
+  }
   while (words.length && /^(?:\w+=|(?:env|sudo|command|exec|timeout|\d+[smh]?)$)/.test(words[0].value)) words = words.slice(1);
   const [command, ...args] = words;
   const name = command?.value.split('/').pop() ?? '';

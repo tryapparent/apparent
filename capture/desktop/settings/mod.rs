@@ -6,8 +6,7 @@ pub(crate) mod onboarding;
 pub(crate) mod onboarding_window;
 pub(crate) mod settings;
 pub(in crate::capture::desktop) mod presentation;
-#[cfg(target_os = "linux")]
-mod storage;
+#[cfg(not(target_os = "macos"))]
 pub(crate) mod settings_window;
 pub(crate) mod shortcut;
 
@@ -86,6 +85,7 @@ pub enum UpdateResult {
     Failed,
 }
 
+#[cfg(not(target_os = "macos"))]
 impl UpdateResult {
     pub fn label(self) -> &'static str {
         match self {

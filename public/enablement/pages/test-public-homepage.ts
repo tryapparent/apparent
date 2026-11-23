@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
-import { chromium } from "playwright-core"
+import { chromium, type Route } from "playwright-core"
 import "../artifact/app-metadata.test.ts"
 
 import { movie, chunkPath } from "../../site/lib/pages-video-metadata.js"
@@ -400,9 +400,9 @@ test("source homepage preserves accepted responsive layout and interactions", as
                 } })
               })
               const installer = "https://github.com/tryapparent/apparent/releases/download/test/" + scenario.asset
-              let releaseLookup: import("playwright-core").Route | undefined
+              const releaseLookup = Promise.withResolvers<Route>()
               await page.unroute("https://api.github.com/repos/tryapparent/apparent/releases?*")
-              await page.route("https://api.github.com/repos/tryapparent/apparent/releases?*", route => { releaseLookup = route })
+              await page.route("https://api.github.com/repos/tryapparent/apparent/releases?*", releaseLookup.resolve)
               await page.route(installer, route => route.fulfill({
                 contentType: "application/octet-stream", headers: { "Content-Disposition": 'attachment; filename="test.dmg"' }, body: "synthetic installer",
               }))
@@ -420,17 +420,20 @@ test("source homepage preserves accepted responsive layout and interactions", as
                 assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width && bounds.height >= 44)
                 if (process.env.SITE_EVIDENCE) await page.screenshot({ path: join(process.env.SITE_EVIDENCE, `${scenario.id}-download-${engine.name()}-${width}-${colorScheme}.png`) })
               }
-              const downloaded = page.waitForEvent("download")
-              if (width === 320) await downloadAction.press("Enter")
-              else await downloadAction.click()
-              await page.waitForFunction(platform => document.querySelector(`[data-download-platform="${platform}"]`)?.getAttribute("aria-busy") === "true", scenario.platform)
-              assert.equal(await page.getByRole("link", { name: "Finding download…", exact: false }).count(), 1)
-              assert.ok(releaseLookup, "click must look up current releases, not open their listing")
-              await releaseLookup.fulfill({ json: [
-                { draft: false, published_at: "2026-11-12", assets: ["Apparent-Preview-9.0.0-arm64.dmg", "Apparent-9.0.0-linux-x86_64.AppImage", "Apparent-9.0.0-linux-aarch64.AppImage"].map(name => ({ name, browser_download_url: "https://github.com/tryapparent/apparent/releases/download/test/" + name })) },
-                { draft: false, published_at: "2026-11-13", assets: [] },
-              ] })
-              assert.equal((await downloaded).url(), installer)
+              const [downloaded] = await Promise.all([
+                page.waitForEvent("download"),
+                (async () => {
+                  if (width === 320) await downloadAction.press("Enter")
+                  else await downloadAction.click()
+                  await page.waitForFunction(platform => document.querySelector(`[data-download-platform="${platform}"]`)?.getAttribute("aria-busy") === "true", scenario.platform)
+                  assert.equal(await page.getByRole("link", { name: "Finding download…", exact: false }).count(), 1)
+                  await (await releaseLookup.promise).fulfill({ json: [
+                    { draft: false, published_at: "2026-11-12", assets: ["Apparent-Preview-9.0.0-arm64.dmg", "Apparent-9.0.0-linux-x86_64.AppImage", "Apparent-9.0.0-linux-aarch64.AppImage"].map(name => ({ name, browser_download_url: "https://github.com/tryapparent/apparent/releases/download/test/" + name })) },
+                    { draft: false, published_at: "2026-11-13", assets: [] },
+                  ] })
+                })(),
+              ])
+              assert.equal(downloaded.url(), installer)
               assert.equal(page.url(), origin + "/" + scenario.query, "download leaves the visitor on the homepage")
               await page.route("https://github.com/tryapparent/apparent/releases", route => route.fulfill({ contentType: "text/html", body: "Synthetic release picker" }))
               await page.unroute("https://api.github.com/repos/tryapparent/apparent/releases?*")

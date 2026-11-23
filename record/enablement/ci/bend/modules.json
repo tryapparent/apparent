@@ -1,9 +1,12 @@
 {
   "modules": [
+    "capture-request/src/capture-admission.bend",
     "completion/src/copy-admission.bend",
     "media/src/assembly/frame-limits.bend",
+    "media/src/assembly/crop-publication.bend",
     "media/src/assembly/frame-label.bend",
     "media/src/assembly/focused-mark.bend",
+    "media/src/circle/circle-label.bend",
     "media/src/export/quiet-export.bend",
     "settings/recording-policy.bend",
     "settings/lip-policy.bend",
@@ -19,6 +22,7 @@
     "storage/src/retention/capacity.bend"
   ],
   "inputs": [
+    "capture-request/",
     "completion/",
     "media/",
     "settings/",

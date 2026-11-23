@@ -17,7 +17,7 @@ use screencapturekit::recording_output::{
 use screencapturekit::screenshot_manager::SCScreenshotManager;
 
 use super::super::{
-    CANDIDATE_EDGE, CANDIDATE_EDGE_NO_VIDEO, CARBON_CMD_KEY, CARBON_CONTROL_KEY, CARBON_OPTION_KEY,
+    CARBON_CMD_KEY, CARBON_CONTROL_KEY, CARBON_OPTION_KEY,
     CARBON_SHIFT_KEY, FRAME_SAMPLE_INTERVAL, LiveOverlayEvent, Sampler, SharedCaptureTelemetry,
     ShortcutConfig, ShortcutKind, MACOS_FN_KEY_CODE, capture_size, clean_label, fn_gesture_transition, hotkey_combos, pick_display, pick_start_display,
     poll_clicks, apparent_log, track_shift_ink,
@@ -1056,11 +1056,8 @@ pub(crate) fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
         &applied_excluded_window_ids,
     );
     crate::capture::desktop::start_metric("sck_ready_ms", started_at);
-    let shot_edge = if video_path.is_some() {
-        CANDIDATE_EDGE
-    } else {
-        CANDIDATE_EDGE_NO_VIDEO
-    };
+    let shot_edge = thread_frames.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        .sampling_edge(&sampler_target, video_path.is_some());
     let shot_config = sck_config(&sampler_target, shot_edge);
     let mut filter_and_config = filter.map(|f| (f, shot_config));
     if filter_and_config.is_none() {
