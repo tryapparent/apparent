@@ -19,7 +19,7 @@ const ortSource = "https://cdn.jsdelivr.net/gh/microsoft/onnxruntime@v1.23.2";
 
 const assets = {
   "model.onnx": [
-    `${modelRoot}/onnx/model.onnx?download=true`,
+    `${modelRoot}/onnx/model.onnx`,
     "d36eea8c3298d339c232581dff18beed6651eacd607d0a531b7bdb100f8dc713",
   ],
   "config.json": [

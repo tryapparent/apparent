@@ -171,10 +171,6 @@ pub struct View {
     pub lower_playback: bool,
     pub playback_level: u8,
     pub video_export: bool,
-    pub retention: RetentionView,
-    /// How much the captures folder takes, once measured.
-    pub captures_size: Option<String>,
-    pub captures_dir: CapturesDirView,
     pub permissions: Vec<crate::permission_admission::Row>,
     pub updates: bool,
     pub update_check: UpdateCheck,
@@ -348,62 +344,6 @@ pub struct ModelView {
     pub chosen: bool,
 }
 
-/// Settings › Storage › Location: where new captures go (`"capturesDir"`).
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CapturesDirView {
-    /// The folder, with the home folder as `~`.
-    pub path: String,
-    /// Chosen in Settings rather than the built-in folder, so Reset shows.
-    pub custom: bool,
-}
-
-impl CapturesDirView {
-    fn new(config: &crate::shared::handoff::Config) -> Self {
-        let chosen = config
-            .captures_dir
-            .as_deref()
-            .and_then(crate::shared::handoff::configured_captures_dir);
-        Self {
-            custom: chosen.is_some(),
-            path: crate::composition::command_line::tilde(
-                &chosen.unwrap_or_else(crate::shared::handoff::builtin_captures_dir),
-            ),
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct RetentionView {
-    /// The chosen preset, or `None` for a policy written by hand.
-    pub preset: Option<&'static str>,
-    pub options: Vec<OptionView>,
-    pub note: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct OptionView {
-    pub id: &'static str,
-    pub label: &'static str,
-}
-
-pub(crate) fn preset_id(preset: crate::capture::engine::bundle::retention::Preset) -> &'static str {
-    match preset {
-        crate::capture::engine::bundle::retention::Preset::Week => "week",
-        crate::capture::engine::bundle::retention::Preset::Month => "month",
-        crate::capture::engine::bundle::retention::Preset::Forever => "forever",
-    }
-}
-
-pub(crate) fn retention_view(policy: &crate::capture::engine::bundle::retention::Policy, maximum_mb: Option<u32>) -> RetentionView {
-    RetentionView {
-        preset: if maximum_mb.is_none() { policy.preset().map(preset_id) } else { None },
-        options: crate::capture::engine::bundle::retention::Preset::ALL.into_iter()
-            .map(|p| OptionView { id: preset_id(p), label: p.label() }).collect(),
-        note: crate::capture::desktop::workflow::storage_preferences::retention_note(policy, maximum_mb),
-    }
-}
-
 fn shortcut_view(
     kind: ShortcutKind,
     cfg: &ShortcutConfig,
@@ -461,16 +401,10 @@ pub enum Action {
     AgentsPreference { request: u32, enabled: Option<bool>, #[serde(default)] setting: Option<String> },
     AgentsConnection { request: u32, connection: Option<super::agents::Connection>, #[serde(default)] disconnect: Option<String> },
     LabsPreference { request: u32, enabled: Option<bool>, #[serde(default)] setting: Option<String> },
-    #[cfg(target_os = "linux")]
-    Storage { command: super::storage::Command },
     Connect { command: super::connect::Command },
     RecordingPreference { request: u32, key: String, value: serde_json::Value },
     RecordingMeter { visible: bool },
     PermissionAction { request: u32, intent: PermissionIntent },
-    /// A settings control: `launchAtLogin`, `errorReporting`, `videoExport`, `lowerPlayback` (bool),
-    /// `playbackLevel` (u8), `microphone` ("default" or a device id), `transcriber`
-    /// ("apple"/"hex"/"command"), `hexModel` (an id), `hexLanguage` (a code), `appleLocale`
-    /// (a locale id or "auto"), `retention` (a preset id).
     Set {
         key: String,
         value: serde_json::Value,
@@ -500,7 +434,6 @@ pub enum Action {
     },
     /// Reopen Apparent so a Screen Recording grant takes.
     Reopen,
-    ShowCaptures,
     CheckForUpdates,
     DismissUpdateCheck,
     UpdateNow,
@@ -526,14 +459,9 @@ pub enum Effect {
     /// Already asked or denied: its System Settings pane.
     OpenSettings(Permission),
     OpenLoginItems,
-    ShowCaptures,
     CheckForUpdates,
     RelaunchUpdate,
     QuitForUpdate,
-    /// The captures folder may have changed size.
-    Measure,
-    #[cfg(target_os = "linux")]
-    MeasureStorage,
     /// The Apple Speech language changed.
     SpeechModel,
     Relaunch,
@@ -563,9 +491,6 @@ pub struct Panel {
     cli_error: Option<String>,
     requested: BTreeSet<Permission>,
     grants: Option<Grants>,
-    captures_size: Option<u64>,
-    #[cfg(target_os = "linux")]
-    storage: super::storage::State,
     /// The connected microphones, once listed (`mic::Watch` keeps them fresh).
     inputs: Option<crate::capture::engine::runtime::audio::mic::Inputs>,
     update_check: UpdateCheck,
@@ -603,10 +528,6 @@ impl Panel {
         self.grants = Some(grants);
     }
 
-    pub fn set_captures_size(&mut self, bytes: u64) {
-        self.captures_size = Some(bytes);
-    }
-
     pub fn set_inputs(&mut self, inputs: crate::capture::engine::runtime::audio::mic::Inputs) {
         self.inputs = Some(inputs);
     }
@@ -623,13 +544,6 @@ impl Panel {
             Action::ConnectHosted => Effect::ConnectHosted,
             Action::ManageSharedLinks => Effect::ManageSharedLinks,
             Action::Set { key, value } => self.set(&key, &value, host),
-            #[cfg(target_os = "linux")]
-            Action::Storage { command } => {
-                let refresh = matches!(command, super::storage::Command::Refresh);
-                if !self.storage.command(&host.config_path(), command) { Effect::None }
-                else if refresh { Effect::MeasureStorage }
-                else { Effect::Measure }
-            }
             Action::RecordShortcut { kind } => {
                 self.error = None;
                 if self.recording.replace(kind).is_none() {
@@ -694,7 +608,6 @@ impl Panel {
                 }
             }
             Action::Navigate { .. } | Action::AgentsPreference { .. } | Action::LabsPreference { .. } | Action::AgentsConnection { .. } => Effect::None, // Session owns presentation routing.
-            Action::ShowCaptures => Effect::ShowCaptures,
             Action::CheckForUpdates => {
                 if cfg!(target_os = "linux") && self.update_check.checking {
                     return Effect::None;
@@ -822,32 +735,6 @@ impl Panel {
                     Err(error) => crate::capture::engine::runtime::apparent_log(format!("Saving {key} failed: {error:#}")),
                 }
             }
-            // An absolute folder from the helper's open panel; "" or null is the built-in one.
-            // Captures already made stay where they are.
-            ("capturesDir", serde_json::Value::Null | serde_json::Value::String(_)) => {
-                match crate::shared::handoff::capture_location::set_in(&path, value.as_str(), None, || true) {
-                    Ok(()) => return Effect::Measure,
-                    Err(code) => crate::capture::engine::runtime::apparent_log(format!("Saving capturesDir failed: {code}")),
-                }
-            }
-            ("retention", serde_json::Value::String(id)) => {
-                if crate::capture::engine::bundle::retention::Preset::ALL
-                    .into_iter()
-                    .any(|p| preset_id(p) == id)
-                {
-                    // The fallback menu uses the same leaf-preserving executor as
-                    // Electron/Linux, not a whole-object Engine config write.
-                    use crate::capture::desktop::workflow::storage_preferences;
-                    let result = storage_preferences::read(&path).and_then(|facts| {
-                        let revision = facts["revision"].as_str().ok_or("config_read_failed")?;
-                        storage_preferences::save(&path, Some(id), revision, || true)
-                    });
-                    if let Err(code) = result {
-                        crate::capture::engine::runtime::apparent_log(format!("Saving retention failed: {code}"));
-                    }
-                    return Effect::Measure;
-                }
-            }
             _ => crate::capture::engine::runtime::apparent_log(format!("Settings: ignoring {key}={value}")),
         }
         Effect::None
@@ -882,8 +769,6 @@ impl Panel {
         let command = crate::capture::engine::runtime::audio::transcription::command_transcriber::Program::load_from(&host.config_path())
             .ok()
             .map(|program| program.name());
-        let policy = crate::capture::engine::bundle::retention::Policy::load_from(&host.config_path());
-        let maximum_mb = crate::composition::retention::configured_storage_limit(&host.config_path()).ok().flatten();
         let login = login_item();
         View {
             version: env!("APPARENT_VERSION_LABEL").to_owned(),
@@ -939,9 +824,6 @@ impl Panel {
                 command,
             },
             video_export: config.video_export_enabled(),
-            retention: retention_view(&policy, maximum_mb),
-            captures_size: self.captures_size.map(crate::capture::engine::bundle::retention::format_bytes),
-            captures_dir: CapturesDirView::new(&config),
             permissions: settings_permissions::rows(self.grants.as_ref(), &self.requested, &config, true).collect(),
             updates: updates_available(),
             update_check: self.update_check.clone(),
@@ -1025,13 +907,10 @@ impl Host for AppHost<'_> {
 /// From the window's helper process and its pollers.
 #[derive(Clone, Debug)]
 pub enum Event {
-    #[cfg(target_os = "linux")]
-    StorageUsage { version: u64, result: Result<serde_json::Value, &'static str> },
     Presentation { generation: u64, event: Box<Event> },
     Connect(super::connect::Event),
     Action(Action),
     Grants(Grants),
-    CapturesSize(u64),
     Microphones(crate::capture::engine::runtime::audio::mic::Inputs),
     #[cfg(target_os = "linux")]
     UpdateProgress(crate::capture::desktop::linux::update::UpdateProgress),
@@ -1062,8 +941,6 @@ pub struct Session {
     connect: Option<super::connect::Controller>,
     transport: Transport,
     polling: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    #[cfg(target_os = "linux")]
-    storage_scan: std::sync::Arc<std::sync::atomic::AtomicU64>,
     events: std::sync::Arc<dyn Fn(Event) + Send + Sync>,
     last_view: String,
     permissions: PermissionsPresenter,
@@ -1093,35 +970,16 @@ impl Session {
         let events: std::sync::Arc<dyn Fn(Event) + Send + Sync> = std::sync::Arc::new(events);
         let pane = initial_settings_pane(pane);
         let generation = super::presentation::generation();
-        let (transport, electron) = Self::open_presentation(pane, generation, &events, true)?;
+        let (transport, electron, pane) = Self::open_presentation(pane, generation, &events, true)?;
 
         let polling = std::sync::Arc::new(AtomicBool::new(true));
         let alive = std::sync::Arc::clone(&polling);
         let poll = std::sync::Arc::clone(&events);
-        #[cfg(target_os = "linux")]
-        let storage_scan = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
-        #[cfg(target_os = "linux")]
-        let scan = storage_scan.clone();
         std::thread::spawn(move || {
             let mut n = 0_u32;
             while alive.load(Ordering::Acquire) {
-                // Hex every 30 s; native Linux usage on open/on demand. Keep
-                // other platforms' size polling and the one-second grant refresh.
                 if n % 30 == 0 {
                     crate::shared::hex::refresh_in_background();
-                    #[cfg(not(target_os = "linux"))]
-                    {
-                        let size =
-                            crate::capture::engine::bundle::retention::captures_size(&crate::shared::handoff::default_captures_dir());
-                        poll(Event::CapturesSize(size));
-                    }
-                }
-                #[cfg(target_os = "linux")]
-                if n == 0 && !electron {
-                    let result = crate::capture::desktop::workflow::storage_preferences::usage(
-                        &crate::shared::handoff::default_config_path(),
-                        || alive.load(Ordering::Acquire) && scan.load(Ordering::Acquire) == 0);
-                    poll(Event::Presentation { generation, event: Box::new(Event::StorageUsage { version: 0, result }) });
                 }
                 poll(Event::Tick);
                 n += 1;
@@ -1145,8 +1003,6 @@ impl Session {
             connect: None,
             transport,
             polling,
-            #[cfg(target_os = "linux")]
-            storage_scan,
             events,
             last_view: String::new(),
             permissions: Default::default(),
@@ -1161,17 +1017,18 @@ impl Session {
         pane: Option<Pane>, generation: u64,
         events: &std::sync::Arc<dyn Fn(Event) + Send + Sync>,
         allow_electron: bool,
-    ) -> anyhow::Result<(Transport, bool)> {
+    ) -> anyhow::Result<(Transport, bool, Option<Pane>)> {
         let target = events.clone();
         let events: std::sync::Arc<dyn Fn(Event) + Send + Sync> = std::sync::Arc::new(move |event| {
             target(Event::Presentation { generation, event: Box::new(event) });
         });
         if allow_electron && super::electron_pane(pane) {
-            match super::presentation::open(pane.unwrap_or(Pane::Storage), events.clone()) {
-                Ok(transport) => return Ok((transport, true)),
+            match super::presentation::open(pane.unwrap_or(Pane::General), events.clone()) {
+                Ok(transport) => return Ok((transport, true, pane)),
                 Err(error) => crate::capture::engine::runtime::apparent_log(format!("Settings fallback: {error:#}")),
             }
         }
+        let pane = if pane == Some(Pane::Storage) { Some(Pane::General) } else { pane };
         #[cfg(not(target_os = "macos"))]
         let transport = {
             let (sender, receiver) = flume::unbounded();
@@ -1180,7 +1037,7 @@ impl Session {
         };
         #[cfg(target_os = "macos")]
         let transport = Self::spawn_helper(pane, events)?;
-        Ok((transport, false))
+        Ok((transport, false, pane))
     }
 
     #[cfg(target_os = "macos")]
@@ -1244,11 +1101,6 @@ impl Session {
         let Some(event) = self.current_event(event) else { return Effect::None; };
         let effect = match event {
             Event::Presentation { .. } => return Effect::None,
-            #[cfg(target_os = "linux")]
-            Event::StorageUsage { version, result } => {
-                self.panel.storage.measured(version, result);
-                Effect::None
-            }
             Event::Action(Action::Navigate { pane }) => {
                 self.panel.on(Action::CancelShortcut, host);
                 self.show(Some(pane));
@@ -1350,10 +1202,6 @@ impl Session {
                     None => Effect::None,
                 }
             }
-            Event::CapturesSize(bytes) => {
-                self.panel.set_captures_size(bytes);
-                Effect::None
-            }
             Event::Microphones(inputs) => {
                 self.panel.set_inputs(inputs);
                 Effect::None
@@ -1381,15 +1229,13 @@ impl Session {
                 // EOF without a normal Close means Electron crashed or failed to
                 // launch. Keep Settings usable without touching saved policy.
                 let generation = super::presentation::generation();
-                if let Ok((transport, electron)) = Self::open_presentation(self.pane, generation, &self.events, false) {
+                if let Ok((transport, electron, pane)) = Self::open_presentation(self.pane, generation, &self.events, false) {
                     self.generation = generation;
                     self.electron = electron;
+                    self.pane = pane;
                     self.last_view.clear();
                     super::presentation::retire(std::mem::replace(&mut self.transport, transport));
-                    #[cfg(target_os = "linux")]
-                    if self.pane == Some(Pane::Storage) {
-                        self.measure_storage(host);
-                    }
+                    self.sync_connect(true);
                     self.sync(host);
                     return Effect::None;
                 }
@@ -1426,12 +1272,6 @@ impl Session {
                 open_login_items_settings();
                 Effect::None
             }
-            Effect::ShowCaptures => {
-                let dir = crate::shared::handoff::default_captures_dir();
-                let _ = std::fs::create_dir_all(&dir);
-                let _ = crate::shared::handoff::open_path(&dir);
-                Effect::None
-            }
             Effect::CheckForUpdates => {
                 #[cfg(target_os = "linux")]
                 {
@@ -1463,24 +1303,6 @@ impl Session {
                 }
                 Effect::None
             }
-            #[cfg(target_os = "linux")]
-            Effect::MeasureStorage => {
-                self.measure_storage(host);
-                Effect::None
-            }
-            Effect::Measure => {
-                crate::capture::engine::bundle::retention::nudge();
-                let events = std::sync::Arc::clone(&self.events);
-                #[cfg(target_os = "linux")]
-                self.measure_storage(host);
-                #[cfg(not(target_os = "linux"))]
-                std::thread::spawn(move || {
-                    let size =
-                        crate::capture::engine::bundle::retention::captures_size(&crate::shared::handoff::default_captures_dir());
-                    events(Event::CapturesSize(size));
-                });
-                Effect::None
-            }
             Effect::SpeechModel => {
                 crate::capture::engine::runtime::audio::transcription::speech_model::restart();
                 Effect::None
@@ -1496,22 +1318,22 @@ impl Session {
         if self.connect.is_none() { self.panel.connect = None; }
     }
 
-    pub fn show(&mut self, pane: Option<Pane>) {
-        if let Some(pane) = pane {
-            if self.pane != Some(pane) {
+    pub fn show(&mut self, mut pane: Option<Pane>) {
+        if let Some(requested) = pane {
+            if self.pane != Some(requested) {
                 self.permissions = Default::default();
             }
-            let electron = super::electron_pane(Some(pane));
+            let electron = super::electron_pane(Some(requested));
             // Every adopted pane uses settings.html and the same restricted bridge.
             // Native-only destinations still replace the presentation.
-            if electron != self.electron && !(matches!(pane, Pane::Recording | Pane::Permissions) && self.pane == Some(pane)) {
+            if electron != self.electron && !(matches!(requested, Pane::Recording | Pane::Permissions) && self.pane == Some(requested)) {
                 let generation = super::presentation::generation();
-                match Self::open_presentation(Some(pane), generation, &self.events, true) {
-                    Ok((transport, electron)) => {
+                match Self::open_presentation(Some(requested), generation, &self.events, true) {
+                    Ok((transport, electron, resolved)) => {
                         self.send(&serde_json::json!({"type": "close"}));
                         self.generation = generation;
                         self.electron = electron;
-                        self.pane = Some(pane);
+                        pane = resolved;
                         self.last_view.clear();
                         super::presentation::retire(std::mem::replace(&mut self.transport, transport));
                     }
@@ -1532,23 +1354,6 @@ impl Session {
         }
         self.sync_connect(true);
         self.send(&serde_json::json!({"type": "show", "pane": pane}));
-    }
-
-    #[cfg(target_os = "linux")]
-    fn measure_storage(&self, host: &dyn Host) {
-        use std::sync::atomic::Ordering;
-        let generation = self.generation;
-        let version = self.panel.storage.usage_version;
-        self.storage_scan.store(version, Ordering::Release);
-        let scan = self.storage_scan.clone();
-        let alive = self.polling.clone();
-        let events = self.events.clone();
-        let config = host.config_path();
-        std::thread::spawn(move || {
-            let result = crate::capture::desktop::workflow::storage_preferences::usage(
-                &config, || alive.load(Ordering::Acquire) && scan.load(Ordering::Acquire) == version);
-            events(Event::Presentation { generation, event: Box::new(Event::StorageUsage { version, result }) });
-        });
     }
 
     pub fn sync(&mut self, host: &dyn Host) {
@@ -1581,10 +1386,6 @@ impl Session {
             return;
         }
         let mut view = serde_json::to_value(self.panel.view(host)).unwrap_or_default();
-        #[cfg(target_os = "linux")]
-        {
-            view["storage"] = serde_json::to_value(self.panel.storage.view(&host.config_path())).unwrap_or_default();
-        }
         view["type"] = "state".into();
         // Switched from Hex to Apple Speech: get its model now, not at the first capture.
         let speech = crate::capture::engine::runtime::audio::transcription::speech_model::current();

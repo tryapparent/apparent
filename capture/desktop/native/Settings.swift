@@ -85,21 +85,6 @@ struct SettingsTranscriber: Decodable, Equatable {
   var command: String? = nil
 }
 
-struct SettingsOption: Decodable, Equatable {
-  var id: String
-  var label: String
-}
-
-struct SettingsRetention: Decodable, Equatable {
-  var preset: String? = "week"
-  var options: [SettingsOption] = [
-    SettingsOption(id: "week", label: "Video for 7 Days"),
-    SettingsOption(id: "month", label: "Video for 30 Days"),
-    SettingsOption(id: "forever", label: "Forever"),
-  ]
-  var note = "Video and audio go to the Trash after 7 days, the rest of each capture after 30 days."
-}
-
 struct SettingsPermission: Decodable, Equatable, Identifiable {
   var permission: String
   var status = "not-determined"
@@ -109,12 +94,6 @@ struct SettingsPermission: Decodable, Equatable, Identifiable {
 
   var id: String { permission }
   var granted: Bool { status == "granted" }
-}
-
-/// Where new captures go: `~`-relative, and whether it was chosen here (Reset shows).
-struct SettingsCapturesDir: Decodable, Equatable {
-  var path = "~/Library/Application Support/apparent/captures"
-  var custom = false
 }
 
 struct SettingsCommandLine: Decodable, Equatable {
@@ -241,9 +220,6 @@ struct SettingsState: Decodable, Equatable {
   var videoExport = false
   var lowerPlayback = false
   var playbackLevel = 20
-  var retention = SettingsRetention()
-  var capturesSize: String?
-  var capturesDir = SettingsCapturesDir()
   var permissions: [SettingsPermission] = ["screen-recording", "microphone", "accessibility", "camera"]
     .map { SettingsPermission(permission: $0, required: ["screen-recording", "microphone", "accessibility"].contains($0)) }
   var updates = true
@@ -255,13 +231,12 @@ struct SettingsState: Decodable, Equatable {
 }
 
 enum SettingsPane: String, CaseIterable {
-  case general, recording, storage, permissions, agents, labs, about
+  case general, recording, permissions, agents, labs, about
 
   var title: String {
     switch self {
     case .general: "General"
     case .recording: "Recording"
-    case .storage: "Storage"
     case .permissions: "Permissions"
     case .agents: "Agents"
     case .labs: "Labs"
@@ -273,7 +248,6 @@ enum SettingsPane: String, CaseIterable {
     switch self {
     case .general: "gearshape.fill"
     case .recording: "record.circle"
-    case .storage: "internaldrive.fill"
     case .permissions: "hand.raised.fill"
     case .agents: "terminal.fill"
     case .labs: "flask"
@@ -286,7 +260,6 @@ enum SettingsPane: String, CaseIterable {
     switch self {
     case .general, .about: (Color(white: 0.62), Color(white: 0.45))
     case .recording: (Color(red: 1, green: 0.42, blue: 0.38), Color(red: 0.92, green: 0.2, blue: 0.17))
-    case .storage: (Color(red: 0.36, green: 0.66, blue: 1), Color(red: 0.16, green: 0.45, blue: 0.95))
     case .permissions: (Color(red: 0.36, green: 0.82, blue: 0.56), Color(red: 0.16, green: 0.66, blue: 0.4))
     case .agents, .labs: (Color(white: 0.36), Color(white: 0.18))
     }
@@ -360,22 +333,6 @@ final class SettingsModel: ObservableObject {
 
   func set(_ key: String, _ value: Any) {
     act("set", ["key": key, "value": value])
-  }
-
-  /// Change… under Storage: a folder picker, sent as `capturesDir`.
-  func chooseCapturesFolder() {
-    let panel = NSOpenPanel()
-    panel.canChooseFiles = false
-    panel.canChooseDirectories = true
-    panel.canCreateDirectories = true
-    panel.allowsMultipleSelection = false
-    panel.prompt = "Choose"
-    panel.message = "New captures go to this folder. Captures already made stay where they are."
-    let current = NSString(string: state.capturesDir.path).expandingTildeInPath
-    panel.directoryURL = URL(fileURLWithPath: current).deletingLastPathComponent()
-    NSApp.activate(ignoringOtherApps: true)
-    guard panel.runModal() == .OK, let url = panel.url else { return }
-    set("capturesDir", url.path)
   }
 }
 
@@ -926,7 +883,6 @@ struct SettingsView: View {
       .padding(.bottom, 28)
       item(.general)
       item(.recording)
-      item(.storage)
       item(.permissions)
       item(.agents)
       item(.labs)
@@ -981,7 +937,7 @@ struct SettingsView: View {
   private func select(_ pane: SettingsPane) {
     if model.state.recording != nil { model.act("cancel-shortcut") }
     switch pane {
-    case .general, .recording, .storage, .labs, .about:
+    case .general, .recording, .labs, .about:
       model.act("navigate", ["pane": pane.rawValue])
     default:
       model.pane = pane
@@ -1015,7 +971,6 @@ struct SettingsView: View {
       switch pane {
       case .general: ScrollView { general }.id(state.connect?.presentation?.headline)
       case .recording: ScrollView { recording }
-      case .storage: storage
       case .permissions: permissions
       case .agents: agents
       case .labs: Text("Reinstall Apparent to restore Labs in Settings.")
@@ -1168,50 +1123,6 @@ struct SettingsView: View {
       SettingsCaption(text: "Adds Export Last Capture as Video… to the menu.")
     }
     .animation(SettingsMotion.state, value: mic)
-  }
-
-  private var storage: some View {
-    let r = state.retention
-    let current = r.options.first { $0.id == r.preset }?.label ?? "Custom"
-    return VStack(spacing: 0) {
-      SettingsGroup {
-        SettingsRow(title: "Keep recordings") {
-          SettingsPopup(value: current, options: r.options.map { ($0.id, $0.label, true) }, selected: r.preset) {
-            model.set("retention", $0)
-          }
-        }
-      }
-      if !r.note.isEmpty {
-        SettingsCaption(text: r.note)
-      }
-      SettingsHeader("Captures")
-      SettingsGroup {
-        HStack(spacing: 12) {
-          VStack(alignment: .leading, spacing: 1) {
-            Text("Location").font(.system(size: 14)).foregroundStyle(SettingsTheme(scheme).text)
-            Text(state.capturesDir.path)
-              .font(.system(size: 12, design: .monospaced))
-              .foregroundStyle(SettingsTheme(scheme).secondary)
-              .truncationMode(.head)
-          }
-          .lineLimit(1)
-          Spacer(minLength: 8)
-          if state.capturesDir.custom {
-            SettingsButton(title: "Reset") { model.set("capturesDir", "") }
-          }
-          SettingsButton(title: "Change…") { model.chooseCapturesFolder() }
-        }
-        .padding(.horizontal, 12)
-        .frame(height: 52)
-        SettingsSeparator()
-        SettingsRow(title: "Size") {
-          Text(state.capturesSize ?? "Measuring…")
-            .font(.system(size: 14).monospacedDigit())
-            .foregroundStyle(SettingsTheme(scheme).secondary)
-          SettingsButton(title: "Show in Finder") { model.act("show-captures") }
-        }
-      }
-    }
   }
 
   private var permissions: some View {
@@ -1716,7 +1627,6 @@ final class SettingsWindow: NSObject, NSApplicationDelegate, NSWindowDelegate {
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     model.rendering = true
     var base = SettingsState()
-    base.capturesSize = "1.4 GB"
     base.permissions = base.permissions.map { row in
       var row = row
       row.status = ["screen-recording", "microphone", "accessibility"].contains(row.permission) ? "granted" : "not-determined"
@@ -1793,8 +1703,6 @@ final class SettingsWindow: NSObject, NSApplicationDelegate, NSWindowDelegate {
     missing.permissions[2].requested = true
     var noUpdates = base
     noUpdates.updates = false
-    var storageCustom = base
-    storageCustom.capturesDir = SettingsCapturesDir(path: "~/Documents/Apparent Captures", custom: true)
     var cliInstalled = base
     cliInstalled.commandLine = SettingsCommandLine(
       path: "/opt/homebrew/bin/apparent", button: "uninstall",
@@ -1847,8 +1755,6 @@ final class SettingsWindow: NSObject, NSApplicationDelegate, NSWindowDelegate {
       ("recording-language-loading", .recording, languageLoading),
       ("recording-language-unsupported", .recording, languageUnsupported),
       ("recording-command", .recording, command),
-      ("storage", .storage, base),
-      ("storage-custom", .storage, storageCustom),
       ("permissions", .permissions, base),
       ("permissions-missing", .permissions, missing),
       ("agents", .agents, base),

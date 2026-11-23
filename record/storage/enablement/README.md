@@ -28,9 +28,10 @@ its focus and validation, and loading, disabled, error and recovery states.
 Repeat with absent, true and false legacy `experiments.electronCaptureLocation`
 values. Check that the shared Electron pane opens in each case and preserves
 the exact config bytes and fixture captures during navigation and reopen.
-Recover from an Electron failure on Storage using the native Settings fallback.
-Verify that it reads the same fixture config and that recovery does not dispatch
-a mutation.
+Exercise both a missing Settings asset at startup and an Electron exit on
+Storage. Native General should open without Storage controls or a preference
+mutation. Restore the packaged assets and reopen Settings to verify that Electron
+Storage still reads the original fixture.
 
 ## Real provider
 

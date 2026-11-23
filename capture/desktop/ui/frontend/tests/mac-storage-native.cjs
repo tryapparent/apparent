@@ -42,8 +42,8 @@ done
 // Resolve only window 1 of the exact owned PID, then descend its sheets. Do not
 // search other processes, use coordinates, or guess which Return commits a picker.
 // Unknown AX shapes fail with bounded diagnostics from this process alone.
-const { panelScript, persistentPanelScript, PickerProcess, prepareStorageChange, cancelStorageChange, pickerCommandMs, pickerStartupMs } = require('../../../../../enablement/prerequisites/mac-picker.ts');
-const { isolatePickerRuntime } = require('../../../../../enablement/prerequisites/mac-runtime.ts');
+const { persistentPanelScript, PickerProcess, prepareStorageChange, cancelStorageChange, pickerCommandMs, pickerStartupMs } = require('../../../../../enablement/prerequisites/mac-picker.ts');
+const { isolatePickerRuntime, storageFixtureAssertions, storageFixtureHashes } = require('../../../../../enablement/prerequisites/mac-runtime.ts');
 const { assertReportingRead } = require('../../../../../enablement/prerequisites/reporting-read.ts');
 
 async function refreshBusyLocation({ idle, busy, refresh }) {
@@ -311,7 +311,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
   const panel = (operation, target) => dispatchPanel('act', operation, target);
   const observePanel = (operation, target) => dispatchPanel('observe', operation, target);
   const snapshot = async () => {
-    const runtime = await within(page.evaluate(() => window.apparent.readRuntimeState()), budget(), 'Runtime read');
+    const runtime = await readRuntimeState(home, budget());
     assert.deepEqual(runtime, { status: 'connected', phase: 'idle' });
     const location = await within(page.evaluate(() => window.apparent.readCaptureLocation()), budget(), 'Storage read');
     assert.equal(location.status, 'connected');
@@ -328,10 +328,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
       throw new Error('Required source provenance lookup failed', { cause: error });
     })).stdout.trim();
     assert.match(report.source.commit, /^[0-9a-f]{40}$/);
-    report.source.sha256 = {};
-    for (const file of ['electron/main.cjs', 'electron/preload.cjs', 'electron/runtime.cjs', 'src/storage.tsx', 'dist/index.html']) {
-      report.source.sha256[file] = createHash('sha256').update(await fs.readFile(path.join(root, file))).digest('hex');
-    }
+    report.source.sha256 = await storageFixtureHashes(root);
     home = await fs.mkdtemp(path.join(runner, 'sn-'));
     await fs.chmod(home, 0o700);
     report.fixtureHome = home;
@@ -561,6 +558,16 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     assert.deepEqual(JSON.parse(await fs.readFile(config, 'utf8')).storageNativeFixture, unknown);
     report.errorReporting.explicitOnOffAndUnknownKeysVerified = true;
     await page.screenshot({ path: path.join(output, 'error-reporting-restarted.png'), timeout: budget(), fullPage: true });
+    await panel.driver?.close();
+    panel.driver = new PickerProcess(() => spawn('/usr/bin/osascript',
+      ['-e', persistentPanelScript.replaceAll('Apparent — UI foundation', 'Apparent Settings — Storage')], {env, stdio: 'pipe'}));
+    await within(application.close(), budget(), 'Close the reporting window');
+    application = await electron.launch({ executablePath: electronExecutable, args: [root, '--settings-storage'], env, timeout: budget(15000) });
+    electronChild = application.process();
+    page = await application.firstWindow({ timeout: budget() });
+    page.setDefaultTimeout(5000);
+    page.on('pageerror', error => rendererErrors.push(error.message));
+    report.storageWindowReadiness = await poll(() => observePanel('inspect-window'), 'Owned Storage Settings AX window readiness');
     const card = page.getByRole('region', { name: 'Capture location', exact: true });
     const locationStatus = card.getByRole('status');
     const change = card.getByRole('button', {name:'Change…', exact:true});
@@ -591,17 +598,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
       pendingNativeChange = undefined;
       if (!result.ok) throw result.error;
     };
-    const assertFiles = async (savedPath) => {
-      const raw = JSON.parse(await fs.readFile(config, 'utf8'));
-      if (savedPath === null) assert.equal(Object.hasOwn(raw, 'capturesDir'), false);
-      else assert.equal(raw.capturesDir, savedPath);
-      assert.deepEqual(raw.storageNativeFixture, unknown);
-      assert.equal(raw.experiments.electronCaptureLocation, false);
-      assert.equal(await fs.readFile(sentinel, 'utf8'), sentinelText);
-      await assert.rejects(fs.stat(path.join(selected, 'existing-file.txt')), { code: 'ENOENT' });
-      return { capturesDir: savedPath, keyAbsent: !Object.hasOwn(raw, 'capturesDir'),
-        unknownFieldsPreserved: true, experimentPreserved: true, existingFileUnchanged: true, existingFileNotMoved: true };
-    };
+    const assertFiles = storageFixtureAssertions(config, sentinel, sentinelText, selected, unknown);
     report.before = { ...await poll(snapshot, 'Initial authoritative read'), files: await assertFiles(null) };
     assert.equal(report.before.location.storage.source, 'builtin');
     assert.equal(report.before.location.storage.effectivePath, builtin);
@@ -722,7 +719,8 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
         try {
           const observed = await within(application.evaluate(({ BrowserWindow }) => {
             const windows = BrowserWindow.getAllWindows();
-            if (windows.length !== 1 || windows[0].getTitle() !== 'Apparent — UI foundation') throw new Error('Unknown owned window');
+            if (windows.length !== 1 || (windows[0].getTitle() !== 'Apparent — UI foundation'
+              && windows[0].getTitle() !== 'Apparent Settings — Storage')) throw new Error('Unknown owned window');
             return { bounds: windows[0].getBounds(),
               nativeDialogs: (globalThis.__apparentStorageDialogProbe ?? []).slice(0, 16) };
           }), budget(), 'Owned failure window bounds');

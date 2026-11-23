@@ -33,7 +33,6 @@ export function owner(file: string): string | undefined {
     ['capture/desktop/workflow/notes/', 'Record'],
     ['capture/desktop/workflow/local_transcription/', 'Record'],
     ['capture/desktop/workflow/storage_preferences.rs', 'Record'],
-    ['capture/desktop/settings/storage.rs', 'Record'],
     ['capture/desktop/ui/frontend/src/connect/', 'Connect'],
     ['capture/desktop/settings/connect.rs', 'Connect'],
     ['capture/desktop/settings/connect/', 'Connect'],

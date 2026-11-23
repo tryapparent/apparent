@@ -41,38 +41,6 @@ impl SavePolicy {
     }
 }
 
-pub(in crate::capture::desktop) fn retention_note(
-    policy: &crate::capture::engine::bundle::retention::Policy, maximum_mb: Option<u32>,
-) -> String {
-    match maximum_mb {
-        Some(0) => return "No size limit.".into(),
-        Some(limit) => return format!("Storage limit is {} GB. Cleanup moves the oldest eligible captures to the Trash to meet this limit.", f64::from(limit) / 1000.0),
-        None => {}
-    }
-    let days = |n: u32| {
-        if n == 1 {
-            "1 day".to_owned()
-        } else {
-            format!("{n} days")
-        }
-    };
-    let bin = if cfg!(target_os = "windows") {
-        "Recycle Bin"
-    } else {
-        "Trash"
-    };
-    match (policy.media_days, policy.bundle_days) {
-        (None, None) => String::new(),
-        (Some(media), Some(bundle)) => format!(
-            "Video and audio go to the {bin} after {}, the rest of each capture after {}.",
-            days(media),
-            days(bundle)
-        ),
-        (Some(media), None) => format!("Video and audio go to the {bin} after {}.", days(media)),
-        (None, Some(bundle)) => format!("Captures go to the {bin} after {}.", days(bundle)),
-    }
-}
-
 pub(in crate::capture::desktop) fn read(config: &Path) -> Result<serde_json::Value, &'static str> {
     let raw = capture_location::read_raw(config).map_err(|_| "config_read_failed")?;
     let stored = raw.get("retention").cloned().and_then(|value| serde_json::from_value::<crate::capture::engine::bundle::retention::Policy>(value).ok());
@@ -94,21 +62,6 @@ pub(in crate::capture::desktop) fn read(config: &Path) -> Result<serde_json::Val
         "maximumMb": crate::composition::retention::storage_limit(&raw),
         "custom": custom,
     }))
-}
-
-// Retained native Settings fallback uses its established preset menu until
-// that presentation is adopted. Both routes share this single durable executor.
-pub(in crate::capture::desktop) fn save(
-    config: &Path, preset: Option<&str>, expected: &str, admit: impl Fn() -> bool,
-) -> Result<serde_json::Value, &'static str> {
-    use crate::capture::engine::bundle::retention::Preset;
-    let policy = preset.map(|id| -> Result<SavePolicy, &'static str> {
-        let preset = Preset::ALL.into_iter().find(|p|
-            crate::capture::desktop::settings::settings::preset_id(*p) == id).ok_or("invalid_request")?;
-        let policy = preset.policy();
-        Ok(SavePolicy { media_days: serde_json::json!(policy.media_days), bundle_days: serde_json::json!(policy.bundle_days) })
-    }).transpose()?;
-    save_policy(config, policy.as_ref(), expected, admit)
 }
 
 pub(super) fn save_policy(

@@ -43,13 +43,13 @@ window.
 | --- | --- | --- |
 | General | Parent | Parent |
 | Recording | Parent | Parent |
-| Storage | Local | Parent |
 | Permissions | Local | Local |
 | Agents | Parent | Local |
 | Labs | Parent | Parent |
 | About | Parent | Parent |
 
-Labs needs the packaged renderer.
+Storage and Labs need the packaged renderer. If Storage cannot open in
+Electron, the session opens native General.
 
 On Linux, the channel preference selects the source named by the separate
 install action, which may install an earlier version. When the check finds no
@@ -84,7 +84,7 @@ Recording opens directly to its microphone and recording controls. The Record
 shortcut is in General, T3 sending is in Agents, and experimental preferences
 are in Labs.
 
-Recording joins General, About, Agents, Labs and eligible Storage routes in
+Recording joins General, About, Agents, Labs and Storage in
 the same Electron document. The native Permissions sidebar routes Recording
 through that Settings session. The session chooses the presenter, filters its
 actions, and owns the existing config transaction. The Electron
