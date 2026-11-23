@@ -114,3 +114,5 @@ manifest to run inspect, zoom, frames, and export inside the same disposable
 VM. Use retained synthetic recordings for the three input paths. No portal
 interaction is needed. Use `vm/artifacts/artifacts/cli-waits.json` after
 integrity-verified retention.
+
+For every producer lane, see [full-journey profiling](profile/README.md).

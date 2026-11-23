@@ -13,6 +13,11 @@ import {
 import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assemble, type Part } from "./assemble.ts";
+import { JourneyProfiles } from "./profile/index.ts";
+import {
+  startLaneProfile,
+  verifyProfiler,
+} from "../../../record/enablement/performance/profile/trace.ts";
 import { contract, contractHash, type Receipt } from "./score.ts";
 
 const repo = fileURLToPath(new URL("../../../", import.meta.url));
@@ -22,9 +27,10 @@ const connect = join(repo, "connect/enablement/benchmark");
 const settings = join(repo, "composition/settings/enablement/performance.ts");
 const node = process.execPath;
 const [configArg, jobArg, ...extra] = process.argv.slice(2);
+const profile = extra.length === 1 && extra[0] === "--profile";
 assert(
-  configArg && jobArg && !extra.length,
-  "Usage: suite.ts PLAN.json PRIVATE_JOB",
+  configArg && jobArg && (!extra.length || profile),
+  "Usage: suite.ts PLAN.json PRIVATE_JOB [--profile]",
 );
 const config = JSON.parse(await readFile(configArg, "utf8")) as {
   revision: string;
@@ -36,6 +42,9 @@ const config = JSON.parse(await readFile(configArg, "utf8")) as {
   previewModel: string;
   chromium: string;
   connectTarget: string;
+  isolatedProfileHost?: true;
+  traceProcessor?: string;
+  applicationRevision?: string;
 };
 const job = await realpath(jobArg);
 const permissions = await stat(job);
@@ -43,11 +52,35 @@ assert.match(job, /^\/tmp\/apparent-dev-[a-zA-Z0-9_-]+$/);
 assert.equal(permissions.uid, process.getuid?.());
 assert.equal(permissions.mode & 0o777, 0o700);
 process.umask(0o077);
+const traceProcessor =
+  profile && config.traceProcessor
+    ? await realpath(config.traceProcessor)
+    : undefined;
+if (profile) {
+  assert(
+    traceProcessor,
+    "The profiling plan needs an absolute traceProcessor path",
+  );
+  assert.equal(
+    config.isolatedProfileHost,
+    true,
+    "Use a dedicated synthetic Linux worker for host profiling",
+  );
+  await verifyProfiler(
+    job,
+    async (program, args) =>
+      execFileSync(program, args, { encoding: "utf8", timeout: 5000 }),
+    "host",
+  );
+}
 
 const git = (args: string[]) =>
   execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" }).trim();
 assert.match(config.revision, /^[a-f0-9]{40}$/);
 assert.equal(config.revision, git(["rev-parse", "HEAD"]));
+const applicationRevision =
+  (profile && config.applicationRevision) || config.revision;
+assert.match(applicationRevision, /^[a-f0-9]{40}$/);
 assert.equal(git(["status", "--porcelain"]), "", "Use a clean pinned checkout");
 const user = config.user;
 assert.match(user, /^[a-z][a-z0-9_-]+$/);
@@ -132,8 +165,8 @@ await command(job, "extract", image, ["--appimage-extract"], {
 const version = await command(job, "version", executable, ["--version"]);
 const stamp = /^apparent\s+\S+\s+·\s+([a-f0-9]{7,40})$/.exec(version)?.[1];
 assert(
-  stamp && config.revision.startsWith(stamp),
-  "AppImage needs the pinned checkout stamp",
+  stamp && applicationRevision.startsWith(stamp),
+  "AppImage needs the pinned application revision stamp",
 );
 const checks = [
   "connect/client/typescript/node_modules/typescript/package.json",
@@ -222,6 +255,7 @@ await save(join(job, "recipe.json"), {
   runner,
   revision: config.revision,
   imageSha256: config.appImageSha256,
+  ...(profile ? { diagnostic: "perfetto", applicationRevision } : {}),
 });
 const receipts: Receipt[] = [];
 
@@ -230,8 +264,13 @@ async function execute(index: number) {
   await mkdir(lane);
   const manifest: Record<string, string> = {};
   const parts: Part[] = [];
-  async function collect(label: string, file: string) {
-    parts.push(await read<Part>(file));
+  const traces = traceProcessor
+    ? new JourneyProfiles(traceProcessor)
+    : undefined;
+  async function collect(label: string, file: string, traceLane = label) {
+    const part = await read<Part>(file);
+    traces?.cover(traceLane, part, relative(lane, file));
+    parts.push(part);
     manifest[label] = relative(lane, file);
     await writeFile(
       join(lane, "fragments.json"),
@@ -257,20 +296,45 @@ async function execute(index: number) {
         config.appImageSha256,
         model,
         evidence,
+        ...(profile ? ["--profile-lane"] : []),
       ],
       { environment: { ...hostService, ...environment } },
     );
-    return join(evidence, "vm");
+    const vm = join(evidence, "vm");
+    await traces?.add(label, join(vm, "artifacts/artifacts"), "guest");
+    return vm;
   }
-  async function report(label: string, script: string, vm: string) {
-    await command(lane, label, node, [script, vm]);
-    await collect(label, join(lane, label + ".log"));
+  async function host(label: string, run: () => Promise<string>) {
+    if (!traces) return run();
+    const directory = join(lane, label + "-profile");
+    const collector = await startLaneProfile(directory, "host");
+    try {
+      const output = await run();
+      await collector.finish();
+      await traces.add(label, directory, "host");
+      return output;
+    } catch (error) {
+      await collector.cancel();
+      throw error;
+    }
+  }
+  async function report(
+    label: string,
+    script: string,
+    vm: string,
+    traceLane: string,
+  ) {
+    const args = [script, vm];
+    if (profile && traceLane === "corpus") args.push("--profile-lane");
+    await command(lane, label, node, args);
+    await collect(label, join(lane, label + ".log"), traceLane);
   }
   const corpus = await native("corpus");
   await report(
     "recording",
     join(journey, "native/recording-report.ts"),
     corpus,
+    "corpus",
   );
   const surface = await native("surface", {
     APPARENT_BENCH_SURFACE: "1",
@@ -279,7 +343,12 @@ async function execute(index: number) {
     APPARENT_BENCH_DETAIL: "1",
     APPARENT_BENCH_PREVIEW_MODEL: preview,
   });
-  await report("surface-report", join(record, "start-report.ts"), surface);
+  await report(
+    "surface-report",
+    join(record, "start-report.ts"),
+    surface,
+    "surface",
+  );
 
   try {
     const practice = await native("practice", {
@@ -290,6 +359,7 @@ async function execute(index: number) {
       join(practice, "artifacts/artifacts/onboarding-waits.json"),
     );
   } catch (error) {
+    if (profile) throw error;
     console.error("First-success proof unavailable: " + String(error));
   }
 
@@ -299,6 +369,7 @@ async function execute(index: number) {
   await collect(
     "launch",
     join(settingsVm, "artifacts/artifacts/launch-waits.json"),
+    "settings",
   );
   await collect(
     "settings",
@@ -343,18 +414,20 @@ async function execute(index: number) {
     selectedFiles: expectedFiles.slice(1),
     summaryMarker: "First, open the project settings",
   });
-  const connectCli = await command(
-    lane,
-    "connect-cli",
-    compiled.executable,
-    ["--ignored", "--nocapture", "benchmark_connect_cli"],
-    {
-      environment: {
-        APPARENT_BENCH_BINARY: executable,
-        APPARENT_BENCH_CONNECT_BUNDLE: short,
-        APPARENT_BENCH_RESULTS: lane,
+  const connectCli = await host("connect-cli", () =>
+    command(
+      lane,
+      "connect-cli",
+      compiled.executable,
+      ["--ignored", "--nocapture", "benchmark_connect_cli"],
+      {
+        environment: {
+          APPARENT_BENCH_BINARY: executable,
+          APPARENT_BENCH_CONNECT_BUNDLE: short,
+          APPARENT_BENCH_RESULTS: lane,
+        },
       },
-    },
+    ),
   );
   const cliReceipt = connectCli
     .split("\n")
@@ -365,33 +438,37 @@ async function execute(index: number) {
   assert(cliReceipt, "Missing verified Connect CLI receipt");
   await collect("connect-cli", cliReceipt);
 
-  await command(
-    lane,
-    "handoff",
-    "xvfb-run",
-    [
-      "-a",
-      node,
-      "--test",
-      join(repo, "composition/pill/enablement/handoff-timing.ts"),
-    ],
-    {
-      environment: {
-        APPARENT_BENCH_HANDOFF_ROOT: dirname(executable),
-        APPARENT_BENCH_RESULTS: lane,
+  await host("handoff", () =>
+    command(
+      lane,
+      "handoff",
+      "xvfb-run",
+      [
+        "-a",
+        node,
+        "--test",
+        join(repo, "composition/pill/enablement/handoff-timing.ts"),
+      ],
+      {
+        environment: {
+          APPARENT_BENCH_HANDOFF_ROOT: dirname(executable),
+          APPARENT_BENCH_RESULTS: lane,
+        },
       },
-    },
+    ),
   );
   await collect("handoff", join(lane, "t3-handoff-waits.json"));
 
-  const recipient = await command(
-    lane,
-    "recipient",
-    node,
-    [join(connect, "recipient.ts"), lane, chrome],
-    {
-      cwd: join(repo, "connect/service"),
-    },
+  const recipient = await host("recipient", () =>
+    command(
+      lane,
+      "recipient",
+      node,
+      [join(connect, "recipient.ts"), lane, chrome],
+      {
+        cwd: join(repo, "connect/service"),
+      },
+    ),
   );
   assert(
     recipient.startsWith(lane + "/") &&
@@ -401,27 +478,37 @@ async function execute(index: number) {
 
   const { receipt, coverage } = assemble(
     {
-      revision: config.revision,
+      revision: applicationRevision,
       runner,
       runId: basename(job) + "-" + index,
       vcpus: recipe.vcpus,
     },
     parts,
+    profile,
   );
-  await save(join(lane, "run.json"), receipt);
+  if (!traces) {
+    await save(join(lane, "run.json"), receipt);
+  }
   await save(join(lane, "coverage.json"), coverage);
   assert(
     coverage.complete,
     "Journey coverage is incomplete: " + JSON.stringify(coverage),
   );
+  if (traces)
+    await save(join(lane, "profiles.json"), traces.index(lane, receipt.waits));
   return receipt;
 }
-for (const index of [1, 2]) receipts.push(await execute(index));
-const ledger = join(job, "ledger.json");
-await save(ledger, { reference: receipts, attempts: [] });
-await command(job, "baseline", node, [
-  join(journey, "run.ts"),
-  "evaluate",
-  ledger,
-]);
-console.log(join(job, "baseline.log"));
+if (profile) {
+  await execute(1);
+  console.log(join(job, "run-1/profiles.json"));
+} else {
+  for (const index of [1, 2]) receipts.push(await execute(index));
+  const ledger = join(job, "ledger.json");
+  await save(ledger, { reference: receipts, attempts: [] });
+  await command(job, "baseline", node, [
+    join(journey, "run.ts"),
+    "evaluate",
+    ledger,
+  ]);
+  console.log(join(job, "baseline.log"));
+}
