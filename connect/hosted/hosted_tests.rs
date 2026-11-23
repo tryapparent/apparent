@@ -192,6 +192,29 @@ fn hosted_inspect_pending_download_summary_and_local_options() {
 }
 
 #[test]
+fn hosted_inspect_shared_destination_explains_private_retry() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().canonicalize().unwrap();
+    let shared = root.join("shared");
+    std::fs::create_dir(&shared).unwrap();
+    std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o770)).unwrap();
+
+    let output = inspect_subprocess(
+        &root.join("config.json"),
+        &shared,
+        &["inspect", "0123456789abcdef0123456789abcdef"],
+    );
+    assert!(!output.status.success(), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let diagnostic = stderr.lines().next().unwrap_or_default();
+    assert!(diagnostic.contains("Unsafe shared or unowned directory tree"), "{stderr}");
+    assert!(diagnostic.contains("Retry from a private working directory"), "{stderr}");
+    assert!(std::fs::read_dir(&shared).unwrap().next().is_none());
+}
+
+#[test]
 fn hosted_inspect_authorization_and_integrity_failures_publish_nothing() {
     setup();
     test_support::inspect_cli_failure_scenario(&inspect_manifest(), inspect_subprocess);

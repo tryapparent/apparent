@@ -158,7 +158,12 @@ impl Client {
         );
         let parent = out.parent().context("Missing output parent")?;
         ensure!(parent.is_dir(), "Output parent must already exist");
-        trusted_directory_tree(parent, true)?;
+        trusted_directory_tree(parent, true).map_err(|error| {
+            let message = format!(
+                "{error}. Retry from a private working directory, or use apparent fetch --out to choose a private destination"
+            );
+            error.context(message)
+        })?;
         let parent = parent.canonicalize()?;
         let out = parent.join(out.file_name().context("Invalid output name")?);
         let stage = Scratch::new_output(&parent)?;
