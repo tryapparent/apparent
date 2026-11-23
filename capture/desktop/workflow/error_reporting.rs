@@ -11,7 +11,7 @@ const ENDPOINT: &str = "https://eu.i.posthog.com/i/v0/e/";
 const QUEUE_SIZE: usize = 16;
 static REPORTER: OnceLock<Reporter> = OnceLock::new();
 #[path = "../../../engine/diagnostics/transport.rs"]
-mod transport;
+pub(crate) mod transport;
 use transport::send;
 mod finalization;
 pub(crate) mod updates;
@@ -89,7 +89,7 @@ struct Consent {
 
 /// A missing file/key defaults on; corrupt, unreadable, oversized, symlinked or
 /// wrongly typed config fails closed. Do not use the forgiving general loader.
-fn reporting_config_in(path: &Path) -> Option<Value> {
+pub(crate) fn reporting_config_in(path: &Path) -> Option<Value> {
     use std::os::unix::fs::OpenOptionsExt;
     let file = std::fs::OpenOptions::new()
         .read(true)
@@ -393,9 +393,8 @@ impl Limiter {
     }
 }
 
-/// Called only by the desktop lifecycle, never ordinary CLI invocations/tests.
 /// The publishable project token is supplied by packaging, not user credentials.
-fn compiled_token() -> Option<&'static str> {
+pub(crate) fn compiled_token() -> Option<&'static str> {
     option_env!("APPARENT_POSTHOG_TOKEN").filter(|token| {
         token.starts_with("phc_") && (20..=200).contains(&token.len())
             && token.bytes().all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))

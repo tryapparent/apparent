@@ -91,6 +91,14 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   await enableAndReload(speaking);
   const sharing=page.getByRole('switch',{name:'Public sharing links'});
   await enableAndReload(sharing);
+  const performance = page.getByRole('switch', {name:'Share recording performance'});
+  await expect(performance).toHaveAccessibleDescription(/to PostHog/);
+  await enableAndReload(performance);
+  await performance.focus();
+  await page.keyboard.press('Space');
+  await expect(performance).not.toBeChecked();
+  await page.reload();
+  await expect(performance).not.toBeChecked();
   const autoPaste=page.getByRole('switch',{name:'Auto paste',exact:true});
   await expect(autoPaste).toBeChecked();
   await autoPaste.focus();

@@ -596,7 +596,6 @@ impl ApparentCoordinator {
         });
     }
 
-    /// Observe the native producer once; policy consumes the practice fact in TypeScript.
     fn take_recording_start(&mut self) -> Option<bool> {
         if self.recording_activity_attempted || self.agent_state().phase != crate::capture::desktop::workflow::agent_capture::Phase::Recording { return None; }
         self.recording_activity_attempted = true;
@@ -604,12 +603,16 @@ impl ApparentCoordinator {
     }
 
     fn observe_recording_activity(&mut self) {
+        if let Some(ActiveRecording { performance: Some(performance), source: CaptureSource::Screen { session, .. }, .. }) = self.active_recording.as_mut()
+            && performance.needs_ready() && session.has_frames()
+        {
+            performance.live();
+        }
         if let Some(practice) = self.take_recording_start() {
             crate::connect::hosted::observe_recording_start(practice);
         }
     }
 
-    /// Advance the UI without waiting on activity transport.
     pub fn island_tick(&mut self, cx: &mut Context<Self>) {
         self.observe_recording_activity();
         #[cfg(target_os = "macos")]
@@ -983,7 +986,6 @@ impl ApparentCoordinator {
         start_metric("picker_prep_ms", started);
     }
 
-    /// From the picker: the full screen it highlights.
     pub fn start_recording_full_screen(&mut self, cx: &mut Context<Self>) {
         let [x, y, w, h] = self.display_rect;
         let centre = [f64::from(x + w / 2.0), f64::from(y + h / 2.0)];
@@ -1063,6 +1065,13 @@ impl ApparentCoordinator {
             *status = None;
         }
         let started = Instant::now();
+        let performance = if self.report_capture
+            || self.onboarding.as_ref().is_some_and(|session| session.local_practice())
+        {
+            None
+        } else {
+            workflow::performance::RecordingPerformance::begin(started)
+        };
         apparent_log(format!(
             "start_recording_with_target invoked: mode={:?} frame={:?}",
             target.mode, target.frame
@@ -1199,6 +1208,7 @@ impl ApparentCoordinator {
         }
         start_metric("notes_start_ms", stage);
         self.active_recording = Some(ActiveRecording {
+            performance,
             started: stage,
             target,
             bundle_dir,
@@ -1239,8 +1249,6 @@ impl ApparentCoordinator {
         }
     }
 
-    /// The island turns into the recording pill: from the picker it morphs, from nothing it opens
-    /// from a compact capsule so the shell springs out to its width, Dynamic Island style.
     fn present_recording_island(&mut self, cx: &mut Context<Self>) {
         if matches!(self.island_phase, IslandPhase::Hidden) {
             self.island_width = ISLAND_OPEN_FROM_W;
@@ -1282,6 +1290,7 @@ impl ApparentCoordinator {
         self.hovered_window = None;
         self.animated_window_rect = None;
         self.active_recording = Some(ActiveRecording {
+            performance: None,
             started: Instant::now(),
             target,
             bundle_dir: PathBuf::new(),
@@ -1404,6 +1413,7 @@ impl ApparentCoordinator {
                 .ok()
         });
         self.active_recording = Some(ActiveRecording {
+            performance: None,
             started: Instant::now(),
             target,
             bundle_dir,
@@ -1446,7 +1456,6 @@ impl ApparentCoordinator {
         self.dismiss_island(cx);
     }
 
-    /// Cancellation must also work before a visible island or recording exists.
     fn cancel_capture_attempt(&mut self) {
         #[cfg(target_os = "linux")]
         { self.shortcut.hold = None; }
@@ -1461,8 +1470,6 @@ impl ApparentCoordinator {
         self.discard_recording();
     }
 
-    /// Native producer admission: a pending Linux source has nothing to finalize.
-    /// Use durable cancellation, including its refusal path, before releasing ownership.
     #[cfg(target_os = "linux")]
     fn cancel_pending_screen_finish(&mut self) -> bool {
         self.cancel_pending_screen_finish_notifying(crate::capture::desktop::linux::shell::notify)
@@ -1503,6 +1510,7 @@ impl ApparentCoordinator {
             self.present_capture_cancellation(cx);
             return;
         }
+        let finish_started = Instant::now();
         self.playback.take();
         apparent_log("finish_recording invoked");
         let Some(rec) = self.active_recording.take() else {
@@ -1532,17 +1540,14 @@ impl ApparentCoordinator {
         let bundle_dir = rec.bundle_dir;
         let target = rec.target;
         let source = rec.source;
+        let performance = rec.performance;
         let report = self.seal_report_capture();
         let completion_facts = self.capture_completion_facts(
             finishing_id.clone(), completion_source, agent_requested, released,
         );
-        // Drop the Metal overlay immediately on the main thread so the screen frame clears,
-        // and morph the Dynamic Island into the compact spinning "Processing…" state while
-        // media teardown, transcription, and PNG encoding run on a background worker.
         drop(rec._metal_overlay);
         self.apply_pill_event(PillEvent::CaptureSealed);
         let generation = self.capture_generation;
-        // Freeze practice policy with the worker, independent of window/UI lifetime.
         let local_practice = self.capture_local_practice;
         cx.notify();
         if matches!(source, CaptureSource::Lab) {
@@ -1583,9 +1588,14 @@ impl ApparentCoordinator {
                 .background_executor()
                 .spawn(async move {
 
-                    recording_completion::finalize(
+                    let finalizer_started = Instant::now();
+                    let result = recording_completion::finalize(
                         source, target, bundle_dir, events, strokes, final_whiteboard, notes_finished, source_released, lip_input,
-                    )
+                    );
+                    if let Some(performance) = performance {
+                        performance.finish(finish_started, finalizer_started, result.1, result.0.is_ok());
+                    }
+                    result
                 })
                 .await;
 
@@ -1613,7 +1623,6 @@ impl ApparentCoordinator {
                                 coord.dismiss_island(cx);
                                 return;
                             }
-                            // receive_capture_result admits only this generation's active UI.
                             if finalized.is_ok() {
                                 if let Some(session) = coord.onboarding.as_mut() {
                                     session.practice_note_saved(note_receipt.as_ref().is_some_and(|receipt| receipt.load(std::sync::atomic::Ordering::Acquire)));

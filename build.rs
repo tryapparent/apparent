@@ -14,6 +14,7 @@ fn main() {
     record_shortcut_build::compile();
     compile_onboarding_entry_policy();
     emit_recording_permissions();
+    emit_native_policy("record", "performance/recording-performance", "settings/permissions/performance-policy.bend");
     emit_native_policy("record", "capture-request/capture-admission", "capture-request/src/capture-admission.bend");
     emit_native_policy("record", "lip-input", "settings/lip-policy.bend");
     emit_native_policy("record/storage", "storage-default", "src/retention/capacity.bend");
