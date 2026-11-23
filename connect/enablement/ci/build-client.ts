@@ -1,35 +1,50 @@
 import { execFileSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { lstat, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { buildBend } from "../../../shared/enablement/bend/build.ts";
 import { buildRenewal } from "./bend/renewal.ts";
 
-const client = new URL("../../client/typescript/", import.meta.url);
-const output = new URL("dist", client);
-const existing = await lstat(output).catch((error: NodeJS.ErrnoException) => {
-  if (error.code !== "ENOENT") throw error;
-});
-if (existing && (!existing.isDirectory() || existing.isSymbolicLink())) {
-  throw new Error("Refusing unsafe crypto build output");
+export const clientPackage = new URL(
+  "../../client/typescript/",
+  import.meta.url,
+);
+const root = fileURLToPath(new URL("../../../", import.meta.url));
+
+export async function buildClient(client = clientPackage): Promise<void> {
+  const output = new URL("dist", client);
+  const existing = await lstat(output).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== "ENOENT") throw error;
+  });
+  if (existing && (!existing.isDirectory() || existing.isSymbolicLink())) {
+    throw new Error("Refusing unsafe crypto build output");
+  }
+  await rm(output, { recursive: true, force: true });
+  execFileSync(
+    process.execPath,
+    [fileURLToPath(new URL("node_modules/typescript/bin/tsc", client))],
+    { cwd: client, stdio: "inherit" },
+  );
+  await buildBend(
+    root,
+    "connect",
+    fileURLToPath(new URL("dist/reader", client)),
+    undefined,
+    "connect/client/typescript/src/reader/",
+  );
+  await buildBend(
+    root,
+    "connect",
+    fileURLToPath(new URL("dist/account", client)),
+    undefined,
+    "connect/client/typescript/src/account/",
+  );
+  await buildRenewal(fileURLToPath(new URL("dist/renewal", client)));
 }
-await rm(output, { recursive: true, force: true });
-execFileSync(
-  process.execPath,
-  [fileURLToPath(new URL("node_modules/typescript/bin/tsc", client))],
-  { cwd: client, stdio: "inherit" },
-);
-await buildBend(
-  fileURLToPath(new URL("../../../", import.meta.url)),
-  "connect",
-  fileURLToPath(new URL("dist/reader", client)),
-  undefined,
-  "connect/client/typescript/src/reader/",
-);
-await buildBend(
-  fileURLToPath(new URL("../../../", import.meta.url)),
-  "connect",
-  fileURLToPath(new URL("dist/account", client)),
-  undefined,
-  "connect/client/typescript/src/account/",
-);
-await buildRenewal(fileURLToPath(new URL("dist/renewal", client)));
+
+if (
+  process.argv[1] &&
+  realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
+  await buildClient();
+}
