@@ -136,9 +136,9 @@ app.whenReady().then(() => {
     show: !settings,
     // The preload needs a render opportunity before the first presentation.
     ...(settings ? { paintWhenInitiallyHidden: true } : {}),
-    width: settings ? 720 : 920, height: settings ? 530 : 760,
-    minWidth: 640, minHeight: settings ? 530 : 620,
-    ...(settings ? frame.settingsWindowOptions(process.platform,['about','agents','labs'].includes(pane)) : {}),
+    ...(settings ? frame.settingsWindowOptions(process.platform) : {
+      width: 920, height: 760, minWidth: 640, minHeight: 620,
+    }),
     title: settings ? 'Apparent Settings' : 'Apparent — UI foundation',
     backgroundColor: followWindowTheme.backgroundColor(nativeTheme),
     webPreferences: {

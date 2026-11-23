@@ -24,6 +24,10 @@ About share one sidebar and window. The native session filters actions against
 the active pane and passes native effects and preference writes to their
 existing owners.
 
+Settings opens with a fixed 740 × 580 content area on Linux and macOS, regardless
+of its starting pane. Electron disables user resize and fullscreen, and macOS
+also disables maximize. Longer panes and enlarged text scroll within Settings.
+
 Settings has one Electron presentation on Linux and macOS. A child exit closes
 the session, releases the Recording meter and shortcut editor, and allows the
 next Settings request to launch a new child. When package resources are missing
