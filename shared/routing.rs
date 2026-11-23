@@ -72,6 +72,8 @@ pub fn parse_url(url: &str) -> Option<WebUrl> {
     })
 }
 
+pub const BROWSER_PAGE_EVENT_PREFIX: &str = "browser page ";
+
 pub fn browser_page_url(raw: &str) -> Option<String> {
     let location = raw.split(['?', '#']).next()?;
     if location.len() > 2048 || location.bytes().any(|b| b <= b' ' || b >= 127 || b == b'\\') {

@@ -24,3 +24,9 @@ When native accessibility resolves a browser page, clicks and marks can include
 its HTTP or HTTPS URL. Credentials, queries and fragments are excluded. Page
 paths may appear in the handoff. Availability depends on the browser exposing
 its accessibility tree and Apparent identifying the interaction’s window.
+
+On Hyprland, Chrome and Chromium may need to be restarted with
+`--force-renderer-accessibility` before they publish page URLs. Apparent omits
+URL context when it cannot uniquely identify the browser window. A recording
+can include URLs from a private window if the browser exposes them through
+accessibility.

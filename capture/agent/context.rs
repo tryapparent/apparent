@@ -1,4 +1,4 @@
-use crate::shared::model::*;
+use crate::shared::{model::*, routing::BROWSER_PAGE_EVENT_PREFIX};
 use crate::capture::engine::sketch::{
     describe_event, direction, mark_on_keyframe, marks_on, quote_label, settled_events,
 };
@@ -319,7 +319,7 @@ fn events(bundle: &ApparentBundle) -> Vec<(u64, String)> {
             _ => None,
         })
         .collect();
-    let mut out: Vec<(u64, String)> = Vec::new();
+    let mut out = Vec::new();
     let mut drags: Option<DragRun> = None;
     for event in &settled {
         if let InteractionEvent::Drag { t, t1, .. } = event {
@@ -361,10 +361,11 @@ fn events(bundle: &ApparentBundle) -> Vec<(u64, String)> {
 }
 
 fn fold_repeats(items: Vec<(u64, String)>) -> Vec<(u64, String)> {
-    let mut out: Vec<(u64, String, u64, usize)> = Vec::new();
+    let mut out = Vec::new();
     for (t, text) in items {
         match out.last_mut() {
-            Some((_, prev, last, count)) if *prev == text && t - *last < REPEAT_MS => {
+            Some((_, prev, last, count))
+                if *prev == text && t - *last < REPEAT_MS && !text.starts_with(BROWSER_PAGE_EVENT_PREFIX) => {
                 *last = t;
                 *count += 1;
             }
@@ -373,11 +374,7 @@ fn fold_repeats(items: Vec<(u64, String)>) -> Vec<(u64, String)> {
     }
     out.into_iter()
         .map(|(t, text, _, count)| {
-            if count > 1 {
-                (t, format!("{text} ×{count}"))
-            } else {
-                (t, text)
-            }
+            (t, if count > 1 { format!("{text} ×{count}") } else { text })
         })
         .collect()
 }

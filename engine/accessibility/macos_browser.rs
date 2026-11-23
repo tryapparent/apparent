@@ -86,5 +86,5 @@ pub fn apply(
 
 fn page_event(t: u64, page: Option<&(u32, String)>) -> Option<crate::shared::model::InteractionEvent> {
     let url = crate::shared::routing::browser_page_url(&page?.1)?;
-    Some(crate::shared::model::InteractionEvent::AppEvent { t, label: format!("browser page {url}") })
+    Some(crate::shared::model::InteractionEvent::AppEvent { t, label: format!("{}{url}", crate::shared::routing::BROWSER_PAGE_EVENT_PREFIX) })
 }

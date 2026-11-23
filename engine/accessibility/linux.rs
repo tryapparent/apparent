@@ -287,7 +287,7 @@ pub fn apply(hits: &[Result], events: &mut Vec<InteractionEvent>, strokes: &mut 
             _ => return None,
         };
         let url = crate::shared::routing::browser_page_url(raw)?;
-        Some(InteractionEvent::AppEvent { t: *time, label: format!("browser page {url}") })
+        Some(InteractionEvent::AppEvent { t: *time, label: format!("{}{url}", crate::shared::routing::BROWSER_PAGE_EVENT_PREFIX) })
     }).collect();
     events.extend(pages);
 }
