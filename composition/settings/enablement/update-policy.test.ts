@@ -2,7 +2,18 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { needsChannelRelease, type UpdateFacts } from "../update-policy.ts";
+import {
+  needsChannelRelease,
+  selectRelease,
+  type UpdateFacts,
+} from "../update-policy.ts";
+
+const script = fileURLToPath(
+  new URL(
+    "../../../capture/desktop/ui/frontend/electron/settings/update-worker.cjs",
+    import.meta.url,
+  ),
+);
 
 const main = { channel: "main" as const, id: "a".repeat(40) };
 const stable = { channel: "stable" as const, id: "v0.3.13" };
@@ -49,12 +60,6 @@ test("installed identity wins over the still-running old executable after stagin
   );
 });
 test("the packaged worker executes the same policy without repository imports", () => {
-  const script = fileURLToPath(
-    new URL(
-      "../../../capture/desktop/ui/frontend/electron/settings/update-worker.cjs",
-      import.meta.url,
-    ),
-  );
   for (const candidate of [main, stable]) {
     const facts: UpdateFacts = {
       candidate,
@@ -62,11 +67,49 @@ test("the packaged worker executes the same policy without repository imports", 
       revision: main.id,
       modified: false,
     };
-    const output = execFileSync(
-      process.execPath,
-      [script, JSON.stringify(facts)],
-      { cwd: "/", encoding: "utf8" },
-    );
+    const output = execFileSync(process.execPath, [script], {
+      cwd: "/",
+      encoding: "utf8",
+      input: JSON.stringify({ operation: "needsChannelRelease", ...facts }),
+    });
     assert.equal(JSON.parse(output), needsChannelRelease(facts));
   }
+});
+
+test("the packaged selector reads a multi-page history from stdin", () => {
+  const release = (version: string) => {
+    const name = `Apparent-${version}-linux-x86_64.AppImage`;
+    return {
+      tag_name: `v${version}`,
+      draft: false,
+      prerelease: false,
+      published_at: "2026-11-01T00:00:00Z",
+      assets: [{ name }, { name: name + ".sha256" }],
+    };
+  };
+  const releases = Array.from({ length: 999 }, () => release("2.9.0"));
+  releases.push(release("2.10.0"));
+  const request = {
+    operation: "selectRelease",
+    channel: "stable",
+    arch: "x86_64",
+    releases,
+  };
+  const output = execFileSync(process.execPath, [script], {
+    cwd: "/",
+    encoding: "utf8",
+    input: JSON.stringify(request),
+  });
+  assert.deepEqual(JSON.parse(output), {
+    kind: "selected",
+    release: 999,
+    image: 0,
+    checksum: 1,
+  });
+  assert.deepEqual(selectRelease("stable", "aarch64", releases), {
+    kind: "noRelease",
+  });
+  assert.deepEqual(selectRelease("stable", "riscv64", releases), {
+    kind: "unsupported",
+  });
 });
