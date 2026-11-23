@@ -16,8 +16,7 @@ import { fileURLToPath } from "node:url";
 
 const [templateArg, user, imageArg, expected, modelArg, jobArg, ...extra] =
   process.argv.slice(2);
-const profileArg =
-  extra.length === 2 && extra[0] === "--profile" ? extra[1] : undefined;
+const profile = extra.length === 1 && extra[0] === "--profile";
 assert(
   templateArg &&
     user &&
@@ -25,8 +24,8 @@ assert(
     expected &&
     modelArg &&
     jobArg &&
-    (!extra.length || profileArg),
-  "Usage: native/run.ts TEMPLATE_DIR SSH_USER APPIMAGE SHA256 MODEL PRIVATE_JOB [--profile TRACEBOX]",
+    (!extra.length || profile),
+  "Usage: native/run.ts TEMPLATE_DIR SSH_USER APPIMAGE SHA256 MODEL PRIVATE_JOB [--profile]",
 );
 const [template, image, model, job] = [
   templateArg,
@@ -98,11 +97,11 @@ const manifest = await import("../benchmark.json", {
 }).then((result) => result.default);
 const requested = process.env.APPARENT_BENCH_PROBE;
 assert(
-  !profileArg ||
+  !profile ||
     (mode === "draw" && (!requested || requested === "long-narration")),
   "--profile requires the long-narration recording probe",
 );
-const selection = profileArg ? "long-narration" : requested;
+const selection = profile ? "long-narration" : requested;
 assert(
   !selection ||
     (selection !== "portal-warmup" &&
@@ -133,9 +132,9 @@ await Promise.all([
     "scene",
   ),
 ]);
-if (profileArg) {
-  await stageFile(realpathSync(profileArg), "tracebox");
-  await chmod(join(staged, "libbench.so.tracebox"), 0o700);
+if (profile) {
+  await writeFile(join(staged, "libbench.so.profile"), "1", { mode: 0o600 });
+  await source("record/enablement/performance/profile/config.ts");
   await source("record/enablement/performance/profile/trace.ts");
 }
 if (surface || onboarding)
@@ -296,7 +295,7 @@ try {
       "wl-copy",
       "--require-command",
       "wl-paste",
-      ...(profileArg ? ["--require-command", "sudo"] : []),
+      ...(profile ? ["--require-command", "sudo"] : []),
       "--scenario-timeout",
       "900",
       "--job-timeout",

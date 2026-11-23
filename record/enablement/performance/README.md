@@ -43,12 +43,25 @@ fixture ID such as `quick-silent`. A smoke reports partial coverage.
 
 ### Profile Stop locally
 
-Pass `--profile` and the path to a trusted Linux x86-64 Perfetto `tracebox`
-executable. The runner stages it in the disposable VM, where the test user
-needs passwordless sudo for kernel scheduling and stack collection.
+Pass `--profile` with a dedicated profiling template. Prepare a private
+derivative of the read-only benchmark template with a trusted Linux x86-64
+Perfetto `tracebox` at `/usr/local/libexec/apparent-bench-tracebox` and the
+following generated file at `/etc/apparent-bench/perfetto.pbtxt`. Both files
+and their containing directories must be root-owned and writable only by
+root. Make the config readable by the test user so the runner can verify it.
 
 ```sh
-node enablement/timing/journey/native/run.ts "$template" scrawl "$image" "$sha256" "$model" "$job" --profile "$tracebox"
+node --input-type=module -e 'import { profileConfig } from "./record/enablement/performance/profile/config.ts"; process.stdout.write(profileConfig)' > "$job/perfetto.pbtxt"
+```
+
+Grant the test account only this command in the derivative's sudoers configuration.
+
+```sudoers
+scrawl ALL=(root) NOPASSWD: /usr/local/libexec/apparent-bench-tracebox --txt -c /etc/apparent-bench/perfetto.pbtxt -o - --notify-fd 2
+```
+
+```sh
+node enablement/timing/journey/native/run.ts "$profile_template" scrawl "$image" "$sha256" "$model" "$job" --profile
 ```
 
 This runs the portal warmup and the five-minute `long-narration` take.

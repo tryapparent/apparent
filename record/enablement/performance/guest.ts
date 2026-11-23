@@ -110,7 +110,7 @@ type Status = {
 };
 const commands = (args: string[], timeout?: number) => exec(app, args, timeout);
 const mode = (await readFile(files("mode"), "utf8")).trim();
-const profile = existsSync(files("tracebox"))
+const profile = existsSync(files("profile"))
   ? await import("./profile/trace.ts")
   : undefined;
 const sink = "journey_" + process.pid;
@@ -195,16 +195,7 @@ const launch = (args: string[]) =>
 try {
   await configFor(false);
   if (profile) {
-    const version = await exec("sudo", [
-      "-n",
-      "--",
-      files("tracebox"),
-      "--version",
-    ]);
-    await put(
-      "profile.json",
-      asJson({ profiler: version, fixture: "long-narration" }),
-    );
+    await profile.verifyProfiler(out, exec);
   }
   let scene: ChildProcess | undefined;
   if (["onboarding", "surface", "draw"].includes(mode)) {
@@ -341,12 +332,7 @@ try {
       let captureProfile;
       if (profile && name === "long-narration") {
         await clock.prepareStop(5000);
-        captureProfile = await profile.startProfile(
-          files("tracebox"),
-          sysApp,
-          out,
-          abort.signal,
-        );
+        captureProfile = await profile.startProfile(out, abort.signal);
       }
       await clock.prepareStop();
       const sentinel = "apparent-journey-sentinel-" + id;

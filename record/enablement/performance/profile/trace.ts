@@ -5,75 +5,58 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { now } from "../fixture-clock.ts";
+import { durationMs, profileConfig } from "./config.ts";
 
-const durationMs = 25000;
+const tracebox = "/usr/local/libexec/apparent-bench-tracebox";
+const config = "/etc/apparent-bench/perfetto.pbtxt";
+const command = [
+  tracebox,
+  "--txt",
+  "-c",
+  config,
+  "-o",
+  "-",
+  "--notify-fd",
+  "2",
+];
 
-export async function startProfile(
-  tracebox: string,
-  executable: string,
+export async function verifyProfiler(
   out: string,
-  signal: AbortSignal,
+  exec: (program: string, args: string[]) => Promise<string>,
 ) {
-  const config = join(out, "perfetto.pbtxt");
-  const trace = join(out, "long-narration.perfetto-trace");
-  const ready = join(out, "perfetto.ready");
+  assert.equal(
+    await readFile(config, "utf8"),
+    profileConfig,
+    "Install the benchmark's Perfetto config in the disposable guest",
+  );
+  try {
+    await exec("sudo", ["-n", "-l", "--", ...command]);
+  } catch (error) {
+    throw Error(
+      "The disposable guest needs the Apparent Perfetto command configured in sudoers",
+      { cause: error },
+    );
+  }
+  const profiler = await exec(tracebox, ["--version"]);
   await writeFile(
-    config,
-    `
-duration_ms: ${durationMs}
-buffers { size_kb: 32768 fill_policy: DISCARD }
-data_sources {
-  config {
-    name: "linux.perf"
-    perf_event_config {
-      timebase {
-        counter: SW_CPU_CLOCK
-        frequency: 99
-        timestamp_clock: PERF_CLOCK_MONOTONIC
-      }
-      callstack_sampling { scope { target_cmdline: ${JSON.stringify(executable)} } }
-    }
-  }
-}
-data_sources {
-  config {
-    name: "linux.ftrace"
-    ftrace_config {
-      ftrace_events: "sched/sched_switch"
-      ftrace_events: "sched/sched_waking"
-    }
-  }
-}
-data_sources {
-  config {
-    name: "linux.process_stats"
-    process_stats_config { scan_all_processes_on_start: true }
-  }
-}
-`,
+    join(out, "profile.json"),
+    JSON.stringify({ profiler, fixture: "long-narration" }) + "\n",
     { flag: "wx" },
   );
-  await writeFile(ready, "", { flag: "wx" });
-  const errors = openSync(join(out, "perfetto.log"), "wx", 0o600);
+}
+
+export async function startProfile(out: string, signal: AbortSignal) {
+  const trace = join(out, "long-narration.perfetto-trace");
+  const log = join(out, "perfetto.log");
+  const errors = openSync(log, "wx", 0o600);
   const output = openSync(trace, "wx", 0o600);
   const started = await now();
   let exited: Promise<void>;
   try {
-    const child = spawn(
-      "sudo",
-      [
-        "-n",
-        "--",
-        "sh",
-        "-c",
-        'exec "$1" --txt -c "$2" -o - --notify-fd 3 3>"$3"',
-        "profile",
-        tracebox,
-        config,
-        ready,
-      ],
-      { signal, stdio: ["ignore", output, errors] },
-    );
+    const child = spawn("sudo", ["-n", "--", ...command], {
+      signal,
+      stdio: ["ignore", output, errors],
+    });
     exited = new Promise<void>((resolve, reject) => {
       child.once("error", reject);
       child.once("exit", (code, termination) => {
@@ -92,9 +75,9 @@ data_sources {
   });
   stoppedBeforeReady.catch(() => {});
   while (true) {
-    const status = await readFile(ready);
-    if (status.length) {
-      assert.equal(status[0], 0, "Perfetto data sources failed to start");
+    const status = (await readFile(log)).find((byte) => byte < 8);
+    if (status !== undefined) {
+      assert.equal(status, 0, "Perfetto data sources failed to start");
       break;
     }
     assert(
