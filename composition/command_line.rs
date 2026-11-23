@@ -3,7 +3,6 @@
 //! `apparent-helper` through its real path (`helper::path`), so it works through the link.
 //! An unrelated command or Homebrew-owned link is never removed behind the package manager's back.
 //!
-//! Windows uses a separate `.cmd` shim (`capture/engine/runtime/platform/legacy_windows/command_line.rs`).
 
 use std::path::{Path, PathBuf};
 

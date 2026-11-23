@@ -538,51 +538,6 @@ mod tests {
         assert_eq!(validate(ShortcutKind::Record, &pressed(R, 0, "r"), &paste).unwrap().label, "R");
     }
 
-    #[cfg(target_os = "windows")]
-    #[test]
-    fn apps_and_windows_keep_their_shortcuts() {
-        let paste = ShortcutConfig::default_paste();
-        let no = |p: Pressed| validate(ShortcutKind::Record, &p, &paste).unwrap_err();
-        // Ctrl and one key belongs to apps; Win and a key, and Alt+Tab and friends, to Windows.
-        assert_eq!(
-            no(pressed(R, CARBON_CONTROL_KEY, "r")),
-            Rejection::Reserved("Ctrl+R".into())
-        );
-        assert_eq!(
-            no(pressed(R, CARBON_CONTROL_KEY | CARBON_SHIFT_KEY, "r")).message(),
-            "Apps use Ctrl+Shift+R. Add Alt."
-        );
-        assert_eq!(
-            no(pressed(R, CARBON_CMD_KEY, "r")).message(),
-            "Windows uses Win+R."
-        );
-        assert_eq!(
-            no(pressed(0x53, CARBON_CMD_KEY | CARBON_SHIFT_KEY, "s")).message(),
-            "Windows uses Win+Shift+S."
-        );
-        assert_eq!(
-            no(pressed(0x73, CARBON_OPTION_KEY, "")).message(),
-            "Windows uses Alt+F4."
-        );
-        assert_eq!(
-            no(pressed(SPACE, CARBON_OPTION_KEY, " ")),
-            Rejection::Reserved("Alt+Space".into())
-        );
-        // Win with Ctrl or Alt is free (Ctrl+Win+Alt+S is one of the default's aliases).
-        assert!(
-            validate(
-                ShortcutKind::Record,
-                &pressed(R, CARBON_CMD_KEY | CARBON_OPTION_KEY, "r"),
-                &paste
-            )
-            .is_ok()
-        );
-        assert_eq!(
-            Rejection::NoModifier.message(),
-            "Hold Ctrl, Alt or Win with the key."
-        );
-    }
-
     #[test]
     fn keys_are_named_for_the_layout_in_use() {
         assert_eq!(

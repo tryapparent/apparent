@@ -13,8 +13,6 @@ pub(super) mod motion;
 pub(super) mod pill_theme;
 pub(super) mod recording_completion;
 pub(super) mod whiteboard;
-#[cfg(target_os = "windows")]
-pub(super) mod windows;
 
 /// The same boxed brand glyph on both desktop status surfaces. Keeping its own
 /// contrasting background also protects it on panels themed independently of

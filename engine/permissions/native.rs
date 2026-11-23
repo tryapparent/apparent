@@ -139,12 +139,6 @@ pub(crate) fn restart(busy: bool) -> Option<&'static str> {
     if busy {
         return Some("capture-active");
     }
-    #[cfg(windows)]
-    {
-        crate::capture::desktop::settings::onboarding::relaunch();
-        None
-    }
-    #[cfg(not(windows))]
     crate::permission_relaunch::launch().err().map(|error| {
         crate::capture::engine::runtime::apparent_log(format!(
             "Could not reopen Apparent: {error:#}"

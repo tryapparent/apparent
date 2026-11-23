@@ -2,10 +2,6 @@
 pub(crate) mod linux;
 #[cfg(target_os = "macos")]
 pub(crate) mod macos;
-#[cfg(target_os = "windows")]
-pub(crate) mod legacy_windows;
-#[cfg(target_os = "windows")]
-pub(crate) mod windows;
 #[path = "../../../../engine/native/note_tap.rs"]
 pub(crate) mod note_tap;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -14,8 +10,6 @@ pub(crate) use note_tap::NoteTap;
 pub(crate) use linux::*;
 #[cfg(target_os = "macos")]
 pub(crate) use macos::*;
-#[cfg(target_os = "windows")]
-pub(crate) use windows::*;
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) fn observe_note_tap(

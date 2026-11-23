@@ -70,7 +70,6 @@ impl SharedCaptureTelemetry {
         self.note_tap_epoch.fetch_add(1, Ordering::AcqRel);
     }
 
-    #[cfg_attr(target_os = "windows", allow(dead_code))]
     pub(crate) fn note_tap_epoch(&self) -> u64 {
         self.note_tap_epoch.load(Ordering::Acquire)
     }
@@ -116,7 +115,6 @@ impl SharedCaptureTelemetry {
         let _ = self.ui_sender.try_send(LiveOverlayEvent::RequestSnapshot);
     }
 
-    #[cfg_attr(target_os = "windows", allow(dead_code))]
     pub(crate) fn request_note_at(&self, t_ms: u64, screen_x: f64, screen_y: f64) {
         if self.active.load(Ordering::Acquire)
             && self.has_note_editor()

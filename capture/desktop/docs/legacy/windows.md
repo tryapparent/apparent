@@ -1,11 +1,7 @@
 # Windows (unsupported historical implementation)
 
-Apparent no longer supports Windows. This page records the retained implementation for historical
-reference only; it is not a build, test or release guide for current work. Do not dispatch the
-Windows release workflow or publish Windows assets. Current development targets macOS and Linux.
-
-Retained code lives in `capture/engine/runtime/platform/windows.rs`, `capture/desktop/ui/windows.rs`, `src/win/`,
-`capture/desktop/settings/onboarding_window.rs` and `capture/desktop/settings/settings_window.rs`. Do not infer current support from it.
+Apparent supports macOS and Linux. The former Windows capture, input, overlay and media
+backends have been retired. The notes below describe the historical implementation.
 
 ## One app, one UI
 
@@ -34,12 +30,14 @@ Shortcuts are `RegisterHotKey` plus low-level hooks and a key-state poller (inje
 
 The cabled iPhone, video export, Sparkle (**Check for Updates…** opens the releases page) and reading the browser tab URL (the `sdk.js` page bridge still works).
 
-## Retained build notes (historical)
+## Historical packaging
 
-Windows releases have ended. The implementation and packaging recipe remain as historical records; do not dispatch the disabled workflow or publish new zips. Earlier unsigned zips are not supported downloads. A headless build and model test are not a native GUI test.
+The former Windows release workflow built an unsigned x64 ZIP with
+`apparent.exe`, the Visual C++ runtime DLLs and transcribe.cpp's DLLs.
+transcribe.cpp used `dynamic-backends` to select a ggml CPU tier at runtime.
+The Windows packaging check verified the executable's DLL imports and checked
+for AVX-512 outside the designated tiers after the failure tracked in #58.
 
-If re-enabled, the retained `.github/workflows/release-windows.yml` job would run a `--release` build and `apparent --help`, copy the Visual C++ runtime DLLs beside it (transcribe.cpp's CMake build uses the DLL runtime, so `crt-static` doesn't link), download and run the real model (`cargo test speech -- --ignored`), repeat that run under Intel SDE as a Lunar Lake CPU (no AVX-512), and produce `Apparent-<version>-windows-x64.zip` (unsigned `apparent.exe`, transcribe.cpp's DLLs, those runtime DLLs, README, LICENSE) for the tag's GitHub release.
+## Bundle recovery
 
-transcribe.cpp is built with `dynamic-backends`: `transcribe.dll`, `ggml.dll`, `ggml-base.dll` and one `ggml-cpu-<tier>.dll` per x86 tier (x64 … haswell, alderlake, skylakex, icelake) sit beside `apparent.exe`, and ggml loads the best tier the CPU has. A static build compiles ggml for the build machine's CPU (`GGML_NATIVE`), which put AVX-512 into every Windows build and crashed the first transcription on CPUs without it (#58). `capture/desktop/scripts/legacy/check-windows-cpu-tiers.ps1` (the historical release workflow) fails if AVX-512 appears in `transcribe.dll`, `ggml*.dll` outside the AVX-512 tiers, or if `apparent.exe` stops importing `transcribe.dll`.
-
-A Screen capture writes `unfinished.json` (target, ink, clicks, window log) beside its video and audio before the bundle is built and deletes it after. If the process dies in between, as #58 did, the next launch runs `apparent recover` in a child process, which builds those bundles in place, once each (`.recovering`; delete it to let `apparent recover` try again). Captures from before it (0.3.10) left only `recording.mp4` and `audio.wav`; once nothing in such a bundle changed for 10 minutes, the same launch pass builds it from those alone, as a full-frame Screen capture with no ink or clicks. `apparent recover <bundle>` builds one now, on a Mac too. Retention leaves bundles alone until they've been tried. From a Mac, `cargo xwin check --target x86_64-pc-windows-msvc` compiles it (needs `cargo-xwin`, LLVM's `clang-cl`/`lld-link`, CMake and Ninja; `XWIN_ACCEPT_LICENSE=1`).
+A Screen capture writes `unfinished.json` (target, ink, clicks, window log) beside its video and audio before the bundle is built and deletes it after. If the process dies in between, as #58 did, the next launch runs `apparent recover` in a child process, which builds those bundles in place, once each (`.recovering`; delete it to let `apparent recover` try again). Captures from before it (0.3.10) left only `recording.mp4` and `audio.wav`; once nothing in such a bundle changed for 10 minutes, the same launch pass builds it from those alone, as a full-frame Screen capture with no ink or clicks. `apparent recover <bundle>` builds one now, on a Mac too. Retention leaves bundles alone until they've been tried.
