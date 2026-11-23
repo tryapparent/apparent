@@ -58,23 +58,39 @@ await copyFile(image, binary);
 await chmod(binary, 0o700);
 const stageFile = (source: string, name: string) =>
   copyFile(source, join(staged, "libbench.so." + name));
+const archive = join(job, "collector");
+async function source(relative: string) {
+  const destination = join(archive, relative);
+  await mkdir(dirname(destination), { recursive: true });
+  await copyFile(join(repo, relative), destination);
+}
 const launcher = join(job, "scenario");
 await writeFile(
   launcher,
-  'exec "$SCRAWL_GUI_LIBRARY_PATH/libbench.so.node" --experimental-strip-types "$SCRAWL_GUI_LIBRARY_PATH/libbench.so.guest.ts"\n',
+  'mkdir -p "$TMPDIR/collector" && tar -C "$TMPDIR/collector" -xf "$SCRAWL_GUI_LIBRARY_PATH/libbench.so.program" && exec "$SCRAWL_GUI_LIBRARY_PATH/libbench.so.node" --experimental-strip-types "$TMPDIR/collector/record/enablement/performance/guest.ts"\n',
   { mode: 0o700, flag: "wx" },
 );
 const surface = process.env.APPARENT_BENCH_SURFACE === "1";
+const media = process.env.APPARENT_BENCH_MEDIA === "1";
+const ink = process.env.APPARENT_BENCH_INK === "1";
+const detail = process.env.APPARENT_BENCH_DETAIL === "1";
+const onboarding = process.env.APPARENT_BENCH_ONBOARDING === "1";
+assert(
+  (!media && !ink && !detail) || surface,
+  "Media and interaction measurements require the surface probe",
+);
 const settings = process.env.APPARENT_BENCH_SETTINGS;
 const cli = process.env.APPARENT_BENCH_LOCAL_CLI_FIXTURES;
-assert([surface, !!settings, !!cli].filter(Boolean).length <= 1);
+assert([surface, onboarding, !!settings, !!cli].filter(Boolean).length <= 1);
 const mode = surface
   ? "surface"
   : settings
     ? "settings"
     : cli
       ? "local-cli"
-      : "draw";
+      : onboarding
+        ? "onboarding"
+        : "draw";
 const manifest = await import("../benchmark.json", {
   with: { type: "json" },
 }).then((result) => result.default);
@@ -93,27 +109,48 @@ await writeFile(join(staged, "libbench.so.cases"), JSON.stringify(cases), {
   mode: 0o600,
 });
 await writeFile(join(staged, "libbench.so.mode"), mode, { mode: 0o600 });
+if (ink) await writeFile(join(staged, "libbench.so.ink"), "1", { mode: 0o600 });
+if (detail)
+  await writeFile(join(staged, "libbench.so.detail"), "1", { mode: 0o600 });
 await Promise.all([
   stageFile(realpathSync(process.execPath), "node"),
   stageFile(model, "model"),
   stageFile(model + ".verified.json", "receipt"),
-  stageFile(join(kit, "guest.ts"), "guest.ts"),
+  source("record/enablement/performance/guest.ts"),
+  source("record/enablement/performance/fixture-clock.ts"),
   stageFile(join(kit, "sample.ts"), "sample.ts"),
   stageFile(
     join(repo, "capture/desktop/scripts/linux/gui/capture-smoke.py"),
     "scene",
   ),
 ]);
+if (surface || onboarding)
+  await source("shared/enablement/performance/electron-observer.ts");
+if (surface)
+  await Promise.all(
+    ["surface.ts", "interactions.ts"].map((file) =>
+      source("record/enablement/performance/" + file),
+    ),
+  );
+if (onboarding) await source("onboarding/enablement/performance.ts");
+if (detail) {
+  const preview = process.env.APPARENT_BENCH_PREVIEW_MODEL;
+  assert(preview, "The local caption probe needs a pinned preview model");
+  const previewFile = realpathSync(preview);
+  assert.equal(
+    await sha256(previewFile),
+    "90d8c89714cd31efc88be62a40c6b2bea57e0cc2063af1ffe2c28f1a228ca110",
+  );
+  await stageFile(previewFile, "preview-model");
+}
 await chmod(join(staged, "libbench.so.node"), 0o700);
 if (settings) await stageFile(realpathSync(settings), "settings.ts");
 if (cli) {
+  await source("enablement/timing/journey/native/local-cli-guest.ts");
   const fixtures = JSON.parse(
     await import("node:fs/promises").then((fs) => fs.readFile(cli, "utf8")),
   );
-  await stageFile(
-    join(repo, "enablement/timing/journey/local-cli.ts"),
-    "local-cli.ts",
-  );
+  await source("enablement/timing/journey/local-cli.ts");
   const inputs = ["short", "ink", "long"].map(
     (name) => [name, realpathSync(fixtures[name])] as const,
   );
@@ -141,6 +178,7 @@ if (cli) {
     "long.apparent",
   ]);
 }
+run("tar", ["-C", archive, "-cf", join(staged, "libbench.so.program"), "."]);
 const speech = join(job, "speech-unit.wav");
 const stimulus = join(job, "stimulus.wav");
 run("ffmpeg", [
@@ -251,7 +289,7 @@ try {
     ],
     "runner.log",
   );
-  if (mode === "draw" || mode === "surface") {
+  if (mode === "draw" || mode === "surface" || mode === "onboarding") {
     const ready = join(vm, "result.json");
     while (!existsSync(ready)) {
       if (runner.child.exitCode !== null)
@@ -261,7 +299,14 @@ try {
     const here = dirname(fileURLToPath(import.meta.url));
     const driver = start(
       process.execPath,
-      [join(here, "driver.ts"), vm, key, mode],
+      [
+        join(here, "driver.ts"),
+        vm,
+        key,
+        mode,
+        ...(media ? ["media"] : []),
+        ...(ink ? ["ink"] : []),
+      ],
       "driver.log",
     );
     const [runnerCode, driverCode] = await Promise.all([

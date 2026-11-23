@@ -1,4 +1,6 @@
-Consumer selection, exact-tree PR evidence reuse and automatic Linux Main publication are documented in [continuous delivery](../docs/continuous-delivery.md). `routing/consumers.ts` owns directory triggers, named suites and shared consumer facts; local pushes and workflows both call `selectRange`. `routing/streams.ts` only compares publication inputs; native commands remain in the existing verifier adapter.
+[Continuous delivery](../docs/continuous-delivery.md) covers selection, exact-tree reuse and Linux Main publication. Local and hosted selectors use `selectRange` and `routing/consumers.ts`. `routing/streams.ts` compares publication inputs. Native commands stay in the verifier adapter.
+
+For isolated Mac picker edits, the Linux execution plan can omit an authenticated Connect client result. Admission retains the full plan. Remove the pending-plan override to restore fresh execution.
 
 `Release application` defaults to manual Linux `mode=verify`. CI completion no longer
 starts a separate notification workflow or posts failed-head completion comments.

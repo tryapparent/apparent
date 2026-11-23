@@ -1,7 +1,7 @@
 //! Narrow Storage transaction executor; Settings policy and persistence intent live in TypeScript.
 use crate::shared::handoff::{capture_location, update_config_allowed_in};
 use std::hash::{Hash, Hasher};
-use std::os::fd::{FromRawFd, IntoRawFd};
+use crate::capture::engine::bundle::retention::folder_usage::scan_directory;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 
@@ -18,7 +18,7 @@ fn field(raw: &serde_json::Value, name: &str) -> serde_json::Value {
 
 fn revision(raw: &serde_json::Value) -> String {
     let mut hash = std::collections::hash_map::DefaultHasher::new();
-    serde_json::json!({"mediaDays":field(raw,"mediaDays"),"bundleDays":field(raw,"bundleDays")})
+    serde_json::json!({"mediaDays":field(raw,"mediaDays"),"bundleDays":field(raw,"bundleDays"),"maximumMb":field(raw,"maximumMb")})
         .to_string().hash(&mut hash);
     format!("{:016x}", hash.finish())
 }
@@ -41,6 +41,38 @@ impl SavePolicy {
     }
 }
 
+pub(in crate::capture::desktop) fn retention_note(
+    policy: &crate::capture::engine::bundle::retention::Policy, maximum_mb: Option<u32>,
+) -> String {
+    match maximum_mb {
+        Some(0) => return "No size limit.".into(),
+        Some(limit) => return format!("Storage limit is {} GB. Cleanup moves the oldest eligible captures to the Trash to meet this limit.", f64::from(limit) / 1000.0),
+        None => {}
+    }
+    let days = |n: u32| {
+        if n == 1 {
+            "1 day".to_owned()
+        } else {
+            format!("{n} days")
+        }
+    };
+    let bin = if cfg!(target_os = "windows") {
+        "Recycle Bin"
+    } else {
+        "Trash"
+    };
+    match (policy.media_days, policy.bundle_days) {
+        (None, None) => String::new(),
+        (Some(media), Some(bundle)) => format!(
+            "Video and audio go to the {bin} after {}, the rest of each capture after {}.",
+            days(media),
+            days(bundle)
+        ),
+        (Some(media), None) => format!("Video and audio go to the {bin} after {}.", days(media)),
+        (None, Some(bundle)) => format!("Captures go to the {bin} after {}.", days(bundle)),
+    }
+}
+
 pub(in crate::capture::desktop) fn read(config: &Path) -> Result<serde_json::Value, &'static str> {
     let raw = capture_location::read_raw(config).map_err(|_| "config_read_failed")?;
     let stored = raw.get("retention").cloned().and_then(|value| serde_json::from_value::<crate::capture::engine::bundle::retention::Policy>(value).ok());
@@ -59,6 +91,7 @@ pub(in crate::capture::desktop) fn read(config: &Path) -> Result<serde_json::Val
         "retention": {"mediaDays":media_days,"bundleDays":bundle_days},
         "defaults": crate::capture::engine::bundle::retention::Policy::default(),
         "revision": revision(&raw),
+        "maximumMb": crate::composition::retention::storage_limit(&raw),
         "custom": custom,
     }))
 }
@@ -84,7 +117,23 @@ pub(super) fn save_policy(
     expected: &str,
     admit: impl Fn() -> bool,
 ) -> Result<serde_json::Value, &'static str> {
-    if policy.is_some_and(|p| !p.valid()) {
+    update_policy(config, policy, None, expected, admit)
+}
+
+pub(super) fn save_limit(
+    config: &Path, maximum_mb: u32, expected: &str, admit: impl Fn() -> bool,
+) -> Result<serde_json::Value, &'static str> {
+    update_policy(config, None, Some(maximum_mb), expected, admit)
+}
+
+fn update_policy(
+    config: &Path,
+    policy: Option<&SavePolicy>,
+    maximum_mb: Option<u32>,
+    expected: &str,
+    admit: impl Fn() -> bool,
+) -> Result<serde_json::Value, &'static str> {
+    if policy.is_some_and(|p| !p.valid()) || maximum_mb.is_some_and(|mb| mb > crate::composition::retention::MAX_STORAGE_MB) {
         return Err("invalid_request");
     }
     let mut refusal = None;
@@ -103,6 +152,16 @@ pub(super) fn save_policy(
         {
             refusal = Some("config_write_failed");
             anyhow::bail!("invalid retention object");
+        }
+        if let Some(maximum_mb) = maximum_mb {
+            if !raw["retention"].is_object() {
+                raw["retention"] = serde_json::json!({});
+            }
+            raw["retention"]["maximumMb"] = maximum_mb.into();
+            return Ok(());
+        }
+        if let Some(fields) = raw["retention"].as_object_mut() {
+            fields.remove("maximumMb");
         }
         match policy {
             Some(policy) => {
@@ -171,109 +230,23 @@ pub(in crate::capture::desktop) fn usage(
         "effectivePath": after.effective_path,
         "displayPath": after.display_path,
         "formatted": crate::capture::engine::bundle::retention::format_bytes(bytes),
+        "bytes": bytes.to_string(),
     }}))
-}
-
-/// Pin every directory, including while enumerating its children. Path-based
-/// read_dir after symlink_metadata has a race that can traverse outside captures.
-fn scan_directory(
-    file: std::fs::File,
-    admit: &impl Fn() -> bool,
-    entries: &mut usize,
-    depth: usize,
-) -> Result<u64, &'static str> {
-    if !admit() || depth >= 256 {
-        return Err("usage_unavailable");
-    }
-    struct Directory(*mut libc::DIR);
-    impl Drop for Directory {
-        fn drop(&mut self) {
-            // fdopendir transferred the owned descriptor to DIR.
-            unsafe {
-                libc::closedir(self.0);
-            }
-        }
-    }
-    let fd = file.into_raw_fd();
-    // SAFETY: fd is an exclusively owned open directory descriptor.
-    let dir = unsafe { libc::fdopendir(fd) };
-    if dir.is_null() {
-        drop(unsafe { std::fs::File::from_raw_fd(fd) });
-        return Err("usage_unavailable");
-    }
-    let dir = Directory(dir);
-    let mut bytes = 0u64;
-    loop {
-        if !admit() {
-            return Err("usage_unavailable");
-        }
-        // readdir returns null for both EOF and error; clear/check errno to
-        // avoid presenting a failed scan as a successful partial total.
-        let entry = unsafe {
-            #[cfg(target_os = "linux")]
-            {
-                *libc::__errno_location() = 0;
-            }
-            #[cfg(target_os = "macos")]
-            {
-                *libc::__error() = 0;
-            }
-            libc::readdir(dir.0)
-        };
-        if entry.is_null() {
-            if std::io::Error::last_os_error().raw_os_error() != Some(0) {
-                return Err("usage_unavailable");
-            }
-            return Ok(bytes);
-        }
-        // SAFETY: readdir's name is NUL-terminated and valid until the next call
-        // on this DIR; recursion uses a different DIR.
-        let name = unsafe { std::ffi::CStr::from_ptr((*entry).d_name.as_ptr()) };
-        if [b".".as_slice(), b"..".as_slice()].contains(&name.to_bytes()) {
-            continue;
-        }
-        *entries += 1;
-        if *entries > 100_000 {
-            return Err("usage_unavailable");
-        }
-        let mut meta = std::mem::MaybeUninit::<libc::stat>::uninit();
-        if unsafe {
-            libc::fstatat(
-                fd,
-                name.as_ptr(),
-                meta.as_mut_ptr(),
-                libc::AT_SYMLINK_NOFOLLOW,
-            )
-        } != 0
-        {
-            return Err("usage_unavailable");
-        }
-        let meta = unsafe { meta.assume_init() };
-        let size = if meta.st_mode & libc::S_IFMT == libc::S_IFDIR {
-            // Parent fd is pinned; O_NOFOLLOW rejects a directory replaced by a
-            // symlink after fstatat. Never reopen an absolute descendant path.
-            let child = unsafe {
-                libc::openat(
-                    fd,
-                    name.as_ptr(),
-                    libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-                )
-            };
-            if child < 0 {
-                return Err("usage_unavailable");
-            }
-            let child = unsafe { std::fs::File::from_raw_fd(child) };
-            scan_directory(child, admit, entries, depth + 1)?
-        } else {
-            u64::try_from(meta.st_size).map_err(|_| "usage_unavailable")?
-        };
-        bytes = bytes.checked_add(size).ok_or("usage_unavailable")?;
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unset_storage_limit_reads_one_gigabyte() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = tmp.path().join("config.json");
+        assert_eq!(read(&config).unwrap()["maximumMb"], 1000);
+        assert!(!config.exists());
+        std::fs::write(&config, r#"{"storageFixture":true}"#).unwrap();
+        assert_eq!(read(&config).unwrap()["maximumMb"], 1000);
+    }
+
     #[test]
     fn malformed_known_retention_values_use_week_defaults_without_echoing_them() {
         let root = std::env::temp_dir().join(format!("retention-{}", crate::shared::ids::make_bundle_id()));
@@ -288,6 +261,24 @@ mod tests {
         assert!(read.to_string().find("private-invalid").is_none());
         assert_eq!(crate::capture::engine::bundle::retention::Policy::load_from(&config), Default::default());
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn save_limit_preserves_age_configuration_and_uses_the_same_revision() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = tmp.path().join("config.json");
+        std::fs::write(&config, r#"{"retention":{"mediaDays":30,"bundleDays":90,"future":true},"other":"keep"}"#).unwrap();
+        let previous = read(&config).unwrap();
+        let revision = previous["revision"].as_str().unwrap();
+        assert!(previous["maximumMb"].is_null());
+        let committed = save_limit(&config, 12_400, revision, || true).unwrap();
+        assert_eq!(committed["maximumMb"], 12_400);
+        assert_eq!(save_limit(&config, 0, revision, || true), Err("conflict"));
+        let actual = capture_location::read_raw(&config).unwrap();
+        assert_eq!(actual["retention"], serde_json::json!({"mediaDays":30,"bundleDays":90,"maximumMb":12400,"future":true}));
+        assert_eq!(actual["other"], "keep");
+        let committed = save_limit(&config, 0, committed["revision"].as_str().unwrap(), || true).unwrap();
+        assert_eq!(committed["maximumMb"], 0);
     }
 
     #[test]

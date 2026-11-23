@@ -6,3 +6,4 @@ export * from './retention-controller.js';
 export * from './location-workflow.js';
 export * from './retention-workflow.js';
 export * from './retention/policy.js';
+export * from './retention/size-limit.js';

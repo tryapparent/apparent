@@ -137,6 +137,8 @@ impl ScreenCaptureSession {
             target.clone(),
             Some(bundle_dir.join("recording.mp4")),
             Arc::clone(&telemetry.excluded_window_ids),
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            telemetry.circle_session.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone(),
             #[cfg(target_os = "macos")]
             Arc::clone(&telemetry.applied_excluded_window_ids),
             #[cfg(any(target_os = "macos", target_os = "linux"))]

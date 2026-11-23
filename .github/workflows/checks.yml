@@ -189,7 +189,7 @@ jobs:
       runner: ubuntu-24.04
       release_receipt: false
       portable: false
-      plan: ${{ needs.select.outputs.plan }}
+      plan: ${{ needs.reuse.outputs.linux_pending_plan || needs.select.outputs.plan }}
 
   release:
     name: Queue Main release
@@ -277,6 +277,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       linux: ${{ steps.evidence.outputs.linux }}
+      linux_pending_plan: ${{ steps.evidence.outputs.linux_pending_plan }}
       macos: ${{ steps.evidence.outputs.macos }}
       portable: ${{ steps.evidence.outputs.portable }}
       hermes: ${{ steps.evidence.outputs.hermes }}

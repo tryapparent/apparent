@@ -341,11 +341,6 @@ test('onboarding coach avoids its board and pill on offset displays, preserves i
   assert.equal(project(state).testInstance,true);
   assert.deepEqual(project(state).practiceBoard,[0,0,700,600]);
   assert.equal(project({...state,practiceBoard:[0,0,-1,600]}).practiceBoard,undefined);
-  const boardView={id:'board-123',strokes:[[[10,20],[30,40]]],color:[217,76,68]};
-  assert.deepEqual(project({...state,boardView}).boardView,boardView);
-  assert.equal(project({...state,boardView:{...boardView,id:'../capture'}}).boardView,null);
-  assert.equal(project({...state,boardView:{...boardView,strokes:[[[Infinity,0]]]}}).boardView,null);
-  assert.equal(project({...state,boardView:{...boardView,strokes:[[[1600,0]]]}}).boardView,null);
 });
 
 test('onboarding fits a small logical work area and converts native X11 geometry', () => {
@@ -410,24 +405,16 @@ test('permission refresh keeps setup unfocused and avoids repeating native geome
  assert.equal(calls.filter(x=>x==='position').length,1,'same mode must preserve a user-moved window');
  stdin.emit('data','{"type":"show"}\n');
  assert.equal(calls.filter(x=>x==='show').length,2,'explicit parent show may reactivate setup');
- const boardState={type:'state',step:'try-it',rows:[],ready:true,practice:'whiteboard',practiceBoard:[100,120,720,540],boardView:{id:'board-123',strokes:[],color:[217,76,68]}};
- stdin.emit('data',JSON.stringify(boardState)+'\n');
- assert.ok(calls.includes('focus'),'opening the inline board view focuses its actual drawing surface');
- assert.ok(calls.some(x=>Array.isArray(x)&&x[0]==='position'&&x[1]===100&&x[2]===120));
- stdin.emit('data',JSON.stringify({...boardState,boardView:null,practiceBoard:null,practice:'preparing'})+'\n');
+ const boardState={type:'state',step:'try-it',rows:[],ready:true,practice:'whiteboard'};
+ stdin.emit('data',JSON.stringify({...boardState,practiceBoard:null,practice:'preparing'})+'\n');
  assert.equal(window.isVisible(),false,'processing hides the owning window');
- stdin.emit('data',JSON.stringify({...boardState,boardView:null,practiceBoard:null,practice:'copied'})+'\n');
+ stdin.emit('data',JSON.stringify({...boardState,practiceBoard:null,practice:'copied'})+'\n');
  assert.equal(window.isVisible(),true,'copied handoff restores the coach');
 });
 
-test('whiteboard bridge admits only finite human paper input and copies a minimal command',()=>{
+test('the onboarding bridge cannot edit Whiteboard ink',()=>{
  const {parseAction}=require('../electron/onboarding-protocol.cjs');
- const base={action:'board',id:'apparent-123-a',operation:'begin',point:[40,60]};
- assert.deepEqual(parseAction({...base,strokes:[[1,2]],demo:true}),base);
- for(const point of [[NaN,1],[Infinity,1],[-1,1],[1600,1],[1,1100],[1],['1',2]])assert.throws(()=>parseAction({...base,point}));
- for(const operation of ['replay','complete','export','stroke'])assert.throws(()=>parseAction({...base,operation}));
- for(const id of ['', '../capture', 'x'.repeat(81)])assert.throws(()=>parseAction({...base,id}));
- for(const operation of ['end','cancel','undo','clear','close'])assert.deepEqual(parseAction({...base,operation}),{action:'board',id:base.id,operation});
+ assert.throws(()=>parseAction({action:'board',id:'example',operation:'begin',point:[40,60]}));
 });
 test('saved shortcut keys retain every modifier and a literal plus key',async()=>{
  const {recordKeys}=await import('../src/onboarding/shortcut/keys.ts');

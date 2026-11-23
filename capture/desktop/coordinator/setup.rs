@@ -650,10 +650,18 @@ impl ApparentCoordinator {
     }
 
     pub(in crate::capture::desktop) fn tick_onboarding_practice(&mut self,cx:&mut Context<Self>) {
+        whiteboard::tick(self, cx);
         if let Some(session) = self.onboarding.as_mut() {
             session.observe_shortcut_modifiers(crate::capture::engine::runtime::modifier_flags());
         }
-        if !self.onboarding.as_ref().is_some_and(|s|s.practice_active()) {return;}
+        if !self.onboarding.as_ref().is_some_and(|s|s.practice_active()) {
+            if self.whiteboard.borrow().practice_window() {
+                self.whiteboard.borrow_mut().close();
+                let coord = cx.entity();
+                cx.defer(move |cx| whiteboard::open(&coord, cx));
+            }
+            return;
+        }
         #[cfg(target_os="macos")]
         let anchor=if self.onboarding.as_ref().is_some_and(|s|s.practice_locating()) {crate::capture::desktop::ui::macos::status_bar_anchor()} else {self.native_pill.as_ref().and_then(|p|p.coach_anchor())};
         #[cfg(target_os="linux")]
@@ -667,11 +675,10 @@ impl ApparentCoordinator {
                 .map(|rect| rect.map(|value| value as f32))
         } else { anchor };
         if let Some(session)=self.onboarding.as_mut(){session.practice_anchor(anchor);}
-        if !self.is_recording() {self.whiteboard.borrow_mut().presentation=None;}
-        let board_frame=whiteboard::frame(&self.whiteboard,cx);
-        let board_view={let board=self.whiteboard.borrow();board.presentation.as_ref().map(|(id,_)|serde_json::json!({"id":id,"strokes":board.strokes,"color":board.color}))};
-        if let Some(session)=self.onboarding.as_mut(){session.board_view(board_view);}
-        let board=self.whiteboard.borrow().strokes.iter().any(|s|!s.is_empty());
+        let (board_id, board_frame) = self.whiteboard.borrow().visible()
+            .map_or((None, None), |(id, frame)| (Some(id.to_owned()), Some(frame)));
+        if let Some(session) = self.onboarding.as_mut() { session.board_id(board_id); }
+        let board = self.whiteboard.borrow().has_ink();
         let screen=self.telemetry.strokes.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter().filter(|s|!s.laser && !s.pts.is_empty()).count();
         let processing=self.is_processing();
         let note_saved=self.note_ui.as_ref().is_some_and(|notes|notes.has_saved_note());
@@ -727,26 +734,15 @@ impl ApparentCoordinator {
                 let close=self.onboarding.as_mut().and_then(|session|session.take_practice_board_close());
                 if let Some((source,transport,attempt,id))=close {
                     let owner=cx.entity().downgrade();
-                    cx.defer(move |cx| { let _=owner.update(cx,|coord,cx| {
-                        if coord.is_recording() && coord.onboarding.as_ref().is_some_and(|s|s.current_practice_scope(source,transport,attempt)) && coord.whiteboard.borrow().presentation.as_ref().is_some_and(|(current,_)|current==&id) {
-                            coord.whiteboard.borrow_mut().presentation=None;
-                            whiteboard::close(cx);
+                    cx.defer(move |cx| { let _=owner.update(cx,|coord,_| {
+                        if coord.is_recording() && coord.onboarding.as_ref().is_some_and(|s|s.current_practice_scope(source,transport,attempt)) && coord.whiteboard.borrow().visible().is_some_and(|(current, _)| current == id) {
+                            coord.whiteboard.borrow_mut().close();
                         }
                     }); });
                 }
                 effect
             }
 
-            Event::Board(value) => {
-                if self.is_recording() && self.onboarding.as_ref().is_some_and(|s|s.electron_practice()) {
-                    let mut board=self.whiteboard.borrow_mut();
-                    if board.presentation.as_ref().is_some_and(|(id,_)|value["id"].as_str()==Some(id.as_str())) {
-                        board.apply_input(&value);
-                    }
-                    drop(board);if matches!(value["operation"].as_str(),Some("end"|"undo"|"clear")){self.request_immediate_frame();}
-                }
-                Effect::None
-            }
             Event::Action(action) if matches!(action.as_str(), "use-desktop-shortcut" | "use-current-shortcut") => {
                 let host = crate::capture::desktop::settings::AppHost { telemetry: &self.telemetry };
                 let editor = self.onboarding_editor.record_shortcut(&host);
@@ -796,8 +792,6 @@ impl ApparentCoordinator {
                 Effect::None
             }
             Event::Exited => {
-                let board_was_open=self.whiteboard.borrow_mut().detach_presentation();
-                if board_was_open && self.is_recording(){let coord=cx.entity();cx.defer(move |cx|whiteboard::open(&coord,cx));}
                 if self.onboarding.as_mut().is_some_and(|session| session.restore_native()) {
                     self.sync_onboarding_editor();
                     return;

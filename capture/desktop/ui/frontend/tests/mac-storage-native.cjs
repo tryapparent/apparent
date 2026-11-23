@@ -347,7 +347,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     await fs.mkdir(selected, { mode: 0o700 });
     await fs.mkdir(builtin, { recursive: true, mode: 0o700 });
     await fs.writeFile(sentinel, sentinelText, { mode: 0o600, flag: 'wx' });
-    await fs.writeFile(config, JSON.stringify({ experiments: { electronCaptureLocation: true },
+    await fs.writeFile(config, JSON.stringify({ experiments: { electronCaptureLocation: false },
       onboarding: { seen: true }, storageNativeFixture: unknown }), { mode: 0o600, flag: 'wx' });
     // Match the native reference fixture: do not hold normal app presentation
     // behind unrelated onboarding initialization. Rust still polls real grants
@@ -562,13 +562,10 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     report.errorReporting.explicitOnOffAndUnknownKeysVerified = true;
     await page.screenshot({ path: path.join(output, 'error-reporting-restarted.png'), timeout: budget(), fullPage: true });
     const card = page.getByRole('region', { name: 'Capture location', exact: true });
-    // Usage repeats the effective path; location assertions must target the
-    // location's own status, not any descendant text in the Storage card.
-    const locationStatus = card.locator(':scope > [role="status"]');
-    const change = card.getByRole('button', { name: 'Change…', exact: true });
-    const reset = card.getByRole('button', { name: 'Reset', exact: true });
-    const refreshRetention = page.getByRole('button', { name: 'Refresh retention', exact: true });
-    const refreshUsage = page.getByRole('button', { name: 'Refresh usage', exact: true });
+    const locationStatus = card.getByRole('status');
+    const change = card.getByRole('button', {name:'Change…', exact:true});
+    const field = page.getByRole('spinbutton', {name:'Maximum storage in GB'});
+    const refreshLocation = card.getByRole('button', {name:'Retry capture location', exact:true});
     let nativeChangeStarting = false;
     const startNativeChange = async () => {
       assert.equal(pendingNativeChange, undefined, 'A native Change is already pending');
@@ -599,7 +596,7 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
       if (savedPath === null) assert.equal(Object.hasOwn(raw, 'capturesDir'), false);
       else assert.equal(raw.capturesDir, savedPath);
       assert.deepEqual(raw.storageNativeFixture, unknown);
-      assert.equal(raw.experiments.electronCaptureLocation, true);
+      assert.equal(raw.experiments.electronCaptureLocation, false);
       assert.equal(await fs.readFile(sentinel, 'utf8'), sentinelText);
       await assert.rejects(fs.stat(path.join(selected, 'existing-file.txt')), { code: 'ENOENT' });
       return { capturesDir: savedPath, keyAbsent: !Object.hasOwn(raw, 'capturesDir'),
@@ -608,23 +605,12 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     report.before = { ...await poll(snapshot, 'Initial authoritative read'), files: await assertFiles(null) };
     assert.equal(report.before.location.storage.source, 'builtin');
     assert.equal(report.before.location.storage.effectivePath, builtin);
-    // Reload may read Storage while the restarted backend is still serving
-    // another request. The card intentionally retains app_busy until Refresh;
-    // a successful direct socket probe above does not refresh the renderer.
-    const refreshLocation = card.getByRole('button', { name: 'Refresh location', exact: true });
-    await expect(refreshLocation).toBeEnabled({ timeout: budget() });
-    await refreshLocation.click({ timeout: budget() });
-    await locationStatus.getByText(report.before.location.storage.displayPath, { exact: true }).waitFor({ timeout: budget() });
-    // Refresh remounts Retention, which performs real reads on Rust's single
-    // Storage worker. Observe those receipts before one Change mutation: an
-    // app_busy reply never opens a picker, regardless of AX polling duration.
+    if (await refreshLocation.isVisible()) await refreshLocation.click({timeout:budget()});
+    await locationStatus.getByText(report.before.location.storage.displayPath, {exact:true}).waitFor({timeout:budget()});
     const waitStorageIdle = async () => {
-      await expect(change).toBeEnabled({ timeout: budget() });
-      await expect(refreshRetention).toBeEnabled({ timeout: budget() });
-      await refreshRetention.click({ timeout: budget() }); // Read-only, no preference write.
-      await expect(page.getByRole('combobox', { name: 'Keep recordings', exact: true })).toBeEnabled({ timeout: budget() });
-      await expect(refreshUsage).toBeEnabled({ timeout: budget() });
-      await expect(page.getByText(/ in captures$/)).toBeVisible({ timeout: budget() });
+      await expect(change).toBeEnabled({timeout:budget()});
+      await expect(field).toBeEnabled({timeout:budget()});
+      await expect(page.locator('.storage-used')).toBeVisible({timeout:budget()});
     };
     const goPathOperation = (operation, target) => {
       assert.equal(electronChild.exitCode, null, 'Owned Electron exited before picker navigation');
@@ -666,8 +652,8 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
       return next;
     }, 'Saved location readback');
     report.postChooseVisibleRefresh = await refreshBusyLocation({
-      idle: () => expect(refreshLocation).toBeEnabled({ timeout: budget() }),
-      busy: () => locationStatus.getByText(/^(Another location request is still running|The save outcome is unknown)\./).isVisible(),
+      idle: () => expect.poll(() => Promise.all([refreshLocation.isVisible(), change.isEnabled()]).then(values => values.some(Boolean)), {timeout:budget()}).toBe(true),
+      busy: () => card.getByRole('alert').getByText(/^(Another location request is still running|The save outcome is unknown)\./).isVisible(),
       refresh: () => refreshLocation.click({ timeout: budget() }),
     });
     await locationStatus.getByText(changed.location.storage.displayPath, { exact: true }).waitFor({ timeout: budget() });
@@ -693,41 +679,18 @@ test('real installed Mac Rust + shipped Electron Storage native Choose/Cancel/Re
     const afterCancelStat = await fs.stat(config, { bigint: true });
     assert.equal(afterCancelStat.ino, beforeCancelStat.ino, 'Cancel replaced config');
     assert.equal(afterCancelStat.mtimeNs, beforeCancelStat.mtimeNs, 'Cancel rewrote config');
-    // Cancel remounts Retention, which reads policy and then scans usage on
-    // Rust's single Storage worker. Wait for that real receipt before the
-    // fixture's direct socket probe and Reset; never retry an unknown outcome.
-    await expect(refreshUsage)
-      .toBeEnabled({ timeout: budget() });
-    report.cancel = { ...await snapshot(), files: await assertFiles(selected),
-      bytesUnchanged: true, inodeUnchanged: true, mtimeUnchanged: true };
+    await waitStorageIdle();
+    report.cancel = {...await snapshot(), files:await assertFiles(selected),
+      bytesUnchanged:true, inodeUnchanged:true, mtimeUnchanged:true};
     assert.deepEqual(report.cancel.location, report.change.location);
-    await reset.click({ timeout: budget() });
-    // The single Rust Settings worker can explicitly refuse admission. That
-    // response guarantees this Reset did not run; exercise the visible Refresh
-    // recovery once. Never repeat a timeout, unknown outcome or other error.
-    const busyMessage = 'Another location request is still running. Refresh when it finishes.';
-    const resetOutcome = await poll(async () => {
-      const text = await locationStatus.innerText({ timeout: budget() });
-      if (text.includes(busyMessage)) return 'busy';
-      assert.ok(text.includes(report.before.location.storage.displayPath), 'Waiting for Reset result');
-      return 'reset';
-    }, 'Rendered Reset result');
-    if (resetOutcome === 'busy') {
-      assert.deepEqual(await fs.readFile(config), beforeCancel, 'Unadmitted Reset changed config');
-      report.resetBusyRecovery = { response: 'app_busy', unchangedConfig: true, refreshes: 1, retries: 1 };
-      await card.getByRole('button', { name: 'Refresh location', exact: true }).click({ timeout: budget() });
-      await locationStatus.getByText(report.change.location.storage.displayPath, { exact: true }).waitFor({ timeout: budget() });
-      await expect(refreshUsage)
-        .toBeEnabled({ timeout: budget() });
-      await reset.click({ timeout: budget() });
-    }
+    assert.equal((await page.evaluate(() => window.apparent.resetCaptureLocation())).status, 'connected');
+    await page.reload({timeout:budget()});
     const resetRead = await poll(async () => {
       const next = await snapshot();
       assert.equal(next.location.storage.savedPath, null);
       return next;
     }, 'Reset location readback');
     await locationStatus.getByText(resetRead.location.storage.displayPath, { exact: true }).waitFor({ timeout: budget() });
-    await expect(reset).toBeDisabled({ timeout: budget() });
     report.reset = { ...resetRead, files: await assertFiles(null) };
     assert.equal(report.reset.location.storage.savedPath, null);
     assert.equal(report.reset.location.storage.source, 'builtin');

@@ -1,553 +1,520 @@
-//! A separate native paper window. Recording keeps running while the browser remains clickable.
+use anyhow::{Context as _, Result, ensure};
+use gpui::{App, Entity};
+use serde_json::json;
 
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::Arc;
-use std::time::Duration;
-
-use gpui::{
-    App, Bounds, Context, Entity, FocusHandle, FontWeight, Image, ImageFormat, IntoElement,
-    KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PathBuilder, Pixels,
-    Point, Render, Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
-    canvas, div, img, point, prelude::*, px, rgb, size, svg,
+use super::super::ApparentCoordinator;
+use std::{
+    collections::VecDeque,
+    io::{BufRead, BufReader, Read, Write},
+    process::{Command, Stdio},
+    sync::Arc,
+    sync::mpsc::{Receiver, SyncSender, TryRecvError, sync_channel},
+    time::{Duration, Instant},
 };
 
-use super::super::{ApparentCoordinator, platform};
-use super::pill_theme::{CARBON, PAPER};
+use serde_json::Value;
 
-pub(in crate::capture::desktop) const PAPER_WIDTH: f32 = 1600.0;
-pub(in crate::capture::desktop) const PAPER_HEIGHT: f32 = 1100.0;
-pub(in crate::capture::desktop) const fn title() -> &'static str { "Apparent Whiteboard" }
-const TOOLBAR_HEIGHT: f32 = 64.0;
-const LILAC: u32 = 0xb7a5d8;
 
-fn toolbar_button(id: &'static str, label: &'static str, close: bool) -> gpui::Stateful<gpui::Div> {
-    div()
-        .id(id)
-        .flex_none()
-        .h(px(36.0))
-        .px(px(12.0))
-        .flex()
-        .items_center()
-        .justify_center()
-        .border_1()
-        .border_color(rgb(if close { LILAC } else { 0x645a69 }))
-        .when(close, |button| {
-            button.bg(rgb(LILAC)).text_color(rgb(CARBON))
-        })
-        .rounded(px(2.0))
-        .cursor_pointer()
-        .hover(move |style| {
-            style
-                .bg(rgb(if close { 0xc4a9e6 } else { 0x302442 }))
-                .border_color(rgb(LILAC))
-        })
-        .when_else(
-            close,
-            |button| {
-                button.w(px(36.0)).px(px(0.0)).child(
-                    svg()
-                        .path(crate::capture::desktop::icons::X)
-                        .size(px(16.0))
-                        .text_color(rgb(CARBON)),
-                )
-            },
-            |button| button.child(label),
-        )
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
+pub(crate) enum Event {
+    Ready { frame: [f32; 4] },
+    Edit { sequence: u32, operation: Edit, point: Option<[f32; 2]> },
 }
 
-#[derive(Clone)]
+pub(crate) struct Window {
+    pub(crate) id: String,
+    child: Option<crate::capture::ui_process::UiChild>,
+    #[cfg(target_os = "linux")]
+    pid: u32,
+    practice: bool,
+    send: SyncSender<Value>,
+    events: Receiver<Event>,
+    deadline: Instant,
+    pub(crate) frame: Option<[f32; 4]>,
+}
+
+impl Window {
+    pub(crate) fn launch(mut command: Command, id: String, practice: bool, paper: &Paper) -> Result<Self> {
+        let mut child = command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .context("Launch Whiteboard")?;
+        let mut input = child.stdin.take().expect("piped stdin");
+        let output = child.stdout.take().expect("piped stdout");
+        let (send, messages) = sync_channel::<Value>(4);
+        let (deliver, events) = sync_channel(512);
+        let window = Self {
+            id,
+            #[cfg(target_os = "linux")]
+            pid: child.id(),
+            child: Some(crate::capture::ui_process::UiChild::new(child)),
+            practice,
+            send,
+            events,
+            deadline: Instant::now() + Duration::from_secs(12), frame: None };
+        std::thread::Builder::new().name("whiteboard-input".into()).spawn(move || {
+            for message in messages {
+                if serde_json::to_writer(&mut input, &message).is_err()
+                    || input.write_all(b"\n").is_err()
+                    || input.flush().is_err()
+                {
+                    break;
+                }
+            }
+        })?;
+        std::thread::Builder::new().name("whiteboard-output".into()).spawn(move || {
+            let mut reader = BufReader::new(output);
+            loop {
+                let mut line = Vec::new();
+                let Ok(length) = reader.by_ref().take(1025).read_until(b'\n', &mut line) else { break };
+                if length == 0 || length > 1024 || line.last() != Some(&b'\n') {
+                    break;
+                }
+                let Ok(event) = serde_json::from_slice(&line) else { break };
+                if deliver.try_send(event).is_err() {
+                    break;
+                }
+            }
+        })?;
+        window.send(json!({"type": "initial", "practice": practice, "paper": paper}))?;
+        Ok(window)
+    }
+
+    pub(crate) fn send(&self, message: Value) -> Result<()> {
+        self.send.try_send(message).map_err(|_| anyhow::anyhow!("Whiteboard receiver unavailable"))
+    }
+
+    pub(crate) fn event(&self) -> Result<Option<Event>> {
+        match self.events.try_recv() {
+            Ok(event) => Ok(Some(event)),
+            Err(TryRecvError::Empty) => {
+                ensure!(self.frame.is_some() || Instant::now() < self.deadline, "Whiteboard did not become ready");
+                Ok(None)
+            }
+            Err(TryRecvError::Disconnected) => anyhow::bail!("Whiteboard disconnected"),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn pid(&self) -> u32 {
+        self.pid
+    }
+}
+
+impl Drop for Window {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            std::thread::spawn(move || { let _ = child.wait(); });
+        }
+    }
+}
+use serde::{Deserialize, Serialize};
+
+use crate::capture::engine::{bundle::bundle_processing::publication, render, sketch};
+use crate::embedded_policy::EmbeddedPolicy;
+use crate::shared::model::ApparentBundle;
+
+#[path = "../../../engine/recording/whiteboard/pixels.rs"]
+mod pixels;
+use pixels::{PAPER_HEIGHT, PAPER_WIDTH, contact_sheet, render_paper};
+
+type Stroke = Arc<Vec<[f32; 2]>>;
+
+#[derive(Clone, Default, Serialize)]
+pub(in crate::capture::desktop) struct Paper {
+    pub color: [u8; 3],
+    #[serde(serialize_with = "serialize_strokes")]
+    pub strokes: Vec<Stroke>,
+}
+
+fn serialize_strokes<S: serde::Serializer>(strokes: &[Stroke], serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(strokes.iter().map(Arc::as_ref))
+}
+
+struct Revision {
+    t: u64,
+    edit: &'static str,
+    paper: Paper,
+}
+
+#[derive(Default)]
+pub(in crate::capture::desktop) struct SavedBoard {
+    paper: Paper,
+    revisions: VecDeque<Revision>,
+}
+
+#[cfg(test)]
+impl From<Paper> for SavedBoard {
+    fn from(paper: Paper) -> Self {
+        Self { paper, ..Self::default() }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Edit {
+    Begin,
+    Move,
+    End,
+    Cancel,
+    Undo,
+    Clear,
+    Close,
+    #[serde(skip_deserializing)]
+    Open,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "$")]
+enum Effect {
+    Ignore,
+    Show,
+    Start,
+    Append,
+    Commit,
+    Discard,
+    UndoDraft { evict: bool },
+    UndoStroke { evict: bool },
+    ClearPaper { evict: bool },
+    Hide,
+    CommitAndHide,
+    CommitAndStart,
+}
+
+struct PaperState {
+    saved: SavedBoard,
+    visible: bool,
+    active: Option<Stroke>,
+    policy: EmbeddedPolicy,
+}
+
+impl PaperState {
+    pub(crate) fn open(color: [u8; 3]) -> Result<Self> {
+        Ok(Self {
+            saved: SavedBoard { paper: Paper { color, strokes: Vec::new() }, ..SavedBoard::default() },
+            visible: false,
+            active: None,
+            policy: EmbeddedPolicy::open(
+                "record-whiteboard",
+                include_str!(concat!(env!("OUT_DIR"), "/record-whiteboard.mjs")),
+                &["whiteboardEdit"],
+            )?,
+        })
+    }
+
+    pub(crate) fn edit(&mut self, event: Edit, point: Option<[f32; 2]>, t: u64) -> Result<bool> {
+        let point = point.filter(|[x, y]| {
+            (0.0..PAPER_WIDTH).contains(x) && (0.0..PAPER_HEIGHT).contains(y)
+        });
+        let output = self.policy.call("whiteboardEdit", (
+            format!("{event:?}"),
+            self.visible,
+            self.active.is_some(),
+            point.is_some(),
+            self.saved.paper.strokes.len() as u32,
+            self.active.as_ref().map_or(0, |stroke| stroke.len() as u32),
+            self.saved.revisions.len() as u32,
+        ))?;
+        match serde_json::from_str(&output)? {
+            Effect::Ignore => return Ok(false),
+            Effect::Show => self.visible = true,
+            Effect::Hide => self.visible = false,
+            Effect::Start => self.active = point.map(|p| Arc::new(vec![p])),
+            Effect::Append => {
+                if let (Some(active), Some(point)) = (&mut self.active, point) {
+                    Arc::make_mut(active).push(point);
+                }
+            }
+            Effect::Discard => self.active = None,
+            Effect::UndoDraft { evict } => {
+                self.remember(t, "before Undo", evict);
+                self.active = None;
+            }
+            Effect::UndoStroke { evict } => {
+                self.remember(t, "before Undo", evict);
+                self.saved.paper.strokes.pop();
+            }
+            Effect::ClearPaper { evict } => {
+                self.remember(t, "before Clear", evict);
+                self.active = None;
+                self.saved.paper.strokes.clear();
+            }
+            Effect::Commit => self.commit(),
+            Effect::CommitAndHide => {
+                self.commit();
+                self.visible = false;
+            }
+            Effect::CommitAndStart => {
+                self.commit();
+                self.active = point.map(|p| Arc::new(vec![p]));
+            }
+        }
+        Ok(true)
+    }
+
+    fn commit(&mut self) {
+        self.saved.paper.strokes.extend(self.active.take());
+    }
+
+    fn remember(&mut self, t: u64, edit: &'static str, evict: bool) {
+        if evict { self.saved.revisions.pop_front(); }
+        let mut paper = self.saved.paper.clone();
+        paper.strokes.extend(self.active.iter().cloned());
+        self.saved.revisions.push_back(Revision { t, edit, paper });
+    }
+}
+#[derive(Default)]
 pub(in crate::capture::desktop) struct Board {
-    pub color: [u8;3],
-    pub presentation: Option<(String, [f32;4])>,
-    pub strokes: Vec<Vec<[f32; 2]>>,
-    pub active: Option<Vec<[f32; 2]>>,
+    color: [u8; 3],
+    board: Option<PaperState>,
+    window: Option<Window>,
 }
-
-impl Default for Board {fn default()->Self{Self{presentation:None,color:[26,26,26],strokes:Vec::new(),active:None}}}
 
 impl Board {
-    pub fn detach_presentation(&mut self) -> bool {
-        self.finish();
-        self.presentation.take().is_some()
+    pub fn reset(&mut self) {
+        *self = Self { color: crate::shared::handoff::pen::rgb(), ..Self::default() };
     }
-    /// The current renderer identity is checked by the coordinator before this native input boundary.
-    pub fn apply_input(&mut self, value: &serde_json::Value) {
-        let point=||serde_json::from_value::<[f32;2]>(value["point"].clone()).ok().filter(|p|p.iter().all(|n|n.is_finite())&&on_paper(*p));
-        match value["operation"].as_str() {
-            Some("begin")=>{if let Some(p)=point(){self.finish();self.start(p);}},
-            Some("move")=>{if let Some(p)=point(){self.extend(p);}},
-            Some("end")=>self.finish(), Some("cancel")=>self.active=None, Some("undo")=>self.undo(), Some("clear")=>self.clear(),
-            Some("close")=>{self.finish();self.presentation=None;}, _=>{}
+
+    fn open(&mut self, practice: bool) -> Result<()> {
+        if let Some(window) = &self.window {
+            return window.send(json!({"type": "focus"}));
+        }
+        let resources = crate::capture::desktop::workflow::electron::resolve()?;
+        let entry = resources.root.join("dist/whiteboard/main.cjs");
+        ensure!(entry.is_file(), "Packaged Whiteboard unavailable");
+        let mut command = std::process::Command::new(&resources.executable);
+        crate::capture::desktop::workflow::electron::configure_sandbox(&mut command, &resources.executable)?;
+        #[cfg(target_os = "linux")]
+        command.arg("--ozone-platform=x11");
+        let board = match self.board.as_mut() {
+            Some(board) => board,
+            None => self.board.insert(PaperState::open(self.color)?),
+        };
+        let id = crate::shared::ids::make_bundle_id();
+        command.arg(entry);
+        let window = Window::launch(
+            command,
+            id, practice, &board.saved.paper,
+        )?;
+        board.edit(Edit::Open, None, 0)?;
+        self.window = Some(window);
+        Ok(())
+    }
+
+    pub fn visible(&self) -> Option<(&str, [f32; 4])> {
+        let window = self.window.as_ref()?;
+        Some((&window.id, window.frame?))
+    }
+
+    pub fn practice_window(&self) -> bool {
+        self.window.as_ref().is_some_and(|window| window.practice)
+    }
+
+    pub fn has_ink(&self) -> bool {
+        self.board.as_ref().is_some_and(|board| !board.saved.paper.strokes.is_empty())
+    }
+
+    pub fn close(&mut self) {
+        self.window.take();
+        if let Some(board) = &mut self.board
+            && let Err(error) = board.edit(Edit::Close, None, 0)
+        {
+            crate::capture::engine::runtime::apparent_log(format!("Whiteboard close: {error:#}"));
         }
     }
 
-    pub fn start(&mut self, point: [f32; 2]) {
-        if on_paper(point) {
-            self.active = Some(vec![point]);
+    pub fn tick(&mut self, cx: &mut App, t: u64) -> bool {
+        match self.drain(cx, t) {
+            Ok(changed) => changed,
+            Err(error) => {
+                self.close();
+                crate::capture::engine::runtime::apparent_log(format!("Whiteboard unavailable: {error:#}"));
+                true
+            }
         }
     }
 
-    pub fn extend(&mut self, point: [f32; 2]) {
-        if let Some(stroke) = self.active.as_mut() {
-            stroke.push([
-                point[0].clamp(0.0, PAPER_WIDTH),
-                point[1].clamp(0.0, PAPER_HEIGHT),
-            ]);
-        }
-    }
-
-    pub fn finish(&mut self) {
-        if let Some(stroke) = self.active.take() {
-            self.strokes.push(stroke);
-        }
-    }
-
-    pub fn undo(&mut self) {
-        if self.active.take().is_none() {
-            self.strokes.pop();
-        }
-    }
-
-    pub fn clear(&mut self) {
-        self.active = None;
-        self.strokes.clear();
-    }
-}
-
-pub(in crate::capture::desktop) fn reset_for_capture(board: &Rc<RefCell<Board>>) {
-    board.borrow_mut().presentation=None;
-    board.borrow_mut().clear();
-    board.borrow_mut().color=crate::shared::handoff::pen::rgb();
-}
-
-fn on_paper([x, y]: [f32; 2]) -> bool {
-    (0.0..PAPER_WIDTH).contains(&x) && (0.0..PAPER_HEIGHT).contains(&y)
-}
-
-/// The canvas starts immediately beneath the toolbar. GPUI pointer positions are window-local;
-/// paper coordinates do not depend on the current window width or height.
-fn paper_point(position: Point<Pixels>) -> [f32; 2] {
-    [
-        f32::from(position.x),
-        f32::from(position.y) - TOOLBAR_HEIGHT,
-    ]
-}
-
-pub(in crate::capture::desktop) struct WhiteboardWindow {
-    board: Rc<RefCell<Board>>,
-    coordinator: Entity<ApparentCoordinator>,
-    focus: FocusHandle,
-    mark: Arc<Image>,
-}
-
-impl WhiteboardWindow {
-    fn snapshot_soon(&self, cx: &mut Context<Self>) {
-        let coordinator = self.coordinator.clone();
-        cx.spawn(async move |_, cx| {
-            cx.background_executor()
-                .timer(Duration::from_millis(120))
-                .await;
-            let _ = coordinator.update(cx, |coord, _| coord.request_immediate_frame());
-        })
-        .detach();
-    }
-}
-
-fn paint_stroke(window: &mut Window, points: &[[f32; 2]], origin: Point<Pixels>, color:[u8;3]) {
-    if points.is_empty() {
-        return;
-    }
-    let mut path = PathBuilder::stroke(px(3.0));
-    let at = |[x, y]: [f32; 2]| point(origin.x + px(x), origin.y + px(y));
-    path.move_to(at(points[0]));
-    if points.len() == 1 {
-        path.line_to(at([points[0][0] + 0.01, points[0][1]]));
-    } else {
-        for &p in &points[1..] {
-            path.line_to(at(p));
-        }
-    }
-    if let Ok(path) = path.build() {
-        let [r,g,b]=color;
-        window.paint_path(path, rgb((u32::from(r)<<16)|(u32::from(g)<<8)|u32::from(b)));
-    }
-}
-
-impl Render for WhiteboardWindow {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let board = self.board.borrow().clone();
-        div()
-            .track_focus(&self.focus)
-            .size_full()
-            .flex()
-            .flex_col()
-            .bg(rgb(PAPER))
-            .font_family("Host Grotesk")
-            .on_key_down(cx.listener(|view, event: &KeyDownEvent, window, cx| {
-                let key = event.keystroke.key.as_str();
-                if key.eq_ignore_ascii_case("escape") {
-                    window.remove_window();
-                    cx.stop_propagation();
-                    return;
+    fn drain(&mut self, cx: &mut App, t: u64) -> Result<bool> {
+        let (Some(window), Some(board)) = (&mut self.window, &mut self.board) else { return Ok(false) };
+        let mut changed = false;
+        for _ in 0..512 {
+            match window.event()? {
+                Some(Event::Ready { frame }) if window.frame.is_none() && frame.iter().all(|n| n.is_finite()) && frame[2] > 0.0 && frame[3] > 0.0 => {
+                    window.frame = Some(frame);
+                    #[cfg(target_os = "linux")]
+                    super::linux::float_whiteboard(window.pid(), cx);
                 }
-                let undo = key.eq_ignore_ascii_case("z") && event.keystroke.modifiers.platform;
-                if undo {
-                    view.board.borrow_mut().undo();
-                    view.snapshot_soon(cx);
-                    cx.notify();
-                    cx.stop_propagation();
-                }
-            }))
-            .child(
-                div()
-                    .h(px(TOOLBAR_HEIGHT))
-                    .flex_none()
-                    .px(px(16.0))
-                    .flex()
-                    .items_center()
-                    .gap(px(8.0))
-                    .bg(rgb(CARBON))
-                    .border_b_1()
-                    .border_color(rgb(LILAC))
-                    .text_size(px(14.0))
-                    .text_color(rgb(PAPER))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w(px(0.0))
-                            .flex()
-                            .items_center()
-                            .gap(px(10.0))
-                            .child(img(self.mark.clone()).size(px(28.0)).flex_none())
-                            .child(
-                                div()
-                                    .text_size(px(16.0))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .child("Whiteboard"),
-                            ),
-                    )
-                    .child(
-                        toolbar_button("whiteboard-undo", "Undo", false).on_click(cx.listener(
-                            |view, _, _, cx| {
-                                view.board.borrow_mut().undo();
-                                view.snapshot_soon(cx);
-                                cx.notify();
-                            },
-                        )),
-                    )
-                    .child(toolbar_button("whiteboard-clear", "Clear", false).on_click(
-                        cx.listener(|view, _, _, cx| {
-                            view.board.borrow_mut().clear();
-                            view.snapshot_soon(cx);
-                            cx.notify();
-                        }),
-                    ))
-                    .child(
-                        toolbar_button("whiteboard-close", "Close", true)
-                            .on_click(cx.listener(|_, _, window, _| window.remove_window())),
-                    ),
-            )
-            .child(
-                div()
-                    .id("whiteboard-paper")
-                    .flex_1()
-                    .w_full()
-                    .overflow_hidden()
-                    .cursor_crosshair()
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|view, event: &MouseDownEvent, _, cx| {
-                            view.board.borrow_mut().start(paper_point(event.position));
-                            cx.notify();
-                        }),
-                    )
-                    .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, _, cx| {
-                        if view.board.borrow().active.is_some() {
-                            view.board.borrow_mut().extend(paper_point(event.position));
-                            cx.notify();
+                Some(Event::Edit { sequence, operation, point }) if window.frame.is_some() => {
+                    changed |= board.edit(operation, point, t)?
+                        && matches!(operation, Edit::End | Edit::Undo | Edit::Clear | Edit::Close);
+                    match operation {
+                        Edit::Begin | Edit::Move => {}
+                        Edit::Close => {
+                            self.window.take();
+                            return Ok(changed);
                         }
-                    }))
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|view, _: &MouseUpEvent, _, cx| {
-                            view.board.borrow_mut().finish();
-                            view.snapshot_soon(cx);
-                            cx.notify();
-                        }),
-                    )
-                    .on_mouse_up_out(
-                        MouseButton::Left,
-                        cx.listener(|view, _: &MouseUpEvent, _, cx| {
-                            view.board.borrow_mut().finish();
-                            view.snapshot_soon(cx);
-                            cx.notify();
-                        }),
-                    )
-                    .child(
-                        canvas(
-                            |_, _, _| {},
-                            move |bounds: Bounds<Pixels>, (), window: &mut Window, _: &mut App| {
-                                for stroke in &board.strokes {
-                                    paint_stroke(window, stroke, bounds.origin, board.color);
-                                }
-                                if let Some(active) = &board.active {
-                                    paint_stroke(window, active, bounds.origin, board.color);
-                                }
-                            },
-                        )
-                        .size_full(),
-                    ),
-            )
+                        _ => window.send(json!({"type": "paper", "sequence": sequence, "paper": board.saved.paper}))?,
+                    }
+                }
+                Some(_) => anyhow::bail!("Invalid Whiteboard event"),
+                None => break,
+            }
+        }
+        Ok(changed)
+    }
+
+    pub fn finish(&mut self, cx: &mut App, t: u64) -> SavedBoard {
+        self.tick(cx, t);
+        self.close();
+        self.board.take().map_or_else(SavedBoard::default, |board| board.saved)
+    }
+}
+
+pub(in crate::capture::desktop) fn tick(
+    coordinator: &mut ApparentCoordinator,
+    cx: &mut gpui::Context<ApparentCoordinator>,
+) {
+    let t = coordinator.active_recording.as_ref().map_or(0, |recording| recording.elapsed_ms());
+    if coordinator.whiteboard.borrow_mut().tick(cx, t) && coordinator.is_recording() {
+        let generation = coordinator.capture_generation;
+        cx.spawn(async move |coord, cx| {
+            cx.background_executor().timer(Duration::from_millis(120)).await;
+            let _ = coord.update(cx, |coord, _| {
+                if coord.capture_generation == generation {
+                    coord.request_immediate_frame();
+                }
+            });
+        }).detach();
     }
 }
 
 pub(in crate::capture::desktop) fn open(coord: &Entity<ApparentCoordinator>, cx: &mut App) {
-    if !coord.read(cx).is_recording() {
-        return;
-    }
-    for handle in cx.windows() {
-        if let Some(board) = handle.downcast::<WhiteboardWindow>() {
-            let _ = board.update(cx, |_, window, _| window.activate_window());
-            coord.update(cx,|coord,_|{if let Some(session)=coord.onboarding.as_mut(){session.practice_whiteboard();}});
+    coord.update(cx, |coord, _| {
+        if !coord.is_recording() {
             return;
         }
-    }
-    if coord.read(cx).onboarding.as_ref().is_some_and(|s|s.electron_practice()) {
-        let bounds = Bounds::centered(None, size(px(720.0), px(540.0)), cx);
-        coord.update(cx, |coord,_| {
-            let mut board=coord.whiteboard.borrow_mut();
-            if board.presentation.is_none() {
-                board.presentation=Some((crate::shared::ids::make_bundle_id(), [bounds.origin.x.into(),bounds.origin.y.into(),720.0,540.0]));
-            }
-            drop(board);
-            if let Some(session)=coord.onboarding.as_mut(){session.practice_whiteboard();}
-        });
-        return;
-    }
-    let shared = coord.read(cx).whiteboard.clone();
-    let coordinator = coord.clone();
-    let bounds = Bounds::centered(None, size(px(720.0), px(540.0)), cx);
-    let opened = cx.open_window(
-        WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
-            titlebar: Some(gpui::TitlebarOptions {
-                title: Some(title().into()),
-                ..Default::default()
-            }),
-            app_id: Some("dev.kitlangton.apparent".into()),
-            focus: true,
-            show: true,
-            kind: WindowKind::Normal,
-            is_resizable: true,
-            window_background: WindowBackgroundAppearance::Opaque,
-            ..Default::default()
-        },
-        move |window, cx| {
-            platform::decorate_app_window(window);
-            let focus = cx.focus_handle();
-            window.focus(&focus);
-            cx.new(|_| WhiteboardWindow {
-                board: shared,
-                coordinator,
-                focus,
-                mark: Arc::new(Image::from_bytes(
-                    ImageFormat::Png,
-                    include_bytes!(concat!(
-                        env!("CARGO_MANIFEST_DIR"),
-                        "/shared/assets/brand/apparent-a.png"
-                    ))
-                    .to_vec(),
-                )),
-            })
-        },
-    );
-    if opened.is_ok() {
-        coord.update(cx,|coord,_|{if let Some(session)=coord.onboarding.as_mut(){session.practice_whiteboard();}});
-        platform::float_whiteboard(cx);
-        platform::take_keys(cx);
-    }
-}
-
-/// Snapshot the paper at Stop before the UI is dismissed; the bundle worker uses this copy.
-pub(in crate::capture::desktop) fn finish_snapshot(
-    board: &Rc<RefCell<Board>>,
-    close: impl FnOnce(),
-) -> Board {
-    board.borrow_mut().finish();
-    let snapshot = board.borrow().clone();
-    board.borrow_mut().presentation=None;
-    close();
-    snapshot
-}
-
-pub(in crate::capture::desktop) fn frame(board: &Rc<RefCell<Board>>, cx: &mut App) -> Option<[f32;4]> {
-    if let Some((_,frame))=&board.borrow().presentation {return Some(*frame);}
-    for handle in cx.windows() {
-        if handle.downcast::<WhiteboardWindow>().is_some() {
-            if let Ok(frame) = handle.update(cx, |_, window, _| {
-                #[cfg(target_os = "linux")]
-                {
-                    // GPUI's cached bounds precede Hyprland's float/move. The
-                    // presentation transport needs the mapped X11 client in pixels.
-                    let xid = crate::capture::desktop::linux::x11::window_id(window)?;
-                    let info = crate::capture::desktop::linux::x11::window_info(xid as isize)?;
-                    return info.on_screen().then(|| info.rect.map(|v| v as f32));
-                }
-                #[cfg(not(target_os = "linux"))]
-                {
-                    let bounds = window.bounds();
-                    Some([bounds.origin.x.into(), bounds.origin.y.into(), bounds.size.width.into(), bounds.size.height.into()])
-                }
-            }) {
-                return frame;
-            }
+        let practice = coord.onboarding.as_ref().is_some_and(|session| session.practice_active());
+        if let Err(error) = coord.whiteboard.borrow_mut().open(practice).context("Open recording Whiteboard") {
+            crate::capture::engine::runtime::apparent_log(format!("{error:#}"));
         }
-    }
-    None
-}
-
-pub(in crate::capture::desktop) fn close(cx: &mut App) {
-    for handle in cx.windows() {
-        if handle.downcast::<WhiteboardWindow>().is_some() {
-            let _ = handle.update(cx, |_, window, _| window.remove_window());
-        }
-    }
+    });
 }
 
 /// A paper export is optional. Never turn a finished screen recording into a failed capture.
 pub(in crate::capture::desktop) fn finish_handoff(
     dir: &std::path::Path,
-    bundle: crate::shared::model::ApparentBundle,
+    bundle: ApparentBundle,
     summary: String,
-    board: &Board,
-) -> (crate::shared::model::ApparentBundle, String) {
+    board: &SavedBoard,
+) -> (ApparentBundle, String) {
     finish_handoff_with(dir, bundle, summary, board, |_| Ok(()))
 }
 
 pub(in crate::capture::desktop) fn finish_handoff_with(
     dir: &std::path::Path,
-    mut bundle: crate::shared::model::ApparentBundle,
+    mut bundle: ApparentBundle,
     summary: String,
-    board: &Board,
+    board: &SavedBoard,
     before_publish: impl FnMut(usize) -> anyhow::Result<()>,
-) -> (crate::shared::model::ApparentBundle, String) {
+) -> (ApparentBundle, String) {
     if let Err(error) = append_to_bundle_with(dir, &mut bundle, board, before_publish) {
         crate::capture::engine::runtime::apparent_log(format!(
             "Whiteboard handoff skipped: {error:#}"
         ));
         return (bundle, summary);
     }
-    let summary = crate::capture::engine::sketch::summary_markdown(&bundle, dir);
+    let summary = sketch::summary_markdown(&bundle, dir);
     (bundle, summary)
 }
 
-/// Keep the whole finished sketch legible even if the window was closed or resized at stop.
 fn append_to_bundle_with(
     dir: &std::path::Path,
-    bundle: &mut crate::shared::model::ApparentBundle,
-    board: &Board,
+    bundle: &mut ApparentBundle,
+    board: &SavedBoard,
     before_publish: impl FnMut(usize) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
     use crate::shared::model::{Keyframe, KeyframeCrop, KeyframeReason};
     use std::io::BufReader;
 
-    if board.strokes.is_empty() {
+
+    let final_paper = (!board.paper.strokes.is_empty()).then_some(Revision {
+        t: bundle.duration_ms,
+        edit: "final state",
+        paper: board.paper.clone(),
+    });
+    if board.revisions.is_empty() && final_paper.is_none() {
         return Ok(());
     }
-    let root = crate::capture::engine::bundle::bundle_processing::publication::Directory::open(
+    let root = publication::Directory::open(
         dir, false,
     )?;
-    let read = |path: &str| -> anyhow::Result<crate::shared::model::RgbaFrame> {
-        crate::capture::engine::render::decode_png(BufReader::new(root.file(path)?))
+    let read = |key: &Keyframe, path: &str| -> Result<_> {
+        Ok((key.clone(), render::decode_png(BufReader::new(root.file(path)?))?))
     };
-    let mut frames: Vec<_> = bundle
-        .keyframes
-        .iter()
-        .map(|key| Ok((key.clone(), read(&key.file)?)))
-        .collect::<anyhow::Result<_>>()?;
-    let index = frames.len() + 1;
-    let count = board.strokes.len();
-    let event = format!(
-        "whiteboard drawing ({count} stroke{}; final state)",
-        if count == 1 { "" } else { "s" }
-    );
-    let key = Keyframe {
-        index,
-        t: bundle.duration_ms,
-        display_time: crate::composition::frame_labels::appended(&bundle.keyframes, bundle.duration_ms),
-        reason: KeyframeReason::Whiteboard,
-        file: format!("frames/frame-{index:02}.png"),
-        event,
-        said: None,
-        mark_id: None,
-        cursor: None,
+    let mut frames = bundle.keyframes.iter().map(|key| read(key, &key.file)).collect::<Result<Vec<_>>>()?;
+    let full_path = |folder: &str, key: &Keyframe| -> String {
+        let name = std::path::Path::new(&key.file).file_name().unwrap_or_default();
+        format!("{folder}/{}", name.to_string_lossy())
     };
-    let paper = render_paper(&board.strokes, bundle.duration_ms, board.color);
-    frames.push((key.clone(), paper.clone()));
-    let sheet = crate::capture::engine::render::render_contact_sheet_for_duration(
-        bundle.duration_ms,
-        &frames,
-    );
-    let mut stamped = vec![(key.clone(), paper)];
-    crate::capture::engine::render::stamp_keyframe_badges(&mut stamped);
-    let png = crate::capture::engine::render::encode_png(&stamped[0].1)?;
-    let full_sheet = if let Some(crop) = &bundle.autocrop {
-        let mut full: Vec<_> = bundle
-            .keyframes
-            .iter()
-            .map(|key| {
-                let name = std::path::Path::new(&key.file).file_name().unwrap();
-                let path = format!("{}/{}", crop.full_frames, name.to_string_lossy());
-                Ok((key.clone(), read(&path)?))
-            })
-            .collect::<anyhow::Result<_>>()?;
-        full.push((key.clone(), stamped[0].1.clone()));
-        Some(
-            crate::capture::engine::render::render_contact_sheet_for_duration(
-                bundle.duration_ms,
-                &full,
-            ),
-        )
-    } else {
-        None
-    };
-
+    let mut full = bundle.autocrop.as_ref().map(|crop| {
+        bundle.keyframes.iter().map(|key| read(key, &full_path(&crop.full_frames, key))).collect::<Result<Vec<_>>>()
+    }).transpose()?;
     let mut next = bundle.clone();
-    let mut writes = vec![
-        (key.file.clone(), png.clone()),
-        (
-            bundle.contact_sheet.clone(),
-            crate::capture::engine::render::encode_png(&sheet)?,
-        ),
-    ];
-    if let (Some(crop), Some(full)) = (&mut next.autocrop, full_sheet) {
-        let name = std::path::Path::new(&key.file).file_name().unwrap();
-        writes.push((
-            format!("{}/{}", crop.full_frames, name.to_string_lossy()),
-            png,
-        ));
-        writes.push((
-            crop.full_contact_sheet.clone(),
-            crate::capture::engine::render::encode_png(&full)?,
-        ));
-        crop.crops.push(KeyframeCrop {
+    let mut writes = Vec::new();
+    let keep_final = final_paper.is_some();
+    let first_index = bundle.keyframes.iter().map(|frame| frame.index).max().unwrap_or(0) + 1;
+    for (offset, revision) in board.revisions.iter().chain(final_paper.iter()).enumerate() {
+        let index = first_index + offset;
+        let count = revision.paper.strokes.len();
+        let t = revision.t.min(bundle.duration_ms);
+        let key = Keyframe {
             index,
-            x: 0.0,
-            y: 0.0,
-            width: bundle.target.frame.width,
-            height: bundle.target.frame.height,
-            kind: crate::capture::engine::autocrop::autocrop::CropKind::Full,
-            reason: "whiteboard paper (not a screen crop)".into(),
-            apps: Vec::new(),
-        });
-        crop.changes.push(Vec::new());
+            t,
+            display_time: crate::composition::frame_labels::appended(&next.keyframes, t),
+            reason: KeyframeReason::Whiteboard,
+            file: format!("frames/frame-{index:02}.png"),
+            event: format!("whiteboard drawing ({count} stroke{}; {})", if count == 1 { "" } else { "s" }, revision.edit),
+            said: None,
+            mark_id: None,
+            cursor: None,
+        };
+        let position = next.keyframes.partition_point(|frame| frame.t <= t);
+        let mut paper = render_paper(&revision.paper.strokes, t, revision.paper.color);
+        frames.insert(position, (key.clone(), paper.clone()));
+        render::stamp_keyframe_badge_in_place(&mut paper, &key);
+        let png = crate::capture::engine::render::encode_png(&paper)?;
+        writes.push((key.file.clone(), png.clone()));
+        if let (Some(crop), Some(full)) = (&mut next.autocrop, &mut full) {
+            writes.push((full_path(&crop.full_frames, &key), png));
+            full.insert(position, (key.clone(), paper));
+            crop.crops.insert(position, KeyframeCrop {
+                index,
+                x: 0.0,
+                y: 0.0,
+                width: bundle.target.frame.width,
+                height: bundle.target.frame.height,
+                kind: crate::capture::engine::autocrop::autocrop::CropKind::Full,
+                reason: "whiteboard paper (not a screen crop)".into(),
+                apps: Vec::new(),
+            });
+            if !crop.changes.is_empty() {
+                crop.changes.insert(position, Vec::new());
+            }
+        }
+        next.keyframes.insert(position, key);
     }
-    next.keyframes.push(key);
+    let sheet = |frames| contact_sheet(bundle.duration_ms, frames, keep_final);
+    writes.push((bundle.contact_sheet.clone(), sheet(frames)?));
+    if let (Some(crop), Some(full)) = (&next.autocrop, full) {
+        writes.push((crop.full_contact_sheet.clone(), sheet(full)?));
+    }
     writes.push(("apparent.json".into(), serde_json::to_vec_pretty(&next)?));
     writes.push((
         "summary.md".into(),
-        crate::capture::engine::sketch::summary_markdown(&next, dir).into_bytes(),
+        sketch::summary_markdown(&next, dir).into_bytes(),
     ));
     publish_artifacts(dir, &writes, before_publish)?;
     *bundle = next;
@@ -563,7 +530,7 @@ fn publish_artifacts(
 ) -> anyhow::Result<()> {
     use anyhow::Context;
 
-    let root = crate::capture::engine::bundle::bundle_processing::publication::Directory::open(
+    let root = publication::Directory::open(
         dir, false,
     )?;
     let stage_name = format!(".whiteboard-{}", crate::shared::ids::make_bundle_id());
@@ -629,181 +596,19 @@ fn publish_artifacts(
     result
 }
 
-fn render_paper(strokes: &[Vec<[f32; 2]>], t_ms: u64, color:[u8;3]) -> crate::shared::model::RgbaFrame {
-    use crate::shared::model::RgbaFrame;
-
-    let (mut x0, mut y0, mut x1, mut y1) = (PAPER_WIDTH, PAPER_HEIGHT, 0.0f32, 0.0f32);
-    for point in strokes.iter().flatten() {
-        x0 = x0.min(point[0]);
-        y0 = y0.min(point[1]);
-        x1 = x1.max(point[0]);
-        y1 = y1.max(point[1]);
-    }
-    let width = (x1 - x0 + 100.0).max(400.0).min(PAPER_WIDTH);
-    let height = (y1 - y0 + 100.0).max(300.0).min(PAPER_HEIGHT);
-    let left = ((x0 + x1 - width) / 2.0).clamp(0.0, PAPER_WIDTH - width);
-    let top = ((y0 + y1 - height) / 2.0).clamp(0.0, PAPER_HEIGHT - height);
-    let (w, h) = (width.ceil() as u32, height.ceil() as u32);
-    let mut image = RgbaFrame::new(t_ms, w, h, vec![255; w as usize * h as usize * 4]);
-    let dot = |image: &mut RgbaFrame, x: f32, y: f32| {
-        let (x, y) = (x.round() as i32, y.round() as i32);
-        for dy in -2..=2 {
-            for dx in -2..=2 {
-                if dx * dx + dy * dy > 5 {
-                    continue;
-                }
-                let (px, py) = (x + dx, y + dy);
-                if px >= 0 && py >= 0 && px < image.width as i32 && py < image.height as i32 {
-                    let at = (py as usize * image.width as usize + px as usize) * 4;
-                    image.rgba[at..at + 3].copy_from_slice(&color);
-                }
-            }
-        }
-    };
-    for stroke in strokes {
-        for point in stroke {
-            dot(&mut image, point[0] - left, point[1] - top);
-        }
-        for pair in stroke.windows(2) {
-            let (a, b) = (pair[0], pair[1]);
-            let steps = ((b[0] - a[0]).hypot(b[1] - a[1]) * 2.0).ceil() as usize;
-            for i in 0..=steps.max(1) {
-                let f = i as f32 / steps.max(1) as f32;
-                dot(
-                    &mut image,
-                    a[0] + (b[0] - a[0]) * f - left,
-                    a[1] + (b[1] - a[1]) * f - top,
-                );
-            }
-        }
-    }
-    image
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn renderer_input_is_human_only_and_rejects_invalid_points() {
-        let mut board=Board::default();
-        board.apply_input(&serde_json::json!({"operation":"replay"}));
-        assert!(board.strokes.is_empty());assert!(board.active.is_none());
-        for p in [[-1.0,4.0],[1600.0,2.0],[3.0,1100.0]] {
-            board.apply_input(&serde_json::json!({"operation":"begin","point":p}));
-            assert!(board.active.is_none());
-        }
-        board.apply_input(&serde_json::json!({"operation":"move","point":[20,30]}));
-        assert!(board.active.is_none());
-        board.apply_input(&serde_json::json!({"operation":"begin","point":[20,30]}));
-        board.apply_input(&serde_json::json!({"operation":"move","point":[40,50]}));
-        board.apply_input(&serde_json::json!({"operation":"end"}));
-        assert_eq!(board.strokes,vec![vec![[20.0,30.0],[40.0,50.0]]]);
-        board.apply_input(&serde_json::json!({"operation":"undo"}));assert!(board.strokes.is_empty());
-        board.apply_input(&serde_json::json!({"operation":"begin","point":[20,30]}));
-        board.apply_input(&serde_json::json!({"operation":"close"}));
-        assert_eq!(board.strokes.len(),1);assert!(board.presentation.is_none());
-    }
-
-    #[test]
-    fn cancellation_discards_only_active_human_ink_and_detach_restores_saved_strokes() {
-        let mut board=Board::default();
-        board.start([20.0,30.0]);board.extend([40.0,50.0]);board.finish();
-        board.start([80.0,90.0]);board.extend([100.0,110.0]);
-        board.apply_input(&serde_json::json!({"operation":"cancel"}));
-        assert_eq!(board.strokes,vec![vec![[20.0,30.0],[40.0,50.0]]]);
-        assert!(board.active.is_none());
-        board.presentation=Some(("board-id".into(),[0.0,0.0,720.0,540.0]));
-        assert!(board.detach_presentation());
-        assert_eq!(board.strokes.len(),1);
-        assert!(!board.detach_presentation());
-    }
-
-    #[test]
-    fn branded_buttons_construct_with_one_hover_style_each() {
-        for (id, label, close) in [
-            ("whiteboard-undo", "Undo", false),
-            ("whiteboard-clear", "Clear", false),
-            ("whiteboard-close", "Close", true),
-        ] {
-            let _ = toolbar_button(id, label, close);
-        }
-    }
-
-    #[test]
-    fn branded_toolbar_keeps_pointer_coordinates_on_the_paper() {
-        let mut board = Board::default();
-        board.start(paper_point(point(px(20.0), px(TOOLBAR_HEIGHT - 1.0))));
-        assert!(
-            board.active.is_none(),
-            "toolbar clicks must never become ink"
-        );
-        board.start(paper_point(point(px(20.0), px(TOOLBAR_HEIGHT))));
-        board.extend(paper_point(point(px(80.0), px(TOOLBAR_HEIGHT + 60.0))));
-        board.finish();
-        assert_eq!(board.strokes, vec![vec![[20.0, 0.0], [80.0, 60.0]]]);
-    }
-
-    #[test]
-    fn stopping_closes_the_board_after_preserving_its_last_drawing() {
-        let board = Rc::new(RefCell::new(Board::default()));
-        board.borrow_mut().start([12.0, 18.0]);
-        board.borrow_mut().extend([32.0, 48.0]);
-        board.borrow_mut().finish();
-        let closed = std::cell::Cell::new(false);
-        let snapshot = finish_snapshot(&board, || closed.set(true));
-        assert!(closed.get(), "Stop must dismiss the visible whiteboard");
-        assert_eq!(snapshot.strokes, board.borrow().strokes);
-        board.borrow_mut().clear();
-        assert_eq!(
-            snapshot.strokes.len(),
-            1,
-            "export must survive the next session"
-        );
-    }
-
-    #[test]
-    fn the_next_capture_starts_with_empty_paper() {
-        let board = Rc::new(RefCell::new(Board::default()));
-        board.borrow_mut().start([12.0, 18.0]);
-        board.borrow_mut().finish();
-        let first = finish_snapshot(&board, || {});
-        reset_for_capture(&board);
-        let next = finish_snapshot(&board, || {});
-        assert_eq!(first.strokes.len(), 1);
-        assert!(
-            next.strokes.is_empty(),
-            "the previous recording must not leak into the next"
-        );
-    }
-
     use crate::shared::model::KeyframeReason;
 
-    #[test]
-    fn strokes_survive_viewport_changes_and_undo_clear_are_explicit() {
-        let mut board = Board::default();
-        board.start([20.0, 40.0]);
-        board.extend([40.0, 60.0]);
-        board.finish();
-        board.start([100.0, 120.0]);
-        board.finish();
-        assert_eq!(
-            board.strokes,
-            vec![vec![[20.0, 40.0], [40.0, 60.0]], vec![[100.0, 120.0]]]
-        );
-        board.undo();
-        assert_eq!(board.strokes.len(), 1);
-        board.clear();
-        assert!(board.strokes.is_empty());
-        assert_eq!((PAPER_WIDTH, PAPER_HEIGHT), (1600.0, 1100.0));
+    fn demo() -> (std::path::PathBuf, ApparentBundle, String) {
+        let root = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
+        crate::capture::desktop::demo::generate_demo_bundle(Some(root.join("demo.apparent"))).unwrap()
     }
 
     #[test]
     fn finished_whiteboard_is_a_legible_handoff_frame_and_text() {
-        let root = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
-        let (dir, mut bundle, _) =
-            crate::capture::desktop::demo::generate_demo_bundle(Some(root.join("demo.apparent")))
-                .unwrap();
+        let (dir, mut bundle, _) = demo();
         let sheet_before = std::fs::read(dir.join("contact-sheet.png")).unwrap();
         let full_dir = dir.join("frames-full");
         std::fs::create_dir(&full_dir).unwrap();
@@ -843,27 +648,38 @@ mod tests {
                 .collect(),
             changes: vec![vec![]; bundle.keyframes.len()],
         });
-        let mut board = Board::default();
-        board.start([40.0, 40.0]);
-        board.extend([420.0, 310.0]);
-        board.finish();
-        append_to_bundle_with(&dir, &mut bundle, &board, |_| Ok(())).unwrap();
+        let mut state = PaperState::open([20, 90, 210]).unwrap();
+        state.edit(Edit::Open, None, 0).unwrap();
+        for point in [[40.0, 40.0], [420.0, 310.0]] {
+            state.edit(Edit::Begin, Some(point), 100).unwrap();
+            state.edit(Edit::End, None, 150).unwrap();
+        }
+        state.edit(Edit::Undo, None, 300).unwrap();
+        state.edit(Edit::Clear, None, 600).unwrap();
+        assert!(!state.edit(Edit::Clear, None, 650).unwrap());
+        state.edit(Edit::Begin, Some([200.0, 200.0]), 700).unwrap();
+        state.edit(Edit::End, None, 750).unwrap();
+        append_to_bundle_with(&dir, &mut bundle, &state.saved, |_| Ok(())).unwrap();
+        assert!(bundle.keyframes.is_sorted_by_key(|key| key.t));
+        let history: Vec<_> = bundle.keyframes.iter().filter(|key| key.reason == KeyframeReason::Whiteboard).collect();
+        assert_eq!(history.iter().map(|key| key.t).collect::<Vec<_>>(), [300, 600, bundle.duration_ms]);
+        assert!(history[0].event.contains("2 strokes; before Undo"));
+        assert!(history[1].event.contains("1 stroke; before Clear"));
+        for compact in [false, true] {
+            let text = sketch::summary_markdown_with(&bundle, &dir, compact);
+            assert!(history.iter().all(|key| text.contains(&key.event)));
+        }
+        let crop = bundle.autocrop.as_ref().unwrap();
+        assert!(crop.crops.iter().zip(&bundle.keyframes).all(|(crop, key)| crop.index == key.index));
+        assert_eq!(crop.changes.len(), bundle.keyframes.len());
         let frame = bundle.keyframes.last().unwrap();
         assert_eq!(frame.reason, KeyframeReason::Whiteboard);
-        assert!(
-            crate::capture::engine::sketch::summary_markdown_with(&bundle, &dir, false)
-                .contains("whiteboard drawing (1 stroke; final state)")
-        );
-        assert!(
-            crate::capture::engine::sketch::summary_markdown_with(&bundle, &dir, true)
-                .contains("whiteboard drawing (1 stroke; final state)")
-        );
         assert!(dir.join(&frame.file).is_file());
-        let image = crate::capture::engine::render::decode_png(std::io::BufReader::new(
+        let image = render::decode_png(std::io::BufReader::new(
             std::fs::File::open(dir.join(&frame.file)).unwrap(),
         ))
         .unwrap();
-        assert!(image.rgba.chunks_exact(4).any(|p| p[0] < 100 && p[1] < 100));
+        assert!(image.rgba.chunks_exact(4).any(|p| p[..3] == [20, 90, 210]));
         assert_ne!(
             std::fs::read(dir.join("contact-sheet.png")).unwrap(),
             sheet_before
@@ -881,43 +697,43 @@ mod tests {
             std::fs::read(dir.join("contact-sheet-full.png")).unwrap(),
             sheet_before
         );
-        let saved: crate::shared::model::ApparentBundle =
+        let saved: ApparentBundle =
             serde_json::from_slice(&std::fs::read(dir.join("apparent.json")).unwrap()).unwrap();
         assert_eq!(saved.keyframes, bundle.keyframes);
         assert_eq!(
             std::fs::read_to_string(dir.join("summary.md")).unwrap(),
-            crate::capture::engine::sketch::summary_markdown(&bundle, &dir)
+            sketch::summary_markdown(&bundle, &dir)
         );
-        std::fs::remove_dir_all(root).unwrap();
+        std::fs::remove_dir_all(dir.parent().unwrap()).unwrap();
     }
 
     #[test]
-    fn empty_or_cleared_paper_does_not_add_a_handoff_tile() {
-        let root = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
-        let (dir, mut bundle, _) =
-            crate::capture::desktop::demo::generate_demo_bundle(Some(root.join("demo.apparent")))
-                .unwrap();
+    fn cleared_paper_preserves_history_without_a_final_tile() {
+        let (dir, mut bundle, _) = demo();
         let before = std::fs::read(dir.join("contact-sheet.png")).unwrap();
         let keys = bundle.keyframes.len();
-        let mut board = Board::default();
-        board.start([30.0, 40.0]);
-        board.finish();
-        board.clear();
+        let board = SavedBoard::default();
         append_to_bundle_with(&dir, &mut bundle, &board, |_| Ok(())).unwrap();
         assert_eq!(bundle.keyframes.len(), keys);
         assert_eq!(
             std::fs::read(dir.join("contact-sheet.png")).unwrap(),
             before
         );
-        std::fs::remove_dir_all(root).unwrap();
+        let mut state = PaperState::open([20, 90, 210]).unwrap();
+        state.edit(Edit::Open, None, 0).unwrap();
+        state.edit(Edit::Begin, Some([100.0, 100.0]), 100).unwrap();
+        state.edit(Edit::Clear, None, 200).unwrap();
+        append_to_bundle_with(&dir, &mut bundle, &state.saved, |_| Ok(())).unwrap();
+        let history: Vec<_> = bundle.keyframes.iter().filter(|key| key.reason == KeyframeReason::Whiteboard).collect();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].t, 200);
+        assert!(history[0].event.contains("1 stroke; before Clear"));
+        std::fs::remove_dir_all(dir.parent().unwrap()).unwrap();
     }
 
     #[test]
     fn failed_paper_publish_keeps_the_original_capture_and_clipboard_text() {
-        let root = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
-        let (dir, bundle, summary) =
-            crate::capture::desktop::demo::generate_demo_bundle(Some(root.join("demo.apparent")))
-                .unwrap();
+        let (dir, bundle, summary) = demo();
         let manifest = std::fs::read(dir.join("apparent.json")).unwrap();
         let sheet = std::fs::read(dir.join("contact-sheet.png")).unwrap();
         let text = std::fs::read(dir.join("summary.md")).unwrap();
@@ -925,10 +741,7 @@ mod tests {
             "frames/frame-{:02}.png",
             bundle.keyframes.len() + 1
         ));
-        let mut board = Board::default();
-        board.start([40.0, 40.0]);
-        board.extend([420.0, 310.0]);
-        board.finish();
+        let board = SavedBoard::from(Paper { color: [26, 26, 26], strokes: vec![vec![[40.0, 40.0], [420.0, 310.0]].into()] });
 
         // Fail after the sheet, then again after the manifest, and restore all originals.
         for fail_at in [2, 3] {
@@ -953,19 +766,12 @@ mod tests {
                     .starts_with(".whiteboard-")
             }));
         }
-        std::fs::remove_dir_all(root).unwrap();
+        std::fs::remove_dir_all(dir.parent().unwrap()).unwrap();
     }
     #[test]
     fn cleanup_failure_retains_stage_and_blocks_fallback_publication() {
-        use crate::capture::engine::bundle::bundle_processing::publication;
-        let root = std::env::temp_dir().join(crate::shared::ids::make_bundle_id());
-        let (dir, bundle, summary) =
-            crate::capture::desktop::demo::generate_demo_bundle(Some(root.join("demo.apparent")))
-                .unwrap();
-        let mut board = Board::default();
-        board.start([40.0, 40.0]);
-        board.extend([420.0, 310.0]);
-        board.finish();
+        let (dir, bundle, summary) = demo();
+        let board = SavedBoard::from(Paper { color: [26, 26, 26], strokes: vec![vec![[40.0, 40.0], [420.0, 310.0]].into()] });
         let result = publication::publish_after(&dir, || {
             let (fallback, text) =
                 finish_handoff_with(&dir, bundle.clone(), summary.clone(), &board, |index| {
@@ -988,6 +794,6 @@ mod tests {
                 .starts_with(".whiteboard-")
         }));
         assert!(publication::checked(&dir, &bundle, &summary).is_err());
-        std::fs::remove_dir_all(root).unwrap();
+        std::fs::remove_dir_all(dir.parent().unwrap()).unwrap();
     }
 }

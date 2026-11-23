@@ -1007,7 +1007,7 @@ pub(crate) fn experiment_enabled_in(config: &Config, name: &str) -> bool {
         .copied()
         .unwrap_or(matches!(
             name,
-            AGENT_DEMO_VIDEO | "copyCaptureId" | "connectSettings" | "nativeLaunch" | "electronCaptureLocation"
+            AGENT_DEMO_VIDEO | "copyCaptureId" | "connectSettings" | "nativeLaunch"
                 | "movableRecordingControls" | "exportNarration" | "onboardingFirstCapture" | "hostedEncryption"
         ))
 }

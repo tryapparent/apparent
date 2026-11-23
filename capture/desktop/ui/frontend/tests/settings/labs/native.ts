@@ -47,24 +47,8 @@ try{
   await expect(agentContext).toBeEnabled();
   await expect(agentContext).toHaveAttribute('aria-checked',String(on));
  }
- const speech=page.getByRole('switch',{name:'Transcript-only handoff'});
- await expect(speech).toBeEnabled();await expect(speech).toHaveAttribute('aria-checked','false');
- for(const on of [true,false]){
-  await speech.click();
-  await expect(speech).toHaveAttribute('aria-checked',String(on))
-  const saved=JSON.parse(await fs.readFile(process.argv[2],'utf8'));
-  assert.equal(saved.experiments.transcriptOnlyHandoff,on);assert.equal(saved.experiments.other,true);
-  await page.reload();await expect(speech).toBeEnabled();await expect(speech).toHaveAttribute('aria-checked',String(on));
- }
- const compact=page.getByRole('switch',{name:'Compact recording prompts'});
- await expect(compact).toBeEnabled();await expect(compact).toHaveAttribute('aria-checked','false');
- for(const on of [true,false]){
-  await compact.click();
-  await expect(compact).toHaveAttribute('aria-checked',String(on))
-  const saved=JSON.parse(await fs.readFile(process.argv[2],'utf8'));
-  assert.equal(saved.experiments.compactHandoff,on);assert.equal(saved.experiments.other,true);
-  await page.reload();await expect(compact).toBeEnabled();await expect(compact).toHaveAttribute('aria-checked',String(on));
- }
+ await expect(page.getByText('Compact recording prompts',{exact:true})).toHaveCount(0);
+ await expect(page.getByText('Transcript-only handoff',{exact:true})).toHaveCount(0);
  const toggle=page.getByRole('switch',{name:'Live local transcription'});
  await expect(toggle).toHaveAttribute('aria-checked','false');await expect(toggle).toBeEnabled();
  for(const on of [true,false]){

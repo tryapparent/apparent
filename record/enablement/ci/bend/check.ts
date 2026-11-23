@@ -41,6 +41,113 @@ await bendScratch(async (scratch) => {
   );
   const proofOutput = join(scratch, "proof");
   await buildBend(root, "record", proofOutput, options);
+  copyFileSync(
+    new URL(
+      "../../../media/src/assembly/crop-publication-request.ts",
+      import.meta.url,
+    ),
+    join(proofOutput, "crop-publication-request.ts"),
+  );
+  run(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+  import assert from "node:assert/strict";
+  import cropPolicy from "./crop-publication.mjs";
+  import { cropPublicationRequest } from "./crop-publication-request.ts";
+  const cropPublication = cropPublicationRequest(cropPolicy.publish);
+  const publish = (rows) =>
+    JSON.parse(cropPublication(JSON.stringify(rows)));
+  assert.equal(publish([]), null);
+  assert.equal(publish([["full", ["Ignored"]]]), null);
+  assert.deepEqual(publish([["activity", []]]), {
+    label: "the activity",
+    regions: [true],
+  });
+  assert.deepEqual(
+    publish([
+      ["focus", ["Éditeur 📝", "終端"]],
+      ["full", ["Ignored"]],
+      ["activity", ["終端", "Éditeur 📝", "Browser"]],
+    ]),
+    { label: "the activity in Éditeur 📝 + 終端 + Browser", regions: [true, false, true] },
+  );
+  for (const kind of ["window", "windows", "fallback"]) {
+    assert.deepEqual(publish([["focus", ["Editor"]], [kind, [""]]]), {
+      label: "Editor + ",
+      regions: [true, true],
+    });
+  }
+  `,
+    ],
+    proofOutput,
+  );
+  run(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+  import assert from "node:assert/strict";
+  import whiteboard from "./whiteboard-edit.mjs";
+  const effect = (action, options = {}) => whiteboard.edit(
+    { $: "Board" + action },
+    options.visible ?? true,
+    options.active ?? false,
+    options.point ?? false,
+    options.strokes ?? 0,
+    options.points ?? 0,
+    options.revisions ?? 0,
+  );
+  const edit = (action, options) => effect(action, options).$;
+  assert.equal(edit("Open", { visible: false }), "Show");
+  assert.equal(edit("Begin", { point: true }), "Start");
+  assert.equal(edit("Begin", { point: true, visible: false }), "Ignore");
+  assert.equal(edit("Begin", { point: true, active: true }), "CommitAndStart");
+  assert.equal(edit("Begin", { point: true, strokes: 500 }), "Ignore");
+  assert.equal(edit("Begin", { point: true, active: true, strokes: 499 }), "Ignore");
+  assert.equal(edit("Move", { point: true }), "Ignore");
+  assert.equal(edit("Move", { point: true, active: true, points: 1999 }), "Append");
+  assert.equal(edit("Move", { point: true, active: true, points: 2000 }), "Ignore");
+  assert.equal(edit("Move", { active: true }), "Ignore");
+  assert.equal(edit("End", { active: true }), "Commit");
+  assert.equal(edit("Cancel", { active: true }), "Discard");
+  assert.equal(edit("Undo", { active: true }), "UndoDraft");
+  assert.equal(edit("Undo", { strokes: 1 }), "UndoStroke");
+  assert.equal(edit("Undo"), "Ignore");
+  assert.equal(edit("Clear", { active: true }), "ClearPaper");
+  assert.equal(edit("Clear", { strokes: 1, visible: false }), "Ignore");
+  assert.equal(edit("Clear"), "Ignore");
+  assert.deepEqual(effect("Undo", { strokes: 2, revisions: 11 }), { $: "UndoStroke", evict: false });
+  assert.deepEqual(effect("Clear", { strokes: 1, revisions: 12 }), { $: "ClearPaper", evict: true });
+  assert.equal(edit("Close", { active: true }), "CommitAndHide");
+  assert.equal(edit("Close"), "Hide");
+  `,
+    ],
+    proofOutput,
+  );
+  assert.deepEqual(JSON.parse(run(process.execPath, ["--input-type=module", "-e", `
+    import capacity from "./capacity.mjs";
+    const bytes = (hi, lo) => ({$: "Bytes", hi, lo});
+    const old = bytes(0, 600000);
+    const size = bytes(0, 500000);
+    const used = bytes(1, 1);
+    const limit = bytes(0, 4294967290);
+    console.log(JSON.stringify([
+      capacity.choose(used, limit, old, old, size),
+      capacity.choose(used, limit, old, bytes(0, 599999), size),
+      capacity.constrain(99999999), capacity.constrain(100000000),
+      capacity.warn(true, 2000, 1000), capacity.warn(true, 1000, 0),
+      [false, true].map(value => capacity.default_limit_mb(value)),
+    ]));
+  `], proofOutput)), [
+    {$:"Choice", trash:true, remaining:{$:"Bytes", hi:0, lo:4294467297}},
+    {$:"Choice", trash:false, remaining:{$:"Bytes", hi:1, lo:1}},
+    true, false, true, false, [1000, 0],
+  ]);
+
   assert.deepEqual(pushToTalkTable(proofOutput), {
     hold: 300,
     actions: [1, 3, 0, 0, 1, 3, 2, 0, 4, 3, 4, 0, 4, 3, 4, 0],
@@ -204,6 +311,7 @@ await bendScratch(async (scratch) => {
     import captions from "./caption-admission.mjs";
     import lip from "./lip-policy.mjs";
     assert.equal(lip.clip_seconds(), 12);
+    assert.equal(lip.decode_threads(), 4);
     assert.equal(lip.finish_tail_ms(), 400);
     for (const lips of [false, true]) for (const mic of [false, true])
       assert.equal(lip.use_microphone(lips, mic), !lips && mic);

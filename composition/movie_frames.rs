@@ -34,18 +34,6 @@ struct Frame {
     file: String,
 }
 
-pub(crate) fn agent(movie: &Path, times: &[u64], offset: u64, edge: u32) -> Result<Vec<RgbaFrame>> {
-    frames(
-        "Agent media",
-        "agent-media",
-        "worker.js",
-        movie,
-        times,
-        offset,
-        edge,
-    )
-}
-
 pub(crate) fn record(
     movie: &Path,
     times: &[u64],
@@ -450,7 +438,7 @@ mod tests {
         );
         assert!(assembled.iter().all(|f| (f.width, f.height) == (320, 240)));
         record_transport::assert_matches_packaged(&movie, &requested, &assembled);
-        let decoded = agent(&movie, &times, 500, 900).unwrap();
+        let decoded = record(&movie, &times, 500, 900).unwrap();
         assert_eq!(decoded.len(), times.len());
         for (frame, time) in decoded.iter().zip(times) {
             assert_eq!(frame.t_ms, time);

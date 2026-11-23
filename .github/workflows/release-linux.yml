@@ -81,7 +81,7 @@ jobs:
   linux:
     needs: admit
     if: needs.admit.outputs.sha != '' && inputs.bridge_commit == ''
-    name: Linux ${{ matrix.arch }}
+    name: ${{ matrix.arch == 'x86_64' && 'Build x86_64 AppImage' || 'Linux aarch64' }}
     strategy:
       fail-fast: false
       matrix:
@@ -215,19 +215,21 @@ jobs:
           # Pin needs this on Ubuntu 24.04 runners.
           sudo sysctl -w kernel.yama.ptrace_scope=0
           bash capture/desktop/scripts/linux/appimage/smoke-cpu.sh "dist/${{ steps.package.outputs.name }}" "$SPEECH_TEST" "$sde" -icl
-      - name: Build and verify the Amazon Linux 2023 CLI
-        if: matrix.arch == 'x86_64' && hashFiles('composition/enablement/release/amazon-linux-cli/build.ts') != ''
-        env:
-          PRODUCER_APPIMAGE: dist/${{ steps.package.outputs.name }}
-        run: node --experimental-strip-types composition/enablement/release/amazon-linux-cli/build.ts dist "$PRODUCER_APPIMAGE"
+      - uses: actions/upload-artifact@v5
+        if: matrix.arch == 'x86_64'
+        with:
+          name: x86-appimage-${{ github.run_attempt }}
+          path: dist/*
+          if-no-files-found: error
+          compression-level: 0
       - uses: actions/checkout@v5
-        if: inputs.release_channel != ''
+        if: matrix.arch == 'aarch64' && inputs.release_channel != ''
         with:
           ref: ${{ github.workflow_sha }}
           clean: false
           persist-credentials: false
       - name: Seal checked Linux candidate
-        if: inputs.release_channel != ''
+        if: matrix.arch == 'aarch64' && inputs.release_channel != ''
         env:
           APPARENT_VERSION: ${{ inputs.version }}
           RELEASE_TAG: ${{ inputs.tag }}
@@ -235,6 +237,7 @@ jobs:
           RELEASE_NATIVE_CHECKS: 'true'
         run: node --experimental-strip-types composition/enablement/release/manifest.ts create dist linux ${{ matrix.arch }}
       - uses: actions/upload-artifact@v5
+        if: matrix.arch == 'aarch64'
         with:
           name: ${{ inputs.release_channel != '' && format('stable-linux-{0}-{1}', matrix.arch, github.run_attempt) || steps.package.outputs.name }}
           path: dist/*
@@ -244,6 +247,77 @@ jobs:
           if [ -n "${APPARENT_RELEASE_TEST_TMP:-}" ]; then
             rm -rf -- "$APPARENT_RELEASE_TEST_TMP"
           fi
+
+  cli:
+    needs: admit
+    if: needs.admit.outputs.sha != '' && inputs.bridge_commit == ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CANDIDATE_SHA: ${{ needs.admit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.admit.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - name: Compile Amazon Linux CLI
+        if: hashFiles('composition/enablement/release/amazon-linux-cli/compile.ts') != ''
+        run: node --experimental-strip-types composition/enablement/release/amazon-linux-cli/build.ts dist --compile-only
+      - uses: actions/upload-artifact@v5
+        if: hashFiles('composition/enablement/release/amazon-linux-cli/compile.ts') != ''
+        with:
+          name: amazon-cli-${{ github.run_attempt }}
+          path: dist/*.zip
+          if-no-files-found: error
+          compression-level: 0
+
+  seal-x86:
+    name: Linux x86_64
+    needs: [admit, linux, cli]
+    runs-on: ubuntu-24.04
+    env:
+      CANDIDATE_SHA: ${{ needs.admit.outputs.sha }}
+      RELEASE_CHANNEL: ${{ inputs.release_channel }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.admit.outputs.sha }}
+          path: candidate
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - uses: actions/download-artifact@v4
+        with:
+          name: x86-appimage-${{ github.run_attempt }}
+          path: candidate/dist
+      - uses: actions/download-artifact@v4
+        if: hashFiles('candidate/composition/enablement/release/amazon-linux-cli/compile.ts') != ''
+        with:
+          name: amazon-cli-${{ github.run_attempt }}
+          path: candidate/cli
+      - name: Verify CLI with checked candidate AppImage
+        id: package
+        run: node --experimental-strip-types composition/enablement/release/amazon-linux-cli/verify.ts
+      - name: Seal checked Linux candidate
+        if: inputs.release_channel != ''
+        env:
+          APPARENT_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          GITHUB_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          RELEASE_NATIVE_CHECKS: 'true'
+        run: node --experimental-strip-types composition/enablement/release/manifest.ts create candidate/dist linux x86_64
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ${{ inputs.release_channel != '' && format('stable-linux-x86_64-{0}', github.run_attempt) || steps.package.outputs.name }}
+          path: candidate/dist/*
 
   signing-bridge:
     needs: admit

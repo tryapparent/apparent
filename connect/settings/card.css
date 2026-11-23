@@ -169,6 +169,34 @@
   outline: 2px solid var(--color-ring);
   outline-offset: 3px;
 }
+.connect-activity-dialog {
+  width: 512px;
+  max-width: calc(100% - 48px);
+  max-height: calc(100% - 48px);
+  overflow: auto;
+  margin: auto;
+  padding: 24px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-foreground);
+}
+.connect-activity-dialog::backdrop {
+  background: color-mix(in srgb, var(--apparent-carbon) 45%, transparent);
+}
+.connect-activity-dialog h2 {
+  font-size: var(--apparent-type-section, 1.5rem);
+  line-height: 2rem;
+  font-weight: 500;
+}
+.connect-activity-dialog h2:focus-visible {
+  outline: none;
+}
+.connect-activity-dialog p {
+  margin-block: 8px 24px;
+}
+.connect-activity-dialog button {
+  border-radius: 0;
+}
 .apparent-connect-workflow .status-footer .connect-browser-error {
   margin: 0 0 12px;
   color: var(--color-destructive);

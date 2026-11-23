@@ -13,3 +13,9 @@ export const retentionPorts: RetentionPorts = {
   reset: async () => await window.apparent?.resetRetention() ?? {status: 'disabled'},
   usage: async () => await window.apparent?.readCaptureUsage() ?? {status: 'disabled'},
 };
+
+export const sizeLimitPorts = {
+  read: retentionPorts.read,
+  usage: retentionPorts.usage,
+  save: async (maximumMb: number) => await window.apparent?.saveStorageLimit?.(maximumMb) ?? {status: 'disabled' as const},
+};

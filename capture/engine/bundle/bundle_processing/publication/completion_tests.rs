@@ -41,12 +41,11 @@ impl Drop for Fixture {
     }
 }
 
-fn board() -> whiteboard::Board {
-    let mut board = whiteboard::Board::default();
-    board.start([40.0, 40.0]);
-    board.extend([420.0, 310.0]);
-    board.finish();
-    board
+fn board() -> whiteboard::SavedBoard {
+    whiteboard::Paper {
+        color: [26, 26, 26],
+        strokes: vec![vec![[40.0, 40.0], [420.0, 310.0]].into()],
+    }.into()
 }
 
 fn dispatch(result: CaptureResult, success: bool) {

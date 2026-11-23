@@ -22,7 +22,7 @@ pub(in crate::capture::desktop) fn finalize(
     bundle_dir: PathBuf,
     events: Vec<InteractionEvent>,
     strokes: Vec<Stroke>,
-    final_whiteboard: whiteboard::Board,
+    final_whiteboard: whiteboard::SavedBoard,
     notes_finished: Option<flume::Receiver<crate::capture::desktop::workflow::notes::FinishResult>>,
     source_released: flume::Sender<()>,
     lip_input: Option<crate::lip_input::Input>,
@@ -65,6 +65,8 @@ pub(in crate::capture::desktop) fn finalize(
             return (Err(anyhow::anyhow!("a lab recording has no bundle")), 0);
         }
     };
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    let circle = screen_session.circle_labels();
     let stopped = screen_session.stop_tracks(audio_recorder, window_log);
     let _ = source_released.send(());
     let recording = stopped.recording;
@@ -111,6 +113,12 @@ pub(in crate::capture::desktop) fn finalize(
                 return Err(anyhow::anyhow!(error)).stage(Stage::NotesReceipt);
             }
         }
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        let strokes = {
+            let mut strokes = strokes;
+            if let Some(session) = circle { session.apply(&mut strokes); }
+            strokes
+        };
         crate::capture::engine::bundle::bundle_processing::finalize_capture_bundle_with_transcript(
             &bundle_dir,
             target,
@@ -121,7 +129,9 @@ pub(in crate::capture::desktop) fn finalize(
             None,
             activity,
             None,
-            lip_input.map(|input| input.transcript(duration_ms)),
+            lip_input.map(|input| {
+                input.transcript(duration_ms, crate::capture::desktop::workflow::error_reporting::report_lipflow_timeout)
+            }),
         )
     });
     (finalized, duration_ms)
@@ -141,7 +151,7 @@ fn after_publication(
 /// the surviving capture before Desktop can see any successful result.
 fn complete_bundle(
     path: &std::path::Path,
-    board: &whiteboard::Board,
+    board: &whiteboard::SavedBoard,
     sampling: Option<Sampling>,
     build: impl FnOnce() -> CaptureResult,
 ) -> CaptureResult {

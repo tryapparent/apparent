@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 mod renewal;
 mod encrypted_transfer;
+use encrypted_transfer::snapshot;
 mod private_files;
 use private_files::*;
 mod file_transfer;
@@ -24,29 +25,15 @@ mod encryption;
 mod foreground;
 mod activity;
 #[cfg(target_os = "linux")]
-mod support_peer;
-#[cfg(target_os = "linux")]
-pub use support_peer::check_support_peer;
+pub use encryption::support::check_support_peer;
 pub use foreground::foreground_progress;
 pub mod settings;
-use settings::{SafeError, cancelled, hosted_failure};
-
 /// Application-owned preferences and browser mechanics. Implementations must
 /// perform fresh reads, preserve unrelated config, and serialize each write.
 /// Called with queue.lock held for publication; never acquire queue.lock here.
-pub trait ConfigProvider: Send + Sync {
-    fn config_path(&self) -> &Path;
-    fn cloud(&self) -> CloudConfig;
-    fn experiment(&self, name: &str) -> bool;
-    fn set_cloud(&self, value: &CloudConfig) -> Result<()>;
-    /// Blocking writers must override this and recheck inside their transaction.
-    fn set_cloud_allowed(&self, value: &CloudConfig, allowed: &dyn Fn() -> bool) -> Result<()> {
-        ensure!(allowed(), "cancelled");
-        self.set_cloud(value)
-    }
-    fn set_experiment(&self, name: &str, enabled: bool) -> Result<()>;
-    fn open_browser(&self, _uri: &Path) {}
-}
+pub use policy::ConfigProvider;
+pub use policy::{RenewalDecision, RenewalFacts};
+use settings::{SafeError, cancelled, hosted_failure};
 
 pub const HOSTED_SYNC: &str = "hostedSync";
 pub const HOSTED_SHARING: &str = "hostedSharing";
@@ -219,6 +206,8 @@ struct Job {
     // Admission pins the format. A preference change cannot downgrade this job.
     #[serde(default)]
     encrypted: bool,
+    #[serde(default)]
+    speaking_style: bool,
     #[serde(default)]
     encryption: Option<encrypted_transfer::EncryptedJob>,
     #[serde(default = "legacy_encryption_version")]
@@ -960,6 +949,7 @@ impl Client {
             files: Vec::new(),
             shared: public_copy,
             public_copy,
+            speaking_style: !public_copy && self.provider.experiment("speakingStyle"),
             encrypted: !public_copy && self.provider.experiment(HOSTED_ENCRYPTION),
             encryption: None,
             encryption_version: 2,
@@ -968,18 +958,6 @@ impl Client {
         Ok(job.id)
     }
 
-    pub fn pointer(&self, bundle: &Path) -> Option<String> {
-        if !self.enabled() || !self.state.is_dir() {
-            return None;
-        }
-        let job = self.jobs().ok()?.into_iter().find(|j| {
-            !j.public_copy && j.bundle == bundle && self.active(j) && j.status != "cancelled"
-        })?;
-        let result = Self::handoff_policy(json!({"job":{"id":job.id,"status":job.status}})).ok()?;
-        // Reconcile consent/generation after the policy runtime returns.
-        if !self.active(&job) { return None; }
-        result.as_str().map(str::to_owned)
-    }
     fn raw_request(
         &self,
         server: &str,

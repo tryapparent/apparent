@@ -1,7 +1,8 @@
+import {privateReservation,styleHistory} from './captures/history.ts';
 import reportPolicy from '#bend/report-policy';
 import {FILE_FORMAT,fileTransport} from '../../client/typescript/contracts.ts';
 import type {Env, CaptureRow, FileRow, ManifestFile, AttemptSnapshot} from './types.ts';
-import {DAY,hex,json,fail,stmt,body,bearer,usage,isRecord,supportCapture,separateReportQuota} from './common.ts';
+import {DAY,hex,json,fail,stmt,body,bearer,usage,isRecord,supportCapture} from './common.ts';
 import {checkedHeads,getObject,uploadAttempt,settledAttempt,deleteAttempts} from './storage.ts';
 import {queueDailyActivity} from './reporting/aggregate-dau.ts';
 const live="status!='deleted' AND expires_at>? AND (status='ready' OR pending_until>?)";
@@ -52,7 +53,7 @@ async function capture(env: Env,id: string,account: string,support=false) {
 const info = async (env:Env,c: CaptureRow) => ({id:c.id,status:c.status,expiresAt:new Date(c.expires_at).toISOString(),...(c.format==='plaintext-v1'?{}:{format:c.format}),...(groupedDelivery(c)?{delivery:'evidence-first-v1',evidenceReady:await evidenceReady(env,c)}:{})});
 export async function captureRoutes(request: Request,env: Env,url: URL,context?:ExecutionContext,support=false) {
  if(url.pathname==='/v1/account'&&request.method==='GET') {const a=await bearer(request,env);return json({beta:a.beta,quotaBytes:500000000,usedBytes:await usage(env,a.account_id)});}
- const match=/^\/v1\/captures\/([a-f0-9]{32})(?:\/(complete|files\/(.+)))?$/.exec(url.pathname);if(!match)return null;
+ const match=/^\/v1\/captures\/([a-f0-9]{32})(?:\/(complete|style-history|files\/(.+)))?$/.exec(url.pathname);if(!match)return null;
  const [,id,action,encoded]=match,method=request.method;
  const a=await bearer(request,env,method!=='GET');
  const owned=()=>capture(env,id,a.account_id,support);
@@ -71,11 +72,8 @@ export async function captureRoutes(request: Request,env: Env,url: URL,context?:
     // The insert trigger tombstones the oldest quota overflow in this same
     // transaction. A duplicate ID cannot run it, including concurrent retries.
     const values=[id,a.account_id,m.text,m.bytes,now+7*DAY,now+DAY,format];
-    const insert='INSERT INTO captures(id,account_id,manifest,bytes,expires_at,pending_until,format)';
     const result=await env.DB.batch([
-     support
-      ?stmt(env,`${insert} SELECT ?,?,?,?,?,?,? WHERE (SELECT COALESCE(sum(bytes),0) FROM captures WHERE account_id=? AND (NOT ${separateReportQuota} OR ${supportCapture}) AND ${live})<=?`,...values,a.account_id,now,now,500000000-m.bytes)
-      :stmt(env,`${insert} VALUES(?,?,?,?,?,?,?)`,...values),
+     privateReservation(env,values,support,input.styleHistory===true,a.account_id,now,m.bytes,live),
      // One set insertion, not one SQL statement per file. JSON keeps the full
      // 512-file manifest below D1's 100-bound-parameter limit as well.
      stmt(env,"INSERT INTO files(capture_id,path,size,sha256) SELECT ?,json_extract(value,'$.path'),json_extract(value,'$.size'),json_extract(value,'$.sha256') FROM json_each(?) WHERE changes()=1",id,m.text)
@@ -98,7 +96,8 @@ export async function captureRoutes(request: Request,env: Env,url: URL,context?:
   return json({ok:true});
  }
  const c=await owned();
- if(!action&&method==='GET')return json({...await info(env,c),files:JSON.parse(c.manifest)});
+ if(action==='style-history'&&method==='GET')return styleHistory(env,c,support,owned);
+ if(!action&&method==='GET')return json({...await info(env,c),...(c.style_history===1?{styleHistory:true}:{}),files:JSON.parse(c.manifest)});
  if(action==='complete'&&method==='POST') {
   if(c.status==='ready')return json(await info(env,c));
   const {results:files}=await stmt(env,'SELECT * FROM files WHERE capture_id=?',id).all<FileRow>();

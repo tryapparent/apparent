@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   bendScratch,
@@ -49,7 +49,7 @@ await bendScratch(async (compiled) => {
     "record",
     compiled,
     undefined,
-    "record/media/src/assembly/frame-limits.bend",
+    "record/media/src/assembly/",
   );
   const frameLimits = readFileSync(join(compiled, "frame-limits.mjs"), "utf8");
   const exportMarker = "export default {";
@@ -95,4 +95,19 @@ return request => JSON.stringify(movieTimes(...JSON.parse(request)));
 })();`,
   ];
   writeFileSync(output, sources.join("\n"));
+
+  const publication = readFileSync(
+    join(compiled, "crop-publication.mjs"),
+    "utf8",
+  );
+  if (publication.split(exportMarker).length !== 2)
+    throw Error("Expected Record crop publication export");
+  writeFileSync(
+    join(dirname(output), "record-crop-publication.mjs"),
+    [
+      publication.replace(exportMarker, "const publication = {"),
+      moduleBody(read("assembly/crop-publication-request.ts")),
+      "export const cropPublication = cropPublicationRequest(publication.publish);",
+    ].join("\n"),
+  );
 });

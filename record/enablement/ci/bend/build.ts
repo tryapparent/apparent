@@ -49,6 +49,7 @@ async function buildMedia(destination: string): Promise<void> {
     await buildBend(root, "record", scratch);
     for (const [folder, module] of [
       ["assembly", "frame-limits.mjs"],
+      ["circle", "circle-label.mjs"],
       ["export", "quiet-export.mjs"],
     ]) {
       const output = join(destination, folder);

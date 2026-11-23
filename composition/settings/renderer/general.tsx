@@ -1,5 +1,10 @@
-import { ConnectSettingsCard } from "./connect";
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Button } from "@apparent/ui/button";
 import { Switch } from "@apparent/ui/switch";
 import {
@@ -44,7 +49,7 @@ declare global {
   }
 }
 
-export function General() {
+export function General({ connect }: { connect: ReactNode }) {
   const [state, setState] = useState<GeneralState>(),
     [validation, setValidation] = useState("");
   const [failures, setFailures] = useState<Failure[]>([]),
@@ -350,7 +355,7 @@ export function General() {
   }
   return (
     <div ref={mount} className="general-settings">
-      <ConnectSettingsCard />
+      {connect}
       <span role="status" className="sr-only">
         {pending.length ? "Waiting for Apparent to confirm the change." : ""}
       </span>

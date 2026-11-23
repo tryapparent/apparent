@@ -19,7 +19,7 @@ use gstreamer as gst;
 use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 
-use crate::capture::engine::runtime::{CANDIDATE_EDGE, CANDIDATE_EDGE_NO_VIDEO, Sampler, apparent_log};
+use crate::capture::engine::runtime::{Sampler, apparent_log};
 use crate::shared::model::{CaptureMode, RgbaFrame};
 
 const FPS: u32 = 30;
@@ -313,7 +313,6 @@ fn crop_launch(crop: &Crop) -> String {
     launch
 }
 
-/// A running recording: GStreamer pushes frames through; Apparent samples the newest one.
 struct Recorder {
     pipeline: gst::Pipeline,
     candidates: gst_app::AppSink,
@@ -378,7 +377,6 @@ impl Recorder {
             .downcast::<gst_app::AppSink>()
             .map_err(|_| anyhow!("Not an appsink"))?;
         let first_frame_ms = Arc::new(AtomicU64::new(u64::MAX));
-        let video = encoder.is_some();
         if let Some(sink) = pipeline
             .by_name("encoder")
             .and_then(|e| e.static_pad("sink"))
@@ -386,14 +384,15 @@ impl Recorder {
             // The movie starts at its first frame: note when that was on the capture clock, and
             // shift every frame so the movie's clock starts at zero.
             let first = Arc::clone(&first_frame_ms);
-            let base: Arc<Mutex<Option<gst::ClockTime>>> = Arc::new(Mutex::new(None));
+            let base = Mutex::new(None);
             sink.add_probe(gst::PadProbeType::BUFFER, move |_, info| {
                 if let Some(gst::PadProbeData::Buffer(buffer)) = info.data.as_mut() {
                     let mut base = base.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                     let pts = buffer.pts();
-                    if base.is_none() {
+                    if base.is_none() && pts.is_some() && buffer.size() != 0 {
                         *base = pts;
                         first.store(started_at.elapsed().as_millis() as u64, Ordering::Release);
+                        crate::capture::desktop::start_metric("screen_first_frame_ms", started_at);
                     }
                     if let (Some(pts), Some(zero)) = (pts, *base) {
                         let buffer = buffer.make_mut();
@@ -412,7 +411,7 @@ impl Recorder {
             candidates,
             out,
             candidate,
-            video,
+            video: encoder.is_some(),
             first_frame_ms,
             last: None,
         })
@@ -619,12 +618,8 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
     };
     let out = crate::capture::engine::runtime::capture_size(&target, long_edge);
     let movie = video_output_path.as_deref().filter(|_| can_record_video());
-    let edge = if movie.is_some() {
-        CANDIDATE_EDGE
-    } else {
-        CANDIDATE_EDGE_NO_VIDEO
-    };
-    let candidate = crate::capture::engine::runtime::capture_size(&target, edge);
+    let candidate = frames.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        .sampling_size(&target, movie.is_some());
     let source = prepared_source.map_or_else(|| super::portal::source_for(&target, &stopping), Ok);
     let recorder = source.and_then(|source| {
         Recorder::new(&source, out, candidate, movie, started_at)

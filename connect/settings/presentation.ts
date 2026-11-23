@@ -1,7 +1,7 @@
 import type { ConnectView } from "../client/typescript/src/account/protocol.ts";
 
 export const activityDisclosure =
-  "While connected, recording starts contribute to daily and weekly account totals. Only a pseudonymous identifier and last active UTC date are kept for seven days; no recording content or email. Manage this in your Connect account’s analytics settings. Practice recordings are excluded.";
+  "Starting a recording while connected counts your account as active in daily and weekly totals. Practice recordings are excluded. Apparent keeps a pseudonymous account ID and the last active date (UTC) for seven days. The counts use no recording content or email addresses. Manage this in your Connect account’s analytics settings.";
 
 export function connectPresentation(view: ConnectView | undefined) {
   const original = view?.presentation;
@@ -33,7 +33,8 @@ export function connectPresentation(view: ConnectView | undefined) {
     original.tone === "warning"
   ) {
     presentation.headline = "Disconnect this computer?";
-    presentation.detail = "Uploads stop. Saved captures stay.";
+    presentation.detail =
+      "Uploads stop. Disconnecting does not delete uploaded captures.";
     presentation.tone = "warning";
     presentation.artwork = false;
   } else if (

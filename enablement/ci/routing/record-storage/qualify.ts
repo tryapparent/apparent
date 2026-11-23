@@ -15,29 +15,36 @@ function storageManifestMatches(json: string): boolean {
   const {modules, inputs} = parseManifest('record', json);
   const storageModules = modules.filter(path => path.startsWith('record/storage/'));
   const storageInputs = inputs.filter(path => path === 'record/storage' || path.startsWith('record/storage/'));
-  return storageModules.length === 1 && storageModules[0] === 'record/storage/src/retention/feedback.bend' &&
+  return isDeepStrictEqual(storageModules.sort(), [
+    'record/storage/src/retention/capacity.bend',
+    'record/storage/src/retention/feedback.bend',
+  ]) &&
     storageInputs.length === 1 && storageInputs[0] === 'record/storage/';
 }
 
 // Re-audit before accepting a changed native-consumer compile graph. This also
 // catches an indirect ../index.js barrel import with no controller-name text.
 export const nativeStorageGraph = new Map([
-  ['capture/desktop/ui/frontend/scripts/build-storage-policy.ts', 'b466b93fe00d51bb4b65656f7b483a7e3e44c8a4'],
+  ['capture/desktop/ui/frontend/scripts/build-storage-policy.ts', '68ba41e2318ffc477fb35c0ee60c453242490e9c'],
   ['record/storage/build.ts', 'ae0958975cc9643e6a5eec4a674a9815a38f462f'],
+  ['record/storage/enablement/ci/bend/storage-default.ts', '22a37a4376729803777afd6b6554e3d638185788'],
   ['record/storage/tsconfig.json', '96d1a20c5109ff4e1996123a75730b7aa99b6165'],
   ['record/storage/package.json', 'a4af0bd9d619131db2423283f51c160d7c738bef'],
   ['record/storage/package-lock.json', '00f2fe49ea668718ef8e9d35ea7baa7236ce685b'],
-  ['record/storage/src/index.ts', 'b0dc2a13ba4e6f5d7c3465c40babe98f16373608'],
+  ['record/storage/src/index.ts', '4c621ae980623155f9f6989ffc0e503376d95328'],
   ['record/storage/src/location-contract.ts', '7ca220e3d9530dea8931473387a9704d329e10d0'],
   ['record/storage/src/location-policy.ts', 'bf45096ee826e7fc398fd0f93fada5ed7c194d7a'],
   ['record/storage/src/location-workflow.ts', 'd564377cd884dda1b0f4e9578d9afeaa0672f9c2'],
   ['record/storage/src/policy.ts', '0debd0cd97c2b1957b15ddfb6110c9fa16248853'],
-  ['record/storage/src/retention-workflow.ts', '20c1a9189671025f359434b35625b9f2450e2c61'],
+  ['record/storage/src/retention-workflow.ts', 'cf4af06dd9022c15235f43a4082177bca0e049a0'],
+  ['record/storage/src/retention/capacity.bend', '09a85f4fb32cd619e7d638d3559ae7aa4c934418'],
+  ['record/storage/src/retention/capacity.d.mts', '491c67db5afb3080af0ab5e55f9c6a4440861d0c'],
+  ['record/storage/src/retention/size-limit.ts', '5dfb1030aad58a71819ff9c99283b66023280c31'],
   ['record/storage/src/retention/feedback.bend', 'fabdd68c23dfe742751ad7be2810baaa160e396a'],
   ['record/storage/src/retention/feedback.d.mts', '169b18bc7f83d1da59398a0c203f5eaa78775f27'],
   ['record/storage/src/retention/policy.ts', 'e1d14cba2899eced97ec5336cac662940049fdbf'],
-  ['record/storage/src/retention/worker.ts', 'c1882b8523de007985eff2764ffed19d5df7fb40'],
-  ['record/storage/src/types.ts', '594b604e20fc45f2ea32ee044a8247811827b71a'],
+  ['record/storage/src/retention/worker.ts', 'e877069ab11b9c76893f3b991edf4b2cde25edfb'],
+  ['record/storage/src/types.ts', 'deee255962414112168206f80bc600da57ddc425'],
   ['shared/enablement/bend/build.ts', '513b4899621933e5a13cafeeaddc43d5635ecd5e'],
   ['shared/enablement/bend/manifest.ts', '7657c844f0c9851aa21ae32641864160e034f0dd'],
   ['shared/enablement/bend/owners.ts', 'b527b1b063951f9f3184be594197dc2e5149e37a'],
@@ -99,11 +106,13 @@ function publicSurface(body: string): string[] | null {
 // selector supplies candidate Git references, including data-driven readers.
 const storageReferences = new Set([
   ...storageControllers,
+  ...nativeStorageGraph.keys(),
+  'build.rs',
   'composition/enablement/ci/typecheck.json',
-  'record/storage/build.ts', 'record/storage/src/index.ts', 'record/storage/package.json', 'record/storage/package-lock.json',
   'record/storage/test/controller.test.ts',
-  'capture/desktop/ui/frontend/package.json', 'capture/desktop/ui/frontend/package-lock.json',
-  ...['scripts/build-storage-policy.ts', 'scripts/settings-native/inputs.ts',
+  'record/storage/renderer/size-limit.tsx',
+  'capture/desktop/ui/frontend/package.json', 'capture/desktop/ui/frontend/package-lock.json', 'capture/desktop/ui/frontend/tsconfig.json',
+  ...['scripts/settings-native/inputs.ts',
     'scripts/settings-native/inputs.test.ts', 'scripts/settings-native/provider.ts',
     'src/bridge.ts', 'src/storage.tsx', 'src/retention.tsx', 'src/storage/transport.ts']
     .map(path => 'capture/desktop/ui/frontend/' + path),
@@ -112,6 +121,7 @@ const storageReferences = new Set([
   'enablement/ci/routing/record-storage/qualify.ts', 'enablement/ci/routing/record-storage/qualify.test.ts',
   'enablement/ci/routing/record-storage/range.test.ts',
   'enablement/local-tests/desktop-install.ts', 'enablement/local-tests/run.ts', 'enablement/local-tests/run.test.ts',
+  'shared/enablement/bend/consumers.ts',
 ]);
 
 export function storageGraphMatches(head: string, git: (args: string[]) => string): boolean {

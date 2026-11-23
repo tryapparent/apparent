@@ -8,6 +8,7 @@ pub(crate) mod settings;
 pub(in crate::capture::desktop) mod presentation;
 #[cfg(target_os = "linux")]
 mod storage;
+#[cfg(not(target_os = "macos"))]
 pub(crate) mod settings_window;
 pub(crate) mod shortcut;
 
@@ -86,6 +87,7 @@ pub enum UpdateResult {
     Failed,
 }
 
+#[cfg(not(target_os = "macos"))]
 impl UpdateResult {
     pub fn label(self) -> &'static str {
         match self {
@@ -141,9 +143,8 @@ fn update_failure(error: &anyhow::Error) -> Option<UpdateFailure> {
 
 fn electron_pane(pane: Option<Pane>) -> bool {
     settings::electron_general(pane)
-        || matches!(pane, Some(Pane::About | Pane::Agents | Pane::Labs | Pane::Recording))
+        || matches!(pane, Some(Pane::About | Pane::Agents | Pane::Labs | Pane::Recording | Pane::Storage))
         || cfg!(any(target_os = "linux", target_os = "macos")) && pane == Some(Pane::Permissions)
-        || settings::electron_storage(pane, crate::shared::handoff::experiment("electronCaptureLocation"))
 }
 
 fn recording_key(key: &str, value: &serde_json::Value) -> bool {

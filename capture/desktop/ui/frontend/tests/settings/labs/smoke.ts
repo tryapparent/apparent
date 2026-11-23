@@ -41,24 +41,28 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   assert.deepEqual(await page.locator('.settings-navigation-wide button').allTextContents(),['General','Recording','Storage','Permissions','Agents','Labs','About']);
   await expect(page.getByRole("switch",{name:"Skip screen selection"})).toHaveCount(0);
   const toggle=page.getByRole('switch',{name:'Live local transcription'});
-  const compact=page.getByRole('switch',{name:'Compact recording prompts'});
-  const speech=page.getByRole('switch',{name:'Transcript-only handoff'});
+  await expect(page.getByText('Compact recording prompts',{exact:true})).toHaveCount(0);
+  await expect(page.getByText('Transcript-only handoff',{exact:true})).toHaveCount(0);
   const agentContext=page.getByRole('switch',{name:'Recording context for agents'});
   const doodles=page.getByRole('switch',{name:'Recording pill doodles'});
+  const circles=page.getByRole('switch',{name:'Label circled items'});
+  await expect(circles).toBeDisabled();
   await expect(agentContext).toBeDisabled();
   await expect(agentContext).toHaveAccessibleDescription(/local dev page using the Apparent SDK/);
-  await expect(compact).toBeDisabled();await expect(speech).toBeDisabled();
   await expect(toggle).toBeDisabled();await expect.poll(()=>Boolean(held)).toBe(true);
   reply(held!);hold=false;await expect(toggle).toBeEnabled();await expect(toggle).toHaveAttribute('aria-checked','false');
   await expect(doodles).toBeChecked();
-  for(const trial of [compact,speech,agentContext]){
-   await expect(trial).toHaveAttribute('aria-checked','false');
-   await trial.focus();await page.keyboard.press('Space');
-   await expect(trial).toHaveAttribute('aria-checked','true');await expect(trial).toBeFocused();
-  }
+  await expect(agentContext).toHaveAttribute('aria-checked','false');
+  await expect(circles).not.toBeChecked();
+  await circles.focus();await page.keyboard.press('Space');
+  await expect(circles).toBeChecked();await expect(circles).toBeFocused();
+  await agentContext.focus();await page.keyboard.press('Space');
+  await expect(agentContext).toHaveAttribute('aria-checked','true');await expect(agentContext).toBeFocused();
   await expect(page.locator('#agent-context-access')).toContainText('Allow Apparent');
   await page.reload();
-  for(const trial of [compact,speech,agentContext,doodles])await expect(trial).toHaveAttribute('aria-checked','true');
+  await expect(circles).toBeChecked();
+  await expect(agentContext).toBeChecked();
+  await expect(doodles).toBeChecked();
   assert.equal(await toggle.locator('.apparent-switch-track').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(229, 229, 234)');
   const track=toggle.locator('.apparent-switch-track');
   await expect(track).toHaveCSS('width','51px');
@@ -73,24 +77,28 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   await expect(toggle).toHaveAttribute('aria-checked','true');
   await expect(toggle).toBeFocused();
   await expect(toggle.locator('.apparent-switch-thumb')).toHaveCSS('transform','matrix(1, 0, 0, 1, 20, 0)');
+  const enableAndReload = async (control: typeof toggle) => {
+   await expect(control).not.toBeChecked();
+   await control.focus();
+   await page.keyboard.press('Space');
+   await expect(control).toBeChecked();
+   await expect(control).toBeFocused();
+   await page.reload();
+   await expect(control).toBeChecked();
+   await expect(toggle).toBeChecked();
+  };
+  const speaking=page.getByRole('switch',{name:'Match my speaking style'});
+  await enableAndReload(speaking);
   const sharing=page.getByRole('switch',{name:'Public sharing links'});
-  await expect(sharing).toHaveAttribute('aria-checked','false');
-  await sharing.focus();await page.keyboard.press('Space');await expect(sharing).toHaveAttribute('aria-checked','true');await expect(sharing).toBeFocused();
-  await page.reload();await expect(sharing).toHaveAttribute('aria-checked','true');await expect(toggle).toHaveAttribute('aria-checked','true');
+  await enableAndReload(sharing);
   const autoPaste=page.getByRole('switch',{name:'Auto paste',exact:true});
-  if(process.platform==='linux'){
-   await expect(autoPaste).toHaveAttribute('aria-checked','false');
-   await autoPaste.focus();await page.keyboard.press('Space');await expect(autoPaste).toHaveAttribute('aria-checked','true');await expect(autoPaste).toBeFocused();
-   await expect(toggle).toHaveAttribute('aria-checked','true');
-   await page.reload();await expect(autoPaste).toHaveAttribute('aria-checked','true');await expect(toggle).toHaveAttribute('aria-checked','true');
-  }else await expect(autoPaste).toBeDisabled();
+  if(process.platform==='linux') await enableAndReload(autoPaste);
+  else await expect(autoPaste).toBeDisabled();
   await expect(page.getByRole('switch',{name:'Double-tap Shift for notes'})).toHaveCount(0);
   const wispr=page.getByRole('switch',{name:'Dictation app conflicts',exact:true});
   await expect(wispr).toHaveAttribute('aria-checked','false');
-  if(process.platform==='darwin'){
-   await wispr.focus();await page.keyboard.press('Space');await expect(wispr).toHaveAttribute('aria-checked','true');await expect(wispr).toBeFocused();
-   await page.reload();await expect(wispr).toHaveAttribute('aria-checked','true');await expect(toggle).toHaveAttribute('aria-checked','true');
-  }else await expect(wispr).toBeDisabled();
+  if(process.platform==='darwin') await enableAndReload(wispr);
+  else await expect(wispr).toBeDisabled();
   assert.equal(await page.evaluate(async()=>await window.apparentGeneral.read().then(()=>false,()=>true) && await window.apparent.readConnectSettings().then(()=>false,()=>true)),true);
   if(process.platform!=='darwin')await assert.rejects(()=>page.evaluate(()=>window.apparentLabs.save(true,'wisprFlow')));
   const silentPrompt = page.getByRole('switch', {name:'Silent prompts'});
@@ -149,9 +157,9 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
     await page.screenshot({path:path.join(process.env.APPARENT_LIVE_PROOF,`labs-${theme}-${width}-bottom.png`)});
     await toggle.scrollIntoViewIfNeeded();
    }
-   for(const id of ['compact-handoff-help','transcript-only-help','agent-context-limits','local-stream-ready','auto-paste-limits','public-sharing-limits','wispr-lab-help']){
+   for(const id of ['speaking-style-help','agent-context-limits','circle-labels-help','local-stream-ready','auto-paste-limits','public-sharing-limits','wispr-lab-help']){
     const guidance=page.locator(`#${id}`);await guidance.evaluate(el=>el.scrollIntoView({block:'center'}));await expect(guidance).toBeInViewport();
-    if((id==='compact-handoff-help' || id==='transcript-only-help' || id==='agent-context-limits') && process.env.APPARENT_LIVE_PROOF)
+    if(['circle-labels-help','agent-context-limits','speaking-style-help'].includes(id) && process.env.APPARENT_LIVE_PROOF)
      await page.screenshot({path:path.join(process.env.APPARENT_LIVE_PROOF,`${id}-${theme}-${width}.png`)});
    }
    await cdp.detach();
@@ -160,7 +168,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   await expect(silentPrompt).toHaveAttribute('aria-checked','false');
   await expect(retryLipflow).toHaveCount(0);
   const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setDeviceMetricsOverride',{width:640,height:530,deviceScaleFactor:1,mobile:false});
-  const recoveries: [string,typeof toggle][]=[['streaming',toggle],['compactHandoff',compact],['transcriptOnly',speech],['agentContext',agentContext],['pillDoodles',doodles]];
+  const recoveries: [string,typeof toggle][]=[['streaming',toggle],['agentContext',agentContext],['speakingStyle',speaking],['circleLabels',circles],['pillDoodles',doodles]];
   if(process.platform==='linux')recoveries.push(['autoPaste',autoPaste]);
   recoveries.push(['sharing',sharing]);
   if(process.platform==='darwin')recoveries.push(['wisprFlow',wispr]);

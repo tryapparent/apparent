@@ -1,10 +1,11 @@
 import type {NativeRetentionResult, RetentionPolicy, UsageResult, Unavailable} from './types.js';
+import {storageLimitValid} from './retention/size-limit.js';
 import {isStoredRetention, isRetentionPolicy} from './policy.js';
 
 export type RevisionedRetention = Unavailable | (Extract<NativeRetentionResult, {status: 'connected'}> & {revision: string});
 export type RetentionWorkflowPorts = {
   read(): Promise<RevisionedRetention>;
-  write(operation: 'save' | 'reset', fields: {expected: string; policy?: RetentionPolicy}): Promise<RevisionedRetention>;
+  write(operation: 'save' | 'reset' | 'limit', fields: {expected: string; policy?: RetentionPolicy; maximumMb?: number}): Promise<RevisionedRetention>;
   usage(): Promise<UsageResult>;
 };
 /** Private revision intent; host supplies shared resource admission and lifetime. */
@@ -20,11 +21,13 @@ export class RetentionWorkflow {
     this.#revision = undefined;
     if (result.status !== 'connected') return result;
     if (typeof result.revision !== 'string' || !/^[a-f0-9]{16}$/.test(result.revision) ||
-        typeof result.custom !== 'boolean' || !isStoredRetention(result.policy))
+        typeof result.custom !== 'boolean' || !isStoredRetention(result.policy) ||
+        (result.maximumMb != null && !storageLimitValid(result.maximumMb)))
       return {status: 'error', code: 'invalid_response'};
     this.#revision = result.revision;
     return {status: 'connected', custom: result.custom, policy: result.policy,
-      ...(result.defaults && {defaults: result.defaults})};
+      ...(result.defaults && {defaults: result.defaults}),
+      ...(result.maximumMb !== undefined && {maximumMb: result.maximumMb})};
   }
   async read(version: number, current: () => boolean): Promise<NativeRetentionResult> {
     const epoch = this.#epoch;
@@ -57,9 +60,10 @@ export class RetentionWorkflow {
       return valid() ? result : {status: 'cancelled'};
     } catch { return valid() ? {status: 'error', code: 'bridge_failed'} : {status: 'cancelled'}; }
   }
-  async mutate(operation: 'save' | 'reset', policy: unknown, current: () => boolean): Promise<NativeRetentionResult> {
-    if (!['save', 'reset'].includes(operation)) return {status: 'error', code: 'invalid_request'};
+  async mutate(operation: 'save' | 'reset' | 'limit', policy: unknown, current: () => boolean): Promise<NativeRetentionResult> {
+    if (!['save', 'reset', 'limit'].includes(operation)) return {status: 'error', code: 'invalid_request'};
     if (operation === 'save' && !isRetentionPolicy(policy)) throw Error('Invalid retention policy');
+    if (operation === 'limit' && !storageLimitValid(policy)) throw Error('Invalid storage limit');
     if (!this.#revision) return {status: 'error', code: 'refresh_required'};
     const expected = this.#revision;
     this.#revision = undefined;
@@ -67,7 +71,7 @@ export class RetentionWorkflow {
     const valid = () => epoch === this.#epoch && current();
     if (!valid()) return {status: 'cancelled'};
     try {
-      const result = await this.#ports.write(operation, {expected, ...(operation === 'save' ? {policy: policy as RetentionPolicy} : {})});
+      const result = await this.#ports.write(operation, {expected, ...(operation === 'save' ? {policy: policy as RetentionPolicy} : operation === 'limit' ? {maximumMb: policy as number} : {})});
       if (!valid()) return {status: 'cancelled'};
       const projected = this.#project(result);
       return result.status === 'connected' && projected.status === 'error'

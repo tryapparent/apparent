@@ -113,3 +113,31 @@ together, preserving the accepted native video admission and mutation guards.
 Remove remaining native defaults/presets only with all their consumers
 and persistence contracts adopted. Mac, AppImage and exact-main delivery remain
 acceptance gates for this slice.
+
+## Maximum storage
+
+The shared Electron Storage pane shows capture-folder usage when it opens. Its
+single size preference accepts decimal GB to three decimal places. The native
+config transaction writes `retention.maximumMb` as decimal MB. Profiles with
+no `retention` setting default to 1 GB. Zero keeps captures without a size limit.
+A successful save nudges the existing cleanup worker.
+
+An existing `retention` object without `maximumMb` keeps its age policy until
+the first size-limit save. The save retains the previous age keys and any
+unrecognized preferences. The legacy
+retention controls can explicitly switch back to age-based cleanup by choosing
+a preset. Removing only `retention.maximumMb` from the config restores age-based
+cleanup. Removing the entire `retention` setting restores the 1 GB default.
+The worker rereads the config on its next pass.
+
+Size-based passes measure the effective capture folder's logical bytes.
+Bend selects settled, finalized captures from oldest to newest, up to the
+amount needed to meet the cap. Native deletion moves them to the Trash through
+the existing worker and skips pinned, active, recovering or changing captures.
+Unrelated files count toward usage and are never selected for cleanup. This is
+a background cleanup threshold. Usage can exceed it while recording or when
+protected captures and unrelated files account for the excess.
+
+Record packages the compiled capacity module with both the Settings workflow
+and the cleanup worker. The existing native fallback retains its older
+location and retention controls while the shared Electron pane owns the cap UI.

@@ -1,0 +1,8 @@
+{
+  "name": "@apparent/performance-tools",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./electron-observer": "./electron-observer.ts"
+  }
+}

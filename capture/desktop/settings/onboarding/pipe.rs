@@ -180,10 +180,6 @@ pub(super) fn read_actions(stdout: std::process::ChildStdout, events: impl Fn(su
                         continue;
                     };
                     if value["type"]=="practice-disposition" {events(super::Event::Practice(value));continue;}
-                    if value.get("action").and_then(|v| v.as_str()) == Some("board") {
-                        events(super::Event::Board(value));
-                        continue;
-                    }
                     let Some(action) = value.get("action").and_then(|v| v.as_str()) else {
                         continue;
                     };
@@ -202,7 +198,7 @@ pub(super) fn read_actions(stdout: std::process::ChildStdout, events: impl Fn(su
                     if action=="shortcut-key" {
                         if let (Some(key),Some(modifiers))=(value["key"].as_str(),value["modifiers"].as_u64()) {
                             if key.len()<=32 && modifiers & !0x1b00 == 0 {
-                                if let Some(key_code)=crate::capture::desktop::settings::settings_window::key_code(key) {
+                                if let Some(key_code)=crate::capture::desktop::settings::shortcut::key_code(key) {
                                     events(super::Event::Shortcut(crate::capture::desktop::settings::Action::Shortcut {
                                         kind:crate::capture::engine::runtime::ShortcutKind::Record,
                                         pressed:crate::capture::desktop::settings::Pressed {key_code,modifiers:modifiers as u32,key:key.to_owned(),reserved:false},

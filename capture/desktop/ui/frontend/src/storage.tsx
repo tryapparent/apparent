@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '@apparent/ui/button';
 import {LocationController, type LocationState} from '@apparent/record-storage';
 import { Retention } from './retention';
-import {locationPorts} from './storage/transport';
 import { Help } from './storage/help';
 import { RefreshCw } from 'lucide-react';
+import {StorageSizeLimit} from '../../../../../record/storage/renderer/size-limit';
+import {locationPorts, sizeLimitPorts} from './storage/transport';
 
 const errors: Record<string, string> = {
   conflict: 'The saved location changed while the picker was open. Refresh before choosing again.',
@@ -28,6 +29,28 @@ export function Storage({ settings = false }: { settings?: boolean }) {
     void current.request('read');
     return () => { unsubscribe(); current.dispose(); if (controller.current === current) controller.current = undefined; };
   }, []);
+  if (settings) return <div className="storage-settings">
+    {snapshot && <StorageSizeLimit key={snapshot.effectivePath} effectivePath={snapshot.effectivePath} ports={sizeLimitPorts} />}
+    <section aria-labelledby="storage-title">
+      <div className="storage-location-summary">
+        <div>
+          <h2 id="storage-title" className="storage-location-heading">Capture location</h2>
+          {snapshot && <p className="storage-detail break-all" role="status">{snapshot.displayPath || '(empty environment override)'}</p>}
+        </div>
+        <div className="storage-location-actions">
+          <Button variant="outline" disabled={busy || result.status !== 'connected'} onClick={() => void request('change')}>Change…</Button>
+          <Button variant="outline" disabled={busy || result.status !== 'connected'} onClick={() => void controller.current?.show()}>Show folder</Button>
+          {snapshot?.custom && <Button variant="outline" disabled={busy || result.status !== 'connected'} onClick={() => void request('reset')}>Reset location</Button>}
+        </div>
+      </div>
+      {busy && <p role="status">Waiting for capture location…</p>}
+      {snapshot?.savedPath && snapshot.savedPath !== snapshot.effectivePath && <p className="storage-detail break-all">Saved preference: {snapshot.savedPath}</p>}
+      {snapshot?.source === 'environment' && <p className="storage-detail">APPARENT_CAPTURES_DIR overrides the saved location for this session.</p>}
+      {snapshot?.source === 'fallback' && <p className="storage-detail">The saved folder is unavailable. Captures use the default folder.</p>}
+      {result.status === 'error' && <p role="alert">{errors[result.code] ?? 'Could not access the capture folder.'}</p>}
+      {!busy && result.status !== 'connected' && <Button type="button" variant="outline" onClick={() => void request('read')}>Retry capture location</Button>}
+    </section>
+  </div>;
   if (result.status === 'disabled' && !settings) return null;
   return <div className={settings ? 'storage-settings' : 'space-y-4 rounded-xl border border-border bg-surface p-6'}>
     <section aria-labelledby="storage-title" className={settings ? undefined : 'space-y-4'}>
@@ -50,7 +73,7 @@ export function Storage({ settings = false }: { settings?: boolean }) {
       </>}
       {result.status === 'disconnected' && <p>Not connected to Rust. Open the current Apparent app and refresh. This window never starts it.</p>}
       {result.status === 'incompatible' && <p>This Rust backend does not support capture location. Update it before using this card.</p>}
-      {!busy && result.status === 'disabled' && <p>Storage is disabled in your configuration. Close this window and reopen Settings to use the fallback.</p>}
+      {!busy && result.status === 'disabled' && <p>Restart Apparent and reopen Settings to use Storage.</p>}
       {result.status === 'error' && <p>{errors[result.code] ?? 'Unable to read capture location. Refresh when the Rust app is responsive.'}</p>}
     </div>
     {!settings && <p className="text-sm text-muted-foreground">New captures use this location. Existing captures stay where they are. Nothing is moved.</p>}

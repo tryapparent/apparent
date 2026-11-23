@@ -175,8 +175,6 @@ pub struct View {
     /// How much the captures folder takes, once measured.
     pub captures_size: Option<String>,
     pub captures_dir: CapturesDirView,
-    #[cfg(target_os = "linux")]
-    pub storage: super::storage::View,
     pub permissions: Vec<crate::permission_admission::Row>,
     pub updates: bool,
     pub update_check: UpdateCheck,
@@ -397,37 +395,12 @@ pub(crate) fn preset_id(preset: crate::capture::engine::bundle::retention::Prese
     }
 }
 
-pub(crate) fn retention_view(policy: &crate::capture::engine::bundle::retention::Policy) -> RetentionView {
+pub(crate) fn retention_view(policy: &crate::capture::engine::bundle::retention::Policy, maximum_mb: Option<u32>) -> RetentionView {
     RetentionView {
-        preset: policy.preset().map(preset_id),
+        preset: if maximum_mb.is_none() { policy.preset().map(preset_id) } else { None },
         options: crate::capture::engine::bundle::retention::Preset::ALL.into_iter()
             .map(|p| OptionView { id: preset_id(p), label: p.label() }).collect(),
-        note: retention_note(policy),
-    }
-}
-
-fn retention_note(policy: &crate::capture::engine::bundle::retention::Policy) -> String {
-    let days = |n: u32| {
-        if n == 1 {
-            "1 day".to_owned()
-        } else {
-            format!("{n} days")
-        }
-    };
-    let bin = if cfg!(target_os = "windows") {
-        "Recycle Bin"
-    } else {
-        "Trash"
-    };
-    match (policy.media_days, policy.bundle_days) {
-        (None, None) => String::new(),
-        (Some(media), Some(bundle)) => format!(
-            "Video and audio go to the {bin} after {}, the rest of each capture after {}.",
-            days(media),
-            days(bundle)
-        ),
-        (Some(media), None) => format!("Video and audio go to the {bin} after {}.", days(media)),
-        (None, Some(bundle)) => format!("Captures go to the {bin} after {}.", days(bundle)),
+        note: crate::capture::desktop::workflow::storage_preferences::retention_note(policy, maximum_mb),
     }
 }
 
@@ -910,6 +883,7 @@ impl Panel {
             .ok()
             .map(|program| program.name());
         let policy = crate::capture::engine::bundle::retention::Policy::load_from(&host.config_path());
+        let maximum_mb = crate::composition::retention::configured_storage_limit(&host.config_path()).ok().flatten();
         let login = login_item();
         View {
             version: env!("APPARENT_VERSION_LABEL").to_owned(),
@@ -965,11 +939,9 @@ impl Panel {
                 command,
             },
             video_export: config.video_export_enabled(),
-            retention: retention_view(&policy),
+            retention: retention_view(&policy, maximum_mb),
             captures_size: self.captures_size.map(crate::capture::engine::bundle::retention::format_bytes),
             captures_dir: CapturesDirView::new(&config),
-            #[cfg(target_os = "linux")]
-            storage: self.storage.view(&host.config_path()),
             permissions: settings_permissions::rows(self.grants.as_ref(), &self.requested, &config, true).collect(),
             updates: updates_available(),
             update_check: self.update_check.clone(),
@@ -1110,10 +1082,6 @@ fn initial_settings_pane(pane: Option<Pane>) -> Option<Pane> {
     Some(pane.unwrap_or(Pane::General))
 }
 
-pub(super) fn electron_storage(pane: Option<Pane>, enabled: bool) -> bool {
-    enabled && pane == Some(Pane::Storage)
-}
-
 impl Session {
     pub fn open(
         pane: Option<Pane>,
@@ -1149,7 +1117,7 @@ impl Session {
                     }
                 }
                 #[cfg(target_os = "linux")]
-                if n == 0 {
+                if n == 0 && !electron {
                     let result = crate::capture::desktop::workflow::storage_preferences::usage(
                         &crate::shared::handoff::default_config_path(),
                         || alive.load(Ordering::Acquire) && scan.load(Ordering::Acquire) == 0);
@@ -1204,17 +1172,18 @@ impl Session {
                 Err(error) => crate::capture::engine::runtime::apparent_log(format!("Settings fallback: {error:#}")),
             }
         }
-        let transport = if cfg!(not(target_os = "macos")) {
+        #[cfg(not(target_os = "macos"))]
+        let transport = {
             let (sender, receiver) = flume::unbounded();
-            crate::capture::desktop::settings::settings_window::request_open(receiver, pane, events);
+            super::settings_window::request_open(receiver, pane, events);
             Transport::InProcess(Some(sender))
-        } else {
-            Self::spawn_helper(pane, events)?
         };
+        #[cfg(target_os = "macos")]
+        let transport = Self::spawn_helper(pane, events)?;
         Ok((transport, false))
     }
 
-    /// `apparent-helper settings`, reading its actions off stdout.
+    #[cfg(target_os = "macos")]
     fn spawn_helper(
         pane: Option<Pane>,
         events: std::sync::Arc<dyn Fn(Event) + Send + Sync>,
@@ -1417,6 +1386,10 @@ impl Session {
                     self.electron = electron;
                     self.last_view.clear();
                     super::presentation::retire(std::mem::replace(&mut self.transport, transport));
+                    #[cfg(target_os = "linux")]
+                    if self.pane == Some(Pane::Storage) {
+                        self.measure_storage(host);
+                    }
                     self.sync(host);
                     return Effect::None;
                 }
@@ -1608,6 +1581,10 @@ impl Session {
             return;
         }
         let mut view = serde_json::to_value(self.panel.view(host)).unwrap_or_default();
+        #[cfg(target_os = "linux")]
+        {
+            view["storage"] = serde_json::to_value(self.panel.storage.view(&host.config_path())).unwrap_or_default();
+        }
         view["type"] = "state".into();
         // Switched from Hex to Apple Speech: get its model now, not at the first capture.
         let speech = crate::capture::engine::runtime::audio::transcription::speech_model::current();

@@ -89,6 +89,8 @@ export default defineConfig({
       build({ entryPoints: [`${source}/view.tsx`], bundle: true, jsx: 'automatic', nodePaths, outdir, minify: true, loader: { '.ttf': 'file' }, define: { 'process.env.NODE_ENV': '"production"' } }),
     ]);
     cpSync(`${source}/index.html`, `${outdir}/index.html`);
+  } }, { name: 'whiteboard-window', async closeBundle() {
+    execFileSync(process.execPath, [fileURLToPath(new URL('../../../../composition/pill/whiteboard/build.ts', import.meta.url)), process.cwd(), 'dist/whiteboard'], { stdio: 'inherit' });
   } }],
   build: { rollupOptions: { input: { foundation: 'index.html', settings: 'settings.html', onboarding: 'onboarding.html', installer: 'src/installer/index.html', pill: 'pill/index.html', controls: 'src/controls/index.html' } } },
 });

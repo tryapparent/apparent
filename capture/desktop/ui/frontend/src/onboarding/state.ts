@@ -17,7 +17,3 @@ export function subscribeOnboardingState<State>(bridge: StateBridge<State>, rece
   }, () => { /* A subsequent live state can still establish the connection. */ });
   return () => { active = false; stop(); };
 }
-
-export function hasCompletedBoardStroke(strokes: readonly (readonly unknown[])[]): boolean {
-  return strokes.some(stroke=>stroke.length>0);
-}

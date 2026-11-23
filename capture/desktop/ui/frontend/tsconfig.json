@@ -11,6 +11,9 @@
     "allowImportingTsExtensions": true,
     "types": ["vite/client"],
     "paths": {
+      "@apparent/record-storage": [
+        "./node_modules/@apparent/record-storage/dist/index.d.ts"
+      ],
       "react": ["./node_modules/@types/react"],
       "react-dom": ["./node_modules/@types/react-dom"],
       "react-dom/*": ["./node_modules/@types/react-dom/*"],
@@ -39,7 +42,8 @@
       "@apparent/ui/native-select": [
         "./node_modules/@apparent/ui/src/forms/native-select.tsx"
       ],
-      "lucide-react": ["./node_modules/lucide-react"]
+      "lucide-react": ["./node_modules/lucide-react"],
+      "electron": ["./node_modules/electron/electron.d.ts"]
     }
   },
   "include": [
@@ -49,6 +53,9 @@
     "../../../../composition/settings/renderer",
     "../../../../composition/pill/renderer",
     "../../../../record/pill/renderer/lip-runtime.d.ts",
-    "../../../../composition/quit/view.tsx"
+    "../../../../composition/quit/view.tsx",
+    "../../../../composition/pill/whiteboard/view.tsx",
+    "../../../../composition/pill/whiteboard/main.ts",
+    "../../../../composition/pill/whiteboard/preload.ts"
   ]
 }

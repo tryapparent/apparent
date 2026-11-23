@@ -113,3 +113,17 @@ Record's pill and Handoff's destination picker through the Desktop bridge.
 The [Composition smoke tests](../../composition/pill/enablement/) exercise the
 installed Electron entrypoint and loopback T3 transport together. Run them
 through the Desktop frontend's existing `test:pill` or `test:electron` command.
+
+The recording Whiteboard opens the packaged Electron window assembled by
+Composition. Onboarding injects its drawing lesson into the same window.
+The Record Bend policy supplies editing decisions to the native capture session,
+which owns the accepted paper across close, reopen and renderer loss. The
+native bundle writer publishes timestamped Whiteboard keyframes for the paper
+visible before Undo or Clear removes ink, plus a separate final image if ink
+remains at Finish. The capture retains the latest 12 pre-edit snapshots. The
+practice example stays in the renderer and never enters those images.
+
+Both pill implementations request the same surface. The desktop package stages
+`dist/whiteboard` beside its other popup assets and uses the installed shared
+Electron runtime. Removing that asset requires reverting the routing and policy
+together to restore a working recording and practice surface.

@@ -13,6 +13,7 @@
 //! makes them about ten times smaller.
 
 use std::collections::BTreeSet;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use std::process::Command;
@@ -25,6 +26,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::capture::engine::runtime::apparent_log;
 
+#[path = "../../../engine/native/folder_usage.rs"]
+pub(crate) mod folder_usage;
 mod video;
 
 /// Marks a bundle to keep forever.
@@ -211,8 +214,14 @@ pub enum Action {
     },
     /// Move the whole bundle to the Trash.
     TrashBundle(PathBuf),
+    TrashForCapacity { bundle: PathBuf, device: u64, inode: u64, bytes: u64 },
     /// Re-encode the bundle's iPhone video.
     Shrink { bundle: PathBuf, video: PathBuf },
+}
+
+fn directory_identity(path: &Path) -> Option<(u64, u64)> {
+    let metadata = std::fs::symlink_metadata(path).ok()?;
+    metadata.is_dir().then(|| (metadata.dev(), metadata.ino()))
 }
 
 fn modified_ago(path: &Path, now: SystemTime) -> Option<Duration> {
@@ -260,7 +269,12 @@ fn created_ms(dir: &Path, manifest: &Manifest) -> Option<u64> {
 }
 
 /// What one cleanup pass would do to the bundles in `captures`, given `now`.
-pub fn plan(captures: &Path, policy: &Policy, now: SystemTime) -> Result<Vec<Action>> {
+#[cfg(test)]
+fn plan(captures: &Path, policy: &Policy, now: SystemTime) -> Result<Vec<Action>> {
+    plan_with_capacity(captures, policy, now, None)
+}
+
+fn plan_with_capacity(captures: &Path, policy: &Policy, now: SystemTime, maximum_mb: Option<u32>) -> Result<Vec<Action>> {
     let now_ms = now
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -279,6 +293,13 @@ pub fn plan(captures: &Path, policy: &Policy, now: SystemTime) -> Result<Vec<Act
         .collect();
     bundles.sort();
     let mut observations = Vec::new();
+    let mut sizes = Vec::new();
+    let mut identities = Vec::new();
+    let total = match maximum_mb {
+        Some(1..) => folder_usage::folder_usage(captures, &|| !recording())
+            .map_err(anyhow::Error::msg)?,
+        _ => 0,
+    };
     let mut materials = Vec::new();
     for dir in bundles {
         if dir.join(PINNED).exists()
@@ -290,10 +311,12 @@ pub fn plan(captures: &Path, policy: &Policy, now: SystemTime) -> Result<Vec<Act
         {
             continue;
         }
-        let manifest: Manifest = std::fs::read(dir.join("apparent.json"))
+        let manifest = std::fs::read(dir.join("apparent.json"))
             .ok()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or_default();
+            .and_then(|bytes| serde_json::from_slice::<Manifest>(&bytes).ok());
+        let finalized = manifest.as_ref().is_some_and(|manifest| created_ms(&dir, manifest).is_some())
+            && dir.extension().is_some_and(|ext| ext == "apparent");
+        let manifest = manifest.unwrap_or_default();
         let Some(created) = created_ms(&dir, &manifest).or_else(|| {
             let ago = modified_ago(&dir, now)?;
             Some(now_ms.saturating_sub(ago.as_millis() as u64))
@@ -309,13 +332,33 @@ pub fn plan(captures: &Path, policy: &Policy, now: SystemTime) -> Result<Vec<Act
             .filter(|path| path.exists())
             .collect();
         let (facts, video) = observe(&dir, &manifest, age_ms, unchanged_ms, !items.is_empty());
+        if maximum_mb.is_some() {
+            let identity = directory_identity(&dir);
+            let size = if finalized && identity.is_some() && maximum_mb.is_some_and(|cap| u64::from(cap) * 1_000_000 < total) {
+                folder_usage::folder_usage(&dir, &|| !recording()).map_err(anyhow::Error::msg)?
+            } else {
+                0
+            };
+            identities.push(identity.map(|(device, inode)| (device, inode, size)));
+            sizes.push(size.to_string());
+        }
         observations.push(facts);
         materials.push((dir, items, video));
     }
     let mut actions = Vec::new();
-    for decision in crate::composition::retention::plan(policy, &observations, false)? {
+    let capacity = maximum_mb.map(|maximum_mb| crate::composition::retention::Capacity {
+        maximum_mb,
+        total: total.to_string(),
+        sizes: &sizes,
+    });
+    for decision in crate::composition::retention::plan_with_capacity(policy, &observations, false, capacity)? {
         let (bundle, items, video) = &materials[decision.index];
         actions.push(match decision.kind {
+            crate::composition::retention::Kind::TrashBundle if maximum_mb.is_some() => {
+                let (device, inode, bytes) = identities[decision.index].context("Missing capture storage identity")?;
+                ensure!(bytes > 0, "Record selected a capture unavailable for storage cleanup");
+                Action::TrashForCapacity {bundle:bundle.clone(), device, inode, bytes}
+            }
             crate::composition::retention::Kind::TrashBundle => Action::TrashBundle(bundle.clone()),
             crate::composition::retention::Kind::TrashMedia => {
                 ensure!(
@@ -494,12 +537,21 @@ fn trash_media(bundle: &Path, items: &[PathBuf], days: u32, trasher: Trasher) ->
 
 /// Runs a plan. Each step is checked again just before it runs, in case a capture or a copy
 /// started meanwhile.
-pub fn apply(actions: &[Action], policy: &Policy, trasher: Trasher, shrink: bool) -> Report {
+#[cfg(test)]
+fn apply(actions: &[Action], policy: &Policy, trasher: Trasher, shrink: bool) -> Report {
+    apply_admitted(actions, policy, trasher, shrink, &|| true)
+}
+
+fn apply_admitted(actions: &[Action], policy: &Policy, trasher: Trasher, shrink: bool, admit: &impl Fn() -> bool) -> Report {
     let mut report = Report::default();
     for action in actions {
+        if !admit() {
+            break;
+        }
         let bundle = match action {
             Action::TrashMedia { bundle, .. }
             | Action::TrashBundle(bundle)
+            | Action::TrashForCapacity { bundle, .. }
             | Action::Shrink { bundle, .. } => bundle,
         };
         let Some(_claim) = claim(bundle) else {
@@ -509,6 +561,9 @@ pub fn apply(actions: &[Action], policy: &Policy, trasher: Trasher, shrink: bool
         if live_marker(bundle, crate::shared::handoff::MEDIA_PENDING, now)
             || live_marker(bundle, MEDIA_SENDING, now)
             || bundle.join(PINNED).exists()
+            || crate::capture::engine::runtime::audio::persistence::live(bundle)
+            || crate::capture::engine::bundle::recover::owed(bundle)
+            || !std::fs::symlink_metadata(bundle).is_ok_and(|metadata| metadata.is_dir())
         {
             continue;
         }
@@ -524,6 +579,17 @@ pub fn apply(actions: &[Action], policy: &Policy, trasher: Trasher, shrink: bool
                 trasher(bundle).map(|()| {
                     report.bundles_trashed += 1;
                     report.freed += size;
+                })
+            }
+            Action::TrashForCapacity {bundle, device, inode, bytes} => {
+                if directory_identity(bundle) != Some((*device, *inode))
+                    || changed_ago(bundle, now).is_none_or(|elapsed| elapsed < Duration::from_secs(600))
+                {
+                    continue;
+                }
+                trasher(bundle).map(|()| {
+                    report.bundles_trashed += 1;
+                    report.freed += bytes;
                 })
             }
             Action::Shrink { bundle, video } if shrink => {
@@ -641,8 +707,24 @@ pub fn run_pass(
     ahead: Duration,
     shrink: bool,
 ) -> Result<(Vec<Action>, Report)> {
+    run_configured_pass(captures, policy, dry_run, ahead, shrink, false)
+}
+
+fn run_configured_pass(
+    captures: &Path, policy: &Policy, dry_run: bool, ahead: Duration, shrink: bool, use_current_folder: bool,
+) -> Result<(Vec<Action>, Report)> {
+    use crate::composition::retention::configured_storage_limit;
     let now = SystemTime::now();
-    let mut actions = plan(captures, policy, now + ahead)?;
+    let config = crate::shared::handoff::default_config_path();
+    let maximum_mb = configured_storage_limit(&config)?;
+    let location = maximum_mb.map(|_| crate::shared::handoff::capture_location::read_in(&config)).transpose()?;
+    let captures = if use_current_folder {
+        location.as_ref().map_or(captures, |location| Path::new(&location.effective_path))
+    } else {
+        captures
+    };
+    let identity = directory_identity(captures);
+    let mut actions = plan_with_capacity(captures, policy, now + ahead, maximum_mb)?;
     if !shrink {
         actions.retain(|a| !matches!(a, Action::Shrink { .. }));
     }
@@ -650,7 +732,12 @@ pub fn run_pass(
         return Ok((actions, Report::default()));
     }
     sweep_leftovers(captures, now);
-    let report = apply(&actions, policy, &trash, true);
+    let report = apply_admitted(&actions, policy, &trash, true, &|| {
+        !recording() && configured_storage_limit(&config).is_ok_and(|limit| limit == maximum_mb) && location.as_ref().is_none_or(|basis| {
+            directory_identity(captures) == identity &&
+                crate::shared::handoff::capture_location::read_in(&config).is_ok_and(|current| current.revision == basis.revision)
+        })
+    });
     if report != Report::default() {
         apparent_log(format!(
             "retention: media of {} bundle(s) and {} whole bundle(s) to the Trash, {} video(s) shrunk, {} freed, {} error(s)",
@@ -790,7 +877,7 @@ fn worker(jobs: &flume::Receiver<Job>) {
             let shrink = last_shrink.is_none_or(|at| {
                 SystemTime::now().duration_since(at).unwrap_or_default() >= SHRINK_EVERY
             });
-            let result = run_pass(&captures, &policy, false, Duration::ZERO, shrink);
+            let result = run_configured_pass(&captures, &policy, false, Duration::ZERO, shrink, true);
             last_attempt = Some(SystemTime::now());
             let (actions, report) = match result {
                 Ok(result) => result,
@@ -1250,6 +1337,25 @@ mod tests {
     fn marker(dir: &Path, name: &str, at: SystemTime) {
         let file = std::fs::File::create(dir.join(name)).unwrap();
         file.set_modified(at).unwrap();
+    }
+
+    #[test]
+    fn capacity_orders_whole_captures_and_excludes_pinned_bundles() {
+        let tmp = tempfile::tempdir().unwrap();
+        let newer = bundle(tmp.path(), "a-new", 2.0, false);
+        let oldest = bundle(tmp.path(), "z-old", 5.0, false);
+        let pinned = bundle(tmp.path(), "pinned", 8.0, false);
+        for bundle in [&newer, &oldest, &pinned] {
+            std::fs::File::create(bundle.join("synthetic.bin")).unwrap().set_len(2_000_000).unwrap();
+        }
+        std::fs::write(pinned.join(PINNED), "").unwrap();
+        let actions = plan_with_capacity(tmp.path(), &Policy::default(), later(), Some(3)).unwrap();
+        assert_eq!(actions.len(), 2);
+        assert!(matches!(&actions[0], Action::TrashForCapacity {bundle, ..} if bundle == &oldest));
+        assert!(matches!(&actions[1], Action::TrashForCapacity {bundle, ..} if bundle == &newer));
+        assert!(plan_with_capacity(tmp.path(), &Policy::default(), later(), Some(0)).unwrap().is_empty());
+        let refused = apply(&actions, &Policy::default(), &|_| panic!("Unsettled captures must not be trashed"), false);
+        assert_eq!(refused, Report::default());
     }
 
     fn planned(captures: &Path, policy: &Policy) -> Vec<Action> {

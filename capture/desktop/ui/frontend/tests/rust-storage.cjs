@@ -19,12 +19,14 @@ async function readLocation() {
 }
 async function main() {
   const selected = path.join(home, 'selected é captures');
-  const enabled = { experiments: { electronCaptureLocation: true }, privateFixture: 'keep' };
-  // Storage now defaults on; exercise the explicit opt-out before enabling it.
-  assert.equal((await captureLocation(home)).status, 'connected');
-  await fs.writeFile(config, JSON.stringify({ experiments: { electronCaptureLocation: false } }));
-  assert.deepEqual(await captureLocation(home), { status: 'disabled' });
-  await fs.writeFile(config, JSON.stringify(enabled));
+  assert.equal((await readLocation()).status, 'connected');
+  for (const electronCaptureLocation of [true, false]) {
+    const legacy = JSON.stringify({ experiments: { electronCaptureLocation, other: true }, privateFixture: 'keep' });
+    await fs.writeFile(config, legacy);
+    assert.equal((await readLocation()).status, 'connected');
+    assert.equal((await storagePreference(home, 'retention')).status, 'connected');
+    assert.equal(await fs.readFile(config, 'utf8'), legacy);
+  }
   assert.deepEqual(await errorReporting(home), { status: 'connected', enabled: true });
   assert.deepEqual(await errorReporting(home, false), { status: 'connected', enabled: false });
   const revoked = JSON.parse(await fs.readFile(config, 'utf8'));
@@ -48,12 +50,15 @@ async function main() {
   const raw = JSON.parse(await fs.readFile(config, 'utf8'));
   assert.equal(raw.privateFixture, 'keep');
   assert.equal(raw.capturesDir, selected);
+  assert.deepEqual(raw.experiments, { electronCaptureLocation: false, other: true });
   assert.deepEqual(await storageLocation(home, 'reset', { expected: first.revision }), { status: 'error', code: 'conflict' });
   const policy = await storagePreference(home, 'retention');
+  assert.equal(policy.maximumMb, 1000);
   assert.deepEqual(policy.policy, { mediaDays: { present: false, value: null }, bundleDays: { present: false, value: null } });
   assert.deepEqual(policy.defaults, { mediaDays: 7, bundleDays: 30 });
   const changedPolicy = await storagePreference(home, 'saveretention', { expected: policy.revision,
     policy: { mediaDays: 30, bundleDays: 90 } });
+  assert.equal(changedPolicy.maximumMb, null);
   assert.deepEqual(changedPolicy.policy, { mediaDays: { present: true, value: 30 }, bundleDays: { present: true, value: 90 } });
   assert.deepEqual(await storagePreference(home, 'retention'), changedPolicy);
   assert.deepEqual(await storagePreference(home, 'saveretention', { expected: policy.revision,
@@ -61,6 +66,7 @@ async function main() {
   await fs.writeFile(path.join(selected, 'synthetic.bin'), Buffer.alloc(1_000_000));
   assert.equal((await storagePreference(home, 'usage')).usage.formatted, '1 MB');
   const defaultPolicy = await storagePreference(home, 'resetretention', { expected: changedPolicy.revision });
+  assert.equal(defaultPolicy.maximumMb, 1000);
   assert.deepEqual(defaultPolicy.policy, { mediaDays: { present: false, value: null }, bundleDays: { present: false, value: null } });
   assert.equal(defaultPolicy.custom, false);
   assert.deepEqual(defaultPolicy.defaults, policy.defaults);

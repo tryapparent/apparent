@@ -249,6 +249,7 @@ enum Storage {
     Retention { deadline: u64 },
     SaveRetention { policy: super::storage_preferences::SavePolicy, expected: String, deadline: u64 },
     ResetRetention { expected: String, deadline: u64 },
+    SaveLimit { #[serde(rename = "maximumMb")] maximum_mb: u32, expected: String, deadline: u64 },
     Usage { deadline: u64 },
 }
 
@@ -259,23 +260,21 @@ impl Storage {
             | Self::LocationFacts { deadline } | Self::ProbeLocation { deadline, .. }
             | Self::SetLocation { deadline, .. } | Self::ResetLocation { deadline, .. }
             | Self::Retention { deadline } | Self::SaveRetention { deadline, .. }
-            | Self::ResetRetention { deadline, .. } | Self::Usage { deadline } => *deadline,
+            | Self::ResetRetention { deadline, .. } | Self::SaveLimit { deadline, .. } | Self::Usage { deadline } => *deadline,
         }
     }
 
     fn execute(&self, config: &std::path::Path, deadline: u64) -> serde_json::Value {
         use crate::shared::handoff::capture_location;
         if storage_clock_ms() >= deadline { return serde_json::json!({"error":"admission_expired"}); }
-        // Rust's config is authority. No environment or renderer flag activates this slice.
-        match capture_location::enabled_in(config) {
-            Ok(true) => {},
-            Ok(false) => return serde_json::json!({"error":"feature_disabled"}),
-            Err(_) => return serde_json::json!({"error":"config_read_failed"}),
+        if capture_location::read_raw(config).is_err() {
+            return serde_json::json!({"error":"config_read_failed"});
         }
         let preferences = match self {
             Self::Retention { .. } => Some(super::storage_preferences::read(config)),
             Self::SaveRetention { policy, expected, .. } => Some(super::storage_preferences::save_policy(config, Some(policy), expected, || storage_clock_ms() < deadline)),
             Self::ResetRetention { expected, .. } => Some(super::storage_preferences::save_policy(config, None, expected, || storage_clock_ms() < deadline)),
+            Self::SaveLimit { maximum_mb, expected, .. } => Some(super::storage_preferences::save_limit(config, *maximum_mb, expected, || storage_clock_ms() < deadline)),
             Self::Usage { .. } => Some(super::storage_preferences::usage(config, || storage_clock_ms() < deadline)),
             _ => None,
         };
@@ -457,7 +456,7 @@ fn parse_request(line: &str) -> Option<Wire> {
             Storage::SetLocation { path, expected, .. } if path.is_empty() || path.len() > 4096 || path.contains('\0') || !std::path::Path::new(path).is_absolute() || !valid_revision(expected) => return None,
             Storage::ResetLocation { expected, .. } if !valid_revision(expected) => return None,
             Storage::SaveRetention { policy, expected, .. } if !policy.valid() || !valid_revision(expected) => return None,
-            Storage::ResetRetention { expected, .. } if !valid_revision(expected) => return None,
+            Storage::ResetRetention { expected, .. } | Storage::SaveLimit { expected, .. } if !valid_revision(expected) => return None,
             _ => {}
         }
         Some(Wire::Storage(storage))
@@ -1166,9 +1165,7 @@ mod tests {
         };
         let read = || call(serde_json::json!({"storage":"retention","deadline":storage_clock_ms()+3000}));
         assert!(read().get("error").is_none(), "Storage is available by default");
-        std::fs::write(&config, r#"{"experiments":{"electronCaptureLocation":false}}"#).unwrap();
-        assert_eq!(read()["error"], "feature_disabled");
-        std::fs::write(&config, serde_json::json!({"experiments":{"electronCaptureLocation":true}, "capturesDir":captures,
+        std::fs::write(&config, serde_json::json!({"experiments":{"electronCaptureLocation":false}, "capturesDir":captures,
             "secret":"keep", "unknown":{"nested":true}, "retention":{"mediaDays":2,"bundleDays":null,"future":"keep"}}).to_string()).unwrap();
         let initial = read();
         assert_eq!(initial["retention"]["mediaDays"], serde_json::json!({"present":true,"value":2}));
@@ -1190,6 +1187,7 @@ mod tests {
         assert_eq!(raw["unknown"]["nested"], true);
         assert_eq!(raw["concurrentSetting"], "kept");
         assert_eq!(raw["retention"]["future"], "keep");
+        assert_eq!(raw["experiments"]["electronCaptureLocation"], false);
         assert_eq!(raw["capturesDir"], captures.to_str().unwrap());
         std::fs::write(&config, r#"{"experiments":{"electronCaptureLocation":true},"retention":{"bundleDays":null}}"#).unwrap();
         let media_absent = read();
@@ -1284,17 +1282,21 @@ mod tests {
     }
 
     #[test]
-    fn storage_admission_reads_file_activation_and_reports_invalid_config() {
+    fn storage_admission_ignores_legacy_flag_and_reports_invalid_config() {
         let (path, listener) = transport_fixture();
         drop(listener);
         let config = path.parent().unwrap().join("config.json");
-        let request = Storage::Read { deadline: storage_clock_ms() + 3000 };
+        let request = Storage::LocationFacts { deadline: storage_clock_ms() + 3000 };
         let read = || request.execute(&config, storage_clock_ms() + 3000);
-        assert!(read().get("error").is_none(), "Storage is available by default");
-        std::fs::write(&config, r#"{"experiments":{"electronCaptureLocation":false}}"#).unwrap();
-        assert_eq!(read()["error"], "feature_disabled");
-        std::fs::write(&config, r#"{"experiments":{"electronCaptureLocation":true}}"#).unwrap();
-        assert!(read().get("storage").is_some());
+        let initial = read();
+        assert!(initial.get("location").is_some());
+        for enabled in [true, false] {
+            let fixture = serde_json::json!({"experiments":{"electronCaptureLocation":enabled}});
+            let bytes = serde_json::to_vec(&fixture).unwrap();
+            std::fs::write(&config, &bytes).unwrap();
+            assert_eq!(read(), initial);
+            assert_eq!(std::fs::read(&config).unwrap(), bytes);
+        }
         std::fs::write(&config, "malformed").unwrap();
         assert_eq!(read()["error"], "config_read_failed");
         assert_eq!(std::fs::read_to_string(&config).unwrap(), "malformed");

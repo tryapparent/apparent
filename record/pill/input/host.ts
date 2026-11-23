@@ -1,20 +1,21 @@
-import { LipHost, decodeLipClip, readLipTrackingModel } from "../../settings/lip-host.ts";
+import { LipHost, LipDecodeTimeout, decodeLipClip, readLipTrackingModel } from "../../settings/lip-host.ts";
 import policy from "../../settings/lip-policy.mjs";
 
 type Control =
   | { action: "start"; capture: string; elapsed: number }
   | { action: "finish" | "cancel"; capture: string };
 type Presentation = Control | { action: "unavailable"; capture: string };
+type Terminal = "done" | "failed" | "timed_out";
 type Result =
   | { kind: "clip"; start: number; end: number; text: string }
-  | { kind: "done" | "failed" };
+  | { kind: Terminal };
 type Job = {
   scope: AbortController;
   owner: number;
   camera: boolean;
   queue: Promise<void>;
   pending: number;
-  lostClip: boolean;
+  failure?: "failed" | "timed_out";
   lastEnd: number;
   decoder: NonNullable<Awaited<ReturnType<LipHost["openDecoder"]>>>;
 };
@@ -66,7 +67,7 @@ export class LipRecordingHost {
       this.present({ capture, action: "unavailable" });
       return;
     }
-    this.jobs.set(capture, { scope, decoder, owner, camera: true, queue: Promise.resolve(), pending: 0, lostClip: false, lastEnd: 0 });
+    this.jobs.set(capture, { scope, decoder, owner, camera: true, queue: Promise.resolve(), pending: 0, lastEnd: 0 });
     this.present(input);
   }
 
@@ -97,8 +98,9 @@ export class LipRecordingHost {
       try {
         const text = await decodeLipClip(job.decoder, bytes, job.scope.signal);
         if (!job.scope.signal.aborted && text) this.result(capture, { kind: "clip", start, end, text });
-      } catch {
-        job.lostClip = true;
+      } catch (error) {
+        if (error instanceof LipDecodeTimeout) job.failure = "timed_out";
+        else job.failure ??= "failed";
       } finally {
         job.pending--;
       }
@@ -111,7 +113,7 @@ export class LipRecordingHost {
     job.camera = false;
     if (this.active?.capture === capture) this.active = undefined;
     void job.queue.then(() => {
-      if (this.jobs.has(capture)) this.end(capture, complete && !job.lostClip ? "done" : "failed");
+      if (this.jobs.has(capture)) this.end(capture, job.failure ?? (complete ? "done" : "failed"));
     });
   }
 
@@ -127,7 +129,7 @@ export class LipRecordingHost {
     this.send(event);
   }
 
-  private end(capture: string, kind: "done" | "failed") {
+  private end(capture: string, kind: Terminal) {
     this.jobs.get(capture)?.scope.abort();
     this.jobs.delete(capture);
     if (this.active?.capture === capture) this.active = undefined;

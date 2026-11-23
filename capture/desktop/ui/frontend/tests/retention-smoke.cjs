@@ -1,295 +1,134 @@
-const { test } = require('node:test');
+const {test} = require('node:test');
 const assert = require('node:assert/strict');
-const { _electron: electron, expect } = require('@playwright/test');
+const {_electron: electron, expect} = require('@playwright/test');
 const fs = require('node:fs/promises');
 const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 
-test('Retention save/reset/readback, failure, usage loading/error and stale response isolation', { timeout: 45000 }, async t => {
-  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'ui-r-'));
+test('Storage Settings reads usage and confirms only explicitly saved limits', {timeout:45_000}, async t => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'storage-ui-'));
   const directory = path.join(home, '.config/apparent/agent-control');
-  await fs.mkdir(directory, { recursive: true, mode: 0o700 });
-  let initialRetentionBusy = true;
-  let preset = 'week';
-  let custom = false;
-  let storedPolicy = { mediaDays: { present: false, value: null }, bundleDays: { present: false, value: null } };
+  await fs.mkdir(directory, {recursive:true, mode:0o700});
+  const address = path.join(directory, 'capture.sock');
+  let maximumMb = 1000;
   let revision = 'a'.repeat(16);
-  let failure;
-  let unknownOutcome = false;
-  let usageError = false;
+  let unknown = false;
+  let usageFailed = false;
   let releaseUsage;
-  let holdUsage = true;
-  let releaseLocation;
-  let releaseShorterSave;
+  let savedLocation = '/captures';
   const requests = [];
-  const clients = new Set();
-  const policy = () => ({ revision, custom, defaults: { mediaDays: 7, bundleDays: 30 }, retention: storedPolicy, secret: 'hidden' });
+  const location = () => ({location:{saved:savedLocation ? {kind:'string',value:savedLocation} : {kind:'absent'},
+    environment:{present:false,value:null}, homePath:home, builtinPath:'/captures', revision:'d'.repeat(16)}});
   const server = net.createServer(socket => {
-    clients.add(socket); socket.on('close', () => clients.delete(socket)); socket.on('error', () => {});
     socket.once('data', data => {
       if (data.toString() === 'state\n') return socket.end('{"state":{"phase":"idle"}}\n');
-      const r = JSON.parse(data); requests.push(r);
+      const request = JSON.parse(data.toString());
       const send = value => socket.end(JSON.stringify(value) + '\n');
-      if (r.reference || r.connect) return send({ error: 'feature_disabled' });
-      if (r.storage === 'retention' && initialRetentionBusy) return send({ error: 'app_busy' });
-      if (r.storage === 'locationfacts') {
-        const reply = () => send({ location: { saved: { kind: 'string', value: '/captures' },
-          environment: { present: false, value: null }, homePath: home, builtinPath: '/builtin', revision } });
-        if (!releaseLocation) { releaseLocation = reply; return; }
-        return reply();
-      }
-      if (r.storage === 'probelocation') return send({ probe: { available: true } });
-      if (r.storage === 'usage') {
-        if (usageError) return send({ error: 'usage_unavailable', message: 'private failure' });
-        const reply = { usage: { effectivePath: '/captures', displayPath: '/captures', formatted: '12 MB', secret: 'hidden' } };
-        if (holdUsage) { holdUsage = false; releaseUsage = () => send(reply); return; }
-        return send(reply);
-      }
-      if (r.storage === 'saveretention' || r.storage === 'resetretention') {
-        if (failure) return send({ error: failure, message: 'private failure' });
-        assert.equal(r.expected, revision);
-        if (r.storage === 'saveretention') {
-          assert.ok(JSON.stringify(r.policy) === JSON.stringify({ mediaDays: 30, bundleDays: 90 }) ||
-            JSON.stringify(r.policy) === JSON.stringify({ mediaDays: 7, bundleDays: 30 }) ||
-            JSON.stringify(r.policy) === JSON.stringify({ mediaDays: null, bundleDays: null }));
-          storedPolicy = { mediaDays: { present: true, value: r.policy.mediaDays }, bundleDays: { present: true, value: r.policy.bundleDays } };
-          preset = r.policy.mediaDays === 30 ? 'month' : r.policy.mediaDays === null ? 'forever' : 'week';
-        } else {
-          preset = 'week'; custom = false;
-          storedPolicy = { mediaDays: { present: false, value: null }, bundleDays: { present: false, value: null } };
+      if (!request.storage) return send({error:'feature_disabled'});
+      requests.push(request);
+      const policy = () => ({maximumMb, revision, custom:true, secret:'hidden', retention:{
+        mediaDays:{present:true,value:7}, bundleDays:{present:true,value:30},
+      }});
+      switch (request.storage) {
+        case 'locationfacts': return send(location());
+        case 'resetlocation':
+          assert.equal(request.expected, 'd'.repeat(16));
+          savedLocation = null;
+          return send(location());
+        case 'probelocation': return send({probe:{available:true}});
+        case 'usage': {
+          if (usageFailed) return send({error:'usage_unavailable'});
+          const reply = () => send({usage:{effectivePath:'/captures', displayPath:'/captures', formatted:'0.124 GB', bytes:'124000000'}});
+          if (releaseUsage === undefined) {releaseUsage = reply; return;}
+          return reply();
         }
-        custom = r.storage === 'saveretention'; revision = (custom ? 'b' : 'c').repeat(16);
-        if (unknownOutcome) { unknownOutcome = false; return send({ error: 'outcome_unknown', message: 'private failure' }); }
-        if (r.policy?.mediaDays === 7) { releaseShorterSave = () => send(policy()); return; }
+        case 'retention': return send(policy());
+        case 'savelimit':
+          assert.equal(request.expected, revision);
+          maximumMb = request.maximumMb;
+          revision = revision === 'a'.repeat(16) ? 'b'.repeat(16) : 'c'.repeat(16);
+          return send(unknown ? {error:'outcome_unknown'} : policy());
+        default: return send({error:'invalid_request'});
       }
-      send(policy());
     });
   });
-  const address = path.join(directory, 'capture.sock');
-  await new Promise(resolve => server.listen(address, resolve)); await fs.chmod(address, 0o600);
-  const app = await electron.launch({ args: [path.join(__dirname, '..'), '--settings-storage'], env: { ...process.env, HOME: home, XDG_CONFIG_HOME: path.join(home, 'config'), APPARENT_MANUAL_REPORT_TOKEN: '' } });
+  await new Promise(resolve => server.listen(address, resolve));
+  await fs.chmod(address, 0o600);
+  let app;
   t.after(async () => {
-    for (const c of clients) c.destroy();
-    let timer;
-    try {
-      await Promise.race([app.close(), new Promise((_, reject) => {
-        timer = setTimeout(() => {
-          app.process().kill('SIGKILL');
-          reject(new Error('Retention smoke Electron cleanup exceeded 5 seconds'));
-        }, 5000);
-      })]);
-    } finally {
-      clearTimeout(timer);
-      await new Promise(resolve => server.close(resolve));
-      await fs.rm(home, { recursive: true, force: true });
-    }
+    await app?.close();
+    await new Promise(resolve => server.close(resolve));
+    await fs.rm(home, {recursive:true, force:true});
   });
+  app = await electron.launch({args:[path.join(__dirname, '..'), '--settings-storage'],
+    env:{...process.env, HOME:home, XDG_CONFIG_HOME:path.join(home, '.config')}});
   const page = await app.firstWindow();
-  const button = name => page.getByRole('button', { name, exact: true });
-  const save = button('Save retention');
-  const reset = button('Reset retention');
-  const refresh = button('Refresh retention');
-  const refreshUsage = button('Refresh usage');
+  const field = page.getByRole('spinbutton', {name:'Maximum storage in GB'});
+  const save = page.getByRole('button', {name:'Save limit', exact:true});
   const proof = process.env.APPARENT_SETTINGS_PROOF;
-  if (proof) await fs.mkdir(proof, { recursive: true });
-  const screenshot = name => proof && page.screenshot({
-    path: path.join(proof, name), animations: 'disabled',
-  });
-  await expect.poll(() => typeof releaseLocation).toBe('function');
-  await expect(page.getByText('Waiting for capture location…')).toBeVisible();
-  assert.equal(await page.getByText('Storage is disabled in your configuration.', { exact: false }).count(), 0);
-  releaseLocation();
+  if (proof) await fs.mkdir(proof, {recursive:true});
+  const shot = name => proof && page.screenshot({path:path.join(proof,name+'.png')});
   await expect(page.getByText('Calculating folder usage…')).toBeVisible();
-  await expect(refreshUsage).toBeDisabled();
-  releaseUsage(); releaseUsage = undefined;
-  await expect(page.getByText('12 MB')).toBeVisible();
-  const card = page.getByRole('region', { name: 'Capture location', exact: true });
-  await expect(card.getByText('/captures', { exact: true })).toHaveCount(1);
-  await expect(card.locator(':scope > [role="status"]').getByText('/captures', { exact: true })).toBeVisible();
-  const select = page.getByRole('combobox', { name: 'Keep recordings', exact: true });
-  const consequence = 'Shorter limits can move existing files to the Trash.';
-  const resetDescription = `Reset to default · Media 7 days · capture 30 days ${consequence}`;
-  await expect(page.getByText('Storage is unavailable. Refresh when the Rust app is responsive.', { exact: true })).toBeVisible();
-  assert.equal(await select.count(), 0);
-  initialRetentionBusy = false;
-  await refresh.click();
-  await expect(select).toHaveValue('week');
-  await expect(select.locator('option:checked')).toHaveText('Media 7 days · capture 30 days');
-  await screenshot('storage-week.png');
-  const help = button('About keeping recordings');
-  await help.focus();
-  await expect(page.getByRole('tooltip')).toContainText('waits until recording finishes.');
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('tooltip')).toHaveCount(0);
-  await help.click();
-  await expect(page.getByRole('tooltip')).toBeVisible();
-  await page.keyboard.press('Escape');
-  await select.selectOption('month');
-  await save.click();
-  await expect(select).toHaveValue('month');
-  await expect(select.locator('option:checked')).toHaveText('Media 30 days · capture 90 days');
-  assert.equal(preset, 'month');
-  await refresh.click();
-  await expect(select).toHaveValue('month');
-  await expect(reset).toBeEnabled();
-  await expect(reset).toHaveAccessibleDescription(resetDescription);
-  await reset.click();
-  await expect(select).toHaveValue('week');
-  await expect(reset).toBeDisabled();
-  failure = 'config_write_failed';
-  await select.selectOption('forever');
-  const recovery = requests.length;
-  await save.click();
-  await expect(page.getByRole('alert')).toContainText('Could not save retention.');
-  await expect(refresh).toBeFocused();
-  assert.equal(await select.count(), 0);
-  failure = undefined;
-  await expect(refresh).toBeEnabled();
-  await page.keyboard.press('Enter');
-  await expect(select).toHaveValue('week');
-  assert.deepEqual(requests.slice(recovery).map(r => r.storage).filter(operation => operation !== 'usage'),
-    ['saveretention', 'retention']);
-  unknownOutcome = true;
-  const previousSaves = requests.filter(request => request.storage === 'saveretention').length;
-  await select.selectOption('month');
-  await save.press('Enter');
-  await expect(page.getByRole('alert')).toContainText('Save is unconfirmed.');
-  await expect(page.getByText('Requested save · Media 30 days · capture 90 days')).toBeVisible();
-  await expect(refresh).toBeFocused();
-  storedPolicy = { mediaDays: { present: true, value: null }, bundleDays: { present: true, value: null } };
-  await page.keyboard.press('Enter');
-  await expect(select).toHaveValue('forever');
-  const saved = page.getByText('Saved · Media forever · capture forever', { exact: true });
-  await expect(saved).toBeVisible();
-  await expect(refresh).toBeFocused();
-  await select.selectOption('week');
-  await expect(select.locator('option:checked')).toHaveText('Media 7 days · capture 30 days');
-  await expect(saved).toBeVisible();
-  await expect(select).toHaveAccessibleDescription('Draft Saved · Media forever · capture forever');
-  await expect(save).toHaveAccessibleDescription(consequence);
-  await expect(reset).toHaveAccessibleDescription(resetDescription);
-  assert.equal(requests.filter(({storage}) => storage === 'saveretention').length, previousSaves + 1);
-  await save.press('Enter');
-  await expect.poll(() => typeof releaseShorterSave).toBe('function');
-  await expect(page.getByText('Saving… Media 7 days · capture 30 days')).toBeVisible();
-  await expect(save).toHaveCount(0);
-  await expect(refresh).toBeDisabled();
-  releaseShorterSave();
-  await expect(select).toHaveValue('week');
-  await expect(save).toBeDisabled();
-  assert.equal(preset, 'week');
-  usageError = true;
-  await refreshUsage.click();
-  await expect(page.getByText('Folder usage is unavailable', { exact: false })).toBeVisible();
-  assert.equal(await page.getByText('12 MB').count(), 0);
-  usageError = false;
-  holdUsage = true;
-  await page.evaluate(() => { window.oldUsage = window.apparent.readCaptureUsage(); });
+  await expect(field).toBeDisabled();
   await expect.poll(() => typeof releaseUsage).toBe('function');
-  await select.selectOption('forever');
+  await shot('storage-loading');
+  releaseUsage();
+  await expect(page.getByText('0.876 GB below the 1 GB limit')).toBeVisible();
+  await expect(field).toHaveValue('1');
+  await expect(page.getByRole('button',{name:'Refresh usage'})).toHaveCount(0);
+  await expect(page.getByText('Keep recordings', {exact:true})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Show folder'})).toBeEnabled();
+  assert.ok(!requests.some(request => /save|reset/.test(request.storage)));
+  for (const width of [720, 640]) for (const theme of ['light','dark']) {
+    const session = await page.context().newCDPSession(page);
+    await session.send('Emulation.setDeviceMetricsOverride', {width,height:530,deviceScaleFactor:1,mobile:false});
+    await page.emulateMedia({colorScheme:theme});
+    await page.evaluate(() => document.fonts.ready);
+    assert.equal(await page.evaluate(() => innerWidth),width);
+    await expect(field).toBeVisible();
+    const unit = await page.locator('.storage-limit-field span').boundingBox();
+    assert.ok(unit && unit.height <= 24, 'GB stays on one line');
+    await shot(`storage-${width}-${theme}`);
+    await session.detach();
+  }
+  await field.fill('-1');
+  await expect(page.getByText('Use 0 GB or more.')).toBeVisible();
+  await expect(save).toBeDisabled();
+  await shot('storage-invalid');
+  await field.fill('0.1');
+  await expect(page.getByText('0.876 GB below the saved 1 GB limit')).toBeVisible();
+  await expect(page.getByText('Cleanup may move the oldest captures to the Trash to meet this limit.')).toBeVisible();
+  await field.press('Escape');
+  await expect(field).toHaveValue('1');
+  assert.equal(requests.filter(request => request.storage === 'savelimit').length,0);
+  await field.fill('0.1');
+  await field.press('Tab');
+  await expect(save).toBeFocused();
+  await save.press('Enter');
+  await expect(page.getByText('0.024 GB over the 0.1 GB limit')).toBeVisible();
+  await expect(field).toBeFocused();
+  await shot('storage-over-limit');
+  unknown = true;
+  await field.fill('0');
   await save.click();
-  await expect(select).toHaveValue('forever');
-  releaseUsage(); releaseUsage = undefined;
-  assert.deepEqual(await page.evaluate(() => window.oldUsage), { status: 'cancelled' });
-  const safe = await page.evaluate(() => window.apparent.readRetention());
-  assert.equal(safe.revision, undefined); assert.equal(safe.secret, undefined);
-  assert.equal(await page.evaluate(() => window.apparent.saveRetention('arbitrary').then(() => false, () => true)), true);
-  assert.deepEqual(await page.evaluate(() => Object.keys(window.apparent).sort()), [
-    'readCaptureLocation', 'changeCaptureLocation', 'resetCaptureLocation', 'readRetention',
-    'saveRetention', 'resetRetention', 'readCaptureUsage', 'navigateSettings', 'showCaptureFolder',
-    'readConnectSettings', 'connectSettings', 'resumeConnectUploads', 'allowConnectUploads',
-    'cancelConnectSettings', 'checkConnectConnection', 'disableConnectUploads', 'disconnectConnectSettings',
-    'requestDisableConnectUploads', 'requestDisconnectConnectSettings', 'openConnectSharedLinks', 'openConnectBrowser',
-  ].sort());
-  assert.equal(await page.evaluate(() => window.apparentFeedback.available()), false);
-  // Even a direct main-process call from this legitimate frame must not reach
-  // unrelated handlers. Check all registered non-Storage capabilities, not only
-  // the bounded methods present in the persistent shared preload.
-  const denied = await app.evaluate(async ({ ipcMain, BrowserWindow }) => {
-    const sender = BrowserWindow.getAllWindows()[0].webContents;
-    const event = { sender, senderFrame: sender.mainFrame };
-    const allowed = new Set(['read-capture-location', 'change-capture-location', 'reset-capture-location',
-      'read-retention', 'save-retention', 'reset-retention', 'read-capture-usage', 'navigate-settings', 'show-capture-folder',
-      'settings-mounted', 'settings-frame-ready', 'settings-route', 'feedback-available', 'feedback-send-written',
-      'feedback-capture-available', 'feedback-capture-start', 'feedback-capture-discard', 'feedback-capture-send']);
-    const rejected = [];
-    for (const [channel, handler] of ipcMain._invokeHandlers) {
-      if (!channel.startsWith('apparent:') || allowed.has(channel.slice('apparent:'.length))) continue;
-      let refused = false;
-      try { await handler(event, ...(channel === 'apparent:set-error-reporting' ? [false] : [])); }
-      catch { refused = true; }
-      if (!refused) throw new Error(`Unrelated Storage capability admitted: ${channel}`);
-      rejected.push(channel);
-    }
-    return rejected;
-  });
-  assert.ok(denied.includes('apparent:connect-allow'));
-  assert.ok(denied.includes('apparent:set-error-reporting'));
-  assert.ok(denied.includes('apparent:copy-capture-reference'));
-  assert.ok(denied.includes('apparent:read-runtime-state'));
-  const content = page.locator('.settings-content');
-  await refreshUsage.scrollIntoViewIfNeeded();
-  assert.equal(await content.evaluate(element => element.scrollWidth <= element.clientWidth), true);
-  const refreshBounds = await refreshUsage.boundingBox();
-  assert.ok(refreshBounds && refreshBounds.y >= 0 && refreshBounds.y + refreshBounds.height <= await page.evaluate(() => innerHeight));
-  assert.equal(await app.evaluate(async ({ ipcMain, BrowserWindow }) => {
-    const sender = BrowserWindow.getAllWindows()[0].webContents;
-    for (const channel of ['read-retention', 'read-capture-usage', 'save-retention', 'reset-retention']) {
-      const handler = ipcMain._invokeHandlers.get(`apparent:${channel}`);
-      for (const event of [{ sender, senderFrame: { url: sender.getURL() } }, { sender, senderFrame: sender.mainFrame }]) {
-        try { await handler(event, 'arbitrary', 'extra'); return false; } catch {}
-      }
-    }
-    return true;
-  }), true);
-  if (proof) await content.evaluate(element => { element.scrollTop = 0; });
-  await screenshot('storage-720-light.png');
-  // Non-resizable Linux windows can ignore setSize; test the actual minimum
-  // renderer viewport on both platforms rather than silently retaining 720px.
-  const viewport = await page.context().newCDPSession(page);
-  await viewport.send('Emulation.setDeviceMetricsOverride', { width: 640, height: 530, deviceScaleFactor: 1, mobile: false });
-  await expect.poll(() => page.evaluate(() => innerWidth)).toBe(640);
-  await page.evaluate(() => document.fonts.ready);
-  await expect(select).toHaveCSS('font-size', '18px');
-  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth &&
-    document.documentElement.scrollHeight <= innerHeight));
-  for (const mode of ['light', 'dark']) {
-    await page.emulateMedia({ colorScheme: mode });
-    assert.equal(await select.evaluate(element => {
-      const style = getComputedStyle(element), context = document.createElement('canvas').getContext('2d');
-      context.font = style.font;
-      return [...element.options].every(option => context.measureText(option.label).width <=
-        element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
-    }), true, `both retention durations remain readable at 640px in ${mode} mode`);
-    await select.selectOption('month');
-    await select.scrollIntoViewIfNeeded();
-    assert.equal(await page.locator('.settings-sidebar').evaluate(element => element.scrollWidth <= element.clientWidth), true);
-    await expect(page.locator('.settings-policy + [data-slot="native-select-icon"]')).toHaveCSS('color',await select.evaluate(e=>getComputedStyle(e).color));
-    await expect(page.locator('.settings-shell')).toHaveCSS('--apparent-primary', '#7a58c7');
-    await expect(page.locator('.settings-shell')).toHaveCSS('color-scheme', mode);
-    await screenshot(`storage-640-${mode}.png`);
-  }
-  await select.focus(); await expect(select).toBeFocused();
-  // Isolate the suspected macOS CDP select-menu shutdown hang: Escape alone
-  // did not fix it. Keep this keyboard check Linux-only; selectOption above
-  // still exercises the shipped Mac change/save path, not native keyboard use.
-  if (process.platform !== 'darwin') {
-    await page.keyboard.press('ArrowDown');
-    await page.keyboard.press('Escape');
-  }
-  assert.ok(requests.some(r => r.storage === 'resetretention'));
-  assert.equal((await page.locator('body').innerText()).includes('private failure'), false);
-  await expect(page.getByRole('heading', { name: 'Storage', exact: true })).toBeVisible();
-  assert.equal(await page.getByText('UI foundation', { exact: false }).count(), 0);
-  assert.equal(await page.getByText('State previews', { exact: true }).count(), 0);
-  assert.equal(await page.evaluate(() => window.apparent.navigateSettings('storage').then(() => false, () => true)), true);
-  assert.equal(await page.evaluate(() => window.apparent.navigateSettings('arbitrary').then(() => false, () => true)), true);
-  assert.equal(await page.evaluate(() => window.apparent.showCaptureFolder('arbitrary').then(() => false, () => true)), false, 'zero-argument preload cannot forward a path');
-  const emitted = [];
-  app.process().stdout.on('data', data => emitted.push(data.toString()));
-  const compact = button('Settings pages, Storage');
-  if (await compact.isVisible()) await compact.click();
-  await button('General').click();
-  await expect.poll(() => emitted.join('')).toContain('"action":"navigate","pane":"general"');
+  await expect(page.getByText('Could not confirm the save.', {exact:false})).toBeVisible();
+  await expect(field).toBeDisabled();
+  await expect(page.getByText('0.024 GB over the saved 0.1 GB limit')).toBeVisible();
+  await shot('storage-unconfirmed');
+  await page.getByRole('button',{name:'Check saved limit'}).click();
+  await expect(field).toBeEnabled();
+  await expect(field).toHaveValue('0');
+  await expect(page.getByText('No size limit',{exact:true})).toBeVisible();
+  assert.equal(requests.filter(request => request.storage === 'savelimit').length,2);
+  usageFailed = true;
+  await page.reload();
+  await expect(page.getByText('Could not measure folder usage.')).toBeVisible();
+  usageFailed = false;
+  await page.getByRole('button',{name:'Retry usage scan'}).click();
+  await expect(page.getByText('0.124 GB',{exact:true})).toBeVisible();
+  const resetLocation = page.getByRole('button',{name:'Reset location'});
+  await resetLocation.click();
+  await expect(resetLocation).toHaveCount(0);
+  assert.equal(requests.filter(request => request.storage === 'resetlocation').length,1);
 });

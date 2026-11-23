@@ -1,106 +1,63 @@
-# Apparent: Agent Instructions
+# Apparent agent instructions
 
-Apparent records screen, voice, cursor, clicks and ink so a human can point, talk and draw while an agent builds. It produces `.apparent` bundles for inspection and handoff. Support macOS and Linux only. Do not add Windows support, tests, release assets or new docs; retire existing Windows code only in a separately scoped change.
+Apparent records screen, voice, cursor, clicks and ink for capture and handoff in `.apparent` bundles. Support macOS and Linux only. Retire existing Windows code in separately scoped work.
 
 ## Product
 
-- Make capture, marking and handoff quick. Record known window, element, URL and session context rather than making agents infer it from pixels.
-- Keep images visual and text semantic. Preserve time-aligned transcript, interactions and absolute paths in bundle text. Cut keyframes on meaningful action or visual change, retain full frames when cropping, and avoid rasterized captions/card chrome.
-- Persist user settings and feature flags in `~/.config/apparent/config.json`, preserving unrelated keys and secrets. Document when file edits take effect, reconcile OS-owned effects, and discover active capture state before restart/change. A saved preference alone does not prove an OS permission or registration applied.
-- Share user-facing behavior across macOS and Linux; adapters supply OS mechanics. Inspect both consumers when changing shared behavior and document real platform differences.
-- Desktop is a fast capture-and-handoff tool: no desktop review workspace; conventional UI belongs mainly in Settings. The recording-sharing workspace belongs in Connect. Minimize stop-to-paste and stop-to-watch delays; distinguish a copied link from a recording ready to watch.
-- Ship new user-facing features enabled by default unless explicitly asked for an opt-in experiment. Preserve consent and permission gates; this does not enable existing experiments.
+- Implement new ideas and feature explorations as default-off features in Settings → Labs. Preserve consent and permission gates.
+- Keep Desktop focused on capture and handoff, with conventional UI mainly in Settings. Connect owns the recording-sharing workspace. Minimize stop-to-paste and stop-to-watch time, and distinguish a copied link from a recording ready to watch.
+- Record known window, element, URL and session context. Preserve time-aligned transcript, interactions and absolute paths in bundle text. Cut keyframes on meaningful action or visual change, retain full frames when cropping and keep captions and metadata semantic.
+- Use the authoritative mutation contract for `~/.config/apparent/config.json` across languages. Preserve unrelated keys and secrets. Document when changes take effect, reconcile OS-owned effects and check for active capture before changing or restarting the app.
+- Share user-facing behavior across macOS and Linux. Inspect both consumers of shared changes and document platform differences.
 
 ## Architecture and migration
 
-**Migrate what you touch to Bend2.** New or changed decisions, validation, transformations and state transitions must be implemented in Bend in the same PR. Move the affected behavior with its callers, tests and production build integration. Do not add parallel implementations or defer the migration to another issue. Retain non-Bend code only for a concrete runtime, platform or integration requirement. Follow the [Bend build and migration guide](shared/enablement/bend/README.md).
-
-Desktop workflow, policy or UI changes must include the smallest usable Electron + React/TypeScript + shadcn slice in the same PR. Improve value-stream alignment and separation of concerns. Use canonical owners and `shared/ui` controls, and preserve persistence contracts.
-
-Keep capture/media execution and native resource, durability and safety mechanisms in Rust/native adapters. Bounded native correctness/security repairs that preserve the intended workflow do not require a UI port. Name the concrete blocker if safe Bend adoption is impossible. Keep native capture independent of UI responsiveness and measure affected performance when relevant.
-
-Canonical product roots are **onboarding/**, **record/**, **handoff/**, **connect/** and **agent/**. Existing **public/** and **hermes/** remain recognized owners. Supporting capability roots are **engine/** and **shared/**; **composition/** assembles owner public contracts and surfaces. There is no Desktop product stream or canonical desktop/ destination. Native generic window hosting is infrastructure.
-
-Onboarding owns first-success teaching, practice and progress, not another recording/delivery implementation. Record owns the full recording feature, including the capture pill, input meter/live captions, whiteboard/ink/notes, save/bundle/transcript/keyframes, storage/retention/export, and headless APIs. Handoff owns clipboard/copy/paste, destination choice, outbound delivery intent, receipts, retries and uncertainty. Connect owns encryption, upload, auth, remote access, readiness and revocation. Agent owns interpretation, inspection and extraction.
-
-The special public capability chain is Agent -> Record -> Engine -> Shared. Only Record accesses Engine; Agent accesses Record. Other sibling product implementations cannot import one another, including Onboarding/Handoff importing Record/Connect. Composition injects narrow capability interfaces/callbacks and assembles owner-provided surfaces; no stream imports Composition. Owners may use their own implementation, public Shared and declared external dependencies. Record may have React UI; ownership does not imply an execution environment. Do not fabricate network/protocol frameworks to cross these boundaries.
-
-Composition assembles Settings from owner public sections. Each stream owns its section UI, validation, persistence and effective-state behavior. Shared supplies canonical controls.
-
-All capture/ paths are frozen migration donors: no additions or inbound relocations, including tools/tests/docs. Existing edits/deletions/outbound moves remain subject to dependency checks; do not grow features inside donor files. Known feature paths map to outcome owners in shared/enablement/dependency-policy/snapshot.ts; mixed shell remains explicit Legacy/unclassified debt, not blanket Desktop ownership. No mass relocation is required.
-
-Preserve one authoritative persistence mutation contract across languages. Keep the working legacy path until its replacement and consumers are accepted; never introduce competing config writers or two implementations of the same visible surface. Document changed routing, rollback and removal conditions. Verify real callers, builds and packaging before removing donors. Delete verified dead code/tests/references rather than archiving them; check compatibility/data readers and other owners' reservations first. See [refactoring guidance](enablement/refactor.md).
-
-Test Bend policy independently of Rust and Electron, renderer behavior separately, and bridges against real providers. Prove claimed owner build independence in a clean environment without Rust tools or cached Rust outputs; a file move or mocked bridge is insufficient. Connect and Public target zero repo-owned Rust/build dependency. Shared/composition must not reintroduce Rust into an owner's Rust-free development loop. The existing root Rust app remains authoritative for capabilities not yet adopted; do not add shims, crates or services merely to simulate ownership.
-
-Use TypeScript for host and effect glue, integration tests and build tooling. Keep generated JavaScript outside Git. New Python or authored JavaScript requires explicit approval. Change Cargo manifests and lockfiles only as needed.
+- **Migrate what you touch to Bend2.** Move changed decisions, validation, transformations and state transitions with their production callers, tests and build integration in the same PR. Keep any non-Bend implementation required by runtime, platform or integration constraints and name the blocker. Follow the [Bend guide](shared/enablement/bend/README.md).
+- Desktop workflow, policy and UI changes must include the smallest usable Electron + React/TypeScript + shadcn slice in the same PR. Use `shared/ui` controls. Keep capture/media execution, native resources, durability and safety in native adapters. Bounded native correctness or security repairs that preserve the workflow need no UI port. Keep capture independent of UI responsiveness and measure affected performance.
+- **Freeze `capture/` as a migration source.** Existing paths can be repaired, deleted or moved out under dependency checks. New paths, inbound moves and feature growth belong outside the donors. Follow the [dependency policy](shared/enablement/dependency-policy/README.md) for owner mapping, language rules and staged limits. TypeScript is the default for host/effect glue and tooling. New Python is restricted to `hermes/`, new Rust to `engine/`, and new authored JavaScript is forbidden. Keep generated JavaScript out of Git.
+- Preserve a single visible surface. Keep working legacy paths until replacements and consumers are accepted. Document routing, rollback and removal conditions. Verify real callers, builds and packaging before removing donors. Check data compatibility and writer reservations before deleting dead code. See the [refactoring guide](enablement/refactor.md).
+- Test Bend policy independently of Rust and Electron and verify bridges against real providers. Prove claimed Rust-free builds in a clean environment without Rust tools or cached outputs. Connect and Public target zero repo-owned Rust/build dependencies, including through Shared and Composition. The root Rust app owns capabilities still awaiting adoption.
 
 ## Ownership and references
 
-These are ownership targets, not claims of completed migration. Use the canonical outcome roots declared above. Existing capture/ references describe frozen donors. Unknown mixed shell remains Legacy/unclassified debt. Settings is assembled by Composition from owner public sections; native generic hosting is infrastructure.
+| Root | Responsibility |
+|---|---|
+| [Onboarding](onboarding/README.md) | First success, practice and progress |
+| [Record](record/completion/README.md) | Recording UI, capture, marks, bundles, transcripts, [storage and retention](record/storage/README.md), export and headless recording APIs |
+| [Handoff](handoff/README.md) | Clipboard, paste, destinations, outbound intent, receipts and retries |
+| [Connect](connect/docs/hosted-web.md) | Sharing, encryption, upload, auth, remote access, readiness and revocation |
+| [Agent](agent/README.md) | Recording interpretation, inspection and extraction |
 
-| Owner | Home | Enablement and CI home | Start here |
-|---|---|---|---|
-| Engine | `engine/`; legacy `capture/engine/` | `engine/enablement/` | [Capability adoption](engine/README.md), [capture](capture/engine/docs/capture.md), [keyframes/text](capture/engine/docs/keyframes-and-text.md), [export/retention](capture/engine/docs/export-and-retention.md) |
-| Record | `record/` | `record/enablement/` | [Storage](record/storage/README.md), [completion](record/completion/README.md) |
-| Onboarding | `onboarding/` | `onboarding/enablement/` | [Ownership](onboarding/README.md) |
-| Handoff | `handoff/` | `handoff/enablement/` | [Ownership](handoff/README.md) |
-| Agent | `agent/`; legacy `capture/agent/` | `agent/enablement/`; legacy `capture/agent/enablement/` | [Agent video workflow](capture/agent/docs/agent-video-workflow.md) |
-| Connect | `connect/` | `connect/enablement/` | [Hosted web](connect/docs/hosted-web.md), [client](connect/docs/hosted-client.md) |
-| Public | `public/` | `public/enablement/` | [Website/deployment](public/enablement/docs/pages-deploy.md) |
-| Hermes | `hermes/` | `hermes/enablement/` | [Integration and distribution](hermes/README.md) |
-| Shared | `shared/` | `shared/enablement/` for shared-package tooling | Reusable UI, schemas, assets and utilities |
-| Repository Enablement | `enablement/` | Shared engineering mechanisms and repository-wide coordination only | [Verification/CI](enablement/docs/continuous-delivery.md), [local checks](enablement/local-tests/README.md), [commit hook](enablement/directory-width/README.md) |
-| Composition | `composition/` | Cross-owner assembly and integration checks; invoke owner entrypoints | CLI/composition wiring and cross-owner acceptance |
+[Public](public/enablement/docs/pages-deploy.md) and [Hermes](hermes/README.md) own their products. [Engine](engine/README.md) and Shared supply capabilities. Composition assembles owner public contracts and Settings sections. Each stream owns its section’s UI, validation, persistence and effective state. Native window hosting is infrastructure. Mixed shell code with unknown ownership stays unclassified.
 
-**Each value stream owns its enablement and CI end to end.** Put stream-specific build, verification, test harnesses/fixtures, packaging, release/deployment tooling, diagnostics and engineering runbooks under that stream's `enablement/` directory. Product implementation stays in its existing home; unit tests may remain beside the implementation they verify. A language, platform or the label “CI” does not transfer ownership to root Enablement. Existing `scripts/`, verification and root Enablement locations are migration sources, not exceptions for new stream-specific tooling.
+The public capability chain is Agent → Record → Engine → Shared. Only Record accesses Engine. Product siblings cannot import one another outside that chain, and no stream imports Composition. Composition supplies narrow interfaces and callbacks. Owners can use public Shared and declared external dependencies.
 
-Root `enablement/` owns genuinely shared runner/bootstrap mechanisms, hooks, reusable verification infrastructure and repository-wide admission/coordination. Stream-owned entrypoints and dependency declarations define their checks and delivery inputs; root coordination consumes them and combines actual shared/composition consumers without duplicating stream policy or maintaining competing selectors. Shared mechanisms may be consumed by streams without moving their release or correctness decisions to the root.
+Each stream owns build, tests, packaging, delivery and diagnostics in its `enablement/`. Root Enablement owns shared execution and repository admission. Keep provider YAML thin and invoke owner entrypoints. Preserve routing to actual consumers, check identities, permissions, concurrency and artifact provenance. Migrate tooling with its callers, tests and delivery inputs. See the [CI guide](enablement/docs/continuous-delivery.md#stream-owned-delivery).
 
-GitHub requires workflow entrypoints in `.github/workflows/`. Each stream owns its workflow's behavior and invokes its `enablement/` entrypoints there; keep provider-required YAML wiring thin. Cross-stream workflows coordinate owner entrypoints and shared execution rather than taking over stream-specific build, test or publication policy. Preserve required check identities, permissions, concurrency, candidate/artifact provenance and delivery gates during migration.
+## Verification
 
-Migrate tooling with its real callers, package/workflow inputs, tests, path routing and owner documentation. Remove obsolete donors after the replacement is accepted; a new directory, forwarding wrapper or duplicated implementation alone does not establish ownership. Keep bounded changes independently usable, record concrete remaining dependencies, and retain native/platform verification where affected.
+Choose proportionate checks for changed behavior and verify boundaries with real producer outputs. Reuse evidence only when relevant inputs match and cite its source. Inspect the changed renderer for UI work and real bundle outputs for output changes. Report test, GUI, permission and publication evidence and gaps.
 
-`composition/` contains CLI/composition wiring; existing capture-internal shared mechanisms are frozen migration sources in `capture/`; new mechanisms belong with their destination owner. Read the relevant owner guidance before changing a subsystem. Keep documentation concise and beside its owner. The preserved migration branch is a source for bounded reviewed ports, not a branch to merge wholesale; [baseline details](enablement/docs/continuous-delivery.md#preview-baseline-restoration).
-
-## Work and verification
-
-Choose the smallest coherent change and proportionate checks. Read-only subagent review is allowed. Respect explicit holds and narrow writer reservations. Release them with the exact contract, commit and remaining gates. Repair in-scope prerequisites. Retry caps still allow independent investigation.
-
-For boundary changes, inspect real producers and consumers and verify with representative producer outputs. Implementation-mirroring fixtures do not establish compatibility. Keep procedures with their owners.
-
-**Linux can verify shared Electron/React UI and portable TypeScript.** Before booking a Mac for legacy UI work, compare it with moving the smallest usable slice to Electron and testing on Linux. Prefer migration when cheaper overall and behavior is preserved, including real routing and persistence. If Mac proof remains necessary, name the changed native behavior or migration blocker.
-
-Test changed OS-specific behavior on the affected OS, using NoMac when needed. Verify native capture, permissions, window integration and packaging on their relevant platforms. Use the Linux guide's isolated VM for native GUI work, never the host or another worker's VM. Physical-device behavior needs suitable hardware. Honor CI and branch protections.
-
-Select checks by changed behavior. Reuse proof only for unchanged relevant inputs and cite its source. Inspect the actual renderer for UI changes and real bundle outputs for output changes. Docs and tooling need no capture. Report test, GUI, permission and publication evidence separately, including gaps. A build, CLI help or bundle path alone proves no downstream behavior.
+Use Linux for portable logic and shared Electron UI. Compare migrating a small legacy UI slice with booking Mac time. Verify changed native behavior, permissions, window integration and packaging on the affected OS. For Linux native GUI work use your [isolated VM](capture/desktop/docs/linux/linux.md), never the host or another worker’s VM. Physical-device behavior needs appropriate hardware.
 
 ## Delivery
 
-For implementation work Simon authorizes in `tryapparent/apparent`, finish through merge into `main` and passing CI for the exact landed commit, without repeated code-review/merge approval. Use short-lived, coherent PRs against current main; preserve trunk usability and explicit task/release holds. Follow failures caused by the change through repair and verification. Normal automatic CD consequences are authorized; separate activation, destructive migration, access, spending and external-message restrictions remain. Other repositories normally receive a scoped commit and draft PR unless authorized otherwise.
+For Simon-authorized work in `tryapparent/apparent`, finish through merge into current `main` and passing CI for the exact landed commit. Honor holds and branch protections and repair failures caused by the change. Normal automatic CD is authorized. Separate activation, destructive migrations, access, spending and external communications require their own authority. Other repositories normally receive a scoped commit and draft PR.
 
-For changes that affect the shipped desktop app, keep ownership after merge until the Development installer for each affected platform is publicly downloadable from Linux Main or macOS Nightly. Follow the automatic publication run and use the [Desktop release outcome](composition/enablement/release/README.md) to verify installer availability and source SHA. If the release queue supersedes the landed commit, follow the newer candidate and confirm the shipped source still contains the change. Include the direct installer links and shipped commit in the completion report. If publication is blocked, name the exact blocker and leave delivery pending.
+For shipped Desktop changes, verify a publicly downloadable Development installer on Linux Main and/or macOS Nightly for each affected platform. Follow a superseding release candidate if it contains the change. Report direct links and shipped SHA, or the exact publication blocker. Use the [Composition release guide](composition/enablement/release/README.md).
 
-In the PR description, reference the primary issue from the commit trailer. Use `Closes #123` for each issue the merge fully resolves. Use `Refs #123` for partial work or when the issue still requires verification or rollout after merge. Before merging, confirm that GitHub lists each issue intended for closure under Development.
-
-Use authenticated `gh` for GitHub operations. For checks and reviews covered by T3's watch on an open PR, use that watch as the sole observer and yield as instructed. Resume from its notification.
-
-For a workflow outside that coverage, such as post-merge CI, a release, or a manually dispatched run whose result is missing from the PR rollup, use a supported completion notification for the exact run if available. Otherwise keep one bounded foreground observer for the run ID, head SHA and attempt. On Clanker, prefer the installed quota-aware waiter, which defaults to a 60-second poll interval. See the `github-operations` skill for its invocation and exit codes. Where the helper is unavailable, use `gh run watch <run-id> --exit-status --compact --interval 60` and verify the exact SHA and attempt before accepting the result. Resume ownership after the wait. Analysis-only work ends with the requested analysis.
-
-Before yielding, name the exact prerequisite and the event that will resume work. A registered PR watch is not proof that it covers workflow completion after an already-reported failure, another PR merging, deployment or runner-capacity recovery. Report an uncovered event explicitly; preserve ownership and harness rules without inventing a new monitor or claiming a callback exists.
-
-Keep CI aligned with owner directories and their actual shared/composition/build consumers; unrelated changes should not rebuild or deploy another product. Preserve required-check admission and pending deliveries across unrelated main pushes. Repository-wide coordination belongs in the [CI guide](enablement/docs/continuous-delivery.md); stream-specific commands, selectors and publication procedures belong beside their owning `enablement/` implementation. Desktop release requirements remain in the [release guide](capture/desktop/docs/release.md) until migrated with their callers.
+Use authenticated `gh` and the [issue traceability contract](shared/enablement/issues/README.md). Use `Closes` for complete issues and `Refs` for partial work. Confirm closures appear under GitHub’s linked Development view. Use T3’s PR watch as the sole observer for covered checks and reviews and yield as directed. For a separate run, use a supported exact-run notification or one bounded foreground observer for its ID, SHA and attempt. See the `github-operations` skill. Before yielding, name the actual prerequisite and what will resume work.
 
 ## Safety and resources
 
-- Keep private captures, transcripts, credentials and personal data out of public artifacts. Use synthetic/sanitized evidence. Preserve others' work and real user data; ask before destructive or ambiguous deletion, access/spending beyond existing authority, provider-setting changes or contacting people. Reasonable isolated synthetic end-to-end tests within existing authority are allowed; clean up only identified test artifacts.
-- Old bundle session metadata does not authorize forwarding captures. Use `apparent copy <bundle>` for clipboard handoff; separate delivery to a person, organization or session requires permission. Search existing issues before filing a report.
-- Never reset Kit's real TCC grants, wake/flash the Studio displays, record/benchmark its real screen, play test audio aloud on Kit's Macs or post tests to a real OpenCode session. Use isolated/approved test environments and the [screen safety gate](capture/desktop/scripts/perf/screen-guard.sh). Follow the Settings guide for installed Mac testing; signing and update storage remain outside disposable output.
-- NoMac: **$2 cumulative per canonical repository/issue (or standalone PR); each session at most $0.50 / 30 minutes**, normally with a 300-second idle timeout. Existing spend and concurrent reservations share that budget; retries/branches/derived issues do not reset it. Narrower task limits win. No top-ups or session extensions are included; work without an issue/PR needs an approved budget bucket. [Queue, ledger and cleanup procedure](enablement/docs/continuous-delivery.md#nomac-verification).
-- When Simon says “make it apparent,” follow [the skill](capture/agent/skills/make-it-apparent/SKILL.md), inspect the complete recording and deliver a playable video in the conversation with truthful limits.
+- Draft `apparent feedback` for even minor friction or workarounds, continue the task, and ask once at handoff before sending the sanitized drafts.
+- Keep private captures, transcripts, credentials and personal data out of public artifacts. Use synthetic or sanitized evidence. Preserve real data and other writers’ work. Clean up only identified test artifacts. Ask before ambiguous or destructive deletion, provider-setting changes or contacting people.
+- Use `apparent copy <bundle>` for clipboard handoff. Sending a capture to a person, organization or session requires permission. Search existing issues before filing reports.
+- Never reset Kit’s real TCC grants, wake or flash Studio displays, record or benchmark its real screen, play test audio on Kit’s Macs or post tests to a real OpenCode session. Use approved isolated environments and the [screen safety gate](capture/desktop/scripts/perf/screen-guard.sh).
+- NoMac limits are **$2 cumulative per canonical repo/issue or standalone PR** and **$0.50 / 30 minutes per session**, normally with a 300-second idle timeout. Count existing spend and concurrent reservations across retries, branches and derived issues. Narrower task limits win. Require an approved bucket for untracked work. See [queue, budget and cleanup](enablement/docs/continuous-delivery.md#nomac-verification).
+- On Clanker, follow `/home/simon/AGENTS.md` and use a private `/tmp/apparent-dev-<job>-<run>/` for disposable artifacts. Keep native signing and update storage outside disposable output.
+- For “make it apparent,” use [the skill](capture/agent/skills/make-it-apparent/SKILL.md), inspect the complete recording and deliver a playable video with truthful limits.
 
-On Clanker, follow `/home/simon/AGENTS.md`: disposable helpers, diagnostics, build/test output, screenshots, proof media, fixtures and VM runs belong in private `/tmp/apparent-dev-<job>-<run>/` jobs. They may be cleaned during verification; regenerate them. Durable evidence elsewhere requires an explicit retention request. Canonical repositories, tools, required application data/config, bounded existing caches, VM templates and real private captures retain their proper locations; this is not authority to move/delete existing data or change cleanup services.
+## Staged code
 
-## Staged code comments
-
-Do not add or change lexical code comments, including doc comments and tool directives. Existing comments may remain or be deleted. The pre-commit staged rule, exact identity/rename handling, supported syntax and fail-closed limits are documented in [dependency policy](shared/enablement/dependency-policy/README.md). Markdown/prose and comment-looking literals are not code comments. Shebangs are executable syntax.
+Do not add or change lexical code comments, including doc comments and tool directives. Existing comments may remain or be deleted. Follow the [staged dependency policy](shared/enablement/dependency-policy/README.md#lexical-comments).

@@ -1,9 +1,0 @@
-.native-board { height:100vh; display:flex; flex-direction:column; background:var(--apparent-background); color:var(--apparent-foreground); }
-.native-board header { display:flex; gap:12px; align-items:center; padding:12px; border-bottom:1px solid var(--apparent-border); }
-.native-board header img { width:110px; }
-.native-board header span { flex:1; }
-.native-board-paper { position:relative; flex:1; min-height:0; background:var(--apparent-paper); }
-.native-board-paper > svg { width:100%; height:100%; touch-action:none; cursor:crosshair; }
-
-.native-board header { -webkit-app-region:drag; flex-wrap:wrap; }
-.native-board header button { -webkit-app-region:no-drag; min-width:44px; min-height:44px; font-size:18px; }

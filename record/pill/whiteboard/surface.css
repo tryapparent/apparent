@@ -1,0 +1,112 @@
+@font-face {
+  font-family: "Host Grotesk";
+  src: url("../../../shared/assets/fonts/HostGrotesk-Variable.ttf")
+    format("truetype");
+  font-weight: 300 800;
+  font-display: swap;
+}
+
+body {
+  margin: 0;
+}
+
+.whiteboard {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font:
+    400 15px / 1.35 "Host Grotesk",
+    system-ui,
+    sans-serif;
+  background: var(--apparent-paper);
+  color: var(--apparent-carbon);
+}
+
+.whiteboard header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--apparent-lilac);
+  background: var(--apparent-carbon);
+  color: var(--apparent-paper);
+  -webkit-app-region: drag;
+}
+
+.whiteboard header img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+.whiteboard h1 {
+  flex: 1;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.whiteboard button {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  min-width: 44px;
+  height: 44px;
+  padding: 0 10px;
+  border: 1px solid #786e82;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.whiteboard button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.whiteboard button:enabled:hover {
+  background: #302442;
+}
+
+.whiteboard button:focus-visible {
+  outline: 2px solid var(--apparent-lilac);
+  outline-offset: 2px;
+}
+
+.whiteboard .whiteboard-clear {
+  border-color: #ad838d;
+}
+
+.whiteboard button:last-child {
+  background: var(--apparent-lilac);
+  color: var(--apparent-carbon);
+}
+
+.whiteboard button:last-child:enabled:hover {
+  background: #d3bfee;
+}
+
+.whiteboard-paper {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.whiteboard-paper > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.whiteboard-paper [role="alert"] {
+  position: relative;
+  max-width: 42ch;
+  margin: 1rem;
+}

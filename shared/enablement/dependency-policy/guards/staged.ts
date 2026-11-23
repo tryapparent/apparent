@@ -4,11 +4,24 @@ import {
   bendOwners,
   parseManifest,
 } from "../../bend/manifest.ts";
+import {
+  declaredOwners,
+  declarationPath,
+  parseConsumers,
+} from "../../bend/routing/declarations.ts";
 import { bendSource } from "../../bend/source.ts";
 import { tokens, sourceBudget, lockfiles } from "./budgets.ts";
 export { tokens } from "./budgets.ts";
 import { git } from "../snapshot.ts";
 import { checkStyles } from "./style.ts";
+
+const connectRustMoves = new Map([
+  ["connect/client/src/renewal/mod.rs", "connect/client/src/renewal.rs"],
+  [
+    "connect/client/src/test_support/mod.rs",
+    "connect/client/src/test_support.rs",
+  ],
+]);
 
 export async function checkStaged(
   cwd: string,
@@ -55,7 +68,12 @@ export async function checkStaged(
   for (const owner of bendOwners) {
     const directory = bendDirectory(owner);
     const manifest = `${directory}/modules.json`;
-    if (!after.has(manifest)) continue;
+    const declared = declaredOwners.some((candidate) => candidate === owner);
+    if (!after.has(manifest)) {
+      if (declared && before.has(manifest))
+        errors.push("Missing owner manifest " + manifest);
+      continue;
+    }
     try {
       if (!after.get(manifest)?.startsWith("100644 "))
         throw new Error(
@@ -65,6 +83,16 @@ export async function checkStaged(
         owner,
         git(["show", `${tree}:${manifest}`], cwd),
       );
+      if (declared) {
+        const declaration = declarationPath(owner);
+        if (!after.get(declaration)?.startsWith("100644 "))
+          throw Error("Missing regular consumer declaration " + declaration);
+        parseConsumers(
+          owner,
+          git(["show", tree + ":" + declaration], cwd),
+          modules,
+        );
+      }
       for (const entry of ["build.ts", "check.ts"]) {
         if (
           modules.length &&
@@ -135,7 +163,11 @@ export async function checkStaged(
         !file.startsWith("hermes/")
       )
         errors.push(`${file}: new Python is allowed only in hermes/`);
-      else if (ext === ".rs" && !file.startsWith("engine/"))
+      else if (
+        ext === ".rs" &&
+        !file.startsWith("engine/") &&
+        !(renamed && connectRustMoves.get(file) === renamed)
+      )
         errors.push(`${file}: new Rust is allowed only in engine/`);
       else if (
         [".js", ".jsx", ".mjs", ".cjs"].includes(ext) ||

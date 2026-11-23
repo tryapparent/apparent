@@ -97,6 +97,7 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
   const record = workflow("stream-record.yml");
   const paths = [
     "record/completion/**",
+    "record/media/src/assembly/crop-publication*",
     "record/pill/**",
     "record/shortcuts/push-to-talk.bend",
     "record/enablement/ci/pill/**",
@@ -121,6 +122,8 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
   for (const path of [
     "record/completion/src/copy-admission.bend",
     "record/completion/src/policy.ts",
+    "record/media/src/assembly/crop-publication.bend",
+    "record/media/src/assembly/crop-publication-request.ts",
     "record/enablement/ci/bend/build.ts",
     "shared/enablement/bend/toolchain.ts",
     ".github/workflows/stream-record.yml",
@@ -149,6 +152,20 @@ test("Record Bend runs on Linux and shares affected inputs with pre-push", () =>
   );
   assert.equal(check("connect/service/src/example.ts"), false);
   assert.equal(check(".github/workflows/stream-agent.yml"), false);
+  for (const [owner, path] of [
+    ["handoff", "handoff/pure/transcript-only.bend"],
+    ["connect", "connect/client/typescript/src/reader/reader-route.bend"],
+    ["connect", "connect/client/typescript/src/account/account-status.bend"],
+  ]) {
+    assert.equal(
+      check(path, true, owner + "/enablement/ci/bend/check.ts"),
+      true,
+      path,
+    );
+    const route = routeDecision([path]);
+    assert.equal(route.plan.desktop, true, path);
+    assert.equal(route.installer, true, path);
+  }
   const connect = "connect/enablement/ci/bend/check.ts";
   for (const path of [
     "connect/service/src/reporting/activity-preference.bend",
