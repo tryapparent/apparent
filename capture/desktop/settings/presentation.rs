@@ -177,7 +177,6 @@ fn renderer_command(runtime: PathBuf, app: PathBuf) -> Command {
 
 fn command(runtime: PathBuf, app: PathBuf) -> Command {
     let mut command = renderer_command(runtime, app);
-    command.env("APPARENT_MODELS_DIR", crate::capture::engine::runtime::audio::transcription::speech::own_models_dir());
     command.env("APPARENT_CONFIG", crate::shared::handoff::default_config_path());
     command.env_remove("APPARENT_MANUAL_REPORT_TOKEN");
     if !cfg!(debug_assertions) && let Some(token) = option_env!("APPARENT_POSTHOG_TOKEN") {

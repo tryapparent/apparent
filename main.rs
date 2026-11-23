@@ -13,8 +13,6 @@ mod stored_frame;
 mod permission_facts;
 #[path = "engine/permissions/admission.rs"]
 mod permission_admission;
-#[path = "record/pill/input/native.rs"]
-mod lip_input;
 #[path = "engine/permissions/native.rs"]
 mod permission_native;
 #[path = "engine/permissions/relaunch.rs"]

@@ -64,7 +64,7 @@ matching unstripped binaries to resolve native function names.
 
 The index is emitted only after every required journey wait and resource passes
 the coverage audit and each trace contains call stacks with no reported data
-loss. The unscored `silent-prompt` entry has no producer in this suite. Profiled
+loss. Profiled
 runs are diagnostic and do not produce a scoring receipt, ledger or baseline.
 The profile index links the same measurement traces by their clock and digest.
 Host and guest measurement traces have separate clock domains.

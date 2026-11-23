@@ -2,37 +2,6 @@
 use super::*;
 use std::net::{TcpListener, TcpStream};
 
-#[test]
-fn lipflow_decoder_timeout_crosses_the_consented_reporter_without_transcript_content() {
-    use crate::lip_input::{Frame, Input};
-
-    let scratch = Scratch::new();
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let endpoint = format!("http://{}/i/v0/e/", listener.local_addr().unwrap());
-    let server = std::thread::spawn(move || {
-        let mut stream = accept(&listener);
-        let payload = request(&mut stream);
-        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
-        payload
-    });
-    let reporter = Reporter::start(scratch.config(), "phc_synthetic".into(), endpoint).unwrap();
-    let (sender, receipt) = flume::bounded(2);
-    sender.send(Frame::Clip { start: 0, end: 200, text: "private-lip-transcript-canary".into() }).unwrap();
-    sender.send(Frame::TimedOut).unwrap();
-    let transcript = Input::Pending(receipt).transcript(1000, |timeout| {
-        reporter.capture(timeout.into(), std::panic::Location::caller());
-    });
-
-    let payload = server.join().unwrap();
-    assert_eq!(transcript.text, "private-lip-transcript-canary");
-    assert!(transcript.missing.is_some());
-    assert_eq!(payload["event"], "$exception");
-    assert_eq!(payload["properties"]["operation"], "lipflow_decoder_timed_out");
-    assert_eq!(payload["properties"]["$exception_list"][0]["mechanism"]["handled"], true);
-    assert!(!payload.to_string().contains("private-lip-transcript-canary"));
-    assert_eq!(Failure::from(crate::lip_input::Timeout::Receipt).code(), "lipflow_receipt_timed_out");
-}
-
 #[cfg(target_os = "linux")]
 #[test]
 fn updater_target_facts_cross_consented_queue_and_http_without_private_paths() {

@@ -1120,7 +1120,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
                 handoff::enable_experiment(name);
             }
             let (dir, old) = handoff::load_bundle(&bundle)?;
-            let lip_transcript = crate::lip_input::preserve(&old.transcript);
+            let saved_transcript = (old.transcript.source == "lipflow").then(|| old.transcript.clone());
             let video = old
                 .video
                 .as_ref()
@@ -1261,7 +1261,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
                             iter_note,
                             iter_activity,
                             old.interaction_telemetry,
-                            lip_transcript.clone(),
+                            saved_transcript.clone(),
                         )?;
                         let _ = handoff::copy_bundle_to_clipboard(&iter_out);
                         runs_ms.push(t0.elapsed().as_secs_f64() * 1_000.0);
@@ -1335,7 +1335,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
                         windows: old.windows,
                         cursor: old.cursor,
                     },
-                    lip_transcript,
+                    saved_transcript,
                 )?
             };
             print!("{summary}");

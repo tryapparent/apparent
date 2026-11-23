@@ -1092,14 +1092,7 @@ impl ApparentCoordinator {
         let id = crate::shared::ids::make_bundle_id();
         let bundle_dir = crate::shared::handoff::default_captures_dir().join(format!("{id}.apparent"));
         let admitted = self.admitted_microphone.take();
-        let lips = if admitted.is_some() {
-            std::mem::take(&mut self.admitted_lips)
-        } else {
-            crate::shared::handoff::experiment("silentPrompt")
-        };
-        let microphone_enabled = admitted.unwrap_or_else(|| crate::lip_input::microphone_enabled(
-            lips, crate::capture::engine::runtime::audio::mic::enabled(),
-        ));
+        let microphone_enabled = admitted.unwrap_or_else(crate::capture::engine::runtime::audio::mic::enabled);
         let Ok(preparation) = ScreenCaptureSession::prepare_start(&bundle_dir, microphone_enabled)
             .inspect_err(|error| self.refuse_raw_protection(error, cx)) else { return; };
         self.telemetry.set_capture_mode(target.mode);
@@ -1221,22 +1214,6 @@ impl ApparentCoordinator {
             microphone_enabled,
         });
         self.present_recording_island(cx);
-        if lips {
-            #[cfg(any(target_os = "linux", target_os = "macos"))]
-            self.ensure_electron_pill();
-            let mut input = crate::lip_input::Input::Unavailable;
-            #[cfg(any(target_os = "linux", target_os = "macos"))]
-            if let Some(pill) = &self.electron_pill {
-                let elapsed = self.active_recording.as_ref().map_or(0, ActiveRecording::elapsed_ms);
-                input = pill.begin_lips(self.capture_generation, elapsed);
-            }
-            if matches!(input, crate::lip_input::Input::Unavailable) {
-                if let Ok(mut status) = CAPTURE_STATUS.lock() {
-                    *status = Some("Lip reading unavailable · microphone off".into());
-                }
-            }
-            self.active_lips = Some(input);
-        }
         start_metric("recording_start_ms", started);
     }
 
@@ -1526,11 +1503,6 @@ impl ApparentCoordinator {
         let agent_requested = std::mem::take(&mut self.agent_finishing);
         #[cfg(not(target_os = "linux"))]
         let agent_requested = false;
-        let lip_input = self.active_lips.take();
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
-        if lip_input.is_some() && let Some(pill) = &self.electron_pill {
-            pill.lip_control(self.capture_generation, "finish", 0);
-        }
         let completion_source = if matches!(&rec.source, CaptureSource::Phone(_)) { "phone" } else { "screen" };
         // Keep the capture-local receipt alive while Finish drains already queued Saves.
         let note_receipt = self.note_ui.as_ref().map(workflow::notes::Session::saved_note_receipt);
@@ -1590,7 +1562,7 @@ impl ApparentCoordinator {
 
                     let finalizer_started = Instant::now();
                     let result = recording_completion::finalize(
-                        source, target, bundle_dir, events, strokes, final_whiteboard, notes_finished, source_released, lip_input,
+                        source, target, bundle_dir, events, strokes, final_whiteboard, notes_finished, source_released,
                     );
                     if let Some(performance) = performance {
                         performance.finish(finish_started, finalizer_started, result.1, result.0.is_ok());

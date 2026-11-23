@@ -1,8 +1,0 @@
-{
-  "name": "@apparent/lip-preview-runtime",
-  "version": "0.0.0",
-  "private": true,
-  "dependencies": {
-    "@mediapipe/tasks-vision": "0.10.21"
-  }
-}

@@ -2,7 +2,6 @@ import { lazy, Suspense, useRef, useState, type ReactNode } from "react";
 import { Button } from "@apparent/ui/button";
 import { StickyNote } from "@apparent/ui/icons";
 import type { PillView } from "./view";
-import type { LipStatus } from "../input/renderer";
 import { InputMeter } from "./ink/input-meter";
 import ink from "./ink/doodle-ink.mjs";
 import { LiveCaption } from "./live-caption";
@@ -72,8 +71,6 @@ function BackgroundTab({ handoff, open, toggle }: { handoff: BackgroundHandoff; 
 
 type Props = {
   view: PillView;
-  lipStatus?: LipStatus | null;
-  lipPreview?: ReactNode;
   onRetryBackground?: (capture: string) => Promise<void>;
   backgroundHandoff?: BackgroundHandoff | null;
   pending?: boolean;
@@ -90,8 +87,6 @@ type Props = {
 };
 export function PillSurface({
   view,
-  lipStatus,
-  lipPreview,
   backgroundHandoff,
   onRetryBackground,
   pending = false,
@@ -223,7 +218,6 @@ export function PillSurface({
               </span>
             </div>
           )}
-          {lipStatus && <span className="notice" role="status">{lipStatus}</span>}
           {view.warning && view.warning !== view.label && (
             <span className="warning" role="status">
               {view.warning}
@@ -341,7 +335,6 @@ export function PillSurface({
           </div>
         )}
       </div>
-      {view.phase === "recording" && lipPreview}
       {view.phase === "recording" && backgroundHandoff && backgroundOpen &&
         <div className="pill-background-detail" role="status">
           <strong>{backgroundHandoff.title}</strong><span>{backgroundLabel(backgroundHandoff)}</span>

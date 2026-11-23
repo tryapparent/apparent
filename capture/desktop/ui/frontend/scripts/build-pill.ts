@@ -23,18 +23,6 @@ try {
    },
   }],
  });
- execFileSync(process.execPath, [recordBuild, captionBuild, 'lip'], {stdio: 'inherit'});
- await build({
-  entryPoints: [join(root, 'record/pill/input/host.ts')],
-  outfile: fileURLToPath(new URL('../electron/pill/lip-recording.cjs', import.meta.url)),
-  bundle: true, platform: 'node', format: 'cjs', target: 'node22',
-  plugins: [{
-   name: 'record-lip-policy',
-   setup(builder) {
-    builder.onResolve({filter: /lip-policy\.mjs$/}, () => ({path: join(captionBuild, 'lip-policy.mjs')}));
-   },
-  }],
- });
 } finally {
  await rm(captionBuild, {recursive: true, force: true});
 }

@@ -16,7 +16,6 @@ fn main() {
     emit_recording_permissions();
     emit_native_policy("record", "performance/recording-performance", "settings/permissions/performance-policy.bend");
     emit_native_policy("record", "capture-request/capture-admission", "capture-request/src/capture-admission.bend");
-    emit_native_policy("record", "lip-input", "settings/lip-policy.bend");
     emit_native_policy("record/storage", "storage-default", "src/retention/capacity.bend");
     emit_native_policy("record", "note-gesture", "notes/double-shift.json");
     emit_native_policy("onboarding", "note-tip", "host/tips/note-tip.json");

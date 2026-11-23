@@ -17,7 +17,6 @@ export async function committedFrame(contents: {
 }
 
 // Desktop shell presentation, independent of the renderer and native backend.
-export { LipHost } from "../../../../../../record/settings/lip-host.ts";
 
 const destinations = ['about', 'labs', 'agents', 'general', 'recording', 'permissions', 'storage'];
 export function isSharedSettingsPane(pane: unknown): pane is string {

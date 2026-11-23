@@ -120,8 +120,7 @@
       "cli-start",
       "CLI start to first valid screen frame and microphone sample"
     ],
-    ["cli-stop", "CLI stop to a verified saved bundle"],
-    ["silent-prompt", "Read my lips to text ready to copy"]
+    ["cli-stop", "CLI stop to a verified saved bundle"]
   ],
   "cases": {
     "paste": [

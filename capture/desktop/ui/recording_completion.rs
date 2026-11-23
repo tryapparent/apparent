@@ -25,7 +25,6 @@ pub(in crate::capture::desktop) fn finalize(
     final_whiteboard: whiteboard::SavedBoard,
     notes_finished: Option<flume::Receiver<crate::capture::desktop::workflow::notes::FinishResult>>,
     source_released: flume::Sender<()>,
-    lip_input: Option<crate::lip_input::Input>,
 ) -> (CaptureResult, u64) {
     #[cfg(target_os = "linux")]
     FinishPhase::StoppingSource.emit();
@@ -119,7 +118,7 @@ pub(in crate::capture::desktop) fn finalize(
             if let Some(session) = circle { session.apply(&mut strokes); }
             strokes
         };
-        crate::capture::engine::bundle::bundle_processing::finalize_capture_bundle_with_transcript(
+        crate::capture::engine::bundle::bundle_processing::finalize_capture_bundle(
             &bundle_dir,
             target,
             recording,
@@ -129,9 +128,6 @@ pub(in crate::capture::desktop) fn finalize(
             None,
             activity,
             None,
-            lip_input.map(|input| {
-                input.transcript(duration_ms, crate::capture::desktop::workflow::error_reporting::report_lipflow_timeout)
-            }),
         )
     });
     (finalized, duration_ms)

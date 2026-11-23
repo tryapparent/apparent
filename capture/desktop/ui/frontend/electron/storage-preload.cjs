@@ -21,14 +21,6 @@ contextBridge.exposeInMainWorld('apparentLabs', Object.freeze({
   },
 }));
 
-contextBridge.exposeInMainWorld('apparentLipPrompt', Object.freeze({
-  prepare: () => ipcRenderer.invoke('apparent:lip-prepare'),
-  begin: () => ipcRenderer.invoke('apparent:lip-begin'),
-  decode: bytes => ipcRenderer.invoke('apparent:lip-decode', bytes),
-  cancel: () => ipcRenderer.invoke('apparent:lip-cancel'),
-  copy: () => ipcRenderer.invoke('apparent:lip-copy'),
-}));
-
 contextBridge.exposeInMainWorld('apparentSettingsMounted', async () => {
   // React has committed its DOM. Do not hold that fact behind hidden-page
   // animation scheduling: Chromium may already have supplied first paint.

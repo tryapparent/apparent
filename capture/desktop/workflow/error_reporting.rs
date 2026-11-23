@@ -33,8 +33,6 @@ pub(crate) enum Failure {
     ScreenStart,
     PhoneStart,
     FinalizeCapture,
-    LipflowDecoderTimeout,
-    LipflowReceiptTimeout,
     VideoExport,
     UpdateCheck,
     RustPanic,
@@ -53,8 +51,6 @@ impl Failure {
             Self::ScreenStart => "screen_start_failed",
             Self::PhoneStart => "phone_start_failed",
             Self::FinalizeCapture => "capture_finalization_failed",
-            Self::LipflowDecoderTimeout => "lipflow_decoder_timed_out",
-            Self::LipflowReceiptTimeout => "lipflow_receipt_timed_out",
             Self::VideoExport => "video_export_failed",
             Self::UpdateCheck => "update_check_failed",
             Self::RustPanic => "rust_panic",
@@ -63,15 +59,6 @@ impl Failure {
             Self::ElectronRendererGone => "electron_renderer_gone",
             Self::ElectronChildGone => "electron_child_gone",
             Self::NativeProcessExit => "native_process_exit",
-        }
-    }
-}
-
-impl From<crate::lip_input::Timeout> for Failure {
-    fn from(timeout: crate::lip_input::Timeout) -> Self {
-        match timeout {
-            crate::lip_input::Timeout::Decoder => Self::LipflowDecoderTimeout,
-            crate::lip_input::Timeout::Receipt => Self::LipflowReceiptTimeout,
         }
     }
 }
@@ -453,10 +440,6 @@ pub(crate) fn report(failure: Failure) {
     if let Some(reporter) = REPORTER.get() {
         reporter.capture(failure, std::panic::Location::caller());
     }
-}
-
-pub(crate) fn report_lipflow_timeout(timeout: crate::lip_input::Timeout) {
-    report(timeout.into());
 }
 
 #[track_caller]

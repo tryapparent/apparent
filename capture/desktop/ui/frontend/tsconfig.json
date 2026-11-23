@@ -52,7 +52,6 @@
     "electron/reporting/index.ts",
     "../../../../composition/settings/renderer",
     "../../../../composition/pill/renderer",
-    "../../../../record/pill/renderer/lip-runtime.d.ts",
     "../../../../composition/quit/view.tsx",
     "../../../../composition/pill/whiteboard/view.tsx",
     "../../../../composition/pill/whiteboard/main.ts",
