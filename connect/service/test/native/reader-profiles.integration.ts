@@ -30,6 +30,9 @@ test("one agent reads encrypted uploads from two Connect accounts", {
   t.after(() => rm(root, { recursive: true, force: true }));
   const worker = await fixture();
   t.after(() => worker.close());
+  await worker.db.exec(
+    await readFile(".generated/migrations/0020.sql", "utf8"),
+  );
   const proxy = http.createServer(async (request, response) => {
     try {
       const chunks: Buffer[] = [];
@@ -104,7 +107,7 @@ test("one agent reads encrypted uploads from two Connect accounts", {
           assert.equal(result.status, 200);
         }
       }
-      return { code: await exited, stdout, stderr };
+      return { code: await exited, stdout, stderr, signal: child.signalCode };
     } finally {
       clearTimeout(timer);
       lines.close();
@@ -114,7 +117,7 @@ test("one agent reads encrypted uploads from two Connect accounts", {
   }
   async function success(...args: Parameters<typeof run>) {
     const result = await run(...args);
-    assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.code, 0, result.stderr || String(result.signal));
     return result.stdout;
   }
 
@@ -200,6 +203,41 @@ test("one agent reads encrypted uploads from two Connect accounts", {
     assert.equal(stored.account_id, account.id);
     assert.equal(stored.format, "apparent-encrypted-v2");
     captures.push({ name, id, transcript, video });
+    if (name === "first") {
+      const config = JSON.parse(await readFile(sender.config, "utf8"));
+      config.experiments.speakingStyle = true;
+      await writeFile(sender.config, JSON.stringify(config));
+      const manifest = JSON.parse(
+        await readFile(join(bundle, "apparent.json"), "utf8"),
+      );
+      manifest.id = "current-example";
+      manifest.transcript.text = "Only the current recording contains this.";
+      await writeFile(join(bundle, "apparent.json"), JSON.stringify(manifest));
+      const uploaded = await success(sender, ["connect", "upload", bundle]);
+      const current =
+        uploaded.match(/\b[a-f0-9]{32}\b/)?.[0] ??
+        JSON.parse(await success(sender, ["connect", "status"])).queue.find(
+          (job: { status: string; id: string }) =>
+            job.status === "ready" && job.id !== id,
+        )?.id;
+
+      assert.ok(current, uploaded);
+      assert.match(
+        await success(agent, ["inspect", current]),
+        /--style-examples/,
+      );
+      const examples = await success(agent, [
+        "inspect",
+        current,
+        "--style-examples",
+      ]);
+      assert.match(examples, /Synthetic recording first/);
+      assert.doesNotMatch(examples, /Only the current/);
+      assert.notEqual(
+        (await run(agent, ["inspect", id, "--style-examples"])).code,
+        0,
+      );
+    }
   }
   assert.equal(await readFile(agent.config, "utf8"), settings);
   const profiles = JSON.parse(await success(agent, ["connect", "readers"])) as {

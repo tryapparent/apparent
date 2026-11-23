@@ -40,10 +40,29 @@ test('v2 admission rejects mixed, missing, sparse or duplicate objects without r
   }finally{await f.close();}
 });
 
+test('speaking style history is opt-in, account bound and newest first',async()=>{
+  const f=await fixture();
+  try {
+    await f.db.exec(await readFile('.generated/migrations/0020.sql','utf8'));
+    const a=await f.identity('style'),other=await f.identity('other-style');
+    const files=[file('envelope.json'),file('sealed/index.age'),file('sealed/file-000000.age')];
+    for(let n=1;n<=17;n++){
+      const token=n===15?other.token:a.token;
+      const result=await f.call('/v1/captures/'+id(n),{token,method:'POST',body:{files,format:'apparent-encrypted-v2',styleHistory:n===16}});
+      assert.equal(result.status,200);
+      await f.db.prepare("UPDATE captures SET status='ready' WHERE id=?").bind(id(n)).run();
+    }
+    const path='/v1/captures/'+id(16)+'/style-history';
+    assert.equal((await f.call(path,{token:other.read})).status,404);
+    assert.equal((await f.call('/v1/captures/'+id(17)+'/style-history',{token:a.read})).status,404);
+    assert.deepEqual(await (await f.call(path,{token:a.read})).json(),{tokenBudget:1024,ids:Array.from({length:12},(_,i)=>id(14-i))});
+  }finally{await f.close();}
+});
+
 test('staged migration artifacts retain exact D1 ledger filenames and historical SQL bytes',async()=>{
-  const names=Array.from({length:19},(_,i)=>String(i+1).padStart(4,'0')+'.sql');
+  const names=Array.from({length:20},(_,i)=>String(i+1).padStart(4,'0')+'.sql');
   assert.deepEqual((await readdir('.generated/migrations')).sort(),names);
   for(const [i,name] of names.entries()){
-    assert.deepEqual(await readFile('.generated/migrations/'+name),await readFile('migrations/'+(i<5?'baseline/':'')+name));
+    assert.deepEqual(await readFile('.generated/migrations/'+name),await readFile('migrations/'+(i<10?'baseline/':'')+name));
   }
 });

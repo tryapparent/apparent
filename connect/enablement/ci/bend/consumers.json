@@ -23,6 +23,12 @@
     "desktop",
     "client"
   ],
+  "connect/service/src/captures/style-history.bend": [
+    "capture",
+    "client",
+    "web",
+    "service"
+  ],
   "connect/service/src/reporting/activity-preference.bend": [
     "capture",
     "client",
