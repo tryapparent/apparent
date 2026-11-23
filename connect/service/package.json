@@ -42,6 +42,10 @@
     }
   },
   "imports": {
+    "#bend/style-history": {
+      "types": "./src/captures/style-history.d.mts",
+      "default": "./dist/bend/style-history.mjs"
+    },
     "#bend/report-policy": {
       "types": "./src/support/report-policy.d.mts",
       "default": "./dist/bend/report-policy.mjs"

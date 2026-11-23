@@ -1,0 +1,11 @@
+{
+  "name": "@apparent/agent-settings",
+  "private": true,
+  "exports": {
+    "./speaking-style": "./speaking-style.tsx"
+  },
+  "dependencies": {
+    "@apparent/ui": "file:../../shared/ui",
+    "react": "^19.2.0"
+  }
+}

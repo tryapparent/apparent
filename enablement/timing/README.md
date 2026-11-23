@@ -63,6 +63,10 @@ optional screenshot-absence check must be the observed literal guard. These
 whole-command forms describe one proof envelope even when it contains multiple
 stages. Free-form setup and mixed Connect smoke preparation remain unresolved.
 
+The static shell scanner also recognizes a literal push of `HEAD` to `origin`
+with the `taskset -c` prefix and a numeric CPU list. The list may include
+decimal ranges. Dynamic affinities and other wrapper forms stay unresolved.
+
 Attribution uses the existing exact process and cell links. Individual jobs and
 nested shell phases have no separate timing rows. Asynchronous launches are
 excluded from the short-call subtotal because a quick return does not establish

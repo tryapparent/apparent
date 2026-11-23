@@ -283,49 +283,18 @@ mod tests {
     }
 
     #[test]
-    fn fallback_retention_preserves_nested_config_and_matches_cleanup_readback() {
-        use crate::capture::engine::bundle::retention::{Policy, Preset};
-        use std::os::unix::fs::PermissionsExt;
-        let dir = TempDir::new("fallback-retention");
+    fn retired_storage_actions_leave_config_unchanged() {
+        let dir = TempDir::new("retired-storage");
         let mut host = fake(&dir);
         let mut panel = Panel::default();
-        std::fs::write(&host.path, serde_json::to_vec(&serde_json::json!({
-            "ingestToken": "synthetic-secret", "futureRoot": {"nested": true},
-            "retention": {"mediaDays": null, "futurePolicy": {"version": 42}}
-        })).unwrap()).unwrap();
-        for preset in [Preset::Month, Preset::Forever, Preset::Week] {
-            assert_eq!(panel.on(Action::Set {
-                key: "retention".into(), value: preset_id(preset).into()
-            }, &mut host), Effect::Measure);
-            let saved = read_json(&host.path);
-            assert_eq!(saved["retention"]["futurePolicy"], serde_json::json!({"version": 42}));
-            assert_eq!(saved["ingestToken"], "synthetic-secret");
-            assert_eq!(saved["futureRoot"], serde_json::json!({"nested": true}));
-            assert_eq!(Policy::load_from(&host.path), preset.policy());
-            assert_eq!(panel.view(&host).retention.preset, Some(preset_id(preset)));
-            assert_eq!(std::fs::metadata(&host.path).unwrap().permissions().mode() & 0o777, 0o600);
-        }
-    }
-
-    #[test]
-    fn fallback_retention_refuses_invalid_config_and_unknown_presets() {
-        let dir = TempDir::new("fallback-retention-refusal");
-        let mut host = fake(&dir);
-        let mut panel = Panel::default();
-        for original in ["{", r#"{"retention":null,"ingestToken":"synthetic-secret"}"#,
-            r#"{"retention":"future-policy","ingestToken":"synthetic-secret"}"#] {
-            std::fs::write(&host.path, original).unwrap();
-            assert_eq!(panel.on(Action::Set {
-                key: "retention".into(), value: "month".into()
-            }, &mut host), Effect::Measure);
-            assert_eq!(std::fs::read(&host.path).unwrap(), original.as_bytes());
-        }
-        let original = r#"{"retention":{"futurePolicy":42},"ingestToken":"synthetic-secret"}"#;
+        let original = br#"{"capturesDir":"/saved","retention":{"maximumMb":12000,"future":42}}"#;
         std::fs::write(&host.path, original).unwrap();
-        assert_eq!(panel.on(Action::Set {
-            key: "retention".into(), value: "unrecognized".into()
-        }, &mut host), Effect::None);
-        assert_eq!(std::fs::read(&host.path).unwrap(), original.as_bytes());
+        for (key, value) in [("capturesDir", "/other"), ("retention", "month")] {
+            assert_eq!(panel.on(Action::Set {
+                key: key.into(), value: value.into()
+            }, &mut host), Effect::None);
+        }
+        assert_eq!(std::fs::read(&host.path).unwrap(), original);
     }
 
     #[test]
@@ -1030,24 +999,12 @@ mod tests {
         assert!(!Panel::default().view(&host).video_export);
         set(&mut panel, &mut host, "videoExport", true.into());
         set(&mut panel, &mut host, "transcriber", "hex".into());
-        assert_eq!(
-            set(&mut panel, &mut host, "retention", "month".into()),
-            Effect::Measure
-        );
         set(&mut panel, &mut host, "transcriber", "nonsense".into());
         let view = panel.view(&host);
         assert!(view.video_export);
         assert!(serde_json::to_value(&view).unwrap().get("autoSend").is_none());
         set(&mut panel, &mut host, "autoSend", true.into());
         assert!(read_json(&host.path).get("autoSend").is_none());
-        assert_eq!(view.retention.preset, Some("month"));
-        assert_eq!(
-            view.retention.note,
-            format!(
-                "Video and audio go to the {} after 30 days, the rest of each capture after 90 days.",
-                if cfg!(target_os = "windows") { "Recycle Bin" } else { "Trash" }
-            )
-        );
         let config = read_json(&host.path);
         assert_eq!(config["transcriber"], "hex");
         assert_eq!(config["ingestToken"], "secret");
@@ -1085,51 +1042,6 @@ mod tests {
         );
         assert!(read_json(&host.path).get("appleLocale").is_none());
         assert_eq!(panel.view(&host).transcriber.apple_locale, "auto");
-        set(&mut panel, &mut host, "retention", "forever".into());
-        // "Forever" says it all; no caption.
-        assert_eq!(panel.view(&host).retention.note, "");
-    }
-
-    #[test]
-    fn the_captures_folder_can_be_chosen_and_reset() {
-        let dir = TempDir::new("captures-dir");
-        let mut host = fake(&dir);
-        let mut panel = Panel::default();
-        let set = |panel: &mut Panel, host: &mut Fake, value: serde_json::Value| {
-            panel.on(
-                Action::Set {
-                    key: "capturesDir".into(),
-                    value,
-                },
-                host,
-            )
-        };
-        let chosen = dir.0.join("My Captures").display().to_string();
-
-        assert_eq!(
-            set(&mut panel, &mut host, chosen.clone().into()),
-            Effect::Measure
-        );
-        assert_eq!(read_json(&host.path)["capturesDir"], chosen.as_str());
-        // A relative folder is turned down and the chosen one kept.
-        assert_eq!(set(&mut panel, &mut host, "captures".into()), Effect::None);
-        assert_eq!(read_json(&host.path)["capturesDir"], chosen.as_str());
-
-        let view = panel.view(&host).captures_dir;
-        assert!(view.custom);
-        assert_eq!(
-            view.path,
-            crate::composition::command_line::tilde(&dir.0.join("My Captures"))
-        );
-
-        assert_eq!(set(&mut panel, &mut host, "".into()), Effect::Measure);
-        assert!(read_json(&host.path).get("capturesDir").is_none());
-        let view = panel.view(&host).captures_dir;
-        assert!(!view.custom);
-        assert_eq!(
-            view.path,
-            crate::composition::command_line::tilde(&crate::shared::handoff::builtin_captures_dir())
-        );
     }
 
     #[test]

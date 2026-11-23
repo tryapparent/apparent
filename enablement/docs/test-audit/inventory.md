@@ -92,7 +92,6 @@
 | Desktop | capture/desktop/settings/settings.rs | source candidate | 3857 | pending |
 | Desktop | capture/desktop/settings/settings_window.rs | source candidate | 2805 | pending |
 | Desktop | capture/desktop/settings/shortcut.rs | source candidate | 248 | pending |
-| Desktop | capture/desktop/settings/storage.rs | source candidate | 176 | pending |
 | Desktop | capture/desktop/ui/controls/mod.rs | source candidate | 399 | pending |
 | Desktop | capture/desktop/ui/desktop_completion/worker.rs | source candidate | 300 | pending |
 | Desktop | capture/desktop/ui/electron_pill/mod.rs | source candidate | 275 | pending |

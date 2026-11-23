@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 mod renewal;
 mod encrypted_transfer;
+use encrypted_transfer::snapshot;
 mod private_files;
 use private_files::*;
 mod file_transfer;
@@ -24,9 +25,7 @@ mod encryption;
 mod foreground;
 mod activity;
 #[cfg(target_os = "linux")]
-mod support_peer;
-#[cfg(target_os = "linux")]
-pub use support_peer::check_support_peer;
+pub use encryption::support::check_support_peer;
 pub use foreground::foreground_progress;
 pub mod settings;
 /// Application-owned preferences and browser mechanics. Implementations must
@@ -207,6 +206,8 @@ struct Job {
     // Admission pins the format. A preference change cannot downgrade this job.
     #[serde(default)]
     encrypted: bool,
+    #[serde(default)]
+    speaking_style: bool,
     #[serde(default)]
     encryption: Option<encrypted_transfer::EncryptedJob>,
     #[serde(default = "legacy_encryption_version")]
@@ -948,6 +949,7 @@ impl Client {
             files: Vec::new(),
             shared: public_copy,
             public_copy,
+            speaking_style: !public_copy && self.provider.experiment("speakingStyle"),
             encrypted: !public_copy && self.provider.experiment(HOSTED_ENCRYPTION),
             encryption: None,
             encryption_version: 2,
@@ -956,18 +958,6 @@ impl Client {
         Ok(job.id)
     }
 
-    pub fn pointer(&self, bundle: &Path) -> Option<String> {
-        if !self.enabled() || !self.state.is_dir() {
-            return None;
-        }
-        let job = self.jobs().ok()?.into_iter().find(|j| {
-            !j.public_copy && j.bundle == bundle && self.active(j) && j.status != "cancelled"
-        })?;
-        let result = Self::handoff_policy(json!({"job":{"id":job.id,"status":job.status}})).ok()?;
-        // Reconcile consent/generation after the policy runtime returns.
-        if !self.active(&job) { return None; }
-        result.as_str().map(str::to_owned)
-    }
     fn raw_request(
         &self,
         server: &str,

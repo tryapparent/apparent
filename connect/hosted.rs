@@ -105,7 +105,7 @@ impl settings_controller::Backend for SettingsBackend {
         self.0.settings_disable(logout)
     }
 }
-fn client() -> Client {
+pub(crate) fn client() -> Client {
     client_at(crate::shared::handoff::default_config_path())
 }
 
@@ -290,7 +290,7 @@ pub fn inspect_source(source: &Path, reader: Option<&str>) -> Result<PathBuf> {
         .map_err(recovery)
 }
 
-fn inspect_capture_id(source: &Path) -> Option<&str> {
+pub(crate) fn inspect_capture_id(source: &Path) -> Option<&str> {
     source.to_str().filter(|id| {
         id.len() == 32
             && id
