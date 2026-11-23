@@ -102,3 +102,17 @@ non-activating, and closes if a capture starts.
 Composition builds the overlay into `dist/frog-nudge/` alongside the desktop
 Settings renderer. A build without that entry stays quiet. Linux retains its
 existing onboarding experience.
+
+## Desktop frog trial
+
+On macOS, enable **Settings → Labs → Desktop frog**, then open **Show welcome
+tour** from About. The second shortcut prompt leads to the frog naming step
+and then the real screen picker. The guided practice uses the existing capture,
+annotation, save and handoff actions. A completed practice recording and
+**Finish setup** commit the frog to the profile before it lands on the desktop.
+
+The red button appears on hover and starts apparent through the existing
+recording action. Drag to move the frog or double-click to hop. The frog
+pauses during capture and setup. Turning the experiment off hides it, and
+turning it back on restores a previously named and adopted frog. On restart
+the frog starts in the display corner again. Linux keeps its existing tour.

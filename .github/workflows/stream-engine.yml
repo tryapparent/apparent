@@ -9,6 +9,7 @@ on:
       - "!engine/diagnostics/**"
       - "!engine/recording/model-cache/**"
       - "!engine/native/input/**"
+      - "!engine/native/macos/desktop/**"
       - "!engine/**/*.md"
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
   push:
@@ -19,6 +20,7 @@ on:
       - "!engine/diagnostics/**"
       - "!engine/recording/model-cache/**"
       - "!engine/native/input/**"
+      - "!engine/native/macos/desktop/**"
       - "!engine/**/*.md"
   workflow_dispatch:
 

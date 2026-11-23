@@ -55,6 +55,7 @@
     "../../../../composition/quit/view.tsx",
     "../../../../composition/pill/whiteboard/view.tsx",
     "../../../../composition/pill/whiteboard/main.ts",
-    "../../../../composition/pill/whiteboard/preload.ts"
+    "../../../../composition/pill/whiteboard/preload.ts",
+    "../../../../onboarding/renderer/frog/desktop.tsx"
   ]
 }

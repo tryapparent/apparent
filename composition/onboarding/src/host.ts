@@ -27,6 +27,7 @@ import type {
 } from "@apparent/connect-native-adapter/onboarding";
 import { parentChannel } from "./channel.ts";
 import { Placement } from "./place.ts";
+import frogPolicy from "@apparent/onboarding/desktop-frog";
 
 type Capabilities = {
   assets: string;
@@ -203,6 +204,48 @@ export function start(capabilities: Capabilities) {
     ipcMain.handle("onboarding:action", (e, ...args: unknown[]) => {
       if (!valid(e) || args.length !== 1)
         throw Error("Forbidden onboarding action");
+      const request = args[0];
+      if (
+        record(request) &&
+        request.action === "frog-name" &&
+        state?.frogNaming &&
+        typeof request.name === "string"
+      ) {
+        const name = request.name.trim();
+        return (
+          frogPolicy.accept_name(/\p{Cc}/u.test(name), name.length) &&
+          channel.send({ type: "frog-name", name })
+        );
+      }
+      if (
+        record(request) &&
+        request.action === "frog-finish" &&
+        state?.frogName &&
+        state.practice === "complete"
+      ) {
+        const bounds = window.getContentBounds();
+        const point = request.takeoff;
+        if (
+          !Array.isArray(point) ||
+          point.length !== 3 ||
+          !point.every(Number.isFinite)
+        )
+          return false;
+        const [x, y, width] = point;
+        if (
+          x < 0 ||
+          x > bounds.width ||
+          y < 0 ||
+          y > bounds.height ||
+          width < 20 ||
+          width > 180
+        )
+          return false;
+        return channel.send({
+          type: "frog-finish",
+          takeoff: [bounds.x + x, bounds.y + y, width],
+        });
+      }
       const action = parseAction(args[0]);
       if (action.action === "board")
         throw Error("Forbidden onboarding command");

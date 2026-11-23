@@ -180,6 +180,24 @@ pub(super) fn read_actions(stdout: std::process::ChildStdout, events: impl Fn(su
                         continue;
                     };
                     if value["type"]=="practice-disposition" {events(super::Event::Practice(value));continue;}
+                    if value["type"] == "frog-name" {
+                        if let Some(name) = value["name"].as_str() {
+                            let name = name.trim();
+                            if (1..=24).contains(&name.encode_utf16().count()) && !name.chars().any(char::is_control) {
+                                events(super::Event::FrogName(name.to_owned()));
+                            }
+                        }
+                        continue;
+                    }
+                    if value["type"] == "frog-finish" {
+                        if let Ok([x, y, width]) = serde_json::from_value::<[f64; 3]>(value["takeoff"].clone())
+                            && [x, y, width].iter().all(|v| v.is_finite())
+                            && (20.0..=180.0).contains(&width)
+                        {
+                            events(super::Event::FrogTakeoff([x, y, width]));
+                        }
+                        continue;
+                    }
                     let Some(action) = value.get("action").and_then(|v| v.as_str()) else {
                         continue;
                     };

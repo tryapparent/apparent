@@ -1,3 +1,6 @@
+include!(concat!(env!("CARGO_MANIFEST_DIR"), "/engine/native/macos/desktop/desktop_frog_peer.rs"));
+include!(concat!(env!("CARGO_MANIFEST_DIR"), "/engine/native/macos/desktop/onboarding_transport.rs"));
+
 impl Session {
     #[cfg(test)]
     pub(crate) fn for_test(flow: Flow) -> Self {
@@ -19,6 +22,7 @@ impl Session {
             saved_shortcut_chosen: false,
             saved_shortcut_tested_for: None,
             saved_first_capture_completed: false,
+            frog_enabled: false, frog_revealed: false, frog_name: None, frog_error: false, frog_takeoff: None,
             clock: std::time::Instant::now(),
             practice: None,
             anchor: None,
@@ -116,6 +120,11 @@ impl Session {
             saved_shortcut_chosen: progress.shortcut_chosen,
             saved_shortcut_tested_for: progress.shortcut_tested_for,
             saved_first_capture_completed: progress.first_capture_completed,
+            frog_enabled: cfg!(target_os = "macos") && shell && crate::shared::handoff::experiment("desktopFrog"),
+            frog_revealed: false,
+            frog_name: progress.frog_name,
+            frog_error: false,
+            frog_takeoff: None,
             clock: std::time::Instant::now(),
             practice: shell.then(super::practice::Practice::default),
             anchor: None,
@@ -141,56 +150,6 @@ impl Session {
         -> impl Fn(Event) + Send + Sync + Clone + 'static
     {
         move |event| events(Event::Session { source, event: Box::new(event) })
-    }
-
-    fn spawn_helper(
-        shortcut: &str,
-        events: impl Fn(Event) + Send + Sync + Clone + 'static,
-    ) -> anyhow::Result<Transport> {
-        use std::process::{Command, Stdio};
-
-        let mut command = Command::new(crate::capture::desktop::helper::path()?);
-        command
-            .args(["onboarding", "--shortcut", shortcut, "--paste"])
-            .arg(crate::capture::desktop::settings::paste_label())
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
-        let dev_icon = concat!(env!("CARGO_MANIFEST_DIR"), "/capture/desktop/assets/app-icon.png");
-        if Path::new(dev_icon).is_file() {
-            command.args(["--icon", dev_icon]);
-        }
-        Self::spawn_transport(&mut command, events)
-    }
-
-    fn spawn_renderer_transport(
-        command: &mut std::process::Command,
-        generation: u64,
-        events: impl Fn(Event) + Send + Sync + Clone + 'static,
-    ) -> anyhow::Result<Transport> {
-        let events = Self::scope_transport(generation, events);
-        command.stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null());
-        let mut child = command.spawn()?;
-        let stdin = child.stdin.take().ok_or_else(|| anyhow::anyhow!("missing onboarding input"))?;
-        let lost = events.clone();
-        let input = match pipe::Input::new(stdin, move || lost(Event::Exited)) {
-            Ok(input) => input,
-            Err(error) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(error.into());
-            }
-        };
-        if let Some(stdout) = child.stdout.take() { pipe::read_actions(stdout, events); }
-        Ok(Transport::Renderer { child: crate::capture::ui_process::UiChild::new(child), input })
-    }
-
-    fn spawn_transport(command: &mut std::process::Command, events: impl Fn(Event) + Send + Sync + Clone + 'static) -> anyhow::Result<Transport> {
-        command.stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null());
-        let mut child = command.spawn()?;
-        let stdin = child.stdin.take();
-        if let Some(stdout) = child.stdout.take() { pipe::read_actions(stdout, events); }
-        Ok(Transport::Helper { child: crate::capture::ui_process::UiChild::new(child), stdin })
     }
 
     pub fn restore_native(&mut self) -> bool {
@@ -253,6 +212,15 @@ impl Session {
     }
 
     pub fn input(&mut self, input: Input) -> Effect {
+        if matches!(input, Input::ShortcutTriggered) && self.frog_stage() != 0 {
+            self.frog_revealed = true;
+            self.sync();
+            return Effect::None;
+        }
+        if matches!(input, Input::Back) {
+            self.frog_revealed = false;
+            self.frog_error = false;
+        }
         if matches!(&input, Input::ShortcutChosen) { self.shortcut_choice_down = true; }
         if self.practice.is_some() && self.flow.step()==Step::TryIt && !self.fallback_pending {
             match &input {
@@ -437,9 +405,15 @@ impl Session {
     }
 
     pub(crate) fn shortcut_policy(&self) -> ShortcutPolicy {
+        match self.frog_stage() {
+            1 => return ShortcutPolicy::Trial,
+            2 => return ShortcutPolicy::Block,
+            _ => (),
+        }
         let policy = self.flow.shortcut_policy();
         if self.shortcut_choice_down && policy == ShortcutPolicy::Trial { ShortcutPolicy::Block } else { policy }
     }
+
     pub(crate) fn shortcut_selection_released(&mut self, released: bool) {
         if released { self.shortcut_choice_down = false; }
     }
@@ -564,6 +538,9 @@ impl Session {
         view["platform"]=std::env::consts::OS.into();
         view["wisprFlowEnabled"]=(cfg!(target_os = "macos")
             && crate::shared::handoff::experiment("onboardingWisprFlow")).into();
+        view["frogNaming"] = (self.frog_stage() == 2).into();
+        view["frogName"] = serde_json::json!(if self.frog_enabled { self.frog_name.as_deref() } else { None });
+        view["frogError"] = self.frog_error.into();
         view["shortcutEditor"]=serde_json::json!(self.editor);
         view["anchor"]=serde_json::json!(self.anchor);
         view["practiceBoard"]=serde_json::json!(self.practice_board);
@@ -603,6 +580,8 @@ impl Session {
                 progress.shortcut_chosen = self.flow.shortcut_chosen;
                 progress.shortcut_tested_for = tested_for.clone();
                 progress.first_capture_completed = self.flow.first_capture_completed;
+                progress.frog_adopted |= self.frog_enabled && self.frog_name.is_some()
+                    && self.flow.first_capture_completed;
             }
             if let Err(error) = progress.save_to(&crate::shared::handoff::default_config_path()) {
                 crate::capture::engine::runtime::apparent_log(&format!("onboarding: progress save failed: {error}"));

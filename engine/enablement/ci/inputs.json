@@ -5,6 +5,7 @@
     "engine/permissions/",
     "engine/diagnostics/",
     "engine/recording/model-cache/",
-    "engine/native/input/"
+    "engine/native/input/",
+    "engine/native/macos/desktop/"
   ]
 }
