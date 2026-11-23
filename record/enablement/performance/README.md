@@ -26,6 +26,9 @@ recording. A persistent observer timestamps the verified clipboard on the
 same host monotonic clock. Guest CPU and memory windows use the native Finish
 log and the owned saved and clipboard receipts. The probe times CLI copy
 against a seeded clipboard and checks the readback independently.
+The changed selection must contain the owned bundle's inspect command or
+match its saved voice-only transcript exactly. Ink fixtures require the
+inspect command.
 
 For timed fixtures, the guest estimates the recorder’s monotonic start from its first
 encoded frame and the elapsed time reported for that frame. It schedules Finish

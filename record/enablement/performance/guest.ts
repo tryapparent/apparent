@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { clipboardObserver, seedClipboard } from "./clipboard/guest.ts";
+import { clipboardProof } from "./clipboard/payload.ts";
 import { now, startFixture, recordMetric } from "./fixture-clock.ts";
 
 const {
@@ -121,7 +122,7 @@ const sink = "journey_" + process.pid;
 const source = sink + ".monitor";
 const dedicated: ChildProcess[] = [];
 const abort = new AbortController();
-const watchClipboard = clipboardObserver(captures, put, abort.signal);
+const watchClipboard = clipboardObserver(put, abort.signal);
 let owned: string | undefined;
 let module: string | undefined;
 
@@ -404,7 +405,10 @@ try {
       ]);
       owned = undefined;
       const clipboard = await clip;
-      assert(clipboard.text.includes(bundle));
+      await put(
+        name + "-proof.json",
+        await clipboardProof(bundle, clipboard.text, fixture.strokes > 0),
+      );
       await recordMetric(
         artifact("spans.tsv"),
         name,
@@ -414,17 +418,6 @@ try {
       );
       await append("phase-finish.tsv", [name, saved, clipboard.at]);
       await captureProfile?.finish(clipboard.at);
-      const evidence = JSON.parse(
-        await readFile(join(bundle, "apparent.json"), "utf8"),
-      );
-      await put(
-        name + "-proof.json",
-        asJson({
-          actualInk: evidence.strokes?.length ?? 0,
-          durationMs: evidence.durationMs,
-          keyframes: evidence.keyframes?.length ?? 0,
-        }),
-      );
       const trace = await readFile(
         join(bundle, "finish-trace.json"),
         "utf8",
