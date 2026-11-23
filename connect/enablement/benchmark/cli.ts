@@ -8,6 +8,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import {
+  type MeasuredWait,
+  measuredWait,
+} from "../../../shared/enablement/performance/measurement.ts";
 
 const [configPath, id, ...extra] = process.argv.slice(2);
 const { APPARENT_BENCH_BINARY: binary, APPARENT_BENCH_RESULTS: directory } =
@@ -69,7 +73,7 @@ const env = {
   APPARENT_CAPTURES_DIR: join(job, "captures"),
   TMPDIR: job,
 };
-const waits: Record<string, { ms: number; verified: true }> = {};
+const waits: Record<string, MeasuredWait> = {};
 const run = (args: string[], cwd: string) =>
   execFileSync(binary, args, {
     cwd,
@@ -88,9 +92,9 @@ function measure(
 ) {
   const start = performance.now();
   const stdout = run(args, cwd);
-  const ms = performance.now() - start;
+  const end = performance.now();
   verify(stdout);
-  waits["inspect-remote/" + id] = { ms, verified: true };
+  waits["inspect-remote/" + id] = measuredWait(start, end);
 }
 
 function verifyFiles(root: string, files: string[]) {

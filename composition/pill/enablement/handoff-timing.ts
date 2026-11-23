@@ -1,10 +1,11 @@
-import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { isAbsolute, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { measuredWait } from "../../../shared/enablement/performance/measurement.ts";
 
 test("time desktop destination selection and verified isolated handoff", {
   timeout: 45000,
@@ -148,7 +149,7 @@ test("time desktop destination selection and verified isolated handoff", {
   const chosen = page.getByRole("option", { name: /Chosen thread/ }).first();
   await expect(chosen).toBeVisible({ timeout: 10000 });
   await expect(chosen).toBeEnabled();
-  const pickerMs = performance.now() - pickerStart;
+  const destinations = measuredWait(pickerStart, performance.now());
   assert.equal(f.calls.length, 0);
 
   const sendStart = performance.now();
@@ -156,7 +157,7 @@ test("time desktop destination selection and verified isolated handoff", {
   await expect(
     page.getByRole("img", { name: "Submitted", exact: true }),
   ).toBeVisible({ timeout: 10000 });
-  const sendMs = performance.now() - sendStart;
+  const send = measuredWait(sendStart, performance.now());
   assert.equal(f.calls.length, 1);
   assert.equal(f.calls[0].payload.threadId, "thread");
   assert.equal(f.calls[0].payload.text, handoff);
@@ -170,8 +171,8 @@ test("time desktop destination selection and verified isolated handoff", {
       {
         version,
         waits: {
-          destinations: { ms: pickerMs, verified: true },
-          send: { ms: sendMs, verified: true },
+          destinations,
+          send,
         },
       },
       null,

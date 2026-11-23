@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import { appendFileSync, readFileSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { interval } from "../../../shared/enablement/performance/measurement.ts";
 import type { InkEvidence } from "./ink.ts";
+
 type Qmp = {
   ready(deadline: number): Promise<void>;
   command(command: string, args: object, deadline: number): Promise<unknown>;
@@ -262,7 +264,13 @@ export async function observeShortcut(
     if (!started()) throw Error("Native action was not sent");
     let prior = started();
     let first:
-      | { ms: number; sampleGapMs: number; frame: Frame; sha256: string }
+      | {
+          at: number;
+          ms: number;
+          sampleGapMs: number;
+          frame: Frame;
+          sha256: string;
+        }
       | undefined;
     while (performance.now() < end && stage() === "scenario") {
       signal.throwIfAborted();
@@ -270,6 +278,7 @@ export async function observeShortcut(
       if (predicate(frame.observation)) {
         if (first) return first;
         first = {
+          at: frame.at,
           ms: Math.round(frame.at - started()),
           sampleGapMs: Math.max(1, Math.round(frame.at - prior)),
           frame: frame.observation,
@@ -361,6 +370,20 @@ export async function observeShortcut(
       pill,
       live,
       ink,
+      intervals: {
+        pill: [
+          interval(keyDown, picker.at, "host"),
+          interval(release, pill.at, "host"),
+        ],
+        live: arrival && [
+          interval(keyDown, picker.at, "host"),
+          interval(
+            press,
+            Math.max(arrival.screenAt, arrival.microphoneAt, pill.at),
+            "host",
+          ),
+        ],
+      },
       ms: picker.ms + pill.ms,
     };
     if (!verifiedStart(receipt))

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import {
   chmod,
   lstat,
@@ -10,6 +10,7 @@ import {
 } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { measuredWait } from "../../../shared/enablement/performance/measurement.ts";
 
 const [appDir, results, ...extra] = process.argv.slice(2);
 assert(
@@ -184,7 +185,7 @@ async function selectRecording(observer: Observer) {
     button: "left",
     clickCount: 1,
   });
-  return (await painted(observer, recording)) - started;
+  return measuredWait(started, await painted(observer, recording));
 }
 
 const options = { ...process.env, APPARENT_DESKTOP_REPORTING: "0" };
@@ -221,7 +222,7 @@ try {
   });
   const cold = launch("launch");
   observer = await connectSettings();
-  const coldMs = (await painted(observer, entry)) - cold.started;
+  const launchWait = measuredWait(cold.started, await painted(observer, entry));
   const coldPane = await observer.evaluate(
     "document.querySelector('h1').textContent",
   );
@@ -231,7 +232,7 @@ try {
       {
         version,
         observedPanel: coldPane,
-        waits: { launch: { ms: coldMs, verified: true } },
+        waits: { launch: launchWait },
       },
       null,
       2,
@@ -274,11 +275,14 @@ try {
   }, "the background application to accept capture requests");
   const reopened = launch("app");
   observer = await connectSettings();
-  const openMs = (await painted(observer, entry)) - reopened.started;
+  const settings = measuredWait(
+    reopened.started,
+    await painted(observer, entry),
+  );
   const openPane = await observer.evaluate(
     "document.querySelector('h1').textContent",
   );
-  const sectionMs = await selectRecording(observer);
+  const section = await selectRecording(observer);
   await observer.evaluate("window.close()");
   await writeFile(
     join(results, "settings-waits.json"),
@@ -287,8 +291,8 @@ try {
         version,
         observedPanel: openPane,
         waits: {
-          settings: { ms: openMs, verified: true },
-          "settings-section": { ms: sectionMs, verified: true },
+          settings,
+          "settings-section": section,
         },
       },
       null,

@@ -1,5 +1,14 @@
 # Perfetto profiling for the journey benchmark
 
+## Measure and score the journey
+
+The default suite writes Perfetto-compatible measurement traces for all verified
+waits and recording resource profiles. Trace Processor measures the slices and
+reads the reported resource counters for the matched v5 score. This mode needs
+a Trace Processor executable. It can run on the ordinary isolated benchmark
+setup. The optional stack collection below uses the provisioned profiling
+environment.
+
 ## Profile complete producer lanes
 
 The [journey suite's profile mode](#profile-the-full-journey-on-linux)
@@ -57,4 +66,6 @@ The index is emitted only after every required journey wait and resource passes
 the coverage audit and each trace contains call stacks with no reported data
 loss. The unscored `silent-prompt` entry has no producer in this suite. Profiled
 runs are diagnostic and do not produce a scoring receipt, ledger or baseline.
+The profile index links the same measurement traces by their clock and digest.
+Host and guest measurement traces have separate clock domains.
 All artifacts stay in the private job directories.
