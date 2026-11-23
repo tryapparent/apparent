@@ -1627,7 +1627,6 @@ final class SettingsWindow: NSObject, NSApplicationDelegate, NSWindowDelegate {
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     model.rendering = true
     var base = SettingsState()
-    base.capturesSize = "1.4 GB"
     base.permissions = base.permissions.map { row in
       var row = row
       row.status = ["screen-recording", "microphone", "accessibility"].contains(row.permission) ? "granted" : "not-determined"
