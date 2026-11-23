@@ -654,9 +654,7 @@ class PreparationTests(unittest.TestCase):
 
 
 class RunnerFailureTests(unittest.TestCase):
-    """Real owned child/streams and disk cleanup; VM/SSH/systemd are inert adapters."""
-
-    def exercise(self, root, scenario_exit: int | str = 7, transfer_exit=0, cleanup_exit=0, corrupt=False, delayed_writer=False, desktop=None, stale_scenario=False, outputs=1):
+    def exercise(self, root, scenario_exit: int | str = 7, transfer_exit=0, cleanup_exit=0, mismatch='', delayed_writer=False, desktop=None, stale_scenario=False, outputs=1):
         root = Path(root)
         binary = root / 'candidate'
         binary.write_bytes(b'synthetic candidate')
@@ -668,8 +666,6 @@ class RunnerFailureTests(unittest.TestCase):
         guest = root / 'guest'
         guest.mkdir()
         (guest / 'evidence.txt').write_text('only evidence')
-        # The transport accepts only these synthetic operations. It never invokes
-        # an SSH client, guest, product binary, systemd or the shell command string.
         transport = root / 'transport.py'
         transport.write_text('''import hashlib, pathlib, shutil, subprocess, sys
 root = pathlib.Path(sys.argv[1])
@@ -698,9 +694,13 @@ elif operation == 'scp' and '-r' in sys.argv:
     if int(sys.argv[3]):
         sys.stderr.write('transfer diagnostic\\n')
         sys.exit(int(sys.argv[3]))
-    shutil.copytree(root / 'guest', sys.argv[-1])
-    if sys.argv[4] == 'corrupt':
-        (pathlib.Path(sys.argv[-1]) / 'evidence.txt').write_text('wrong')
+    if sys.argv[4] == 'guest':
+        (root / 'guest/evidence.txt').write_text('late')
+    destination = pathlib.Path(sys.argv[-1])
+    shutil.copytree(root / 'guest', destination)
+    if sys.argv[4] == 'copy':
+        (destination / 'evidence.txt').unlink()
+        (destination / 'different.txt').write_text('wrong')
 elif operation == 'cleanup':
     sys.stderr.write('cleanup diagnostic\\n')
     sys.exit(int(sys.argv[3]))
@@ -710,13 +710,11 @@ elif operation == 'cleanup':
         def transport_execute(command, **kwargs):
             if command[0] == 'scp':
                 command = [sys.executable, str(transport), str(root), 'scp', str(transfer_exit),
-                           'corrupt' if corrupt else 'normal', *command[1:]]
+                           mismatch, *command[1:]]
             elif command[0] == 'systemctl':
                 command = [sys.executable, str(transport), str(root), 'cleanup', str(cleanup_exit)]
             result = real_execute(command, **kwargs)
             if writer is not None and command[:3] == [sys.executable, '-c', runner.MANIFEST_SCRIPT]:
-                # Both manifests now match, but the guest is still live. Let
-                # its writer produce evidence before main can shut it down.
                 (root / 'release-writer').touch()
                 writer.wait(timeout=5)
             return result
@@ -739,8 +737,6 @@ elif operation == 'cleanup':
             owned_processes.append(process)
             return process
 
-        # An independent remote-writer analogue survives the local transport.
-        # It waits until the copied snapshot has already been hashed.
         writer = None
         if delayed_writer:
             writer = real_popen([sys.executable, '-c', '''import pathlib, sys, time
@@ -855,12 +851,18 @@ while not (root / 'release-writer').exists(): time.sleep(.01)
             self.assertFalse((results / 'disk.qcow2').exists())
             self.assertEqual(status['cleanup']['status'], 'complete')
 
-    def test_successful_but_corrupt_transfer_does_not_delete_disk(self):
-        with tempfile.TemporaryDirectory() as root:
-            code, status, results = self.exercise(root, scenario_exit=0, corrupt=True)
-            self.assertNotEqual(code, 0)
-            self.assertIn('manifest mismatch', status['primary_failure']['message'])
-            self.assertTrue((results / 'disk.qcow2').exists())
+    def test_manifest_mismatch_preserves_disk_and_counts_without_paths(self):
+        for cause in ('copy', 'guest'):
+            with self.subTest(cause=cause), tempfile.TemporaryDirectory() as root:
+                code, status, results = self.exercise(root, scenario_exit=0, mismatch=cause)
+                self.assertNotEqual(code, 0)
+                self.assertIn('manifest mismatch', status['primary_failure']['message'])
+                guest_changed = cause == 'guest'
+                self.assertEqual(status['retention_mismatch'],
+                                 dict(missing=int(not guest_changed), extra=int(not guest_changed),
+                                      changed=int(guest_changed), guest_changed=guest_changed))
+                self.assertFalse((results / 'artifacts-retained').exists())
+                self.assertTrue((results / 'disk.qcow2').exists())
 
     def test_failed_or_unknown_remote_exit_keeps_disk_despite_matching_partial_snapshot(self):
         for remote_exit in ('timeout', 255, 7):
