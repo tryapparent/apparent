@@ -1,21 +1,21 @@
 import assert from "node:assert/strict";
-import { clipboardObserver, seedClipboard } from "./clipboard/guest.ts";
-import { now, startFixture } from "./fixture-clock.ts";
-import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess, execFile, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { closeSync, existsSync, openSync } from "node:fs";
 import {
+  appendFile,
   copyFile,
   mkdir,
   readFile,
   rename,
   stat,
   writeFile,
-  appendFile,
 } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
+import { clipboardObserver, seedClipboard } from "./clipboard/guest.ts";
+import { now, startFixture, recordMetric } from "./fixture-clock.ts";
 
 const {
   SCRAWL_GUI_OUTPUT: root,
@@ -45,8 +45,6 @@ const put = (name: string, value: string) =>
 const append = (name: string, values: (number | string)[]) =>
   appendFile(artifact(name), values.join("\t") + "\n");
 const asJson = JSON.stringify;
-const metric = (name: string, id: string, ms: number) =>
-  append("spans.tsv", [name, id, "measured", ms]);
 const phase = (name: string) => put("current-phase", name);
 const asyncExec = promisify(execFile);
 const exec = (command: string, args: string[], timeout = 10_000) =>
@@ -222,33 +220,28 @@ try {
     );
     await writeFile(join(scratch, "output-path"), root + "\n");
   }
-  if (mode === "local-cli") {
-    await exec(
+  const collector = (file: string, args: string[], timeout: number) =>
+    exec(
       process.execPath,
-      [
-        join(
-          scratch,
-          "collector/enablement/timing/journey/native/local-cli-guest.ts",
-        ),
-        app,
-        scratch,
-        out,
-        libs,
-      ],
+      [join(scratch, "collector", file), ...args],
+      timeout,
+    );
+  if (mode === "local-cli") {
+    await collector(
+      "enablement/timing/journey/native/local-cli-guest.ts",
+      [app, scratch, out, libs],
       430000,
     );
   } else if (mode === "settings") {
-    await exec(process.execPath, [files("settings.ts"), appDir, out], 80000);
+    await collector(
+      "composition/settings/enablement/performance.ts",
+      [appDir, out],
+      80000,
+    );
   } else if (mode === "onboarding") {
-    await exec(
-      process.execPath,
-      [
-        join(scratch, "collector/onboarding/enablement/performance.ts"),
-        appDir,
-        config,
-        captures,
-        out,
-      ],
+    await collector(
+      "onboarding/enablement/performance.ts",
+      [appDir, config, captures, out],
       120000,
     );
     await phase("done");
@@ -412,7 +405,13 @@ try {
       owned = undefined;
       const clipboard = await clip;
       assert(clipboard.text.includes(bundle));
-      await metric(name, "paste", clipboard.at - stop);
+      await recordMetric(
+        artifact("spans.tsv"),
+        name,
+        "paste",
+        stop,
+        clipboard.at,
+      );
       await append("phase-finish.tsv", [name, saved, clipboard.at]);
       await captureProfile?.finish(clipboard.at);
       const evidence = JSON.parse(
@@ -458,7 +457,13 @@ try {
         await commands(["copy", bundle]);
         const copied = await observation;
         assert.equal(copied.text, clipboard.text);
-        await metric(name, "cli-copy", copied.at - started);
+        await recordMetric(
+          artifact("spans.tsv"),
+          name,
+          "cli-copy",
+          started,
+          copied.at,
+        );
       }
     }
     if (surface) {

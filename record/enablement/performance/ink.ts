@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
+import {
+  type Interval,
+  interval,
+} from "../../../shared/enablement/performance/measurement.ts";
 
 const origin = { x: 430, y: 515 };
 const prefix = Buffer.from("P6\n1280 800\n255\n");
@@ -42,6 +46,7 @@ export type InkEvidence = {
   before: number;
   after: number;
   frame: string;
+  interval?: Interval;
 };
 
 export function verifiedInk(value: InkEvidence) {
@@ -94,6 +99,7 @@ export async function observeInk(
           before: before.pixels,
           after: frame.pixels,
           frame: frame.sha256,
+          interval: interval(started, frame.at, "host"),
         };
       } else {
         first = undefined;

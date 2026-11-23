@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-
 import {
   connectTo,
   waitFor,
 } from "../../../shared/enablement/performance/electron-observer.ts";
+import {
+  type MeasuredWait,
+  measuredWait,
+} from "../../../shared/enablement/performance/measurement.ts";
 
 type Observer = Awaited<ReturnType<typeof connectTo>>;
 type Process = { kill(signal?: NodeJS.Signals): boolean };
@@ -16,7 +19,7 @@ type Status = {
   bundle_path?: string;
   state?: { phase?: string };
 };
-type Waits = Record<string, { ms: number; verified: true }>;
+type Waits = Record<string, MeasuredWait>;
 type Fixture = {
   output: string;
   scratch: string;
@@ -117,7 +120,7 @@ async function caption({ start, sink, cue }: Fixture, pill: Observer) {
       18000,
     );
     await pill.painted();
-    return { text, ms: performance.now() - started };
+    return { text, timing: measuredWait(started, performance.now()) };
   } finally {
     player.kill("SIGTERM");
   }
@@ -187,10 +190,10 @@ async function measureCancel(
     "Input resumed",
   );
   await stopped;
-  const ms = performance.now() - started;
+  const timing = measuredWait(started, performance.now());
   await draft.evaluate("document.activeElement.select()");
   await key(draft, "Backspace", 8);
-  return ms;
+  return timing;
 }
 
 export async function measureInteractions(fixture: Fixture) {
@@ -225,9 +228,9 @@ export async function measureInteractions(fixture: Fixture) {
     const pill = await connectTo(output, "pill", /\/pill\/index\.html$/);
     try {
       await attempt("captions", async () => {
-        const { ms, text } = await caption(fixture, pill);
-        await mark(output, "captions", { captureId: id, ms, text });
-        waits.captions = { ms, verified: true };
+        const { timing, text } = await caption(fixture, pill);
+        await mark(output, "captions", { captureId: id, ms: timing.ms, text });
+        waits.captions = timing;
       });
       await attempt("note", async () => {
         await draft.send("Page.bringToFront");
@@ -252,9 +255,9 @@ export async function measureInteractions(fixture: Fixture) {
         }
       });
       await attempt("cancel", async () => {
-        const ms = await measureCancel(fixture, pill, draft, id);
-        await mark(output, "cancel", { captureId: id, ms });
-        waits.cancel = { ms, verified: true };
+        const timing = await measureCancel(fixture, pill, draft, id);
+        await mark(output, "cancel", { captureId: id, ms: timing.ms });
+        waits.cancel = timing;
       });
     } finally {
       pill.close();

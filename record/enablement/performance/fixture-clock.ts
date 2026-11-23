@@ -7,6 +7,19 @@ export const now = async () =>
     Number((await readFile("/proc/uptime", "utf8")).split(" ")[0]) * 1000,
   );
 
+export function recordMetric(
+  path: string,
+  name: string,
+  id: string,
+  start: number,
+  end: number,
+) {
+  return appendFile(
+    path,
+    [name, id, "measured", end - start, start, end].join("\t") + "\n",
+  );
+}
+
 export async function startFixture(
   log: () => Promise<string>,
   commands: (args: string[], timeout: number) => Promise<string>,

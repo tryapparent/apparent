@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./electron-observer": "./electron-observer.ts"
+    "./electron-observer": "./electron-observer.ts",
+    "./measurement": "./measurement.ts"
   }
 }
