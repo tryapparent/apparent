@@ -1,7 +1,7 @@
 import Base
 
 def sample_percent() -> U32:
-  10
+  100
 
 def short_recording_ms() -> U32:
   30000

@@ -104,8 +104,8 @@ authorization stays with the capture-time portal.
 ## Optional recording performance
 
 Labs offers **Share recording performance**, off by default and independent
-of error reporting. It takes effect for new screen recordings. In sampled
-recordings that reach finalization, Start measures native recording setup
+of error reporting. It covers every new screen recording that reaches a live
+frame and finalization while opted in. Start measures native recording setup
 through the first observed live frame. Finish measures the native Finish
 request through the bundle publication result. A failed finalizer is tagged
 as a failure. Set the switch off to invalidate that recording's previous
