@@ -26,3 +26,11 @@ place. `apparent connect logout
 --reader <name>` signs out that profile. An unqualified logout signs out the
 original default credentials. A shared agent runtime can access every reader
 profile available to its OS account.
+
+## Native client integration
+
+Blocking `ConfigProvider::set_cloud_allowed` implementations must recheck
+cancellation inside their transaction. The Connect renewal transport receives
+nonsecret decisions through `ConfigProvider::renewal_transition`. The
+application embeds the owner module and the standalone client uses its
+compiled Node entrypoint.

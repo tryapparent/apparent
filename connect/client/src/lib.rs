@@ -29,24 +29,12 @@ mod support_peer;
 pub use support_peer::check_support_peer;
 pub use foreground::foreground_progress;
 pub mod settings;
-use settings::{SafeError, cancelled, hosted_failure};
-
 /// Application-owned preferences and browser mechanics. Implementations must
 /// perform fresh reads, preserve unrelated config, and serialize each write.
 /// Called with queue.lock held for publication; never acquire queue.lock here.
-pub trait ConfigProvider: Send + Sync {
-    fn config_path(&self) -> &Path;
-    fn cloud(&self) -> CloudConfig;
-    fn experiment(&self, name: &str) -> bool;
-    fn set_cloud(&self, value: &CloudConfig) -> Result<()>;
-    /// Blocking writers must override this and recheck inside their transaction.
-    fn set_cloud_allowed(&self, value: &CloudConfig, allowed: &dyn Fn() -> bool) -> Result<()> {
-        ensure!(allowed(), "cancelled");
-        self.set_cloud(value)
-    }
-    fn set_experiment(&self, name: &str, enabled: bool) -> Result<()>;
-    fn open_browser(&self, _uri: &Path) {}
-}
+pub use policy::ConfigProvider;
+pub use policy::{RenewalDecision, RenewalFacts};
+use settings::{SafeError, cancelled, hosted_failure};
 
 pub const HOSTED_SYNC: &str = "hostedSync";
 pub const HOSTED_SHARING: &str = "hostedSharing";

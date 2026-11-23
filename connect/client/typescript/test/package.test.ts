@@ -11,6 +11,8 @@ const builtModules = [
   "account/cli",
   "account/presentation",
   "account/protocol",
+  "renewal/cli",
+  "renewal/transition",
   "activity/index",
   "transfer",
   "transfer/contract",
@@ -30,6 +32,7 @@ const builtFiles = [
   ...builtModules.flatMap((name) => [name + ".d.ts", name + ".js"]),
   "reader/reader-route.mjs",
   "account/account-status.mjs",
+  "renewal/credential-renewal.mjs",
 ].sort();
 function run(
   command: string,
@@ -60,6 +63,7 @@ async function fixture(t: test.TestContext) {
   for (const relative of [
     "shared/enablement/bend",
     "connect/enablement/ci/bend/modules.json",
+    "connect/enablement/ci/bend/renewal.ts",
     "connect/enablement/ci/build-client.ts",
   ]) {
     await fs.cp(
@@ -187,6 +191,28 @@ test("packed consumer installs and runs without Rust, compilers or source resolu
     ["ci", "--offline", "--ignore-scripts=false", "--no-audit", "--no-fund"],
     consumer,
     env,
+  );
+  const renewal = path.join(
+    consumer,
+    "node_modules/@apparent/connect-crypto/dist/renewal/cli.js",
+  );
+  const transitions = execFileSync(process.execPath, [renewal], {
+    cwd: consumer,
+    env,
+    input: [
+      { phase: "journal", completed: true, refreshExpired: true },
+      { phase: "transport", rejected: true, canRetry: false },
+    ]
+      .map((facts) => JSON.stringify(facts))
+      .join("\n"),
+    encoding: "utf8",
+  });
+  assert.deepEqual(
+    transitions
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line)),
+    ["recover", "reapprove"],
   );
   const activityPolicy = path.join(
     consumer,

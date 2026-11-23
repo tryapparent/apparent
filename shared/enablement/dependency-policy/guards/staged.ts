@@ -15,6 +15,14 @@ export { tokens } from "./budgets.ts";
 import { git } from "../snapshot.ts";
 import { checkStyles } from "./style.ts";
 
+const connectRustMoves = new Map([
+  ["connect/client/src/renewal/mod.rs", "connect/client/src/renewal.rs"],
+  [
+    "connect/client/src/test_support/mod.rs",
+    "connect/client/src/test_support.rs",
+  ],
+]);
+
 export async function checkStaged(
   cwd: string,
   head: string | undefined,
@@ -155,7 +163,11 @@ export async function checkStaged(
         !file.startsWith("hermes/")
       )
         errors.push(`${file}: new Python is allowed only in hermes/`);
-      else if (ext === ".rs" && !file.startsWith("engine/"))
+      else if (
+        ext === ".rs" &&
+        !file.startsWith("engine/") &&
+        !(renamed && connectRustMoves.get(file) === renamed)
+      )
         errors.push(`${file}: new Rust is allowed only in engine/`);
       else if (
         [".js", ".jsx", ".mjs", ".cjs"].includes(ext) ||
