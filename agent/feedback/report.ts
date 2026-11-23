@@ -14,9 +14,6 @@ type Request = Report & {
 };
 
 function event(report: Request, id: string) {
-  const issueName =
-    report.desktop ? "Apparent desktop bug report" :
-      report.kind === "bug" ? "Apparent CLI bug report" : "Apparent CLI feedback";
   const source = report.desktop ? "desktop_feedback" : "agent_cli_feedback";
   const fingerprint = createHash("sha256")
     .update(JSON.stringify([report.kind, report.title, report.body]))
@@ -42,7 +39,7 @@ function event(report: Request, id: string) {
       build: report.build,
       environment: report.environment,
       $os: process.platform,
-      $issue_name: issueName,
+      $issue_name: report.desktop ? "Apparent desktop bug report" : report.title,
       $exception_level: "error",
       $exception_fingerprint: `${report.desktop ? "desktop-feedback" : "agent-cli"}:${report.kind}:${fingerprint}`,
       $exception_list: [

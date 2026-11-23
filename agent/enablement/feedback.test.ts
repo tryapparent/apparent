@@ -72,7 +72,7 @@ test("PostHog receives labeled, anonymous exception events and a stable fingerpr
   assert.equal(first.distinct_id, first.uuid);
   assert.notEqual(first.distinct_id, duplicate.distinct_id);
   const properties = first.properties;
-  assert.equal(properties.$issue_name, "Apparent CLI bug report");
+  assert.equal(properties.$issue_name, report.title);
   assert.equal(properties.$exception_list[0].type, "AgentCliBugReport");
   assert.equal(properties.$exception_level, "error");
   assert.equal(properties.source, "agent_cli_feedback");
@@ -94,7 +94,7 @@ test("PostHog receives labeled, anonymous exception events and a stable fingerpr
     properties.$exception_fingerprint,
     feedback.properties.$exception_fingerprint,
   );
-  assert.equal(feedback.properties.$issue_name, "Apparent CLI feedback");
+  assert.equal(feedback.properties.$issue_name, report.title);
   assert.equal(feedback.properties.feedback_kind, "feedback");
 });
 
@@ -139,5 +139,6 @@ test("desktop feedback accepts a stable submission UUID and has its own PostHog 
   assert.deepEqual(events[0], events[1]);
   assert.equal(events[0].uuid, id);
   assert.equal(events[0].properties.source, "desktop_feedback");
+  assert.equal(events[0].properties.$issue_name, "Apparent desktop bug report");
   assert.equal(events[0].properties.feedback_body, report.body);
 });
