@@ -64,7 +64,7 @@ function host(mode: string, capture = () => Promise.resolve({ isEmpty: () => fal
     __dirname: path.dirname(filename),
     setTimeout: (callback: () => void) => { const timer = { callback, active: true, unref() {} }; timers.push(timer); return timer; },
     clearTimeout: (timer?: typeof timers[number]) => { if (timer) timer.active = false; },
-    process: { argv: ['electron', '.', mode, '--settings-parent'], env: {}, platform, stdin: {}, stdout: output },
+    process: { argv: ['electron', '.', ...mode.split(' '), '--settings-parent'], env: {}, platform, stdin: {}, stdout: output },
   }, { filename });
   const mounted = () => handlers.get('apparent:settings-mounted')!({ sender: window.webContents, senderFrame: window.webContents.mainFrame });
   const expire = () => { for (const timer of timers) if (timer.active) { timer.active = false; timer.callback(); } };
@@ -72,17 +72,15 @@ function host(mode: string, capture = () => Promise.resolve({ isEmpty: () => fal
   return { window: window!, lines, exits, written, mounted, frameReady, expire, handlers, output };
 }
 
-test('every Linux Settings presentation opens as a compact managed dialog', () => {
-  // New sessions keep the floating hint. The shared window remains resizable
-  // when its initial compact pane is replaced by Agents or About.
-  for (let reopen = 0; reopen < 3; reopen++) {
-    const { window } = host('--settings-storage', undefined, 'linux');
+test('every Linux Settings pane opens in a fixed-size managed dialog', () => {
+  for (const pane of ['general', 'recording', 'storage', 'permissions', 'agents', 'labs', 'about']) {
+    const { window } = host(`--settings-storage --settings-${pane}`, undefined, 'linux');
     assert.equal(window.options.type, 'dialog');
-    assert.equal(window.options.width, 720);
-    assert.equal(window.options.height, 530);
-    assert.equal(window.options.resizable, true);
-    assert.equal(window.options.maximizable, true);
-    assert.equal(window.options.fullscreenable, true);
+    assert.equal(window.options.width, 740);
+    assert.equal(window.options.height, 580);
+    assert.equal(window.options.useContentSize, true);
+    assert.equal(window.options.resizable, false);
+    assert.equal(window.options.fullscreenable, false);
     assert.equal(window.options.alwaysOnTop, undefined, 'Settings stays an ordinary managed dialog');
   }
 });
@@ -178,11 +176,13 @@ test('an actual window dismissal still notifies the parent once', async () => {
 for (const mode of ['--settings-storage']) {
   test(`${mode} waits for first paint even when the parent requests focus early`, async () => {
     const { window, lines, mounted, expire, exits } = host(mode);
-    assert.equal(window.options.width, 720);
-    assert.equal(window.options.height, 530);
+    assert.equal(window.options.width, 740);
+    assert.equal(window.options.height, 580);
+    assert.equal(window.options.useContentSize, true);
     assert.equal(window.options.titleBarStyle, 'hiddenInset');
-    assert.equal(window.options.resizable, true);
-    assert.equal(window.options.fullscreenable, true);
+    assert.equal(window.options.resizable, false);
+    assert.equal(window.options.maximizable, false);
+    assert.equal(window.options.fullscreenable, false);
     assert.equal(window.options.acceptFirstMouse, true, 'Inactive pane clicks match the native helper');
     assert.equal(window.options.paintWhenInitiallyHidden, true, 'Hidden Settings must render to receive a first-frame confirmation');
     assert.equal(window.centers, 1, 'Center the final AppKit frame before presenting it');
