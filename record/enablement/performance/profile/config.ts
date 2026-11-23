@@ -1,7 +1,8 @@
 export const durationMs = 25000;
+export const laneDurationMs = 930000;
+export const laneSizeLimit = 256 * 1024 * 1024;
 
-export const profileConfig = `duration_ms: ${durationMs}
-buffers { size_kb: 32768 fill_policy: DISCARD }
+const sampling = (processes: string[]) => `
 data_sources {
   config {
     name: "linux.perf"
@@ -11,10 +12,15 @@ data_sources {
         frequency: 99
         timestamp_clock: PERF_CLOCK_BOOTTIME
       }
-      callstack_sampling { scope { target_cmdline: "apparent" } }
+      callstack_sampling {
+        scope { ${processes.map((name) => `target_cmdline: "${name}"`).join(" ")} }
+      }
     }
   }
 }
+`;
+
+const scheduling = `
 data_sources {
   config {
     name: "linux.ftrace"
@@ -31,3 +37,31 @@ data_sources {
   }
 }
 `;
+
+export const profileConfig = `duration_ms: ${durationMs}
+buffers { size_kb: 32768 fill_policy: DISCARD }${sampling(["apparent"])}${scheduling}`;
+
+function lane(processes: string[], events: string) {
+  return `duration_ms: ${laneDurationMs}
+buffers { size_kb: 32768 fill_policy: RING_BUFFER }
+write_into_file: true
+file_write_period_ms: 1000
+max_file_size_bytes: ${laneSizeLimit}${sampling(processes)}${events}`;
+}
+
+const desktop = ["apparent", "AppRun.wrapped", "electron", "ffmpeg", "ffprobe"];
+export const guestProfileConfig = lane(
+  [...desktop, "libbench.so.node", "Hyprland"],
+  scheduling,
+);
+export const hostProfileConfig = lane(
+  [
+    ...desktop,
+    "node",
+    "chromium",
+    "chrome",
+    "chrome-headless-shell",
+    "apparent_connect_client-*",
+  ],
+  "",
+);

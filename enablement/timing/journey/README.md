@@ -104,3 +104,5 @@ This producer feeds a synthetic completed take into the packaged pill and
 uses the shipped picker and T3 transport with a local receiver. It verifies
 the selected destination, exact draft text, independent receiver acceptance,
 and visible confirmation. The fixture has no live T3 account or workspace.
+
+For diagnostic Perfetto traces of all journey lanes, see [full-journey profiling](../../../record/enablement/performance/profile/README.md).
