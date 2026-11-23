@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { now, startFixture } from "./fixture-clock.ts";
 import {
   execFile,
   execFileSync,
@@ -51,10 +52,6 @@ const asJson = JSON.stringify;
 const metric = (name: string, id: string, ms: number) =>
   append("spans.tsv", [name, id, "measured", ms]);
 const phase = (name: string) => put("current-phase", name);
-const now = async () =>
-  Math.round(
-    Number((await readFile("/proc/uptime", "utf8")).split(" ")[0]) * 1000,
-  );
 const asyncExec = promisify(execFile);
 const exec = (command: string, args: string[], timeout = 10_000) =>
   asyncExec(command, args, {
@@ -344,42 +341,51 @@ try {
       };
       const diskObserver = recordDisk();
       diskObserver.catch(() => {});
-      const start = await now();
-      const entered = JSON.parse(
-        await commands(
-          ["capture", "start", "--request-id", id, "--wait", "--timeout", "78"],
-          85000,
-        ),
-      ) as Status;
-      assert(entered.capture_id === id && entered.status === "recording");
-      const live = await now();
+      const warmup = name === "portal-warmup";
+      const clock = await startFixture(
+        log,
+        commands,
+        id,
+        fixture.seconds,
+        warmup,
+        abort.signal,
+      );
+      const { start, live } = clock;
       const player = fixture.audio === "spoken" ? speak(name) : undefined;
       await put(name + "-draw-request", String(fixture.strokes));
       await phase("recording " + name);
-      await pause(fixture.seconds * 1000);
-      player?.kill("SIGTERM");
-
+      await clock.prepareStop();
       const sentinel = "apparent-journey-sentinel-" + id;
       await seedClipboard(sentinel);
-      let stop = await now();
-      const epochOffset = Date.now() - stop;
-      const beforeFinish = (await log()).length;
-      const clip = watchClipboard(name, sentinel, stop);
-      clip.catch(() => {});
-      let saveText: string;
-      if (name === "portal-warmup") {
-        saveText = await commands(
-          ["capture", "stop", id, "--wait", "--timeout", "120"],
-          127000,
-        );
-      } else {
+      if (!warmup) {
         const active = await captureState();
         assert(
           active.value.state?.capture_id === id &&
             active.value.state.phase === "recording",
         );
         await put(name + "-owned-active.json", active.text);
+        await clock.waitUntilDue();
+        player?.kill("SIGTERM");
+      }
+      let stop = await now();
+      const epochOffset = Date.now() - stop;
+      const beforeFinish = (await log()).length;
+      const clip = watchClipboard(name, sentinel, stop);
+      clip.catch(() => {});
+      let saveText: string;
+      if (warmup) {
+        saveText = await commands(
+          ["capture", "stop", id, "--wait", "--timeout", "120"],
+          127000,
+        );
+      } else {
+        const requested = await now();
         await phase("finish " + name + " " + id);
+        await clock.recordRequest(
+          artifact("fixture-clock.tsv"),
+          name,
+          requested,
+        );
         saveText = await until(120000, async () => {
           const receipt = await captureStatus(id).catch(() => undefined);
           return receipt?.value.status === "saved" &&
