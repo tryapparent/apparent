@@ -1,7 +1,8 @@
 // Disposable native-test runtime identity, never an installed product mutation.
-import {cp, lstat, mkdtemp, readFile, realpath, rename} from 'node:fs/promises';
+import {cp, lstat, mkdtemp, readFile, realpath, rename, stat} from 'node:fs/promises';
 import {join, relative, resolve} from 'node:path';
 import {randomUUID, createHash} from 'node:crypto';
+import assert from 'node:assert/strict';
 
 type NativeCommand = (file:string,args:string[])=>Promise<{stdout:string}>;
 export async function isolatePickerRuntime(sourceExecutable:string, home:string, run:NativeCommand) {
@@ -43,4 +44,26 @@ export async function isolatePickerRuntime(sourceExecutable:string, home:string,
  if(await hash(source)!==sourceSha256)throw Error('Source Electron executable changed during fixture preparation');
  return {executable,bundleId,sourceExecutable:source,sourceBundleId,sourceSha256,
   executableSha256:await hash(executable),signatureVerified:true};
+}
+
+export function storageFixtureAssertions(config: string, sentinel: string, sentinelText: string, selected: string, unknown: unknown) {
+  return async (savedPath: string | null) => {
+    const raw = JSON.parse(await readFile(config, 'utf8'));
+    if (savedPath === null) assert.equal(Object.hasOwn(raw, 'capturesDir'), false);
+    else assert.equal(raw.capturesDir, savedPath);
+    assert.deepEqual(raw.storageNativeFixture, unknown);
+    assert.equal(raw.experiments.electronCaptureLocation, false);
+    assert.equal(await readFile(sentinel, 'utf8'), sentinelText);
+    await assert.rejects(stat(join(selected, 'existing-file.txt')), {code: 'ENOENT'});
+    return {capturesDir: savedPath, keyAbsent: !Object.hasOwn(raw, 'capturesDir'),
+      unknownFieldsPreserved: true, experimentPreserved: true, existingFileUnchanged: true, existingFileNotMoved: true};
+  };
+}
+
+export async function storageFixtureHashes(root: string) {
+  const files = ['electron/main.cjs', 'electron/preload.cjs', 'electron/storage-preload.cjs',
+    'electron/runtime.cjs', 'src/storage.tsx', 'dist/index.html', 'dist/settings.html'];
+  return Object.fromEntries(await Promise.all(files.map(async file => [
+    file, createHash('sha256').update(await readFile(join(root, file))).digest('hex'),
+  ])));
 }
