@@ -41,6 +41,49 @@ await bendScratch(async (scratch) => {
   );
   const proofOutput = join(scratch, "proof");
   await buildBend(root, "record", proofOutput, options);
+  copyFileSync(
+    new URL(
+      "../../../media/src/assembly/crop-publication-request.ts",
+      import.meta.url,
+    ),
+    join(proofOutput, "crop-publication-request.ts"),
+  );
+  run(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+  import assert from "node:assert/strict";
+  import cropPolicy from "./crop-publication.mjs";
+  import { cropPublicationRequest } from "./crop-publication-request.ts";
+  const cropPublication = cropPublicationRequest(cropPolicy.publish);
+  const publish = (rows) =>
+    JSON.parse(cropPublication(JSON.stringify(rows)));
+  assert.equal(publish([]), null);
+  assert.equal(publish([["full", ["Ignored"]]]), null);
+  assert.deepEqual(publish([["activity", []]]), {
+    label: "the activity",
+    regions: [true],
+  });
+  assert.deepEqual(
+    publish([
+      ["focus", ["Éditeur 📝", "終端"]],
+      ["full", ["Ignored"]],
+      ["activity", ["終端", "Éditeur 📝", "Browser"]],
+    ]),
+    { label: "the activity in Éditeur 📝 + 終端 + Browser", regions: [true, false, true] },
+  );
+  for (const kind of ["window", "windows", "fallback"]) {
+    assert.deepEqual(publish([["focus", ["Editor"]], [kind, [""]]]), {
+      label: "Editor + ",
+      regions: [true, true],
+    });
+  }
+  `,
+    ],
+    proofOutput,
+  );
   run(
     process.execPath,
     [

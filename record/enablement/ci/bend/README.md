@@ -17,3 +17,18 @@ node record/enablement/ci/bend/check.ts --lean-bin /absolute/path/to/lean/bin
 ```
 
 Pre-push skips the Lean download and kernel build to keep local feedback fast. The stale-capture law covers the pure policy decision. Record's host still owns the freshness observation and final check before writing to the clipboard.
+
+## Crop publication
+
+
+The bundle writer calls the Record crop publication policy once after its native
+planner has produced the keyframe candidates. [Bend2](../../../media/src/assembly/crop-publication.bend)
+decides which frames use a crop and composes the summary from app names in
+first-seen order. Cargo embeds its generated module through
+[Record's build](embed-media.ts). Composition runs it in
+the in-process JavaScript host on Linux and macOS.
+
+Rust retains candidate geometry, capture-point rounding, pixel extraction,
+annotation and storage of full frames. When the publication plan is absent or
+the embedded evaluation fails, the native writer returns the annotated full
+frames through its existing fallback.
