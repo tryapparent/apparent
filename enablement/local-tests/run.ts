@@ -13,7 +13,7 @@ import {desktopDependencies, desktopPackage} from './desktop-install.ts';
 import {owners, selectedOwners, routeDecision, routingProblems, desktopPackagingInputs} from '../ci/routing/consumers.ts';
 import {selectRange} from '../ci/select.ts';
 import {explainSelection} from './preview/explain.ts';
-import {diagnosticContracts, foregroundCommands, timingContracts} from './contracts.ts';
+import {diagnosticContracts, foregroundCommands, timingContracts, workflowContracts} from './contracts.ts';
 export {owners} from '../ci/routing/consumers.ts';
 import type {Admission} from './service.ts';
 
@@ -103,6 +103,7 @@ export function commands(selected: Owner[], base: string, head: string, platform
   installScope: {paths: string[] | null; workflowControls?: string[]; local?: boolean} = {paths: null}): Command[] {
   const result: Command[] = [];
   const add = (argv: string[], cwd = '.') => result.push({ argv, cwd });
+  if (installScope.local) result.push(...workflowContracts(installScope.paths));
   if (rustChanged && selected.some(owner => ['capture', 'engine', 'client'].includes(owner)))
     add(['python3', 'enablement/verification.py', '--base', base, '--preflight']);
   if (selected.includes('tooling') || installScope.paths === null)
