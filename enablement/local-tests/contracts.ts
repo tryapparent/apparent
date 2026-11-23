@@ -37,3 +37,10 @@ export function diagnosticContracts() {
       'shared/enablement/dependency-policy/fast/typecheck.test.ts'], cwd: '.'},
   ];
 }
+
+export function workflowContracts(paths: string[] | null) {
+  const fixture = 'enablement/ci/routing/test-only/workflow-triggers.test.ts';
+  return paths === null || paths.some(path => path.startsWith('.github/workflows/') || path === fixture)
+    ? [{argv: ['bun', 'test', fixture], cwd: '.'}]
+    : [];
+}
