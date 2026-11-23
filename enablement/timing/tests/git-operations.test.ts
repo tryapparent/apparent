@@ -167,3 +167,161 @@ test("configured push attribution follows the launcher through its linked polls 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+const affinityPush =
+  'export CARGO_BUILD_JOBS=2 CARGO_INCREMENTAL=0\ntaskset -c 0-2,4 git push origin HEAD > "/tmp/synthetic-push.log" 2>&1';
+
+test("affinity-prefixed push attribution stays within the literal command shape", () => {
+  const command = (cmd: string) =>
+    operations("exec_command", JSON.stringify({ cmd })).operations;
+  assert.deepEqual(command(affinityPush), ["verification/push"]);
+  assert.deepEqual(command(affinityPush + "\ncargo test"), [
+    "Rust build/test",
+    "verification/push",
+  ]);
+  for (const unsupported of [
+    affinityPush.replace("0-2,4", "0,,4"),
+    affinityPush.replace("0-2,4", "0-"),
+    affinityPush.replace("0-2,4", "0-2:2"),
+    affinityPush.replace("0-2,4", '"$cpus"'),
+    affinityPush.replace("0-2,4", "$(get_cpus)"),
+    affinityPush.replace("0-2,4", '""'),
+    affinityPush.replace("-c", "--cpu-list"),
+    affinityPush.replace("taskset", "timeout 20 taskset"),
+    affinityPush.replace("git push origin HEAD", "git -c alias.p=push p"),
+    affinityPush.replace("git push origin HEAD", 'git push origin "$ref"'),
+    affinityPush.replace(
+      "git push origin HEAD",
+      'bash -c "git push origin HEAD"',
+    ),
+    affinityPush.replace("git push origin HEAD", "git status"),
+  ])
+    assert.deepEqual(command(unsupported), ["unknown"], unsupported);
+});
+
+test("a literal affinity push carries its intent through the structured session and yielded cell", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "apparent-dev-affinity-push-"));
+  try {
+    const file = join(dir, "rollout.jsonl");
+    const row = (seconds: number, payload: object) => ({
+      type: "response_item",
+      timestamp: new Date(seconds * 1000).toISOString(),
+      payload,
+    });
+    const read = async (cmd: string) => {
+      const rows = [
+        { type: "session_meta", payload: { id: "synthetic", cwd: "/fixture" } },
+        row(1, {
+          type: "custom_tool_call",
+          name: "exec",
+          call_id: "launch",
+          input: `text(await tools.exec_command({cmd:${JSON.stringify(cmd)}, yield_time_ms:1000}));`,
+        }),
+        row(2, {
+          type: "custom_tool_call_output",
+          call_id: "launch",
+          output: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                session_id: 321,
+                output: "fixture-private-output",
+              }),
+            },
+          ],
+        }),
+        row(3, {
+          type: "custom_tool_call",
+          name: "exec",
+          call_id: "poll",
+          input:
+            'const result = await tools.write_stdin({session_id:321, chars:""}); text(result);',
+        }),
+        row(4, {
+          type: "custom_tool_call_output",
+          call_id: "poll",
+          output: "Script running with cell ID fixture:1",
+        }),
+        row(5, {
+          type: "function_call",
+          name: "wait",
+          call_id: "linked",
+          arguments: '{"cell_id":"fixture:1"}',
+        }),
+        row(6, {
+          type: "function_call",
+          name: "wait",
+          call_id: "unlinked",
+          arguments: '{"cell_id":"fixture:2"}',
+        }),
+        row(7, {
+          type: "function_call_output",
+          call_id: "unlinked",
+          output: "fixture-unrelated",
+        }),
+        row(9, {
+          type: "function_call_output",
+          call_id: "linked",
+          output: "fixture-cell-complete",
+        }),
+      ];
+      writeFileSync(file, rows.map((r) => JSON.stringify(r)).join("\n"));
+      return (await readRollout(file, () => true)).calls;
+    };
+    const calls = await read(affinityPush);
+    const baseline = await read(affinityPush.replace("0-2,4", '"$cpus"'));
+    const report = summarize(calls, 0, 10_000);
+    const before = summarize(baseline, 0, 10_000);
+    const timing = ({
+      id,
+      start,
+      end,
+      processObservedEnd,
+      asynchronous,
+    }: (typeof calls)[number]) => [
+      id,
+      start,
+      end,
+      processObservedEnd,
+      asynchronous,
+    ];
+    assert.deepEqual(calls.map(timing), baseline.map(timing));
+    assert.deepEqual(report.tools, before.tools);
+    assert.equal(report.calls, 4);
+    assert.equal(report.calls, before.calls);
+    assert.equal(report.observedToolUnionSeconds, 6);
+    assert.equal(
+      report.observedToolUnionSeconds,
+      before.observedToolUnionSeconds,
+    );
+    assert.deepEqual(report.actionRanking.processes.ranked, []);
+    assert.deepEqual(
+      report.actionRanking.processes,
+      before.actionRanking.processes,
+    );
+    assert.deepEqual(calls.find((c) => c.id === "linked")?.waitedOperations, [
+      "verification/push",
+    ]);
+    assert.equal(
+      calls.find((c) => c.id === "unlinked")?.waitedOperations,
+      undefined,
+    );
+    const ranked = report.actionRanking.envelopes.ranked;
+    assert.deepEqual(
+      ranked.map(({ label, count, totalSeconds }) => [
+        label,
+        count,
+        totalSeconds,
+      ]),
+      [
+        ["waiting/status for verification/push", 2, 5],
+        ["verification/push", 1, 1],
+        ["process wait", 1, 1],
+      ],
+    );
+    assert.ok(!JSON.stringify(report).includes("fixture-private-output"));
+    assert.ok(!JSON.stringify(report).includes("synthetic-push.log"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
