@@ -842,27 +842,18 @@ impl Panel {
     }
 }
 
-/// Whether this copy can check for updates: Sparkle in Apparent.app; on Windows the releases
-/// page always opens.
 pub(super) fn updates_available() -> bool {
     #[cfg(target_os = "macos")]
     return crate::capture::desktop::sparkle::available();
     #[cfg(target_os = "linux")]
     return std::env::var_os("APPIMAGE").is_some();
-    #[cfg(target_os = "windows")]
-    true
 }
 
 #[cfg(not(target_os = "linux"))]
 fn check_for_updates() {
     #[cfg(target_os = "macos")]
     crate::capture::desktop::sparkle::check_for_updates();
-    #[cfg(target_os = "windows")]
-    let _ = crate::shared::handoff::open_path(Path::new(RELEASES_URL));
 }
-
-#[cfg(target_os = "windows")]
-const RELEASES_URL: &str = "https://github.com/tryapparent/apparent/releases/latest";
 
 // MARK: The live window
 

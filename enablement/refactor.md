@@ -70,7 +70,7 @@ The following exhaustive baseline ledger documents an earlier campaign proposal 
 | `assets/AppIcon.icon/Assets/glow.svg` | `capture/desktop/assets/AppIcon.icon/Assets/glow.svg` | MOVE | desktop |
 | `assets/AppIcon.icon/icon.json` | `capture/desktop/assets/AppIcon.icon/icon.json` | MOVE | desktop |
 | `assets/Apparent.icns` | `capture/desktop/assets/Apparent.icns` | MOVE | desktop |
-| `assets/Apparent.ico` | `capture/desktop/assets/Apparent.ico` | MOVE | desktop (legacy unsupported code; retained, out of scope) |
+| `assets/Apparent.ico` | `capture/desktop/assets/Apparent.ico` | DROP | Windows-only retirement #1752 |
 | `assets/app-icon.png` | `capture/desktop/assets/app-icon.png` | MOVE | desktop |
 | `assets/brand/apparent-a.png` | `shared/assets/brand/apparent-a.png` | MOVE | shared |
 | `assets/brand/apparent-app-icon.svg` | `shared/assets/brand/apparent-app-icon.svg` | MOVE | shared |
@@ -221,8 +221,8 @@ The following exhaustive baseline ledger documents an earlier campaign proposal 
 | `hosted/test/typescript.test.mjs` | `connect/service/test/typescript.test.mjs` | MOVE | connect |
 | `hosted/tsconfig.json` | `connect/service/tsconfig.json` | MOVE | connect |
 | `hosted/wrangler.toml` | `connect/service/wrangler.toml` | MOVE | connect |
-| `packaging/linux/dev.kitlangton.apparent.desktop` | `capture/desktop/packaging/linux/dev.kitlangton.apparent.desktop` | MOVE | desktop |
-| `packaging/linux/dev.kitlangton.apparent.png` | `capture/desktop/packaging/linux/dev.kitlangton.apparent.png` | MOVE | desktop |
+| `packaging/linux/dev.kitlangton.apparent.desktop` | `composition/enablement/release/linux/dev.kitlangton.apparent.desktop.json` | MOVE | Composition release |
+| `packaging/linux/dev.kitlangton.apparent.png` | `composition/enablement/release/linux/dev.kitlangton.apparent.png` | MOVE | Composition release |
 | `perf/pill/clips.py` | `capture/desktop/scripts/perf/pill/clips.py` | MOVE | desktop |
 | `perf/pill/motion-lint.config.json` | `capture/desktop/scripts/perf/pill/motion-lint.config.json` | MOVE | desktop |
 | `perf/pill/record.sh` | `capture/desktop/scripts/perf/pill/record.sh` | MOVE | desktop |
@@ -246,7 +246,7 @@ The following exhaustive baseline ledger documents an earlier campaign proposal 
 | `scripts/cd/verify_worker.py` | `public/site/scripts/cd/verify_worker.py` | MOVE | public |
 | `scripts/check-ca-roots.sh` | `capture/desktop/scripts/support/check-ca-roots.sh` | MOVE | desktop |
 | `scripts/check-permission-panel-dock.sh` | `capture/desktop/scripts/support/check-permission-panel-dock.sh` | MOVE | desktop |
-| `scripts/check-windows-cpu-tiers.ps1` | `scripts/check-windows-cpu-tiers.ps1` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
+| `scripts/check-windows-cpu-tiers.ps1` | `scripts/check-windows-cpu-tiers.ps1` | DROP | Windows-only retirement #1752 |
 | `scripts/install-app-remote.sh` | `capture/desktop/scripts/packaging/install-app-remote.sh` | MOVE | desktop |
 | `scripts/install-app.sh` | `capture/desktop/scripts/packaging/install-app.sh` | MOVE | desktop |
 | `scripts/linux/appimage.sh` | `capture/desktop/scripts/linux/appimage/appimage.sh` | MOVE | desktop |
@@ -541,7 +541,7 @@ The following exhaustive baseline ledger documents an earlier campaign proposal 
 | `capture/engine/runtime/platform/macos.rs` | `capture/engine/runtime/platform/macos.rs` | RETAIN | capture |
 | `capture/engine/runtime/recording/recorder.rs` | `capture/engine/runtime/recording/recorder.rs` | RETAIN | capture |
 | `capture/engine/runtime/recording/tests_recorder.rs` | `capture/engine/runtime/recording/tests_recorder.rs` | RETAIN | capture |
-| `capture/engine/runtime/platform/windows.rs` | `capture/engine/runtime/platform/windows.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
+| `capture/engine/runtime/platform/windows.rs` | `capture/engine/runtime/platform/windows.rs` | DROP | Windows-only retirement #1752 |
 | `src/command_line.rs` | `composition/command_line.rs` | MOVE | desktop |
 | `src/command_transcriber.rs` | `capture/engine/runtime/audio/transcription/command_transcriber.rs` | MOVE | shared Rust module |
 | `src/export/camera.rs` | `capture/engine/export/camera.rs` | MOVE | shared Rust module |
@@ -649,20 +649,20 @@ The following exhaustive baseline ledger documents an earlier campaign proposal 
 | `src/ui/pill_theme.rs` | `capture/desktop/ui/pill_theme.rs` | MOVE | desktop |
 | `src/ui/recording_completion.rs` | `capture/desktop/ui/recording_completion.rs` | MOVE | desktop |
 | `src/ui/whiteboard.rs` | `capture/desktop/ui/whiteboard.rs` | MOVE | desktop |
-| `src/ui/windows.rs` | `capture/desktop/ui/windows.rs` | MOVE | desktop (legacy unsupported code; retained, out of scope) |
+| `src/ui/windows.rs` | `capture/desktop/ui/windows.rs` | DROP | Windows-only retirement #1752 |
 | `src/warm_recognizer.rs` | `capture/engine/runtime/audio/transcription/warm_recognizer.rs` | MOVE | shared Rust module |
 | `src/web.rs` | `capture/desktop/web.rs` | MOVE | desktop |
-| `capture/engine/runtime/platform/legacy_windows/platform/clipboard.rs` | `capture/engine/runtime/platform/legacy_windows/platform/clipboard.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
-| `capture/engine/runtime/platform/legacy_windows/platform/command_line.rs` | `capture/engine/runtime/platform/legacy_windows/platform/command_line.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
-| `capture/engine/runtime/platform/legacy_windows/capture/helper.rs` | `capture/engine/runtime/platform/legacy_windows/capture/helper.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
-| `capture/engine/runtime/platform/legacy_windows/platform/login.rs` | `capture/engine/runtime/platform/legacy_windows/platform/login.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
-| `capture/engine/runtime/platform/legacy_windows/capture/media.rs` | `capture/engine/runtime/platform/legacy_windows/capture/media.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
-| `capture/engine/runtime/platform/legacy_windows/mod.rs` | `capture/engine/runtime/platform/legacy_windows/mod.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
-| `capture/engine/runtime/platform/legacy_windows/capture/overlay.rs` | `capture/engine/runtime/platform/legacy_windows/capture/overlay.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
-| `capture/engine/runtime/platform/legacy_windows/capture/playback.rs` | `capture/engine/runtime/platform/legacy_windows/capture/playback.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
-| `capture/engine/runtime/platform/legacy_windows/platform/privacy.rs` | `capture/engine/runtime/platform/legacy_windows/platform/privacy.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
-| `capture/engine/runtime/platform/legacy_windows/platform/shell.rs` | `capture/engine/runtime/platform/legacy_windows/platform/shell.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
-| `capture/engine/runtime/platform/legacy_windows/capture/uia.rs` | `capture/engine/runtime/platform/legacy_windows/capture/uia.rs` | RETAIN | desktop (legacy unsupported code; retained, out of scope) |
+| `capture/engine/runtime/platform/legacy_windows/platform/clipboard.rs` | `capture/engine/runtime/platform/legacy_windows/platform/clipboard.rs` | DROP | Windows-only retirement #1752 |
+| `capture/engine/runtime/platform/legacy_windows/platform/command_line.rs` | `capture/engine/runtime/platform/legacy_windows/platform/command_line.rs` | DROP | Windows-only retirement #1752 |
+| `capture/engine/runtime/platform/legacy_windows/capture/helper.rs` | `capture/engine/runtime/platform/legacy_windows/capture/helper.rs` | DROP | Windows-only retirement #1752 |
+| `capture/engine/runtime/platform/legacy_windows/platform/login.rs` | `capture/engine/runtime/platform/legacy_windows/platform/login.rs` | DROP | Windows-only retirement #1752 |
+| `capture/engine/runtime/platform/legacy_windows/capture/media.rs` | `capture/engine/runtime/platform/legacy_windows/capture/media.rs` | DROP | Windows-only retirement #1752 |
+| `capture/engine/runtime/platform/legacy_windows/mod.rs` | `capture/engine/runtime/platform/legacy_windows/mod.rs` | DROP | Windows-only retirement #1752 |
+| `capture/engine/runtime/platform/legacy_windows/capture/overlay.rs` | `capture/engine/runtime/platform/legacy_windows/capture/overlay.rs` | DROP | Windows-only retirement #1752 |
+| `capture/engine/runtime/platform/legacy_windows/capture/playback.rs` | `capture/engine/runtime/platform/legacy_windows/capture/playback.rs` | DROP | Windows-only retirement #1752 |
+| `capture/engine/runtime/platform/legacy_windows/platform/privacy.rs` | `capture/engine/runtime/platform/legacy_windows/platform/privacy.rs` | DROP | Windows-only retirement #1752 |
+| `capture/engine/runtime/platform/legacy_windows/platform/shell.rs` | `capture/engine/runtime/platform/legacy_windows/platform/shell.rs` | DROP | Windows-only retirement #1752 |
+| `capture/engine/runtime/platform/legacy_windows/capture/uia.rs` | `capture/engine/runtime/platform/legacy_windows/capture/uia.rs` | DROP | Windows-only retirement #1752 |
 | `src/windows.rs` | `shared/windows.rs` | MOVE | shared Rust module |
 | `src/agent_proof/zoom.rs` | `capture/agent/zoom.rs` | MOVE | capture-agent |
 | `tests/test_pre_push_guard.py` | `enablement/tests/test_pre_push_guard.py` | MOVE | enablement |

@@ -61,8 +61,6 @@ impl Engine {
 /// Parakeet through `transcribe.cpp` (`crate::shared::speech`). Both are `Engine::Apple` in the config.
 #[cfg(target_os = "macos")]
 pub const LOCAL_ENGINE_TITLE: &str = "Apple Speech";
-#[cfg(target_os = "windows")]
-pub const LOCAL_ENGINE_TITLE: &str = "Parakeet (on this PC)";
 #[cfg(target_os = "linux")]
 pub const LOCAL_ENGINE_TITLE: &str = "Parakeet (on this computer)";
 

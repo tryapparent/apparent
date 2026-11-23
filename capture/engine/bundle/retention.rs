@@ -203,18 +203,6 @@ fn changed_ago(path: &Path, now: SystemTime) -> Option<Duration> {
     Some(now.duration_since(changed).unwrap_or_default())
 }
 
-/// NTFS's change time for the folder (`ChangeTime`), which moves when an entry is added, removed
-/// or renamed, like the Unix ctime.
-#[cfg(windows)]
-fn changed_ago(path: &Path, now: SystemTime) -> Option<Duration> {
-    let changed =
-        crate::capture::engine::runtime::platform::legacy_windows::platform::shell::change_time(
-            path,
-        )
-        .or_else(|| path.metadata().ok()?.modified().ok())?;
-    Some(now.duration_since(changed).unwrap_or_default())
-}
-
 /// A sync marker that is recent enough to mean a copy is still running.
 fn live_marker(dir: &Path, name: &str, now: SystemTime) -> bool {
     modified_ago(&dir.join(name), now).is_some_and(|ago| ago < STALE_MARKER)
@@ -380,17 +368,6 @@ fn observe(
 
 /// Moves `path` to the Trash.
 pub type Trasher<'a> = &'a dyn Fn(&Path) -> Result<()>;
-
-#[cfg(windows)]
-pub fn trash(path: &Path) -> Result<()> {
-    crate::capture::engine::runtime::platform::legacy_windows::platform::shell::recycle(path)?;
-    ensure!(
-        !path.exists(),
-        "Could not move {} to the Recycle Bin",
-        path.display()
-    );
-    Ok(())
-}
 
 /// The freedesktop Trash (`~/.local/share/Trash`), as the file manager uses it.
 #[cfg(target_os = "linux")]
@@ -748,8 +725,6 @@ fn lower_priority() {
     unsafe {
         libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_UTILITY, 0);
     }
-    #[cfg(windows)]
-    crate::capture::engine::runtime::platform::legacy_windows::platform::shell::background_thread();
     // SAFETY: only lowers the calling thread's own priority.
     #[cfg(target_os = "linux")]
     unsafe {

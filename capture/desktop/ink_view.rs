@@ -104,8 +104,6 @@ impl OverlayView {
         // Screen coordinates are physical pixels, so use the window's actual paint scale.
         #[cfg(target_os = "linux")]
         let k = screen_to_view_scale(viewport_scale);
-        #[cfg(target_os = "windows")]
-        let k = 1.0 / placement.scale;
         let [ox, oy] = [placement.rect[0] as f32, placement.rect[1] as f32];
         let local = |x: f32, y: f32| [(x - ox) * k, (y - oy) * k];
         let picker = if selecting {

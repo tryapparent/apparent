@@ -55,6 +55,8 @@ done < "$out/nss-libraries"
 cd "$out"
 install -Dm755 "$root/capture/desktop/scripts/support/apparent-restore-clipboard.py" "$appdir/usr/bin/apparent-restore-clipboard.py"
 node "$root/capture/desktop/ui/frontend/scripts/package-notes.mjs" "$appdir/usr/lib/apparent/note-ui"
+desktop_entry="$out/dev.kitlangton.apparent.desktop"
+node --experimental-strip-types "$root/composition/enablement/release/linux/desktop-entry.ts" > "$desktop_entry"
 LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy \
   --appdir "$appdir" \
   --executable "$binary" \
@@ -64,8 +66,8 @@ LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy \
   "${libraries[@]}" \
   --executable "$(command -v wl-copy)" \
   --executable "$(command -v wl-paste)" \
-  --desktop-file "$root/capture/desktop/packaging/linux/dev.kitlangton.apparent.desktop" \
-  --icon-file "$root/capture/desktop/packaging/linux/dev.kitlangton.apparent.png" \
+  --desktop-file "$desktop_entry" \
+  --icon-file "$root/composition/enablement/release/linux/dev.kitlangton.apparent.png" \
   --plugin gstreamer
 node --experimental-strip-types "$root/capture/desktop/scripts/linux/appimage/nss-runtime.ts" check "$appdir/usr/lib"
 LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy --appdir "$appdir" --output appimage

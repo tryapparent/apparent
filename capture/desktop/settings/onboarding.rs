@@ -1068,27 +1068,6 @@ impl Drop for Session {
     }
 }
 
-/// Starts Apparent again once this copy has quit: the new copy waits for this one
-/// (`win::shell::wait_for_relauncher`) before it starts the app.
-#[cfg(windows)]
-pub fn relaunch() {
-    use std::os::windows::process::CommandExt;
-    /// No console window flashes up for the new copy (`apparent.exe` is a console program).
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let Ok(exe) = std::env::current_exe() else {
-        return;
-    };
-    let _ = std::process::Command::new(exe)
-        .args(std::env::args_os().skip(1))
-        .env(crate::capture::engine::runtime::platform::legacy_windows::platform::shell::RELAUNCHED_BY, std::process::id().to_string())
-        .creation_flags(CREATE_NO_WINDOW)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
-}
-
-#[cfg(not(windows))]
 pub use crate::permission_relaunch::relaunch;
 
 include!("onboarding/tests.rs");

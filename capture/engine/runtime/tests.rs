@@ -318,11 +318,6 @@ mod tests {
             modifier_symbols(CARBON_CMD_KEY | CARBON_CONTROL_KEY | CARBON_SHIFT_KEY),
             "⌃⇧⌘"
         );
-        #[cfg(target_os = "windows")]
-        assert_eq!(
-            modifier_symbols(CARBON_CMD_KEY | CARBON_CONTROL_KEY | CARBON_SHIFT_KEY),
-            "Ctrl+Win+Shift+"
-        );
         #[cfg(target_os = "linux")]
         assert_eq!(
             modifier_symbols(CARBON_CMD_KEY | CARBON_CONTROL_KEY | CARBON_SHIFT_KEY),

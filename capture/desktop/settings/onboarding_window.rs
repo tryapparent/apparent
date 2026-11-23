@@ -422,11 +422,6 @@ impl OnboardingWindow {
     }
 }
 
-#[cfg(target_os = "windows")]
-fn open_settings(permission: Permission) {
-    crate::capture::engine::runtime::platform::legacy_windows::platform::privacy::open_settings(permission);
-}
-
 #[cfg(target_os = "linux")]
 fn open_settings(permission: Permission) {
     crate::capture::desktop::linux::privacy::open_settings(permission);
@@ -434,14 +429,6 @@ fn open_settings(permission: Permission) {
 
 #[cfg(target_os = "macos")]
 fn open_settings(_permission: Permission) {}
-
-#[cfg(target_os = "windows")]
-fn set_visible(window: Option<&mut Window>, visible: bool) {
-    use windows::Win32::UI::WindowsAndMessaging::{SW_HIDE, SW_SHOW, ShowWindow};
-    if let Some(hwnd) = window.and_then(|w| crate::capture::desktop::hwnd_of(w)) {
-        let _ = unsafe { ShowWindow(hwnd, if visible { SW_SHOW } else { SW_HIDE }) };
-    }
-}
 
 #[cfg(target_os = "linux")]
 fn set_visible(window: Option<&mut Window>, visible: bool) {
@@ -1177,13 +1164,6 @@ impl OnboardingWindow {
         if CAPTION_H == 0.0 {
             return None;
         }
-        #[cfg(target_os = "windows")]
-        let glyph_font = if crate::capture::engine::runtime::platform::legacy_windows::platform::shell::windows_11() {
-            "Segoe Fluent Icons"
-        } else {
-            "Segoe MDL2 Assets"
-        };
-        #[cfg(not(target_os = "windows"))]
         let glyph_font = ".SystemUIFont";
         let _ = cx;
         Some(
