@@ -34,14 +34,12 @@ pub trait UserPasteOps {
     fn offer_text(&mut self) -> Result<()>;
     fn still_ours(&mut self, value: &'static str) -> Result<bool>;
     fn paste(&mut self) -> Result<()>;
-    fn enter(&mut self) -> Result<()>;
     /// Leave the text handoff on the clipboard for an ordinary manual Ctrl+V.
     /// Never overwrite a selection the user changed during the attempt.
     fn fallback(&mut self, offered: &'static str) -> Result<()>;
 }
 
-/// Record chooses whether this capability includes Enter. Manual Paste never does.
-fn paste_sequence(ops: &mut impl UserPasteOps, submit: bool, with_image: bool) -> Result<()> {
+fn paste_sequence(ops: &mut impl UserPasteOps, with_image: bool) -> Result<()> {
     let mut offered = "";
     let result = (|| {
         ops.check_focus()?;
@@ -63,12 +61,6 @@ fn paste_sequence(ops: &mut impl UserPasteOps, submit: bool, with_image: bool) -
             "Clipboard changed before text paste"
         );
         ops.paste()?;
-        if submit {
-            std::thread::sleep(Duration::from_millis(160));
-            ops.check_focus()?;
-            ensure!(ops.still_ours("text")?, "Clipboard changed before Enter");
-            ops.enter()?;
-        }
         Ok(())
     })();
     let fallback = ops.fallback(offered);
@@ -81,14 +73,6 @@ pub fn paste_bundle(bundle_dir: &Path) -> Result<()> {
 
 /// Completion must use the window frozen at Finish, never discover a new target.
 pub fn paste_bundle_into(bundle_dir: &Path, focused: &FocusedWindow) -> Result<()> {
-    paste_bundle_with_enter(bundle_dir, focused, false)
-}
-
-pub fn paste_bundle_and_submit_into(bundle_dir: &Path, focused: &FocusedWindow) -> Result<()> {
-    paste_bundle_with_enter(bundle_dir, focused, true)
-}
-
-fn paste_bundle_with_enter(bundle_dir: &Path, focused: &FocusedWindow, submit: bool) -> Result<()> {
     ensure!(!crate::capture::engine::runtime::is_frontmost_terminal(), "Choose a graphical composer for auto paste");
     crate::capture::engine::runtime::wait_for_modifiers_released(350);
     let (directory, bundle) = crate::shared::handoff::load_bundle(bundle_dir)?;
@@ -100,7 +84,7 @@ fn paste_bundle_with_enter(bundle_dir: &Path, focused: &FocusedWindow, submit: b
         original: focused,
         image: image.as_deref(),
         summary: &summary,
-    }, submit, with_image)
+    }, with_image)
 }
 
 struct LivePaste<'a> {
@@ -135,9 +119,6 @@ impl UserPasteOps for LivePaste<'_> {
     fn paste(&mut self) -> Result<()> {
         std::thread::sleep(Duration::from_millis(20));
         super::hyprland::paste_into_focused(self.original, false)
-    }
-    fn enter(&mut self) -> Result<()> {
-        super::hyprland::enter_into_focused(self.original)
     }
     fn fallback(&mut self, offered: &'static str) -> Result<()> {
         if offered == "image" {
@@ -175,7 +156,7 @@ mod tests {
             conn.map_window(window).unwrap(); conn.flush().unwrap();
             println!("ready"); std::io::stdout().flush().unwrap();
             let started = std::time::Instant::now(); let mut received = 0;
-            while started.elapsed().as_secs() < 10 && received < 3 {
+            while started.elapsed().as_secs() < 3 {
                 if let Some(Event::KeyPress(event)) = conn.poll_for_event().unwrap() {
                     if received < 2 && event.state.contains(KeyButMask::CONTROL) {
                         let mime = if received == 0 { "image/png" } else { "text/plain;charset=utf-8" };
@@ -184,17 +165,14 @@ mod tests {
                         if received == 0 { assert!(content.stdout.starts_with(b"\x89PNG")); }
                         else { assert!(String::from_utf8(content.stdout).unwrap().contains("Synthetic auto paste")); }
                         received += 1;
-                    } else if received == 2 {
+                    } else {
                         let keys = conn.get_keyboard_mapping(event.detail, 1).unwrap().reply().unwrap();
-                        if keys.keysyms.contains(&0xff0d) {
-                            assert!(!event.state.intersects(KeyButMask::CONTROL | KeyButMask::SHIFT | KeyButMask::MOD1 | KeyButMask::MOD4));
-                            received += 1;
-                        }
+                        assert!(!keys.keysyms.contains(&0xff0d), "Paste dispatched Enter");
                     }
                 }
                 std::thread::sleep(Duration::from_millis(5));
             }
-            assert_eq!(received, 3, "receiver must accept image and text before unmodified Enter");
+            assert_eq!(received, 2, "receiver must accept image and text");
             return;
         }
         assert!(super::super::hyprland::running(), "isolated Hyprland guest required");
@@ -211,12 +189,12 @@ mod tests {
         let bundle = serde_json::json!({"version":1,"id":"synthetic-auto-paste","createdAtMs":0,"durationMs":1000,
             "target":{"mode":"display","displayId":0,"frame":{"x":0.0,"y":0.0,"width":640.0,"height":400.0,"scale":1.0}},
             "transcript":{"source":"test","text":"Synthetic auto paste","segments":[]},
-            "strokes":[],"marks":[],"events":[],"keyframes":[],"contactSheet":"c.png"});
+            "strokes":[],"marks":[],"events":[],"note":"Synthetic interaction context","keyframes":[],"contactSheet":"c.png"});
         std::fs::write(fixture.path().join("apparent.json"), serde_json::to_vec(&bundle).unwrap()).unwrap();
         let mut png = png::Encoder::new(std::fs::File::create(fixture.path().join("c.png")).unwrap(), 1, 1);
         png.set_color(png::ColorType::Rgb); png.set_depth(png::BitDepth::Eight);
         png.write_header().unwrap().write_image_data(&[100, 0, 200]).unwrap();
-        let result = paste_bundle_and_submit_into(fixture.path(), &focused);
+        let result = paste_bundle_into(fixture.path(), &focused);
         // Drain the child's test report so it cannot outlive the fixture.
         for line in lines { println!("{}", line.unwrap()); }
         let status = child.wait().unwrap();
@@ -234,9 +212,6 @@ mod tests {
             fail_text_offer: bool,
             lose_focus_after_image: bool,
             user_changes_clipboard: bool,
-            lose_focus_after_text: bool,
-            change_clipboard_after_text: bool,
-            fail_enter: bool,
         }
         impl UserPasteOps for Draft {
             fn check_focus(&mut self) -> Result<()> {
@@ -268,10 +243,6 @@ mod tests {
                 {
                     bail!("second paste refused")
                 }
-                if self.calls.iter().filter(|&&call| call == "paste").count() == 2 {
-                    if self.lose_focus_after_text { self.focused = false; }
-                    if self.change_clipboard_after_text { self.clipboard = "user content"; }
-                }
                 if self.calls.iter().filter(|&&call| call == "paste").count() == 1 {
                     if self.lose_focus_after_image {
                         self.focused = false;
@@ -289,48 +260,29 @@ mod tests {
                 }
                 Ok(())
             }
-            fn enter(&mut self) -> Result<()> {
-                self.calls.push("enter");
-                if self.fail_enter { bail!("Enter refused"); }
-                Ok(())
-            }
+
         }
         let mut draft = Draft {
             clipboard: "handoff",
             focused: true,
             ..Default::default()
         };
-        paste_sequence(&mut draft, false, true).unwrap();
+        paste_sequence(&mut draft, true).unwrap();
         assert_eq!(draft.calls, ["image", "paste", "text", "paste", "fallback"]);
         assert_eq!(
             draft.clipboard, "text",
             "manual Ctrl+V must still paste the handoff"
         );
-        let mut automatic = Draft { focused: true, ..Default::default() };
-        paste_sequence(&mut automatic, true, true).unwrap();
-        assert_eq!(automatic.calls, ["image", "paste", "text", "paste", "enter", "fallback"]);
         let mut speech = Draft { focused: true, ..Default::default() };
-        paste_sequence(&mut speech, true, false).unwrap();
-        assert_eq!(speech.calls, ["text", "paste", "enter", "fallback"]);
-        for mut stopped in [
-            Draft { focused: true, fail_second: true, ..Default::default() },
-            Draft { focused: true, lose_focus_after_image: true, ..Default::default() },
-            Draft { focused: true, lose_focus_after_text: true, ..Default::default() },
-            Draft { focused: true, change_clipboard_after_text: true, ..Default::default() },
-        ] {
-            assert!(paste_sequence(&mut stopped, true, true).is_err());
-            assert!(!stopped.calls.contains(&"enter"), "An interrupted paste must never press Enter");
-        }
-        let mut refused_enter = Draft { focused: true, fail_enter: true, ..Default::default() };
-        assert!(paste_sequence(&mut refused_enter, true, true).is_err());
-        assert_eq!(refused_enter.clipboard, "text");
+        paste_sequence(&mut speech, false).unwrap();
+        assert_eq!(speech.calls, ["text", "paste", "fallback"]);
         let mut failed = Draft {
             clipboard: "handoff",
             focused: true,
             fail_second: true,
             ..Default::default()
         };
-        assert!(paste_sequence(&mut failed, false, true).is_err());
+        assert!(paste_sequence(&mut failed, true).is_err());
         assert_eq!(
             failed.clipboard, "text",
             "failed automatic paste must leave a Ctrl+V fallback"
@@ -341,7 +293,7 @@ mod tests {
             fail_text_offer: true,
             ..Default::default()
         };
-        assert!(paste_sequence(&mut refused, false, true).is_err());
+        assert!(paste_sequence(&mut refused, true).is_err());
         assert_eq!(
             refused.clipboard, "text",
             "a failed text offer must not leave the image on Ctrl+V"
@@ -352,7 +304,7 @@ mod tests {
             lose_focus_after_image: true,
             ..Default::default()
         };
-        assert!(paste_sequence(&mut changed_focus, false, true).is_err());
+        assert!(paste_sequence(&mut changed_focus, true).is_err());
         assert_eq!(
             changed_focus
                 .calls
@@ -368,7 +320,7 @@ mod tests {
             user_changes_clipboard: true,
             ..Default::default()
         };
-        assert!(paste_sequence(&mut changed_clipboard, false, true).is_err());
+        assert!(paste_sequence(&mut changed_clipboard, true).is_err());
         assert_eq!(
             changed_clipboard.clipboard, "user content",
             "do not overwrite a newer user copy"

@@ -13,7 +13,7 @@ Show your agent what you mean with a quick screen recording, your voice, and a f
 
 1. **Record** — press `⌥⇧S` on macOS or `Alt+Shift+S` on Linux.
 2. **Make your point** — talk, click around, hold `Shift` to draw, or `Shift`-click to drop a pin.
-3. **Hand it off** — press the shortcut again to finish, then paste into your agent chat.
+3. **Hand it off** — press the shortcut again to finish. If your agent composer stays focused, Apparent can paste an unsent draft. You can also paste from the clipboard.
 
 Your agent gets annotated keyframes, a timed transcript, and an interaction timeline
 in a `.apparent` bundle. It can read what you said, see where you pointed, and pull

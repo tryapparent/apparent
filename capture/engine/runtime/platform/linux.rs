@@ -473,14 +473,15 @@ pub(crate) fn is_helper_process(_pid: i32) -> bool {
 
 // MARK: Synthetic input
 
-pub fn wait_for_modifiers_released(max_wait_ms: u64) {
+pub fn wait_for_modifiers_released(max_wait_ms: u64) -> bool {
     let deadline = Instant::now() + Duration::from_millis(max_wait_ms);
     while Instant::now() < deadline {
         if !held_now().mods.any() {
-            break;
+            return true;
         }
         thread::sleep(Duration::from_millis(10));
     }
+    !held_now().mods.any()
 }
 
 const XK_CONTROL_L: u32 = 0xffe3;
@@ -507,9 +508,6 @@ fn keycode(keysym: u32) -> Option<u8> {
     x11::keycodes_for(keysym).into_iter().next()
 }
 
-/// Pastes into the app in front: Ctrl+V, or Ctrl+Shift+V in a terminal (Ctrl+V is a control
-/// character there). On Wayland through the RemoteDesktop portal, which asks once; on X11
-/// through XTEST. A Ctrl the user still holds is left alone.
 pub fn try_post_synthetic_cmd_v() -> anyhow::Result<()> {
     let shift = super::super::is_frontmost_terminal();
     if linux::wayland_session() {

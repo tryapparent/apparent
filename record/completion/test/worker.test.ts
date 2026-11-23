@@ -12,7 +12,7 @@ await runCompletion({may_copy: (saved, current, connected) => saved && current &
 ];
 
 const context = {capture:{generation:'7',captureId:'a',requestId:'request-a'},
-  platform:'linux',source:'screen',agentRequested:false,automaticTrialEnabled:false,lab:false,hyprland:true,wayland:true};
+  platform:'linux',source:'screen',agentRequested:false,autoPasteEnabled:false,lab:false,pasteTargetAvailable:true};
 const input = {version:1,context,current:true,outcome:{kind:'saved',bundlePath:'/synthetic/a.apparent'}};
 for(const result of ['copied','failed','revoked']) {
   test(`real headless worker uses ${result} capability receipt without Electron`,async t=>{

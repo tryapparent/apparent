@@ -9,11 +9,9 @@ export type Context = Readonly<{
   platform: 'linux' | 'macos';
   source: 'screen' | 'phone';
   agentRequested: boolean;
-  automaticTrialEnabled: boolean;
-  pasteOnRelease?: boolean;
+  autoPasteEnabled: boolean;
+  pasteTargetAvailable: boolean;
   lab: boolean;
-  hyprland: boolean;
-  wayland: boolean;
   imageQualityWarning?: string | null;
 }>;
 export type State = Readonly<{
@@ -30,7 +28,7 @@ export type Event =
   | {type: 'finalized'; capture: Capture; outcome: Outcome}
   | {type: 'clipboard'; capture: Capture; result: 'copied' | 'failed'}
   | {type: 'dismiss' | 'cancel' | 'revoke' | 'disconnect' | 'reconnect'};
-export type Effect = Readonly<{type: 'copy'; capture: Capture; mode: 'text' | 'bundle' | 'autoPasteDraft' | 'autoPasteAndSubmit'}>;
+export type Effect = Readonly<{type: 'copy'; capture: Capture; mode: 'bundle' | 'autoPasteDraft'}>;
 export type Decision = Readonly<{state: State; effects: readonly Effect[]}>;
 
 export function begin(context: Context, current: boolean): State {
@@ -41,16 +39,16 @@ export function sameCapture(a: Capture, b: Capture): boolean {
 }
 export type CopyPolicy = {
   may_copy(saved: boolean, current: boolean, connected: boolean): boolean;
-  copy_mode(localScreen: boolean, hyprland: boolean, wayland: boolean, draft: boolean, submit: boolean): 0 | 1 | 2;
+  copy_mode(localScreen: boolean, enabled: boolean, target: boolean): 0 | 1;
 };
-const modes = ['bundle', 'autoPasteDraft', 'autoPasteAndSubmit'] as const;
+const modes = ['bundle', 'autoPasteDraft'] as const;
 
 export function reduce(previous: State, event: Event, policy: CopyPolicy): Decision {
   let state = previous;
   const context = state.context;
   const mode = modes[policy.copy_mode(
-    context.platform === 'linux' && context.source === 'screen' && !context.agentRequested && !context.lab,
-    context.hyprland, context.wayland, context.pasteOnRelease === true, context.automaticTrialEnabled,
+    context.source === 'screen' && !context.agentRequested && !context.lab,
+    context.autoPasteEnabled, context.pasteTargetAvailable,
   )];
   const automatic = mode !== 'bundle';
   const effects: Effect[] = [];
@@ -79,10 +77,9 @@ export function reduce(previous: State, event: Event, policy: CopyPolicy): Decis
       state = {...state, copyPending: false, observation: {...state.observation, clipboard: event.result},
         manualRecovery: event.result === 'failed' && !automatic,
         status: event.result === 'failed' ? automatic ? 'Saved · auto paste stopped' : 'Saved · open bundle (copy failed)'
-          : mode === 'autoPasteAndSubmit' ? 'Saved · Enter pressed' : mode === 'autoPasteDraft' ? 'Saved · paste dispatched' : 'Saved · copied',
-        notifications: automatic ? [...state.notifications, {title: 'Auto paste', body: event.result === 'failed'
-          ? 'Auto paste stopped. Check your composer before retrying from the saved bundle.'
-          : `${mode === 'autoPasteAndSubmit' ? 'Image and text paste dispatched, then Enter pressed' : 'Draft paste dispatched'}. Check your composer for the result. Saved capture: ${state.observation.outcome.bundlePath}`}] : state.notifications};
+          : automatic ? 'Saved · paste dispatched' : 'Saved · copied',
+        notifications: automatic && event.result === 'failed' ? [...state.notifications, {title: 'Auto paste stopped',
+          body: 'Check your composer before retrying from the saved bundle.'}] : state.notifications};
     }
   }
   return {state, effects};

@@ -16,12 +16,6 @@ const PUSH_TO_TALK: &str = "pushToTalk";
 #[cfg(not(target_os = "linux"))]
 fn push_to_talk_supported() -> bool { false }
 
-fn auto_paste_supported() -> bool {
-    #[cfg(target_os = "linux")]
-    { crate::capture::desktop::linux::auto_paste::available() }
-    #[cfg(not(target_os = "linux"))]
-    { false }
-}
 pub(super) fn facts(path: &Path) -> serde_json::Value {
     let value = match std::fs::read(path) {
         Ok(bytes) => match serde_json::from_slice::<serde_json::Value>(&bytes) {
@@ -42,7 +36,7 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
         "agentContextSaved": normalized(AGENT_CONTEXT),
         "sharingSaved": saved("hostedSharing"),
         "autoPasteSaved": saved(AUTO_PASTE),
-        "autoPasteSupported": auto_paste_supported(),
+        "autoPasteSupported": cfg!(any(target_os = "macos", target_os = "linux")),
         "pushToTalkSaved": saved(PUSH_TO_TALK),
         "pushToTalkSupported": push_to_talk_supported(),
         "wisprSaved": saved("onboardingWisprFlow"),
@@ -72,8 +66,7 @@ pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>, setting:
     let Some((key, true)) = key(setting) else {
         return serde_json::json!({"type":"labs-result","request":request,"facts":{"error":"config_write_failed"}});
     };
-    let mut result = if enabled == Some(true) && (key == AUTO_PASTE && !auto_paste_supported()
-        || key == PUSH_TO_TALK && !push_to_talk_supported()) {
+    let mut result = if enabled == Some(true) && key == PUSH_TO_TALK && !push_to_talk_supported() {
         serde_json::json!({"error":"config_write_failed"})
     } else if let Some(on) = enabled {
         match crate::shared::handoff::set_experiment_in(path, key, on) {

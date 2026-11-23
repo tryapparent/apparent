@@ -82,13 +82,15 @@ available through Apparent.
 
 ## Auto paste
 
-Labs reads the same native Hyprland Wayland capability as recording completion.
-The trial requires Lua dispatchers and remains an opt-in that can press Enter
-in the focused composer when the recording finishes. An unsupported session
-cannot turn it on, but can turn off a saved On value. Completion uses the
-ordinary copy path when the trial is unavailable. The saved recording's Paste
-action leaves submission to you, and you can paste the copied text yourself.
+Apparent saves a local desktop screen capture and copies its text. If a writable
+field is focused at Finish and stays focused, Apparent also pastes the draft. A
+visual handoff attempts the contact sheet first, then the text. The receiving
+app controls attachment acceptance and you submit the draft yourself.
 
-The existing Labs action and config writer still own `experiments.autoPasteDraft`.
-A rollback should revert the native capability gate and the bundled Labs
-presentation together. The saved value needs no migration.
+Auto paste is on by default. Settings → Labs can turn it off for the next
+Finish. An existing `experiments.autoPasteDraft: false` stays off, and an existing
+`true` now only pastes. Practice, agent, phone and terminal workflows retain
+manual handoff. On Wayland without the Hyprland shortcut adapter, use explicit
+Paste and grant keyboard access before automatic paste can use the desktop
+portal. If focus, clipboard ownership or provider access changes, check the
+draft and use the saved recording to recover.

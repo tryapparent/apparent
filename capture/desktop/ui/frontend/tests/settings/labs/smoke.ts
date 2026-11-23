@@ -26,7 +26,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
    const field=setting==='wisprFlow'?'wisprSaved':setting?`${setting}Saved`:'saved';
    saved[field]=message.enabled;
   }
-  application.stdin.write(JSON.stringify({type:'labs-result',request:message.request,facts:fail?{error:'config_write_failed'}:{...saved,agentContextAccess:'approval_required',autoPasteSupported:process.platform==='linux',wisprSupported:process.platform==='darwin'}})+'\n');
+  application.stdin.write(JSON.stringify({type:'labs-result',request:message.request,facts:fail?{error:'config_write_failed'}:{...saved,agentContextAccess:'approval_required',autoPasteSupported:true,wisprSupported:process.platform==='darwin'}})+'\n');
  };
  createInterface({input:application.stdout}).on('line',line=>{
   try{const value=JSON.parse(line);messages.push(value);if(value.action==='agents-preference'){application.stdin.write(JSON.stringify({type:'agents-result',request:value.request,facts:{saved:null,t3Saved:false,t3Configured:false}})+'\n');}if(value.action==='labs-preference'){if(hold)held=value;else reply(value);}}catch{}
@@ -92,8 +92,12 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   const sharing=page.getByRole('switch',{name:'Public sharing links'});
   await enableAndReload(sharing);
   const autoPaste=page.getByRole('switch',{name:'Auto paste',exact:true});
-  if(process.platform==='linux') await enableAndReload(autoPaste);
-  else await expect(autoPaste).toBeDisabled();
+  await expect(autoPaste).toBeChecked();
+  await autoPaste.focus();
+  await page.keyboard.press('Space');
+  await expect(autoPaste).not.toBeChecked();
+  await page.reload();
+  await enableAndReload(autoPaste);
   await expect(page.getByRole('switch',{name:'Double-tap Shift for notes'})).toHaveCount(0);
   const wispr=page.getByRole('switch',{name:'Dictation app conflicts',exact:true});
   await expect(wispr).toHaveAttribute('aria-checked','false');
@@ -157,7 +161,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
     await page.screenshot({path:path.join(process.env.APPARENT_LIVE_PROOF,`labs-${theme}-${width}-bottom.png`)});
     await toggle.scrollIntoViewIfNeeded();
    }
-   for(const id of ['speaking-style-help','agent-context-limits','circle-labels-help','local-stream-ready','auto-paste-limits','public-sharing-limits','wispr-lab-help']){
+   for(const id of ['speaking-style-help','agent-context-limits','circle-labels-help','local-stream-ready','auto-paste-help','public-sharing-limits','wispr-lab-help']){
     const guidance=page.locator(`#${id}`);await guidance.evaluate(el=>el.scrollIntoView({block:'center'}));await expect(guidance).toBeInViewport();
     if(['circle-labels-help','agent-context-limits','speaking-style-help'].includes(id) && process.env.APPARENT_LIVE_PROOF)
      await page.screenshot({path:path.join(process.env.APPARENT_LIVE_PROOF,`${id}-${theme}-${width}.png`)});
@@ -169,7 +173,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   await expect(retryLipflow).toHaveCount(0);
   const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setDeviceMetricsOverride',{width:640,height:530,deviceScaleFactor:1,mobile:false});
   const recoveries: [string,typeof toggle][]=[['streaming',toggle],['agentContext',agentContext],['speakingStyle',speaking],['circleLabels',circles],['pillDoodles',doodles]];
-  if(process.platform==='linux')recoveries.push(['autoPaste',autoPaste]);
+  recoveries.push(['autoPaste',autoPaste]);
   recoveries.push(['sharing',sharing]);
   if(process.platform==='darwin')recoveries.push(['wisprFlow',wispr]);
   for(const [setting,control] of recoveries){

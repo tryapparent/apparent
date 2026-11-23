@@ -67,7 +67,7 @@ try{
   await page.reload();await expect(sharing).toBeEnabled();await expect(sharing).toHaveAttribute('aria-checked',String(on));
  }
  const autoPaste=page.getByRole('switch',{name:'Auto paste',exact:true});
- await expect(autoPaste).toHaveAccessibleDescription(/supported Hyprland|Unavailable in this session/);
+ await expect(autoPaste).toHaveAccessibleDescription(/You decide when to send/);
  if(await autoPaste.isEnabled()){
   for(const on of [true,false]){
    await autoPaste.click();await expect(autoPaste).toHaveAttribute('aria-checked',String(on));
