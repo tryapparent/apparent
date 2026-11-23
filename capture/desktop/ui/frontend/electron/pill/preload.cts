@@ -2,15 +2,6 @@
 'use strict';
 const {contextBridge,ipcRenderer} = require('electron');
 contextBridge.exposeInMainWorld('apparentPill', Object.freeze({
-  subscribeLip: callback => {
-    const listener=(_event,control)=>callback(control);
-    ipcRenderer.on('pill:lip-control',listener);
-    void ipcRenderer.invoke('pill:lip-listening').catch(()=>{});
-    return ()=>ipcRenderer.removeListener('pill:lip-control',listener);
-  },
-  lipPreview: capture => ipcRenderer.invoke('pill:lip-preview',capture),
-  lipClip: (capture,start,end,bytes) => ipcRenderer.invoke('pill:lip-clip',capture,start,end,bytes),
-  lipFinish: (capture,complete) => ipcRenderer.invoke('pill:lip-finish',capture,complete),
   read: () => ipcRenderer.invoke('pill:read'),
   retryBackgroundHandoff: capture => ipcRenderer.invoke('pill:retry-background-handoff',capture),
   backgroundHandoff: () => ipcRenderer.invoke('pill:background-handoff'),

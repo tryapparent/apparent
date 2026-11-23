@@ -439,13 +439,6 @@ pub fn finalize_capture_bundle_with_transcript(
             Ok((transcribe_handle.join().unwrap(), (pre, frames, crop_settings, assembly_plan)))
         })?;
 
-        let mut context = std::collections::BTreeMap::new();
-        if transcript.source == "lipflow" {
-            context.insert("microphoneCapture".into(), "off".into());
-            if let Some(missing) = &transcript.missing {
-                context.insert("Lip reading".into(), missing.reason.clone());
-            }
-        }
         let built = build_bundle_from_parts(
             bundle_dir,
             target,
@@ -457,7 +450,6 @@ pub fn finalize_capture_bundle_with_transcript(
             video_path.clone(),
             note,
             SourceExtras {
-                context,
                 activity,
                 interaction_telemetry,
                 video_ink,

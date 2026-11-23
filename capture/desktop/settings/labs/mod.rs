@@ -44,7 +44,6 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
         "pushToTalkSupported": push_to_talk_supported(),
         "wisprSaved": saved("onboardingWisprFlow"),
         "wisprSupported": cfg!(target_os = "macos"),
-        "silentPromptSaved": saved("silentPrompt"),
         "pillDoodlesSaved": normalized(crate::capture::desktop::ui::electron_pill::PILL_DOODLES),
         "dictationFrogSaved": saved("dictationFrog"),
     })
@@ -60,7 +59,6 @@ pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
         Some("autoPaste") => Some((AUTO_PASTE, true)),
         Some("pushToTalk") => Some((PUSH_TO_TALK, true)),
         Some("wisprFlow") => Some(("onboardingWisprFlow", cfg!(target_os = "macos"))),
-        Some("silentPrompt") => Some(("silentPrompt", true)),
         Some(name) if name == crate::capture::desktop::ui::electron_pill::PILL_DOODLES => Some((crate::capture::desktop::ui::electron_pill::PILL_DOODLES, true)),
         Some("dictationFrog") => Some(("dictationFrog", cfg!(target_os = "macos"))),
         _ => None,
@@ -102,6 +100,18 @@ fn desktop_access(activate: bool) -> &'static str {
 }
 #[cfg(test)] mod tests {
     use super::*;
+    #[test]
+    fn retired_camera_experiment_is_ignored_and_cannot_be_set() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("config.json");
+        let saved = r#"{"experiments":{"silentPrompt":true,"other":true}}"#;
+        std::fs::write(&path, saved).unwrap();
+
+        assert!(facts(&path).get("silentPromptSaved").is_none());
+        let reply = request(&path, 1, Some(false), Some("silentPrompt"));
+        assert_eq!(reply["facts"]["error"], "config_write_failed");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), saved);
+    }
     #[test]
     fn performance_consent_is_off_and_rotates_on_reenable() {
         let directory = tempfile::tempdir().unwrap();
@@ -151,19 +161,6 @@ fn desktop_access(activate: bool) -> &'static str {
             assert_eq!(saved["experiments"][AGENT_CONTEXT], enabled);
             assert_eq!(saved["experiments"]["other"], true);
             assert_eq!(saved["secret"], "private");
-        }
-    }
-    #[test]
-    fn silent_prompt_is_opt_in_and_round_trips() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("config.json");
-        std::fs::write(&path, r#"{"experiments":{"other":true}}"#).unwrap();
-        assert!(facts(&path)["silentPromptSaved"].is_null());
-        for enabled in [true, false] {
-            let response = request(&path, 1, Some(enabled), Some("silentPrompt"));
-            assert_eq!(response["facts"]["silentPromptSaved"], enabled);
-            let config = crate::shared::handoff::load_config_from(&path);
-            assert!(crate::shared::handoff::experiment_enabled_in(&config, "other"));
         }
     }
     #[test]

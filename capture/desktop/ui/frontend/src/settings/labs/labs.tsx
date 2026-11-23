@@ -5,13 +5,12 @@ import {ErrorDialog} from '@apparent/ui/error-dialog';
 import frog from '../../../../../assets/settings/frog-puzzled.png';
 import {enabled, autoPasteEnabled, sharingEnabled, wisprEnabled, type LabsFacts, type LabsSetting} from './policy';
 import type {ComponentType} from 'react';
-import {SilentPrompt} from '../../../../../../../record/settings/renderer/silent-prompt';
 
 declare global {interface Window {apparentLabs: {
   read(): Promise<LabsFacts>; save(value: boolean, setting?: LabsSetting): Promise<LabsFacts>;
   subscribe(callback: (facts: LabsFacts) => void): () => void;
 };}}
-const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', silentPrompt: 'silent-prompt-toggle', agentContext: 'agent-context-toggle', speakingStyle: 'speaking-style-toggle', circleLabels: 'circle-labels-toggle', pillDoodles: 'pill-doodles-toggle', recordingPerformance: 'recording-performance-toggle'};
+const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', agentContext: 'agent-context-toggle', speakingStyle: 'speaking-style-toggle', circleLabels: 'circle-labels-toggle', pillDoodles: 'pill-doodles-toggle', recordingPerformance: 'recording-performance-toggle'};
 export type LabsExperiment<Checked = boolean> = ComponentType<{
   id: string; checked: Checked; disabled: boolean; saving: boolean;
   access?: LabsFacts['agentContextAccess'];
@@ -115,19 +114,6 @@ export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: Fr
     {FrogNudge && wisprSupported.current && <FrogNudge id={controls.dictationFrog} checked={facts?.dictationFrogSaved ?? false}
       disabled={busy || !facts || !!facts.error} saving={busy && setting === 'dictationFrog'}
       onCheckedChange={value => void request(value, 'dictationFrog')} />}
-    <section className="agent-preference">
-      <div className="agent-preference-row">
-        <h2 className="settings-preference-label" id="silent-prompt-label">Silent prompts</h2>
-        <Switch id={controls.silentPrompt} className="agent-switch"
-          checked={facts?.silentPromptSaved ?? false}
-          aria-labelledby="silent-prompt-label" aria-describedby="silent-prompt-help"
-          aria-busy={busy && setting === 'silentPrompt'}
-          disabled={busy || !facts || !!facts.error}
-          onCheckedChange={value => void request(value, 'silentPrompt')} />
-      </div>
-      <p id="silent-prompt-help">Use lip reading for transcripts in screen recordings. The camera opens when recording starts, and the microphone stays off. Turning this on downloads the model and runtime.</p>
-      {facts?.silentPromptSaved && <SilentPrompt />}
-    </section>
     <section className="agent-preference">
       <div className="agent-preference-row">
         <h2 className="settings-preference-label" id="recording-performance-label">Share recording performance</h2>

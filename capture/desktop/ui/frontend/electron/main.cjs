@@ -74,7 +74,7 @@ function startControls() {
 
 if(process.argv.includes('--controls')) { startControls(); }
 else if(process.argv.includes('--onboarding')) { require('./onboarding.cjs'); } else {
-const { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, nativeTheme, clipboard, screen } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, nativeTheme, clipboard } = require('electron');
 const os = require('node:os');
 let exitWithReports = code => app.exit(code);
 if (process.env.APPARENT_DESKTOP_REPORTING === '1') {
@@ -95,7 +95,6 @@ const frame = require('./settings/frame.cjs');
 let pane = frame.initialSettingsPane(process.argv);
 const settings = !!pane;
 const hasSettingsParent = process.argv.includes('--settings-parent');
-const lip = new frame.LipHost(process.env.APPARENT_MODELS_DIR);
 const settingsHosts = new frame.SettingsHosts(action => process.stdout.write(JSON.stringify(action) + '\n'));
 let generalState;
 const settingsHash = settings && pane !== 'storage' ? '#' + pane : '';
@@ -117,8 +116,6 @@ const preferenceQueue=new PreferenceQueue();
 const resetPreferences = () => {
   agentsPreferences.close();
   labsPreferences.close();
-  lip.enabled = false;
-  lip.cancel();
   settingsHosts.reset();
 };
 let aboutState;
@@ -197,25 +194,7 @@ app.whenReady().then(() => {
   followWindowTheme(nativeTheme, window);
   window.removeMenu();
   const page = pathToFileURL(path.join(__dirname, settings ? '../dist/settings.html' : '../dist/index.html')).href;
-  let lipWindow;
-  window.webContents.setWindowOpenHandler(details => {
-    if (details.url !== 'about:blank' || details.frameName !== 'apparent-silent-prompt' ||
-        !canUseLip() || !lip.enabled || lipWindow) return { action: 'deny' };
-    const work = screen.getDisplayMatching(window.getBounds()).workArea;
-    const width = Math.min(work.width, 480), height = Math.min(work.height, 200);
-    return { action: 'allow', overrideBrowserWindowOptions: {
-      width, height, x: Math.round(work.x + (work.width - width) / 2),
-      y: work.y + work.height - height - 24, frame: false, alwaysOnTop: true,
-      resizable: false, skipTaskbar: true, backgroundColor: 'transparent', transparent: true,
-      webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, preload: undefined },
-    } };
-  });
-  window.webContents.on('did-create-window', child => {
-    lipWindow = child;
-    child.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-    child.webContents.on('will-navigate', (event) => event.preventDefault());
-    child.once('closed', () => { lipWindow = undefined; lip.cancel(); });
-  });
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event) => event.preventDefault());
   window.webContents.on('will-attach-webview', (event) => event.preventDefault());
   let pending;
@@ -225,37 +204,6 @@ app.whenReady().then(() => {
     if (window.isDestroyed() || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame ||
         event.senderFrame.url !== page + settingsHash || args.length !== 0) throw new Error('Forbidden bridge request');
   };
-  const canUseLip = () => pane === 'labs' && hasSettingsParent && !settingsClosing;
-  const cameraFrame = (contents, permission, details) => canUseLip() &&
-    lip.allowsCamera() && permission === 'media' && contents === window.webContents &&
-    details.isMainFrame === true && details.requestingUrl?.split('#')[0] === page;
-  session.defaultSession.setPermissionRequestHandler((contents, permission, reply, details) =>
-    reply(cameraFrame(contents, permission, details) && details.mediaTypes?.length === 1 &&
-      details.mediaTypes[0] === 'video'));
-  session.defaultSession.setPermissionCheckHandler((contents, permission, _origin, details) =>
-    cameraFrame(contents, permission, details) && details.mediaType === 'video');
-  app.on('before-quit', () => lip.stopSetup());
-  const bindLip = (name, arity, handle) => ipcMain.handle(`apparent:lip-${name}`, (event, ...args) => {
-    validate(event, []);
-    if (!canUseLip() || args.length !== arity) throw Error('Silent prompts unavailable');
-    return handle(...args);
-  });
-  bindLip('prepare', 0, () => lip.prepare());
-  bindLip('begin', 0, async () => {
-    if (!lipWindow) throw Error('Silent prompt pill unavailable');
-    const [capture, wasm] = await Promise.all([
-      lip.begin(),
-      require('node:fs/promises').readFile(path.join(__dirname, '../dist/assets/lip-vision.wasm')),
-    ]);
-    return { ...capture, wasm };
-  });
-  bindLip('decode', 1, bytes => lip.decode(bytes));
-  bindLip('cancel', 0, () => lip.cancel());
-  bindLip('copy', 0, async () => {
-    const text = lip.textToCopy();
-    await clipboard.writeText(text);
-    if (await clipboard.readText() !== text) throw Error('Copy not confirmed');
-  });
   const validateFoundation = (event, args) => {
     if (settings) throw new Error('Unavailable in Storage Settings');
     validate(event, args);
@@ -421,10 +369,6 @@ app.whenReady().then(() => {
           window.webContents.send('apparent:about-state', command);
         }
         if (pane === 'agents' && command.type === 'agents-result') agentsPreferences.receive(command);
-        if (pane === 'labs' && ['labs-result', 'labs-state'].includes(command.type)) {
-          lip.enabled = labsFacts(command.facts).silentPromptSaved === true;
-          if (!lip.enabled) { lip.cancel(); lip.stopSetup(); }
-        }
         if (pane === 'labs' && command.type === 'labs-result') labsPreferences.receive(command);
         if (pane === 'labs' && command.type === 'labs-state') window.webContents.send('apparent:labs-state', labsFacts(command.facts));
         if (pane === 'agents' && command.type === 'agents-state') {

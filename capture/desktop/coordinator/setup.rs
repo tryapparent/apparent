@@ -10,8 +10,6 @@ impl ApparentCoordinator {
             telemetry,
             note_ui: None,
             admitted_microphone: None,
-            admitted_lips: false,
-            active_lips: None,
             whiteboard: Rc::new(RefCell::new(whiteboard::Board::default())),
             active_recording: None,
             capture_generation: 0,
@@ -617,17 +615,12 @@ impl ApparentCoordinator {
         if self.lab {
             return true;
         }
-        let lips = crate::shared::handoff::experiment("silentPrompt");
-        let microphone = crate::lip_input::microphone_enabled(
-            lips, crate::capture::engine::runtime::audio::mic::enabled(),
-        );
+        let microphone = crate::capture::engine::runtime::audio::mic::enabled();
         self.admitted_microphone = None;
-        self.admitted_lips = false;
         if !self.permissions_allow_recording(microphone, session_selected) {
             return false;
         }
         self.admitted_microphone = Some(microphone);
-        self.admitted_lips = lips;
         true
     }
 
@@ -997,12 +990,6 @@ impl ApparentCoordinator {
         }
         self.report_capture = false;
         let rec = self.active_recording.take()?;
-        if self.active_lips.take().is_some() {
-            #[cfg(any(target_os = "linux", target_os = "macos"))]
-            if let Some(pill) = &self.electron_pill {
-                pill.lip_control(self.capture_generation, "cancel", 0);
-            }
-        }
         self.note_ui = None;
         let _ = self.telemetry.finish_session();
         match rec.source {

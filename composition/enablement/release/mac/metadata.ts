@@ -12,13 +12,6 @@ export function markElectronAccessory(runtime: string) {
     "YES",
     plist,
   ]);
-  execFileSync("/usr/bin/plutil", [
-    "-replace",
-    "NSCameraUsageDescription",
-    "-string",
-    "Apparent films a short silent prompt when you start the camera in Labs.",
-    plist,
-  ]);
 }
 
 export function macProduct(channel: string | undefined) {

@@ -75,11 +75,10 @@ if (
       mode !== "media" &&
       mode !== "captions" &&
       mode !== "bloom" &&
-      mode !== "ink" &&
-      mode !== "lip")
+      mode !== "ink")
   )
     throw new Error(
-      "Usage: node record/enablement/ci/bend/build.ts <destination> [media|captions|bloom|ink|lip]",
+      "Usage: node record/enablement/ci/bend/build.ts <destination> [media|captions|bloom|ink]",
     );
   if (mode === "media") await buildMedia(resolve(destination));
   else if (mode === "captions")
@@ -87,12 +86,6 @@ if (
       resolve(destination),
       "caption-admission.mjs",
       "record/transcription/",
-    );
-  else if (mode === "lip")
-    await buildRecordModule(
-      resolve(destination),
-      "lip-policy.mjs",
-      "record/settings/lip-policy.bend",
     );
   else if (mode === "bloom") await buildBloom(resolve(destination));
   else if (mode === "ink") await buildInk(resolve(destination));

@@ -17,11 +17,9 @@ for (const file of ['button.tsx', 'keyboard/keycap.tsx', 'keyboard/keycap.css', 
 import { execFileSync } from "node:child_process";
 
 let reportingOutput: string;
-const lipRuntime = new URL('../../../../record/pill/runtime/', import.meta.url);
-const mediaPipe = new URL('node_modules/@mediapipe/tasks-vision/', lipRuntime);
 export default defineConfig({
   base: './',
-  resolve: { alias: { '@lip-runtime': fileURLToPath(new URL('.', mediaPipe)).slice(0, -1) }, dedupe: ['react', 'react-dom', '@apparent/ui', 'lucide-react'] },
+  resolve: { dedupe: ['react', 'react-dom', '@apparent/ui', 'lucide-react'] },
   plugins: [{ name: 'recording-settings-policy', buildStart() {
     execFileSync(process.execPath, [fileURLToPath(new URL('../../../../record/settings/build.ts', import.meta.url))], { stdio: 'inherit' });
     for (const mode of ['bloom', 'ink']) execFileSync(process.execPath, [
@@ -31,16 +29,7 @@ export default defineConfig({
     ], { stdio: 'inherit' });
     execFileSync(process.execPath, [fileURLToPath(new URL('../../../../composition/enablement/ci/bend/build.ts', import.meta.url))], { stdio: 'inherit' });
     execFileSync(process.execPath, [fileURLToPath(new URL('../../../../handoff/enablement/ci/bend/build.ts', import.meta.url))], { stdio: 'inherit' });
-  } }, {
-    name: 'record-lip-runtime',
-    buildStart() {
-      execFileSync('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: lipRuntime, stdio: 'inherit' });
-    },
-    closeBundle() {
-      cpSync(new URL('wasm/vision_wasm_internal.wasm', mediaPipe), 'dist/assets/lip-vision.wasm');
-      cpSync(new URL('../../../../record/pill/renderer/LICENSE-lip-preview.txt', import.meta.url), 'dist/assets/LICENSE-lip-preview.txt');
-    },
-  }, react(), {
+  } }, react(), {
     name: 'composition-utility-sources',
     enforce: 'pre',
     transform(css, id) {

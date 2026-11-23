@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {chmodSync, cpSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
+import {chmodSync, cpSync, mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 
 export function qualifyTranscript(options: {
@@ -29,30 +29,48 @@ export function qualifyTranscript(options: {
   const hash=(path:string)=>createHash('sha256').update(readFileSync(path)).digest('hex');
   const preserved=[movie,wav,transcriber,config].map(path=>[path,hash(path)] as const);
   const rows=[];
-  for(const route of ['phone','screen','recovery']) {
+  for(const route of ['phone','screen','recovery','saved-camera-transcript']) {
+    const savedCameraTranscript=route==='saved-camera-transcript';
     const input=join(directory,route+'-input.apparent'),output=join(directory,route+'-output.apparent');
     cpSync(sourceBundle,input,{recursive:true,errorOnExist:true,force:false});chmodSync(input,0o700);
     cpSync(movie,join(input,'recording.mp4'));chmodSync(join(input,'recording.mp4'),0o600);
-    cpSync(wav,join(input,'audio.wav'));chmodSync(join(input,'audio.wav'),0o600);
+    if(savedCameraTranscript) {
+      rmSync(join(input,'audio.wav'),{force:true});
+    } else {
+      cpSync(wav,join(input,'audio.wav'));chmodSync(join(input,'audio.wav'),0o600);
+    }
     const manifest=JSON.parse(readFileSync(join(input,'apparent.json'),'utf8'));
     manifest.durationMs=20000;manifest.source=route==='phone'?'iphone':'screen';
     manifest.device=route==='phone'?{name:'Synthetic file',capture:'mirror',width:96,height:64}:undefined;
     manifest.target={mode:'display',displayId:0,frame:{x:0,y:0,width:96,height:64,scale:1}};
-    manifest.video='recording.mp4';manifest.audio='audio.wav';manifest.videoOffsetMs=0;manifest.strokes=[];manifest.events=[];manifest.cursor=[];
+    manifest.video='recording.mp4';manifest.audio=savedCameraTranscript?undefined:'audio.wav';manifest.videoOffsetMs=0;manifest.strokes=[];manifest.events=[];manifest.cursor=[];
+    if(savedCameraTranscript) {
+      manifest.context={microphoneCapture:'off'};
+      manifest.transcript={...transcript,estimated:true,source:'lipflow'};
+    }
     manifest.marks=[1000,4000,7000,10000,13000,16000].map((t,i)=>({id:`f${i+1}`,shape:'flag',strokes:[],t0:t,t1:t,
       boxNorm:[0,0,1,1],description:'flagged this moment'}));
     if(route!=='phone')manifest.marks=[];
     writeFileSync(join(input,'apparent.json'),JSON.stringify(manifest),{mode:0o600});
-    const before=[hash(join(input,'apparent.json')),hash(join(input,'recording.mp4')),hash(join(input,'audio.wav'))];
+    const sourceFiles=['apparent.json','recording.mp4',...(savedCameraTranscript?[]:['audio.wav'])];
+    const before=sourceFiles.map(file=>hash(join(input,file)));
     execFileSync(binary,['reprocess',input,'--out',output,'--transcriber','command',...(route==='screen'?['--bench','1']:[])],
       {timeout:90_000,stdio:'pipe',env:{...process.env,HOME:home,CFFIXED_USER_HOME:home,APPARENT_CONFIG:config,
         APPARENT_MODELS_DIR:join(home,'unused-models'),XDG_CONFIG_HOME:join(home,'config'),XDG_DATA_HOME:join(home,'data'),
         XDG_CACHE_HOME:join(home,'cache'),XDG_RUNTIME_DIR:runtimeDirectory,DISPLAY:'',WAYLAND_DISPLAY:'',
         DBUS_SESSION_BUS_ADDRESS:'',APPIMAGE_EXTRACT_AND_RUN:'1'}});
     const result=JSON.parse(readFileSync(join(output,'apparent.json'),'utf8'));
-    assert.match(result.transcript.source,/^command:/);assert.equal(result.transcript.text,transcript.text);
+    if(savedCameraTranscript) {
+      assert.equal(result.transcript.source,'lipflow');
+      assert.equal(result.context.microphoneCapture,'off');
+      assert.equal(result.audio,undefined);
+    } else {
+      assert.match(result.transcript.source,/^command:/);
+    }
+    assert.equal(result.transcript.text,transcript.text);
     const said=result.keyframes.map((frame:{said?:string})=>frame.said??null);
-    assert(result.keyframes.length>=2,'the changed movie must exercise allocation across multiple real frames');
+    if(!savedCameraTranscript)
+      assert(result.keyframes.length>=2,'the changed movie must exercise allocation across multiple real frames');
     if(route==='phone') {
       assert.deepEqual(result.keyframes.map((frame:{t:number})=>frame.t),[1000,4000,7000,10000,13000,16000]);
       assert.deepEqual(said,['Make this smaller,','and move','that.','Next part.',null,'Final words.']);
@@ -60,7 +78,7 @@ export function qualifyTranscript(options: {
     assert.equal(said.filter(Boolean).join(' '),transcript.text,'words must appear once, in order, across real frames');
     const summary=readFileSync(join(output,'summary.md'),'utf8');
     for(const text of said.filter(Boolean))assert(summary.includes(text));
-    assert.deepEqual([hash(join(input,'apparent.json')),hash(join(input,'recording.mp4')),hash(join(input,'audio.wav'))],before);
+    assert.deepEqual(sourceFiles.map(file=>hash(join(input,file))),before);
     rows.push({route,said,transcript:result.transcript,keyframes:result.keyframes,
       frameHashes:result.keyframes.map((frame:{file:string})=>hash(join(output,frame.file))),
       sheet:join(output,result.contactSheet),sheetHash:hash(join(output,result.contactSheet)),summary});
