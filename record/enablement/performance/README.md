@@ -27,6 +27,11 @@ same host monotonic clock. Guest CPU and memory windows use the native Finish
 log and the owned saved and clipboard receipts. The probe times CLI copy
 against a seeded clipboard and checks the readback independently.
 
+For timed fixtures, the guest estimates the recorder’s monotonic start from its first
+encoded frame and the elapsed time reported for that frame. It schedules Finish
+against that clock and records the estimate, deadline and request time in
+`fixture-clock.tsv`. The duration check uses the saved manifest.
+
 The report requires the VM runner's integrity-verified retention, exact
 capture IDs, expected ink and duration, useful keyframes, valid transcript
 word clocks, decodable saved video, and verified clipboard. It reports saved

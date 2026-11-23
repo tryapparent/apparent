@@ -4,7 +4,7 @@ pub use apparent_connect_client::{
     AccountView, CloudConfig, ConnectCommand, HOSTED_SHARING, HOSTED_SYNC, PreparedLink,
     SharesCommand,
 };
-use apparent_connect_client::{Client, ConfigProvider};
+use apparent_connect_client::{Client, ConfigProvider, RenewalDecision, RenewalFacts};
 // Package call sites own the concrete flags; this adapter preserves override semantics.
 use crate::shared::handoff::experiment as app_experiment;
 use std::path::{Path, PathBuf};
@@ -46,6 +46,18 @@ impl ConfigProvider for AppConfig {
                 .insert(name.to_owned(), enabled.into());
             Ok(())
         })
+    }
+    fn renewal_transition(&self, facts: RenewalFacts) -> Result<RenewalDecision> {
+        const SOURCE: &str = include_str!(concat!(env!("OUT_DIR"), "/credential-renewal.mjs"));
+        const ENDPOINT: &str = "renewalTransition";
+        let host = crate::embedded_policy::EmbeddedPolicy::open_with_deadline(
+            "connect-credential-renewal",
+            SOURCE,
+            &[ENDPOINT],
+            std::time::Instant::now() + Duration::from_millis(250),
+        )?;
+        let action = host.call(ENDPOINT, (serde_json::to_string(&facts)?,))?;
+        Ok(serde_json::from_value(serde_json::Value::String(action))?)
     }
     fn open_browser(&self, uri: &Path) {
         let _ = crate::shared::handoff::open_path(uri);

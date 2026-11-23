@@ -3,7 +3,8 @@
     "service/src/reporting/activity-preference.bend",
     "service/src/support/report-policy.bend",
     "client/typescript/src/reader/reader-route.bend",
-    "client/typescript/src/account/account-status.bend"
+    "client/typescript/src/account/account-status.bend",
+    "client/typescript/src/renewal/credential-renewal.bend"
   ],
   "inputs": [
     "service/",
@@ -12,6 +13,10 @@
     "tooling/hosting/package.json",
     "tooling/hosting/scripts/bundle.ts",
     "native-adapter/",
-    "client/typescript/src/account/"
+    "client/typescript/src/account/",
+    "enablement/ci/bend/renewal.ts",
+    "client/typescript/src/renewal/",
+    "client/src/renewal/mod.rs",
+    "client/src/test_support/renewal_tests.rs"
   ]
 }

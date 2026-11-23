@@ -44,16 +44,16 @@ function processes() {
     if (!/^\d+$/.test(name)) continue;
     try {
       const stat = readFileSync("/proc/" + name + "/stat", "utf8");
-      const [, parent, , , , , , , , , , ut, st, , , , , , birth, , rss] = stat
+      const fields = stat
         .slice(stat.lastIndexOf(")") + 2)
         .trim()
         .split(/\s+/);
       const info = {
         pid: Number(name),
-        parent: Number(parent),
-        birth: Number(birth),
-        ticks: Number(ut) + Number(st),
-        rss: Math.max(0, Number(rss)),
+        parent: Number(fields[1]),
+        birth: Number(fields[19]),
+        ticks: Number(fields[11]) + Number(fields[12]),
+        rss: Math.max(0, Number(fields[21])),
       };
       const family = children.get(info.parent) ?? [];
       family.push(info);

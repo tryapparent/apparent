@@ -69,14 +69,16 @@ Unknown languages remain a documented scope limit. There is no physical-line gat
 
 ## Languages and staged style
 
-TypeScript/TSX/MTS/CTS is the default. New Python is allowed only under hermes/; new Rust only under
-engine/. New authored JS/JSX/MJS/CJS rejects. Existing files in these languages may be repaired;
-renames/copies receive destination policy. New Swift, shell, C-family and extensionless shebang scripts
-require an exact reviewed allowance (currently none). Existing native/tool scripts remain repairable.
-Recognized JSON/YAML/TOML config/data and CSS/HTML remain valid formats. This is not permission to
-move product behavior into Engine. Generated JS belongs ignored outside Git. Python/Node/shell shebangs
-cannot bypass destination rules. Unknown languages without recognized suffix/shebang are not inferred;
-the comment parser independently rejects unsupported changed source. This is not universal language detection.
+Use TypeScript/TSX/MTS/CTS by default. New Python belongs in hermes/ and new Rust
+in engine/. Existing files may be repaired. Destination rules apply to moves.
+Two exact Connect Rust moves into `renewal/mod.rs` and `test_support/mod.rs`
+are allowed when the original blob and mode are identical and the source is removed.
+Product behavior stays with its owner. New authored JS/JSX/MJS/CJS rejects and
+generated JS stays outside Git. New Swift, shell, C-family and extensionless
+shebang scripts require an exact reviewed allowance. Existing scripts remain
+repairable. Recognized config/data, CSS and HTML remain valid. Shebangs cannot
+bypass destination rules. Unknown formats are not inferred and unsupported
+changed source is checked separately by the comment parser.
 
 Pinned Biome 2.6.8 checks changed regular TS/JS variants, CSS, JSON and JSONC staged blobs in private
 isolated scratch, with explicit config and no candidate project execution. Standard formatting is required

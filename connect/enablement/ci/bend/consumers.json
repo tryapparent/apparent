@@ -23,6 +23,13 @@
     "desktop",
     "client"
   ],
+  "connect/enablement/ci/bend/renewal.ts": ["capture", "desktop", "client"],
+  "connect/client/typescript/src/renewal/": ["capture", "desktop", "client"],
+  "connect/client/typescript/src/renewal/credential-renewal.bend": [
+    "capture",
+    "desktop",
+    "client"
+  ],
   "connect/service/src/reporting/activity-preference.bend": [
     "capture",
     "client",
