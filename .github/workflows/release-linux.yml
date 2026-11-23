@@ -182,6 +182,8 @@ jobs:
         run: python3 capture/desktop/scripts/linux/appimage/check-cpu-tiers.py target/release
       - name: Package
         id: package
+        env:
+          APPARENT_APPIMAGE_REUSE_SETTINGS_BUILD: "1"
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           if [[ -n "$TAG" && "$TAG" != "v$version" ]]; then

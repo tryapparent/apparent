@@ -6,8 +6,10 @@ import { stagePopupAssets } from './popup-entries.mjs';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const destination = process.argv[2];
 if (!destination || !path.isAbsolute(destination)) throw new Error('Expected absolute notes destination');
-for (const args of [['ci', '--no-audit', '--no-fund'], ['run', 'build']]) {
-  const result = spawnSync('npm', args, { cwd: root, stdio: 'inherit' });
-  if (result.status !== 0) process.exit(result.status || 1);
+if (process.env.APPARENT_APPIMAGE_REUSE_SETTINGS_BUILD !== "1") {
+  for (const args of [['ci', '--no-audit', '--no-fund'], ['run', 'build']]) {
+    const result = spawnSync('npm', args, { cwd: root, stdio: 'inherit' });
+    if (result.status !== 0) process.exit(result.status || 1);
+  }
 }
 await stagePopupAssets(root, destination);
