@@ -21,6 +21,8 @@ const targets: Target[] = [
       "shared/enablement/bend/",
       "record/enablement/permissions/native.ts",
       "record/capture-request/src/permission-requirements.ts",
+      "record/capture-request/src/capture-admission.bend",
+      "record/enablement/ci/bend/capture-request/capture-admission.ts",
       "onboarding/host/entry-policy.ts",
       "onboarding/enablement/ci/entry-policy.ts",
     ],
