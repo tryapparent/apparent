@@ -1,16 +1,12 @@
 # Onboarding, permissions and Settings
 
-Settings → Labs offers **Auto paste** on Linux, off by default. It saves
-`experiments.autoPasteDraft` through the existing config transaction; changes
-apply at the next Finish without restart (including external file edits).
-Linux Hyprland with Lua dispatchers is the initial native adapter; other Linux
-desktops and macOS keep ordinary copy. The image-then-text trial requires the
-same window to remain focused from Finish through processing and both pastes.
-Auto paste now presses Enter after both pastes, with another focus and clipboard
-check before Enter. Manual Paste does not press Enter. Dispatch does not prove
-attachment acceptance or successful sending; check the receiving composer. Saved captures and the explicit Paste action remain
-available. Setup practice and agent/phone captures do not auto paste.
-Turning the experiment off restores ordinary copy; no donor surface is removed.
+**Auto paste** in Settings → Labs is on by default on macOS and Linux. The
+existing config transaction saves `experiments.autoPasteDraft` and applies it
+at the next Finish. Apparent checks that the same editable field is focused
+and leaves the draft for you to submit. On Wayland without the Hyprland shortcut
+adapter, explicit Paste can request keyboard access for subsequent automatic
+pastes. Use the saved recording or copied text when automatic paste cannot run.
+Setup practice, agent and phone captures use manual handoff.
 
 ## Shared onboarding visuals
 

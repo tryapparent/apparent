@@ -13,6 +13,7 @@ use zbus::zvariant::OwnedObjectPath;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FocusedApp {
     pub pid: Option<u32>,
+    pub window_id: (String, String),
     /// What the app calls itself (`gnome-terminal-server`, `Firefox`), prettified.
     pub name: String,
     /// The executable's name, as on X11 (`gnome-terminal-server`, `firefox`).
@@ -36,6 +37,7 @@ fn bus() -> Option<&'static Connection> {
             .ok()?;
         zbus::blocking::connection::Builder::address(address.as_str())
             .ok()?
+            .method_timeout(Duration::from_millis(150))
             .build()
             .ok()
     })
@@ -59,12 +61,14 @@ fn children(proxy: &Proxy) -> Vec<(String, OwnedObjectPath)> {
     proxy.call("GetChildren", &()).unwrap_or_default()
 }
 
-fn find_focused() -> Option<FocusedApp> {
+fn find_focused(require_editor: bool) -> Option<(FocusedApp, Option<(String, String)>)> {
+    let deadline = Instant::now() + Duration::from_millis(120);
     let bus = bus()?;
     let registry = accessible(bus, "org.a11y.atspi.Registry", ROOT)?;
     let dbus = zbus::blocking::fdo::DBusProxy::new(bus).ok()?;
     let own = bus.unique_name().map(|n| n.to_string());
     for (name, path) in children(&registry) {
+        if require_editor && Instant::now() >= deadline { return None; }
         if own.as_deref() == Some(name.as_str()) {
             continue;
         }
@@ -72,6 +76,7 @@ fn find_focused() -> Option<FocusedApp> {
             continue;
         };
         for (window_bus, window_path) in children(&app) {
+            if require_editor && Instant::now() >= deadline { return None; }
             let Some(window) = accessible(bus, &window_bus, window_path.as_str()) else {
                 continue;
             };
@@ -92,19 +97,59 @@ fn find_focused() -> Option<FocusedApp> {
                 .unwrap_or_else(|| app_name.clone())
                 .to_ascii_lowercase();
             if id == X11_FRAMES {
-                return x11_front();
+                return if require_editor { None } else { x11_front().map(|app| (app, None)) };
             }
             let identity = pid.and_then(super::super::app_identity);
             let title: String = window.get_property("Name").unwrap_or_default();
-            return Some(FocusedApp {
+            let editor = if require_editor {
+                Some(focused_editor(bus, &window, deadline)?)
+            } else {
+                None
+            };
+            return Some((FocusedApp {
                 pid,
+                window_id: (window_bus.clone(), window_path.to_string()),
                 name: identity.map_or(app_name, |(name, _)| name),
                 id,
                 title: Some(title).filter(|t| !t.is_empty()),
-            });
+            }, editor));
         }
     }
     None
+}
+
+fn focused_editor(
+    bus: &Connection,
+    window: &Proxy,
+    deadline: Instant,
+) -> Option<(String, String)> {
+    const EDITABLE: u32 = 1 << 7;
+    const FOCUSED: u32 = 1 << 12;
+    let mut pending = children(window);
+    let mut visited = std::collections::HashSet::new();
+    while let Some((name, path)) = pending.pop() {
+        if Instant::now() >= deadline {
+            return None;
+        }
+        if !visited.insert((name.clone(), path.clone())) {
+            continue;
+        }
+        let Some(node) = accessible(bus, &name, path.as_str()) else { continue; };
+        let state: Vec<u32> = node.call("GetState", &()).ok()?;
+        if state.first().is_some_and(|bits| bits & FOCUSED != 0) {
+            let role: String = node.call("GetRoleName", &()).ok()?;
+            if state[0] & EDITABLE != 0 && role != "password text" {
+                return Some((name.clone(), path.to_string()));
+            }
+        }
+        pending.extend(children(&node));
+    }
+    None
+}
+
+pub(crate) fn paste_focus() -> Option<(u32, (String, String), (String, String))> {
+    let (app, editor) = find_focused(true)?;
+    Some((app.pid?, app.window_id, editor?))
 }
 
 /// GNOME draws X11 apps' title bars in this process, whose frame windows report the app
@@ -120,6 +165,7 @@ fn x11_front() -> Option<FocusedApp> {
     let (name, id) = super::super::app_identity(front.pid)?;
     Some(FocusedApp {
         pid: Some(front.pid),
+        window_id: (String::new(), front.hwnd.to_string()),
         name,
         id,
         title: Some(front.title).filter(|t| !t.is_empty()),
@@ -135,7 +181,7 @@ pub fn focused_app() -> Option<FocusedApp> {
     {
         return app.clone();
     }
-    let app = find_focused();
+    let app = find_focused(false).map(|(app, _)| app);
     *cache = Some((Instant::now(), app.clone()));
     app
 }

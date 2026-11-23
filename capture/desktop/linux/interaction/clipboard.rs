@@ -23,12 +23,10 @@ fn with<T>(f: impl FnOnce(&mut arboard::Clipboard) -> Result<T, arboard::Error>)
 }
 
 /// Desktops whose XWayland selections don't reach native Wayland apps.
-fn native_wayland_clipboard() -> bool {
+pub(crate) fn native_wayland_clipboard() -> bool {
     (super::super::kde() || super::super::hyprland()) && super::super::wayland_session()
 }
 
-/// This is a preflight only. A failed offer after this check must not replace
-/// clipboard contents: another process may have become the selection owner.
 pub fn combined_offer_supported() -> bool {
     native_wayland_clipboard()
         && super::super::wayland_display().is_some_and(|display| helper_ready(&restore_helper(), &display))

@@ -39,8 +39,8 @@ export function PushToTalk({
         />
       </div>
       <p id="push-to-talk-help">
-        Hold the Record shortcut to start recording. Release to finish and paste
-        a draft into the original composer. A quick tap still toggles recording.
+        Hold the Record shortcut to start recording and release to finish. A
+        quick tap still toggles recording.
       </p>
       {supported === false ? (
         <p id="push-to-talk-availability">
@@ -49,7 +49,8 @@ export function PushToTalk({
         </p>
       ) : (
         <p id="push-to-talk-focus">
-          Keep your composer focused until the draft appears.
+          With Auto paste on, keep the same field focused until the draft
+          appears.
         </p>
       )}
     </section>

@@ -28,8 +28,8 @@ On Hyprland Wayland with Lua dispatchers and readable input devices, enable
 Hold the shortcut for 300 ms to start quick screen recording, then release
 the key or a required modifier to finish. Hold mode uses the focused display's
 quick recording path. Start in a graphical composer and keep that window
-focused through processing. Apparent pastes a draft into that window and
-leaves submission to you. If paste cannot run, the saved recording and
+focused through processing. With Auto paste on, Apparent pastes a draft into the
+focused editable field and leaves submission to you. If paste cannot run, the saved recording and
 manual handoff remain available. The setting applies on the next press.
 
 Bend defines the gesture's transitions and threshold. The Linux Cargo build

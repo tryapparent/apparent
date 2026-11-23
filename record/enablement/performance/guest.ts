@@ -110,9 +110,15 @@ type Status = {
 };
 const commands = (args: string[], timeout?: number) => exec(app, args, timeout);
 const mode = (await readFile(files("mode"), "utf8")).trim();
-const profile = existsSync(files("profile"))
-  ? await import("./profile/trace.ts")
+const profileScope = existsSync(files("profile"))
+  ? await readFile(files("profile"), "utf8")
   : undefined;
+assert(
+  profileScope === undefined ||
+    profileScope === "finish" ||
+    profileScope === "guest",
+);
+const profile = profileScope ? await import("./profile/trace.ts") : undefined;
 const sink = "journey_" + process.pid;
 const source = sink + ".monitor";
 const dedicated: ChildProcess[] = [];
@@ -192,10 +198,15 @@ const launch = (args: string[]) =>
     TMPDIR: runScratch,
   });
 
+let laneProfile:
+  | Awaited<ReturnType<NonNullable<typeof profile>["startLaneProfile"]>>
+  | undefined;
 try {
   await configFor(false);
-  if (profile) {
-    await profile.verifyProfiler(out, exec);
+  if (profile && profileScope) {
+    await profile.verifyProfiler(out, exec, profileScope);
+    if (profileScope === "guest")
+      laneProfile = await profile.startLaneProfile(out, "guest", abort.signal);
   }
   let scene: ChildProcess | undefined;
   if (["onboarding", "surface", "draw"].includes(mode)) {
@@ -330,7 +341,7 @@ try {
       await put(name + "-draw-request", String(fixture.strokes));
       await phase("recording " + name);
       let captureProfile;
-      if (profile && name === "long-narration") {
+      if (profile && profileScope === "finish" && name === "long-narration") {
         await clock.prepareStop(5000);
         captureProfile = await profile.startProfile(out, abort.signal);
       }
@@ -487,8 +498,11 @@ try {
     assert(sampler.exitCode === null, "Resource sampler exited early");
     await phase("done");
   }
+  await laneProfile?.finish();
+  laneProfile = undefined;
 } finally {
   abort.abort();
+  await laneProfile?.cancel();
   if (owned) await commands(["capture", "cancel", owned], 5000).catch(() => {});
   for (const child of dedicated) {
     child.kill("SIGCONT");

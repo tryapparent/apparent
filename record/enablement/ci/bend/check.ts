@@ -422,10 +422,9 @@ await bendScratch(async (scratch) => {
     platform: "linux",
     source: "screen",
     agentRequested: false,
-    automaticTrialEnabled: false,
+    autoPasteEnabled: false,
     lab: false,
-    hyprland: true,
-    wayland: true,
+    pasteTargetAvailable: true,
   };
   for (const current of [true, false]) {
     const invocation = spawnSync(

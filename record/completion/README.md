@@ -25,15 +25,13 @@ One take uses one bounded subprocess and at most two exchanges. No new daemon,
 socket listener, installer or configuration writer is introduced. The worker
 chooses the clipboard capability; Desktop rechecks the current generation on
 the GUI thread immediately before executing it against the retained native path.
-It acknowledges `copied`, `failed` or `revoked`. Only an actual successful write
-can produce `copied`. The default-off `autoPasteDraft` trial requests the Linux
-Hyprland image-then-text-and-Enter capability for local screen captures. Desktop pins
-the focused window at Finish, rechecks it before each paste and leaves the saved
-capture available. Setup practice, agent captures, phone captures and macOS retain
-ordinary copy. A clipboard receipt does not prove attachment acceptance; the pill
-reports only that Enter was pressed, not that the app sent a message. Manual
-Paste still leaves the draft unsent. Focus or clipboard changes stop automatic
-Enter and retain the saved capture.
+It acknowledges `copied`, `failed` or `revoked`. Only an actual successful
+clipboard write can produce `copied`. Bend requests automatic draft paste for
+eligible local screen captures on macOS and Linux when the preference is on and
+Desktop identified a focused editor at Finish. The native adapter rechecks the
+target and clipboard before each keystroke. Setup practice, agent and phone
+captures use ordinary copy. The worker reports paste dispatch and retains bundle
+access. Submission is a separate action in the receiving app.
 
 The native adapter also supplies the saved bundle's immutable `imageQualityWarning`.
 Record preserves that exact warning in Linux completion notifications: an unsettled

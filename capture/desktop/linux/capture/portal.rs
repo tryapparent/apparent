@@ -569,54 +569,9 @@ fn gvariant_string(text: &str) -> String {
 
 // MARK: Keystrokes
 
-/// Ctrl+V (or Ctrl+Shift+V) into the focused app through the RemoteDesktop portal: Wayland lets
-/// no app send another keystrokes. The desktop asks once; the answer is remembered.
-pub fn send_paste(shift: bool) -> Result<()> {
-    use ashpd::desktop::PersistMode;
-    use ashpd::desktop::remote_desktop::{DeviceType, KeyState, RemoteDesktop};
-    const CTRL: i32 = 0xffe3; // XK_Control_L
-    const SHIFT: i32 = 0xffe1; // XK_Shift_L
-    const V: i32 = 0x76; // XK_v
-    futures_lite::future::block_on(async move {
-        let proxy = RemoteDesktop::new().await?;
-        let session = proxy.create_session().await?;
-        let token = saved_token("remote-desktop");
-        proxy
-            .select_devices(
-                &session,
-                DeviceType::Keyboard.into(),
-                token.as_deref(),
-                PersistMode::ExplicitlyRevoked,
-            )
-            .await?;
-        let started = proxy.start(&session, None).await?.response();
-        let started = match started {
-            Ok(started) => started,
-            Err(error) => {
-                save_token("remote-desktop", None);
-                return Err(error.into());
-            }
-        };
-        save_token("remote-desktop", started.restore_token());
-        let mut keys = vec![CTRL];
-        if shift {
-            keys.push(SHIFT);
-        }
-        keys.push(V);
-        for &key in &keys {
-            proxy
-                .notify_keyboard_keysym(&session, key, KeyState::Pressed)
-                .await?;
-        }
-        for &key in keys.iter().rev() {
-            proxy
-                .notify_keyboard_keysym(&session, key, KeyState::Released)
-                .await?;
-        }
-        let _ = session.close().await;
-        anyhow::Ok(())
-    })
-}
+#[path = "../../../../engine/native/input/draft_paste_portal.rs"]
+mod paste;
+pub(crate) use paste::{draft_paste_supported, send_paste, send_paste_checked};
 
 #[cfg(test)]
 mod tests {

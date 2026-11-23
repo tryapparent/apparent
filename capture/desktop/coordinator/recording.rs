@@ -29,9 +29,7 @@ impl ApparentCoordinator {
             self.share_copied = None;
             self.reveal.observed_upload_progress = None;
             self.share_probe_at = None;
-            // A new recording or dismissal revokes detached workers' UI ownership.
-            // Their finalized bundles remain on disk; stale results must not copy to
-            // the clipboard, replace the current review, or finish a newer practice.
+            self.auto_paste.cancel();
             self.capture_generation = self.capture_generation.wrapping_add(1);
         }
         if matches!(phase, IslandPhase::Recording) && !matches!(self.island_phase, IslandPhase::Recording) {
@@ -1535,15 +1533,15 @@ impl ApparentCoordinator {
         let target = rec.target;
         let source = rec.source;
         let report = self.seal_report_capture();
+        let completion_facts = self.capture_completion_facts(
+            finishing_id.clone(), completion_source, agent_requested, released,
+        );
         // Drop the Metal overlay immediately on the main thread so the screen frame clears,
         // and morph the Dynamic Island into the compact spinning "Processing…" state while
         // media teardown, transcription, and PNG encoding run on a background worker.
         drop(rec._metal_overlay);
         self.apply_pill_event(PillEvent::CaptureSealed);
         let generation = self.capture_generation;
-        let completion_facts = self.capture_completion_facts(
-            finishing_id.clone(), completion_source, agent_requested, released,
-        );
         // Freeze practice policy with the worker, independent of window/UI lifetime.
         let local_practice = self.capture_local_practice;
         cx.notify();

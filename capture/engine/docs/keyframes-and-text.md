@@ -291,9 +291,14 @@ Off by default. A finished capture (and `apparent copy`) normally copies the sum
 
 Off by default; Linux Hyprland Wayland only. The guarded `handoff::run_draft_handoff` / `DraftHandoffOps` contract is available to in-crate receivers: capture an exact receiver+editor target, preflight support, offer and paste the PNG, poll for a **visible attachment** without repeating the paste, then insert text only if focus and offered clipboard data still match. Confirm visible text, and restore the previous **plain-text-only** clipboard only when the offered MIME and bytes still match. This is a best-effort contention check, not atomic ownership: Wayland can replace an identical offer or change owner between the check and restore. Refused paste, missing attachment, focus loss, unsupported receiver, and clipboard contention return errors; the user must upload the sheet and paste the summary manually. The shipped Linux receiver has **no verified attachment observer**, so this experiment currently refuses *before* touching the clipboard or draft. An image offered to the clipboard, visible attachment, visible text, and receiving-agent access are separate claims; only a consented synthetic send can test the last one. Do not enable this experiment until the intended composer observer and unsent live draft are verified.
 
-## Experiment `autoPasteDraft` (`capture/desktop/linux/auto_paste.rs`, `capture/desktop/mod.rs`)
+## Auto paste
 
-Off by default; currently **fails closed on Linux**. When enabled, a finished capture saves the bundle and copies the text summary, but does not dispatch image or text paste keystrokes. The paper says “Saved · paste manually” and points to `contact-sheet.png`: attach it in the intended unsent composer, then use Ctrl+V for the summary. Apparent never sends the draft. The prior window-only trial could paste into another T3 thread within the same window. A window address is not a stable draft/editor identity, and a paste keystroke is not an image attachment receipt. Automatic handoff must wait for a receiver that can verify the capture-start and finish target, writable composer, accepted attachment, and visible text without duplicate insertions. The explicit user-directed `apparent paste` command remains available, but it cannot prove receiver acceptance either. Ordinary Ctrl+V and Omarchy Super+V are unchanged.
+Screen captures save the bundle and copy the handoff text. When Auto paste is on,
+Desktop also attempts to insert an unsent draft into the editable field focused
+at Finish. It checks the target and clipboard before dispatching each paste.
+The receiving app determines attachment acceptance. Terminals and recordings
+without a verified target retain the copy and manual Paste paths. See
+[Handoff](../../../handoff/README.md#auto-paste).
 
 Use the Agent-owned [context comparison scenario](../../agent/enablement/README.md#context-experiment-comparison) to compare explicitly selected bundles before and after a summary experiment. It preserves both image sets and uses one baseline transcript for the text comparison.
 

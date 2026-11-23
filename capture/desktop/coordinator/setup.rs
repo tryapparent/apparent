@@ -87,8 +87,7 @@ impl ApparentCoordinator {
             iphone: None,
             completed_dir: None,
             completed_note: None,
-            #[cfg(target_os = "linux")]
-            auto_paste_target: None,
+            auto_paste: Default::default(),
             share_public: false,
             share_online: false,
             share_probe_at: None,

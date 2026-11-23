@@ -33,25 +33,27 @@ export function AutoPaste({
           className="agent-switch"
           checked={checked}
           aria-labelledby="auto-paste-label"
-          aria-describedby="auto-paste-help auto-paste-limits auto-paste-fallback"
+          aria-describedby={
+            supported
+              ? "auto-paste-help auto-paste-fallback"
+              : "auto-paste-help auto-paste-limits auto-paste-fallback"
+          }
           aria-busy={saving}
           disabled={disabled || !policy.can_toggle(supported, checked)}
           onCheckedChange={onCheckedChange}
         />
       </div>
       <p id="auto-paste-help">
-        After processing, Apparent pastes the image and text into the focused
-        composer and automatically presses Enter. Your app may reject the
-        attachment or leave the message unsent.
+        Keep the same draft field focused from Finish until the draft appears.
+        You decide when to send.
       </p>
-      <p id="auto-paste-limits">
-        {!supported
-          ? "Unavailable in this session. Auto paste requires Hyprland on Wayland with Lua dispatchers."
-          : "Starting with your next recording on supported Hyprland, keep your composer focused until processing finishes."}
-      </p>
+      {!supported && (
+        <p id="auto-paste-limits">
+          Auto paste is unavailable on this platform.
+        </p>
+      )}
       <p id="auto-paste-fallback">
-        You can choose Paste on the saved recording and submit it yourself, or
-        paste the copied text into your composer.
+        If automatic paste is unavailable, use Paste on the saved recording.
       </p>
     </section>
   );

@@ -6,13 +6,16 @@ import { storage } from "../storage.ts";
 import type { Receipt } from "../score.ts";
 
 const [root, ...extra] = process.argv.slice(2);
-if (!root || extra.length)
-  throw new Error("Usage: report.ts RETAINED_VM_DIRECTORY");
+const profileLane = extra.length === 1 && extra[0] === "--profile-lane";
+if (!root || (extra.length && !profileLane))
+  throw new Error("Usage: report.ts RETAINED_VM_DIRECTORY [--profile-lane]");
 const artifacts = resolve(root, "artifacts/artifacts");
-if (existsSync(resolve(artifacts, "profile.json")))
+if (existsSync(resolve(artifacts, "profile.json")) && !profileLane)
   throw new Error(
     "Profiled timings are diagnostic and cannot produce a scoring receipt",
   );
+if (profileLane && !existsSync(resolve(artifacts, "lane-window.json")))
+  throw new Error("Missing completed Perfetto lane window");
 const read = (name: string) =>
   readFileSync(resolve(artifacts, name), "utf8").trimEnd();
 const rows = (name: string, header = false) =>
@@ -307,5 +310,14 @@ for (const id of fixtureIds) {
 const copyMs = measured("quick-silent", "cli-copy");
 if (copyMs > 0) waits.copy = { ms: copyMs, verified: true };
 console.log(
-  JSON.stringify({ version: read("version.txt"), waits, resources }, null, 2),
+  JSON.stringify(
+    {
+      version: read("version.txt"),
+      waits,
+      resources,
+      ...(profileLane ? { diagnostic: true } : {}),
+    },
+    null,
+    2,
+  ),
 );

@@ -959,8 +959,7 @@ pub struct ApparentCoordinator {
     iphone: Option<PhoneDevice>,
     /// The bundle the Completed island is showing.
     completed_dir: Option<PathBuf>,
-    #[cfg(target_os = "linux")]
-    auto_paste_target: Option<(u64, linux::hyprland::FocusedWindow)>,
+    auto_paste: ui::desktop_completion::AutoPaste,
     /// The Completed island's lead text.
     completed_note: Option<String>,
     share_public: bool,

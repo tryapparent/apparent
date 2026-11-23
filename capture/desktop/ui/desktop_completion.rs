@@ -4,6 +4,9 @@
 mod worker;
 
 use gpui::Context;
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use crate::capture::engine::draft_paste::{self, DraftClipboard, DraftTarget};
+use crate::shared::handoff;
 
 use super::super::{ApparentCoordinator, CAPTURE_STATUS, PillEvent};
 use super::recording_completion::CaptureResult;
@@ -11,16 +14,18 @@ use crate::capture::engine::runtime::apparent_log;
 pub(in crate::capture::desktop) use worker::{Capture, Facts};
 use worker::{Completion, CopyMode, Effect, Outcome, State, Worker};
 
-pub(in crate::capture::desktop) fn auto_paste_enabled(local_practice: bool) -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        !local_practice && crate::shared::handoff::experiment("autoPasteDraft")
-            && crate::capture::desktop::linux::auto_paste::available()
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = local_practice;
-        false
+#[derive(Default)]
+pub(in crate::capture::desktop) struct AutoPaste {
+    target: Option<(u64, DraftTarget)>,
+    active: Option<Arc<AtomicBool>>,
+}
+
+impl AutoPaste {
+    pub(in crate::capture::desktop) fn cancel(&mut self) {
+        self.target = None;
+        if let Some(active) = self.active.take() {
+            active.store(false, Ordering::Release);
+        }
     }
 }
 
@@ -38,13 +43,24 @@ impl ApparentCoordinator {
         released: bool,
     ) -> Facts {
         let generation = self.capture_generation;
-        #[cfg(target_os = "linux")]
-        use crate::capture::desktop::linux::{hyprland, wayland_session};
-        #[cfg(not(target_os = "linux"))]
-        let _ = released;
+        let auto_paste_enabled = !self.capture_local_practice && handoff::experiment("autoPasteDraft");
         #[cfg(target_os = "linux")]
         let hold = self.shortcut.hold.take().filter(|hold| hold.generation == Some(generation));
-        let completion_facts = Facts {
+        #[cfg(target_os = "macos")]
+        let _ = released;
+
+        let target = (auto_paste_enabled && !agent_requested && completion_source == "screen" && !self.lab)
+            .then(DraftTarget::focused).flatten();
+        #[cfg(target_os = "linux")]
+        let target = match hold {
+            Some(hold) => target.filter(|target| {
+                matches!(target, DraftTarget::Hyprland(window, _) if released && hold.target.as_ref() == Some(window))
+            }),
+            None => target,
+        };
+        let paste_target_available = target.is_some();
+        self.auto_paste.target = target.map(|target| (generation, target));
+        Facts {
             capture: Capture {
                 generation: generation.to_string(),
                 capture_id: finishing_id.clone().unwrap_or_default(),
@@ -53,39 +69,11 @@ impl ApparentCoordinator {
             platform: if cfg!(target_os = "linux") { "linux" } else { "macos" }.into(),
             source: completion_source.into(),
             agent_requested,
-            automatic_trial_enabled: auto_paste_enabled(self.capture_local_practice)
-                && {
-                    #[cfg(target_os = "linux")]
-                    { hold.is_none() }
-                    #[cfg(not(target_os = "linux"))]
-                    { true }
-                },
-            #[cfg(target_os = "linux")]
-            paste_on_release: released && hold.is_some() && !self.capture_local_practice,
-            #[cfg(not(target_os = "linux"))]
-            paste_on_release: false,
+            auto_paste_enabled,
+            paste_target_available,
             image_quality_warning: None,
             lab: self.lab,
-            #[cfg(target_os = "linux")]
-            hyprland: hyprland::running(),
-            #[cfg(not(target_os = "linux"))]
-            hyprland: false,
-            #[cfg(target_os = "linux")]
-            wayland: wayland_session(),
-            #[cfg(not(target_os = "linux"))]
-            wayland: false,
-        };
-        #[cfg(target_os = "linux")]
-        {
-            self.auto_paste_target = if completion_facts.paste_on_release {
-                hold.and_then(|hold| hold.target)
-                    .filter(|target| hyprland::focused_window().is_ok_and(|focused| focused == *target))
-                    .map(|target| (generation, target))
-            } else if completion_facts.automatic_trial_enabled && completion_facts.hyprland && completion_facts.wayland {
-                hyprland::focused_window().ok().map(|target| (generation, target))
-            } else { None };
         }
-        completion_facts
     }
 
     /// Dispatches a finalizer receipt separately from effects on the current capture UI.
@@ -143,8 +131,7 @@ impl ApparentCoordinator {
         facts.image_quality_warning = finalized.as_ref().ok()
             .and_then(|(_, bundle, _)| bundle.image_quality_warning.clone());
         let capture = facts.capture.clone();
-        #[cfg(target_os = "linux")]
-        let paste_target = self.auto_paste_target.take().filter(|(owner, _)| *owner == generation).map(|(_, target)| target);
+        let paste_target = self.auto_paste.target.take().filter(|(owner, _)| *owner == generation).map(|(_, target)| target);
         let outcome = match &finalized {
             Ok((dir, _, _)) => Outcome::Saved { bundle_path: dir.clone() },
             Err(error) => Outcome::Failed { message: error.to_string() },
@@ -162,42 +149,55 @@ impl ApparentCoordinator {
                     let copy = decision.effects.first().map(|effect| match effect {
                         Effect::Copy { mode, .. } => *mode,
                     });
-                    let receipt = copy.map(|mode| entity.update(cx, |coord, _| {
-                        // Native capability admission is atomic with the clipboard call
-                        // on this thread. Never trust a child/renderer generation alone.
+                    let mut draft = None;
+                    let mut receipt = copy.map(|mode| entity.update(cx, |coord, _| {
                         if !coord.accepts_capture_result(generation) { return "revoked"; }
-                        let Ok((dir, _, _)) = &finalized else { return "revoked"; };
-                        let result = match mode {
-                            #[cfg(target_os = "linux")]
-                            CopyMode::AutoPasteDraft | CopyMode::AutoPasteAndSubmit => {
-                                // Establish manual recovery first. A paste dispatch is not
-                                // evidence that the receiving editor accepted an attachment.
-                                crate::shared::handoff::copy_bundle_text_to_clipboard(dir).and_then(|()| {
-                                    let result = paste_target.as_ref().ok_or_else(|| anyhow::anyhow!("No focused target at Finish"))
-                                        .and_then(|target| match mode {
-                                            CopyMode::AutoPasteAndSubmit => crate::capture::desktop::linux::auto_paste::paste_bundle_and_submit_into(dir, target),
-                                            _ => crate::capture::desktop::linux::auto_paste::paste_bundle_into(dir, target),
-                                        });
-                                    if let Err(error) = &result {
-                                        apparent_log(format!("Auto paste skipped: {error:#}"));
-                                        crate::capture::desktop::linux::shell::notify("Auto paste stopped", "Keep your composer focused until processing finishes, or use Paste on the saved capture.");
-                                    }
-                                    result
-                                })
+                        let Ok((dir, bundle, _)) = &finalized else { return "revoked"; };
+                        let result = match (mode, paste_target) {
+                            (CopyMode::AutoPasteDraft, Some(target)) => {
+                                let (text, image) = handoff::clipboard_payload(bundle, dir);
+                                let image = image.then(|| dir.join(&bundle.contact_sheet));
+                                handoff::copy_string_to_clipboard(&text)
+                                    .and_then(|()| DraftClipboard::owner())
+                                    .map(|clipboard| {
+                                        let active = Arc::new(AtomicBool::new(true));
+                                        coord.auto_paste.active = Some(active.clone());
+                                        draft = Some((image, text, target, clipboard, active));
+                                    })
                             }
-                            #[cfg(not(target_os = "linux"))]
-                            CopyMode::AutoPasteDraft | CopyMode::AutoPasteAndSubmit => Err(anyhow::anyhow!("Auto paste is Linux-only")),
-                            #[cfg(target_os = "linux")]
-                            CopyMode::Text => crate::shared::handoff::copy_bundle_text_to_clipboard(dir),
-                            #[cfg(not(target_os = "linux"))]
-                            CopyMode::Text => Err(anyhow::anyhow!("Unsupported text-only completion capability")),
-                            CopyMode::Bundle => crate::shared::handoff::copy_bundle_to_clipboard(dir),
+                            _ => handoff::copy_bundle_to_clipboard(dir),
                         };
                         match result {
                             Ok(()) => "copied",
                             Err(error) => { apparent_log(format!("Copy handoff failed: {error:#}")); "failed" }
                         }
                     }).unwrap_or("revoked"));
+                    if let Some((image, text, target, clipboard, active)) = draft {
+                        let deadline = cx.background_executor().timer(std::time::Duration::from_secs(4));
+                        let draft_active = active.clone();
+                        let paste = cx.background_executor().spawn(async move {
+                            let result = draft_paste::paste(
+                                image.as_deref(), &text, &target, &clipboard,
+                                || draft_active.load(Ordering::Acquire),
+                                handoff::copy_png_to_clipboard, handoff::copy_string_to_clipboard,
+                            );
+                            if let Err(error) = &result {
+                                apparent_log(format!("Auto paste stopped: {error:#}"));
+                            }
+                            result.is_ok()
+                        });
+                        let success = futures_lite::future::race(paste, async {
+                            deadline.await;
+                            false
+                        }).await;
+                        receipt = Some(if !active.swap(false, Ordering::AcqRel) {
+                            "revoked"
+                        } else if success {
+                            "copied"
+                        } else {
+                            "failed"
+                        });
+                    }
                     cx.background_executor().spawn(async move {
                         worker.complete(decision, receipt)
                     }).await
@@ -206,6 +206,7 @@ impl ApparentCoordinator {
             };
             let _ = entity.update(cx, |coord, cx| {
                 if !coord.accepts_capture_result(generation) { return; }
+                coord.auto_paste.active = None;
                 let state = match completion.state {
                     Ok(state) if state.current => Some(state),
                     Ok(_) => return,

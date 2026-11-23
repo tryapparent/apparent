@@ -1780,16 +1780,15 @@ pub fn current_mouse_screen() -> Option<[f32; 2]> {
     current_mouse_location().map(|p| [p.x as f32, p.y as f32])
 }
 
-pub fn wait_for_modifiers_released(max_wait_ms: u64) {
+pub fn wait_for_modifiers_released(max_wait_ms: u64) -> bool {
     let deadline = Instant::now() + Duration::from_millis(max_wait_ms);
     while Instant::now() < deadline {
-        let flags = unsafe { CGEventSourceFlagsState(0) | CGEventSourceFlagsState(1) };
-        let any_mod = (flags & (FLAG_COMMAND | FLAG_CONTROL | FLAG_ALTERNATE | FLAG_SHIFT)) != 0;
-        if !any_mod {
-            break;
+        if modifier_flags() == 0 {
+            return true;
         }
         thread::sleep(Duration::from_millis(10));
     }
+    modifier_flags() == 0
 }
 
 pub fn post_synthetic_cmd_v() {

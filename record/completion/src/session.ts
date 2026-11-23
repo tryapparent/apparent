@@ -40,14 +40,11 @@ export async function runCompletion(policy: CopyPolicy): Promise<void> {
       ) ||
       !["linux", "macos"].includes(context.platform) ||
       !["screen", "phone"].includes(context.source) ||
-      (context.pasteOnRelease !== undefined &&
-        typeof context.pasteOnRelease !== "boolean") ||
       [
         "agentRequested",
-        "automaticTrialEnabled",
+        "autoPasteEnabled",
+        "pasteTargetAvailable",
         "lab",
-        "hyprland",
-        "wayland",
       ].some((k) => typeof context[k as keyof Context] !== "boolean")
     ) {
       throw Error("Invalid completion context");

@@ -3,6 +3,7 @@ import { audit, contractHash } from "./score.ts";
 
 export type Part = Partial<Pick<Receipt, "waits" | "resources">> & {
   version: string;
+  diagnostic?: true;
 };
 
 export type RunIdentity = Pick<
@@ -10,13 +11,19 @@ export type RunIdentity = Pick<
   "revision" | "runner" | "runId" | "vcpus"
 >;
 
-export function assemble(identity: RunIdentity, parts: Part[]) {
+export function assemble(
+  identity: RunIdentity,
+  parts: Part[],
+  diagnostic = false,
+) {
   if (!parts.length)
     throw new Error("At least one verified probe fragment is required");
   const waits = Object.create(null) as Receipt["waits"];
   const resources = Object.create(null) as Receipt["resources"];
   const stamp = /^apparent\s+\S+\s+·\s+([0-9a-f]{7,40})$/;
   for (const part of parts) {
+    if (part.diagnostic && !diagnostic)
+      throw new Error("Profiled fragments cannot produce a scoring receipt");
     const revision = stamp.exec(part.version)?.[1];
     if (!revision || !identity.revision.startsWith(revision)) {
       throw new Error(

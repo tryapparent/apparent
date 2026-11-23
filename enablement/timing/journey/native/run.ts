@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 const [templateArg, user, imageArg, expected, modelArg, jobArg, ...extra] =
   process.argv.slice(2);
 const profile = extra.length === 1 && extra[0] === "--profile";
+const profileLane = extra.length === 1 && extra[0] === "--profile-lane";
 assert(
   templateArg &&
     user &&
@@ -24,8 +25,8 @@ assert(
     expected &&
     modelArg &&
     jobArg &&
-    (!extra.length || profile),
-  "Usage: native/run.ts TEMPLATE_DIR SSH_USER APPIMAGE SHA256 MODEL PRIVATE_JOB [--profile]",
+    (!extra.length || profile || profileLane),
+  "Usage: native/run.ts TEMPLATE_DIR SSH_USER APPIMAGE SHA256 MODEL PRIVATE_JOB [--profile|--profile-lane]",
 );
 const [template, image, model, job] = [
   templateArg,
@@ -132,8 +133,12 @@ await Promise.all([
     "scene",
   ),
 ]);
-if (profile) {
-  await writeFile(join(staged, "libbench.so.profile"), "1", { mode: 0o600 });
+if (profile || profileLane) {
+  await writeFile(
+    join(staged, "libbench.so.profile"),
+    profile ? "finish" : "guest",
+    { mode: 0o600 },
+  );
   await source("record/enablement/performance/profile/config.ts");
   await source("record/enablement/performance/profile/trace.ts");
 }
@@ -295,7 +300,7 @@ try {
       "wl-copy",
       "--require-command",
       "wl-paste",
-      ...(profile ? ["--require-command", "sudo"] : []),
+      ...(profile || profileLane ? ["--require-command", "sudo"] : []),
       "--scenario-timeout",
       "900",
       "--job-timeout",

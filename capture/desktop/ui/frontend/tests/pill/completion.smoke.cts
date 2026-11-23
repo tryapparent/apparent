@@ -24,7 +24,7 @@ test('packaged Record result reaches the pill and survives renderer reload',asyn
  const lines=createInterface({input:worker.stdout})[Symbol.asyncIterator]();
  worker.stdin.write(JSON.stringify({version:1,current:true,
   context:{capture:{generation:'9',captureId:'synthetic-a',requestId:'synthetic-request'},platform:process.platform==='linux'?'linux':'macos',
-   source:'screen',agentRequested:false,automaticTrialEnabled:false,lab:false,hyprland:false,wayland:false},
+   source:'screen',agentRequested:false,autoPasteEnabled:false,pasteTargetAvailable:false,lab:false},
   outcome:{kind:'saved',bundlePath:'/synthetic/a.apparent'}})+'\n');
  const initial=JSON.parse((await lines.next()).value);
  assert.equal(initial.effects[0].mode,'bundle');
