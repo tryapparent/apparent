@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, stat, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   bendScratch,
   buildBend,
@@ -15,6 +15,7 @@ import {
 import type { JourneyContract } from "./watch-ledger.ts";
 import {
   hash,
+  maxExternalPercent,
   mean,
   read,
   runMs,
@@ -34,7 +35,6 @@ const contract = JSON.parse(
   ),
 ) as JourneyContract;
 const { contractHash } = contract;
-const maxExternalPercent = 5;
 const relativeResourceAllowance = 10;
 const resourceKeys = [
   "cpuSeconds",
@@ -48,24 +48,24 @@ const waitNames = [
   "warm share to ready",
   "warm open to frame",
 ];
-async function benchmark(
+export async function benchmark(
   mode: "baseline" | "compare",
   directory: string,
   chrome: string,
   cpuSpec: string,
   controlTree = repo,
   referencePath?: string,
+  candidateTree = repo,
+  hostedProfile?: string,
 ) {
-  assert.ok(
-    isAbsolute(directory) && isAbsolute(chrome) && isAbsolute(controlTree),
-  );
+  assert.ok([directory, chrome, controlTree, candidateTree].every(isAbsolute));
   assert.equal(
     (await stat(directory)).mode & 0o077,
     0,
     "Results directory must be private",
   );
   const runtime = {
-    host: hostname(),
+    host: hostedProfile ?? hostname(),
     cpuSpec,
     node: process.version,
     chrome: await hash(chrome),
@@ -89,7 +89,7 @@ async function benchmark(
   }
   const result = await mkdtemp(join(directory, mode + "-"));
   const baseline = mode === "baseline";
-  if (baseline) {
+  if (baseline && !hostedProfile) {
     const main = execFileSync("git", ["rev-parse", "origin/main"], {
       cwd: repo,
       encoding: "utf8",
@@ -105,8 +105,15 @@ async function benchmark(
     );
   }
   const first = await sample(controlTree, result, chrome, cpuSpec, !baseline);
-  const candidate = await sample(repo, result, chrome, cpuSpec, true);
-  const candidateRepeat = await sample(repo, result, chrome, cpuSpec, true);
+  const measuredTree = baseline ? controlTree : candidateTree;
+  const candidate = await sample(measuredTree, result, chrome, cpuSpec, true);
+  const candidateRepeat = await sample(
+    measuredTree,
+    result,
+    chrome,
+    cpuSpec,
+    true,
+  );
   const repeat = await sample(controlTree, result, chrome, cpuSpec, !baseline);
   const samples: Matched<Sample> = [first, candidate, candidateRepeat, repeat];
   for (const item of samples)
@@ -185,8 +192,8 @@ async function benchmark(
   await writeFile(receipt, JSON.stringify(payload, null, 2) + "\n", {
     mode: 0o600,
   });
-  console.log(JSON.stringify(payload, null, 2));
-  if (!qualified) process.exitCode = 2;
+  if (!hostedProfile) console.log(JSON.stringify(payload, null, 2));
+  return payload;
 }
 
 function benchmarkLimits(
@@ -213,43 +220,60 @@ function benchmarkLimits(
   });
 }
 
-const [mode, directory, chrome, cpuSpec, control, reference, ...extra] =
-  process.argv.slice(2);
-if (mode === "ledger" && directory && !chrome) {
-  const result = await bendScratch(async (scratch) => {
-    await buildBend(
-      repo,
-      "enablement",
-      scratch,
-      undefined,
-      "enablement/timing/journey/journey-scoring.bend",
-    );
-    return execFileSync(
-      process.execPath,
-      [
-        "--input-type=module",
-        "-e",
-        `import policy from "./journey-scoring.mjs";
+async function main() {
+  const [mode, directory, chrome, cpuSpec, control, reference, ...extra] =
+    process.argv.slice(2);
+  if (mode === "ledger" && directory && !chrome) {
+    const result = await bendScratch(async (scratch) => {
+      await buildBend(
+        repo,
+        "enablement",
+        scratch,
+        undefined,
+        "enablement/timing/journey/journey-scoring.bend",
+      );
+      return execFileSync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `import policy from "./journey-scoring.mjs";
        import { ledger } from ${JSON.stringify(new URL("./watch-ledger.ts", import.meta.url).href)};
        console.log(JSON.stringify(await ledger(process.argv[1], policy, JSON.parse(process.argv[2])), null, 2));`,
-        resolve(directory),
-        JSON.stringify({ contractHash, hillClimb: contract.hillClimb }),
-      ],
-      { cwd: scratch, encoding: "utf8" },
+          resolve(directory),
+          JSON.stringify({ contractHash, hillClimb: contract.hillClimb }),
+        ],
+        { cwd: scratch, encoding: "utf8" },
+      );
+    });
+    process.stdout.write(result);
+  } else if (
+    directory &&
+    chrome &&
+    cpuSpec &&
+    !extra.length &&
+    ((mode === "baseline" && !control) ||
+      (mode === "compare" && control && reference))
+  ) {
+    const result = await benchmark(
+      mode,
+      directory,
+      chrome,
+      cpuSpec,
+      control,
+      reference,
     );
-  });
-  process.stdout.write(result);
-} else if (
-  directory &&
-  chrome &&
-  cpuSpec &&
-  !extra.length &&
-  ((mode === "baseline" && !control) ||
-    (mode === "compare" && control && reference))
+    if (!result.qualified) process.exitCode = 2;
+  } else {
+    throw Error(
+      "Usage: watch-score.ts baseline|compare PRIVATE_DIR ABSOLUTE_CHROMIUM CPU_LIST [ABSOLUTE_INCUMBENT_TREE BASELINE_RECEIPT] | ledger LEDGER.json",
+    );
+  }
+}
+
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(resolve(process.argv[1])).href
 ) {
-  await benchmark(mode, directory, chrome, cpuSpec, control, reference);
-} else {
-  throw Error(
-    "Usage: watch-score.ts baseline|compare PRIVATE_DIR ABSOLUTE_CHROMIUM CPU_LIST [ABSOLUTE_INCUMBENT_TREE BASELINE_RECEIPT] | ledger LEDGER.json",
-  );
+  await main();
 }
