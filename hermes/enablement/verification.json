@@ -1,0 +1,27 @@
+{
+  "scenarios": [
+    {
+      "id": "hermes-local-inspection",
+      "description": "Measure delivery of spoken instructions, timed interaction context and contact-sheet pixels through the registered Apparent Hermes tool.",
+      "platforms": ["linux"],
+      "userEntryPoint": "Invoke apparent_inspect with an explicit local synthetic .apparent bundle path. The plugin consumes the full Apparent CLI and delivers a multimodal tool result.",
+      "prerequisites": [
+        "Node 22, Python 3 with the plugin's Pillow dependency, taskset, a quiet Linux CPU and SMT sibling, and a private job directory.",
+        "A clean full Apparent CLI from the control revision. The pinned Bend compiler is needed only to prepare the two scoring modules."
+      ],
+      "runner": {
+        "path": "hermes/enablement/performance/run.ts",
+        "instructions": "hermes/enablement/performance/README.md"
+      },
+      "expectedEvidence": [
+        "Cold and warm raw milliseconds, monotonic trace, output receipt and resource guards for each sample.",
+        "The returned transcript and note match the fixture and the delivered JPEG independently decodes to the expected dimensions and colors.",
+        "An immutable control at score 100, timed trace overhead and quiet repeat spread, and a stop decision from the shipped journey policy."
+      ],
+      "limits": [
+        "Hermes tool registration, configuration and result delivery use HermesToolHostFixture. No live Hermes session or model inference runs.",
+        "The real CLI subprocesses and bundle reads run locally. Connect, native recorder, Desktop rendering and production transport need their own acceptance."
+      ]
+    }
+  ]
+}
