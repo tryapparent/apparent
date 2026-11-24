@@ -187,9 +187,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn screen_selection_preserves_explicit_choices_and_defaults_to_the_picker() {
+    fn screen_selection_preserves_explicit_choices_and_defaults_to_full_display() {
         use crate::permission_admission::{ScreenSelection, screen_selection};
-        assert_eq!(screen_selection(true, None), ScreenSelection::Picker);
+        assert_eq!(screen_selection(true, None), ScreenSelection::FullDisplay);
         assert_eq!(screen_selection(false, None), ScreenSelection::Unavailable);
         assert_eq!(
             screen_selection(true, Some(save_picker(false))),

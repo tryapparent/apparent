@@ -81,7 +81,7 @@ def screen_selection(supported: Bool, saved: SavedPicker) -> U32:
     case True{}:
       match saved:
         case unset{}:
-          1
+          2
         case picker{}:
           1
         case full_display{}:
@@ -94,8 +94,8 @@ def save_picker(skip: Bool) -> Bool:
     case True{}:
       False{}
 
-law fresh_install_uses_picker:
-  {screen_selection(True{}, unset{}) == 1 : U32}
+law fresh_install_uses_full_display:
+  {screen_selection(True{}, unset{}) == 2 : U32}
 
-def fresh_install_uses_picker():
+def fresh_install_uses_full_display():
   {==}

@@ -125,6 +125,7 @@ await Promise.all([
   stageFile(model, "model"),
   stageFile(model + ".verified.json", "receipt"),
   source("record/enablement/performance/guest.ts"),
+  source("record/enablement/performance/fixtures/config.ts"),
   source("shared/enablement/performance/measurement.ts"),
   source("record/enablement/performance/clipboard/guest.ts"),
   source("record/enablement/performance/fixture-clock.ts"),
