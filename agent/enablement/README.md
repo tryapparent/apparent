@@ -63,7 +63,7 @@ Supply only explicitly synthetic bundles containing timed spoken keyframes,
 their PNGs and a contact sheet. Reuse the same immutable corpus for every
 comparison. There are no OS or provider effect substitutes.
 
-Use Linux with Node 22, FFmpeg, GNU Time, Git and an unstripped native release
+Use Linux with Node 22, Bun, FFmpeg, GNU Time, Git and an unstripped native release
 ELF for each revision. The diagnostic pass uses `nm` and `sudo -n bpftrace`
 with kernel BPF and BTF support. It observes only direct children of the runner
 executing the named binary. No probes modify the binary. No live service is
@@ -77,8 +77,8 @@ complete, verified stdout and successful process exit. The ABBA comparison
 uses equal-weight per-case medians across 11 new processes per block with warm
 input pages. Two control medians provide the same-build noise estimate. A
 qualified same-build control scores 100. CPU time, peak RSS, disk output
-blocks and immutable bundle bytes are reported separately. Blocks bracketed
-by more than 10% busy CPU or sibling time are retained as unqualified.
+blocks and immutable bundle bytes are reported separately. Blocks with measured interference
+above 10% on the measured CPU or its SMT sibling during or around the block are retained as unqualified.
 
 The diagnostic runs preserve one UUID per invocation and use Linux monotonic
 timestamps for the outer wait, exec, app startup, local routing, bundle and

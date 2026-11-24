@@ -8,6 +8,7 @@ import {
   readFileSync,
   readdirSync,
   realpathSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { hostname, release } from "node:os";
@@ -16,6 +17,13 @@ import {
   benchmarkComparison,
   type Matched,
 } from "../../../shared/enablement/performance/comparison.ts";
+import {
+  cpu,
+  siblings,
+  idle,
+  contentionSnapshot,
+  blockContention,
+} from "./contention.ts";
 import { demoFixtures, fingerprint, loadFixtures } from "./fixtures.ts";
 import { loadLedger, stopDecision } from "./stop.ts";
 import { probe } from "./trace.ts";
@@ -36,6 +44,13 @@ assert(
   "Usage: node inspect.ts CONTROL_BINARY CANDIDATE_BINARY /tmp/apparent-dev-JOB-RUN [SYNTHETIC_FIXTURES.json|-] [LEDGER.json]",
 );
 assert(/^\/tmp\/apparent-dev-[^/]+$/.test(work) && realpathSync(work) === work);
+const workspace = statSync(work);
+assert(
+  workspace.isDirectory() &&
+    workspace.uid === process.getuid?.() &&
+    (workspace.mode & 0o077) === 0,
+  "The work directory must be private and owned by the runner",
+);
 const job = mkdtempSync(join(work, "inspect-"));
 const home = join(job, "home");
 const temp = join(job, "tmp");
@@ -61,6 +76,9 @@ const run = (path: string, args: string[]) =>
     timeout: 120000,
     maxBuffer: 16 * 1024 * 1024,
   });
+const binaryDigest = (path: string) =>
+  createHash("sha256").update(readFileSync(path)).digest("hex");
+
 function inventory(path: string) {
   const version = run(path, ["--version"]).trim();
   const abbreviated = version.match(/ · ([0-9a-f]{7,40})$/)?.[1];
@@ -81,7 +99,7 @@ function inventory(path: string) {
     path,
     version,
     revision,
-    sha256: createHash("sha256").update(readFileSync(path)).digest("hex"),
+    sha256: binaryDigest(path),
   };
 }
 const control = inventory(realpathSync(controlPath));
@@ -112,44 +130,8 @@ const fixtures = loadFixtures(
   },
 );
 
-const cpuList = readFileSync("/proc/self/status", "utf8").match(
-  /^Cpus_allowed_list:\s+(.+)$/m,
-)?.[1];
-assert(
-  cpuList && /^\d+$/.test(cpuList),
-  "Pin this benchmark to one quiet CPU with taskset",
-);
-const cpu = Number(cpuList);
-const siblings = readFileSync(
-  "/sys/devices/system/cpu/cpu" + cpu + "/topology/thread_siblings_list",
-  "utf8",
-)
-  .trim()
-  .split(",")
-  .flatMap((range) => {
-    const [first, last = first] = range.split("-").map(Number);
-    return Array.from(
-      { length: last - first + 1 },
-      (_, index) => first + index,
-    );
-  });
-function counters() {
-  const lines = readFileSync("/proc/stat", "utf8").split("\n");
-  return siblings.map((id) => {
-    const line = lines.find((entry) => entry.startsWith("cpu" + id + " "));
-    assert(line, "CPU went offline");
-    return line.trim().split(/\s+/).slice(1, 9).map(Number);
-  });
-}
-async function idle() {
-  const before = counters();
-  await new Promise((done) => setTimeout(done, 700));
-  return counters().map((after, index) => {
-    const elapsed = after.map((value, i) => value - before[index][i]);
-    const total = elapsed.reduce((sum, value) => sum + value, 0);
-    return { cpu: siblings[index], busy: total ? 1 - elapsed[3] / total : 1 };
-  });
-}
+const ledger = ledgerPath && loadLedger(ledgerPath, fixtures, control);
+
 function prewarm(bundle: string) {
   readFileSync(join(bundle, "apparent.json"));
 }
@@ -204,6 +186,7 @@ type Contention = Awaited<ReturnType<typeof idle>>;
 const rounds: {
   binary: string;
   before: Contention;
+  during: Contention;
   after: Contention;
   cases: { name: Fixture["name"]; waits: Wait[] }[];
 }[] = [];
@@ -215,15 +198,18 @@ try {
       attempt(binary.path, fixture);
     }
     const before = await idle();
+    const blockStart = contentionSnapshot();
     const cases = fixtures.map((fixture) => ({
       name: fixture.name,
       waits: Array.from({ length: 11 }, () => attempt(binary.path, fixture)),
     }));
+    await new Promise((done) => setTimeout(done, 500));
+    const during = blockContention(blockStart, contentionSnapshot());
     const after = await idle();
-    rounds.push({ binary: binary.sha256, before, after, cases });
+    rounds.push({ binary: binary.sha256, before, during, after, cases });
   }
-  qualifiedHost = rounds.every(({ before, after }) =>
-    [...before, ...after].every(({ busy }) => busy <= 0.1),
+  qualifiedHost = rounds.every(({ before, during, after }) =>
+    [...before, ...during, ...after].every(({ busy }) => busy <= 0.1),
   );
   writeFileSync(
     join(job, "quiet.json"),
@@ -271,7 +257,16 @@ const resources = binaries.map((binary) =>
       .split(" ")
       .map(Number);
     assert([peakRssKiB, outputBlocks].every(Number.isFinite));
-    return { name: fixture.name, id: wait.id, peakRssKiB, outputBlocks };
+    const { cpuMs, stdout }: { cpuMs: number; stdout: string } = JSON.parse(
+      run("bun", [
+        new URL("./process-cpu.ts", import.meta.url).pathname,
+        binary.path,
+        fixture.bundle,
+      ]),
+    );
+    assert(Number.isFinite(cpuMs) && cpuMs > 0);
+    assert.equal(fixture.verify(stdout), wait.stdoutSha256);
+    return { name: fixture.name, id: wait.id, cpuMs, peakRssKiB, outputBlocks };
   }),
 );
 type DiagnosticWait = Wait & { case: Fixture["name"] };
@@ -368,26 +363,18 @@ const budgets: { metric: string; fixture: string; limit: number[] }[] =
       ];
     });
   });
-const cpuMsByFixture = Object.fromEntries(
-  fixtures.map(({ name }) => [
-    name,
-    diagnostics.map(({ observed }) =>
-      median(
-        observed
-          .filter((row) => row.case === name)
-          .map(({ trace }) => trace.cpuMs),
-      ),
-    ),
-  ]),
-);
-for (const [fixture, [controlCpu, candidateCpu = controlCpu]] of Object.entries(
-  cpuMsByFixture,
-)) {
-  budgets.push({
-    metric: "tracedCpuMs",
-    fixture,
-    limit: [candidateCpu, controlCpu, Math.max(0.5, controlCpu / 10)],
-  });
+for (const [index, { name }] of fixtures.entries()) {
+  const reference = Math.max(
+    resources[0][index].cpuMs,
+    resources[3][index].cpuMs,
+  );
+  for (const round of [resources[1], resources[2]]) {
+    budgets.push({
+      metric: "processCpuMs",
+      fixture: name,
+      limit: [round[index].cpuMs, reference, Math.max(0.5, reference / 10)],
+    });
+  }
 }
 const comparison = await benchmarkComparison(
   [composite, ...perFixture],
@@ -401,6 +388,12 @@ const guards = budgets.map(({ metric, fixture, limit }, index) => ({
 }));
 for (const fixture of fixtures)
   assert.deepEqual(fingerprint(fixture.bundle), fixture.fingerprint);
+for (const binary of new Set([control, candidate]))
+  assert.equal(
+    binaryDigest(binary.path),
+    binary.sha256,
+    "Binary changed during the benchmark",
+  );
 assert.deepEqual(readdirSync(temp), [], "Inspect left scratch files");
 assert(!existsSync(env.APPARENT_CONFIG), "Inspect wrote configuration");
 const { controlMeanMs } = comparison.timings[0];
@@ -410,7 +403,6 @@ const referenceRepeats: [number, number] = [
   (100 * composite[0]) / controlMeanMs,
   (100 * composite[3]) / controlMeanMs,
 ];
-const ledger = ledgerPath && loadLedger(ledgerPath, fixtures);
 const qualified = qualifiedHost && guards.every(({ passed }) => passed);
 const sameBuild = control.sha256 === candidate.sha256;
 const stop = await stopDecision(
@@ -420,7 +412,7 @@ const stop = await stopDecision(
 );
 const invalidReasons = [
   ...(!qualifiedHost
-    ? ["CPU or SMT sibling exceeded 10% busy around a scored block"]
+    ? ["CPU or SMT sibling exceeded 10% busy during or around a scored block"]
     : []),
   ...guards
     .filter(({ passed }) => !passed)
@@ -448,7 +440,6 @@ const receipt = {
   ],
   rounds,
   resources,
-  cpuMsByFixture,
   guards,
   stop,
   ...(ledger ? { frozenControl: ledger.reference } : {}),

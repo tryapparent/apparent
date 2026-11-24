@@ -224,7 +224,7 @@ export function analyzeTrace(endpoint: Endpoint, marks: Mark[]) {
     clock: "linux-monotonic",
     spans: result,
     criticalPath,
-    cpuMs: exit.bytes / 1e6,
+    mainThreadCpuMs: exit.bytes / 1e6,
     firstStdoutMs: nsToMs(stdout[0].start - start),
     completeStdoutMs: nsToMs(stdout.at(-1)!.end - start),
     unattributedMs: nsToMs(unattributed),
@@ -297,16 +297,18 @@ export async function probe<T extends Endpoint>(
     `interval:ms:100 /!@ready/ { @ready = 1; printf("ready\\n"); }`,
     `END { clear(@active); clear(@load); clear(@read); clear(@stdout); clear(@seen); clear(@ready); }`,
   );
-  const path = join(directory, "trace.bt");
-  writeFileSync(path, clauses.join("\n") + "\n", { mode: 0o600 });
+  const program = clauses.join("\n") + "\n";
+  writeFileSync(join(directory, "trace.bt"), program, { mode: 0o600 });
   const tracer = spawn(
-    "sudo",
-    ["-n", "timeout", "30s", "bpftrace", "-q", "-B", "none", path],
-    { stdio: ["ignore", "pipe", "pipe"] },
+    "/usr/bin/sudo",
+    ["-n", "timeout", "30s", "bpftrace", "-q", "-B", "none", "-"],
+    { stdio: ["pipe", "pipe", "pipe"] },
   );
   let stdout = "",
     stderr = "";
   const ready = Promise.withResolvers<void>();
+  tracer.stdin.on("error", ready.reject);
+  tracer.stdin.end(program);
   tracer.stdout.setEncoding("utf8").on("data", (chunk: string) => {
     stdout += chunk;
     if (stdout.includes("ready\n")) ready.resolve();

@@ -6,7 +6,7 @@
       "platforms": ["linux"],
       "userEntryPoint": "Run apparent inspect /absolute/capture.apparent and read its summary and referenced evidence.",
       "prerequisites": [
-        "Unstripped native release builds, Node 22, FFmpeg, GNU Time, Git, nm and permission to run bpftrace locally.",
+        "Unstripped native release builds, Node 22, Bun, FFmpeg, GNU Time, Git, nm and permission to run bpftrace locally.",
         "An uncontended CPU and SMT sibling, and a private job for retained or demo-generated synthetic bundles."
       ],
       "runner": {

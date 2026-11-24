@@ -61,6 +61,7 @@ export type Experiment = {
 export function loadLedger(
   path: string,
   fixtureIds: { name: string; fingerprint: { sha256: string } }[],
+  control: { revision: string; sha256: string },
 ) {
   const ledger: { referenceReceipt: string; experiments: Experiment[] } =
     JSON.parse(readFileSync(path, "utf8"));
@@ -80,6 +81,12 @@ export function loadLedger(
     "Ledger requires a qualified frozen control receipt",
   );
   assert.equal(reference.control.sha256, reference.candidate.sha256);
+  assert.equal(
+    reference.control.sha256,
+    control.sha256,
+    "Comparison control differs from the frozen control",
+  );
+  assert.equal(reference.control.revision, control.revision);
   assert.equal(reference.stop.contractHash, contractHash);
   assert.deepEqual(
     fixtureIds.map(({ name, fingerprint }) => [name, fingerprint.sha256]),

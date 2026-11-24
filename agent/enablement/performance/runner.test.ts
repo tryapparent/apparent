@@ -39,7 +39,7 @@ test("probe spans cover the observer wait without double-counting overlap", () =
   ];
   const trace = analyzeTrace(endpoint, marks);
   assert.equal(trace.attemptId, endpoint.id);
-  assert.equal(trace.cpuMs, 9);
+  assert.equal(trace.mainThreadCpuMs, 9);
   assert.equal(trace.completeStdoutMs, 15);
   assert.equal(trace.concurrentMs, 3);
   assert.equal(trace.unattributedMs, 4);
