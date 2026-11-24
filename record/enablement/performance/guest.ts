@@ -7,7 +7,6 @@ import {
   copyFile,
   mkdir,
   readFile,
-  rename,
   stat,
   writeFile,
 } from "node:fs/promises";
@@ -16,6 +15,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { clipboardObserver, seedClipboard } from "./clipboard/guest.ts";
 import { now, startFixture, recordMetric } from "./fixture-clock.ts";
+import { recorderFixtureConfig } from "./fixtures/config.ts";
 
 const {
   APPARENT_GUI_OUTPUT: root,
@@ -153,22 +153,7 @@ async function until<T>(ms: number, probe: () => Promise<T | undefined>) {
   }
   throw Error("Guest checkpoint timed out");
 }
-async function configFor(speech: boolean, streaming = false) {
-  const pending = config + ".benchmark";
-  await writeFile(
-    pending,
-    asJson({
-      onboarding: { seen: true },
-      launchAtLogin: false,
-      autoPasteDraft: false,
-      errorReporting: false,
-      microphoneEnabled: speech,
-      experiments: { localStreamingTranscription: streaming },
-      microphone: { id: "pulse:" + source, name: "Synthetic English fixture" },
-    }),
-  );
-  await rename(pending, config);
-}
+const configFor = recorderFixtureConfig(config, source, mode === "surface");
 async function captureState() {
   const text = await commands(["capture", "state"]);
   return { text, value: JSON.parse(text) as Status };

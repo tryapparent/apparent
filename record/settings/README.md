@@ -1,13 +1,17 @@
 # Recording start preference
 
-**Settings → Permissions → Skip screen selection** is off by default on
-macOS and Wayland. In that state, each Screen recording started from the app or
-Record shortcut opens the native picker. Turning it on records one full display.
-Wayland can still ask for system approval. X11 has no native picker.
+**Settings → Permissions → Skip screen selection** is on by default on
+macOS and Wayland sessions that use the screen-sharing portal for full-display
+capture. Screen recordings started from the app or Record shortcut
+use the full-display route. Turn it off to choose a screen before every
+recording. The portal can still ask for system approval. GNOME Wayland
+defaults to the picker because its direct capture API can start without a
+sharing dialog. X11 has no native picker.
 
 The next Screen recording reads `experiments.chooseScreenEachTime` from
-`~/.config/apparent/config.json`. Absent and explicit `true` choose the picker.
-Explicit `false` uses the full-display route, preserving older saved selections.
+`~/.config/apparent/config.json`. An absent value uses the session default.
+Explicit `false` selects the full-display route and explicit `true` enables
+the system picker where available.
 The Record Permissions presenter uses the app's existing config transaction.
 
 macOS uses the picker-authorized ScreenCaptureKit filter for the movie and
@@ -54,8 +58,7 @@ reflect observed system access. It shows **Check again** if the automatic access
 check fails. The screen selection preference takes effect on the next capture.
 The Bend repair policy also serves the native Settings fallback and onboarding
 repair. Keep the native fallback available for missing assets or renderer startup
-failure. Rolling back the Electron surface also requires rolling back the
-screen-selection default because the native fallback cannot edit that preference.
+failure.
 The native build consumes the compact generated table so Cargo can
 build offline. After editing the policy, run
 `node record/enablement/ci/bend/permission-table.ts > record/settings/permissions/permission-policy.json`

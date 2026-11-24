@@ -52,7 +52,7 @@ process.stdout.write(`const ROWS: [u32; 3] = [${rows.join(", ")}];\n`);
 
 const modes = ["Unavailable", "Picker", "FullDisplay"];
 if (
-  screenSelection.length !== 6 ||
+  screenSelection.length !== 12 ||
   screenSelection.some((index) => !modes[index])
 )
   throw Error("Invalid Bend screen selection table");
@@ -62,6 +62,6 @@ if (
 )
   throw Error("Invalid Bend screen selection save table");
 process.stdout.write(
-  `const SCREEN_SELECTION: [ScreenSelection; 6] = [${screenSelection.map((index) => "ScreenSelection::" + modes[index]).join(", ")}];\n` +
+  `const SCREEN_SELECTION: [ScreenSelection; 12] = [${screenSelection.map((index) => "ScreenSelection::" + modes[index]).join(", ")}];\n` +
     `const SAVE_PICKER: [bool; 2] = [${savePicker.join(", ")}];\n`,
 );
