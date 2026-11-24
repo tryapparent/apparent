@@ -8,9 +8,14 @@ export function PillGuide({screenOnly=false,finish=false}:{screenOnly?:boolean;f
   const host=useRef<HTMLDivElement>(null),surface=useRef<HTMLDivElement>(null);
   const [layout,setLayout]=useState({width:500,scale:1,height:88,x:100,y:20});
   const target=screenOnly?'select-screen':finish?'finish':'whiteboard';
-  const view:PillView={revision:1,phase:screenOnly?'selecting':'recording',clock:'0:03',label:'Choose what to record',warning:null,notice:null,reducedMotion:false,draggable:false,noteCount:0,inputWaveform:screenOnly?null:Array(24).fill(.08),actions:screenOnly?
+  const view:PillView={revision:1,phase:screenOnly?'selecting':'recording',clock:'',label:'Choose what to record',warning:null,notice:null,reducedMotion:false,draggable:false,noteCount:0,inputWaveform:null,actions:screenOnly?
     [{id:'select-area',label:'Area',enabled:true,selected:false,primary:false},{id:'select-screen',label:'Screen',enabled:true,selected:false,primary:false}]:
     [{id:'whiteboard',label:'Whiteboard',enabled:true,selected:false,primary:false},{id:'finish',label:'Finish',enabled:true,selected:false,primary:true},{id:'cancel',label:'Cancel recording',enabled:true,selected:false,primary:false}]};
+  const description = screenOnly
+    ? 'Example: click Screen to start recording'
+    : finish
+      ? 'Example: click the stop square to save your capture'
+      : 'Example: click the pen icon to open Whiteboard';
   useLayoutEffect(()=>{
     const update=()=>{if(!host.current||!surface.current)return;
       const pill=surface.current.querySelector<HTMLElement>('.pill'),button=surface.current.querySelector<HTMLElement>(`[data-action=${target}]`);
@@ -25,7 +30,7 @@ export function PillGuide({screenOnly=false,finish=false}:{screenOnly?:boolean;f
     update();const observer=new ResizeObserver(update);if(host.current)observer.observe(host.current);if(surface.current)observer.observe(surface.current);
     void document.fonts.ready.then(update);return()=>observer.disconnect();
   },[target]);
-  return <figure className="native-control native-pill-guide" style={{'--pill-preview-width':`${layout.width}px`} as React.CSSProperties} data-kind={finish?"finish":"whiteboard"} aria-label={`Example: click ${screenOnly?'Screen':finish?'Finish':'Whiteboard'} in the recording controls`}>
+  return <figure className="native-control native-pill-guide" style={{'--pill-preview-width':`${layout.width}px`} as React.CSSProperties} data-kind={finish?"finish":"whiteboard"} aria-label={description}>
     <div ref={host} className="native-pill-example" style={{height:layout.height}}>
       <div ref={surface} inert aria-hidden="true" className="native-pill-example-surface" style={{'--preview-scale':layout.scale} as React.CSSProperties}>
         <PillSurface view={view} receivedAt={performance.now()} onAction={()=>{}}/>

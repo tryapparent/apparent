@@ -146,7 +146,6 @@ html.native-onboarding-shell:has(.native-setup) .apparent-build-identity { top: 
 .native-coach-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .native-coach-actions .native-later { margin-top: 0; }
 .native-finish-close { position: absolute; top: 0; right: 0; width: 44px; height: 44px; min-width: 44px; min-height: 44px; padding: 0; font-size: 20px; }
-.native-coach[data-stage=stop] h1 { padding-inline-end: 48px; }
 
 /* The companion shares the existing transparent coach window; no extra focusable window. */
 .native-trackpad-helper { padding: 16px; margin: 16px 0; border: 1px solid var(--apparent-border); border-radius: 18px 18px 18px 5px; background: var(--apparent-surface); color: var(--apparent-foreground); font: 400 1.125rem/1.5 var(--font-sans); }
@@ -160,10 +159,6 @@ html.native-onboarding-shell:has(.native-setup) .apparent-build-identity { top: 
 }
 
 .native-wordmark { width: 138px; height: auto; }
-.native-saved-keys { display:flex; flex-wrap:wrap; justify-content:center; gap:12px; }
-
-
-.native-coach .native-saved-keys .apparent-key { --key-size:24px; }
 
 /* One compact dismissal in every coach, away from the primary instruction. */
 .native-coach h1 { padding-inline-end:48px; }

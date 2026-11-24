@@ -127,24 +127,50 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 9
   send({step:'try-it',practice:'screen',platform:'linux'});
   await expect(page.getByRole('heading',{name:'Choose your display.',exact:true})).toBeVisible();
   await expect(page.locator('.native-control')).toHaveCount(0);
-  send({ step:'try-it', practice:'whiteboard', anchor:[300,30,320,50] });
-  await expect(page.getByRole('heading', { name:'Open Whiteboard.', exact:true })).toBeVisible();
-  await expect.poll(() => page.evaluate(() => innerWidth)).toBe(380);
-  if(process.env.APPARENT_ONBOARDING_EVIDENCE){await fs.mkdir(process.env.APPARENT_ONBOARDING_EVIDENCE,{recursive:true});await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,'whiteboard-coach.png')});}
-  const coachMetrics=await context.newCDPSession(page);
-  try{
-    for(const width of [380,320])for(const scheme of schemes){
-      await coachMetrics.send('Emulation.setDeviceMetricsOverride',{width,height:440,deviceScaleFactor:1,mobile:false});
-      await page.emulateMedia({colorScheme:scheme,reducedMotion:'reduce'});
-      await expect.poll(()=>page.locator('.native-coach').evaluate(el=>Math.ceil(el.getBoundingClientRect().width))).toBeLessThanOrEqual(width-48);
-      assert.ok(await page.locator('.native-coach').evaluate(el=>el.getBoundingClientRect().height<200),'whiteboard coach stays compact');
-      await page.getByRole('button',{name:'Close guide',exact:true}).focus();
-      await expect(page.getByRole('button',{name:'Close guide',exact:true})).toBeFocused();
-      if(process.env.APPARENT_ONBOARDING_EVIDENCE)await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,`whiteboard-coach-${scheme}-${width}.png`)});
+  const coachMetrics = await context.newCDPSession(page);
+  const evidence = process.env.APPARENT_ONBOARDING_EVIDENCE;
+  if (evidence) await fs.mkdir(evidence, { recursive: true });
+  try {
+    for (const [phase, action, title] of [
+      ['whiteboard', 'whiteboard', 'Open Whiteboard.'],
+      ['stop', 'finish', 'Finish your capture.'],
+    ]) {
+      send({ step: 'try-it', practice: phase, anchor: [300, 30, 320, 50] });
+      await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
+      await expect.poll(() => page.evaluate(() => innerWidth)).toBe(380);
+      for (const width of [380, 320]) for (const scheme of schemes) {
+        await coachMetrics.send('Emulation.setDeviceMetricsOverride', { width, height: 440, deviceScaleFactor: 1, mobile: false });
+        await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
+        const coach = page.locator('.native-coach');
+        await expect.poll(() => coach.evaluate(el => Math.ceil(el.getBoundingClientRect().width))).toBeLessThanOrEqual(width - 48);
+        assert.ok(await coach.evaluate(el => el.getBoundingClientRect().height < 200), phase + ' coach stays compact');
+        await expect(coach.locator('p, kbd')).toHaveCount(0);
+        await expect(coach.locator('.native-pill-guide')).toHaveAttribute('data-kind', action);
+        await expect.poll(() => coach.evaluate((el, action) => {
+          const pointer = el.querySelector('.native-pill-pointer')?.getBoundingClientRect();
+          const button = el.querySelector(`[data-action=${action}]`)?.getBoundingClientRect();
+          const row = el.querySelector('.pill-row')?.getBoundingClientRect();
+          const content = el.querySelector('.native-coach-content')?.getBoundingClientRect();
+          return Boolean(pointer && button && row && content &&
+            Math.abs(pointer.left - (button.left + button.width / 2)) <= 1 &&
+            Math.abs(pointer.top - (button.top + button.height / 2)) <= 1 &&
+            row.right <= content.right && pointer.bottom <= content.bottom);
+        }, action)).toBe(true);
+        await page.locator('h1').click();
+        if (evidence) await page.screenshot({ path: path.join(evidence, `${action}-coach-${scheme}-${width}.png`), omitBackground: true });
+        await page.keyboard.press('Tab');
+        const close = page.getByRole('button', { name: 'Close guide', exact: true });
+        await expect(close).toBeFocused();
+        await expect(close).toHaveCSS('outline-style', 'solid');
+      }
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      await expect(page.locator('.native-pill-pointer')).toHaveCSS('animation-name', 'pill-guide-pointer');
+      await coachMetrics.send('Emulation.clearDeviceMetricsOverride');
     }
-  }finally{
-    await coachMetrics.send('Emulation.clearDeviceMetricsOverride');await coachMetrics.detach();
-    await page.emulateMedia({colorScheme:'light',reducedMotion:'no-preference'});
+  } finally {
+    await coachMetrics.send('Emulation.clearDeviceMetricsOverride');
+    await coachMetrics.detach();
+    await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'no-preference' });
   }
   assert.equal(await page.evaluate(() => {
     const main=document.querySelector<HTMLElement>('main');if(!main)throw new Error('Missing main');const rect=main.getBoundingClientRect();
@@ -185,8 +211,7 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 9
   assert.equal(await page.evaluate(()=>window.nativeOnboarding.action('practice-settings').then(()=>false,()=>true)),true);
   send({step:'try-it',practice:'stop',shortcut:'⌃⌥⇧9',firstCaptureRequired:true});
   await expect(page.getByRole('heading',{name:'Finish your capture.',exact:true})).toBeVisible();
-  assert.deepEqual(await page.locator('.native-saved-keys kbd').allTextContents(),['⌃','⌥','⇧','9']);
-  assert.equal(await page.locator('.native-control').count(),0);
+  await expect(page.getByRole('figure', { name: 'Example: click the stop square to save your capture' })).toBeVisible();
   await expect(page.getByRole('button',{name:'Close guide'})).toBeVisible();
   send({step:'try-it',practice:'board-ink',practiceBoard:[100,100,720,540]});
   await expect(page.getByRole("heading", { name: "Whiteboard", exact: true })).toHaveCount(0);
@@ -199,13 +224,10 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 9
   // The teaching preview reuses real controls but cannot dispatch capture actions.
   send({step:'try-it',practice:'whiteboard',platform:'linux',firstCaptureRequired:true});
   await expect(page.locator('.native-control')).toHaveAttribute('data-kind','whiteboard');
-  await expect(page.locator('.native-pill-example .pill [data-action=whiteboard]')).toBeVisible();
-  await expect(page.locator('.native-pill-example .pill [data-action=finish]')).toBeVisible();
-  await expect(page.locator('.native-pill-example .input-bloom')).toBeVisible();
-  await expect.poll(()=>page.locator('.native-coach').evaluate(card=>{
-    const pill=card.querySelector('.pill-row');if(!pill)return Infinity;
-    return card.getBoundingClientRect().right-pill.getBoundingClientRect().right;
-  })).toBeLessThan(27);
+  assert.deepEqual(await page.locator('.native-pill-example [data-action]').evaluateAll(
+    buttons => buttons.map(button => button.getAttribute('data-action')),
+  ), ['finish', 'whiteboard', 'cancel']);
+  await expect(page.locator('.native-pill-example .input-bloom, .native-pill-example .pill-doodles, .native-pill-example .clock')).toHaveCount(0);
   assert.equal(await page.locator('.native-pill-example .pill').evaluate(el=>Boolean(el.closest('[inert]'))),true);
   const beforePreview=output;
   await page.locator('.native-pill-example [data-action=whiteboard]').evaluate((el:HTMLElement)=>el.click());
