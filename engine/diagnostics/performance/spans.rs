@@ -155,14 +155,22 @@ where
     }
 }
 
+fn epoch_ns() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
+}
+
 pub(crate) fn collect<T>(enabled: bool, work: impl FnOnce() -> T) -> (T, Collected) {
-    let recording = enabled.then(|| {
+    collect_on(enabled.then(|| (Instant::now(), epoch_ns())), work)
+}
+
+fn collect_on<T>(clock: Option<(Instant, u128)>, work: impl FnOnce() -> T) -> (T, Collected) {
+    let recording = clock.map(|(instant, epoch)| {
         Arc::new(Mutex::new(Recording {
-            instant: Instant::now(),
-            epoch: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos(),
+            instant,
+            epoch,
             next: 3,
             collected: Collected::default(),
         }))
@@ -183,6 +191,44 @@ pub(crate) fn collect<T>(enabled: bool, work: impl FnOnce() -> T) -> (T, Collect
         })
         .unwrap_or_default();
     (result, collected)
+}
+
+pub(crate) fn local_finish<T>(cutoff: Option<Instant>, work: impl FnOnce() -> T) -> T {
+    let (Some(cutoff), Ok(attempt)) = (cutoff, std::env::var("APPARENT_FINISH_BENCH_SPANS")) else {
+        return work();
+    };
+    if attempt.len() != 36
+        || !attempt.bytes().enumerate().all(|(i, byte)| match i {
+            8 | 13 | 18 | 23 => byte == b'-',
+            _ => byte.is_ascii_hexdigit(),
+        })
+        || CURRENT.with(|current| current.borrow().is_some())
+    {
+        return work();
+    }
+    let origin = epoch_ns().saturating_sub(cutoff.elapsed().as_nanos());
+    let (result, collected) = collect_on(Some((cutoff, origin)), work);
+    let elapsed = cutoff.elapsed().as_secs_f64() * 1000.0;
+    let relative = |value: u128| value.saturating_sub(origin) as f64 / 1_000_000.0;
+    let spans: Vec<_> = collected.spans.into_iter().map(|span| {
+        serde_json::json!({
+            "id": span.id,
+            "parent": span.parent,
+            "name": span.operation.name(),
+            "startMs": relative(span.start),
+            "endMs": relative(span.end),
+        })
+    }).collect();
+    eprintln!(
+        "BENCH_FINISH_SPANS {}",
+        serde_json::json!({
+            "attempt": attempt,
+            "elapsedMs": elapsed,
+            "dropped": collected.dropped,
+            "spans": spans,
+        })
+    );
+    result
 }
 
 #[cfg(test)]

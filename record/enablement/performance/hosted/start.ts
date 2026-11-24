@@ -1,0 +1,136 @@
+import assert from "node:assert/strict";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { waitForQuietStart } from "../fixtures/host-pressure.ts";
+import {
+  apt,
+  command,
+  cpuSample,
+  hostCounters,
+  json,
+  openJob,
+  receipt,
+  stageRevision,
+  stealSince,
+} from "./job.ts";
+import { waterfall } from "./waterfall.ts";
+
+const job = openJob("start");
+apt(
+  "xvfb",
+  "xauth",
+  "xdotool",
+  "ffmpeg",
+  "libgtk-3-0t64",
+  "libnss3",
+  "libasound2t64",
+);
+
+function build(checkout: string, revision: string, name: string) {
+  const tree = stageRevision(checkout, revision, job, name);
+  const desktop = join(tree, "capture/desktop/ui/frontend");
+  command("npm", ["ci", "--no-audit", "--no-fund"], {
+    cwd: desktop,
+    env: job.env,
+  });
+  command("npm", ["run", "build"], { cwd: desktop, env: job.env });
+  return desktop;
+}
+
+const control = build(job.control, job.revisions.control, "control");
+const candidate = job.calibrationOnly
+  ? undefined
+  : build(job.candidate, job.revisions.candidate, "candidate");
+const runner = fileURLToPath(new URL("../local/startup.ts", import.meta.url));
+
+async function run(phase: "baseline" | "comparison", other?: string) {
+  const output = join(job.evidence, phase);
+  await waitForQuietStart(AbortSignal.timeout(46_000));
+  const host = hostCounters();
+  const before = cpuSample();
+  try {
+    command(
+      process.execPath,
+      [runner, control, output, ...(other ? [other] : [])],
+      { env: job.env },
+    );
+  } finally {
+    receipt(join(job.evidence, phase + "-runner-steal.json"), {
+      before,
+      after: cpuSample(),
+      host,
+      hostAfter: hostCounters(),
+    });
+  }
+  const snapshot = json(join(job.evidence, phase + "-runner-steal.json"));
+  const stealPercent = stealSince(snapshot.before, snapshot.after);
+  receipt(join(job.evidence, phase + "-runner-steal.json"), {
+    ...snapshot,
+    stealPercent,
+    limitPercent: 5,
+  });
+  assert.ok(stealPercent <= 5, "Hosted runner CPU steal exceeded 5%");
+  const result = json(join(output, "comparison.json"));
+  assert.equal(result.eligible, true);
+  assert.deepEqual(
+    result.order,
+    other
+      ? ["control", "candidate", "candidate", "control"]
+      : ["control", "control"],
+  );
+  if (!other)
+    assert.ok(
+      result.timing.every(({ score }: { score: number }) => score === 100),
+    );
+  const attempts = result.runs.flatMap(
+    (
+      arm: {
+        attempts: {
+          mode: string;
+          spans: { name: string; startUs: number; endUs: number }[];
+        }[];
+      },
+      index: number,
+    ) =>
+      arm.attempts.map(({ mode, spans }) => {
+        const origin = Math.min(...spans.map((span) => span.startUs));
+        return {
+          label: result.order[index] + " " + (index + 1) + " · " + mode,
+          rows: spans.map(({ name, startUs, endUs }) => {
+            assert.ok(
+              Number.isFinite(startUs) &&
+                Number.isFinite(endUs) &&
+                startUs <= endUs,
+            );
+            return {
+              name,
+              fromMs: (startUs - origin) / 1000,
+              toMs: (endUs - origin) / 1000,
+            };
+          }),
+        };
+      }),
+  );
+  waterfall(
+    join(output, "waterfall.html"),
+    "Hosted Record Start",
+    "Local observer clock. Xvfb and the Electron pill witness both run in the hosted runner.",
+    attempts,
+  );
+}
+
+await run("baseline");
+if (candidate) await run("comparison", candidate);
+receipt(join(job.evidence, "record-run.json"), {
+  lane: "start",
+  qualified: true,
+  revisions: job.revisions,
+  hostedRun: {
+    provider: "github-hosted",
+    image: "ubuntu-24.04",
+    id: process.env.GITHUB_RUN_ID,
+    attempt: process.env.GITHUB_RUN_ATTEMPT,
+  },
+  baseline: "baseline/comparison.json",
+  comparison: candidate ? "comparison/comparison.json" : null,
+});
