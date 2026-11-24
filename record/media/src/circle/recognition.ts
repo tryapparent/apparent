@@ -148,8 +148,7 @@ function readLines(
     )
     .map((line) => line.words.join(" "))
     .filter(
-      (text) =>
-        /[\p{L}\p{N}]/u.test(text) && text.length >= 2 && text.length <= 90,
+      (text) => /[\p{L}\p{N}]/u.test(text) && policy.label_length(text.length),
     )
     .slice(0, 3);
   return { text, uncertain: observed.some((line) => line.uncertain) };

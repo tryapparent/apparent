@@ -48,9 +48,11 @@ window log. Render title strings as untrusted text. Old bundles, recordings with
 the experiment off, and unsupported actions can omit the array entirely.
 
 The macOS Window Server and X11 providers use the live window stack for points
-and verify the whole ink bounding box at release. Hyprland uses the focused
-compositor window, validates point/ink geometry and coverage, and rejects
-conflicting window, focus and title events during observation. Unproven
+and verify the whole ink bounding box at release. When Apparent's own ink
+overlay takes focus on Hyprland, the stroke probe can use the unique preceding
+window in compositor focus history on that workspace. The probe still requires
+matching observations, uninterrupted focus/title evidence, and an unobscured
+stroke rectangle. Unproven
 Wayland pointer coordinates, other Wayland compositors, phone and timed CLI
 captures have no action context. Notes and laser points currently have no row.
 The collector uses a bounded background queue and discards results older than

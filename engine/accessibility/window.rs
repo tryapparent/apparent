@@ -13,6 +13,7 @@ const EVENTS_LIMIT: usize = 16_384;
 #[serde(rename_all = "camelCase")]
 pub struct Window {
     address: String,
+    #[serde(default)]
     stable_id: String,
     pub pid: u32,
     #[serde(default)]
@@ -31,16 +32,13 @@ struct Workspace {
 
 #[derive(Deserialize)]
 struct Client {
-    address: String,
-    pid: u32,
-    at: [i32; 2],
-    size: [i32; 2],
-    workspace: Workspace,
+    #[serde(flatten)]
+    window: Window,
     mapped: bool,
     hidden: bool,
     pinned: bool,
-    #[serde(default)]
-    title: String,
+    #[serde(default, rename = "focusHistoryID")]
+    focus_history: Option<i32>,
 }
 
 pub fn focused() -> Option<Window> {
@@ -50,14 +48,35 @@ pub fn focused() -> Option<Window> {
 
 pub fn action_focused() -> Option<Window> {
     let window = read::<Window>("j/activewindow")?;
-    if window.address.is_empty()
-        || window.stable_id.is_empty()
-        || window.pid == 0
-        || window.is_ink()
-    {
+    (window.identified() && !window.is_ink()).then_some(window)
+}
+
+pub fn stroke_focused() -> Option<Window> {
+    let window = read::<Window>("j/activewindow")?;
+    if !window.identified() {
         return None;
     }
-    Some(window)
+    if !window.is_ink() {
+        return Some(window);
+    }
+    stroke_under_ink(window, read("j/clients")?)
+}
+
+fn stroke_under_ink(ink: Window, clients: Vec<Client>) -> Option<Window> {
+    if !clients.iter().any(|client| {
+        client.window == ink && client.focus_history == Some(0) && client.mapped && !client.hidden
+    }) {
+        return None;
+    }
+    let mut previous = clients.into_iter().filter(|client| client.focus_history == Some(1));
+    let candidate = previous.next()?;
+    (previous.next().is_none()
+        && candidate.mapped
+        && !candidate.hidden
+        && candidate.window.workspace == ink.workspace
+        && candidate.window.identified()
+        && !candidate.window.is_ink())
+    .then_some(candidate.window)
 }
 
 fn read<T: serde::de::DeserializeOwned>(request: &str) -> Option<T> {
@@ -86,6 +105,10 @@ pub fn layout_rect(rect: [i32; 4]) -> Option<[i32; 4]> {
 }
 
 impl Window {
+    fn identified(&self) -> bool {
+        !self.address.is_empty() && !self.stable_id.is_empty() && self.pid != 0
+    }
+
     fn is_ink(&self) -> bool {
         self.pid == std::process::id() && self.title.starts_with("Apparent Ink ")
     }
@@ -99,9 +122,7 @@ impl Window {
     }
 
     pub fn action_uncovered(&self, rect: [i32; 4]) -> Option<bool> {
-        self.uncovered(rect, |client| {
-            client.pid == std::process::id() && client.title.starts_with("Apparent Ink ")
-        })
+        self.uncovered(rect, |client| client.is_ink())
     }
 
 
@@ -121,24 +142,21 @@ impl Window {
         self.uncovered(region, |client| client.pid == std::process::id())
     }
 
-    fn uncovered(&self, region: [i32; 4], ignore: impl Fn(&Client) -> bool) -> Option<bool> {
+    fn uncovered(&self, region: [i32; 4], ignore: impl Fn(&Window) -> bool) -> Option<bool> {
         let clients = read::<Vec<Client>>("j/clients")?;
         if !clients
             .iter()
-            .any(|client| client.address == self.address && client.mapped && !client.hidden)
+            .any(|client| client.window.address == self.address && client.mapped && !client.hidden)
         {
             return None;
         }
         let covered = clients.iter().any(|client| {
-            client.address != self.address
-                && !ignore(client)
+            client.window.address != self.address
+                && !ignore(&client.window)
                 && client.mapped
                 && !client.hidden
-                && (client.workspace == self.workspace || client.pinned)
-                && overlaps(
-                    region,
-                    [client.at[0], client.at[1], client.size[0], client.size[1]],
-                )
+                && (client.window.workspace == self.workspace || client.pinned)
+                && client.window.overlaps(region)
         });
         Some(!covered)
     }
@@ -259,6 +277,42 @@ fn changes_layout(line: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_unique_visible_previous_focus_can_supply_ink_context() {
+        let ink = serde_json::json!({
+            "address": "0x123", "stableId": "123", "pid": std::process::id(),
+            "title": format!("Apparent Ink {} Draw", std::process::id()),
+            "at": [0, 0], "size": [1280, 800], "workspace": {"id": 1}
+        });
+        let resolve = |updates: serde_json::Value| {
+            let mut overlay = ink.clone();
+            overlay["mapped"] = true.into();
+            overlay["hidden"] = false.into();
+            overlay["pinned"] = false.into();
+            overlay["focusHistoryID"] = 0.into();
+            let mut target = serde_json::json!({
+                "address": "0x321", "stableId": "321", "pid": 55, "class": "firefox",
+                "title": "Synthetic heading", "at": [20, 20], "size": [800, 600],
+                "workspace": {"id": 1}, "mapped": true, "hidden": false,
+                "pinned": false, "focusHistoryID": 1
+            });
+            target.as_object_mut().unwrap().extend(updates.as_object().unwrap().clone());
+            stroke_under_ink(
+                serde_json::from_value(ink.clone()).unwrap(),
+                serde_json::from_value(serde_json::json!([overlay, target])).unwrap(),
+            )
+        };
+        assert_eq!(resolve(serde_json::json!({})).unwrap().title, "Synthetic heading");
+        for changes in [
+            serde_json::json!({"hidden": true}),
+            serde_json::json!({"workspace": {"id": 2}}),
+            serde_json::json!({"focusHistoryID": -1}),
+            serde_json::json!({"stableId": ""}),
+        ] {
+            assert!(resolve(changes).is_none());
+        }
+    }
 
     #[test]
     fn drawing_overlay_events_do_not_invalidate_focus() {

@@ -24,6 +24,9 @@ def retry_region(has_text: Bool, uncertain: Bool, has_category: Bool, wide: Bool
 def include_caption(has_category: Bool, lines: U32) -> Bool:
   Bool.or(Bool.not(has_category), U32.is_eq(lines, 1))
 
+def label_length(+length: U32) -> Bool:
+  Bool.and(U32.is_ge(length, 2), U32.is_le(length, 160))
+
 law low_confidence_text_is_uncertain:
   {word_admission(9, 600, True{}) == 1 : U32}
 
