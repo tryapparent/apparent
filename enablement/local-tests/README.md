@@ -29,7 +29,8 @@ Candidate and baseline reuse a diagnostics-private target/build directory
 per manifest when their toolchain and Cargo configuration match. Later
 invocations start cold. The directory is discarded on completion, keeping
 build scripts and their runtime companions separate from developer artifacts.
-Install the shared locked admission tools for Rust warning scope parsing.
+When the hook selects Rust diagnostics, it loads the locked syntax tools before
+running Cargo. Install them with `npm ci --ignore-scripts --prefix shared/enablement/dependency-policy`.
 The standard contracts command installs these tools and exercises both the
 TypeScript and Cargo hook fixtures.
 
