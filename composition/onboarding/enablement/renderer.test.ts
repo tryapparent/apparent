@@ -258,11 +258,15 @@ test("trusted practice host drives the real renderer without accepting renderer 
     expect(page.locator(".native-coach")).toHaveAttribute("data-stage", name);
   await batch([{ type: "reset" }, { type: "started" }]);
   await stage("whiteboard");
+  await batch([{ type: "whiteboard-visible", visible: true }]);
+  await stage("whiteboard");
+  await batch([{ type: "whiteboard-visible", visible: false }]);
+  await stage("whiteboard");
   await batch([
     { type: "whiteboard-visible", visible: true },
     { type: "ink", board: true, screen: 4 },
   ]);
-  await stage("board-ink");
+  await stage("whiteboard");
   await batch([
     { type: "ink", board: true, screen: 5 },
     { type: "whiteboard-visible", visible: false },

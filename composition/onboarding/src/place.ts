@@ -6,6 +6,7 @@ import {
   type Rect,
 } from "@apparent/onboarding/presentation";
 import type { Projection } from "@apparent/onboarding/projection";
+import traversal from "@apparent/onboarding/traversal";
 import { removeCompositorBorder } from "./hyprland.ts";
 function nativeRectangle(rect: Rect | undefined): Rect | undefined {
   if (!rect) return rect;
@@ -44,8 +45,12 @@ export class Placement {
       return;
     }
     if (
-      value.step === "try-it" &&
-      (value.practice === "preparing" || value.practiceBoard)
+      traversal.hide_practice_coach(
+        value.step === "try-it",
+        Boolean(value.practiceBoard),
+        value.practice === "board-ink",
+        value.practice === "preparing",
+      )
     ) {
       window.hide();
       return;

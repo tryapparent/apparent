@@ -133,3 +133,6 @@ law back_keeps_repair_open:
 
 def back_keeps_repair_open(step, permissions_ready):
   {==}
+
+def hide_practice_coach(practice: Bool, board_visible: Bool, board_step: Bool, preparing: Bool) -> Bool:
+  Bool.and(practice, Bool.or(board_visible, Bool.or(board_step, preparing)))

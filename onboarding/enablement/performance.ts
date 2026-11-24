@@ -135,6 +135,12 @@ async function measurePractice() {
           button: "left",
           clickCount: 1,
         });
+        await onScreen(
+          '.native-board-lesson[data-ink="true"]',
+          "accepted practice Whiteboard ink",
+          board,
+        );
+        await board.click('button[aria-label="Close whiteboard"]');
       } finally {
         board.close();
       }
