@@ -42,6 +42,27 @@
       ]
     },
     {
+      "id": "local-recording-pill-startup",
+      "description": "Score recording state to independently visible and actionable Electron controls on Xvfb.",
+      "platforms": ["linux"],
+      "userEntryPoint": "Begin a recording with the source picker skipped. The local fixture submits the recording state at the Electron parent boundary.",
+      "prerequisites": [
+        "A verified unpacked Linux AppImage or a pinned Desktop frontend build with the Electron pill host and renderer.",
+        "Node 22, Xvfb, FFmpeg with X11 capture, xdotool and the repository Bend2 toolchain on a quiet host."
+      ],
+      "runner": {
+        "path": "record/enablement/performance/local/startup.ts",
+        "instructions": "record/enablement/performance/local/README.md"
+      },
+      "expectedEvidence": [
+        "Cold and warm raw latency, same-build repeat gap, observer overhead, normalized score and machine-readable traces.",
+        "Verified pixels and matching Finish action, with resource guard results."
+      ],
+      "limits": [
+        "The capture state and window admission use local fixtures. Physical input, consent, native compositor admission and first media require the native Start benchmark."
+      ]
+    },
+    {
       "id": "focused-record-benchmark",
       "description": "Compare verified recording startup or Stop-to-clipboard on two builds.",
       "platforms": ["linux-hyprland"],

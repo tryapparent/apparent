@@ -1,5 +1,7 @@
 # Native recording performance probe
 
+Use the [local pill startup benchmark](local/README.md) for the Xvfb score and hill-climb ledger.
+
 ## Compare Start or Stop
 
 Record's focused benchmark measures one user wait at a time. Run the control

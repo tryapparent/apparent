@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -88,6 +88,44 @@ test("focused scoring reads native report shapes and rejects unqualified evidenc
   assert.deepEqual(stopReport.failures, [
     "Run 3 exceeded the recording CPU budget",
   ]);
+  const skipped = reports.map((report, index) => {
+    const updated = structuredClone(report);
+    for (const key of ["live", "pill"] as const) {
+      updated.waits[key].intervals = updated.waits[key].intervals.map(
+        ([span]) => [
+          { ...span, endUs: span.startUs + updated.waits[key].ms * 1000 },
+        ],
+      );
+    }
+    const out = join(job, "skipped-" + index + ".json");
+    const directTakes = ["shortcut-first", "shortcut-repeat"].map((name) => ({
+      name,
+      resources: {
+        cpuSeconds: 2,
+        peakSampledPssMiB: 500,
+        minAvailableMiB: 1800,
+        guestStealPercent: 0,
+        hostCpuPressurePercent: 0,
+        videoBytes: 400000,
+      },
+    }));
+    writeFileSync(
+      out,
+      JSON.stringify({ ...updated, selection: "skipped", directTakes }),
+    );
+    return out;
+  });
+  const direct = run("start", skipped);
+  assert.equal(direct.status, 0, direct.stderr);
+  assert.equal(JSON.parse(direct.stdout).score, startReport.score);
+  assert.match(
+    run("start", [files[0], ...skipped.slice(1)]).stderr,
+    /matching source selection/,
+  );
+  const busy = JSON.parse(readFileSync(skipped[1], "utf8"));
+  busy.directTakes[0].resources.hostCpuPressurePercent = 5.01;
+  writeFileSync(skipped[1], JSON.stringify(busy));
+  assert.match(run("start", skipped).stderr, /CPU contention exceeded 5%/);
   assert.match(
     run("stop", [files[0], files[1], files[1], files[3]]).stderr,
     /four independent/,

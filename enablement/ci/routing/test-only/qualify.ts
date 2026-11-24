@@ -12,7 +12,7 @@ const reviewedMentions = new Map([
   ['enablement/ci/routing/engine-inputs/qualify.ts', 'b66de612376888a99dc04c77d4ffec6818b897e4'],
   ['enablement/ci/routing/engine-inputs/range.test.ts', '57e53af4325bfc51ce19c686cf65a9bd3a355e61'],
   ['capture/desktop/ui/frontend/tests/foreground/mac.ts', '595c94a634f10da7ca2f3272233d0bb9115932fa'],
-  ['enablement/ci/runner/mac-pill-bootstrap.test.ts', '345243e0210b9ee60aee05aeac0545cf3ce486f3'],
+  ['enablement/ci/runner/mac-pill-bootstrap.test.ts', '89d67942da0dd73228c720e044e0f0ba9a2dba9a'],
 ]);
 
 export function qualifyCiTests(base: string, head: string, candidates: string[], cwd: string): string[] {

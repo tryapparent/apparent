@@ -153,7 +153,11 @@ async function until<T>(ms: number, probe: () => Promise<T | undefined>) {
   }
   throw Error("Guest checkpoint timed out");
 }
-const configFor = recorderFixtureConfig(config, source, mode === "surface");
+const configFor = recorderFixtureConfig(
+  config,
+  source,
+  mode === "surface" ? !existsSync(files("skip-picker")) : undefined,
+);
 async function captureState() {
   const text = await commands(["capture", "state"]);
   return { text, value: JSON.parse(text) as Status };
@@ -454,6 +458,7 @@ try {
     if (surface) {
       await surface.surfaceRecipe({
         detail,
+        startupLog: existsSync(files("skip-picker")) ? log : undefined,
         appDir,
         out,
         scratch,

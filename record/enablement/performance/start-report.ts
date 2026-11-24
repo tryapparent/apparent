@@ -1,10 +1,13 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import {
   type Interval,
   type MeasuredWait,
 } from "../../../shared/enablement/performance/measurement.ts";
 import { type InkEvidence, verifiedInk } from "./ink.ts";
+import { pressureReader } from "./native/pressure.ts";
+import { startupSpans } from "./native/start-spans.ts";
 import { verifiedStart } from "./start.ts";
 
 const [root, ...extra] = process.argv.slice(2);
@@ -36,9 +39,25 @@ const owned = new Set<string>();
 const pillIntervals: Interval[][] = [];
 const liveIntervals: Interval[][] = [];
 const inkIntervals: Interval[][] = [];
+const directTakes = [];
+const selection = rows[0]?.selection;
+const hostPressure =
+  selection === "skipped"
+    ? pressureReader(
+        readFileSync(resolve(dirname(root), "host-pressure.tsv"), "utf8"),
+      )
+    : undefined;
+const resources =
+  selection === "skipped"
+    ? read("artifacts/artifacts/resources.tsv")
+        .trim()
+        .split("\n")
+        .slice(1)
+        .map((line) => line.split("\t").map(Number))
+    : [];
 for (const name of names) {
   const row = rows.find((row) => row.name === name);
-  if (!row || !verifiedStart(row))
+  if (!row || row.selection !== selection || !verifiedStart(row))
     throw Error("Unqualified native Start observation");
   const state = artifact(name, "state").state;
   const saved = artifact(name, "stop");
@@ -62,6 +81,76 @@ for (const name of names) {
     throw Error("Native Start was not followed by a usable owned capture");
   }
   owned.add(state.capture_id);
+  if (hostPressure) {
+    const movie = resolve(root, "artifacts/captures", bundle, output.video);
+    execFileSync(
+      "ffmpeg",
+      [
+        "-nostdin",
+        "-v",
+        "error",
+        "-xerror",
+        "-threads",
+        "1",
+        "-i",
+        movie,
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a?",
+        "-f",
+        "null",
+        "-",
+      ],
+      { timeout: 12000 },
+    );
+    const trace = artifact(name, "startup");
+    const appRelativeSpans = startupSpans(trace, () =>
+      read("artifacts/artifacts/application.log"),
+    );
+    const samples = resources.filter(
+      (sample) =>
+        sample[0] >= trace.resourceWindow.started &&
+        sample[0] <= trace.resourceWindow.stoppedAt &&
+        sample[11] > 0,
+    );
+    const pss = samples.filter(
+      (sample) => sample[8] > 0 && sample[8] === sample[9],
+    );
+    const cpu = samples.reduce((sum, sample) => sum + sample[3], 0);
+    const [witness] = row.intervals?.live ?? [];
+    if (
+      trace.captureId !== state.capture_id ||
+      !row.live ||
+      !appRelativeSpans.length ||
+      !samples.length ||
+      !pss.length ||
+      cpu <= 0 ||
+      !witness
+    ) {
+      throw Error("Missing picker-skipped Start trace or resource evidence");
+    }
+    const pressure = hostPressure(witness);
+    directTakes.push({
+      name,
+      ...trace,
+      appRelativeSpans,
+      observation: row,
+      hostPressureWindow: pressure,
+      resources: {
+        cpuSeconds:
+          samples.reduce((sum, sample) => sum + sample[2], 0) /
+          Number(read("artifacts/artifacts/clock-ticks.txt")),
+        peakSampledPssMiB: Math.max(...pss.map((sample) => sample[7])) / 1024,
+        minAvailableMiB:
+          Math.min(...samples.map((sample) => sample[10])) / 1024,
+        guestStealPercent:
+          (100 * samples.reduce((sum, sample) => sum + sample[5], 0)) / cpu,
+        hostCpuPressurePercent: pressure.percent,
+        videoBytes: statSync(movie).size,
+      },
+    });
+  }
   ms += row.ms / names.length;
   if (row.intervals?.pill) pillIntervals.push(row.intervals.pill);
   if (row.ink !== undefined) {
@@ -85,7 +174,7 @@ for (const name of names) {
       row.live.pillMs < row.pill.ms
     )
       throw Error("Unqualified first media observation");
-    live.push(row.picker.ms + Math.max(...milestones));
+    live.push((row.picker?.ms ?? 0) + Math.max(...milestones));
     if (row.intervals?.live) liveIntervals.push(row.intervals.live);
   }
 }
@@ -152,6 +241,8 @@ console.log(
   JSON.stringify(
     {
       version,
+      ...(selection ? { selection } : {}),
+      ...(directTakes.length ? { directTakes } : {}),
       waits: {
         pill: { ms, verified: true, intervals: pillIntervals },
         ...interactions,
