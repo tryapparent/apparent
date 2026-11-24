@@ -186,10 +186,10 @@ test("staged Whiteboard renders accepted ink and puts editing behind the parent 
   assert.equal(await exit, 1);
 });
 
-test("the same staged window hosts practice and closes after accepted human ink", {
+test("the practice board keeps accepted ink until the user closes it", {
   timeout: 20_000,
 }, async (t) => {
-  const { page, edits, reply } = await launch(t, true, blank);
+  const { page, home, edits, reply } = await launch(t, true, blank);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(page.getByText("Your turn")).toBeVisible();
   assert.equal(
@@ -199,9 +199,31 @@ test("the same staged window hosts practice and closes after accepted human ink"
   assert.deepEqual(edits(), []);
   const canvas = page.getByRole("img", { name: "Whiteboard drawing canvas" });
   await canvas.click({ position: { x: 60, y: 100 } });
-  const accepted = Date.now();
   await reply("end", { ...blank, strokes: [[[60, 100]]] });
+  await page.waitForTimeout(2100);
+  assert.equal(edits().at(-1)?.operation, "end");
   await expect(canvas.locator("circle")).toHaveCount(1);
+  await expect(page.getByRole("status")).toHaveText("Close when you’re done.");
+  await expect(page.locator(".native-board-lesson path")).toHaveCount(0);
+  const metrics = await home.newCDPSession(page);
+  for (const width of [720, 320]) {
+    await metrics.send("Emulation.setDeviceMetricsOverride", {
+      width,
+      height: width === 720 ? 540 : 280,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    for (const colorScheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme });
+      const status = await page.getByRole("status").boundingBox();
+      assert.ok(status && status.x >= 0 && status.x + status.width <= width);
+      const evidence = process.env.APPARENT_WHITEBOARD_EVIDENCE;
+      if (evidence)
+        await page.screenshot({
+          path: join(evidence, `practice-ink-${width}-${colorScheme}.png`),
+        });
+    }
+  }
+  await page.keyboard.press("Escape");
   await expect.poll(() => edits().at(-1)?.operation).toBe("close");
-  assert.ok(Date.now() - accepted >= 1990);
 });

@@ -157,7 +157,7 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 9
   await expect(page.getByRole('heading', { name:'apparent lives here.', exact:true })).toBeVisible();
   await expect(page.getByText('Click the a in your menu bar, then Open Latest Capture.', { exact:true })).toBeVisible();
   await expect(page.locator('.native-coach')).toHaveAttribute('data-arrow','true');
-  for(const phase of ['screen','whiteboard','board-ink','screen-ink','stop','copied','paste','locate','complete','retry','copy-failed']){
+  for(const phase of ['screen','whiteboard','screen-ink','stop','copied','paste','locate','complete','retry','copy-failed']){
     send({step:'try-it',practice:phase});
     await expect(page.locator('.native-coach')).toHaveAttribute('data-stage',phase);
     if(phase==='screen-ink'){

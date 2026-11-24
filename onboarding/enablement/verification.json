@@ -4,7 +4,7 @@
       "id": "onboarding-practice-completion",
       "description": "Finish the onboarding practice recording and verify that the app saves the recording, copies its reference, and persists setup completion.",
       "platforms": ["linux-hyprland"],
-      "userEntryPoint": "Resume the practice lesson. Use the Record shortcut, draw on the practice whiteboard, then draw on the screen with Shift held. Use the Record shortcut to finish, continue from the copied confirmation, and choose Finish setup.",
+      "userEntryPoint": "Resume the practice lesson. Use the Record shortcut, draw on the practice Whiteboard, and close the Whiteboard when done. Draw on the screen with Shift held. Use the Record shortcut to finish, continue from the copied confirmation, and choose Finish setup.",
       "prerequisites": [
         "A checksum-verified Linux AppImage, the qualified disposable Omarchy guest template, and a new private job directory.",
         "The pinned English Parakeet Q4 model and its adjacent .verified.json receipt. The runner seeds an empty private capture directory and enables the practice lesson for that profile."

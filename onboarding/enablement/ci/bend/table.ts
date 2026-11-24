@@ -30,6 +30,15 @@ export function traversalTable(directory: string): string {
 import assert from "node:assert/strict";
 import traversal from "./tour-traversal.mjs";
 
+for (const practice of [false, true])
+  for (const boardVisible of [false, true])
+    for (const boardStep of [false, true])
+      for (const preparing of [false, true])
+        assert.equal(
+          traversal.hide_practice_coach(practice, boardVisible, boardStep, preparing),
+          practice && (boardVisible || boardStep || preparing),
+        );
+
 const steps = ${JSON.stringify(steps)};
 const cases = Object.entries(${JSON.stringify(inputs)});
 const table = Object.fromEntries(cases.map(([name, flags]) => {

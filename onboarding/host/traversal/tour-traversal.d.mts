@@ -11,6 +11,12 @@ type Step = {
 type Primary = { $: "TourStay" | "TourAdvance" | "TourClose" };
 
 declare const traversal: {
+  hide_practice_coach(
+    practice: boolean,
+    boardVisible: boolean,
+    boardStep: boolean,
+    preparing: boolean,
+  ): boolean;
   visible(step: Step, permissionsReady: boolean): boolean;
   enter(step: Step, permissionsReady: boolean): Step;
   advance(

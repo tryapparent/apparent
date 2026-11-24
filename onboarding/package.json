@@ -1,6 +1,6 @@
 {
   "name": "@apparent/onboarding",
-  "version": "0.3.6",
+  "version": "0.3.8",
   "type": "module",
   "exports": {
     "./practice": {
@@ -36,7 +36,7 @@
       "import": "./dist/host/actions.js"
     },
     "./traversal": {
-      "types": "./dist/host/traversal/tour-traversal.d.mts",
+      "types": "./host/traversal/tour-traversal.d.mts",
       "import": "./dist/host/traversal/tour-traversal.mjs"
     },
     "./desktop-frog": {
@@ -46,6 +46,7 @@
   },
   "files": [
     "dist",
+    "host/traversal/tour-traversal.d.mts",
     "host/traversal/desktop-frog.d.mts"
   ],
   "scripts": {
