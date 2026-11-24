@@ -24,12 +24,15 @@ await bendScratch(async (directory) => {
     [
       "--input-type=module",
       "-e",
-      `import { handoffLine, windowSuffix } from "./agent-handoff-line.mjs";
+      `import { handoffLine, windowAgrees, windowHeading, windowSuffix, keepFrameHead } from "./agent-handoff-line.mjs";
 import { readFileSync } from "node:fs";
-const { lines, windows } = JSON.parse(readFileSync(0, "utf8"));
+const { lines, windows, headings, frames } = JSON.parse(readFileSync(0, "utf8"));
 console.log(JSON.stringify({
   lines: lines.map(args => handoffLine(...args)),
   windows: windows.map(observations => windowSuffix(JSON.stringify(observations))),
+  agreements: windows.map(observations => windowAgrees(JSON.stringify(observations))),
+  headings: headings.map(pair => windowHeading(JSON.stringify(pair))),
+  frames: frames.map(args => keepFrameHead(...args)),
 }));`,
     ],
     {
@@ -41,6 +44,10 @@ console.log(JSON.stringify({
           ["Circle", "0:20", "②", "“Save”", " (2 strokes)"],
           ["Speech", "0:20", "", "Try this.", ""],
           ["Action", "0:20", "", "clicked", ""],
+          ["Circle", "0:20", "", "“Date”, “Tomorrow”, “Date”", "", true],
+          ["Circle", "0:20", "", "image “dog”, “dog”", "", true],
+          ["Circle", "0:20", "", "button “Next”", "", true],
+          ["Action", "0:20", "", "clicked", "", true],
         ],
         windows: [
           [],
@@ -51,15 +58,36 @@ console.log(JSON.stringify({
           [browser, { ...browser, id: "other" }],
           [{ id: "settings", app: "Apparent" }],
         ],
+        headings: [
+          [null, { ...browser, title: "Quick picks — Mozilla Firefox" }],
+          [browser, browser],
+          [browser, { ...browser, title: "Next tab — Mozilla Firefox" }],
+          [browser, { ...browser, id: "other" }],
+          [
+            null,
+            { ...browser, app: "Editor", title: "Text — Mozilla Firefox" },
+          ],
+          [null, { ...browser, app: "chromium", title: "Search - Chromium" }],
+        ],
+        frames: [
+          [true, true, true],
+          [true, false, true],
+          [false, true, true],
+          [true, false, false],
+        ],
       }),
     },
   );
-  const { lines, windows } = JSON.parse(rendered);
+  const { lines, windows, agreements, headings, frames } = JSON.parse(rendered);
   assert.deepEqual(lines, [
     "0:20 Circled: target unidentified",
     "0:20 Circled: ② “Save” (2 strokes)",
     "0:20 Said: “Try this.”",
     "0:20 Action: clicked",
+    "0:20 Circled “Date” ×2, “Tomorrow”",
+    "0:20 Circled image “dog”, “dog”",
+    "0:20 Circled button “Next”",
+    "0:20 clicked",
   ]);
   assert.deepEqual(windows, [
     " · Window: unknown",
@@ -70,6 +98,16 @@ console.log(JSON.stringify({
     " · Window: unknown",
     " · Nearby window: Apparent",
   ]);
+  assert.deepEqual(agreements, ["", "yes", "yes", "", "", "", "yes"]);
+  assert.deepEqual(headings, [
+    "Nearby: Firefox · Quick picks",
+    "",
+    "Nearby: Firefox · Next tab",
+    "Nearby: Firefox · Quick picks",
+    "Nearby: Editor · Text — Mozilla Firefox",
+    "Nearby: chromium · Search",
+  ]);
+  assert.deepEqual(frames, ["", "yes", "yes", ""]);
   function run(overrides: object) {
     const request = {
       moment: "10000",

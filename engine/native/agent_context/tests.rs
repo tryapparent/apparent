@@ -116,6 +116,53 @@ fn bundle(words: Vec<WordTiming>, keyframes: Vec<Keyframe>) -> ApparentBundle {
 }
 
 #[test]
+fn compact_handoff_groups_exact_windows_across_routine_scene_changes() {
+    let mut b = bundle(Vec::new(), vec![
+        keyframe(1, 2000, KeyframeReason::SceneChange, ""),
+        keyframe(2, 3500, KeyframeReason::Mark, ""),
+        keyframe(3, 5000, KeyframeReason::SceneChange, ""),
+    ]);
+    b.strokes = vec![stroke(3500, 0.1, 0.1)];
+    b.marks = crate::capture::engine::sketch::marks_of(&b.strokes);
+    b.marks[0].shape = Shape::Circle;
+    b.marks[0].on = Some("“Date”, “Date”, “Date”".into());
+    b.keyframes[1].mark_id = Some(b.marks[0].id.clone());
+    let page = ActionWindow {
+        id: "firefox-window".into(),
+        app: "Firefox".into(),
+        title: Some("Board — Mozilla Firefox".into()),
+    };
+    let other = ActionWindow { title: Some("Other tab — Mozilla Firefox".into()), ..page.clone() };
+    b.action_context = vec![
+        ActionContext { kind: ActionKind::Stroke, t: 3500, window: page.clone() },
+        ActionContext { kind: ActionKind::Pointer, t: 5500, window: page.clone() },
+        ActionContext { kind: ActionKind::Pointer, t: 6200, window: other },
+        ActionContext { kind: ActionKind::Pointer, t: 8000, window: page },
+    ];
+    b.events = [5500, 6200, 7000, 8000].map(|t| InteractionEvent::Click {
+        t, x: 0.5, y: 0.5, role: None, label: None, button: None,
+    }).to_vec();
+
+    let compact = compact_keyframe_texts(&b).unwrap();
+    assert!(compact.iter().all(|frame| frame.head.is_empty()));
+    let lines = compact.into_iter().flat_map(|frame| frame.lines).collect::<Vec<_>>();
+    assert_eq!(lines, [
+        "Nearby: Firefox · Board",
+        "  0:03 Circled “Date” ×3",
+        "  0:05 clicked",
+        "Nearby: Firefox · Other tab",
+        "  0:06 clicked",
+        "0:07 clicked · Window unknown",
+        "Nearby: Firefox · Board",
+        "  0:08 clicked",
+    ]);
+    let detailed = keyframe_texts(&b).unwrap();
+    assert_eq!(detailed[0].head, "scene changed");
+    assert!(detailed[1].lines[0].contains("“Date”, “Date”, “Date” · Nearby window: Firefox — Board — Mozilla Firefox"));
+    assert!(detailed[2].lines[0].contains(" · Nearby window: Firefox — Board — Mozilla Firefox"));
+}
+
+#[test]
 fn nearby_windows_do_not_claim_input_time_identity_and_require_stroke_agreement() {
     let mut b = bundle(
         Vec::new(),
