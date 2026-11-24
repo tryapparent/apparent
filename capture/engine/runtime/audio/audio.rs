@@ -238,22 +238,9 @@ impl AudioRecorder {
         let word_probe = (!trial && crate::shared::handoff::experiment("liveWordWarning"))
             .then(|| crate::capture::engine::runtime::audio::transcription::live_word_probe::Probe::start(Arc::clone(&samples)));
         #[cfg(target_os = "linux")]
-        crate::capture::engine::runtime::audio::transcription::warm_recognizer::clear_if_disabled();
-        #[cfg(target_os = "linux")]
-        let local_background = !trial
-            && crate::capture::engine::runtime::audio::transcription::pause_transcribe::wanted();
-        #[cfg(target_os = "linux")]
-        let buffered = (local_background && word_probe.is_none())
-            .then(|| crate::capture::engine::runtime::audio::transcription::parakeet_buffered::Buffered::start(Arc::clone(&samples)))
-            .and_then(|result| result.ok());
-        #[cfg(target_os = "linux")]
-        if trial || buffered.is_some() { crate::capture::engine::runtime::audio::transcription::warm_recognizer::clear(); }
-        #[cfg(target_os = "linux")]
-        let pause = (local_background && buffered.is_none())
-            .then(|| crate::capture::engine::runtime::audio::transcription::pause_transcribe::Pause::start(Arc::clone(&samples)))
-            .and_then(|result| {
-                result.inspect_err(|error| crate::capture::engine::runtime::apparent_log(format!("Pause transcription: {error:#}"))).ok()
-            });
+        let (pause, buffered) = crate::capture::engine::runtime::audio::transcription::parakeet_buffered::start_background(
+            &samples, trial, word_probe.is_some(),
+        );
         Ok(Self {
             local_streaming: trial,
             #[cfg(any(target_os = "linux", target_os = "macos"))]
