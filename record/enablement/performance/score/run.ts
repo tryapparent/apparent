@@ -20,12 +20,22 @@ type Capture = {
   finalization: Phase;
   wordErrorRate: number;
 };
+type StartResources = {
+  cpuSeconds: number;
+  peakSampledPssMiB: number;
+  minAvailableMiB: number;
+  guestStealPercent: number;
+  hostCpuPressurePercent: number;
+  videoBytes: number;
+};
 type Report = {
   version: string;
+  selection?: "skipped";
   diagnostic?: true;
   waits?: Record<string, MeasuredWait>;
   resources?: Record<string, Capture>;
   stages?: Record<string, Record<string, number>>;
+  directTakes?: { name: string; resources: StartResources }[];
 };
 
 const fixture = "threshold-27";
@@ -51,6 +61,13 @@ const reports = files.map((file) => {
 const [a, b, bRepeat, aRepeat] = reports;
 if (a.version !== aRepeat.version || b.version !== bRepeat.version)
   throw Error("Revisions must match within each control and candidate pair");
+if (
+  (a.selection !== undefined &&
+    (a.selection !== "skipped" || lane !== "start")) ||
+  reports.some((report) => report.selection !== a.selection)
+) {
+  throw Error("Start reports must use matching source selection");
+}
 
 const finite = (n: unknown): n is number =>
   typeof n === "number" && Number.isFinite(n) && n >= 0;
@@ -69,7 +86,10 @@ function times(key: string, trials: number) {
       throw Error("Missing verified " + key + " observation: " + files[i]);
     let durationUs = 0;
     for (const trial of wait.intervals) {
-      if (!Array.isArray(trial) || trial.length !== trials)
+      if (
+        !Array.isArray(trial) ||
+        trial.length !== (a.selection === "skipped" ? 1 : trials)
+      )
         throw Error("Missing witness interval: " + files[i]);
       for (const span of trial) {
         if (
@@ -124,6 +144,67 @@ const captures =
     : undefined;
 
 const checks: { limits: Limit[]; failure: string; invalid?: true }[] = [];
+if (a.selection === "skipped") {
+  for (const [index, report] of reports.entries()) {
+    const takes = report.directTakes;
+    if (
+      takes?.length !== 2 ||
+      takes[0].name !== "shortcut-first" ||
+      takes[1].name !== "shortcut-repeat"
+    )
+      throw Error("Missing picker-skipped resource evidence");
+    for (const [sample, { resources }] of takes.entries()) {
+      if (
+        !resources ||
+        ![
+          resources.cpuSeconds,
+          resources.peakSampledPssMiB,
+          resources.minAvailableMiB,
+          resources.guestStealPercent,
+          resources.hostCpuPressurePercent,
+          resources.videoBytes,
+        ].every(finite) ||
+        resources.videoBytes <= 0 ||
+        resources.peakSampledPssMiB <= 0
+      )
+        throw Error("Invalid picker-skipped resource evidence");
+      checks.push({
+        limits: [
+          [resources.guestStealPercent, 5],
+          [resources.hostCpuPressurePercent, 5],
+        ],
+        failure: "CPU contention exceeded 5%: " + files[index],
+        invalid: true,
+      });
+      if (index === 1 || index === 2) {
+        const left = a.directTakes?.[sample].resources;
+        const right = aRepeat.directTakes?.[sample].resources;
+        if (!left || !right) throw Error("Missing matching control resources");
+        const maxCpu = Math.max(left.cpuSeconds, right.cpuSeconds);
+        checks.push({
+          limits: [
+            [resources.cpuSeconds, maxCpu, Math.max(0.2, maxCpu * 0.1)],
+            [
+              resources.peakSampledPssMiB,
+              Math.max(left.peakSampledPssMiB, right.peakSampledPssMiB),
+              128,
+            ],
+            [1024, resources.minAvailableMiB],
+            [
+              resources.videoBytes / 1048576,
+              Math.max(left.videoBytes, right.videoBytes) / 1048576,
+              16,
+            ],
+          ],
+          failure:
+            "Run " +
+            (index + 1) +
+            " exceeded the picker-skipped resource budget",
+        });
+      }
+    }
+  }
+}
 if (captures) {
   const controlPss =
     (captures[0].recording.appPssMiB + captures[3].recording.appPssMiB) / 2;
@@ -188,6 +269,14 @@ console.log(
     {
       stream: "record",
       lane,
+      ...(a.selection ? { selection: a.selection } : {}),
+      ...(a.selection
+        ? {
+            startResources: reports.map(({ directTakes }) =>
+              directTakes?.map(({ resources }) => resources),
+            ),
+          }
+        : {}),
       ...(lane === "stop" ? { fixture } : {}),
       control: a.version,
       candidate: b.version,

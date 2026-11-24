@@ -3,6 +3,7 @@ import { appendFileSync, readFileSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { interval } from "../../../shared/enablement/performance/measurement.ts";
+import { waitForQuietStart } from "./fixtures/host-pressure.ts";
 import type { InkEvidence } from "./ink.ts";
 
 type Qmp = {
@@ -42,6 +43,7 @@ function scan(path: string) {
   }
   let purple = 0;
   let dark = 0;
+  let recordingRed = 0;
   for (let y = 38; y < 76; y += 2) {
     for (let x = 555; x < 840; x += 2) {
       const i = pixel(x, y);
@@ -50,8 +52,15 @@ function scan(path: string) {
       if (r < 65 && g < 65 && b < 78) dark++;
     }
   }
+  for (let y = 44; y < 88; y++) {
+    for (let x = 160; x < 810; x++) {
+      const i = pixel(x, y);
+      const [r, g, b] = [pixels[i], pixels[i + 1], pixels[i + 2]];
+      if (r > 160 && r > g + 36 && r > b + 21) recordingRed++;
+    }
+  }
   return {
-    observation: { pickerMarkers, purple, dark },
+    observation: { pickerMarkers, purple, dark, recordingRed },
     digest: () => createHash("sha256").update(pixels).digest("hex"),
   };
 }
@@ -60,8 +69,8 @@ type Frame = ReturnType<typeof scan>["observation"];
 const pickerVisible = (frame: Frame) => frame.pickerMarkers === markers.length;
 const pillVisible = (before: Frame, after: Frame) =>
   !pickerVisible(after) &&
-  after.purple > before.purple + 80 &&
-  after.dark > before.dark + 300;
+  (after.recordingRed >= before.recordingRed + 12 ||
+    (after.purple > before.purple + 80 && after.dark > before.dark + 300));
 const keyEvent = (code: string, down: boolean) => ({
   type: "key",
   data: { down, key: { type: "qcode", data: code } },
@@ -206,15 +215,21 @@ function measured(value: unknown): value is number {
 
 export function verifiedStart(row: {
   source?: string;
+  selection?: "skipped";
   ms?: number;
   output?: { name?: string; x?: number; y?: number };
   before: Frame;
-  confirmation: Frame;
-  picker: { ms: number; sampleGapMs: number; frame: Frame; sha256: string };
+  confirmation?: Frame;
+  picker?: { ms: number; sampleGapMs: number; frame: Frame; sha256: string };
   pill: { ms: number; sampleGapMs: number; frame: Frame; sha256: string };
 }) {
   const { source, ms, output, before, confirmation, picker, pill } = row;
-  return (
+  const step = (item: typeof pill) =>
+    measured(item.ms) &&
+    measured(item.sampleGapMs) &&
+    item.sampleGapMs <= maxSampleGapMs &&
+    /^[a-f0-9]{64}$/.test(item.sha256);
+  const ready =
     source === "qmp-framebuffer-v1" &&
     output?.name === "Virtual-1" &&
     measured(output.x) &&
@@ -224,16 +239,24 @@ export function verifiedStart(row: {
     output.y > 245 &&
     output.y < 590 &&
     !pickerVisible(before) &&
+    step(pill);
+  if (row.selection === "skipped") {
+    return (
+      ready &&
+      !picker &&
+      !confirmation &&
+      ms === pill.ms &&
+      pillVisible(before, pill.frame)
+    );
+  }
+  return (
+    ready &&
+    picker &&
+    confirmation &&
     pickerVisible(confirmation) &&
     pickerVisible(picker.frame) &&
     pillVisible(confirmation, pill.frame) &&
-    [picker, pill].every(
-      (step) =>
-        measured(step.ms) &&
-        measured(step.sampleGapMs) &&
-        step.sampleGapMs <= maxSampleGapMs &&
-        /^[a-f0-9]{64}$/.test(step.sha256),
-    ) &&
+    step(picker) &&
     ms === picker.ms + pill.ms
   );
 }
@@ -251,6 +274,7 @@ export async function observeShortcut(
     close(): void;
   },
   inkProbe?: (qmp: Qmp) => Promise<InkEvidence>,
+  selection?: "skipped",
 ) {
   const path = resolve(root, name + "-scan.ppm");
   const dump = () => captureFrame(qmp, path);
@@ -279,7 +303,7 @@ export async function observeShortcut(
         if (first) return first;
         first = {
           at: frame.at,
-          ms: Math.round(frame.at - started()),
+          ms: frame.at - started(),
           sampleGapMs: Math.max(1, Math.round(frame.at - prior)),
           frame: frame.observation,
           sha256: frame.digest(),
@@ -294,6 +318,7 @@ export async function observeShortcut(
   };
   try {
     await qmp.ready(performance.now() + 3000);
+    if (selection === "skipped") await waitForQuietStart(signal);
     const before = (await dump()).observation;
     if (pickerVisible(before))
       throw Error("Source picker was already open before the shortcut");
@@ -313,6 +338,64 @@ export async function observeShortcut(
         ]);
       }
     };
+    const retain = (receipt: Parameters<typeof verifiedStart>[0]) => {
+      if (!verifiedStart(receipt))
+        throw Error("Invalid native Start observation");
+      appendFileSync(
+        resolve(root, "weighted-start-observations.jsonl"),
+        JSON.stringify(receipt) + "\n",
+        { mode: 0o600 },
+      );
+      rmSync(path);
+      console.log(JSON.stringify(receipt));
+    };
+    if (selection === "skipped") {
+      const output = verifyOutput(ssh);
+      const media = armMedia?.();
+      try {
+        await media?.connected;
+        const [pill, arrival] = await Promise.all([
+          observe(
+            () => keyDown,
+            (frame) => pillVisible(before, frame),
+            "recording pill",
+          ),
+          media?.finished,
+          shortcut(),
+        ]);
+        const live = arrival && {
+          screenMs: arrival.screenAt - keyDown,
+          microphoneMs: arrival.microphoneAt - keyDown,
+          pillMs: pill.at - keyDown,
+        };
+        if (live && !Object.values(live).every(measured))
+          throw Error("First media evidence preceded the recording shortcut");
+        const receipt = {
+          name,
+          source: "qmp-framebuffer-v1",
+          selection,
+          output,
+          before,
+          pill,
+          live,
+          ms: pill.ms,
+          intervals: {
+            pill: [interval(keyDown, pill.at, "host")],
+            live: arrival && [
+              interval(
+                keyDown,
+                Math.max(pill.at, arrival.screenAt, arrival.microphoneAt),
+                "host",
+              ),
+            ],
+          },
+        };
+        retain(receipt);
+      } finally {
+        media?.close();
+      }
+      return;
+    }
     const [picker] = await Promise.all([
       observe(() => keyDown, pickerVisible, "output picker"),
       shortcut(),
@@ -386,15 +469,7 @@ export async function observeShortcut(
       },
       ms: picker.ms + pill.ms,
     };
-    if (!verifiedStart(receipt))
-      throw Error("Invalid native Start observation");
-    appendFileSync(
-      resolve(root, "weighted-start-observations.jsonl"),
-      JSON.stringify(receipt) + "\n",
-      { mode: 0o600 },
-    );
-    rmSync(path);
-    console.log(JSON.stringify(receipt));
+    retain(receipt);
   } finally {
     qmp.close();
   }

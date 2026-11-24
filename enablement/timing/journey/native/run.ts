@@ -72,7 +72,8 @@ await writeFile(
   'mkdir -p "$TMPDIR/collector" && tar -C "$TMPDIR/collector" -xf "$APPARENT_GUI_LIBRARY_PATH/libbench.so.program" && exec "$APPARENT_GUI_LIBRARY_PATH/libbench.so.node" --experimental-strip-types "$TMPDIR/collector/record/enablement/performance/guest.ts"\n',
   { mode: 0o700, flag: "wx" },
 );
-const surface = process.env.APPARENT_BENCH_SURFACE === "1";
+const direct = process.env.APPARENT_BENCH_SURFACE === "picker-skipped";
+const surface = process.env.APPARENT_BENCH_SURFACE === "1" || direct;
 const media = process.env.APPARENT_BENCH_MEDIA === "1";
 const ink = process.env.APPARENT_BENCH_INK === "1";
 const detail = process.env.APPARENT_BENCH_DETAIL === "1";
@@ -80,6 +81,10 @@ const onboarding = process.env.APPARENT_BENCH_ONBOARDING === "1";
 assert(
   (!media && !ink && !detail) || surface,
   "Media and interaction measurements require the surface probe",
+);
+assert(
+  !direct || (media && !ink && !detail),
+  "Picker-skipped Start requires the focused media probe",
 );
 const settings = process.env.APPARENT_BENCH_SETTINGS;
 const cli = process.env.APPARENT_BENCH_LOCAL_CLI_FIXTURES;
@@ -117,6 +122,10 @@ await writeFile(join(staged, "libbench.so.cases"), JSON.stringify(cases), {
   mode: 0o600,
 });
 await writeFile(join(staged, "libbench.so.mode"), mode, { mode: 0o600 });
+if (direct)
+  await writeFile(join(staged, "libbench.so.skip-picker"), "1", {
+    mode: 0o600,
+  });
 if (ink) await writeFile(join(staged, "libbench.so.ink"), "1", { mode: 0o600 });
 if (detail)
   await writeFile(join(staged, "libbench.so.detail"), "1", { mode: 0o600 });
@@ -333,6 +342,7 @@ try {
         key,
         mode,
         ...(media ? ["media"] : []),
+        ...(direct ? ["picker-skipped"] : []),
         ...(ink ? ["ink"] : []),
       ],
       "driver.log",
