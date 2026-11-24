@@ -7,7 +7,16 @@ The lane measures two user waits on the Electron recording controls.
 
 The scenario measures each wait in a fresh Electron process. The fresh catalogue loads when the synthetic completed-recording frame arrives. The prewarmed catalogue loads during a synthetic recording phase. The command reports synthetic completion frame to observed mapped trigger as a separate diagnostic. The primary score excludes this setup, handoff text production, and the time between the clicks.
 
-## Run on Linux
+## Score on GitHub Actions
+
+Use the [manual hosted workflow](../../../enablement/timing/hosted/README.md)
+with stream `handoff` and pinned SHAs. The adapter builds both revisions
+before timing and retains calibration, matched receipts and per-trial
+waterfall spans in the run artifact. Hosted guest CPU and I/O pressure
+use the existing 5% limits. The enclosing host's pressure and SMT
+topology are outside the guest's visibility.
+
+## Local diagnostic replay
 
 Use a quiet machine with Node 22, the locked Desktop dependencies, Xvfb, and accessible Linux PSI and Electron process PSS counters. Build both revisions before taking measurements. On Clanker, use the shared build runner for the builds and keep artifacts in the private job root.
 
@@ -24,15 +33,17 @@ printf '%s\n' "$control" > "$job/control/APPARENT_BENCH_REVISION"
 )
 ```
 
-Run, validate, and score the baseline from the tooling worktree. The Composition launcher supplies the actual Desktop bundle entry point, Electron runner, and WebSocket server implementation. Handoff owns the fixture, interaction, acceptance checks, spans, admission, and score.
+Run the diagnostic replay from the tooling worktree. The Composition launcher supplies the actual Desktop bundle entry point, Electron runner, and WebSocket server implementation. Handoff owns the fixture, interaction, acceptance checks, spans, admission, and score.
 
 ```sh
 env -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS TMPDIR="$job/tmp" \
   xvfb-run -a node composition/pill/enablement/focused-handoff.ts \
-  baseline "$job" "$job/control"
+  pilot "$job" "$job/control"
 ```
 
-Prepare a second archive the same way for a single candidate SHA. Invoke the same command with `compare "$job" "$job/control" "$job/candidate"`. Use the current qualified incumbent as that comparison's control. Keep the original baseline for the campaign stop command. Use `pilot "$job" "$job/control"` for a two-variant trace and synthetic screenshots during tool bring-up. Pilots bypass pressure admission and emit no score.
+The pilot records both variants and synthetic screenshots. It bypasses
+pressure admission and emits no campaign score. Earlier Clanker receipts
+are historical and remain outside the hosted score series.
 
 The runner emits raw milliseconds and a JSON comparison on stdout. It also writes each trace or quiet trial, the pressure admission record, and `comparison.json` under a new private directory printed on stderr. A pressure check runs before the scored block. A sample over the CPU or I/O pressure limits is retained as invalid and repeated in its original slot, with a bounded number of attempts. The benchmark fails if it cannot obtain a valid sample in that slot.
 
