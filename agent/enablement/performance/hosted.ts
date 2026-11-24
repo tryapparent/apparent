@@ -81,12 +81,21 @@ function run(
   }
 }
 
-function identity(checkout: string) {
+function identity(checkout: string, beforeBuild = false) {
   const git = (...args: string[]) =>
     execFileSync("git", ["-C", checkout, ...args], { encoding: "utf8" }).trim();
   const sha = git("rev-parse", "HEAD");
   assert(/^[0-9a-f]{40}$/.test(sha));
-  assert.equal(git("status", "--porcelain", "--untracked-files=no"), "");
+  assert.equal(
+    git(
+      "status",
+      "--porcelain",
+      "--untracked-files=all",
+      ...(beforeBuild ? ["--ignored=matching"] : []),
+    ),
+    "",
+    "Build checkout contains files outside the pinned tree or tracked changes",
+  );
   return sha;
 }
 
@@ -181,8 +190,8 @@ function retainReceipts() {
 }
 
 try {
-  const controlSha = identity(controlRoot),
-    candidateSha = identity(candidateRoot);
+  const controlSha = identity(controlRoot, true),
+    candidateSha = identity(candidateRoot, true);
   const limits = cpuLimits();
   assert(
     limits.effectiveCpus >= 1,

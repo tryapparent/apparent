@@ -127,7 +127,9 @@ a new synthetic demo corpus from the control for both runs, then performs
 A/A/A/A calibration followed by A/B/B/A when the revisions differ.
 
 The adapter records CPU affinity, effective cgroup quota, guest-reported SMT
-peer sets and kernel pressure. The scheduler and steal counters describe the
+peer sets and kernel pressure. PSI snapshots provide host context. Qualification
+uses the sampled CPU contention, guest steal and cgroup throttling guards.
+The scheduler and steal counters describe the
 guest-visible CPUs. Hypervisor topology beyond those counters is unavailable.
 Before scoring, the adapter pins a competing subprocess to the selected CPU
 and requires the same contention guard to reject it. The worker exits before

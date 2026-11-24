@@ -6,6 +6,11 @@ export function assertHosted() {
   assert.equal(process.env.GITHUB_ACTIONS, "true");
   assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
   assert.equal(process.env.GITHUB_REPOSITORY, "tryapparent/apparent");
+  assert.equal(
+    process.version,
+    "v22.23.0",
+    "Hosted Agent benchmark requires the gateway Node pin",
+  );
   assert.equal(process.platform, "linux");
   assert.equal(process.arch, "x64");
   const os = readFileSync("/etc/os-release", "utf8");
