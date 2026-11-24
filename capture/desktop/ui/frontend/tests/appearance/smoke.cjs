@@ -15,14 +15,13 @@ test('Settings renderer and window follow Electron theme changes without reload'
   await expect.poll(() => application.evaluate(({BrowserWindow}) => BrowserWindow.getAllWindows()[0].isVisible()),
     {timeout:16000, message:'Settings presents within its existing startup deadline'}).toBe(true);
   assert.equal(await page.evaluate(() => typeof window.apparentSettingsMounted), 'function');
-  assert.deepEqual(await application.evaluate(({BrowserWindow}) => {
-    const {width, height} = BrowserWindow.getAllWindows()[0].getBounds();
-    return {width, height};
-  }), {width:720, height:530});
+  assert.deepEqual(await application.evaluate(({BrowserWindow}) =>
+    BrowserWindow.getAllWindows()[0].getContentSize()), [740, 580]);
   // Playwright otherwise forces light media even when Electron follows the OS.
   await page.emulateMedia({colorScheme:null});
   await page.locator('.settings-shell').waitFor();
   assert.equal(await application.evaluate(({nativeTheme})=>nativeTheme.themeSource),'system');
+  const session = await page.context().newCDPSession(page);
   for(const mode of ['light','dark','light']) {
     await application.evaluate(({nativeTheme},mode)=>{nativeTheme.themeSource=mode;},mode);
     await expect(page.locator('body')).toHaveCSS('background-color',mode==='dark'?'rgb(32, 27, 36)':'rgb(245, 240, 232)');
@@ -31,8 +30,8 @@ test('Settings renderer and window follow Electron theme changes without reload'
     await expect(page.locator('.settings-sidebar')).toHaveCSS('background-color','rgb(2, 1, 2)');
     await expect(page.getByRole('button',{name:'Storage',exact:true})).toHaveCSS('color','rgb(2, 1, 2)');
     assert.equal(await page.locator('.settings-sidebar').evaluate(element => element.getBoundingClientRect().width), 216);
-    for(const width of [720,640]) {
-      await application.evaluate(({BrowserWindow},width)=>BrowserWindow.getAllWindows()[0].setSize(width,530),width);
+    for(const [width,height] of [[740,580],[640,530]]) {
+      await session.send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
       const compact=page.getByRole('button',{name:'Settings pages, Storage',exact:true});
       if(width===640) {
         await compact.press('Enter');
@@ -50,11 +49,11 @@ test('Settings renderer and window follow Electron theme changes without reload'
         await page.getByRole('button',{name:'Agents',exact:true}).hover();
         await page.screenshot({path:path.join(process.env.APPARENT_SHELL_PROOF,`sidebar-hover-${width}-${mode}.png`)});
       }
-      await page.mouse.move(0,529);
+      await page.mouse.move(0,height-1);
       await expect(page.getByRole('button',{name:'Agents',exact:true}).locator('svg')).toHaveCSS('color','rgb(183, 165, 216)');
       if(width===640) await compact.press('Escape');
     }
-    await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(720,530));
+    await session.send('Emulation.clearDeviceMetricsOverride');
     for(const [name,color] of [['General','rgb(183, 165, 216)'],['Storage','rgb(2, 1, 2)']]) {
       const control=page.getByRole('button',{name,exact:true});
       await control.focus();await page.keyboard.press('Tab');await page.keyboard.press('Shift+Tab');

@@ -24,6 +24,10 @@ About share one sidebar and window. The native session filters actions against
 the active pane and passes native effects and preference writes to their
 existing owners.
 
+Settings opens with a fixed 740 × 580 content area on Linux and macOS, regardless
+of its starting pane. Electron disables user resize and fullscreen, and macOS
+also disables maximize. Longer panes and enlarged text scroll within Settings.
+
 Settings has one Electron presentation on Linux and macOS. A child exit closes
 the session, releases the Recording meter and shortcut editor, and allows the
 next Settings request to launch a new child. When package resources are missing
@@ -104,8 +108,8 @@ authorization stays with the capture-time portal.
 ## Optional recording performance
 
 Labs offers **Share recording performance**, off by default and independent
-of error reporting. It takes effect for new screen recordings. In sampled
-recordings that reach finalization, Start measures native recording setup
+of error reporting. It covers every new screen recording that reaches a live
+frame and finalization while opted in. Start measures native recording setup
 through the first observed live frame. Finish measures the native Finish
 request through the bundle publication result. A failed finalizer is tagged
 as a failure. Set the switch off to invalidate that recording's previous

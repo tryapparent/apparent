@@ -55,8 +55,6 @@ def failure_record(stage, error):
 
 
 def write_result(directory, status):
-    # Runner and independent expiry may finish together. Serialize read/replace
-    # and keep the first persisted failure and terminal expiry facts.
     with (directory / 'result.lock').open('a') as lock:
         os.fchmod(lock.fileno(), 0o600)
         deadline = time.monotonic() + 2
@@ -570,8 +568,6 @@ def main():
             copy_firmware(args.ovmf_vars, vars_copy)
             port = available_port()
             command = qemu_command(overlay, vars_copy, directory, port, args.memory, args.isolated_network, args.outputs, desktop=args.desktop, input_profile=args.input_profile)
-            # The user manager survives a SIGKILL or OOM kill of this runner.
-            # Refuse to boot at all if that independent expiry cannot be armed.
             expiry_unit = arm_expiry(directory, args.job_timeout)
             status['cleanup']['expiry'] = 'armed'
             stage('boot')
@@ -616,8 +612,6 @@ def main():
                 guest_binary = guest_bin + "/" + args.binary.name
                 scp = transfer + [str(args.scenario), f"{args.ssh_user}@127.0.0.1:{remote}"]
                 call(scp)
-                # Recheck every staged byte, including libraries and the driver.
-                # A candidate hash alone misses changed packaging/scenario inputs.
                 staged = [(path, guest_bin + '/' + path.name) for path in files]
                 staged.append((args.scenario, remote))
                 audio_file = ""
@@ -640,7 +634,6 @@ def main():
                     status['unrun'] = []
                     status['product'] = 'unknown'
                     command = prefix + [scenario_command(remote, guest_output, guest_binary, guest_bin, audio_file, args.inhibit_idle)]
-                    # Files keep full private output without buffering a long recipe in RAM.
                     with (directory / 'scenario.log').open('w') as output, (directory / 'scenario.stderr').open('w') as errors:
                         try:
                             result = subprocess.run(command, stdout=output, stderr=errors,
@@ -664,14 +657,22 @@ def main():
                             code = (143 if isinstance(error, SystemExit) else
                                     130 if isinstance(error, KeyboardInterrupt) else status['scenario_exit'] or 1)
                 finally:
-                    # Preserve guest diagnostics even when the scenario times out.
                     stage('retention')
                     status['artifact_retention'] = 'unverified'
-                    expected = json.loads(call(prefix + ['python3 -c ' + shlex.quote(MANIFEST_SCRIPT) + ' ' + shlex.quote(guest_output)]).stdout)
+                    manifest = prefix + [f'python3 -c {shlex.quote(MANIFEST_SCRIPT)} {shlex.quote(guest_output)}']
+                    expected = json.loads(call(manifest).stdout)
                     call(transfer[:2] + ["-r"] + transfer[2:] +
                          [f"{args.ssh_user}@127.0.0.1:{guest_output}/.", str(directory / "artifacts")], timeout=60)
                     actual = json.loads(call([sys.executable, '-c', MANIFEST_SCRIPT, str(directory / 'artifacts')]).stdout)
                     if actual != expected:
+                        mismatch = status['retention_mismatch'] = {
+                            'missing': len(expected.keys() - actual.keys()),
+                            'extra': len(actual.keys() - expected.keys()),
+                            'changed': sum(expected[path] != actual[path] for path in expected.keys() & actual.keys()),
+                            'guest_changed': None,
+                        }
+                        with contextlib.suppress(OSError, ValueError, subprocess.SubprocessError):
+                            mismatch['guest_changed'] = json.loads(call(manifest, timeout=10).stdout) != expected
                         raise RuntimeError('artifact transfer hash manifest mismatch; keeping cold job disk')
                     if scenario_completed:
                         status['artifact_retention'] = 'verified'
