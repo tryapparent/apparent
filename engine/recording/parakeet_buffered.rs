@@ -8,8 +8,8 @@ use std::sync::{
 use std::thread::JoinHandle;
 use std::time::Duration;
 use transcribe_cpp::{
-    CancelToken, Model, ParakeetBufferedStreamOptions, RunOptions, StreamExtension, StreamOptions,
-    ParakeetStreamOptions, TimestampKind,
+    CancelToken, Model, ParakeetStreamOptions, RunOptions, StreamExtension, StreamOptions,
+    TimestampKind,
 };
 
 use crate::capture::engine::runtime::audio::{
@@ -20,6 +20,34 @@ use crate::shared::model::{TranscriptData, TranscriptSegment, WordTiming};
 
 const START_SAMPLES: usize = 320_000;
 
+pub(crate) fn start_background(
+    samples: &Arc<Mutex<Samples>>,
+    trial: bool,
+    word_probe: bool,
+) -> (Option<Pause>, Option<Buffered>) {
+    super::warm_recognizer::clear_if_disabled();
+    let local = !trial && super::pause_transcribe::wanted();
+    let buffered = if local
+        && !word_probe
+        && super::speech::resident_final::selected_for_capture().is_some()
+    {
+        Buffered::start(Arc::clone(samples)).ok()
+    } else {
+        None
+    };
+    if trial || buffered.is_some() {
+        super::warm_recognizer::clear();
+    }
+    let pause = if super::speech::resident_final::allows_capture_pause(local, word_probe) {
+        Pause::start(Arc::clone(samples))
+            .inspect_err(|error| crate::capture::engine::runtime::apparent_log(format!("Pause transcription: {error:#}")))
+            .ok()
+    } else {
+        None
+    };
+    (pause, buffered)
+}
+
 pub struct Buffered {
     stop: Arc<AtomicBool>,
     cancel: CancelToken,
@@ -28,7 +56,7 @@ pub struct Buffered {
 }
 
 impl Buffered {
-    pub fn start(samples: Arc<Mutex<Samples>>) -> Result<Self> {
+    fn start(samples: Arc<Mutex<Samples>>) -> Result<Self> {
         let stop = Arc::new(AtomicBool::new(false));
         let worker_stop = Arc::clone(&stop);
         let cancel = CancelToken::new();
@@ -91,19 +119,8 @@ fn run(
         !stop.load(Ordering::Acquire) && !cancel.is_cancelled(),
         "Capture ended before buffered speech started"
     );
-    let installed = super::speech::installed_models().into_iter().next();
-    let resident = super::speech::resident_final::selected(installed.is_some());
-    let cached = resident.is_some();
-    let path = resident
-        .or_else(|| {
-            installed.filter(|path| {
-                path.file_name().is_some_and(|name| {
-                    name == super::speech::preferred_parakeet().filename
-                        || name == super::speech::PARAKEET.filename
-                })
-            })
-        })
-        .context("No ready buffered speech model")?;
+    let path = super::speech::resident_final::selected_for_capture()
+        .context("No ready resident speech model")?;
     super::speech::init_backends()?;
     let name = path
         .file_stem()
@@ -128,17 +145,9 @@ fn run(
             ..Default::default()
         },
         &StreamOptions {
-            family: Some(if cached {
-                StreamExtension::ParakeetStream(ParakeetStreamOptions {
-                    att_context_right: Some(13),
-                })
-            } else {
-                StreamExtension::ParakeetBuffered(ParakeetBufferedStreamOptions {
-                    left_ms: Some(5600),
-                    chunk_ms: Some(1040),
-                    right_ms: Some(1040),
-                })
-            }),
+            family: Some(StreamExtension::ParakeetStream(ParakeetStreamOptions {
+                att_context_right: Some(13),
+            })),
             ..Default::default()
         },
     )?;
@@ -179,16 +188,11 @@ fn run(
     stream.finalize()?;
     ensure!(!stream.was_aborted(), "Stream cancelled");
     let mut result = stream.snapshot();
-    if cached {
-        clamp_trailing_punctuation(&mut result.tokens, i64::try_from(sample_count / 16)?);
-    }
+    clamp_trailing_punctuation(&mut result.tokens, i64::try_from(sample_count / 16)?);
     drop(stream);
     ensure!(!session.was_truncated(), "Incomplete stream");
     let transcript = materialize(result, name, sample_count)?;
-    crate::capture::desktop::start_metric(
-        if cached { "local_cache_aware_finish_ms" } else { "local_stream_finish_success_ms" },
-        finish_started,
-    );
+    crate::capture::desktop::start_metric("local_cache_aware_finish_ms", finish_started);
     Ok(transcript)
 }
 
