@@ -132,7 +132,6 @@ impl ConfigProvider for FixtureConfig {
             .unwrap_or_default()
     }
     fn experiment(&self, name: &str) -> bool {
-        // Legacy tests explicitly enable these flags; mutable-provider regressions
         // below separately exercise fresh false reads.
         matches!(name, HOSTED_SYNC | HOSTED_SHARING)
             || (name == HOSTED_ENCRYPTION
@@ -1317,7 +1316,7 @@ pub fn hosted_sharing_management_uses_management_id_and_verifies_revoke() {
     let f = Fixture::new();
     let server = Server::new("");
     f.authorize(&server.url);
-    config::enable_experiment("hostedSharing");
+    config::enable_experiment(HOSTED_SHARING);
     f.client.share(&f.bundle()).unwrap();
     let shares = f.client.shares().unwrap();
     assert_eq!(shares["shares"][0]["id"], "c".repeat(32));
@@ -1339,7 +1338,7 @@ pub fn hosted_sharing_reserves_before_media_reuses_url_and_resumes_queue() {
     let f = Fixture::new();
     let server = Server::new("");
     f.authorize(&server.url);
-    config::enable_experiment("hostedSharing");
+    config::enable_experiment(HOSTED_SHARING);
     let bundle = f.bundle();
     let url = f.client.share(&bundle).unwrap();
     assert_eq!(url, format!("{}/s/{}", server.url, "b".repeat(64)));

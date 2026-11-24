@@ -1,0 +1,26 @@
+[
+  {
+    "id": "agents.agentDemoVideo",
+    "label": "Ask for video proof",
+    "kind": "boolean",
+    "default": true,
+    "apply": "next-handoff",
+    "legacy": { "path": "experiments.agentDemoVideo", "lenient": true }
+  },
+  {
+    "id": "agents.t3DestinationPicker",
+    "label": "Send recordings to T3 Code",
+    "kind": "boolean",
+    "default": false,
+    "apply": "next-recording",
+    "legacy": { "path": "experiments.t3DestinationPicker" }
+  },
+  {
+    "id": "labs.autoPasteDraft",
+    "label": "Auto paste",
+    "kind": "boolean",
+    "default": true,
+    "apply": "next-finish",
+    "legacy": { "path": "experiments.autoPasteDraft", "lenient": true }
+  }
+]

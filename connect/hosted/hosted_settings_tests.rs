@@ -32,6 +32,22 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn hosted_sharing_settings_read_canonical_before_legacy() {
+    let fixture = Fixture::new();
+    let path = fixture.path();
+    for (body, expected) in [
+        (r#"{"experiments":{"hostedSharing":true}}"#, Some(true)),
+        (r#"{"labs":{"hostedSharing":false},"experiments":{"hostedSharing":true}}"#, Some(false)),
+        (r#"{"labs":{"hostedSharing":"true"},"experiments":{"hostedSharing":true}}"#, Some(false)),
+        (r#"{"labs":{"hostedSharing":true},"experiments":{"hostedSharing":false}}"#, Some(true)),
+        ("invalid", None),
+    ] {
+        fs::write(&path, body).unwrap();
+        assert_eq!(sharing_preference_in(&path), expected);
+    }
+}
+
+#[test]
 fn hosted_settings_provider_preserves_unknown_nested_cloud_and_experiments() {
     let fixture = Fixture::new();
     let path = fixture.path();

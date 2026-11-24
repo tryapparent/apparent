@@ -45,7 +45,7 @@ try {
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-checked', String(on));
     const saved = JSON.parse(await fs.readFile(process.argv[2], 'utf8'));
-    assert.equal(saved.experiments.agentDemoVideo, on);
+    assert.equal(saved.agents.agentDemoVideo, on);
     assert.equal(saved.secret, 'private');
   }
   await page.reload();

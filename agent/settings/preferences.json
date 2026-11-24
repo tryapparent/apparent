@@ -1,0 +1,19 @@
+[
+  {
+    "id": "labs.agentContext",
+    "label": "Recording context for agents",
+    "kind": "boolean",
+    "default": false,
+    "apply": "next-capture",
+    "legacy": { "path": "experiments.agentContext", "lenient": true },
+    "effect": "agentContext"
+  },
+  {
+    "id": "labs.speakingStyle",
+    "label": "Match my speaking style",
+    "kind": "boolean",
+    "default": false,
+    "apply": "next-upload-admission",
+    "legacy": { "path": "experiments.speakingStyle", "lenient": true }
+  }
+]

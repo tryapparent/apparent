@@ -2,6 +2,7 @@ pub(crate) mod connect;
 mod agents;
 pub(crate) use agents::persist_t3_connection;
 mod labs;
+pub(crate) use labs::desktop_access;
 pub(crate) mod onboarding;
 pub(crate) mod onboarding_window;
 pub(crate) mod settings;
@@ -17,15 +18,21 @@ fn save_launch_at_login(
     on: bool,
     set: impl FnOnce(bool) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
-    let key = "launchAtLogin";
-    let previous = std::fs::read(path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-        .and_then(|config| config.get(key).cloned())
-        .unwrap_or(serde_json::Value::Null);
-    crate::shared::handoff::set_config_value_in(path, key, on.into())?;
+    use crate::shared::handoff::{edit_preference, preference_value, update_config_in};
+    let key = "general.launchAtLogin";
+    let wanted = serde_json::Value::Bool(on);
+    let mut previous = None;
+    update_config_in(path, |config| {
+        previous = preference_value(config, key);
+        edit_preference(config, key, Some(wanted.clone()))
+    })?;
     if let Err(error) = set(on) {
-        if let Err(rollback) = crate::shared::handoff::set_config_value_in(path, key, previous) {
+        if let Err(rollback) = update_config_in(path, |config| {
+            if preference_value(config, key).as_ref() == Some(&wanted) {
+                edit_preference(config, key, previous)?;
+            }
+            Ok(())
+        }) {
             crate::capture::engine::runtime::apparent_log(format!("Restoring {key} failed: {rollback:#}"));
         }
         return Err(error);
@@ -194,43 +201,13 @@ impl Drop for RecordingMeter {
 }
 
 fn save_recording(path: &std::path::Path, key: &str, value: &serde_json::Value, inputs: Option<&crate::capture::engine::runtime::audio::mic::Inputs>) -> anyhow::Result<Effect> {
-    use crate::capture::engine::runtime::audio::{mic, transcription::{speech_model, transcribe::Engine}};
-    use crate::shared::handoff::{set_config_value_in, update_config_in};
-    let string = value.as_str().unwrap_or_default();
-    let value = match key {
-        "microphone" => {
-            anyhow::ensure!(string == "default" || inputs.and_then(|inputs| inputs.find(string)).is_some(),
-                "Microphone disconnected");
-            mic::save_in(path, string, inputs.unwrap_or(&mic::Inputs::default()))?;
-            return Ok(Effect::None);
-        }
-        "transcriber" => Engine::parse(string).ok_or_else(|| anyhow::anyhow!("Invalid transcriber"))?.name().into(),
-        "hexModel" => {
-            let model = string.trim();
-            anyhow::ensure!(!model.is_empty(), "Missing Hex model");
-            update_config_in(path, |config| {
-                config["hexModel"] = model.into();
-                config["transcriber"] = "hex".into();
-                Ok(())
-            })?;
-            return Ok(Effect::None);
-        }
-        "hexLanguage" => crate::shared::hex::language_code(string)
-            .ok_or_else(|| anyhow::anyhow!("Invalid Hex language"))?.into(),
-        "appleLocale" => {
-            let locale = string.trim();
-            let value = if locale.is_empty() || locale.eq_ignore_ascii_case("auto") {
-                serde_json::Value::Null
-            } else {
-                speech_model::locale_id(locale).ok_or_else(|| anyhow::anyhow!("Invalid Apple Speech language"))?.into()
-            };
-            set_config_value_in(path, key, value)?;
-            return Ok(Effect::SpeechModel);
-        }
-        _ => value.clone(),
+    let value = if key == "microphone" {
+        serde_json::json!({"id": value})
+    } else {
+        value.clone()
     };
-    set_config_value_in(path, key, value)?;
-    Ok(Effect::None)
+    crate::recording_preferences::save(path, &format!("recording.{key}"), Some(&value), inputs)?;
+    Ok(if key == "appleLocale" { Effect::SpeechModel } else { Effect::None })
 }
 
 fn recording_state(view: View) -> serde_json::Value {
@@ -320,9 +297,9 @@ fn recording_preferences_use_one_durable_config_mutation_and_keep_unrelated_valu
     assert_eq!(save_recording(&path, "videoExport", &true.into(), None).unwrap(), Effect::None);
     let saved = read_json(&path);
     assert_eq!(saved["future"]["field"], 42);
-    assert_eq!(saved["hexModel"], "selected");
-    assert_eq!(saved["transcriber"], "hex");
-    assert_eq!(saved["videoExport"], true);
+    assert_eq!(saved["recording"]["hexModel"], "selected");
+    assert_eq!(saved["recording"]["transcriber"], "hex");
+    assert_eq!(saved["recording"]["videoExport"], true);
     assert!(saved.get("microphone").is_none());
 
     std::fs::write(&path, "invalid config").unwrap();

@@ -52,8 +52,9 @@ of the tour requires installed acceptance on macOS and Linux.
 
 ## Dictation app conflicts
 
-On macOS, **Settings → Labs → Dictation app conflicts** uses the existing
-default-off `experiments.onboardingWisprFlow` preference and config writer.
+On macOS, **Settings → Labs → Dictation app conflicts** saves the default-off
+`labs.onboardingWisprFlow` preference. Existing
+`experiments.onboardingWisprFlow` values remain readable.
 The next shortcut setup visit checks for running Wispr Flow and Superwhisper
 apps. The prompt names the apps it found and offers to keep them open or request
 a normal quit. With both running, the quit action asks both to exit. A refusal
@@ -83,7 +84,8 @@ The tip policy and native table are verified by
 
 ## Frog after dictation
 
-**Settings → Labs → Frog after dictation** is off by default. On macOS, the
+**Settings → Labs → Frog after dictation** saves `labs.dictationFrog`, off by default.
+Existing `experiments.dictationFrog` values remain readable. On macOS, the
 frog waves after the first, third, fifth, and subsequent odd-numbered input
 sessions in Wispr Flow and Superwhisper. Each app has its own cycle.
 Cancellations and microphone tests also count.

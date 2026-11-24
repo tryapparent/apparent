@@ -15,122 +15,7 @@ use crate::permission_facts::{Grants, Permission, Status};
 use crate::composition::settings_permissions::{self, PermissionIntent, Outcome, PermissionsPresenter};
 use crate::permission_admission::Repair;
 
-// MARK: Shortcuts in the config
-
-/// Apparent's two shortcuts.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Shortcuts {
-    pub record: ShortcutConfig,
-    pub paste: ShortcutConfig,
-}
-
-impl Default for Shortcuts {
-    fn default() -> Self {
-        Self {
-            record: ShortcutConfig::default_record(),
-            paste: ShortcutConfig::default_paste(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Stored {
-    key_code: u32,
-    modifiers: u32,
-    label: String,
-}
-
-impl Shortcuts {
-    pub fn get(&self, kind: ShortcutKind) -> &ShortcutConfig {
-        match kind {
-            ShortcutKind::Record => &self.record,
-            ShortcutKind::Paste => &self.paste,
-        }
-    }
-
-    fn set(&mut self, kind: ShortcutKind, cfg: ShortcutConfig) {
-        match kind {
-            ShortcutKind::Record => self.record = cfg,
-            ShortcutKind::Paste => self.paste = cfg,
-        }
-    }
-
-    /// From `~/.config/apparent/config.json`, moving a shortcut saved by 0.3.x (its own file
-    /// under Application Support) across the first time.
-    pub fn load() -> Self {
-        let path = crate::shared::handoff::default_config_path();
-        let legacy = legacy_path();
-        let (shortcuts, migrated) = Self::load_from(&path, &legacy);
-        if migrated && save_shortcut_in(&path, ShortcutKind::Record, &shortcuts.record).is_ok() {
-            let _ = std::fs::remove_file(&legacy);
-        }
-        if let Some(record) = desktop_record(&path) {
-            return Self {
-                record,
-                ..shortcuts
-            };
-        }
-        shortcuts
-    }
-
-    /// The shortcuts in `path`, else a custom record shortcut from the old file at `legacy`
-    /// (returning `true` when that one should be moved across).
-    pub fn load_from(path: &Path, legacy: &Path) -> (Self, bool) {
-        let config = read_json(path);
-        let mut shortcuts = Self::default();
-        if crate::shared::handoff::is_nightly() {
-            shortcuts.record = ShortcutConfig::unset();
-        }
-        let stored = config.get("shortcuts");
-        for kind in ShortcutKind::ALL {
-            let value = stored.and_then(|s| s.get(kind_key(kind)));
-            if kind.can_unset() && value.is_some_and(serde_json::Value::is_null) {
-                shortcuts.set(kind, ShortcutConfig::unset());
-            } else if let Some(cfg) = value
-                .and_then(|v| serde_json::from_value::<Stored>(v.clone()).ok())
-                .and_then(|s| from_stored(kind, s))
-            {
-                shortcuts.set(kind, cfg);
-            }
-        }
-        if stored.is_some() {
-            return (shortcuts, false);
-        }
-        let old = read_json(legacy);
-        let old = (
-            old.get("key_code").and_then(serde_json::Value::as_u64),
-            old.get("carbon_modifiers")
-                .and_then(serde_json::Value::as_u64),
-            old.get("label").and_then(serde_json::Value::as_str),
-        );
-        if let (Some(key_code), Some(modifiers), Some(label)) = old
-            && let Some(cfg) = from_stored(
-                ShortcutKind::Record,
-                Stored {
-                    key_code: key_code as u32,
-                    modifiers: modifiers as u32,
-                    label: label.to_owned(),
-                },
-            )
-            // 0.3.x saved its default too, and ⌃⌥⇧S was an older default.
-            && !cfg.is_default_for(ShortcutKind::Record)
-            && cfg.label != "⌃⌥⇧S"
-        {
-            shortcuts.record = cfg;
-            return (shortcuts, true);
-        }
-        (shortcuts, false)
-    }
-}
-
-fn legacy_path() -> PathBuf {
-    crate::shared::handoff::builtin_captures_dir()
-        .parent()
-        .map_or_else(|| PathBuf::from("."), Path::to_path_buf)
-        .join("config.json")
-}
-
+include!("../../../engine/native/input/shortcut_preferences/mod.rs");
 include!("shortcut/config.rs");
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -368,25 +253,6 @@ fn shortcut_view(
         recording,
         error: error.cloned(),
     }
-}
-
-fn desktop_record(path: &Path) -> Option<ShortcutConfig> {
-    #[cfg(target_os = "linux")]
-    {
-        let app_preferred = prefers_app_shortcut(&read_json(path));
-        crate::capture::engine::runtime::uses_desktop_record(app_preferred, true)
-            .then(crate::capture::desktop::linux::hyprland::external_record)
-            .flatten()
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = path;
-        None
-    }
-}
-
-pub(crate) fn external_record_owned(kind: ShortcutKind) -> bool {
-    kind == ShortcutKind::Record && desktop_record(&crate::shared::handoff::default_config_path()).is_some()
 }
 
 // MARK: The window's logic
@@ -691,11 +557,6 @@ impl Panel {
 
     fn set(&mut self, key: &str, value: &serde_json::Value, host: &mut dyn Host) -> Effect {
         let path = host.config_path();
-        let write = |key: &str, value: serde_json::Value| {
-            if let Err(error) = crate::shared::handoff::set_config_value_in(&path, key, value) {
-                crate::capture::engine::runtime::apparent_log(format!("Saving {key} failed: {error:#}"));
-            }
-        };
         match (key, value) {
             ("errorReporting", serde_json::Value::Bool(on)) => {
                 if let Err(error) = crate::capture::desktop::workflow::error_reporting::set_enabled_in(&path, *on) {
@@ -703,7 +564,7 @@ impl Panel {
                 }
             }
             ("agentDemoVideo", serde_json::Value::Bool(on)) => {
-                if let Err(error) = crate::shared::handoff::set_experiment_in(&path, "agentDemoVideo", *on) {
+                if let Err(error) = crate::shared::handoff::write_preference(&path, "agents.agentDemoVideo", Some((*on).into())) {
                     crate::capture::engine::runtime::apparent_log(format!("Saving {key} failed: {error:#}"));
                 }
             }
@@ -720,7 +581,7 @@ impl Panel {
             ("updateChannel", serde_json::Value::String(channel))
                 if !self.update_check.checking && matches!(channel.as_str(), "stable" | "main") =>
             {
-                match crate::shared::handoff::set_config_value_in(&path, key, value.clone()) {
+                match crate::shared::handoff::write_preference(&path, "about.updateChannel", Some(value.clone())) {
                     Ok(()) => self.update_check = UpdateCheck::default(),
                     Err(error) => crate::capture::engine::runtime::apparent_log(format!("Saving {key} failed: {error:#}")),
                 }
@@ -768,7 +629,7 @@ impl Panel {
         let login = login_item();
         View {
             version: env!("APPARENT_VERSION_LABEL").to_owned(),
-            hosted: crate::shared::handoff::experiment_enabled_in(&config, crate::connect::hosted::HOSTED_SHARING)
+            hosted: crate::shared::handoff::experiment_preference_in(&config, crate::connect::hosted::HOSTED_SHARING)
                 .then(|| crate::connect::hosted::account_view_in(&host.config_path())),
             login: LoginView {
                 on: matches!(login, LoginItem::On | LoginItem::NeedsApproval),
@@ -776,7 +637,7 @@ impl Panel {
                 needs_approval: login == LoginItem::NeedsApproval,
             },
             error_reporting: crate::capture::desktop::workflow::error_reporting::enabled_in(&host.config_path()),
-            agent_demo_video: crate::shared::handoff::experiment_enabled_in(&config, "agentDemoVideo"),
+            agent_demo_video: crate::shared::handoff::experiment_preference_in(&config, "agents.agentDemoVideo"),
             shortcuts: ShortcutKind::ALL
                 .into_iter()
                 .map(|kind| {

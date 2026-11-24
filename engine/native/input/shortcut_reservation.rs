@@ -1,5 +1,5 @@
 #[cfg(target_os = "macos")]
-fn native_shortcut_reserved(key: u32, modifiers: u32) -> bool {
+pub(super) fn native_shortcut_reserved(key: u32, modifiers: u32) -> bool {
     use std::{process::Command, time::Duration};
 
     if matches!(
