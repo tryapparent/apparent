@@ -310,12 +310,22 @@ fn payloads(report: &Report) -> (Value, Value) {
         "startTimeUnixNano":report.finalizer.start.to_string(),
         "endTimeUnixNano":report.finalizer.end.to_string()
     }));
-    for (index, stage) in report.startup.iter().enumerate() {
+    if let Some(end) = report.startup.iter().map(|stage| stage.end).max() {
+        let timeline = "0000000000000002";
+        spans[0]["parentSpanId"] = json!(timeline);
         spans.push(json!({
-            "traceId":report.trace_ids[0],"spanId":format!("{:016x}", index + 2),
-            "parentSpanId":"0000000000000001","name":stage.name,"kind":1,
-            "startTimeUnixNano":stage.start.to_string(),"endTimeUnixNano":stage.end.to_string()
+            "traceId":report.trace_ids[0],"spanId":timeline,
+            "name":"recording.start.timeline","kind":1,
+            "startTimeUnixNano":report.start.start.to_string(),
+            "endTimeUnixNano":end.max(report.start.end).to_string()
         }));
+        for (index, stage) in report.startup.iter().enumerate() {
+            spans.push(json!({
+                "traceId":report.trace_ids[0],"spanId":format!("{:016x}", index + 3),
+                "parentSpanId":timeline,"name":stage.name,"kind":1,
+                "startTimeUnixNano":stage.start.to_string(),"endTimeUnixNano":stage.end.to_string()
+            }));
+        }
     }
     (
         json!({"resourceMetrics":[{"resource":resource,"scopeMetrics":[{"scope":scope,"metrics":metrics}]}]}),
@@ -376,9 +386,9 @@ mod tests {
             recording_ms: 89000,
             saved: false,
             startup: vec![Timing {
-                name: "recording.start.portal_start",
-                start: 1_050_000_000,
-                end: 1_250_000_000,
+                name: "recording.start.pill_acknowledge",
+                start: 1_250_000_000,
+                end: 1_600_000_000,
             }],
         };
         let (metrics, traces) = payloads(&report);
@@ -402,8 +412,11 @@ mod tests {
         assert_eq!(spans[1]["spanId"], spans[2]["parentSpanId"]);
         assert_eq!(spans[1]["status"]["code"], 2);
         assert_eq!(spans[3]["traceId"], spans[0]["traceId"]);
-        assert_eq!(spans[3]["parentSpanId"], spans[0]["spanId"]);
-        assert_eq!(spans[3]["name"], "recording.start.portal_start");
+        assert_eq!(spans[3]["name"], "recording.start.timeline");
+        assert_eq!(spans[0]["parentSpanId"], spans[3]["spanId"]);
+        assert_eq!(spans[4]["parentSpanId"], spans[3]["spanId"]);
+        assert_eq!(spans[4]["name"], "recording.start.pill_acknowledge");
+        assert_eq!(spans[3]["endTimeUnixNano"], "1600000000");
         assert!(!metrics.to_string().contains("private-generation"));
         assert!(!traces.to_string().contains("private-generation"));
     }
