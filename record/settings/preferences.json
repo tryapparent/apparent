@@ -1,0 +1,182 @@
+[
+  {
+    "id": "permissions.skipScreenSelection",
+    "label": "Skip screen selection",
+    "kind": "boolean",
+    "default": true,
+    "apply": "next-capture",
+    "platforms": ["macos", "wayland"],
+    "legacy": { "path": "experiments.chooseScreenEachTime", "invert": true }
+  },
+  {
+    "id": "labs.localStreamingTranscription",
+    "label": "Live local transcription",
+    "kind": "boolean",
+    "default": false,
+    "apply": "next-capture",
+    "legacy": {
+      "path": "experiments.localStreamingTranscription",
+      "lenient": true
+    }
+  },
+  {
+    "id": "labs.pillDoodles",
+    "label": "Recording pill doodles",
+    "kind": "boolean",
+    "default": false,
+    "apply": "next-capture",
+    "legacy": { "path": "experiments.pillDoodles", "lenient": true }
+  },
+  {
+    "id": "labs.softBloom",
+    "label": "Soft Bloom",
+    "kind": "boolean",
+    "default": false,
+    "apply": "next-capture",
+    "legacy": { "path": "experiments.softBloom", "lenient": true }
+  },
+  {
+    "id": "labs.pushToTalk",
+    "label": "Push to talk",
+    "kind": "boolean",
+    "default": false,
+    "apply": "next-shortcut",
+    "platforms": ["linux"],
+    "effect": "pushToTalk",
+    "legacy": { "path": "experiments.pushToTalk", "lenient": true }
+  },
+  {
+    "id": "labs.recordingPerformance",
+    "label": "Share performance metrics",
+    "kind": "boolean",
+    "default": false,
+    "apply": "next-capture",
+    "effect": "recordingPerformance",
+    "legacy": { "path": "experiments.recordingPerformance" }
+  },
+  {
+    "id": "recording.microphoneEnabled",
+    "label": "Microphone for next capture",
+    "kind": "boolean",
+    "default": true,
+    "apply": "next-capture",
+    "legacy": { "path": "microphoneEnabled" }
+  },
+  {
+    "id": "recording.microphone",
+    "label": "Microphone",
+    "kind": "object",
+    "default": null,
+    "apply": "next-capture",
+    "effect": "recording",
+    "legacy": { "path": "microphone" }
+  },
+  {
+    "id": "recording.transcriber",
+    "label": "Transcription engine",
+    "kind": "string",
+    "default": "apple",
+    "apply": "next-capture",
+    "effect": "recording",
+    "legacy": { "path": "transcriber" }
+  },
+  {
+    "id": "recording.hexModel",
+    "label": "Hex model",
+    "kind": "string",
+    "default": null,
+    "apply": "next-capture",
+    "effect": "recording",
+    "legacy": { "path": "hexModel" }
+  },
+  {
+    "id": "recording.hexLanguage",
+    "label": "Hex language",
+    "kind": "string",
+    "default": "en",
+    "apply": "next-capture",
+    "platforms": ["macos"],
+    "effect": "recording",
+    "legacy": { "path": "hexLanguage" }
+  },
+  {
+    "id": "recording.appleLocale",
+    "label": "Apple Speech language",
+    "kind": "string",
+    "default": null,
+    "apply": "next-capture",
+    "platforms": ["macos"],
+    "effect": "recording",
+    "legacy": { "path": "appleLocale" }
+  },
+  {
+    "id": "recording.lowerPlayback",
+    "label": "Lower other-app volume",
+    "kind": "boolean",
+    "default": false,
+    "apply": "next-capture",
+    "legacy": { "path": "lowerPlayback" }
+  },
+  {
+    "id": "recording.playbackLevel",
+    "label": "Lowered playback level",
+    "kind": "integer",
+    "default": 20,
+    "min": 0,
+    "max": 100,
+    "apply": "next-capture",
+    "legacy": { "path": "playbackLevel" }
+  },
+  {
+    "id": "recording.videoExport",
+    "label": "Video export",
+    "kind": "boolean",
+    "default": true,
+    "apply": "menu-refresh",
+    "legacy": { "path": "videoExport" }
+  },
+  {
+    "id": "storage.mediaDays",
+    "label": "Keep recording media",
+    "kind": "integer",
+    "default": 7,
+    "min": 0,
+    "max": 4294967295,
+    "nullable": true,
+    "apply": "cleanup-pass",
+    "effect": "retention",
+    "legacy": { "path": "retention.mediaDays" }
+  },
+  {
+    "id": "storage.capturesDir",
+    "label": "Recordings folder",
+    "kind": "string",
+    "default": null,
+    "apply": "next-capture",
+    "effect": "captureLocation",
+    "legacy": { "path": "capturesDir" }
+  },
+  {
+    "id": "storage.bundleDays",
+    "label": "Keep recording bundles",
+    "kind": "integer",
+    "default": 30,
+    "min": 0,
+    "max": 4294967295,
+    "nullable": true,
+    "apply": "cleanup-pass",
+    "effect": "retention",
+    "legacy": { "path": "retention.bundleDays" }
+  },
+  {
+    "id": "storage.maximumMb",
+    "label": "Recording storage limit",
+    "kind": "integer",
+    "default": 1000,
+    "min": 0,
+    "max": 99999999,
+    "apply": "cleanup-pass",
+    "effect": "retention",
+    "legacy": { "path": "retention.maximumMb" }
+  }
+]

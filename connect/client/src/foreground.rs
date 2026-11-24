@@ -212,7 +212,7 @@ impl Client {
             files: Vec::new(),
             shared: share,
             public_copy,
-            speaking_style: !public_copy && self.provider.experiment("speakingStyle"),
+            speaking_style: !public_copy && self.provider.experiment(SPEAKING_STYLE),
             encrypted: !public_copy && self.provider.experiment(HOSTED_ENCRYPTION),
             encryption: None,
             encryption_version: 2,

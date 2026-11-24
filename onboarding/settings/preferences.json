@@ -1,0 +1,29 @@
+[
+  {
+    "id": "labs.onboardingWisprFlow",
+    "label": "Dictation app conflicts",
+    "kind": "boolean",
+    "default": false,
+    "apply": "next-shortcut-setup",
+    "platforms": ["macos"],
+    "legacy": { "path": "experiments.onboardingWisprFlow" }
+  },
+  {
+    "id": "labs.dictationFrog",
+    "label": "Frog after dictation",
+    "kind": "boolean",
+    "default": false,
+    "apply": "live",
+    "platforms": ["macos"],
+    "legacy": { "path": "experiments.dictationFrog" }
+  },
+  {
+    "id": "labs.desktopFrog",
+    "label": "Desktop frog",
+    "kind": "boolean",
+    "default": false,
+    "apply": "live",
+    "platforms": ["macos"],
+    "legacy": { "path": "experiments.desktopFrog", "lenient": true }
+  }
+]

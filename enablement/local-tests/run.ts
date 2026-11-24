@@ -100,19 +100,18 @@ export function agentMediaCommands(): Command[] {
 }
 
 export function commands(selected: Owner[], base: string, head: string, platform = process.platform, rustChanged = true,
-  installScope: {paths: string[] | null; workflowControls?: string[]; local?: boolean} = {paths: null}): Command[] {
-  const result: Command[] = [];
+  scope: {paths: string[] | null; workflowControls?: string[]; local?: boolean} = {paths: null}): Command[] {
+  const result: Command[] = scope.local ? workflowContracts(scope.paths, base, scope.workflowControls) : [];
   const add = (argv: string[], cwd = '.') => result.push({ argv, cwd });
-  if (installScope.local) result.push(...workflowContracts(installScope.paths));
   if (rustChanged && selected.some(owner => ['capture', 'engine', 'client'].includes(owner)))
     add(['python3', 'enablement/verification.py', '--base', base, '--preflight']);
-  if (selected.includes('tooling') || installScope.paths === null)
+  if (selected.includes('tooling') || scope.paths === null)
     add(['python3', 'enablement/verification.py', '--base', base, '--head', head, '--pr']);
-  if (installScope.local)
-    for (const owner of affectedBendOwners(root, installScope.paths))
+  if (scope.local)
+    for (const owner of affectedBendOwners(root, scope.paths))
       add(['node', bendDirectory(owner) + '/check.ts']);
   if (selected.includes('tooling')) result.push(...toolingCommands());
-  else if (selected.includes('desktop')) result.push(...installationContracts(installScope.paths, installScope.workflowControls));
+  else if (selected.includes('desktop')) result.push(...installationContracts(scope.paths, scope.workflowControls));
   if (selected.includes('onboarding')) result.push(...onboardingCommands());
   if (selected.includes('capture')) {
     add(['node', '--experimental-strip-types', 'record/enablement/ci/media.ts']);
@@ -132,7 +131,7 @@ export function commands(selected: Owner[], base: string, head: string, platform
     const cwd = 'capture/desktop/ui/frontend';
     add(['npm', 'ci', '--no-audit', '--no-fund'], cwd);
     add(['npm', 'test'], cwd);
-    if (!installScope.local || installScope.paths === null || installScope.paths.some(path => /\.(?:rs|cjs)$/.test(path) || path.includes('/electron/') || path.includes('/tests/')))
+    if (!scope.local || scope.paths === null || scope.paths.some(path => /\.(?:rs|cjs)$/.test(path) || path.includes('/electron/') || path.includes('/tests/')))
       add([...(platform === 'linux' ? ['xvfb-run', '-a'] : []), 'npm', 'run', 'test:electron'], cwd);
   }
   if (rustChanged && (selected.includes('capture') || selected.includes('engine'))) {

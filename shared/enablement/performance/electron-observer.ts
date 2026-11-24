@@ -84,7 +84,15 @@ export async function connectTo(output: string, surface: Surface, url: RegExp) {
       if (target) return target;
     }
   }, surface + " renderer");
-  const socket = new WebSocket(target.webSocketDebuggerUrl);
+  return connectToEndpoint(target.webSocketDebuggerUrl, surface);
+}
+
+export async function connectToEndpoint(endpoint: string, surface: Surface) {
+  assert.match(
+    endpoint,
+    /^ws:\/\/127\.0\.0\.1:\d{1,5}\/devtools\/page\/[a-zA-Z0-9-]+$/,
+  );
+  const socket = new WebSocket(endpoint);
   await new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(
       () => reject(Error("Local CDP did not open")),

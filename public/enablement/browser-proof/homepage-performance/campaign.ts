@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import {
@@ -13,6 +13,16 @@ import {
   type Limit,
   type Matched,
 } from "../../../../shared/enablement/performance/comparison.ts";
+import {
+  browserContract,
+  loadHostedEvidence,
+  verifyDemoProof,
+  type Effort,
+  type HostedLedger,
+  type Ledger,
+  type Receipt,
+  type Result,
+} from "./campaign-evidence.ts";
 
 const root = fileURLToPath(new URL("../../../../", import.meta.url));
 const scoringDirectory = "enablement/timing/journey";
@@ -38,50 +48,29 @@ type Policy = {
   ): boolean;
 };
 
-type Result = {
-  navigation: "cold" | "warm";
-  detailed: boolean;
-  verified: true;
-  eligible: boolean;
-  verifiedMs: number;
-  cpuPressurePercent: number;
-  chromiumCpuMs: number;
-  sampledChromiumPssKiB: number;
-  pageTiming: {
-    document: { transferBytes: number };
-    resources: { name: string; transferBytes: number }[];
-  };
-};
-type Receipt = {
-  compatible: { detailed: boolean };
-  mode: "quiet" | "trace" | "calibrate";
-  runId: string;
-  qualified: boolean;
-  revision: string;
-  packageSha256: string;
-  packageBytes: number;
-  receipts: Result[];
-};
-type Effort = { start: string; end: string };
-type Experiment = {
-  hypothesis: string;
-  effort: Effort[];
-  runs: Matched<string>;
-  qualityEvidence: string;
-};
-type Ledger = {
-  controls: [] | [string, string];
-  experiments: Experiment[];
-  unscoredEffort: Effort[];
-  diagnostics?: { evidence: string; reason: string }[];
-};
-
-const path = process.argv[2];
-if (!path || process.argv.length !== 3)
-  throw new Error("Supply the focused campaign ledger JSON");
+const [path, mode, ...extra] = process.argv.slice(2);
+const comparisonOnly = mode === "--compare-only";
+assert(
+  path && !extra.length && (!mode || comparisonOnly),
+  "Supply the campaign ledger and optional --compare-only",
+);
+const ledgerPath = resolve(path);
 const read = async <T>(path: string) =>
-  JSON.parse(await readFile(path, "utf8")) as T;
-const ledger = await read<Ledger>(path);
+  JSON.parse(await readFile(resolve(dirname(ledgerPath), path), "utf8")) as T;
+const input = await read<Ledger | HostedLedger>(ledgerPath);
+const hosted = "calibration" in input;
+assert(!hosted || !comparisonOnly, "Hosted evidence belongs to a campaign");
+const { ledger, calibration, hostedExperiments } = hosted
+  ? await loadHostedEvidence(input, dirname(ledgerPath))
+  : { ledger: input, calibration: null, hostedExperiments: [] };
+if (comparisonOnly)
+  assert(
+    ledger.controls.length === 2 &&
+      ledger.experiments.length <= 1 &&
+      !ledger.unscoredEffort.length &&
+      ledger.experiments.every((row) => !row.effort.length),
+    "A comparison-only ledger has two controls, at most one bracket, and no effort intervals",
+  );
 const windows = contract.hillClimb as {
   windowSeconds: number;
   earlyWindows: number;
@@ -160,7 +149,7 @@ const readRun = async (path: string) => {
   assert(
     row.qualified &&
       !row.compatible.detailed &&
-      (row.mode === "quiet" || row.mode === "calibrate"),
+      (row.mode === "quiet" || (!hosted && row.mode === "calibrate")),
     "Only verified uncontended quiet waits enter the frontier",
   );
   assert(!seen.has(row.runId), "Repeated receipt");
@@ -171,6 +160,19 @@ const [first, second] = await Promise.all(ledger.controls.map(readRun));
 assert.equal(first.revision, second.revision);
 assert.equal(first.packageSha256, second.packageSha256);
 assert.deepEqual(first.compatible, second.compatible);
+if (calibration) {
+  assert.equal(first.revision, calibration.gateway.control);
+  assert.equal(first.compatible.runner.affinity, calibration.platform.affinity);
+  assert.equal(first.compatible.runner.node, calibration.platform.node);
+}
+
+const probeOverheadMs = calibration
+  ? await verifyDemoProof(
+      join(dirname(calibration.controls[0]), "../control-overhead"),
+      first,
+      "calibrate",
+    )
+  : null;
 
 const median = (values: number[]) => {
   assert(
@@ -201,8 +203,11 @@ const metric = (
       )
       .map(get),
   );
-const wait = (row: Receipt) =>
-  metric(row, "cold", (result) => result.verifiedMs);
+function wait(row: Receipt) {
+  const ms = metric(row, "cold", (result) => result.verifiedMs);
+  assert(ms > 0, "Waits must be positive");
+  return ms;
+}
 const warm = (row: Receipt) =>
   metric(row, "warm", (result) => result.verifiedMs);
 const cpu = (row: Receipt) =>
@@ -227,13 +232,16 @@ const guardMetrics = {
   loopbackKiB: wire,
   packageKiB: disk,
 };
-const guardAllowances = Object.fromEntries(
-  Object.entries(guardMetrics).map(([name, get]) => {
-    const x = get(first);
-    const y = get(second);
-    return [name, Math.max(Math.abs(x - y), (x + y) * 0.05)];
-  }),
-);
+function allowances(first: Receipt, second: Receipt) {
+  return Object.fromEntries(
+    Object.entries(guardMetrics).map(([name, get]) => {
+      const x = get(first);
+      const y = get(second);
+      return [name, Math.max(Math.abs(x - y), (x + y) * 0.05)];
+    }),
+  );
+}
+const guardAllowances = allowances(first, second);
 const controlMs = (wait(first) + wait(second)) / 2;
 
 const result = await bendScratch(async (directory) => {
@@ -248,8 +256,10 @@ const result = await bendScratch(async (directory) => {
   const { default: policy } = loadCompiled("./journey-scoring.mjs") as {
     default: Policy;
   };
-  const speed = (ms: number) =>
-    policy.speed_index(Math.max(1, Math.round((10000 * ms) / controlMs)));
+  const scoreFor = (ms: number) => (100 * ms) / controlMs;
+  const speedOf = (score: number) =>
+    policy.speed_index(Math.max(1, Math.round(100 * score)));
+  const speed = (ms: number) => speedOf(scoreFor(ms));
   const repeatVariation = Math.abs(speed(wait(first)) - speed(wait(second)));
   const initialSpeed = speed(controlMs);
   let incumbent = {
@@ -262,13 +272,15 @@ const result = await bendScratch(async (directory) => {
   const sinceGain = new Set<string>();
   const experiments = [];
   let lastEnd = 0;
-  for (const experiment of ledger.experiments) {
-    const end = Math.max(...experiment.effort.map((row) => interval(row).end));
+  for (const [index, experiment] of ledger.experiments.entries()) {
+    const end = comparisonOnly
+      ? 0
+      : Math.max(...experiment.effort.map((row) => interval(row).end));
     assert(
       experiment.hypothesis.trim() &&
         experiment.qualityEvidence.trim() &&
         experiment.effort.every((row) => interval(row).start >= lastEnd) &&
-        end > lastEnd,
+        (comparisonOnly || end > lastEnd),
     );
     lastEnd = end;
     const activeSeconds = elapsedThrough(end);
@@ -276,7 +288,57 @@ const result = await bendScratch(async (directory) => {
       experiment.runs.map(readRun),
     )) as Matched<Receipt>;
     const [a, b, repeatB, repeatA] = runs;
-    for (const run of runs) assert.deepEqual(run.compatible, first.compatible);
+    const job = hostedExperiments[index];
+    let matchedAllowances = guardAllowances;
+    let noise = repeatVariation;
+    if (job) {
+      const [jobFirst, jobSecond] = await Promise.all(
+        job.controls.map(readRun),
+      );
+      assert.equal(job.gateway.control, incumbent.revision);
+      assert.equal(job.gateway.candidate, b.revision);
+      assert.equal(a.compatible.runner.affinity, job.platform.affinity);
+      assert.deepEqual(
+        browserContract(a.compatible),
+        browserContract(first.compatible),
+        "Hosted browser, scenario and probe must match the frozen control",
+      );
+      for (const row of [jobFirst, jobSecond]) {
+        assert.equal(row.revision, a.revision);
+        assert.equal(row.packageSha256, a.packageSha256);
+        assert.deepEqual(row.compatible, a.compatible);
+      }
+      await Promise.all([
+        verifyDemoProof(
+          join(dirname(job.controls[0]), "../control-overhead"),
+          a,
+          "calibrate",
+        ),
+        verifyDemoProof(
+          dirname(experiment.qualityEvidence),
+          b,
+          "trace",
+          false,
+          experiment.qualityEvidence,
+        ),
+        verifyDemoProof(
+          join(dirname(experiment.qualityEvidence), "../candidate-small-dark"),
+          b,
+          "trace",
+          true,
+        ),
+      ]);
+      matchedAllowances = allowances(jobFirst, jobSecond);
+      const mean = (wait(jobFirst) + wait(jobSecond)) / 2;
+      const jobSpeed = (row: Receipt) =>
+        speedOf((incumbent.score * wait(row)) / mean);
+      noise = Math.max(
+        noise,
+        Math.abs(jobSpeed(jobFirst) - jobSpeed(jobSecond)),
+      );
+    }
+    for (const run of runs)
+      assert.deepEqual(run.compatible, job ? a.compatible : first.compatible);
     for (const run of [a, repeatA]) {
       assert.equal(incumbent.revision, run.revision);
       assert.equal(incumbent.packageSha256, run.packageSha256);
@@ -295,7 +357,7 @@ const result = await bendScratch(async (directory) => {
         limit: [
           get(candidate),
           get(i ? repeatA : a),
-          guardAllowances[name],
+          matchedAllowances[name],
         ] as Limit,
       })),
     );
@@ -303,8 +365,13 @@ const result = await bendScratch(async (directory) => {
       [runs.map(wait) as Matched<number>],
       guards.map((row) => row.limit),
     );
-    const candidateMs = (wait(b) + wait(repeatB)) / 2;
-    const candidateSpeed = speed(candidateMs);
+    const timing = comparison.timings[0];
+    const relativeScore = (candidate: number, reference: number) =>
+      (incumbent.score * candidate) / reference;
+    const score = job
+      ? relativeScore(timing.candidateMeanMs, timing.controlMeanMs)
+      : scoreFor(timing.candidateMeanMs);
+    const candidateSpeed = speedOf(score);
     sinceGain.add(experiment.hypothesis.trim().toLowerCase());
     const guardResult = guards.map((guard, i) => ({
       ...guard,
@@ -312,18 +379,25 @@ const result = await bendScratch(async (directory) => {
     }));
     const accepted =
       comparison.permitted.every(Boolean) &&
-      policy.material_gain(incumbent.speed, candidateSpeed, repeatVariation) &&
+      policy.material_gain(incumbent.speed, candidateSpeed, noise) &&
       [
         [a, b],
         [repeatA, repeatB],
-      ].every(([reference, candidate]) =>
-        policy.material_gain(
-          Math.max(incumbent.speed, speed(wait(reference))),
-          speed(wait(candidate)),
-          repeatVariation,
-        ),
-      );
-    const score = (100 * candidateMs) / controlMs;
+      ].every(([reference, candidate]) => {
+        const referenceMs = wait(reference);
+        const candidateMs = wait(candidate);
+        return job
+          ? policy.material_gain(
+              incumbent.speed,
+              speedOf(relativeScore(candidateMs, referenceMs)),
+              noise,
+            )
+          : policy.material_gain(
+              Math.max(incumbent.speed, speed(referenceMs)),
+              speed(candidateMs),
+              noise,
+            );
+      });
     if (accepted) {
       incumbent = {
         revision: b.revision,
@@ -337,7 +411,15 @@ const result = await bendScratch(async (directory) => {
     experiments.push({
       ...experiment,
       activeSeconds,
-      ...comparison.timings[0],
+      ...timing,
+      ...(job && {
+        hostedRun: job.gateway.run,
+        hostedAttempt: job.gateway.attempt,
+        controlRevision: a.revision,
+        candidateRevision: b.revision,
+        matchedScore: timing.score,
+        repeatVariationSpeed: noise / 100000,
+      }),
       score,
       candidateSpeed: candidateSpeed / 100000,
       guardResult,
@@ -367,6 +449,13 @@ const result = await bendScratch(async (directory) => {
     diagnostics,
     controlMs,
     baselineQuietMs: [wait(first), wait(second)],
+    ...(calibration && {
+      hostedCalibration: {
+        run: calibration.gateway.run,
+        attempt: calibration.gateway.attempt,
+        probeOverheadMs,
+      },
+    }),
     controlScore: 100,
     repeatVariationSpeed: repeatVariation / 100000,
     guardAllowances,
@@ -390,6 +479,7 @@ const result = await bendScratch(async (directory) => {
         : null,
     latestCompleteRates: gainPerWindow.slice(-2).map((gain) => gain / 100000),
     distinctHypothesesSinceGain: sinceGain.size,
+    comparisonOnly,
     stop: policy.should_stop(
       true,
       enoughWindows,

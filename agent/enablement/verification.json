@@ -18,7 +18,28 @@
         "Verified timed narration, decodable PNG evidence, immutable bundle bytes and a monotonic trace per diagnostic attempt."
       ],
       "limits": [
-        "The default local path uses no VM or external services. Packaged extraction, native capture, macOS and remote sources have separate checks."
+        "Only the shared manual GitHub-hosted Ubuntu 24.04 workflow qualifies campaign scores. Local replay is diagnostic. Packaged extraction, native capture, macOS and remote sources have separate checks."
+      ]
+    },
+    {
+      "id": "hosted-inspect-calibration",
+      "description": "Calibrate Agent local inspection on a standard GitHub-hosted runner.",
+      "platforms": ["linux"],
+      "userEntryPoint": "Dispatch the shared performance workflow for Agent with equal reviewed control and candidate SHAs.",
+      "prerequisites": [
+        "Standard ubuntu-24.04 runner and the shared manual performance workflow on main.",
+        "Full detached checkouts, Node 22.23.0 and the owner adapter's Ubuntu and native tool prerequisites."
+      ],
+      "runner": {
+        "path": "agent/enablement/performance/hosted.ts",
+        "instructions": "agent/enablement/README.md#hosted-campaign-runs"
+      },
+      "expectedEvidence": [
+        "CPU quota and topology receipt, rejected injected load, and quiet same-build A/A/A/A score of 100 with raw repeat variation.",
+        "The receipt preserves verified synthetic output, CPU, RSS, storage and native trace waterfalls. Distinct revisions additionally produce matched A/B/B/A waits."
+      ],
+      "limits": [
+        "Counters describe guest-visible CPUs and their visible siblings. The lane covers explicit local inspect rather than packaged extraction or remote providers."
       ]
     }
   ]

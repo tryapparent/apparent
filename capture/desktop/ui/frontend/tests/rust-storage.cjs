@@ -49,7 +49,7 @@ async function main() {
   assert.equal(saved.storage.savedPath, selected);
   const raw = JSON.parse(await fs.readFile(config, 'utf8'));
   assert.equal(raw.privateFixture, 'keep');
-  assert.equal(raw.capturesDir, selected);
+  assert.equal(raw.storage.capturesDir, selected);
   assert.deepEqual(raw.experiments, { electronCaptureLocation: false, other: true });
   assert.deepEqual(await storageLocation(home, 'reset', { expected: first.revision }), { status: 'error', code: 'conflict' });
   const policy = await storagePreference(home, 'retention');
@@ -83,13 +83,13 @@ async function main() {
     socket.on('end', () => { clearTimeout(timer); resolve(JSON.parse(body)); });
   });
   assert.deepEqual(expired, { error: 'admission_expired' });
-  assert.equal(JSON.parse(await fs.readFile(config, 'utf8')).capturesDir, selected);
+  assert.equal(JSON.parse(await fs.readFile(config, 'utf8')).storage.capturesDir, selected);
   const resetFacts = await storageLocation(home, 'reset', { expected: saved.revision });
   const resetCandidate = locationCandidate(resetFacts.location);
   const reset = { status: 'connected', revision: resetCandidate.revision, storage: resetCandidate.snapshot };
   assert.equal(reset.status, 'connected');
   assert.equal(reset.storage.savedPath, null);
-  assert.equal(Object.hasOwn(JSON.parse(await fs.readFile(config, 'utf8')), 'capturesDir'), false);
+  assert.equal(JSON.parse(await fs.readFile(config, 'utf8')).storage?.capturesDir, undefined);
   await fs.writeFile(config, 'malformed');
   assert.deepEqual(await errorReporting(home), { status: 'error', code: 'config_read_failed' });
   assert.deepEqual(await storageLocation(home, 'facts'), { status: 'error', code: 'config_read_failed' });

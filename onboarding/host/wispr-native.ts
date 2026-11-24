@@ -6,7 +6,19 @@ import {
   type DictationApp,
   type WisprResult,
 } from "./dictation.ts";
-import { wisprExperiment, type WisprProvider } from "./wispr.ts";
+import table from "../settings/dictation-preference.json" with { type: "json" };
+import preferences from "../settings/preferences.json" with { type: "json" };
+import type { WisprProvider } from "./wispr.ts";
+
+const wispr = preferences.find(({ id }) => id === "labs.onboardingWisprFlow");
+if (!wispr) throw Error("Missing dictation conflicts preference");
+const {
+  id,
+  legacy: { path: oldPath },
+  default: fallback,
+} = wispr;
+const [pane, field] = id.split(".");
+const [oldGroup, oldField] = oldPath.split(".");
 
 const bundleIds: Record<DictationApp, string> = {
   wisprFlow: "com.electron.wispr-flow",
@@ -88,7 +100,28 @@ export async function savedWisprExperiment(home: string): Promise<boolean> {
         "utf8",
       ),
     );
-    return config?.experiments?.[wisprExperiment] === true;
+    const group = config?.[pane];
+    if (
+      group !== undefined &&
+      (!group || typeof group !== "object" || Array.isArray(group))
+    )
+      return false;
+    const canonical = group?.[field];
+    const legacy = config?.[oldGroup]?.[oldField];
+    const expected = config?.settingsCompatibility?.[id];
+    const previousBuildEdited =
+      typeof expected === "boolean" &&
+      expected === canonical &&
+      legacy !== expected;
+    const state =
+      canonical === undefined || previousBuildEdited
+        ? 0
+        : canonical === true
+          ? 2
+          : 1;
+    return table[state][
+      Number(typeof legacy === "boolean" ? legacy : fallback)
+    ];
   } catch {
     return false;
   }

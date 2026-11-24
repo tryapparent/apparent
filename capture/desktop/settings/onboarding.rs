@@ -17,8 +17,8 @@
 //! tour comes back on the same screen. Input Monitoring is never asked for: clicks come from an
 //! AppKit mouse monitor that needs no permission, keys from an Accessibility event tap.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::{collections::{BTreeMap, BTreeSet}, path::Path};
+use crate::shared::handoff;
 
 use serde::{Deserialize, Serialize};
 
@@ -805,7 +805,7 @@ impl Progress {
         }
     }
     pub fn load() -> Self {
-        Self::load_from(&crate::shared::handoff::default_config_path())
+        Self::load_from(&handoff::default_config_path())
     }
 
     pub fn load_from(path: &Path) -> Self {
@@ -818,7 +818,7 @@ impl Progress {
     }
 
     pub fn save(&self) {
-        let _ = self.save_to(&crate::shared::handoff::default_config_path());
+        let _ = self.save_to(&handoff::default_config_path());
     }
 
     /// Replace only this schema's leaves through the shared durable writer.
@@ -827,7 +827,7 @@ impl Progress {
         const KEYS: [&str; 13] = ["tourRevision", "seen", "deferred", "resume", "granted", "relaunchedAt",
             "reopenFix", "tutorial", "shortcutChosen", "shortcutTestedFor", "firstCaptureCompleted", "frogName", "frogAdopted"];
         let value = serde_json::to_value(self)?;
-        crate::shared::handoff::update_config_in(path, |config| {
+        handoff::update_config_in(path, |config| {
             let root = config.as_object_mut().ok_or_else(|| anyhow::anyhow!("Invalid config"))?;
             let progress = root.entry("onboarding").or_insert_with(|| serde_json::json!({}));
             let target = progress.as_object_mut().ok_or_else(|| anyhow::anyhow!("Invalid onboarding progress"))?;
@@ -891,7 +891,7 @@ pub(crate) fn note_grants(grants: &Grants) {
 pub(crate) fn prepare_launch(grants: &Grants, missing: &[Permission]) -> Option<Flow> {
     let mut progress = Progress::load();
     let changed = progress.note(grants) | progress.prepare_current_tour();
-    let plan = launch_plan(&progress, grants, crate::shared::handoff::experiment("onboardingFirstCapture"), missing);
+    let plan = launch_plan(&progress, grants, handoff::experiment("onboardingFirstCapture"), missing);
     if std::mem::take(&mut progress.reopen_fix) || changed {
         progress.save();
     }

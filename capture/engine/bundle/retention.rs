@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, ensure};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::capture::engine::runtime::apparent_log;
 
@@ -52,45 +52,10 @@ const SHRINK_EVERY: Duration = Duration::from_secs(24 * 3600);
 /// Made from the heavy media (`apparent zoom` sheets and frame ranges), so it goes with it.
 const DERIVED_MEDIA: [&str; 1] = ["zoom"];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Policy {
-    /// Days to keep video, audio and full-size frames; `None` keeps them.
-    #[serde(default = "default_media_days")]
-    pub media_days: Option<u32>,
-    /// Days to keep the bundle itself; `None` keeps it.
-    #[serde(default = "default_bundle_days")]
-    pub bundle_days: Option<u32>,
-}
-
-fn default_media_days() -> Option<u32> {
-    Some(7)
-}
-
-fn default_bundle_days() -> Option<u32> {
-    Some(30)
-}
-
-impl Default for Policy {
-    fn default() -> Self {
-        Self { media_days: Some(7), bundle_days: Some(30) }
-    }
-}
-
-impl Policy {
-    pub fn load() -> Self {
-        Self::load_from(&crate::shared::handoff::default_config_path())
-    }
-
-    pub fn load_from(path: &Path) -> Self {
-        std::fs::read(path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-            .and_then(|config| config.get("retention").cloned())
-            .and_then(|value| serde_json::from_value(value).ok())
-            .unwrap_or_default()
-    }
-}
+#[path = "../../../engine/native/storage/retention.rs"]
+mod preferences;
+pub use preferences::Policy;
+pub(crate) use preferences::{BUNDLE_DAYS, MEDIA_DAYS};
 
 // MARK: What Apparent is busy with
 
@@ -674,7 +639,8 @@ fn run_configured_pass(
     }
     sweep_leftovers(captures, now);
     let report = apply_admitted(&actions, policy, &trash, true, &|| {
-        !recording() && configured_storage_limit(&config).is_ok_and(|limit| limit == maximum_mb) && location.as_ref().is_none_or(|basis| {
+        !recording() && (!use_current_folder || &Policy::load_from(&config) == policy)
+            && configured_storage_limit(&config).is_ok_and(|limit| limit == maximum_mb) && location.as_ref().is_none_or(|basis| {
             directory_identity(captures) == identity &&
                 crate::shared::handoff::capture_location::read_in(&config).is_ok_and(|current| current.revision == basis.revision)
         })
@@ -1330,6 +1296,18 @@ mod tests {
                 media_days: Some(30),
                 bundle_days: Some(90)
             }
+        );
+    }
+
+    #[test]
+    fn canonical_retention_preserves_explicit_null_with_an_invalid_sibling() {
+        let config = serde_json::json!({
+            "storage": {"mediaDays": null, "bundleDays": "invalid"},
+            "retention": {"mediaDays": 3, "bundleDays": 90},
+        });
+        assert_eq!(
+            Policy::from_config(&config),
+            Policy { media_days: None, bundle_days: Some(30) },
         );
     }
 

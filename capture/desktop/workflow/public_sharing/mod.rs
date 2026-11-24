@@ -36,7 +36,7 @@ pub(crate) struct Controller(Arc<Mutex<Option<Entry>>>);
 
 impl Controller {
     pub(crate) fn start(&self, capture: String, bundle: PathBuf, generation: u64) -> Result<String, &'static str> {
-        if !crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING) { return Err("feature_disabled"); }
+        if !crate::shared::handoff::experiment_preference(crate::connect::hosted::HOSTED_SHARING) { return Err("feature_disabled"); }
         if !crate::connect::hosted::sharing_connected() { return Err("connect_required"); }
         let metadata = std::fs::metadata(&bundle).map_err(|_| "invalid_capture")?;
         let inode = (metadata.dev(), metadata.ino());
