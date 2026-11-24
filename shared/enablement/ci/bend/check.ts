@@ -1,9 +1,14 @@
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { bendScratch, proofOptions } from "../../bend/build.ts";
 import { run } from "../../bend/toolchain.ts";
 import { buildSparkleOutcomes } from "./build.ts";
 
 await bendScratch(async (scratch) => {
+  const regression = fileURLToPath(
+    new URL("../../bend/toolchain.test.ts", import.meta.url),
+  );
+  console.log(run(process.execPath, ["--test", regression], scratch).trimEnd());
   await buildSparkleOutcomes(
     join(scratch, "sparkle-outcomes.mjs"),
     proofOptions(process.argv.slice(2)),
