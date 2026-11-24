@@ -29,7 +29,7 @@ export function startDesktopFrog(assets: string) {
           : "apparent-desktop-frog",
       ),
   );
-  const directory = join(assets, "dist/desktop-frog");
+  const directory = join(assets, "dist/composition/onboarding/desktop-frog");
   const page = pathToFileURL(join(directory, "desktop.html")).href;
   let name = "";
   let shortcut = "";
