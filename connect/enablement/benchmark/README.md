@@ -66,14 +66,12 @@ The reviewed workflow calls the owner entrypoint with three absolute paths:
 node connect/enablement/benchmark/hosted.ts "$control_tree" "$candidate_tree" "$evidence"
 ```
 
-The adapter builds each tree's Worker from its service lockfile, stages its
-migrations and recipient assets, and installs Chromium from the control
-tree's locked Playwright package before sampling. It requires Node 22.23.0,
-GNU time, taskset and FFmpeg with libx264. No Rust client build is needed.
-The gateway uploads the synthetic evidence directory on failure as well as
-success. `calibration.json` and `comparison.json` index the packaged
-`watch-score.json` receipts, resource logs and cold/warm waterfalls. The
-synthetic media fixture and build caches remain on the runner.
+Setup builds both Workers and stages migrations and recipient assets from
+locked service inputs. It installs Chromium from locked Playwright and
+Ubuntu FFmpeg when absent. Sampling requires Node 22.23.0, GNU time,
+taskset and libx264. The workflow uploads synthetic receipts, resource
+logs and waterfalls even on failure. `calibration.json` and
+`comparison.json` index the receipts. Fixture media and caches stay local.
 
 Both phases run serially in the same job with the same Chromium executable.
 The sampler selects all CPUs in the Linux process affinity and checks that

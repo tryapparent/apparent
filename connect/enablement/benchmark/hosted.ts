@@ -145,6 +145,25 @@ async function main(args: string[]) {
   await record("connect-environment.json", environment);
 
   try {
+    const ffmpeg = spawnSync("ffmpeg", ["-version"], { stdio: "ignore" });
+    if (
+      (ffmpeg.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT"
+    ) {
+      run(control, join(evidence, "ffmpeg-apt-update.log"), "sudo", [
+        "apt-get",
+        "update",
+      ]);
+      run(control, join(evidence, "ffmpeg-install.log"), "sudo", [
+        "apt-get",
+        "install",
+        "-y",
+        "--no-install-recommends",
+        "ffmpeg",
+      ]);
+    } else {
+      if (ffmpeg.error) throw ffmpeg.error;
+      assert.equal(ffmpeg.status, 0, "FFmpeg version probe failed");
+    }
     const encoders = execFileSync("ffmpeg", ["-hide_banner", "-encoders"], {
       encoding: "utf8",
     });
