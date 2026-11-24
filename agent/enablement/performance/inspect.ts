@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { hostname, release } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import {
   benchmarkComparison,
   type Matched,
@@ -23,10 +23,15 @@ import {
   idle,
   contentionSnapshot,
   blockContention,
+  quiet,
 } from "./contention.ts";
 import { demoFixtures, fingerprint, loadFixtures } from "./fixtures.ts";
 import { loadLedger, stopDecision } from "./stop.ts";
+import { assertHosted, throttlingCounters } from "./hosted-environment.ts";
 import { probe } from "./trace.ts";
+
+const hosted = process.env.APPARENT_AGENT_HOSTED === "1";
+if (hosted) assertHosted();
 
 const [
   controlPath,
@@ -43,6 +48,7 @@ assert(
     ),
   "Usage: node inspect.ts CONTROL_BINARY CANDIDATE_BINARY /tmp/apparent-dev-JOB-RUN [SYNTHETIC_FIXTURES.json|-] [LEDGER.json]",
 );
+assert(hosted || !ledgerPath, "Campaign ledgers require a hosted replay");
 assert(/^\/tmp\/apparent-dev-[^/]+$/.test(work) && realpathSync(work) === work);
 const workspace = statSync(work);
 assert(
@@ -86,14 +92,19 @@ function inventory(path: string) {
     abbreviated,
     "Build must identify a clean source revision: " + version,
   );
-  const revision = execFileSync(
-    "git",
-    ["rev-parse", "--verify", abbreviated + "^{commit}"],
-    {
-      cwd: new URL("../../../", import.meta.url),
-      encoding: "utf8",
-    },
-  ).trim();
+  const revision = hosted
+    ? process.env.APPARENT_AGENT_BUILD_REVISIONS?.split(",").find((sha) =>
+        sha.startsWith(abbreviated),
+      )
+    : execFileSync(
+        "git",
+        ["rev-parse", "--verify", abbreviated + "^{commit}"],
+        {
+          cwd: new URL("../../../", import.meta.url),
+          encoding: "utf8",
+        },
+      ).trim();
+  assert(revision, "The binary does not identify an admitted revision");
   assert(/^[0-9a-f]{40}$/.test(revision));
   return {
     path,
@@ -188,6 +199,7 @@ const rounds: {
   before: Contention;
   during: Contention;
   after: Contention;
+  throttling?: number[];
   cases: { name: Fixture["name"]; waits: Wait[] }[];
 }[] = [];
 let qualifiedHost = false;
@@ -197,6 +209,7 @@ try {
       prewarm(fixture.bundle);
       attempt(binary.path, fixture);
     }
+    const initialThrottling = hosted ? throttlingCounters() : undefined;
     const before = await idle();
     const blockStart = contentionSnapshot();
     const cases = fixtures.map((fixture) => ({
@@ -206,10 +219,24 @@ try {
     await new Promise((done) => setTimeout(done, 500));
     const during = blockContention(blockStart, contentionSnapshot());
     const after = await idle();
-    rounds.push({ binary: binary.sha256, before, during, after, cases });
+    const finalThrottling = hosted ? throttlingCounters() : undefined;
+    assert.equal(initialThrottling?.length, finalThrottling?.length);
+    const throttling = finalThrottling?.map(
+      (count, index) => count - initialThrottling![index],
+    );
+    rounds.push({
+      binary: binary.sha256,
+      before,
+      during,
+      after,
+      throttling,
+      cases,
+    });
   }
-  qualifiedHost = rounds.every(({ before, during, after }) =>
-    [...before, ...during, ...after].every(({ busy }) => busy <= 0.1),
+  qualifiedHost = rounds.every(
+    ({ before, during, after, throttling }) =>
+      quiet([...before, ...during, ...after]) &&
+      (throttling?.every((count) => count === 0) ?? true),
   );
   writeFileSync(
     join(job, "quiet.json"),
@@ -305,7 +332,11 @@ for (const binary of control.sha256 === candidate.sha256
   const observed = await probe(binary.path, directory, before.length, sample);
   const after = sample();
   const coldIndex = fixtures
-    .filter(({ bundle }) => bundle.startsWith(job + "/"))
+    .filter(
+      ({ bundle }) =>
+        bundle.startsWith(job + "/") ||
+        (hosted && bundle.startsWith(dirname(work) + "/")),
+    )
     .map((fixture) => {
       const index = join(fixture.bundle, "apparent.json");
       run("sync", ["-d", index]);
@@ -407,12 +438,14 @@ const qualified = qualifiedHost && guards.every(({ passed }) => passed);
 const sameBuild = control.sha256 === candidate.sha256;
 const stop = await stopDecision(
   ledger ? ledger.repeats : referenceRepeats,
-  ledger ? true : qualified && sameBuild,
+  ledger ? hosted : hosted && qualified && sameBuild,
   ledger ? ledger.experiments : [],
 );
 const invalidReasons = [
   ...(!qualifiedHost
-    ? ["CPU or SMT sibling exceeded 10% busy during or around a scored block"]
+    ? [
+        "CPU contention, guest steal, or cgroup throttling invalidated a scored block",
+      ]
     : []),
   ...guards
     .filter(({ passed }) => !passed)
@@ -424,7 +457,8 @@ const receipt = {
   control,
   candidate,
   affinity,
-  score: qualified ? score : null,
+  venue: hosted ? "github-hosted-ubuntu-24.04" : "local-diagnostic",
+  score: qualified && hosted ? score : null,
   qualified,
   invalidReasons,
   timing: comparison.timings[0],
@@ -444,7 +478,19 @@ const receipt = {
   stop,
   ...(ledger ? { frozenControl: ledger.reference } : {}),
 };
-const report = { ...receipt, diagnostics };
+const withoutScore = <T extends { score: number }>({
+  score: _score,
+  ...raw
+}: T) => raw;
+const report = hosted
+  ? { ...receipt, diagnostics }
+  : {
+      ...receipt,
+      timing: withoutScore(receipt.timing),
+      cases: receipt.cases.map(withoutScore),
+      repeatScores: null,
+      diagnostics,
+    };
 writeFileSync(
   join(job, "receipt.json"),
   JSON.stringify(report, null, 2) + "\n",
