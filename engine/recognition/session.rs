@@ -5,8 +5,6 @@ use std::time::{Duration, Instant};
 use crate::capture::engine::{autocrop::autocrop, sketch};
 use crate::shared::model::{RgbaFrame, Shape, Stroke};
 
-pub(crate) const SETTING: &str = "circleLabels";
-
 type Recognizer = fn(&RgbaFrame, &[[f32; 2]]) -> Option<String>;
 
 struct Job {

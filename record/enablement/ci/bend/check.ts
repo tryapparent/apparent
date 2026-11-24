@@ -9,7 +9,7 @@ import {
   proofOptions,
 } from "../../../../shared/enablement/bend/build.ts";
 import { run } from "../../../../shared/enablement/bend/toolchain.ts";
-import { actionContextTable } from "./action-context-table.ts";
+import { checkActionTables } from "./action-context-table.ts";
 import { repairTable } from "./permission-table.ts";
 import { admissionSource, buildAdmission } from "./build.ts";
 import { checkCaptureAdmission } from "./capture-request/check.ts";
@@ -43,16 +43,7 @@ await bendScratch(async (scratch) => {
   );
   const proofOutput = join(scratch, "proof");
   await buildBend(root, "record", proofOutput, options);
-  assert.deepEqual(JSON.parse(actionContextTable(proofOutput)), [
-    false,
-    false,
-    false,
-    false,
-    false,
-    false,
-    false,
-    true,
-  ]);
+  checkActionTables(root, proofOutput);
   copyFileSync(
     new URL(
       "../../../media/src/assembly/crop-publication-request.ts",

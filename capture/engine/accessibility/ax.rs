@@ -7,6 +7,12 @@
 use core_foundation::base::{CFType, CFTypeRef, TCFType};
 #[cfg(target_os = "macos")]
 use core_foundation::string::{CFString, CFStringRef};
+#[path = "../../../engine/accessibility/macos_browser.rs"]
+mod browser;
+pub use browser::apply;
+#[cfg(target_os = "macos")]
+use browser::window_at;
+
 use std::collections::HashMap;
 #[cfg(target_os = "macos")]
 use std::ffi::c_void;
@@ -66,6 +72,7 @@ pub struct Hit {
     pub identifier: Option<String>,
     /// The file name of the document the element's window shows (`AXDocument`).
     pub document: Option<String>,
+    browser_page: Option<(u32, String)>,
 }
 
 impl Hit {
@@ -158,25 +165,6 @@ fn cell_child_label<'a>(
         .filter_map(|(_, value, _)| value.and_then(clip));
     let name = names.next()?;
     names.next().is_none().then_some(name)
-}
-
-#[cfg(target_os = "macos")]
-fn window_owner_at(raw: &[crate::shared::windows::RawWindow], x: f64, y: f64, own: i32) -> Option<i32> {
-    raw.iter()
-        .filter(|w| {
-            let [wx, wy, ww, wh] = w.bounds;
-            // The Dock reports a full-screen window even where it draws nothing.
-            // Window Server's cursor sprite follows the pointer above the clicked app.
-            w.alpha > 0.01
-                && !(w.owner == "Dock" && w.layer == 20)
-                && !(w.owner == "Window Server" && w.layer == 2_147_483_630)
-                && x >= wx
-                && x <= wx + ww
-                && y >= wy
-                && y <= wy + wh
-        })
-        .find(|w| w.pid != own)
-        .map(|w| w.pid)
 }
 
 /// Owns a CoreFoundation value returned under the create rule.
@@ -282,22 +270,20 @@ pub fn hit_test(x: f64, y: f64) -> Option<Hit> {
     let system = Owned(unsafe { AXUIElementCreateSystemWide() });
     unsafe { AXUIElementSetMessagingTimeout(system.0, MESSAGE_TIMEOUT_S) };
     let mut element = element_at(system.0, x, y)?;
-    if pid_of(element.0) == Some(own) {
-        let raw = objc2::rc::autoreleasepool(|_| crate::shared::windows::raw_windows());
-        let pid = window_owner_at(&raw, x, y, own)?;
+    let system_owner = pid_of(element.0)?;
+    let direct_browser_hit = system_owner != own && browser::is_browser(system_owner);
+    let raw = objc2::rc::autoreleasepool(|_| crate::shared::windows::raw_windows());
+    let front_window = window_at(&raw, x, y, own, direct_browser_hit);
+    if system_owner == own {
+        let pid = front_window?.pid;
         let app = Owned(unsafe { AXUIElementCreateApplication(pid) });
         unsafe { AXUIElementSetMessagingTimeout(app.0, MESSAGE_TIMEOUT_S) };
         element = element_at(app.0, x, y)?;
         if pid_of(element.0) != Some(pid) {
             return None;
         }
-    } else {
-        let raw = objc2::rc::autoreleasepool(|_| crate::shared::windows::raw_windows());
-        if let Some(pid) = window_owner_at(&raw, x, y, own)
-            && pid_of(element.0) != Some(pid)
-        {
-            return None;
-        }
+    } else if front_window.is_some_and(|window| window.pid != system_owner) {
+        return None;
     }
     let over = || started.elapsed() > LOOKUP_BUDGET;
 
@@ -324,6 +310,11 @@ pub fn hit_test(x: f64, y: f64) -> Option<Hit> {
     let subrole = string_attribute(element.0, "AXSubrole").unwrap_or_default();
     let input = is_input(&role, &subrole);
     let owner = pid_of(element.0)?;
+    let browser_owner = if owner == system_owner {
+        direct_browser_hit
+    } else {
+        browser::is_browser(owner)
+    };
     let role_description = string_attribute(element.0, "AXRoleDescription")
         .or_else(|| role.strip_prefix("AX").map(str::to_lowercase))
         .unwrap_or_default();
@@ -357,7 +348,8 @@ pub fn hit_test(x: f64, y: f64) -> Option<Hit> {
             .or_else(|| string_attribute(element.0, "AXDOMIdentifier"))
             .and_then(|s| clip(&s));
     }
-    if !over()
+    if !browser_owner
+        && !over()
         && let Some(window) = element_attribute(element.0, "AXWindow")
         && pid_of(window.0) == Some(owner)
     {
@@ -365,6 +357,15 @@ pub fn hit_test(x: f64, y: f64) -> Option<Hit> {
             .and_then(|url| document_name(&url))
             .and_then(|s| clip(&s));
     }
+    hit.browser_page = front_window
+        .filter(|window| browser_owner && window.layer == 0 && window.pid == owner)
+        .and_then(|window| {
+            let url = browser::browser_page(element.0, window.pid, started)?;
+            let after = objc2::rc::autoreleasepool(|_| crate::shared::windows::raw_windows());
+            let current = window_at(&after, x, y, own, direct_browser_hit);
+            current.is_some_and(|current| current.id == window.id && current.pid == window.pid)
+                .then_some((window.id, url))
+        });
     Some(hit)
 }
 
@@ -405,9 +406,10 @@ pub enum Target {
     Pointer(u64),
     /// The stroke that began at this capture time.
     Stroke(u64),
+    StrokeStart(u64),
 }
 
-type Job = (u64, Target, f64, f64);
+type Job = (u64, Target, f64, f64, Instant);
 
 /// Runs lookups for one capture at a time on a background thread and keeps their results until
 /// the capture finishes.
@@ -437,14 +439,17 @@ impl Prober {
         let _ = std::thread::Builder::new()
             .name("apparent-ax".into())
             .spawn(move || {
-                for (job_session, target, x, y) in queue {
+                for (job_session, target, x, y, queued_at) in queue {
                     if job_session == worker_session.load(Ordering::Acquire)
-                        && let Some(hit) = lookup(x, y)
+                        && let Some(mut hit) = lookup(x, y)
                     {
-                        worker_hits
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .insert(target, hit);
+                        if queued_at.elapsed() > LOOKUP_BUDGET {
+                            hit.browser_page = None;
+                        }
+                        let mut hits = worker_hits.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                        if job_session == worker_session.load(Ordering::Acquire) {
+                            hits.insert(target, hit);
+                        }
                     }
                     worker_pending.fetch_sub(1, Ordering::AcqRel);
                 }
@@ -471,7 +476,7 @@ impl Prober {
         self.pending.fetch_add(1, Ordering::AcqRel);
         if self
             .jobs
-            .send((self.session.load(Ordering::Acquire), target, x, y))
+            .send((self.session.load(Ordering::Acquire), target, x, y, Instant::now()))
             .is_err()
         {
             self.pending.fetch_sub(1, Ordering::AcqRel);
@@ -490,36 +495,6 @@ impl Prober {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner),
         )
-    }
-}
-
-/// Puts lookup results on the clicks, drags and strokes they were for.
-pub fn apply(
-    hits: &HashMap<Target, Hit>,
-    events: &mut [crate::shared::model::InteractionEvent],
-    strokes: &mut [crate::shared::model::Stroke],
-) {
-    use crate::shared::model::InteractionEvent;
-    for event in events.iter_mut() {
-        match event {
-            InteractionEvent::Click { t, label, role, .. } => {
-                if let Some(hit) = hits.get(&Target::Pointer(*t)) {
-                    *role = Some(hit.role.clone());
-                    *label = hit.label_text().or(label.take());
-                }
-            }
-            InteractionEvent::Drag { t, label, .. } => {
-                if let Some(text) = hits.get(&Target::Pointer(*t)).and_then(Hit::on_text) {
-                    *label = Some(text);
-                }
-            }
-            _ => {}
-        }
-    }
-    for stroke in strokes.iter_mut().filter(|s| !s.laser && s.on.is_none()) {
-        if let Some(text) = hits.get(&Target::Stroke(stroke.t0)).and_then(Hit::mark_text) {
-            stroke.on = Some(text);
-        }
     }
 }
 

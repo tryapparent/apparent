@@ -40,7 +40,7 @@ impl Prober {
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn apply(_hits: &HashMap<Target, Hit>, _events: &mut [InteractionEvent], _strokes: &mut [Stroke]) {}
+pub fn apply(_hits: &HashMap<Target, Hit>, _events: &mut Vec<InteractionEvent>, _strokes: &mut [Stroke]) {}
 
 #[cfg(not(target_os = "linux"))]
 pub fn stroke_probe_point(_stroke: &Stroke, _frame: TargetFrame) -> Option<(f64, f64)> {

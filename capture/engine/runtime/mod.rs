@@ -946,7 +946,7 @@ impl SharedCaptureTelemetry {
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             *self.circle_session.lock().unwrap_or_else(PoisonError::into_inner) =
-                (self.capture_mode.load(Ordering::Acquire) != 3 && crate::shared::handoff::experiment(crate::circle_recognition::SETTING))
+                (self.capture_mode.load(Ordering::Acquire) != 3 && agent_context)
                 .then(|| crate::circle_recognition::Session::start(crate::composition::assembly::circle_label)).flatten();
         }
         if agent_context {

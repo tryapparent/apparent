@@ -35,8 +35,9 @@ export function AgentContextPreference({
         />
       </div>
       <p id="agent-context-help">
-        Include more detail about clicks, shortcuts, and marks in the handoff.
-        Start a new recording to collect extra context.
+        Add click details, page URLs, and labels for circled items to your
+        handoff when available. Circle recognition runs on this device. Applies
+        to your next recording.
       </p>
       <p id="agent-context-limits">
         On Linux, this enables desktop accessibility. It stays on when you turn
@@ -54,39 +55,6 @@ export function AgentContextPreference({
           : access === "disabled" || access === "unavailable"
             ? "Desktop accessibility is off or unavailable. Visual marks still work."
             : null}
-      </p>
-    </section>
-  );
-}
-
-export function CircleLabelsPreference({
-  id,
-  checked,
-  disabled,
-  saving,
-  onCheckedChange,
-}: AgentContextPreferenceProps) {
-  return (
-    <section className="agent-preference">
-      <div className="agent-preference-row">
-        <h2 className="settings-preference-label" id="circle-labels-label">
-          Label circled items
-        </h2>
-        <Switch
-          id={id}
-          className="agent-switch"
-          checked={checked}
-          disabled={disabled}
-          aria-busy={saving}
-          aria-labelledby="circle-labels-label"
-          aria-describedby="circle-labels-help"
-          onCheckedChange={onCheckedChange}
-        />
-      </div>
-      <p id="circle-labels-help">
-        Read English text and recognize objects you circle on screen. Available
-        labels appear in the handoff. Runs on this device starting with your
-        next recording.
       </p>
     </section>
   );
