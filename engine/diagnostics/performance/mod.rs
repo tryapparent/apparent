@@ -222,6 +222,18 @@ impl RecordingPerformance {
             return;
         }
         let startup = self.startup.stages(self.start, start.start);
+        if !startup.is_empty() {
+            let stages: Vec<_> = startup.iter().map(|stage| {
+                json!({
+                    "stage": stage.name,
+                    "startMs": (stage.start - start.start) as f64 / 1_000_000.0,
+                    "endMs": (stage.end - start.start) as f64 / 1_000_000.0,
+                })
+            }).collect();
+            crate::capture::engine::runtime::apparent_log(format!(
+                "recording startup stages: {}", json!(stages)
+            ));
+        }
         let report = Report {
             consent: self.consent,
             trace_ids: self.trace_ids,

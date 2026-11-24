@@ -119,7 +119,9 @@ Release builds configured with Apparent's PostHog project token send duration
 histograms and timing spans over OTLP HTTP to the EU project. Startup spans
 include capture preparation, audio and video setup, portal calls where observed,
 and the acknowledgement from Electron when its recording pill reports geometry.
-That acknowledgement does not establish when the compositor first displayed it. Reports
+The application log retains the same stage names and relative times for local
+diagnosis. The acknowledgement does not establish when the compositor first
+displayed the pill. Reports
 include the build, operating system, length bucket, outcome, and timing
 timestamps. Trace IDs are random and scoped to Start or Finish. The capture
 content, paths, account identifiers, and consent revision stay local.
