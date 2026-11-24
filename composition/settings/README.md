@@ -131,8 +131,17 @@ Enable Application Metrics in the PostHog project to ingest histograms.
 Use `recording.start.duration` and `recording.finish.duration` with
 `service.version`, `os.type`, and `outcome` to compare p50 and p95. Include
 the sample count when comparing releases. In distributed tracing, filter
-by `apparent-desktop` to see the Finish span and finalizer time beneath it.
-The local Perfetto benchmark remains available for stack-level diagnosis.
+by `apparent-desktop` and the trace's `service.version`, not only the currently
+installed version. Expand Finish → finalizer for native function boundaries:
+screen/audio/window shutdown, action context, notes wait, circle labels,
+transcription, visual preparation, keyframe selection and decode, cropping,
+contact sheets, artifact writes, whiteboard handoff, publication lock,
+validation and durability. Worker spans retain their parent and actual overlap;
+do not sum parallel durations. Operations that are skipped have no span. Child
+completion does not imply success; the Finish outcome remains authoritative.
+Each Finish trace retains at most 128 child spans, with `recording.spans_dropped` on
+the finalizer. These are instrumented timings, not automatic stack samples.
+The local Perfetto benchmark remains available for deeper stack-level diagnosis.
 
 For example, query Finish p95 after filtering to successful bundles.
 
