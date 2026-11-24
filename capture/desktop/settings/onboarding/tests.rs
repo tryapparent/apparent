@@ -131,12 +131,13 @@ mod tests {
         assert!(session.admits_practice_capture_action(attempt, Stage::Stop));
         assert!(!session.admits_practice_capture_action(attempt, Stage::Whiteboard));
 
-        session.practice.as_mut().unwrap().attempt += 1;
+        session.practice.as_mut().unwrap().observed_attempt = Some(attempt - 1);
         assert!(!session.admits_practice_capture_action(attempt, Stage::Stop));
-        assert!(!session.admits_practice_capture_action(attempt + 1, Stage::Stop));
+        assert!(!session.admits_practice_capture_action(attempt - 1, Stage::Stop));
+        session.practice.as_mut().unwrap().observed_attempt = Some(attempt);
 
         session.input(Input::CaptureEnded { completed: false });
-        assert!(!session.admits_practice_capture_action(attempt + 1, Stage::Whiteboard));
+        assert!(!session.admits_practice_capture_action(attempt, Stage::Whiteboard));
     }
 
     #[test]
