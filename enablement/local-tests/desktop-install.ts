@@ -1,8 +1,9 @@
 // Local Desktop installs only. Build/test commands always execute, including hits.
-import {execFileSync} from 'node:child_process';
-import {existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
+import {execFileSync, spawnSync} from 'node:child_process';
+import {closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readFileSync, readlinkSync, realpathSync, symlinkSync, unlinkSync} from 'node:fs';
 import {dirname, join, relative, resolve} from 'node:path';
 import {release} from 'node:os';
+import type {Stats} from 'node:fs';
 import {digest, reuse} from './receipt.ts';
 import {files, npmConfiguration} from './service.ts';
 import type {FileDigests} from './service.ts';
@@ -10,6 +11,8 @@ import type {Admission} from './service.ts';
 import type {Command} from './run.ts';
 
 export const desktopPackage = 'capture/desktop/ui/frontend';
+const lockName = 'apparent-desktop-install.lock';
+const leaseName = 'apparent-desktop-install.lease';
 const install = ['npm', 'ci', '--no-audit', '--no-fund'];
 const localPackages = ['shared/ui', 'record/storage', 'record/capture-request'];
 const installScripts = new Map([
@@ -86,41 +89,60 @@ export function desktopInstallSnapshot(cwd: string, env: NodeJS.ProcessEnv, admi
 
 // Recognize the runner's complete Desktop block; never change its public plan.
 export function desktopDependencies(block: Command[], cwd: string, inherited: NodeJS.ProcessEnv,
-  admission: Admission | undefined, run: (command: Command, environment?: NodeJS.ProcessEnv) => void): boolean {
+  admission: Admission | undefined, run: (command: Command, environment?: NodeJS.ProcessEnv, lease?: number) => void): boolean {
   const expected = [install, ['npm', 'test'], [...(process.platform === 'linux' ? ['xvfb-run', '-a'] : []), 'npm', 'run', 'test:electron']];
   if (![2, 3].includes(block.length) || block.some((c, i) => c.cwd !== desktopPackage || c.env || JSON.stringify(c.argv) !== JSON.stringify(expected[i]))) return false;
   const env = installEnvironment(inherited);
   // npm ci removes node_modules. Protect the complete block, even on hits and
   // unqualified/fresh fallbacks. This runtime mutex is per-worktree Git metadata,
   // separate from disposable receipts: cleanup must not admit a second writer.
-  const lock = join(git(cwd, inherited, ['rev-parse', '--absolute-git-dir']).trim(), 'apparent-desktop-install.lock');
-  try { mkdirSync(lock, {mode: 0o700}); }
-  catch { throw Error(`Desktop dependency operation locked or unavailable: ${lock}. Retry after its owner finishes; interrupted locks require owner verification before removal.`); }
-  const identity = lstatSync(lock);
+  const directory = git(cwd, inherited, ['rev-parse', '--absolute-git-dir']).trim();
+  const lock = join(directory, lockName);
+  const lease = openSync(join(directory, leaseName),
+    constants.O_CREAT | constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600);
+  let marker: Stats | undefined;
   try {
-    writeFileSync(join(lock, 'owner.json'), JSON.stringify({pid: process.pid, started: new Date().toISOString()}), {flag: 'wx', mode: 0o600});
+    const identity = fstatSync(lease);
+    if (!identity.isFile() || identity.nlink !== 1 || identity.size !== 0 || identity.uid !== process.getuid?.() || (identity.mode & 0o077))
+      throw Error('Desktop dependency lease must be a private empty regular file');
+    const grant = spawnSync('/usr/bin/perl', ['-MFcntl=:flock', '-e', 'flock(STDIN, LOCK_EX | LOCK_NB) or exit 1'], {
+      stdio: [lease, 'inherit', 'inherit'], env: {},
+    });
+    if (grant.error) throw grant.error;
+    if (grant.status !== 0) throw Error(`Desktop dependency operation locked or unavailable: ${lock}. Retry after its owner finishes.`);
+
+    const previous = lstatSync(lock, {throwIfNoEntry: false});
+    if (previous && !(previous.isSymbolicLink() && readlinkSync(lock) === leaseName))
+      throw Error(`Desktop dependency operation locked or unavailable: ${lock}. Legacy locks require owner verification before removal.`);
+    if (!previous) symlinkSync(leaseName, lock);
+    marker = lstatSync(lock);
+    const runLocked = (command: Command, environment?: NodeJS.ProcessEnv) => run(command, environment, lease);
     const eligible = admission && ['linux', 'darwin'].includes(process.platform) && !env.CI && !env.GITHUB_ACTIONS
       && !Object.keys(env).some(name => /^(NODE_|LD_|DYLD_|ELECTRON_|ESBUILD_|VSCODE_INSPECTOR_OPTIONS)/.test(name));
-    if (!eligible) { block.forEach(command => run(command)); return true; }
+    if (!eligible) { block.forEach(command => runLocked(command)); return true; }
     const digests: FileDigests = new Map();
     let initial: InstallSnapshot | undefined;
     try { initial = desktopInstallSnapshot(cwd, env, admission!, digests); }
-    catch { block.forEach(command => run(command)); return true; }
+    catch { block.forEach(command => runLocked(command)); return true; }
     const snapshot = () => {
       const value = initial; initial = undefined;
       return value ?? desktopInstallSnapshot(cwd, env, admission!, digests);
     };
     let checked = false;
-    const checks = () => { block.slice(1).forEach(command => run(command)); checked = true; };
+    const checks = () => { block.slice(1).forEach(command => runLocked(command)); checked = true; };
     reuse(join(cwd, desktopPackage), snapshot, () => {
-      run(block[0], env);
+      runLocked(block[0], env);
       checks();
     }, console.error, {label: 'Desktop dependencies', refreshed: (before, after) => after.installed
       && before.head === after.head && JSON.stringify(before.inputs) === JSON.stringify(after.inputs)});
     if (!checked) checks();
   } finally {
-    const current = lstatSync(lock, {throwIfNoEntry: false});
-    if (current?.ino === identity.ino && current.dev === identity.dev) rmSync(lock, {recursive: true});
+    try {
+      if (marker) {
+        const current = lstatSync(lock, {throwIfNoEntry: false});
+        if (current?.ino === marker.ino && current.dev === marker.dev) unlinkSync(lock);
+      }
+    } finally { closeSync(lease); }
   }
   return true;
 }
