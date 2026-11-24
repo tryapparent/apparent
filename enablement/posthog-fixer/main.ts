@@ -4,7 +4,7 @@ import {Store} from './store.ts';
 import {T3} from './t3.ts';
 import {Worker, contextReader} from './worker.ts';
 import {server} from './http.ts';
-import {activatedSupportFd, supportServer} from './support-socket.ts';
+import {activatedSupportFd, supportServer} from './support/socket.ts';
 
 async function main() {
   process.umask(0o077);
