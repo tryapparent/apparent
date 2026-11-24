@@ -36,6 +36,8 @@ Each stream owns build, tests, packaging, delivery and diagnostics in its `enabl
 
 ## Verification
 
+Discover user-facing verification recipes in `*/enablement/verification.json`. Each stream owns its manifest. In the same PR, update affected entries when the user path, prerequisites, runner, platform coverage or expected evidence changes. Add entries as repeatable checks are established. Include the user entry point, prerequisites, existing runner instructions, observable evidence and coverage limits. Put a cross-stream scenario with the stream that owns the end-to-end check.
+
 Choose proportionate checks for changed behavior and verify boundaries with real producer outputs. Reuse evidence only when relevant inputs match and cite its source. Inspect the changed renderer for UI work and real bundle outputs for output changes. Report test, GUI, permission and publication evidence and gaps.
 
 Use Linux for portable logic and shared Electron UI. Compare migrating a small legacy UI slice with booking Mac time. Verify changed native behavior, permissions, window integration and packaging on the affected OS. For Linux native GUI work use your [isolated VM](capture/desktop/docs/linux/linux.md), never the host or another worker’s VM. Physical-device behavior needs appropriate hardware.
