@@ -382,7 +382,12 @@ impl Hyprland {
         } else {
             self.events.drain(None)?;
         }
-        let window = window::action_focused()?;
+        let focused = if request.key.0 == ActionKind::Stroke {
+            window::stroke_focused
+        } else {
+            window::action_focused
+        };
+        let window = focused()?;
         if matches!(request.probe, Probe::StrokeEnd(_))
             && self.stroke.take().as_ref() != Some(&window)
         {
@@ -421,7 +426,7 @@ impl Hyprland {
         {
             return None;
         }
-        let confirmed = window::action_focused();
+        let confirmed = focused();
         if self
             .events
             .drain_action(self.stroke.as_ref().unwrap_or(&window))?
