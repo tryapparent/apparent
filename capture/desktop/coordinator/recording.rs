@@ -1327,14 +1327,11 @@ impl ApparentCoordinator {
                 .background_executor()
                 .spawn(async move {
 
-                    let finalizer_started = Instant::now();
-                    let result = recording_completion::finalize(
-                        source, target, bundle_dir, events, strokes, action_context, final_whiteboard, notes_finished, source_released,
-                    );
-                    if let Some(performance) = performance {
-                        performance.finish(finish_started, finalizer_started, result.1, result.0.is_ok());
-                    }
-                    result
+                    workflow::performance::RecordingPerformance::finalize(performance, finish_started, || {
+                        recording_completion::finalize(
+                            source, target, bundle_dir, events, strokes, action_context, final_whiteboard, notes_finished, source_released,
+                        )
+                    })
                 })
                 .await;
 

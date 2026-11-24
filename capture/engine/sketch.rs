@@ -2270,22 +2270,21 @@ mod tests {
         no_words.audio = Some("audio.wav".into());
         no_words.transcript = TranscriptData { source: "command:test".into(), ..Default::default() };
         let summary = summary_markdown(&no_words, &audio_dir);
-        assert!(summary.contains("No words transcribed"));
+        assert!(summary.contains("No words transcribed. The audio was saved.\n"));
         assert!(!summary.contains("No microphone audio was saved"));
-        let compact = summary_markdown_formatted(&no_words, &audio_dir, true, Some(false));
-        assert!(!compact.contains("No words transcribed"));
-        let legacy = summary_markdown_formatted(&no_words, &audio_dir, false, Some(false));
-        assert!(legacy.contains("No words transcribed"));
+        let paste = |bundle, agent_context| {
+            summary_markdown_formatted(bundle, &audio_dir, agent_context, Some(false))
+        };
+        assert!(!paste(&no_words, true).contains("No words transcribed"));
+        assert!(paste(&no_words, false).contains("No words transcribed"));
 
         let mut failure = silent.clone();
         failure.audio = Some("audio.wav".into());
         let summary = summary_markdown(&failure, &audio_dir);
         assert!(summary.contains("No transcript: "));
         assert!(!summary.contains("No words transcribed"));
-        let compact = summary_markdown_formatted(&failure, &audio_dir, true, Some(false));
-        assert!(compact.contains("No transcript: "));
-        let compact = summary_markdown_formatted(&no_audio, &audio_dir, true, Some(false));
-        assert!(compact.contains("No microphone audio was saved"));
+        assert!(paste(&failure, true).contains("No transcript: "));
+        assert!(paste(&no_audio, true).contains("No microphone audio was saved"));
         std::fs::remove_dir_all(&audio_dir).unwrap();
 
         // A phone bundle: device header, a flagged keyframe, and app events under the keyframe

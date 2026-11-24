@@ -58,7 +58,7 @@ Use authenticated `gh` and the [issue traceability contract](shared/enablement/i
 - Never reset Kit’s real TCC grants, wake or flash Studio displays, record or benchmark its real screen, play test audio on Kit’s Macs or post tests to a real OpenCode session. Use approved isolated environments and the [screen safety gate](capture/desktop/scripts/perf/screen-guard.sh).
 - NoMac limits are **$2 cumulative per canonical repo/issue or standalone PR** and **$0.50 / 30 minutes per session**, normally with a 300-second idle timeout. Count existing spend and concurrent reservations across retries, branches and derived issues. Narrower task limits win. Require an approved bucket for untracked work. See [queue, budget and cleanup](enablement/docs/continuous-delivery.md#nomac-verification).
 - On Clanker, follow `/home/simon/AGENTS.md` and use a private `/tmp/apparent-dev-<job>-<run>/` for disposable artifacts. Keep native signing and update storage outside disposable output.
-- For “make it apparent,” use [the skill](capture/agent/skills/make-it-apparent/SKILL.md), inspect the complete recording and deliver a playable video with truthful limits.
+- For “make it apparent,” use [the skill](agent/skills/make-it-apparent/SKILL.md), inspect the complete recording and deliver a playable video with truthful limits.
 
 ## Staged code
 

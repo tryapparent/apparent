@@ -168,3 +168,10 @@ pub(crate) fn inspect(bundle: std::path::PathBuf, reader: Option<String>, json: 
     }
     Ok(())
 }
+pub(super) const SKILL: &str = concat!(
+    include_str!("../agent/skills/apparent/SKILL.md"),
+    "\n",
+    include_str!("../agent/skills/apparent/connect/README.md"),
+    "\n",
+    include_str!("../agent/skills/apparent/commands/README.md"),
+);

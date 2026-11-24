@@ -9,7 +9,7 @@ import { latestRelease } from "../../site/src/appcast.ts"
 
 const SITE = "https://app.tryapparent.com"
 const REPO = "https://github.com/tryapparent/apparent"
-const RAW_SKILL = "https://raw.githubusercontent.com/tryapparent/apparent/main/capture/agent/skills/apparent/SKILL.md"
+const RAW_SKILL = "https://raw.githubusercontent.com/tryapparent/apparent/main/agent/skills/apparent/SKILL.md"
 
 const repo = (path: string) => readFileSync(fileURLToPath(new URL(`../../../${path}`, import.meta.url)), "utf8")
 
@@ -82,7 +82,7 @@ export function agentFiles(): Record<string, string> {
   const recording = guide("capture/desktop/docs/guides/recording.md")
   const processing = guide("capture/engine/docs/guides/processing.md")
   const agents = guide("capture/agent/docs/usage.md")
-  const skill = repo("capture/agent/skills/apparent/SKILL.md")
+  const skill = [guide("agent/skills/apparent/SKILL.md"), guide("agent/skills/apparent/connect/README.md"), guide("agent/skills/apparent/commands/README.md")].join("\n")
   const tagline = readme.match(/^### (.+)$/m)![1]
   const intro = readme.split(/^### .+$/m)[1].split("\n\n").filter((p) => p.trim())[0].trim()
   const summary = `> ${tagline} Apparent is an open-source screen recorder for macOS and Linux. It turns your screen, voice, clicks and drawings into annotated keyframes, a timed transcript, and an interaction timeline for a coding agent.`
@@ -101,9 +101,9 @@ ${intro}
 
 ## Agents
 
-- [Agent skill](${SITE}/skill.md): install it with \`bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent\`. With it, an agent that gets an Apparent paste reads the contact sheet and transcript, opens the keyframes the narration points at, and uses the \`apparent\` command to look closer.
-- [Make it apparent](${REPO}/blob/main/capture/agent/skills/make-it-apparent/SKILL.md): a separate video walkthrough skill; install it explicitly with \`bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/make-it-apparent\`. The capture-reading skill install does not guarantee it is present.
-- [SKILL.md on GitHub](${RAW_SKILL}): the same skill, raw, from the main branch.
+- [Agent skill](${SITE}/skill.md): install it with \`bunx skills add https://github.com/tryapparent/apparent/tree/main/agent/skills/apparent\`. With it, an agent that gets an Apparent paste reads the contact sheet and transcript, opens the keyframes the narration points at, and uses the \`apparent\` command to look closer.
+- [Make it apparent](${REPO}/blob/main/agent/skills/make-it-apparent/SKILL.md): a separate video walkthrough skill; install it explicitly with \`bunx skills add https://github.com/tryapparent/apparent/tree/main/agent/skills/make-it-apparent\`. The capture-reading skill install does not guarantee it is present.
+- [SKILL.md on GitHub](${RAW_SKILL}): the catalog entry and links to supporting guides.
 - [Full text](${SITE}/llms-full.txt): this file plus the install notes, capture controls, CLI and the whole skill in one document.
 
 ## Captures

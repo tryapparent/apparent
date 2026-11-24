@@ -111,10 +111,10 @@ Install the app through the [official packaging instructions](../../desktop/docs
 The executable is `Apparent.app/Contents/MacOS/apparent`; Settings → Agents can
 install a CLI link. Linux AppImages cannot run on macOS. Windows is unsupported.
 
-Optionally install the [capture-reading skill](../skills/apparent/SKILL.md):
+Optionally install the [capture-reading skill](../../../agent/skills/apparent/SKILL.md):
 
 ```sh
-bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent
+bunx skills add https://github.com/tryapparent/apparent/tree/main/agent/skills/apparent
 ```
 
 This installs neither the binary nor recording permissions.

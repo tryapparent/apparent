@@ -212,6 +212,6 @@ pub(crate) fn audio_notice(
         Some(missing) => format!("No transcript: {}\n", missing.reason),
         None if bundle.transcript.source == "none" => "No transcript: Recognition did not run. The audio is saved.\n".into(),
         None if compact && !bundle.transcript.source.trim().is_empty() => String::new(),
-        None => "No words transcribed. Your audio was saved—check it or try again closer to the microphone.\n".into(),
+        None => "No words transcribed. The audio was saved.\n".into(),
     }
 }

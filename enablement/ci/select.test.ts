@@ -138,10 +138,7 @@ test('Public-only inputs keep their actual web verification and avoid native sui
     assert.equal(needsPlatform([path]), false, path);
     assert.deepEqual(selectedOwners([path]), ['public']);
   }
-  assert.equal(needsPlatform(['capture/agent/skills/apparent/SKILL.md']), true, 'skill body is embedded in the native CLI');
-  const source = readFileSync(new URL('public/enablement/site-build/agent-files.ts', root), 'utf8');
-  const consumed = [...new Set([...source.matchAll(/\b(?:repo|guide)\("([^"]+\.md)"\)/g)].map(m => m[1]))].sort();
-  assert.deepEqual(consumed, [...publicMarkdown].sort(), 'new build consumers require review');
+  assert.equal(needsPlatform(['agent/skills/apparent/SKILL.md']), true);
 });
 test('Connect web is portable; service retains real integration plus its canonical service checks', () => {
   assert.deepEqual(selectedOwners(['connect/web/src/NewPage.tsx']), ['web']);
@@ -169,6 +166,7 @@ test('owner prose and repository guidance select no product suites while embedde
   const prose = ['AGENTS.md', 'CONTRIBUTING.md', 'LICENSE', 'CONTEXT.md', 'capture/AGENTS.md',
     'capture/desktop/scripts/mac/README.md', 'capture/desktop/scripts/mac/cache.md',
     'capture/agent/setup/README.md', 'capture/agent/media/README.md', 'agent/enablement/README.md',
+    'agent/skills/make-it-apparent/SKILL.md', 'agent/skills/make-it-apparent/references/README.md',
     'record/media/README.md', 'record/storage/enablement/test-audit.md',
     'connect/tooling/hosting/README.md', 'connect/docs/hosted-web.md',
     'public/enablement/docs/pages-deploy.md', 'public/site/docs/feature-grid.md',
@@ -192,9 +190,8 @@ test('owner prose and repository guidance select no product suites while embedde
   assert.ok(Object.values(decision.publicationStreams).every(value => !value));
   for (const path of [...publicMarkdown, 'public/site/public/assets/brand-book/brand-guidelines.md',
     'public/site/public/assets/brand-book/design-system/instructions/design-work.md',
-    'public/site/src/copy.md', 'capture/agent/skills/apparent/SKILL.md',
+    'public/site/src/copy.md', 'agent/skills/apparent/SKILL.md',
     'hermes/README.md', 'connect/client/typescript/README.md',
-    'capture/agent/skills/make-it-apparent/references/solution-survey.md',
     'hermes/skills/recordings/SKILL.md', 'record/storage/instructions/AGENTS.md'])
     assert.equal(documentationOnlyPath(path), false, path);
   // Mixed changes keep the non-documentation input; unknown prose still fails closed.

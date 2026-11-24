@@ -10,7 +10,7 @@ Read login/fetch needs no desktop launch, recording permissions, speech model or
 Optionally install the capture-reading skill for Claude Code, OpenCode, Codex and other agents:
 
 ```sh
-bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent
+bunx skills add https://github.com/tryapparent/apparent/tree/main/agent/skills/apparent
 ```
 
 On macOS, the `apparent` command is the binary inside Apparent.app. Click
@@ -25,7 +25,7 @@ inspect --marks` lists them) makes a dense sheet of frames around a moment, `app
 frames` pulls a range, `apparent copy` puts a capture on the clipboard, and `apparent export`
 makes a shareable `.mp4`. `apparent skill` prints the skill without installing anything.
 
-The repository also ships [`make-it-apparent`](../skills/make-it-apparent/SKILL.md), a separate
+The repository also ships [`make-it-apparent`](../../../agent/skills/make-it-apparent/SKILL.md), a separate
 agent skill for a short, checked change demo, unresolved-problem demonstration or technical
 explainer. It covers causal explanation, captions, privacy, playback review and honest evidence
 limits. The capture-reading skill above is still for understanding feedback someone sends you;
@@ -34,7 +34,7 @@ does not guarantee that this named workflow is installed. Install it explicitly 
 environment before asking for a demo:
 
 ```sh
-bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/make-it-apparent
+bunx skills add https://github.com/tryapparent/apparent/tree/main/agent/skills/make-it-apparent
 ```
 
 Live Apparent proof needs a working capture on an accessible machine; a conceptual explainer
