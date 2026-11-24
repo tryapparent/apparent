@@ -118,14 +118,15 @@ test("committed candidate routing selects the workflow contract commands and pre
     macAbout: "Verify installed About download policy",
     theme: "Verify shared theme",
     engineering: "Verify push guards, selection and publication admission",
+    settings: "Verify Settings contract",
     tooling: "Verify the shared selected tooling suite",
     workflow: "Validate workflow syntax and job dependencies",
   };
   const all = Object.values(checks);
   for (const [paths, expected] of [
-    [[native], []],
+    [[native], [checks.settings]],
     [[theme], [checks.theme]],
-    [[sparkle], [checks.sparkle, checks.macAbout]],
+    [[sparkle], [checks.sparkle, checks.macAbout, checks.settings]],
     [[verifier], [checks.release, checks.macAbout, checks.engineering]],
     [[release], [checks.release, checks.macAbout]],
     [
@@ -134,13 +135,14 @@ test("committed candidate routing selects the workflow contract commands and pre
         checks.release,
         checks.macAbout,
         checks.engineering,
+        checks.settings,
         checks.tooling,
         checks.workflow,
       ],
     ],
     [
       [native, theme, release],
-      [checks.release, checks.macAbout, checks.theme],
+      [checks.release, checks.macAbout, checks.theme, checks.settings],
     ],
   ] as const) {
     git("reset", "--hard", base);
@@ -160,7 +162,13 @@ test("committed candidate routing selects the workflow contract commands and pre
       assert.equal(outputs.installer, "true");
       assert.deepEqual(
         steps(outputs).map((step: { name: string }) => step.name),
-        ["Record selected contracts"],
+        [
+          "Record selected contracts",
+          undefined,
+          undefined,
+          "Prepare Settings contract parser",
+          "Verify Settings contract",
+        ],
       );
       assert.ok(!jobs.linux.needs.includes("contracts"));
     }

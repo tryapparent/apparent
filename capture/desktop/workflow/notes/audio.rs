@@ -20,8 +20,7 @@ impl Request {
         }
         if let Self::Set { enabled, .. } = self {
             if crate::shared::handoff::update_config_allowed_in(path, &allowed, |config| {
-                config["microphoneEnabled"] = serde_json::json!(enabled);
-                Ok(())
+                crate::shared::handoff::edit_preference(config, "recording.microphoneEnabled", Some((*enabled).into()))
             })
             .is_err()
             {
@@ -56,6 +55,7 @@ mod tests {
         let data: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(data["microphone"]["id"], "chosen");
+        assert_eq!(data["recording"]["microphoneEnabled"], false);
         assert_eq!(data["privateKey"], "synthetic");
         assert_eq!(data["future"]["value"], 7);
         let before = std::fs::read(&path).unwrap();

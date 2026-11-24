@@ -37,7 +37,8 @@ pub use policy::{RenewalDecision, RenewalFacts};
 use settings::{SafeError, cancelled, hosted_failure};
 
 pub const HOSTED_SYNC: &str = "hostedSync";
-pub const HOSTED_SHARING: &str = "hostedSharing";
+pub const HOSTED_SHARING: &str = "labs.hostedSharing";
+pub const SPEAKING_STYLE: &str = "labs.speakingStyle";
 pub const HOSTED_ENCRYPTION: &str = "hostedEncryption";
 pub const FOREGROUND_UPLOAD: &str = "connectForegroundUpload";
 
@@ -212,10 +213,8 @@ struct Job {
     files: Vec<Asset>,
     #[serde(default)]
     shared: bool,
-    // Only an explicit public-sharing choice admits a separate readable copy.
     #[serde(default)]
     public_copy: bool,
-    // Admission pins the format. A preference change cannot downgrade this job.
     #[serde(default)]
     encrypted: bool,
     #[serde(default)]
@@ -928,7 +927,7 @@ impl Client {
             files: Vec::new(),
             shared: public_copy,
             public_copy,
-            speaking_style: !public_copy && self.provider.experiment("speakingStyle"),
+            speaking_style: !public_copy && self.provider.experiment(SPEAKING_STYLE),
             encrypted: !public_copy && self.provider.experiment(HOSTED_ENCRYPTION),
             encryption: None,
             encryption_version: 2,

@@ -73,7 +73,7 @@ impl ApparentCoordinator {
             movable: crate::shared::handoff::experiment("movableRecordingControls"),
             paste: self.completed_dir.is_some(),
             inspect: self.review_bundle.is_some(),
-            sharing_enabled: crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING),
+            sharing_enabled: crate::shared::handoff::experiment_preference(crate::connect::hosted::HOSTED_SHARING),
             sharing_online: self.share_online,
             mic_warning: microphone.map(InputWarning::announcement),
             audio_issue: audio.map(CompletedAudioIssue::label),

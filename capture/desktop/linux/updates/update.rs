@@ -29,7 +29,7 @@ static CHECK: Mutex<()> = Mutex::new(());
 
 pub fn set_channel_in(path: &Path, channel: &str) -> Result<()> {
     ensure_update!(matches!(channel, "stable" | "main"), "channel must be stable or main");
-    crate::shared::handoff::set_config_value_in(path, "updateChannel", channel.into())
+    crate::shared::handoff::write_preference(path, "about.updateChannel", Some(channel.into()))
 }
 
 fn write_runtime_in(path: &Path, pid: u32, ticks: u64) -> Result<()> {
@@ -61,7 +61,6 @@ pub fn record_running() -> Result<()> {
         process_ticks(pid).context("cannot read Apparent process start time")?)
 }
 
-/// Mark the GPUI application as initialized for the update relaunch helper.
 pub fn mark_relaunch_ready() -> Result<()> {
     let Some(path) = std::env::var_os("APPARENT_UPDATE_READY").map(PathBuf::from) else { return Ok(()) };
     let image = target()?.context("relaunch readiness requires an AppImage")?;
@@ -79,7 +78,7 @@ pub fn status_at(path: &Path) -> Result<serde_json::Value> {
         Err(error) => return Err(error.into()),
     };
     ensure_update!(config.is_object(), "config must be an object");
-    let channel = if config["updateChannel"] == "main" { "main" } else { "stable" };
+    let channel = if crate::shared::handoff::preference_value(&config, "about.updateChannel").as_ref().and_then(|value| value.as_str()) == Some("main") { "main" } else { "stable" };
     let recorded = &config["running"];
     let running = match (recorded["pid"].as_u64().and_then(|n| u32::try_from(n).ok()), recorded["startTicks"].as_u64()) {
         (Some(pid), Some(ticks)) if process_ticks(pid) == Some(ticks)
@@ -146,7 +145,6 @@ pub(crate) fn restart_pending(status: &serde_json::Value) -> bool {
     status["pendingRestart"] == true
 }
 
-/// Start the installed AppImage after this process exits, not the old running inode.
 pub fn relaunch_staged() -> Result<()> {
     let image = target()?.context("Updates require an owned AppImage under your home directory")?;
     let name = image.file_name().context("AppImage has no name")?.to_string_lossy();
@@ -156,6 +154,7 @@ pub fn relaunch_staged() -> Result<()> {
     ensure_update!(restart_pending(&status()?), "no installed update is waiting for a restart");
     ensure_update!(backup.is_file(), "previous AppImage is unavailable for recovery");
     ensure_update!(fs::metadata(&backup)?.permissions().mode() & 0o111 != 0, "previous AppImage is not executable");
+    crate::composition::check_preference_compatibility()?;
     // A successful shell spawn proves nothing about the image it will execute later.
     // Check the new image before leaving the running app, and keep the old one as a
     // recovery path if the image disappears or fails to start after this process exits.
@@ -286,7 +285,6 @@ exit 1"#)
     Ok(command)
 }
 
-// Main previews are published from main as GitHub releases.
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Release {
@@ -603,12 +601,12 @@ fn install(candidate: &Candidate, image: &Path, progress: &dyn Fn(UpdateProgress
         progress(UpdateProgress::Verifying);
         verify_download(&stage, &candidate.sha256).stage(Stage::ChecksumVerify)?;
         progress(UpdateProgress::Installing);
-        // Fail closed if the launcher changed while the download was in flight.
         let current = fs::symlink_metadata(image).stage(Stage::InstallTarget)?;
         ensure_update!(current.is_file() && !current.file_type().is_symlink() && current.uid() == unsafe { libc::geteuid() }, "installed AppImage changed while downloading");
         let config = crate::shared::handoff::load_config_from(&crate::shared::handoff::default_config_path());
         let selected = if config.update_channel.as_deref() == Some("main") { "main" } else { "stable" };
         ensure_update!(selected == candidate.channel, "channel changed while downloading");
+        crate::composition::check_preference_compatibility().stage(Stage::Config)?;
         let mut f = OpenOptions::new().write(true).create_new(true).open(&staged_sidecar).stage(Stage::MarkerWrite)?;
         f.write_all(serde_json::to_string(&serde_json::json!({"channel": candidate.channel, "id": candidate.id}))?.as_bytes()).stage(Stage::MarkerWrite)?;
         f.sync_all().stage(Stage::MarkerWrite)?;
@@ -626,7 +624,6 @@ fn install(candidate: &Candidate, image: &Path, progress: &dyn Fn(UpdateProgress
         }
         exchange(&stage, image)?;
         swapped = true;
-        // The old AppImage is now at stage; it remains a rollback copy.
         if let Err(error) = fs::rename(&stage, &backup) {
             exchange(&stage, image).context("could not restore installed AppImage after backup failed")?;
             swapped = false;
@@ -1485,7 +1482,7 @@ mod tests {
         fs::write(&path, br#"{"ingestToken":"private","autoSend":false}"#).unwrap();
         set_channel_in(&path, "main").unwrap();
         let value: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        assert_eq!(value["updateChannel"], "main");
+        assert_eq!(value["about"]["updateChannel"], "main");
         assert_eq!(value["ingestToken"], "private");
         assert_eq!(value["autoSend"], false);
         let before = fs::read(&path).unwrap();

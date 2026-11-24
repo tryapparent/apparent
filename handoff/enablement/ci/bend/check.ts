@@ -29,6 +29,11 @@ await bendScratch(async (scratch) => {
       import t3 from "./t3-settings.mjs";
       import feedback from "./written-report.mjs";
       assert.deepEqual(
+        [[true, false, true], [true, true, false], [false, false, true], [false, true, false]]
+          .map(input => t3.picker_enabled(...input)),
+        [false, true, true, false],
+      );
+      assert.deepEqual(
         [[true, true, 8192], [true, true, 8193], [false, true, 0], [true, false, 5]]
           .map(args => feedback.admit_written_report(...args)),
         [true, false, false, false],

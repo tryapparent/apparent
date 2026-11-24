@@ -385,7 +385,6 @@ pub fn apparent_log(msg: impl AsRef<str>) {
         .as_millis();
     let line = format!("[{ts}] {}\n", msg.as_ref());
     eprint!("{line}");
-    // Tests log fixture failures on purpose; keep them out of the user's real log.
     if cfg!(test) {
         return;
     }
@@ -946,7 +945,7 @@ impl SharedCaptureTelemetry {
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             *self.circle_session.lock().unwrap_or_else(PoisonError::into_inner) =
-                (self.capture_mode.load(Ordering::Acquire) != 3 && crate::shared::handoff::experiment(crate::circle_recognition::SETTING))
+                (self.capture_mode.load(Ordering::Acquire) != 3 && crate::shared::handoff::experiment_preference(crate::circle_recognition::SETTING))
                 .then(|| crate::circle_recognition::Session::start(crate::composition::assembly::circle_label)).flatten();
         }
         if agent_context {

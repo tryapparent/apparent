@@ -30,17 +30,23 @@ try{
  await doodles.click();
  await expect(doodles).toHaveAttribute('aria-checked','true');
  const savedDoodles=JSON.parse(await fs.readFile(process.argv[2],'utf8'));
- assert.equal(savedDoodles.experiments.pillDoodles,true);
+ assert.equal(savedDoodles.labs.pillDoodles,true);
  await page.reload();
  await expect(doodles).toBeEnabled();
  await expect(doodles).toHaveAttribute('aria-checked','true');
+ const bloom=page.getByRole('switch',{name:'Soft Bloom'});
+ await expect(bloom).toBeEnabled();
+ await expect(bloom).not.toBeChecked();
+ await bloom.click();
+ await expect(bloom).toBeChecked();
+ assert.equal(JSON.parse(await fs.readFile(process.argv[2],'utf8')).labs.softBloom,true);
  const agentContext=page.getByRole('switch',{name:'Recording context for agents'});
  await expect(agentContext).toHaveAttribute('aria-checked','false');
  for(const on of [true,false]){
   await agentContext.click();
   await expect(agentContext).toHaveAttribute('aria-checked',String(on));
   const saved=JSON.parse(await fs.readFile(process.argv[2],'utf8'));
-  assert.equal(saved.experiments.agentContext,on);
+  assert.equal(saved.labs.agentContext,on);
   assert.equal(saved.experiments.other,true);
   assert.equal(saved.secret,'private');
   await page.reload();
@@ -54,7 +60,7 @@ try{
  for(const on of [true,false]){
   await toggle.click();await expect(toggle).toHaveAttribute('aria-checked',String(on));
   const saved=JSON.parse(await fs.readFile(process.argv[2],'utf8'));
-  assert.equal(saved.experiments.localStreamingTranscription,on);assert.equal(saved.experiments.other,true);assert.equal(saved.secret,'private');
+  assert.equal(saved.labs.localStreamingTranscription,on);assert.equal(saved.experiments.other,true);assert.equal(saved.secret,'private');
   await page.reload();await expect(toggle).toBeEnabled();await expect(toggle).toHaveAttribute('aria-checked',String(on));
  }
  await expect(page.getByRole('switch',{name:'Send recordings to T3 Code'})).toHaveCount(0);
@@ -62,7 +68,7 @@ try{
  for(const on of [true,false]){
   await sharing.click();await expect(sharing).toHaveAttribute('aria-checked',String(on));
   const saved=JSON.parse(await fs.readFile(process.argv[2],'utf8'));
-  assert.equal(saved.experiments.hostedSharing,on);assert.equal(saved.experiments.localStreamingTranscription,false);
+  assert.equal(saved.labs.hostedSharing,on);assert.equal(saved.labs.localStreamingTranscription,false);
   assert.equal(saved.experiments.other,true);assert.equal(saved.secret,'private');
   await page.reload();await expect(sharing).toBeEnabled();await expect(sharing).toHaveAttribute('aria-checked',String(on));
  }
@@ -73,7 +79,7 @@ try{
  for(const on of [false,true]){
   await autoPaste.click();await expect(autoPaste).toHaveAttribute('aria-checked',String(on));
   const saved=JSON.parse(await fs.readFile(process.argv[2],'utf8'));
-  assert.equal(saved.experiments.autoPasteDraft,on);assert.equal(saved.experiments.localStreamingTranscription,false);
+  assert.equal(saved.labs.autoPasteDraft,on);assert.equal(saved.labs.localStreamingTranscription,false);
   assert.equal(saved.experiments.other,true);assert.equal(saved.secret,'private');
   await page.reload();await expect(autoPaste).toBeEnabled();await expect(autoPaste).toHaveAttribute('aria-checked',String(on));
  }
@@ -83,7 +89,7 @@ try{
   for(const on of [true,false]){
    await wispr.click();await expect(wispr).toHaveAttribute('aria-checked',String(on));
    const saved=JSON.parse(await fs.readFile(process.argv[2],'utf8'));
-   assert.equal(saved.experiments.onboardingWisprFlow,on);assert.equal(saved.experiments.localStreamingTranscription,false);
+   assert.equal(saved.labs.onboardingWisprFlow,on);assert.equal(saved.labs.localStreamingTranscription,false);
    assert.equal(saved.secret,'private');assert.equal(saved.experiments.other,true);
    await page.reload();await expect(wispr).toBeEnabled();await expect(wispr).toHaveAttribute('aria-checked',String(on));
   }

@@ -47,7 +47,7 @@ fn eligible(installed: bool) -> bool {
     allows_resident_final(
         Engine::preferred() == Engine::Apple,
         installed,
-        crate::shared::handoff::experiment("localStreamingTranscription"),
+        crate::shared::handoff::experiment_preference("labs.localStreamingTranscription"),
     )
 }
 
