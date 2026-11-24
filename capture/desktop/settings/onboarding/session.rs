@@ -415,7 +415,9 @@ impl Session {
     }
 
     pub(crate) fn shortcut_selection_released(&mut self, released: bool) {
-        if released { self.shortcut_choice_down = false; }
+        if released && std::mem::take(&mut self.shortcut_choice_down) && self.choosing_shortcut() {
+            self.sync();
+        }
     }
 
     pub(crate) fn observe_shortcut_modifiers(&mut self, flags: u64) {

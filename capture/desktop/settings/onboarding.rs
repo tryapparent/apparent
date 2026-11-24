@@ -1135,18 +1135,33 @@ fn shortcut_native_process_failures_reject_without_accepting_renderer_claims() {
 
 #[test]
 fn electron_choice_receipt_is_bound_to_the_released_native_selection() {
-    let mut session=Session::for_test(Flow::tour(Step::Shortcut,None).with_first_capture(true,true,false,false));
-    session.shortcut_label="Fn".into();
-    session.practice=Some(super::practice::Practice::default());
-    let (sender,_receiver)=flume::unbounded();
-    session.fallback=Some(Box::new(move |_|Ok(Transport::InProcess(Some(sender.clone())))));
-    session.shortcut_choice_down=true;
-    session.action("accept-shortcut-choice:Fn");
+    let mut session = Session::for_test(
+        Flow::tour(Step::Shortcut, None).with_first_capture(true, false, false, false),
+    );
+    session.shortcut_label = "Option".into();
+    session.practice = Some(super::practice::Practice::default());
+    session.input(Input::ShortcutChosen);
+    session.saved_resume = Some(Step::Shortcut);
+    session.saved_shortcut_chosen = true;
+    let (sender, receiver) = flume::unbounded();
+    session.transport = Transport::InProcess(Some(sender.clone()));
+    session.fallback = Some(Box::new(move |_| Ok(Transport::InProcess(Some(sender.clone())))));
+    session.sync();
+    assert_eq!(receiver.try_recv().unwrap()["shortcutSelectionReleased"], false);
+    session.observe_shortcut_modifiers(1 << 19);
+    assert!(receiver.try_recv().is_err());
+    session.action("accept-shortcut-choice:Option");
     assert!(!session.flow.shortcut_tested,"a held choice cannot admit capture");
-    session.shortcut_selection_released(true);
+    session.observe_shortcut_modifiers(0);
+    let released = receiver.try_recv().expect("releasing Option sends the new view");
+    assert_eq!(released["shortcutSelectionReleased"], true);
+    assert_eq!(released["shortcut"], "Option");
+    session.observe_shortcut_modifiers(0);
+    assert!(receiver.try_recv().is_err());
+    session.transport = Transport::InProcess(None);
     session.action("accept-shortcut-choice:Copilot");
     assert!(!session.flow.shortcut_tested,"stale shortcut receipt is rejected");
-    session.action("accept-shortcut-choice:Fn");
+    session.action("accept-shortcut-choice:Option");
     assert!(session.flow.shortcut_tested);
     assert_eq!(session.flow.step(),Step::Shortcut,"receipt never starts capture");
     session.action("continue");
@@ -1154,6 +1169,6 @@ fn electron_choice_receipt_is_bound_to_the_released_native_selection() {
     assert_eq!(session.shortcut_policy(),ShortcutPolicy::Record,"next press records without another trial");
     session.flow.step=Step::Shortcut;session.flow.shortcut_tested=false;
     session.fallback=None;
-    session.action("accept-shortcut-choice:Fn");
+    session.action("accept-shortcut-choice:Option");
     assert!(!session.flow.shortcut_tested,"retired Electron cannot change fallback progression");
 }
