@@ -74,14 +74,21 @@ type SavedPicker is Data:
   picker{}
   full_display{}
 
-def screen_selection(supported: Bool, saved: SavedPicker) -> U32:
+def default_screen_selection(direct_needs_opt_in: Bool) -> U32:
+  match direct_needs_opt_in:
+    case False{}:
+      2
+    case True{}:
+      1
+
+def screen_selection(supported: Bool, direct_needs_opt_in: Bool, saved: SavedPicker) -> U32:
   match supported:
     case False{}:
       0
     case True{}:
       match saved:
         case unset{}:
-          2
+          default_screen_selection(direct_needs_opt_in)
         case picker{}:
           1
         case full_display{}:
@@ -95,7 +102,13 @@ def save_picker(skip: Bool) -> Bool:
       False{}
 
 law fresh_install_uses_full_display:
-  {screen_selection(True{}, unset{}) == 2 : U32}
+  {screen_selection(True{}, False{}, unset{}) == 2 : U32}
 
 def fresh_install_uses_full_display():
+  {==}
+
+law direct_capture_without_system_consent_requires_opt_in:
+  {screen_selection(True{}, True{}, unset{}) == 1 : U32}
+
+def direct_capture_without_system_consent_requires_opt_in():
   {==}
