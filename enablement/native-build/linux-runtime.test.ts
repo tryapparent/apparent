@@ -21,6 +21,50 @@ function productionStager(): string {
   assert.fail('production Linux runtime stager must be balanced');
 }
 
+test('Linux runtime staging follows both Cargo output layouts to the binary and test directories', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'apparent-dev-linux-layout-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const source = join(dir, 'main.rs');
+  const staging = join(dir, 'staging');
+  writeFileSync(source, `use std::path::PathBuf;\n${productionStager()}\nfn main() { stage_transcribe_shared_objects(); }\n`);
+  const compile = spawnSync('rustc', ['--edition=2024', source, '-o', staging], {
+    cwd: root, encoding: 'utf8', timeout: 30_000,
+  });
+  assert.equal(compile.status, 0, String(compile.error ?? compile.stderr));
+
+  const runtime = join(dir, 'runtime');
+  const modules = join(dir, 'modules');
+  mkdirSync(runtime);
+  mkdirSync(modules);
+  writeFileSync(join(runtime, 'libtranscribe.so.0.2'), 'synthetic runtime');
+  writeFileSync(join(modules, 'libggml-cpu-x64.so'), 'synthetic backend');
+  writeFileSync(join(runtime, 'not-a-library.txt'), 'exclude');
+  const layouts = [
+    ['legacy/debug', 'apparent-hash/out'],
+    ['current/custom-profile', 'apparent/hash/out'],
+  ];
+  for (const [profilePath, layout] of layouts) {
+    const profile = join(dir, profilePath);
+    const output = join(profile, 'build', layout);
+    mkdirSync(output, { recursive: true });
+    const result = spawnSync(staging, [], {
+      cwd: dir, encoding: 'utf8', timeout: 30_000,
+      env: {
+        PATH: '',
+        OUT_DIR: output,
+        DEP_TRANSCRIBE_CPP_RUNTIME_DIR: runtime,
+        DEP_TRANSCRIBE_CPP_MODULE_DIR: modules,
+      },
+    });
+    assert.equal(result.status, 0, `${layout}: ${result.error ?? result.stderr}`);
+    for (const destination of [profile, join(profile, 'deps')]) {
+      assert.equal(readFileSync(join(destination, 'libtranscribe.so.0.2'), 'utf8'), 'synthetic runtime');
+      assert.equal(readFileSync(join(destination, 'libggml-cpu-x64.so'), 'utf8'), 'synthetic backend');
+      assert.equal(existsSync(join(destination, 'not-a-library.txt')), false);
+    }
+  }
+});
+
 test('Cargo reruns production runtime staging after cached shared objects are pruned', { skip: process.platform !== 'linux' }, t => {
   const dir = mkdtempSync(join(tmpdir(), 'apparent-dev-linux-runtime-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
