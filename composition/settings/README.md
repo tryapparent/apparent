@@ -107,7 +107,7 @@ authorization stays with the capture-time portal.
 
 ## Optional recording performance
 
-Labs offers **Share recording performance**, off by default and independent
+Labs offers **Share performance metrics**, off by default and independent
 of error reporting. It covers every new screen recording that reaches a live
 frame and finalization while opted in. Start measures native recording setup
 through the first observed live frame. Finish measures the native Finish
@@ -116,7 +116,12 @@ as a failure. Set the switch off to invalidate that recording's previous
 consent and any pending reports. A request already admitted may finish.
 
 Release builds configured with Apparent's PostHog project token send duration
-histograms and a few timing spans over OTLP HTTP to the EU project. Reports
+histograms and timing spans over OTLP HTTP to the EU project. Startup spans
+include capture preparation, audio and video setup, portal calls where observed,
+and the acknowledgement from Electron when its recording pill reports geometry.
+The application log retains the same stage names and relative times for local
+diagnosis. The acknowledgement does not establish when the compositor first
+displayed the pill. Reports
 include the build, operating system, length bucket, outcome, and timing
 timestamps. Trace IDs are random and scoped to Start or Finish. The capture
 content, paths, account identifiers, and consent revision stay local.
