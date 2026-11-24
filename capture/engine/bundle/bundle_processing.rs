@@ -4,6 +4,7 @@
 //! caller effects stay outside; existing config, media and recovery adapters remain.
 
 use std::path::{Path, PathBuf};
+use crate::recording_trace::{self as trace, Operation};
 
 use anyhow::{Context, Result};
 use crate::capture::engine::runtime::recording::diagnostics::{Diagnose, Stage};
@@ -123,10 +124,12 @@ pub fn prepare_visuals(
     activity: &windows::ActivityLog,
     video_ink: Option<model::VideoInk>,
 ) -> Option<PreparedVisuals> {
+    let _span = trace::span(Operation::PrepareVisuals);
     if selected.is_empty() {
         return None;
     }
     crate::composition::frame_labels::stamp(&mut selected);
+    let crop_span = trace::span(Operation::AnnotateCrop);
     let (mut annotated_frames, mut cropped) = autocrop::annotate_and_crop(
         selected,
         baseline,
@@ -140,6 +143,8 @@ pub fn prepare_visuals(
         &activity.cursor,
         video_ink,
     );
+    drop(crop_span);
+    let sheet_span = trace::span(Operation::RenderSheet);
     let keyframes: Vec<model::Keyframe> =
         annotated_frames.iter().map(|(kf, _)| kf.clone()).collect();
     let (full_sheet, contact_sheet) = std::thread::scope(|scope| {
@@ -149,6 +154,7 @@ pub fn prepare_visuals(
         let sheet = render::render_contact_sheet_for_duration(duration_ms, &annotated_frames);
         (full_handle.map(|h| h.join().ok()).flatten(), sheet)
     });
+    drop(sheet_span);
     render::stamp_keyframe_badges(&mut annotated_frames);
     if let Some((_, full)) = &mut cropped {
         render::stamp_keyframe_badges(full);
@@ -358,14 +364,15 @@ pub fn finalize_capture_bundle_with_transcript(
         let ((transcript, transcribe_ms), ((predecoded, prepared), frames, crop_settings, assembly_plan)) = std::thread::scope(|scope| {
             let wav_path = &wav_path;
             let recorded_audio = &recorded_audio;
-            let transcribe_handle = scope.spawn(move || {
+            let transcribe_handle = scope.spawn(trace::propagate(move || {
+                let _span = trace::span(Operation::Transcribe);
                 let t0 = std::time::Instant::now();
                 let tr = transcript.unwrap_or_else(|| transcribe::transcribe(
                     has_wav.then_some(wav_path.as_path()),
                     recorded_audio.as_ref(),
                 ));
                 (tr, t0.elapsed().as_millis() as u64)
-            });
+            }));
             recover::write(
                 bundle_dir,
                 &recover::Unfinished {
@@ -406,8 +413,10 @@ pub fn finalize_capture_bundle_with_transcript(
                             .iter()
                             .all(|(k, _)| k.reason == model::KeyframeReason::Mark);
                     let times: Vec<u64> = preview.iter().map(|(k, _)| k.t).collect();
+                    let decode_span = trace::span(Operation::DecodeFrames);
                     let decoded =
                         crate::composition::movie_frames::record(movie, &times, video_offset_ms, 0).unwrap_or_default();
+                    drop(decode_span);
                     if duration_ms >= 20_000 {
                         let cache = if marks_fill {
                             Vec::new()
@@ -597,6 +606,7 @@ pub fn build_bundle_from_parts(
     extras: SourceExtras,
 ) -> Result<(PathBuf, ApparentBundle, String)> {
     let mut frames = frames.into();
+    let _span = trace::span(Operation::BundleBuild);
     publication::publish_after(bundle_dir, || {
         let mut events = events;
         merge_capture_notes(bundle_dir, &mut events)?;
@@ -646,6 +656,7 @@ pub fn build_bundle_from_parts(
         }
         let bench = std::env::var_os("APPARENT_BENCH").is_some();
         let started = std::time::Instant::now();
+        let selection_span = trace::span(Operation::SelectFrames);
         let speech = crate::composition::transcript::speech::plan(&transcript)?;
         let mut selected = crate::composition::transcript::apply(frames.select(
             &strokes,
@@ -656,6 +667,7 @@ pub fn build_bundle_from_parts(
             extras.video_ink,
         )?, &transcript)?;
         crate::composition::frame_labels::stamp(&mut selected);
+        drop(selection_span);
         let select_only_at = std::time::Instant::now();
         let completion_warning = captured_ink_frame_warning(&selected, &marks, extras.video_ink);
         let matches_prepared = completion_warning.is_none() && extras.prepared.as_ref().is_some_and(|prep| {
@@ -706,6 +718,7 @@ pub fn build_bundle_from_parts(
                 let baseline = frames.into_first();
                 let selected = match &extras.full_frames {
                     Some(decode) if !selected.is_empty() => {
+                        let _span = trace::span(Operation::DecodeFrames);
                         let times: Vec<u64> = selected.iter().map(|(k, _)| k.t).collect();
                         match decode(&times) {
                             Ok(full) => {
@@ -752,6 +765,7 @@ pub fn build_bundle_from_parts(
                         None => None,
                     }
                 };
+                let crop_span = trace::span(Operation::AnnotateCrop);
                 let (mut annotated_frames, mut cropped) = autocrop::annotate_and_crop(
                     selected,
                     baseline.as_ref(),
@@ -765,10 +779,12 @@ pub fn build_bundle_from_parts(
                     &extras.activity.cursor,
                     extras.video_ink,
                 );
+                drop(crop_span);
                 let keyframes: Vec<model::Keyframe> =
                     annotated_frames.iter().map(|(kf, _)| kf.clone()).collect();
                 let annotated_at = std::time::Instant::now();
 
+                let sheet_span = trace::span(Operation::RenderSheet);
                 let (full_sheet, contact_sheet) = std::thread::scope(|scope| {
                     let full_handle = cropped.as_ref().map(|(_, full)| {
                         scope.spawn(|| render::render_contact_sheet_for_duration(duration_ms, full))
@@ -777,6 +793,7 @@ pub fn build_bundle_from_parts(
                         render::render_contact_sheet_for_duration(duration_ms, &annotated_frames);
                     (full_handle.map(|h| h.join().unwrap()), sheet)
                 });
+                drop(sheet_span);
                 render::stamp_keyframe_badges(&mut annotated_frames);
                 if let Some((_, full)) = &mut cropped {
                     render::stamp_keyframe_badges(full);
@@ -852,6 +869,7 @@ pub fn build_bundle_from_parts(
         };
         let summary = summary_markdown(&bundle, bundle_dir);
 
+        let write_span = trace::span(Operation::WriteArtifacts);
         match output {
             BundleOutput::Prepared(prep) => {
                 let root = publication::Directory::open(bundle_dir, true)?;
@@ -900,6 +918,7 @@ pub fn build_bundle_from_parts(
             }
         }
 
+        drop(write_span);
         let finished = std::time::Instant::now();
         let select_ms = (select_only_at - started).as_millis() as u64;
         let decode_ms = (selected_at - select_only_at).as_millis() as u64;
@@ -1221,51 +1240,7 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
-    #[test]
-    fn demo_bundle_saves_finish_trace_without_configuration() {
-        let dir = std::env::temp_dir().join(format!("{}.apparent", make_bundle_id()));
-        let (built, _, _) = generate_demo_bundle(Some(dir.clone())).unwrap();
-        assert_eq!(built, dir);
-        let trace: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(dir.join("finish-trace.json")).unwrap()).unwrap();
-        assert_eq!(trace["version"], 1);
-        assert!(trace["totalMs"].is_u64());
-        assert!(dir.join("apparent.json").exists());
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn finish_trace_contains_only_timings() {
-        let dir = std::env::temp_dir().join(make_bundle_id());
-        std::fs::create_dir_all(&dir).unwrap();
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-        }
-        let trace = FinishTrace {
-            version: 1,
-            stop_ms: Some(8),
-            audio_ms: None,
-            candidates_ms: None,
-            transcribe_ms: Some(40),
-            select_ms: 2,
-            decode_ms: 3,
-            autocrop_ms: 4,
-            sheet_ms: 5,
-            write_ms: 6,
-            total_ms: 50,
-            prepared_visuals: false,
-        };
-        let path = dir.join("finish-trace.json");
-        save_finish_trace(&dir, &trace).unwrap();
-        let json: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        assert_eq!(json["transcribeMs"], 40);
-        assert_eq!(json["totalMs"], 50);
-        assert_eq!(json["preparedVisuals"], false);
-        assert_eq!(json.as_object().unwrap().len(), 12);
-        std::fs::remove_dir_all(dir).unwrap();
-    }
+    include!("../../../engine/diagnostics/performance/bundle_tests.rs");
 
     #[test]
     fn full_keyframes_match_by_time_and_preserve_partial_decodes() {

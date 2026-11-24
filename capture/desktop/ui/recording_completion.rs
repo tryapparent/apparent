@@ -1,6 +1,7 @@
 //! In-process media teardown and bundle finalization, run only on the background executor.
 
 use std::path::PathBuf;
+use crate::recording_trace::{span, Operation};
 
 use super::super::CaptureSource;
 use super::whiteboard;
@@ -67,12 +68,16 @@ pub(in crate::capture::desktop) fn finalize(
     };
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     let circle = screen_session.circle_labels();
-    let stopped = screen_session.stop_tracks(audio_recorder, window_log);
+    let stopped = {
+        let _span = span(Operation::StopTracks);
+        screen_session.stop_tracks(audio_recorder, window_log)
+    };
     let _ = source_released.send(());
     let recording = stopped.recording;
     let sampling = stopped.sampling;
     let mut activity = stopped.activity;
     if let Some(context) = action_context {
+        let _span = span(Operation::ActionContext);
         activity.action_context = context.finish(&events, &strokes);
     }
     let duration_ms = recording.duration_ms;
@@ -95,7 +100,8 @@ pub(in crate::capture::desktop) fn finalize(
     };
     let finalized = complete_bundle(&bundle_dir, &final_whiteboard, sampling, || {
         if let Some(receipt) = notes_finished {
-            if let Err(error) = receipt
+            let notes_span = span(Operation::NotesWait);
+            let notes_result = receipt
                 .recv_timeout(std::time::Duration::from_secs(12))
                 .map_err(|_| "Notes finish receipt unavailable".to_owned())
                 .and_then(|r| r.map(|outcome| match outcome {
@@ -103,8 +109,9 @@ pub(in crate::capture::desktop) fn finalize(
                     crate::capture::desktop::workflow::notes::FinishOutcome::UnavailableBeforeAdmission => {
                         apparent_log("Typed notes unavailable before admission; finalizing screen capture without notes");
                     }
-                }))
-            {
+                }));
+            drop(notes_span);
+            if let Err(error) = notes_result {
                 crate::capture::engine::bundle::recover::write(
                     &bundle_dir,
                     &crate::capture::engine::bundle::recover::Unfinished {
@@ -133,7 +140,10 @@ pub(in crate::capture::desktop) fn finalize(
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         let strokes = {
             let mut strokes = strokes;
-            if let Some(session) = circle { session.apply(&mut strokes); }
+            if let Some(session) = circle {
+                let _span = span(Operation::CircleLabels);
+                session.apply(&mut strokes);
+            }
             strokes
         };
         crate::capture::engine::bundle::bundle_processing::finalize_capture_bundle(
@@ -179,6 +189,7 @@ fn complete_bundle(
             build()
         },
         |dir, bundle, summary| {
+            let _span = span(Operation::Whiteboard);
             #[cfg(target_os = "linux")]
             FinishPhase::PublishingBundle.emit();
             whiteboard::finish_handoff(dir, bundle, summary, board)
