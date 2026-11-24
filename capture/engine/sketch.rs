@@ -882,7 +882,7 @@ fn summary_markdown_formatted(
                 out.push_str("No transcript: Recognition did not run. The audio is saved.\n");
             }
         } else if bundle.transcript.text.trim().is_empty() {
-            out.push_str("No words transcribed. Your audio was saved—check it or try again closer to the microphone.\n");
+            out.push_str("No words transcribed. The audio was saved.\n");
         }
     }
     let mut app_events: Vec<(u64, String)> = bundle
@@ -2286,7 +2286,7 @@ mod tests {
         no_words.audio = Some("audio.wav".into());
         no_words.transcript = TranscriptData { source: "command:test".into(), ..Default::default() };
         let summary = summary_markdown(&no_words, &audio_dir);
-        assert!(summary.contains("No words transcribed"));
+        assert!(summary.contains("No words transcribed. The audio was saved.\n"));
         assert!(!summary.contains("No microphone audio was saved"));
 
         let mut failure = silent.clone();
