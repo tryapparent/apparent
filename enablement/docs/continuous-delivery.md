@@ -479,9 +479,9 @@ Dependency caches are not test receipts; no speedup is claimed here.
 
 ## Commit integration checkpoint
 
-With `core.hooksPath=.githooks`, `post-commit` refreshes `origin/main` with a
-five-second, noninteractive fetch on feature branches. When HEAD does not contain
-that main commit, it prints `INTEGRATION REQUIRED` and the exact fetched SHA.
+With `core.hooksPath=.githooks`, `post-commit` refreshes feature branches'
+`origin/main` via a five-second noninteractive fetch with automatic maintenance
+disabled. If HEAD lacks the fetched commit, it prints `INTEGRATION REQUIRED` and its SHA.
 The owning agent should finish running operations, preserve any remaining
 uncommitted work, rebase onto that SHA, inspect incoming changes and rerun affected
 checks before starting the next work section. This is an advisory checkpoint,
