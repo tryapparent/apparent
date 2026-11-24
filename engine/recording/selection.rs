@@ -31,7 +31,7 @@ pub(crate) fn cancel() {
     }
 }
 
-pub(crate) const PREFERENCE: &str = "chooseScreenEachTime";
+pub(crate) const PREFERENCE: &str = "permissions.skipScreenSelection";
 
 pub(crate) fn supported() -> bool {
     #[cfg(target_os = "linux")]
@@ -57,7 +57,7 @@ pub(crate) fn enabled_in(config: &crate::shared::handoff::Config) -> bool {
 pub(crate) fn preference(
     config: &crate::shared::handoff::Config,
 ) -> crate::permission_admission::ScreenSelection {
-    crate::permission_admission::screen_selection(supported(), config.experiments.get(PREFERENCE).copied())
+    crate::permission_admission::screen_selection(supported(), config.skip_screen_selection)
 }
 
 pub(crate) struct DisplaySelection {

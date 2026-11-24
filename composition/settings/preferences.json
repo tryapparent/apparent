@@ -1,0 +1,49 @@
+[
+  {
+    "id": "general.launchAtLogin",
+    "label": "Launch at login",
+    "kind": "boolean",
+    "default": null,
+    "apply": "native-registration",
+    "effect": "loginItem",
+    "legacy": { "path": "launchAtLogin" }
+  },
+  {
+    "id": "general.errorReporting",
+    "label": "Send technical error reports",
+    "kind": "boolean",
+    "default": true,
+    "apply": "next-report",
+    "effect": "errorReporting",
+    "legacy": { "path": "errorReporting" }
+  },
+  {
+    "id": "general.recordShortcut",
+    "label": "Record shortcut",
+    "kind": "object",
+    "default": null,
+    "apply": "native-registration",
+    "effect": "shortcut",
+    "legacy": { "path": "shortcuts.record" }
+  },
+  {
+    "id": "general.pasteShortcut",
+    "label": "Paste shortcut",
+    "kind": "object",
+    "default": null,
+    "nullable": true,
+    "apply": "native-registration",
+    "effect": "shortcut",
+    "legacy": { "path": "shortcuts.paste" }
+  },
+  {
+    "id": "about.updateChannel",
+    "label": "Update channel",
+    "kind": "string",
+    "default": "stable",
+    "apply": "next-update-check",
+    "platforms": ["linux"],
+    "choices": ["stable", "main"],
+    "legacy": { "path": "updateChannel" }
+  }
+]

@@ -4,7 +4,7 @@ pub use apparent_connect_client::{
     AccountView, CloudConfig, ConnectCommand, HOSTED_SHARING, HOSTED_SYNC, PreparedLink,
     SharesCommand,
 };
-use apparent_connect_client::{Client, ConfigProvider, RenewalDecision, RenewalFacts};
+use apparent_connect_client::{Client, ConfigProvider, RenewalDecision, RenewalFacts, SPEAKING_STYLE};
 // Package call sites own the concrete flags; this adapter preserves override semantics.
 use crate::shared::handoff::experiment as app_experiment;
 use std::path::{Path, PathBuf};
@@ -22,7 +22,10 @@ impl ConfigProvider for AppConfig {
             .unwrap_or_default()
     }
     fn experiment(&self, name: &str) -> bool {
-        app_experiment(name)
+        match name {
+            HOSTED_SHARING | SPEAKING_STYLE => crate::shared::handoff::experiment_preference(name),
+            _ => app_experiment(name),
+        }
     }
     fn set_cloud(&self, value: &CloudConfig) -> Result<()> {
         self.set_cloud_allowed(value, &|| true)
@@ -77,10 +80,25 @@ pub fn settings_backend(
 
 struct SettingsBackend(Client, PathBuf);
 use crate::capture::desktop::settings::connect as settings_controller;
+
+fn sharing_preference_in(path: &Path) -> Option<bool> {
+    use crate::shared::handoff::experiment_preference_overridden;
+    use crate::shared::preferences::{preference, preference_value, read_preferences};
+    let config = read_preferences(path).ok()?;
+    let enabled = preference_value(&config, HOSTED_SHARING)
+        .and_then(|saved| saved.as_bool())
+        .or_else(|| preference(HOSTED_SHARING)?["default"].as_bool())
+        .unwrap_or(false);
+    Some(experiment_preference_overridden(HOSTED_SHARING) || enabled)
+}
+
 impl settings_controller::Backend for SettingsBackend {
     fn shared_links_url(&self) -> Option<String> {
-        crate::shared::handoff::capture_location::experiment_in(&self.1, HOSTED_SHARING)
-            .ok().filter(|enabled| *enabled).and_then(|_| self.0.shared_links_url())
+        if sharing_preference_in(&self.1)? {
+            self.0.shared_links_url()
+        } else {
+            None
+        }
     }
     fn snapshot(
         &self,

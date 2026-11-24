@@ -5,10 +5,11 @@ macOS and Wayland. In that state, each Screen recording started from the app or
 Record shortcut opens the native picker. Turning it on records one full display.
 Wayland can still ask for system approval. X11 has no native picker.
 
-The next Screen recording reads `experiments.chooseScreenEachTime` from
-`~/.config/apparent/config.json`. Absent and explicit `true` choose the picker.
-Explicit `false` uses the full-display route, preserving older saved selections.
-The Record Permissions presenter uses the app's existing config transaction.
+The next Screen recording reads `permissions.skipScreenSelection` from
+`~/.config/apparent/config.json`. Absent and explicit `false` choose the picker.
+Explicit `true` uses the full-display route. Older files can still use the
+inverse key, `experiments.chooseScreenEachTime`. The Permissions presenter and
+`apparent settings` use the same config transaction.
 
 macOS uses the picker-authorized ScreenCaptureKit filter for the movie and
 keyframe candidates. Wayland reuses the selected portal session directly, with
@@ -33,12 +34,19 @@ access.
 
 | Control | Saved value and effect |
 | --- | --- |
-| Microphone input | `microphone` stores the native device ID and name, or clears them for System default. New recordings fall back to default if the device is unavailable. The input level uses only an authorized native input while Recording is visible. |
-| Transcription engine | `transcriber` selects Parakeet on Linux or Apple Speech on macOS under the existing `apple` value. Hex and Command depend on native availability. Command uses an existing usable `transcribeCommand`. The next capture uses the preferred engine and its existing fallback. |
-| Language | macOS Apple Speech reads `appleLocale`, or uses the system language when Automatic clears the value. A successful change restarts the speech-model check. Permission and model readiness come from the native provider. |
-| Hex model and language | The model selector is available on both systems when Hex reports models. Selecting a model saves `hexModel` and selects Hex in one transaction. The macOS language field saves `hexLanguage` and accepts blank for English. Model support determines whether Hex applies it. |
-| Other-app volume | `lowerPlayback` and `playbackLevel` apply at the next recording's volume-lowering start. macOS uses a 0–100% slider. Linux uses presets and requires audio support plus `experiments.linux-playback-ducking`; a saved On preference can be turned off when the experiment is unavailable. |
-| Video export | `videoExport` controls the Export Last Capture as Video menu item. It does not export a capture by itself. |
+| Microphone input | `recording.microphone` stores the native device ID and name, or clears them for System default. New recordings fall back to default if the device is unavailable. The input level uses only an authorized native input while Recording is visible. |
+| Microphone on/off | `recording.microphoneEnabled` applies to the next capture. The menu and Recording switch share the same writer. |
+| Transcription engine | `recording.transcriber` selects Parakeet on Linux or Apple Speech on macOS under the existing `apple` value. Hex and Command depend on native availability. Command uses an existing usable `transcribeCommand`. The next capture uses the preferred engine and its existing fallback. |
+| Language | macOS Apple Speech reads `recording.appleLocale`, or uses the system language when Automatic clears the value. Saving through the pane also restarts the speech-model check. Permission and model readiness come from the native provider. |
+| Hex model and language | The model selector is available on both systems when Hex reports models. Selecting a model saves `recording.hexModel` and selects Hex in one transaction. The macOS language field saves `recording.hexLanguage` and accepts blank for English. Model support determines whether Hex applies it. |
+| Other-app volume | `recording.lowerPlayback` and `recording.playbackLevel` apply at the next recording's volume-lowering start. macOS uses a 0–100% slider. Linux uses presets and requires audio support plus `experiments.linux-playback-ducking`. A saved On preference can be turned off when the experiment is unavailable. |
+| Video export | `recording.videoExport` controls the Export Last Capture as Video menu item. |
+
+The former top-level Recording keys remain accepted for existing files.
+The CLI accepts a device ID as `{"id":"device-id"}` for
+`apparent settings set recording.microphone`. Use `apparent mic list` to
+discover IDs and `apparent settings reset recording.microphone` for the system
+default. Settings output includes the ID for this preference.
 
 Linux also projects H.264 encoder/decoder warnings and local model download
 status. The native controller keeps the shared writer, microphone permission,

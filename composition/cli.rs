@@ -205,6 +205,7 @@ enum TuneCommand {
 
 #[derive(Subcommand)]
 enum Command {
+    Settings(super::preferences::Settings),
     /// Connect the recording destination picker to an unmodified T3 Code server.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     T3 {
@@ -821,8 +822,6 @@ fn setup_hermes(check: bool, json: bool, profile: Option<PathBuf>, package: Opti
 pub(super) fn run_cli(cli: Cli) -> Result<()> {
     let command = match cli.command {
         Some(command) => command,
-        // `apparent` typed in a terminal (on PATH through Settings › Agents or Homebrew) would
-        // start a second menu-bar app. macOS opens the app with stdin on /dev/null.
         None if cfg!(any(target_os = "macos", target_os = "linux"))
             && std::io::IsTerminal::is_terminal(&std::io::stdin()) =>
         {
@@ -835,6 +834,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
         },
     };
     match command {
+        Command::Settings(args) => super::preferences::run(args),
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         Command::T3 { command } => t3_command(command),
         #[cfg(any(target_os = "macos", target_os = "linux"))]

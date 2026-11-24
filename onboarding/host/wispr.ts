@@ -17,7 +17,6 @@ export type WisprProvider = (
   signal: AbortSignal,
   apps: readonly DictationApp[],
 ) => Promise<WisprResult>;
-export const wisprExperiment = "onboardingWisprFlow";
 export function eligibleWispr(context: WisprContext | null): boolean {
   return (
     context?.platform === "macos" &&

@@ -12,6 +12,8 @@ mod linux_candidate;
 mod embedded_policy;
 #[path = "engine/recording/stored_frame.rs"]
 mod stored_frame;
+#[path = "engine/recording/preferences/mod.rs"]
+mod recording_preferences;
 #[path = "engine/permissions/facts.rs"]
 mod permission_facts;
 #[path = "engine/permissions/admission.rs"]

@@ -1,0 +1,10 @@
+[
+  {
+    "id": "labs.hostedSharing",
+    "label": "Public sharing links",
+    "kind": "boolean",
+    "default": false,
+    "apply": "next-recording",
+    "legacy": { "path": "experiments.hostedSharing", "lenient": true }
+  }
+]

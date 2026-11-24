@@ -11,6 +11,11 @@ Composition entry supplies the existing config path and builds into the
 Electron pill's existing `t3.cjs` asset. The host still owns the IPC, focus,
 window geometry, and native capture lifecycle.
 
+**Agents → Send recordings to T3 Code** saves `agents.t3DestinationPicker`.
+The picker starts off and enabling it still requires pairing before a send.
+**Ask for video proof** saves `agents.agentDemoVideo`, on by default for the
+next handoff. Both preferences keep reading their prior `experiments` keys.
+
 The picker uses T3's `server.getConfig` environment label for multiple
 computers. Missing, duplicate, or address-only names receive numeric
 disambiguation. Connection addresses remain in Settings. Browse advances
@@ -87,9 +92,9 @@ field is focused at Finish and stays focused, Apparent also pastes the draft. A
 visual handoff attempts the contact sheet first, then the text. The receiving
 app controls attachment acceptance and you submit the draft yourself.
 
-Auto paste is on by default. Settings → Labs can turn it off for the next
-Finish. An existing `experiments.autoPasteDraft: false` stays off, and an existing
-`true` now only pastes. Practice, agent, phone and terminal workflows retain
+Auto paste is on by default. Settings → Labs or
+`apparent settings set labs.autoPasteDraft false` turns it off for the next
+Finish. Existing `experiments.autoPasteDraft` values remain readable. Practice, agent, phone and terminal workflows retain
 manual handoff. On Wayland without the Hyprland shortcut adapter, use explicit
 Paste and grant keyboard access before automatic paste can use the desktop
 portal. If focus, clipboard ownership or provider access changes, check the

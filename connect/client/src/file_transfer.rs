@@ -328,7 +328,7 @@ impl Client {
             let receipt: Value = serde_json::from_slice(&bytes).ok()?;
             return receipt["captureId"].as_str().filter(|id| valid_id(id)).map(str::to_owned);
         }
-        if !self.provider.experiment("speakingStyle") || !self.enabled() {
+        if !self.provider.experiment(SPEAKING_STYLE) || !self.enabled() {
             return None;
         }
         let path = bundle.canonicalize().ok()?;

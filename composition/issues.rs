@@ -1,4 +1,3 @@
-//! Explicit, text-only GitHub feedback. Never reads captures, config secrets or logs.
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
@@ -261,5 +260,78 @@ mod tests {
         assert!(result.is_err());
         assert!(leader_reserved, "leader was reaped before pipe cleanup, allowing PID reuse");
         assert!(descendant_stopped, "owned descendant survived timeout cleanup");
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+pub(crate) mod feedback {
+    use std::{path::PathBuf, process::Command, time::Duration};
+
+    use anyhow::{Context, Result, bail};
+    use clap::{Args, ValueEnum};
+    use serde_json::{Value, json};
+    pub(crate) use crate::permission_admission::PermissionIntent;
+
+    use crate::composition::worker;
+
+    #[derive(Clone, Copy, ValueEnum)]
+    enum Kind {
+        Feedback,
+        Bug,
+    }
+
+    #[derive(Args)]
+    #[command(
+        after_help = "Send in one call with --submit.\n\nOptional local preview:\n  apparent feedback --kind bug --title 'Zoom rejects 1:05' \\\n    --body 'Expected 65 seconds. Zoom rejected the timestamp.'\n\nInclude what you tried, what you expected, and what happened.\nOmit private paths, capture contents, and credentials."
+    )]
+    pub(crate) struct FeedbackArgs {
+        #[arg(long, value_enum, default_value = "feedback", help = "Report category")]
+        kind: Kind,
+        #[arg(long, help = "Short report title")]
+        title: String,
+        #[arg(long, help = "Report text. Omit credentials and private content")]
+        body: String,
+        #[arg(
+            long,
+            help = "Send to Apparent's PostHog project. The default is a local JSON preview"
+        )]
+        submit: bool,
+    }
+
+    pub(crate) fn command(args: FeedbackArgs) -> Result<()> {
+        let source = concat!(
+            include_str!("../agent/feedback/report.ts"),
+            "\nconsole.log(JSON.stringify(await main()));\n"
+        );
+        let input = json!({
+            "kind": match args.kind { Kind::Feedback => "feedback", Kind::Bug => "bug" },
+            "title": args.title,
+            "body": args.body,
+            "submit": args.submit,
+            "token": option_env!("APPARENT_POSTHOG_TOKEN"),
+            "build": env!("APPARENT_VERSION_LABEL"),
+            "environment": env!("APPARENT_REPORTING_ENVIRONMENT"),
+        });
+        let node = worker::bundled_node()?.unwrap_or_else(|| PathBuf::from("node"));
+        let input = worker::private_input(&serde_json::to_vec(&input)?)?;
+        let reply = worker::run_with_input(
+            Command::new(node)
+                .env("ELECTRON_RUN_AS_NODE", "1")
+                .env_remove("NODE_OPTIONS")
+                .args(["--input-type=module-typescript", "--eval", source]),
+            input,
+            Duration::from_secs(10),
+            64 * 1024,
+        )
+        .context(
+            "Could not complete feedback command; it requires the bundled runtime or Node.js 22.23+",
+        )?;
+        let reply: Value =
+            serde_json::from_slice(&reply).context("Invalid feedback worker response")?;
+        if let Some(error) = reply["error"].as_str() {
+            bail!("{error}");
+        }
+        println!("{reply}");
+        Ok(())
     }
 }

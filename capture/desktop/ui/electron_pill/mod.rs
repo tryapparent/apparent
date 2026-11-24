@@ -270,11 +270,12 @@ impl View {
             self.doodle_ink = previous
                 .filter(|view| view.phase == "recording")
                 .map_or_else(|| {
-                    use crate::shared::handoff::{default_config_path, load_config_from};
+                    use crate::shared::handoff::{default_config_path, read_preference};
                     if cfg!(test) {
                         return None;
                     }
-                    load_config_from(&default_config_path()).experiments.get(PILL_DOODLES).copied()
+                    read_preference(&default_config_path(), "labs.pillDoodles")
+                        .and_then(|value| value.as_bool())
                 }, |view| view.doodle_ink);
         }
     }

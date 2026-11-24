@@ -1,9 +1,9 @@
 use crate::capture::engine::runtime::recording::recorder::selection;
-use crate::permission_admission::{Row, project_rows, save_picker};
+use crate::permission_admission::{Row, project_rows};
 use crate::permission_facts::{Grants, Permission, Status};
 
 pub(crate) use crate::permission_admission::PermissionIntent;
-use crate::shared::handoff::{Config, load_config_from, set_experiment_in};
+use crate::shared::handoff::{Config, load_config_from, write_preference};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -122,7 +122,7 @@ fn save_screen_selection(config_path: &Path, skip: bool) -> Option<&'static str>
     if !selection::supported() {
         return Some("unavailable");
     }
-    set_experiment_in(config_path, selection::PREFERENCE, save_picker(skip))
+    write_preference(config_path, selection::PREFERENCE, Some(skip.into()))
         .err()
         .map(|_| "failed")
 }
@@ -192,13 +192,38 @@ mod tests {
         assert_eq!(screen_selection(true, None), ScreenSelection::Picker);
         assert_eq!(screen_selection(false, None), ScreenSelection::Unavailable);
         assert_eq!(
-            screen_selection(true, Some(save_picker(false))),
+            screen_selection(true, Some(false)),
             ScreenSelection::Picker
         );
         assert_eq!(
-            screen_selection(true, Some(save_picker(true))),
+            screen_selection(true, Some(true)),
             ScreenSelection::FullDisplay
         );
+    }
+
+    #[test]
+    fn screen_selection_prefers_canonical_values_and_resets_to_policy_default() {
+        use crate::permission_admission::{ScreenSelection, screen_selection};
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let stored = || {
+            let config = load_config_from(&path);
+            screen_selection(true, config.skip_screen_selection)
+        };
+        std::fs::write(&path, br#"{"experiments":{"chooseScreenEachTime":false,"other":true}}"#).unwrap();
+        assert_eq!(stored(), ScreenSelection::FullDisplay);
+        std::fs::write(&path, br#"{"experiments":{"chooseScreenEachTime":false,"other":true},"permissions":{"skipScreenSelection":false}}"#).unwrap();
+        assert_eq!(stored(), ScreenSelection::Picker);
+        let before = std::fs::read(&path).unwrap();
+        assert!(write_preference(&path, selection::PREFERENCE, Some("false".into())).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        write_preference(&path, selection::PREFERENCE, None).unwrap();
+        assert_eq!(stored(), screen_selection(true, None));
+        let saved = crate::shared::handoff::read_preferences(&path).unwrap();
+        assert_eq!(saved["experiments"]["other"], true);
+        assert!(saved["experiments"].get("chooseScreenEachTime").is_none());
+        assert!(saved["permissions"].get("skipScreenSelection").is_none());
     }
 
     #[test]

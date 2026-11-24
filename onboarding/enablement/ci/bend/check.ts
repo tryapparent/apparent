@@ -5,6 +5,7 @@ import {
   bendScratch,
   proofOptions,
 } from "../../../../shared/enablement/bend/build.ts";
+import { run } from "../../../../shared/enablement/bend/toolchain.ts";
 import { buildTraversal, host } from "./build.ts";
 import { type Table, traversalTable } from "./table.ts";
 
@@ -15,6 +16,29 @@ import { tipTable, tipTablePath } from "./note-tip.ts";
 const args = process.argv.slice(2);
 const update = args.length === 1 && args[0] === "--write-native";
 const tablePath = join(host, "tour-traversal.json");
+const dictationPath = new URL(
+  "../../../settings/dictation-preference.json",
+  import.meta.url,
+);
+
+function dictationTable(directory: string): string {
+  return run(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+    import policy from "./dictation-preference.mjs";
+    console.log(JSON.stringify(
+      [0, 1, 2].map(canonical =>
+        [false, true].map(legacy => policy.preference_enabled(canonical, legacy))
+      )
+    ).replaceAll(",", ", "));
+  `,
+    ],
+    directory,
+  );
+}
 
 await bendScratch(async (scratch) => {
   const production = join(scratch, "production");
@@ -37,6 +61,12 @@ await bendScratch(async (scratch) => {
     name: [false, false, true, false, true, false, true, false, false, false],
     visible: [false, false, true, false],
   });
+  const dictation = dictationTable(production);
+  assert.deepEqual(JSON.parse(dictation), [
+    [false, true],
+    [false, false],
+    [true, true],
+  ]);
   assert.deepEqual(JSON.parse(frog), {
     delay: 350,
     eligible: [false, false, true, false],
@@ -52,6 +82,7 @@ await bendScratch(async (scratch) => {
   });
   if (update) {
     writeFileSync(desktopFrogTablePath, desktopFrog);
+    writeFileSync(dictationPath, dictation);
     writeFileSync(frogTablePath, frog);
     writeFileSync(tipTablePath, tips);
     writeFileSync(tablePath, generated);
@@ -65,6 +96,11 @@ await bendScratch(async (scratch) => {
     assert.deepEqual(
       JSON.parse(readFileSync(desktopFrogTablePath, "utf8")),
       JSON.parse(desktopFrog),
+  );
+    assert.equal(dictationTable(proof), dictation);
+    assert.deepEqual(
+      JSON.parse(readFileSync(dictationPath, "utf8")),
+      JSON.parse(dictation),
     );
     assert.deepEqual(
       JSON.parse(readFileSync(frogTablePath, "utf8")),

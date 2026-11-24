@@ -434,7 +434,7 @@ impl ApparentCoordinator {
                 return;
             }
         }
-        if !crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING)
+        if !crate::shared::handoff::experiment_preference(crate::connect::hosted::HOSTED_SHARING)
             || !matches!(self.island_phase, IslandPhase::Completed { .. })
             || self.share_probe_at.is_some_and(|at| at.elapsed() < Duration::from_secs(5)) {
             return;
@@ -507,7 +507,7 @@ impl ApparentCoordinator {
             }
             return;
         }
-        if !crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING)
+        if !crate::shared::handoff::experiment_preference(crate::connect::hosted::HOSTED_SHARING)
             || !matches!(self.island_phase, IslandPhase::Completed { .. })
             || !self.share_online || self.share_pending.is_some() { return; }
         let Some(bundle) = self.completed_dir.clone() else { return };
@@ -537,7 +537,7 @@ impl ApparentCoordinator {
             let worker_active = active.clone();
             let result = cx.background_executor().spawn(async move {
                 let allowed = || worker_active.load(std::sync::atomic::Ordering::SeqCst)
-                    && crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING);
+                    && crate::shared::handoff::experiment_preference(crate::connect::hosted::HOSTED_SHARING);
                 if connect { crate::connect::hosted::connect_sharing(&allowed)?; }
                 if public { crate::connect::hosted::prepare_public_link_handoff(&worker_bundle, &allowed, foreground) }
                 else { crate::connect::hosted::copy_link_handoff(&worker_bundle, &allowed, foreground) }
@@ -841,7 +841,6 @@ impl ApparentCoordinator {
         }
     }
 
-    /// The menu bar's picker on platforms that still expose target selection.
     #[cfg(not(target_os = "linux"))]
     pub fn begin_target_selection(&mut self, cx: &mut Context<Self>) {
         self.open_picker(None, cx);
@@ -1158,7 +1157,7 @@ impl ApparentCoordinator {
             return;
         }
         self.publish_capture_busy();
-        let stream_admission = crate::shared::handoff::experiment("localStreamingTranscription")
+        let stream_admission = crate::shared::handoff::experiment_preference("labs.localStreamingTranscription")
             .then(workflow::local_transcription::admission);
         let allow_notes = cfg!(target_os = "linux") || prepared_source.is_none();
         use crate::capture::engine::runtime::recording::recorder::StartError;

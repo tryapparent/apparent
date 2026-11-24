@@ -21,12 +21,10 @@ const {
   repair: table,
   rows,
   screenSelection,
-  savePicker,
 }: {
   repair: number[];
   rows: number[];
   screenSelection: number[];
-  savePicker: boolean[];
 } = JSON.parse(
   readFileSync(
     new URL(
@@ -56,12 +54,6 @@ if (
   screenSelection.some((index) => !modes[index])
 )
   throw Error("Invalid Bend screen selection table");
-if (
-  savePicker.length !== 2 ||
-  savePicker.some((value) => typeof value !== "boolean")
-)
-  throw Error("Invalid Bend screen selection save table");
 process.stdout.write(
-  `const SCREEN_SELECTION: [ScreenSelection; 6] = [${screenSelection.map((index) => "ScreenSelection::" + modes[index]).join(", ")}];\n` +
-    `const SAVE_PICKER: [bool; 2] = [${savePicker.join(", ")}];\n`,
+  `const SCREEN_SELECTION: [ScreenSelection; 6] = [${screenSelection.map((index) => "ScreenSelection::" + modes[index]).join(", ")}];\n`,
 );
