@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Whiteboard,
@@ -6,10 +6,7 @@ import {
   type Lesson,
   type Paper,
 } from "../../../record/pill/whiteboard/renderer";
-import {
-  BoardLesson,
-  boardLessonHoldMs,
-} from "../../../onboarding/renderer/board-lesson";
+import { BoardLesson } from "../../../onboarding/renderer/board-lesson";
 import "@apparent/ui/tokens.css";
 
 declare global {
@@ -22,23 +19,14 @@ declare global {
   }
 }
 
-function PracticeLesson({ drawing, hasInk, close }: Parameters<Lesson>[0]) {
+function PracticeLesson({ drawing, hasInk }: Parameters<Lesson>[0]) {
   const [demonstrated, setDemonstrated] = useState(false);
-  const hold = useCallback(
-    (node: HTMLDivElement | null) => {
-      if (!node || !hasInk || drawing) return;
-      const timer = window.setTimeout(close, boardLessonHoldMs);
-      return () => window.clearTimeout(timer);
-    },
-    [close, drawing, hasInk],
-  );
   return (
-    <div ref={hold}>
-      <BoardLesson
-        ready={demonstrated || drawing || hasInk}
-        onExampleEnd={() => setDemonstrated(true)}
-      />
-    </div>
+    <BoardLesson
+      ready={demonstrated || drawing || hasInk}
+      hasInk={hasInk}
+      onExampleEnd={() => setDemonstrated(true)}
+    />
   );
 }
 

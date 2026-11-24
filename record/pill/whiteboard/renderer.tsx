@@ -28,7 +28,6 @@ export type Edit = (
 export type Lesson = (state: {
   drawing: boolean;
   hasInk: boolean;
-  close: () => void;
 }) => ReactNode;
 
 export function Whiteboard({
@@ -203,7 +202,7 @@ export function Whiteboard({
               ),
           )}
         </svg>
-        {lesson?.({ drawing, hasInk, close })}
+        {lesson?.({ drawing, hasInk })}
         {error && (
           <p role="alert">
             Whiteboard disconnected. Close this window and reopen Whiteboard
