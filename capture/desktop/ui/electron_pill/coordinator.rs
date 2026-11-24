@@ -161,6 +161,7 @@ impl ApparentCoordinator {
             reduced_motion: snapshot.reduced_motion,
             input_waveform: snapshot.input_waveform,
             doodle_ink: None,
+            soft_bloom: None,
             transcript: None,
             notice: None,
             note_tip: None,

@@ -12,6 +12,7 @@ export function nativeTraversal(): string {
   const functions = (Object.keys(inputs) as (keyof Table)[]).map((name) => {
     const flags = inputs[name];
     const [result, variants] = {
+      practice_control: ["bool", ["false", "true"]],
       visible: ["bool", ["false", "true"]],
       enter: ["Step", stepVariants],
       advance: [

@@ -53,7 +53,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   await expect(agentContext).toHaveAccessibleDescription(/local dev page using the Apparent SDK/);
   await expect(toggle).toBeDisabled();await expect.poll(()=>Boolean(held)).toBe(true);
   reply(held!);hold=false;await expect(toggle).toBeEnabled();await expect(toggle).toHaveAttribute('aria-checked','false');
-  await expect(doodles).toBeChecked();
+  await expect(doodles).not.toBeChecked();
   await expect(agentContext).toHaveAttribute('aria-checked','false');
   await expect(circles).not.toBeChecked();
   await circles.focus();await page.keyboard.press('Space');
@@ -64,7 +64,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   await page.reload();
   await expect(circles).toBeChecked();
   await expect(agentContext).toBeChecked();
-  await expect(doodles).toBeChecked();
+  await expect(doodles).not.toBeChecked();
   assert.equal(await toggle.locator('.apparent-switch-track').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(229, 229, 234)');
   const track=toggle.locator('.apparent-switch-track');
   await expect(track).toHaveCSS('width','51px');
@@ -89,6 +89,8 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
    await expect(control).toBeChecked();
    await expect(toggle).toBeChecked();
   };
+  await enableAndReload(doodles);
+  await enableAndReload(page.getByRole('switch',{name:'Soft Bloom'}));
   const speaking=page.getByRole('switch',{name:'Match my speaking style'});
   await enableAndReload(speaking);
   const sharing=page.getByRole('switch',{name:'Public sharing links'});

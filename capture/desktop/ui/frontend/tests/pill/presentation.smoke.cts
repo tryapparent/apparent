@@ -204,13 +204,13 @@ test('close stays at the trailing edge and progress rotates unless motion is red
    for(const noteCount of [0,12]){
     await publish({...recording,actions:[...actions,...(noteCount?[control('notes','Open notes')]:[])],noteCount});
     if(process.env.APPARENT_PILL_EVIDENCE)await page.screenshot({path:path.join(process.env.APPARENT_PILL_EVIDENCE,`${theme}-${width}-notes-${noteCount}.png`)});
-    assert.deepEqual(await page.locator('.controls button').evaluateAll(es=>es.map(e=>e.getAttribute('aria-label'))),['Whiteboard','Finish','Cancel']);
+    assert.deepEqual(await page.locator('.pill-row button').evaluateAll(es=>es.map(e=>[e.getAttribute('aria-label'),e.textContent])),[['Finish',''],['Whiteboard',''],['Cancel','']]);
     const close=await page.getByRole('button',{name:'Cancel',exact:true}).boundingBox();
     const finish=await page.getByRole('button',{name:'Finish',exact:true}).boundingBox();
     const row=await page.locator('.pill-row').boundingBox();
     assert.ok(close.x>=finish.x+finish.width,'Close must follow Finish spatially');
     assert.ok(close.x+close.width<=row.x+row.width);
-    assert.ok(row.x+row.width<=width);
+    assert.ok(row.width<=180 && row.x+row.width<=width);
     assert.equal(close.width,44);assert.equal(close.height,44);
    }
   }
@@ -234,6 +234,7 @@ test('close stays at the trailing edge and progress rotates unless motion is red
  await publish({...recording,actions});
  const close=page.getByRole('button',{name:'Cancel',exact:true});
  await page.getByRole('button',{name:'Finish',exact:true}).focus();
+ await page.keyboard.press('Tab');await expect(page.getByRole('button',{name:'Whiteboard',exact:true})).toBeFocused();
  await page.keyboard.press('Tab');await expect(close).toBeFocused();
  assert.equal(await close.evaluate(el=>getComputedStyle(el).outlineStyle),'solid');
  assert.equal(await close.evaluate(el=>getComputedStyle(el).outlineWidth),'2px');
@@ -299,7 +300,8 @@ test('a warm pill waits for its current layout and performs no sizing work for t
  await page.evaluate(()=>document.fonts.ready);
  const start=await application.evaluate(()=>globalThis.measurements);
  for(let i=0;i<20;i++)await publish({...recording,clock:`00:${String(i).padStart(2,'0')}`,inputWaveform:Array(24).fill(i/20)});
- await expect(page.locator('.clock')).toHaveText('00:19');
+ await expect.poll(()=>page.evaluate(async()=>(await window.apparentPill.read()).clock)).toBe('00:19');
+ await expect(page.locator('.clock')).toHaveCount(0);
  // Includes several former 250ms polling periods, with parent heartbeats.
  for(let i=0;i<6;i++){
   await page.waitForTimeout(100);await publish({...recording,clock:'00:19',inputWaveform:Array(24).fill(.95)});
@@ -311,7 +313,7 @@ test('a warm pill waits for its current layout and performs no sizing work for t
   BrowserWindow.getAllWindows()[0].on('hide',()=>globalThis.resizeHides++);
  });
  await publish({...recording,revision:3,warning:'Microphone input stopped; screen recording continues'});
- await expect(page.getByRole('status')).toContainText('Microphone');
+ await expect(page.getByRole('status').filter({hasText:'Microphone'})).toBeVisible();
  await expect(page.getByRole('button',{name:'Finish',exact:true})).toBeInViewport();
  assert.ok(await application.evaluate(()=>globalThis.measurements)>start,'Content changes must still size the window');
  await page.evaluate(()=>window.apparentPill.layout(3));

@@ -68,6 +68,11 @@ async function measurePractice() {
         'main.native-coach[data-stage="' + name + '"]',
         "the " + name + " coaching step",
       );
+    async function clickCoach(action: "whiteboard" | "finish") {
+      const selector = `main.native-coach button[data-action="${action}"]:enabled:not([inert] *)`;
+      await onScreen(selector, "the active " + action + " coach button");
+      await coach.click(selector);
+    }
     try {
       await onScreen(
         "h1.native-shortcut-prompt",
@@ -79,18 +84,7 @@ async function measurePractice() {
       );
       await phase("practice record");
       await stage("whiteboard");
-      const pill = await observer.connectTo(
-        output,
-        "pill",
-        /\/pill\/index\.html$/,
-      );
-      try {
-        await pill.click(
-          "main[data-phase=recording] button[data-action=whiteboard]",
-        );
-      } finally {
-        pill.close();
-      }
+      await clickCoach("whiteboard");
       const board = await observer.connectTo(
         output,
         "whiteboard",
@@ -147,7 +141,8 @@ async function measurePractice() {
       await stage("screen-ink");
       await phase("practice screen-ink");
       await stage("stop");
-      await phase("practice finish");
+      await phase("finishing from the practice coach");
+      await clickCoach("finish");
       await stage("copied");
       const capture = await observer.waitFor(async () => {
         const name = (await readdir(captures)).find((name) =>

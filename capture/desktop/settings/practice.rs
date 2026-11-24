@@ -11,6 +11,7 @@ pub struct Practice {
     pub locating: bool,
     pub desktop_stage: bool,
     pub attempt: u64,
+    pub observed_attempt: Option<u64>,
     sequence: u64,
     pub pending: VecDeque<Value>,
     pub visibility: Option<bool>,
@@ -95,6 +96,7 @@ impl Practice {
         let finish=d.accepted && d.stage==Stage::Complete && self.pending.front().unwrap()["events"].as_array().is_some_and(|events|events.iter().any(|e|matches!(e["action"].as_str(),Some("practice-finish"|"practice-settings"))));
         self.pending.pop_front();
         if d.attempt==self.attempt.to_string() {
+            self.observed_attempt = Some(self.attempt);
             self.stage=d.stage;self.latest=d.latest;self.locating=d.locating;self.desktop_stage=d.desktop_stage;
             if d.close_board {self.close_board=d.board;}
             Ok((finish,d.sequence))

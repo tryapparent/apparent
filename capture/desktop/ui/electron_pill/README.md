@@ -6,10 +6,11 @@ capture generation and exact handoff selection before dispatch. The renderer
 receives no bundle paths, credentials, configuration or capture contents.
 
 The row covers selection, recording, processing and completion. It reuses
-shared shadcn Button controls and Lucide icons. Cancel/dismiss uses ×; ordinary actions retain labels.
-Cancel/dismiss stays at the trailing edge in visual and keyboard order; during
-ordinary recording it follows Whiteboard and Finish. Completion orders Inspect
-before the primary Paste action, matching Whiteboard before Finish. Processing
+shared shadcn Button controls and Lucide icons. During recording, a plain red
+square finishes the capture and the pen icon opens Whiteboard. Capture switches
+are shown before recording. Cancel and
+Dismiss use × at the trailing edge in visual and keyboard order. Completion
+orders Inspect before the primary Paste action. Processing
 and foreground upload indicators rotate unless OS or native reduced motion is enabled.
 Warnings and rejected actions remain inline;
 there is no expandable panel or Record-package dependency.

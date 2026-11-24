@@ -37,9 +37,7 @@ export type Surface =
     >
   | Readonly<
       Tag<"RecordingSurface"> & {
-        switches: boolean;
         no_words: boolean;
-        phone: boolean;
         notes: number;
         movable: boolean;
         finish_primary: boolean;
@@ -115,12 +113,11 @@ export function presentation(
   ) {
     actions.push({ id, label, enabled, selected, primary });
   }
-  function modes(phone: boolean, selected?: Mode) {
-    const prefix = selected ? "select" : "switch";
-    control(prefix + "-area", "Area", true, selected === "Area");
-    control(prefix + "-screen", "Screen", true, selected === "Screen");
+  function modes(phone: boolean, selected: Mode) {
+    control("select-area", "Area", true, selected === "Area");
+    control("select-screen", "Screen", true, selected === "Screen");
     if (phone)
-      control(prefix + "-iphone", "iPhone", true, selected === "Iphone");
+      control("select-iphone", "iPhone", true, selected === "Iphone");
   }
   switch (surface.$) {
     case "HiddenSurface":
@@ -131,16 +128,12 @@ export function presentation(
       control("cancel", "Cancel");
       return { ...result, phase: "selecting", label: "Choose what to record" };
     case "RecordingSurface":
-      if (surface.switches) {
-        modes(surface.phone);
-      } else {
-        if (surface.no_words)
-          result.warning = [result.warning, "No words recognized yet"]
-            .filter(Boolean)
-            .join(" · ");
-        control("whiteboard", "Whiteboard");
-        control("finish", "Finish", true, false, surface.finish_primary);
-      }
+      if (surface.no_words)
+        result.warning = [result.warning, "No words recognized yet"]
+          .filter(Boolean)
+          .join(" · ");
+      control("whiteboard", "Whiteboard");
+      control("finish", "Finish", true, false, surface.finish_primary);
       control("cancel", "Cancel");
       if (surface.notes) control("notes", "Open notes");
       return {

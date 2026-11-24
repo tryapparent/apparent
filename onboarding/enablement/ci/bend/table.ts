@@ -15,6 +15,7 @@ export const inputs = {
   advance: ["repair", "permissions_ready"],
   back: ["repair", "permissions_ready"],
   primary: ["permissions_ready", "practice", "chosen", "tested", "editing"],
+  practice_control: ["recording", "target_stage"],
   resume_capture: ["practice", "completed"],
 };
 
@@ -37,7 +38,7 @@ const table = Object.fromEntries(cases.map(([name, flags]) => {
   const rows = steps.map(step => Array.from({ length: 2 ** flags.length }, (_, index) => {
     const args = flags.map((_, bit) => Boolean(index & (1 << bit)));
     const result = traversal[name]({ $: "Tour" + step }, ...args);
-    if (name === "visible") {
+    if (name === "visible" || name === "practice_control") {
       assert.equal(typeof result, "boolean");
       return Number(result);
     }

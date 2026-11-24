@@ -36,7 +36,8 @@ test('shared pill renders authoritative states and isolates commands',async t=>{
  assert.equal(await page.evaluate(async()=>{try{await window.apparentPill.beginDrag(0);return false;}catch{return true;}}),true);
  const controls=page.getByRole('group',{name:'Recording controls'}).getByRole('button');
  assert.equal(await controls.last().getAttribute('aria-label'),'Cancel');
- assert.equal(await page.getByRole('button',{name:'Finish',exact:true}).locator('svg').count(),1);
+ await expect(page.locator('.lead button')).toHaveAttribute('data-action','finish');
+ await expect(page.locator('.clock')).toHaveCount(0);
  assert.equal(await controls.last().innerText(),'');
  const bounds=await controls.last().boundingBox();assert.ok(bounds.height>=44 && bounds.width>=44);
  if(evidence)await page.screenshot({path:path.join(evidence,'recording.png')});
@@ -60,7 +61,7 @@ test('shared pill renders authoritative states and isolates commands',async t=>{
  await application.evaluate(()=>globalThis.resumeProcessingLayout());
  assert.equal(await page.getByRole('button').count(),0);
  await publish({...base,revision:3,warning:'Microphone input stopped; screen recording continues',actions:base.actions.map(a=>({...a,primary:false}))});
- await expect(page.getByRole('status')).toContainText('screen recording continues');
+ await expect(page.getByRole('status').filter({hasText:'screen recording continues'})).toBeVisible();
  await expect(page.getByRole('button',{name:'Finish',exact:true})).toBeEnabled();
  await expect(page.getByRole('button',{name:'Finish',exact:true})).toBeInViewport();
  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth && document.documentElement.scrollHeight<=innerHeight)).toBe(true);
@@ -139,7 +140,7 @@ test('Linux native drag IPC checks its epoch and converts the OS press point', {
  const lead=await page.locator('.lead').boundingBox();assert.ok(lead);
  const point=await application.evaluate(({BrowserWindow,screen},lead)=>{
   const bounds=BrowserWindow.getAllWindows()[0].getBounds();
-  const dip={x:Math.round(bounds.x+lead.x+lead.width/2),y:Math.round(bounds.y+lead.y+lead.height/2)};
+  const dip={x:Math.round(bounds.x+lead.x+4),y:Math.round(bounds.y+lead.y+lead.height/2)};
   globalThis.pillTestCursor=screen.getCursorScreenPoint;screen.getCursorScreenPoint=()=>dip;
   return {dip,physical:screen.dipToScreenPoint(dip)};
  },lead);

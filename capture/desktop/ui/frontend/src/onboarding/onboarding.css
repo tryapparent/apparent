@@ -146,7 +146,6 @@ html.native-onboarding-shell:has(.native-setup) .apparent-build-identity { top: 
 .native-coach-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .native-coach-actions .native-later { margin-top: 0; }
 .native-finish-close { position: absolute; top: 0; right: 0; width: 44px; height: 44px; min-width: 44px; min-height: 44px; padding: 0; font-size: 20px; }
-.native-coach[data-stage=stop] h1 { padding-inline-end: 48px; }
 
 /* The companion shares the existing transparent coach window; no extra focusable window. */
 .native-trackpad-helper { padding: 16px; margin: 16px 0; border: 1px solid var(--apparent-border); border-radius: 18px 18px 18px 5px; background: var(--apparent-surface); color: var(--apparent-foreground); font: 400 1.125rem/1.5 var(--font-sans); }
@@ -160,10 +159,6 @@ html.native-onboarding-shell:has(.native-setup) .apparent-build-identity { top: 
 }
 
 .native-wordmark { width: 138px; height: auto; }
-.native-saved-keys { display:flex; flex-wrap:wrap; justify-content:center; gap:12px; }
-
-
-.native-coach .native-saved-keys .apparent-key { --key-size:24px; }
 
 /* One compact dismissal in every coach, away from the primary instruction. */
 .native-coach h1 { padding-inline-end:48px; }
@@ -199,3 +194,27 @@ html.native-onboarding-shell:has(.native-setup) .apparent-build-identity { top: 
 .native-setup footer {position:relative;}
 .native-setup-progress {position:absolute;left:50%;top:calc(50% - 3px);transform:translateX(-50%);}
 @media(max-width:560px){.native-setup-progress{position:static;transform:none;order:3;flex-basis:100%;width:100%;}}
+
+.native-coach:is([data-stage=whiteboard], [data-stage=stop]) {
+  --coach-card-inset: max(24px, calc((100vw - 260px) / 2));
+  inset-inline: var(--coach-card-inset);
+  padding-inline: 4px;
+  text-align: center;
+}
+.native-coach:is([data-stage=whiteboard], [data-stage=stop]) h1 {
+  padding-inline: 44px;
+}
+.native-coach:is([data-stage=whiteboard], [data-stage=stop]) .native-pill-guide {
+  margin-inline: auto;
+}
+.native-coach:is([data-stage=whiteboard], [data-stage=stop]) > :is(img, .frog-coach-actor) {
+  inset-inline: 0;
+  margin-inline: auto;
+  top: -59px;
+}
+.native-coach:is([data-stage=whiteboard], [data-stage=stop]) > .frog-coach-actor {
+  width: max-content;
+}
+.native-coach:is([data-stage=whiteboard], [data-stage=stop])[data-arrow=true]:before {
+  left: calc(clamp(20px, calc(var(--coach-arrow) + 24px - var(--coach-card-inset)), 100% - 20px) - 9px);
+}

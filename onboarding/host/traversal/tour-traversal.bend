@@ -109,6 +109,13 @@ def resume_capture(step: Step, practice: Bool, completed: Bool) -> Step:
     case False{}:
       step
 
+def practice_control(step: Step, recording: Bool, target_stage: Bool) -> Bool:
+  match step:
+    case TourTryIt{}:
+      Bool.and(recording, target_stage)
+    case other:
+      False{}
+
 law blocked_permission_cannot_advance:
   for practice: Bool
   for chosen: Bool
