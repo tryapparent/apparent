@@ -6,7 +6,6 @@ import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium, expect } from "@playwright/test";
 
 test("trusted practice host drives the real renderer without accepting renderer facts", {
   timeout: 60000,
@@ -15,6 +14,8 @@ test("trusted practice host drives the real renderer without accepting renderer 
     new URL("../../../capture/desktop/ui/frontend/", import.meta.url),
   );
   const require = createRequire(path.join(frontend, "package.json"));
+  const { chromium, expect } =
+    require("@playwright/test") as typeof import("@playwright/test");
   const profile = await mkdtemp(path.join(tmpdir(), "practice-composition-"));
   const child = spawn(
     require("electron"),
@@ -258,11 +259,14 @@ test("trusted practice host drives the real renderer without accepting renderer 
     expect(page.locator(".native-coach")).toHaveAttribute("data-stage", name);
   await batch([{ type: "reset" }, { type: "started" }]);
   await stage("whiteboard");
+  await batch([{ type: "whiteboard-visible", visible: true }]);
+  await batch([{ type: "whiteboard-visible", visible: false }]);
+  await stage("whiteboard");
   await batch([
     { type: "whiteboard-visible", visible: true },
     { type: "ink", board: true, screen: 4 },
   ]);
-  await stage("board-ink");
+  await expect(page.getByRole("heading", { name: "Draw on the whiteboard." })).toHaveCount(0);
   await batch([
     { type: "ink", board: true, screen: 5 },
     { type: "whiteboard-visible", visible: false },

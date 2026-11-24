@@ -106,6 +106,7 @@ export function start(capabilities: Capabilities) {
       frame: false,
       transparent: true,
       resizable: false,
+      acceptFirstMouse: true,
       backgroundColor: transparentBackgroundColor,
       webPreferences: {
         preload: path.join(
@@ -291,12 +292,11 @@ export function start(capabilities: Capabilities) {
             const reply = practiceHost.accept(v);
             practiceEnabled = true;
             channel.send(reply);
-            if (state) {
+            if (state && state.practice !== reply.stage) {
               state = {
                 ...state,
                 practice: reply.stage,
-                practiceAttempt:
-                  state.practice === reply.stage ? state.practiceAttempt : null,
+                practiceAttempt: null,
               };
               present();
             }

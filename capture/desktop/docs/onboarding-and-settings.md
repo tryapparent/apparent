@@ -654,14 +654,14 @@ the saved drawing. Pointer cancellation and renderer
 loss discard only an unfinished stroke; guide dismissal restores the native
 whiteboard with completed human ink intact. Finish keeps its saved shortcut
 keycaps and accessible close control; closing the guide leaves recording active.
-Linux illustrates opening the already-visible Whiteboard control because capture
-is display-only there; macOS retains the supported Screen → Whiteboard sequence.
+Both platforms can open the real Whiteboard from the practice coach. macOS
+retains the supported Screen → Whiteboard sequence.
 Rollback is the existing onboarding renderer fallback. Keep the native board
 adapter until both platforms accept the Electron path; removal requires verified
 Mac and isolated Linux focus, geometry, capture and handoff behavior.
 
-The real Rust capture phase selects the coach. The Screen and Whiteboard examples
-reuse the production recording controls inertly. The location example opens its
+The native capture phase selects the coach. The Whiteboard and Finish coaches
+use the active recording controls. The location example opens its
 menu below the icon with an arrow to the matching Open Latest Capture entry and
 uses neutral theme roles rather than wallpaper tint. These examples loop and
 remain static under reduced motion.
@@ -737,16 +737,12 @@ observation acknowledgements, attempt admission and lesson-policy migration are
 still required before retiring `settings/practice.rs`. Rollback reverts the
 writer and its Session transport variant together; there is no config change.
 
-The Electron whiteboard retains the first completed human stroke and closes after
-two native-acknowledged strokes. The person can also close it after one stroke.
-Dots and short strokes count; cancelling a new stroke preserves completed ink.
-Native ink is observed before board visibility, so drawing and closing between
-polls still advances directly to **Draw on your screen.** Closing an empty board
-returns to the Whiteboard prompt. The native fallback retains manual close;
-neither route clears the saved drawing on close. TypeScript owns automatic close;
-Rust retains native stroke/visibility receipts and the remaining lesson reducer
-until its separately held host migration is accepted. Routing is unchanged;
-rollback reverts this close policy and receipt ordering together.
+The practice Whiteboard keeps completed strokes visible until the person closes
+it. Dots and short strokes count, and cancelling a new stroke preserves completed
+ink. The board itself prompts the person to close it after native acceptance.
+The floating coach stays hidden until the board closes, then shows **Draw on your
+screen.** Closing an empty board returns to **Open Whiteboard**. Both routes
+retain saved ink on close.
 The person must make a later,
 separate screen stroke before the coach advances to Finish. The note lesson and
 its Shift-click illustration are removed; adding notes remains optional, and the

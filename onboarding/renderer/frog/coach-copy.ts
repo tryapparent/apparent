@@ -13,7 +13,7 @@ export function coachCopy(
       text: "Choose a display in the system sharing dialog.",
     },
     whiteboard: { title: "Open Whiteboard.", text: "" },
-    "board-ink": { title: "Draw on the whiteboard.", text: "" },
+    "board-ink": { title: "", text: "" },
     "screen-ink": { title: "Draw on your screen.", text: "" },
     stop: { title: "Finish your capture.", text: "" },
     preparing: { title: "", text: "" },

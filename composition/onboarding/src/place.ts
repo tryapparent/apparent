@@ -45,9 +45,11 @@ export class Placement {
     }
     if (
       value.step === "try-it" &&
-      (value.practice === "preparing" || value.practiceBoard)
+      (value.practice === "preparing" ||
+        value.practice === "board-ink" ||
+        value.practiceBoard)
     ) {
-      window.hide();
+      if (window.isVisible()) window.hide();
       return;
     }
     let v =

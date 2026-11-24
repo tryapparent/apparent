@@ -186,7 +186,7 @@ test("staged Whiteboard renders accepted ink and puts editing behind the parent 
   assert.equal(await exit, 1);
 });
 
-test("the same staged window hosts practice and closes after accepted human ink", {
+test("practice keeps accepted ink visible until the person closes the board", {
   timeout: 20_000,
 }, async (t) => {
   const { page, edits, reply } = await launch(t, true, blank);
@@ -199,9 +199,12 @@ test("the same staged window hosts practice and closes after accepted human ink"
   assert.deepEqual(edits(), []);
   const canvas = page.getByRole("img", { name: "Whiteboard drawing canvas" });
   await canvas.click({ position: { x: 60, y: 100 } });
-  const accepted = Date.now();
   await reply("end", { ...blank, strokes: [[[60, 100]]] });
   await expect(canvas.locator("circle")).toHaveCount(1);
+  await expect(page.getByRole("status")).toHaveText("Close Whiteboard to continue.");
+  await page.waitForTimeout(2100);
+  assert.equal(edits().at(-1)?.operation, "end");
+  await expect(canvas.locator("circle")).toHaveCount(1);
+  await page.getByRole("button", { name: "Close whiteboard" }).click();
   await expect.poll(() => edits().at(-1)?.operation).toBe("close");
-  assert.ok(Date.now() - accepted >= 1990);
 });

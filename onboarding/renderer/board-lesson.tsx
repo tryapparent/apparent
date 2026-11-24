@@ -1,18 +1,22 @@
 import "./board-lesson.css";
 
-export const boardLessonHoldMs = 2000;
-
 export function BoardLesson({
   ready,
+  hasInk,
   onExampleEnd,
 }: {
   ready: boolean;
+  hasInk: boolean;
   onExampleEnd: () => void;
 }) {
   return (
-    <div className="native-board-lesson" data-ready={ready}>
+    <div className="native-board-lesson" data-ready={ready} data-has-ink={hasInk}>
       <p role="status">
-        {ready ? "Your turn" : "Let me show you how to draw."}
+        {hasInk
+          ? "Close Whiteboard to continue."
+          : ready
+            ? "Your turn"
+            : "Let me show you how to draw."}
       </p>
       <svg aria-hidden="true" viewBox="0 0 720 470">
         <path
