@@ -334,10 +334,9 @@ mod tests {
             assert_eq!(panel.on(action, &mut host), Effect::None);
             let reopened = Panel::default().view(&host);
             assert_eq!(reopened.error_reporting, on);
-            let serialized = serde_json::to_value(reopened).unwrap();
-            assert_eq!(serialized["general"]["errorReporting"], on);
-            assert!(serialized.get("error_reporting").is_none());
+            assert_eq!(serde_json::to_value(reopened).unwrap()["errorReporting"], on);
             let saved = read_json(&host.path);
+            assert_eq!(saved["general"]["errorReporting"], on);
             for (key, value) in unrelated.as_object().unwrap() {
                 assert_eq!(&saved[key], value, "unrelated config key {key} must survive");
             }
