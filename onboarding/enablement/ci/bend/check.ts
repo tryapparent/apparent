@@ -96,7 +96,7 @@ await bendScratch(async (scratch) => {
     assert.deepEqual(
       JSON.parse(readFileSync(desktopFrogTablePath, "utf8")),
       JSON.parse(desktopFrog),
-  );
+    );
     assert.equal(dictationTable(proof), dictation);
     assert.deepEqual(
       JSON.parse(readFileSync(dictationPath, "utf8")),
