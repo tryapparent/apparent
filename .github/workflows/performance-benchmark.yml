@@ -6,7 +6,7 @@ on:
       stream:
         description: Reviewed benchmark stream
         type: choice
-        options: [handoff]
+        options: [handoff, onboarding, connect]
         required: true
       control:
         description: Full control commit SHA on main
