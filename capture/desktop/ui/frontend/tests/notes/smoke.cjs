@@ -6,7 +6,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 
 for (const scale of process.platform === 'linux' ? [1, 2] : [1]) {
-test(`shipped Electron note UI focuses, saves, counts, edits, recovers drafts and isolates bridge at ${scale}x`, { timeout: 45000 }, async t => {
+test(`shipped Electron note UI focuses, saves, counts, deletes, edits, recovers drafts and isolates bridge at ${scale}x`, { timeout: 45000 }, async t => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'apparent-notes-ui-'));
   const profile = path.join(home, 'owned-profile');
   await fs.mkdir(profile, { mode: 0o700 });
@@ -107,6 +107,16 @@ test(`shipped Electron note UI focuses, saves, counts, edits, recovers drafts an
     const id = messages.find(m => m.action === 'surface' && m.rect[2] === 150 * scale && m.rect[3] === 44 * scale).id;
     await expect.poll(() => require('node:child_process').execFileSync('xwininfo', ['-id', String(id)], {encoding:'utf8'}).includes('Map State: IsViewable')).toBe(true);
   }
+  const deleteNote = popup.getByRole('button', { name: 'Delete note 1' });
+  await deleteNote.click();
+  await expect.poll(() => messages.filter(m => m.action === 'delete' && m.pin === 1).length).toBe(1);
+  const saved = state;
+  state = { ...state, notes: [], drafts: [] };
+  send([{ kind: 'delete' }]);
+  await expect(popup.getByText('No notes yet.')).toBeVisible();
+  await expect(deleteNote).toHaveCount(0);
+  await expect(badge.getByRole('button', { name: '0 saved notes. Open notes' })).toBeVisible();
+  state = saved; send([{ kind: 'list' }]);
   await popup.getByRole('button', { name: /Smaller button/ }).click();
   await expect.poll(() => messages.some(m => m.action === 'edit' && m.pin === 1)).toBe(true);
   state.mode = 'editor'; send();

@@ -38,6 +38,7 @@ app.whenReady().then(() => {
   function window(surface, width, height) {
     const win = new BrowserWindow({ title: 'Apparent notes', width, height, show: false, frame: false, transparent: true,
       resizable: false, skipTaskbar: true, alwaysOnTop: true, hasShadow: false,
+      ...(process.platform === 'darwin' && surface === 'popup' ? { acceptFirstMouse: true } : {}),
       ...(process.platform === 'linux' && surface === 'badge' ? { focusable: false } : {}),
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true,
         nodeIntegration: false, sandbox: true, spellcheck: false, webSecurity: true } });
