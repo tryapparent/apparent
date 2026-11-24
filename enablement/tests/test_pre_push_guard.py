@@ -50,11 +50,9 @@ class PrePushGuardTests(unittest.TestCase):
                            str(SELECTOR.parent / "local-tests/fixtures/runner.ts"),
                            str(self.repo), cwd=HOOK.parents[1])
         self.assertEqual(materialized.returncode, 0, materialized.stderr)
-        # The real verifier now runs the shared frontend color guard. Preserve
-        # its actual dependency closure in this disposable hook repository.
         theme = self.repo / "shared/ui/scripts"
         theme.mkdir(parents=True)
-        for name in ("check-theme.py", "legacy-colors.json"):
+        for name in ("check-theme.py", "check-theme.ts", "legacy-colors.json"):
             shutil.copy2(SELECTOR.parents[1] / "shared/ui/scripts" / name, theme / name)
         run("git", "add", ".", cwd=self.repo)
         run("git", "commit", "-qm", "original", cwd=self.repo)
