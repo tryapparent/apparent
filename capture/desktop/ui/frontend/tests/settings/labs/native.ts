@@ -26,14 +26,14 @@ try{
  browser=await chromium.connectOverCDP(url);const page=browser.contexts()[0].pages()[0];
  const doodles=page.getByRole('switch',{name:'Recording pill doodles'});
  await expect(doodles).toBeEnabled();
- await expect(doodles).toBeChecked();
+ await expect(doodles).not.toBeChecked();
  await doodles.click();
- await expect(doodles).toHaveAttribute('aria-checked','false');
+ await expect(doodles).toHaveAttribute('aria-checked','true');
  const savedDoodles=JSON.parse(await fs.readFile(process.argv[2],'utf8'));
- assert.equal(savedDoodles.experiments.pillDoodles,false);
+ assert.equal(savedDoodles.experiments.pillDoodles,true);
  await page.reload();
  await expect(doodles).toBeEnabled();
- await expect(doodles).toHaveAttribute('aria-checked','false');
+ await expect(doodles).toHaveAttribute('aria-checked','true');
  const agentContext=page.getByRole('switch',{name:'Recording context for agents'});
  await expect(agentContext).toHaveAttribute('aria-checked','false');
  for(const on of [true,false]){

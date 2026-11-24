@@ -23,7 +23,7 @@ export function PillDoodles({
         <Switch
           id={id}
           className="agent-switch"
-          checked={ink.doodles_enabled(checked === false)}
+          checked={ink.doodles_enabled(checked === true)}
           aria-labelledby="pill-doodles-label"
           aria-describedby="pill-doodles-help"
           aria-busy={saving}

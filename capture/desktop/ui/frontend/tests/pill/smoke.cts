@@ -80,18 +80,7 @@ test('shared pill renders authoritative states and isolates commands',async t=>{
  if(evidence)await page.screenshot({path:path.join(evidence,'selecting.png')});
  await page.keyboard.press('Escape');
  await expect.poll(()=>sent.filter(x=>x.action==='cancel').length).toBe(1);
- await publish({...base,revision:5,inputWaveform:Array(24).fill(.2),transcript:{state:'starting',text:''},actions:[
-  {id:'switch-area',label:'Area',enabled:true,selected:false,primary:false},
-  {id:'switch-screen',label:'Screen',enabled:true,selected:false,primary:false},base.actions[2]]});
- const screen=page.getByRole('button',{name:'Screen',exact:true});
- await expect(screen).toHaveAttribute('title','Screen');
- await expect(screen).toHaveText('');
- await expect(page.getByRole('button',{name:'Finish',exact:true})).toHaveCount(0);
- assert.ok((await page.locator('.pill-row').boundingBox()).width<=220);
- if(evidence)await page.locator('.pill-surface').screenshot({path:path.join(evidence,'switching.png')});
- await screen.click();
- await expect.poll(()=>sent.find(x=>x.action==='switch-screen')).toEqual({revision:5,action:'switch-screen'});
- await publish({...base,revision:6,phase:'completed',label:'Saved',draggable:false,actions:[
+ await publish({...base,revision:5,phase:'completed',label:'Saved',draggable:false,actions:[
   {id:'paste',label:'Paste',enabled:true,selected:false,primary:true},
   {id:'copy-link',label:'Public link',enabled:false,selected:false,primary:false},
   {id:'dismiss',label:'Dismiss',enabled:true,selected:false,primary:false}]});
@@ -151,7 +140,7 @@ test('Linux native drag IPC checks its epoch and converts the OS press point', {
  const lead=await page.locator('.lead').boundingBox();assert.ok(lead);
  const point=await application.evaluate(({BrowserWindow,screen},lead)=>{
   const bounds=BrowserWindow.getAllWindows()[0].getBounds();
-  const dip={x:Math.round(bounds.x+lead.x+8),y:Math.round(bounds.y+lead.y+lead.height/2)};
+  const dip={x:Math.round(bounds.x+lead.x+4),y:Math.round(bounds.y+lead.y+lead.height/2)};
   globalThis.pillTestCursor=screen.getCursorScreenPoint;screen.getCursorScreenPoint=()=>dip;
   return {dip,physical:screen.dipToScreenPoint(dip)};
  },lead);

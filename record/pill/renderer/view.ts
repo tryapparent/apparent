@@ -10,6 +10,7 @@ export type PillView = {
   reducedMotion: boolean;
   draggable: boolean;
   inputWaveform: number[] | null;
+  softBloom?: boolean | null;
   doodleInk?: boolean | null;
   noteCount: number;
   shareIndicator?: import("../presentation").ShareIndicator;

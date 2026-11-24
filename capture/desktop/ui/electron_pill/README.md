@@ -6,9 +6,9 @@ capture generation and exact handoff selection before dispatch. The renderer
 receives no bundle paths, credentials, configuration or capture contents.
 
 The row covers selection, recording, processing and completion. It reuses
-shared shadcn Button controls and Lucide icons. During recording, the whiteboard
-and capture switches use icon-only buttons with accessible names. The red stop
-square in the microphone meter replaces the separate Finish button. Cancel and
+shared shadcn Button controls and Lucide icons. During recording, a plain red
+square finishes the capture and the pen icon opens Whiteboard. Capture switches
+are shown before recording. Cancel and
 Dismiss use × at the trailing edge in visual and keyboard order. Completion
 orders Inspect before the primary Paste action. Processing
 and foreground upload indicators rotate unless OS or native reduced motion is enabled.

@@ -255,7 +255,7 @@ type Share is Data:
 type Surface is Data:
   HiddenSurface{}
   PickerSurface{mode: Mode, can_record: Bool, phone: Bool}
-  RecordingSurface{switches: Bool, no_words: Bool, phone: Bool, notes: U32, movable: Bool, finish_primary: Bool}
+  RecordingSurface{no_words: Bool, notes: U32, movable: Bool, finish_primary: Bool}
   ProcessingSurface{}
   CompletedSurface{paste: Bool, inspect: Bool, share: Share, copy: Copy, audio_problem: Bool}
 
@@ -302,19 +302,15 @@ def can_record(mode: Mode) -> Bool:
     case other:
       False{}
 
-def recording_surface(reveal: Reveal, phone: Bool, +no_words: Bool, notes: U32, movable: Bool, microphone_problem: Bool) -> Surface:
-  match reveal:
-    case Closed{}:
-      RecordingSurface{False{}, no_words, phone, U32.min(notes, 100), movable, Bool.not(Bool.or(no_words, microphone_problem))}
-    case Open{min_at, idle_at, leave_at, hovered, working, baseline}:
-      RecordingSurface{True{}, False{}, phone, U32.min(notes, 100), movable, False{}}
+def recording_surface(+no_words: Bool, notes: U32, movable: Bool, microphone_problem: Bool) -> Surface:
+  RecordingSurface{no_words, U32.min(notes, 100), movable, Bool.not(Bool.or(no_words, microphone_problem))}
 
 def present(phase: Phase, facts: Facts) -> Surface:
   match phase facts:
     case Selecting{+mode} Facts{phone, no_words, note_count, movable, paste, inspect, enabled, online, microphone_problem, audio_problem}:
       PickerSurface{mode, can_record(mode), phone}
     case Recording{reveal} Facts{phone, no_words, note_count, movable, paste, inspect, enabled, online, microphone_problem, audio_problem}:
-      recording_surface(reveal, phone, no_words, note_count, movable, microphone_problem)
+      recording_surface(no_words, note_count, movable, microphone_problem)
     case Processing{released} Facts{phone, no_words, note_count, movable, paste, inspect, enabled, online, microphone_problem, audio_problem}:
       ProcessingSurface{}
     case Completed{result} Facts{phone, no_words, note_count, movable, paste, inspect, enabled, online, microphone_problem, audio_problem}:

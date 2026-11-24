@@ -4,14 +4,14 @@
       "id": "compact-recording-pill",
       "description": "Verify the compact recording row, live captions, and capture commands.",
       "platforms": ["linux", "macos"],
-      "userEntryPoint": "Start a recording and use the Screen switch when offered. Use the pen for Whiteboard or the red square to finish. The trailing cross cancels.",
+      "userEntryPoint": "Select a capture mode before starting a recording. Use the pen for Whiteboard or the red square to finish. The trailing cross cancels.",
       "prerequisites": ["Install the locked Desktop frontend dependencies. Use Xvfb on Linux."],
       "runner": {
         "path": "capture/desktop/ui/frontend/package.json",
         "instructions": "Run npm run test:pill from the frontend directory. Prefix with xvfb-run -a on Linux. Set APPARENT_PILL_EVIDENCE and APPARENT_LIVE_PROOF to a private evidence directory to retain screenshots."
       },
       "expectedEvidence": [
-        "The recording row has icon-only controls and no elapsed time. Screen and Finish dispatch their original actions, and the trailing cross retains Cancel.",
+        "The recording row has icon-only controls and no elapsed time. Finish and the trailing cross dispatch their original actions. Capture switches appear in the picker, and microphone activity adds no visible ring until Soft Bloom is enabled in Labs.",
         "The row fits at 320 and 1200 DIP in both themes. The smoke checks keyboard focus, pending states, live-caption overflow, and stable layout during recording telemetry."
       ],
       "limits": ["The production Electron renderer runs with a synthetic native parent. Real capture, compositor and packaging behavior require native verification."]

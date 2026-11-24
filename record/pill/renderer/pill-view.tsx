@@ -24,11 +24,8 @@ import "./surface.css";
 const Doodles = lazy(() => import("./ink/doodles"));
 const actionIcons: Record<string, LucideIcon> = {
   "select-area": Scan,
-  "switch-area": Scan,
   "select-screen": Monitor,
-  "switch-screen": Monitor,
   "select-iphone": Smartphone,
-  "switch-iphone": Smartphone,
   record: Circle,
   whiteboard: PenLine,
   paste: ClipboardPaste,
@@ -128,7 +125,7 @@ export function PillSurface({
       controls[pasteIndex],
     ];
   const showDoodles =
-    view.phase === "recording" && ink.doodles_enabled(view.doodleInk === false);
+    view.phase === "recording" && ink.doodles_enabled(view.doodleInk === true);
   return (
     <main
       data-revision={view.revision}
@@ -167,7 +164,7 @@ export function PillSurface({
               }}
             >
               <span className={`indicator-slot ${view.phase}`}>
-                {microphoneInput !== null && (
+                {view.softBloom && microphoneInput !== null && (
                   <InputMeter
                     input={microphoneInput}
                     receivedAt={receivedAt}
