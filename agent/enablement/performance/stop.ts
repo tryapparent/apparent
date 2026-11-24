@@ -67,6 +67,7 @@ export function loadLedger(
     JSON.parse(readFileSync(path, "utf8"));
   const reference: {
     schema: number;
+    venue?: string;
     score: number;
     qualified: boolean;
     control: { revision: string; sha256: string };
@@ -76,6 +77,7 @@ export function loadLedger(
   } = JSON.parse(readFileSync(ledger.referenceReceipt, "utf8"));
   assert(
     reference.schema === 1 &&
+      reference.venue === "github-hosted-ubuntu-24.04" &&
       reference.qualified === true &&
       reference.score === 100,
     "Ledger requires a qualified frozen control receipt",

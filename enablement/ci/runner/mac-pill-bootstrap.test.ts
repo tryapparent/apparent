@@ -63,7 +63,8 @@ func observe(_ req: [String: Any], _ png: URL) throws -> ([String: Any], [Word],
         "bounds": [current.rect.minX,current.rect.minY,current.rect.width,current.rect.height],
         "frontPid": fault == "observedFront" ? 100 : Int(foreground)], [], [current.pid])
 }
-func ownedAccessibilityButton(_ expected: Pill, label: String, point: CGPoint, descendants: Set<pid_t>) throws -> [String: Any]? {
+func ownedAccessibilityButton(_ expected: Pill, label: String, point: CGPoint?, descendants: Set<pid_t>) throws -> [String: Any]? {
+    precondition(point == nil, "Icon-only Finish needs no OCR point")
     events.append("tree")
     if fault == "tree" { throw Refusal(message: "ambiguous or unavailable tree") }
     if fault == "neverReady" || now - admittedAt < 2 { return nil }
@@ -81,7 +82,7 @@ for scenario in ["", "unowned", "wrongFront", "admission", "ocr", "pid", "window
     var passed = false
     do {
         _ = try observeForPreparation(["expectedFrontPid": scenario == "wrongFront" ? 100 : 99], png)
-        _ = try preparePillAccessibility([:], expected, label: "Finish", point: .zero, descendants: [42])
+        _ = try preparePillAccessibility([:], expected, label: "Finish", point: nil, descendants: [42])
         passed = true
     } catch {}
     precondition(passed == scenario.isEmpty, "Unexpected acceptance: \(scenario)")

@@ -34,6 +34,7 @@ const coordinators = new Set([
   "verification.yml",
   "verification-platform.yml",
   "linux-updater-harness.yml",
+  "performance-benchmark.yml",
   "release-linux.yml",
   "release-mac-preview.yml",
 ]);

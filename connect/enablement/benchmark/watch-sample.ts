@@ -42,7 +42,9 @@ export const runMs = (run: Replay) =>
 export const fixture = (run: Replay) =>
   run.attempts.map((row) => row.proof.manifest);
 
-async function cpuCounters(cpus: number[]) {
+export const maxExternalPercent = 5;
+
+export async function cpuCounters(cpus: number[]) {
   const text = await readFile("/proc/stat", "utf8");
   return cpus.map((cpu) => {
     const row = text
@@ -59,7 +61,7 @@ async function cpuCounters(cpus: number[]) {
   });
 }
 
-async function affinity(spec: string) {
+export async function affinity(spec: string) {
   assert.match(spec, /^\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*$/);
   const cpus = spec.split(",").flatMap((range) => {
     const [start, end = start] = range.split("-").map(Number);

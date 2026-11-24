@@ -269,7 +269,7 @@ func admitPillAccessibility(_ pill: Pill) throws {
     try withinBudget()
 }
 
-func buttonIdentity(_ element: AXUIElement, label: String, point: CGPoint, descendants: Set<pid_t>) throws -> [String: Any]? {
+func buttonIdentity(_ element: AXUIElement, label: String, point: CGPoint?, descendants: Set<pid_t>, window: CGRect? = nil) throws -> [String: Any]? {
     var current = element
     for depth in 0..<5 {
         try withinBudget()
@@ -302,11 +302,10 @@ func buttonIdentity(_ element: AXUIElement, label: String, point: CGPoint, desce
                 "Could not read requested button geometry")
             let bounds = CGRect(origin: position, size: size)
             clickTrace?.add(["stage":"buttonGeometry", "pid":Int(pid), "label":label,
-                "bounds":[bounds.minX,bounds.minY,bounds.width,bounds.height], "point":[point.x,point.y]])
-            // AX supplies an independent physical target check. A stable image
-            // scale alone cannot establish that OCR maps to this exact button.
+                "bounds":[bounds.minX,bounds.minY,bounds.width,bounds.height], "point":point.map { [$0.x,$0.y] } ?? []])
             try need(position.x.isFinite && position.y.isFinite && size.width.isFinite && size.height.isFinite &&
-                size.width > 0 && size.height > 0 && bounds.contains(point), "OCR point is outside the exact requested native button")
+                size.width > 0 && size.height > 0 && (point.map { bounds.contains($0) } ?? (window?.contains(bounds) == true)),
+                "Requested button does not match the owned surface or click point")
             return ["pid": Int(pid), "role": role, "title": title == label ? label : "", "description": description == label ? label : "",
                 "bounds":[bounds.minX,bounds.minY,bounds.width,bounds.height]]
         }
@@ -318,7 +317,7 @@ func buttonIdentity(_ element: AXUIElement, label: String, point: CGPoint, desce
     return nil
 }
 
-func ownedAccessibilityButton(_ expected: Pill, label: String, point: CGPoint, descendants: Set<pid_t>) throws -> [String: Any]? {
+func ownedAccessibilityButton(_ expected: Pill, label: String, point: CGPoint?, descendants: Set<pid_t>) throws -> [String: Any]? {
     func children(_ element: AXUIElement, _ attribute: String, limit: Int) throws -> [AXUIElement] {
         var count: CFIndex = 0
         let result = AXUIElementGetAttributeValueCount(element, attribute as CFString, &count)
@@ -361,7 +360,7 @@ func ownedAccessibilityButton(_ expected: Pill, label: String, point: CGPoint, d
                 CGRect(origin: origin, size: dimensions) == expected.rect, "Owned accessibility window differs from mapped pill")
         }
         if role as? String == (kAXButtonRole as String),
-           let identity = try buttonIdentity(element, label: label, point: point, descendants: descendants) { matches.append(identity) }
+           let identity = try buttonIdentity(element, label: label, point: point, descendants: descendants, window: expected.rect) { matches.append(identity) }
         let next = try children(element, kAXChildrenAttribute, limit: 128 - seen.count - queue.count)
         queue.append(contentsOf: next.map { ($0, depth + 1) })
     }
@@ -376,9 +375,6 @@ func observeForPreparation(_ req: [String: Any], _ png: URL) throws -> ([String:
         try need(required is Int && (required as! Int) > 1 && Int(frontBefore) == (required as! Int),
             "Synthetic scene lost foreground before accessibility admission")
     }
-    // This enables only the verified owned process's accessibility tree. It
-    // neither activates a window nor sends input. Start Electron's asynchronous
-    // publication before screenshot/OCR so its debounce can overlap that work.
     try admitPillAccessibility(expected)
     let observed = try observe(req, png)
     _ = try currentPill(req, expected)
@@ -392,13 +388,11 @@ func observeForPreparation(_ req: [String: Any], _ png: URL) throws -> ([String:
     return observed
 }
 
-func preparePillAccessibility(_ req: [String: Any], _ expected: Pill, label: String, point: CGPoint, descendants: Set<pid_t>) throws -> [String: Any] {
+func preparePillAccessibility(_ req: [String: Any], _ expected: Pill, label: String, point: CGPoint?, descendants: Set<pid_t>) throws -> [String: Any] {
     _ = try currentPill(req, expected)
     let frontBefore = frontPID()
     while true {
         try withinBudget()
-        // Before hover the native panel is intentionally click-through. Tree
-        // readiness is not a physical-hit assertion; click checks that separately.
         if let identity = try ownedAccessibilityButton(expected, label: label, point: point, descendants: descendants) {
                 _ = try currentPill(req, expected)
                 try need(frontPID() == frontBefore, "Foreground drift during accessibility bootstrap")
@@ -455,13 +449,17 @@ func main() throws {
             "Synthetic scene lost foreground before native operation")
     }
     if op == "snapshot" { print(String(data: try JSONSerialization.data(withJSONObject: before), encoding: .utf8)!); return }
-    try need(op == "click" || op == "prepare", "Unknown operation")
-    let label = req["label"] as! String; try need((op == "prepare" ? ["Finish", "Public link"] : ["Public link", "Create public link", "Cancel upload", "Retry upload"]).contains(label), "Unsupported operation label")
-    let matching = try words.compactMap { word -> CGRect? in guard let range = word.text.range(of: label) else { return nil }; return try word.candidate.boundingBox(for: range)?.boundingBox }
-    try need(matching.count == 1, "Label OCR match is missing or ambiguous")
-    let b = before["bounds"] as! [CGFloat], box = matching[0]
-    try need(box.minX >= 0 && box.minY >= 0 && box.maxX <= 1 && box.maxY <= 1 && box.width > 0 && box.height > 0, "OCR target outside owned image")
-    let point = CGPoint(x: b[0] + box.midX*b[2], y: b[1] + (1-box.midY)*b[3])
+    let label = req["label"] as! String, b = before["bounds"] as! [CGFloat]
+    let point: CGPoint?
+    if op == "prepare" && label == "Finish" {
+        point = nil
+    } else {
+        let matching = try words.compactMap { word -> CGRect? in guard let range = word.text.range(of: label) else { return nil }; return try word.candidate.boundingBox(for: range)?.boundingBox }
+        try need(matching.count == 1, "Label OCR match is missing or ambiguous")
+        let box = matching[0]
+        try need(box.minX >= 0 && box.minY >= 0 && box.maxX <= 1 && box.maxY <= 1 && box.width > 0 && box.height > 0, "OCR target outside owned image")
+        point = CGPoint(x: b[0] + box.midX*b[2], y: b[1] + (1-box.midY)*b[3])
+    }
     guard let trace = clickTrace else { throw Refusal(message: "Click trace unavailable") }
     let initialPill = try pill(req).0
     try need(Int(initialPill.pid) == (before["pid"] as! Int) && Int(initialPill.id) == (before["windowId"] as! Int) &&
@@ -477,6 +475,7 @@ func main() throws {
         print(String(data: encoded, encoding: .utf8)!)
         return
     }
+    guard let point else { throw Refusal(message: "No physical click point") }
     trace.add(["stage":"beforeMove", "frontPid":Int(frontPID()), "pillPid":Int(initialPill.pid), "windowId":Int(initialPill.id), "bounds":[initialPill.rect.minX,initialPill.rect.minY,initialPill.rect.width,initialPill.rect.height], "geometry":before["geometry"]!, "point":[point.x,point.y]])
     try trace.requireComplete()
     try need(frontPID() == pid_t(before["frontPid"] as! Int), "Foreground drift before pointer movement")

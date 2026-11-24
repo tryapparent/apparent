@@ -212,10 +212,8 @@ async function main() {
       await evidence('bootstrap-regression-failure', {error: redact(error)});
       throw error;
     }
-    // Login registration is outside this fixture. Omission leaves OS state alone
-    // and avoids unrelated synchronous ServiceManagement reconciliation on the GUI thread.
     await writeFile(configFile, JSON.stringify({onboarding: {seen: true}, autoPasteDraft: false, microphoneEnabled: false,
-      experiments: {hostedSharing: true, connectForegroundUpload: true, hostedEncryption: false}}), {mode: 0o600, flag: 'wx'});
+      experiments: {hostedSharing: true, connectForegroundUpload: true, hostedEncryption: false, movableRecordingControls: false}}), {mode: 0o600, flag: 'wx'});
     const grant = (await cli(['screen-permission-status'])).trim();
     await evidence('permission', {passiveInstalledBinaryGrant: grant});
     assert.equal(grant, 'true', 'Installed candidate lacks Screen Recording grant; no TCC changes permitted');
@@ -251,8 +249,8 @@ async function main() {
     await savedForeground({
       waitForRecordingControls: async () => {
         const observe = (retired = 0) => poll(() => native('snapshot'),
-          frame => frame.pid !== retired && frame.frontPid === generated.pid && text(frame).includes('finish'),
-          'recording Finish control', 18_000);
+          frame => frame.pid !== retired && frame.frontPid === generated.pid,
+          'mapped recording controls', 18_000);
         const {pid} = await observe();
         assert.ok(Number.isSafeInteger(pid) && pid > 1);
         const parent = execFileSync('/bin/ps', ['-o', 'ppid=', '-p', String(pid)], {timeout: 2000, encoding: 'utf8'});

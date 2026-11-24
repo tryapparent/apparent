@@ -39,6 +39,9 @@ node public/enablement/browser-proof/homepage-performance/campaign.ts \
 This evaluates all matched guards and the local speed decision. It records no
 active effort and cannot trigger campaign stop. Keep Clanker scores historical.
 
+Use the [hosted campaign ledger](hosted-campaign/README.md) to combine matched jobs
+and evaluate the shipped stop rule.
+
 ## Local diagnostic replay
 
 Build the standard Public package using Node 22 and the locked dependencies.
