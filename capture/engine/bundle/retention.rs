@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, ensure};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::capture::engine::runtime::apparent_log;
 

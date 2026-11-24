@@ -270,7 +270,6 @@ pub(crate) mod feedback {
     use anyhow::{Context, Result, bail};
     use clap::{Args, ValueEnum};
     use serde_json::{Value, json};
-    pub(crate) use crate::permission_admission::PermissionIntent;
 
     use crate::composition::worker;
 

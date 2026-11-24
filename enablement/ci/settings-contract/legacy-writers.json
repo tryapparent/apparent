@@ -2,7 +2,6 @@
   "capture/desktop/linux/updates/update.rs\twrite_runtime_in\tset_config_value_in\trunning",
   "capture/desktop/settings/agents/mod.rs\tpersist_t3_connection\tupdate_config_in\t<transaction>",
   "capture/desktop/settings/onboarding.rs\tsave_to\tupdate_config_in\t<transaction>",
-  "capture/desktop/settings/settings.rs\tset\tset_config_value_in\t<computed>",
   "capture/desktop/ui/electron_pill/mod.rs\trecord_start\tupdate_config_in\t<transaction>",
   "engine/native/macos/desktop/dictation_nudge.rs\tfinish_session\tupdate_config_in\t<transaction>",
   "capture/desktop/workflow/notes/audio.rs\texecute\tupdate_config_allowed_in\t<transaction>",

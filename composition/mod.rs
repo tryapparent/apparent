@@ -65,7 +65,7 @@ mod preferences {
                 value
             }
             (true, "general.launchAtLogin") => {
-                use crate::capture::desktop::settings::shortcut::{LoginItem, login_item};
+                use crate::capture::desktop::settings::{LoginItem, login_item};
                 let (status, actual) = match login_item() {
                     LoginItem::On => ("registered", Some(true)),
                     LoginItem::Off => ("off", Some(false)),

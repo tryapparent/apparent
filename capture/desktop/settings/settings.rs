@@ -557,11 +557,6 @@ impl Panel {
 
     fn set(&mut self, key: &str, value: &serde_json::Value, host: &mut dyn Host) -> Effect {
         let path = host.config_path();
-        let write = |key: &str, value: serde_json::Value| {
-            if let Err(error) = crate::shared::handoff::set_config_value_in(&path, key, value) {
-                crate::capture::engine::runtime::apparent_log(format!("Saving {key} failed: {error:#}"));
-            }
-        };
         match (key, value) {
             ("errorReporting", serde_json::Value::Bool(on)) => {
                 if let Err(error) = crate::capture::desktop::workflow::error_reporting::set_enabled_in(&path, *on) {
