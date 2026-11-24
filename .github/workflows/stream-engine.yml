@@ -7,7 +7,7 @@ on:
       - "engine/**"
       - "!engine/permissions/**"
       - "!engine/diagnostics/**"
-      - "!engine/recording/model-cache/**"
+      - "!engine/recording/**"
       - "!engine/native/input/**"
       - "!engine/**/*.md"
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
@@ -17,7 +17,7 @@ on:
       - "engine/**"
       - "!engine/permissions/**"
       - "!engine/diagnostics/**"
-      - "!engine/recording/model-cache/**"
+      - "!engine/recording/**"
       - "!engine/native/input/**"
       - "!engine/**/*.md"
   workflow_dispatch:
