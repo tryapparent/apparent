@@ -1,12 +1,28 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync} from 'node:fs';
+import {cpSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {storageControllers, nativeStorageGraph, recordBendManifest} from './qualify.ts';
 import {YAML} from 'bun';
 import {accepted} from '../evidence.ts';
+
+function assertAuditedStorageGraph(head: string, git: (...args: string[]) => string) {
+  const entries = git('ls-tree', '-r', '-t', head, '--', ...nativeStorageGraph.keys());
+  const tree = new Map(entries.split('\n').filter(Boolean).map(entry => {
+    const [object, path] = entry.split('\t');
+    return [path, object] as const;
+  }));
+  for (const [path, blob] of nativeStorageGraph) {
+    const expected = `100644 blob ${blob}`;
+    const actual = tree.get(path) ?? 'missing';
+    if (actual !== expected) {
+      assert.fail(`Record Storage routing pin mismatch for ${path}: expected ${expected}, actual ${actual}`);
+    }
+  }
+}
 
 test('real Git controller changes preserve Desktop renderer and main packaging, omit native compilation only with proof', {timeout: 15_000}, () => {
   const root = mkdtempSync(join(tmpdir(), 'storage-routing-'));
@@ -23,7 +39,13 @@ test('real Git controller changes preserve Desktop renderer and main packaging, 
   try {
     git('init', '-q');
     for (const [path, source] of sources) write(path, source);
-    for (const path of nativeStorageGraph.keys()) write(path, readFileSync(new URL('../../../../' + path, import.meta.url), 'utf8'));
+    for (const path of nativeStorageGraph.keys()) {
+      const input = fileURLToPath(new URL('../../../../' + path, import.meta.url));
+      if (!lstatSync(input, {throwIfNoEntry: false})) continue;
+      const destination = join(root, path);
+      mkdirSync(dirname(destination), {recursive: true});
+      cpSync(input, destination, {recursive: true, verbatimSymlinks: true});
+    }
     const manifest = JSON.parse(readFileSync(new URL('../../../../' + recordBendManifest, import.meta.url), 'utf8'));
     manifest.modules.push('notes/routing-fixture.bend');
     write(recordBendManifest, JSON.stringify(manifest));
@@ -33,7 +55,9 @@ test('real Git controller changes preserve Desktop renderer and main packaging, 
       assert.notEqual(source, implementation);
       git('reset', '--hard', base);
       write(path, implementation);
-      const head = commit(), result = selectRange(base, head, root);
+      const head = commit();
+      assertAuditedStorageGraph(head, git);
+      const result = selectRange(base, head, root);
       assert.deepEqual(result.qualifiedStorageControllers, [path]);
       assert.equal(result.plan.root, false); assert.equal(result.plan.engine, false);
       assert.equal(result.plan.client, false); assert.equal(result.plan.desktop, true);
@@ -89,6 +113,19 @@ test('real Git controller changes preserve Desktop renderer and main packaging, 
     }
     git('reset', '--hard', base);
     const retention = 'record/storage/src/retention-controller.ts';
+    const audited = 'shared/enablement/bend/toolchain.ts';
+    write(audited, readFileSync(join(root, audited), 'utf8') + '\n');
+    const driftedBlob = git('hash-object', audited);
+    const driftedBase = commit();
+    write(retention, sources.get(retention)!.replace('this.#generation++;', 'this.#generation += 1;'));
+    const driftedHead = commit();
+    assert.throws(() => assertAuditedStorageGraph(driftedHead, git), {
+      message: `Record Storage routing pin mismatch for ${audited}: expected 100644 blob ${nativeStorageGraph.get(audited)}, actual 100644 blob ${driftedBlob}`,
+    });
+    const drifted = selectRange(driftedBase, driftedHead, root);
+    assert.deepEqual(drifted.qualifiedStorageControllers, []);
+    assert.equal(drifted.plan.root, true);
+    git('reset', '--hard', base);
     write(retention, sources.get(retention)!.replace('this.#generation++;', 'this.#generation += 1;'));
     const feedback = 'record/storage/src/retention/feedback.bend';
     write(feedback, readFileSync(join(root, feedback), 'utf8') + '\n');
