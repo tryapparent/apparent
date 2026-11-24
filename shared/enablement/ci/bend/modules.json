@@ -1,4 +1,7 @@
 {
-  "modules": ["analytics/sparkle-outcomes.bend"],
-  "inputs": []
+  "modules": [
+    "analytics/sparkle-outcomes.bend",
+    "enablement/performance/comparison.bend"
+  ],
+  "inputs": ["enablement/performance/comparison.ts"]
 }

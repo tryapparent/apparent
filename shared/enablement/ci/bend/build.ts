@@ -10,7 +10,13 @@ export async function buildSparkleOutcomes(
   proof?: Parameters<typeof buildBend>[3],
 ): Promise<void> {
   await bendScratch(async (scratch) => {
-    await buildBend(root, "shared", scratch, proof);
+    await buildBend(
+      root,
+      "shared",
+      scratch,
+      proof,
+      "shared/analytics/sparkle-outcomes.bend",
+    );
     const kernel = readFileSync(join(scratch, "sparkle-outcomes.mjs"), "utf8");
     const declaration = "export default {";
     if (kernel.split(declaration).length !== 2)
