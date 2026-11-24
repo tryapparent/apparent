@@ -3,6 +3,7 @@
     "capture-request/src/capture-admission.bend",
     "completion/src/copy-admission.bend",
     "media/src/assembly/frame-limits.bend",
+    "media/src/assembly/action-context.bend",
     "media/src/assembly/crop-publication.bend",
     "media/src/assembly/frame-label.bend",
     "media/src/assembly/focused-mark.bend",

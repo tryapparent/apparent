@@ -93,19 +93,24 @@ pub fn wayland_session() -> bool {
 /// so an absolute pointing device's position comes first when one moved it last
 /// (`input::absolute_pointer`).
 pub fn cursor_position() -> Option<(f64, f64)> {
-    if wayland_session()
+    capture_cursor_position().map(|(point, _)| point)
+}
+
+pub(crate) fn capture_cursor_position() -> Option<((f64, f64), bool)> {
+    let wayland = wayland_session();
+    if wayland
         && hyprland::running()
         && let Some(point) = hyprland::cursor_in_x_space(&output_rects())
     {
-        return Some(point);
+        return Some((point, true));
     }
-    if wayland_session()
+    if wayland
         && let Some([nx, ny]) = input::absolute_pointer()
         && let Some([x, y, w, h]) = desktop_rect()
     {
-        return Some((x + nx * w, y + ny * h));
+        return Some(((x + nx * w, y + ny * h), true));
     }
-    x11::cursor_position()
+    x11::cursor_position().map(|point| (point, !wayland))
 }
 
 /// Each output's name and X11 rectangle, read at most once a second.

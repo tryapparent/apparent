@@ -17,6 +17,21 @@ const DEFUNCT: u32 = 1 << 6;
 const EDITABLE: u32 = 1 << 7;
 const SHOWING: u32 = 1 << 25;
 const VISIBLE: u32 = 1 << 30;
+const MARK_ROLE_PRIORITY: [[bool; 4]; 4] =
+    include!("../../record/media/src/assembly/target/mark-role-priority.json");
+
+#[derive(Clone, Copy)]
+enum MarkRole {
+    Text = 1,
+    Image = 2,
+    Control = 3,
+}
+
+impl MarkRole {
+    fn preferred(self, selected: Option<Self>) -> bool {
+        MARK_ROLE_PRIORITY[self as usize][selected.map_or(0, |role| role as usize)]
+    }
+}
 
 #[derive(Debug, PartialEq, Eq, serde::Deserialize, zbus::zvariant::Type)]
 pub struct Object(String, OwnedObjectPath);
@@ -129,10 +144,10 @@ impl Bus {
             .proxy(tree, COMPONENT)?
             .call("GetAccessibleAtPoint", &(x, y, 1_u32))
             .ok()?;
-        let mut candidate = None;
+        let mut candidate: Option<(Object, &str, MarkRole)> = None;
         for _ in 0..16 {
             if object == *tree {
-                let (target, role): (Object, &str) = candidate?;
+                let (target, role, _) = candidate?;
                 let name: String = self.proxy(&target, ACCESSIBLE)?.get_property("Name").ok()?;
                 return label(role, &name);
             }
@@ -154,10 +169,10 @@ impl Bus {
                 .get_property::<(String, OwnedObjectPath)>("Parent")
                 .ok()?;
             drop(accessible);
-            if let Some(kind) = label_role(&role) {
-                if kind != "text" || candidate.is_none() {
-                    candidate = Some((object, kind));
-                }
+            if let Some((name, kind)) = label_role(&role)
+                && kind.preferred(candidate.as_ref().map(|(_, _, kind)| *kind))
+            {
+                candidate = Some((object, name, kind));
             }
             object = Object(bus, path);
         }
@@ -165,16 +180,20 @@ impl Bus {
     }
 }
 
-fn label_role(role: &str) -> Option<&'static str> {
+fn label_role(role: &str) -> Option<(&'static str, MarkRole)> {
     Some(match role {
-        "button" | "push button" | "toggle button" | "push button menu" => "button",
-        "label" | "static" => "text",
-        "check box" => "checkbox",
-        "radio button" => "radio button",
-        "page tab" => "tab",
-        "menu item" | "check menu item" | "radio menu item" => "menu item",
-        "link" => "link",
-        "heading" => "heading",
+        "button" | "push button" | "toggle button" | "push button menu" => {
+            ("button", MarkRole::Control)
+        }
+        "label" | "static" => ("text", MarkRole::Text),
+        "check box" => ("checkbox", MarkRole::Control),
+        "radio button" => ("radio button", MarkRole::Control),
+        "page tab" => ("tab", MarkRole::Control),
+        "menu item" | "check menu item" | "radio menu item" => ("menu item", MarkRole::Control),
+        "link" => ("link", MarkRole::Control),
+        "heading" => ("heading", MarkRole::Text),
+        "image" => ("image", MarkRole::Image),
+        "list item" => ("list item", MarkRole::Control),
         _ => return None,
     })
 }
@@ -199,15 +218,33 @@ mod tests {
     #[test]
     fn exposed_names_are_bounded_and_input_roles_are_excluded() {
         assert_eq!(
-            label(label_role("push button").unwrap(), "  Save\n now ").as_deref(),
+            label(label_role("push button").unwrap().0, "  Save\n now ").as_deref(),
             Some("button “Save now”")
         );
-        assert_eq!(label_role("password text"), None);
-        assert_eq!(label_role("entry"), None);
+        assert!(label_role("password text").is_none());
+        assert!(label_role("entry").is_none());
         assert_eq!(label("button", " "), None);
         assert_eq!(
             label("button", &"目".repeat(61)).unwrap(),
             format!("button “{}…”", "目".repeat(59))
         );
+    }
+
+    #[test]
+    fn card_and_icon_controls_use_the_nearest_semantic_target() {
+        let (text, text_role) = label_role("static").unwrap();
+        let (image, image_role) = label_role("image").unwrap();
+        let (card, card_role) = label_role("list item").unwrap();
+        let (button, button_role) = label_role("push button").unwrap();
+        assert_eq!((text, image), ("text", "image"));
+        assert!(image_role.preferred(Some(text_role)));
+        assert!(card_role.preferred(Some(image_role)));
+        assert!(!card_role.preferred(Some(button_role)));
+        assert_eq!(
+            label(card, "Artist card — Nina Simone").as_deref(),
+            Some("list item “Artist card — Nina Simone”")
+        );
+        assert_eq!(label(button, "Next").as_deref(), Some("button “Next”"));
+        assert_eq!(label(button, ""), None);
     }
 }

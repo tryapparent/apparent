@@ -9,6 +9,7 @@ import {
   proofOptions,
 } from "../../../../shared/enablement/bend/build.ts";
 import { run } from "../../../../shared/enablement/bend/toolchain.ts";
+import { actionContextTable } from "./action-context-table.ts";
 import { repairTable } from "./permission-table.ts";
 import { admissionSource, buildAdmission } from "./build.ts";
 import { checkCaptureAdmission } from "./capture-request/check.ts";
@@ -42,6 +43,16 @@ await bendScratch(async (scratch) => {
   );
   const proofOutput = join(scratch, "proof");
   await buildBend(root, "record", proofOutput, options);
+  assert.deepEqual(JSON.parse(actionContextTable(proofOutput)), [
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    true,
+  ]);
   copyFileSync(
     new URL(
       "../../../media/src/assembly/crop-publication-request.ts",
@@ -281,6 +292,39 @@ await bendScratch(async (scratch) => {
     ),
   );
   assert.deepEqual(repairTable(proofOutput), repair);
+  const [markPriority, markIdentity] = JSON.parse(
+    run(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `
+      import policy from "./focused-mark.mjs";
+      console.log(JSON.stringify([
+        Array.from({length: 4}, (_, candidate) => Array.from({length: 4}, (_, selected) =>
+          policy.prefer_mark_role(candidate, selected))),
+        Array.from({length: 4}, (_, flags) =>
+          policy.admit_mark_identity(Boolean(flags & 1), Boolean(flags & 2))),
+      ]));
+      `,
+      ],
+      proofOutput,
+    ),
+  );
+  for (const [name, expected] of [
+    ["mark-role-priority", markPriority],
+    ["mark-identity", markIdentity],
+  ]) {
+    assert.deepEqual(
+      JSON.parse(
+        readFileSync(
+          join(root, "record/media/src/assembly/target", `${name}.json`),
+          "utf8",
+        ),
+      ),
+      expected,
+    );
+  }
   assert.deepEqual(
     JSON.parse(
       readFileSync(

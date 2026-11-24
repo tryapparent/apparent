@@ -1309,12 +1309,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
                 )?
                 .2
             } else {
-                if let Some(audio) = old
-                    .audio
-                    .as_ref()
-                    .map(|a| dir.join(a))
-                    .filter(|p| p.is_file())
-                {
+                if let Some(audio) = old.audio.map(|a| dir.join(a)).filter(|p| p.is_file()) {
                     std::fs::copy(audio, out.join("audio.wav"))?;
                 }
                 rebuild_screen_bundle(
@@ -1329,6 +1324,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
                         video_offset_ms: old.video_offset_ms,
                         strokes: old.strokes,
                         events: old.events,
+                        action_context: old.action_context,
                         interaction_telemetry: old.interaction_telemetry,
                         video_ink: old.video_ink,
                         note: old.note,

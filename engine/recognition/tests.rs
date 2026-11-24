@@ -66,3 +66,22 @@ fn before_ink_pixels_follow_the_circle_and_native_labels_win() {
     session.apply(std::slice::from_mut(&mut stroke));
     assert!(stroke.on.is_none());
 }
+
+#[test]
+fn legacy_stroke_and_unavailable_recognizer_keep_the_unidentified_mark() {
+    let encoded = serde_json::to_value(circle(500)).unwrap();
+    assert!(encoded.get("on").is_none());
+    let stroke: Stroke = serde_json::from_value(encoded).unwrap();
+    let frame = Arc::new(RgbaFrame::new(480, 640, 480, vec![0; 640 * 480 * 4]));
+    let job = Job {
+        generation: 0,
+        frame,
+        stroke: stroke.clone(),
+    };
+    assert_eq!(recognize(&job, |_, _| None), None);
+    let mark = sketch::marks_of(&[stroke]).pop().unwrap();
+    assert_eq!(mark.on, None);
+    assert_eq!(mark.t0, 500);
+    assert_eq!(mark.shape, Shape::Circle);
+    assert!(mark.box_norm[0] < mark.box_norm[2]);
+}

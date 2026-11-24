@@ -347,43 +347,41 @@ pub(crate) fn clipboard_summary_with_access(
     if bundle.keyframes.iter().any(|frame| frame.display_time.is_some()) {
         let mut out =
             crate::capture::engine::sketch::clipboard_markdown(bundle, directory, hosted.is_some());
-        out.push_str(pointer.trim_end());
-        out.push_str("\nInspect relevant frames before edits.\n");
-        out.push_str("Install if missing: https://github.com/tryapparent/apparent\n");
+        out += pointer.trim_end();
+        out += crate::capture::agent::context::clipboard_frame_hint();
+        out += "Install if missing: https://github.com/tryapparent/apparent\n";
         if hosted.is_none() {
-            out.push_str("Path is on the recording computer. If inaccessible, transfer the complete bundle over an authorized connection. See apparent connect alternatives.\n");
+            out += "Path is on the recording computer. If inaccessible, transfer the complete bundle over an authorized connection. See apparent connect alternatives.\n";
             if let Some(crop) = &bundle.autocrop {
-                out.push_str(&format!("Full frames: {}/\n", crop.full_frames));
+                out += &format!("Full frames: {}/\n", crop.full_frames);
             }
         }
         if request_video {
-            out.push_str("For complex visible changes, use make-it-apparent. Share verified video or explain the blocker.\n");
+            out += "For complex visible changes, use make-it-apparent. Share verified video or explain the blocker.\n";
         }
         return out;
     }
     let mut out = pointer;
-    out.push_str(&format!("\n{CLI_INSTALL}\n\n"));
+    out += &format!("\n{CLI_INSTALL}\n\n");
     if hosted.is_some() {
-        out.push_str("Inspect relevant images before making changes.");
+        out += "Inspect relevant images before making changes.";
     } else {
-        out.push_str(
-            "Inspect contact-sheet.png and relevant frames/ in that folder before making changes.",
-        );
+        out += "Inspect contact-sheet.png and relevant frames/ in that folder before making changes.";
         out.push_str(" This path is on the recording computer. If it is inaccessible here, use an existing authorized connection to transfer the complete .apparent folder, then inspect its destination path. Run apparent connect alternatives for local/SSH guidance; do not enable remote access or forward private captures without permission.");
         if let Some(crop) = &bundle.autocrop {
-            out.push_str(&format!(" Uncropped images are in {}/.", crop.full_frames));
+            out += &format!(" Uncropped images are in {}/.", crop.full_frames);
         }
     }
     if request_video {
         out.push(' ');
-        out.push_str(DEMO_VIDEO_REQUEST);
+        out += DEMO_VIDEO_REQUEST;
     }
-    out.push_str("\n\n");
-    out.push_str(&crate::capture::engine::sketch::clipboard_markdown(
+    out += "\n\n";
+    out += &crate::capture::engine::sketch::clipboard_markdown(
         bundle,
         directory,
         hosted.is_some(),
-    ));
+    );
     out
 }
 

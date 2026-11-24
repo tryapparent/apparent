@@ -7,6 +7,8 @@ import {
   buildBend,
 } from "../../../../shared/enablement/bend/build.ts";
 
+import { actionContextTable } from "./action-context-table.ts";
+
 const root = fileURLToPath(new URL("../../../../", import.meta.url));
 const output = process.argv[2];
 if (!output) throw Error("Expected a Record media policy output path");
@@ -50,6 +52,10 @@ await bendScratch(async (compiled) => {
     compiled,
     undefined,
     "record/media/src/assembly/",
+  );
+  writeFileSync(
+    join(dirname(output), "record-action-context.json"),
+    actionContextTable(compiled),
   );
   const frameLimits = readFileSync(join(compiled, "frame-limits.mjs"), "utf8");
   const exportMarker = "export default {";

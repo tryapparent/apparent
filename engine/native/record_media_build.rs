@@ -4,6 +4,7 @@ pub(crate) fn compile_record_media() {
     let generator = "record/enablement/ci/bend/embed-media.ts";
     for input in [
         generator,
+        "record/enablement/ci/bend/action-context-table.ts",
         "record/enablement/ci/bend/modules.json",
         "record/media/src/assembly-policy.ts",
         "record/media/src/assembly",

@@ -225,7 +225,6 @@ pub struct SourceExtras {
     /// candidate frames (phone movies).
     pub full_frames: Option<FullFrames>,
     pub prepared: Option<PreparedVisuals>,
-    /// Reuse Record's plan across predecode and final selection for this exact duration.
     pub(crate) assembly_plan: Option<crate::composition::assembly::AssemblyPlan>,
     pub timings: StageTimings,
 }
@@ -377,6 +376,7 @@ pub fn finalize_capture_bundle_with_transcript(
                     video_offset_ms,
                     strokes: strokes.clone(),
                     events: events.clone(),
+                    action_context: activity.action_context.clone(),
                     interaction_telemetry,
                     video_ink,
                     note: note.clone(),
@@ -476,8 +476,6 @@ pub fn finalize_capture_bundle_with_transcript(
     })
 }
 
-/// Builds a Screen capture's bundle in `out`, which holds its video and `audio.wav`, from them
-/// and what the recording logged: `apparent reprocess` and `apparent recover`.
 pub fn rebuild_screen_bundle(
     out: &Path,
     old: recover::Unfinished,
@@ -555,6 +553,7 @@ fn rebuild_screen_bundle_from(
         SourceExtras {
             context: old.context,
             activity: windows::ActivityLog {
+                action_context: old.action_context,
                 windows: old.windows,
                 cursor: old.cursor,
                 ..Default::default()
@@ -832,6 +831,7 @@ pub fn build_bundle_from_parts(
             strokes,
             marks,
             events,
+            action_context: extras.activity.action_context,
             interaction_telemetry: extras.interaction_telemetry,
             video_ink: extras.video_ink,
             keyframes,
