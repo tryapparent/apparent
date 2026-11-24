@@ -36,6 +36,9 @@ fn main() {
     compile_embedded_policy("connect/enablement/ci/bend/renewal.ts", &[
         "connect/client/typescript/src/renewal", "connect/enablement/ci/bend/modules.json",
     ], "credential-renewal.mjs");
+    compile_embedded_policy("agent/context/build.ts", &[
+        "agent/context", "agent/enablement/ci/bend",
+    ], "agent-handoff-line.mjs");
     record_media_build::compile_record_media();
     sparkle_outcomes::compile();
     println!("cargo:rerun-if-env-changed=APPARENT_POSTHOG_TOKEN");

@@ -2,6 +2,10 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+#[path = "../engine/native/input/action_context/model.rs"]
+mod action_context;
+pub use action_context::{ActionContext, ActionKind, ActionWindow};
+
 pub use crate::shared::windows::{CursorSample, WindowSnapshot};
 
 /// Coordinates in `Stroke::pts` are scaled to `0..=10_000` (1/10000 of target width/height).
@@ -57,6 +61,8 @@ pub struct ApparentBundle {
     pub strokes: Vec<Stroke>,
     pub marks: Vec<Mark>,
     pub events: Vec<InteractionEvent>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub action_context: Vec<ActionContext>,
     /// Absent on older bundles; timed CLI recordings have no interaction collector.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interaction_telemetry: Option<InteractionTelemetry>,
@@ -90,11 +96,8 @@ pub struct ApparentBundle {
     /// Screen names in older in-app recordings (kept to read existing bundles).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub screens: Vec<ScreenSpan>,
-    /// Screen mode: the on-screen windows over time, front to back, stored only when they
-    /// change. Titles stay here and never go into the summary or the clipboard.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub windows: Vec<WindowSnapshot>,
-    /// Screen mode: the cursor at up to 15 Hz while it moves, as `[t, x, y]` (normalized).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cursor: Vec<CursorSample>,
     /// Screen mode: how the keyframes were cropped (`frames/` and the contact sheet are cropped;

@@ -31,6 +31,6 @@ pub(crate) fn probe_stroke(stroke: &Stroke, frame: TargetFrame) {
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) fn admit_browser_page(confirmed: bool, mark: bool, same_page: bool) -> bool {
-    const ADMISSION: [bool; 8] = include!("../../../record/media/src/assembly/browser-page.json");
+    const ADMISSION: [bool; 8] = include!("../../../record/media/src/assembly/target/browser-page.json");
     ADMISSION[usize::from(confirmed) | (usize::from(mark) << 1) | (usize::from(same_page) << 2)]
 }

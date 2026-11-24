@@ -11,7 +11,7 @@ pub(crate) use super::ax_other::percent_decode;
 #[path = "atspi.rs"]
 mod atspi;
 #[path = "window.rs"]
-mod window;
+pub(crate) mod window;
 
 const QUEUE: usize = 8;
 const FRESHNESS: Duration = Duration::from_millis(150);

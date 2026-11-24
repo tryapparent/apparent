@@ -22,6 +22,7 @@ pub(super) fn track_shift_ink(
             .unwrap_or_else(PoisonError::into_inner);
         let stroke = guard.get_or_insert_with(|| {
             telemetry.window_log_request.store(true, Ordering::Release);
+            telemetry.observe_pointer_context(crate::shared::model::ActionKind::Stroke, t_ms, x, y);
             #[cfg(any(target_os = "linux", target_os = "macos"))]
             if let Some(session) = telemetry
                 .circle_session
@@ -65,6 +66,7 @@ pub(super) fn track_shift_ink(
             .take()
             && is_real_ink(&stroke)
         {
+            telemetry.observe_stroke_end_context(&stroke);
             if telemetry.probing() {
                 let frame = *telemetry
                     .target_frame

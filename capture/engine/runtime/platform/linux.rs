@@ -999,7 +999,6 @@ pub fn update_global_shortcut(telemetry: &SharedCaptureTelemetry, config: Shortc
 
 // MARK: Input
 
-/// Notes where keys come from: the X server on X11, the input devices on Wayland.
 fn check_tap(telemetry: &SharedCaptureTelemetry) {
     if linux::wayland_session() {
         input::start();
@@ -1039,6 +1038,7 @@ fn log_chord(telemetry: &SharedCaptureTelemetry, mods: Modifiers, vk: u16) {
     };
     let t_ms = telemetry.elapsed_ms();
     telemetry.window_log_request.store(true, Ordering::Release);
+    telemetry.observe_key_context(t_ms);
     telemetry
         .events
         .lock()
@@ -1138,12 +1138,12 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
             stale_pointer = pure_shift.then(linux::cursor_position).flatten();
         }
 
-        let Some((x, y)) = linux::cursor_position() else {
+        let Some(((x, y), known)) = linux::capture_cursor_position() else {
             note_tap.reset();
             continue;
         };
+        telemetry.action_pointer_known.store(known, Ordering::Relaxed);
         if stale_pointer.is_some_and(|stale| stale == (x, y)) {
-            // Not where the pointer is yet: wait for it to move over the overlay.
             pure_shift = false;
         } else {
             stale_pointer = None;

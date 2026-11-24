@@ -79,3 +79,46 @@ test("either local provider can succeed independently", async () => {
   );
   assert.equal(await recognizeCircle(crop, unavailable, unavailable), "");
 });
+
+test("a cut-off neighboring line cannot name the selected image", async () => {
+  const result = await recognizeCircle(
+    {
+      ...crop,
+      width: 168,
+      rgba: new Uint8Array(168 * 80 * 4),
+      points: crop.points.map(([x, y]) => [x * 2.1, y]),
+    },
+    async () => [
+      word("Similar", 65, 36),
+      {
+        ...word("artists", 144, 37),
+        box: { x: 144, y: 37, width: 24, height: 8 },
+      },
+    ],
+    async () => [{ index: 281, label: "tabby", score: 0.9 }],
+  );
+  assert.equal(result, "image “cat”");
+});
+
+test("ellipsized titles cannot become clean names on a second OCR pass", async () => {
+  const passes: string[] = [];
+  const result = await recognizeCircle(
+    crop,
+    async (_pixels, _width, _height, mode) => {
+      passes.push(mode);
+      return [word("Recommended", 30, 35), word("Artists…", 41, 35)];
+    },
+    async () => [],
+  );
+  assert.equal(result, "");
+  assert.deepEqual(passes, ["auto"]);
+});
+
+test("an OCR line confined to the edge does not identify a central icon", async () => {
+  const result = await recognizeCircle(
+    crop,
+    async () => [word("Search", 36, 9)],
+    async () => [{ index: 0, label: "monitor", score: 0.99 }],
+  );
+  assert.equal(result, "");
+});

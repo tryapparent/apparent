@@ -61,12 +61,11 @@ pub struct WindowEntry {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CursorSample(pub u64, pub f32, pub f32);
 
-/// What the worker collected over one capture.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ActivityLog {
+    pub action_context: Vec<crate::shared::model::ActionContext>,
     pub windows: Vec<WindowSnapshot>,
     pub cursor: Vec<CursorSample>,
-    /// Calls to the window list and the time they took, for the log line at the end.
     pub snapshot_calls: u32,
     pub snapshot_time: Duration,
     /// When the finish sequence began and how long stopping capture streams took.

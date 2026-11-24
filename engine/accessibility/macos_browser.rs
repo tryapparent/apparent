@@ -71,7 +71,7 @@ pub fn apply(
     for stroke in strokes.iter_mut().filter(|s| !s.laser) {
         if let Some(hit) = hits.get(&Target::Stroke(stroke.t0)) {
             if stroke.on.is_none() {
-                stroke.on = hit.on_text();
+                stroke.on = hit.mark_text();
             }
             let page = hit.browser_page.as_ref();
             let start = hits.get(&Target::StrokeStart(stroke.t0))

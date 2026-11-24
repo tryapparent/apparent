@@ -17,6 +17,12 @@ use crate::shared::model::{
 
 pub(crate) use platform::*;
 
+#[path = "../../../engine/native/input/action_context/mod.rs"]
+mod action_context;
+pub(in crate::capture) use action_context::Collector as ActionContextCollector;
+#[path = "../../../engine/native/input/action_context/finish.rs"]
+mod finish_telemetry;
+
 pub use recording::recorder::{
     CANDIDATE_BUDGET_BYTES, CANDIDATE_EDGE, CandidateBuffer, FRAME_SAMPLE_INTERVAL,
     ScreenCaptureSession, ScreenRecording, capture_size,
@@ -679,6 +685,9 @@ pub struct SharedCaptureTelemetry {
     /// The `agentContext` experiment was on when this capture started: clicks and strokes are
     /// looked up in the Accessibility tree (`crate::ax`, macOS only).
     agent_context: AtomicBool,
+    action_context: Mutex<Option<ActionContextCollector>>,
+    #[cfg(target_os = "linux")]
+    action_pointer_known: AtomicBool,
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub(crate) circle_session: Mutex<Option<Arc<crate::circle_recognition::Session>>>,
     /// A ⇧-press inside the target: when, where (global points) and on which frame.
@@ -748,6 +757,9 @@ impl SharedCaptureTelemetry {
             fn_candidate: AtomicBool::new(false),
             drag_start: Mutex::new(None),
             agent_context: AtomicBool::new(false),
+            action_context: Mutex::default(),
+            #[cfg(target_os = "linux")]
+            action_pointer_known: AtomicBool::new(false),
             #[cfg(any(target_os = "linux", target_os = "macos"))]
             circle_session: Mutex::default(),
             shift_press: Mutex::new(None),
@@ -930,6 +942,7 @@ impl SharedCaptureTelemetry {
         self.window_log_request.store(false, Ordering::Release);
         let agent_context = crate::shared::handoff::experiment(crate::shared::handoff::AGENT_CONTEXT);
         self.agent_context.store(agent_context, Ordering::Release);
+        self.reset_action_context();
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
             *self.circle_session.lock().unwrap_or_else(PoisonError::into_inner) =
@@ -1011,6 +1024,7 @@ impl SharedCaptureTelemetry {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) =
             Some((t_ms, nx, ny, None, start_frame));
+        self.observe_pointer_context(crate::shared::model::ActionKind::Pointer, t_ms, screen_x, screen_y);
         if self.probing() {
             crate::capture::engine::accessibility::ax::Prober::shared().probe(crate::capture::engine::accessibility::ax::Target::Pointer(t_ms), screen_x, screen_y);
         }
@@ -1296,63 +1310,6 @@ impl SharedCaptureTelemetry {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .push(laser);
         }
-    }
-
-    pub fn finish_session(&self) -> (Vec<InteractionEvent>, Vec<Stroke>) {
-        self.active.store(false, Ordering::Release);
-        self.selecting.store(false, Ordering::Release);
-        *self
-            .drag_start
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-        *self
-            .shift_press
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-        #[cfg(target_os = "linux")]
-        self.set_native_note_window(None);
-        self.finish_active_laser(None);
-        if let Some(ink) = self
-            .live_ink
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take()
-            && ink.pts.len() >= 3
-        {
-            #[cfg(any(target_os = "linux", target_os = "macos"))]
-            if let Some(session) = self.circle_session.lock().unwrap_or_else(PoisonError::into_inner).as_ref() {
-                session.end_mark(&ink);
-            }
-            self.strokes
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .push(ink);
-        }
-        let mut events = std::mem::take(
-            &mut *self
-                .events
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        );
-        let mut strokes = std::mem::take(
-            &mut *self
-                .strokes
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        );
-        if self.agent_context.swap(false, Ordering::AcqRel) {
-            let hits = crate::capture::engine::accessibility::ax::Prober::shared().finish();
-            crate::capture::engine::accessibility::ax::apply(&hits, &mut events, &mut strokes);
-            if self.capture_mode.load(Ordering::Acquire) != 3 {
-                let end = crate::shared::clock::now_epoch_ms();
-                let start = end.saturating_sub(self.elapsed_ms());
-                let page = crate::capture::desktop::workflow::page::between(start, end);
-                crate::capture::desktop::workflow::page::apply(&page, start, &mut events, &mut strokes);
-            }
-        }
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
-        self.circle_session.lock().unwrap_or_else(PoisonError::into_inner).take();
-        (events, strokes)
     }
 }
 

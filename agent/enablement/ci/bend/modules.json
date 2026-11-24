@@ -1,4 +1,4 @@
 {
-  "modules": ["zoom/zoom-plan.bend"],
-  "inputs": ["zoom/", "enablement/ci/bend/"]
+  "modules": ["context/handoff-line.bend", "zoom/zoom-plan.bend"],
+  "inputs": ["context/", "zoom/", "enablement/ci/bend/"]
 }
