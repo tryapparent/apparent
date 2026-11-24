@@ -193,7 +193,7 @@ pub(crate) fn desktop_access(activate: bool) -> &'static str {
             let mut command = Command::new("xvfb-run");command.args(["-a", "node"]);command
         } else { Command::new("node") };
         let mut child = command.arg("--experimental-strip-types")
-            .arg(root.join("composition/settings/enablement/labs/native.ts")).arg(&path)
+            .arg(root.join("composition/settings/enablement/labs/native.mts")).arg(&path)
             .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn().unwrap();
         let mut input = child.stdin.take().unwrap();
         for line in std::io::BufReader::new(child.stdout.take().unwrap()).lines() {
