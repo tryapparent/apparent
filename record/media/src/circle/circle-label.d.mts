@@ -6,8 +6,19 @@ declare const policy: {
     top: number,
     generic: boolean,
   ): number;
-  word_admission(hits: number, confidence: number): number;
-  retry_region(hasText: boolean, hasCategory: boolean, wide: boolean): number;
-  include_category(hasText: boolean, wide: boolean, lines: number): boolean;
+  word_admission(hits: number, confidence: number, complete: boolean): number;
+  select_line(
+    uncertain: boolean,
+    centeredX: boolean,
+    centeredY: boolean,
+    hasCategory: boolean,
+  ): boolean;
+  retry_region(
+    hasText: boolean,
+    uncertain: boolean,
+    hasCategory: boolean,
+    wide: boolean,
+  ): number;
+  include_caption(hasCategory: boolean, lines: number): boolean;
 };
 export default policy;

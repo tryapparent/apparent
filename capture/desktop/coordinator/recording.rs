@@ -1498,10 +1498,9 @@ impl ApparentCoordinator {
         #[cfg(not(target_os = "linux"))]
         let agent_requested = false;
         let completion_source = if matches!(&rec.source, CaptureSource::Phone(_)) { "phone" } else { "screen" };
-        // Keep the capture-local receipt alive while Finish drains already queued Saves.
         let note_receipt = self.note_ui.as_ref().map(workflow::notes::Session::saved_note_receipt);
         let notes_finished = self.note_ui.take().map(workflow::notes::Session::finish);
-        let (events, strokes) = self.telemetry.finish_session();
+        let (events, strokes, action_context) = self.telemetry.finish_session_with_context();
         let paper_time = rec.elapsed_ms();
         let bundle_dir = rec.bundle_dir;
         let target = rec.target;
@@ -1556,7 +1555,7 @@ impl ApparentCoordinator {
 
                     let finalizer_started = Instant::now();
                     let result = recording_completion::finalize(
-                        source, target, bundle_dir, events, strokes, final_whiteboard, notes_finished, source_released,
+                        source, target, bundle_dir, events, strokes, action_context, final_whiteboard, notes_finished, source_released,
                     );
                     if let Some(performance) = performance {
                         performance.finish(finish_started, finalizer_started, result.1, result.0.is_ok());

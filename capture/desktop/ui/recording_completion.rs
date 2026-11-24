@@ -6,7 +6,7 @@ use super::super::CaptureSource;
 use super::whiteboard;
 #[cfg(target_os = "linux")]
 use crate::capture::desktop::workflow::FinishPhase;
-use crate::capture::engine::runtime::apparent_log;
+use crate::capture::engine::runtime::{ActionContextCollector, apparent_log};
 use crate::capture::engine::runtime::recording::diagnostics::{
     Diagnose, Stage, sampling::Sampling, with_sampling,
 };
@@ -22,6 +22,7 @@ pub(in crate::capture::desktop) fn finalize(
     bundle_dir: PathBuf,
     events: Vec<InteractionEvent>,
     strokes: Vec<Stroke>,
+    action_context: Option<ActionContextCollector>,
     final_whiteboard: whiteboard::SavedBoard,
     notes_finished: Option<flume::Receiver<crate::capture::desktop::workflow::notes::FinishResult>>,
     source_released: flume::Sender<()>,
@@ -70,7 +71,10 @@ pub(in crate::capture::desktop) fn finalize(
     let _ = source_released.send(());
     let recording = stopped.recording;
     let sampling = stopped.sampling;
-    let activity = stopped.activity;
+    let mut activity = stopped.activity;
+    if let Some(context) = action_context {
+        activity.action_context = context.finish(&events, &strokes);
+    }
     let duration_ms = recording.duration_ms;
     let recorded_audio = match stopped.audio {
         Ok(audio) => audio,
@@ -116,6 +120,7 @@ pub(in crate::capture::desktop) fn finalize(
                         video_ink: recording.video_ink,
                         strokes,
                         events,
+                        action_context: activity.action_context,
                         interaction_telemetry: None,
                         note: None,
                         windows: activity.windows,

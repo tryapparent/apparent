@@ -10,25 +10,28 @@ def category(+group: U32, combined: U32, top: U32, generic: Bool) -> U32:
   specific = Bool.and(Bool.not(generic), U32.is_ge(top, 850))
   Bool.pick(U32, pooled, group, Bool.pick(U32, specific, 3, 0))
 
-def word_admission(hits: U32, confidence: U32) -> U32:
-  Bool.pick(U32, U32.is_ge(hits, 3), Bool.pick(U32, U32.is_ge(confidence, 750), 2, 1), 0)
+def word_admission(+hits: U32, confidence: U32, complete: Bool) -> U32:
+  reliable = Bool.and(complete, Bool.and(U32.is_eq(hits, 9), U32.is_ge(confidence, 750)))
+  Bool.pick(U32, U32.is_eq(hits, 0), 0, Bool.pick(U32, reliable, 2, 1))
 
-def retry_region(has_text: Bool, has_category: Bool, wide: Bool) -> U32:
-  match has_text:
-    case True{}:
-      0
-    case False{}:
-      match has_category:
-        case True{}:
-          2
-        case False{}:
-          Bool.pick(U32, wide, 1, 0)
+def select_line(uncertain: Bool, centered_x: Bool, centered_y: Bool, has_category: Bool) -> Bool:
+  Bool.and(Bool.not(uncertain), Bool.and(centered_x, Bool.or(centered_y, has_category)))
 
-def include_category(has_text: Bool, wide: Bool, lines: U32) -> Bool:
-  Bool.or(Bool.not(has_text), Bool.and(Bool.not(wide), U32.is_eq(lines, 1)))
+def retry_region(has_text: Bool, uncertain: Bool, has_category: Bool, wide: Bool) -> U32:
+  retry = Bool.pick(U32, has_category, 2, Bool.pick(U32, wide, 1, 0))
+  Bool.pick(U32, Bool.or(has_text, uncertain), 0, retry)
+
+def include_caption(has_category: Bool, lines: U32) -> Bool:
+  Bool.or(Bool.not(has_category), U32.is_eq(lines, 1))
 
 law low_confidence_text_is_uncertain:
-  {word_admission(5, 600) == 1 : U32}
+  {word_admission(9, 600, True{}) == 1 : U32}
 
 def low_confidence_text_is_uncertain():
+  {==}
+
+law partial_text_is_uncertain:
+  {word_admission(6, 990, True{}) == 1 : U32}
+
+def partial_text_is_uncertain():
   {==}

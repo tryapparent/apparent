@@ -74,45 +74,85 @@ function selectedPixels(crop: Crop) {
   return pixels;
 }
 
+interface Region {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 function readLines(
   words: Word[],
-  points: number[][],
-  left: number,
-  top: number,
+  crop: Crop,
+  region: Region,
+  hasCategory: boolean,
 ) {
-  const lines = new Map<number, { words: string[]; uncertain: boolean }>();
+  const lines = new Map<
+    number,
+    { words: string[]; uncertain: boolean; bounds: number[] }
+  >();
   for (const word of words.slice(0, 256)) {
     const box = word.box;
+    const text = word.text.replace(/[\p{Cc}\p{Cf}“”]/gu, " ").trim();
+    const truncated = /…|\.{2,}/u.test(text);
+    if (!truncated && !/[\p{L}\p{N}]/u.test(text)) continue;
+    const x = region.x + box.x;
+    const y = region.y + box.y;
     let hits = 0;
-    for (const fx of [0.15, 0.5, 0.85]) {
-      for (const fy of [0.25, 0.75]) {
-        if (
-          inside(
-            left + box.x + box.width * fx,
-            top + box.y + box.height * fy,
-            points,
-          )
-        )
+    for (const fx of [0, 0.5, 1]) {
+      for (const fy of [0, 0.5, 1]) {
+        if (inside(x + box.width * fx, y + box.height * fy, crop.points))
           hits++;
       }
     }
-    const admission = policy.word_admission(hits, score(word.confidence));
+    const complete =
+      !truncated &&
+      box.x > 1 &&
+      box.y > 1 &&
+      box.x + box.width < region.width - 1 &&
+      box.y + box.height < region.height - 1;
+    const admission = policy.word_admission(
+      hits,
+      score(word.confidence),
+      complete,
+    );
     if (admission === 0) continue;
-    const line = lines.get(word.line) ?? { words: [], uncertain: false };
-    const text = word.text.replace(/[\p{Cc}\p{Cf}“”]/gu, " ").trim();
-    if (!/[\p{L}\p{N}]/u.test(text)) continue;
-    if (admission === 1) line.uncertain = true;
-    else line.words.push(text);
+    const line = lines.get(word.line) ?? {
+      words: [],
+      uncertain: false,
+      bounds: [x, y, x + box.width, y + box.height],
+    };
+    if (admission === 1) {
+      line.uncertain = true;
+    } else {
+      line.words.push(text);
+      const [left, top, right, bottom] = line.bounds;
+      line.bounds = [
+        Math.min(left, x),
+        Math.min(top, y),
+        Math.max(right, x + box.width),
+        Math.max(bottom, y + box.height),
+      ];
+    }
     lines.set(word.line, line);
   }
-  return [...lines.values()]
-    .filter((line) => !line.uncertain)
+  const observed = [...lines.values()];
+  const text = observed
+    .filter(({ uncertain, bounds: [left, top, right, bottom] }) =>
+      policy.select_line(
+        uncertain,
+        Math.abs(left + right - crop.width) <= crop.width * 0.5,
+        Math.abs(top + bottom - crop.height) <= crop.height * 0.5,
+        hasCategory,
+      ),
+    )
     .map((line) => line.words.join(" "))
     .filter(
       (text) =>
         /[\p{L}\p{N}]/u.test(text) && text.length >= 2 && text.length <= 90,
     )
     .slice(0, 3);
+  return { text, uncertain: observed.some((line) => line.uncertain) };
 }
 
 function objectName(classes: Category[]) {
@@ -166,10 +206,17 @@ export async function recognizeCircle(
     classify(selectedPixels(crop), crop.width, crop.height).catch(() => []),
   ]);
   const category = objectName(categories);
-  let lines = readLines(words, crop.points, 0, 0);
+  const hasCategory = Boolean(category);
+  let { text, uncertain } = readLines(
+    words,
+    crop,
+    { x: 0, y: 0, width: crop.width, height: crop.height },
+    hasCategory,
+  );
   const region = policy.retry_region(
-    lines.length > 0,
-    Boolean(category),
+    text.length > 0,
+    uncertain,
+    hasCategory,
     crop.width >= 1.4 * crop.height,
   );
   if (region) {
@@ -177,16 +224,13 @@ export async function recognizeCircle(
     const retry = await ocr(r.pixels, r.width, r.height, "line").catch(
       () => [],
     );
-    lines = readLines(retry, crop.points, r.x, r.y);
+    text = readLines(retry, crop, r, hasCategory).text;
   }
-  const include = policy.include_category(
-    lines.length > 0,
-    crop.width > 2 * crop.height,
-    lines.length,
-  );
   return [
-    include && category ? `image “${category}”` : "",
-    ...lines.map((line) => `“${line}”`),
+    category ? `image “${category}”` : "",
+    ...(policy.include_caption(hasCategory, text.length) ? text : []).map(
+      (line) => `“${line}”`,
+    ),
   ]
     .filter(Boolean)
     .join(", ");
