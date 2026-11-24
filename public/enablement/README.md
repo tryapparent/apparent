@@ -27,3 +27,6 @@ See [Pages delivery](docs/pages-deploy.md) for artifact provenance, privacy,
 current-main checks, origins and recovery. Workflow check names, gates, locks and
 artifact names are unchanged. Reverting this migration must restore the tooling,
 workspace/lockfile and all callers together; do not leave forwarding donors.
+
+The [homepage performance replay](browser-proof/homepage-performance/README.md) runs locally against
+the packaged Public build and verifies the setup clipboard and feature demo.
