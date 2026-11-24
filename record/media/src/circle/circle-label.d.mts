@@ -20,5 +20,6 @@ declare const policy: {
     wide: boolean,
   ): number;
   include_caption(hasCategory: boolean, lines: number): boolean;
+  label_length(length: number): boolean;
 };
 export default policy;

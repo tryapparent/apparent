@@ -122,3 +122,22 @@ test("an OCR line confined to the edge does not identify a central icon", async 
   );
   assert.equal(result, "");
 });
+
+test("a complete chart heading can identify a circled target", async () => {
+  const heading =
+    "Word Error Rate Index for Non-streaming Speech Recognition versus Total Parameters for Open Weights";
+  const words = heading
+    .split(" ")
+    .map((part, index) => word(part, 80 + index * 10, 36));
+  const result = await recognizeCircle(
+    {
+      ...crop,
+      width: 320,
+      rgba: new Uint8Array(320 * 80 * 4),
+      points: crop.points.map(([x, y]) => [x * 4, y]),
+    },
+    async () => words,
+    async () => [],
+  );
+  assert.equal(result, `“${heading}”`);
+});

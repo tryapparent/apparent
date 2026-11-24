@@ -392,7 +392,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
-        if: env.CHECK_ENGINEERING == 'true' || env.CHECK_RELEASE == 'true' || env.CHECK_TOOLING == 'true' || env.CHECK_SPARKLE == 'true'
+        if: env.CHECK_ENGINEERING == 'true' || env.CHECK_RELEASE == 'true' || env.CHECK_THEME == 'true' || env.CHECK_TOOLING == 'true' || env.CHECK_SPARKLE == 'true'
         with:
           node-version: '22.23.0'
       - name: Verify paired release contracts
@@ -410,7 +410,9 @@ jobs:
         run: node composition/enablement/ci/bend/check.ts --proof
       - name: Verify shared theme
         if: env.CHECK_THEME == 'true'
-        run: python3 shared/ui/scripts/check-theme.py
+        run: |
+          python3 shared/ui/scripts/check-theme.py
+          python3 -m unittest discover -s shared/ui/test -p 'test_*.py'
       - name: Verify push guards, selection and publication admission
         if: env.CHECK_ENGINEERING == 'true'
         run: |
