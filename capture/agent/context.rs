@@ -1,7 +1,7 @@
 use crate::embedded_policy::EmbeddedPolicy;
 #[path = "../../engine/native/agent_context/handoff.rs"]
 mod handoff;
-use handoff::{ContextLine, FrameText, WindowEvidence, line, open_handoff_policy, render_context_line, window_near_mark};
+use handoff::{ContextLine, FrameText, WindowEvidence, fold_repeats, line, open_handoff_policy, render_context_line, window_near_mark};
 pub(crate) use handoff::{append_frame, audio_notice, frame_is_flagged};
 use crate::shared::model::*;
 use crate::capture::engine::sketch::{
@@ -401,27 +401,6 @@ fn events(bundle: &ApparentBundle) -> Vec<(u64, ContextLine<'_>)> {
     } else {
         out
     }
-}
-
-fn fold_repeats(items: Vec<(u64, ContextLine<'_>)>) -> Vec<(u64, ContextLine<'_>)> {
-    let mut out: Vec<(u64, ContextLine<'_>, u64, usize)> = Vec::new();
-    for (t, action) in items {
-        match out.last_mut() {
-            Some((_, prev, last, count)) if prev.text == action.text && t - *last < REPEAT_MS => {
-                *last = t;
-                *count += 1;
-            }
-            _ => out.push((t, action, t, 1)),
-        }
-    }
-    out.into_iter()
-        .map(|(t, mut action, _, count)| {
-            if count > 1 {
-                action.text.push_str(&format!(" ×{count}"));
-            }
-            (t, action)
-        })
-        .collect()
 }
 
 /// A drag worth a line: one that names what it moved, or an unnamed one that went far.

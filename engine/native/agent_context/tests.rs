@@ -1,4 +1,5 @@
 use super::*;
+use crate::shared::routing::BROWSER_PAGE_EVENT_PREFIX;
 use crate::shared::windows::WindowEntry;
 
 fn stroke(t0: u64, x: f32, y: f32) -> Stroke {
@@ -113,6 +114,34 @@ fn bundle(words: Vec<WordTiming>, keyframes: Vec<Keyframe>) -> ApparentBundle {
         destination: None,
         image_quality_warning: None,
     }
+}
+
+#[test]
+fn browser_page_urls_keep_each_time_in_the_compact_handoff() {
+    let mut bundle = bundle(
+        Vec::new(),
+        vec![keyframe(1, 1000, KeyframeReason::SceneChange, "")],
+    );
+    bundle.events = [
+        (2000, "https://example.com/first"),
+        (3000, "https://example.com/first"),
+        (4000, "https://example.com/second"),
+    ]
+    .map(|(t, url)| InteractionEvent::AppEvent {
+        t,
+        label: format!("{BROWSER_PAGE_EVENT_PREFIX}{url}"),
+    })
+    .to_vec();
+
+    let frames = compact_keyframe_texts(&bundle).unwrap();
+    assert_eq!(
+        frames[0].lines,
+        [
+            "0:02 browser page https://example.com/first",
+            "0:03 browser page https://example.com/first",
+            "0:04 browser page https://example.com/second",
+        ]
+    );
 }
 
 #[test]

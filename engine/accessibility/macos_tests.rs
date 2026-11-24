@@ -16,6 +16,7 @@ fn labels_are_one_short_line_and_name_the_element() {
         label: Some("New Tab".into()),
         identifier: Some("tab-new".into()),
         document: Some("main.rs".into()),
+        ..Hit::default()
     };
     assert_eq!(
         hit.label_text().as_deref(),
@@ -102,36 +103,45 @@ fn overlay_fallback_requires_the_front_window_owner() {
         layer: 0,
         alpha: 1.0,
     };
+    let owner = |windows: &[crate::shared::windows::RawWindow], direct_browser_hit| {
+        window_at(windows, 50.0, 50.0, 9, direct_browser_hit).map(|window| window.pid)
+    };
     assert_eq!(
-        window_owner_at(&[window(7, 0.0), window(8, 0.0)], 50.0, 50.0, 9),
+        owner(&[window(7, 0.0), window(8, 0.0)], false),
         Some(7)
     );
     assert_eq!(
-        window_owner_at(&[window(9, 0.0), window(7, 0.0)], 50.0, 50.0, 9),
+        owner(&[window(9, 0.0), window(7, 0.0)], false),
         Some(7)
     );
-    assert_eq!(window_owner_at(&[window(7, 200.0)], 50.0, 50.0, 9), None);
+    assert_eq!(owner(&[window(7, 200.0)], false), None);
     let mut dock = window(6, 0.0);
     dock.owner = "Dock".into();
     dock.layer = 20;
     assert_eq!(
-        window_owner_at(&[dock, window(7, 0.0)], 50.0, 50.0, 9),
+        owner(&[dock, window(7, 0.0)], false),
         Some(7)
     );
     let mut cursor = window(6, 0.0);
     cursor.owner = "Window Server".into();
     cursor.layer = 2_147_483_630;
     assert_eq!(
-        window_owner_at(&[cursor, window(7, 0.0)], 50.0, 50.0, 9),
+        owner(&[cursor, window(7, 0.0)], false),
         Some(7)
     );
     let mut menu_bar = window(6, 0.0);
     menu_bar.owner = "Window Server".into();
     menu_bar.layer = 24;
     assert_eq!(
-        window_owner_at(&[menu_bar, window(7, 0.0)], 50.0, 50.0, 9),
+        owner(&[menu_bar, window(7, 0.0)], true),
         Some(6)
     );
+    let mut notification = window(6, 0.0);
+    notification.owner = "Notification Center".into();
+    notification.layer = 21;
+    let windows = [notification, window(7, 0.0)];
+    assert_eq!(owner(&windows, false), Some(6));
+    assert_eq!(owner(&windows, true), Some(7));
 }
 
 #[test]
