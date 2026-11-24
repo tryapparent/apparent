@@ -24,6 +24,41 @@ test("saved connection alone leaves picker off; explicit sending flag enables it
   assert.equal(JSON.stringify(c.view()).includes("private-test-token"), false);
 });
 
+test("the canonical Agents preference controls sending before a legacy override", async (t) => {
+  const f = await fixture(t);
+  const c = new Controller(() => {}, f.config);
+  const saved = JSON.parse(await readFile(f.config, "utf8"));
+
+  for (const disabled of [false, null, "yes"]) {
+    await writeFile(
+      f.config,
+      JSON.stringify({
+        ...saved,
+        agents: { t3DestinationPicker: disabled },
+        experiments: { t3DestinationPicker: true },
+      }),
+    );
+    await c.update(`disabled:${String(disabled)}`, "processing");
+    assert.equal(c.view(), null);
+    assert.equal(f.reads, 0);
+  }
+
+  await writeFile(
+    f.config,
+    JSON.stringify({
+      ...saved,
+      agents: { t3DestinationPicker: true },
+      experiments: { t3DestinationPicker: false },
+    }),
+  );
+  await c.update("enabled", "processing");
+  assert.deepEqual(
+    c.view()?.choices.map((choice) => choice.id),
+    ["new", "thread"],
+  );
+  assert.equal(f.reads, 1);
+});
+
 test("recording warms the picker once and makes choices available at Finish", async (t) => {
   const f = await fixture(t);
   const c = new Controller(() => {}, f.config);

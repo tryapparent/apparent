@@ -100,16 +100,16 @@ pub fn choice_in(path: &std::path::Path) -> Option<Choice> {
 /// can't be named) changes nothing.
 pub fn save_in(path: &std::path::Path, id: &str, inputs: &Inputs) -> anyhow::Result<()> {
     let value = if id == "default" {
-        serde_json::Value::Null
+        None
     } else if let Some(input) = inputs.find(id) {
-        serde_json::to_value(Choice {
+        Some(serde_json::to_value(Choice {
             id: input.id.clone(),
             name: input.name.clone(),
-        })?
+        })?)
     } else {
         return Ok(());
     };
-    crate::shared::handoff::set_config_value_in(path, "microphone", value)
+    crate::shared::handoff::write_preference(path, "recording.microphone", value)
 }
 
 /// Enumerates input devices (never on the UI thread).

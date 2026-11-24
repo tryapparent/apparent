@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   bendScratch,
@@ -9,11 +10,10 @@ export type PermissionTable = {
   repair: number[];
   rows: number[];
   screenSelection: number[];
-  savePicker: boolean[];
 };
 
 export function repairTable(directory: string): PermissionTable {
-  return JSON.parse(
+  const table: PermissionTable = JSON.parse(
     run(
       process.execPath,
       [
@@ -35,14 +35,28 @@ export function repairTable(directory: string): PermissionTable {
             policy.screen_selection(supported, directNeedsOptIn, { $ })
           )
         )
-      ),
-      savePicker: [false, true].map(skip => policy.save_picker(skip))
+      )
     }));
   `,
       ],
       directory,
     ),
   );
+  const catalog = JSON.parse(
+    readFileSync(
+      new URL("../../../settings/preferences.json", import.meta.url),
+      "utf8",
+    ),
+  ) as Array<{ id: string; default: unknown }>;
+  const picker = catalog.find(
+    ({ id }) => id === "permissions.skipScreenSelection",
+  );
+  if (picker?.default !== (table.screenSelection[6] === 2)) {
+    throw Error(
+      "Settings catalog must follow the Bend screen-selection default",
+    );
+  }
+  return table;
 }
 
 if (import.meta.main) {

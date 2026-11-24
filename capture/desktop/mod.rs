@@ -1,7 +1,6 @@
 pub(crate) mod demo;
 #[cfg(target_os = "macos")]
 pub(crate) mod helper;
-// Exercise the actual Mac adapter's portable process contracts on Linux without
 // replacing Linux's in-process provider or claiming macOS permission acceptance.
 #[cfg(all(test, target_os = "linux"))]
 #[path = "helper.rs"]
@@ -514,7 +513,7 @@ fn island_content_width(
                 + LEAD_TRAIL
                 + divider
                 + chip_width(window, "Paste", FontWeight::SEMIBOLD)
-                + if crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING) {
+                + if crate::shared::handoff::experiment_preference(crate::connect::hosted::HOSTED_SHARING) {
                     CHIP_GAP + chip_width(window, "Public link", FontWeight::MEDIUM)
                 } else { 0.0 }
                 + chip_width(window, "Inspect", FontWeight::MEDIUM)

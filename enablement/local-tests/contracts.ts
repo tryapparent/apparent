@@ -3,6 +3,7 @@
 // review of this execution definition and retain conservative CI selection.
 import {readdirSync} from 'node:fs';
 import {resolve} from 'node:path';
+import {settingsContractRequired} from '../../shared/enablement/ci/settings-inputs.ts';
 
 export function timingContracts(cwd: string): string[] {
   const tests: string[] = [];
@@ -34,13 +35,17 @@ export function diagnosticContracts() {
   return [
     {argv: ['npm', 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], cwd},
     {argv: ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/rust/check.test.ts',
-      'shared/enablement/dependency-policy/fast/typecheck.test.ts'], cwd: '.'},
+      'shared/enablement/dependency-policy/fast/typecheck.test.ts', 'enablement/local-tests/settings-contract.test.ts'], cwd: '.'},
   ];
 }
 
-export function workflowContracts(paths: string[] | null) {
+export function workflowContracts(paths: string[] | null, base: string, workflowControls: string[] = []) {
   const fixture = 'enablement/ci/routing/test-only/workflow-triggers.test.ts';
-  return paths === null || paths.some(path => path.startsWith('.github/workflows/') || path === fixture)
+  const commands = paths === null || paths.some(path => path.startsWith('.github/workflows/') || path === fixture)
     ? [{argv: ['bun', 'test', fixture], cwd: '.'}]
     : [];
+  const controlsOnly = paths?.length && paths.every(path => workflowControls.includes(path));
+  if (!controlsOnly && settingsContractRequired(paths))
+    commands.push({argv: ['node', '--experimental-strip-types', 'enablement/ci/settings-contract/check.ts', base], cwd: '.'});
+  return commands;
 }

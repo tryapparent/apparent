@@ -31,7 +31,7 @@ pub(crate) fn cancel() {
     }
 }
 
-pub(crate) const PREFERENCE: &str = "chooseScreenEachTime";
+pub(crate) const PREFERENCE: &str = "permissions.skipScreenSelection";
 
 pub(crate) fn supported() -> bool {
     #[cfg(target_os = "linux")]
@@ -57,6 +57,10 @@ pub(crate) fn enabled_in(config: &crate::shared::handoff::Config) -> bool {
 pub(crate) fn preference(
     config: &crate::shared::handoff::Config,
 ) -> crate::permission_admission::ScreenSelection {
+    selection_for_saved(config.skip_screen_selection)
+}
+
+pub(crate) fn selection_for_saved(skip: Option<bool>) -> crate::permission_admission::ScreenSelection {
     #[cfg(target_os = "linux")]
     let direct_needs_opt_in = crate::capture::desktop::linux::gnome();
     #[cfg(not(target_os = "linux"))]
@@ -64,7 +68,7 @@ pub(crate) fn preference(
     crate::permission_admission::screen_selection(
         supported(),
         direct_needs_opt_in,
-        config.experiments.get(PREFERENCE).copied(),
+        skip,
     )
 }
 
