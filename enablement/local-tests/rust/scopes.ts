@@ -30,8 +30,12 @@ async function load() {
   }
 }
 
+export function loadRustSyntax() {
+  return (language ??= load());
+}
+
 export async function rustScopes(root: string) {
-  const { Parser, rust } = await (language ??= load());
+  const { Parser, rust } = await loadRustSyntax();
   const parser = new Parser();
   parser.setLanguage(rust);
   const cache = new Map<
