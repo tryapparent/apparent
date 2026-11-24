@@ -2,8 +2,8 @@
 
 Install once with Node 22.18+ and `npm ci --ignore-scripts --prefix shared/enablement/dependency-policy`.
 The tracked pre-commit pins one immutable tree for width and all staged checks. Commits run installed tools only:
-no network, installs, native builds or services. No new CI or pre-push invocation exists.
-The existing pre-push protection remains separate. Missing tooling rejects with installation guidance.
+no network, installs, native builds or services. The existing pre-push checks remain separate.
+Missing tooling rejects with installation guidance.
 Run `npm test --prefix shared/enablement/dependency-policy` and
 `node --experimental-strip-types --test enablement/hooks/test.ts` for synthetic tests.
 
@@ -40,10 +40,11 @@ resolver plugins are unsupported. CSS/assets/JSON resource imports, manifest-onl
 build graphs and runtime delivery are outside graph coverage. Unowned root/enablement importers and
 dependency/vendor/target sources are excluded. This ratchet does not prove owner build independence.
 
-All new paths under capture/ reject, including copies and inbound relocations. Existing repairs,
-deletions and moves out remain possible. snapshot.ts maps evidenced legacy onboarding, recording,
-handoff, connect, agent and engine donors; unknown shell stays Legacy, not a new stream. This checks
-path growth, not semantic feature expansion in an existing file. Width allowances stay exact and bounded.
+The architecture guard freezes new paths and file types under capture/ and caps each existing source
+file at its baseline nonblank line count. Same-size repairs, deletions and moves out remain possible.
+Bend placement and feature growth within that cap require review. Pre-commit and the Architecture
+admission workflow share this offline TypeScript guard and the Rust destination rule. CI compares
+the PR merge tree to its first parent or the previous main tree to the pushed tree.
 
 ## Markdown budgets
 

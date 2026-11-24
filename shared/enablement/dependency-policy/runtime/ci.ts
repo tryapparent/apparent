@@ -28,6 +28,7 @@ const workflows: Record<string, string> = {
   "hermes.yml": "Hermes",
 };
 const coordinators = new Set([
+  "architecture.yml",
   "branch-cleanup.yml",
   "checks.yml",
   "verification.yml",

@@ -33,7 +33,7 @@ test("stream triggers and PR checkout", () => {
         ),
       )
       .sort(),
-    "branch-cleanup.yml checks.yml hermes.yml stream-agent.yml stream-connect.yml stream-engine.yml stream-handoff.yml stream-onboarding.yml stream-public.yml stream-record.yml".split(
+    "architecture.yml branch-cleanup.yml checks.yml hermes.yml stream-agent.yml stream-connect.yml stream-engine.yml stream-handoff.yml stream-onboarding.yml stream-public.yml stream-record.yml".split(
       " ",
     ),
   );
@@ -68,6 +68,29 @@ test("stream triggers and PR checkout", () => {
         assert.equal(step.with?.["persist-credentials"], false);
       }
     }
+});
+test("architecture admission runs for every main PR and push on checkout history", () => {
+  const architecture = workflow("architecture.yml");
+  assert.deepEqual(architecture.on, {
+    pull_request: { branches: ["main"] },
+    push: { branches: ["main"] },
+  });
+  assert.deepEqual(architecture.permissions, { contents: "read" });
+  const steps = architecture.jobs.architecture.steps ?? [];
+  assert.deepEqual(steps[0], {
+    uses: "actions/checkout@v4",
+    with: { "fetch-depth": 0, "persist-credentials": false },
+  });
+  const entrypoint =
+    "shared/enablement/dependency-policy/guards/architecture.ts";
+  assert.ok(
+    steps.some((step) => step.run?.endsWith(entrypoint + " HEAD^1 HEAD")),
+  );
+  assert.ok(
+    steps.some((step) =>
+      step.run?.endsWith(entrypoint + ' "$PREVIOUS_MAIN" HEAD'),
+    ),
+  );
 });
 test("closed PR cleanup runs its mutation only from the trusted repository checkout", () => {
   const cleanup = workflow("branch-cleanup.yml");

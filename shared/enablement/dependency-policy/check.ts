@@ -46,8 +46,6 @@ try {
   const candidate = analyze(staged, undefined, newGlobals);
   for (const issue of oldDOM) baseline.add(issue);
   for (const issue of newDOM) candidate.add(issue);
-  for (const file of staged.modes.keys()) if (file.startsWith('capture/') && !committed.modes.has(file))
-    candidate.add(`${file}: capture/ is frozen; put new files and inbound relocations in the canonical onboarding/, record/, handoff/, connect/, agent/, engine/ or shared/ owner`);
   for (const issue of ciPolicy(committed)) baseline.add(issue);
   for (const issue of ciPolicy(staged)) candidate.add(issue);
   const added = [...candidate].filter(edge => !baseline.has(edge));
