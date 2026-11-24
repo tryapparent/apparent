@@ -232,8 +232,6 @@ pub(crate) fn capture_exclusion_ready(window: Option<u32>, applied: &[u32], scre
     !screen_capture || window.is_some_and(|id| id > 0 && applied.contains(&id))
 }
 
-pub(in crate::capture::desktop) const SOFT_BLOOM: &str = "softBloom";
-pub(in crate::capture::desktop) const PILL_DOODLES: &str = "pillDoodles";
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -275,10 +273,12 @@ impl View {
             self.doodle_ink = previous.doodle_ink;
             self.soft_bloom = previous.soft_bloom;
         } else if !cfg!(test) {
-            use crate::shared::handoff::{default_config_path, load_config_from};
-            let flags = load_config_from(&default_config_path()).experiments;
-            self.doodle_ink = flags.get(PILL_DOODLES).copied();
-            self.soft_bloom = flags.get(SOFT_BLOOM).copied();
+            use crate::shared::handoff::{default_config_path, preference_value, read_preferences};
+            if let Ok(config) = read_preferences(&default_config_path()) {
+                let saved = |id| preference_value(&config, id).and_then(|value| value.as_bool());
+                self.doodle_ink = saved("labs.pillDoodles");
+                self.soft_bloom = saved("labs.softBloom");
+            }
         }
     }
     fn admits_sharing_confirmation(&self, revision: Option<u64>) -> bool {

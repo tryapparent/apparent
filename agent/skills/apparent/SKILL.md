@@ -90,10 +90,14 @@ is explicit: `apparent launch-handler install`; `apparent launch-handler status`
 reads the OS selection. See `capture/desktop/docs/native-launch.md`. Browser timers cannot confirm
 installation or successful opening. Do not change a user's handler to test this.
 
-Settings uses `~/.config/apparent/config.json`, overridable through
-`APPARENT_CONFIG`. Use the owning documentation for supported keys and when
-changes take effect. Preserve unrelated JSON keys and keep the file private
-(`0600`). Never print the full file. Manage permissions through OS grants.
+Use `apparent settings list --json`, `get <id> --json`, `set <id> <json-value>` and
+`reset <id>` for registered preferences. The response includes the effective value
+and when changes take effect. Retention writes require `--confirm-cleanup`.
+The CLI shares Settings' config transaction, including compatibility with older
+releases. `APPARENT_CONFIG` overrides `~/.config/apparent/config.json`. For older
+builds, consult the owner docs before editing a single key. Preserve valid JSON,
+unrelated keys and `0600` permissions. Never print the full file. OS permission
+grants still require OS approval.
 
 `apparent` is the installed Apparent app's binary on macOS or Linux. If `command -v apparent` finds nothing on a Mac, use `/Applications/Apparent.app/Contents/MacOS/apparent` (or the same path under `~/Applications`); on Linux, use the installed `~/.local/bin/apparent` link or the AppImage's path. Settings › Agents can install the CLI link without replacing another program. Run the command on the computer with Apparent and access to the bundle; elsewhere, read `contact-sheet.png`, `frames/` and `apparent.json` directly. Most commands take a bundle path or `latest`, the newest capture. Quote paths containing spaces, such as macOS `Application Support` paths.
 

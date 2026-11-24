@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 const ENDPOINT: &str = "https://eu.i.posthog.com/i/v0/e/";
 const QUEUE_SIZE: usize = 16;
 static REPORTER: OnceLock<Reporter> = OnceLock::new();
+const PREFERENCE: &str = "general.errorReporting";
 #[path = "../../../engine/diagnostics/transport.rs"]
 pub(crate) mod transport;
 use transport::send;
@@ -20,12 +21,10 @@ pub(crate) mod updates;
 #[path = "../../../engine/diagnostics/supervisor.rs"]
 pub(super) mod native_supervisor;
 
-/// Only installed release children inherit production reporting admission.
 pub(crate) fn configure_child(command: &mut Command) {
     command.env("APPARENT_DESKTOP_REPORTING", if REPORTER.get().is_some() && !cfg!(debug_assertions) { "1" } else { "0" });
 }
 
-/// Only reviewed, static failure categories can enter the reporting boundary.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Failure {
     ProtectRecording,
@@ -103,10 +102,7 @@ pub(crate) fn reporting_config_in(path: &Path) -> Option<Value> {
 
 fn consent_in(path: &Path) -> Option<Consent> {
     let value = reporting_config_in(path)?;
-    match value.get("errorReporting") {
-        None | Some(Value::Bool(true)) => {}
-        _ => return None,
-    }
+    if !enabled(&value)? { return None; }
     let generation = match value.get("errorReportingGeneration") {
         None => "initial".to_owned(),
         Some(Value::String(value)) if value.len() <= 128 => value.clone(),
@@ -120,18 +116,21 @@ pub(crate) fn enabled_in(path: &Path) -> bool {
 }
 
 pub(crate) fn set_enabled_in(path: &Path, on: bool) -> anyhow::Result<()> {
+    set_preference(path, Some(on))
+}
+
+pub(crate) fn set_preference(path: &Path, on: Option<bool>) -> anyhow::Result<()> {
     set_enabled_admitted_in(path, on, || true).map_err(anyhow::Error::msg)
 }
 
-fn set_enabled_admitted_in(path: &Path, on: bool, admit: impl FnOnce() -> bool) -> Result<(), &'static str> {
+fn set_enabled_admitted_in(path: &Path, on: Option<bool>, admit: impl FnOnce() -> bool) -> Result<(), &'static str> {
     let mut expired = false;
     let result = crate::shared::handoff::update_config_in(path, |config| {
-        // This check runs against the fresh config after acquiring its flock.
         if !admit() {
             expired = true;
             anyhow::bail!("expired");
         }
-        config["errorReporting"] = json!(on);
+        crate::shared::handoff::edit_preference(config, PREFERENCE, on.map(Value::Bool))?;
         // Rotate on EVERY explicit change, so disable/re-enable cannot revive a
         // queued report, even if another process makes both edits between reads.
         config["errorReportingGeneration"] = json!(crate::shared::ids::make_bundle_id());
@@ -145,18 +144,19 @@ fn read_enabled_in(path: &Path) -> Result<bool, &'static str> {
     if config.get("errorReportingGeneration").is_some_and(|v| !v.as_str().is_some_and(|s| s.len() <= 128)) {
         return Err("config_read_failed");
     }
-    match config.get("errorReporting") {
-        None | Some(Value::Bool(true)) => Ok(true),
-        Some(Value::Bool(false)) => Ok(false),
-        _ => Err("config_read_failed"),
-    }
+    enabled(&config).ok_or("config_read_failed")
+}
+
+fn enabled(config: &Value) -> Option<bool> {
+    let (saved, source) = crate::shared::handoff::preference_state(config, PREFERENCE);
+    (source != "invalid").then(|| saved != Some(Value::Bool(false)))
 }
 
 pub(crate) fn error_reporting_bridge_in(path: &Path, operation: &str, enabled: Option<bool>, admit: impl FnOnce() -> bool) -> Result<bool, &'static str> {
     match (operation, enabled) {
         ("read", None) => read_enabled_in(path),
         ("set", Some(value)) => {
-            set_enabled_admitted_in(path, value, admit)?;
+            set_enabled_admitted_in(path, Some(value), admit)?;
             read_enabled_in(path)
         }
         _ => Err("invalid_request"),
@@ -211,7 +211,6 @@ impl Report {
         let mut payload = json!({
             "api_key": token,
             "event": "$exception",
-            // A fresh event identity, not a person, installation or session.
             "distinct_id": event_id,
             "properties": {
                 "$process_person_profile": false,
@@ -380,7 +379,6 @@ impl Limiter {
     }
 }
 
-/// The publishable project token is supplied by packaging, not user credentials.
 pub(crate) fn compiled_token() -> Option<&'static str> {
     option_env!("APPARENT_POSTHOG_TOKEN").filter(|token| {
         token.starts_with("phc_") && (20..=200).contains(&token.len())

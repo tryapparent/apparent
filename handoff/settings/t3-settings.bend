@@ -1,5 +1,12 @@
 import Base
 
+def picker_enabled(canonical_present: Bool, canonical_enabled: Bool, legacy_enabled: Bool) -> Bool:
+  match canonical_present:
+    case True{}:
+      canonical_enabled
+    case False{}:
+      legacy_enabled
+
 def show_computers(saved: Bool, known: Bool) -> Bool:
   match known:
     case True{}:
