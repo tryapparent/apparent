@@ -1,0 +1,25 @@
+{
+  "scenarios": [
+    {
+      "id": "local-inspect-performance",
+      "description": "Measure a real apparent inspect on synthetic bundles with independent text and image verification.",
+      "platforms": ["linux"],
+      "userEntryPoint": "Run apparent inspect /absolute/capture.apparent and read its summary and referenced evidence.",
+      "prerequisites": [
+        "Unstripped native release builds, Node 22, Bun, FFmpeg, GNU Time, Git, nm and permission to run bpftrace locally.",
+        "An uncontended CPU and SMT sibling, and a private job for retained or demo-generated synthetic bundles."
+      ],
+      "runner": {
+        "path": "agent/enablement/performance/inspect.ts",
+        "instructions": "agent/enablement/README.md#local-inspect-performance"
+      },
+      "expectedEvidence": [
+        "Raw paired waits, normalized score, source and binary identities, probe overhead, resource use and a machine-readable stop decision.",
+        "Verified timed narration, decodable PNG evidence, immutable bundle bytes and a monotonic trace per diagnostic attempt."
+      ],
+      "limits": [
+        "The default local path uses no VM or external services. Packaged extraction, native capture, macOS and remote sources have separate checks."
+      ]
+    }
+  ]
+}
