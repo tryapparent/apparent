@@ -28,43 +28,23 @@ impl ApparentCoordinator {
             public_share: crate::capture::desktop::workflow::public_sharing::Controller::default(),
             #[cfg(target_os = "linux")]
             agent_finishing: false,
-            last_live_no_words: false,
             playback: None,
             picker_metal_overlay: None,
-            native_pill: None,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             electron_pill: None,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
-            electron_pill_failed: false,
+            electron_pill_retry_at: None,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             electron_pill_routed: false,
             #[cfg(target_os="macos")]
             electron_pill_exclusions: Vec::new(),
+            #[cfg(target_os = "macos")]
+            electron_pill_exclusion_wait: None,
             iphone_preview: None,
             island_phase: IslandPhase::Hidden,
             reveal: crate::capture::desktop::settings::shortcut::Reveal::default(),
-            island_prev_phase: IslandPhase::Hidden,
-            island_phase_since: motion::now(),
-            island_dismissed_from: IslandPhase::Hidden,
-            island_width: 205.0,
-            island_target_width: 205.0,
-            island_velocity: 0.0,
-            island_scale: 0.92,
-            island_scale_velocity: 0.0,
-            island_y: -6.0,
-            island_y_velocity: 0.0,
-            island_opacity: 0.0,
-            island_morph: Morph::Phase,
-            reveal_since: motion::now(),
-            reveal_outgoing: None,
-            reveal_prev_chips: false,
             reduced_motion: false,
-            switch: None,
-            island_stepped: Instant::now(),
-            island_await_frame: false,
             last_elapsed_ms: 0,
-            highlight_prev: None,
-            highlight_since: motion::now(),
             selectable_windows: Vec::new(),
             selection_generation: 0,
             windows_loading: false,
@@ -73,7 +53,6 @@ impl ApparentCoordinator {
             animated_window_rect: None,
             selection_drag: None,
             display_rect: [0.0, 0.0, 1440.0, 900.0],
-            paste_drag_start: None,
             recording_shortcut_key: false,
             review_audio_issue: initial_bundle
                 .as_ref()
@@ -652,9 +631,9 @@ impl ApparentCoordinator {
             return;
         }
         #[cfg(target_os="macos")]
-        let anchor=if self.onboarding.as_ref().is_some_and(|s|s.practice_locating()) {crate::capture::desktop::ui::macos::status_bar_anchor()} else {self.native_pill.as_ref().and_then(|p|p.coach_anchor())};
+        let anchor=if self.onboarding.as_ref().is_some_and(|s|s.practice_locating()) {crate::capture::desktop::ui::macos::status_bar_anchor()} else {None};
         #[cfg(target_os="linux")]
-        let anchor=crate::capture::desktop::ui::linux::coach_anchor();
+        let anchor=None;
         #[cfg(not(any(target_os="macos",target_os="linux")))]
         let anchor=None;
         #[cfg(any(target_os="macos",target_os="linux"))]
@@ -748,7 +727,7 @@ impl ApparentCoordinator {
                 Effect::None
             }
             Event::Action(action) if action.starts_with("practice-open-board:") || action.starts_with("practice-save-capture:") => {
-                use crate::capture::desktop::native::pill::PillAction;
+                use crate::capture::desktop::ui::electron_pill::PillAction;
                 use crate::capture::desktop::settings::practice::Stage;
                 let (command, attempt) = action.split_once(':').unwrap();
                 let (stage, pill_action) = if command == "practice-open-board" {
@@ -909,28 +888,12 @@ impl ApparentCoordinator {
         }
         self.reduced_motion = reduce_motion();
         self.reveal_pill_controls();
-        self.reveal_since = motion::now();
-        self.reveal_outgoing = None;
-        self.island_morph = Morph::RevealOpen;
-        if self.reduced_motion {
-            self.island_scale = 1.0;
-            self.island_scale_velocity = 0.0;
-            self.island_y = 0.0;
-            self.island_y_velocity = 0.0;
-        }
-        self.sync_native_pill();
+        self.sync_electron_pill();
         cx.notify();
     }
 
     fn fold_reveal(&mut self) {
         self.apply_pill_event(PillEvent::RevealClosed);
-    }
-
-    fn play_fold(&mut self) {
-        self.reveal_since = motion::now();
-        self.reveal_outgoing = Some(true);
-        self.island_morph = Morph::RevealClose;
-        self.sync_native_pill();
     }
 
     pub fn switch_recording(&mut self, mode: SelectionMode, cx: &mut Context<Self>) {
@@ -952,7 +915,6 @@ impl ApparentCoordinator {
             return;
         }
         apparent_log(format!("switch_recording -> {mode:?}"));
-        let chips_shown = self.reveal.chips;
         let Some((_, overlay)) = self.discard_recording() else {
             return;
         };
@@ -964,12 +926,7 @@ impl ApparentCoordinator {
         }
         self.picker_metal_overlay = overlay;
         self.open_picker(Some(mode), cx);
-        if self.is_selecting() && chips_shown && !self.reduced_motion {
-            self.highlight_prev = Some(SelectionMode::Screen);
-            self.highlight_since = motion::now();
-            self.island_morph = Morph::Switch;
-            self.switch = Some(SwitchMorph { slide: None });
-        }
+
     }
 
     pub fn is_island_visible(&self) -> bool {
@@ -1047,10 +1004,7 @@ impl ApparentCoordinator {
             return;
         }
         self.open_iphone_when_found = false;
-        if let IslandPhase::Selecting { mode: prev_mode } = self.island_phase {
-            if prev_mode != mode {
-                self.island_scale_velocity += 1.25;
-            }
+        if self.is_selecting() {
             if mode != SelectionMode::Iphone
                 && let Some(ref mut preview) = self.iphone_preview
             {

@@ -77,10 +77,9 @@ test('production staging ships the generated TypeScript policy actually loaded b
   assert.match(main, /require\('\.\/lifecycle\.cjs'\)/);
   const { initialPresentation, projectSnapshot } = require(policyPath);
   const state = projectSnapshot(initialPresentation([20, 30]), {
-    events: [{ kind: 'embedded', value: true }, { kind: 'badge', rect: [100, 40, 584, 56] }, { kind: 'list' }],
+    events: [{ kind: 'badge', rect: [100, 40, 584, 56] }, { kind: 'list' }],
     notes: [], drafts: [], error: null,
   });
   assert.equal(state.mode, 'list');
   assert.deepEqual(state.position, [684, 96]);
-  assert.equal(state.embedded, true);
 });

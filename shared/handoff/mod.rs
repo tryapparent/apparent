@@ -824,12 +824,6 @@ pub struct Config {
     /// Apple Speech locale (BCP-47, e.g. "zh-TW"); missing means the Mac's own language.
     #[serde(default)]
     pub apple_locale: Option<String>,
-    /// Whether to use the native Metal recording pill instead of GPUI's `HudPillWindow` (default `true`).
-    #[serde(default)]
-    pub native_pill: Option<bool>,
-    /// Visual style of the native recording pill: `"black"` (default) or `"glass"` (`NSGlassEffectView`).
-    #[serde(default)]
-    pub pill_style: Option<String>,
     /// Behaviour Kit tries locally before it ships (`{"agentContext": true}`); see `experiment`.
     /// Read leniently (`lenient_experiments`), so a stray value never fails the file.
     #[serde(default, deserialize_with = "lenient_experiments")]
@@ -949,7 +943,7 @@ pub fn enable_experiment(name: &str) {
         .push(name.to_owned());
 }
 
-fn experiment_overridden(name: &str) -> bool {
+pub(crate) fn experiment_overridden(name: &str) -> bool {
     EXPERIMENT_OVERRIDES
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -1076,33 +1070,6 @@ pub fn apple_locale_from(config: &Config) -> Option<String> {
 pub fn transcribe_command()
 -> Result<crate::capture::engine::runtime::audio::transcription::command_transcriber::Program, crate::capture::engine::runtime::audio::transcription::command_transcriber::Unusable> {
     crate::capture::engine::runtime::audio::transcription::command_transcriber::Program::load_from(&default_config_path())
-}
-
-/// Whether the native AppKit + Metal recording pill is enabled (`APPARENT_NATIVE_PILL` or
-/// `nativePill` in `config.json`, default `true`). macOS only: elsewhere the GPUI capsule draws.
-pub fn native_pill() -> bool {
-    if cfg!(not(target_os = "macos")) {
-        return false;
-    }
-    if let Ok(val) = std::env::var("APPARENT_NATIVE_PILL") {
-        let s = val.trim().to_ascii_lowercase();
-        if matches!(s.as_str(), "0" | "false" | "gpui" | "off" | "no") {
-            return false;
-        }
-        if matches!(s.as_str(), "1" | "true" | "native" | "metal" | "on" | "yes") {
-            return true;
-        }
-    }
-    config().native_pill.unwrap_or(true)
-}
-
-/// Configured capsule style (`pillStyle` in `config.json`, default `"black"`).
-pub fn pill_style() -> crate::capture::desktop::native::pill::PillStyle {
-    config()
-        .pill_style
-        .as_deref()
-        .and_then(crate::capture::desktop::native::pill::PillStyle::from_str_opt)
-        .unwrap_or(crate::capture::desktop::native::pill::PillStyle::Black)
 }
 
 /// Change one experiment without replacing unrelated flags or secret-bearing config keys.

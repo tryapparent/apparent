@@ -33,7 +33,7 @@ Investigate the existing serializable `View` in `capture/desktop/settings/settin
 
 ## 3. Capture pill and overlay when touched
 
-Read `capture/desktop/mod.rs`, `capture/desktop/native/pill/{mod.rs,types.rs}`, `capture/desktop/ui/linux.rs`, and their callers. Trace Engine calls, timers, input/ink ownership, handoff, shutdown and startup. Inspect root build inputs and desktop packaging before choosing new file paths.
+Read `capture/desktop/mod.rs`, `capture/desktop/ui/electron_pill/`, `capture/desktop/ui/linux.rs`, and their callers. Trace Engine calls, timers, input/ink ownership, handoff, shutdown and startup. Inspect root build inputs and desktop packaging before choosing new file paths.
 
 Use `capture/engine/docs/capture.md#agent-control-of-the-running-gui` as the existing control contract: it has request-owned start/stop/cancel and receipts, but currently requires the running GUI. Do not present it as an already independent headless Engine or replace it with the telemetry-incomplete timed recorder.
 

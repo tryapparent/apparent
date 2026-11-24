@@ -19,7 +19,6 @@ const helperSources = [
 });
 const shaders = [
   ['capture/desktop/native/laser_overlay.metal', 'laser_overlay'],
-  ['capture/desktop/native/pill/pill.metal', 'pill'],
 ];
 const environmentInputs = ['DEVELOPER_DIR', 'SDKROOT', 'TOOLCHAINS', 'MACOSX_DEPLOYMENT_TARGET',
   'CPATH', 'C_INCLUDE_PATH', 'CPLUS_INCLUDE_PATH', 'LIBRARY_PATH',

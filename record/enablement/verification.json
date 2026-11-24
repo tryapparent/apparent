@@ -17,7 +17,7 @@
         "The row fits at 320 and 1200 DIP in both themes. The smoke checks keyboard focus, pending states, live-caption overflow, and stable layout during recording telemetry."
       ],
       "limits": [
-        "The production Electron renderer runs with a synthetic native parent. Real capture, compositor and packaging behavior require native verification."
+        "The production Electron renderer runs with a synthetic native parent. Use the installed AppImage in an isolated VM for compositor admission and the installed macOS foreground CI scenario for child recovery during a real capture."
       ]
     },
     {

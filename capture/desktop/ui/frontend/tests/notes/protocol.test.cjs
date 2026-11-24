@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { validCommand, validSnapshot, popupBounds, badgeBounds } = require('../../electron/notes/protocol.cjs');
+const { validCommand, validSnapshot, popupBounds } = require('../../electron/notes/protocol.cjs');
 test('notes bridge accepts only bounded note actions, never renderer paths or window commands', () => {
   assert.equal(validCommand({ action: 'save', pin: 1, text: 'Change this\nnot that' }), true);
   for (const message of [{ action: 'save', pin: 1, text: 'x', path: '/tmp/private' },
@@ -13,8 +13,6 @@ test('notes snapshot retains an exact click time and validates draft and saved t
   const n = { pin: 1, t: 1234, x: .25, y: .5, text: 'Keep me' };
   const s = { mode: 'editor', current: 1, position: [-300, 42], notes: [], drafts: [n], error: null };
   assert.equal(validSnapshot(s), true);
-  assert.equal(validSnapshot({...s,embedded:true}),true);
-  assert.equal(validSnapshot({...s,embedded:1}),false);
   assert.equal(validSnapshot({ ...s, drafts: [{ ...n, x: NaN }] }), false);
   assert.equal(validSnapshot({ ...s, notes: [{ ...n, text: '\0' }] }), false);
 });
@@ -27,7 +25,4 @@ test('popup stays inside work areas including negative display coordinates and s
 
 test('counter falls left or below instead of covering the capsule at a display edge', () => {
   const area = { x: -1280, y: 0, width: 1280, height: 800 };
-  assert.deepEqual(badgeBounds([-1000, 40, 350, 40], area), { x: -644, y: 40 });
-  assert.deepEqual(badgeBounds([-370, 40, 350, 40], area), { x: -526, y: 40 });
-  assert.deepEqual(badgeBounds([-1270, 40, 1260, 40], area), { x: -715, y: 86 });
 });

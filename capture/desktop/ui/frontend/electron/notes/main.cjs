@@ -10,7 +10,7 @@ const suppliedProfile = process.argv.find(v => v.startsWith('--notes-profile='))
 const profile = suppliedProfile || fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'apparent-note-ui-'));
 const { pathToFileURL } = require('node:url');
 const readline = require('node:readline');
-const { validCommand, validSnapshot, popupBounds, badgeBounds } = require('./protocol.cjs');
+const { validCommand, validSnapshot, popupBounds } = require('./protocol.cjs');
 const { initialPresentation, projectSnapshot } = require('./presentation.cjs');
 const { createNotesLifecycle } = require('./lifecycle.cjs');
 app.setName('Apparent Notes');
@@ -26,7 +26,7 @@ app.on('quit', () => {
 });
 const frame = process.argv.find(v => v.startsWith('--capture-frame='))?.slice('--capture-frame='.length).split(',').map(Number);
 if (!frame || frame.length !== 4 || !frame.every(Number.isFinite)) app.exit(1);
-let latest, popup, badge;
+let latest, popup;
 let presentation = initialPresentation([frame[0] + frame[2] / 2, frame[1] + 80]);
 const lifecycle = createNotesLifecycle();
 const send = (value) => process.stdout.write(JSON.stringify(value) + '\n');
@@ -35,10 +35,9 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_wc, _permission, reply) => reply(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
   const page = pathToFileURL(path.join(__dirname, '../../dist/index.html')).href;
-  function window(surface, width, height) {
-    const win = new BrowserWindow({ title: 'Apparent notes', width, height, show: false, frame: false, transparent: true,
+  function createPopup() {
+    const win = new BrowserWindow({ title: 'Apparent notes', width: 332, height: 200, show: false, frame: false, transparent: true,
       resizable: false, skipTaskbar: true, alwaysOnTop: true, hasShadow: false,
-      ...(process.platform === 'linux' && surface === 'badge' ? { focusable: false } : {}),
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true,
         nodeIntegration: false, sandbox: true, spellcheck: false, webSecurity: true } });
     win.webContents.on('page-title-updated', event => event.preventDefault());
@@ -49,28 +48,18 @@ app.whenReady().then(() => {
     win.webContents.on('will-attach-webview', e => e.preventDefault());
     win.webContents.on('render-process-gone', () => app.quit());
     // XWayland activation can arrive after the first state paint.
-    if (process.platform === 'linux' && surface === 'popup') {
+    if (process.platform === 'linux') {
       win.on('focus', () => { if (!lifecycle.finishing && latest?.mode !== 'badge' && win.isVisible()) win.webContents.focus(); });
     }
-    win.loadURL(page + '#notes-' + surface);
+    win.loadURL(page + '#notes-popup');
     return win;
   }
-  popup = window('popup', 332, 200); badge = window('badge', 150, 44);
+  popup = createPopup();
   // Rust's Linux anchors are X11 root pixels; Electron window bounds are DIPs.
   function desktopPoint(x, y) {
     const point = { x: Math.round(x), y: Math.round(y) };
     return process.platform === 'linux' ? screen.screenToDipPoint(point) : point;
   }
-  function desktopRect([x, y, width, height]) {
-    if (process.platform !== 'linux') return [x, y, width, height];
-    const point = desktopPoint(x, y);
-    const scale = screen.getDisplayNearestPoint(point).scaleFactor;
-    return [point.x, point.y, width / scale, height / scale];
-  }
-  const center = desktopPoint(frame[0] + frame[2] / 2, frame[1] + frame[3] / 2);
-  const display = screen.getDisplayNearestPoint(center);
-  const area = display.workArea;
-  badge.setPosition(Math.min(area.x + area.width - 156, center.x + 150), area.y + 12);
   const placed = new Map();
   const requested = new Map();
   function setRequestedBounds(win, bounds, opening) {
@@ -95,12 +84,12 @@ app.whenReady().then(() => {
   }
   function validate(event) {
     const win = BrowserWindow.fromWebContents(event.sender);
-    if (![popup, badge].includes(win) || event.senderFrame !== event.sender.mainFrame ||
-      !event.senderFrame.url.startsWith(page + '#notes-')) throw new Error('Forbidden notes request');
+    if (win !== popup || event.senderFrame !== event.sender.mainFrame ||
+      event.senderFrame.url !== page + '#notes-popup') throw new Error('Forbidden notes request');
   }
   function publish() {
     if (!latest) return;
-    for (const win of [popup, badge]) win.webContents.send('notes:snapshot', latest);
+    popup.webContents.send('notes:snapshot', latest);
   }
   function finishWhenReady() {
     if (!lifecycle.ready || !lifecycle.finishing || lifecycle.finished) return;
@@ -120,7 +109,7 @@ app.whenReady().then(() => {
     try {
       const state = JSON.parse(line);
       if (state.finishing === true && Object.keys(state).length === 1) {
-        lifecycle.requestFinish(); popup.hide(); badge.hide();
+        lifecycle.requestFinish(); popup.hide();
         finishWhenReady();
         return;
       }
@@ -135,15 +124,6 @@ app.whenReady().then(() => {
       send({ action: 'presentation', revision: state.revision, active: projected.mode !== 'badge' });
       Object.assign(state, projected);
       latest = state;
-      let requestedBadge;
-      const openingBadge = !badge.isVisible();
-      if (state.badgeRect) {
-        const rect = desktopRect(state.badgeRect);
-        const work = screen.getDisplayNearestPoint({ x: Math.round(rect[0] + rect[2] / 2), y: Math.round(rect[1] + rect[3] / 2) }).workArea;
-        const bounds = badgeBounds(rect, work);
-        requestedBadge = { ...bounds, width: 150, height: 44 };
-        setRequestedBounds(badge, requestedBadge, openingBadge);
-      }
       const point = desktopPoint(...state.position);
       if (state.mode !== 'badge') {
         const work = screen.getDisplayNearestPoint(point).workArea;
@@ -155,17 +135,12 @@ app.whenReady().then(() => {
         if (focus) { popup.focus(); if (process.platform === 'linux') popup.webContents.focus(); }
         placeSurface(popup, focus, opening, bounds);
       } else { popup.hide(); if (previous && previous.mode !== 'badge') send({ action: 'hidden' }); }
-      if (state.embedded) badge.hide();
-      else {
-        if (openingBadge) badge.showInactive();
-        placeSurface(badge, false, openingBadge, requestedBadge);
-      }
       publish();
     } catch { app.quit(); }
   });
   lines.on('close', () => app.quit());
-  Promise.all([popup.webContents.executeJavaScript('document.readyState'), badge.webContents.executeJavaScript('document.readyState')]).then(() => {
-    const ids = [popup, badge].map(w => Number(w.getMediaSourceId().split(':')[1])).filter(n => Number.isInteger(n) && n > 0);
+  popup.webContents.executeJavaScript('document.readyState').then(() => {
+    const ids = [popup].map(w => Number(w.getMediaSourceId().split(':')[1])).filter(n => Number.isInteger(n) && n > 0);
     send({ action: 'windows', ids }); send({ action: 'ready' });
     lifecycle.markReady(); finishWhenReady();
   }).catch(() => app.quit());

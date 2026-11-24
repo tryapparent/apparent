@@ -174,33 +174,14 @@ enum LabCommand {
     Pill {
         #[arg(value_enum)]
         scene: ui::LabScene,
-        /// Write a motion-lint trace of every frame here (same as `APPARENT_MOTION_TRACE`).
-        #[arg(long)]
-        trace: Option<PathBuf>,
-        /// Times to play it; 0 repeats until stopped (tune while it loops).
         #[arg(long, default_value_t = 1)]
         repeat: u32,
-        /// Animation time scale, e.g. 0.25 for slow motion (overrides tune.json's timeScale).
         #[arg(long)]
         time_scale: Option<f32>,
         /// Leave out the plain backdrop behind the capsule.
         #[arg(long)]
         no_backdrop: bool,
     },
-}
-
-#[derive(Subcommand)]
-enum TuneCommand {
-    /// Every key with its live and default value, and the presets (default).
-    List,
-    /// Set one key, e.g. `switch.slide.duration 0.4`.
-    Set { key: String, value: f32 },
-    /// Apply a numbered preset (1 is Today); clears individual keys.
-    Preset { number: usize },
-    /// Delete tune.json: back to the built-in defaults.
-    Reset,
-    /// Print the live values as Rust, to bake into `Tune::DEFAULT`.
-    Rust,
 }
 
 #[derive(Subcommand)]
@@ -375,19 +356,10 @@ enum Command {
         #[arg(long, conflicts_with = "bundle")]
         captures: Option<PathBuf>,
     },
-    /// Motion lab: replay the capsule's states on a fixed timeline with nothing captured, for
-    /// traces (`--trace`, motion-lint's format), screen recordings and tuning.
     #[command(hide = true)]
     Lab {
         #[command(subcommand)]
         command: LabCommand,
-    },
-    /// Tune the capsule's springs live: edits `~/.config/apparent/tune.json`, which debug builds
-    /// (the lab and the installed app) re-read within a quarter second.
-    #[command(hide = true)]
-    Tune {
-        #[command(subcommand)]
-        command: Option<TuneCommand>,
     },
     /// List microphones or choose the one Mac captures record from (Settings › Recording).
     Mic {
@@ -1367,35 +1339,19 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
             command:
                 LabCommand::Pill {
                     scene,
-                    trace,
                     repeat,
                     time_scale,
                     no_backdrop,
                 },
         } => {
-            // Set before the app starts any thread; the lab reads them once.
-            unsafe {
-                if let Some(trace) = trace {
-                    std::env::set_var("APPARENT_MOTION_TRACE", trace);
-                }
-                if let Some(scale) = time_scale {
-                    std::env::set_var("APPARENT_TIME_SCALE", scale.to_string());
-                }
-            }
             ui::run_lab(ui::LabOptions {
                 scene,
                 repeat,
                 backdrop: !no_backdrop,
+                time_scale,
             });
             Ok(())
         }
-        Command::Tune { command } => ui::tune_command(match command.unwrap_or(TuneCommand::List) {
-            TuneCommand::List => ui::TuneAction::List,
-            TuneCommand::Set { key, value } => ui::TuneAction::Set(key, value),
-            TuneCommand::Preset { number } => ui::TuneAction::Preset(number),
-            TuneCommand::Reset => ui::TuneAction::Reset,
-            TuneCommand::Rust => ui::TuneAction::Rust,
-        }),
         Command::Mic {
             command: MicCommand::List,
         } => {

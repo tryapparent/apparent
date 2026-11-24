@@ -41,11 +41,11 @@ use gpui::{
 use ui::macos as platform;
 #[cfg(target_os = "linux")]
 use ui::linux as platform;
-use ui::{desktop_completion, lab, motion, pill_theme, recording_completion, whiteboard};
+use ui::{desktop_completion, lab, motion, recording_completion, whiteboard};
 #[cfg(target_os = "linux")]
 pub(crate) use platform::set_app_icon;
 use platform::{
-    PillChrome, install_status_bar, pointer_on_hud_pill, reduce_motion, set_status_inbox_count,
+    install_status_bar, reduce_motion, set_status_inbox_count,
     set_status_text,
 };
 
@@ -78,129 +78,7 @@ const ACCENT_COLOR: u32 = 0x3b5cf6;
 const ACCENT_HOVER: u32 = 0x4b6bff;
 const INK_RED: u32 = 0xff3b30;
 
-// Dynamic Island capsule geometry. GPUI boxes are border-box, so the hairline border is part of
-// the inset: R_outer (20) = R_chip (16) + border (1) + pad (3), on every side.
-const ISLAND_H: f32 = 40.0;
-/// Width the recording pill opens from when a recording starts without the picker.
-const ISLAND_OPEN_FROM_W: f32 = 120.0;
-const ISLAND_RADIUS: f32 = ISLAND_H / 2.0;
-const ISLAND_INSET: f32 = 4.0;
-const ISLAND_PAD: f32 = ISLAND_INSET - 1.0;
-const CHIP_H: f32 = ISLAND_H - 2.0 * ISLAND_INSET;
-const CHIP_RADIUS: f32 = CHIP_H / 2.0;
-const CHIP_PX: f32 = 12.0;
-const CHIP_GAP: f32 = 2.0;
-const LIVE_WARNING_END_PAD: f32 = 16.0;
-const DIVIDER_MX: f32 = 6.0;
-const LEAD_TRAIL: f32 = 8.0;
-const HUD_TEXT: f32 = 13.0;
-// Selection-mode segments: line icon, then label.
-const SEG_PX: f32 = 10.0;
-const SEG_ICON: f32 = 14.0;
-const SEG_ICON_GAP: f32 = 5.0;
-// The live warning and optional input meter need room without clipping Finish.
-const PILL_WINDOW_W: f32 = 640.0;
-#[cfg(target_os = "linux")]
-const EQUALIZER_W: f32 = 28.0;
-#[cfg(target_os = "linux")]
-fn recording_equalizer_enabled() -> bool {
-    true
-}
-const PILL_WINDOW_H: f32 = 84.0;
-
-use ui::pill_theme::{PillTheme, SIGNAL, SIGNAL_HOVER, WARNING};
-
 pub use ui::lab::{Options as LabOptions, Scene as LabScene, run as run_lab};
-pub(crate) use ui::motion::{TuneAction, tune_command};
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct Spring {
-    /// Visual duration in seconds.
-    response: f32,
-    bounce: f32,
-}
-
-impl Spring {
-    /// Kit's duration + bounce: ω = 2π / duration, ζ = 1 − bounce.
-    const fn visual(duration: f32, bounce: f32) -> Self {
-        Self {
-            response: duration,
-            bounce,
-        }
-    }
-}
-
-// The capsule's springs and durations live in `motion::Tune` (defaults in `Tune::DEFAULT`, live
-// overrides from `~/.config/apparent/tune.json` in debug builds; `apparent tune`).
-//
-// Switch chips on a tap-started recording (`crate::capture::desktop::settings::shortcut::Reveal`). One shape: the recording
-// pill grows into the chip row and folds back. The width leads the morph palette (.42/.16 open,
-// .38/.08 close) on a slightly faster spring; the lead (dot + clock) stays pinned to the left
-// edge, and each trailing item fades in as the moving edge uncovers it, on the same frame. The
-// chips ↔ controls swap fades in place with a sine blur pulse (sharp at both ends) and no content
-// scale, so the pinned lead never travels.
-
-/// Which width spring the current morph uses.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Morph {
-    /// A phase change (`Tune::island`).
-    Phase,
-    /// The switch chips opening (`Tune::reveal_open`).
-    RevealOpen,
-    /// The switch chips folding back (`Tune::reveal_close`).
-    RevealClose,
-    /// A switch chip turning the recording into the picker (`Tune::switch_width`).
-    Switch,
-}
-
-impl Morph {
-    fn spring(self, tune: &motion::Tune) -> Spring {
-        match self {
-            Self::Phase => tune.island,
-            Self::RevealOpen => tune.reveal_open,
-            Self::RevealClose => tune.reveal_close,
-            Self::Switch => tune.switch_width,
-        }
-    }
-}
-
-/// Reduced motion: no width travel, the groups only cross-fade over this long.
-const REDUCED_FADE_S: f32 = 0.18;
-/// The picker's highlight moving from one mode to another cross-fades over this long.
-const HIGHLIGHT_FADE_S: f32 = 0.18;
-
-/// A switch chip turning the recording into the picker (`switch_recording`). The capsule stays
-/// one shape: the chips are the picker's chips, so the picker row starts where they were and
-/// slides to its place on `Tune::switch_slide` while the width springs on `Tune::switch_width`
-/// (a touch faster, so it leads). The lead (dot and clock, frozen) and its divider ride along in
-/// front of the row and leave under the capsule's left edge; Record, the divider and ✕ ride
-/// behind it and fade in as the right edge uncovers them.
-#[derive(Clone, Copy, Debug)]
-struct SwitchMorph {
-    /// The row's offset from its resting place and its velocity, in points. Measured by the
-    /// first frame that draws it (text widths need the window).
-    slide: Option<(f32, f32)>,
-}
-
-/// Advances a damped spring with fixed 4ms sub-steps so long frames stay stable.
-fn spring_step(value: f32, velocity: f32, target: f32, dt: f32, spring: Spring) -> (f32, f32) {
-    let omega = std::f32::consts::TAU / spring.response;
-    let stiffness = omega * omega;
-    let damping = 2.0 * (1.0 - spring.bounce) * omega;
-    let steps = (dt / 0.004).ceil().max(1.0) as usize;
-    let h = dt / steps as f32;
-    let (mut x, mut v) = (value, velocity);
-    for _ in 0..steps {
-        v += ((target - x) * stiffness - v * damping) * h;
-        x += v * h;
-    }
-    (x, v)
-}
-
-fn with_alpha(color: u32, alpha: f32) -> gpui::Rgba {
-    rgba((color << 8) | (alpha.clamp(0.0, 1.0) * 255.0).round() as u32)
-}
-
 pub(crate) fn ease_out_cubic(t: f32) -> f32 {
     1.0 - (1.0 - t.clamp(0.0, 1.0)).powi(3)
 }
@@ -240,25 +118,11 @@ fn measure_text(window: &Window, text: &str, size: f32, weight: FontWeight) -> f
     f32::from(line.width).ceil()
 }
 
-fn chip_width(window: &Window, label: &str, weight: FontWeight) -> f32 {
-    measure_text(window, label, HUD_TEXT, weight) + 2.0 * CHIP_PX
-}
-
 fn clock_template(clock: &str) -> String {
     clock
         .chars()
         .map(|c| if c.is_ascii_digit() { '0' } else { c })
         .collect()
-}
-
-/// Lead text of the Completed island: local captures were copied (or sent, as `note` says);
-/// iPhone ones count the inbox.
-fn completed_label(inbox_count: usize, note: Option<&str>) -> String {
-    match inbox_count {
-        0 => note.unwrap_or("Copied").to_owned(),
-        1 => "From iPhone".to_owned(),
-        n => format!("{n} from iPhone"),
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -310,220 +174,10 @@ fn bundle_audio_issue(
     )
 }
 
-fn completed_status_label(
-    inbox_count: usize,
-    note: Option<&str>,
-    issue: Option<CompletedAudioIssue>,
-) -> String {
-    let label = completed_label(inbox_count, note);
-    if let Some(issue) = issue {
-        format!("{label} · {}", issue.label())
-    } else {
-        label
-    }
-}
-
-/// Inner width of the Selecting row: mode segments, an optional Record chip, divider, and ✕.
-fn selecting_row_width(label_widths: &[f32], record_width: Option<f32>) -> f32 {
-    let segments: f32 = label_widths
-        .iter()
-        .map(|label| label + 2.0 * SEG_PX + SEG_ICON + SEG_ICON_GAP)
-        .sum();
-    let items = label_widths.len() + usize::from(record_width.is_some()) + 2;
-    segments
-        + record_width.unwrap_or(0.0)
-        + 1.0
-        + 2.0 * DIVIDER_MX
-        + CHIP_H
-        + (items - 1) as f32 * CHIP_GAP
-}
-
-fn segment_width(window: &Window, mode: SelectionMode) -> f32 {
-    measure_text(window, mode.label(), HUD_TEXT, FontWeight::MEDIUM)
-        + 2.0 * SEG_PX
-        + SEG_ICON
-        + SEG_ICON_GAP
-}
-
-/// Widths of the items after a Recording capsule's divider: the switch chips while the reveal
-/// is open (`crate::capture::desktop::settings::shortcut::Reveal`), else Cancel · Finish.
-fn recording_trail_widths(window: &Window, chips: bool, iphone: bool) -> Vec<f32> {
-    if chips {
-        SelectionMode::available(iphone)
-            .iter()
-            .map(|&mode| segment_width(window, mode))
-            .collect()
-    } else {
-        let mut widths = vec![chip_width(window, "Cancel", FontWeight::MEDIUM)];
-        if whiteboard_enabled() {
-            widths.push(chip_width(window, "Whiteboard", FontWeight::MEDIUM));
-        }
-        widths.push(chip_width(window, "Finish", FontWeight::SEMIBOLD));
-        widths
-    }
-}
-
-fn whiteboard_enabled() -> bool {
-    true
-}
-
-/// Trace names for a Recording capsule's trailing group, with each item's opacity.
-fn trail_keys(
-    chips: bool,
-    iphone: bool,
-    alphas: &[f32],
-    prefix: &str,
-) -> Vec<Option<(String, f32)>> {
-    let names: Vec<String> = if chips {
-        SelectionMode::available(iphone)
-            .iter()
-            .map(|m| format!("chip:{}", m.label()))
-            .collect()
-    } else {
-        let mut names = vec!["cancel".to_string()];
-        if whiteboard_enabled() {
-            names.push("whiteboard".to_string());
-        }
-        names.push("finish".to_string());
-        names
-    };
-    names
-        .into_iter()
-        .enumerate()
-        .map(|(i, n)| {
-            Some((
-                format!("{prefix}{n}"),
-                alphas.get(i).copied().unwrap_or(1.0),
-            ))
-        })
-        .collect()
-}
-
-/// Left edges of a trailing group's items, starting at `x0`.
-fn trail_offsets(x0: f32, widths: &[f32]) -> Vec<f32> {
-    widths
-        .iter()
-        .scan(x0, |x, w| {
-            let left = *x;
-            *x += w + CHIP_GAP;
-            Some(left)
-        })
-        .collect()
-}
-
-/// How much of an item at `x` (width `w`) the capsule's moving right edge has uncovered, eased:
-/// trailing items fade in as the pill grows into them and out as it folds over them.
-fn edge_alpha(inner_now: f32, x: f32, w: f32) -> f32 {
-    let t = ((inner_now - x) / w.max(1.0)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
-}
-
 /// The switch chips' clock: the animation clock, so they stay open as long in slow motion
 /// (`motion::time_scale`).
 fn reveal_clock_ms() -> u64 {
     (motion::now() * 1000.0) as u64
-}
-
-/// An item of the picker row sliding in from under the capsule's right edge (`outer`, the
-/// shell's outer edge): invisible while the edge would still cut into its middle, opaque once
-/// it is clear, so nothing shows half cut.
-fn uncover_alpha(outer: f32, x: f32, w: f32) -> f32 {
-    let inside = (outer - x) / w.max(1.0);
-    let t = ((inside - 0.7) / 0.4).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
-}
-
-/// Intrinsic outer width of the capsule for a phase, mirroring the layout in `HudPillWindow`.
-/// `chips`: a Recording capsule showing its switch chips.
-fn island_content_width(
-    window: &Window,
-    phase: IslandPhase,
-    clock: &str,
-    iphone: bool,
-    chips: bool,
-    warning: Option<InputWarning>,
-    completed_note: Option<&str>,
-    completed_issue: Option<CompletedAudioIssue>,
-    live_no_words: bool,
-) -> f32 {
-    let divider = 1.0 + 2.0 * DIVIDER_MX;
-    let inner = match phase {
-        IslandPhase::Selecting { mode } => {
-            let labels: Vec<f32> = SelectionMode::available(iphone)
-                .iter()
-                .map(|m| measure_text(window, m.label(), HUD_TEXT, FontWeight::MEDIUM))
-                .collect();
-            let record = mode
-                .shows_record()
-                .then(|| chip_width(window, "Record", FontWeight::SEMIBOLD));
-            selecting_row_width(&labels, record)
-        }
-        IslandPhase::Recording => {
-            let trail = recording_trail_widths(window, chips, iphone);
-            let warning_w = warning.map_or(0.0, |warning| {
-                measure_text(window, warning.label(), HUD_TEXT, FontWeight::MEDIUM)
-                    + 2.0 * CHIP_PX
-                    + divider
-                    + 2.0 * CHIP_GAP
-            });
-            #[cfg(target_os = "linux")]
-            let meter_w = if recording_equalizer_enabled() {
-                EQUALIZER_W + CHIP_GAP
-            } else {
-                0.0
-            };
-            #[cfg(not(target_os = "linux"))]
-            let meter_w = 0.0;
-            CHIP_H
-                + measure_text(
-                    window,
-                    &clock_template(clock),
-                    HUD_TEXT,
-                    FontWeight::SEMIBOLD,
-                )
-                + LEAD_TRAIL
-                + divider
-                + warning_w
-                + meter_w
-                + trail.iter().sum::<f32>()
-                + (trail.len() + 1) as f32 * CHIP_GAP
-                + if live_no_words {
-                    divider
-                        + CHIP_GAP
-                        + measure_text(window, "⚠ No words yet", HUD_TEXT, FontWeight::SEMIBOLD)
-                        + LIVE_WARNING_END_PAD
-                } else {
-                    0.0
-                }
-        }
-        IslandPhase::Processing => {
-            CHIP_H
-                + 6.0
-                + measure_text(window, "Processing…", HUD_TEXT, FontWeight::SEMIBOLD)
-                + CHIP_PX
-        }
-        IslandPhase::Completed { inbox_count, .. } => {
-            CHIP_H
-                + 8.0
-                + measure_text(
-                    window,
-                    &completed_status_label(inbox_count, completed_note, completed_issue),
-                    HUD_TEXT,
-                    FontWeight::SEMIBOLD,
-                )
-                + LEAD_TRAIL
-                + divider
-                + chip_width(window, "Paste", FontWeight::SEMIBOLD)
-                + if crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING) {
-                    CHIP_GAP + chip_width(window, "Public link", FontWeight::MEDIUM)
-                } else { 0.0 }
-                + chip_width(window, "Inspect", FontWeight::MEDIUM)
-                + CHIP_H
-                + 3.0 * CHIP_GAP
-        }
-        IslandPhase::Hidden | IslandPhase::Dismissing => return ISLAND_H,
-    };
-    inner + 2.0 * ISLAND_INSET
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -728,33 +382,6 @@ impl SelectionMode {
         }
     }
 
-    pub(crate) fn label(self) -> &'static str {
-        match self {
-            Self::Area => "Area",
-            Self::Window => "Window",
-            Self::Screen => "Screen",
-            Self::Iphone => "iPhone",
-        }
-    }
-
-    pub(crate) fn icon(self) -> &'static str {
-        match self {
-            Self::Area => crate::capture::desktop::icons::AREA,
-            Self::Window => crate::capture::desktop::icons::WINDOW,
-            Self::Screen => crate::capture::desktop::icons::SCREEN,
-            Self::Iphone => crate::capture::desktop::icons::IPHONE,
-        }
-    }
-
-    fn chip_id(self) -> &'static str {
-        match self {
-            Self::Area => "sel-area",
-            Self::Window => "sel-window",
-            Self::Screen => "sel-screen",
-            Self::Iphone => "sel-iphone",
-        }
-    }
-
     /// Screen and iPhone need no pointer gesture, so the HUD offers a Record chip for them.
     pub(crate) fn shows_record(self) -> bool {
         matches!(self, Self::Screen | Self::Iphone)
@@ -785,6 +412,22 @@ impl SelectionMode {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum PillAction {
+    SelectMode(SelectionMode),
+    RecordSelected,
+    Cancel,
+    Whiteboard,
+    Notes,
+    Finish,
+    Paste(Option<[f32; 2]>),
+    CopyLink,
+    CopyPublicLink,
+    Inspect,
+    SettingsAgents,
+    DismissCompleted,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum IslandPhase {
     Hidden,
@@ -800,20 +443,6 @@ pub enum IslandPhase {
         /// Unhandled iPhone captures including this one; 0 for a local capture.
         inbox_count: usize,
     },
-    Dismissing,
-}
-
-impl IslandPhase {
-    fn trace_name(self) -> &'static str {
-        match self {
-            Self::Hidden => "hidden",
-            Self::Selecting { .. } => "selecting",
-            Self::Recording => "recording",
-            Self::Processing => "processing",
-            Self::Completed { .. } => "completed",
-            Self::Dismissing => "dismissing",
-        }
-    }
 }
 
 enum CaptureSource {
@@ -885,57 +514,25 @@ pub struct ApparentCoordinator {
     public_share: crate::capture::desktop::workflow::public_sharing::Controller,
     #[cfg(target_os = "linux")]
     agent_finishing: bool,
-    last_live_no_words: bool,
     playback: Option<crate::capture::desktop::playback::Guard>,
     picker_metal_overlay: Option<LaserOverlay>,
-    native_pill: Option<crate::capture::desktop::native::pill::NativePill>,
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     electron_pill: Option<ui::electron_pill::Session>,
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    electron_pill_failed: bool,
+    electron_pill_retry_at: Option<Instant>,
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     electron_pill_routed: bool,
     #[cfg(target_os="macos")]
     electron_pill_exclusions: Vec<u32>,
+    #[cfg(target_os = "macos")]
+    electron_pill_exclusion_wait: Option<Instant>,
     iphone_preview: Option<PhoneSession>,
     island_phase: IslandPhase,
-    island_prev_phase: IslandPhase,
-    /// `motion::now()` when the phase last changed.
-    island_phase_since: f64,
-    island_dismissed_from: IslandPhase,
-    island_width: f32,
-    island_target_width: f32,
-    island_velocity: f32,
-    island_scale: f32,
-    island_scale_velocity: f32,
-    island_y: f32,
-    island_y_velocity: f32,
-    island_opacity: f32,
-    /// Which width spring the current morph uses.
-    island_morph: Morph,
     /// Switch chips on a tap-started recording (`crate::capture::desktop::settings::shortcut::Reveal`).
     reveal: crate::capture::desktop::settings::shortcut::Reveal,
-    /// When the chips last opened or folded, for the in-place swap of the trailing group.
-    reveal_since: f64,
-    /// The trailing group fading out after that change: `Some(true)` the chips, `Some(false)` the
-    /// controls, `None` when the capsule opened straight into its state (nothing to swap).
-    reveal_outgoing: Option<bool>,
-    /// The chips were open when the island last changed phase, so a Recording capsule that is
-    /// blurring out or dismissing keeps them.
-    reveal_prev_chips: bool,
-    /// macOS Reduce motion, read when a reveal starts.
     reduced_motion: bool,
-    switch: Option<SwitchMorph>,
-    /// When the springs were last advanced (`step_island`).
-    island_stepped: Instant,
-    /// A new capsule window has drawn its first frame and not its second (which comes late):
-    /// only its frames advance the springs, so the hitch slows the opening instead of eating it.
-    island_await_frame: bool,
     /// The recording clock last shown, so the lead keeps its time while it leaves.
     last_elapsed_ms: u64,
-    /// The highlighted mode before the last change and when it changed (`HIGHLIGHT_FADE_S`).
-    highlight_prev: Option<SelectionMode>,
-    highlight_since: f64,
     selectable_windows: Vec<TargetInfo>,
     selection_generation: u64,
     windows_loading: bool,
@@ -945,7 +542,6 @@ pub struct ApparentCoordinator {
     selection_drag: Option<([f32; 2], [f32; 2])>,
     /// Global frame of the display the picker covers, highlighted in `SelectionMode::Screen`.
     display_rect: [f32; 4],
-    paste_drag_start: Option<[f32; 2]>,
     recording_shortcut_key: bool,
     review_bundle: Option<(PathBuf, ApparentBundle)>,
     /// Read the WAV once when selecting a bundle, never on the capsule's animation tick.

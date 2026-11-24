@@ -99,9 +99,9 @@ supported rather than being silently ignored by the app.
 
 Pill content resizes update bounds and input shape while keeping the Electron
 window mapped. A hide/resize/show cycle can orphan its XWayland surface on
-Hyprland despite Electron reporting it visible, forcing native fallback. Warning,
-completion and upload-state resizes retain the same surface and repaint in place;
-the existing watchdog and native fallback still handle actual presentation failure.
+Hyprland despite Electron reporting it visible. Warning, completion and
+upload-state resizes retain the same surface and repaint in place. The watchdog
+restarts the Electron pill after presentation failure.
 
 Without the `input` group, a capture on Wayland has no clicks, keys or ⇧ ink outside Apparent's own windows, and records only the screen and voice.
 
@@ -114,9 +114,7 @@ Electron controls and native fallback omit **Choose What to Record…**, and a
 recording opens directly onto Whiteboard, Finish and Cancel rather than Area/Screen
 switch chips. A retired bridge picker command is rejected without starting a capture.
 A stale non-Screen switch cannot discard an active recording. There is no new
-setting or opt-in route. The native fallback follows the same presentation when
-Electron is unavailable; macOS selection and the existing diagnostic lab remain
-unchanged. The native safety guards stay on the GUI thread that owns capture
+setting or opt-in route. The native safety guards stay on the GUI thread that owns capture
 lifetimes, so a failed or stale renderer cannot retarget/delete the recording.
 
 This removes Apparent's picker, not the compositor's consent dialog. Screen sharing

@@ -6,7 +6,7 @@ type Note = { pin: number; t: number; x: number; y: number; text: string };
 type Snapshot = { mode: 'badge' | 'editor' | 'list'; current: number | null;
   notes: Note[]; drafts: Note[]; error: string | null };
 type Command = { action: 'save' | 'draft'; pin: number; text: string } |
-  { action: 'edit' | 'delete'; pin: number } | { action: 'dismiss' | 'list' };
+  { action: 'edit' | 'delete'; pin: number } | { action: 'dismiss' };
 declare global {
   interface Window { captureNotes?: {
     onSnapshot: (callback: (state: Snapshot) => void) => () => void;
@@ -18,9 +18,7 @@ export function CaptureNotes() {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const field = useRef<HTMLTextAreaElement>(null);
   const current = useRef<number | null>(null);
-  const badge = location.hash === '#notes-badge';
   useEffect(() => window.captureNotes?.onSnapshot(next => {
     setState(next); setError(next.error ?? undefined);
     if (next.error || next.mode !== 'editor') setBusy(false);
@@ -29,9 +27,6 @@ export function CaptureNotes() {
       setText(next.drafts.find(n => n.pin === next.current)?.text ?? '');
     }
   }), []);
-  useEffect(() => {
-    if (!badge && state?.mode === 'editor') field.current?.focus({ preventScroll: true });
-  }, [badge, state?.current, state?.mode]);
   async function command(message: Command) {
     if (!window.captureNotes) { setError('Notes are not connected to the recording.'); return; }
     try { await window.captureNotes.command(message); }
@@ -47,14 +42,11 @@ export function CaptureNotes() {
   }
   if (!state) return <div className="notes-unavailable" role="status">Connecting notes…</div>;
   return <main className="capture-notes" onClick={e => {
-    if (!badge && e.target === e.currentTarget) void dismiss();
+    if (e.target === e.currentTarget) void dismiss();
   }} onKeyDown={e => {
     if (e.key === 'Escape' && !e.nativeEvent.isComposing) { e.preventDefault(); void dismiss(); }
   }}>
-    {badge ? <Button variant="ghost" className="note-count" aria-label={`${state.notes.length} saved notes. Open notes`} onClick={() => void command({ action: 'list' })}>
-      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 2.5h10v11H3zM5 6h6M5 9h4" stroke="currentColor" strokeLinecap="round" /></svg>
-      {state.notes.length} {state.notes.length === 1 ? 'note' : 'notes'}
-    </Button> : state.mode === 'list' ? <section className="note-list" aria-label="Capture notes">
+    {state.mode === 'list' ? <section className="note-list" aria-label="Capture notes">
       <header><strong>Notes</strong><Button variant="ghost" size="sm" aria-label="Close notes" onClick={() => void dismiss()}>Close</Button></header>
       {state.drafts.filter(n => n.text.trim()).length === 0 ? <p>No notes yet.</p> :
         state.drafts.filter(n => n.text.trim()).map(n => <article key={n.pin}>
@@ -65,14 +57,14 @@ export function CaptureNotes() {
           <Button variant="ghost" size="sm" aria-label={`Delete note ${n.pin}`} onClick={() => void command({ action: 'delete', pin: n.pin })}>Delete</Button>
         </article>)}
       {error && <p role="alert">{error}</p>}
-    </section> : <form className="note-popup" aria-label={`Note at pin ${state.current}`} onSubmit={e => { e.preventDefault(); save(); }}>
-      <textarea ref={field} aria-label="Note text" placeholder="What should change?" value={text} rows={3} maxLength={8192}
+    </section> : state.mode === 'editor' ? <form className="note-popup" aria-label={`Note at pin ${state.current}`} onSubmit={e => { e.preventDefault(); save(); }}>
+      <textarea key={state.current} autoFocus aria-label="Note text" placeholder="What should change?" value={text} rows={3} maxLength={8192}
         onChange={e => { const value = e.target.value; setText(value); if (state.current) void command({ action: 'draft', pin: state.current, text: value }); }}
         onKeyDown={e => {
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); save(); }
         }} />
       {error && <p role="alert">{error}</p>}
       <footer><Button type="submit" size="sm" disabled={busy}>{busy ? 'Saving…' : 'Attach'}<span aria-hidden="true">↵</span></Button></footer>
-    </form>}
+    </form> : null}
   </main>;
 }

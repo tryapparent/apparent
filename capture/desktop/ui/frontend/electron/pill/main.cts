@@ -34,7 +34,7 @@ function focusPicker(focused){
   if(focused)window.focus();else{
     window.blur();
     if(hyprland && admittedWindowId!==null && destinations.view()?.confirmed)
-      emit({releasePickerFocus:admittedWindowId});
+      emit({releaseFocus:admittedWindowId});
   }
 }
 const destinations=require('./t3.cjs').createController(()=>{if(!staging&&!publishingState&&loaded&&window&&!window.isDestroyed()){
@@ -74,7 +74,6 @@ function setSharingConfirmation(revision){
   const previous=sharingConfirmation;
   if(previous===revision)return;
   sharingConfirmation=revision;
-  // Retain only this revision's native presentation while consent is pending.
   if(previous!==null)emit({revision:previous,sharingConfirmation:false});
   if(revision!==null)emit({revision,sharingConfirmation:true});
 }
@@ -178,8 +177,6 @@ process.stdin.on('data',chunk=>{
       }else if(message.type==='position' && process.platform==='linux' && Array.isArray(message.point) && message.point.length===2 && message.point.every(Number.isFinite)){
         if(window && activated && rendererReady && window.isVisible() && message.revision===current?.revision && current.phase==='recording' && current.draggable){
           const point=screen.screenToDipPoint({x:Math.round(message.point[0]),y:Math.round(message.point[1])});
-          // Electron owns mapping as well as geometry. A native X11 remap races
-          // Chromium visibility and can orphan the surface in Hyprland.
           const before=window.getBounds();
           if(before.x!==point.x || before.y!==point.y){
             if(hyprland)window.hide();
@@ -249,9 +246,9 @@ app.whenReady().then(()=>{
     }
     pasteGesture=null;
     pending=true;
+    if(hyprland&&!keyboardMode&&admittedWindowId!==null)emit({releaseFocus:admittedWindowId});
     emit(message);
   });
-  // Parent's bounded state defines content; main measures its own trusted document.
   async function measure(revision){
     if(!loaded || window.isDestroyed())return;
     const measuredWindow=window,document=documentGeneration;

@@ -1,4 +1,3 @@
-/** Actual installed macOS foreground capture/share; disposable hosted CI only. */
 import assert from 'node:assert/strict';
 import {createHash, randomBytes} from 'node:crypto';
 import {chmod, cp, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, stat, writeFile} from 'node:fs/promises';
@@ -92,8 +91,6 @@ const footprint = (s: any) => ({reserve: s.calls['POST /v1/captures/:id'] ?? 0,
   manifest: s.calls['GET /v1/captures/:id'] ?? 0, share: s.shareCalls, bytes: s.uploadedBytes,
   putAttempts: s.putAttempts, cancelledPuts: s.cancelledPuts});
 async function jobs() { try { return (await readdir(path.join(appEnv.HOME!, '.config/apparent/hosted'))).filter(name => name.endsWith('.job')); } catch (e: any) { if (e.code === 'ENOENT') return []; throw e; } }
-// Read only the owned synthetic capture's diagnostic, after its writers stop.
-// Failed finalization has no saved bundle to copy through the success path.
 async function retainCaptureDiagnostics(captures: string, destination: string) {
   const entries = await readdir(captures, {withFileTypes: true});
   assert.ok(entries.length <= 4, 'Unexpected synthetic capture inventory');
@@ -167,7 +164,6 @@ done
 `;
 async function main() {
   try {
-    // Refuse before any file, process, clipboard, permission or pixel effects.
     assert.equal(process.platform, 'darwin', 'Actual foreground acceptance requires macOS');
     for (const [key, value] of Object.entries({CI: 'true', GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', RUNNER_OS: 'macOS'})) assert.equal(hostEnv[key], value);
     repo = execFileSync('git', ['rev-parse', '--show-toplevel'], {encoding: 'utf8'}).trim();
@@ -252,16 +248,21 @@ async function main() {
     await evidence('owned-request', {captureId});
     const start = await startOwnedCapture(captureId);
     assert.equal(start.capture_id, captureId); assert.equal(start.status, 'recording', 'A real captured frame is required');
-    await sleep(2000);
     await savedForeground({
       waitForRecordingControls: async () => {
-        // Mac's initial target-switch reveal folds into these controls. Wait
-        // for the real surface rather than bootstrapping during that morph.
-        await ui('recording Finish control', value => value.includes('finish'), generated.pid);
+        const observe = (retired = 0) => poll(() => native('snapshot'),
+          frame => frame.pid !== retired && frame.frontPid === generated.pid && text(frame).includes('finish'),
+          'recording Finish control', 18_000);
+        const {pid} = await observe();
+        assert.ok(Number.isSafeInteger(pid) && pid > 1);
+        const parent = execFileSync('/bin/ps', ['-o', 'ppid=', '-p', String(pid)], {timeout: 2000, encoding: 'utf8'});
+        assert.equal(Number(parent), rustPid, 'Pill must be a child of the owned app');
+        process.kill(pid, 'SIGTERM');
+        const {pid: replacement, windowId} = await observe(pid);
+        assert.deepEqual(JSON.parse(await cli(['capture', 'state'])).state, {phase: 'recording', capture_id: captureId});
+        await evidence('recording-pill-recovery', {pid, replacement, windowId, captureId});
       },
       prepareRecording: async () => {
-        // Read-only: never Finish through this input adapter. Enable the real
-        // Electron AX tree while Recording has no saved-dismissal deadline.
         const prepared = await native('prepare', 'Finish');
         assert.equal(prepared.prepared, true, 'Native accessibility bootstrap did not acknowledge an actual button');
         assert.ok(Number.isSafeInteger(prepared.pid) && prepared.pid > 1, 'Prepared accessibility lacks an exact pill PID');
@@ -285,9 +286,6 @@ async function main() {
         await native('click', 'Cancel upload');
         const cancelled = await poll(status, value => value.cancelledPuts === 1, 'cancelled PUT connection', 5000);
         assert.equal(cancelled.uploadedBytes, 0, 'Cancelled transfer committed bytes');
-        // Each native click retains its own fresh screenshot, OCR and exact AX
-        // target. Reuse that pre-click evidence within the 15-second recovery
-        // interval rather than spending it on duplicate screenshot/OCR passes.
         const retry = await native('click', 'Retry upload');
         assert.equal(retry.frontPid, generated.pid, 'Synthetic scene lost foreground');
         assert.ok(text(retry).includes('cancelled') && text(retry).includes('retry upload'), 'Retry must come from the cancelled local recording');
@@ -304,7 +302,6 @@ async function main() {
           },
           click: async label => {
             if (label === 'Create public link') {
-              // Consent must outlive the ordinary 15-second saved-pill timer.
               await sleep(16_000);
               await ui('recopy disclosure retained after completion deadline', value => value.includes('create public link'), generated.pid);
               assert.deepEqual(footprint(await status()), footprint(completed), 'Waiting for consent changed the hosted recording');
@@ -342,7 +339,6 @@ async function main() {
           if (metadata.audio) assert.ok((await stat(path.join(bundle, metadata.audio))).size <= 44, 'Microphone-off capture contains audio bytes');
           assert.equal(JSON.parse(await readFile(configFile, 'utf8')).microphoneEnabled, false);
         }, async () => {
-          // Retain private bundle evidence even if a media assertion failed.
           await withRetainedEvidence(() => cp(bundle, path.join(output, 'synthetic.apparent'), {recursive: true, errorOnExist: true, force: false}),
             () => evidence('bundle-proof-timing', {startedAt, elapsedMs: performance.now() - started}),
             error => { cleanupErrors.push('bundle timing: ' + redact(error)); });

@@ -21,10 +21,8 @@ drafts never count. The 72px transparent footprint keeps Whiteboard, Finish and
 Cancel fixed for 0, 1 and multi-digit counts. Its hidden region is excluded from
 Linux input shape and hover. Clicking opens the existing notes list. Rust projects
 the existing durable Store receipt and retains its sole persistence writer;
-TypeScript owns the count presentation. The separate badge is suppressed only
-while Electron owns the visible pill, and returns on native/Glass fallback.
-The existing note editor and saved format are unchanged. Remove the fallback
-badge only after all compatibility routes have accepted replacements.
+TypeScript owns the count presentation. The count stays in the pill. The note editor and saved format use their existing
+Store contract.
 
 Build the frontend with `npm ci && npm run build` in `../frontend`. Its build
 transpiles the preserved CommonJS Electron host from `.cts`; generated `.cjs`
@@ -46,9 +44,9 @@ only for the current completed view with an enabled sharing control; a closed
 child cannot retain the presentation. Closing the confirmation resumes the
 ordinary completion interval without uploading before consent.
 
-The existing Desktop coordinator owns child startup and readiness. A failed
-launch, expired readiness or child exit restores the native pill without
-stopping capture. Linux warms the hidden child at startup and retains native
+The existing Desktop coordinator owns child startup and readiness. A failed launch, expired readiness or child exit retires the child.
+The coordinator warms a hidden Electron window before activation and retries
+after a short backoff while capture continues. Linux retains native
 held-button/identity checks, drag clamping and exact-window pinning. The child
 alone moves/remaps its Electron surface; Rust never remaps it concurrently.
 The child also reconciles its X11 input stacking without taking focus.
@@ -57,8 +55,7 @@ Recovery samples the owned process before closing it and records pipe-stop
 codes, readiness/activation observations and the last flushed phase/revision.
 An unhealthy transport is distinct from an observed OS exit. Electron stderr
 records bounded termination reasons and relative timing, without parent frames,
-capture labels, paths or error text. These observations do not change deadlines,
-action admission or fallback.
+capture labels, paths or error text.
 Each new semantic snapshot is laid out before a hidden window becomes visible.
 Clock and microphone snapshots do not request layout; a ResizeObserver handles
 actual content/font size changes. The host has no periodic layout measurement.
@@ -75,23 +72,18 @@ background-throttled, so preloading can finish before the first capture.
 On Lua-configured Hyprland the native adapter installs an exact-window `no_anim`,
 `no_blur` and `no_shadow`
 runtime rule before acknowledging readiness, and retires it when the child pipe
-closes. The native fallback uses the same rule for its window lifetime. These
-are compositor mechanics; recording and presentation policy are unchanged.
+closes.
 Other compositors and older Hyprlang retain their own window-animation
-policy; application CSS motion is still disabled. Startup/watchdog and native
-fallback remain active. Rollback restores the previous presentation host and
-geometry polling together; no capture or persisted preference format changes.
+policy; application CSS motion is still disabled. The startup watchdog applies to each replacement renderer.
 macOS Black uses this shared presentation by default. The existing movable-controls
 feature retains dragging and Mac movie inclusion, not presentation admission.
 It is enabled by default. Explicitly set `experiments.movableRecordingControls`
-to `false` to exercise the excluded Mac route; omitting it tests the included route.
-Glass retains native routing.
-There is one visible pill. Missing packaged assets retain the native route.
+to `false` to exercise the excluded Mac route. Omitting it tests the included route.
 The packaged Mac runtime starts as an accessory. The installer opts into regular
 activation. Before readiness, the Mac-only signed AppKit adapter configures the
 owned panel for all Spaces and other apps' fullscreen windows. It checks the ID,
 title and panel mask, and applies `_setPreventsActivation:` with keyboard access.
-Refusal keeps native recovery. The installed foreground test uses a separate
+Refusal triggers Electron recovery. The installed foreground test uses a separate
 fullscreen app to verify stacking and focus.
 On Mac with movable controls explicitly disabled, capture reset restores the child
 window's explicit exclusion. If the

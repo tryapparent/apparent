@@ -10,20 +10,17 @@ impl ApparentCoordinator {
         let reopened_picker = matches!(event, PillEvent::PickerOpened { .. });
         let Some((phase, reveal)) = self.observe_pill_event(event) else { return };
         self.reveal.facts = None;
-        let previous_reveal = std::mem::replace(&mut self.reveal.chips, reveal);
+        self.reveal.chips = reveal;
         let changed = std::mem::discriminant(&self.island_phase) != std::mem::discriminant(&phase);
         if !changed && !began_capture && !reopened_picker {
             self.island_phase = phase;
-            if previous_reveal && !reveal {
-                self.play_fold();
-            }
             return;
         }
         use crate::capture::desktop::settings::onboarding::Input;
-        if matches!(phase, IslandPhase::Selecting { .. } | IslandPhase::Processing | IslandPhase::Recording | IslandPhase::Hidden | IslandPhase::Dismissing) {
+        if matches!(phase, IslandPhase::Selecting { .. } | IslandPhase::Processing | IslandPhase::Recording | IslandPhase::Hidden) {
             self.public_share.cancel_all();
         }
-        if matches!(phase, IslandPhase::Recording | IslandPhase::Hidden | IslandPhase::Dismissing) {
+        if matches!(phase, IslandPhase::Recording | IslandPhase::Hidden) {
             if let Some((_, _, active)) = self.share_pending.take() {
                 active.store(false, std::sync::atomic::Ordering::SeqCst);
             }
@@ -47,7 +44,7 @@ impl ApparentCoordinator {
             }
             // Startup can fail before Recording is presented. Clear the shortcut attempt
             // then too, so a later menu capture cannot inherit it.
-            (_, IslandPhase::Hidden | IslandPhase::Dismissing) => {
+            (_, IslandPhase::Hidden) => {
                 Some(Input::CaptureEnded { completed: false })
             }
             _ => None,
@@ -57,32 +54,9 @@ impl ApparentCoordinator {
         {
             session.input(input);
         }
-        if changed {
-            // A new phase replaces the whole content; the chips go with it, and the outgoing
-            // Recording content keeps showing them while it blurs away.
-            self.reveal_prev_chips = previous_reveal;
-            self.reveal_outgoing = None;
-            self.island_morph = Morph::Phase;
-            self.switch = None;
-            self.highlight_prev = None;
-            if matches!(self.island_phase, IslandPhase::Hidden) {
-                self.island_stepped = Instant::now();
-            }
-            self.island_prev_phase = self.island_phase;
-            if matches!(phase, IslandPhase::Dismissing) {
-                self.island_dismissed_from = self.island_phase;
-            } else if matches!(self.island_phase, IslandPhase::Hidden) {
-                self.island_scale = 0.92;
-                self.island_scale_velocity = 0.0;
-                self.island_y = -6.0;
-                self.island_y_velocity = 0.0;
-            }
-            self.island_phase_since = motion::now();
-            motion::trace_event(format!("phase:{}", phase.trace_name()));
-        }
         let appearing = matches!(
             self.island_phase,
-            IslandPhase::Hidden | IslandPhase::Dismissing
+            IslandPhase::Hidden
         );
         self.island_phase = phase;
         self.publish_capture_busy();
@@ -92,17 +66,11 @@ impl ApparentCoordinator {
                     phase,
                     IslandPhase::Selecting { .. } | IslandPhase::Recording
                 ));
-        if crate::shared::handoff::native_pill() {
-            if !matches!(phase, IslandPhase::Hidden) {
-                self.ensure_native_pill();
-            }
-            if place {
-                self.place_capsule();
-            }
-            self.sync_native_pill();
-        } else if place {
+        if place {
+            self.ensure_electron_pill();
             self.place_capsule();
         }
+        self.sync_electron_pill();
     }
 
     /// Puts the capsule on the pointer's display during screen recording or selection,
@@ -123,10 +91,6 @@ impl ApparentCoordinator {
         };
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         if let Some(session) = &self.electron_pill { session.place(point); }
-        match self.native_pill {
-            Some(ref pill) => pill.place_on(point),
-            None => platform::place_hud_pill(point),
-        }
     }
 
     /// The iPhone's mirror window can be dragged to another display mid-recording: the ink
@@ -155,9 +119,6 @@ impl ApparentCoordinator {
             return;
         }
         self.display_rect = overlay.screen().map(|v| v as f32);
-        if let Some(ref pill) = self.native_pill {
-            pill.place_on(centre);
-        }
         #[cfg(any(target_os="macos",target_os="linux"))]
         if let Some(session)=&self.electron_pill {session.place(centre);}
     }
@@ -195,7 +156,7 @@ impl ApparentCoordinator {
             self.display_rect = frame.map(|v| v as f32);
             // A manually dragged Linux capsule remains where it was dropped.
             // Continue following with the ink overlay, but leave the pill alone.
-            if !platform::pill_user_moved() && !self.electron_pill.as_ref().is_some_and(|s|s.moved()) {
+            if !self.electron_pill.as_ref().is_some_and(|s|s.moved()) {
                 self.place_capsule();
             }
         }
@@ -252,27 +213,6 @@ impl ApparentCoordinator {
         }
     }
 
-    pub(crate) fn ensure_native_pill(&mut self) {
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        if self.electron_pill_routed { return; }
-        if !crate::shared::handoff::native_pill() || self.native_pill.is_some() {
-            return;
-        }
-        match crate::capture::desktop::native::pill::NativePill::open() {
-            Ok(pill) => {
-                if !crate::shared::handoff::experiment("movableRecordingControls") {
-                    self.telemetry.excluded_window_ids.lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .push(pill.window_number());
-                }
-                self.native_pill = Some(pill);
-            }
-            Err(err) => {
-                apparent_log(format!("NativePill::open error: {err}"));
-            }
-        }
-    }
-
     pub(in crate::capture::desktop) fn recording_has_no_words(&self) -> bool {
         matches!(
             self.active_recording.as_ref().map(|rec| &rec.source),
@@ -281,79 +221,14 @@ impl ApparentCoordinator {
         )
     }
 
-    fn pill_snapshot(&self) -> crate::capture::desktop::native::pill::PillSnapshot {
-        use crate::capture::desktop::native::pill::{PillSnapshot, PillStyle, model::Pres};
-        let recording_ms = self
-            .active_recording
-            .as_ref()
-            .map(ActiveRecording::elapsed_ms);
-        let elapsed_ms = recording_ms.unwrap_or(self.last_elapsed_ms);
-        let clock = format_clock(elapsed_ms);
-        let has_iphone = self.iphone.is_some();
-
-        let pres = match self.island_phase {
-            IslandPhase::Hidden | IslandPhase::Dismissing => Pres::Hidden,
-            IslandPhase::Selecting { mode } => Pres::Selecting { mode, has_iphone },
-            IslandPhase::Recording if self.reveal.presentation.no_words => {
-                Pres::RecordingWarning {
-                    chips: false,
-                    has_iphone,
-                }
-            }
-            IslandPhase::Recording => Pres::Recording {
-                chips: self.reveal.chips,
-                has_iphone,
-            },
-            IslandPhase::Processing => Pres::Processing,
-            IslandPhase::Completed { .. } => {
-                Pres::Completed {
-                    share: self.fallback_share(),
-                    warning: self.reveal.completed_presentation.completed_warning,
-                    label: self.reveal.completed_presentation.label.clone(),
-                    routes: Vec::new(),
-                }
-            }
-        };
-        PillSnapshot {
-            pres,
-            clock,
-            mic_warning: self
-                .active_recording
-                .as_ref()
-                .and_then(ActiveRecording::mic_warning),
-            input_waveform: matches!(self.island_phase, IslandPhase::Recording).then(|| {
-                self.active_recording.as_ref().and_then(|recording| match &recording.source {
-                    CaptureSource::Screen { audio: Some(audio), .. } =>
-                        Some(audio.input_waveform().unwrap_or([0.0; 24])),
-                    _ => None,
-                })
-            }).flatten(),
-            reduced_motion: self.reduced_motion,
-            style: PillStyle::current(),
-        }
-    }
-
-    pub(crate) fn sync_native_pill(&mut self) {
-        self.refresh_pill_presentation();
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        self.sync_electron_pill();
-        if self.native_pill.is_some() {
-            let snap = self.pill_snapshot();
-            if let Some(ref pill) = self.native_pill {
-                pill.sync(snap);
-            }
-        }
-    }
-
     fn apply_pill_action(
         &mut self,
-        action: crate::capture::desktop::native::pill::PillAction,
+        action: pill_state::PillAction,
         cx: &mut Context<Self>,
     ) {
-        use crate::capture::desktop::native::pill::PillAction;
+        use pill_state::PillAction;
         match action {
             PillAction::SelectMode(mode) => self.click_selection_mode(mode, cx),
-            PillAction::SwitchRecording(mode) => self.switch_recording(mode, cx),
             PillAction::RecordSelected => self.record_selected_mode(cx),
             PillAction::Cancel => self.cancel_recording(cx),
             PillAction::Whiteboard => {
@@ -373,7 +248,6 @@ impl ApparentCoordinator {
             PillAction::Inspect => self.inspect_completed_bundle(cx),
             PillAction::SettingsAgents => self.open_settings(Some(settings::Pane::Agents)),
             PillAction::DismissCompleted => self.dismiss_completed_bundle(cx),
-            PillAction::Route(_) => {}
         }
     }
 
@@ -383,7 +257,7 @@ impl ApparentCoordinator {
         }
         if matches!(
             self.island_phase,
-            IslandPhase::Hidden | IslandPhase::Dismissing
+            IslandPhase::Hidden
         ) {
             return;
         }
@@ -413,10 +287,9 @@ impl ApparentCoordinator {
             self.mark_handled(&dir);
         }
         self.apply_pill_event(PillEvent::Hide);
-        self.island_opacity = 0.0;
         let entity = cx.entity().clone();
         cx.defer(move |cx| {
-            close_capture_windows(cx);
+            close_picker_window(cx);
             open_review_window(&entity, cx);
         });
         cx.notify();
@@ -428,15 +301,15 @@ impl ApparentCoordinator {
                 if self.reveal.observed_upload_progress != Some(percent) {
                     self.reveal.observed_upload_progress = Some(percent);
                     self.show_completion_text(pill_state::CompletionCopy::Uploading, format!("Uploading… {percent}%"));
-                    self.sync_native_pill();
+                    self.sync_electron_pill();
                     cx.notify();
                 }
                 return;
             }
         }
-        if !crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING)
-            || !matches!(self.island_phase, IslandPhase::Completed { .. })
-            || self.share_probe_at.is_some_and(|at| at.elapsed() < Duration::from_secs(5)) {
+        if !matches!(self.island_phase, IslandPhase::Completed { .. })
+            || self.share_probe_at.is_some_and(|at| at.elapsed() < Duration::from_secs(5))
+            || !crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING) {
             return;
         }
         self.share_probe_at = Some(Instant::now());
@@ -464,7 +337,7 @@ impl ApparentCoordinator {
                         coord.apply_pill_event(PillEvent::OnlineObserved);
                     }
                 }
-                coord.sync_native_pill();
+                coord.sync_electron_pill();
                 cx.notify();
             });
         }).detach();
@@ -502,7 +375,7 @@ impl ApparentCoordinator {
     fn copy_completed_link_with_consent(&mut self, public: bool, cx: &mut Context<Self>) {
         if crate::connect::hosted::foreground_progress().is_some() {
             if self.cancel_completed_foreground_share() {
-                self.sync_native_pill();
+                self.sync_electron_pill();
                 cx.notify();
             }
             return;
@@ -522,7 +395,7 @@ impl ApparentCoordinator {
         } else {
             self.reserve_completed_link(false, cx);
         }
-        self.sync_native_pill();
+        self.sync_electron_pill();
         cx.notify();
     }
 
@@ -560,7 +433,7 @@ impl ApparentCoordinator {
                         else { "Sharing stopped · click Public link to retry".into() },
                 };
                 coord.show_completion_text(copy, text);
-                coord.sync_native_pill();
+                coord.sync_electron_pill();
                 cx.notify();
             });
         }).detach();
@@ -623,32 +496,18 @@ impl ApparentCoordinator {
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         self.tick_electron_pill(cx);
         self.tick_hosted_sharing(cx);
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        #[cfg(target_os = "linux")]
         if matches!(self.island_phase, IslandPhase::Recording) {
             platform::tick_pill_drag();
         }
-        if self.note_ui.is_some() {
-            if let Some(ui) = self.note_ui.as_mut() { ui.set_embedded(self.electron_pill_routed); }
-            let anchor = self.native_pill.as_ref().and_then(|p| p.note_badge_anchor());
-            #[cfg(any(target_os = "linux", target_os = "macos"))]
-            let anchor = self.electron_pill.as_ref().filter(|_| self.electron_pill_routed)
-                .and_then(|pill| pill.note_badge_anchor()).or(anchor);
-            #[cfg(target_os = "linux")]
-            let anchor = anchor.or_else(|| platform::note_badge_anchor(self.island_width * self.island_scale, self.island_y + (PILL_WINDOW_H - ISLAND_H * self.island_scale) / 2.0));
-            if let (Some(ui), Some(point)) = (self.note_ui.as_mut(), anchor) { ui.position_badge(point); }
+        let anchor = self.electron_pill.as_ref().filter(|_| self.electron_pill_routed)
+            .and_then(|pill| pill.note_badge_anchor());
+        if let Some(ui) = self.note_ui.as_mut() {
+            if let Some(anchor) = anchor {
+                ui.position_badge(anchor);
+            }
         }
-        let live_no_words = self.recording_has_no_words();
-        if live_no_words != self.last_live_no_words {
-            self.last_live_no_words = live_no_words;
-            self.sync_native_pill();
-            cx.notify();
-        }
-        if self.island_await_frame {
-            // Ask for the frame that ends the wait.
-            cx.notify();
-        } else {
-            self.step_island(cx);
-        }
+        self.step_island(cx);
     }
 
     #[cfg(target_os = "linux")]
@@ -684,20 +543,6 @@ impl ApparentCoordinator {
     /// coming, and the capsule calls it as it draws, so every frame shows its own moment rather
     /// than the loop's last tick (up to 8 ms stale, which made the steps uneven).
     pub fn step_island(&mut self, cx: &mut Context<Self>) {
-        if let Some(actions) = self.native_pill.as_ref().map(|p| p.drain_actions()) {
-            for action in actions {
-                self.apply_pill_action(action, cx);
-            }
-        }
-        let tune = motion::tune();
-        let real = self.island_stepped.elapsed().as_secs_f32();
-        if real < 0.0002 {
-            return;
-        }
-        self.island_stepped = Instant::now();
-        // A late frame slows the motion rather than skipping it ahead (a new window's second
-        // frame comes ~50 ms after its first).
-        let dt = (real * motion::time_scale()).min(0.025);
         self.advance_pill_deadlines();
 
         if let IslandPhase::Selecting { mode } = self.island_phase {
@@ -737,95 +582,19 @@ impl ApparentCoordinator {
         #[cfg(target_os = "linux")]
         self.follow_recording_pointer();
 
-        // Keep layout width at `island_target_width` during open and dismiss so the capsule never
-        // clips its inner chips; open/dismiss use a restrained 0.92 <-> 1.0 scale.
-        let (target_w, target_scale, target_y, target_opacity, fade_rate) = match self.island_phase
-        {
-            IslandPhase::Hidden => return,
-            IslandPhase::Dismissing => (self.island_target_width, 0.92, -6.0, 0.0, 18.0),
-            _ => (self.island_target_width, 1.0, 0.0, 1.0, 20.0),
-        };
-
         if self.reveal.chips {
             let activity = self.telemetry.reveal_activity();
-            let on_pill = self
-                .native_pill
-                .as_ref()
-                .map_or_else(pointer_on_hud_pill, |p| p.pointer_on_pill());
-            #[cfg(any(target_os = "macos", target_os = "linux"))]
-            let on_pill = self.electron_pill.as_ref().filter(|s| s.ready()).map_or(on_pill, |s| s.hovered());
-            if on_pill != self.reveal.pointer_inside {
-                self.reveal.pointer_inside = on_pill;
-                self.apply_pill_event(PillEvent::PointerChanged { inside: on_pill });
+            let hovered = self.electron_pill.as_ref().is_some_and(|session| session.hovered());
+            if hovered != self.reveal.pointer_inside {
+                self.reveal.pointer_inside = hovered;
+                self.apply_pill_event(PillEvent::PointerChanged { inside: hovered });
             }
             if activity != self.reveal.activity_count {
                 self.reveal.activity_count = activity;
                 self.apply_pill_event(PillEvent::ActivityObserved { activity: activity as u32 });
             }
         }
-
-        let (width, velocity) = if self.reduced_motion && self.island_morph != Morph::Phase {
-            // Reduce motion: the reveal's groups fade in place with no width travel; a shrink
-            // waits for the outgoing chips to fade so none are clipped while visible.
-            let fading =
-                self.reveal_outgoing.is_some() && motion::age(self.reveal_since) < REDUCED_FADE_S;
-            if fading && target_w < self.island_width {
-                (self.island_width, 0.0)
-            } else {
-                (target_w, 0.0)
-            }
-        } else {
-            spring_step(
-                self.island_width,
-                self.island_velocity,
-                target_w,
-                dt,
-                self.island_morph.spring(&tune),
-            )
-        };
-        let (scale, s_vel) = spring_step(
-            self.island_scale,
-            self.island_scale_velocity,
-            target_scale,
-            dt,
-            tune.island_scale,
-        );
-        let (y_off, y_vel) = spring_step(
-            self.island_y,
-            self.island_y_velocity,
-            target_y,
-            dt,
-            tune.island_scale,
-        );
-        if let Some(morph) = self.switch.as_mut()
-            && let Some((x, v)) = morph.slide
-        {
-            let (x, v) = spring_step(x, v, 0.0, dt, tune.switch_slide);
-            morph.slide = Some((x, v));
-            if x.abs() < 0.2 && v.abs() < 2.0 {
-                self.switch = None;
-            }
-        }
-        self.island_width = width.clamp(120.0, PILL_WINDOW_W - 16.0);
-        self.island_velocity = velocity;
-        self.island_scale = scale.clamp(0.35, 1.18);
-        self.island_scale_velocity = s_vel;
-        self.island_y = y_off.clamp(-18.0, 14.0);
-        self.island_y_velocity = y_vel;
-        self.island_opacity += (target_opacity - self.island_opacity) * (fade_rate * dt).min(1.0);
-        self.sync_native_pill();
-
-        let dismiss_done = if let Some(ref pill) = self.native_pill {
-            pill.is_fully_hidden()
-        } else {
-            self.island_opacity < 0.03
-        };
-        if matches!(self.island_phase, IslandPhase::Dismissing) && dismiss_done {
-            self.apply_pill_event(PillEvent::SurfaceHidden);
-            self.island_opacity = 0.0;
-            cx.defer(close_capture_windows);
-        }
-        if self.native_pill.is_none() {
+        if matches!(self.island_phase, IslandPhase::Selecting { .. }) {
             cx.notify();
         }
     }
@@ -915,20 +684,6 @@ impl ApparentCoordinator {
         })
         .detach();
         self.selection_drag = None;
-        if matches!(
-            self.island_phase,
-            IslandPhase::Hidden | IslandPhase::Dismissing
-        ) {
-            // Enter near full size (0.92 -> 1.0) at full intrinsic layout width so inner buttons
-            // are never clipped.
-            self.island_width = self.island_target_width.max(195.0);
-            self.island_velocity = 0.0;
-            self.island_scale = 0.92;
-            self.island_scale_velocity = 0.0;
-            self.island_y = -6.0;
-            self.island_y_velocity = 0.0;
-            self.island_opacity = 0.0;
-        }
         // Open on the mode the last recording used. The phone needs a live preview, started once
         // the picker is up; Window starts on Area's crosshair until the window list arrives.
         let opening = match mode.unwrap_or(self.last_mode) {
@@ -995,14 +750,6 @@ impl ApparentCoordinator {
     }
 
     fn present_recording_island(&mut self, cx: &mut Context<Self>) {
-        if matches!(self.island_phase, IslandPhase::Hidden) {
-            self.island_width = ISLAND_OPEN_FROM_W;
-            self.island_velocity = 0.0;
-            self.island_scale = 0.92;
-            self.island_scale_velocity = 0.0;
-            self.island_y = -6.0;
-            self.island_y_velocity = 0.0;
-        }
         if !self.lab {
             crate::capture::desktop::settings::onboarding::Progress::recording_started();
             if self.onboarding.as_ref().is_some_and(|session| {
@@ -1018,7 +765,7 @@ impl ApparentCoordinator {
         cx.defer(move |cx| {
             close_review_window(cx);
             close_picker_window(cx);
-            ensure_hud_pill_open(&entity, cx);
+            entity.update(cx, |coord, _| coord.ensure_electron_pill());
         });
         cx.notify();
     }
@@ -1027,9 +774,6 @@ impl ApparentCoordinator {
     /// the capsule goes through exactly the states a real one does.
     fn start_lab_recording(&mut self, target: TargetInfo, cx: &mut Context<Self>) {
         self.whiteboard.borrow_mut().reset();
-        if let IslandPhase::Selecting { mode } = self.island_phase {
-            motion::trace_event(format!("record:{}", mode.label()));
-        }
         self.iphone_preview = None;
         self.selection_drag = None;
         self.hovered_window = None;

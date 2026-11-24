@@ -5,10 +5,10 @@ mod session;
 mod pin;
 use crate::capture::desktop::{
     SelectionMode,
-    native::pill::PillAction,
 };
 use anyhow::{Context as _, Result};
 use crate::embedded_policy::EmbeddedPolicy;
+pub(crate) use crate::capture::desktop::PillAction;
 
 const SOURCE: &str = include_str!(concat!(env!("OUT_DIR"), "/record-pill.mjs"));
 
@@ -23,7 +23,6 @@ pub(crate) enum Event {
     CaptureSaved { recovery: bool, text: Option<String>, frame_count: usize, duration_ms: u64 },
     CaptureFailed,
     Dismiss,
-    SurfaceHidden,
     Hide,
     RevealOpened { activity: u32 },
     RevealClosed,
@@ -84,7 +83,6 @@ pub(crate) enum Phase {
     Recording,
     Processing,
     Completed,
-    Dismissing,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize)]
@@ -172,6 +170,7 @@ pub(crate) struct Adapter {
     pub(crate) pointer_inside: bool,
     pub(crate) activity_count: usize,
     pub(crate) consent_open: bool,
+    pub(crate) preferences: Option<(std::time::Instant, bool, bool)>,
     pub(crate) facts: Option<Facts>,
     pub(crate) presentation: Presentation,
     pub(crate) completed_presentation: Presentation,
@@ -189,6 +188,7 @@ impl Default for Adapter {
             pointer_inside: false,
             activity_count: 0,
             consent_open: false,
+            preferences: None,
             facts: None,
             presentation: Presentation::default(),
             completed_presentation: Presentation::default(),
@@ -235,7 +235,7 @@ pub(crate) fn capture_exclusion_ready(window: Option<u32>, applied: &[u32], scre
 pub(in crate::capture::desktop) const SOFT_BLOOM: &str = "softBloom";
 pub(in crate::capture::desktop) const PILL_DOODLES: &str = "pillDoodles";
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct View {
     pub transcript: Option<crate::capture::engine::runtime::audio::transcription::speech_preview::Preview>,
