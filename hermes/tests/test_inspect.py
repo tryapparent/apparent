@@ -82,13 +82,20 @@ class InspectionTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.bundle = Path(self.temp.name) / "test.apparent"
         self.bundle.mkdir()
-        Image.new("RGB", (200, 100), "red").save(self.bundle / "contact-sheet.png")
-        self.manifest = {"contactSheet": "contact-sheet.png", "keyframes": []}
+        fixture = json.loads((ROOT / "enablement/performance/fixture.json").read_text())
+        self.text = fixture["text"]
+        Image.new("RGB", (fixture["width"], fixture["height"]), fixture["color"]).save(
+            self.bundle / fixture["contactSheet"])
+        self.manifest = {"contactSheet": fixture["contactSheet"], "keyframes": []}
         self.adapter = Adapter("/installed/apparent")
+
+    def open_result_image(self, value):
+        encoded = value["content"][1]["image_url"]["url"].split(",")[1]
+        return Image.open(io.BytesIO(base64.b64decode(encoded)))
 
     def inspect_local(self, manifest=None, frame=None):
         with patch("apparent_plugin.adapter.execute", side_effect=[
-            "Fix the red button", json.dumps(self.manifest if manifest is None else manifest),
+            self.text, json.dumps(self.manifest if manifest is None else manifest),
         ]):
             return self.adapter.inspect(str(self.bundle), frame)
 
@@ -96,8 +103,8 @@ class InspectionTests(unittest.TestCase):
         before = (self.bundle / "contact-sheet.png").read_bytes()
         value = self.inspect_local()
         self.assertTrue(value["_multimodal"])
-        self.assertIn("Fix the red button", value["content"][0]["text"])
-        with Image.open(io.BytesIO(base64.b64decode(value["content"][1]["image_url"]["url"].split(",")[1]))) as image:
+        self.assertIn(self.text, value["content"][0]["text"])
+        with self.open_result_image(value) as image:
             red, green, blue = image.getpixel((100, 50))
             self.assertGreater(red, 240)
             self.assertLess(green + blue, 20)
@@ -150,7 +157,7 @@ class InspectionTests(unittest.TestCase):
     def test_image_limits_bound_input_dimensions_and_returned_pixels(self):
         Image.new("RGB", (2400, 1200)).save(self.bundle / "wide.png")
         value = result("Instructions", self.bundle, "wide.png")
-        with Image.open(io.BytesIO(base64.b64decode(value["content"][1]["image_url"]["url"].split(",")[1]))) as image:
+        with self.open_result_image(value) as image:
             self.assertEqual(image.size, (1600, 800))
         for name, data in (("broken.png", b"broken"), ("large.png", b"x" * (8 * 1024 * 1024 + 1))):
             (self.bundle / name).write_bytes(data)
@@ -184,7 +191,7 @@ class InspectionTests(unittest.TestCase):
         self.assertIn(capture, value["text_summary"])
         self.assertTrue(snapshots)
         self.assertFalse(snapshots[0].exists())
-        with Image.open(io.BytesIO(base64.b64decode(value["content"][1]["image_url"]["url"].split(",")[1]))) as image:
+        with self.open_result_image(value) as image:
             self.assertEqual(image.size, (200, 100))
 
     def test_connect_download_failure_cleans_snapshot_without_inspection(self):

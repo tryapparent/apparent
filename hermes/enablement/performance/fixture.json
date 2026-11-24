@@ -1,0 +1,31 @@
+{
+  "text": "Fix the red button",
+  "contactSheet": "contact-sheet.png",
+  "width": 200,
+  "height": 100,
+  "color": "red",
+  "bundle": {
+    "version": 1,
+    "id": "synthetic-hermes-inspection",
+    "createdAtMs": 0,
+    "durationMs": 1000,
+    "target": {
+      "mode": "display",
+      "displayId": 0,
+      "frame": { "x": 0, "y": 0, "width": 200, "height": 100, "scale": 1 }
+    },
+    "strokes": [],
+    "marks": [],
+    "events": [
+      {
+        "kind": "note",
+        "t": 500,
+        "pin": 1,
+        "x": 0.5,
+        "y": 0.5,
+        "text": "Synthetic button context"
+      }
+    ],
+    "keyframes": []
+  }
+}
