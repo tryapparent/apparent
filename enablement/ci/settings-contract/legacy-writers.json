@@ -7,6 +7,5 @@
   "capture/desktop/workflow/notes/audio.rs\texecute\tupdate_config_allowed_in\t<transaction>",
   "connect/hosted.rs\tset_cloud_allowed\tupdate_config_allowed_in\t<transaction>",
   "connect/hosted.rs\tset_experiment\tupdate_config_allowed_in\t<transaction>",
-  "shared/handoff/mod.rs\tset_experiment_in\tupdate_config_in\t<transaction>",
   "shared/handoff/pen.rs\tpersist\tset_config_value_in\tpenColor"
 ]

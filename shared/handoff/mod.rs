@@ -1139,7 +1139,7 @@ pub fn pill_style() -> crate::capture::desktop::native::pill::PillStyle {
         .unwrap_or(crate::capture::desktop::native::pill::PillStyle::Black)
 }
 
-/// Change one experiment without replacing unrelated flags or secret-bearing config keys.
+#[cfg(test)]
 pub(crate) fn set_experiment_in(path: &Path, name: &str, on: bool) -> Result<()> {
     update_config_in(path, |config| {
         let experiments = config

@@ -159,10 +159,10 @@ pub(crate) fn desktop_access(activate: bool) -> &'static str {
         std::fs::write(&path, r#"{"experiments":{"other":true,"pillDoodles":"off"}}"#).unwrap();
         assert_eq!(facts(&path)["pillDoodlesSaved"], false);
         for enabled in [true, false] {
-            let response = request(&path, 1, Some(enabled), Some(crate::capture::desktop::ui::electron_pill::PILL_DOODLES));
+            let response = request(&path, 1, Some(enabled), Some("pillDoodles"));
             assert_eq!(response["facts"]["pillDoodlesSaved"], enabled);
             let config = crate::shared::handoff::load_config_from(&path);
-            assert_eq!(config.experiments.get(crate::capture::desktop::ui::electron_pill::PILL_DOODLES), Some(&enabled));
+            assert_eq!(config.experiments.get("pillDoodles"), Some(&enabled));
             assert!(crate::shared::handoff::experiment_enabled_in(&config, "other"));
         }
     }

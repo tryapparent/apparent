@@ -232,7 +232,6 @@ pub(crate) fn capture_exclusion_ready(window: Option<u32>, applied: &[u32], scre
     !screen_capture || window.is_some_and(|id| id > 0 && applied.contains(&id))
 }
 
-pub(in crate::capture::desktop) const PILL_DOODLES: &str = "pillDoodles";
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
