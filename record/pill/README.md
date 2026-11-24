@@ -27,6 +27,11 @@ leaves the policy instance and its capture untouched.
 
 ## Microphone activity
 
+The active Electron pill shows icons for capture switches and Whiteboard. The
+red square in the microphone meter finishes the recording when Finish is
+available, and the trailing cross cancels. The left gutter supports dragging
+when the owner enables it. The timer remains available to the native fallback.
+
 The Electron recording pill shows Soft Bloom around the recording dot when
 the capture supplies microphone history. The newest captured sample drives
 its size. Quiet and expired samples hold the last size. Reduced Motion uses
