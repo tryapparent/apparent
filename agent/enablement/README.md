@@ -42,9 +42,10 @@ removed before return. No app restart, activation, publication or release occurs
 ## Local inspect performance
 
 From the repository root, point both arguments at the same clean release build
-to freeze a control. For a comparison, pass the incumbent first and candidate
-second. Use a CPU whose physical core and SMT sibling are quiet throughout the
-run.
+for a local diagnostic replay. For a paired replay, pass the incumbent first
+and candidate second. Pin the process to a quiet CPU and keep its visible SMT
+peers quiet. Local receipts identify the venue and leave the campaign score
+empty.
 
 ```sh
 job=$(mktemp -d /tmp/apparent-dev-agent-inspect-XXXXXX)
@@ -76,7 +77,7 @@ referenced sheet and spoken-keyframe PNGs. The endpoint is invocation through
 complete, verified stdout and successful process exit. The ABBA comparison
 uses equal-weight per-case medians across 11 new processes per block with warm
 input pages. Two control medians provide the same-build noise estimate. A
-qualified same-build control scores 100. CPU time, peak RSS, disk output
+qualified hosted same-build control scores 100. CPU time, peak RSS, disk output
 blocks and immutable bundle bytes are reported separately. Blocks with measured interference
 above 10% on the measured CPU or its SMT sibling during or around the block are retained as unqualified.
 
@@ -105,3 +106,37 @@ It uses retained pixels and does not exercise a live capture, Connect, Agent
 Context experiments, Hermes, or the packaged zoom and frames providers. The
 journey's local CLI scenario and the existing [packaged extraction checks](../../capture/agent/media/README.md)
 cover additional boundaries.
+
+
+### Hosted campaign runs
+
+The shared manual performance workflow dispatches Agent on a standard public
+GitHub-hosted Ubuntu 24.04 x64 runner. In the gateway, select the Agent stream
+and supply full reviewed `control` and `candidate` commit SHAs. Equal SHAs run
+calibration alone. The gateway invokes this owner entry point with detached
+checkouts and a private evidence directory.
+
+```sh
+node agent/enablement/performance/hosted.ts   /absolute/control-checkout /absolute/candidate-checkout /absolute/evidence
+```
+
+The gateway provides Node 22.23.0 and the complete checkouts. The adapter stages
+the locked release CLI and adjacent native libraries from each input. It installs
+the existing Ubuntu prerequisites, bpftrace, Rust 1.99.1, and Bun 1.3.10. It uses
+a new synthetic demo corpus from the control for both runs, then performs
+A/A/A/A calibration followed by A/B/B/A when the revisions differ.
+
+The adapter records CPU affinity, effective cgroup quota, guest-reported SMT
+peer sets and kernel pressure. The scheduler and steal counters describe the
+guest-visible CPUs. Hypervisor topology beyond those counters is unavailable.
+Before scoring, the adapter pins a competing subprocess to the selected CPU
+and requires the same contention guard to reject it. The worker exits before
+calibration. Both batches use the selected CPU and its guest-visible peers
+with the existing 10% guard. A missing native probe or failed resource,
+output or contention guard exits nonzero and retains the available evidence.
+
+The evidence directory contains exact command arguments, build logs, CPU
+admission and contention proof, receipts and monotonic trace waterfalls.
+The gateway uploads the available evidence even for a rejected run. Build
+outputs and synthetic source fixtures are disposable. Previous Clanker
+measurements are diagnostic history.
