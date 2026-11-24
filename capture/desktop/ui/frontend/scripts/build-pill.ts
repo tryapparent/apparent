@@ -23,6 +23,17 @@ try {
    },
   }],
  });
+ await build({
+  entryPoints: [join(root, 'record/transcription/src/openrouter.ts')],
+  outfile: fileURLToPath(new URL('../electron/settings/openrouter.cjs', import.meta.url)),
+  bundle: true, platform: 'node', format: 'cjs', target: 'node22',
+  plugins: [{
+   name: 'record-openrouter-policy',
+   setup(builder) {
+    builder.onResolve({filter: /caption-admission\.mjs$/}, () => ({path: join(captionBuild, 'caption-admission.mjs')}));
+   },
+  }],
+ });
 } finally {
  await rm(captionBuild, {recursive: true, force: true});
 }
@@ -35,7 +46,7 @@ await build({entryPoints:[fileURLToPath(new URL('../../../../../composition/hand
 // No native compiler, Electron API or renderer is a dependency of this worker.
 const completion = new URL('../electron/record-completion/', import.meta.url);
 const recordSources = ['completion', 'transcription'].flatMap(owner=>['policy', 'worker'].map(name=>fileURLToPath(new URL(`../../../../../record/${owner}/src/${name}.ts`,import.meta.url))));
-const program = ts.createProgram([...recordSources,fileURLToPath(new URL('../electron/pill/diagnostics.cts',import.meta.url)),fileURLToPath(new URL('../../../../../composition/handoff/main/entry.ts',import.meta.url))],{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.NodeNext,moduleResolution:ts.ModuleResolutionKind.NodeNext,
+const program = ts.createProgram([...recordSources,join(root, "record/transcription/src/openrouter.ts"),fileURLToPath(new URL('../electron/pill/diagnostics.cts',import.meta.url)),fileURLToPath(new URL('../../../../../composition/handoff/main/entry.ts',import.meta.url))],{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.NodeNext,moduleResolution:ts.ModuleResolutionKind.NodeNext,
  strict:true,skipLibCheck:true,noEmit:true,allowImportingTsExtensions:true,types:['node'],typeRoots:[fileURLToPath(new URL('../node_modules/@types',import.meta.url))]});
 const diagnostics=ts.getPreEmitDiagnostics(program);
 if(diagnostics.length)throw Error(ts.formatDiagnosticsWithColorAndContext(diagnostics,{getCanonicalFileName:f=>f,getCurrentDirectory:()=>process.cwd(),getNewLine:()=> '\n'}));

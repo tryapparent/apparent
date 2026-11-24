@@ -44,6 +44,12 @@ class SettingsPane extends HTMLElement {
   }
 
   private renderPushToTalkExperiment?: PushToTalkExperiment;
+  private renderOpenRouterExperiment?: React.ComponentType;
+  set openRouterExperiment(component: React.ComponentType | undefined) {
+    this.renderOpenRouterExperiment = component;
+    this.renderPane();
+  }
+
   private renderPillDoodlesExperiment?: LabsExperiment<boolean | null | undefined>;
 
   set pillDoodlesExperiment(component: LabsExperiment<boolean | null | undefined> | undefined) {
@@ -76,7 +82,7 @@ class SettingsPane extends HTMLElement {
   private renderPane() {
     const pane = this.getAttribute("pane");
     this.root?.render(pane === "Agents" ? <Agents /> :
-      pane === "Labs" ? <Labs speakingStyleExperiment={this.renderSpeakingStyleExperiment} circleLabelsExperiment={this.renderCircleLabelsExperiment} frogExperiment={this.renderFrogExperiment} desktopFrogExperiment={this.renderDesktopFrogExperiment} agentContextExperiment={this.renderAgentContextExperiment} autoPasteExperiment={this.renderAutoPasteExperiment} pushToTalkExperiment={this.renderPushToTalkExperiment} pillDoodlesExperiment={this.renderPillDoodlesExperiment} /> : <Storage settings />);
+      pane === "Labs" ? <Labs openRouterExperiment={this.renderOpenRouterExperiment} speakingStyleExperiment={this.renderSpeakingStyleExperiment} circleLabelsExperiment={this.renderCircleLabelsExperiment} frogExperiment={this.renderFrogExperiment} desktopFrogExperiment={this.renderDesktopFrogExperiment} agentContextExperiment={this.renderAgentContextExperiment} autoPasteExperiment={this.renderAutoPasteExperiment} pushToTalkExperiment={this.renderPushToTalkExperiment} pillDoodlesExperiment={this.renderPillDoodlesExperiment} /> : <Storage settings />);
   }
 }
 

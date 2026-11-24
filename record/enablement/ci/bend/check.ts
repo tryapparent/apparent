@@ -13,6 +13,7 @@ import { actionContextTable } from "./action-context-table.ts";
 import { repairTable } from "./permission-table.ts";
 import { admissionSource, buildAdmission } from "./build.ts";
 import { checkCaptureAdmission } from "./capture-request/check.ts";
+import { checkCaptionPolicies } from "./native/final-stream.ts";
 import { assemblePill } from "./pill.ts";
 
 import { gestureTable, gestureTablePath } from "./note-gesture.ts";
@@ -346,28 +347,7 @@ await bendScratch(async (scratch) => {
       ),
     ),
   );
-  run(
-    process.execPath,
-    [
-      "--input-type=module",
-      "-e",
-      `
-    import assert from "node:assert/strict";
-    import recording from "./recording-policy.mjs";
-    import captions from "./caption-admission.mjs";
-    for (const available of [false, true]) {
-      for (const saved of [false, true]) {
-        assert.equal(captions.preview_allowed(saved, available), saved && available);
-        assert.equal(recording.volume_switch_enabled(available, saved), available || saved);
-        assert.equal(recording.volume_level_enabled(available, saved), available && saved);
-        assert.equal(recording.transcription_detail(false, saved, available), available || saved ? 1 : 0);
-        assert.equal(recording.transcription_detail(true, saved, available), 2);
-      }
-    }
-  `,
-    ],
-    proofOutput,
-  );
+  checkCaptionPolicies(proofOutput);
   const pill = join(scratch, "record-pill.mjs");
   assemblePill(proofOutput, pill);
   const stateTest = join(scratch, "state-cases.ts");

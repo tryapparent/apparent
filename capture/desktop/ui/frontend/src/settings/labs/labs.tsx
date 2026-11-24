@@ -18,7 +18,8 @@ export type LabsExperiment<Checked = boolean> = ComponentType<{
 }>;
 export type AutoPasteExperiment = ComponentType<React.ComponentProps<LabsExperiment> & {supported: boolean}>;
 export type PushToTalkExperiment = ComponentType<React.ComponentProps<LabsExperiment> & {supported?: boolean}>;
-export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: FrogNudge, desktopFrogExperiment: DesktopFrog, agentContextExperiment: AgentContext, circleLabelsExperiment: CircleLabels, autoPasteExperiment: AutoPaste, pushToTalkExperiment: PushToTalk, pillDoodlesExperiment: PillDoodles}: {
+export function Labs({openRouterExperiment: OpenRouter, speakingStyleExperiment: SpeakingStyle, frogExperiment: FrogNudge, desktopFrogExperiment: DesktopFrog, agentContextExperiment: AgentContext, circleLabelsExperiment: CircleLabels, autoPasteExperiment: AutoPaste, pushToTalkExperiment: PushToTalk, pillDoodlesExperiment: PillDoodles}: {
+  openRouterExperiment?: ComponentType;
   speakingStyleExperiment?: LabsExperiment;
   frogExperiment?: LabsExperiment;
   desktopFrogExperiment?: LabsExperiment;
@@ -87,6 +88,7 @@ export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: Fr
       <p id="local-stream-help">See a live preview of your English speech below the recording controls. The saved transcript is generated separately on this computer.</p>
       <p id="local-stream-ready">Enabling downloads any missing speech models. Live text starts on the next recording after the models are ready.</p>
     </section>
+    {OpenRouter && <OpenRouter />}
     {SpeakingStyle && <SpeakingStyle id={controls.speakingStyle} checked={facts?.speakingStyleSaved === true}
       disabled={busy || !facts || !!facts.error} saving={busy && setting === 'speakingStyle'}
       onCheckedChange={value => void request(value, 'speakingStyle')} />}
