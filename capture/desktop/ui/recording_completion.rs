@@ -76,6 +76,19 @@ pub(in crate::capture::desktop) fn finalize(
         Ok(audio) => audio,
         Err(error) => return (Err(error).stage(Stage::AudioStop), duration_ms),
     };
+    #[cfg(target_os = "linux")]
+    let _saved_wav = recorded_audio.as_ref().and_then(|audio| audio.saved_lease.as_ref())
+        .filter(|lease| lease.saved_wav().is_some()).cloned();
+    #[cfg(target_os = "linux")]
+    let _capture_guard = if let Some(dir) = stopped.storage_dir.as_ref() {
+        let audio = _saved_wav.as_deref().and_then(|lease| lease.saved_wav());
+        match crate::capture::engine::bundle::bundle_processing::publication::coordinate_captured(&bundle_dir, dir, audio) {
+            Ok(guard) => Some(guard),
+            Err(error) => return (Err(error).stage(Stage::PublicationCoordinate), duration_ms),
+        }
+    } else {
+        None
+    };
     let finalized = complete_bundle(&bundle_dir, &final_whiteboard, sampling, || {
         if let Some(receipt) = notes_finished {
             if let Err(error) = receipt

@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use transcribe_cpp::{Model, RunOptions, TimestampKind};
@@ -18,6 +17,10 @@ pub(super) use parakeet::{Incremental, RecognitionPhase};
 mod artifacts;
 pub use artifacts::{Artifact, PARAKEET};
 pub(super) use artifacts::preferred_parakeet;
+
+#[cfg(target_os = "linux")]
+#[path = "../../../../../engine/recording/model-cache/resident_final.rs"]
+pub(super) mod resident_final;
 
 fn models_dir() -> PathBuf {
     crate::shared::hex::support_dir().join("models")
@@ -102,7 +105,14 @@ fn model_name(path: &Path) -> String {
 }
 
 pub fn transcribe(audio: &Path) -> Result<TranscriptData> {
-    let Some(path) = installed_models().into_iter().next() else {
+    let path = installed_models().into_iter().next();
+    #[cfg(target_os = "linux")]
+    if let Some(model) = resident_final::selected(path.is_some()) {
+        let transcript = transcribe_model(audio, &model)?;
+        anyhow::ensure!(!transcript.estimated, "Resident speech model lacks measured word times");
+        return Ok(transcript);
+    }
+    let Some(path) = path else {
         // The background download hasn't finished (or failed): the bundle is transcribed again
         // once it has.
         let status = crate::capture::engine::runtime::audio::transcription::speech_model::current();
@@ -223,75 +233,12 @@ pub(super) fn init_backends() -> Result<()> {
     .map_err(|error| anyhow::anyhow!("transcribe.cpp backends: {error}"))
 }
 
-/// Makes sure a model is on disk: `installed` when Hex's or Apparent's own is there, else downloads
-/// `PARAKEET` into `own_models_dir()`, reporting progress, and keeps it only if its SHA-256
-/// matches. The same lines as macOS's `apparent-helper speech-model --install`.
+#[cfg(target_os = "linux")]
 pub use artifacts::install;
 
 #[path = "../../../../../engine/recording/model-cache/download.rs"]
 mod model_cache;
 pub use model_cache::download;
-
-/// Fetches `url` into `partial` (resuming it), reporting how much of `total` has arrived.
-fn fetch(url: &str, partial: &Path, total: u64, progress: &mut dyn FnMut(f64)) -> Result<()> {
-    use std::io::Read;
-    let (program, mut child) = spawn_fetch(url, partial)?;
-    loop {
-        if let Some(status) = child.try_wait()? {
-            if status.success() {
-                progress(1.0);
-                return Ok(());
-            }
-            let mut error = String::new();
-            if let Some(mut stderr) = child.stderr.take() {
-                let _ = stderr.read_to_string(&mut error);
-            }
-            bail!("the download failed ({program}, {status}): {}", error.trim());
-        }
-        let have = std::fs::metadata(partial).map_or(0, |m| m.len());
-        progress((have as f64 / total as f64).min(0.99));
-        std::thread::sleep(Duration::from_millis(500));
-    }
-}
-
-const CURL_ARGS: [&str; 9] = [
-    "--fail",
-    "--location",
-    "--silent",
-    "--show-error",
-    "--retry",
-    "3",
-    "--continue-at",
-    "-",
-    "--output",
-];
-
-/// macOS supplies curl; Linux can also use wget when curl is unavailable.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-fn spawn_fetch(url: &str, partial: &Path) -> Result<(String, std::process::Child)> {
-    let mut command = if crate::shared::handoff::on_path("curl").is_some() {
-        let mut command = std::process::Command::new("curl");
-        command.args(CURL_ARGS).arg(partial).arg(url);
-        command
-    } else if crate::shared::handoff::on_path("wget").is_some() {
-        let mut command = std::process::Command::new("wget");
-        command
-            .args(["--quiet", "--continue", "--tries=3", "--output-document"])
-            .arg(partial)
-            .arg(url);
-        command
-    } else {
-        bail!("downloading the speech model needs curl or wget");
-    };
-    let program = command.get_program().to_string_lossy().into_owned();
-    let child = command
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .with_context(|| format!("Could not run {program}"))?;
-    Ok((program, child))
-}
 
 #[cfg(test)]
 mod tests {

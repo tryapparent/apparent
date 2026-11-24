@@ -63,12 +63,37 @@ pub(crate) fn preference(
 pub(crate) struct DisplaySelection {
     stop: Arc<AtomicBool>,
     #[cfg(target_os = "linux")]
-    receiver: flume::Receiver<anyhow::Result<Display>>,
+    receiver: flume::Receiver<anyhow::Result<SelectedDisplay>>,
     #[cfg(target_os = "macos")]
     picker: super::macos_picker::PendingDisplay,
 }
 
-type Display = (crate::shared::model::TargetInfo, super::PreparedSource);
+pub(crate) struct SelectedDisplay {
+    pub(crate) target: crate::shared::model::TargetInfo,
+    pub(crate) source: super::PreparedSource,
+    #[cfg(target_os = "linux")]
+    pub(crate) storage: Option<super::ChooserStorage>,
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for DisplaySelection {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn select_linux(stop: &AtomicBool) -> anyhow::Result<SelectedDisplay> {
+    std::thread::scope(|scope| {
+        let store = std::thread::Builder::new()
+            .name("apparent-chooser-storage".into())
+            .spawn_scoped(scope, super::ChooserStorage::prepare_for_chooser);
+        let result = crate::capture::desktop::linux::portal::choose_display(stop);
+        let storage = store.ok().and_then(|job| job.join().ok()).flatten();
+        let (target, source) = result?;
+        Ok(SelectedDisplay { target, source, storage })
+    })
+}
 
 impl DisplaySelection {
     pub(crate) fn begin(#[cfg(target_os = "macos")] excluded_windows: &[u32]) -> Option<Self> {
@@ -95,7 +120,7 @@ impl DisplaySelection {
             std::thread::Builder::new()
                 .name("apparent-display-picker".into())
                 .spawn(move || {
-                    let result = crate::capture::desktop::linux::portal::choose_display(&worker);
+                    let result = select_linux(&worker);
                     drop(worker);
                     let _ = sender.send(result);
                 })?;
@@ -115,7 +140,7 @@ impl DisplaySelection {
     pub(crate) async fn acquire<F: Future<Output = ()>>(
         self,
         wait: impl FnMut() -> F,
-    ) -> Option<Display> {
+    ) -> Option<SelectedDisplay> {
         let result = self.receive(wait).await;
         result.unwrap_or_else(|error| {
             crate::capture::engine::runtime::apparent_log(format!(
@@ -128,14 +153,15 @@ impl DisplaySelection {
     async fn receive<F: Future<Output = ()>>(
         self,
         wait: impl FnMut() -> F,
-    ) -> anyhow::Result<Option<Display>> {
+    ) -> anyhow::Result<Option<SelectedDisplay>> {
         #[cfg(target_os = "linux")]
         let result = {
             let _ = wait;
             self.receiver.recv_async().await?.map(Some)
         };
         #[cfg(target_os = "macos")]
-        let result = self.picker.choose(&self.stop, wait).await;
+        let result = self.picker.choose(&self.stop, wait).await
+            .map(|selected| selected.map(|(target, source)| SelectedDisplay { target, source }));
         if self.stop.load(Ordering::Acquire) {
             return Ok(None);
         }

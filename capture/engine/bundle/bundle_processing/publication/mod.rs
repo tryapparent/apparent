@@ -37,15 +37,27 @@ struct Lease {
     // Closing this descriptor releases flock after the last owning-thread guard.
     _lock: File,
     root: Metadata,
+    recorded_audio: std::cell::OnceCell<Metadata>,
 }
 
 pub fn coordinate(path: &Path) -> Result<Coordination> {
+    coordinate_with_directory(path, None)
+}
+
+fn coordinate_with_directory(path: &Path, pinned: Option<&File>) -> Result<Coordination> {
     let path = fs::absolute(path)?;
     if let Some(lease) = HELD.with(|held| held.borrow().get(&path).and_then(Weak::upgrade)) {
         check_lease(&path, &lease)?;
+        if let Some(pinned) = pinned {
+            ensure!(fs::same_directory(&lease.root, &pinned.metadata()?), "capture directory differs from publication");
+        }
         return Ok(Coordination { path, lease });
     }
-    let root = Directory::open(&path, true)?;
+    let root = if let Some(pinned) = pinned {
+        Directory(pinned.try_clone()?)
+    } else {
+        Directory::open(&path, true)?
+    };
     let lock = root.leaf(LOCK, true)?;
     // SAFETY: live owned descriptor. flock works on Linux and macOS.
     if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) } != 0 {
@@ -63,12 +75,29 @@ pub fn coordinate(path: &Path) -> Result<Coordination> {
     let lease = Rc::new(Lease {
         _lock: lock,
         root: metadata,
+        recorded_audio: std::cell::OnceCell::new(),
     });
     HELD.with(|held| {
         held.borrow_mut()
             .insert(path.clone(), Rc::downgrade(&lease))
     });
     Ok(Coordination { path, lease })
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn coordinate_captured(
+    path: &Path,
+    pinned: &File,
+    audio: Option<&Metadata>,
+) -> Result<Coordination> {
+    let guard = coordinate_with_directory(path, Some(pinned))?;
+    if let Some(audio) = audio {
+        let root = Directory(pinned.try_clone()?);
+        ensure!(fs::same(audio, &root.file("audio.wav")?.metadata()?), "recorded audio was replaced or modified");
+        let bound = guard.lease.recorded_audio.get_or_init(|| audio.clone());
+        ensure!(fs::same(bound, audio), "publication already owns different recorded audio");
+    }
+    Ok(guard)
 }
 
 fn check_lease(path: &Path, lease: &Lease) -> Result<()> {
@@ -176,6 +205,9 @@ fn checked_with(
     let root = Directory::open(path, false)?;
     let before = root.0.metadata()?;
     let inventory = validate::Inventory::read(&root).stage(Stage::PublicationValidate)?;
+    if let Some(expected_audio) = guard.lease.recorded_audio.get() {
+        inventory.check_recorded_audio(expected_audio).stage(Stage::PublicationValidate)?;
+    }
     let manifest = inventory.validate(path, expected, summary).stage(Stage::PublicationValidate)?;
     after_validation()?;
     check_lease(path, &guard.lease)?;
@@ -230,6 +262,43 @@ pub(crate) fn preflight_sources(path: &Path, video: Option<&Path>) -> Result<()>
         root.file("audio.wav")?;
     }
     Ok(())
+}
+
+pub(super) fn sync_movie_while<T>(
+    path: &Path,
+    movie: Option<&Path>,
+    assemble: impl FnOnce() -> Result<T>,
+) -> Result<T> {
+    let Some(movie) = movie.filter(|_| cfg!(target_os = "linux")) else {
+        return assemble();
+    };
+    let (root, leaf, file, before) = (|| {
+        ensure!(movie.parent() == Some(path), "movie is outside its bundle");
+        let leaf = movie.file_name().and_then(|name| name.to_str()).context("invalid movie name")?;
+        let root = Directory::open(path, false)?;
+        let file = root.leaf(leaf, false)?;
+        let before = file.metadata()?;
+        Ok((root, leaf, file, before))
+    })().stage(Stage::PublicationSync)?;
+    std::thread::scope(|scope| {
+        let Ok(worker) = std::thread::Builder::new().spawn_scoped(scope, || file.sync_all()) else {
+            return assemble();
+        };
+        let assembled = assemble();
+        let synced = worker.join();
+        let output = assembled?;
+        (|| {
+            synced.map_err(|_| anyhow::anyhow!("Movie durability worker panicked"))??;
+            let current = root.leaf(leaf, false)?.metadata()?;
+            ensure!(
+                fs::same(&before, &file.metadata()?)
+                    && fs::same(&before, &current),
+                "movie changed while syncing during assembly"
+            );
+            Ok(())
+        })().stage(Stage::PublicationSync)?;
+        Ok(output)
+    })
 }
 
 /// Write already encoded images without pathname traversal or symlink writes.

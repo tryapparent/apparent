@@ -20,6 +20,12 @@ pub(super) struct Inventory {
     directories: BTreeMap<String, (Directory, Metadata)>,
 }
 impl Inventory {
+    pub(super) fn check_recorded_audio(&self, expected: &Metadata) -> Result<()> {
+        let audio = self.files.get("audio.wav").context("recorded audio is missing")?;
+        ensure!(fs::same(expected, &audio.metadata), "recorded audio was replaced or modified");
+        Ok(())
+    }
+
     pub fn read(root: &Directory) -> Result<Self> {
         let mut result = Self {
             files: BTreeMap::new(),

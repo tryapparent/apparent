@@ -40,6 +40,8 @@ impl ScreenCaptureSession {
             frames: Arc::new(Mutex::new(CandidateBuffer::new(1 << 20))),
             real_frame_seen: Arc::clone(&seen), startup_failed: Arc::clone(&failed),
             video_offset_ms: Arc::new(AtomicU64::new(0)), sampler_thread: Some(worker),
+            #[cfg(target_os = "linux")]
+            storage_dir: None,
             _recording: crate::capture::engine::bundle::retention::Recording::start(),
         }, failed, seen)
     }
@@ -106,6 +108,8 @@ fn synthetic_candidate_does_not_make_agent_capture_ready() {
         #[cfg(target_os = "macos")]
         native_stop: None,
         sampler_thread: None,
+        #[cfg(target_os = "linux")]
+        storage_dir: None,
         _recording: crate::capture::engine::bundle::retention::Recording::start(),
     };
     assert!(
@@ -146,6 +150,8 @@ fn transient_screenshot_failure_retries_to_readiness_and_finalization() {
             #[cfg(target_os = "macos")]
             native_stop: None,
             sampler_thread: Some(worker),
+            #[cfg(target_os = "linux")]
+            storage_dir: None,
             _recording: crate::capture::engine::bundle::retention::Recording::start(),
         };
         session.frames.lock().unwrap().set_sampling_route(Route::Screenshot);
@@ -209,6 +215,8 @@ fn pending_worker_is_not_failed_and_terminal_signal_does_not_discard_it() {
         #[cfg(target_os = "macos")]
         native_stop: None,
         sampler_thread: Some(worker),
+        #[cfg(target_os = "linux")]
+        storage_dir: None,
         _recording: crate::capture::engine::bundle::retention::Recording::start(),
     };
     assert!(!session.failed_to_start(), "a pending producer is not an error");
@@ -257,6 +265,8 @@ fn screen_stop_joins_worker_before_collecting_its_final_media() {
         #[cfg(target_os = "macos")]
         native_stop: None,
         sampler_thread: Some(worker),
+        #[cfg(target_os = "linux")]
+        storage_dir: None,
         _recording: crate::capture::engine::bundle::retention::Recording::start(),
     };
     let recording = session.stop();
@@ -336,6 +346,8 @@ fn stopped_capture_without_real_frames_retains_sampling_diagnostics() {
         #[cfg(target_os = "macos")]
         native_stop: None,
         sampler_thread: None,
+        #[cfg(target_os = "linux")]
+        storage_dir: None,
         _recording: crate::capture::engine::bundle::retention::Recording::start(),
     };
     session.frames.lock().unwrap().set_sampling_route(Route::SystemPicker);

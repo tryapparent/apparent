@@ -1,8 +1,36 @@
+use super::FrameRef;
 use crate::shared::model::RgbaFrame;
 
 const THUMB_WIDTH: usize = 64;
 const THUMB_HEIGHT: usize = 36;
 pub(super) const THUMB_PIXELS: usize = THUMB_WIDTH * THUMB_HEIGHT;
+
+pub(super) fn luma_thumbnails(frames: &[FrameRef<'_>]) -> Vec<[f32; THUMB_PIXELS]> {
+    if frames.len() >= 128 {
+        let chunk_size = frames.len().div_ceil(6).max(1);
+        std::thread::scope(|scope| {
+            let workers: Vec<_> = frames
+                .chunks(chunk_size)
+                .map(|chunk| {
+                    scope.spawn(move || -> Vec<[f32; THUMB_PIXELS]> {
+                        chunk.iter().map(|frame| frame.with_rgba(None, luma_thumbnail)).collect()
+                    })
+                })
+                .collect();
+            let mut out = Vec::with_capacity(frames.len());
+            for worker in workers {
+                out.extend(worker.join().unwrap());
+            }
+            out
+        })
+    } else {
+        let mut scratch = Vec::new();
+        frames
+            .iter()
+            .map(|frame| frame.with_rgba(Some(&mut scratch), luma_thumbnail))
+            .collect()
+    }
+}
 
 pub(super) fn luma_thumbnail(frame: &RgbaFrame) -> [f32; THUMB_PIXELS] {
     let mut thumbnail = [0.0; THUMB_PIXELS];
