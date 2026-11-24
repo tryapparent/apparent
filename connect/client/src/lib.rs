@@ -23,6 +23,7 @@ mod policy;
 use policy::*;
 mod encryption;
 mod foreground;
+use foreground::{canonical_query, validate_share_url};
 mod activity;
 #[cfg(target_os = "linux")]
 pub use encryption::support::check_support_peer;
@@ -109,6 +110,15 @@ pub enum ConnectCommand {
     },
     #[command(about = "List local Connect read profiles and authorization status")]
     Readers,
+    #[command(about = "List recent recordings for one Connect reader")]
+    List {
+        #[arg(long)]
+        reader: Option<String>,
+        #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u8).range(1..=50))]
+        limit: u8,
+        #[arg(long)]
+        json: bool,
+    },
     /// Disable automatic uploads and cancel pending jobs, retaining credentials.
     Disable,
     /// Retry failed queued captures. Does not discover or upload old captures.
@@ -192,6 +202,8 @@ struct Job {
     server: String,
     generation: String,
     created: u64,
+    #[serde(default)]
+    recorded_at_ms: Option<u64>,
     attempts: u32,
     next_attempt: u64,
     status: String,
@@ -246,41 +258,6 @@ fn hex_digest(s: &str) -> bool {
     s.len() == 64
         && s.bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-}
-
-fn validate_share_url(server: &str, url: &str) -> Result<()> {
-    ensure!(
-        url.strip_prefix(&format!("{server}/s/"))
-            .is_some_and(hex_digest),
-        "Invalid share URL"
-    );
-    Ok(())
-}
-
-fn canonical_query(query: &str) -> bool {
-    if query.is_empty() || query.len() > 12_288 {
-        return false;
-    }
-    let bytes = query.as_bytes();
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == b'%' {
-            if index + 2 >= bytes.len()
-                || !bytes[index + 1].is_ascii_hexdigit()
-                || !bytes[index + 2].is_ascii_hexdigit()
-                || bytes[index + 1].is_ascii_lowercase()
-                || bytes[index + 2].is_ascii_lowercase()
-            {
-                return false;
-            }
-            index += 3;
-        } else if bytes[index].is_ascii_alphanumeric() || b"-._~".contains(&bytes[index]) {
-            index += 1;
-        } else {
-            return false;
-        }
-    }
-    true
 }
 
 fn safe_shares_error(message: &str) -> &'static str {
@@ -626,6 +603,7 @@ impl Client {
             self.save_job(&current)?;
             job = current;
         }
+        job.recorded_at_ms = Job::recording_time(&scratch.0);
         let allowed =
             || foreground() && self.provider.experiment(HOSTED_SHARING) && self.share_active(&job);
         let base = format!("/v1/captures/{id}");
@@ -634,7 +612,7 @@ impl Client {
             Some(&credential),
             "POST",
             &base,
-            Some(json!({"files":files})),
+            Some(job.reservation(json!({"files":files}))),
             Duration::from_secs(30),
             &allowed,
         )?;
@@ -938,6 +916,7 @@ impl Client {
         );
         let job = Job {
             id: random_id()?,
+            recorded_at_ms: None,
             bundle,
             server: settings.server,
             generation: credential.generation,
@@ -1679,6 +1658,7 @@ impl Client {
         // Stage a stable snapshot through O_NOFOLLOW handles. Retry the same manifest;
         // changing local media cannot silently mutate an already reserved capture ID.
         let files = snapshot(&job.bundle, &scratch.0)?;
+        job.recorded_at_ms = Job::recording_time(&scratch.0);
         ensure!(
             serde_json::to_vec(&json!({"files": files}))?.len() <= 128 * 1024,
             "invalid_manifest: exceeds v1 request limit"
@@ -1700,7 +1680,7 @@ impl Client {
             Some(&credential),
             "POST",
             &base,
-            Some(json!({"files": files})),
+            Some(job.reservation(json!({"files": files}))),
             Duration::from_secs(30),
             &allowed,
         )?;

@@ -47,6 +47,23 @@ await bendScratch(async (scratch) => {
       directory,
     );
     assert.deepEqual(JSON.parse(style), [12, 1024, true, false, false, false]);
+    const list = run(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `import policy from "./recording-list.mjs";
+        console.log(JSON.stringify([
+          [0, 1, 50, 51].map(policy.valid_limit),
+          [0, 2932896, 2932897].map(policy.valid_recording_day),
+        ]));`,
+      ],
+      directory,
+    );
+    assert.deepEqual(JSON.parse(list), [
+      [false, true, true, false],
+      [true, true, false],
+    ]);
     const reports = run(
       process.execPath,
       [

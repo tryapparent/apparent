@@ -60,9 +60,9 @@ test('speaking style history is opt-in, account bound and newest first',async()=
 });
 
 test('staged migration artifacts retain exact D1 ledger filenames and historical SQL bytes',async()=>{
-  const names=Array.from({length:20},(_,i)=>String(i+1).padStart(4,'0')+'.sql');
+  const names=Array.from({length:21},(_,i)=>String(i+1).padStart(4,'0')+'.sql');
   assert.deepEqual((await readdir('.generated/migrations')).sort(),names);
   for(const [i,name] of names.entries()){
-    assert.deepEqual(await readFile('.generated/migrations/'+name),await readFile('migrations/'+(i<10?'baseline/':'')+name));
+    assert.deepEqual(await readFile('.generated/migrations/'+name),await readFile('migrations/'+(i<10?'baseline/':i===20?'recordings/':'')+name));
   }
 });

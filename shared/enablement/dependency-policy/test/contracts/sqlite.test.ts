@@ -7,6 +7,10 @@ test("Connect migrations classify SQLite comments and quoted tokens", async () =
   const index =
     "CREATE INDEX cleanup ON attempts(cleaned_at, key) WHERE status != '-- literal';";
   assert.deepEqual(await comments(file, index), []);
+  assert.deepEqual(
+    await comments("connect/service/migrations/recordings/0021.sql", index),
+    [],
+  );
   assert.deepEqual(await comments(file, index + " -- comment\n"), [
     "-- comment",
   ]);

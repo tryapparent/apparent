@@ -303,7 +303,7 @@ test('DAU: one consented account, durable upload/share actions, retry and withdr
  const f=await setup({SHARING_ENABLED:'true'});try{
   await f.db.exec((await readFile('.generated/migrations/0003.sql','utf8')).replaceAll('\n',' '));
   // Exercise the actual current migration suffix, as the production ledger does.
-  for(const name of (await readdir('.generated/migrations')).filter(name=>/^\d{4}\.sql$/.test(name)&&Number(name.slice(0,4))>=7&&name!=='0011.sql').sort())await f.db.exec((await readFile('.generated/migrations/'+name,'utf8')).replaceAll('\n',' '));
+  for(const name of (await readdir('.generated/migrations')).filter(name=>name>'0006.sql'&&name!=='0011.sql'&&name!=='0021.sql').sort())await f.db.exec((await readFile('.generated/migrations/'+name,'utf8')).replaceAll('\n',' '));
   const a=await f.identity('one-dau-account');
   const share=path=>f.call(path+'/share',{token:a.token,method:'POST'});
   const before=await upload(f,a,801);assert.equal((await f.call(before+'/complete',{token:a.token,method:'POST'})).status,200);

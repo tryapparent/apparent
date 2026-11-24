@@ -1,11 +1,33 @@
 ---
 name: apparent
-description: Inspect a narrated screen recording to understand a visual bug or UI change the user is showing a coding agent. Match their words to clicks, drawings and annotated frames in an Apparent capture. Use for an `[apparent 0:12 …]` paste, a `.apparent` bundle or its contact-sheet.png, “look at my apparent”, or a screen the user just recorded or drew on. Use the apparent CLI to zoom in, extract frames, copy a capture or export video.
+description: Use when the user invokes /apparent, asks to read their latest Connect recording, or provides an Apparent capture or handoff. Match narration to clicks, drawings and annotated frames to understand what the user is showing.
 ---
 
 # Apparent captures
 
 Apparent records someone's screen, voice, clicks and red ink, then packs the result into a `.apparent` folder (a bundle). They send it to show you a problem instead of describing it, so the capture is the bug report. Read it closely before you answer, and don't ask them to explain again what the capture already shows. If something is unclear, look closer with `apparent zoom` first.
+
+## Open the latest Connect recording
+
+For bare `/apparent` or a request for the latest Connect recording, run
+`apparent connect list --limit 1 --json`. If
+the user names a reader, pass `--reader <name>`. If the CLI reports multiple
+readers, ask which reader to use. If read approval or CLI support is missing,
+report the blocker and offer to inspect an exact capture ID or accessible bundle.
+
+Use the returned `reader` and first capture's `id` together. Report which
+recording you selected and when it was recorded, or say the time is unavailable.
+An empty list means Connect has no current recordings for that reader. A
+`pending` capture is still preparing. Keep its ID selected and tell the user
+its state. A recording queued on the sender's device may be absent from Connect.
+
+When the capture is `ready`, follow the Connect inspection steps below using
+`--reader <returned-reader>`. Open the actual contact sheet and transcript.
+Use selective fetch when supported and keep downloaded evidence in a private
+directory. For `/apparent <capture-id>`, use that exact ID and the existing
+reader selection flow. If the message only invokes the skill, summarize what
+the recording shows and the request you heard. Follow any task the user gave in
+the message using the recording as context.
 
 ## What a paste looks like
 
@@ -50,18 +72,10 @@ Other files: `apparent.json` is the full manifest (keyframes, `marks` with shape
 
 ### Check the build
 
-Run `apparent --version` before diagnosing missing CLI capabilities. Updated builds
-print the embedded identity, for example `apparent 0.3.13 · 2362f2b`, with
-`+modified` for tracked source edits or `build unknown` when no valid revision was
-available at build time. `apparent -V` keeps the package version alone. Compare the
-revision with the intended release's source commit and check that executable's
-`<command> --help`. Version reporting works offline from any directory.
-
-Older releases can print only `apparent 0.3.13` even when their code differs. Resolve
-the executable/link and compare its installation provenance and artifact checksum
-with the intended platform release. To check a separately prepared candidate,
-invoke its absolute executable or extracted-AppImage wrapper path with `--version`.
-Keep the extracted runtime libraries beside it. See the repository's
+Check `apparent --version` and the specific command's `--help` before diagnosing
+missing capabilities. Compare the embedded revision with the intended release.
+Older builds may print only the package version. Resolve the exact executable
+and compare installation provenance and artifact checksum where needed. See
 `capture/agent/docs/installation.md` for platform layouts.
 
 Use `apparent feedback --help` for the command format. If the command is unavailable, keep the draft in chat and check the installed version before sending. A public GitHub issue needs separate approval.
@@ -76,7 +90,10 @@ is explicit: `apparent launch-handler install`; `apparent launch-handler status`
 reads the OS selection. See `capture/desktop/docs/native-launch.md`. Browser timers cannot confirm
 installation or successful opening. Do not change a user's handler to test this.
 
-The Settings controls for recording, shortcuts and retention use `~/.config/apparent/config.json` (`APPARENT_CONFIG` overrides the path). Consult the relevant Apparent owner documentation for config keys, accepted values and platform limitations. Change only the needed key, preserve other keys, and keep the file private (`0600` on Unix): old configs may contain private values. Never paste or print the whole config. A programmatic edit must preserve valid JSON, rather than replacing the file with a partial object. The UI writes changes there; an explicit `"launchAtLogin": true` or `false` also updates OS registration on app launch or within two seconds while it runs. A disabled OS login item can still need the user's approval. Some values (such as captures folder) are read on demand; shortcuts are registered at app startup or when changed through Settings, so restart Apparent after editing `shortcuts` by hand. Permissions are OS grants, not JSON settings; do not claim to enable them by editing this file. Installing the CLI or the agent skill is an installation action, not an app preference.
+Settings uses `~/.config/apparent/config.json`, overridable through
+`APPARENT_CONFIG`. Use the owning documentation for supported keys and when
+changes take effect. Preserve unrelated JSON keys and keep the file private
+(`0600`). Never print the full file. Manage permissions through OS grants.
 
 `apparent` is the installed Apparent app's binary on macOS or Linux. If `command -v apparent` finds nothing on a Mac, use `/Applications/Apparent.app/Contents/MacOS/apparent` (or the same path under `~/Applications`); on Linux, use the installed `~/.local/bin/apparent` link or the AppImage's path. Settings › Agents can install the CLI link without replacing another program. Run the command on the computer with Apparent and access to the bundle; elsewhere, read `contact-sheet.png`, `frames/` and `apparent.json` directly. Most commands take a bundle path or `latest`, the newest capture. Quote paths containing spaces, such as macOS `Application Support` paths.
 
