@@ -50,23 +50,23 @@ try {
   writeFileSync(scenario, `#!/bin/bash
 set -euo pipefail
 umask 077
-cat > "$SCRAWL_GUI_OUTPUT/target.html" <<'APPARENT_HTML'
+cat > "$APPARENT_GUI_OUTPUT/target.html" <<'APPARENT_HTML'
 ${target}
 APPARENT_HTML
-printf '%s\\n' "$DISPLAY" "$WAYLAND_DISPLAY" "$XDG_RUNTIME_DIR" "$TMPDIR" > "$SCRAWL_GUI_OUTPUT/environment.txt"
-hyprctl getoption input:kb_options > "$SCRAWL_GUI_OUTPUT/keyboard-options.txt" 2>&1 || true
-cat /etc/keyd/default.conf >> "$SCRAWL_GUI_OUTPUT/keyboard-options.txt" 2>/dev/null || true
-systemd-inhibit --list --no-pager > "$SCRAWL_GUI_OUTPUT/inhibitors.txt"
-grep -F "$SCRAWL_GUI_IDLE_INHIBITOR" "$SCRAWL_GUI_OUTPUT/inhibitors.txt" >/dev/null
-hyprctl getoption input:kb_layout > "$SCRAWL_GUI_OUTPUT/keyboard-layout.txt"
-grep -x 'str: us' "$SCRAWL_GUI_OUTPUT/keyboard-layout.txt" >/dev/null
-chromium --no-first-run --disable-default-apps --disable-background-networking --password-store=basic --user-data-dir="$TMPDIR/browser" --remote-debugging-port=9222 --start-fullscreen "file://$SCRAWL_GUI_OUTPUT/target.html" > "$SCRAWL_GUI_OUTPUT/browser.log" 2>&1 &
+printf '%s\\n' "$DISPLAY" "$WAYLAND_DISPLAY" "$XDG_RUNTIME_DIR" "$TMPDIR" > "$APPARENT_GUI_OUTPUT/environment.txt"
+hyprctl getoption input:kb_options > "$APPARENT_GUI_OUTPUT/keyboard-options.txt" 2>&1 || true
+cat /etc/keyd/default.conf >> "$APPARENT_GUI_OUTPUT/keyboard-options.txt" 2>/dev/null || true
+systemd-inhibit --list --no-pager > "$APPARENT_GUI_OUTPUT/inhibitors.txt"
+grep -F "$APPARENT_GUI_IDLE_INHIBITOR" "$APPARENT_GUI_OUTPUT/inhibitors.txt" >/dev/null
+hyprctl getoption input:kb_layout > "$APPARENT_GUI_OUTPUT/keyboard-layout.txt"
+grep -x 'str: us' "$APPARENT_GUI_OUTPUT/keyboard-layout.txt" >/dev/null
+chromium --no-first-run --disable-default-apps --disable-background-networking --password-store=basic --user-data-dir="$TMPDIR/browser" --remote-debugging-port=9222 --start-fullscreen "file://$APPARENT_GUI_OUTPUT/target.html" > "$APPARENT_GUI_OUTPUT/browser.log" 2>&1 &
 browser=$!
 trap 'kill "$browser" 2>/dev/null || true; wait "$browser" 2>/dev/null || true' EXIT
-printf '%s\\n' "$SCRAWL_GUI_OUTPUT" > "$TMPDIR/output-path"
+printf '%s\\n' "$APPARENT_GUI_OUTPUT" > "$TMPDIR/output-path"
 for ((n=0;n<100;n++)); do
   kill -0 "$browser" || exit 71
-  if test -f "$SCRAWL_GUI_OUTPUT/done"; then exit "$(cat "$SCRAWL_GUI_OUTPUT/done")"; fi
+  if test -f "$APPARENT_GUI_OUTPUT/done"; then exit "$(cat "$APPARENT_GUI_OUTPUT/done")"; fi
   sleep 1
 done
 exit 70

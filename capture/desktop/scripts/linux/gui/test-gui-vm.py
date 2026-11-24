@@ -91,8 +91,8 @@ class GuestIsolationTests(unittest.TestCase):
         scenario.write_text('set -eu\n'
                             'test -z "${LD_LIBRARY_PATH+x}"\n'
                             'bash -c "printf system-shell-ready"\n'
-                            'test "$SCRAWL_GUI_LIBRARY_PATH" = "$SCRAWL_GUI_OUTPUT"\n'
-                            'test "$SCRAWL_GUI_BINARY" = /synthetic/candidate\n'
+                            'test "$APPARENT_GUI_LIBRARY_PATH" = "$APPARENT_GUI_OUTPUT"\n'
+                            'test "$APPARENT_GUI_BINARY" = /synthetic/candidate\n'
                             'test ${#TMPDIR} -le 28\n')
         env = dict(os.environ)
         env.pop('LD_LIBRARY_PATH', None)
@@ -119,11 +119,11 @@ class GuestIsolationTests(unittest.TestCase):
             tool = root / 'systemd-inhibit'
             tool.write_text('#!/bin/bash\n'
                             'test "$1" = --what=idle && test "$2" = --mode=block || exit 80\n'
-                            'test "$3" = "--who=$SCRAWL_GUI_IDLE_INHIBITOR" || exit 81\n'
+                            'test "$3" = "--who=$APPARENT_GUI_IDLE_INHIBITOR" || exit 81\n'
                             'shift 4\nexec "$@"\n')
             tool.chmod(0o700)
             scenario = root / 'scenario.sh'
-            scenario.write_text('test -n "$SCRAWL_GUI_IDLE_INHIBITOR" || exit 82\nexit 23\n')
+            scenario.write_text('test -n "$APPARENT_GUI_IDLE_INHIBITOR" || exit 82\nexit 23\n')
             command = runner.scenario_command(str(scenario), str(root), '/synthetic/candidate', str(root), '', True)
             result = subprocess.run(['bash', '-c', command], capture_output=True, text=True,
                                     env=dict(os.environ, PATH=str(root) + ':' + os.environ['PATH']))
@@ -326,7 +326,7 @@ class GuestIsolationTests(unittest.TestCase):
                 self.assertIn("--on-active=45s", command.call_args.args[0])
                 self.assertIn(str(Path(scratch) / "reaper.py"), command.call_args.args[0])
                 self.assertEqual((Path(scratch) / "reaper.py").read_bytes(), REAPER.read_bytes())
-                self.assertTrue(unit.startswith("scrawl-gui-expire-"))
+                self.assertTrue(unit.startswith("apparent-gui-expire-"))
                 command.side_effect = subprocess.CalledProcessError(1, ["systemd-run"])
                 with self.assertRaises(subprocess.CalledProcessError):
                     runner.arm_expiry(Path(scratch), 45)
@@ -673,7 +673,7 @@ operation = sys.argv[2]
 if operation == 'ssh':
     command = sys.argv[-1]
     if command.startswith('sha256sum '):
-        source = 'scenario' if 'scrawl-gui-scenario-' in command else 'candidate'
+        source = 'scenario' if 'apparent-gui-scenario-' in command else 'candidate'
         content = (root / source).read_bytes()
         if source == 'scenario' and (root / 'stale-scenario').exists():
             content += b'changed during transport'

@@ -1182,7 +1182,7 @@ mod tests {
 
     #[test]
     fn external_copilot_requires_source_and_live_binding() {
-        let source = "o.bind(\"SUPER + SHIFT + code:201\", \"Apparent: record\", \"env LD_PRELOAD=/usr/lib/libcblas.so.3 GST_PLUGIN_PATH=/home/simon/.local/share/scrawl-setup/gstreamer-1.28.8 GPUI_X11_SCALE_FACTOR=1.6666667 /home/simon/.local/bin/apparent shortcut record\")";
+        let source = "o.bind(\"SUPER + SHIFT + code:201\", \"Apparent: record\", \"env LD_PRELOAD=/usr/lib/libcblas.so.3 GST_PLUGIN_PATH=/home/simon/.local/share/apparent/gstreamer-1.28.8 GPUI_X11_SCALE_FACTOR=1.6666667 /home/simon/.local/bin/apparent shortcut record\")";
         let live = r#"[{"modmask":65,"key":"code:201","keycode":0,"description":"Apparent: record"}]"#;
         assert_eq!(external_record_from(source, live).unwrap().0.key_code, 201);
         assert!(external_record_from(source, &live.replace("Apparent: record", "Omarchy menu")).is_none());

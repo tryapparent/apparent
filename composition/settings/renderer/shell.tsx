@@ -17,6 +17,7 @@ import {
   FrogNudgePreference,
   type FrogNudgePreferenceProps,
 } from "../../../onboarding/renderer/frog-nudge/preview";
+import { DesktopFrogPreference } from "../../../onboarding/renderer/frog/preference";
 import { SpeakingStyle } from "../../../agent/settings/speaking-style";
 import { About, type AboutBridge } from "./about";
 import availableFrog from "../../../capture/desktop/assets/settings/frog-jump.png";
@@ -91,6 +92,7 @@ declare module "react" {
         pillDoodlesExperiment?: typeof PillDoodles;
         autoPasteExperiment?: ComponentType<AutoPasteProps>;
         speakingStyleExperiment?: typeof SpeakingStyle;
+        desktopFrogExperiment?: typeof DesktopFrogPreference;
         frogExperiment?: ComponentType<FrogNudgePreferenceProps>;
         agentContextExperiment?: ComponentType<AgentContextPreferenceProps>;
       };
@@ -221,9 +223,17 @@ function Settings() {
         <BugReport bridge={window.apparentFeedback} frog={availableFrog} />
       </aside>
       <main className="settings-content" ref={content}>
-        <header className="settings-page-heading" data-about={current === "About" || undefined}>
+        <header
+          className="settings-page-heading"
+          data-about={current === "About" || undefined}
+        >
           <h1>{current}</h1>
-          {current === "About" && <div className="settings-about-heading-actions" ref={setAboutActions} />}
+          {current === "About" && (
+            <div
+              className="settings-about-heading-actions"
+              ref={setAboutActions}
+            />
+          )}
           <div id="settings-account" />
         </header>
         {error && <p role="alert">{error}</p>}
@@ -234,21 +244,32 @@ function Settings() {
         ) : current === "Permissions" ? (
           <PermissionsSection bridge={window.apparentPermissions} />
         ) : current === "About" ? (
-          <About bridge={window.apparentAbout} artwork={aboutArtwork} headingActions={aboutActions} />
+          <About
+            bridge={window.apparentAbout}
+            artwork={aboutArtwork}
+            headingActions={aboutActions}
+          />
         ) : (
           <apparent-settings-pane
             pane={current}
-            speakingStyleExperiment={current === "Labs" ? SpeakingStyle : undefined}
+            speakingStyleExperiment={
+              current === "Labs" ? SpeakingStyle : undefined
+            }
             pushToTalkExperiment={current === "Labs" ? PushToTalk : undefined}
             pillDoodlesExperiment={current === "Labs" ? PillDoodles : undefined}
             autoPasteExperiment={current === "Labs" ? AutoPaste : undefined}
             agentContextExperiment={AgentContextPreference}
+            desktopFrogExperiment={
+              current === "Labs" ? DesktopFrogPreference : undefined
+            }
             frogExperiment={
               current === "Labs" ? FrogNudgePreference : undefined
             }
           />
         )}
-        {current === "Agents" && <T3Settings bridge={window.apparentAgents} artwork={failedFrog} />}
+        {current === "Agents" && (
+          <T3Settings bridge={window.apparentAgents} artwork={failedFrog} />
+        )}
       </main>
     </div>
   );

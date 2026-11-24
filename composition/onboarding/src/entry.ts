@@ -9,6 +9,7 @@ import {
 import { install } from "./reporting.ts";
 import { reportException } from "./exception.ts";
 import { start } from "./host.ts";
+import { startDesktopFrog } from "../frog/host.ts";
 
 const index = process.argv.indexOf("--assets-root");
 if (
@@ -19,9 +20,12 @@ if (
   throw Error("Missing native onboarding assets root");
 const home = homedir();
 install(app, (kind) => reportException(home, kind));
-start({
-  assets: process.argv[index + 1],
-  connect: new OnboardingConnectAdapter(home),
-  wispr: macWispr,
-  wisprEnabled: () => savedWisprExperiment(home),
-});
+if (process.argv.includes("--desktop-frog"))
+  startDesktopFrog(process.argv[index + 1]);
+else
+  start({
+    assets: process.argv[index + 1],
+    connect: new OnboardingConnectAdapter(home),
+    wispr: macWispr,
+    wisprEnabled: () => savedWisprExperiment(home),
+  });

@@ -18,6 +18,11 @@ class SigningTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             frontend = root / "capture/desktop/ui/frontend"
+            frog_assets = (
+                "dist/composition/onboarding/desktop-frog/desktop.html",
+                "dist/composition/onboarding/desktop-frog/preload.cjs",
+                "dist/composition/onboarding/desktop-frog/desktop.js",
+            )
             for relative in ("electron/main.cjs", "electron/preload.cjs", "electron/settings.cjs",
                              "dist/settings.html", "dist/onboarding.html", "dist/src/controls/index.html",
                              "dist/onboarding-presentation.cjs", "dist/onboarding-hyprland.cjs", "dist/onboarding-selection.cjs", "dist/onboarding-wispr.cjs",
@@ -54,7 +59,7 @@ class SigningTests(unittest.TestCase):
                              "electron/agent-media/range-worker.js", "electron/agent-media/range-policy.js",
                              "electron/agent-media/node_modules/@apparent/engine-sdk/dist/index.js",
                              "electron/agent-media/native/apparent-engine-frames",
-                             "electron/agent-media/native/apparent-engine-frames-native"):
+                             "electron/agent-media/native/apparent-engine-frames-native", *frog_assets):
                 file = frontend / relative
                 file.parent.mkdir(parents=True, exist_ok=True)
                 file.write_text(relative)
@@ -152,6 +157,8 @@ class SigningTests(unittest.TestCase):
                      patch.object(stage, "sign_runtime", side_effect=runtime_signer) as runtime:
                     stage.main()
                 self.assertEqual(addon.read_text(), "electron/pill/native/window.node")
+                for relative in frog_assets:
+                    self.assertEqual((mac / "app" / relative).read_text(), relative)
                 runtime.assert_called_once()
             (frontend / "electron/pill/native/window.node").unlink()
             with patch.object(stage, "__file__", str(script)), \

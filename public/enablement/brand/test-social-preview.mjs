@@ -32,7 +32,7 @@ for (const [file, htmlPath] of [["index.html", join(site, "index.html")], ["dist
   })
 }
 
-test("the public package includes the exact branded PNG, not the legacy Scrawl card", () => {
+test("the public package includes the exact branded PNG", () => {
   const source = readFileSync(join(site, "public/assets/brand/social-preview-v1.png"))
   const packaged = readFileSync(join(artifact, "social-preview-v1.png"))
   assert.deepEqual(packaged, source)

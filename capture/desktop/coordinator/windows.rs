@@ -11,7 +11,6 @@ fn open_picker_windows(coord_entity: &Entity<ApparentCoordinator>, cx: &mut App)
     close_picker_window(cx);
     let screen = coord_entity.read(cx).display_rect;
     let display = platform::display_at(screen, cx);
-    // Windows wants the display's own origin, or GPUI puts the picker at its default bounds.
     let picker_bounds = Bounds {
         origin: platform::window_origin(display.as_deref()),
         size: platform::layout_size(screen, display.as_deref()),
@@ -537,7 +536,7 @@ pub fn run_app(
                     platform::poll_status_bar();
                     settings::onboarding_window::poll(cx);
                     #[cfg(any(target_os = "macos", target_os = "linux"))]
-                    workflow::electron::poll_windows(cx);
+                    workflow::electron::poll_windows(cx, &loop_coord);
                     #[cfg(any(target_os = "macos", target_os = "linux"))]
                     if workflow::launch_instance::take_open(onboarding_initialized) {
                         loop_coord.update(cx, |coord, cx| {

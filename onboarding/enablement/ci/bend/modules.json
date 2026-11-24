@@ -2,12 +2,15 @@
   "modules": [
     "host/traversal/tour-traversal.bend",
     "host/tips/note-tip.bend",
-    "host/tips/frog-nudge.bend"
+    "host/tips/frog-nudge.bend",
+    "host/traversal/desktop-frog.bend"
   ],
   "inputs": [
     "host/traversal/tour-traversal.d.mts",
     "host/traversal/tour-traversal.json",
     "enablement/ci/entry-policy.ts",
-    "host/tips/"
+    "host/tips/",
+    "host/traversal/desktop-frog.d.mts",
+    "host/traversal/desktop-frog.json"
   ]
 }

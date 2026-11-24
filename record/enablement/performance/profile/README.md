@@ -24,10 +24,11 @@ Install the guest config at `/etc/apparent-bench/guest.pbtxt` in a private
 benchmark VM derivative and the host config at `/etc/apparent-bench/host.pbtxt`
 on the dedicated synthetic worker. Use the root ownership and write restrictions
 listed in the [focused Stop instructions](../README.md#profile-stop-locally). Provision the exact command for the account running that
-environment, substituting the appropriate config path in the sudoers entry.
+environment. Replace `GUEST_USER` with its username and use the config path for
+the machine running the command.
 
 ```sudoers
-scrawl ALL=(root) NOPASSWD: /usr/local/libexec/apparent-bench-tracebox --txt -c /etc/apparent-bench/guest.pbtxt -o - --notify-fd 2
+GUEST_USER ALL=(root) NOPASSWD: /usr/local/libexec/apparent-bench-tracebox --txt -c /etc/apparent-bench/guest.pbtxt -o - --notify-fd 2
 ```
 
 Lane traces start before the producer exercises the packaged app and flush

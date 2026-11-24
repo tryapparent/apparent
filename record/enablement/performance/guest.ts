@@ -18,13 +18,13 @@ import { clipboardObserver, seedClipboard } from "./clipboard/guest.ts";
 import { now, startFixture, recordMetric } from "./fixture-clock.ts";
 
 const {
-  SCRAWL_GUI_OUTPUT: root,
-  SCRAWL_GUI_BINARY: image,
-  SCRAWL_GUI_LIBRARY_PATH: libs,
-  SCRAWL_GUI_AUDIO_FILE: audio,
+  APPARENT_GUI_OUTPUT: root,
+  APPARENT_GUI_BINARY: image,
+  APPARENT_GUI_LIBRARY_PATH: libs,
+  APPARENT_GUI_AUDIO_FILE: audio,
   TMPDIR: scratch,
 } = process.env;
-assert(root && /^\/home\/[a-z0-9_-]+\/scrawl-gui-output-[a-f0-9]+$/.test(root));
+assert(root && /^\/home\/[a-z0-9_-]+\/apparent-gui-out-[a-f0-9]+$/.test(root));
 assert(
   scratch && /^\/tmp\/ag-[a-z0-9]+$/.test(scratch) && image && libs && audio,
 );

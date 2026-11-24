@@ -6,10 +6,11 @@ a disposable Omarchy VM, synthetic English audio, the normal recorder and
 the independently verified clipboard.
 
 Run with a sealed AppImage, the sanitized VM template, and the verified Q4
-English model. The results directory must be private and newly created.
+English model. Set `guest_user` to the VM template’s SSH account. The results
+directory must be private and newly created.
 
 ```sh
-node enablement/timing/journey/native/run.ts "$template" scrawl "$image" "$sha256" "$model" "$job"
+node enablement/timing/journey/native/run.ts "$template" "$guest_user" "$image" "$sha256" "$model" "$job"
 ```
 
 The runner qualifies the stock chooser in the dedicated synthetic guest before
@@ -54,14 +55,15 @@ root. Make the config readable by the test user so the runner can verify it.
 node --input-type=module -e 'import { profileConfig } from "./record/enablement/performance/profile/config.ts"; process.stdout.write(profileConfig)' > "$job/perfetto.pbtxt"
 ```
 
-Grant the test account only this command in the derivative's sudoers configuration.
+Grant the test account only this command in the derivative's sudoers
+configuration, replacing `GUEST_USER` with its username.
 
 ```sudoers
-scrawl ALL=(root) NOPASSWD: /usr/local/libexec/apparent-bench-tracebox --txt -c /etc/apparent-bench/perfetto.pbtxt -o - --notify-fd 2
+GUEST_USER ALL=(root) NOPASSWD: /usr/local/libexec/apparent-bench-tracebox --txt -c /etc/apparent-bench/perfetto.pbtxt -o - --notify-fd 2
 ```
 
 ```sh
-node enablement/timing/journey/native/run.ts "$profile_template" scrawl "$image" "$sha256" "$model" "$job" --profile
+node enablement/timing/journey/native/run.ts "$profile_template" "$guest_user" "$image" "$sha256" "$model" "$job" --profile
 ```
 
 This runs the portal warmup and the five-minute `long-narration` take.

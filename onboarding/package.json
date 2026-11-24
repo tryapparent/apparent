@@ -1,6 +1,6 @@
 {
   "name": "@apparent/onboarding",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "type": "module",
   "exports": {
     "./practice": {
@@ -38,10 +38,15 @@
     "./traversal": {
       "types": "./dist/host/traversal/tour-traversal.d.mts",
       "import": "./dist/host/traversal/tour-traversal.mjs"
+    },
+    "./desktop-frog": {
+      "types": "./host/traversal/desktop-frog.d.mts",
+      "import": "./dist/host/traversal/desktop-frog.mjs"
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "host/traversal/desktop-frog.d.mts"
   ],
   "scripts": {
     "test": "node --experimental-strip-types --test practice/*.test.ts host/*.test.ts",

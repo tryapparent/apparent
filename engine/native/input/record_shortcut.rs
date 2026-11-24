@@ -1,4 +1,32 @@
 impl ApparentCoordinator {
+    fn accept_frog_name(&mut self, _name: String, _cx: &mut Context<Self>) -> crate::capture::desktop::settings::onboarding::Effect {
+        #[cfg(target_os = "macos")]
+        if !self.capture_busy() && self.onboarding.as_mut().is_some_and(|session| session.name_frog(_name)) {
+            self.begin_target_selection(_cx);
+        }
+        crate::capture::desktop::settings::onboarding::Effect::None
+    }
+
+    fn sync_onboarding_editor(&mut self) {
+        use crate::capture::desktop::settings::Host as _;
+        let host = crate::capture::desktop::settings::AppHost {
+            telemetry: &self.telemetry,
+        };
+        if let Some(session) = self.onboarding.as_mut() {
+            session.shortcut_changed(&host.shortcuts().record.label);
+            session.shortcut_editor(&self.onboarding_editor.record_shortcut(&host));
+        }
+    }
+
+    fn cancel_onboarding_editor(&mut self) {
+        let mut host = crate::capture::desktop::settings::AppHost {
+            telemetry: &self.telemetry,
+        };
+        self.onboarding_editor
+            .on(crate::capture::desktop::settings::Action::CancelShortcut, &mut host);
+    }
+
+
     fn activity(&self) -> crate::capture::desktop::settings::shortcut::Activity {
         use crate::capture::desktop::settings::shortcut::Activity;
         if let Some(rec) = &self.active_recording {

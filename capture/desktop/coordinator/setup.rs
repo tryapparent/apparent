@@ -732,6 +732,9 @@ impl ApparentCoordinator {
                 effect
             }
 
+            Event::FrogName(name) => self.accept_frog_name(name, cx),
+            Event::FrogTakeoff(takeoff) => self.onboarding.as_mut()
+                .map_or(Effect::None, |session| session.finish_frog(takeoff)),
             Event::Action(action) if matches!(action.as_str(), "use-desktop-shortcut" | "use-current-shortcut") => {
                 let host = crate::capture::desktop::settings::AppHost { telemetry: &self.telemetry };
                 let editor = self.onboarding_editor.record_shortcut(&host);
@@ -807,6 +810,10 @@ impl ApparentCoordinator {
                 self.sync_onboarding_editor();
             }
             Effect::Close | Effect::Settings => {
+                #[cfg(target_os = "macos")]
+                if let Some(takeoff) = self.onboarding.as_mut().and_then(|session| session.take_frog_takeoff()) {
+                    workflow::electron::land_desktop_frog(cx, takeoff);
+                }
                 if let Some(session) = self.onboarding.as_ref() {
                     session.leave(false);
                 }
@@ -848,25 +855,6 @@ impl ApparentCoordinator {
         {
             self.cancel_onboarding_editor();
         }
-    }
-
-    fn sync_onboarding_editor(&mut self) {
-        use crate::capture::desktop::settings::Host as _;
-        let host = crate::capture::desktop::settings::AppHost {
-            telemetry: &self.telemetry,
-        };
-        if let Some(session) = self.onboarding.as_mut() {
-            session.shortcut_changed(&host.shortcuts().record.label);
-            session.shortcut_editor(&self.onboarding_editor.record_shortcut(&host));
-        }
-    }
-
-    fn cancel_onboarding_editor(&mut self) {
-        let mut host = crate::capture::desktop::settings::AppHost {
-            telemetry: &self.telemetry,
-        };
-        self.onboarding_editor
-            .on(crate::capture::desktop::settings::Action::CancelShortcut, &mut host);
     }
 
     fn begin_playback(&mut self) {

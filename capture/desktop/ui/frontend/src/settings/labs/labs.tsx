@@ -10,7 +10,7 @@ declare global {interface Window {apparentLabs: {
   read(): Promise<LabsFacts>; save(value: boolean, setting?: LabsSetting): Promise<LabsFacts>;
   subscribe(callback: (facts: LabsFacts) => void): () => void;
 };}}
-const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', agentContext: 'agent-context-toggle', speakingStyle: 'speaking-style-toggle', pillDoodles: 'pill-doodles-toggle', recordingPerformance: 'recording-performance-toggle'};
+const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', desktopFrog: 'desktop-frog-toggle', agentContext: 'agent-context-toggle', speakingStyle: 'speaking-style-toggle', pillDoodles: 'pill-doodles-toggle', recordingPerformance: 'recording-performance-toggle'};
 export type LabsExperiment<Checked = boolean> = ComponentType<{
   id: string; checked: Checked; disabled: boolean; saving: boolean;
   access?: LabsFacts['agentContextAccess'];
@@ -18,9 +18,10 @@ export type LabsExperiment<Checked = boolean> = ComponentType<{
 }>;
 export type AutoPasteExperiment = ComponentType<React.ComponentProps<LabsExperiment> & {supported: boolean}>;
 export type PushToTalkExperiment = ComponentType<React.ComponentProps<LabsExperiment> & {supported?: boolean}>;
-export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: FrogNudge, agentContextExperiment: AgentContext, autoPasteExperiment: AutoPaste, pushToTalkExperiment: PushToTalk, pillDoodlesExperiment: PillDoodles}: {
+export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: FrogNudge, desktopFrogExperiment: DesktopFrog, agentContextExperiment: AgentContext, autoPasteExperiment: AutoPaste, pushToTalkExperiment: PushToTalk, pillDoodlesExperiment: PillDoodles}: {
   speakingStyleExperiment?: LabsExperiment;
   frogExperiment?: LabsExperiment;
+  desktopFrogExperiment?: LabsExperiment;
   agentContextExperiment?: LabsExperiment;
   autoPasteExperiment?: AutoPasteExperiment;
   pushToTalkExperiment?: PushToTalkExperiment;
@@ -107,6 +108,9 @@ export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: Fr
           disabled={busy || wispr === undefined || !wisprSupported.current} onCheckedChange={value => void request(value, 'wisprFlow')} /></div>
       <p id="wispr-lab-help">Offer to quit Wispr Flow or Superwhisper before choosing a recording shortcut. macOS only.</p>
     </section>
+    {DesktopFrog && wisprSupported.current && <DesktopFrog id={controls.desktopFrog} checked={facts?.desktopFrogSaved ?? false}
+      disabled={busy || !facts || !!facts.error} saving={busy && setting === 'desktopFrog'}
+      onCheckedChange={value => void request(value, 'desktopFrog')} />}
     {FrogNudge && wisprSupported.current && <FrogNudge id={controls.dictationFrog} checked={facts?.dictationFrogSaved ?? false}
       disabled={busy || !facts || !!facts.error} saving={busy && setting === 'dictationFrog'}
       onCheckedChange={value => void request(value, 'dictationFrog')} />}

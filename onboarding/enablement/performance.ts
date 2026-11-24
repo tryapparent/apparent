@@ -10,7 +10,7 @@ const [appDir, config, captures, output, ...extra] = process.argv.slice(2);
 assert(!extra.length && appDir && config && captures && output);
 assert.match(
   output,
-  /^\/home\/[a-z0-9_-]+\/scrawl-gui-output-[0-9a-f]+\/artifacts$/,
+  /^\/home\/[a-z0-9_-]+\/apparent-gui-out-[0-9a-f]+\/artifacts$/,
 );
 const root = output.slice(0, -"/artifacts".length);
 assert.equal(config, join(root, "config/apparent/config.json"));
@@ -50,10 +50,10 @@ async function measurePractice() {
       "onboarding",
       /\/(onboarding\.html|index\.html\?nativeOnboarding)$/,
     );
-    async function onScreen(selector: string, label: string) {
+    async function onScreen(selector: string, label: string, surface = coach) {
       await observer.waitFor(
         async () => {
-          const shown = await coach.evaluate<boolean>(`(() => {
+          const shown = await surface.evaluate<boolean>(`(() => {
         const target = document.querySelector(${JSON.stringify(selector)});
         return document.visibilityState === "visible" && !!target?.getBoundingClientRect().height;
       })()`);
@@ -91,49 +91,59 @@ async function measurePractice() {
       } finally {
         pill.close();
       }
-      await onScreen(
-        'svg[aria-label="Whiteboard drawing canvas"]',
-        "the native-owned practice whiteboard",
+      const board = await observer.connectTo(
+        output,
+        "whiteboard",
+        /\/whiteboard\/index\.html$/,
       );
-      const box = await coach.evaluate<{
-        x: number;
-        y: number;
-        width: number;
-        height: number;
-      }>(`(() => {
+      try {
+        await onScreen(
+          '.native-board-lesson[data-ready="true"]',
+          "the practice whiteboard ready for a stroke",
+          board,
+        );
+        const box = await board.evaluate<{
+          x: number;
+          y: number;
+          width: number;
+          height: number;
+        }>(`(() => {
       const {x, y, width, height} = document.querySelector('[aria-label="Whiteboard drawing canvas"]').getBoundingClientRect();
       return {x, y, width, height};
     })()`);
-      const at = (x: number, y: number) => ({
-        x: box.x + x * box.width,
-        y: box.y + y * box.height,
-      });
-      await coach.send("Input.dispatchMouseEvent", {
-        type: "mousePressed",
-        ...at(0.25, 0.35),
-        button: "left",
-        clickCount: 1,
-        buttons: 1,
-      });
-      for (const [x, y] of [
-        [0.32, 0.36],
-        [0.39, 0.39],
-        [0.45, 0.43],
-        [0.48, 0.4],
-      ]) {
-        await coach.send("Input.dispatchMouseEvent", {
-          type: "mouseMoved",
-          ...at(x, y),
+        const at = (x: number, y: number) => ({
+          x: box.x + x * box.width,
+          y: box.y + y * box.height,
+        });
+        await board.send("Input.dispatchMouseEvent", {
+          type: "mousePressed",
+          ...at(0.25, 0.35),
           button: "left",
+          clickCount: 1,
           buttons: 1,
         });
+        for (const [x, y] of [
+          [0.32, 0.36],
+          [0.39, 0.39],
+          [0.45, 0.43],
+          [0.48, 0.4],
+        ]) {
+          await board.send("Input.dispatchMouseEvent", {
+            type: "mouseMoved",
+            ...at(x, y),
+            button: "left",
+            buttons: 1,
+          });
+        }
+        await board.send("Input.dispatchMouseEvent", {
+          type: "mouseReleased",
+          ...at(0.48, 0.4),
+          button: "left",
+          clickCount: 1,
+        });
+      } finally {
+        board.close();
       }
-      await coach.send("Input.dispatchMouseEvent", {
-        type: "mouseReleased",
-        ...at(0.48, 0.4),
-        button: "left",
-        clickCount: 1,
-      });
       await stage("screen-ink");
       await phase("practice screen-ink");
       await stage("stop");

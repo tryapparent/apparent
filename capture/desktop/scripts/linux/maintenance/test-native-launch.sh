@@ -2,8 +2,8 @@
 # Run only inside a disposable gui-vm.py guest. Never against a user's installation.
 # Browser confirmation is deliberately interactive: inspect the job's private VNC view.
 set -euo pipefail
-: "${SCRAWL_GUI_BINARY:?disposable runner must stage the candidate}"
-: "${SCRAWL_GUI_OUTPUT:?disposable runner must own the output directory}"
+: "${APPARENT_GUI_BINARY:?disposable runner must stage the candidate}"
+: "${APPARENT_GUI_OUTPUT:?disposable runner must own the output directory}"
 for tool in jq grim xdg-mime xdg-open update-desktop-database chromium hyprctl; do
   command -v "$tool" >/dev/null || { echo "Missing guest prerequisite: $tool" >&2; exit 1; }
 done
@@ -13,8 +13,8 @@ done < <(systemctl --user show-environment)
 : "${HYPRLAND_INSTANCE_SIGNATURE:?missing test-user compositor}"
 : "${DISPLAY:?missing XWayland display}"
 if pgrep -u "$(id -u)" -f '[a]pparent (app|launch)' >/dev/null; then echo 'Refusing an occupied guest' >&2; exit 1; fi
-bin=$SCRAWL_GUI_BINARY
-out=$SCRAWL_GUI_OUTPUT
+bin=$APPARENT_GUI_BINARY
+out=$APPARENT_GUI_OUTPUT
 systemd-detect-virt --vm --quiet
 if [[ -e "$HOME/.config/apparent/config.json" ]]; then
   echo 'Refusing to overwrite an existing Apparent config; use a fresh disposable guest' >&2

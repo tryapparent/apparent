@@ -3,7 +3,7 @@ import { lstat, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-type Surface = "pill" | "notes" | "draft" | "onboarding";
+type Surface = "pill" | "notes" | "draft" | "onboarding" | "whiteboard";
 type Target = { url: string; webSocketDebuggerUrl: string };
 
 export async function waitFor<T>(
@@ -24,7 +24,7 @@ export async function installObservers(app: string, output: string) {
   assert.match(app, /^\/tmp\/ag-[a-z0-9]+\/app\/squashfs-root$/);
   assert.match(
     output,
-    /^\/home\/[a-z0-9_-]+\/scrawl-gui-output-[0-9a-f]+\/artifacts$/,
+    /^\/home\/[a-z0-9_-]+\/apparent-gui-out-[0-9a-f]+\/artifacts$/,
   );
   const runtime = join(app, "usr/share/apparent/settings/runtime/electron");
   assert((await lstat(runtime)).isFile());
@@ -38,6 +38,7 @@ for arg in "$@"; do
      */electron/pill/main.cjs) name=pill ;;
      */electron/notes/main.cjs) name=notes ;;
      */composition/onboarding/entry.cjs) name=onboarding ;;
+     */dist/whiteboard/main.cjs) name=whiteboard ;;
      */benchmark-draft.cjs) name=draft ;;
   esac
 done

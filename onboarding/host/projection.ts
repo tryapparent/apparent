@@ -116,6 +116,12 @@ export function project(value: unknown) {
     penError: v.penError === true,
     penRgb: rgb(v.penRgb) ? v.penRgb : [255, 59, 48],
     wisprFlowEnabled: v.platform === "macos" && v.wisprFlowEnabled === true,
+    frogNaming: v.platform === "macos" && v.frogNaming === true,
+    frogName:
+      v.platform === "macos" && typeof v.frogName === "string"
+        ? v.frogName
+        : undefined,
+    frogError: v.frogError === true,
     platform: v.platform === "linux" ? "linux" : "macos",
     shortcutEditor: record(editor)
       ? {

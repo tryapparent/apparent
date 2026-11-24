@@ -9,6 +9,7 @@ import { buildTraversal, host } from "./build.ts";
 import { type Table, traversalTable } from "./table.ts";
 
 import { frogTable, frogTablePath } from "./frog-nudge.ts";
+import { desktopFrogTable, desktopFrogTablePath } from "./desktop-frog.ts";
 import { tipTable, tipTablePath } from "./note-tip.ts";
 
 const args = process.argv.slice(2);
@@ -30,6 +31,12 @@ await bendScratch(async (scratch) => {
     ],
   });
   const frog = frogTable(production);
+  const desktopFrog = desktopFrogTable(production);
+  assert.deepEqual(JSON.parse(desktopFrog), {
+    naming: [0, 0, 0, 0, 1, 2, 0, 0],
+    name: [false, false, true, false, true, false, true, false, false, false],
+    visible: [false, false, true, false],
+  });
   assert.deepEqual(JSON.parse(frog), {
     delay: 350,
     eligible: [false, false, true, false],
@@ -44,6 +51,7 @@ await bendScratch(async (scratch) => {
     ],
   });
   if (update) {
+    writeFileSync(desktopFrogTablePath, desktopFrog);
     writeFileSync(frogTablePath, frog);
     writeFileSync(tipTablePath, tips);
     writeFileSync(tablePath, generated);
@@ -53,6 +61,11 @@ await bendScratch(async (scratch) => {
     assert.equal(traversalTable(proof), generated);
     assert.equal(tipTable(proof), tips);
     assert.equal(frogTable(proof), frog);
+    assert.equal(desktopFrogTable(proof), desktopFrog);
+    assert.deepEqual(
+      JSON.parse(readFileSync(desktopFrogTablePath, "utf8")),
+      JSON.parse(desktopFrog),
+    );
     assert.deepEqual(
       JSON.parse(readFileSync(frogTablePath, "utf8")),
       JSON.parse(frog),

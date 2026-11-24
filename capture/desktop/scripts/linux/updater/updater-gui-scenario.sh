@@ -10,8 +10,8 @@ if [[ "$UPDATER_CHANNEL" == main ]]; then
   export UPDATER_CANDIDATE_ID='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
   [[ "$UPDATER_EXPECTED_SOURCE_HEAD" != "$UPDATER_CANDIDATE_ID" ]]
 fi
-out="${SCRAWL_GUI_OUTPUT:?}"
-image="${SCRAWL_GUI_BINARY:?}"
+out="${APPARENT_GUI_OUTPUT:?}"
+image="${APPARENT_GUI_BINARY:?}"
 mkdir -p "$out"
 # The controller prepends the fixture source, never fetched code.
 __UPDATER_FIXTURE_SOURCE__

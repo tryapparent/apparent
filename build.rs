@@ -24,6 +24,7 @@ fn main() {
     emit_native_policy("record/storage", "storage-default", "src/retention/capacity.bend");
     emit_native_policy("record", "note-gesture", "notes/double-shift.json");
     emit_native_policy("onboarding", "note-tip", "host/tips/note-tip.json");
+    emit_native_policy("onboarding", "desktop-frog", "host/traversal/desktop-frog.json");
     #[cfg(target_os = "macos")]
     emit_native_policy("onboarding", "frog-nudge", "host/tips/frog-nudge.json");
     compile_embedded_policy("record/enablement/ci/bend/pill.ts", &[
@@ -211,14 +212,12 @@ fn watch_desktop_tooling() {
         "capture/desktop/scripts/linux/appimage/dependencies.sh",
         "capture/desktop/scripts/linux/gui/gui-vm-reaper.py",
         "capture/desktop/scripts/linux/gui/gui-vm.py",
-        "capture/desktop/scripts/linux/maintenance/migrate-scrawl.py",
         "capture/desktop/scripts/linux/maintenance/publish-main-preview.py",
         "capture/desktop/scripts/linux/appimage/smoke-cpu.sh",
         "capture/desktop/scripts/linux/gui/test-capture-smoke.py",
         "capture/desktop/scripts/linux/gui/test-gui-vm.py",
         "capture/desktop/scripts/linux/maintenance/test-native-launch.sh",
         "capture/desktop/scripts/linux/updater/test-updater-gui.py",
-        "capture/desktop/scripts/linux/maintenance/test_migrate_scrawl.py",
         "capture/desktop/scripts/linux/updater/updater-fixture.py",
         "capture/desktop/scripts/linux/updater/updater-gui-scenario.sh",
         "capture/desktop/scripts/linux/updater/updater-gui.py",

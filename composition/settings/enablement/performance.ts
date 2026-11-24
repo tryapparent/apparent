@@ -23,11 +23,11 @@ assert(
 );
 const profile = process.env.XDG_CONFIG_HOME;
 const captureDir = process.env.APPARENT_CAPTURES_DIR;
-const owner = process.env.SCRAWL_GUI_OUTPUT;
+const owner = process.env.APPARENT_GUI_OUTPUT;
 const scratch = process.env.TMPDIR;
 assert(
   owner &&
-    /^\/home\/[a-z0-9_-]+\/scrawl-gui-output-[0-9a-f]+$/.test(owner) &&
+    /^\/home\/[a-z0-9_-]+\/apparent-gui-out-[0-9a-f]+$/.test(owner) &&
     profile === join(owner, "config") &&
     captureDir === join(owner, "captures") &&
     results === join(owner, "artifacts") &&
