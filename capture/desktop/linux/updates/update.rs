@@ -1067,7 +1067,7 @@ mod tests {
         incomplete["assets"].as_array_mut().unwrap().pop();
         let mut legacy = stable_release_fixture("v0.3.13", "x86_64");
         for asset in legacy["assets"].as_array_mut().unwrap() {
-            asset["name"] = asset["name"].as_str().unwrap().replace("Apparent-", "Scrawl-").into();
+            asset["name"] = asset["name"].as_str().unwrap().replace("Apparent-", "OtherRecorder-").into();
         }
         let releases = vec![preview, draft, unpublished, incomplete, legacy,
             stable_release_fixture("v0.3.15", "aarch64"),
@@ -1116,7 +1116,7 @@ mod tests {
             release(&format!("linux-main-v2-{}", "b".repeat(40)), "2026-10-28T01:00:00Z", false, apparent),
             release(&format!("linux-main-v2-{}", "c".repeat(40)), "2026-10-29T01:00:00Z", true, apparent),
             release(&format!("linux-main-v2-{}", "d".repeat(40)), "2026-10-30T01:00:00Z", false,
-                "Scrawl-0.3.13-linux-x86_64.AppImage"),
+                "OtherRecorder-0.3.13-linux-x86_64.AppImage"),
         ];
         let candidate = candidate_from_history(&releases, "main", "x86_64", &|url| {
             assert!(url.contains(&format!("linux-main-v2-{}", "b".repeat(40))));

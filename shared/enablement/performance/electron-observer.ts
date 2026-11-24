@@ -24,7 +24,7 @@ export async function installObservers(app: string, output: string) {
   assert.match(app, /^\/tmp\/ag-[a-z0-9]+\/app\/squashfs-root$/);
   assert.match(
     output,
-    /^\/home\/[a-z0-9_-]+\/scrawl-gui-output-[0-9a-f]+\/artifacts$/,
+    /^\/home\/[a-z0-9_-]+\/apparent-gui-out-[0-9a-f]+\/artifacts$/,
   );
   const runtime = join(app, "usr/share/apparent/settings/runtime/electron");
   assert((await lstat(runtime)).isFile());

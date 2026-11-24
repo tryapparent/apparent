@@ -58,7 +58,6 @@
 | Desktop | capture/desktop/scripts/linux/maintenance/signing-bridge.test.ts | source candidate | 118 | pending |
 | Desktop | capture/desktop/scripts/linux/maintenance/signing-bridge.ts | source candidate | 179 | pending |
 | Desktop | capture/desktop/scripts/linux/maintenance/test-native-launch.sh | support/scenario | 143 | pending |
-| Desktop | capture/desktop/scripts/linux/maintenance/test_migrate_scrawl.py | source candidate | 360 | pending |
 | Desktop | capture/desktop/scripts/linux/updater/test-updater-gui.py | source candidate | 426 | pending |
 | Desktop | capture/desktop/scripts/packaging/frontend/stage.test.ts | source candidate | 76 | pending |
 | Desktop | capture/desktop/scripts/packaging/native-candidate.test.ts | source candidate | 128 | pending |

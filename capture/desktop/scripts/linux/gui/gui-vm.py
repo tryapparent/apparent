@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one isolated Scrawl GUI scenario against a stopped-VM template.
+"""Run one isolated Apparent GUI scenario against a stopped-VM template.
 
 The template is never writable. Each invocation owns its disk overlay, OVMF state,
 network forwarding, VNC/QMP sockets, SSH host key cache, and artifact directory.
@@ -225,7 +225,7 @@ def copy_firmware(template, destination):
     destination.chmod(0o600)
 
 def arm_expiry(directory, seconds):
-    unit = "scrawl-gui-expire-" + uuid.uuid4().hex
+    unit = "apparent-gui-expire-" + uuid.uuid4().hex
     # Keep the reaper beside its job: a temporary code worktree may disappear
     # after the runner is killed but before the independent timer fires.
     reaper = directory / "reaper.py"
@@ -249,7 +249,7 @@ def qemu_command(overlay, vars_copy, directory, port, memory, isolated_network=F
     x11_heads = desktop == 'gnome-x11' and outputs == 2
     primary = 'virtio-vga,max_outputs=2,id=apparent-x11-display' if x11_heads else 'virtio-vga'
     command = [
-        "qemu-system-x86_64", "-name", "scrawl-gui-" + directory.name,
+        "qemu-system-x86_64", "-name", "apparent-gui-" + directory.name,
         "-machine", "q35,accel=kvm" + (",i8042=off" if input_profile == "mouse" else ""), "-cpu", "host", "-smp", "4", "-m", str(memory),
         "-drive", "if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd",
         "-drive", "if=pflash,format=raw,file=" + str(vars_copy),
@@ -311,11 +311,11 @@ def scenario_command(remote, output, binary, libraries, audio, inhibit_idle=Fals
     idle_id = 'apparent-gui-' + hashlib.sha256(libraries.encode()).hexdigest()[:20] if inhibit_idle else ''
     inhibitor = (' systemd-inhibit --what=idle --mode=block --who=' + shlex.quote(idle_id) +
                  ' --why=' + shlex.quote('Disposable Apparent GUI verification') if inhibit_idle else '')
-    command = ('SCRAWL_GUI_IDLE_INHIBITOR=' + shlex.quote(idle_id) + ' TMPDIR=' + shlex.quote(guest_tmp(libraries)) +
-            ' SCRAWL_GUI_OUTPUT=' + shlex.quote(output) +
-            ' SCRAWL_GUI_BINARY=' + shlex.quote(binary) +
-            ' SCRAWL_GUI_AUDIO_FILE=' + shlex.quote(audio) +
-            ' SCRAWL_GUI_LIBRARY_PATH=' + shlex.quote(libraries) +
+    command = ('APPARENT_GUI_IDLE_INHIBITOR=' + shlex.quote(idle_id) + ' TMPDIR=' + shlex.quote(guest_tmp(libraries)) +
+            ' APPARENT_GUI_OUTPUT=' + shlex.quote(output) +
+            ' APPARENT_GUI_BINARY=' + shlex.quote(binary) +
+            ' APPARENT_GUI_AUDIO_FILE=' + shlex.quote(audio) +
+            ' APPARENT_GUI_LIBRARY_PATH=' + shlex.quote(libraries) +
             inhibitor + ' bash ' + shlex.quote(remote))
     return 'bash -c ' + shlex.quote(session + command)
 
@@ -599,9 +599,9 @@ def main():
                 status['transport'] = {'ssh_port': port, 'ssh_user': args.ssh_user,
                                        'qmp_socket': str(directory / 'qmp.sock'), 'anchor_pid': process.pid}
                 stage('staging')
-                remote = "/home/" + args.ssh_user + "/scrawl-gui-scenario-" + uuid.uuid4().hex + ".sh"
-                guest_output = "/home/" + args.ssh_user + "/scrawl-gui-output-" + uuid.uuid4().hex
-                guest_bin = "/home/" + args.ssh_user + "/scrawl-gui-bin-" + uuid.uuid4().hex
+                remote = "/home/" + args.ssh_user + "/apparent-gui-scenario-" + uuid.uuid4().hex + ".sh"
+                guest_output = "/home/" + args.ssh_user + "/apparent-gui-out-" + uuid.uuid4().hex
+                guest_bin = "/home/" + args.ssh_user + "/apparent-gui-bin-" + uuid.uuid4().hex
                 call(prefix + [guest_staging_command(guest_bin, guest_output)], timeout=10)
                 files = [args.binary.absolute()] + [Path(path) for path in status['inputs']['libraries']]
                 transfer = ["scp", "-q", "-P", str(port), "-i", str(args.ssh_key.resolve()),

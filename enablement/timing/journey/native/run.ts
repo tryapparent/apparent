@@ -69,7 +69,7 @@ async function source(relative: string) {
 const launcher = join(job, "scenario");
 await writeFile(
   launcher,
-  'mkdir -p "$TMPDIR/collector" && tar -C "$TMPDIR/collector" -xf "$SCRAWL_GUI_LIBRARY_PATH/libbench.so.program" && exec "$SCRAWL_GUI_LIBRARY_PATH/libbench.so.node" --experimental-strip-types "$TMPDIR/collector/record/enablement/performance/guest.ts"\n',
+  'mkdir -p "$TMPDIR/collector" && tar -C "$TMPDIR/collector" -xf "$APPARENT_GUI_LIBRARY_PATH/libbench.so.program" && exec "$APPARENT_GUI_LIBRARY_PATH/libbench.so.node" --experimental-strip-types "$TMPDIR/collector/record/enablement/performance/guest.ts"\n',
   { mode: 0o700, flag: "wx" },
 );
 const surface = process.env.APPARENT_BENCH_SURFACE === "1";

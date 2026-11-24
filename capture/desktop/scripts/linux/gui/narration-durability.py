@@ -7,9 +7,9 @@ DESCRIPTION = """Guest-only #257 scenario; no VM controller, installs, downloads
 Run via gui-vm.py --audio-file <synthetic PCM16 WAV, 8..60s> --isolated-network.
 The sanitized guest needs pactl, pw-play, parecord, grim, ffmpeg, libX11 and
 normal capture/portal dependencies. Parent must approve each native portal
-chooser within 60s. SCRAWL_GUI_BINARY must be the staged raw ELF (not an
+chooser within 60s. APPARENT_GUI_BINARY must be the staged raw ELF (not an
 AppImage launcher): exact executable/argv/PID ownership is required for signals.
-SCRAWL_GUI_OUTPUT is supplied by gui-vm.py. SCRAWL_GUI_ARTIFACTS optionally
+APPARENT_GUI_OUTPUT is supplied by gui-vm.py. APPARENT_GUI_ARTIFACTS optionally
 selects a NEW subdirectory of that output; defaults to output/artifacts.
 
 Uses a unique module-null-sink, never physical speakers or system defaults.
@@ -154,7 +154,7 @@ class Scenario:
         return (self.out / record['stdout']).read_text()
 
     def command_environment(self, argv):
-        libraries = self.env.get('SCRAWL_GUI_LIBRARY_PATH')
+        libraries = self.env.get('APPARENT_GUI_LIBRARY_PATH')
         if str(argv[0]) == str(self.binary) and libraries:
             return dict(self.env, LD_LIBRARY_PATH=libraries)
         return self.env
@@ -241,7 +241,7 @@ class Scenario:
             raise Failure('existing apparent.sock; refuse shared/live desktop')
         for proc in Path('/proc').iterdir():
             try:
-                if proc.name.isdigit() and proc.stat().st_uid == os.getuid() and (proc / 'comm').read_text().strip() in {'apparent', 'scrawl'}:
+                if proc.name.isdigit() and proc.stat().st_uid == os.getuid() and (proc / 'comm').read_text().strip() == 'apparent':
                     raise Failure('existing product process; use a clean isolated guest')
             except (FileNotFoundError, PermissionError, ProcessLookupError):
                 pass
@@ -521,15 +521,15 @@ def main():
         scene()
         return 0
     os.umask(0o077)
-    output = Path(os.environ['SCRAWL_GUI_OUTPUT']).resolve()
-    artifacts = Path(os.environ.get('SCRAWL_GUI_ARTIFACTS', str(output / 'artifacts'))).resolve()
+    output = Path(os.environ['APPARENT_GUI_OUTPUT']).resolve()
+    artifacts = Path(os.environ.get('APPARENT_GUI_ARTIFACTS', str(output / 'artifacts'))).resolve()
     if artifacts == output or not artifacts.is_relative_to(output):
-        parser.error('SCRAWL_GUI_ARTIFACTS must be a new child of runner output for retention')
+        parser.error('APPARENT_GUI_ARTIFACTS must be a new child of runner output for retention')
     if (output / '.config').exists() or artifacts.exists():
         parser.error('output already used; preserve evidence and choose a new run')
     artifacts.mkdir(parents=True)
-    scenario = Scenario(output, artifacts, Path(os.environ['SCRAWL_GUI_BINARY']).resolve(),
-                        Path(os.environ['SCRAWL_GUI_AUDIO_FILE']).resolve())
+    scenario = Scenario(output, artifacts, Path(os.environ['APPARENT_GUI_BINARY']).resolve(),
+                        Path(os.environ['APPARENT_GUI_AUDIO_FILE']).resolve())
     def interrupted(*_):
         raise Failure('scenario interrupted; incomplete gates remain UNRUN')
     signal.signal(signal.SIGTERM, interrupted)

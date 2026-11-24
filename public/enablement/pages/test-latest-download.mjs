@@ -30,10 +30,10 @@ test("Mac site downloads ignore Nightly and other Mac prereleases", () => {
   assert.match(selectLatestDownload([other, nightly, ...releases], "mac"), /Apparent-Preview-0\.5\.1-arm64\.dmg$/)
 })
 
-test("does not send a visitor to a draft, checksum, old Scrawl binary, or untrusted asset URL", () => {
+test("does not send a visitor to a draft, checksum, another product’s binary, or untrusted asset URL", () => {
   const odd = [
     release("2026-10-31T00:00:00Z", ["Apparent-Preview-0.6.1-arm64.dmg"], true),
-    release("2026-10-30T00:00:00Z", ["Scrawl-Preview-0.9.0-arm64.dmg", "Apparent-0.5.0-linux-x86_64.AppImage.sha256"]),
+    release("2026-10-30T00:00:00Z", ["OtherRecorder-Preview-0.9.0-arm64.dmg", "Apparent-0.5.0-linux-x86_64.AppImage.sha256"]),
     release("2026-10-29T00:00:00Z", ["Apparent-Preview-0.6.0-arm64.dmg"]),
     ...releases,
   ]

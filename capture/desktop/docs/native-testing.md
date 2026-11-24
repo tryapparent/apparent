@@ -107,7 +107,7 @@ filesystem size; its earlier failed runs remain failed.
 
 Use a sanitized, powered-off, standalone qcow2 template with matching stopped
 OVMF variables, a test-only SSH key and a desktop-autologin test account. It
-must contain no personal material or autostarted Apparent/Scrawl. Do not use
+must contain no personal material or autostarted recorders. Do not use
 X1, the persistent live VM disk, or another worker's resources. Coordinate RAM,
 CPU and cgroup capacity before launching. The existing runner owns the overlay,
 firmware copy, SSH forwarding, Unix VNC/QMP sockets, expiry and teardown.
@@ -169,7 +169,7 @@ Guest prerequisites: Python 3, libX11, working XWayland/DISPLAY, the candidate's
 Vulkan/GStreamer runtime, a working user session bus, Hyprland and ScreenCast
 portal/PipeWire. The scenario imports the desktop environment from
 `systemctl --user show-environment`, checks `DISPLAY`/runtime, refuses an existing
-`apparent.sock` or same-user Apparent/Scrawl process, and waits for real control
+`apparent.sock` or same-user Apparent process, and waits for real control
 readiness. It checks actual H.264 decoding before capture, but does not install
 codecs or repair a template.
 
@@ -177,7 +177,7 @@ The private output directory is also `HOME`, with private config/data/cache,
 `APPARENT_CONFIG` and `APPARENT_CAPTURES_DIR`. The real desktop runtime and bus
 remain available for portals/Hyprland. The HOME-based control socket must fit
 Linux's 107-byte pathname limit; the scenario refuses longer paths before GUI
-launch. For the baseline runner's `/home/simon/scrawl-gui-output-<32hex>` path,
+launch. For a runner path such as `/home/tester/apparent-gui-out-<32hex>`,
 using the output itself as HOME fits; adding a nested `home/` does not. A longer
 guest username may require the runner owner to shorten its guest staging path.
 `TMPDIR` is a separate private guest directory: AppImage extraction contains
@@ -245,8 +245,8 @@ scaling, crossings and Finish/Cancel remain unqualified by this environment test
 
 The read-only standalone template is
 `/home/simon/VMs/apparent-gnome-noble-20261108/`: `system.qcow2`, matching
-`OVMF_VARS.fd`, test-only `test_access` key and SSH user `scrawl`. Inspect its
-`preparation.json`, `versions.tsv` and `template.sha256` before use. Disk SHA256:
+`OVMF_VARS.fd` and test-only `test_access` key. Use `sshUser` from
+`preparation.json`. Check `versions.tsv` and `template.sha256`. Disk SHA256:
 `822c0c89fd0d84aac4a6eb53b30f46d3452dfcbe6252825d84513a88853d1da7`;
 firmware SHA256:
 `eb0a2e4955aa6549433e8f8371913916559660e9fd2571a248a9527bd653f232`.
@@ -310,12 +310,12 @@ after measured capacity and ownership checks. Preparation itself allocates no VM
 
 The Python file has a tested shell/Python entry header because the existing
 runner copies just one scenario file and invokes it with Bash. No sibling
-scenario dependency needs staging. The runner supplies `SCRAWL_GUI_BINARY`,
-`SCRAWL_GUI_OUTPUT` and `SCRAWL_GUI_LIBRARY_PATH`. Bash and system tools keep
+scenario dependency needs staging. The runner supplies `APPARENT_GUI_BINARY`,
+`APPARENT_GUI_OUTPUT` and `APPARENT_GUI_LIBRARY_PATH`. Bash and system tools keep
 their session library environment. Both maintained Python recipes set
 `LD_LIBRARY_PATH` only for the exact candidate's GUI, CLI and decoder invocations.
 Custom Bash recipes must do the same at each candidate call, for example
-`LD_LIBRARY_PATH="$SCRAWL_GUI_LIBRARY_PATH" "$SCRAWL_GUI_BINARY" app`.
+`LD_LIBRARY_PATH="$APPARENT_GUI_LIBRARY_PATH" "$APPARENT_GUI_BINARY" app`.
 Update older private scenarios that relied on the runner exporting a global
 `LD_LIBRARY_PATH`. Preserve exported `XAUTHORITY`, desktop bus/runtime and
 normal AppImage entry when isolating HOME. For an already owned guest

@@ -179,7 +179,7 @@ export function jsonLd(): string {
     image: `${SITE}/social-preview-v1.png`,
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
     publisher: { "@type": "Organization", name: "Apparent", url: "https://github.com/tryapparent" },
-    creditText: "Apparent began as a fork of Scrawl, created by Kit Langton.",
+    creditText: "Apparent builds on original work by Kit Langton.",
     sameAs: [REPO],
   })
 }

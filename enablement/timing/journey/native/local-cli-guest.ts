@@ -49,7 +49,7 @@ assert.match(scratch, /^\/tmp\/ag-[a-z0-9]+$/);
 assert.equal(app, join(scratch, "app/squashfs-root/AppRun"));
 assert.match(
   output,
-  /^\/home\/[a-z0-9_-]+\/scrawl-gui-output-[a-f0-9]+\/artifacts$/,
+  /^\/home\/[a-z0-9_-]+\/apparent-gui-out-[a-f0-9]+\/artifacts$/,
 );
 await runGuestCli(app, scratch, output, (name) =>
   join(libs, "libbench.so." + name),

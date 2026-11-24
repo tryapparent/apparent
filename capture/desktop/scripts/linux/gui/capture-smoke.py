@@ -105,7 +105,7 @@ class Recipe:
         (self.out / "capture-smoke-report.json").write_text(json.dumps(self.report, indent=2) + "\n")
 
     def command_environment(self, argv):
-        libraries = self.env.get("SCRAWL_GUI_LIBRARY_PATH")
+        libraries = self.env.get("APPARENT_GUI_LIBRARY_PATH")
         if str(argv[0]) == str(self.binary) and libraries:
             return dict(self.env, LD_LIBRARY_PATH=libraries)
         return self.env
@@ -168,7 +168,7 @@ class Recipe:
             raise Failure("environment", "existing apparent.sock: refuse to replace or forward to another GUI")
         for entry in Path("/proc").iterdir():
             try:
-                if entry.name.isdigit() and entry.stat().st_uid == os.getuid() and (entry / "comm").read_text().strip() in {"apparent", "scrawl"}:
+                if entry.name.isdigit() and entry.stat().st_uid == os.getuid() and (entry / "comm").read_text().strip() == "apparent":
                     raise Failure("environment", "existing product process: use a clean owned guest")
             except (FileNotFoundError, PermissionError, ProcessLookupError):
                 pass
@@ -432,11 +432,11 @@ def main():
     if not 1 <= args.consent_timeout <= 120:
         parser.error("consent-timeout must be 1..120 seconds")
     os.umask(0o077)
-    output = Path(os.environ["SCRAWL_GUI_OUTPUT"]).resolve()
+    output = Path(os.environ["APPARENT_GUI_OUTPUT"]).resolve()
     output.mkdir(parents=True, exist_ok=True)
     if (output / "capture-smoke-report.json").exists() or (output / ".config").exists():
         parser.error("output already used; preserve it and choose a new run")
-    recipe = Recipe(output, Path(os.environ["SCRAWL_GUI_BINARY"]).resolve(), args.consent_timeout)
+    recipe = Recipe(output, Path(os.environ["APPARENT_GUI_BINARY"]).resolve(), args.consent_timeout)
     signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(Failure("driver", "scenario terminated")))
     try:
         recipe.run()

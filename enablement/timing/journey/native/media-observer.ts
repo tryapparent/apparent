@@ -9,7 +9,7 @@ export function observeFirstMedia(
   remote: (command: string) => WatchProcess,
 ) {
   if (
-    !/^\/home\/[a-z0-9_-]+\/scrawl-gui-output-[0-9a-f]+\/artifacts\/application\.log$/.test(
+    !/^\/home\/[a-z0-9_-]+\/apparent-gui-out-[0-9a-f]+\/artifacts\/application\.log$/.test(
       log,
     )
   ) {
