@@ -521,7 +521,7 @@ impl Session {
             && self.practice.as_ref().is_some_and(|p|p.attempt==attempt)
     }
 
-    pub fn admits_practice_capture_action(&self, attempt: u64, stage: super::super::practice::Stage) -> bool {
+    pub fn admits_practice_capture_action(&self, attempt: u64, stage: super::practice::Stage) -> bool {
         self.current_practice_scope(self.source, self.transport_generation, attempt) &&
             traversal::practice_control(
                 self.flow.step(),
