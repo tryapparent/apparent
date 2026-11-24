@@ -26,18 +26,19 @@
       "platforms": ["linux"],
       "userEntryPoint": "Choose Share on a saved recording, then open the ready capability link.",
       "prerequisites": [
-        "A built Connect Worker from the exact revision, Node 22, GNU time, taskset, FFmpeg with libx264, Chromium, quiet complete CPU cores and a private Linux results directory."
+        "Standard GitHub-hosted ubuntu-24.04, Node 22.23.0, pinned control and candidate revisions, and a private evidence directory."
       ],
       "runner": {
-        "path": "connect/enablement/benchmark/watch-score.ts",
-        "instructions": "Follow the owner benchmark README and run the focused baseline or matched compare command from the repository root."
+        "path": "connect/enablement/benchmark/hosted.ts",
+        "instructions": "Dispatch the optional hosted benchmark with stream=connect. Follow the owner README for pinned revisions, the synthetic evidence artifact and local diagnostic replay."
       },
       "expectedEvidence": [
         "An unauthenticated recipient verifies the ready manifest, all original assets match the synthetic fixture, and Chromium presents two frames with advancing media time.",
         "A machine-readable receipt distinguishes link availability, watch readiness and advancing playback and records cold/warm milliseconds, trace coverage, resource guards and normalized score."
       ],
       "limits": [
-        "The loopback lane uses named effect substitutes for the Desktop sender, identity and managed persistence. Chromium is headless and browser HTTP caching is disabled."
+        "The loopback lane uses named effect substitutes for the Desktop sender, identity and managed persistence. Chromium is headless and browser HTTP caching is disabled.",
+        "CPU accounting and topology describe the hosted Linux guest. Local diagnostic timings are outside the hosted score series."
       ]
     }
   ]

@@ -50,12 +50,43 @@ origin. The fragment carries the checkout revision used to build the Worker.
 
 ### Focused share-to-watch score
 
-Run on a quiet Linux host with Node 22, GNU time, taskset, FFmpeg with libx264
-and local Chromium. Build the Worker with the commands above from the exact
-checkout being measured. The focused lane only needs the service build; it
-uses the current producer's local Worker and Chromium without the Rust client
-build. Run from the repository root. Use a fresh private results directory
-and choose complete physical cores, including their SMT siblings.
+Run scored batches through the manual **Performance benchmark** workflow on
+standard GitHub-hosted `ubuntu-24.04` x64. Use full pinned commit SHAs. For the
+first calibration, use the same current-main SHA in both fields. For an
+experiment, supply the incumbent and reviewed candidate SHAs.
+
+```sh
+gh workflow run performance-benchmark.yml --repo tryapparent/apparent --ref main \
+  -f stream=connect -f control="$control_sha" -f candidate="$candidate_sha"
+```
+
+The reviewed workflow calls the owner entrypoint with three absolute paths:
+
+```sh
+node connect/enablement/benchmark/hosted.ts "$control_tree" "$candidate_tree" "$evidence"
+```
+
+The adapter builds each tree's Worker from its service lockfile, stages its
+migrations and recipient assets, and installs Chromium from the control
+tree's locked Playwright package before sampling. It requires Node 22.23.0,
+GNU time, taskset and FFmpeg with libx264. No Rust client build is needed.
+The gateway uploads the synthetic evidence directory on failure as well as
+success. `calibration.json` and `comparison.json` index the packaged
+`watch-score.json` receipts, resource logs and cold/warm waterfalls. The
+synthetic media fixture and build caches remain on the runner.
+
+Both phases run serially in the same job with the same Chromium executable.
+The sampler selects all CPUs in the Linux process affinity and checks that
+each visible SMT sibling is included. A five-second preflight and the
+per-sample guard use the guest's per-CPU `/proc/stat` to account for outside
+CPU activity, I/O wait and steal at the existing 5% limits. I/O PSI is recorded
+as diagnostic context. The runner reports its visible virtual topology and
+does not certify the cloud host's physical cores. Receipt compatibility uses
+the runner image, visible CPU profile, quota, and browser/tool revisions.
+
+For local developer diagnostics, build the Worker with the commands above
+and choose complete visible SMT sibling sets. Local output and historical
+Clanker scores are outside the hosted score series.
 
 ```sh
 git fetch origin main
@@ -122,16 +153,17 @@ batch. Compare CPU and RSS against the higher matched incumbent repeat plus
 and play component may regress by at most the larger of 20 ms or 10% against
 the higher matched incumbent repeat.
 
-For one committed candidate, build both checkouts, keep the harness identical
-and run the same command with `compare` in the candidate checkout:
+For a local matched diagnostic replay, build both checkouts, keep the harness
+identical and run `compare` in the candidate checkout:
 
 ```sh
 TMPDIR="$results" node connect/enablement/benchmark/watch-score.ts compare \
   "$results" "$chromium" "$cpus" "$incumbent_checkout" "$baseline_receipt"
 ```
 
-Comparisons run incumbent, candidate, candidate, incumbent in order. Keep a
-private ledger with `baseline` set to the absolute baseline receipt and
+Hosted comparisons run incumbent, candidate, candidate, incumbent in order.
+Download the hosted receipts and keep a private ledger with `baseline` set
+to the absolute path of the frozen hosted baseline receipt and
 `entries` containing `hypothesis`, `activeSeconds`, `outcome` and
 `receipt`. Use measured active campaign work only. Diagnostic failures have
 an outcome and can omit the hypothesis so they contribute no tested idea.
