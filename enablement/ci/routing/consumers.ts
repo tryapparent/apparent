@@ -9,15 +9,16 @@ export const desktopPackagingInputs = new Set(['install-app.sh', 'frontend/stage
   .map(file => 'capture/desktop/scripts/packaging/' + file));
 import { publicMarkdown, hostedBrowserFixture } from '../../../public/enablement/cd/ci/inputs.ts';
 export { publicMarkdown };
+const apparentSkill = 'agent/skills/apparent/';
 const proseRoots = ['capture', 'record', 'agent', 'connect', 'public', 'hermes', 'enablement', 'shared', 'composition', 'engine', 'handoff', 'onboarding'];
 const rootProse = new Set(['CONTRIBUTING.md', 'LICENSE', 'NOTICE', 'SECURITY.md', 'CODE_OF_CONDUCT.md', 'CONTEXT.md', 'VERIFICATION.md']);
 const productMarkdown = new Set(['hermes/README.md', 'connect/client/typescript/README.md']);
 const embeddedSegments = /(^|\/)(skills?|prompts?|instructions?|tests?|fixtures?|templates?)(\/|$)/i;
-export function documentationOnlyPath(path: string): boolean {
-  if (rootProse.has(path) || /^agent\/skills\/(?:\.gitattributes|pitch-deck\/.*\.md)$/.test(path)) return true;
-  if (!path.endsWith('.md') || publicMarkdown.has(path) || productMarkdown.has(path)) return false;
-  if (/^public\/site\/(public|src|brand\/(src|shared))\//.test(path)) return false;
-  if (embeddedSegments.test(path) && !/(^|\/)README\.md$/i.test(path)) return false;
+export function documentationOnlyPath(path: string) {
+  if (rootProse.has(path) || /^agent\/skills\/(?:\.gitattributes|(?:pitch-deck|make-it-apparent)\/.*\.md)$/.test(path)) return true;
+  if (!path.endsWith('.md') || publicMarkdown.has(path) || path.startsWith(apparentSkill) || productMarkdown.has(path)) return false;
+  if (/^public\/site\/(public|src|brand\/(src|shared))\//.test(path) ||
+      (embeddedSegments.test(path) && !/(^|\/)README\.md$/i.test(path))) return false;
   if (/(^|\/)AGENTS\.md$/.test(path)) return true;
   if (/(^|\/)(AGENTS|SKILL|CLAUDE|GEMINI)[^/]*\.md$/i.test(path)) return false;
   return proseRoots.includes(path.split('/')[0]);
@@ -45,7 +46,7 @@ const onboardingConnectInputs = new Set([
   'src/connect/flow.ts', 'src/bridge.ts', 'tests/connect/flow.test.ts',
   'tests/connect/session.test.ts', 'tests/connect/flow-hook.test.ts',
 ].map(path => frontend + path));
-export function onboardingInput(path: string): boolean {
+export function onboardingInput(path: string) {
   return shortcutConflictInput(path) || onboardingConnectInputs.has(path) || onboardingRoots.some(root => path.startsWith(root)) ||
     ['onboarding.html', 'electron/onboarding.cjs', 'electron/onboarding-preload.cjs', 'electron/onboarding-protocol.cjs']
       .some(file => path === frontend + file) ||
@@ -69,9 +70,9 @@ function directConsumers(path: string): readonly Owner[] {
   if (/^(capture\/desktop\/ui\/frontend\/src\/onboarding|onboarding\/renderer)\/.*\.(tsx|css)$/.test(path) ||
       path === frontend + 'onboarding.html') return ['desktop', 'onboarding'];
 
-  if (publicMarkdown.has(path) && path !== 'capture/agent/skills/apparent/SKILL.md') return ['public'];
+  if (path.startsWith(apparentSkill)) return ['capture', 'engine', 'public'];
+  if (publicMarkdown.has(path)) return ['public'];
   if (path === 'hermes/skills/recordings/SKILL.md') return ['hermes'];
-  if (path === 'capture/agent/skills/apparent/SKILL.md') return ['capture', 'engine', 'public'];
   if (/(^|\/)(AGENTS|SKILL|CLAUDE|GEMINI)\.md$/i.test(path) && !['capture/', 'connect/', 'public/', 'hermes/', 'record/'].some(root => path.startsWith(root))) return platformOwners;
   const native = /\.(rs|swift|metal|c|cc|cpp|h|mm)$/.test(path) || /(^|\/)Cargo\.(toml|lock)$/.test(path);
   if (/^record\/(?:storage|completion|capture-request|transcription)\/(?:src\/.*\.ts|test\/.*\.test\.ts|package(?:-lock)?\.json|tsconfig(?:\.build)?\.json)$/.test(path) ||
@@ -146,7 +147,7 @@ const directoryPaths = {
   connect: [...common, ...independent, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, ...desktopPackagingInputs, 'connect/**', 'public/**',
     '.github/workflows/stream-connect.yml', 'enablement/release_gate.py'],
   public: [...common, ...independent, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/hermes.yml', 'public/**', '.github/workflows/stream-public.yml', 'README.md',
-    'capture/agent/skills/apparent/SKILL.md', 'capture/agent/docs/usage.md',
+    apparentSkill + '**', 'capture/' + apparentSkill + 'SKILL.md', 'capture/agent/docs/usage.md',
     'capture/desktop/docs/guides/recording.md', 'capture/engine/docs/guides/processing.md'],
   hermes: [...common, ...independent, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/stream-public.yml', 'hermes/**', 'capture/agent/setup/**',
     frontend + 'src/hermes/**', '.github/workflows/hermes.yml'],
@@ -157,7 +158,7 @@ const knownDirectories = ['capture', 'record', 'agent', 'connect', 'public', 'he
 const knownFiles = ['AGENTS.md', 'README.md', 'Cargo.toml', 'Cargo.lock', 'build.rs', 'main.rs'];
 export const streamPaths = Object.fromEntries(Object.entries(directoryPaths).map(([stream, paths]) =>
   [stream, stream === 'engine' ? automaticPaths : ['**', ...knownDirectories.map(root => '!' + root + '/**'), ...knownFiles.map(path => '!' + path), ...paths]])) as Record<Stream, string[]>;
-export function affectsStream(stream: Stream, path: string): boolean {
+export function affectsStream(stream: Stream, path: string) {
   if (stream === 'engine') return affectsEngine(path);
   return streamPaths[stream].reduce((selected, rule) => {
     const pattern = rule.replace(/^!/, '');

@@ -4,6 +4,10 @@ Own interpretation, inspection and extraction of recordings. Use Record public c
 
 This is the canonical top-level owner root, not a claim of completed migration. Put owner-specific enablement under enablement/ here. See the root AGENTS.md and shared/enablement/dependency-policy for enforceable boundaries.
 
+Install the [capture-reading skill](skills/apparent/SKILL.md) or the
+[video-proof skill](skills/make-it-apparent/SKILL.md) from `agent/skills/`.
+Older install URLs forward to these guides.
+
 ## Report feedback from the CLI
 
 Use `apparent feedback --help` for a copyable example. CLI argument errors and failed `inspect`, `fetch`, `frames` and `zoom` commands point to it after the original error. Send sanitized `apparent feedback` for even minor friction or workarounds, then continue the task.

@@ -708,7 +708,7 @@ enum CaptureCommand {
     Handoff { capture_id: String },
 }
 
-const SKILL: &str = include_str!("../capture/agent/skills/apparent/SKILL.md");
+use super::transcript::SKILL;
 
 #[cfg(target_os = "linux")]
 #[derive(Subcommand)]

@@ -1,6 +1,6 @@
 # Agent video workflow
 
-Use this with [Make It Apparent](../skills/make-it-apparent/SKILL.md) when an agent needs real desktop proof. The CLI controls a running GUI through its normal interaction-aware capture path; it is not a separate recorder or portable VM harness. Check installed help: older builds lack `capture start` and `stop --wait`. Read the host's capture safety rules first. Keep recordings, private paths, logs and QA outside git and public assets.
+Use this with [Make It Apparent](../../../agent/skills/make-it-apparent/SKILL.md) for desktop proof. The CLI controls a running GUI through its normal interaction-aware capture path; it is not a separate recorder or portable VM harness. Check installed help: older builds lack `capture start` and `stop --wait`. Read the host's capture safety rules first. Keep recordings, private paths, logs and QA outside git and public assets.
 
 ## Prepare and claim only your own take
 
