@@ -2,9 +2,8 @@ import icon from '../../../../../../../shared/assets/brand/apparent-app-icon.svg
 import './control-guide.css';
 import {PillGuide} from './pill-guide';
 
-/** Illustrated controls, never capture/menu actions. Rust owns real progress. */
-export function ControlGuide({ kind, screenOnly = false }: { kind: 'whiteboard' | 'finish' | 'locate'; screenOnly?: boolean; }) {
-  if(kind!=='locate')return <PillGuide screenOnly={screenOnly} finish={kind==='finish'}/>;
+export function ControlGuide({ kind, screenOnly = false, onTarget }: { kind: 'whiteboard' | 'finish' | 'locate'; screenOnly?: boolean; onTarget?: () => void; }) {
+  if(kind!=='locate')return <PillGuide screenOnly={screenOnly} finish={kind==='finish'} onTarget={onTarget}/>;
   const label = 'Example: open the apparent menu, then Open Latest Capture';
   return <figure className="native-control" data-kind={kind} data-screen-only={screenOnly} aria-label={label}>
     <div className="native-control-motion" aria-hidden="true">

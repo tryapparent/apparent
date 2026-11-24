@@ -747,6 +747,22 @@ impl ApparentCoordinator {
                 }
                 Effect::None
             }
+            Event::Action(action) if action.starts_with("practice-open-board:") || action.starts_with("practice-save-capture:") => {
+                use crate::capture::desktop::native::pill::PillAction;
+                use crate::capture::desktop::settings::practice::Stage;
+                let (command, attempt) = action.split_once(':').unwrap();
+                let (stage, pill_action) = if command == "practice-open-board" {
+                    (Stage::Whiteboard, PillAction::Whiteboard)
+                } else {
+                    (Stage::Stop, PillAction::Finish)
+                };
+                if self.is_recording() && attempt.parse().ok().is_some_and(|attempt| {
+                    self.onboarding.as_ref().is_some_and(|session| session.admits_practice_capture_action(attempt, stage))
+                }) {
+                    self.apply_pill_action(pill_action, cx);
+                }
+                Effect::None
+            }
             Event::Action(action) => self
                 .onboarding
                 .as_mut()

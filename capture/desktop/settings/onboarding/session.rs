@@ -521,6 +521,17 @@ impl Session {
             && self.practice.as_ref().is_some_and(|p|p.attempt==attempt)
     }
 
+    pub fn admits_practice_capture_action(&self, attempt: u64, stage: super::super::practice::Stage) -> bool {
+        self.current_practice_scope(self.source, self.transport_generation, attempt) &&
+            traversal::practice_control(
+                self.flow.step(),
+                self.flow.practice_recording,
+                self.practice.as_ref().is_some_and(|practice| {
+                    practice.observed_attempt == Some(attempt) && practice.stage == stage
+                }),
+            )
+    }
+
     pub fn editing_shortcut(&self) -> bool {
         self.flow.step() == Step::Shortcut && self.flow.shortcut_editing
     }
@@ -532,7 +543,12 @@ impl Session {
         }
         let mut view = serde_json::to_value(self.flow.view()).unwrap_or_default();
         view["type"] = "state".into();
-        if let Some(practice)=self.practice.as_ref() {view["practice"]=serde_json::json!(practice.stage);}
+        if let Some(practice) = self.practice.as_ref() {
+            view["practice"] = serde_json::json!(practice.stage);
+            if self.flow.practice_recording && practice.observed_attempt == Some(practice.attempt) {
+                view["practiceAttempt"] = practice.attempt.to_string().into();
+            }
+        }
         view["shortcut"]=self.shortcut_label.clone().into();
         view["shortcutSelectionReleased"]=(!self.shortcut_choice_down).into();
         view["platform"]=std::env::consts::OS.into();

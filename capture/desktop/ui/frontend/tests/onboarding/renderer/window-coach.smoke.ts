@@ -135,14 +135,14 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 9
       ['whiteboard', 'whiteboard', 'Open Whiteboard.'],
       ['stop', 'finish', 'Finish your capture.'],
     ]) {
-      send({ step: 'try-it', practice: phase, anchor: [300, 30, 320, 50] });
+      send({ step: 'try-it', practice: phase, practiceAttempt: '7', anchor: [300, 30, 320, 50] });
       await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
       await expect.poll(() => page.evaluate(() => innerWidth)).toBe(380);
       for (const width of [380, 320]) for (const scheme of schemes) {
         await coachMetrics.send('Emulation.setDeviceMetricsOverride', { width, height: 440, deviceScaleFactor: 1, mobile: false });
         await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
         const coach = page.locator('.native-coach');
-        await expect.poll(() => coach.evaluate(el => Math.ceil(el.getBoundingClientRect().width))).toBeLessThanOrEqual(width - 48);
+        await expect.poll(() => coach.evaluate(el => Math.ceil(el.getBoundingClientRect().width))).toBeLessThanOrEqual(Math.min(260, width - 48));
         assert.ok(await coach.evaluate(el => el.getBoundingClientRect().height < 200), phase + ' coach stays compact');
         await expect(coach.locator('p, kbd')).toHaveCount(0);
         await expect(coach.locator('.native-pill-guide')).toHaveAttribute('data-kind', action);
@@ -159,10 +159,20 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 9
         await page.locator('h1').click();
         if (evidence) await page.screenshot({ path: path.join(evidence, `${action}-coach-${scheme}-${width}.png`), omitBackground: true });
         await page.keyboard.press('Tab');
+        const target = coach.locator(`button[data-action=${action}]`);
+        await expect(target).toBeFocused();
+        await expect(target).toHaveCSS('outline-style', 'solid');
+        await expect(coach.locator('button[data-action=cancel]')).toBeDisabled();
+        await page.keyboard.press('Tab');
         const close = page.getByRole('button', { name: 'Close guide', exact: true });
         await expect(close).toBeFocused();
         await expect(close).toHaveCSS('outline-style', 'solid');
       }
+      const target = page.locator(`.native-pill-guide button[data-action=${action}]`);
+      if (action === 'whiteboard') await target.click();
+      else await target.press('Enter');
+      const command = action === 'whiteboard' ? 'practice-open-board' : 'practice-save-capture';
+      await expect.poll(latestAction).toBe(command + ':7');
       await page.emulateMedia({ reducedMotion: 'no-preference' });
       await expect(page.locator('.native-pill-pointer')).toHaveCSS('animation-name', 'pill-guide-pointer');
       await coachMetrics.send('Emulation.clearDeviceMetricsOverride');

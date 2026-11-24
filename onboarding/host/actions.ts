@@ -25,6 +25,7 @@ export function parseAction(value: unknown) {
   if (typeof value === "string") {
     if (
       actions.has(value) ||
+      /^practice-(open-board|save-capture):[0-9]{1,20}$/.test(value) ||
       /^pen:(coral|purple|blue|green)(:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$/.test(
         value,
       )

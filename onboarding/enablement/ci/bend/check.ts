@@ -100,6 +100,14 @@ await bendScratch(async (scratch) => {
     "3434",
     "4545",
   ]);
+  assert.deepEqual(table.practice_control, [
+    "0000",
+    "0000",
+    "0000",
+    "0000",
+    "0001",
+    "0000",
+  ]);
   assert.deepEqual(table.resume_capture, [
     "0000",
     "1111",
