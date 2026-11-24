@@ -149,7 +149,8 @@ export function project(value: unknown) {
       typeof v.practice === "string" && phases.has(v.practice)
         ? v.practice
         : null,
-    practiceAttempt: typeof v.practiceAttempt === "string" ? v.practiceAttempt : null,
+    practiceAttempt:
+      typeof v.practiceAttempt === "string" ? v.practiceAttempt : null,
     firstCaptureRequired: v.firstCaptureRequired === true,
     practiceBoard:
       rect(v.practiceBoard) && v.practiceBoard[2] > 0 && v.practiceBoard[3] > 0

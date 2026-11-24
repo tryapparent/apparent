@@ -79,7 +79,9 @@ async function measurePractice() {
       );
       await phase("practice record");
       await stage("whiteboard");
-      await coach.click('main.native-coach button[data-action="whiteboard"]:enabled');
+      await coach.click(
+        'main.native-coach button[data-action="whiteboard"]:enabled',
+      );
       const board = await observer.connectTo(
         output,
         "whiteboard",
@@ -137,7 +139,9 @@ async function measurePractice() {
       await phase("practice screen-ink");
       await stage("stop");
       await phase("finishing from the practice coach");
-      await coach.click('main.native-coach button[data-action="finish"]:enabled');
+      await coach.click(
+        'main.native-coach button[data-action="finish"]:enabled',
+      );
       await stage("copied");
       const capture = await observer.waitFor(async () => {
         const name = (await readdir(captures)).find((name) =>
