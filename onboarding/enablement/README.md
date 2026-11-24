@@ -33,7 +33,17 @@ the full Linux capture/draw/finish/paste/completion sequence, and the actual cha
 Electron build in both themes at normal/minimum sizes with keyboard recovery.
 The former x64 macOS proof under Rosetta is not ARM-native acceptance.
 
-Run the local journey benchmark with `APPARENT_BENCH_ONBOARDING=1` for the first-use checkpoint. It resumes a private profile at the real practice lesson, completes the whiteboard and screen strokes, and verifies an owned saved bundle and its clipboard text. Timing starts at **Finish setup** and ends when the native app has persisted first-capture success and closed the coach. The pinned Clanker VM and receipt assembly are documented in the [journey benchmark](../../enablement/timing/journey/README.md).
+## Performance
+
+Run the first-use checkpoint from the repository root on Clanker. Use the frozen inputs from the [journey benchmark](../../enablement/timing/journey/README.md#run) and a new private job directory.
+
+```sh
+job=$(mktemp -d /tmp/apparent-dev-onboarding-XXXXXX)
+APPARENT_BENCH_ONBOARDING=1 node enablement/timing/journey/native/run.ts \
+  "$template" "$ssh_user" "$appimage" "$appimage_sha256" "$model" "$job"
+```
+
+The probe resumes a private profile at the practice lesson, waits for **Your turn** in the separate Whiteboard renderer, completes the Whiteboard and screen strokes, and verifies an owned saved bundle and its clipboard text. Timing starts at **Finish setup** and ends when the native app has persisted first-capture success and closed the coach. Inspect `vm/artifacts/artifacts/onboarding-waits.json` in the job directory for the verified `first-success` wait.
 
 ## Tour traversal
 

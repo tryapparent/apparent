@@ -1,0 +1,27 @@
+{
+  "scenarios": [
+    {
+      "id": "first-capture-practice",
+      "description": "Complete the first capture lesson and verify that setup success persists.",
+      "platforms": ["linux-hyprland"],
+      "userEntryPoint": "Resume onboarding at Try it in a fresh test profile. Start the practice recording, open Whiteboard from the recording controls, complete the Whiteboard and screen strokes, stop the recording, then select Finish setup.",
+      "prerequisites": [
+        "A checksum-verified Linux AppImage, the pinned Parakeet model and its verification receipt, and a fresh disposable Hyprland guest with working portal capture and input.",
+        "Node 22 and a private benchmark job directory on Clanker."
+      ],
+      "runner": {
+        "path": "enablement/timing/journey/native/run.ts",
+        "scenario": "onboarding/enablement/performance.ts",
+        "instructions": "onboarding/enablement/README.md#performance"
+      },
+      "expectedEvidence": [
+        "The practice lesson reaches Your turn in the separate Whiteboard renderer before the probe draws. The coach then advances to the screen-ink step.",
+        "The saved practice bundle has strokes, keyframes and a nonempty recording. Clipboard text references that exact bundle.",
+        "The retained onboarding-waits.json contains a verified first-success wait after the coach closes and the config records first-capture completion."
+      ],
+      "limits": [
+        "The runner seeds a private profile at the practice stage. Earlier onboarding steps, other platforms and external paste are outside its coverage."
+      ]
+    }
+  ]
+}
