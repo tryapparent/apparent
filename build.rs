@@ -14,6 +14,11 @@ fn main() {
     record_shortcut_build::compile();
     compile_onboarding_entry_policy();
     emit_recording_permissions();
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
+        println!("cargo:rerun-if-changed=record/enablement/ci/bend/modules.json");
+        println!("cargo:rerun-if-changed=shared/enablement/bend");
+        emit_native_policy("record", "native/final-stream", "transcription/src/final-stream.bend");
+    }
     emit_native_policy("record", "performance/recording-performance", "settings/permissions/performance-policy.bend");
     emit_native_policy("record", "capture-request/capture-admission", "capture-request/src/capture-admission.bend");
     emit_native_policy("record/storage", "storage-default", "src/retention/capacity.bend");

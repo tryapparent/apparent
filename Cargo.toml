@@ -16,6 +16,7 @@ clap = { version = "4.6.7", features = ["derive"] }
 cpal = "0.18.2"
 dirs = "7.0.0"
 flume = "0.12.0"
+futures-lite = "2"
 hound = "3.5.1"
 libc = "0.2.189"
 png = "0.18.1"
@@ -51,7 +52,6 @@ transcribe-cpp = { version = "=0.4.1", default-features = false, features = ["me
 ab_glyph = "0.2.32"
 arboard = { version = "3.6.1", default-features = false, features = ["image-data"] }
 ashpd = { version = "0.11", default-features = false, features = ["async-std"] }
-futures-lite = "2"
 # X11 only: GPUI 0.2.2's Wayland windows can't be placed or kept on top, so Apparent's windows
 # go through XWayland on a Wayland session (see capture/desktop/docs/linux/linux.md).
 gpui = { version = "0.2.2", default-features = false, features = ["font-kit", "x11"] }

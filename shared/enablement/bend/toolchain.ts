@@ -8,6 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { bendComments } from "./source.ts";
 
 const revision = "9c586f094f4fc88bef440dc8b4d77a2f92c257cc";
@@ -84,6 +85,35 @@ export async function provisionLean(scratch: string): Promise<string> {
   return join(scratch, release, "bin");
 }
 
+async function downloadSource(file: string): Promise<Buffer> {
+  const url = `${upstream}/${file}`;
+  const signal = AbortSignal.timeout(30_000);
+  const options = { signal, redirect: "error" as const };
+  for (let attempt = 1; ; attempt++) {
+    let response: Response;
+    try {
+      signal.throwIfAborted();
+      response = await fetch(url, options);
+      if (response.ok) return Buffer.from(await response.arrayBuffer());
+      void response.body?.cancel().catch(() => {});
+      if (response.status === 503 && attempt === 1) {
+        await delay(500, undefined, { signal });
+        continue;
+      }
+    } catch (error) {
+      const detail = signal.aborted
+        ? "30-second deadline exceeded"
+        : String(error);
+      throw new Error(`Bend toolchain download failed for ${file}: ${detail}`, {
+        cause: error,
+      });
+    }
+    throw new Error(
+      `Bend toolchain download failed for ${file}: ${response.status} (attempt ${attempt})`,
+    );
+  }
+}
+
 export async function prepareBend(
   scratch: string,
   options: { runtime: "node" } | { runtime: "bun"; leanDirectory?: string },
@@ -101,14 +131,7 @@ export async function prepareBend(
     Object.entries(sources)
       .filter(([file]) => leanDirectory || file !== "bendtt.lean")
       .map(async ([file, digest]) => {
-        const response = await fetch(`${upstream}/${file}`, {
-          signal: AbortSignal.timeout(30_000),
-        });
-        if (!response.ok)
-          throw new Error(
-            `Bend toolchain download failed for ${file}: ${response.status}`,
-          );
-        const bytes = Buffer.from(await response.arrayBuffer());
+        const bytes = await downloadSource(file);
         if (createHash("sha256").update(bytes).digest("hex") !== digest)
           throw new Error(`Bend toolchain integrity check failed for ${file}`);
         return { file, bytes };

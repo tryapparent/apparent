@@ -230,7 +230,7 @@ use std::collections::BTreeMap;
 use std::net::{TcpListener, TcpStream};
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, Ordering::{self, SeqCst}},
 };
 
 #[cfg_attr(test, test)]
@@ -2528,14 +2528,14 @@ impl ConfigProvider for MutableProvider {
     }
     fn experiment(&self, name: &str) -> bool {
         match name {
-            HOSTED_SYNC => self.sync.load(Ordering::SeqCst),
-            HOSTED_SHARING => self.sharing.load(Ordering::SeqCst),
+            HOSTED_SYNC => self.sync.load(SeqCst),
+            HOSTED_SHARING => self.sharing.load(SeqCst),
             _ => false,
         }
     }
     fn set_cloud(&self, cloud: &CloudConfig) -> Result<()> {
         ensure!(
-            !self.fail_write.load(Ordering::SeqCst),
+            !self.fail_write.load(SeqCst),
             "synthetic provider write failure"
         );
         self.inner.set_cloud(cloud)
@@ -2543,13 +2543,16 @@ impl ConfigProvider for MutableProvider {
     fn set_experiment(&self, name: &str, enabled: bool) -> Result<()> {
         self.inner.set_experiment(name, enabled)
     }
+    fn renewal_transition(&self, facts: RenewalFacts) -> Result<RenewalDecision> {
+        self.inner.renewal_transition(facts)
+    }
 }
 fn mutable_client(f: &Fixture) -> (Client, Arc<MutableProvider>) {
     let provider = Arc::new(MutableProvider {
         inner: f.client.provider.clone(),
-        sharing: AtomicBool::new(true),
-        sync: AtomicBool::new(true),
-        fail_write: AtomicBool::new(false),
+        sharing: true.into(),
+        sync: true.into(),
+        fail_write: false.into(),
     });
     (Client::new(provider.clone()), provider)
 }
@@ -2558,32 +2561,33 @@ fn mutable_client(f: &Fixture) -> (Client, Arc<MutableProvider>) {
 pub fn hosted_constructed_client_and_prepared_link_read_current_provider() {
     let f = Fixture::new();
     let server = Server::new("");
+    let requests = || server.state.lock().unwrap().requests;
     f.authorize(&server.url);
     let bundle = f.bundle();
     let (client, provider) = mutable_client(&f);
     let link = client.prepare_link(&bundle, &|| true).unwrap();
     assert!(link.authorized());
-    provider.sharing.store(false, Ordering::SeqCst);
+    provider.sharing.store(false, SeqCst);
     assert!(!link.authorized());
     assert!(client.prepare_link(&bundle, &|| true).is_err());
-    provider.sharing.store(true, Ordering::SeqCst);
+    provider.sharing.store(true, SeqCst);
     assert!(link.authorized());
-    provider.sync.store(false, Ordering::SeqCst);
+    provider.sync.store(false, SeqCst);
     assert!(!client.enabled());
     assert!(!link.authorized());
-    let before = server.state.lock().unwrap().requests;
+    let before = requests();
     client.process_once().unwrap();
-    assert_eq!(server.state.lock().unwrap().requests, before);
-    provider.sync.store(true, Ordering::SeqCst);
+    assert_eq!(requests(), before);
+    provider.sync.store(true, SeqCst);
     assert!(link.authorized());
     // Same constructed client sees the provider's durable disable, not a snapshot.
     client.disable(false).unwrap();
     assert!(!client.enabled());
     assert!(!link.authorized());
     assert!(client.enqueue(&bundle).is_err());
-    let stopped = server.state.lock().unwrap().requests;
+    let stopped = requests();
     client.process_once().unwrap();
-    assert_eq!(server.state.lock().unwrap().requests, stopped);
+    assert_eq!(requests(), stopped);
     assert_eq!(fs::read(bundle.join("audio.wav")).unwrap(), b"audio");
 }
 
@@ -2596,10 +2600,11 @@ pub fn hosted_provider_write_failure_never_reports_disabled_or_login_success() {
     let (client, provider) = mutable_client(&f);
     let link = client.prepare_link(&bundle, &|| true).unwrap();
     let before = fs::read(&client.config).unwrap();
-    provider.fail_write.store(true, Ordering::SeqCst);
-    let error = client.disable(false).unwrap_err();
+    provider.fail_write.store(true, SeqCst);
     assert!(
-        error
+        client
+            .disable(false)
+            .unwrap_err()
             .to_string()
             .contains("synthetic provider write failure")
     );
@@ -2618,11 +2623,11 @@ pub fn hosted_provider_write_failure_never_reports_disabled_or_login_success() {
         fresh.settings_snapshot(),
         Err(settings::SafeError::LocalState)
     );
-    provider.fail_write.store(false, Ordering::SeqCst);
+    provider.fail_write.store(false, SeqCst);
     client.disable(false).unwrap();
     assert!(!link.authorized());
     let disabled = client.settings();
-    provider.fail_write.store(true, Ordering::SeqCst);
+    provider.fail_write.store(true, SeqCst);
     assert!(client.login(&server.url, "upload", true, false).is_err());
     assert_eq!(client.settings(), disabled);
     assert!(!client.enabled());

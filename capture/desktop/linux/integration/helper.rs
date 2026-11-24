@@ -54,10 +54,10 @@ pub struct SpeechModelLine {
 /// Linux transcribes with Parakeet (`speech`): Hex's installed model, else Apparent's own copy,
 /// downloaded and checked here.
 pub fn install_speech_model(
-    _stop: &dyn Fn() -> bool,
+    stop: &dyn Fn() -> bool,
     line: impl FnMut(SpeechModelLine),
 ) -> Result<()> {
-    crate::capture::engine::runtime::audio::transcription::speech::install(line)
+    crate::capture::engine::runtime::audio::transcription::speech::install(stop, line)
 }
 
 /// On-device transcription with measured word timings (Parakeet through `transcribe.cpp`).

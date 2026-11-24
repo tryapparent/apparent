@@ -75,10 +75,9 @@ test("real Cargo diagnostics compare complete pinned trees and tolerate line shi
     install(`enablement/local-tests/rust/${file}.ts`);
   install("shared/enablement/dependency-policy/fast/materialize.ts");
   const tools = "shared/enablement/dependency-policy/node_modules";
-  symlinkSync(path.join(repo, tools), path.join(cwd, tools), "dir");
   install("shared/enablement/issues/run.ts", "process.stdin.resume();\n");
   install("enablement/local-tests/run.ts", "process.exit(0);\n");
-  put(".gitignore", "/target/\n/cargo-home/\n");
+  put(".gitignore", `/target/\n/cargo-home/\n/${tools}\n`);
   install(
     "build.rs",
     `
@@ -145,7 +144,16 @@ test("real Cargo diagnostics compare complete pinned trees and tolerate line shi
     "main.rs",
     "\nmod previously_unused {\n    struct Same;\n}\nfn main() {}\n",
   );
-  const accepted = push(commit());
+  const shifted = commit();
+  const missingTools = push(shifted);
+  assert.equal(missingTools.status, 1, missingTools.stderr);
+  assert.match(
+    missingTools.stderr,
+    /Install the locked syntax tools with npm ci/,
+  );
+  assert.doesNotMatch(missingTools.stderr, /fixture output /);
+  symlinkSync(path.join(repo, tools), path.join(cwd, tools), "dir");
+  const accepted = push(shifted);
   assert.equal(accepted.status, 0, accepted.stderr);
   assert.match(accepted.stderr, /main .*apparent, 1 dead_code warning/);
   const hostOS = process.platform === "linux" ? "linux" : "macos";

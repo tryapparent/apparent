@@ -10,6 +10,8 @@ pub(crate) struct StoppedScreen {
     pub(crate) sampling: Option<Sampling>,
     pub(crate) audio: anyhow::Result<Option<RecordedAudio>>,
     pub(crate) activity: ActivityLog,
+    #[cfg(target_os = "linux")]
+    pub(crate) storage_dir: Option<std::fs::File>,
 }
 
 impl ScreenCaptureSession {
@@ -18,9 +20,17 @@ impl ScreenCaptureSession {
         audio: Option<AudioRecorder>,
         windows: Option<WindowLogger>,
     ) -> StoppedScreen {
+        #[cfg(target_os = "linux")]
+        let (screen, storage_dir) = {
+            let mut screen = self;
+            let storage_dir = screen.storage_dir.take();
+            (screen, storage_dir)
+        };
+        #[cfg(not(target_os = "linux"))]
+        let screen = self;
         let stop_started = Instant::now();
         let ((recording, sampling), audio, mut activity) = std::thread::scope(|scope| {
-            let screen = scope.spawn(|| self.stop_with_sampling());
+            let screen = scope.spawn(|| screen.stop_with_sampling());
             let windows = scope.spawn(|| windows.map(WindowLogger::stop).unwrap_or_default());
             let audio = stop_optional(audio);
             (
@@ -36,6 +46,18 @@ impl ScreenCaptureSession {
             sampling,
             audio,
             activity,
+            #[cfg(target_os = "linux")]
+            storage_dir,
+        }
+    }
+}
+
+impl Drop for ScreenCaptureSession {
+    fn drop(&mut self) {
+        self.stopping.store(true, std::sync::atomic::Ordering::Release);
+        if let Some(handle) = self.sampler_thread.take() {
+            handle.thread().unpark();
+            let _ = handle.join();
         }
     }
 }

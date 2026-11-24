@@ -6,6 +6,7 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 import { compilerMessages, newWarnings, type Warning } from "./messages.ts";
+import { loadRustSyntax } from "./scopes.ts";
 import { diagnosticsPlan, type Target } from "./targets.ts";
 
 type Environment = NodeJS.ProcessEnv;
@@ -163,13 +164,14 @@ export async function checkRust(
       "Rust diagnostics: the site video demo requires its separate Metal/media build and has no tracked Cargo lock; host hook coverage does not include it",
     );
   if (!selected.length) return;
-  const { materialize } = await import(
-    "../../../shared/enablement/dependency-policy/fast/materialize.ts"
-  );
   if (!["linux", "darwin"].includes(process.platform))
     throw Error(
       "Rust diagnostic checks require a supported Linux or macOS host",
     );
+  await loadRustSyntax();
+  const { materialize } = await import(
+    "../../../shared/enablement/dependency-policy/fast/materialize.ts"
+  );
   const sharedEnv = { ...process.env };
   for (const name of Object.keys(sharedEnv))
     if (name.startsWith("GIT_")) delete sharedEnv[name];

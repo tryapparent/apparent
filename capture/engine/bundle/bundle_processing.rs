@@ -333,13 +333,14 @@ pub fn finalize_capture_bundle_with_transcript(
             video_offset_ms,
             video_ink,
         } = recording;
+        let video = video_path.as_deref();
         if frames.is_empty() {
             // The MP4 stream can succeed even when every screenshot fails. Do not turn
             // it into keyframes here: the sampler drops screenshots while a system
             // permission prompt is visible, but the movie may still contain it.
             recover::mark_unsafe_video(bundle_dir).stage(Stage::RecoveryJournal)?;
             let message = "No screen frames were captured. Choose a screen in the sharing dialog and try again.";
-            if let Some(ref video) = video_path {
+            if let Some(video) = video {
                 return Err(anyhow::anyhow!("{message} The raw video was kept at {}.", video.display())).stage(Stage::NoSafeFrames);
             }
             return Err(anyhow::anyhow!("{message}")).stage(Stage::NoSafeFrames);
@@ -354,8 +355,8 @@ pub fn finalize_capture_bundle_with_transcript(
         let wav_path = bundle_dir.join("audio.wav");
         let has_wav = wav_path.exists();
         let wav_required = recorded_audio.is_some() || has_wav;
-        publication::preflight_sources(bundle_dir, video_path.as_deref()).stage(Stage::SourcePreflight)?;
-        let ((transcript, transcribe_ms), ((predecoded, prepared), frames, crop_settings, assembly_plan)) = std::thread::scope(|scope| -> Result<_> {
+        publication::preflight_sources(bundle_dir, video).stage(Stage::SourcePreflight)?;
+        let ((transcript, transcribe_ms), ((predecoded, prepared), frames, crop_settings, assembly_plan)) = std::thread::scope(|scope| {
             let wav_path = &wav_path;
             let recorded_audio = &recorded_audio;
             let transcribe_handle = scope.spawn(move || {
@@ -372,7 +373,7 @@ pub fn finalize_capture_bundle_with_transcript(
                     context: recover::capture_context(bundle_dir).context("Could not persist recovery journal").stage(Stage::RecoveryJournal)?,
                     target: target.clone(),
                     duration_ms,
-                    video: video_path.as_deref().and_then(Path::file_name).map(|name| name.to_string_lossy().into_owned()),
+                    video: video.and_then(Path::file_name).map(|name| name.to_string_lossy().into_owned()),
                     video_offset_ms,
                     strokes: strokes.clone(),
                     events: events.clone(),
@@ -383,60 +384,60 @@ pub fn finalize_capture_bundle_with_transcript(
                     cursor: activity.cursor.clone(),
                 },
             ).stage(Stage::RecoveryJournal)?;
-            let crop_settings = (target.mode == CaptureMode::Display)
-                .then(autocrop::Settings::configured)
-                .flatten();
-            let assembly_plan = crate::composition::assembly::plan(duration_ms)?;
-            let limits = assembly_plan.limits(duration_ms)?;
-            let mut frames = SelectionFrames::from(frames);
-            let pre = if let Some(ref movie) = video_path {
-                let mut preview_marks = marks_of(&strokes);
-                let preview = frames.select(
-                    &strokes,
-                    &mut preview_marks,
-                    &events,
-                    &crate::capture::engine::keyframes::SpeechInput::empty(&TranscriptData::default()),
-                    limits,
-                    video_ink,
-                )?.frames;
-                let marks_fill = preview.len() == limits.maximum
-                    && preview
-                        .iter()
-                        .all(|(k, _)| k.reason == model::KeyframeReason::Mark);
-                let times: Vec<u64> = preview.iter().map(|(k, _)| k.t).collect();
-                let decoded =
-                    crate::composition::movie_frames::record(movie, &times, video_offset_ms, 0).unwrap_or_default();
-                if duration_ms >= 20_000 {
-                    let cache = if marks_fill {
-                        Vec::new()
+            publication::sync_movie_while(bundle_dir, video, || {
+                let crop_settings = (target.mode == CaptureMode::Display)
+                    .then(autocrop::Settings::configured)
+                    .flatten();
+                let assembly_plan = crate::composition::assembly::plan(duration_ms)?;
+                let limits = assembly_plan.limits(duration_ms)?;
+                let mut frames = SelectionFrames::from(frames);
+                let pre = if let Some(movie) = video {
+                    let mut preview_marks = marks_of(&strokes);
+                    let preview = frames.select(
+                        &strokes,
+                        &mut preview_marks,
+                        &events,
+                        &crate::capture::engine::keyframes::SpeechInput::empty(&TranscriptData::default()),
+                        limits,
+                        video_ink,
+                    )?.frames;
+                    let marks_fill = preview.len() == limits.maximum
+                        && preview
+                            .iter()
+                            .all(|(k, _)| k.reason == model::KeyframeReason::Mark);
+                    let times: Vec<u64> = preview.iter().map(|(k, _)| k.t).collect();
+                    let decoded =
+                        crate::composition::movie_frames::record(movie, &times, video_offset_ms, 0).unwrap_or_default();
+                    if duration_ms >= 20_000 {
+                        let cache = if marks_fill {
+                            Vec::new()
+                        } else {
+                            decoded.clone()
+                        };
+                        let (merged, matched) = merge_full_keyframes(preview, decoded);
+                        let vis = (matched == merged.len())
+                            .then(|| prepare_visuals(
+                                    merged,
+                                    frames.first().as_ref(),
+                                    crop_settings.as_ref(),
+                                    &target,
+                                    duration_ms,
+                                    &strokes,
+                                    &preview_marks,
+                                    &events,
+                                    &activity,
+                                    video_ink,
+                                ))
+                            .flatten();
+                        (cache, vis)
                     } else {
-                        decoded.clone()
-                    };
-                    let (merged, matched) = merge_full_keyframes(preview, decoded);
-                    let vis = (matched == merged.len())
-                        .then(|| {
-                            prepare_visuals(
-                                merged,
-                                frames.first().as_ref(),
-                                crop_settings.as_ref(),
-                                &target,
-                                duration_ms,
-                                &strokes,
-                                &preview_marks,
-                                &events,
-                                &activity,
-                                video_ink,
-                            )
-                        })
-                        .flatten();
-                    (cache, vis)
+                        (decoded, None)
+                    }
                 } else {
-                    (decoded, None)
-                }
-            } else {
-                (Vec::new(), None)
-            };
-            Ok((transcribe_handle.join().unwrap(), (pre, frames, crop_settings, assembly_plan)))
+                    (Vec::new(), None)
+                };
+                Ok((transcribe_handle.join().unwrap(), (pre, frames, crop_settings, assembly_plan)))
+            })
         })?;
 
         let built = build_bundle_from_parts(
@@ -467,8 +468,7 @@ pub fn finalize_capture_bundle_with_transcript(
                 },
                 ..SourceExtras::default()
             },
-        );
-        let built = built.stage(Stage::BundleBuild)?;
+        ).stage(Stage::BundleBuild)?;
         if wav_required && built.1.audio.as_deref() != Some("audio.wav") {
             return Err(anyhow::anyhow!("captured audio disappeared during bundle construction")).stage(Stage::AudioMissing);
         }

@@ -5,6 +5,9 @@ mod build_version { include!("enablement/build_version.rs"); }
 mod circle_recognition;
 mod capture;
 mod composition;
+#[cfg(target_os = "linux")]
+#[path = "engine/recording/linux_candidate/mod.rs"]
+mod linux_candidate;
 #[path = "engine/native/embedded_policy.rs"]
 mod embedded_policy;
 #[path = "engine/recording/stored_frame.rs"]

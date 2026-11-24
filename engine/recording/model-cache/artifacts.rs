@@ -1,5 +1,7 @@
-use anyhow::Result;
+#[cfg(target_os = "linux")]
 use crate::capture::desktop::helper::SpeechModelLine;
+#[cfg(target_os = "linux")]
+use anyhow::Result;
 
 pub struct Artifact {
     pub filename: &'static str,
@@ -23,34 +25,64 @@ const PARAKEET_Q4: Artifact = Artifact {
 };
 
 pub(crate) fn preferred_parakeet() -> &'static Artifact {
-    if cfg!(target_os = "linux") { &PARAKEET_Q4 } else { &PARAKEET }
+    if cfg!(target_os = "linux") {
+        &PARAKEET_Q4
+    } else {
+        &PARAKEET
+    }
 }
 
-pub fn install(mut line: impl FnMut(SpeechModelLine)) -> Result<()> {
+#[cfg(target_os = "linux")]
+pub fn install(stop: &dyn Fn() -> bool, mut line: impl FnMut(SpeechModelLine)) -> Result<()> {
+    let installed = super::installed_models();
+    let own_dir = super::own_models_dir();
+    let preferred = preferred_parakeet();
+    let preparing = [preferred.filename, PARAKEET.filename].iter().any(|name| {
+        ["", ".partial", ".nightly.partial"]
+            .iter()
+            .any(|suffix| own_dir.join(format!("{name}{suffix}")).exists())
+    });
+    let resident = super::resident_final::wants_install(!installed.is_empty(), preparing);
     let report = |status: &str, progress: Option<f64>, error: Option<String>| SpeechModelLine {
         status: status.into(),
-        engine: Some("Parakeet".into()),
+        engine: Some(if resident { "Nemotron" } else { "Parakeet" }.into()),
         locale: Some("en".into()),
         locales: None,
         progress,
         error,
     };
-    let installed = super::installed_models();
-    let own_dir = super::own_models_dir();
-    let preferred = preferred_parakeet();
-    let needs_preferred = installed.is_empty() || (cfg!(target_os = "linux")
-        && installed.iter().all(|path| path.starts_with(&own_dir))
-        && !installed.iter().any(|path| path.file_name().is_some_and(|name| name == preferred.filename)));
+    if resident {
+        let result = super::resident_final::install(&own_dir, stop, &mut |done| {
+            line(report("downloading", Some(done), None));
+        });
+        if !stop() {
+            match result {
+                Ok(()) => line(report("installed", Some(1.0), None)),
+                Err(error) => line(report("failed", None, Some(format!("{error:#}")))),
+            }
+        }
+        return Ok(());
+    }
+    let needs_preferred = installed.is_empty()
+        || (installed.iter().all(|path| path.starts_with(&own_dir))
+            && !installed.iter().any(|path| {
+                path.file_name()
+                    .is_some_and(|name| name == preferred.filename)
+            }));
     if needs_preferred {
         let mut progress = |done: f64| {
-            if installed.is_empty() { line(report("downloading", Some(done), None)); }
+            if installed.is_empty() {
+                line(report("downloading", Some(done), None));
+            }
         };
         if let Err(error) = super::download(preferred, &own_dir, &mut progress) {
             if installed.is_empty() {
                 line(report("failed", None, Some(format!("{error:#}"))));
                 return Ok(());
             }
-            crate::capture::engine::runtime::apparent_log(format!("Preferred local speech model unavailable: {error:#}"));
+            crate::capture::engine::runtime::apparent_log(format!(
+                "Preferred local speech model unavailable: {error:#}"
+            ));
         }
     }
     line(report("installed", Some(1.0), None));

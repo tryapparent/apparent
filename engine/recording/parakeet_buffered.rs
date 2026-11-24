@@ -9,10 +9,13 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 use transcribe_cpp::{
     CancelToken, Model, ParakeetBufferedStreamOptions, RunOptions, StreamExtension, StreamOptions,
-    TimestampKind,
+    ParakeetStreamOptions, TimestampKind,
 };
 
-use crate::capture::engine::runtime::audio::persistence::Samples;
+use crate::capture::engine::runtime::audio::{
+    audio::decode_wav_16k,
+    persistence::{Samples, header},
+};
 use crate::shared::model::{TranscriptData, TranscriptSegment, WordTiming};
 
 const START_SAMPLES: usize = 320_000;
@@ -88,17 +91,19 @@ fn run(
         !stop.load(Ordering::Acquire) && !cancel.is_cancelled(),
         "Capture ended before buffered speech started"
     );
-    let path = super::speech::installed_models()
-        .into_iter()
-        .next()
-        .filter(|path| {
-            path.file_name().is_some_and(|name| {
-                name == super::speech::preferred_parakeet().filename
-                    || name == super::speech::PARAKEET.filename
+    let installed = super::speech::installed_models().into_iter().next();
+    let resident = super::speech::resident_final::selected(installed.is_some());
+    let cached = resident.is_some();
+    let path = resident
+        .or_else(|| {
+            installed.filter(|path| {
+                path.file_name().is_some_and(|name| {
+                    name == super::speech::preferred_parakeet().filename
+                        || name == super::speech::PARAKEET.filename
+                })
             })
         })
-        .context("No ready buffered Parakeet model");
-    let path = path?;
+        .context("No ready buffered speech model")?;
     super::speech::init_backends()?;
     let name = path
         .file_stem()
@@ -123,13 +128,17 @@ fn run(
             ..Default::default()
         },
         &StreamOptions {
-            family: Some(StreamExtension::ParakeetBuffered(
-                ParakeetBufferedStreamOptions {
+            family: Some(if cached {
+                StreamExtension::ParakeetStream(ParakeetStreamOptions {
+                    att_context_right: Some(13),
+                })
+            } else {
+                StreamExtension::ParakeetBuffered(ParakeetBufferedStreamOptions {
                     left_ms: Some(5600),
                     chunk_ms: Some(1040),
                     right_ms: Some(1040),
-                },
-            )),
+                })
+            }),
             ..Default::default()
         },
     )?;
@@ -163,20 +172,66 @@ fn run(
         .recv()
         .context("Stream cancelled before finalization")?;
     let finish_started = std::time::Instant::now();
-    let audio = crate::capture::engine::runtime::audio::audio::decode_wav_16k(&wav)?;
-    ensure!(consumed <= audio.len(), "Stream exceeds saved audio");
-    for chunk in audio[consumed..].chunks(16_000) {
+    let (sample_count, audio) = saved_audio_tail(&wav, consumed)?;
+    for chunk in audio.chunks(16_000) {
         stream.feed(chunk)?;
     }
     stream.finalize()?;
     ensure!(!stream.was_aborted(), "Stream cancelled");
-    let result = stream.snapshot();
+    let mut result = stream.snapshot();
+    if cached {
+        clamp_trailing_punctuation(&mut result.tokens, i64::try_from(sample_count / 16)?);
+    }
     drop(stream);
     ensure!(!session.was_truncated(), "Incomplete stream");
-    let transcript = materialize(result, name, audio.len())?;
-    crate::capture::desktop::start_metric("local_stream_finish_success_ms", finish_started);
+    let transcript = materialize(result, name, sample_count)?;
+    crate::capture::desktop::start_metric(
+        if cached { "local_cache_aware_finish_ms" } else { "local_stream_finish_success_ms" },
+        finish_started,
+    );
     Ok(transcript)
 }
+
+fn canonical_pcm16(wav: &[u8]) -> Option<&[u8]> {
+    let (actual_header, payload) = wav.split_at_checked(44)?;
+    let bytes = u32::try_from(payload.len()).ok()?;
+    (bytes % 2 == 0 && bytes <= u32::MAX - 36 && actual_header == header(bytes))
+        .then_some(payload)
+}
+
+fn saved_audio_tail(wav: &[u8], consumed: usize) -> Result<(usize, Vec<f32>)> {
+    if let Some(payload) = canonical_pcm16(wav) {
+        let sample_count = payload.len() / 2;
+        ensure!(consumed <= sample_count, "Stream exceeds saved audio");
+        let tail = payload[consumed * 2..]
+            .chunks_exact(2)
+            .map(|sample| f32::from(i16::from_le_bytes([sample[0], sample[1]])) / 32_768.0)
+            .collect();
+        return Ok((sample_count, tail));
+    }
+    let mut audio = decode_wav_16k(wav)?;
+    let sample_count = audio.len();
+    ensure!(consumed <= sample_count, "Stream exceeds saved audio");
+    audio.drain(..consumed);
+    Ok((sample_count, audio))
+}
+
+fn clamp_trailing_punctuation(tokens: &mut [transcribe_cpp::Token], end: i64) {
+    if let Some(token) = tokens.last_mut() {
+        let text = token.text.trim();
+        if token.t0_ms > end
+            && token.t0_ms <= end + super::speech::resident_final::EOF_PUNCTUATION_START_ALLOWANCE_MS
+            && token.t1_ms >= token.t0_ms
+            && token.t1_ms <= end + 1000
+            && !text.is_empty()
+            && text.bytes().all(|byte| matches!(byte, b'.' | b',' | b'!' | b'?' | b';' | b':'))
+        {
+            token.t0_ms = end;
+            token.t1_ms = end;
+        }
+    }
+}
+
 fn pcm16(sample: f32) -> f32 {
     crate::capture::engine::runtime::audio::audio::pcm16(sample) as f32 / 32768.0
 }
@@ -316,10 +371,62 @@ mod tests {
     use super::*;
 
     #[test]
+    fn saved_tail_matches_full_decode_at_sample_boundaries() {
+        use crate::capture::engine::runtime::audio::audio::encode_wav_16k;
+
+        let wav = encode_wav_16k(&[-1.0, -0.5 / 32_768.0, 0.0, 0.5 / 32_768.0, 1.0]).unwrap();
+        assert!(canonical_pcm16(&wav).is_some());
+        let mut with_chunk = wav.clone();
+        with_chunk.splice(36..36, *b"JUNK\x02\0\0\0\0\0");
+        with_chunk[4..8].copy_from_slice(&(wav.len() as u32 + 2).to_le_bytes());
+        assert!(canonical_pcm16(&with_chunk).is_none());
+        let expected = decode_wav_16k(&wav).unwrap();
+        for input in [&wav, &with_chunk] {
+            for consumed in 0..=expected.len() {
+                assert_eq!(
+                    saved_audio_tail(input, consumed).unwrap(),
+                    (expected.len(), expected[consumed..].to_vec())
+                );
+            }
+            assert!(saved_audio_tail(input, expected.len() + 1).is_err());
+        }
+        for truncated in [&wav[..43], &wav[..wav.len() - 1], &wav[..44]] {
+            assert!(canonical_pcm16(truncated).is_none());
+            assert!(saved_audio_tail(truncated, expected.len()).is_err());
+        }
+        let mut unsupported = wav;
+        unsupported[24..28].copy_from_slice(&44_100_u32.to_le_bytes());
+        assert!(saved_audio_tail(&unsupported, expected.len()).is_err());
+    }
+
+    #[test]
     fn short_capture_uses_its_saved_audio_fallback() {
         let buffered = Buffered::start(Arc::new(Mutex::new(Samples::default()))).unwrap();
         let error = buffered.finish(&[]).unwrap_err();
         assert!(error.to_string().contains("Capture ended"));
+    }
+
+    #[test]
+    fn only_bounds_trailing_punctuation_within_one_frame() {
+        let last = |text: &str, t0_ms, t1_ms| transcribe_cpp::Token {
+            text: text.into(),
+            t0_ms,
+            t1_ms,
+            ..Default::default()
+        };
+        let mut tokens = [last("then", 800, 960), last(".", 1030, 1110)];
+        clamp_trailing_punctuation(&mut tokens, 1000);
+        let words = timed_words("then.", &tokens, 1000).unwrap();
+        assert_eq!((words[0].t0, words[0].t1), (800, 1000));
+
+        for mut tokens in [
+            [last("then", 800, 960), last("later", 1030, 1110)],
+            [last("then", 800, 960), last(".", 1081, 1110)],
+            [last(".", 1030, 1110), last("then", 800, 960)],
+        ] {
+            clamp_trailing_punctuation(&mut tokens, 1000);
+            assert!(timed_words("then.", &tokens, 1000).is_err());
+        }
     }
 
     #[test]

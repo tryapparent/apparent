@@ -8,7 +8,7 @@ use objc2_app_kit::NSRunningApplication;
 use screencapturekit::cm::{CMSampleBufferExt, CMSampleBufferSCExt, SCFrameStatus};
 use screencapturekit::content_sharing_picker::{
     SCContentSharingPicker, SCContentSharingPickerConfiguration, SCContentSharingPickerMode,
-    SCPickerEvent, SCPickerSubscription,
+    SCPickerEvent, SCPickerResult, SCPickerSubscription,
 };
 use screencapturekit::cv::CVPixelBufferLockFlags;
 use screencapturekit::prelude::*;
@@ -32,7 +32,7 @@ pub(crate) struct SelectedDisplay {
 }
 
 pub(crate) struct PendingDisplay {
-    receiver: flume::Receiver<Result<Option<SCContentFilter>>>,
+    receiver: flume::Receiver<Result<Option<SCPickerResult>>>,
     observer: SCPickerSubscription,
 }
 
@@ -56,7 +56,7 @@ impl PendingDisplay {
                 SCPickerEvent::Updated {
                     result,
                     stream: None,
-                } => Ok(Some(result.filter())),
+                } => Ok(Some(result)),
                 SCPickerEvent::Cancelled { stream: None } => Ok(None),
                 SCPickerEvent::Failed(error) => Err(anyhow::anyhow!("{error}")),
                 _ => return,
@@ -83,13 +83,20 @@ impl PendingDisplay {
                 Err(error) => return Err(error.into()),
             }
         };
-        let Some(filter) = result else {
+        let Some(result) = result else {
             return Ok(None);
         };
+        let filter = result.filter();
         ensure!(
             filter.style()? == SCShareableContentStyle::Display,
             "The picker did not authorize a display"
         );
+        let displays = result.displays();
+        let display_id = match displays.as_slice() {
+            [display] => Some(display.display_id()),
+            [] => None,
+            _ => anyhow::bail!("The picker authorized more than one display"),
+        };
         let rect = filter.content_rect();
         let bounds = [
             rect.origin.x,
@@ -97,26 +104,13 @@ impl PendingDisplay {
             rect.size.width,
             rect.size.height,
         ];
-        ensure!(
-            bounds.iter().all(|value| value.is_finite()),
-            "Invalid picker display bounds"
-        );
         let candidates = screens::current();
-        let mut matching = candidates.iter().filter(|display| {
-            display
-                .frame
-                .iter()
-                .zip(bounds)
-                .all(|(actual, expected)| (actual - expected).abs() < 1.0)
-                && (display.scale - f64::from(filter.point_pixel_scale())).abs() < 0.01
-        });
-        let display = matching
-            .next()
-            .context("The authorized display does not match a connected screen")?;
-        ensure!(
-            matching.next().is_none(),
-            "The authorized display is ambiguous"
-        );
+        let display = selected_screen(
+            &candidates,
+            display_id,
+            bounds,
+            f64::from(filter.point_pixel_scale()),
+        )?;
         let [x, y, width, height] = display.frame;
         let target = TargetInfo {
             mode: CaptureMode::Display,
@@ -140,6 +134,83 @@ impl PendingDisplay {
                 _observer: self.observer,
             },
         )))
+    }
+}
+
+fn selected_screen(
+    candidates: &[screens::Screen],
+    display_id: Option<u32>,
+    bounds: [f64; 4],
+    scale: f64,
+) -> Result<&screens::Screen> {
+    if let Some(id) = display_id {
+        return candidates
+            .iter()
+            .find(|display| id != 0 && display.id == id)
+            .context("The authorized display does not match a connected screen");
+    }
+    ensure!(
+        bounds.iter().all(|value| value.is_finite()),
+        "Invalid picker display bounds"
+    );
+    let mut matching = candidates.iter().filter(|display| {
+        display
+            .frame
+            .iter()
+            .zip(bounds)
+            .all(|(actual, expected)| (actual - expected).abs() < 1.0)
+            && (display.scale - scale).abs() < 0.01
+    });
+    let display = matching
+        .next()
+        .context("The authorized display does not match a connected screen")?;
+    ensure!(
+        matching.next().is_none(),
+        "The authorized display is ambiguous"
+    );
+    Ok(display)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const LAPTOP: screens::Screen = screens::Screen {
+        id: 1,
+        frame: [0., 0., 1440., 900.],
+        visible: [0., 0., 1440., 900.],
+        scale: 2.,
+        safe_top: 0.,
+    };
+    const MONITOR: screens::Screen = screens::Screen {
+        id: 2,
+        frame: [-1440., -150., 1440., 900.],
+        visible: [-1440., -150., 1440., 900.],
+        ..LAPTOP
+    };
+
+    #[test]
+    fn picker_display_id_takes_precedence_over_the_filter_geometry() {
+        let displays = [LAPTOP, MONITOR];
+        assert_eq!(
+            selected_screen(&displays, Some(MONITOR.id), LAPTOP.frame, LAPTOP.scale).unwrap(),
+            &MONITOR
+        );
+    }
+
+    #[test]
+    fn disconnected_picker_display_does_not_fall_back_to_another_display() {
+        assert!(selected_screen(&[LAPTOP], Some(MONITOR.id), LAPTOP.frame, LAPTOP.scale).is_err());
+    }
+
+    #[test]
+    fn geometry_matches_a_unique_screen_when_the_picker_has_no_display_id() {
+        let displays = [LAPTOP, MONITOR];
+        assert_eq!(
+            selected_screen(&displays, None, MONITOR.frame, MONITOR.scale).unwrap(),
+            &MONITOR
+        );
+        assert!(selected_screen(&[LAPTOP, LAPTOP], None, LAPTOP.frame, LAPTOP.scale).is_err());
     }
 }
 
