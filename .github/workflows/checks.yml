@@ -257,6 +257,7 @@ jobs:
       contract_workflow: ${{ steps.paths.outputs.contract_workflow }}
       contract_tooling: ${{ steps.paths.outputs.contract_tooling }}
       contract_sparkle: ${{ steps.paths.outputs.contract_sparkle }}
+      contract_settings: ${{ steps.paths.outputs.contract_settings }}
       mac_plan: ${{ steps.paths.outputs.mac_plan }}
       hermes: ${{ steps.paths.outputs.hermes }}
       portable: ${{ steps.paths.outputs.portable }}
@@ -382,17 +383,18 @@ jobs:
       CHECK_WORKFLOW: ${{ needs.select.result != 'success' || needs.select.outputs.contract_workflow != 'false' }}
       CHECK_TOOLING: ${{ needs.select.result != 'success' || needs.select.outputs.contract_tooling != 'false' }}
       CHECK_SPARKLE: ${{ needs.select.result != 'success' || needs.select.outputs.contract_sparkle != 'false' }}
+      CHECK_SETTINGS: ${{ needs.select.result != 'success' || needs.select.outputs.contract_settings != 'false' }}
     steps:
       - name: Record selected contracts
         run: |
-          printf '%s\n' "engineering=$CHECK_ENGINEERING release=$CHECK_RELEASE theme=$CHECK_THEME workflow=$CHECK_WORKFLOW tooling=$CHECK_TOOLING"
+          printf '%s\n' "engineering=$CHECK_ENGINEERING release=$CHECK_RELEASE theme=$CHECK_THEME workflow=$CHECK_WORKFLOW tooling=$CHECK_TOOLING settings=$CHECK_SETTINGS"
       - uses: actions/checkout@v4
-        if: env.CHECK_ENGINEERING == 'true' || env.CHECK_RELEASE == 'true' || env.CHECK_THEME == 'true' || env.CHECK_WORKFLOW == 'true' || env.CHECK_TOOLING == 'true' || env.CHECK_SPARKLE == 'true'
+        if: env.CHECK_ENGINEERING == 'true' || env.CHECK_RELEASE == 'true' || env.CHECK_THEME == 'true' || env.CHECK_WORKFLOW == 'true' || env.CHECK_TOOLING == 'true' || env.CHECK_SPARKLE == 'true' || env.CHECK_SETTINGS == 'true'
         with:
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
-        if: env.CHECK_ENGINEERING == 'true' || env.CHECK_RELEASE == 'true' || env.CHECK_THEME == 'true' || env.CHECK_TOOLING == 'true' || env.CHECK_SPARKLE == 'true'
+        if: env.CHECK_ENGINEERING == 'true' || env.CHECK_RELEASE == 'true' || env.CHECK_THEME == 'true' || env.CHECK_TOOLING == 'true' || env.CHECK_SPARKLE == 'true' || env.CHECK_SETTINGS == 'true'
         with:
           node-version: '22.23.0'
       - name: Verify paired release contracts
@@ -418,6 +420,14 @@ jobs:
         run: |
           python3 -m unittest discover -s enablement/tests -p 'test_*.py'
           node --experimental-strip-types enablement/local-tests/run.ts --contracts
+      - name: Prepare Settings contract parser
+        if: env.CHECK_SETTINGS == 'true' && env.CHECK_ENGINEERING != 'true'
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix shared/enablement/dependency-policy
+      - name: Verify Settings contract
+        if: env.CHECK_SETTINGS == 'true'
+        env:
+          SETTINGS_CONTRACT_BASE: ${{ github.event_name == 'pull_request' && format('{0}^1', github.sha) || github.event.before }}
+        run: node --experimental-strip-types enablement/ci/settings-contract/check.ts
       - name: Verify the shared selected tooling suite
         if: env.CHECK_TOOLING == 'true'
         run: node --experimental-strip-types enablement/local-tests/run.ts --tooling

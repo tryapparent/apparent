@@ -96,7 +96,6 @@ fn finalization_audio_report_identifies_expired_writer_history_and_retains_saved
     use std::time::{Duration, Instant};
 
     let scratch = Scratch::new();
-    // No microphone: exceed the retained 60-second history. Retained backlog
     // is recoverable; actual sample loss must still fail before Stop.
     let samples = Arc::new(Mutex::new(Samples::from(vec![0.25; 60 * 16_000 + 1])));
     let failure = Arc::new(Mutex::new(None));
@@ -299,7 +298,7 @@ fn narrow_settings_bridge_reads_default_and_persists_explicit_changes_without_dr
     assert_eq!(error_reporting_bridge_in(&path, "set", Some(false), || true), Ok(false));
     let saved: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     assert_eq!(saved["sentinel"], "keep");
-    assert_eq!(saved["errorReporting"], false);
+    assert_eq!(saved["general"]["errorReporting"], false);
     assert_eq!(error_reporting_bridge_in(&path, "read", None, || true), Ok(false));
     assert_eq!(error_reporting_bridge_in(&path, "set", Some(true), || true), Ok(true));
     assert_eq!(error_reporting_bridge_in(&path, "unknown", None, || true), Err("invalid_request"));

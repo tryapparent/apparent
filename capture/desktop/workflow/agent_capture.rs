@@ -339,7 +339,6 @@ impl Reference {
                 (Action::ReferenceCopy, expected, deadline)
             }
         };
-        // Node uses the same clock as Storage. Convert only the remaining budget
         // to the GUI request clock; never compare different macOS clock origins.
         let remaining = deadline.saturating_sub(storage_clock_ms()).min(3000);
         Some((Some((action, expected)), clock_ms() + remaining))
@@ -1002,12 +1001,10 @@ fn execute_with(
             return serde_json::json!({"capture_id": id, "error": "invalid_response"});
         }
         if value["error"].is_string() {
-            // Listener/transport errors may not yet have reached the GUI thread.
             value["capture_id"] = serde_json::json!(id);
             return value;
         }
         if let Some((action, id)) = action {
-            // A response for a different resource is never a successful receipt.
             let status = value["status"].as_str();
             if value["capture_id"].as_str() != Some(id)
                 || !matches!(
@@ -1176,6 +1173,9 @@ mod tests {
         let saved = save(month.clone(), &initial["revision"]);
         assert_eq!(saved["retention"]["mediaDays"]["value"], 30);
         assert_eq!(saved["retention"]["bundleDays"]["value"], 90);
+        let canonical = crate::shared::handoff::capture_location::read_raw(&config).unwrap();
+        assert_eq!(canonical["storage"]["mediaDays"], 30);
+        assert_eq!(canonical["retention"]["mediaDays"], 30);
         assert_eq!(read(), saved);
         assert_eq!(save(serde_json::json!({"mediaDays":null,"bundleDays":null}), &initial["revision"])["error"], "conflict");
         let reset = call(serde_json::json!({"storage":"resetretention","expected":saved["revision"],"deadline":storage_clock_ms()+3000}));
@@ -1218,7 +1218,6 @@ mod tests {
         assert_eq!(super::super::storage_preferences::save_policy(&config, Some(&month_policy), after_unknown["revision"].as_str().unwrap(), || true), Err("outcome_unknown"), "publishing identical values can also have uncertain durability");
         assert_eq!(after_unknown["retention"]["mediaDays"]["value"], 30);
         assert_eq!(after_unknown["retention"]["bundleDays"]["value"], 90);
-        // Fail an actual config commit (owned malformed file), not an optimistic UI mock.
         std::fs::write(&config, "malformed").unwrap();
         assert_eq!(super::super::storage_preferences::save_policy(&config, Some(&month_policy), after_unknown["revision"].as_str().unwrap(), || true), Err("config_write_failed"));
         assert_eq!(std::fs::read_to_string(&config).unwrap(), "malformed");

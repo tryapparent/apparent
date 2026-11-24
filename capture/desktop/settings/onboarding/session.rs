@@ -1,5 +1,6 @@
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/engine/native/macos/desktop/desktop_frog_peer.rs"));
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/engine/native/macos/desktop/onboarding_transport.rs"));
+use crate::shared::handoff;
 
 impl Session {
     #[cfg(test)]
@@ -101,7 +102,7 @@ impl Session {
                 .with_auto_relaunch(allowed)
                 .with_tutorial(progress.tutorial)
                 .with_first_capture(
-                    crate::shared::handoff::experiment("onboardingFirstCapture"),
+                    handoff::experiment("onboardingFirstCapture"),
                     progress.shortcut_chosen,
                     progress.tested_shortcut(shortcut),
                     progress.first_capture_completed,
@@ -120,7 +121,7 @@ impl Session {
             saved_shortcut_chosen: progress.shortcut_chosen,
             saved_shortcut_tested_for: progress.shortcut_tested_for,
             saved_first_capture_completed: progress.first_capture_completed,
-            frog_enabled: cfg!(target_os = "macos") && shell && crate::shared::handoff::experiment("desktopFrog"),
+            frog_enabled: cfg!(target_os = "macos") && shell && handoff::experiment_preference("labs.desktopFrog"),
             frog_revealed: false,
             frog_name: progress.frog_name,
             frog_error: false,
@@ -208,7 +209,7 @@ impl Session {
     pub fn dismiss(&self) -> anyhow::Result<()> {
         let mut progress = Progress::load();
         progress.dismiss(&self.flow);
-        progress.save_to(&crate::shared::handoff::default_config_path())
+        progress.save_to(&handoff::default_config_path())
     }
 
     pub fn input(&mut self, input: Input) -> Effect {
@@ -320,7 +321,7 @@ impl Session {
                 if self.pen_picker {
                     let (name, receipt) = name.split_once(':').map_or((name, None), |(name, id)| (name, Some(id)));
                     if receipt.is_some_and(|id| id.len()!=36 || !id.bytes().all(|c| c.is_ascii_hexdigit() || c==b'-')) {return Effect::None;}
-                    self.pen_error=crate::shared::handoff::pen::save(name).is_err();
+                    self.pen_error=handoff::pen::save(name).is_err();
                     self.pen_selected=!self.pen_error;
                     self.pen_save_id=receipt.map(str::to_owned);
                     self.sync();
@@ -537,7 +538,7 @@ impl Session {
         view["shortcutSelectionReleased"]=(!self.shortcut_choice_down).into();
         view["platform"]=std::env::consts::OS.into();
         view["wisprFlowEnabled"]=(cfg!(target_os = "macos")
-            && crate::shared::handoff::experiment("onboardingWisprFlow")).into();
+            && handoff::experiment_preference("labs.onboardingWisprFlow")).into();
         view["frogNaming"] = (self.frog_stage() == 2).into();
         view["frogName"] = serde_json::json!(if self.frog_enabled { self.frog_name.as_deref() } else { None });
         view["frogError"] = self.frog_error.into();
@@ -547,7 +548,7 @@ impl Session {
         view["testInstance"]=false.into();
         view["penSaveId"]=serde_json::json!(self.pen_save_id);
         view["penPicker"]=self.pen_picker.into();view["penSelected"]=self.pen_selected.into();view["penError"]=self.pen_error.into();
-        view["penRgb"]=serde_json::json!(crate::shared::handoff::pen::rgb());
+        view["penRgb"]=serde_json::json!(handoff::pen::rgb());
         view["speech"] = serde_json::to_value(crate::capture::engine::runtime::audio::transcription::speech_model::current()).unwrap_or_default();
         let text = view.to_string();
         if text != self.last_view {
@@ -583,7 +584,7 @@ impl Session {
                 progress.frog_adopted |= self.frog_enabled && self.frog_name.is_some()
                     && self.flow.first_capture_completed;
             }
-            if let Err(error) = progress.save_to(&crate::shared::handoff::default_config_path()) {
+            if let Err(error) = progress.save_to(&handoff::default_config_path()) {
                 crate::capture::engine::runtime::apparent_log(&format!("onboarding: progress save failed: {error}"));
                 return;
             }

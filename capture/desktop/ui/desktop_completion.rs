@@ -43,7 +43,7 @@ impl ApparentCoordinator {
         released: bool,
     ) -> Facts {
         let generation = self.capture_generation;
-        let auto_paste_enabled = !self.capture_local_practice && handoff::experiment("autoPasteDraft");
+        let auto_paste_enabled = !self.capture_local_practice && handoff::experiment_preference("labs.autoPasteDraft");
         #[cfg(target_os = "linux")]
         let hold = self.shortcut.hold.take().filter(|hold| hold.generation == Some(generation));
         #[cfg(target_os = "macos")]

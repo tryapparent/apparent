@@ -1,10 +1,10 @@
 //! Persistence mechanism only. The Labs catalogue/defaults belong to Desktop TS.
 use std::path::Path;
-use crate::shared::handoff::{AGENT_CONTEXT, Config};
-use crate::capture::desktop::workflow::performance::{GENERATION, SETTING, generation};
+use crate::shared::handoff::{preference_value, read_preferences, write_preference};
+use crate::capture::desktop::workflow::performance::{PREFERENCE, SETTING, generation, set_preference};
 
-const KEY: &str = "localStreamingTranscription";
-const AUTO_PASTE: &str = "autoPasteDraft";
+const KEY: &str = "labs.localStreamingTranscription";
+const AUTO_PASTE: &str = "labs.autoPasteDraft";
 const ACTIVATE_CONTEXT: [bool; 4] = include!("../../../../record/settings/permissions/agent-context-activation.json");
 
 #[cfg(not(test))]
@@ -12,57 +12,47 @@ const ACTIVATE_CONTEXT: [bool; 4] = include!("../../../../record/settings/permis
 mod native_access;
 
 #[cfg(target_os = "linux")]
-use crate::capture::desktop::settings::shortcut::{PUSH_TO_TALK, push_to_talk_supported};
-#[cfg(not(target_os = "linux"))]
-const PUSH_TO_TALK: &str = "pushToTalk";
+use crate::capture::desktop::settings::shortcut::push_to_talk_supported;
 #[cfg(not(target_os = "linux"))]
 fn push_to_talk_supported() -> bool { false }
 
 pub(super) fn facts(path: &Path) -> serde_json::Value {
-    let value = match std::fs::read(path) {
-        Ok(bytes) => match serde_json::from_slice::<serde_json::Value>(&bytes) {
-            Ok(value) if value.is_object() => value,
-            _ => return serde_json::json!({"error":"config_read_failed"}),
-        },
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => serde_json::json!({}),
-        Err(_) => return serde_json::json!({"error":"config_read_failed"}),
+    let Ok(value) = read_preferences(path) else {
+        return serde_json::json!({"error":"config_read_failed"});
     };
-    let saved = |key| value.get("experiments").and_then(|flags|flags.get(key)).and_then(|flag|flag.as_bool());
-    let experiment_config = serde_json::json!({"experiments": value.get("experiments")});
-    let experiment_config = serde_json::from_value::<Config>(experiment_config).ok();
-    let normalized = |key| experiment_config.as_ref()?.experiments.get(key).copied();
+    let saved = |id| preference_value(&value, id);
     serde_json::json!({
         "saved": saved(KEY),
         "recordingPerformanceSaved": generation(&value).is_some(),
-        "circleLabelsSaved": normalized("circleLabels"),
-        "speakingStyleSaved": saved("speakingStyle"),
-        "agentContextSaved": normalized(AGENT_CONTEXT),
-        "sharingSaved": saved("hostedSharing"),
+        "circleLabelsSaved": saved("labs.circleLabels"),
+        "speakingStyleSaved": saved("labs.speakingStyle"),
+        "agentContextSaved": saved("labs.agentContext"),
+        "sharingSaved": saved("labs.hostedSharing"),
         "autoPasteSaved": saved(AUTO_PASTE),
         "autoPasteSupported": cfg!(any(target_os = "macos", target_os = "linux")),
-        "pushToTalkSaved": saved(PUSH_TO_TALK),
+        "pushToTalkSaved": saved("labs.pushToTalk"),
         "pushToTalkSupported": push_to_talk_supported(),
-        "wisprSaved": saved("onboardingWisprFlow"),
+        "wisprSaved": saved("labs.onboardingWisprFlow"),
         "wisprSupported": cfg!(target_os = "macos"),
-        "pillDoodlesSaved": normalized(crate::capture::desktop::ui::electron_pill::PILL_DOODLES),
-        "dictationFrogSaved": saved("dictationFrog"),
-        "desktopFrogSaved": saved("desktopFrog"),
+        "pillDoodlesSaved": saved("labs.pillDoodles"),
+        "dictationFrogSaved": saved("labs.dictationFrog"),
+        "desktopFrogSaved": saved("labs.desktopFrog"),
     })
 }
 pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
     match setting {
         None | Some("streaming") => Some((KEY, true)),
-        Some(SETTING) => Some((SETTING, true)),
-        Some("circleLabels") => Some(("circleLabels", true)),
-        Some("agentContext") => Some((AGENT_CONTEXT, true)),
-        Some("speakingStyle") => Some(("speakingStyle", true)),
-        Some("sharing") => Some(("hostedSharing", true)),
+        Some(SETTING) => Some((PREFERENCE, true)),
+        Some("circleLabels") => Some(("labs.circleLabels", true)),
+        Some("agentContext") => Some(("labs.agentContext", true)),
+        Some("speakingStyle") => Some(("labs.speakingStyle", true)),
+        Some("sharing") => Some(("labs.hostedSharing", true)),
         Some("autoPaste") => Some((AUTO_PASTE, true)),
-        Some("pushToTalk") => Some((PUSH_TO_TALK, true)),
-        Some("wisprFlow") => Some(("onboardingWisprFlow", cfg!(target_os = "macos"))),
-        Some(name) if name == crate::capture::desktop::ui::electron_pill::PILL_DOODLES => Some((crate::capture::desktop::ui::electron_pill::PILL_DOODLES, true)),
-        Some("desktopFrog") => Some(("desktopFrog", cfg!(target_os = "macos"))),
-        Some("dictationFrog") => Some(("dictationFrog", cfg!(target_os = "macos"))),
+        Some("pushToTalk") => Some(("labs.pushToTalk", true)),
+        Some("wisprFlow") => Some(("labs.onboardingWisprFlow", cfg!(target_os = "macos"))),
+        Some("pillDoodles") => Some(("labs.pillDoodles", true)),
+        Some("dictationFrog") => Some(("labs.dictationFrog", cfg!(target_os = "macos"))),
+        Some("desktopFrog") => Some(("labs.desktopFrog", cfg!(target_os = "macos"))),
         _ => None,
     }
 }
@@ -70,34 +60,29 @@ pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>, setting:
     let Some((key, true)) = key(setting) else {
         return serde_json::json!({"type":"labs-result","request":request,"facts":{"error":"config_write_failed"}});
     };
-    let mut result = if enabled == Some(true) && key == PUSH_TO_TALK && !push_to_talk_supported() {
+    let mut result = if enabled == Some(true) && key == "labs.pushToTalk" && !push_to_talk_supported() {
         serde_json::json!({"error":"config_write_failed"})
     } else if let Some(on) = enabled {
-        let saved = if key == SETTING {
-            crate::shared::handoff::update_config_in(path, |config| {
-                let flags = config.as_object_mut().unwrap().entry("experiments").or_insert_with(|| serde_json::json!({}));
-                flags.as_object_mut().ok_or_else(|| anyhow::anyhow!("Invalid experiments"))?.insert(SETTING.to_owned(), on.into());
-                config[GENERATION] = crate::shared::ids::make_bundle_id().into();
-                Ok(())
-            })
+        let saved = if key == PREFERENCE {
+            set_preference(path, Some(on.into()))
         } else {
-            crate::shared::handoff::set_experiment_in(path, key, on)
+            write_preference(path, key, Some(on.into()))
         };
         match saved {
             Ok(()) => facts(path), Err(_) => serde_json::json!({"error":"config_write_failed"}),
         }
     } else {facts(path)};
     if result["agentContextSaved"] == true {
-        let index = usize::from(enabled == Some(true)) | (usize::from(key == AGENT_CONTEXT) << 1);
+        let index = usize::from(enabled == Some(true)) | (usize::from(key == "labs.agentContext") << 1);
         result["agentContextAccess"] = serde_json::json!(desktop_access(ACTIVATE_CONTEXT[index]));
     }
     serde_json::json!({"type":"labs-result","request":request,"facts":result})
 }
 
 #[cfg(not(test))]
-use native_access::desktop_access;
+pub(crate) use native_access::desktop_access;
 #[cfg(test)]
-fn desktop_access(activate: bool) -> &'static str {
+pub(crate) fn desktop_access(activate: bool) -> &'static str {
     if activate { "activation_requested" } else { "read_only" }
 }
 #[cfg(test)] mod tests {
@@ -149,7 +134,7 @@ fn desktop_access(activate: bool) -> &'static str {
         std::fs::write(&path, r#"{"secret":"private","experiments":{"agentContext":"yes","other":true}}"#).unwrap();
         assert_eq!(facts(&path)["agentContextSaved"], true);
         for enabled in [false, true] {
-            let response = request(&path, 1, Some(enabled), Some(AGENT_CONTEXT));
+            let response = request(&path, 1, Some(enabled), Some("agentContext"));
             assert_eq!(response["facts"]["agentContextSaved"], enabled);
             if enabled {
                 assert_eq!(response["facts"]["agentContextAccess"], "activation_requested");
@@ -160,7 +145,7 @@ fn desktop_access(activate: bool) -> &'static str {
             assert!(!response.to_string().contains("private"));
             let stored = std::fs::read_to_string(&path).unwrap();
             let saved: serde_json::Value = serde_json::from_str(&stored).unwrap();
-            assert_eq!(saved["experiments"][AGENT_CONTEXT], enabled);
+            assert_eq!(saved["labs"]["agentContext"], enabled);
             assert_eq!(saved["experiments"]["other"], true);
             assert_eq!(saved["secret"], "private");
         }
@@ -174,10 +159,10 @@ fn desktop_access(activate: bool) -> &'static str {
         std::fs::write(&path, r#"{"experiments":{"other":true,"pillDoodles":"off"}}"#).unwrap();
         assert_eq!(facts(&path)["pillDoodlesSaved"], false);
         for enabled in [true, false] {
-            let response = request(&path, 1, Some(enabled), Some(crate::capture::desktop::ui::electron_pill::PILL_DOODLES));
+            let response = request(&path, 1, Some(enabled), Some("pillDoodles"));
             assert_eq!(response["facts"]["pillDoodlesSaved"], enabled);
             let config = crate::shared::handoff::load_config_from(&path);
-            assert_eq!(config.experiments.get(crate::capture::desktop::ui::electron_pill::PILL_DOODLES), Some(&enabled));
+            assert_eq!(config.experiments.get("pillDoodles"), Some(&enabled));
             assert!(crate::shared::handoff::experiment_enabled_in(&config, "other"));
         }
     }
@@ -248,7 +233,7 @@ fn desktop_access(activate: bool) -> &'static str {
             assert_eq!(enable["facts"]["error"],"config_write_failed");
             assert!(facts(&path)["autoPasteSaved"].is_null());
         }
-        crate::shared::handoff::set_experiment_in(&path, AUTO_PASTE, true).unwrap();
+        write_preference(&path, AUTO_PASTE, Some(true.into())).unwrap();
         assert_eq!(request(&path,3,Some(false),Some("autoPaste"))["facts"]["autoPasteSaved"],false);
         assert_eq!(facts(&path)["saved"],false);
         let before=std::fs::read(&path).unwrap();

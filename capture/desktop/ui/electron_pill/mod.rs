@@ -232,7 +232,6 @@ pub(crate) fn capture_exclusion_ready(window: Option<u32>, applied: &[u32], scre
     !screen_capture || window.is_some_and(|id| id > 0 && applied.contains(&id))
 }
 
-pub(in crate::capture::desktop) const PILL_DOODLES: &str = "pillDoodles";
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -270,11 +269,12 @@ impl View {
             self.doodle_ink = previous
                 .filter(|view| view.phase == "recording")
                 .map_or_else(|| {
-                    use crate::shared::handoff::{default_config_path, load_config_from};
+                    use crate::shared::handoff::{default_config_path, read_preference};
                     if cfg!(test) {
                         return None;
                     }
-                    load_config_from(&default_config_path()).experiments.get(PILL_DOODLES).copied()
+                    read_preference(&default_config_path(), "labs.pillDoodles")
+                        .and_then(|value| value.as_bool())
                 }, |view| view.doodle_ink);
         }
     }

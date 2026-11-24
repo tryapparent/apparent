@@ -30,6 +30,12 @@ test('default off and malformed config fail closed without leaking unrelated pre
     }
     await writeFile(file,JSON.stringify({secret:'private',experiments:{onboardingWisprFlow:true}}));
     assert.equal(await savedWisprExperiment(home),true);
+    for(const value of [false,null,'true']){
+      await writeFile(file,JSON.stringify({labs:{onboardingWisprFlow:value},experiments:{onboardingWisprFlow:true}}));
+      assert.equal(await savedWisprExperiment(home),false);
+    }
+    await writeFile(file,JSON.stringify({labs:{onboardingWisprFlow:true},experiments:{onboardingWisprFlow:false}}));
+    assert.equal(await savedWisprExperiment(home),true);
     assert.throws(()=>preferenceFacts({saved:null,wisprSaved:'true'}));
   }finally{await rm(home,{recursive:true,force:true});}
 });

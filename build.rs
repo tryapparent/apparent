@@ -11,6 +11,7 @@ mod record_shortcut_build;
 
 fn main() {
     build_version::emit();
+    emit_settings_catalog();
     record_shortcut_build::compile();
     compile_onboarding_entry_policy();
     emit_recording_permissions();
@@ -74,6 +75,22 @@ fn main() {
             println!("cargo:rustc-link-arg=-Wl,-rpath,{swift_runtime}");
         }
     }
+}
+
+fn emit_settings_catalog() {
+    for owner in ["agent", "composition", "connect", "handoff", "onboarding", "record"] {
+        println!("cargo:rerun-if-changed={owner}/settings/preferences.json");
+    }
+    let dir = "enablement/ci/settings-contract";
+    println!("cargo:rerun-if-changed={dir}/emit.ts");
+    println!("cargo:rerun-if-changed={dir}/catalog.ts");
+    let output = Command::new("node")
+        .arg(format!("{dir}/emit.ts"))
+        .output()
+        .expect("Node 22 is required for the Settings catalog");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let out = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+    std::fs::write(out.join("settings-catalog.json"), output.stdout).expect("write Settings catalog");
 }
 
 fn emit_native_policy(owner: &str, name: &str, table: &str) {

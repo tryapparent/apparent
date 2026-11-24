@@ -18,6 +18,9 @@ pub(crate) use config_store::{capture_socket, launch_socket};
 #[cfg(target_os = "macos")]
 pub use config_store::log_dir;
 pub(crate) use config_store::{update_config_in, update_config_allowed_in};
+pub(crate) use config_store::{edit_preference, write_preference};
+pub(crate) use super::preferences::{preference_state, preference_value, preferences, read_preference, read_preferences};
+use super::preferences::{experiment_boolean, preference};
 #[cfg(test)]
 pub(crate) use config_store::set_config_write_hook;
 #[cfg(test)]
@@ -38,9 +41,17 @@ pub fn default_captures_dir() -> PathBuf {
 }
 
 fn resolve_captures_dir(configured: Option<&str>, environment: Option<PathBuf>) -> (PathBuf, &'static str) {
+    resolve_captures_dir_with(configured, environment, usable_captures_dir)
+}
+
+fn resolve_captures_dir_with(
+    configured: Option<&str>,
+    environment: Option<PathBuf>,
+    usable: impl FnOnce(&Path) -> bool,
+) -> (PathBuf, &'static str) {
     if let Some(dir) = environment { return (dir, "environment"); }
     if let Some(dir) = configured.and_then(configured_captures_dir) {
-        if usable_captures_dir(&dir) { return (dir, "configured"); }
+        if usable(&dir) { return (dir, "configured"); }
         return (builtin_captures_dir(), "fallback");
     }
     (builtin_captures_dir(), "builtin")
@@ -778,11 +789,9 @@ fn opencode_binary() -> Result<PathBuf> {
 pub struct Config {
     #[serde(default)]
     pub pen_color: Option<String>,
-    /// Hosted sync preference; credentials are separate private artifacts, not settings.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     #[serde(default)]
     pub cloud: Option<crate::connect::hosted::CloudConfig>,
-    /// Desired OS login registration. Missing leaves the OS's existing choice alone.
     #[serde(default)]
     pub launch_at_login: Option<bool>,
     #[serde(default)]
@@ -791,59 +800,40 @@ pub struct Config {
     pub agent_opencode: Option<String>,
     #[serde(default)]
     pub update_channel: Option<String>,
-    /// `false` turns Screen-capture auto-crop off; an object overrides its settings.
     #[serde(default)]
     pub autocrop: Option<serde_json::Value>,
-    /// `false` keeps Mac captures of a dev site on the clipboard instead of sending them to the
-    /// site's OpenCode session (`routing`).
     #[serde(default)]
     pub auto_send: Option<bool>,
-    /// Feature flag: shows **Export Last Capture as Video…** in the menu (default on).
     #[serde(default)]
     pub video_export: Option<bool>,
-    /// `"apple"` (default), `"hex"` or `"command"`: which engine transcribes recordings
-    /// (`transcribe`). The command's own keys are read by `transcribe_command`, not here, so a
-    /// malformed one can't reset this struct.
     #[serde(default)]
     pub transcriber: Option<String>,
-    /// Reuse Linux Parakeet across captures for 30 idle minutes (default true).
     #[serde(default)]
     pub warm_recognizer: Option<bool>,
-    /// Lower the output volume while recording (`playback`) to `playbackLevel` percent of it.
     #[serde(default)]
     pub lower_playback: Option<bool>,
     #[serde(default)]
     pub playback_level: Option<u8>,
-    /// The Hex model to use when `transcriber` is `"hex"` (default: the first ready one of
-    /// `hex::PREFERRED_MODELS`).
     #[serde(default)]
     pub hex_model: Option<String>,
-    /// Hex language code (`"en"` by default, `"auto"` for model language detection).
     #[serde(default)]
     pub hex_language: Option<String>,
-    /// Apple Speech locale (BCP-47, e.g. "zh-TW"); missing means the Mac's own language.
     #[serde(default)]
     pub apple_locale: Option<String>,
-    /// Whether to use the native Metal recording pill instead of GPUI's `HudPillWindow` (default `true`).
     #[serde(default)]
     pub native_pill: Option<bool>,
-    /// Visual style of the native recording pill: `"black"` (default) or `"glass"` (`NSGlassEffectView`).
     #[serde(default)]
     pub pill_style: Option<String>,
-    /// Behaviour Kit tries locally before it ships (`{"agentContext": true}`); see `experiment`.
-    /// Read leniently (`lenient_experiments`), so a stray value never fails the file.
     #[serde(default, deserialize_with = "lenient_experiments")]
     pub experiments: std::collections::BTreeMap<String, bool>,
-    /// The microphone Mac captures record from (`mic`); absent follows the macOS default.
+    #[serde(skip)]
+    pub(crate) skip_screen_selection: Option<bool>,
     #[serde(default)]
     pub microphone: Option<crate::capture::engine::runtime::audio::mic::Choice>,
-    /// Explicit off allows typed captures without microphone access; applies at next start.
     #[serde(default)]
     pub microphone_enabled: Option<bool>,
-    /// Legacy routing settings, retained for config compatibility.
     #[serde(default)]
     pub routing: Option<RoutingConfig>,
-    /// Where new captures go (`default_captures_dir`); absent keeps the built-in folder.
     #[serde(default)]
     pub captures_dir: Option<String>,
 }
@@ -857,7 +847,6 @@ impl Config {
         self.warm_recognizer.unwrap_or(true)
     }
 
-    /// The output volume while recording when `lowerPlayback` is on, in percent of what it was.
     pub fn recording_volume(&self) -> u8 {
         self.playback_level.unwrap_or(20).min(100)
     }
@@ -897,17 +886,7 @@ where
         return Ok(out);
     };
     for (name, value) in map {
-        let on = match &value {
-            Value::Bool(b) => Some(*b),
-            Value::Number(n) => n.as_f64().map(|n| n != 0.0),
-            Value::String(s) => match s.trim().to_ascii_lowercase().as_str() {
-                "true" | "yes" | "on" | "1" => Some(true),
-                "false" | "no" | "off" | "0" | "" => Some(false),
-                _ => None,
-            },
-            _ => None,
-        };
-        match on {
+        match experiment_boolean(&value) {
             Some(on) => {
                 out.insert(name, on);
             }
@@ -919,7 +898,6 @@ where
     Ok(out)
 }
 
-/// Config problems are logged once per process, not on every read.
 fn log_config_once(message: String) {
     static SEEN: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
     let mut seen = SEEN
@@ -967,7 +945,31 @@ pub fn experiment(name: &str) -> bool {
     experiment_enabled_in(&config(), name)
 }
 
-/// Most experiments are opt-in; these features are on unless explicitly disabled.
+pub(crate) fn experiment_preference(id: &str) -> bool {
+    let overridden = experiment_preference_overridden(id);
+    if overridden || cfg!(test) {
+        return overridden;
+    }
+    experiment_preference_in(&config(), id)
+}
+
+pub(crate) fn experiment_preference_overridden(id: &str) -> bool {
+    experiment_overridden(id) || preference(id)
+        .and_then(|entry| entry["legacy"]["path"].as_str())
+        .and_then(|path| path.strip_prefix("experiments."))
+        .is_some_and(experiment_overridden)
+}
+
+pub(crate) fn experiment_preference_in(config: &Config, id: &str) -> bool {
+    let Some(entry) = preference(id) else { return false };
+    entry["legacy"]["path"]
+        .as_str()
+        .and_then(|path| path.strip_prefix("experiments."))
+        .and_then(|name| config.experiments.get(name).copied())
+        .or_else(|| entry["default"].as_bool())
+        .unwrap_or(false)
+}
+
 pub(crate) fn experiment_enabled_in(config: &Config, name: &str) -> bool {
     config
         .experiments
@@ -989,16 +991,49 @@ pub fn load_config_from(path: &Path) -> Config {
         .unwrap_or_default()
 }
 
-/// The config in `value`. A key whose value doesn't fit (`"autoSend": "maybe"`) is dropped and
-/// logged on its own, so one bad setting never resets the others to their defaults.
-fn config_from_value(value: serde_json::Value) -> Config {
+fn config_from_value(mut value: serde_json::Value) -> Config {
+    let skip = preference_value(&value, "permissions.skipScreenSelection").and_then(|v| v.as_bool());
+    for entry in preferences() {
+        let id = entry["id"].as_str().unwrap();
+        let Some(alias) = entry["legacy"]["path"].as_str() else { continue };
+        if entry["legacy"]["invert"] == true {
+            continue;
+        }
+        let (pane, field) = id.split_once('.').unwrap();
+        if !alias.starts_with("experiments.") &&
+            value.get(pane).is_none_or(|group| group.is_object() && group.get(field).is_none()) {
+            continue;
+        }
+        let saved = preference_value(&value, id);
+        if let Some(key) = alias.strip_prefix("experiments.") {
+            if value.is_object() && saved.is_some() && !value["experiments"].is_object() {
+                value["experiments"] = serde_json::json!({});
+            }
+            if let Some(flags) = value.get_mut("experiments").and_then(serde_json::Value::as_object_mut) {
+                flags.remove(key);
+                if let Some(saved) = saved {
+                    flags.insert(key.into(), saved);
+                }
+            }
+        } else if !alias.contains('.') && let Some(map) = value.as_object_mut() {
+            map.remove(alias);
+            if let Some(saved) = saved {
+                map.insert(alias.into(), saved);
+            }
+        }
+    }
+    let mut config = deserialize_config(value);
+    config.skip_screen_selection = skip;
+    config
+}
+
+fn deserialize_config(value: serde_json::Value) -> Config {
     let serde_json::Value::Object(map) = value else {
         return Config::default();
     };
     if let Ok(config) = serde_json::from_value(serde_json::Value::Object(map.clone())) {
         return config;
     }
-    // Add keys one at a time, keeping each only if everything so far still reads.
     let mut kept = serde_json::Map::new();
     for (key, value) in map {
         kept.insert(key.clone(), value.clone());
@@ -1016,7 +1051,6 @@ fn config() -> Config {
     load_config_from(&default_config_path())
 }
 
-/// Read at recording start; edits never interrupt an active capture. Tests use defaults.
 pub fn warm_recognizer() -> bool {
     if cfg!(test) {
         Config::default().warm_recognizer_enabled()
@@ -1105,7 +1139,7 @@ pub fn pill_style() -> crate::capture::desktop::native::pill::PillStyle {
         .unwrap_or(crate::capture::desktop::native::pill::PillStyle::Black)
 }
 
-/// Change one experiment without replacing unrelated flags or secret-bearing config keys.
+#[cfg(test)]
 pub(crate) fn set_experiment_in(path: &Path, name: &str, on: bool) -> Result<()> {
     update_config_in(path, |config| {
         let experiments = config

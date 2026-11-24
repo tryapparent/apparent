@@ -1,26 +1,65 @@
 //! Finite, read-only Record retention planning over native observations.
 use crate::capture::engine::bundle::retention::Policy;
+use crate::shared::handoff::{edit_preference, preference_state, update_config_in};
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use std::{path::Path, process::Command, time::Duration};
 
 pub(crate) const MAX_STORAGE_MB: u32 = 99_999_999;
+pub(crate) const MAXIMUM_MB: &str = "storage.maximumMb";
 include!(concat!(env!("OUT_DIR"), "/storage-default.rs"));
 
 pub(crate) fn storage_limit(config: &serde_json::Value) -> Option<u32> {
-    let retention = config.get("retention");
-    match retention.and_then(|settings| settings.get("maximumMb")) {
-        Some(value) => value.as_u64().and_then(|value| u32::try_from(value).ok())
-            .filter(|value| *value <= MAX_STORAGE_MB),
-        None => DEFAULT_STORAGE_LIMIT_MB[usize::from(retention.is_some())],
+    match preference_state(config, MAXIMUM_MB) {
+        (Some(value), _) => value.as_u64().and_then(|value| u32::try_from(value).ok()),
+        (None, "invalid") => None,
+        (None, _) => {
+            let has_retention = config.get("retention").is_some()
+                || Policy::saved_fields(config).iter().any(Option::is_some);
+            DEFAULT_STORAGE_LIMIT_MB[usize::from(has_retention)]
+        }
     }
 }
 
 pub(crate) fn configured_storage_limit(path: &Path) -> Result<Option<u32>> {
     let raw = crate::shared::handoff::capture_location::read_raw(path)?;
     let limit = storage_limit(&raw);
-    ensure!(limit.is_some() || raw["retention"].get("maximumMb").is_none(), "Invalid saved storage limit");
+    ensure!(preference_state(&raw, MAXIMUM_MB).1 != "invalid", "Invalid saved storage limit");
     Ok(limit)
+}
+
+pub(crate) fn set_preference(
+    path: &Path,
+    id: &str,
+    value: Option<serde_json::Value>,
+) -> Result<()> {
+    use crate::capture::engine::bundle::retention::{BUNDLE_DAYS, MEDIA_DAYS};
+    ensure!(matches!(id, MEDIA_DAYS | BUNDLE_DAYS | MAXIMUM_MB), "Unknown retention preference");
+    update_config_in(path, |config| {
+        ensure!(config.get("retention").is_none_or(serde_json::Value::is_object), "Invalid retention object");
+        edit_preference(config, id, value)?;
+        remove_empty_legacy_retention(config);
+        Ok(())
+    })
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn check_preference_compatibility() -> Result<()> {
+    let config = crate::shared::handoff::read_preferences(&crate::shared::handoff::default_config_path())?;
+    crate::shared::preferences::check_legacy_readback(&config)?;
+    if ["mediaDays", "bundleDays"].iter().any(|key| config["storage"].get(key).is_some())
+        && let Some(legacy) = config.get("retention")
+    {
+        serde_json::from_value::<Policy>(legacy.clone())
+            .context("Re-save Storage retention before installing or restarting an update")?;
+    }
+    Ok(())
+}
+
+pub(crate) fn remove_empty_legacy_retention(config: &mut serde_json::Value) {
+    if config["retention"].as_object().is_some_and(serde_json::Map::is_empty) {
+        config.as_object_mut().unwrap().remove("retention");
+    }
 }
 
 #[derive(Serialize)]
