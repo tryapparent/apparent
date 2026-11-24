@@ -5,7 +5,7 @@ export type Config = {
   support?: { executable: string; tokenFile: string; keyFile: string; agentUid: number };
   projectId: number; t3ProjectId: string; t3Origin: string; t3TokenFile: string;
   webhookTokenFile: string; stateDirectory: string; posthogCommand: string;
-  posthogOrigin: string; port: number; dailyLimit: number; queueLimit: number;
+  posthogOrigin: string; port: number; dailyLimit: number; queueLimit: number; batchSize: number;
   modelSelection: {instanceId: string; model: string; options?: {id: string; value: string}[]};
   runtimeMode: 'auto-accept-edits' | 'auto' | 'full-access';
 };
@@ -44,10 +44,13 @@ export function config(env: NodeJS.ProcessEnv): Config {
   } : undefined;
   if (support && (process.platform !== 'linux' || !process.getuid?.() || support.agentUid === process.getuid()))
     throw Error('The support reader and its coding agent require separate non-root Linux accounts');
+  const queueLimit = integer('QUEUE_LIMIT', 100, 1000);
+  const maxBatchSize = Math.min(3, queueLimit);
   return {support, projectId: integer('POSTHOG_PROJECT_ID', 329943, 2147483647), t3ProjectId: required('T3_PROJECT_ID'),
     t3Origin: t3Origin.origin, posthogOrigin, t3TokenFile: path('T3_TOKEN_FILE'), webhookTokenFile: path('WEBHOOK_TOKEN_FILE'),
     stateDirectory: path('STATE_DIRECTORY'), posthogCommand: path('POSTHOG_COMMAND'),
-    port: integer('PORT', 8646, 65535), dailyLimit: integer('DAILY_LIMIT', 10, 100), queueLimit: integer('QUEUE_LIMIT', 100, 1000),
+    port: integer('PORT', 8646, 65535), dailyLimit: integer('DAILY_LIMIT', 10, 100), queueLimit,
+    batchSize: integer('BATCH_SIZE', maxBatchSize, maxBatchSize),
     modelSelection: {instanceId, model: required('T3_MODEL'),
       ...(reasoning === undefined ? {} : {options: [{id:'reasoningEffort', value:reasoning}]})},
     runtimeMode: runtimeMode as Config['runtimeMode']};

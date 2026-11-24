@@ -4,7 +4,7 @@ import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 
 export type Job = {issue: string; thread: string; command: string; state: 'queued' | 'launching' | 'active' | 'done' | 'held';
-  payload: string | null; attempts: number; next_at: number; reserved_at: number | null};
+  payload: string | null; attempts: number; next_at: number; reserved_at: number | null; batch_thread: string | null};
 export type SupportAccess = {report: string; digest: string; expiresAt: number};
 export class Store {
   db!: DatabaseSync;
@@ -31,6 +31,8 @@ export class Store {
       const existing = this.db.prepare('SELECT identity FROM metadata').get();
       if (existing && existing.identity !== identity) throw Error('Queue belongs to a different target; use a separate state directory');
       if (!existing) this.db.prepare('INSERT INTO metadata VALUES (?)').run(identity);
+      if (!this.db.prepare('PRAGMA table_info(jobs)').all().some(column => column.name === 'batch_thread'))
+        this.db.exec('ALTER TABLE jobs ADD COLUMN batch_thread TEXT');
     } catch (error) {if (this.db?.isOpen) this.db.close(); this.lock.close(); throw error;}
   }
   enqueue(issue: string, limit: number): 'accepted' | 'duplicate' | 'full' {
@@ -44,18 +46,31 @@ export class Store {
     return 'accepted';
   }
   jobs(): Job[] {return this.db.prepare('SELECT * FROM jobs ORDER BY rowid').all() as Job[];}
-  nextLaunch(now: number, limit: number): Job | undefined {
-    return this.db.prepare(`SELECT * FROM jobs WHERE next_at<=? AND
-      (state='launching' OR (state='queued' AND ?))
-      ORDER BY state='queued', rowid LIMIT 1`).get(now, Number(this.dailyCount(now) < limit)) as Job | undefined;
+  nextLaunch(now: number, limit: number, batchSize: number): Job[] {
+    const retry = this.db.prepare(`SELECT * FROM jobs WHERE state='launching' AND batch_thread IS NULL
+      AND next_at<=? ORDER BY rowid LIMIT 1`).get(now) as Job | undefined;
+    if (retry) return [retry];
+    if (this.dailyCount(now) >= limit) return [];
+    const jobs = this.db.prepare("SELECT * FROM jobs WHERE state='queued' AND next_at<=? ORDER BY rowid LIMIT ?")
+      .all(now, batchSize) as Job[];
+    return jobs.length === batchSize ? jobs : [];
   }
-  reserve(job: Job, payload: string, now: number, access?: SupportAccess): void {
+  reserve(jobs: Job[], payload: string, now: number, grants: Map<string, SupportAccess>): void {
+    const [leader] = jobs;
     this.db.exec('BEGIN');
     try {
-      const result = this.db.prepare("UPDATE jobs SET state='launching',payload=?,reserved_at=?,attempts=0 WHERE issue=? AND state='queued'").run(payload, now, job.issue);
-      if (result.changes === 1 && access) this.db.prepare(
+      const reserve = this.db.prepare(`UPDATE jobs SET state='launching',payload=?,reserved_at=?,batch_thread=?,attempts=0
+        WHERE issue=? AND state='queued'`);
+      const grant = this.db.prepare(
         'INSERT INTO support_access(thread,report,digest,expires_at) VALUES (?,?,?,?)',
-      ).run(job.thread, access.report, access.digest, access.expiresAt);
+      );
+      for (const job of jobs) {
+        const first = job.issue === leader.issue;
+        const result = reserve.run(first ? payload : null, first ? now : null, first ? null : leader.thread, job.issue);
+        if (result.changes !== 1) throw Error('Batch member is no longer queued');
+        const access = grants.get(job.issue);
+        if (access) grant.run(job.thread, access.report, access.digest, access.expiresAt);
+      }
       this.db.exec('COMMIT');
     } catch (error) {this.db.exec('ROLLBACK'); throw error;}
   }
@@ -71,8 +86,16 @@ export class Store {
       WHERE thread=? AND expires_at>? AND digest=? AND state IN ('launching','active')`).get(thread, now, digest));
   }
   update(issue: string, state: Job['state'], attempts = 0, next = 0): void {
-    if (state === 'done') this.db.prepare('DELETE FROM support_access WHERE thread=(SELECT thread FROM jobs WHERE issue=?)').run(issue);
-    this.db.prepare('UPDATE jobs SET state=?,attempts=?,next_at=? WHERE issue=?').run(state, attempts, next, issue);
+    const leader = this.db.prepare('SELECT coalesce(batch_thread,thread) AS thread FROM jobs WHERE issue=?').get(issue);
+    if (!leader) return;
+    this.db.exec('BEGIN');
+    try {
+      if (state === 'done') this.db.prepare(`DELETE FROM support_access WHERE thread IN
+        (SELECT thread FROM jobs WHERE thread=? OR batch_thread=?)`).run(leader.thread, leader.thread);
+      this.db.prepare('UPDATE jobs SET state=?,attempts=?,next_at=? WHERE thread=? OR batch_thread=?')
+        .run(state, attempts, next, leader.thread, leader.thread);
+      this.db.exec('COMMIT');
+    } catch (error) {this.db.exec('ROLLBACK'); throw error;}
   }
   dailyCount(now: number): number {
     const start = now - now % 86400000;
