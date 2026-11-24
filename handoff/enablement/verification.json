@@ -1,0 +1,25 @@
+{
+  "scenarios": [
+    {
+      "id": "focused-destination-handoff",
+      "description": "Measure picker input to a selectable destination and selection to a verified T3 receipt and Submitted presentation.",
+      "platforms": ["linux-x11"],
+      "userEntryPoint": "Open the destination picker on a completed recording, then select an existing thread.",
+      "prerequisites": [
+        "A prepared build of the exact revision, its locked Desktop dependencies, and a private Xvfb display.",
+        "CPU and storage pressure below the focused benchmark admission thresholds."
+      ],
+      "runner": {
+        "path": "handoff/enablement/performance/run.ts",
+        "instructions": "handoff/enablement/performance/README.md"
+      },
+      "expectedEvidence": [
+        "A trusted click, a selectable row, the exact synthetic dispatch payload, an independent receiver acceptance, the durable sent receipt and the visible Submitted indicator.",
+        "Separate fresh and prewarmed catalogue trials, normalized score, matched repeat deltas, CPU, PSS, storage and span attribution."
+      ],
+      "limits": [
+        "Runs the production Electron renderer and Handoff code with a synthetic native parent and loopback T3 receiver. Real clipboard, native compositor, OS focus restoration and real T3 acceptance require their existing verification lanes."
+      ]
+    }
+  ]
+}
