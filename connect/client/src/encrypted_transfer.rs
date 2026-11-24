@@ -25,6 +25,38 @@ pub(super) struct PeerSet {
 struct StoredSpool {
     metadata: EncryptedJob,
     files: Vec<Asset>,
+    #[serde(default)]
+    recorded_at_ms: Option<u64>,
+}
+
+impl Job {
+    pub(super) fn recording_time(bundle: &Path) -> Option<u64> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct RecordingMetadata {
+            created_at_ms: u64,
+        }
+
+        let file = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(bundle.join("apparent.json"))
+            .ok()?;
+        let metadata = file.metadata().ok()?;
+        if !metadata.is_file() || metadata.len() > MAX_FILE_BYTES {
+            return None;
+        }
+        let reader = std::io::BufReader::new(file.take(MAX_FILE_BYTES));
+        let time = serde_json::from_reader::<_, RecordingMetadata>(reader).ok()?.created_at_ms;
+        (time > 0 && time <= (now() + 86400) * 1000).then_some(time)
+    }
+
+    pub(super) fn reservation(&self, mut body: Value) -> Value {
+        if let Some(time) = self.recorded_at_ms {
+            body["recordedAtMs"] = json!(time);
+        }
+        body
+    }
 }
 
 impl Client {
@@ -57,6 +89,7 @@ impl Client {
         };
         let ordinary = Scratch::new(&self.state)?;
         snapshot(&job.bundle, &ordinary.0)?;
+        job.recorded_at_ms = Job::recording_time(&ordinary.0);
         ensure!(allowed(), "cancelled");
         job.files =
             encryption::v2::pack(&ordinary.0, destination, &context, &identity, &recipients)?;
@@ -203,6 +236,7 @@ impl Client {
             };
             let ordinary = Scratch::new(&self.state)?;
             snapshot(&job.bundle, &ordinary.0).context("encryption_snapshot_failed")?;
+            let recorded_at_ms = Job::recording_time(&ordinary.0);
             let sealed = Scratch::new(&self.state)?;
             let files = if job.encryption_version == 2 {
                 encryption::v2::pack(&ordinary.0, &sealed.0, &context, &identity, &recipients)
@@ -216,7 +250,7 @@ impl Client {
             };
             atomic_json(
                 &sealed.0.join("spool-state.json"),
-                &StoredSpool { metadata, files },
+                &StoredSpool { metadata, files, recorded_at_ms },
             )
             .context("encryption_spool_receipt_failed")?;
             // Immutable spool comes before remote reservation. If publication of the
@@ -241,6 +275,7 @@ impl Client {
         );
         job.files = saved.files;
         job.encryption = Some(saved.metadata);
+        job.recorded_at_ms = saved.recorded_at_ms;
         self.encryption_recipients_current(job, &credential)?;
         for file in &job.files {
             let source = spool.join(&file.path);
@@ -268,7 +303,7 @@ impl Client {
             Some(&credential),
             "POST",
             &base,
-            Some(json!({"format":FORMAT,"files":job.files})),
+            Some(job.reservation(json!({"format":FORMAT,"files":job.files}))),
             Duration::from_secs(30),
             &allowed,
         )?;

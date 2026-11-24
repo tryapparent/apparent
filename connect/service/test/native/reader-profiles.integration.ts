@@ -156,6 +156,7 @@ test("one agent reads encrypted uploads from two Connect accounts", {
     const bundle = join(sender.cwd, "source.apparent");
     await mkdir(bundle, { mode: 0o700 });
     const transcript = `Synthetic recording ${name}`;
+    const recordedAtMs = Date.now() - 60_000;
     const video = `synthetic video ${name}`;
     await writeFile(join(bundle, "recording.mov"), video);
     await writeFile(join(bundle, "summary.md"), transcript);
@@ -171,7 +172,7 @@ test("one agent reads encrypted uploads from two Connect accounts", {
       JSON.stringify({
         version: 1,
         id: name,
-        createdAtMs: 0,
+        createdAtMs: recordedAtMs,
         durationMs: 4000,
         target: {
           mode: "display",
@@ -202,6 +203,26 @@ test("one agent reads encrypted uploads from two Connect accounts", {
       .first();
     assert.equal(stored.account_id, account.id);
     assert.equal(stored.format, "apparent-encrypted-v2");
+    const listing = JSON.parse(
+      await success(agent, [
+        "connect",
+        "list",
+        "--reader",
+        name,
+        "--limit",
+        "1",
+        "--json",
+      ]),
+    );
+    assert.equal(listing.reader, name);
+    assert.equal(listing.captures.length, 1);
+    assert.equal(listing.captures[0].id, id);
+    assert.equal(listing.captures[0].status, "ready");
+    assert.equal(
+      listing.captures[0].recordedAt,
+      new Date(recordedAtMs).toISOString(),
+    );
+    assert.ok(listing.captures[0].ageSeconds >= 60);
     captures.push({ name, id, transcript, video });
     if (name === "first") {
       const config = JSON.parse(await readFile(sender.config, "utf8"));
@@ -247,6 +268,9 @@ test("one agent reads encrypted uploads from two Connect accounts", {
     profiles.map(({ name }) => name),
     ["default", "first", "second"],
   );
+  const ambiguous = await run(agent, ["connect", "list", "--json"]);
+  assert.notEqual(ambiguous.code, 0);
+  assert.match(ambiguous.stderr, /choose --reader/);
   for (const capture of captures) {
     const wrong = capture.name === "first" ? "second" : "first";
     const out = join(agent.cwd, `${capture.name}.apparent`);
@@ -279,6 +303,14 @@ test("one agent reads encrypted uploads from two Connect accounts", {
   const after = JSON.parse(await success(agent, ["connect", "readers"]));
   assert.equal(after[1].auth.status, "signed_out");
   assert.equal(after[2].auth.status, "signed_in");
+  const remaining = JSON.parse(
+    await success(agent, ["connect", "list", "--json"]),
+  );
+  assert.equal(remaining.reader, "second");
+  assert.deepEqual(
+    remaining.captures.map((capture: { id: string }) => capture.id),
+    [captures[1].id],
+  );
   await success(agent, [
     "fetch",
     captures[1].id,

@@ -44,6 +44,41 @@ impl Drop for ProgressGuard {
     }
 }
 
+pub(super) fn validate_share_url(server: &str, url: &str) -> Result<()> {
+    ensure!(
+        url.strip_prefix(&format!("{server}/s/"))
+            .is_some_and(hex_digest),
+        "Invalid share URL"
+    );
+    Ok(())
+}
+
+pub(super) fn canonical_query(query: &str) -> bool {
+    if query.is_empty() || query.len() > 12_288 {
+        return false;
+    }
+    let bytes = query.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            if index + 2 >= bytes.len()
+                || !bytes[index + 1].is_ascii_hexdigit()
+                || !bytes[index + 2].is_ascii_hexdigit()
+                || bytes[index + 1].is_ascii_lowercase()
+                || bytes[index + 2].is_ascii_lowercase()
+            {
+                return false;
+            }
+            index += 3;
+        } else if bytes[index].is_ascii_alphanumeric() || b"-._~".contains(&bytes[index]) {
+            index += 1;
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
 impl Client {
     pub fn pointer(&self, bundle: &Path) -> Option<String> {
         if !self.enabled() || !self.state.is_dir() {
@@ -165,6 +200,7 @@ impl Client {
         let cancellation = self.cancellation()?;
         let mut job = Job {
             id: random_id()?,
+            recorded_at_ms: None,
             bundle: bundle.canonicalize()?,
             server: server_url(&settings.server)?,
             generation: credential.generation.clone(),
@@ -202,6 +238,7 @@ impl Client {
             self.foreground_encrypted_snapshot(&mut job, &stage.0, &preparing)?;
         } else {
             job.files = snapshot(&job.bundle, &stage.0)?;
+            job.recorded_at_ms = Job::recording_time(&stage.0);
         }
         // Recreate after manifest preparation so the closure borrows the finished job.
         let allowed = || {
@@ -339,9 +376,9 @@ impl Client {
                         if job.speaking_style {
                             reservation["styleHistory"] = json!(true);
                         }
-                        reservation
+                        job.reservation(reservation)
                     } else {
-                        json!({"files":job.files})
+                        job.reservation(json!({"files":job.files}))
                     }),
                     Duration::from_secs(30),
                     &allowed,

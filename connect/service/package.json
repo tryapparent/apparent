@@ -42,6 +42,10 @@
     }
   },
   "imports": {
+    "#bend/recording-list": {
+      "types": "./src/captures/recording-list.d.mts",
+      "default": "./dist/bend/recording-list.mjs"
+    },
     "#bend/style-history": {
       "types": "./src/captures/style-history.d.mts",
       "default": "./dist/bend/style-history.mjs"

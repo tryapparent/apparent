@@ -1,11 +1,10 @@
-import {privateReservation,styleHistory} from './captures/history.ts';
+import {live,privateReservation,recordingTime,styleHistory} from './captures/history.ts';
 import reportPolicy from '#bend/report-policy';
 import {FILE_FORMAT,fileTransport} from '../../client/typescript/contracts.ts';
 import type {Env, CaptureRow, FileRow, ManifestFile, AttemptSnapshot} from './types.ts';
 import {DAY,hex,json,fail,stmt,body,bearer,usage,isRecord,supportCapture} from './common.ts';
 import {checkedHeads,getObject,uploadAttempt,settledAttempt,deleteAttempts} from './storage.ts';
 import {queueDailyActivity} from './reporting/aggregate-dau.ts';
-const live="status!='deleted' AND expires_at>? AND (status='ready' OR pending_until>?)";
 const supportPath=/^support\/part-[0-5]\.age$/;
 export function validPath(path: unknown): path is string {
  return typeof path==='string'&&path.length<=128&&/^(apparent\.json|notes\.json|summary\.md|contact-sheet(?:-full)?\.png|audio\.wav|recording\.(mp4|mov)|finish-trace\.json|timeline\.json|frames(?:-full)?\/frame-[0-9]+\.png)$/.test(path);
@@ -71,9 +70,9 @@ export async function captureRoutes(request: Request,env: Env,url: URL,context?:
    try {
     // The insert trigger tombstones the oldest quota overflow in this same
     // transaction. A duplicate ID cannot run it, including concurrent retries.
-    const values=[id,a.account_id,m.text,m.bytes,now+7*DAY,now+DAY,format];
+    const values=[id,a.account_id,m.text,m.bytes,now+7*DAY,now+DAY,format,recordingTime(input.recordedAtMs)];
     const result=await env.DB.batch([
-     privateReservation(env,values,support,input.styleHistory===true,a.account_id,now,m.bytes,live),
+     await privateReservation(env,values,support,input.styleHistory===true,a.account_id,now,m.bytes),
      // One set insertion, not one SQL statement per file. JSON keeps the full
      // 512-file manifest below D1's 100-bound-parameter limit as well.
      stmt(env,"INSERT INTO files(capture_id,path,size,sha256) SELECT ?,json_extract(value,'$.path'),json_extract(value,'$.size'),json_extract(value,'$.sha256') FROM json_each(?) WHERE changes()=1",id,m.text)

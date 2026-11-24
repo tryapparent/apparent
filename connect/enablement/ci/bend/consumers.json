@@ -36,6 +36,12 @@
     "web",
     "service"
   ],
+  "connect/service/src/captures/recording-list.bend": [
+    "capture",
+    "client",
+    "web",
+    "service"
+  ],
   "connect/service/src/reporting/activity-preference.bend": [
     "capture",
     "client",

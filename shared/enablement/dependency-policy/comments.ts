@@ -58,7 +58,7 @@ let initialized = false;
 const swiftCommentTask = "apparent-swift-comments";
 type EmbeddedHtml = { markup?: string };
 const connectMigration =
-  /^connect\/service\/migrations\/(?:baseline\/)?\d{4}\.sql$/;
+  /^connect\/service\/migrations\/(?:baseline\/|recordings\/)?\d{4}\.sql$/;
 let sqliteParser:
   | Promise<import("@willbooster/web-tree-sitter").Parser>
   | undefined;
