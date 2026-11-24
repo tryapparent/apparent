@@ -3,6 +3,7 @@
 //
 //   bun ../enablement/browser-proof/motion/hitches.ts --url http://localhost:4602/ [--browser webkit] [--size iphone] [--runs 2]
 import { chromium, webkit } from "playwright-core"
+import { framePacing } from "./frame-pacing.ts"
 
 const args = new Map<string, string>()
 for (let i = 2; i < process.argv.length; i += 2) args.set(process.argv[i].replace(/^--/, ""), process.argv[i + 1])
@@ -12,11 +13,6 @@ const size = args.get("size") ?? "iphone"
 const runs = Number(args.get("runs") ?? "2")
 const query = args.get("query") ?? ""
 const viewport = size === "iphone" ? { width: 393, height: 852 } : { width: 1280, height: 860 }
-
-const pct = (xs: number[], p: number) => {
-  const s = [...xs].sort((a, b) => a - b)
-  return s[Math.min(s.length - 1, Math.floor((s.length - 1) * p))] ?? 0
-}
 
 const all: number[] = []
 const longTasks: number[] = []
@@ -56,21 +52,4 @@ for (let r = 0; r < runs; r++) {
   await browser.close()
 }
 
-const over = (ms: number) => all.filter((d) => d > ms).length
-console.log(
-  JSON.stringify({
-    url,
-    browser: browserName,
-    size,
-    runs,
-    frames: all.length,
-    p50: +pct(all, 0.5).toFixed(2),
-    p95: +pct(all, 0.95).toFixed(2),
-    p99: +pct(all, 0.99).toFixed(2),
-    max: +Math.max(...all).toFixed(1),
-    over25ms: over(25),
-    over34ms: over(34),
-    longTasks: longTasks.length,
-    longTaskMs: +longTasks.reduce((a, b) => a + b, 0).toFixed(0),
-  }),
-)
+console.log(JSON.stringify({ url, browser: browserName, size, runs, ...framePacing(all, longTasks) }))
