@@ -36,3 +36,30 @@ first half to Nemotron and checks the full timed Parakeet result after Stop.
 Set `APPARENT_STREAM_EXPECT_DEVICE=cpu` for CPU verification. The separate macOS
 `real_metal_nemotron_preview_and_parakeet_saved_transcript` fixture requires
 actual Metal execution.
+
+## OpenRouter BYOK experiment
+
+In the installed Settings → Labs pane on Linux or macOS, save an OpenRouter
+API key, select **MAI-Transcribe 2**, and enable **OpenRouter transcription**.
+At Stop, an ordinary Desktop screen recording with microphone audio attempts one
+file transcription using the current Labs preference. A failed request falls
+back to the usual transcriber and the recording can still be saved. Removing the
+key disables the experiment. An already submitted request may finish. There is
+no live streaming or Connect service involved.
+
+The key is stored in a separate owner-only `0600` file beside the active profile’s
+config. The Settings bridge returns only key presence, model and enabled state.
+The worker gets the WAV on private stdin. Requests use a fixed OpenRouter
+endpoint, refuse redirects, and have a 15-second deadline and 16 MiB input cap.
+
+For an attempted upload, `finish-trace.json` records
+`hostedTranscription` with the result category, input size and duration, HTTP
+status when available, request and worker elapsed times, provider-reported
+audio duration and request cost when returned, timed-word count when
+available, and local fallback elapsed time when used. Neither the key, audio,
+provider body nor transcript is written to the trace. Bundle transcript metadata
+identifies the model on successful hosted runs.
+
+The Record Bend check runs credential state and synthetic HTTP cases. The Labs
+Electron smoke covers the controls. A provider smoke uses a tester’s own key and
+non-sensitive narration, then checks the saved word timings and the finish trace.

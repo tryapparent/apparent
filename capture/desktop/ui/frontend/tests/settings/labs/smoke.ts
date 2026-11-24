@@ -14,7 +14,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
  const frontend=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../..');
  const application=spawn(createRequire(import.meta.url)('electron') as string,
   ['--no-sandbox',frontend,'--settings-storage','--settings-labs','--settings-parent','--remote-debugging-port=0'],
-  {env:{...process.env,ELECTRON_RUN_AS_NODE:'',HOME:home,XDG_CONFIG_HOME:path.join(home,'config'),XDG_CACHE_HOME:path.join(home,'cache')},stdio:'pipe'});
+  {env:{...process.env,ELECTRON_RUN_AS_NODE:'',HOME:home,APPARENT_CONFIG:path.join(home,'app','config.json'),XDG_CONFIG_HOME:path.join(home,'config'),XDG_CACHE_HOME:path.join(home,'cache')},stdio:'pipe'});
  const exited=new Promise<void>(resolve=>application.once('exit',()=>resolve()));
  let browser:Awaited<ReturnType<typeof chromium.connectOverCDP>>|undefined;
  const messages:Record<string,unknown>[]=[];
@@ -199,6 +199,22 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
    for(const control of [toggle,sharing,wispr]){await control.scrollIntoViewIfNeeded();await expect(control).toBeInViewport();}
   }
   await page.evaluate(()=>document.documentElement.style.removeProperty('font-size'));
+  const hosted=page.getByRole('switch',{name:'OpenRouter transcription'});
+  const key=page.getByLabel('OpenRouter API key',{exact:true});
+  const proofKey='sk-or-v1-synthetic-settings-proof';
+  const credential=path.join(home,'app','openrouter-transcription.json');
+  await expect(hosted).toBeDisabled();
+  await key.fill(proofKey);
+  await page.getByRole('button',{name:'Save key'}).click();
+  await expect(key).toHaveValue('');
+  await expect(hosted).toHaveAttribute('aria-checked','false');
+  await expect(page.getByLabel('Model',{exact:true})).toHaveValue('microsoft/mai-transcribe-2');
+  await hosted.press('Space');
+  await expect(hosted).toHaveAttribute('aria-checked','true');
+  assert.equal((await fs.stat(credential)).mode & 0o777,0o600);
+  await page.getByRole('button',{name:'Remove key'}).click();
+  await expect(hosted).toBeDisabled();
+  await assert.rejects(fs.stat(credential),{code:'ENOENT'});
   for(const pane of ['General','Agents','Recording','Permissions','Storage','About']){
    const before=messages.length;const target=page.getByRole('button',{name:pane,exact:true});
    await expect(target).toBeEnabled();await target.focus();await expect(target).toBeFocused();await target.press('Enter');

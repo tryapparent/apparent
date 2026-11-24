@@ -46,6 +46,28 @@
         "The scenario drives the running GUI through capture start, stop and cancel CLI commands. Picker, shortcut, capsule button and paste into another app are outside its coverage.",
         "The clipboard and focus assertions are specific to Hyprland. Audio quality, ink and multi-display behavior require separate checks."
       ]
+    },
+    {
+      "id": "openrouter-byok-transcription",
+      "description": "Save a test key, select MAI-Transcribe 2, and observe request and fallback timings.",
+      "platforms": ["linux", "macos"],
+      "userEntryPoint": "Open Settings → Labs, save an OpenRouter key, enable OpenRouter transcription, and stop a screen recording with synthetic narration.",
+      "prerequisites": [
+        "An installed candidate and a private test account with OpenRouter credits for the live-provider check.",
+        "A synthetic recording with a microphone track."
+      ],
+      "runner": {
+        "path": "capture/desktop/ui/frontend/tests/settings/labs/smoke.ts",
+        "policy": "record/enablement/ci/bend/check.ts",
+        "instructions": "record/transcription/README.md#openrouter-byok-experiment"
+      },
+      "expectedEvidence": [
+        "Electron verifies key save, opt-in, model selection and removal using a synthetic credential.",
+        "A live success has OpenRouter model provenance, word timings and a success receipt in finish-trace.json. A refused request records its status and local fallback time while retaining the bundle."
+      ],
+      "limits": [
+        "The automated Settings and policy proofs use synthetic credentials and provider responses. Native capture and live OpenRouter performance need a real provider run."
+      ]
     }
   ]
 }

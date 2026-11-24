@@ -38,8 +38,21 @@ if (program.emit(undefined, (file, content) => {
   if (file === `${root}/src/settings/agents/policy.js`) ts.sys.writeFile(`${root}/electron/settings/agents.cjs`, content);
 
   if (file === `${root}/tests/settings/agents/parent.cjs`) ts.sys.writeFile(file,content);
-  if (file === `${root}/src/settings/labs/policy.js`) ts.sys.writeFile(`${root}/electron/settings/labs.cjs`, content);
 }).emitSkipped) throw Error('Connect transport emission failed');
+
+await build({
+  stdin: {
+    contents: "export * from './src/settings/labs/policy.ts'; export { openRouterAction } from './electron/settings/openrouter.cjs';",
+    resolveDir: root,
+  },
+  plugins: [{
+    name: 'installed-openrouter-settings',
+    setup(builder) {
+      builder.onResolve({filter: /electron\/settings\/openrouter\.cjs$/}, () => ({path: './openrouter.cjs', external: true}));
+    },
+  }],
+  outfile: `${root}/electron/settings/labs.cjs`, bundle: true, platform: 'node', format: 'cjs', target: 'node22',
+});
 
 await build({
   stdin: {

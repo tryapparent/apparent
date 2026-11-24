@@ -146,7 +146,7 @@ pub(in crate::capture::desktop) fn finalize(
             }
             strokes
         };
-        crate::capture::engine::bundle::bundle_processing::finalize_capture_bundle(
+        crate::capture::engine::bundle::bundle_processing::finalize_capture_bundle_with_trial(
             &bundle_dir,
             target,
             recording,
@@ -156,6 +156,8 @@ pub(in crate::capture::desktop) fn finalize(
             None,
             activity,
             None,
+            None,
+            true,
         )
     });
     (finalized, duration_ms)

@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('apparentSettingsRoute', callback => {
   return () => { live = false; ipcRenderer.removeListener('apparent:settings-route', listener); };
 });
 
+contextBridge.exposeInMainWorld('apparentOpenRouter', action => ipcRenderer.invoke('apparent:openrouter-preference', action));
+
 contextBridge.exposeInMainWorld('apparentLabs', Object.freeze({
   read: () => ipcRenderer.invoke('apparent:labs-preference'),
   save: (enabled, setting) => ipcRenderer.invoke('apparent:labs-preference', enabled, ...(setting === undefined ? [] : [setting])),

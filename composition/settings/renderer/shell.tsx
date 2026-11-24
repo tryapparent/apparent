@@ -19,6 +19,7 @@ import {
 } from "../../../onboarding/renderer/frog-nudge/preview";
 import { DesktopFrogPreference } from "../../../onboarding/renderer/frog/preference";
 import { SpeakingStyle } from "../../../agent/settings/speaking-style";
+import { OpenRouterExperiment } from "../../../record/settings/renderer/openrouter-experiment";
 import { About, type AboutBridge } from "./about";
 import availableFrog from "../../../capture/desktop/assets/settings/frog-jump.png";
 import currentFrog from "../../../capture/desktop/assets/settings/frog-lounge.png";
@@ -90,6 +91,7 @@ declare module "react" {
       > & {
         pane: string;
         pushToTalkExperiment?: ComponentType<PushToTalkProps>;
+        openRouterExperiment?: typeof OpenRouterExperiment;
         pillDoodlesExperiment?: typeof PillDoodles;
         autoPasteExperiment?: ComponentType<AutoPasteProps>;
         speakingStyleExperiment?: typeof SpeakingStyle;
@@ -258,6 +260,9 @@ function Settings() {
               current === "Labs" ? SpeakingStyle : undefined
             }
             pushToTalkExperiment={current === "Labs" ? PushToTalk : undefined}
+            openRouterExperiment={
+              current === "Labs" ? OpenRouterExperiment : undefined
+            }
             pillDoodlesExperiment={current === "Labs" ? PillDoodles : undefined}
             autoPasteExperiment={current === "Labs" ? AutoPaste : undefined}
             agentContextExperiment={AgentContextPreference}

@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { copyFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   bendScratch,
@@ -43,6 +45,49 @@ export function finalStreamTable(directory: string): {
       directory,
     ),
   );
+}
+
+export function checkCaptionPolicies(proofOutput: string) {
+  run(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+    import assert from "node:assert/strict";
+    import recording from "./recording-policy.mjs";
+    import captions from "./caption-admission.mjs";
+    assert.equal(captions.openrouter_allowed(true, "microsoft/mai-transcribe-2"), true);
+    assert.equal(captions.openrouter_allowed(false, "microsoft/mai-transcribe-2"), false);
+    assert.equal(captions.openrouter_allowed(true, "arbitrary"), false);
+    for (const available of [false, true]) {
+      for (const saved of [false, true]) {
+        assert.equal(captions.preview_allowed(saved, available), saved && available);
+        assert.equal(recording.volume_switch_enabled(available, saved), available || saved);
+        assert.equal(recording.volume_level_enabled(available, saved), available && saved);
+        assert.equal(recording.transcription_detail(false, saved, available), available || saved ? 1 : 0);
+        assert.equal(recording.transcription_detail(true, saved, available), 2);
+      }
+    }
+  `,
+    ],
+    proofOutput,
+  );
+  mkdirSync(join(proofOutput, "src"), { recursive: true });
+  mkdirSync(join(proofOutput, "test"), { recursive: true });
+  copyFileSync(
+    join(proofOutput, "caption-admission.mjs"),
+    join(proofOutput, "src/caption-admission.mjs"),
+  );
+  copyFileSync(
+    join(root, "record/transcription/src/openrouter.ts"),
+    join(proofOutput, "src/openrouter.ts"),
+  );
+  copyFileSync(
+    join(root, "record/transcription/test/openrouter-cases.ts"),
+    join(proofOutput, "test/openrouter-cases.ts"),
+  );
+  run(process.execPath, ["test/openrouter-cases.ts"], proofOutput);
 }
 
 if (import.meta.main) {

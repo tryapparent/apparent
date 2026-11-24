@@ -3,6 +3,7 @@
   "private": true,
   "exports": {
     "./recording-section": "./renderer/recording-section.tsx",
+    "./openrouter-experiment": "./renderer/openrouter-experiment.tsx",
     "./recording-contract": "./recording-contract.ts"
   },
   "peerDependencies": {

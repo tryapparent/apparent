@@ -1,4 +1,3 @@
-// Presentation only: the owning Rust process admits every command.
 function startControls() {
   const {app, BrowserWindow, ipcMain, Menu, session, nativeTheme} = require('electron');
   const path = require('node:path');
@@ -98,7 +97,7 @@ const hasSettingsParent = process.argv.includes('--settings-parent');
 const settingsHosts = new frame.SettingsHosts(action => process.stdout.write(JSON.stringify(action) + '\n'));
 let generalState;
 const settingsHash = settings && pane !== 'storage' ? '#' + pane : '';
-const {LabsPreferences, facts: labsFacts} = require('./settings/labs.cjs');
+const {LabsPreferences, facts: labsFacts, openRouterAction} = require('./settings/labs.cjs');
 const labsPreferences = new LabsPreferences(message => {
   if (pane !== 'labs' || !hasSettingsParent) throw new Error('Labs parent unavailable');
   process.stdout.write(JSON.stringify(message) + '\n');
@@ -120,7 +119,6 @@ const resetPreferences = () => {
 };
 let aboutState;
 
-// Deliberately separate from the installed application's profile and identity.
 app.setName(settings ? 'Apparent Settings' : 'Apparent UI Foundation');
 const profile = process.env.APPARENT_PROFILE === 'apparent-nightly' ? 'apparent-nightly' : 'apparent';
 app.setPath('userData', path.join(app.getPath('appData'), `${profile}-${settings ? 'settings' : 'ui-foundation'}`));
@@ -134,7 +132,6 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionCheckHandler(() => false);
   const window = new BrowserWindow({
     show: !settings,
-    // The preload needs a render opportunity before the first presentation.
     ...(settings ? { paintWhenInitiallyHidden: true } : {}),
     ...(settings ? frame.settingsWindowOptions(process.platform) : {
       width: 920, height: 760, minWidth: 640, minHeight: 620,
@@ -147,7 +144,6 @@ app.whenReady().then(() => {
       webSecurity: true, spellcheck: false,
     },
   });
-  // A parent show must not expose Chromium's empty initial document.
   let settingsPainted = false;
   let settingsMounted = false;
   let settingsCommitted = false;
@@ -181,7 +177,6 @@ app.whenReady().then(() => {
     window.focus();
   };
   if (settings) {
-    // First paint alone can be an empty document with a missing entry module.
     startupTimer = setTimeout(failSettings, 15000);
     startupTimer.unref();
     window.once('ready-to-show', () => {
@@ -287,6 +282,10 @@ app.whenReady().then(() => {
     validate(event, []);
     if (pane !== 'agents' || args.length > 1 || args.length === 1 && typeof args[0] !== 'boolean') throw new Error('Forbidden Agents preference');
     return preferenceRequest(...args);
+  });
+  ipcMain.handle('apparent:openrouter-preference', (event, ...args) => {
+    validate(event, []);
+    return openRouterAction(pane === 'labs' && hasSettingsParent && !settingsClosing && process.env.APPARENT_CONFIG, args);
   });
   ipcMain.handle('apparent:labs-preference', (event, ...args) => {
     validate(event, []);

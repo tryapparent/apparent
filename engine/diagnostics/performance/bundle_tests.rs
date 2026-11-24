@@ -49,6 +49,7 @@ fn finish_trace_contains_only_timings() {
         audio_ms: None,
         candidates_ms: None,
         transcribe_ms: Some(40),
+        hosted_transcription: None,
         select_ms: 2,
         decode_ms: 3,
         autocrop_ms: 4,
