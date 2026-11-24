@@ -1,6 +1,5 @@
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/engine/native/macos/desktop/desktop_frog_peer.rs"));
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/engine/native/macos/desktop/onboarding_transport.rs"));
-use crate::shared::handoff;
 
 impl Session {
     #[cfg(test)]

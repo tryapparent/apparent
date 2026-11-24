@@ -427,7 +427,9 @@ jobs:
         if: env.CHECK_SETTINGS == 'true'
         env:
           SETTINGS_CONTRACT_BASE: ${{ github.event_name == 'pull_request' && format('{0}^1', github.sha) || github.event.before }}
-        run: node --experimental-strip-types enablement/ci/settings-contract/check.ts
+        run: |
+          node --experimental-strip-types --test enablement/local-tests/settings-contract.test.ts
+          node --experimental-strip-types enablement/ci/settings-contract/check.ts
       - name: Verify the shared selected tooling suite
         if: env.CHECK_TOOLING == 'true'
         run: node --experimental-strip-types enablement/local-tests/run.ts --tooling

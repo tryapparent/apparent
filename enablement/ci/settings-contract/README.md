@@ -5,7 +5,7 @@ Native builds use `node enablement/ci/settings-contract/emit.ts` to assemble the
 After installing the pinned parser tools with `npm ci --ignore-scripts --prefix shared/enablement/dependency-policy`, run these commands from the repository root.
 
 ```sh
-node --experimental-strip-types --test enablement/ci/settings-contract/check.test.ts
+node --experimental-strip-types --test enablement/local-tests/settings-contract.test.ts
 node --experimental-strip-types enablement/ci/settings-contract/check.ts
 ```
 

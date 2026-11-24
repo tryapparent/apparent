@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { catalogPaths, validateCatalog, type Preference } from "./catalog.ts";
-import { enforceBaseline, enforceBaselineShrink } from "./check.ts";
-import { settingsContractRequired } from "../../../shared/enablement/ci/settings-inputs.ts";
-import { sourceChecker } from "./source.ts";
+import {
+  catalogPaths,
+  validateCatalog,
+  type Preference,
+} from "../ci/settings-contract/catalog.ts";
+import {
+  enforceBaseline,
+  enforceBaselineShrink,
+} from "../ci/settings-contract/check.ts";
+import { settingsContractRequired } from "../../shared/enablement/ci/settings-inputs.ts";
+import { sourceChecker } from "../ci/settings-contract/source.ts";
 
 const picker = {
   id: "permissions.skipScreenSelection",
@@ -203,6 +210,7 @@ test("catalog, UI binding, runtime, writer and guard edits select the contract",
     "engine/recording/selection.rs",
     "record/settings/permissions/permission-policy.bend",
     "enablement/ci/settings-contract/check.ts",
+    "enablement/local-tests/settings-contract.test.ts",
     "build.rs",
     ".github/workflows/checks.yml",
   ])

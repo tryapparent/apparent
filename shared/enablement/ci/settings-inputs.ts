@@ -21,7 +21,7 @@ export function settingsContractRequired(paths: string[] | null): boolean {
           path.endsWith("/settings/preferences.json")) ||
         preferenceSource(path) ||
         (sourceRoots.test(path) && path.endsWith(".bend")) ||
-        /^(?:shared\/settings\/|enablement\/ci\/(?:settings-contract\/|select\.ts$)|enablement\/local-tests\/(?:run|contracts)\.ts$|shared\/enablement\/(?:dependency-policy\/|ci\/settings-inputs\.ts$)|\.github\/workflows\/checks\.yml$|build\.rs$)/.test(
+        /^(?:shared\/settings\/|enablement\/ci\/(?:settings-contract\/|select\.ts$)|enablement\/local-tests\/(?:run|contracts|settings-contract\.test)\.ts$|shared\/enablement\/(?:dependency-policy\/|ci\/settings-inputs\.ts$)|\.github\/workflows\/checks\.yml$|build\.rs$)/.test(
           path,
         ),
     )

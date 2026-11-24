@@ -43,7 +43,7 @@ The original [Settings migration](https://github.com/tryapparent/apparent/issues
 Run failing fixtures before each change and rerun them through the production entrypoints after it. Use disposable configs and synthetic values throughout.
 
 ```sh
-node --experimental-strip-types --test enablement/ci/settings-contract/check.test.ts
+node --experimental-strip-types --test enablement/local-tests/settings-contract.test.ts
 node --experimental-strip-types enablement/ci/settings-contract/check.ts
 node record/enablement/ci/bend/check.ts --proof
 cargo test --locked screen_selection

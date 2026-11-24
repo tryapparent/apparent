@@ -35,7 +35,7 @@ export function diagnosticContracts() {
   return [
     {argv: ['npm', 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], cwd},
     {argv: ['node', '--experimental-strip-types', '--test', 'enablement/local-tests/rust/check.test.ts',
-      'shared/enablement/dependency-policy/fast/typecheck.test.ts'], cwd: '.'},
+      'shared/enablement/dependency-policy/fast/typecheck.test.ts', 'enablement/local-tests/settings-contract.test.ts'], cwd: '.'},
   ];
 }
 
