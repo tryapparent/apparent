@@ -112,7 +112,7 @@ test('declared external and builtins pass; JS runtime forms cannot hide cross-ow
 });
 test('all capture paths are frozen: additions, inbound renames and copies fail', t => {
   const f = fixture(t);
-  f.put('capture/mod.rs','// legacy'); f.put('capture/ui_process.rs','// legacy');
+  f.put('capture/mod.rs','// legacy\nfn existing() {}'); f.put('capture/ui_process.rs','// legacy');
   f.put('capture/desktop/ui/frontend/src/onboarding/a.ts','export {}'); f.put('capture/agent/a.ts','export {}');
   f.put('capture/engine/a.ts','export {}'); f.put('onboarding/a.ts','export {}');
   f.stage(); f.commit(); f.pass();
