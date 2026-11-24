@@ -1,4 +1,5 @@
 """Run the installed post-commit hook against isolated real Git repositories."""
+import json
 import os
 from pathlib import Path
 import shutil
@@ -109,6 +110,23 @@ class CommitCheckpointTests(unittest.TestCase):
         result = self.commit(cwd=linked)
         self.assertIn('INTEGRATION REQUIRED', result.stderr)
         self.assertEqual(self.git('rev-parse', 'HEAD').stdout.strip(), self.main)
+
+    def test_linked_worktree_checkpoint_fetch_skips_automatic_maintenance(self):
+        self.advance_main()
+        linked = self.root / 'linked'
+        self.git('worktree', 'add', '-qb', 'linked', str(linked))
+        trace = self.root / 'trace.jsonl'
+        self.env['GIT_TRACE2_EVENT'] = str(trace)
+
+        result = self.git('hook', 'run', 'post-commit', cwd=linked)
+
+        self.assertIn('INTEGRATION REQUIRED', result.stderr)
+        self.assertEqual(self.git('rev-parse', 'origin/main', cwd=linked).stdout.strip(),
+                         self.incoming)
+        commands = [event['argv'] for event in map(json.loads, trace.read_text().splitlines())
+                    if event['event'] == 'child_start' and 'argv' in event]
+        self.assertFalse(any(command[1:3] == ['maintenance', 'run'] for command in commands),
+                         commands)
 
     def test_fetch_timeout_is_bounded(self):
         # Exercise the actual timeout/process-group cleanup without network access.

@@ -1,4 +1,5 @@
 use std::time::Instant;
+use crate::recording_trace::{self as trace, Operation};
 
 use super::{ScreenCaptureSession, ScreenRecording};
 use crate::capture::engine::runtime::audio::audio::{AudioRecorder, RecordedAudio, stop_optional};
@@ -30,9 +31,18 @@ impl ScreenCaptureSession {
         let screen = self;
         let stop_started = Instant::now();
         let ((recording, sampling), audio, mut activity) = std::thread::scope(|scope| {
-            let screen = scope.spawn(|| screen.stop_with_sampling());
-            let windows = scope.spawn(|| windows.map(WindowLogger::stop).unwrap_or_default());
-            let audio = stop_optional(audio);
+            let screen = scope.spawn(trace::propagate(|| {
+                let _span = trace::span(Operation::StopScreen);
+                screen.stop_with_sampling()
+            }));
+            let windows = scope.spawn(trace::propagate(|| {
+                let _span = trace::span(Operation::StopWindows);
+                windows.map(WindowLogger::stop).unwrap_or_default()
+            }));
+            let audio = {
+                let _span = trace::span(Operation::StopAudio);
+                stop_optional(audio)
+            };
             (
                 screen.join().unwrap(),
                 audio,

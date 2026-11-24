@@ -1,19 +1,17 @@
 # PostHog fix queue
 
-A Node 22.23+ TypeScript service receives new Error Tracking issue notifications,
-records their IDs in private SQLite state, and launches a T3 fix thread in an
-isolated `origin/main` worktree. No Rust, Electron, npm install or hosted service
-is required. Tests run in the tooling suite.
+This Node 22.23+ TypeScript service stores new Error Tracking issue IDs in private
+SQLite state. It launches one T3 fix thread and isolated `origin/main` worktree
+per three distinct ready issues by default. The service needs only Node. Tests run
+in the tooling suite.
 
-The initial scope is **issue created**, not every `$exception`, reopened issues,
-spikes or backfilling existing errors. Duplicate deliveries remain deduplicated
-by project/issue, including after restart and completion. The queue itself never marks PostHog issues resolved. Fix threads maintain status
-and GitHub links through the instructions below; settlement is not proof of recovery.
+The queue processes **issue created** and deduplicates by project and issue across
+restarts and completion. Fix threads maintain status and GitHub links.
 
 ## Configure and run
 
-The unit is an installation template. Verify the owning T3 environment, project
-and CLI before activation; requalify the RPC adapter after T3 upgrades.
+Verify the owning T3 environment, project and CLI before activation. Requalify
+the RPC adapter after T3 upgrades.
 
 Create a private configuration directory and a private persistent state directory
 (e.g. `~/.config/apparent-posthog-fixer` and `~/.local/state/apparent-posthog-fixer`).
@@ -36,6 +34,7 @@ systemd EnvironmentFile):
 | `WEBHOOK_TOKEN_FILE` | Absolute private file containing a random token of at least 32 characters |
 | `STATE_DIRECTORY` | Absolute private queue directory |
 | `PORT`, `DAILY_LIMIT`, `QUEUE_LIMIT` | Defaults: `8646`, `10`, `100` |
+| `BATCH_SIZE` | Defaults to `3` or the queue limit if lower. Accepts `1` to `3` within the queue limit. |
 
 Use the owning T3 CLI's `auth session issue` with only `orchestration:read` and
 `orchestration:operate` and a bounded TTL. Capture its token directly into the
@@ -66,8 +65,8 @@ Run with the configured environment:
 node --experimental-strip-types enablement/posthog-fixer/main.ts
 ```
 
-For systemd, adjust the unit's checkout, Node PATH and state paths to the actual
-installation. Create the state directory before starting the sandboxed unit. The
+Adjust the systemd templates for the installed checkout, Node PATH and state
+paths. Create the state directory before starting the unit. The
 service binds only `127.0.0.1`. Expose **only** `POST /webhooks/posthog` through an
 existing HTTPS reverse proxy; preserve Authorization, limit requests to 16 KiB,
 and do not log headers or bodies. Never expose T3 itself through this webhook
@@ -105,21 +104,16 @@ Sources: [webhook template](https://github.com/PostHog/posthog/blob/master/nodej
 
 ## Limits, recovery and rollback
 
-One service process owns each queue through a crash-released SQLite lock.
-Each new PostHog issue gets a repair thread and worktree. Repeated notifications
-for the same issue reuse its durable record. Waiting and unsettled threads
-continue to be checked for completion while the fixer starts other issues.
-T3 settlement with all runs terminal completes the corresponding queue entry.
-Existing repository delivery gates still apply. Different issues can affect the
-same code, so each repair must reconcile with current main before merge.
+A crash-released SQLite lock gives one process queue ownership. The fixer waits
+for a full batch of the oldest ready issues across restarts. Each prompt includes
+all issue links and context for separate tracking and verification. A waiting
+thread can settle while new batches launch. Settlement completes its queue entries.
 
-The UTC daily cap counts durable launch reservations, including uncertain launches.
-After an RPC failure the service retries the exact persisted command, thread ID
-and prompt, at most three attempts with one-minute backoff. It then holds that
-issue for operator reconciliation. Context-read failures retry separately.
-Unknown or malformed T3 status preserves the affected issue's state. Queue identity is bound to both origins and both projects; changing
-targets requires a different state directory. Completed deduplication rows are
-retained; deleting them would permit old notifications to launch again.
+The UTC daily cap counts reserved threads. The queue limit counts unfinished
+issues. An RPC failure retries the stored launch up to three attempts, a minute
+apart, then holds the batch. Context failures back off per issue. Unknown T3
+status preserves state. Keep completed rows for deduplication. Use a separate
+queue for different PostHog or T3 origins or projects.
 
 Stop the service before using its exclusive queue management commands, with the
 same environment as the service:
@@ -129,12 +123,14 @@ node --experimental-strip-types enablement/posthog-fixer/manage.ts list
 node --experimental-strip-types enablement/posthog-fixer/manage.ts retry <held-issue-uuid>
 ```
 
-Inspect the recorded T3 thread before retrying an uncertain launch. Retry preserves
-its payload and IDs; it cannot create a replacement worker. Renew expired
-credentials or repair connectivity first. No automatic suppression, cancellation,
-merge bypass, backlog deletion, remote exposure or activation occurs on install.
-To roll back activation, disable the PostHog destination, stop the service, and
-retain its private queue and T3 threads for reconciliation.
+Inspect the T3 thread before retrying an uncertain launch. Any member UUID
+retries its held batch with the stored payload and IDs. An issue held before
+reservation returns to the queue.
+
+The upgrade preserves existing launch reservations. Set `BATCH_SIZE=1` and
+restart the batch-aware service to restore one thread per new issue. Existing
+batches keep their grouping. To stop automation, disable the destination, stop
+the service and retain its queue and T3 threads.
 
 ## Verification
 
@@ -188,10 +184,10 @@ the kernel-provided Unix peer UID before fetching or decrypting any data. The
 fixer refuses its own UID and UID 0. The webhook's TCP listener cannot serve
 recordings. Do not forward the Unix socket through the webhook proxy.
 
-The fixer gives each job a random bearer to request its own report over the
+The fixer gives each issue a random bearer to request its own report over the
 Unix socket. Downloads decrypt on demand and remove the fixer's temporary
 plaintext before returning the archive. The agent extracts the tar in a
 private temporary directory and removes its copy after inspection. The grant
-allows up to three attempts, expires within seven days, and is revoked on job
+allows up to three attempts, expires within seven days, and is revoked on thread
 settlement. Retrieval failures can be retried within that bound. No recording
 is stored in the T3 attachment vault or the launch payload.

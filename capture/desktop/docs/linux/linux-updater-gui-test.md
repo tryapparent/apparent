@@ -181,7 +181,7 @@ does not manufacture intermediate motion. Loading assertions happen while the
 response is blocked; they prove feedback before network completion, not a
 benchmark of production-network latency.
 
-Run the repository's `capture/agent/skills/make-it-apparent/SKILL.md` workflow for delivery:
+Run the repository's `agent/skills/make-it-apparent/SKILL.md` workflow for delivery:
 inspect the complete raw movie, add timed plain-spoken explanation and readable
 captions, disclose generated narration and the local fixture/sampling limits,
 inspect the finished movie and deliver it privately in the requesting thread.
