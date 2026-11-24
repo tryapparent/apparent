@@ -116,7 +116,7 @@ export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: Fr
       onCheckedChange={value => void request(value, 'dictationFrog')} />}
     <section className="agent-preference">
       <div className="agent-preference-row">
-        <h2 className="settings-preference-label" id="recording-performance-label">Share recording performance</h2>
+        <h2 className="settings-preference-label" id="recording-performance-label">Share performance metrics</h2>
         <Switch id={controls.recordingPerformance} className="agent-switch"
           checked={facts?.recordingPerformanceSaved === true}
           aria-labelledby="recording-performance-label" aria-describedby="recording-performance-help"
@@ -124,7 +124,7 @@ export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: Fr
           disabled={busy || !facts || !!facts.error}
           onCheckedChange={value => void request(value, 'recordingPerformance')} />
       </div>
-      <p id="recording-performance-help">Send start and save timings for each screen recording to PostHog, along with your app build, operating system, and recording-length range.</p>
+      <p id="recording-performance-help">Send detailed startup and save timings for screen recordings to PostHog, along with your app build, operating system, and recording-length range.</p>
     </section>
     <span role="status" className="sr-only">{busy ? operation === 'save' ? 'Saving preference' : 'Reading saved preference' : ''}</span>
     {(!facts || facts.error) && !busy && !error && <Button id="labs-refresh" variant="secondary" onClick={() => void request(undefined, setting)}>Refresh preference</Button>}

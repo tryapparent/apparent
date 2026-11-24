@@ -134,6 +134,8 @@ impl ScreenCaptureSession {
             None,
             #[cfg(target_os = "linux")]
             None,
+            #[cfg(target_os = "linux")]
+            None,
         )
     }
 
@@ -211,6 +213,7 @@ impl ScreenCaptureSession {
         #[cfg(any(target_os = "macos", target_os = "linux"))] prepared_source: Option<
             PreparedSource,
         >,
+        startup: Option<&crate::capture::desktop::workflow::performance::Startup>,
     ) -> Result<ScreenTracks, StartError> {
         #[cfg(target_os = "linux")]
         let StartPreparation { storage, audio: prepared_audio, .. } = preparation;
@@ -248,6 +251,9 @@ impl ScreenCaptureSession {
             None
         };
         start_metric("audio_start_ms", stage);
+        if let Some(trace) = startup {
+            trace.record(crate::capture::desktop::workflow::performance::StartupPoint::AudioReady);
+        }
         let stage = Instant::now();
         let screen = Self::start_with_exclusion_receipt(
             target.clone(),
@@ -261,6 +267,8 @@ impl ScreenCaptureSession {
             prepared_source,
             #[cfg(target_os = "linux")]
             pinned,
+            #[cfg(target_os = "linux")]
+            startup.cloned(),
         );
         let screen = match screen {
             Ok(screen) => screen,
