@@ -258,14 +258,12 @@ The following exhaustive baseline ledger documents an earlier campaign proposal 
 | `scripts/linux/dependencies.sh` | `capture/desktop/scripts/linux/appimage/dependencies.sh` | MOVE | desktop |
 | `scripts/linux/gui-vm-reaper.py` | `capture/desktop/scripts/linux/gui/gui-vm-reaper.py` | MOVE | desktop |
 | `scripts/linux/gui-vm.py` | `capture/desktop/scripts/linux/gui/gui-vm.py` | MOVE | desktop |
-| `scripts/linux/migrate-scrawl.py` | `capture/desktop/scripts/linux/maintenance/migrate-scrawl.py` | MOVE | desktop |
 | `scripts/linux/publish-main-preview.py` | `capture/desktop/scripts/linux/maintenance/publish-main-preview.py` | MOVE | desktop |
 | `scripts/linux/smoke-cpu.sh` | `capture/desktop/scripts/linux/appimage/smoke-cpu.sh` | MOVE | desktop |
 | `scripts/linux/test-capture-smoke.py` | `capture/desktop/scripts/linux/gui/test-capture-smoke.py` | MOVE | desktop |
 | `scripts/linux/test-gui-vm.py` | `capture/desktop/scripts/linux/gui/test-gui-vm.py` | MOVE | desktop |
 | `scripts/linux/test-native-launch.sh` | `capture/desktop/scripts/linux/maintenance/test-native-launch.sh` | MOVE | desktop |
 | `scripts/linux/test-updater-gui.py` | `capture/desktop/scripts/linux/updater/test-updater-gui.py` | MOVE | desktop |
-| `scripts/linux/test_migrate_scrawl.py` | `capture/desktop/scripts/linux/maintenance/test_migrate_scrawl.py` | MOVE | desktop |
 | `scripts/linux/updater-fixture.py` | `capture/desktop/scripts/linux/updater/updater-fixture.py` | MOVE | desktop |
 | `scripts/linux/updater-gui-scenario.sh` | `capture/desktop/scripts/linux/updater/updater-gui-scenario.sh` | MOVE | desktop |
 | `scripts/linux/updater-gui.py` | `capture/desktop/scripts/linux/updater/updater-gui.py` | MOVE | desktop |

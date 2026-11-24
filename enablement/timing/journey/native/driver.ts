@@ -185,7 +185,7 @@ while (performance.now() < deadline) {
     out =
       ssh("cat " + readiness.tmpdir + "/output-path 2>/dev/null || true") ||
       undefined;
-    if (out && !/^\/home\/[a-z0-9_-]+\/scrawl-gui-output-[0-9a-f]+$/.test(out))
+    if (out && !/^\/home\/[a-z0-9_-]+\/apparent-gui-out-[0-9a-f]+$/.test(out))
       throw Error("Unexpected guest-owned output path");
   }
   if (out) {

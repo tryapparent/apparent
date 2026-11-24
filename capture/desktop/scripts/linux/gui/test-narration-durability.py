@@ -30,7 +30,7 @@ def wav(path, samples, rate=16000):
 class DriverTests(unittest.TestCase):
     def test_library_path_is_scoped_to_candidate_calls_and_launches(self):
         self.driver.env.pop('LD_LIBRARY_PATH', None)
-        self.driver.env['SCRAWL_GUI_LIBRARY_PATH'] = str(self.root)
+        self.driver.env['APPARENT_GUI_LIBRARY_PATH'] = str(self.root)
         command = [self.driver.binary, '-c', 'import os; print(os.environ["LD_LIBRARY_PATH"])']
         self.assertEqual(self.driver.call(command).strip(), str(self.root))
         child = self.driver.launch(command, 'candidate-env')
@@ -77,7 +77,7 @@ class DriverTests(unittest.TestCase):
     def test_shell_entry_is_self_contained(self):
         result = subprocess.run(['bash', str(Path(__file__).with_name('narration-durability.py')), '--help'], capture_output=True, timeout=3)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(b'SCRAWL_GUI_ARTIFACTS', result.stdout)
+        self.assertIn(b'APPARENT_GUI_ARTIFACTS', result.stdout)
 
     def test_exact_owned_child_signal_and_no_signal_after_reap(self):
         ready = self.root / 'child-ready'
@@ -127,10 +127,10 @@ class DriverTests(unittest.TestCase):
     def test_real_entrypoint_alarm_preserves_execution_and_cleanup_budgets(self):
         output = self.root / 'entrypoint'
         output.mkdir()
-        environment = {'SCRAWL_GUI_OUTPUT': str(output),
-                       'SCRAWL_GUI_BINARY': str(self.driver.binary),
-                       'SCRAWL_GUI_AUDIO_FILE': str(self.root / 'tone.wav'),
-                       'SCRAWL_GUI_ARTIFACTS': str(output / 'proof')}
+        environment = {'APPARENT_GUI_OUTPUT': str(output),
+                       'APPARENT_GUI_BINARY': str(self.driver.binary),
+                       'APPARENT_GUI_AUDIO_FILE': str(self.root / 'tone.wav'),
+                       'APPARENT_GUI_ARTIFACTS': str(output / 'proof')}
         def completed():
             self.driver.report['result'] = 'PASS_RECIPE_GATES_ONLY'
         with patch.dict(module.os.environ, environment), \

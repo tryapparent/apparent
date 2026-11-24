@@ -377,7 +377,7 @@ refusal and rejection of a second renderer. It is not native platform acceptance
 `tests/native-smoke.cjs` is a disposable-guest-only Electron entrypoint. The
 existing isolated Linux runner is `capture/desktop/scripts/linux/gui/gui-vm.py`;
 follow `../../docs/native-testing.md` for template/access/lifecycle requirements.
-In an owned disposable Mac, run it with `SCRAWL_GUI_OUTPUT` set to a private
+In an owned disposable Mac, run it with `APPARENT_GUI_OUTPUT` set to a private
 evidence directory. Use a fresh private HOME for disconnected checks; for live
 checks use the running Rust app's HOME and `NATIVE_EXPECT_CONNECTED=1`. It saves
 only its own window, never the host screen. Native evidence is private, not a

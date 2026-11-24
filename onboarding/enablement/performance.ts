@@ -10,7 +10,7 @@ const [appDir, config, captures, output, ...extra] = process.argv.slice(2);
 assert(!extra.length && appDir && config && captures && output);
 assert.match(
   output,
-  /^\/home\/[a-z0-9_-]+\/scrawl-gui-output-[0-9a-f]+\/artifacts$/,
+  /^\/home\/[a-z0-9_-]+\/apparent-gui-out-[0-9a-f]+\/artifacts$/,
 );
 const root = output.slice(0, -"/artifacts".length);
 assert.equal(config, join(root, "config/apparent/config.json"));

@@ -3,7 +3,7 @@ const { app, BrowserWindow } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const assert = require('node:assert/strict');
-const output = process.env.SCRAWL_GUI_OUTPUT;
+const output = process.env.APPARENT_GUI_OUTPUT;
 if (!output) throw new Error('Run only inside the isolated GUI runner');
 require('../electron/main.cjs');
 

@@ -19,8 +19,8 @@ spec.loader.exec_module(smoke)
 # This is an explicitly synthetic CLI peer, not a fake native acceptance result.
 PEER = r'''#!/usr/bin/env python3
 import json, os, pathlib, socket, sys, time
-root = pathlib.Path(os.environ['SCRAWL_GUI_OUTPUT'])
-assert os.environ['LD_LIBRARY_PATH'] == os.environ['SCRAWL_GUI_LIBRARY_PATH']
+root = pathlib.Path(os.environ['APPARENT_GUI_OUTPUT'])
+assert os.environ['LD_LIBRARY_PATH'] == os.environ['APPARENT_GUI_LIBRARY_PATH']
 if sys.argv[1] == 'decoder-check':
     if os.environ.get('PEER_NO_DECODER'):
         print('synthetic missing H.264 decoder', file=sys.stderr)
@@ -235,7 +235,7 @@ class TransportTests(unittest.TestCase):
                               'for last; do :; done\nprintf "SYNTHETIC NOT MEDIA" > "$last"\n')
             ffmpeg.chmod(0o700)
             env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'],
-                       SCRAWL_GUI_OUTPUT=str(out), SCRAWL_GUI_LIBRARY_PATH=str(tools))
+                       APPARENT_GUI_OUTPUT=str(out), APPARENT_GUI_LIBRARY_PATH=str(tools))
             env.pop('LD_LIBRARY_PATH', None)
             if fail:
                 env['PEER_FAIL'] = '1'

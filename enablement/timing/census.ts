@@ -26,7 +26,7 @@ export function describe(tool: string, source: string) {
     'Rust build/test':'rust/build','JavaScript/package build/test':'js/test-build-install'};
   const category = inspected.operations.length === 1 ? aliases[inspected.operations[0]] ?? inspected.operations[0] : 'mixed operations';
   const normalized = source.replace(/\/tmp\/apparent-dev-[\w./-]+/g, '<job>')
-    .replace(/\/home\/[^\s"'`]+\/worktrees\/scrawl\/t3-[\w-]+/g, '<worktree>')
+    .replace(/\/home\/[^\s"'`]+\/worktrees\/[^/\s]+\/t3-[\w-]+/g, '<worktree>')
   return { category, ...inspected, fingerprint: hash(tool + '\n' + normalized) }
 }
 
