@@ -102,7 +102,7 @@ and agent read approval are separate; website sign-in grants neither.
 
 ## License and credits
 
-Apparent began as a fork of [Scrawl](https://github.com/kitlangton/scrawl), created by Kit Langton.
+Apparent started as a fork of [Scrawl](https://github.com/kitlangton/scrawl), the screen recorder created by [Kit Langton](https://github.com/kitlangton). Thank you to Kit and the Scrawl contributors for the work Apparent builds on.
 
 Apparent is [MIT licensed](LICENSE). See the
 [third-party notices](capture/desktop/docs/guides/credits.md) for additional credits.
