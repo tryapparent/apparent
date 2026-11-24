@@ -159,7 +159,7 @@ pub fn transcribe(wav: Option<&Path>, audio: Option<&RecordedAudio>) -> Transcri
         || {
             #[cfg(target_os = "linux")]
             if let Some(pause) = pause {
-                match pause.finish(&audio.wav_bytes) {
+                match pause.finish(&audio.wav_bytes, audio.sample_count) {
                     Ok(transcript) => return transcript,
                     Err(error) => crate::capture::engine::runtime::apparent_log(format!("Pause transcription failed, transcribing the recording: {error:#}")),
                 }

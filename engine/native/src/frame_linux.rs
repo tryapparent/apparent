@@ -149,7 +149,7 @@ impl Reader {
         if self.can_seek_forward
             && !backwards
             && target.saturating_sub(position) >= 4_000
-            && self.duration.saturating_sub(target) > 100
+            && (target == self.duration - 1 || self.duration.saturating_sub(target) > 100)
             && self.next.as_ref().is_none_or(|frame| frame.at <= target)
         {
             let seek = self.try_seek_near(target);
@@ -201,7 +201,9 @@ impl Reader {
         }
         self.previous = Some(first);
         self.read_through(target, deadline)?;
-        if self.witness.confirmed() && self.next.is_some() {
+        if self.witness.confirmed()
+            && (self.next.is_some() || (target == self.duration - 1 && self.sink.is_eos()))
+        {
             Ok(())
         } else {
             Err("decode_failed")

@@ -36,6 +36,10 @@ impl Pause {
         if crate::shared::handoff::warm_recognizer() {
             return Self::start_with(samples, warm_recognizer::transcriber()?);
         }
+        Self::start_capture_owned(samples)
+    }
+
+    pub(super) fn start_capture_owned(samples: Arc<Mutex<Samples>>) -> Result<Self> {
         let mut model = None;
         Self::start_with(samples, move |chunk, offset, phase| {
             if model.is_none() {
@@ -131,6 +135,14 @@ impl Pause {
             .join()
             .map_err(|_| anyhow!("Pause transcriber panicked"))?
     }
+
+    pub(super) fn discard(mut self) -> Result<()> {
+        let worker = self.worker.take().context("Pause transcriber already finished")?;
+        drop(self);
+        worker.thread().unpark();
+        let _ = worker.join().map_err(|_| anyhow!("Pause transcriber panicked"))?;
+        Ok(())
+    }
 }
 
 impl Drop for Pause {
@@ -161,28 +173,9 @@ fn pause_boundary(samples: &[f32]) -> Option<(usize, usize)> {
         .map(|(_, boundary)| (start, boundary))
 }
 
-/// Feed a saved WAV at microphone speed for a repeatable CLI comparison.
-pub fn simulate(wav: &[u8], speed: f64) -> Result<Pause> {
-    let samples = audio::decode_wav_16k(wav)?;
-    let buffer = Arc::new(Mutex::new(Samples::default()));
-    let pause = Pause::start(Arc::clone(&buffer))?;
-    let started = std::time::Instant::now();
-    for (i, chunk) in samples.chunks(160).enumerate() {
-        buffer
-            .lock()
-            .map_err(|_| anyhow!("Microphone buffer poisoned"))?
-            .extend_from_slice(chunk);
-        let due = Duration::from_secs_f64((i + 1) as f64 * 0.01 / speed.max(0.01));
-        if let Some(wait) = due.checked_sub(started.elapsed()) {
-            std::thread::sleep(wait);
-        }
-    }
-    buffer
-        .lock()
-        .map_err(|_| anyhow!("Microphone buffer poisoned"))?
-        .clear();
-    Ok(pause)
-}
+#[path = "../../../../../engine/recording/lifecycle/pause_replay.rs"]
+mod replay;
+pub use replay::simulate;
 
 fn merge(parts: Vec<TranscriptData>) -> TranscriptData {
     let mut result = TranscriptData::default();
