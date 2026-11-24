@@ -450,15 +450,13 @@ limited to a fresh OCR target in a verified descendant of the installed app;
 the native adapter also requires the exact named accessibility button with the
 projected point inside its native bounds, verifies window geometry through
 screenshot and input, and preserves the scene's foreground.
-Before any input, a separate read-only bootstrap requests Electron's documented
+Before input, a read-only bootstrap requests Electron's
 [`AXManualAccessibility`](https://www.electronjs.org/docs/latest/tutorial/accessibility)
-tree for the exact verified pill process and waits for the actual named button.
-It reads the bounded owned window tree, matching its title and native geometry.
-Each lookup admits at most four window roots and 128 elements; the element limit
-also bounds nesting without assuming the renderer's accessibility depth.
-The Mac panel is click-through before hover, so global point hit-testing is not
-a renderer-readiness test. Actual clicks still move the pointer and require the
-exact global hit receiver immediately before input.
+tree in the owned pill process. It matches the window title and native geometry,
+then finds the enabled Finish icon button within its bounds before the exact-ID
+CLI stops capture. Each lookup allows four window roots and 128 elements.
+The panel is click-through before hover. Actual clicks move the pointer and
+require the exact global hit receiver immediately before input.
 Electron 45 debounces this request for two seconds; the bootstrap uses the
 helper's existing eight-second budget. Subsequent input retains its 1.5-second
 hit-readiness deadline and never repeats the accessibility request. An unexposed

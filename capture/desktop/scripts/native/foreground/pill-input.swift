@@ -269,7 +269,7 @@ func admitPillAccessibility(_ pill: Pill) throws {
     try withinBudget()
 }
 
-func buttonIdentity(_ element: AXUIElement, label: String, point: CGPoint, descendants: Set<pid_t>) throws -> [String: Any]? {
+func buttonIdentity(_ element: AXUIElement, label: String, point: CGPoint?, descendants: Set<pid_t>) throws -> [String: Any]? {
     var current = element
     for depth in 0..<5 {
         try withinBudget()
@@ -301,12 +301,19 @@ func buttonIdentity(_ element: AXUIElement, label: String, point: CGPoint, desce
                 AXValueGetType(sizeValue) == .cgSize && AXValueGetValue(sizeValue, .cgSize, &size),
                 "Could not read requested button geometry")
             let bounds = CGRect(origin: position, size: size)
-            clickTrace?.add(["stage":"buttonGeometry", "pid":Int(pid), "label":label,
-                "bounds":[bounds.minX,bounds.minY,bounds.width,bounds.height], "point":[point.x,point.y]])
-            // AX supplies an independent physical target check. A stable image
-            // scale alone cannot establish that OCR maps to this exact button.
+            var geometry: [String: Any] = ["stage":"buttonGeometry", "pid":Int(pid), "label":label,
+                "bounds":[bounds.minX,bounds.minY,bounds.width,bounds.height]]
             try need(position.x.isFinite && position.y.isFinite && size.width.isFinite && size.height.isFinite &&
-                size.width > 0 && size.height > 0 && bounds.contains(point), "OCR point is outside the exact requested native button")
+                size.width > 0 && size.height > 0, "Invalid requested button geometry")
+            if let point {
+                geometry["point"] = [point.x,point.y]
+                try need(bounds.contains(point), "OCR point is outside the exact requested native button")
+            } else {
+                var enabled: CFTypeRef?
+                guard AXUIElementCopyAttributeValue(current, kAXEnabledAttribute as CFString, &enabled) == .success,
+                      enabled as? Bool == true else { return nil }
+            }
+            clickTrace?.add(geometry)
             return ["pid": Int(pid), "role": role, "title": title == label ? label : "", "description": description == label ? label : "",
                 "bounds":[bounds.minX,bounds.minY,bounds.width,bounds.height]]
         }
@@ -318,7 +325,7 @@ func buttonIdentity(_ element: AXUIElement, label: String, point: CGPoint, desce
     return nil
 }
 
-func ownedAccessibilityButton(_ expected: Pill, label: String, point: CGPoint, descendants: Set<pid_t>) throws -> [String: Any]? {
+func ownedAccessibilityButton(_ expected: Pill, label: String, point: CGPoint?, descendants: Set<pid_t>) throws -> [String: Any]? {
     func children(_ element: AXUIElement, _ attribute: String, limit: Int) throws -> [AXUIElement] {
         var count: CFIndex = 0
         let result = AXUIElementGetAttributeValueCount(element, attribute as CFString, &count)
@@ -361,7 +368,14 @@ func ownedAccessibilityButton(_ expected: Pill, label: String, point: CGPoint, d
                 CGRect(origin: origin, size: dimensions) == expected.rect, "Owned accessibility window differs from mapped pill")
         }
         if role as? String == (kAXButtonRole as String),
-           let identity = try buttonIdentity(element, label: label, point: point, descendants: descendants) { matches.append(identity) }
+           let identity = try buttonIdentity(element, label: label, point: point, descendants: descendants) {
+            if point == nil {
+                let bounds = identity["bounds"] as! [CGFloat]
+                try need(expected.rect.contains(CGRect(x: bounds[0], y: bounds[1], width: bounds[2], height: bounds[3])),
+                    "Requested button is outside the owned pill")
+            }
+            matches.append(identity)
+        }
         let next = try children(element, kAXChildrenAttribute, limit: 128 - seen.count - queue.count)
         queue.append(contentsOf: next.map { ($0, depth + 1) })
     }
@@ -369,44 +383,28 @@ func ownedAccessibilityButton(_ expected: Pill, label: String, point: CGPoint, d
     return matches.first
 }
 
-func observeForPreparation(_ req: [String: Any], _ png: URL) throws -> ([String: Any], [Word], Set<pid_t>) {
+func preparePillAccessibility(_ req: [String: Any]) throws -> [String: Any] {
     let (expected, _) = try pill(req)
     let frontBefore = frontPID()
-    if let required = req["expectedFrontPid"] {
-        try need(required is Int && (required as! Int) > 1 && Int(frontBefore) == (required as! Int),
-            "Synthetic scene lost foreground before accessibility admission")
+    guard let required = req["expectedFrontPid"] as? Int, required > 1, Int(frontBefore) == required else {
+        throw Refusal(message: "Synthetic scene lost foreground before accessibility admission")
     }
-    // This enables only the verified owned process's accessibility tree. It
-    // neither activates a window nor sends input. Start Electron's asynchronous
-    // publication before screenshot/OCR so its debounce can overlap that work.
     try admitPillAccessibility(expected)
-    let observed = try observe(req, png)
-    _ = try currentPill(req, expected)
-    let before = observed.0
-    try need(before["pid"] as? Int == Int(expected.pid) && before["windowId"] as? Int == Int(expected.id) &&
-        before["bounds"] as? [CGFloat] == [expected.rect.minX,expected.rect.minY,expected.rect.width,expected.rect.height],
-        "Pill changed during accessibility bootstrap observation")
-    try need(before["frontPid"] as? Int == Int(frontBefore) && frontPID() == frontBefore,
-        "Foreground drift during accessibility bootstrap observation")
-    try withinBudget()
-    return observed
-}
-
-func preparePillAccessibility(_ req: [String: Any], _ expected: Pill, label: String, point: CGPoint, descendants: Set<pid_t>) throws -> [String: Any] {
-    _ = try currentPill(req, expected)
-    let frontBefore = frontPID()
+    let descendants = try ancestry(expected.pid)
     while true {
         try withinBudget()
+        try need(frontPID() == frontBefore, "Foreground drift during accessibility bootstrap")
         // Before hover the native panel is intentionally click-through. Tree
         // readiness is not a physical-hit assertion; click checks that separately.
-        if let identity = try ownedAccessibilityButton(expected, label: label, point: point, descendants: descendants) {
-                _ = try currentPill(req, expected)
-                try need(frontPID() == frontBefore, "Foreground drift during accessibility bootstrap")
-                try withinBudget()
-                try clickTrace?.requireComplete()
-                clickTrace?.add(["stage":"accessibilityReady", "receiver":identity])
-                try clickTrace?.requireComplete()
-                return identity
+        if let identity = try ownedAccessibilityButton(expected, label: "Finish", point: nil, descendants: descendants) {
+            _ = try currentPill(req, expected)
+            try need(frontPID() == frontBefore, "Foreground drift during accessibility bootstrap")
+            try withinBudget()
+            try clickTrace?.requireComplete()
+            clickTrace?.add(["stage":"accessibilityReady", "receiver":identity])
+            try clickTrace?.requireComplete()
+            return ["prepared": true, "pid": Int(expected.pid), "windowId": Int(expected.id),
+                "button": identity, "frontPid": Int(frontBefore), "trace": clickTraceName!]
         }
         Thread.sleep(forTimeInterval: 0.025)
     }
@@ -425,7 +423,7 @@ func main() throws {
     try need(rootPid > 1 && rootPid <= Int(Int32.max), "Invalid root PID")
     let op = req["operation"] as! String, out = URL(fileURLWithPath: req["output"] as! String).standardizedFileURL
     try need(["snapshot", "prepare", "click", "startup", "close-settings"].contains(op), "Unknown operation")
-    if op == "prepare" { try need(["Finish", "Public link"].contains(req["label"] as? String ?? ""), "Unsupported accessibility bootstrap label") }
+    if op == "prepare" { try need(req["label"] as? String == "Finish", "Unsupported accessibility bootstrap label") }
     if op == "click" { try need(["Public link", "Create public link", "Cancel upload", "Retry upload"].contains(req["label"] as? String ?? ""), "Unsupported click label") }
     try safeOwnedPath(out, root: runner)
     try need(!fm.fileExists(atPath: out.path), "Output must be fresh")
@@ -448,15 +446,17 @@ func main() throws {
         clickTrace = try ClickTrace(traceURL)
         clickTraceName = traceURL.lastPathComponent
     }
-    let (before, words, pillDescendants) = try (op == "prepare" ? observeForPreparation(req, out) :
-        (op == "click" ? observeBeforeInput(req, out) : observe(req, out)))
+    if op == "prepare" {
+        let receipt = try preparePillAccessibility(req)
+        print(String(data: try JSONSerialization.data(withJSONObject: receipt), encoding: .utf8)!); return
+    }
+    let (before, words, pillDescendants) = try (op == "click" ? observeBeforeInput(req, out) : observe(req, out))
     if let expected = req["expectedFrontPid"] {
         try need(expected is Int && (expected as! Int) > 1 && before["frontPid"] as? Int == (expected as! Int),
             "Synthetic scene lost foreground before native operation")
     }
     if op == "snapshot" { print(String(data: try JSONSerialization.data(withJSONObject: before), encoding: .utf8)!); return }
-    try need(op == "click" || op == "prepare", "Unknown operation")
-    let label = req["label"] as! String; try need((op == "prepare" ? ["Finish", "Public link"] : ["Public link", "Create public link", "Cancel upload", "Retry upload"]).contains(label), "Unsupported operation label")
+    let label = req["label"] as! String
     let matching = try words.compactMap { word -> CGRect? in guard let range = word.text.range(of: label) else { return nil }; return try word.candidate.boundingBox(for: range)?.boundingBox }
     try need(matching.count == 1, "Label OCR match is missing or ambiguous")
     let b = before["bounds"] as! [CGFloat], box = matching[0]
@@ -468,14 +468,6 @@ func main() throws {
         [initialPill.rect.minX,initialPill.rect.minY,initialPill.rect.width,initialPill.rect.height] == b, "Pill changed before accessibility admission")
     if let preparedPid = req["preparedPid"] {
         try need(preparedPid is Int && (preparedPid as! Int) == Int(initialPill.pid), "Prepared accessibility belongs to another pill PID")
-    }
-    if op == "prepare" {
-        try need(frontPID() == pid_t(before["frontPid"] as! Int), "Foreground drift before accessibility bootstrap")
-        let identity = try preparePillAccessibility(req, initialPill, label: label, point: point, descendants: pillDescendants)
-        let receipt: [String: Any] = ["prepared":true,"pid":Int(initialPill.pid),"windowId":Int(initialPill.id),"button":identity,"frontPid":Int(frontPID()),"trace":clickTraceName!]
-        let encoded = try JSONSerialization.data(withJSONObject: receipt)
-        print(String(data: encoded, encoding: .utf8)!)
-        return
     }
     trace.add(["stage":"beforeMove", "frontPid":Int(frontPID()), "pillPid":Int(initialPill.pid), "windowId":Int(initialPill.id), "bounds":[initialPill.rect.minX,initialPill.rect.minY,initialPill.rect.width,initialPill.rect.height], "geometry":before["geometry"]!, "point":[point.x,point.y]])
     try trace.requireComplete()
