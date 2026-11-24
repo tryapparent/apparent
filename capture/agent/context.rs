@@ -1,10 +1,12 @@
 use crate::embedded_policy::EmbeddedPolicy;
-use crate::shared::{model::*, routing::BROWSER_PAGE_EVENT_PREFIX};
+#[path = "../../engine/native/agent_context/handoff.rs"]
+mod handoff;
+use handoff::{ContextLine, FrameText, WindowEvidence, fold_repeats, line, open_handoff_policy, render_context_line, window_near_mark};
+pub(crate) use handoff::{append_frame, audio_notice, frame_is_flagged};
+use crate::shared::model::*;
 use crate::capture::engine::sketch::{
     describe_event, direction, mark_on_keyframe, marks_on, quote_label, settled_events,
 };
-
-const HANDOFF_LINE: &str = include_str!(concat!(env!("OUT_DIR"), "/agent-handoff-line.mjs"));
 
 pub(crate) fn clipboard_frame_hint() -> &'static str {
     if crate::shared::handoff::experiment(crate::shared::handoff::AGENT_CONTEXT) {
@@ -22,12 +24,6 @@ pub(crate) fn window_observation_notice(bundle: &ApparentBundle) -> &'static str
     } else {
         ""
     }
-}
-
-#[derive(Debug)]
-pub struct FrameText {
-    pub head: String,
-    pub lines: Vec<String>,
 }
 
 /// How far back an item's place in the speech moves to the start of its clause.
@@ -58,9 +54,7 @@ enum Item<'a> {
         mark: &'a Mark,
         number: Option<usize>,
     },
-    Event {
-        text: String,
-    },
+    Event(ContextLine<'a>),
     Note { text: String },
 }
 
@@ -81,11 +75,19 @@ pub fn circled(n: usize) -> String {
 }
 
 pub(crate) fn keyframe_texts(bundle: &ApparentBundle) -> Option<Vec<FrameText>> {
+    handoff_frames(bundle, false)
+}
+
+pub(crate) fn compact_keyframe_texts(bundle: &ApparentBundle) -> Option<Vec<FrameText>> {
+    handoff_frames(bundle, true)
+}
+
+fn handoff_frames(bundle: &ApparentBundle, compact: bool) -> Option<Vec<FrameText>> {
     let frames = &bundle.keyframes;
     if frames.is_empty() {
         return None;
     }
-    let policy = EmbeddedPolicy::open("agent-handoff-line", HANDOFF_LINE, &["handoffLine", "windowSuffix"]).ok()?;
+    let policy = open_handoff_policy()?;
     let words = frame_words(bundle);
     let clicks: Vec<_> = frames.iter().map(|frame| click_anchor(frame, &bundle.events)).collect();
     let starts = frame_starts(bundle, words.as_deref(), &clicks);
@@ -107,7 +109,7 @@ pub(crate) fn keyframe_texts(bundle: &ApparentBundle) -> Option<Vec<FrameText>> 
         if frame.reason == KeyframeReason::Click && clicks[i].is_none() {
             let text = without_positions(&frame.event);
             if !text.trim().is_empty() {
-                items[i].push(Timed { t: frame.t, item: Item::Event { text } });
+                items[i].push(Timed { t: frame.t, item: Item::Event(ContextLine::plain(text)) });
             }
         }
     }
@@ -121,13 +123,15 @@ pub(crate) fn keyframe_texts(bundle: &ApparentBundle) -> Option<Vec<FrameText>> 
             });
         }
     }
-    for (t, text) in events(bundle, &policy) {
+    for (t, action) in events(bundle) {
         items[owner(t)].push(Timed {
             t,
-            item: Item::Event { text },
+            item: Item::Event(action),
         });
     }
 
+    let mut previous_window = None;
+    let mut previous_screen = bundle.screen_at(0);
     frames
         .iter()
         .enumerate()
@@ -135,15 +139,29 @@ pub(crate) fn keyframe_texts(bundle: &ApparentBundle) -> Option<Vec<FrameText>> 
             let mut timed = std::mem::take(&mut items[i]);
             timed.sort_by_key(|item| item.t);
             let lines = match &words {
-                Some(words) => interleave(&policy, bundle, &words[i], &timed),
-                None => interleave_unsplit(&policy, bundle, frame.said.as_deref(), frame.t, &timed),
+                Some(words) => interleave(&policy, bundle, &words[i], &timed, compact),
+                None => interleave_unsplit(&policy, bundle, frame.said.as_deref(), frame.t, &timed, compact),
             }?;
-            let head = match changed_regions(bundle, i) {
+            let scene = frame.reason == KeyframeReason::SceneChange;
+            let keep_head = lines.is_empty()
+                && (!compact || policy.call("keepFrameHead", (compact, scene, true)).ok()? == "yes");
+            let head = match (!compact).then(|| changed_regions(bundle, i)).flatten() {
                 Some(changed) => format!("[{changed} changed]"),
-                None if lines.is_empty() => without_positions(&frame.event),
+                None if keep_head => without_positions(&frame.event),
                 None => String::new(),
             };
-            Some(FrameText { head, lines })
+            if compact {
+                let screen = bundle.screen_at(frame.t);
+                if !head.is_empty() || screen != previous_screen || frame_is_flagged(bundle, frame) {
+                    previous_window = None;
+                }
+                previous_screen = screen;
+            }
+            let mut rendered = Vec::new();
+            for line in lines {
+                render_context_line(&policy, compact, line, &mut previous_window, &mut rendered)?;
+            }
+            Some(FrameText { head, lines: rendered })
         })
         .collect()
 }
@@ -320,7 +338,7 @@ fn click_anchor(frame: &Keyframe, events: &[InteractionEvent]) -> Option<u64> {
 
 /// Everything besides marks that the summary shows inline, in time order, with repeats of one
 /// thing (a shortcut, a click on one control) folded into `×N` and a run of drags into one line.
-fn events(bundle: &ApparentBundle, policy: &EmbeddedPolicy) -> Vec<(u64, String)> {
+fn events(bundle: &ApparentBundle) -> Vec<(u64, ContextLine<'_>)> {
     let settled = settled_events(&bundle.events);
     // On a Mac capture these come from the dev page (`crate::page`), not an app.
     let page_scrubs: Vec<u64> = settled
@@ -342,11 +360,11 @@ fn events(bundle: &ApparentBundle, policy: &EmbeddedPolicy) -> Vec<(u64, String)
                 .iter()
                 .any(|&s| s + SCRUB_MS >= *t && s <= t1 + SCRUB_MS);
             if let Some(drag) = drag_text(event).filter(|_| !reported) {
-                let window = event_window(bundle, event);
+                let window = bundle.window_observed_near_action(ActionKind::Pointer, *t);
                 match &mut drags {
                     Some(run) if run.joins(&drag, *t, window) => run.add(drag, *t1),
                     _ => {
-                        out.extend(drags.take().map(|run| run.line(bundle, policy)));
+                        out.extend(drags.take().map(|run| run.line(bundle)));
                         drags = Some(DragRun::new(drag, *t, *t1, window));
                     }
                 }
@@ -355,27 +373,27 @@ fn events(bundle: &ApparentBundle, policy: &EmbeddedPolicy) -> Vec<(u64, String)
         }
         let line = match event {
             InteractionEvent::AppEvent { t, label } if bundle.device.is_none() => {
-                Some((*t, label.clone()))
+                Some((*t, ContextLine::plain(label.clone())))
             }
             // Window titles stay in apparent.json; the summary names apps only.
-            InteractionEvent::AppChange { t, app, .. } => Some((*t, format!("switched to {app}"))),
-            other => event_text(other).map(|mut text| {
-                if event_context_kind(other).is_some() {
-                    text.push_str(&window_suffix(policy, bundle, [event_window(bundle, other)]));
-                }
-                (other.timestamp_ms(), text)
+            InteractionEvent::AppChange { t, app, .. } => Some((*t, ContextLine::plain(format!("switched to {app}")))),
+            other => event_text(other).map(|text| {
+                let window = event_context_kind(other).map_or(WindowEvidence::None, |kind| {
+                    WindowEvidence::action(bundle, bundle.window_observed_near_action(kind, other.timestamp_ms()))
+                });
+                (other.timestamp_ms(), ContextLine { text, window })
             }),
         };
         out.extend(line);
     }
-    out.extend(drags.map(|run| run.line(bundle, policy)));
-    out.extend(window_changes(&bundle.windows));
+    out.extend(drags.map(|run| run.line(bundle)));
+    out.extend(window_changes(&bundle.windows).into_iter().map(|(t, text)| (t, ContextLine::plain(text))));
     out.extend(bundle.context_changes.iter().map(|change| {
         let text = match &change.value {
             Some(value) => format!("{} → {}", one_line(&change.key), one_line(value)),
             None => format!("{} cleared", one_line(&change.key)),
         };
-        (change.t, text)
+        (change.t, ContextLine::plain(text))
     }));
     out.sort_by_key(|(t, _)| *t);
     if bundle.action_context.is_empty() {
@@ -383,25 +401,6 @@ fn events(bundle: &ApparentBundle, policy: &EmbeddedPolicy) -> Vec<(u64, String)
     } else {
         out
     }
-}
-
-fn fold_repeats(items: Vec<(u64, String)>) -> Vec<(u64, String)> {
-    let mut out = Vec::new();
-    for (t, text) in items {
-        match out.last_mut() {
-            Some((_, prev, last, count))
-                if *prev == text && t - *last < REPEAT_MS && !text.starts_with(BROWSER_PAGE_EVENT_PREFIX) => {
-                *last = t;
-                *count += 1;
-            }
-            _ => out.push((t, text, t, 1)),
-        }
-    }
-    out.into_iter()
-        .map(|(t, text, _, count)| {
-            (t, if count > 1 { format!("{text} ×{count}") } else { text })
-        })
-        .collect()
 }
 
 /// A drag worth a line: one that names what it moved, or an unnamed one that went far.
@@ -492,7 +491,7 @@ impl<'a> DragRun<'a> {
         self.drags.push(drag);
     }
 
-    fn line(self, bundle: &ApparentBundle, policy: &EmbeddedPolicy) -> (u64, String) {
+    fn line(self, bundle: &ApparentBundle) -> (u64, ContextLine<'a>) {
         let first = &self.drags[0];
         let mut text = first.verb.to_owned();
         if let Some(name) = &first.name {
@@ -513,8 +512,7 @@ impl<'a> DragRun<'a> {
         if count > 1 && first.verb != "scrubbed" {
             text.push_str(&format!(" ×{count}"));
         }
-        text.push_str(&window_suffix(policy, bundle, [self.window]));
-        (self.t, text)
+        (self.t, ContextLine { text, window: WindowEvidence::action(bundle, self.window) })
     }
 }
 
@@ -525,37 +523,6 @@ fn event_context_kind(event: &InteractionEvent) -> Option<ActionKind> {
         InteractionEvent::Scroll { .. } => Some(ActionKind::Scroll),
         _ => None,
     }
-}
-
-fn event_window<'a>(bundle: &'a ApparentBundle, event: &InteractionEvent) -> Option<&'a ActionWindow> {
-    bundle.window_observed_near_action(event_context_kind(event)?, event.timestamp_ms())
-}
-
-fn window_suffix<'a>(
-    policy: &EmbeddedPolicy,
-    bundle: &ApparentBundle,
-    windows: impl IntoIterator<Item = Option<&'a ActionWindow>>,
-) -> String {
-    if bundle.action_context.is_empty() {
-        return String::new();
-    }
-    let observations: Vec<_> = windows.into_iter().collect();
-    let suffix = serde_json::to_string(&observations)
-        .map_err(anyhow::Error::from)
-        .and_then(|json| policy.call("windowSuffix", (json,)))
-        .unwrap_or_else(|_| " · Window: unknown".into());
-    let mut safe = String::new();
-    for ch in suffix.chars() {
-        match ch {
-            ch if ch.is_control() || matches!(ch, '\u{2028}' | '\u{2029}') => safe.push(' '),
-            '\\' | '[' | ']' | '<' | '>' | '`' | '*' | '_' => {
-                safe.push('\\');
-                safe.push(ch);
-            }
-            ch => safe.push(ch),
-        }
-    }
-    safe
 }
 
 fn event_text(event: &InteractionEvent) -> Option<String> {
@@ -715,30 +682,25 @@ fn join_words(words: &[&WordTiming]) -> String {
     text
 }
 
-fn line(policy: &EmbeddedPolicy, kind: &str, t: u64, number: &str, text: &str, suffix: &str) -> Option<String> {
-    let text = if kind == "Note" { text.to_owned() } else { text.replace(['\r', '\n'], " ") };
-    policy.call("handoffLine", (kind, format_clock(t), number, text, suffix)).ok()
-}
-
-fn action_line(policy: &EmbeddedPolicy, bundle: &ApparentBundle, timed: &Timed) -> Option<String> {
+fn action_line<'a>(policy: &EmbeddedPolicy, bundle: &'a ApparentBundle, timed: &Timed<'a>, compact: bool) -> Option<ContextLine<'a>> {
     let t = timed.t;
     match &timed.item {
         Item::Mark { mark, number } => {
             let number = number.map(circled).unwrap_or_default();
-            let window = window_suffix(policy, bundle, mark.strokes.iter().map(|&index| {
-                let stroke = bundle.strokes.get(index)?;
-                bundle.window_observed_near_action(ActionKind::Stroke, stroke.t0)
-            }));
-            if mark.shape == Shape::Circle {
+            let nearby = window_near_mark(policy, bundle, mark)?;
+            let text = if mark.shape == Shape::Circle {
                 let target = mark_target(mark).unwrap_or_default();
-                let suffix = stroke_suffix(mark) + &window;
-                line(policy, "Circle", t, &number, &target, &suffix)
+                line(policy, "Circle", t, &number, &target, &stroke_suffix(mark), compact)?
             } else {
-                line(policy, "Mark", t, &number, &mark_text(mark), &window)
-            }
+                line(policy, "Mark", t, &number, &mark_text(mark), "", compact)?
+            };
+            Some(ContextLine { text, window: WindowEvidence::action(bundle, nearby) })
         }
-        Item::Event { text } => line(policy, "Action", t, "", text, ""),
-        Item::Note { text } => line(policy, "Note", t, "", text, ""),
+        Item::Event(action) => Some(ContextLine {
+            text: line(policy, "Action", t, "", &action.text, "", compact)?,
+            window: action.window,
+        }),
+        Item::Note { text } => line(policy, "Note", t, "", text, "", compact).map(ContextLine::plain),
     }
 }
 
@@ -796,12 +758,13 @@ fn split_point(t: u64, words: &[&WordTiming], clauses: &[usize]) -> u64 {
     }
 }
 
-fn interleave(
+fn interleave<'a>(
     policy: &EmbeddedPolicy,
-    bundle: &ApparentBundle,
+    bundle: &'a ApparentBundle,
     words: &[&WordTiming],
-    items: &[Timed],
-) -> Option<Vec<String>> {
+    items: &[Timed<'a>],
+    compact: bool,
+) -> Option<Vec<ContextLine<'a>>> {
     let clauses = clause_starts(words);
     let mut lines = Vec::new();
     let mut remaining = words;
@@ -814,31 +777,32 @@ fn interleave(
         };
         last_split = split.max(last_split);
         let end = remaining.partition_point(|word| word.t0 < last_split);
-        push_speech(policy, &mut lines, &remaining[..end])?;
-        lines.push(action_line(policy, bundle, item)?);
+        push_speech(policy, &mut lines, &remaining[..end], compact)?;
+        lines.push(action_line(policy, bundle, item, compact)?);
         remaining = &remaining[end..];
     }
-    push_speech(policy, &mut lines, remaining)?;
+    push_speech(policy, &mut lines, remaining, compact)?;
     Some(lines)
 }
 
-fn push_speech(policy: &EmbeddedPolicy, lines: &mut Vec<String>, words: &[&WordTiming]) -> Option<()> {
+fn push_speech(policy: &EmbeddedPolicy, lines: &mut Vec<ContextLine<'_>>, words: &[&WordTiming], compact: bool) -> Option<()> {
     if let Some(word) = words.first() {
-        lines.push(line(policy, "Speech", word.t0, "", &join_words(words), "")?);
+        lines.push(ContextLine::plain(line(policy, "Speech", word.t0, "", &join_words(words), "", compact)?));
     }
     Some(())
 }
 
-fn interleave_unsplit(
+fn interleave_unsplit<'a>(
     policy: &EmbeddedPolicy,
-    bundle: &ApparentBundle,
+    bundle: &'a ApparentBundle,
     said: Option<&str>,
     t: u64,
-    items: &[Timed],
-) -> Option<Vec<String>> {
-    let mut lines = items.iter().map(|item| action_line(policy, bundle, item)).collect::<Option<Vec<_>>>()?;
+    items: &[Timed<'a>],
+    compact: bool,
+) -> Option<Vec<ContextLine<'a>>> {
+    let mut lines = items.iter().map(|item| action_line(policy, bundle, item, compact)).collect::<Option<Vec<_>>>()?;
     if let Some(speech) = said.map(str::trim).filter(|s| !s.is_empty()) {
-        lines.insert(items.partition_point(|item| item.t <= t), line(policy, "Speech", t, "", speech, "")?);
+        lines.insert(items.partition_point(|item| item.t <= t), ContextLine::plain(line(policy, "Speech", t, "", speech, "", compact)?));
     }
     Some(lines)
 }

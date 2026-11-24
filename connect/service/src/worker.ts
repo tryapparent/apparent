@@ -3,6 +3,7 @@ import {ApiError,fail,trustedSiteOrigin,apiBasePath} from './common.ts';
 import {authRoutes} from './auth.ts';
 import {mcpRoutes} from './mcp/server.ts';
 import {captureRoutes,cleanup} from './captures.ts';
+import {listCaptures} from './captures/history.ts';
 import {shareRoutes} from './shares.ts';
 import {renderShare,shareViewScript,shareViewStyles,shareWordmark,shareFont} from './share-view.ts';
 import {flushAnalytics} from './analytics.ts';
@@ -33,6 +34,8 @@ export default {
     if(Object.keys(data).length)fail('invalid_request');
     queueProductActivity(env,context,request,account.account_id,'desktop');
     response=Response.json({ok:true});
+   }else if(url.pathname==='/v1/captures'&&request.method==='GET') {
+    response=await listCaptures(request,env,url);
    }else response=await supportRoutes(request,env,url)||await mcpRoutes(request,env,url)||await authRoutes(request,env,url)||await shareRoutes(request,env,url,renderShare,context)||await captureRoutes(request,env,url,context);
    if(!response)fail('not_found',404);
   }catch(e){response=Response.json({error:{code:e instanceof ApiError?e.code:'internal_error',message:e instanceof ApiError?e.message:'Request failed'}},{status:e instanceof ApiError?e.status:500});}

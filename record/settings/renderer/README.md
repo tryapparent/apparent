@@ -30,3 +30,21 @@ On Hyprland, Chrome and Chromium may need to be restarted with
 URL context when it cannot uniquely identify the browser window. A recording
 can include URLs from a private window if the browser exposes them through
 accessibility.
+
+## Verify browser handoff on a native desktop
+
+Use an installed candidate in a disposable desktop session. Open two local
+test pages with the same title and different paths. Include a test query and
+fragment in each URL. Enable Recording context for agents and grant the
+required accessibility and screen recording permissions.
+
+Start a screen recording. Click a labeled control and draw a Shift circle
+around it on each page. On macOS, repeat a take with a notification banner
+visible away from the control. Stop the recording and run `apparent copy <bundle>`
+for the saved bundle.
+
+Check that the clipboard text and bundle summary contain the correct page
+path at each click and circle time. Look for the test query and fragment in
+the full summary and clipboard text, including the button and circle labels.
+Neither marker should appear. Repeat with the Labs switch off to verify that
+the next recording omits browser URLs.

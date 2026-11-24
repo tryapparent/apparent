@@ -12,6 +12,8 @@ use super::diagnostics::sampling::{Rejection, Route};
 use super::diagnostics::sampling::Sampling;
 use crate::shared::model::{RgbaFrame, TargetInfo};
 use crate::stored_frame::StoredFrame;
+#[cfg(target_os = "linux")]
+use crate::capture::desktop::workflow::performance::Startup;
 
 #[path = "../../../../engine/recording/start.rs"]
 mod start;
@@ -162,6 +164,8 @@ pub(crate) struct Sampler {
     pub pinned_movie_dir: Option<std::fs::File>,
     #[cfg(target_os = "linux")]
     pub prepared_source: Option<PreparedSource>,
+    #[cfg(target_os = "linux")]
+    pub startup: Option<Startup>,
     /// Apparent's own windows to leave out of the recording.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub excluded_window_ids: Arc<Mutex<Vec<u32>>>,
@@ -246,6 +250,8 @@ impl ScreenCaptureSession {
         prepared_source: Option<PreparedSource>,
         #[cfg(target_os = "linux")]
         pinned_movie_dir: Option<std::fs::File>,
+        #[cfg(target_os = "linux")]
+        startup: Option<Startup>,
     ) -> anyhow::Result<Self> {
         super::super::ensure_recording_mode(target.mode)?;
         #[cfg(target_os = "linux")]
@@ -284,19 +290,20 @@ impl ScreenCaptureSession {
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         let thread_startup_failed = Arc::clone(&startup_failed);
         let thread_offset = Arc::clone(&video_offset_ms);
-        let sampler_target = target;
         #[cfg(target_os = "linux")]
         let storage_dir = pinned_movie_dir.as_ref().map(std::fs::File::try_clone).transpose()?;
         let sampler_thread = thread::Builder::new()
             .name("apparent-frame-sampler".into())
             .spawn(move || {
                 let sampler = Sampler {
-                    target: sampler_target,
+                    target,
                     video_output_path,
                     #[cfg(target_os = "linux")]
                     pinned_movie_dir,
                     #[cfg(target_os = "linux")]
                     prepared_source,
+                    #[cfg(target_os = "linux")]
+                    startup,
                     excluded_window_ids,
                     #[cfg(target_os = "macos")]
                     applied_excluded_window_ids,

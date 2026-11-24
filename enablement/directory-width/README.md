@@ -69,3 +69,16 @@ Its replacement directly invokes the tracked pre-push selector; it never chains
 the obsolete hook. Custom pre-push hooks retain their bytes and modes. Preparation
 also composes issue autofill/validation message hooks; see
 [issue binding](../../shared/enablement/issues/README.md).
+
+In a migrated linked worktree, check the effective hook with
+`git rev-parse --path-format=absolute --git-path hooks/pre-push` and the settings
+source with `git config --show-origin --get core.hooksPath`. If the hook matches
+the retired Cargo fingerprint, prepare and review its replacement as above.
+
+When shared archived refs are read-only, refresh the base without automatic
+maintenance using
+`git fetch --no-auto-maintenance --no-tags --no-recurse-submodules origin refs/heads/main:refs/remotes/origin/main`.
+If another Git operation triggers a maintenance lock error after completing,
+check its result before retrying. To suppress maintenance for a single invocation,
+use `git -c maintenance.auto=false -c gc.auto=0 <command>`. Hooks stay enabled
+and shared configuration is preserved.

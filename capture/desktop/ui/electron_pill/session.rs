@@ -2,6 +2,7 @@
 use super::{Command as Action, View};
 mod diagnostics;
 use diagnostics::{Observation, ReaderStop, WriterStop};
+include!("../../../../engine/diagnostics/performance/pill_session.rs");
 use std::{
     io::Write,
     path::PathBuf,
@@ -53,7 +54,7 @@ pub struct Session {
     pin_admission: Arc<Mutex<super::pin::Admission>>,
     #[cfg(target_os = "linux")]
     drag_position: Arc<Mutex<Option<[f64; 4]>>>,
-    frame: Arc<Mutex<Option<(u64, [f64; 4])>>>,
+    frame: Arc<Mutex<Option<(u64, [f64; 4], Instant)>>>,
 }
 
 fn assets() -> Option<(PathBuf, PathBuf)> {
@@ -181,14 +182,7 @@ impl Session {
                     if stdin.flush().is_err() {
                         break 'writer WriterStop::Flush;
                     }
-                    if message.get("type").and_then(|v| v.as_str()) == Some("state")
-                        && let (Some(phase), Some(revision)) = (
-                            message.pointer("/view/phase").and_then(|v| v.as_str()),
-                            message.pointer("/view/revision").and_then(|v| v.as_u64()),
-                        )
-                    {
-                        write_observation.lock().unwrap().wrote_state(phase, revision);
-                    }
+                    observe_flushed_state(&write_observation, &message);
                 }
             };
             write_observation.lock().unwrap().writer_stop = Some(stopped);
@@ -261,11 +255,11 @@ impl Session {
                         }
                         continue;
                     }
-                    if let Some(frame_value) = value.get("frame") {
-                        let Some(revision) = value.get("revision").and_then(|v| v.as_u64()) else { break ReaderStop::InvalidFrame; };
-                        let Ok(rect) = serde_json::from_value::<[f64; 4]>(frame_value.clone()) else { break ReaderStop::InvalidFrame; };
-                        if !rect.iter().all(|v| v.is_finite()) || rect[2] <= 0.0 || rect[3] <= 0.0 { break ReaderStop::InvalidFrame; }
-                        *frame_readback.lock().unwrap() = Some((revision, rect));
+                    if let Some(frame) = value.get("frame") {
+                        let Some(receipt) = geometry_receipt(&value, frame) else {
+                            break ReaderStop::InvalidFrame;
+                        };
+                        *frame_readback.lock().unwrap() = Some(receipt);
                         continue;
                     }
                     if value.get("pin").and_then(|v| v.as_bool()) == Some(true) {
@@ -427,13 +421,6 @@ impl Session {
         match self.window_id.load(Ordering::Acquire) {
             0 => None,
             id => Some(id),
-        }
-    }
-    pub fn note_badge_anchor(&self) -> Option<[f64; 4]> {
-        if !self.healthy() || !self.ready() { return None; }
-        {
-            let (revision, rect) = (*self.frame.lock().ok()?)?;
-            (revision == self.view.revision).then_some(rect)
         }
     }
     pub fn healthy(&self) -> bool {

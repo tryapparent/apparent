@@ -88,7 +88,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   await enableAndReload(speaking);
   const sharing=page.getByRole('switch',{name:'Public sharing links'});
   await enableAndReload(sharing);
-  const performance = page.getByRole('switch', {name:'Share recording performance'});
+  const performance = page.getByRole('switch', {name:'Share performance metrics'});
   await expect(performance).toHaveAccessibleDescription(/to PostHog/);
   await enableAndReload(performance);
   await performance.focus();

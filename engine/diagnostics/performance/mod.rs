@@ -1,7 +1,7 @@
 use serde_json::{Value, json};
 use std::fs::File;
 use std::io::Read;
-use std::sync::{OnceLock, mpsc};
+use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 include!(concat!(env!("OUT_DIR"), "/recording-performance.rs"));
@@ -40,6 +40,86 @@ pub(crate) struct RecordingPerformance {
     start: Instant,
     ready: Option<Timing>,
     trace_ids: [String; 2],
+    startup: Startup,
+    pill_reported: bool,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum StartupPoint {
+    Entry,
+    ContextReady,
+    TracksEnter,
+    AudioReady,
+    TracksReturn,
+    PillRequested,
+    PillStateFlushed,
+    PillReported,
+    PortalConnect,
+    PortalCreate,
+    PortalSelect,
+    PortalStart,
+    PortalResponse,
+    PipewireRequest,
+    PipewireOpen,
+    VideoBuild,
+    VideoInitialized,
+    VideoFirstFrame,
+}
+
+use StartupPoint::*;
+
+impl StartupPoint {
+    pub(crate) fn record_in(self, trace: Option<&Startup>) {
+        if let Some(trace) = trace {
+            trace.record(self);
+        }
+    }
+}
+
+const STARTUP_STAGES: &[(&str, StartupPoint, StartupPoint)] = &[
+    ("recording.start.admission", Entry, ContextReady),
+    ("recording.start.prepare", ContextReady, TracksEnter),
+    ("recording.start.audio_setup", TracksEnter, AudioReady),
+    ("recording.start.video_dispatch", AudioReady, TracksReturn),
+    ("recording.start.notes_and_publish", TracksReturn, PillRequested),
+    ("recording.start.pill_acknowledge", PillRequested, PillReported),
+    ("recording.start.pill_queue", PillRequested, PillStateFlushed),
+    ("recording.start.pill_after_flush", PillStateFlushed, PillReported),
+    ("recording.start.portal_connect", PortalConnect, PortalCreate),
+    ("recording.start.portal_create_session", PortalCreate, PortalSelect),
+    ("recording.start.portal_select_sources", PortalSelect, PortalStart),
+    ("recording.start.portal_start", PortalStart, PortalResponse),
+    ("recording.start.pipewire_connect", PipewireRequest, PipewireOpen),
+    ("recording.start.video_initialize", VideoBuild, VideoInitialized),
+    ("recording.start.video_first_frame", VideoBuild, VideoFirstFrame),
+];
+
+#[derive(Clone, Default)]
+pub(crate) struct Startup(Arc<Mutex<[Option<Instant>; VideoFirstFrame as usize + 1]>>);
+
+impl Startup {
+    pub(crate) fn record(&self, point: StartupPoint) {
+        self.record_at(point, Instant::now());
+    }
+
+    pub(crate) fn record_at(&self, point: StartupPoint, at: Instant) {
+        self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+            [point as usize].get_or_insert(at);
+    }
+
+    fn stages(&self, origin: Instant, epoch: u128) -> Vec<Timing> {
+        let points = self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        STARTUP_STAGES.iter().filter_map(|&(name, from, to)| {
+            let start = points[from as usize]?;
+            let end = points[to as usize]?;
+            end.checked_duration_since(start)?;
+            Some(Timing {
+                name,
+                start: epoch + start.checked_duration_since(origin)?.as_nanos(),
+                end: epoch + end.checked_duration_since(origin)?.as_nanos(),
+            })
+        }).collect()
+    }
 }
 
 struct Report {
@@ -50,6 +130,8 @@ struct Report {
     finalizer: Timing,
     recording_ms: u64,
     saved: bool,
+    startup: Vec<Timing>,
+    stages: crate::recording_trace::Collected,
 }
 
 pub(crate) fn generation(config: &Value) -> Option<&str> {
@@ -68,6 +150,19 @@ fn consent() -> Option<String> {
 }
 
 impl RecordingPerformance {
+    pub(crate) fn finalize<T, E>(
+        performance: Option<Self>,
+        finish: Instant,
+        work: impl FnOnce() -> (Result<T, E>, u64),
+    ) -> (Result<T, E>, u64) {
+        let started = Instant::now();
+        let (result, stages) = crate::recording_trace::collect(performance.is_some(), work);
+        if let Some(performance) = performance {
+            performance.finish(finish, started, result.1, result.0.is_ok(), stages);
+        }
+        result
+    }
+
     pub(crate) fn begin(start: Instant) -> Option<Self> {
         crate::capture::desktop::workflow::error_reporting::compiled_token()?;
         let consent = consent()?;
@@ -91,11 +186,27 @@ impl RecordingPerformance {
             start,
             ready: None,
             trace_ids,
+            startup: Startup::default(),
+            pill_reported: false,
         })
     }
 
     pub(crate) fn needs_ready(&self) -> bool {
         self.ready.is_none()
+    }
+
+    pub(crate) fn startup(&self) -> &Startup {
+        &self.startup
+    }
+
+    pub(crate) fn needs_pill(&self) -> bool {
+        !self.pill_reported
+    }
+
+    pub(crate) fn pill_reported(&mut self, flushed: Instant, reported: Instant) {
+        self.pill_reported = true;
+        self.startup.record_at(PillStateFlushed, flushed);
+        self.startup.record_at(PillReported, reported);
     }
 
     pub(crate) fn live(&mut self) {
@@ -108,6 +219,7 @@ impl RecordingPerformance {
         finalizer_started: Instant,
         recording_ms: u64,
         saved: bool,
+        stages: crate::recording_trace::Collected,
     ) {
         let Some(start) = self.ready else {
             return;
@@ -124,6 +236,19 @@ impl RecordingPerformance {
         if consent().as_deref() != Some(&self.consent) {
             return;
         }
+        let startup = self.startup.stages(self.start, start.start);
+        if !startup.is_empty() {
+            let stages: Vec<_> = startup.iter().map(|stage| {
+                json!({
+                    "stage": stage.name,
+                    "startMs": (stage.start - start.start) as f64 / 1_000_000.0,
+                    "endMs": (stage.end - start.start) as f64 / 1_000_000.0,
+                })
+            }).collect();
+            crate::capture::engine::runtime::apparent_log(format!(
+                "recording startup stages: {}", json!(stages)
+            ));
+        }
         let report = Report {
             consent: self.consent,
             trace_ids: self.trace_ids,
@@ -132,6 +257,8 @@ impl RecordingPerformance {
             finalizer,
             recording_ms,
             saved,
+            startup,
+            stages,
         };
         if let Some(sender) = sender() {
             let _ = sender.try_send(report);
@@ -176,7 +303,7 @@ fn payloads(report: &Report) -> (Value, Value) {
     ]});
     let scope = json!({"name":"apparent.recording"});
     let mut metrics = Vec::with_capacity(2);
-    let mut spans = Vec::with_capacity(3);
+    let mut spans = Vec::with_capacity(4 + report.startup.len() + report.stages.spans.len());
     for (index, timing) in [&report.start, &report.finish].into_iter().enumerate() {
         let ok = index == 0 || report.saved;
         let attributes = [
@@ -209,8 +336,36 @@ fn payloads(report: &Report) -> (Value, Value) {
         "spanId":"0000000000000002","parentSpanId":"0000000000000001",
         "name":report.finalizer.name,"kind":1,
         "startTimeUnixNano":report.finalizer.start.to_string(),
-        "endTimeUnixNano":report.finalizer.end.to_string()
+        "endTimeUnixNano":report.finalizer.end.to_string(),
+        "attributes":[{"key":"recording.spans_dropped","value":{"intValue":report.stages.dropped.to_string()}}]
     }));
+    if let Some(end) = report.startup.iter().map(|stage| stage.end).max() {
+        let timeline = "0000000000000002";
+        spans[0]["parentSpanId"] = json!(timeline);
+        spans.push(json!({
+            "traceId":report.trace_ids[0],"spanId":timeline,
+            "name":"recording.start.timeline","kind":1,
+            "startTimeUnixNano":report.start.start.to_string(),
+            "endTimeUnixNano":end.max(report.start.end).to_string()
+        }));
+        for (index, stage) in report.startup.iter().enumerate() {
+            spans.push(json!({
+                "traceId":report.trace_ids[0],"spanId":format!("{:016x}", index + 3),
+                "parentSpanId":timeline,"name":stage.name,"kind":1,
+                "startTimeUnixNano":stage.start.to_string(),"endTimeUnixNano":stage.end.to_string()
+            }));
+        }
+    }
+    for stage in &report.stages.spans {
+        spans.push(json!({
+            "traceId":report.trace_ids[1],
+            "spanId":format!("{:016x}", stage.id),
+            "parentSpanId":format!("{:016x}", stage.parent),
+            "name":stage.operation.name(),"kind":1,
+            "startTimeUnixNano":stage.start.to_string(),
+            "endTimeUnixNano":stage.end.to_string()
+        }));
+    }
     (
         json!({"resourceMetrics":[{"resource":resource,"scopeMetrics":[{"scope":scope,"metrics":metrics}]}]}),
         json!({"resourceSpans":[{"resource":resource,"scopeSpans":[{"scope":scope,"spans":spans}]}]}),
@@ -218,63 +373,4 @@ fn payloads(report: &Report) -> (Value, Value) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn performance_requires_explicit_consent_and_generation() {
-        assert_eq!(generation(&json!({})), None);
-        assert_eq!(generation(&json!({"experiments": {SETTING: true}})), None);
-        for enabled in [json!(false), json!("true"), json!(true)] {
-            let state = json!({"experiments":{SETTING: enabled}, GENERATION: "revision"});
-            assert_eq!(generation(&state), (enabled == true).then_some("revision"));
-        }
-    }
-
-    #[test]
-    fn exports_sampled_histograms_and_parented_finish_spans() {
-        let report = Report {
-            consent: "private-generation".into(),
-            trace_ids: ["09".repeat(16), "10".repeat(16)],
-            start: Timing {
-                name: "recording.start.duration",
-                start: 1_000_000_000,
-                end: 1_500_000_000,
-            },
-            finish: Timing {
-                name: "recording.finish.duration",
-                start: 90_000_000_000,
-                end: 92_000_000_000,
-            },
-            finalizer: Timing {
-                name: "recording.bundle.finalize",
-                start: 91_000_000_000,
-                end: 92_000_000_000,
-            },
-            recording_ms: 89000,
-            saved: false,
-        };
-        let (metrics, traces) = payloads(&report);
-        let datapoint = &metrics["resourceMetrics"][0]["scopeMetrics"][0]["metrics"][0]["histogram"]
-            ["dataPoints"][0];
-        assert_eq!(datapoint["sum"], 500.0);
-        assert_eq!(datapoint["count"], "1");
-        assert_eq!(datapoint["bucketCounts"][5], "1");
-        assert_eq!(
-            datapoint["bucketCounts"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .filter(|value| **value == "1")
-                .count(),
-            1
-        );
-        let spans = &traces["resourceSpans"][0]["scopeSpans"][0]["spans"];
-        assert_ne!(spans[0]["traceId"], spans[1]["traceId"]);
-        assert_eq!(spans[1]["traceId"], spans[2]["traceId"]);
-        assert_eq!(spans[1]["spanId"], spans[2]["parentSpanId"]);
-        assert_eq!(spans[1]["status"]["code"], 2);
-        assert!(!metrics.to_string().contains("private-generation"));
-        assert!(!traces.to_string().contains("private-generation"));
-    }
-}
+mod tests;

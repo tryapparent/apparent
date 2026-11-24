@@ -187,16 +187,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn screen_selection_preserves_explicit_choices_and_defaults_to_the_picker() {
+    fn screen_selection_preserves_explicit_choices_and_requires_opt_in_for_direct_gnome_capture() {
         use crate::permission_admission::{ScreenSelection, screen_selection};
-        assert_eq!(screen_selection(true, None), ScreenSelection::Picker);
-        assert_eq!(screen_selection(false, None), ScreenSelection::Unavailable);
         assert_eq!(
-            screen_selection(true, Some(save_picker(false))),
+            screen_selection(true, false, None),
+            ScreenSelection::FullDisplay
+        );
+        assert_eq!(screen_selection(true, true, None), ScreenSelection::Picker);
+        assert_eq!(
+            screen_selection(false, false, None),
+            ScreenSelection::Unavailable
+        );
+        assert_eq!(
+            screen_selection(true, false, Some(save_picker(false))),
             ScreenSelection::Picker
         );
         assert_eq!(
-            screen_selection(true, Some(save_picker(true))),
+            screen_selection(true, true, Some(save_picker(true))),
             ScreenSelection::FullDisplay
         );
     }

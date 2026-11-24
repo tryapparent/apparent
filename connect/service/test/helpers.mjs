@@ -5,7 +5,7 @@ import {serializeSignedCookie} from 'better-call';
 const authSecret='synthetic-better-auth-secret-only-for-tests-32bytes';
 export const digest = s => createHash('sha256').update(s).digest('hex');
 export async function fixture(bindings={},options={}) {
- const {instances=false,v2Migration=true,...workerOptions}=options;
+ const {instances=false,v2Migration=true,recordingMigration=true,...workerOptions}=options;
  const config={modules:true,scriptPath:'dist/worker.js',compatibilityDate:'2026-02-05',compatibilityFlags:['nodejs_compat'],d1Databases:{DB:'shared-db'},r2Buckets:{BUCKET:'shared-bucket'},bindings:{SITE_ORIGIN:'https://site.example',API_ORIGIN:'https://api.example',BETTER_AUTH_SECRET:authSecret,GOOGLE_CLIENT_ID:'test-client',GOOGLE_CLIENT_SECRET:'controlled-secret',TOKEN_ENCRYPTION_KEY:Buffer.alloc(32,7).toString('base64'),...bindings},...workerOptions};
  config.modules=[{type:'ESModule',path:'dist/worker.js',contents:config.script??await readFile(config.scriptPath,'utf8')}];delete config.script;delete config.scriptPath;
  config.outboundService??=async request=>{
@@ -21,6 +21,7 @@ export async function fixture(bindings={},options={}) {
  await db.exec((await readFile('.generated/migrations/0004.sql','utf8')).replace(/^--.*$/gm,'').replaceAll('\n',' '));
  await db.exec((await readFile('.generated/migrations/0005.sql','utf8')).replace(/^--.*$/gm,'').replaceAll('\n',' '));
  if(v2Migration)await db.exec((await readFile('.generated/migrations/0011.sql','utf8')).replace(/^--.*$/gm,'').replaceAll('\n',' '));
+ if(recordingMigration)await db.exec((await readFile('.generated/migrations/0021.sql','utf8')).replaceAll('\n',' '));
  const apiOrigin=config.bindings.API_ORIGIN;
  const call=async (path,{token,cookie,csrf,origin,method='GET',body,raw,headers={},instance}={})=>{
   const target=instance?await mf.getWorker(instance):mf,fetch=instance?target.fetch.bind(target):target.dispatchFetch.bind(target);

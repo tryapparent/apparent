@@ -5,15 +5,44 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 #[cfg(target_os = "macos")]
-pub(super) fn browser_page(element: AxElement, owner: i32, started: Instant) -> Option<String> {
-    use core_foundation::url::CFURL;
+pub(super) fn window_at(
+    raw: &[crate::shared::windows::RawWindow],
+    x: f64,
+    y: f64,
+    own: i32,
+    direct_browser_hit: bool,
+) -> Option<&crate::shared::windows::RawWindow> {
+    raw.iter().find(|window| {
+        let [left, top, width, height] = window.bounds;
+        window.pid != own
+            && window.alpha > 0.01
+            && x >= left
+            && x <= left + width
+            && y >= top
+            && y <= top + height
+            && !(window.owner == "Dock" && window.layer == 20)
+            && !(window.owner == "Window Server" && window.layer == 2_147_483_630)
+            && !(direct_browser_hit && window.owner == "Notification Center" && window.layer == 21)
+    })
+}
+
+#[cfg(target_os = "macos")]
+pub(super) fn is_browser(owner: i32) -> bool {
     use objc2_app_kit::NSRunningApplication;
 
-    let app = NSRunningApplication::runningApplicationWithProcessIdentifier(owner)?;
-    let id = app.bundleIdentifier()?.to_string();
-    if !matches!(id.as_str(), "com.google.Chrome" | "org.chromium.Chromium" | "org.mozilla.firefox") {
-        return None;
-    }
+    NSRunningApplication::runningApplicationWithProcessIdentifier(owner)
+        .and_then(|app| app.bundleIdentifier())
+        .is_some_and(|id| {
+            matches!(
+                id.to_string().as_str(),
+                "com.google.Chrome" | "org.chromium.Chromium" | "org.mozilla.firefox"
+            )
+        })
+}
+
+#[cfg(target_os = "macos")]
+pub(super) fn browser_page(element: AxElement, owner: i32, started: Instant) -> Option<String> {
+    use core_foundation::url::CFURL;
 
     let mut parent = None;
     let mut page = None;

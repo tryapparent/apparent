@@ -6,5 +6,8 @@ def resident_final(local_builtin: Bool, installed_model: Bool, preview_trial: Bo
 def install_resident_final(resident: Bool, configured_builtin: Bool, parakeet_preparing: Bool) -> Bool:
   Bool.and(resident, Bool.and(configured_builtin, Bool.not(parakeet_preparing)))
 
+def pause_capture(local_background: Bool, word_probe: Bool) -> Bool:
+  Bool.and(local_background, word_probe)
+
 def eof_punctuation_start_allowance_ms() -> U32:
   80

@@ -10,6 +10,8 @@ use core_foundation::string::{CFString, CFStringRef};
 #[path = "../../../engine/accessibility/macos_browser.rs"]
 mod browser;
 pub use browser::apply;
+#[cfg(target_os = "macos")]
+use browser::window_at;
 
 use std::collections::HashMap;
 #[cfg(target_os = "macos")]
@@ -165,31 +167,6 @@ fn cell_child_label<'a>(
     names.next().is_none().then_some(name)
 }
 
-#[cfg(target_os = "macos")]
-fn window_owner_at(raw: &[crate::shared::windows::RawWindow], x: f64, y: f64, own: i32) -> Option<i32> {
-    window_at(raw, x, y, own).map(|window| window.pid)
-}
-
-#[cfg(target_os = "macos")]
-fn window_at(
-    raw: &[crate::shared::windows::RawWindow], x: f64, y: f64, own: i32,
-) -> Option<&crate::shared::windows::RawWindow> {
-    raw.iter()
-        .filter(|w| {
-            let [wx, wy, ww, wh] = w.bounds;
-            // The Dock reports a full-screen window even where it draws nothing.
-            // Window Server's cursor sprite follows the pointer above the clicked app.
-            w.alpha > 0.01
-                && !(w.owner == "Dock" && w.layer == 20)
-                && !(w.owner == "Window Server" && w.layer == 2_147_483_630)
-                && x >= wx
-                && x <= wx + ww
-                && y >= wy
-                && y <= wy + wh
-        })
-        .find(|w| w.pid != own)
-}
-
 /// Owns a CoreFoundation value returned under the create rule.
 #[cfg(target_os = "macos")]
 struct Owned(CFTypeRef);
@@ -293,21 +270,20 @@ pub fn hit_test(x: f64, y: f64) -> Option<Hit> {
     let system = Owned(unsafe { AXUIElementCreateSystemWide() });
     unsafe { AXUIElementSetMessagingTimeout(system.0, MESSAGE_TIMEOUT_S) };
     let mut element = element_at(system.0, x, y)?;
+    let system_owner = pid_of(element.0)?;
+    let direct_browser_hit = system_owner != own && browser::is_browser(system_owner);
     let raw = objc2::rc::autoreleasepool(|_| crate::shared::windows::raw_windows());
-    if pid_of(element.0) == Some(own) {
-        let pid = window_owner_at(&raw, x, y, own)?;
+    let front_window = window_at(&raw, x, y, own, direct_browser_hit);
+    if system_owner == own {
+        let pid = front_window?.pid;
         let app = Owned(unsafe { AXUIElementCreateApplication(pid) });
         unsafe { AXUIElementSetMessagingTimeout(app.0, MESSAGE_TIMEOUT_S) };
         element = element_at(app.0, x, y)?;
         if pid_of(element.0) != Some(pid) {
             return None;
         }
-    } else {
-        if let Some(pid) = window_owner_at(&raw, x, y, own)
-            && pid_of(element.0) != Some(pid)
-        {
-            return None;
-        }
+    } else if front_window.is_some_and(|window| window.pid != system_owner) {
+        return None;
     }
     let over = || started.elapsed() > LOOKUP_BUDGET;
 
@@ -334,6 +310,11 @@ pub fn hit_test(x: f64, y: f64) -> Option<Hit> {
     let subrole = string_attribute(element.0, "AXSubrole").unwrap_or_default();
     let input = is_input(&role, &subrole);
     let owner = pid_of(element.0)?;
+    let browser_owner = if owner == system_owner {
+        direct_browser_hit
+    } else {
+        browser::is_browser(owner)
+    };
     let role_description = string_attribute(element.0, "AXRoleDescription")
         .or_else(|| role.strip_prefix("AX").map(str::to_lowercase))
         .unwrap_or_default();
@@ -367,7 +348,8 @@ pub fn hit_test(x: f64, y: f64) -> Option<Hit> {
             .or_else(|| string_attribute(element.0, "AXDOMIdentifier"))
             .and_then(|s| clip(&s));
     }
-    if !over()
+    if !browser_owner
+        && !over()
         && let Some(window) = element_attribute(element.0, "AXWindow")
         && pid_of(window.0) == Some(owner)
     {
@@ -375,12 +357,13 @@ pub fn hit_test(x: f64, y: f64) -> Option<Hit> {
             .and_then(|url| document_name(&url))
             .and_then(|s| clip(&s));
     }
-    hit.browser_page = window_at(&raw, x, y, own)
-        .filter(|window| window.layer == 0 && Some(window.pid) == pid_of(element.0))
+    hit.browser_page = front_window
+        .filter(|window| browser_owner && window.layer == 0 && window.pid == owner)
         .and_then(|window| {
             let url = browser::browser_page(element.0, window.pid, started)?;
             let after = objc2::rc::autoreleasepool(|_| crate::shared::windows::raw_windows());
-            (window_at(&after, x, y, own).map(|window| window.id) == Some(window.id))
+            let current = window_at(&after, x, y, own, direct_browser_hit);
+            current.is_some_and(|current| current.id == window.id && current.pid == window.pid)
                 .then_some((window.id, url))
         });
     Some(hit)

@@ -30,7 +30,11 @@ export function repairTable(directory: string): PermissionTable {
       ),
       rows: ["macos", "wayland", "x11"].map(($) => policy.settings_rows({ $ })),
       screenSelection: [false, true].flatMap(supported =>
-        ["unset", "picker", "full_display"].map($ => policy.screen_selection(supported, { $ }))
+        [false, true].flatMap(directNeedsOptIn =>
+          ["unset", "picker", "full_display"].map($ =>
+            policy.screen_selection(supported, directNeedsOptIn, { $ })
+          )
+        )
       ),
       savePicker: [false, true].map(skip => policy.save_picker(skip))
     }));

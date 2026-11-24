@@ -766,7 +766,14 @@ fn summary_markdown_formatted(
     agent_context: bool,
     clipboard_hosted: Option<bool>,
 ) -> String {
-    let agent_texts = agent_context.then(|| crate::capture::agent::context::keyframe_texts(bundle)).flatten();
+    let compact_agent_context = agent_context && clipboard_hosted.is_some();
+    let agent_texts = agent_context.then(|| {
+        if compact_agent_context {
+            crate::capture::agent::context::compact_keyframe_texts(bundle)
+        } else {
+            crate::capture::agent::context::keyframe_texts(bundle)
+        }
+    }).flatten();
     let mut target = bundle
         .target
         .app
@@ -870,21 +877,7 @@ fn summary_markdown_formatted(
             crop.label, crop.full_frames
         );
     }
-    if bundle.source.as_deref() != Some("iphone") && !bundle.context.get("microphoneCapture").is_some_and(|v| v == "off") {
-        if !bundle.has_microphone_samples(bundle_dir) {
-            out.push_str("No microphone audio was saved. Check the microphone and try again.\n");
-        } else if bundle.transcript.text.trim().is_empty()
-            && (bundle.transcript.missing.is_some() || bundle.transcript.source == "none")
-        {
-            if let Some(missing) = &bundle.transcript.missing {
-                out.push_str(&format!("No transcript: {}\n", missing.reason));
-            } else {
-                out.push_str("No transcript: Recognition did not run. The audio is saved.\n");
-            }
-        } else if bundle.transcript.text.trim().is_empty() {
-            out.push_str("No words transcribed. Your audio was saved—check it or try again closer to the microphone.\n");
-        }
-    }
+    out.push_str(&crate::capture::agent::context::audio_notice(bundle, bundle_dir, compact_agent_context));
     let mut app_events: Vec<(u64, String)> = bundle
         .events
         .iter()
@@ -920,28 +913,19 @@ fn summary_markdown_formatted(
                 _ => String::new(),
             };
             shown_screen = screen;
-            let flag = frame
-                .mark_id
-                .as_ref()
-                .and_then(|id| bundle.marks.iter().find(|m| &m.id == id))
-                .is_some_and(|m| m.shape == Shape::Flag);
+            let flag = crate::capture::agent::context::frame_is_flagged(bundle, frame);
             (frame, screen_marker, flag)
         })
     };
     if let Some(texts) = agent_texts {
-        out += crate::capture::agent::context::window_observation_notice(bundle);
+        if !compact_agent_context || bundle.action_context.is_empty() {
+            out += crate::capture::agent::context::window_observation_notice(bundle);
+        }
         for ((frame, screen_marker, flag), text) in frames().zip(texts) {
-            let flag_marker = if flag { " ⚑" } else { "" };
-            let prefix = crate::composition::frame_labels::prefix(frame);
-            out += &format!("{prefix}{screen_marker}{flag_marker}");
-            if !text.head.is_empty() {
-                out.push(' ');
-                out += &text.head;
-            }
-            out.push('\n');
-            for line in text.lines {
-                out += &format!("  {line}\n");
-            }
+            crate::capture::agent::context::append_frame(
+                &mut out, &crate::composition::frame_labels::prefix(frame), &screen_marker,
+                flag, text, compact_agent_context,
+            );
         }
     } else if !bundle.keyframes.is_empty() {
         let first_t = bundle.keyframes[0].t;
@@ -2146,8 +2130,8 @@ mod tests {
         assert!(summary.contains("- #1 (0:05) “This row is too dense.”"));
         assert!(!summary.contains("No transcript"));
         let pasted = summary_markdown_formatted(&bundle, std::path::Path::new("/b"), true, Some(false));
-        assert!(pasted.contains("\n  0:04 Action: pressed ⌘K\n"));
-        assert!(pasted.contains("\n  0:05 Said: “This row is too dense.”\n"));
+        assert!(pasted.contains("\n0:04 pressed ⌘K\n"));
+        assert!(pasted.contains("\n0:05 Said: “This row is too dense.”\n"));
 
         let mut text_only = bundle.clone();
         text_only.keyframes.clear();
@@ -2286,14 +2270,21 @@ mod tests {
         no_words.audio = Some("audio.wav".into());
         no_words.transcript = TranscriptData { source: "command:test".into(), ..Default::default() };
         let summary = summary_markdown(&no_words, &audio_dir);
-        assert!(summary.contains("No words transcribed"));
+        assert!(summary.contains("No words transcribed. The audio was saved.\n"));
         assert!(!summary.contains("No microphone audio was saved"));
+        let paste = |bundle, agent_context| {
+            summary_markdown_formatted(bundle, &audio_dir, agent_context, Some(false))
+        };
+        assert!(!paste(&no_words, true).contains("No words transcribed"));
+        assert!(paste(&no_words, false).contains("No words transcribed"));
 
         let mut failure = silent.clone();
         failure.audio = Some("audio.wav".into());
         let summary = summary_markdown(&failure, &audio_dir);
         assert!(summary.contains("No transcript: "));
         assert!(!summary.contains("No words transcribed"));
+        assert!(paste(&failure, true).contains("No transcript: "));
+        assert!(paste(&no_audio, true).contains("No microphone audio was saved"));
         std::fs::remove_dir_all(&audio_dir).unwrap();
 
         // A phone bundle: device header, a flagged keyframe, and app events under the keyframe

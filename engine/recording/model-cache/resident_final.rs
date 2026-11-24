@@ -105,6 +105,13 @@ pub(crate) fn selected(installed: bool) -> Option<PathBuf> {
     is_verified(&candidate).then_some(candidate.path)
 }
 
+pub(crate) fn selected_for_capture() -> Option<PathBuf> {
+    if VERIFIED.try_lock().ok()?.is_none() {
+        return None;
+    }
+    selected(!super::installed_models().is_empty())
+}
+
 fn is_verified(candidate: &VerifiedModel) -> bool {
     VERIFIED
         .try_lock()

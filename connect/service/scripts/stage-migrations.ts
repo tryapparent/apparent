@@ -8,8 +8,9 @@ const parent=await lstat(path.dirname(output));if(!parent.isDirectory()||parent.
 const stat=await lstat(output).catch((e:NodeJS.ErrnoException)=>{if(e.code!=='ENOENT')throw e;});
 if(stat&&(!stat.isDirectory()||stat.isSymbolicLink()))throw Error('Unsafe migration build output');
 const files=new Map<string,string>();
-for(const directory of [source,path.join(source,'baseline')])for(const name of await readdir(directory)){
-  if(directory===source&&name==='baseline')continue;
+const groups=['baseline','recordings'];
+for(const directory of [source,...groups.map(group=>path.join(source,group))])for(const name of await readdir(directory)){
+  if(directory===source&&groups.includes(name))continue;
   const file=path.join(directory,name),entry=await lstat(file);
   if(!/^\d{4}\.sql$/.test(name)||!entry.isFile()||entry.isSymbolicLink()||files.has(name))throw Error('Invalid migration source');
   files.set(name,file);
