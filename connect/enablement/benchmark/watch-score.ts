@@ -1,0 +1,255 @@
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtemp, stat, writeFile } from "node:fs/promises";
+import { hostname } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  bendScratch,
+  buildBend,
+} from "../../../shared/enablement/bend/build.ts";
+import {
+  benchmarkComparison,
+  type Matched,
+} from "../../../shared/enablement/performance/comparison.ts";
+import type { JourneyContract } from "./watch-ledger.ts";
+import {
+  hash,
+  mean,
+  read,
+  runMs,
+  sample,
+  validate,
+  type Benchmark,
+  type Replay,
+  type Sample,
+} from "./watch-sample.ts";
+
+const repo = fileURLToPath(new URL("../../../", import.meta.url));
+const contract = JSON.parse(
+  execFileSync(
+    process.execPath,
+    [join(repo, "enablement/timing/journey/run.ts"), "contract"],
+    { cwd: repo, encoding: "utf8" },
+  ),
+) as JourneyContract;
+const { contractHash } = contract;
+const maxExternalPercent = 5;
+const relativeResourceAllowance = 10;
+const resourceKeys = [
+  "cpuSeconds",
+  "peakProcessRssKiB",
+  "storedCaptureBytes",
+] as const;
+const waitNames = [
+  "share to advancing frame",
+  "cold share to ready",
+  "cold open to frame",
+  "warm share to ready",
+  "warm open to frame",
+];
+async function benchmark(
+  mode: "baseline" | "compare",
+  directory: string,
+  chrome: string,
+  cpuSpec: string,
+  controlTree = repo,
+  referencePath?: string,
+) {
+  assert.ok(
+    isAbsolute(directory) && isAbsolute(chrome) && isAbsolute(controlTree),
+  );
+  assert.equal(
+    (await stat(directory)).mode & 0o077,
+    0,
+    "Results directory must be private",
+  );
+  const runtime = {
+    host: hostname(),
+    cpuSpec,
+    node: process.version,
+    chrome: await hash(chrome),
+    ffmpeg: execFileSync("ffmpeg", ["-version"], { encoding: "utf8" }).split(
+      "\n",
+    )[0],
+  };
+  const reference = referencePath && (await read<Benchmark>(referencePath));
+  if (mode === "compare") {
+    assert.ok(
+      reference && reference.qualified,
+      "Comparison requires a qualified baseline",
+    );
+    assert.equal(reference.mode, "baseline");
+    assert.equal(reference.contractHash, contractHash);
+    assert.deepEqual(
+      runtime,
+      reference.runtime,
+      "Benchmark host or runtime changed",
+    );
+  }
+  const result = await mkdtemp(join(directory, mode + "-"));
+  const baseline = mode === "baseline";
+  if (baseline) {
+    const main = execFileSync("git", ["rev-parse", "origin/main"], {
+      cwd: repo,
+      encoding: "utf8",
+    }).trim();
+    const head = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: repo,
+      encoding: "utf8",
+    }).trim();
+    assert.equal(
+      head,
+      main,
+      "Collect the baseline on the pinned current-main commit",
+    );
+  }
+  const first = await sample(controlTree, result, chrome, cpuSpec, !baseline);
+  const candidate = await sample(repo, result, chrome, cpuSpec, true);
+  const candidateRepeat = await sample(repo, result, chrome, cpuSpec, true);
+  const repeat = await sample(controlTree, result, chrome, cpuSpec, !baseline);
+  const samples: Matched<Sample> = [first, candidate, candidateRepeat, repeat];
+  for (const item of samples)
+    validate(item, reference ? reference.samples[1] : first);
+  assert.equal(first.workerHash, repeat.workerHash);
+  assert.equal(candidate.workerHash, candidateRepeat.workerHash);
+  if (baseline) assert.equal(first.workerHash, candidate.workerHash);
+  const waits = [
+    (row: Replay) => runMs(row),
+    (row: Replay) => row.attempts[0].rawMs.shareToReady,
+    (row: Replay) => row.attempts[0].rawMs.openToAdvancingFrameAck,
+    (row: Replay) => row.attempts[1].rawMs.shareToReady,
+    (row: Replay) => row.attempts[1].rawMs.openToAdvancingFrameAck,
+  ].map(
+    (select) => samples.map((item) => select(item.replay)) as Matched<number>,
+  );
+  const guards = [
+    ...benchmarkLimits(first, repeat, candidate, candidateRepeat),
+    ...waits
+      .slice(1)
+      .flatMap(([first, candidate, candidateRepeat, last], index) => {
+        const control = Math.max(first, last);
+        const allowance = Math.max(
+          20,
+          (control * relativeResourceAllowance) / 100,
+        );
+        return [candidate, candidateRepeat].map((ms, repeat) => ({
+          name: waitNames[index + 1],
+          repeat: repeat + 1,
+          limit: [ms, control, allowance] satisfies [number, number, number],
+        }));
+      }),
+  ];
+  const comparison = await benchmarkComparison(
+    waits,
+    guards.map((guard) => guard.limit),
+  );
+  const quiet = samples.every(
+    ({ resource }) =>
+      resource.externalCpuPercent <= maxExternalPercent &&
+      resource.peakHostWaitPercent <= maxExternalPercent,
+  );
+  const valid = quiet;
+  const qualified = valid && (baseline || comparison.permitted.every(Boolean));
+  const baselineMs = mean(waits[0].slice(1, 3));
+  const noiseSpeedIndex =
+    Math.abs(1 / waits[0][1] - 1 / waits[0][2]) * baselineMs;
+  const receipt = join(result, "watch-score.json");
+  const payload = {
+    mode,
+    contractHash,
+    valid,
+    qualified,
+    runtime,
+    receipt,
+    samples,
+    noiseSpeedIndex,
+    comparison: comparison.timings.map((timing, index) => ({
+      wait: waitNames[index],
+      ...timing,
+    })),
+    guards: guards.map((guard, index) => ({
+      ...guard,
+      passed: comparison.permitted[index],
+    })),
+    score: valid
+      ? baseline
+        ? 100
+        : (100 * baselineMs) /
+          mean(reference!.samples.slice(1, 3).map((item) => runMs(item.replay)))
+      : null,
+    ...(baseline
+      ? { probeOverheadMs: baselineMs - mean([waits[0][0], waits[0][3]]) }
+      : {}),
+  };
+  await writeFile(receipt, JSON.stringify(payload, null, 2) + "\n", {
+    mode: 0o600,
+  });
+  console.log(JSON.stringify(payload, null, 2));
+  if (!qualified) process.exitCode = 2;
+}
+
+function benchmarkLimits(
+  first: Sample,
+  repeat: Sample,
+  candidate: Sample,
+  candidateRepeat: Sample,
+) {
+  return resourceKeys.flatMap((name) => {
+    const control = Math.max(first.resource[name], repeat.resource[name]);
+    const allowance =
+      name === "storedCaptureBytes"
+        ? 0
+        : (control * relativeResourceAllowance) / 100;
+    return [candidate, candidateRepeat].map((item, repeat) => ({
+      name,
+      repeat: repeat + 1,
+      limit: [item.resource[name], control, allowance] satisfies [
+        number,
+        number,
+        number,
+      ],
+    }));
+  });
+}
+
+const [mode, directory, chrome, cpuSpec, control, reference, ...extra] =
+  process.argv.slice(2);
+if (mode === "ledger" && directory && !chrome) {
+  const result = await bendScratch(async (scratch) => {
+    await buildBend(
+      repo,
+      "enablement",
+      scratch,
+      undefined,
+      "enablement/timing/journey/journey-scoring.bend",
+    );
+    return execFileSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `import policy from "./journey-scoring.mjs";
+       import { ledger } from ${JSON.stringify(new URL("./watch-ledger.ts", import.meta.url).href)};
+       console.log(JSON.stringify(await ledger(process.argv[1], policy, JSON.parse(process.argv[2])), null, 2));`,
+        resolve(directory),
+        JSON.stringify({ contractHash, hillClimb: contract.hillClimb }),
+      ],
+      { cwd: scratch, encoding: "utf8" },
+    );
+  });
+  process.stdout.write(result);
+} else if (
+  directory &&
+  chrome &&
+  cpuSpec &&
+  !extra.length &&
+  ((mode === "baseline" && !control) ||
+    (mode === "compare" && control && reference))
+) {
+  await benchmark(mode, directory, chrome, cpuSpec, control, reference);
+} else {
+  throw Error(
+    "Usage: watch-score.ts baseline|compare PRIVATE_DIR ABSOLUTE_CHROMIUM CPU_LIST [ABSOLUTE_INCUMBENT_TREE BASELINE_RECEIPT] | ledger LEDGER.json",
+  );
+}

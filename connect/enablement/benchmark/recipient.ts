@@ -9,20 +9,24 @@ import {
   type MeasuredWait,
   measuredWait,
 } from "../../../shared/enablement/performance/measurement.ts";
+import { watchAttempt } from "./watch.ts";
 
 const service = new URL("../../service/", import.meta.url);
 const requireService = createRequire(new URL("package.json", service));
 const { chromium } = requireService("playwright-core");
 const { fixture, id, digest } = await import("../../service/test/helpers.mjs");
-const [work, chrome, ...extra] = process.argv.slice(2);
+const [work, chrome, mode, ...extra] = process.argv.slice(2);
 if (
   !work ||
   !isAbsolute(work) ||
   !chrome ||
   !isAbsolute(chrome) ||
+  (mode && mode !== "watch-traced" && mode !== "watch-untraced") ||
   extra.length
 ) {
-  throw Error("Usage: recipient.ts PRIVATE_RESULTS_DIR ABSOLUTE_CHROMIUM");
+  throw Error(
+    "Usage: recipient.ts PRIVATE_RESULTS_DIR ABSOLUTE_CHROMIUM [watch-traced|watch-untraced]",
+  );
 }
 const repo = fileURLToPath(new URL("../../../", import.meta.url));
 const revision = execFileSync("git", ["rev-parse", "HEAD"], {
@@ -103,6 +107,58 @@ try {
       ),
     ],
   ]);
+  if (mode) {
+    const browser = await chromium.launch({
+      executablePath: chrome,
+      headless: true,
+    });
+    try {
+      const context = await browser.newContext({
+        viewport: { width: 1280, height: 900 },
+      });
+      const attempts = [];
+      for (const [index, variant] of (["cold", "warm"] as const).entries()) {
+        attempts.push(
+          await watchAttempt({
+            backend,
+            origin,
+            token: user.token,
+            captureId: id(171313 + index),
+            assets,
+            context,
+            variant,
+            trace: mode === "watch-traced",
+            directory: job,
+          }),
+        );
+      }
+      const receipt = join(job, "watch-replay.json");
+      await writeFile(
+        receipt,
+        JSON.stringify(
+          { revision, chromium: browser.version(), attempts },
+          null,
+          2,
+        ) + "\n",
+        { mode: 0o600 },
+      );
+      console.log(receipt);
+    } finally {
+      await browser.close();
+    }
+  } else await legacy(backend, user, capture, origin, assets);
+} finally {
+  gateway.close();
+  await backend?.close();
+}
+
+async function legacy(
+  backend: Awaited<ReturnType<typeof fixture>>,
+  user: { token: string },
+  capture: string,
+  origin: string,
+  assets: Map<string, Buffer>,
+) {
   const manifest = [...assets].map(([path, bytes]) => ({
     path,
     size: bytes.length,
@@ -221,7 +277,4 @@ try {
     { mode: 0o600 },
   );
   console.log(receipt);
-} finally {
-  gateway.close();
-  await backend?.close();
 }

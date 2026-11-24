@@ -19,6 +19,26 @@
       "limits": [
         "The fixture uses a local synthetic Connect service. It does not exercise a live account, agent slash-command registration or Desktop UI."
       ]
+    },
+    {
+      "id": "share-to-advancing-watch-frame",
+      "description": "Measure synthetic Connect share activation through verified readiness and advancing recipient playback.",
+      "platforms": ["linux"],
+      "userEntryPoint": "Choose Share on a saved recording, then open the ready capability link.",
+      "prerequisites": [
+        "A built Connect Worker from the exact revision, Node 22, GNU time, taskset, FFmpeg with libx264, Chromium, quiet complete CPU cores and a private Linux results directory."
+      ],
+      "runner": {
+        "path": "connect/enablement/benchmark/watch-score.ts",
+        "instructions": "Follow the owner benchmark README and run the focused baseline or matched compare command from the repository root."
+      },
+      "expectedEvidence": [
+        "An unauthenticated recipient verifies the ready manifest, all original assets match the synthetic fixture, and Chromium presents two frames with advancing media time.",
+        "A machine-readable receipt distinguishes link availability, watch readiness and advancing playback and records cold/warm milliseconds, trace coverage, resource guards and normalized score."
+      ],
+      "limits": [
+        "The loopback lane uses named effect substitutes for the Desktop sender, identity and managed persistence. Chromium is headless and browser HTTP caching is disabled."
+      ]
     }
   ]
 }
