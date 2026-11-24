@@ -25,6 +25,29 @@
         "This starts at the resumed practice lesson. Initial launch, permissions setup, and shortcut selection are outside its coverage.",
         "The probe verifies the clipboard offer. Pasting into another app, macOS, and independent theme or window-size coverage require separate checks."
       ]
+    },
+    {
+      "id": "onboarding-electron-click-through",
+      "description": "Run the production Electron coach and Whiteboard and score verified Onboarding transitions on standard GitHub-hosted Ubuntu using named synthetic effects.",
+      "platforms": ["linux-x11-xvfb"],
+      "userEntryPoint": "Open welcome or resume practice, start the practice take, open, mark and close the Whiteboard, finish the take, verify its clipboard acknowledgement, and choose Finish setup.",
+      "prerequisites": [
+        "The manual hosted performance workflow on tryapparent/apparent, with a pinned current-main control SHA and a reviewed candidate SHA.",
+        "The standard ubuntu-24.04 runner has Node 22.23.0. The adapter builds the locked desktop frontend, resolves its matching Electron runtime and prepares Xvfb and GNU time before the measurements."
+      ],
+      "runner": {
+        "path": "onboarding/enablement/performance/hosted.ts",
+        "instructions": "onboarding/enablement/performance/local/README.md"
+      },
+      "expectedEvidence": [
+        "Each observation has stage milliseconds, same-clock trace intervals and dwell, executable, renderer and fixture hashes, and verified assertions for Whiteboard ink, synthetic media and clipboard readback, persisted fixture completion and coach closure.",
+        "Every job records same-build repeat noise and incremental trace overhead. A job with distinct builds also publishes serial matched A/B/B/A cold and resumed comparisons with resource guards and scores.",
+        "The artifact contains exact build and runner identities, raw admission samples and traces. Rejected runs retain available evidence and do not qualify."
+      ],
+      "limits": [
+        "Xvfb exercises the installed Electron renderer and local protocol. Record frame and save, Handoff clipboard and Onboarding native persistence are narrow fixture substitutes. The native guest scenario verifies the real boundaries.",
+        "Resumed is a fresh process at the saved practice step. The test does not measure a warm process, real OS permissions, real device input or macOS."
+      ]
     }
   ]
 }
