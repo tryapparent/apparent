@@ -1,7 +1,6 @@
 pub(crate) mod demo;
 #[cfg(target_os = "macos")]
 pub(crate) mod helper;
-// Exercise the actual Mac adapter's portable process contracts on Linux without
 // replacing Linux's in-process provider or claiming macOS permission acceptance.
 #[cfg(all(test, target_os = "linux"))]
 #[path = "helper.rs"]

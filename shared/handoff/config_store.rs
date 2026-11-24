@@ -1,7 +1,8 @@
-//! Serialized JSON config storage shared by CLI and GUI writers.
 use std::fs;
 use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, ensure};
+use serde_json::{Value, json};
+use crate::shared::preferences::{preference, valid};
 
 #[derive(Debug)]
 pub(crate) struct ConfigPublicationUncertain;
@@ -34,8 +35,6 @@ pub(crate) fn profile_name() -> &'static str {
     if is_nightly() { "apparent-nightly" } else { "apparent" }
 }
 
-/// Sets one top-level key in `path` (`null` removes it), keeping the rest (and its `0600` mode,
-/// since it holds the ingest token).
 pub fn set_config_value_in(path: &Path, key: &str, value: serde_json::Value) -> Result<()> {
     update_config_in(path, |config| {
         if value.is_null() {
@@ -45,6 +44,47 @@ pub fn set_config_value_in(path: &Path, key: &str, value: serde_json::Value) -> 
         }
         Ok(())
     })
+}
+
+pub(crate) fn write_preference(path: &Path, id: &str, value: Option<Value>) -> Result<()> {
+    update_config_in(path, |config| edit_preference(config, id, value))
+}
+
+pub(crate) fn edit_preference(config: &mut Value, id: &str, value: Option<Value>) -> Result<()> {
+    let entry = preference(id).context("Unknown preference")?;
+    ensure!(value.as_ref().is_none_or(|value| valid(entry, value)), "Invalid preference value");
+    if let Some(alias) = entry["legacy"]["path"].as_str() {
+        let old_value = if entry["legacy"]["invert"] == true {
+            value.as_ref().and_then(Value::as_bool).map(|on| Value::Bool(!on))
+        } else {
+            value.clone()
+        };
+        edit_leaf(config, alias, old_value.clone())?;
+        edit_leaf(config, &format!("settingsCompatibility.{id}"), old_value)?;
+    }
+    edit_leaf(config, id, value)?;
+    Ok(())
+}
+
+fn edit_leaf(config: &mut Value, id: &str, value: Option<Value>) -> Result<()> {
+    let object = config.as_object_mut().context("Invalid config")?;
+    let (map, key) = if let Some((group, key)) = id.split_once('.') {
+        let child = if value.is_some() {
+            object.entry(group).or_insert_with(|| json!({}))
+        } else {
+            let Some(child) = object.get_mut(group) else { return Ok(()) };
+            child
+        };
+        (child.as_object_mut(), key)
+    } else {
+        (Some(object), id)
+    };
+    if let Some(value) = value {
+        map.context("Invalid Settings group")?.insert(key.into(), value);
+    } else if let Some(map) = map {
+        map.remove(key);
+    }
+    Ok(())
 }
 
 // One sidecar inode for every CLI/GUI writer, never the replaced config inode.

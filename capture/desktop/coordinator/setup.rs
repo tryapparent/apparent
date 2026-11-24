@@ -442,7 +442,7 @@ impl ApparentCoordinator {
             }
             Effect::ConnectHosted if self.share_waiting_account => self.reserve_completed_link(true, cx),
             Effect::ConnectHosted => {
-                if self.share_login.is_none() && crate::shared::handoff::experiment(crate::connect::hosted::HOSTED_SHARING) {
+                if self.share_login.is_none() && crate::shared::handoff::experiment_preference("labs.hostedSharing") {
                     let active = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
                     self.share_login = Some(active.clone());
                     cx.spawn(async move |entity, cx| {

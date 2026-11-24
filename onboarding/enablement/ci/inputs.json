@@ -37,6 +37,8 @@
     "onboarding/host/wispr.ts",
     "onboarding/host/wispr-native.ts",
     "onboarding/host/dictation.ts",
+    "onboarding/settings/dictation-preference.json",
+    "onboarding/settings/preferences.json",
     "composition/onboarding/src/entry.ts",
     "onboarding/renderer/frog-nudge/index.html",
     "onboarding/renderer/frog-nudge/overlay.tsx",

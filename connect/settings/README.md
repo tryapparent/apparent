@@ -21,6 +21,10 @@ checks a saved connection on its first General visit and keeps the last status
 visible on return while it reads local facts. Polling pauses outside General.
 The Connect account menu keeps the manual check available.
 
+**Settings → Labs → Public sharing links** saves `labs.hostedSharing` and
+applies to the next recording. Existing `experiments.hostedSharing` values
+remain readable. Share creation still uses the existing explicit sharing flow.
+
 `apparent connect status` and `apparent connect readers` retain their existing
 machine-readable diagnostic fields, including renewal deadlines and CLI
 reapproval guidance. The standalone Amazon Linux CLI has no packaged JavaScript

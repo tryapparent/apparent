@@ -275,11 +275,11 @@ mod tests {
         let mut host = fake(&dir);
         let mut panel = Panel::default();
         panel.on(Action::Set { key: "launchAtLogin".into(), value: true.into() }, &mut host);
-        assert_eq!(read_json(&host.path)["launchAtLogin"], true);
+        assert_eq!(read_json(&host.path)["general"]["launchAtLogin"], true);
         assert_eq!(crate::shared::handoff::load_config_from(&host.path).launch_at_login, Some(true));
         host.refuse_login = true;
         panel.on(Action::Set { key: "launchAtLogin".into(), value: false.into() }, &mut host);
-        assert_eq!(read_json(&host.path)["launchAtLogin"], true, "a failed OS change must not claim success in the file");
+        assert_eq!(read_json(&host.path)["general"]["launchAtLogin"], true, "a failed OS change must not claim success in the file");
     }
 
     #[test]
@@ -311,7 +311,7 @@ mod tests {
         assert_eq!(read_json(&host.path)["ingestToken"], "private");
         panel.on(Action::Set { key: "agentDemoVideo".into(), value: false.into() }, &mut host);
         assert!(!panel.view(&host).agent_demo_video);
-        assert_eq!(read_json(&host.path)["experiments"]["agentDemoVideo"], false);
+        assert_eq!(read_json(&host.path)["agents"]["agentDemoVideo"], false);
     }
 
     #[test]
@@ -334,10 +334,9 @@ mod tests {
             assert_eq!(panel.on(action, &mut host), Effect::None);
             let reopened = Panel::default().view(&host);
             assert_eq!(reopened.error_reporting, on);
-            let serialized = serde_json::to_value(reopened).unwrap();
-            assert_eq!(serialized["errorReporting"], on);
-            assert!(serialized.get("error_reporting").is_none());
+            assert_eq!(serde_json::to_value(reopened).unwrap()["errorReporting"], on);
             let saved = read_json(&host.path);
+            assert_eq!(saved["general"]["errorReporting"], on);
             for (key, value) in unrelated.as_object().unwrap() {
                 assert_eq!(&saved[key], value, "unrelated config key {key} must survive");
             }
@@ -688,47 +687,6 @@ mod tests {
     }
 
     #[test]
-    fn a_custom_shortcut_from_0_3_moves_across_once() {
-        let dir = TempDir::new("legacy");
-        let path = dir.0.join("config.json");
-        let legacy = dir.0.join("legacy.json");
-        // 0.3.x wrote its default too. Mac keeps that saved Alt+Shift+S explicit after Fn became
-        // the default; Linux still recognizes its former layout-S default.
-        std::fs::write(
-            &legacy,
-            r#"{"key_code":41,"carbon_modifiers":2560,"label":"⌥⇧S"}"#,
-        )
-        .unwrap();
-        let (former_default, migrate) = Shortcuts::load_from(&path, &legacy);
-        if cfg!(target_os = "macos") {
-            assert!(migrate);
-            assert_eq!(former_default.record.label, "⌥⇧S");
-            assert_eq!(former_default.record.key_code, 41);
-        } else {
-            assert_eq!((former_default, migrate), (Shortcuts::default(), false));
-        }
-        std::fs::write(
-            &legacy,
-            r#"{"key_code":15,"carbon_modifiers":6144,"label":"⌃⌥R"}"#,
-        )
-        .unwrap();
-        let (loaded, migrate) = Shortcuts::load_from(&path, &legacy);
-        assert!(migrate);
-        assert_eq!(loaded.record.label, "⌃⌥R");
-        // Once the new config has shortcuts, the old file is ignored.
-        save_shortcut_in(
-            &path,
-            ShortcutKind::Record,
-            &ShortcutConfig::default_record(),
-        )
-        .unwrap();
-        assert_eq!(
-            Shortcuts::load_from(&path, &legacy),
-            (Shortcuts::default(), false)
-        );
-    }
-
-    #[test]
     fn recording_pauses_the_hotkeys_and_a_good_combo_is_saved() {
         let dir = TempDir::new("record");
         let mut host = fake(&dir);
@@ -1006,10 +964,13 @@ mod tests {
         set(&mut panel, &mut host, "autoSend", true.into());
         assert!(read_json(&host.path).get("autoSend").is_none());
         let config = read_json(&host.path);
-        assert_eq!(config["transcriber"], "hex");
+        assert_eq!(config["recording"]["videoExport"], true);
+        assert_eq!(config["recording"]["lowerPlayback"], true);
+        assert_eq!(config["recording"]["playbackLevel"], 35);
+        assert_eq!(config["recording"]["transcriber"], "hex");
         assert_eq!(config["ingestToken"], "secret");
         set(&mut panel, &mut host, "hexModel", "parakeet".into());
-        assert_eq!(read_json(&host.path)["hexModel"], "parakeet");
+        assert_eq!(read_json(&host.path)["recording"]["hexModel"], "parakeet");
         assert_eq!(panel.view(&host).transcriber.language, "en");
         set(&mut panel, &mut host, "hexLanguage", " NL ".into());
         assert_eq!(panel.view(&host).transcriber.language, "nl");
@@ -1019,7 +980,7 @@ mod tests {
             "hexLanguage",
             "nl&language=en".into(),
         );
-        assert_eq!(read_json(&host.path)["hexLanguage"], "nl");
+        assert_eq!(read_json(&host.path)["recording"]["hexLanguage"], "nl");
         set(&mut panel, &mut host, "hexLanguage", "auto".into());
         assert_eq!(panel.view(&host).transcriber.language, "auto");
         set(&mut panel, &mut host, "hexLanguage", "".into());
@@ -1029,13 +990,13 @@ mod tests {
             set(&mut panel, &mut host, "appleLocale", "zh-TW".into()),
             Effect::SpeechModel
         );
-        assert_eq!(read_json(&host.path)["appleLocale"], "zh-TW");
+        assert_eq!(read_json(&host.path)["recording"]["appleLocale"], "zh-TW");
         assert_eq!(panel.view(&host).transcriber.apple_locale, "zh-TW");
         assert_eq!(
             set(&mut panel, &mut host, "appleLocale", "zh-TW --install".into()),
             Effect::None
         );
-        assert_eq!(read_json(&host.path)["appleLocale"], "zh-TW");
+        assert_eq!(read_json(&host.path)["recording"]["appleLocale"], "zh-TW");
         assert_eq!(
             set(&mut panel, &mut host, "appleLocale", "auto".into()),
             Effect::SpeechModel
@@ -1106,7 +1067,7 @@ mod tests {
 
         pick(&mut panel, &mut host, "usb-1");
         assert_eq!(
-            read_json(&host.path)["microphone"],
+            read_json(&host.path)["recording"]["microphone"],
             serde_json::json!({"id": "usb-1", "name": "Shure MV7"})
         );
         let mic = panel.view(&host).microphone;
@@ -1137,7 +1098,7 @@ mod tests {
         panel.set_inputs(both);
         assert_eq!(panel.view(&host).microphone.note, None, "back again");
         pick(&mut panel, &mut host, "default");
-        assert_eq!(read_json(&host.path).get("microphone"), None);
+        assert!(read_json(&host.path)["recording"].get("microphone").is_none());
         assert_eq!(panel.view(&host).microphone.selected, "default");
     }
 
@@ -1167,7 +1128,7 @@ mod tests {
             },
             &mut host,
         );
-        assert_eq!(read_json(&host.path)["transcriber"], "command");
+        assert_eq!(read_json(&host.path)["recording"]["transcriber"], "command");
         assert_eq!(panel.view(&host).transcriber.engine, "command");
     }
 

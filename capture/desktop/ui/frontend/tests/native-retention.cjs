@@ -21,7 +21,7 @@ module.exports = async function verifyRetention(page, {config, captures, output}
   await field.press('Enter');
   await expect(page.getByText('Storage limit saved.')).toBeVisible();
   const capped = JSON.parse(await fs.readFile(config, 'utf8'));
-  assert.deepEqual(capped, {...original, retention:{...original.retention, maximumMb:12500}});
+  assert.deepEqual(capped, {...original, storage:{...original.storage, maximumMb:12500}});
   await page.screenshot({path:path.join(output, 'storage-limit-saved.png')});
   const beforeFailure = await fs.readFile(config);
   await field.fill('10');
@@ -38,7 +38,7 @@ module.exports = async function verifyRetention(page, {config, captures, output}
   await field.press('Enter');
   await expect(page.getByText('No size limit', {exact:true})).toBeVisible();
   const uncapped = JSON.parse(await fs.readFile(config, 'utf8'));
-  assert.deepEqual(uncapped, {...original, retention:{...original.retention, maximumMb:0}});
+  assert.deepEqual(uncapped, {...original, storage:{...original.storage, maximumMb:0}});
   const blocked = path.join(captures, 'unreadable-synthetic');
   await fs.mkdir(blocked, {mode:0o700});
   try {

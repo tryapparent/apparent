@@ -273,7 +273,7 @@ impl ApparentCoordinator {
             return;
         }
         self.publish_capture_busy();
-        let stream_admission = crate::shared::handoff::experiment("localStreamingTranscription")
+        let stream_admission = crate::shared::handoff::experiment_preference("labs.localStreamingTranscription")
             .then(workflow::local_transcription::admission);
         let allow_notes = cfg!(target_os = "linux") || prepared_source.is_none();
         use crate::capture::engine::runtime::recording::recorder::StartError;

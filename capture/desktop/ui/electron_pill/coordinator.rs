@@ -63,7 +63,8 @@ impl ApparentCoordinator {
     }
 
     pub(in crate::capture::desktop) fn refresh_pill_presentation(&mut self) {
-        use crate::shared::handoff::{default_config_path, experiment_enabled_in, experiment_overridden, load_config_from};
+        use crate::shared::handoff::{default_config_path, experiment_enabled_in, experiment_overridden,
+            experiment_preference_in, experiment_preference_overridden, load_config_from};
         let now = Instant::now();
         let (_, movable, sharing_enabled) = match self.reveal.preferences {
             Some(preferences) if now.duration_since(preferences.0) < Duration::from_millis(500) => preferences,
@@ -73,8 +74,8 @@ impl ApparentCoordinator {
                     now,
                     experiment_overridden("movableRecordingControls")
                         || (!cfg!(test) && experiment_enabled_in(&config, "movableRecordingControls")),
-                    experiment_overridden(crate::connect::hosted::HOSTED_SHARING)
-                        || (!cfg!(test) && experiment_enabled_in(&config, crate::connect::hosted::HOSTED_SHARING)),
+                    experiment_preference_overridden(crate::connect::hosted::HOSTED_SHARING)
+                        || (!cfg!(test) && experiment_preference_in(&config, crate::connect::hosted::HOSTED_SHARING)),
                 );
                 self.reveal.preferences = Some(preferences);
                 preferences
@@ -321,7 +322,6 @@ impl ApparentCoordinator {
             .map(Session::actions)
             .unwrap_or_default();
         for action in actions {
-            // Each action was admitted against the freshly projected state, never renderer policy.
             self.apply_pill_action(action, cx);
             self.sync_electron_pill();
         }

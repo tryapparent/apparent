@@ -421,7 +421,7 @@ pub fn run_app(
                                 MenuAction::Controls(_) => {},
                                 MenuAction::ToggleMicrophone => {
                                     let enabled = !crate::capture::engine::runtime::audio::mic::enabled();
-                                    if let Err(error) = crate::shared::handoff::set_config_value_in(&crate::shared::handoff::default_config_path(), "microphoneEnabled", serde_json::json!(enabled)) {
+                                    if let Err(error) = crate::shared::handoff::write_preference(&crate::shared::handoff::default_config_path(), "recording.microphoneEnabled", Some(enabled.into())) {
                                         apparent_log(format!("Microphone preference was not saved: {error:#}"));
                                     }
                                 }

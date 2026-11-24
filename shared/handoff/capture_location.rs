@@ -40,11 +40,17 @@ pub struct EnvironmentValue {
     pub value: Option<String>,
 }
 
+const PREFERENCE: &str = "storage.capturesDir";
+
+fn stored(raw: &serde_json::Value) -> Option<&serde_json::Value> {
+    raw.pointer("/storage/capturesDir").or_else(|| raw.get("capturesDir"))
+}
+
 fn revision(raw: &serde_json::Value) -> String {
     // An opaque stale-edit fingerprint, not an authentication token.
     // DefaultHasher is available on both platforms without a crypto dependency.
     let mut hash = std::collections::hash_map::DefaultHasher::new();
-    let captures_dir = match raw.get("capturesDir") {
+    let captures_dir = match stored(raw) {
         Some(value) => serde_json::json!({"present":true,"value":value}),
         None => serde_json::json!({"present":false,"value":null}),
     };
@@ -73,11 +79,26 @@ pub fn read_in(path: &Path) -> Result<Snapshot> {
     snapshot(&read_raw(path)?, std::env::var_os("APPARENT_CAPTURES_DIR").map(PathBuf::from))
 }
 
+pub(crate) fn effective_path_for_cli(raw: &serde_json::Value) -> (PathBuf, &'static str) {
+    projected_path(raw, std::env::var_os("APPARENT_CAPTURES_DIR").map(PathBuf::from))
+}
+
+fn projected_path(raw: &serde_json::Value, environment: Option<PathBuf>) -> (PathBuf, &'static str) {
+    let configured = stored(raw).and_then(serde_json::Value::as_str);
+    resolve_captures_dir_with(configured, environment, |dir| {
+        dir.ancestors().find_map(|ancestor| match fs::metadata(ancestor) {
+            Ok(meta) => Some(meta.is_dir() && !meta.permissions().readonly()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(_) => Some(false),
+        }).unwrap_or(false)
+    })
+}
+
 /// Facts only: TypeScript selects the Settings candidate and native code supplies
 /// environment/home/default paths plus the owner-scoped CAS revision.
 pub fn facts_in(path: &Path) -> Result<LocationFacts> {
     let raw = read_raw(path)?;
-    let saved = match raw.get("capturesDir") {
+    let saved = match stored(&raw) {
         None => SavedValue::Absent,
         Some(serde_json::Value::String(value)) => SavedValue::String { value: value.clone() },
         Some(serde_json::Value::Null) => SavedValue::Null,
@@ -113,7 +134,7 @@ pub(crate) fn experiment_in(path: &Path, name: &str) -> Result<bool> {
 }
 
 fn snapshot(raw: &serde_json::Value, environment: Option<PathBuf>) -> Result<Snapshot> {
-    let saved_path = raw["capturesDir"].as_str().filter(|s| configured_captures_dir(s).is_some())
+    let saved_path = stored(raw).and_then(serde_json::Value::as_str).filter(|s| configured_captures_dir(s).is_some())
         .map(|s| s.trim().to_owned());
     let (effective, source) = resolve_captures_dir(saved_path.as_deref(), environment);
     let effective_path = effective.to_str().context("non UTF-8 path")?.to_owned();
@@ -141,11 +162,7 @@ pub fn set_in(
         if expected.is_some_and(|expected| revision(raw) != expected) {
             refusal = Some("conflict"); bail!("conflict");
         }
-        match value {
-            Some(value) => raw["capturesDir"] = value.into(),
-            None => { raw.as_object_mut().unwrap().remove("capturesDir"); }
-        }
-        Ok(())
+        edit_preference(raw, PREFERENCE, value.map(Into::into))
     });
     result.map_err(|error| {
         if error.is::<super::ConfigPublicationUncertain>() { return "outcome_unknown"; }
@@ -158,6 +175,24 @@ mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
     use std::{cell::Cell, rc::Rc};
+
+    #[test]
+    fn projected_path_reports_configured_or_overridden_without_creating_directories() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("missing");
+        let config = serde_json::json!({"storage":{"capturesDir":directory}});
+        assert_eq!(projected_path(&config, None), (directory.clone(), "configured"));
+        assert!(!directory.exists());
+
+        let override_path = root.path().join("override");
+        assert_eq!(
+            projected_path(&config, Some(override_path.clone())),
+            (override_path.clone(), "environment")
+        );
+        assert!(!override_path.exists());
+        fs::write(&directory, "synthetic file").unwrap();
+        assert_eq!(projected_path(&config, None).1, "fallback");
+    }
 
     #[test]
     fn capture_location_transaction_preserves_secrets_conflicts_expires_and_resets() {
@@ -182,6 +217,8 @@ mod tests {
         assert_eq!(saved.saved_path.as_deref(), chosen.to_str());
         assert_eq!(saved.source, "configured");
         let mut raw = read_raw(&path).unwrap();
+        assert_eq!(raw["storage"]["capturesDir"], chosen.to_str().unwrap());
+        assert_eq!(raw["capturesDir"], chosen.to_str().unwrap());
         assert_eq!(raw["secret"], "keep");
         assert_eq!(raw["unknown"]["nested"], true);
         assert_eq!(raw["otherSetting"], "new");
@@ -217,10 +254,10 @@ mod tests {
         assert_eq!(overridden.saved_path, saved.saved_path);
         let blocked = dir.join("file");
         fs::write(&blocked, "not a folder").unwrap();
-        raw["capturesDir"] = blocked.to_str().unwrap().into();
+        raw["storage"]["capturesDir"] = blocked.to_str().unwrap().into();
         assert_eq!(snapshot(&raw, None).unwrap().source, "fallback");
         set_in(&path, None, Some(&after_unknown.revision), || true).unwrap();
-        assert!(!read_raw(&path).unwrap().as_object().unwrap().contains_key("capturesDir"));
+        assert!(stored(&read_raw(&path).unwrap()).is_none());
         assert_eq!(read_in(&path).unwrap().source, "builtin");
         fs::write(&path, "malformed").unwrap();
         assert_eq!(set_in(&path, None, None, || true), Err("config_write_failed"));
