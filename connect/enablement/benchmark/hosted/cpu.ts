@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { cpus as processorInfo } from "node:os";
 import { setTimeout } from "node:timers/promises";
 import { affinity, cpuCounters, maxExternalPercent } from "../watch-sample.ts";
+import { readCpuQuota } from "./quota.ts";
 
 const linux = (path: string) =>
   readFile(path, "utf8").then((text) => text.trim());
@@ -28,7 +29,7 @@ export async function readHostedCpu() {
     topology.every(({ model }) => model),
     "Missing visible CPU model",
   );
-  const cpuQuota = await linux("/sys/fs/cgroup/cpu.max");
+  const cpuQuota = await readCpuQuota();
   return { cpuSpec, cpus, topology, cpuQuota };
 }
 
