@@ -6,7 +6,12 @@
     "./controller": "./main/controller.ts",
     "./destinations": "./pure/destinations.ts",
     "./picker": "./renderer/picker.tsx",
-    "./auto-paste": "./settings/auto-paste.tsx"
+    "./auto-paste": "./settings/auto-paste.tsx",
+    "./enablement/receiver": "./enablement/performance/receiver.ts",
+    "./enablement/benchmark": "./enablement/performance/run.ts"
+  },
+  "devDependencies": {
+    "electron": "^45.2.1"
   },
   "peerDependencies": {
     "@apparent/ui": "0.0.0",

@@ -1,0 +1,14 @@
+{
+  "version": "handoff-destination-receipt-v1",
+  "trialsPerVariantPerBatch": 3,
+  "variants": ["fresh-catalogue", "prewarmed-catalogue"],
+  "cpuPressurePercent": 5,
+  "ioPressurePercent": 5,
+  "relativeAppResourceAllowance": 0.1,
+  "variantRegressionAllowanceMs": 16.7,
+  "retainedReceiptAllowanceBytes": 0,
+  "maxTrialPressureAttempts": 4,
+  "maxAppCpuSeconds": 4,
+  "maxAppPostSendPssKiB": 1048576,
+  "maxRetainedReceiptBytes": 1024
+}
