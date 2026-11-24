@@ -344,6 +344,7 @@ test("a confirmed T3 send keeps its tab and stays centered on the next recording
       reducedMotion: true,
       draggable: false,
       inputWaveform: waveform,
+      softBloom: true,
       noteCount: 0,
       actions,
     },
@@ -412,6 +413,7 @@ test("a confirmed T3 send keeps its tab and stays centered on the next recording
     revision: 3,
     phase: "recording",
     inputWaveform: waveform,
+    softBloom: true,
     actions,
   };
   await send(frame);

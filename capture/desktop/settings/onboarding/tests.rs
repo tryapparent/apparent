@@ -112,6 +112,35 @@ mod tests {
         session.practice=Some(super::super::practice::Practice::default());session
     }
     #[test]
+    fn coach_actions_require_the_observed_active_practice_attempt_and_stage() {
+        use super::super::practice::Stage;
+        let mut session = coached_session();
+        assert!(!session.admits_practice_capture_action(0, Stage::Whiteboard));
+
+        session.input(Input::ShortcutTriggered);
+        session.input(Input::CaptureStarted);
+        let attempt = session.practice.as_ref().unwrap().attempt;
+        assert!(session.admits_practice_capture_action(attempt, Stage::Whiteboard));
+        assert!(!session.admits_practice_capture_action(attempt, Stage::Stop));
+        assert!(!session.admits_practice_capture_action(attempt - 1, Stage::Whiteboard));
+
+        session.practice_whiteboard();
+        session.observe_practice(true, 0, false, None);
+        session.practice_board_closed();
+        session.observe_practice(false, 1, false, None);
+        assert!(session.admits_practice_capture_action(attempt, Stage::Stop));
+        assert!(!session.admits_practice_capture_action(attempt, Stage::Whiteboard));
+
+        session.practice.as_mut().unwrap().observed_attempt = Some(attempt - 1);
+        assert!(!session.admits_practice_capture_action(attempt, Stage::Stop));
+        assert!(!session.admits_practice_capture_action(attempt - 1, Stage::Stop));
+        session.practice.as_mut().unwrap().observed_attempt = Some(attempt);
+
+        session.input(Input::CaptureEnded { completed: false });
+        assert!(!session.admits_practice_capture_action(attempt, Stage::Whiteboard));
+    }
+
+    #[test]
     fn completion_adapter_preserves_identity_and_actual_clipboard_result() {
         use super::super::practice::Stage;
         for (clipboard, stage) in [(Some(true), Stage::Copied), (Some(false), Stage::CopyFailed), (None, Stage::CopyFailed)] {

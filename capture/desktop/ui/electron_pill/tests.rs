@@ -70,6 +70,7 @@ fn project(source: &PillSnapshot, revision: u64, mut facts: Facts) -> View {
         clock: source.clock.clone(),
         input_waveform: source.input_waveform,
         doodle_ink: None,
+        soft_bloom: None,
         reduced_motion: source.reduced_motion,
         transcript: None,
         notice: None,

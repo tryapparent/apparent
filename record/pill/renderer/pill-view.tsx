@@ -17,7 +17,6 @@ import {
   Scan,
   ScanEye,
   Smartphone,
-  Square,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -25,14 +24,10 @@ import "./surface.css";
 const Doodles = lazy(() => import("./ink/doodles"));
 const actionIcons: Record<string, LucideIcon> = {
   "select-area": Scan,
-  "switch-area": Scan,
   "select-screen": Monitor,
-  "switch-screen": Monitor,
   "select-iphone": Smartphone,
-  "switch-iphone": Smartphone,
   record: Circle,
   whiteboard: PenLine,
-  finish: Square,
   paste: ClipboardPaste,
   "copy-link": Link,
   inspect: ScanEye,
@@ -115,10 +110,12 @@ export function PillSurface({
   const pasteStart = useRef<[number, number] | null>(null);
   const uploading = view.shareIndicator === "uploading";
   const uploadStopped = view.shareIndicator === "retry";
-  const microphoneInput = view.phase === "recording" ? view.inputWaveform : null;
+  const recording = view.phase === "recording";
+  const microphoneInput = recording ? view.inputWaveform : null;
+  const finish = recording ? view.actions.find((action) => action.id === "finish") : undefined;
   const isClose = (id: string) => id === "cancel" || id === "dismiss";
   const controls = view.actions
-    .filter((action) => action.id !== "notes")
+    .filter((action) => action.id !== "notes" && action !== finish)
     .sort((a, b) => Number(isClose(a.id)) - Number(isClose(b.id)));
   const pasteIndex = controls.findIndex((action) => action.id === "paste");
   const inspectIndex = controls.findIndex((action) => action.id === "inspect");
@@ -128,7 +125,7 @@ export function PillSurface({
       controls[pasteIndex],
     ];
   const showDoodles =
-    view.phase === "recording" && ink.doodles_enabled(view.doodleInk === false);
+    view.phase === "recording" && ink.doodles_enabled(view.doodleInk === true);
   return (
     <main
       data-revision={view.revision}
@@ -166,18 +163,28 @@ export function PillSurface({
                   void onBeginDrag?.().catch(() => {});
               }}
             >
-              <span
-                className={`indicator-slot ${view.phase}`}
-                data-bloom={microphoneInput !== null}
-              >
-                {microphoneInput !== null && (
+              <span className={`indicator-slot ${view.phase}`}>
+                {view.softBloom && microphoneInput !== null && (
                   <InputMeter
                     input={microphoneInput}
                     receivedAt={receivedAt}
                     reduced={view.reducedMotion || reduced}
                   />
                 )}
-                {uploading ? (
+                {finish ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="pill-stop"
+                    data-action="finish"
+                    aria-label={finish.label}
+                    title="Finish recording"
+                    disabled={!finish.enabled || pending || controlsDisabled}
+                    onClick={() => onAction(finish.id)}
+                  >
+                    <span className="indicator recording" aria-hidden="true" />
+                  </Button>
+                ) : uploading ? (
                   <LoaderCircle
                     aria-hidden="true"
                     className="indicator processing"
@@ -201,21 +208,13 @@ export function PillSurface({
                   />
                 )}
               </span>
-              <span
-                className="clock"
-                role={view.phase === "completed" ? "status" : undefined}
-                aria-label={
-                  view.phase === "recording"
-                    ? `Recording ${view.clock}`
-                    : undefined
-                }
-              >
-                {view.phase === "recording"
-                  ? view.clock
-                  : view.phase === "processing"
-                    ? "Processing…"
-                    : view.label}
-              </span>
+              {recording ? (
+                <span className="sr-only" role="status">Recording</span>
+              ) : (
+                <span className="clock" role={view.phase === "completed" ? "status" : undefined}>
+                  {view.phase === "processing" ? "Processing…" : view.label}
+                </span>
+              )}
             </div>
           )}
           {view.warning && view.warning !== view.label && (
@@ -233,7 +232,7 @@ export function PillSurface({
               Action not confirmed. Use the recording shortcut or tray menu.
             </span>
           )}
-          {view.actions.length > 0 && (
+          {controls.length > 0 && (
             <div
               className="controls"
               role="group"
@@ -245,7 +244,7 @@ export function PillSurface({
                   action.id === "copy-link" && uploading
                     ? X
                     : actionIcons[action.id];
-                const iconOnly = isClose(action.id);
+                const iconOnly = recording || isClose(action.id);
                 return (
                   <Button
                     key={action.id}

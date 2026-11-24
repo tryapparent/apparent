@@ -27,6 +27,11 @@ declare const traversal: {
     tested: boolean,
     editing: boolean,
   ): Primary;
+  practice_control(
+    step: Step,
+    recording: boolean,
+    targetStage: boolean,
+  ): boolean;
   resume_capture(step: Step, practice: boolean, completed: boolean): Step;
 };
 

@@ -6,7 +6,7 @@ export function LiveCaption({ value }: { value: Preview }) {
   const [shift, setShift] = useState(0);
   const content = preview(value, true)!;
   const text = content.failed
-    ? "Live text unavailable. Recording continues."
+    ? "Live text unavailable"
     : content.text;
   useLayoutEffect(() => {
     let active = true;
@@ -31,8 +31,9 @@ export function LiveCaption({ value }: { value: Preview }) {
         ref={viewport}
         className="live-caption__viewport"
         data-overflow={shift > 0}
-        aria-label="Live local transcription"
-        aria-live="off"
+        role={content.failed ? "status" : undefined}
+        aria-label={content.failed ? undefined : "Live local transcription"}
+        aria-live={content.failed ? undefined : "off"}
         title={text}
       >
         <div

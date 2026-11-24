@@ -49,10 +49,10 @@ test('live text keeps controls fixed, tails overflow, clears on stop, and preser
   if(process.env.APPARENT_LIVE_PROOF){await fs.mkdir(process.env.APPARENT_LIVE_PROOF,{recursive:true});await page.screenshot({path:path.join(process.env.APPARENT_LIVE_PROOF,`pill-${theme}-${width}-notes-${noteCount}.png`)});}
   await page.emulateMedia({reducedMotion:'reduce'});
   assert.equal(await page.locator('.live-caption__caret').evaluate(el=>getComputedStyle(el).animationName),'none');
-  await page.getByRole('button',{name:'Finish',exact:true}).focus();await page.keyboard.press('Tab');await expect(page.getByRole('button',{name:'Cancel',exact:true})).toBeFocused();
+  await page.getByRole('button',{name:'Finish',exact:true}).focus();await page.keyboard.press('Tab');await expect(page.getByRole('button',{name:'Whiteboard',exact:true})).toBeFocused();
  }
  await publish({...state,transcript:{state:'failed',text:''},revision:++state.revision});
- await expect(page.locator('.live-caption')).toContainText('Recording continues.');
+ await expect(page.locator('.live-caption').getByRole('status')).toHaveText('Live text unavailable');
  await publish({...state,phase:'processing',transcript:null,inputWaveform:null,actions:[],revision:++state.revision});
  await expect(page.locator('.live-caption')).toHaveCount(0);
  await publish({...state,transcript:{state:'starting',text:''},revision:++state.revision});

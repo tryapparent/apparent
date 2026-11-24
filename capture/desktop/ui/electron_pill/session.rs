@@ -109,7 +109,7 @@ impl Session {
     }
 
     pub fn open(mut view: View, generation: u64, selection: Selection) -> anyhow::Result<Self> {
-        view.read_doodles(None);
+        view.read_appearance(None);
         let (app, runtime) =
             assets().ok_or_else(|| anyhow::anyhow!("Packaged recording pill unavailable"))?;
         let mut launch = Command::new(&runtime);
@@ -469,7 +469,7 @@ impl Session {
             && self.view.admits_sharing_confirmation(*self.sharing_confirmation.lock().unwrap())
     }
     pub fn update(&mut self, mut view: View, generation: u64, selection: Selection) {
-        view.read_doodles((self.generation == generation).then_some(&self.view));
+        view.read_appearance((self.generation == generation).then_some(&self.view));
         #[cfg(target_os = "linux")]
         {
             let position = self.drag_position.lock().unwrap().take();
@@ -608,6 +608,7 @@ mod native_tests {
             transcript: None,
             input_waveform: None,
             doodle_ink: None,
+            soft_bloom: None,
             presentation: super::super::Presentation {
                 phase: "recording".into(),
                 ..Default::default()

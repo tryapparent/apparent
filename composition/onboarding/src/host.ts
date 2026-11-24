@@ -292,7 +292,12 @@ export function start(capabilities: Capabilities) {
             practiceEnabled = true;
             channel.send(reply);
             if (state) {
-              state = { ...state, practice: reply.stage };
+              state = {
+                ...state,
+                practice: reply.stage,
+                practiceAttempt:
+                  state.practice === reply.stage ? state.practiceAttempt : null,
+              };
               present();
             }
           } catch {
@@ -331,7 +336,10 @@ export function start(capabilities: Capabilities) {
         }
         const next = project(v);
         if (next) {
-          if (practiceEnabled) next.practice = practiceHost.state.stage;
+          if (practiceEnabled && next.practice !== practiceHost.state.stage) {
+            next.practice = practiceHost.state.stage;
+            next.practiceAttempt = null;
+          }
           if (
             JSON.stringify([
               state?.step,

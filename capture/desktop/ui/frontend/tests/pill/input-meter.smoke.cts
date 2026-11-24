@@ -5,7 +5,7 @@ const path = require("node:path");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 
-test("Soft Bloom holds in silence and gives a static sound cue in reduced motion", async t => {
+test("the compact pill defaults to bare controls and reuses the opt-in Soft Bloom and doodles", async t => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), "pill-bloom-"));
   const application = await electron.launch({
     args: [path.resolve(__dirname, "host.cjs"), "--no-sandbox"],
@@ -30,7 +30,7 @@ test("Soft Bloom holds in silence and gives a static sound cue in reduced motion
   const publish = changes => application.evaluate((_electron, state) => {
     process.stdin.emit("data", JSON.stringify({ type: "state", view: state }) + "\n");
     process.stdin.emit("data", '{"type":"activate"}\n');
-  }, { ...view, ...changes });
+  }, { ...view, softBloom: true, ...changes });
   const bloom = page.locator(".input-bloom");
   const ring = page.locator(".input-bloom__ring");
   const radius = async () => Number(await ring.getAttribute("r"));
@@ -46,8 +46,12 @@ test("Soft Bloom holds in silence and gives a static sound cue in reduced motion
   };
   const quiet = { inputWaveform: [...Array(23).fill(0.8), 0] };
   const sound = { inputWaveform: [...Array(23).fill(0), 0.18] };
-  await publish({doodleInk: null});
+  await publish({doodleInk: null, softBloom: null, ...sound});
+  await expect(page.getByRole("button", {name: "Finish", exact: true})).toBeVisible();
+  await expect(row.locator(".pill-doodles,.input-bloom")).toHaveCount(0);
+  await publish({doodleInk: true, softBloom: false});
   await expect(row.locator(".pill-doodles")).toBeVisible();
+  await expect(bloom).toHaveCount(0);
   await publish({});
   await expect(ring).toBeVisible();
   await expect(row.locator(".pill-doodles")).toHaveCount(0);

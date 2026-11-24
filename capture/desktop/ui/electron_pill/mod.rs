@@ -232,6 +232,7 @@ pub(crate) fn capture_exclusion_ready(window: Option<u32>, applied: &[u32], scre
     !screen_capture || window.is_some_and(|id| id > 0 && applied.contains(&id))
 }
 
+pub(in crate::capture::desktop) const SOFT_BLOOM: &str = "softBloom";
 pub(in crate::capture::desktop) const PILL_DOODLES: &str = "pillDoodles";
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -247,6 +248,7 @@ pub(crate) struct View {
     pub reduced_motion: bool,
     pub input_waveform: Option<[f32; 24]>,
     pub doodle_ink: Option<bool>,
+    pub soft_bloom: Option<bool>,
 }
 
 impl std::ops::Deref for View {
@@ -265,17 +267,18 @@ impl Session {
 }
 
 impl View {
-    fn read_doodles(&mut self, previous: Option<&Self>) {
-        if self.phase == "recording" {
-            self.doodle_ink = previous
-                .filter(|view| view.phase == "recording")
-                .map_or_else(|| {
-                    use crate::shared::handoff::{default_config_path, load_config_from};
-                    if cfg!(test) {
-                        return None;
-                    }
-                    load_config_from(&default_config_path()).experiments.get(PILL_DOODLES).copied()
-                }, |view| view.doodle_ink);
+    fn read_appearance(&mut self, previous: Option<&Self>) {
+        if self.phase != "recording" {
+            return;
+        }
+        if let Some(previous) = previous.filter(|view| view.phase == "recording") {
+            self.doodle_ink = previous.doodle_ink;
+            self.soft_bloom = previous.soft_bloom;
+        } else if !cfg!(test) {
+            use crate::shared::handoff::{default_config_path, load_config_from};
+            let flags = load_config_from(&default_config_path()).experiments;
+            self.doodle_ink = flags.get(PILL_DOODLES).copied();
+            self.soft_bloom = flags.get(SOFT_BLOOM).copied();
         }
     }
     fn admits_sharing_confirmation(&self, revision: Option<u64>) -> bool {
@@ -346,9 +349,6 @@ impl View {
             "dismiss" => PillAction::DismissCompleted,
             action if action.starts_with("select-") => {
                 PillAction::SelectMode(SelectionMode::from_key(&action[7..])?)
-            }
-            action if action.starts_with("switch-") => {
-                PillAction::SwitchRecording(SelectionMode::from_key(&action[7..])?)
             }
             _ => return None,
         })

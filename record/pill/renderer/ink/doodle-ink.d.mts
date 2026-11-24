@@ -1,5 +1,5 @@
 declare const policy: {
-  doodles_enabled(optedOut: boolean): boolean;
+  doodles_enabled(optedIn: boolean): boolean;
   ink_level(magnitude: number, fresh: boolean): number;
   ink_speed(level: number): number;
   ink_width(level: number): number;

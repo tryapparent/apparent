@@ -78,6 +78,7 @@ test("reveal deadlines preserve minimum visibility and hover linger across a clo
     null,
   );
   assert.equal(send("Deadline", now + 5000).reveal, true);
+  assert.deepEqual(present({ phone: true }).actions.map(({ id }) => id), ["whiteboard", "finish", "cancel"]);
   assert.equal(
     send("PointerChanged", now + 6000, { inside: false }).wakeInMs,
     1200,
