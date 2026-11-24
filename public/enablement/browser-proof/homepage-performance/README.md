@@ -8,7 +8,38 @@ each attempt. The prompt is public product text. The browser's ephemeral
 headless clipboard is the named substitute for a desktop OS clipboard. The
 replay neither installs anything nor contacts an agent.
 
-## Run against a packaged build
+## Hosted scoring
+
+Dispatch the shared performance gateway from main with stream `public` and full
+`control` and `candidate` SHAs. Equal SHAs request calibration only. The gateway
+calls this from its reviewed checkout on standard GitHub-hosted Ubuntu 24.04:
+
+```sh
+node public/enablement/browser-proof/homepage-performance/hosted.ts \
+  "$CONTROL_CHECKOUT" "$CANDIDATE_CHECKOUT" "$EVIDENCE_DIR"
+```
+
+Supply detached absolute checkout paths, a private existing evidence directory,
+and Node 22.23.0. Public provisions Bun 1.3.10 if needed and installs its pinned
+Chromium with Ubuntu dependencies. Builds use Git archives in runner scratch with a tool allowlist that excludes Rust.
+The adapter times two independent same-build controls and alternating probe
+orders, then runs A/B/B/A serially on the same runner. Desktop and small-phone
+dark replays verify candidate output. The evidence contains exact commands,
+timing receipts, browser traces and waterfalls. CPU PSI comes from the Linux VM,
+and is subject to the same 2% block limit. Guest steal, I/O and memory PSI, and
+vCPU topology are recorded for diagnosis. Hypervisor host PSI is unavailable.
+
+To recompute the single-job comparison from an extracted artifact:
+
+```sh
+node public/enablement/browser-proof/homepage-performance/campaign.ts \
+  "$EVIDENCE_DIR/public/comparison-ledger.json" --compare-only
+```
+
+This evaluates all matched guards and the local speed decision. It records no
+active effort and cannot trigger campaign stop. Keep Clanker scores historical.
+
+## Local diagnostic replay
 
 Build the standard Public package using Node 22 and the locked dependencies.
 These commands work in a private checkout or Git archive. Keep diagnostic

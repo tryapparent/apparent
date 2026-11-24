@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import {
@@ -76,12 +76,24 @@ type Ledger = {
   diagnostics?: { evidence: string; reason: string }[];
 };
 
-const path = process.argv[2];
-if (!path || process.argv.length !== 3)
-  throw new Error("Supply the focused campaign ledger JSON");
+const [path, mode, ...extra] = process.argv.slice(2);
+const comparisonOnly = mode === "--compare-only";
+assert(
+  path && !extra.length && (!mode || comparisonOnly),
+  "Supply the campaign ledger and optional --compare-only",
+);
+const ledgerPath = resolve(path);
 const read = async <T>(path: string) =>
-  JSON.parse(await readFile(path, "utf8")) as T;
-const ledger = await read<Ledger>(path);
+  JSON.parse(await readFile(resolve(dirname(ledgerPath), path), "utf8")) as T;
+const ledger = await read<Ledger>(ledgerPath);
+if (comparisonOnly)
+  assert(
+    ledger.controls.length === 2 &&
+      ledger.experiments.length <= 1 &&
+      !ledger.unscoredEffort.length &&
+      ledger.experiments.every((row) => !row.effort.length),
+    "A comparison-only ledger has two controls, at most one bracket, and no effort intervals",
+  );
 const windows = contract.hillClimb as {
   windowSeconds: number;
   earlyWindows: number;
@@ -263,12 +275,14 @@ const result = await bendScratch(async (directory) => {
   const experiments = [];
   let lastEnd = 0;
   for (const experiment of ledger.experiments) {
-    const end = Math.max(...experiment.effort.map((row) => interval(row).end));
+    const end = comparisonOnly
+      ? 0
+      : Math.max(...experiment.effort.map((row) => interval(row).end));
     assert(
       experiment.hypothesis.trim() &&
         experiment.qualityEvidence.trim() &&
         experiment.effort.every((row) => interval(row).start >= lastEnd) &&
-        end > lastEnd,
+        (comparisonOnly || end > lastEnd),
     );
     lastEnd = end;
     const activeSeconds = elapsedThrough(end);
@@ -390,6 +404,7 @@ const result = await bendScratch(async (directory) => {
         : null,
     latestCompleteRates: gainPerWindow.slice(-2).map((gain) => gain / 100000),
     distinctHypothesesSinceGain: sinceGain.size,
+    comparisonOnly,
     stop: policy.should_stop(
       true,
       enoughWindows,
