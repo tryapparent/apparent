@@ -7,6 +7,7 @@
   "name": "@apparent/onboarding-renderer",
   "exports": {
     "./frog-nudge": "./frog-nudge/preview.tsx",
-    "./board-lesson": "./board-lesson.tsx"
+    "./board-lesson": "./board-lesson.tsx",
+    "./desktop-frog": "./frog/preference.tsx"
   }
 }

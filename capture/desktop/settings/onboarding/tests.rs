@@ -914,11 +914,10 @@ mod tests {
 
     #[test]
     fn replay_resets_only_tour_progress_and_config_writer_preserves_other_values() {
-        let mut progress = Progress {
+        let original = Progress {
             tour_revision: 1,
             seen: true,
             deferred: true,
-            resume: None,
             granted: BTreeSet::from([Permission::ScreenRecording, Permission::Accessibility]),
             relaunched_at: Some(123),
             reopen_fix: true,
@@ -926,18 +925,20 @@ mod tests {
             shortcut_chosen: true,
             shortcut_tested_for: Some("⌥⇧R".into()),
             first_capture_completed: true,
+            frog_name: Some("Evie".into()),
+            frog_adopted: true,
+            ..Progress::default()
         };
+        let mut progress = original.clone();
         progress.reset_for_replay();
-        assert!(progress.seen);
-        assert!(progress.deferred);
-        assert_eq!(progress.resume, Some(Step::Welcome));
-        assert_eq!(progress.tutorial, None);
-        assert!(!progress.shortcut_chosen);
-        assert_eq!(progress.shortcut_tested_for, None);
-        assert!(!progress.first_capture_completed);
-        assert_eq!(progress.granted, BTreeSet::from([Permission::ScreenRecording, Permission::Accessibility]));
-        assert_eq!(progress.relaunched_at, Some(123));
-        assert!(progress.reopen_fix);
+        assert_eq!(progress, Progress {
+            resume: Some(Step::Welcome),
+            tutorial: None,
+            shortcut_chosen: false,
+            shortcut_tested_for: None,
+            first_capture_completed: false,
+            ..original
+        });
 
         let ready = Some(grants(&Permission::REQUIRED));
         let mut replay = Flow::tour(progress.resume.unwrap(), ready).with_first_capture(
@@ -1108,6 +1109,8 @@ mod tests {
             shortcut_chosen: true,
             shortcut_tested_for: Some("⌥⇧S".into()),
             first_capture_completed: true,
+            frog_name: Some("Evie".into()),
+            frog_adopted: true,
         };
         progress.save_to(&path).unwrap();
         let restored = Progress::load_from(&path);
@@ -1127,7 +1130,7 @@ mod tests {
         Progress::default().save_to(&path).unwrap();
         let cleared: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(cleared["onboarding"]["future"], config["onboarding"]["future"]);
-        for key in ["resume", "relaunchedAt", "reopenFix", "tutorial", "shortcutTestedFor"] {
+        for key in ["resume", "relaunchedAt", "reopenFix", "tutorial", "shortcutTestedFor", "frogName", "frogAdopted"] {
             assert!(cleared["onboarding"].get(key).is_none(), "stale schema leaf: {key}");
         }
         for invalid in [r#"{"onboarding":null,"keep":"synthetic"}"#, r#"{"onboarding":[],"keep":"synthetic"}"#] {
