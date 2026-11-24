@@ -13,6 +13,7 @@ const METRICS: &str = "https://eu.i.posthog.com/i/v1/metrics";
 const TRACES: &str = "https://eu.i.posthog.com/i/v1/traces";
 
 pub(crate) const SETTING: &str = "recordingPerformance";
+pub(crate) const PREFERENCE: &str = "labs.recordingPerformance";
 pub(crate) const GENERATION: &str = "recordingPerformanceGeneration";
 
 struct Timing {
@@ -135,12 +136,20 @@ struct Report {
 }
 
 pub(crate) fn generation(config: &Value) -> Option<&str> {
-    if config["experiments"][SETTING] != true {
+    if crate::shared::handoff::preference_value(config, PREFERENCE) != Some(Value::Bool(true)) {
         return None;
     }
     config[GENERATION]
         .as_str()
         .filter(|value| !value.is_empty() && value.len() <= 128)
+}
+
+pub(crate) fn set_preference(path: &std::path::Path, value: Option<Value>) -> anyhow::Result<()> {
+    crate::shared::handoff::update_config_in(path, |config| {
+        crate::shared::handoff::edit_preference(config, PREFERENCE, value)?;
+        config[GENERATION] = json!(crate::shared::ids::make_bundle_id());
+        Ok(())
+    })
 }
 
 fn consent() -> Option<String> {

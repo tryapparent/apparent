@@ -3,7 +3,8 @@
     "host/traversal/tour-traversal.bend",
     "host/tips/note-tip.bend",
     "host/tips/frog-nudge.bend",
-    "host/traversal/desktop-frog.bend"
+    "host/traversal/desktop-frog.bend",
+    "settings/dictation-preference.bend"
   ],
   "inputs": [
     "host/traversal/tour-traversal.d.mts",
@@ -11,6 +12,7 @@
     "enablement/ci/entry-policy.ts",
     "host/tips/",
     "host/traversal/desktop-frog.d.mts",
-    "host/traversal/desktop-frog.json"
+    "host/traversal/desktop-frog.json",
+    "settings/"
   ]
 }

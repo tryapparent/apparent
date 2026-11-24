@@ -1,4 +1,5 @@
 import {contractChecks} from '../../shared/enablement/ci/contract-inputs.ts';
+import {settingsContractRequired} from '../../shared/enablement/ci/settings-inputs.ts';
 import {admissionTooling, admissionConsumersKnown} from '../../shared/enablement/ci/inputs.ts';
 import {engineIndependentRange} from './routing/engine-inputs/qualify.ts';
 import {portableForegroundInputs, foregroundPortableChange, serviceOnlyRange} from '../../shared/enablement/ci/connect-inputs.ts';
@@ -211,7 +212,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     desktop: plan.desktop && macEnabled, client: plan.client && macEnabled};
   const classified = process.env.GITHUB_EVENT_NAME !== 'workflow_dispatch' && result.inputProofKnown && !unownedPaths(result.paths).length;
   const storage = result.paths.some(path => path === recordBendManifest || storageControllers.has(path) || nativeStorageGraph.has(path));
-  const output = {...result, mac_rust, plan, mac_plan: macPlan, ...contractChecks(classified ? result.paths : null, plan.tooling, storage)};
+  const contractPaths = classified ? result.paths : null;
+  const output = {...result, mac_rust, plan, mac_plan: macPlan, ...contractChecks(contractPaths, plan.tooling, storage),
+    contract_settings: settingsContractRequired(contractPaths)};
   console.log(JSON.stringify({...output, reasons}));
   appendFileSync(process.env.GITHUB_OUTPUT!, Object.entries(output).map(([key, value]) => key + '=' + (typeof value === 'object' ? JSON.stringify(value) : value) + '\n').join(''));
 }

@@ -27,7 +27,7 @@ pub(in crate::capture::desktop) fn poll_desktop_frog(
         .is_none_or(|time| time.elapsed().as_millis() >= 1500);
     if refresh {
         frog.checked = Some(std::time::Instant::now());
-        let name = if crate::shared::handoff::experiment("desktopFrog") {
+        let name = if crate::shared::handoff::experiment_preference("labs.desktopFrog") {
             let saved = Progress::load();
             saved.frog_name.filter(|_| saved.frog_adopted)
         } else {

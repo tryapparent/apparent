@@ -1,25 +1,28 @@
 //! Narrow Storage transaction executor; Settings policy and persistence intent live in TypeScript.
-use crate::shared::handoff::{capture_location, update_config_allowed_in};
+use crate::shared::handoff::{capture_location, edit_preference, update_config_allowed_in};
 use std::hash::{Hash, Hasher};
+use crate::capture::engine::bundle::retention::{BUNDLE_DAYS, MEDIA_DAYS, Policy};
 use crate::capture::engine::bundle::retention::folder_usage::scan_directory;
+use crate::composition::retention::{MAXIMUM_MB, remove_empty_legacy_retention};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 
-fn field(raw: &serde_json::Value, name: &str) -> serde_json::Value {
-    match raw
-        .get("retention")
-        .and_then(serde_json::Value::as_object)
-        .and_then(|r| r.get(name))
-    {
-        Some(value) => serde_json::json!({"present":true,"value":value}),
-        None => serde_json::json!({"present":false,"value":null}),
-    }
+fn field(value: Option<serde_json::Value>) -> serde_json::Value {
+    serde_json::json!({"present":value.is_some(),"value":value})
 }
 
 fn revision(raw: &serde_json::Value) -> String {
     let mut hash = std::collections::hash_map::DefaultHasher::new();
-    serde_json::json!({"mediaDays":field(raw,"mediaDays"),"bundleDays":field(raw,"bundleDays"),"maximumMb":field(raw,"maximumMb")})
-        .to_string().hash(&mut hash);
+    raw.get("retention").is_some().hash(&mut hash);
+    for key in ["retention", "storage"] {
+        let group = raw.get(key);
+        group.is_some_and(|value| !value.is_object()).hash(&mut hash);
+        for field in ["mediaDays", "bundleDays", "maximumMb"] {
+            group.and_then(|value| value.get(field))
+                .map(serde_json::Value::to_string)
+                .hash(&mut hash);
+        }
+    }
     format!("{:016x}", hash.finish())
 }
 
@@ -43,21 +46,12 @@ impl SavePolicy {
 
 pub(in crate::capture::desktop) fn read(config: &Path) -> Result<serde_json::Value, &'static str> {
     let raw = capture_location::read_raw(config).map_err(|_| "config_read_failed")?;
-    let stored = raw.get("retention").cloned().and_then(|value| serde_json::from_value::<crate::capture::engine::bundle::retention::Policy>(value).ok());
-    let malformed = raw.get("retention").is_some_and(|value| value.is_object()) && stored.is_none();
-    let (media_days, bundle_days) = if malformed {
-        // Preserve the old cleanup reader's `unwrap_or_default()` behavior: one
-        // malformed known value falls back to Week as a whole. Never project the
-        // malformed value itself into the Settings renderer.
-        (serde_json::json!({"present":false,"value":null}), serde_json::json!({"present":false,"value":null}))
-    } else {
-        (field(&raw, "mediaDays"), field(&raw, "bundleDays"))
-    };
-    let custom = raw["retention"].get("mediaDays").is_some()
-        || raw["retention"].get("bundleDays").is_some();
+    let [media_days, bundle_days] = Policy::saved_fields(&raw).map(field);
+    let custom = ["retention", "storage"].into_iter().any(|group|
+        ["mediaDays", "bundleDays"].into_iter().any(|key| raw[group].get(key).is_some()));
     Ok(serde_json::json!({
         "retention": {"mediaDays":media_days,"bundleDays":bundle_days},
-        "defaults": crate::capture::engine::bundle::retention::Policy::default(),
+        "defaults": Policy::default(),
         "revision": revision(&raw),
         "maximumMb": crate::composition::retention::storage_limit(&raw),
         "custom": custom,
@@ -107,36 +101,13 @@ fn update_policy(
             anyhow::bail!("invalid retention object");
         }
         if let Some(maximum_mb) = maximum_mb {
-            if !raw["retention"].is_object() {
-                raw["retention"] = serde_json::json!({});
-            }
-            raw["retention"]["maximumMb"] = maximum_mb.into();
-            return Ok(());
+            edit_preference(raw, MAXIMUM_MB, Some(maximum_mb.into()))?;
+        } else {
+            edit_preference(raw, MAXIMUM_MB, None)?;
+            edit_preference(raw, MEDIA_DAYS, policy.map(|policy| policy.media_days.clone()))?;
+            edit_preference(raw, BUNDLE_DAYS, policy.map(|policy| policy.bundle_days.clone()))?;
         }
-        if let Some(fields) = raw["retention"].as_object_mut() {
-            fields.remove("maximumMb");
-        }
-        match policy {
-            Some(policy) => {
-                // Keep unrecognized nested policy keys, too.
-                if !raw["retention"].is_object() {
-                    raw["retention"] = serde_json::json!({});
-                }
-                raw["retention"]["mediaDays"] = policy.media_days.clone();
-                raw["retention"]["bundleDays"] = policy.bundle_days.clone();
-            }
-            None => {
-                if let Some(fields) = raw["retention"].as_object_mut() {
-                    fields.remove("mediaDays");
-                    fields.remove("bundleDays");
-                    if fields.is_empty() {
-                        raw.as_object_mut().unwrap().remove("retention");
-                    }
-                } else {
-                    raw.as_object_mut().unwrap().remove("retention");
-                }
-            }
-        }
+        remove_empty_legacy_retention(raw);
         Ok(())
     })
     .map_err(|error| {
@@ -229,6 +200,7 @@ mod tests {
         assert_eq!(save_limit(&config, 0, revision, || true), Err("conflict"));
         let actual = capture_location::read_raw(&config).unwrap();
         assert_eq!(actual["retention"], serde_json::json!({"mediaDays":30,"bundleDays":90,"maximumMb":12400,"future":true}));
+        assert_eq!(actual["storage"]["maximumMb"], 12_400);
         assert_eq!(actual["other"], "keep");
         let committed = save_limit(&config, 0, committed["revision"].as_str().unwrap(), || true).unwrap();
         assert_eq!(committed["maximumMb"], 0);

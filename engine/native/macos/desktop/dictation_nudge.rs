@@ -10,7 +10,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::shared::handoff::{default_config_path, update_config_in};
+use crate::shared::handoff::{default_config_path, preference_value, update_config_in};
 
 include!(concat!(env!("OUT_DIR"), "/frog-nudge.rs"));
 
@@ -121,7 +121,7 @@ fn eligible(enabled: bool, blocked: bool) -> bool {
 }
 
 fn enabled(config: &serde_json::Value) -> bool {
-    config["experiments"]["dictationFrog"].as_bool() == Some(true)
+    preference_value(config, "labs.dictationFrog").is_some_and(|value| value == true)
 }
 
 fn finish_session(path: &Path, count: &str, blocked: &AtomicBool) -> bool {

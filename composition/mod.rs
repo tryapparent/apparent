@@ -1,6 +1,168 @@
 pub(crate) use crate::permission_admission::repair as permission_repair;
 pub(crate) mod cli;
 
+mod preferences {
+    use anyhow::{Context, Result, ensure};
+    use clap::{Args, Subcommand};
+    use serde_json::{Value, json};
+
+    use crate::shared::handoff::{
+        default_config_path, preference_state, preferences, read_preferences, write_preference,
+    };
+
+    #[derive(Args)]
+    pub(super) struct Settings {
+        #[arg(long, global = true)]
+        json: bool,
+        #[arg(long, global = true)]
+        confirm_cleanup: bool,
+        #[command(subcommand)]
+        command: Command,
+    }
+
+    #[derive(Subcommand)]
+    enum Command {
+        List { pane: Option<String> },
+        Get { id: String },
+        Set { id: String, value: String },
+        Reset { id: String },
+    }
+
+    fn available(entry: &Value) -> bool {
+        #[cfg(target_os = "linux")]
+        let wayland = crate::capture::desktop::linux::wayland_session();
+        #[cfg(not(target_os = "linux"))]
+        let wayland = false;
+        entry["platforms"].as_array().is_none_or(|platforms| {
+            platforms.iter().any(|platform| {
+                platform == std::env::consts::OS || (wayland && platform == "wayland")
+            })
+        })
+    }
+
+    fn state(entry: &Value, config: &Value) -> Value {
+        use crate::capture::engine::runtime::recording::recorder::selection;
+        use crate::permission_admission::ScreenSelection;
+
+        let id = entry["id"].as_str().unwrap();
+        let (saved, mut source) = preference_state(config, id);
+        let available = available(entry);
+        let requested = saved.as_ref().unwrap_or(&entry["default"]);
+        let mut system_status = None;
+        let effective = match (available, id) {
+            (false, _) => Value::Null,
+            (true, "storage.maximumMb") => json!(super::retention::storage_limit(config)),
+            (true, "storage.mediaDays") => json!(crate::capture::engine::bundle::retention::Policy::from_config(config).media_days),
+            (true, "storage.bundleDays") => json!(crate::capture::engine::bundle::retention::Policy::from_config(config).bundle_days),
+            (true, selection::PREFERENCE) => {
+                json!(selection::selection_for_saved(saved.as_ref().and_then(Value::as_bool)) == ScreenSelection::FullDisplay)
+            }
+            (true, "storage.capturesDir") => {
+                let (path, origin) = crate::shared::handoff::capture_location::effective_path_for_cli(config);
+                if origin == "environment" { source = "system-override"; }
+                json!(path)
+            }
+            (true, "labs.recordingPerformance") => json!(crate::capture::desktop::workflow::performance::generation(config).is_some()),
+            (true, "general.errorReporting") if source == "invalid" ||
+                config.get("errorReportingGeneration").is_some_and(|value| value.as_str().is_none_or(|value| value.len() > 128)) => Value::Bool(false),
+            (true, "general.recordShortcut" | "general.pasteShortcut") => {
+                let (value, overridden) = crate::capture::desktop::settings::shortcut_state_for_cli(config, id);
+                if overridden { source = "system-override"; }
+                value
+            }
+            (true, "general.launchAtLogin") => {
+                use crate::capture::desktop::settings::{LoginItem, login_item};
+                let (status, actual) = match login_item() {
+                    LoginItem::On => ("registered", Some(true)),
+                    LoginItem::Off => ("off", Some(false)),
+                    LoginItem::NeedsApproval => ("approval-required", Some(false)),
+                    LoginItem::Unavailable => ("unavailable", None),
+                };
+                system_status = Some(status);
+                json!(actual)
+            }
+            (true, "labs.agentContext") if requested == true => {
+                let access = crate::capture::desktop::settings::desktop_access(false);
+                system_status = Some(access);
+                json!(access == "enabled")
+            }
+            _ => requested.clone(),
+        };
+        let mut result = entry.clone();
+        result.as_object_mut().unwrap().remove("legacy");
+        if id == selection::PREFERENCE && available {
+            result["default"] = json!(selection::selection_for_saved(None) == ScreenSelection::FullDisplay);
+        }
+        result["present"] = json!(saved.is_some() || source == "invalid");
+        result["saved"] = saved.map_or(Value::Null, |value| {
+            if entry["effect"] == "shortcut" {
+                crate::capture::desktop::settings::shortcut_public_value(value)
+            } else {
+                crate::recording_preferences::public_value(id, value)
+            }
+        });
+        result["effective"] = crate::recording_preferences::public_value(id, effective);
+        result["source"] = json!(source);
+        result["available"] = json!(available);
+        if let Some(status) = system_status { result["systemStatus"] = json!(status); }
+        result
+    }
+
+    pub(super) fn run(args: Settings) -> Result<()> {
+        let path = default_config_path();
+        let catalog = preferences();
+        let find = |id: &str| catalog.iter().find(|entry| entry["id"] == id).context("Unknown preference");
+        let result = match args.command {
+            Command::List { pane } => {
+                let config = read_preferences(&path)?;
+                let matched: Vec<_> = catalog.iter().filter(|entry| {
+                    pane.as_deref().is_none_or(|pane| {
+                        entry["id"].as_str().unwrap().split_once('.').is_some_and(|(group, _)| group == pane)
+                    })
+                }).map(|entry| state(entry, &config)).collect();
+                ensure!(pane.is_none() || !matched.is_empty(), "Unknown pane");
+                json!(matched)
+            }
+            Command::Get { id } => state(find(&id)?, &read_preferences(&path)?),
+            Command::Set { ref id, .. } | Command::Reset { ref id } => {
+                let entry = find(id)?;
+                ensure!(available(entry), "Unsupported platform");
+                let value = match &args.command {
+                    Command::Set { value, .. } => Some(serde_json::from_str(value).context("Expected JSON value")?),
+                    _ => None,
+                };
+                match entry["effect"].as_str() {
+                    None | Some("agentContext" | "loginItem") => write_preference(&path, id, value)?,
+                    Some("recordingPerformance") => crate::capture::desktop::workflow::performance::set_preference(&path, value)?,
+                    Some("pushToTalk") => {
+                        #[cfg(target_os = "linux")]
+                        ensure!(value != Some(Value::Bool(true)) || crate::capture::desktop::settings::shortcut::push_to_talk_supported(), "Push to talk requires the app-managed Record shortcut");
+                        write_preference(&path, id, value)?;
+                    }
+                    Some("errorReporting") => {
+                        let on = value.as_ref().map(|value| value.as_bool().context("Expected boolean")).transpose()?;
+                        crate::capture::desktop::workflow::error_reporting::set_preference(&path, on)?;
+                    }
+                    Some("recording") => crate::recording_preferences::set_from_cli(&path, id, value)?,
+                    Some("shortcut") => crate::capture::desktop::settings::set_shortcut_for_cli(&path, id, value)?,
+                    Some("captureLocation") => {
+                        let folder = value.as_ref().map(|value| value.as_str().context("Expected folder path")).transpose()?;
+                        crate::shared::handoff::capture_location::set_in(&path, folder, None, || true).map_err(anyhow::Error::msg)?;
+                    }
+                    Some("retention") => {
+                        ensure!(args.confirm_cleanup, "Pass --confirm-cleanup");
+                        super::retention::set_preference(&path, id, value)?;
+                    }
+                    Some(_) => anyhow::bail!("Unsupported effect"),
+                }
+                state(entry, &read_preferences(&path)?)
+            }
+        };
+        println!("{}", if args.json { result.to_string() } else { format!("{result:#}") });
+        Ok(())
+    }
+}
+
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 const FEEDBACK_HINT: &str = "Confusing behavior or workaround? Draft a note with `apparent feedback --help`.";
 
@@ -80,83 +242,12 @@ pub(crate) mod movie_frames;
 pub(crate) mod screen_frames;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub(crate) mod transcript;
-pub(crate) use assembly::frame_labels;
-pub(crate) use assembly::transcript_handoff;
+pub(crate) use assembly::{frame_labels, transcript_handoff};
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub(crate) mod worker;
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-pub(crate) mod feedback {
-    use std::{path::PathBuf, process::Command, time::Duration};
-
-    use anyhow::{Context, Result, bail};
-    use clap::{Args, ValueEnum};
-    use serde_json::{Value, json};
-    pub(crate) use crate::permission_admission::PermissionIntent;
-
-    use super::worker;
-
-    #[derive(Clone, Copy, ValueEnum)]
-    enum Kind {
-        Feedback,
-        Bug,
-    }
-
-    #[derive(Args)]
-    #[command(
-        after_help = "Send in one call with --submit.\n\nOptional local preview:\n  apparent feedback --kind bug --title 'Zoom rejects 1:05' \\\n    --body 'Expected 65 seconds. Zoom rejected the timestamp.'\n\nInclude what you tried, what you expected, and what happened.\nOmit private paths, capture contents, and credentials."
-    )]
-    pub(crate) struct FeedbackArgs {
-        #[arg(long, value_enum, default_value = "feedback", help = "Report category")]
-        kind: Kind,
-        #[arg(long, help = "Short report title")]
-        title: String,
-        #[arg(long, help = "Report text. Omit credentials and private content")]
-        body: String,
-        #[arg(
-            long,
-            help = "Send to Apparent's PostHog project. The default is a local JSON preview"
-        )]
-        submit: bool,
-    }
-
-    pub(crate) fn command(args: FeedbackArgs) -> Result<()> {
-        let source = concat!(
-            include_str!("../agent/feedback/report.ts"),
-            "\nconsole.log(JSON.stringify(await main()));\n"
-        );
-        let input = json!({
-            "kind": match args.kind { Kind::Feedback => "feedback", Kind::Bug => "bug" },
-            "title": args.title,
-            "body": args.body,
-            "submit": args.submit,
-            "token": option_env!("APPARENT_POSTHOG_TOKEN"),
-            "build": env!("APPARENT_VERSION_LABEL"),
-            "environment": env!("APPARENT_REPORTING_ENVIRONMENT"),
-        });
-        let node = worker::bundled_node()?.unwrap_or_else(|| PathBuf::from("node"));
-        let input = worker::private_input(&serde_json::to_vec(&input)?)?;
-        let reply = worker::run_with_input(
-            Command::new(node)
-                .env("ELECTRON_RUN_AS_NODE", "1")
-                .env_remove("NODE_OPTIONS")
-                .args(["--input-type=module-typescript", "--eval", source]),
-            input,
-            Duration::from_secs(10),
-            64 * 1024,
-        )
-        .context(
-            "Could not complete feedback command; it requires the bundled runtime or Node.js 22.23+",
-        )?;
-        let reply: Value =
-            serde_json::from_slice(&reply).context("Invalid feedback worker response")?;
-        if let Some(error) = reply["error"].as_str() {
-            bail!("{error}");
-        }
-        println!("{reply}");
-        Ok(())
-    }
-}
+pub(crate) use issues::feedback;
 
 #[cfg(test)]
 mod cli_contracts {
@@ -358,3 +449,6 @@ pub(crate) fn observe_permissions() -> Option<crate::permission_facts::Grants> {
 
 #[path = "../engine/permissions/settings.rs"]
 pub(crate) mod settings_permissions;
+
+#[cfg(target_os = "linux")]
+pub(crate) use retention::check_preference_compatibility;
