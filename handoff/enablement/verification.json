@@ -6,11 +6,11 @@
       "platforms": ["linux-x11"],
       "userEntryPoint": "Open the destination picker on a completed recording, then select an existing thread.",
       "prerequisites": [
-        "A prepared build of the exact revision, its locked Desktop dependencies, and a private Xvfb display.",
+        "Manual performance-benchmark workflow on standard GitHub-hosted Ubuntu 24.04 with published full revision SHAs.",
         "CPU and storage pressure below the focused benchmark admission thresholds."
       ],
       "runner": {
-        "path": "handoff/enablement/performance/run.ts",
+        "path": "handoff/enablement/ci/hosted-performance.ts",
         "instructions": "handoff/enablement/performance/README.md"
       },
       "expectedEvidence": [
