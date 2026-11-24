@@ -23,7 +23,8 @@ pub enum Target {
 }
 
 enum Request {
-    Start(u64, Instant),
+    Start(u64, f64, f64, Instant),
+    Pointer(u64, f64, f64, Instant),
     Resolve(Mark, Instant),
 }
 
@@ -52,7 +53,13 @@ impl Mark {
 
 struct Session {
     requests: flume::Sender<Request>,
-    results: flume::Receiver<(u64, String)>,
+    results: flume::Receiver<Result>,
+}
+
+pub enum Result {
+    Label(u64, String),
+    Pointer(u64, String),
+    Mark(u64, String),
 }
 
 pub struct Prober(Mutex<Option<Session>>);
@@ -94,8 +101,8 @@ impl Prober {
         }
     }
 
-    pub fn mark_started(&self, time: u64) {
-        self.send(Request::Start(time, Instant::now()));
+    pub fn mark_started(&self, time: u64, x: f64, y: f64) {
+        self.send(Request::Start(time, x, y, Instant::now()));
     }
 
     pub fn stroke(&self, stroke: &Stroke, frame: TargetFrame) {
@@ -104,18 +111,18 @@ impl Prober {
         }
     }
 
-    pub fn probe(&self, Target::Pointer(time): Target, _x: f64, _y: f64) {
-        let _ = time;
+    pub fn probe(&self, Target::Pointer(time): Target, x: f64, y: f64) {
+        self.send(Request::Pointer(time, x, y, Instant::now()));
     }
 
-    pub fn finish(&self) -> HashMap<u64, String> {
+    pub fn finish(&self) -> Vec<Result> {
         let session = self
             .0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take();
         let Some(Session { requests, results }) = session else {
-            return HashMap::new();
+            return Vec::new();
         };
         drop(requests);
         let deadline = Instant::now() + DRAIN;
@@ -126,7 +133,8 @@ impl Prober {
 struct Witness {
     time: u64,
     window: window::Window,
-    tree: atspi::Object,
+    tree: Option<atspi::Object>,
+    page: Option<String>,
 }
 
 struct Work {
@@ -136,7 +144,7 @@ struct Work {
 }
 
 impl Work {
-    fn run(pending: flume::Receiver<Request>, labels: flume::Sender<(u64, String)>) {
+    fn run(pending: flume::Receiver<Request>, labels: flume::Sender<Result>) {
         let Some(events) = window::Events::open() else {
             return;
         };
@@ -150,30 +158,70 @@ impl Work {
         };
         while let Ok(request) = pending.recv() {
             match request {
-                Request::Start(time, at) => worker.witness = worker.begin_mark(time, at),
+                Request::Start(time, x, y, at) => worker.witness = worker.begin_mark(time, x, y, at),
+                Request::Pointer(time, x, y, at) => {
+                    if let Some(page) = worker.pointer_page(x, y, at) {
+                        let _ = labels.try_send(Result::Pointer(time, page));
+                    }
+                }
                 Request::Resolve(mark, at) => {
-                    if let Some(label) = worker.resolve(&mark, at) {
-                        let _ = labels.try_send((mark.time, label));
+                    if let Some((label, page)) = worker.resolve(&mark, at) {
+                        if let Some(label) = label {
+                            let _ = labels.try_send(Result::Label(mark.time, label));
+                        }
+                        if let Some(page) = page {
+                            let _ = labels.try_send(Result::Mark(mark.time, page));
+                        }
                     }
                 }
             }
         }
     }
 
-    fn begin_mark(&mut self, time: u64, at: Instant) -> Option<Witness> {
+    fn begin_mark(&mut self, time: u64, x: f64, y: f64, at: Instant) -> Option<Witness> {
+        if at.elapsed() > FRESHNESS {
+            return None;
+        }
+        self.events.drain(None)?;
+        let rect = window::layout_rect([x.floor() as i32, y.floor() as i32, 1, 1])?;
+        let window = window::focused_for_mark(rect)?;
+        let tree = self.accessibility.active_tree(window.pid);
+        let page = window.mark_point(rect).and_then(|point| {
+            (window.is_uncovered(rect)? && window::share_picker_clear(rect)?).then_some(())?;
+            self.page(&window, point)
+        });
+        if self.events.drain(Some(&window))? || window::focused_for_mark(rect).as_ref() != Some(&window) {
+            return None;
+        }
+        Some(Witness { time, window, tree, page })
+    }
+
+    fn page(&self, window: &window::Window, point: (i32, i32)) -> Option<String> {
+        let attribute = window.browser_attribute()?;
+        let (size, title) = window.unique_browser_client()?;
+        self.accessibility.browser_page(window.pid, size, &title, point, attribute)
+    }
+
+    fn pointer_page(&mut self, x: f64, y: f64, at: Instant) -> Option<String> {
         if at.elapsed() > FRESHNESS {
             return None;
         }
         self.events.drain(None)?;
         let window = window::focused()?;
-        let tree = self.accessibility.active_tree(window.pid)?;
-        if self.events.drain(Some(&window))? || window::focused().as_ref() != Some(&window) {
+        window.browser_attribute()?;
+        let (rect, point) = window.point(x, y)?;
+        if !window.is_uncovered(rect)? || !window::share_picker_clear(rect)? {
             return None;
         }
-        Some(Witness { time, window, tree })
+        let page = self.page(&window, point)?;
+        if self.events.drain(Some(&window))? || window::focused().as_ref() != Some(&window)
+            || !window::share_picker_clear(rect)? {
+            return None;
+        }
+        Some(page)
     }
 
-    fn resolve(&mut self, mark: &Mark, at: Instant) -> Option<String> {
+    fn resolve(&mut self, mark: &Mark, at: Instant) -> Option<(Option<String>, Option<String>)> {
         let witness = self
             .witness
             .take()
@@ -181,28 +229,33 @@ impl Work {
         if at.elapsed() > FRESHNESS || self.events.drain(Some(&witness.window))? {
             return None;
         }
-        let window = window::focused()?;
         let rect = window::layout_rect(mark.bounds)?;
-        let tree = self.accessibility.active_tree(window.pid)?;
+        let window = window::focused_for_mark(rect)?;
+        let tree = self.accessibility.active_tree(window.pid);
         let inside = window.contains(rect);
         let clear = window.is_uncovered(rect)?;
         let same_window = witness.window == window;
-        let same_tree = witness.tree == tree;
-        if !admit(inside, clear, same_window, same_tree) {
+        if !admit(inside, clear, same_window, true) {
             return None;
         }
-        let label = self
-            .accessibility
-            .label_at(&tree, window.mark_point(rect)?)?;
-        let still_focused = window::focused().as_ref() == Some(&window);
-        let still_active = self.accessibility.is_active(&tree);
+        let point = window.mark_point(rect)?;
+        let label = tree.as_ref().filter(|tree| witness.tree.as_ref() == Some(*tree))
+            .and_then(|tree| self.accessibility.label_at(tree, point))
+            .filter(|_| tree.as_ref().is_some_and(|tree| self.accessibility.is_active(tree)));
+        let page = witness.page.and_then(|start| {
+            window::share_picker_clear(rect)?.then_some(())?;
+            let end = self.page(&window, point);
+            super::admit_browser_page(end.is_some(), true, end.as_ref() == Some(&start))
+                .then_some(start)
+        });
+        let still_focused = window::focused_for_mark(rect).as_ref() == Some(&window);
         let still_clear = window.is_uncovered(rect)?;
         if self.events.drain(Some(&window))?
-            || !admit(inside, still_clear, still_focused, still_active)
+            || !admit(inside, still_clear, still_focused, true)
         {
             return None;
         }
-        Some(label)
+        Some((label, page))
     }
 }
 
@@ -214,15 +267,27 @@ fn admit(inside: bool, clear: bool, same_window: bool, same_tree: bool) -> bool 
     ADMISSION[bits]
 }
 
-pub fn apply(
-    hits: &HashMap<u64, String>,
-    _events: &mut [InteractionEvent],
-    strokes: &mut [Stroke],
-) {
-    for stroke in strokes
-        .iter_mut()
+pub fn apply(hits: &[Result], events: &mut Vec<InteractionEvent>, strokes: &mut [Stroke]) {
+    let labels: HashMap<_, _> = hits.iter().filter_map(|hit| match hit {
+        Result::Label(t, label) => Some((*t, label)),
+        _ => None,
+    }).collect();
+    for stroke in strokes.iter_mut()
         .filter(|stroke| stroke.on.is_none() && !stroke.laser && stroke.pin.is_none())
     {
-        stroke.on = hits.get(&stroke.t0).cloned();
+        stroke.on = labels.get(&stroke.t0).map(|label| (*label).clone());
     }
+
+    let pages: Vec<_> = hits.iter().filter_map(|hit| {
+        let (time, raw) = match hit {
+            Result::Pointer(time, raw) if events.iter().any(|event| matches!(
+                event, InteractionEvent::Click { t, .. } | InteractionEvent::Drag { t, .. } if t == time
+            )) => (time, raw),
+            Result::Mark(time, raw) if strokes.iter().any(|stroke| stroke.t0 == *time && !stroke.laser) => (time, raw),
+            _ => return None,
+        };
+        let url = crate::shared::routing::browser_page_url(raw)?;
+        Some(InteractionEvent::AppEvent { t: *time, label: format!("{}{url}", crate::shared::routing::BROWSER_PAGE_EVENT_PREFIX) })
+    }).collect();
+    events.extend(pages);
 }

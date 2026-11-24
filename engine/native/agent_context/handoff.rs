@@ -2,6 +2,7 @@ use crate::embedded_policy::EmbeddedPolicy;
 use crate::shared::model::{
     ActionKind, ActionWindow, ApparentBundle, Keyframe, Mark, Shape, format_clock,
 };
+use crate::shared::routing::BROWSER_PAGE_EVENT_PREFIX;
 
 const HANDOFF_LINE: &str = include_str!(concat!(env!("OUT_DIR"), "/agent-handoff-line.mjs"));
 
@@ -40,6 +41,31 @@ impl<'a> ContextLine<'a> {
             window: WindowEvidence::None,
         }
     }
+}
+
+pub(super) fn fold_repeats(items: Vec<(u64, ContextLine<'_>)>) -> Vec<(u64, ContextLine<'_>)> {
+    let mut out: Vec<(u64, ContextLine<'_>, u64, usize)> = Vec::new();
+    for (t, action) in items {
+        match out.last_mut() {
+            Some((_, prev, last, count))
+                if prev.text == action.text
+                    && t - *last < super::REPEAT_MS
+                    && !action.text.starts_with(BROWSER_PAGE_EVENT_PREFIX) =>
+            {
+                *last = t;
+                *count += 1;
+            }
+            _ => out.push((t, action, t, 1)),
+        }
+    }
+    out.into_iter()
+        .map(|(t, mut action, _, count)| {
+            if count > 1 {
+                action.text.push_str(&format!(" ×{count}"));
+            }
+            (t, action)
+        })
+        .collect()
 }
 
 pub(crate) fn frame_is_flagged(bundle: &ApparentBundle, frame: &Keyframe) -> bool {

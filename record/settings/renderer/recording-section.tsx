@@ -8,7 +8,6 @@ import "./recording-section.css";
 
 export {
   AgentContextPreference,
-  CircleLabelsPreference,
   type AgentContextPreferenceProps,
 } from "./agent-context-preference";
 

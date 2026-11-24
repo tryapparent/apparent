@@ -10,7 +10,7 @@ declare global {interface Window {apparentLabs: {
   read(): Promise<LabsFacts>; save(value: boolean, setting?: LabsSetting): Promise<LabsFacts>;
   subscribe(callback: (facts: LabsFacts) => void): () => void;
 };}}
-const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', desktopFrog: 'desktop-frog-toggle', agentContext: 'agent-context-toggle', speakingStyle: 'speaking-style-toggle', circleLabels: 'circle-labels-toggle', pillDoodles: 'pill-doodles-toggle', softBloom: 'soft-bloom-toggle', recordingPerformance: 'recording-performance-toggle'};
+const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', desktopFrog: 'desktop-frog-toggle', agentContext: 'agent-context-toggle', speakingStyle: 'speaking-style-toggle', pillDoodles: 'pill-doodles-toggle', softBloom: 'soft-bloom-toggle', recordingPerformance: 'recording-performance-toggle'};
 export type LabsExperiment<Checked = boolean> = ComponentType<{
   id: string; checked: Checked; disabled: boolean; saving: boolean;
   access?: LabsFacts['agentContextAccess'];
@@ -18,12 +18,11 @@ export type LabsExperiment<Checked = boolean> = ComponentType<{
 }>;
 export type AutoPasteExperiment = ComponentType<React.ComponentProps<LabsExperiment> & {supported: boolean}>;
 export type PushToTalkExperiment = ComponentType<React.ComponentProps<LabsExperiment> & {supported?: boolean}>;
-export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: FrogNudge, desktopFrogExperiment: DesktopFrog, agentContextExperiment: AgentContext, circleLabelsExperiment: CircleLabels, autoPasteExperiment: AutoPaste, pushToTalkExperiment: PushToTalk, pillDoodlesExperiment: PillDoodles}: {
+export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: FrogNudge, desktopFrogExperiment: DesktopFrog, agentContextExperiment: AgentContext, autoPasteExperiment: AutoPaste, pushToTalkExperiment: PushToTalk, pillDoodlesExperiment: PillDoodles}: {
   speakingStyleExperiment?: LabsExperiment;
   frogExperiment?: LabsExperiment;
   desktopFrogExperiment?: LabsExperiment;
   agentContextExperiment?: LabsExperiment;
-  circleLabelsExperiment?: LabsExperiment;
   autoPasteExperiment?: AutoPasteExperiment;
   pushToTalkExperiment?: PushToTalkExperiment;
   pillDoodlesExperiment?: LabsExperiment<boolean | null | undefined>;
@@ -77,9 +76,6 @@ export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: Fr
       access={facts?.agentContextAccess}
       disabled={busy || !facts || !!facts.error} saving={busy && setting === 'agentContext'}
       onCheckedChange={value => void request(value, 'agentContext')} />}
-    {CircleLabels && <CircleLabels id={controls.circleLabels} checked={facts?.circleLabelsSaved === true}
-      disabled={busy || !facts || !!facts.error} saving={busy && setting === 'circleLabels'}
-      onCheckedChange={value => void request(value, 'circleLabels')} />}
     <section className="agent-preference">
       <div className="agent-preference-row"><h2 className="settings-preference-label" id="local-stream-label" tabIndex={-1}>Live local transcription</h2>
         <Switch id={controls.streaming} className="agent-switch" checked={on ?? false} aria-labelledby="local-stream-label" aria-describedby="local-stream-help local-stream-ready" aria-busy={busy && setting === 'streaming'}

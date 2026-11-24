@@ -79,6 +79,34 @@ fn stroke_under_ink(ink: Window, clients: Vec<Client>) -> Option<Window> {
     .then_some(candidate.window)
 }
 
+pub fn focused_for_mark(rect: [i32; 4]) -> Option<Window> {
+    stroke_focused().filter(|window| window.pid != std::process::id() && window.contains(rect))
+}
+
+pub fn share_picker_clear(rect: [i32; 4]) -> Option<bool> {
+    #[derive(Deserialize)]
+    struct Layer {
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+        namespace: String,
+    }
+    #[derive(Deserialize)]
+    struct Output {
+        levels: std::collections::HashMap<String, Vec<Layer>>,
+    }
+    let outputs: std::collections::HashMap<String, Output> = read("j/layers")?;
+    Some(!outputs.values().any(|output| {
+        ["2", "3"].into_iter().filter_map(|level| output.levels.get(level))
+            .flatten().any(|layer| {
+                matches!(layer.namespace.as_str(),
+                    "ch.wysbd.hyprland-preview-share-picker" | "xdg-desktop-portal-hyprland")
+                    && overlaps(rect, [layer.x, layer.y, layer.w, layer.h])
+            })
+    }))
+}
+
 fn read<T: serde::de::DeserializeOwned>(request: &str) -> Option<T> {
     let output = hyprland::request_with_timeout(request, REQUEST).ok()?;
     serde_json::from_str(&output).ok()
@@ -107,6 +135,27 @@ pub fn layout_rect(rect: [i32; 4]) -> Option<[i32; 4]> {
 impl Window {
     fn identified(&self) -> bool {
         !self.address.is_empty() && !self.stable_id.is_empty() && self.pid != 0
+    }
+
+    pub fn browser_attribute(&self) -> Option<&'static str> {
+        match self.class.as_str() {
+            "chromium" | "Chromium" | "google-chrome" | "Google-chrome" | "google-chrome-stable" => Some("URI"),
+            "firefox" | "Firefox" | "org.mozilla.firefox" => Some("DocURL"),
+            _ => None,
+        }
+    }
+
+    pub fn unique_browser_client(&self) -> Option<([i32; 2], String)> {
+        let clients = read::<Vec<Client>>("j/clients")?;
+        let mut windows = clients.iter().filter(|client| client.window.pid == self.pid && client.mapped);
+        let only = windows.next()?;
+        (only.window.address == self.address && windows.next().is_none())
+            .then(|| (self.size, only.window.title.clone()))
+    }
+
+    pub fn point(&self, x: f64, y: f64) -> Option<([i32; 4], (i32, i32))> {
+        let rect = layout_rect([x.floor() as i32, y.floor() as i32, 1, 1])?;
+        self.contains(rect).then(|| (rect, (rect[0] - self.at[0], rect[1] - self.at[1])))
     }
 
     fn is_ink(&self) -> bool {

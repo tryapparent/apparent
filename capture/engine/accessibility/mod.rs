@@ -10,11 +10,13 @@ pub(crate) use ax_other as ax;
 
 use crate::shared::model::{Stroke, TargetFrame};
 
-pub(crate) fn mark_started(time: u64) {
+pub(crate) fn mark_started(time: u64, x: f64, y: f64) {
     #[cfg(target_os = "linux")]
-    ax::Prober::shared().mark_started(time);
-    #[cfg(not(target_os = "linux"))]
-    let _ = time;
+    ax::Prober::shared().mark_started(time, x, y);
+    #[cfg(target_os = "macos")]
+    ax::Prober::shared().probe(ax::Target::StrokeStart(time), x, y);
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    let _ = (time, x, y);
 }
 
 pub(crate) fn probe_stroke(stroke: &Stroke, frame: TargetFrame) {
@@ -24,4 +26,11 @@ pub(crate) fn probe_stroke(stroke: &Stroke, frame: TargetFrame) {
     if let Some((x, y)) = ax::stroke_probe_point(stroke, frame) {
         ax::Prober::shared().probe(ax::Target::Stroke(stroke.t0), x, y);
     }
+}
+
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(crate) fn admit_browser_page(confirmed: bool, mark: bool, same_page: bool) -> bool {
+    const ADMISSION: [bool; 8] = include!("../../../record/media/src/assembly/target/browser-page.json");
+    ADMISSION[usize::from(confirmed) | (usize::from(mark) << 1) | (usize::from(same_page) << 2)]
 }

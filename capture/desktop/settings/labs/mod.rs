@@ -34,7 +34,6 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
     serde_json::json!({
         "saved": saved(KEY),
         "recordingPerformanceSaved": generation(&value).is_some(),
-        "circleLabelsSaved": normalized("circleLabels"),
         "speakingStyleSaved": saved("speakingStyle"),
         "agentContextSaved": normalized(AGENT_CONTEXT),
         "sharingSaved": saved("hostedSharing"),
@@ -54,7 +53,6 @@ pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
     match setting {
         None | Some("streaming") => Some((KEY, true)),
         Some(SETTING) => Some((SETTING, true)),
-        Some("circleLabels") => Some(("circleLabels", true)),
         Some("agentContext") => Some((AGENT_CONTEXT, true)),
         Some("speakingStyle") => Some(("speakingStyle", true)),
         Some("sharing") => Some(("hostedSharing", true)),
