@@ -119,7 +119,7 @@ test('ordinary prose skips Public checks while pending website delivery stays cu
     assert.equal(selectRange(docs, git('rev-parse', 'HEAD'), directory).public, true)
     assert.equal(currentStream('public', candidate, git('rev-parse', 'HEAD'), directory), false)
     git('reset', '--hard', docs)
-    put('capture/agent/skills/apparent/SKILL.md', 'changed'); git('add', '.'); git('commit', '-qm', 'skill')
+    put('agent/skills/apparent/SKILL.md', 'changed'); git('add', '.'); git('commit', '-qm', 'skill')
     assert.equal(selectRange(docs, git('rev-parse', 'HEAD'), directory).public, true)
     assert.equal(currentStream('public', candidate, git('rev-parse', 'HEAD'), directory), false)
     git('reset', '--hard', docs)

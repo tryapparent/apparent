@@ -42,7 +42,7 @@ and [Linux setup](capture/desktop/docs/linux/linux.md).
 Install the optional capture-reading skill for Claude Code, Codex, OpenCode, and other agents:
 
 ```sh
-bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent
+bunx skills add https://github.com/tryapparent/apparent/tree/main/agent/skills/apparent
 ```
 
 The skill teaches your agent to read captures and look closer with `apparent zoom`,
@@ -56,7 +56,7 @@ Apparent also helps your agent **show what it made**, reproduce a bug on video,
 or explain how something works. Install the separate video-making skill:
 
 ```sh
-bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/make-it-apparent
+bunx skills add https://github.com/tryapparent/apparent/tree/main/agent/skills/make-it-apparent
 ```
 
 Then ask your agent:
@@ -74,7 +74,7 @@ them apart from working software.
 
 Live desktop demos need the app running on the agent's machine, capture
 permissions, and a safe screen to record. See the
-[video-making skill](capture/agent/skills/make-it-apparent/SKILL.md) and
+[video-making skill](agent/skills/make-it-apparent/SKILL.md) and
 [agent video workflow](capture/agent/docs/agent-video-workflow.md) for setup and
 verification details.
 
@@ -86,7 +86,7 @@ verification details.
 | Set up a Linux desktop | [Linux guide](capture/desktop/docs/linux/linux.md) |
 | Install the CLI on my agent's machine | [Agent installation](capture/agent/docs/installation.md) |
 | Inspect, zoom, copy, or reprocess a capture | [CLI and agent guide](capture/agent/docs/usage.md) |
-| Have an agent create a demo, bug video, or explainer | [Video-making skill](capture/agent/skills/make-it-apparent/SKILL.md) · [Video workflow](capture/agent/docs/agent-video-workflow.md) |
+| Have an agent create a demo, bug video, or explainer | [Video-making skill](agent/skills/make-it-apparent/SKILL.md) · [Video workflow](capture/agent/docs/agent-video-workflow.md) |
 | Choose a transcriber, tune crops, or export video | [Processing guide](capture/engine/docs/guides/processing.md) |
 | Fetch shared captures with Connect | [Connect setup](connect/docs/hosted-client.md) |
 | Build and test Apparent | [Development reference](enablement/docs/development.md) · [macOS packaging](capture/desktop/docs/release.md) |
