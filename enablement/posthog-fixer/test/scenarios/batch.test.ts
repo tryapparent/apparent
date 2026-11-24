@@ -47,6 +47,10 @@ test("three distinct issues share one durable launch, replay and settlement", as
   await worker().tick(now);
   assert.deepEqual(contexts, [issue, second, third]);
   assert.equal(launches.length, 1);
+  assert.match(
+    launches[0].initialMessage.text,
+    /link them all to this thread before merging any/,
+  );
   for (const member of contexts) {
     assert.ok(
       launches[0].initialMessage.text.includes(`/error_tracking/${member}`),

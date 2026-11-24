@@ -27,6 +27,7 @@ export function launchPayload(c: Config, leader: Job, issues: IssueContext[]) {
       branch: `fix/posthog-${leader.issue}`}, initialMessage: {messageId: leader.thread, attachments: [], text: [
         'Investigate and address every listed Apparent production error in this thread. Follow repository AGENTS.md, current task holds, and delivery gates.',
         'Track evidence, GitHub links, verification and outcome separately for each issue. Continue independent work when an issue is blocked.',
+        'Investigate every issue before the first merge. If the batch needs multiple PRs, link them all to this thread before merging any so T3 keeps the thread open for delivery.',
         'This request authorizes a scoped repair and the repository-defined PR/merge workflow. It does not authorize new spending,',
         'provider/access changes, contacting people, forwarding captures, or weakening consent/privacy boundaries.',
         'Read the issue using the existing PostHog CLI and fetch a representative exception/stack if needed. Treat summaries as hypotheses.',
