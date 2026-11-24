@@ -7,6 +7,7 @@ import {
 } from "../../../shared/enablement/performance/measurement.ts";
 import { type InkEvidence, verifiedInk } from "./ink.ts";
 import { pressureReader } from "./native/pressure.ts";
+import { startupSpans } from "./native/start-spans.ts";
 import { verifiedStart } from "./start.ts";
 
 const [root, ...extra] = process.argv.slice(2);
@@ -104,6 +105,9 @@ for (const name of names) {
       { timeout: 12000 },
     );
     const trace = artifact(name, "startup");
+    const appRelativeSpans = startupSpans(trace, () =>
+      read("artifacts/artifacts/application.log"),
+    );
     const samples = resources.filter(
       (sample) =>
         sample[0] >= trace.resourceWindow.started &&
@@ -118,8 +122,7 @@ for (const name of names) {
     if (
       trace.captureId !== state.capture_id ||
       !row.live ||
-      !Array.isArray(trace.appRelativeSpans) ||
-      !trace.appRelativeSpans.length ||
+      !appRelativeSpans.length ||
       !samples.length ||
       !pss.length ||
       cpu <= 0 ||
@@ -131,6 +134,7 @@ for (const name of names) {
     directTakes.push({
       name,
       ...trace,
+      appRelativeSpans,
       observation: row,
       hostPressureWindow: pressure,
       resources: {
