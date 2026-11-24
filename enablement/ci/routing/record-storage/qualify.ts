@@ -49,7 +49,7 @@ export const nativeStorageGraph = new Map([
   ['shared/enablement/bend/manifest.ts', '7657c844f0c9851aa21ae32641864160e034f0dd'],
   ['shared/enablement/bend/owners.ts', 'b527b1b063951f9f3184be594197dc2e5149e37a'],
   ['shared/enablement/bend/source.ts', '631b590a17498f515b693808782cf7539997806b'],
-  ['shared/enablement/bend/toolchain.ts', 'eeaa26190ec44e9acfeac47153dccaa8d0f63158'],
+  ['shared/enablement/bend/toolchain.ts', '8febcabcda0d768d4b7f1e0d39ccccd70911285b'],
 ]);
 
 // The audited controllers use ordinary quoted strings/comments, no templates or
