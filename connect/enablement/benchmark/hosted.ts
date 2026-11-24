@@ -129,7 +129,7 @@ async function main(args: string[]) {
     platform: "github-hosted ubuntu-24.04 x64",
     image,
     topology: cpu.topology,
-    cpuQuota: cpu.cpuQuota,
+    cpuQuota: cpu.cpuQuota.limits,
   });
   const environment = {
     controlSha,
