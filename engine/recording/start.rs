@@ -14,6 +14,13 @@ use crate::capture::engine::runtime::{
 use crate::shared::model::{CaptureMode, TargetInfo};
 use crate::shared::windows::WindowLogger;
 
+#[cfg(target_os = "linux")]
+use super::ChooserStorage;
+#[cfg(target_os = "linux")]
+use super::chooser_storage::Promotion;
+#[cfg(target_os = "linux")]
+use crate::capture::engine::runtime::audio::audio::PreparedAudio;
+
 pub(crate) enum StartError {
     MicrophoneIntent(std::io::Error),
     Audio(anyhow::Error),
@@ -21,9 +28,22 @@ pub(crate) enum StartError {
 }
 
 #[cfg(target_os = "linux")]
-type AudioPreparation = std::thread::JoinHandle<anyhow::Result<
-    crate::capture::engine::runtime::audio::audio::PreparedAudio,
->>;
+pub(crate) enum AudioPreparation {
+    Worker(std::thread::JoinHandle<anyhow::Result<PreparedAudio>>),
+    Ready(PreparedAudio),
+}
+
+#[cfg(target_os = "linux")]
+impl AudioPreparation {
+    fn wait(self) -> anyhow::Result<PreparedAudio> {
+        match self {
+            Self::Worker(worker) => worker.join()
+                .map_err(|_| anyhow::anyhow!("Audio preparation worker panicked"))?,
+            Self::Ready(audio) => Ok(audio),
+        }
+    }
+}
+
 pub(crate) type LocalStreamAdmission = Box<dyn FnOnce() -> anyhow::Result<bool> + Send>;
 pub(crate) type ScreenTracks = (
     ScreenCaptureSession,
@@ -35,11 +55,33 @@ pub(crate) struct StartPreparation {
     protection: Option<std::thread::JoinHandle<anyhow::Result<()>>>,
     started: Instant,
     #[cfg(target_os = "linux")]
-    pub(crate) audio: Option<AudioPreparation>,
+    audio: Option<AudioPreparation>,
+    #[cfg(target_os = "linux")]
+    storage: Option<ChooserStorage>,
+    #[cfg(target_os = "linux")]
+    promotion: Option<std::thread::JoinHandle<anyhow::Result<Promotion>>>,
 }
 
 impl StartPreparation {
     pub(crate) fn protect(mut self, bundle_dir: &Path) -> anyhow::Result<Self> {
+        #[cfg(target_os = "linux")]
+        if let Some(promotion) = self.promotion.take() {
+            let waiting = Instant::now();
+            let promoted = promotion.join()
+                .map_err(|_| anyhow::anyhow!("Provisional screen storage worker panicked"))?;
+            start_metric("raw_protection_critical_ms", waiting);
+            start_metric("raw_protection_overlapped_ms", self.started);
+            let promoted = match promoted? {
+                ready @ Promotion::Ready(_, _) => ready,
+                Promotion::Fallback { microphone } => {
+                    ChooserStorage::reserve_final(bundle_dir, microphone)?
+                }
+            };
+            if let Promotion::Ready(storage, audio) = promoted {
+                self.storage = Some(storage);
+                self.audio = audio.map(AudioPreparation::Ready);
+            }
+        }
         if let Some(protection) = self.protection.take() {
             let waiting = Instant::now();
             let result = protection.join()
@@ -51,7 +93,7 @@ impl StartPreparation {
                 if let Err(cleanup) = recover::abandon_start(bundle_dir, || {
                     #[cfg(target_os = "linux")]
                     if let Some(worker) = self.audio.take() {
-                        let _ = worker.join();
+                        let _ = worker.wait();
                     }
                 }) {
                     apparent_log(format!("Failed protection cleanup: {cleanup:#}"));
@@ -61,9 +103,63 @@ impl StartPreparation {
         }
         Ok(self)
     }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn abandon(self, bundle_dir: &Path) -> anyhow::Result<()> {
+        if let Some(storage) = self.storage {
+            let result = storage.cancel();
+            drop(self.audio);
+            return result;
+        }
+        recover::abandon_start(bundle_dir, || {
+            if let Some(worker) = self.audio {
+                let _ = worker.wait();
+            }
+        })
+    }
 }
 
 impl ScreenCaptureSession {
+    pub fn start(
+        target: TargetInfo,
+        video_output_path: Option<std::path::PathBuf>,
+        excluded_window_ids: Arc<std::sync::Mutex<Vec<u32>>>,
+    ) -> anyhow::Result<Self> {
+        Self::start_with_exclusion_receipt(target, video_output_path, excluded_window_ids,
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            None,
+            #[cfg(target_os = "macos")]
+            Arc::new(std::sync::Mutex::new(Vec::new())),
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            None,
+            #[cfg(target_os = "linux")]
+            None,
+        )
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn prepare_picker_start(
+        storage: Option<ChooserStorage>,
+        bundle_dir: &Path,
+        microphone: bool,
+    ) -> anyhow::Result<StartPreparation> {
+        let Some(storage) = storage.filter(|stage| stage.matches(bundle_dir, microphone)) else {
+            return Self::prepare_start(bundle_dir, microphone);
+        };
+        let started = Instant::now();
+        let bundle_dir = bundle_dir.to_owned();
+        let promotion = std::thread::Builder::new()
+            .name("apparent-promote-screen-storage".into())
+            .spawn(move || storage.promote(&bundle_dir))?;
+        Ok(StartPreparation {
+            protection: None,
+            started,
+            audio: None,
+            storage: None,
+            promotion: Some(promotion),
+        })
+    }
+
     pub(crate) fn prepare_start(
         bundle_dir: &Path,
         _microphone: bool,
@@ -84,6 +180,10 @@ impl ScreenCaptureSession {
             started,
             #[cfg(target_os = "linux")]
             audio: Self::prepare_audio(bundle_dir, _microphone),
+            #[cfg(target_os = "linux")]
+            storage: None,
+            #[cfg(target_os = "linux")]
+            promotion: None,
         })
     }
 
@@ -95,9 +195,10 @@ impl ScreenCaptureSession {
         let bundle_dir = bundle_dir.to_owned();
         std::thread::Builder::new()
             .name("apparent-audio-prepare".into())
-            .spawn(move || crate::capture::engine::runtime::audio::audio::PreparedAudio::new(&bundle_dir))
+            .spawn(move || PreparedAudio::new(&bundle_dir))
             .inspect_err(|error| apparent_log(format!("Could not schedule audio preparation: {error}")))
             .ok()
+            .map(AudioPreparation::Worker)
     }
 
     pub(crate) fn start_tracks(
@@ -106,19 +207,24 @@ impl ScreenCaptureSession {
         telemetry: &SharedCaptureTelemetry,
         microphone: bool,
         stream_admission: Option<LocalStreamAdmission>,
-        #[cfg(target_os = "linux")] prepared_audio: Option<AudioPreparation>,
+        #[cfg(target_os = "linux")] preparation: StartPreparation,
         #[cfg(any(target_os = "macos", target_os = "linux"))] prepared_source: Option<
             PreparedSource,
         >,
     ) -> Result<ScreenTracks, StartError> {
+        #[cfg(target_os = "linux")]
+        let StartPreparation { storage, audio: prepared_audio, .. } = preparation;
+        #[cfg(target_os = "linux")]
+        let pinned = storage.as_ref().map(|storage| {
+            storage.verify_bundle(bundle_dir)?;
+            Ok(storage.directory()?)
+        }).transpose().map_err(StartError::Screen)?;
         let stage = Instant::now();
         let audio = if microphone {
             #[cfg(target_os = "linux")]
             let recorder = match prepared_audio {
                 Some(prepared) => {
-                    let prepared = prepared.join()
-                        .map_err(|_| StartError::Audio(anyhow::anyhow!("Audio preparation worker panicked")))?
-                        .map_err(StartError::Audio)?;
+                    let prepared = prepared.wait().map_err(StartError::Audio)?;
                     AudioRecorder::start_prepared(prepared, stream_admission, stage)
                 }
                 None => AudioRecorder::start_with_local_stream(bundle_dir, stream_admission),
@@ -127,6 +233,16 @@ impl ScreenCaptureSession {
             let recorder = AudioRecorder::start_with_local_stream(bundle_dir, stream_admission);
             Some(recorder.map_err(StartError::Audio)?)
         } else {
+            #[cfg(target_os = "linux")]
+            let pinned_path = storage.as_ref().map(ChooserStorage::pinned_path);
+            #[cfg(target_os = "linux")]
+            if let Some(path) = pinned_path {
+                recover::record_microphone_off(&path, target).map_err(StartError::Screen)?;
+            } else {
+                std::fs::write(bundle_dir.join("microphone-off"), b"")
+                    .map_err(StartError::MicrophoneIntent)?;
+            }
+            #[cfg(not(target_os = "linux"))]
             std::fs::write(bundle_dir.join("microphone-off"), b"")
                 .map_err(StartError::MicrophoneIntent)?;
             None
@@ -143,10 +259,20 @@ impl ScreenCaptureSession {
             Arc::clone(&telemetry.applied_excluded_window_ids),
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             prepared_source,
+            #[cfg(target_os = "linux")]
+            pinned,
         );
         let screen = match screen {
             Ok(screen) => screen,
             Err(error) => {
+                #[cfg(target_os = "linux")]
+                if let Some(storage) = storage {
+                    if let Err(cleanup) = storage.cancel() {
+                        apparent_log(format!("Failed capture startup cleanup: {cleanup:#}"));
+                    }
+                    drop(audio);
+                    return Err(StartError::Screen(error));
+                }
                 if let Err(cleanup) = recover::abandon_start(bundle_dir, || drop(audio)) {
                     apparent_log(format!(
                         "Failed capture startup cleanup at {}: {cleanup:#}",
@@ -167,6 +293,10 @@ impl ScreenCaptureSession {
                 Arc::clone(&telemetry.window_log_request),
             )
         });
+        #[cfg(target_os = "linux")]
+        if let Some(storage) = storage {
+            storage.release();
+        }
         Ok((screen, audio, windows))
     }
 }
@@ -209,6 +339,9 @@ pub(crate) struct ScreenProtection {
     directory: std::fs::File,
 }
 
+pub(super) const SCREEN_PROTECTION_BYTES: &[u8] =
+    b"No safe screenshots; do not recover movie frames\n";
+
 impl ScreenProtection {
     pub(crate) fn commit(self) -> anyhow::Result<()> {
         self.marker.sync_all()?;
@@ -232,6 +365,6 @@ pub(crate) fn prepare_screen_capture(bundle_dir: &Path) -> anyhow::Result<Screen
         .create_new(true)
         .open(bundle_dir.join(recover::UNSAFE_VIDEO))
         .with_context(|| format!("Could not protect raw video in {}", bundle_dir.display()))?;
-    marker.write_all(b"No safe screenshots; do not recover movie frames\n")?;
+    marker.write_all(SCREEN_PROTECTION_BYTES)?;
     Ok(ScreenProtection { marker, directory: root.0 })
 }

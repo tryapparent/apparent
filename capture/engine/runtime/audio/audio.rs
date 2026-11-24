@@ -144,20 +144,9 @@ pub struct RecordedAudio {
     pub pause: crate::capture::engine::runtime::audio::transcription::pause_transcribe::Slot,
 }
 
-pub(crate) struct PreparedAudio {
-    samples: Arc<Mutex<Samples>>,
-    writer: Writer,
-    error: Arc<Mutex<Option<String>>>,
-}
-
-impl PreparedAudio {
-    pub(crate) fn new(bundle_dir: &std::path::Path) -> Result<Self> {
-        let samples = Arc::new(Mutex::new(Samples::default()));
-        let error = Arc::new(Mutex::new(None));
-        let writer = Writer::start(bundle_dir, Arc::clone(&samples), Arc::clone(&error))?;
-        Ok(Self { samples, writer, error })
-    }
-}
+#[path = "../../../../engine/recording/lifecycle/prepared_audio.rs"]
+mod prepared_audio;
+pub(crate) use prepared_audio::PreparedAudio;
 
 pub struct AudioRecorder {
     local_streaming: bool,

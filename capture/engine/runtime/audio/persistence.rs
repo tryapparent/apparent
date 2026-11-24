@@ -104,6 +104,10 @@ impl std::ops::Deref for Samples {
 pub struct Lease {
     file: File,
     path: PathBuf,
+    #[cfg(target_os = "linux")]
+    prepared_file: Option<File>,
+    #[cfg(target_os = "linux")]
+    saved_wav: std::sync::OnceLock<std::fs::Metadata>,
 }
 impl Lease {
     pub fn create(dir: &Path) -> Result<Self> {
@@ -120,7 +124,7 @@ impl Lease {
             let _ = std::fs::remove_file(&path);
             return Err(error);
         }
-        Ok(Self { file, path })
+        Ok(Self::new(file, path))
     }
     pub fn acquire(dir: &Path) -> Result<Self> {
         let path = dir.join(RECORDING);
@@ -132,12 +136,34 @@ impl Lease {
             identity == "apparent-pcm16-16000-v1\n",
             "Unknown narration journal"
         );
-        Ok(Self { file, path })
+        Ok(Self::new(file, path))
+    }
+
+    fn new(file: File, path: PathBuf) -> Self {
+        Self {
+            file,
+            path,
+            #[cfg(target_os = "linux")]
+            prepared_file: None,
+            #[cfg(target_os = "linux")]
+            saved_wav: std::sync::OnceLock::new(),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn saved_wav(&self) -> Option<&std::fs::Metadata> {
+        self.saved_wav.get()
     }
     pub fn remove(&self) -> Result<()> {
         std::fs::remove_file(&self.path)?;
         File::open(self.path.parent().context("Missing narration parent")?)?.sync_all()?;
         Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn in_bundle(mut self, dir: &Path) -> Self {
+        self.path = dir.join(RECORDING);
+        self
     }
 }
 fn options() -> OpenOptions {
@@ -208,6 +234,26 @@ pub struct Writer {
     lease: Arc<Lease>,
 }
 impl Writer {
+    #[cfg(target_os = "linux")]
+    pub(crate) fn prepare_wav(mut file: File) -> Result<File> {
+        file.write_all(&header(0))?;
+        file.sync_all()?;
+        Ok(file)
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(super) fn start_prepared(
+        dir: &Path,
+        file: File,
+        mut lease: Lease,
+        samples: Arc<Mutex<Samples>>,
+        error: Arc<Mutex<Option<String>>>,
+    ) -> Result<Self> {
+        lease.prepared_file = Some(file.try_clone().context(SaveFailure)?);
+        Self::start_writer(dir.join("audio.wav"), file, Arc::new(lease), samples, error)
+            .context(SaveFailure)
+    }
+
     pub fn start(
         dir: &Path,
         samples: Arc<Mutex<Samples>>,
@@ -229,32 +275,10 @@ impl Writer {
             file.write_all(&header(0))?;
             file.sync_all()?;
             File::open(dir)?.sync_all()?;
-            let (stop, receiver) = std::sync::mpsc::channel();
-            let worker_lease = Arc::clone(&lease);
-            let worker = std::thread::Builder::new()
-                .name("apparent-narration".into())
-                .spawn(move || {
-                    let _lease = worker_lease;
-                    let result = write_stream(&mut file, &samples, receiver);
-                    if let Err(ref failure) = result {
-                        let message =
-                            format!("Narration save failed: {failure:#}; saved prefix retained");
-                        crate::capture::engine::runtime::apparent_log(&message);
-                        if let Ok(mut error) = error.lock() {
-                            *error = Some(message);
-                        }
-                    }
-                    result
-                })?;
-            Ok((stop, worker))
+            Self::start_writer(path.clone(), file, Arc::clone(&lease), samples, error)
         })();
         match initialized {
-            Ok((stop, worker)) => Ok(Self {
-                stop: Some(stop),
-                worker: Some(worker),
-                path,
-                lease,
-            }),
+            Ok(writer) => Ok(writer),
             Err(error) => {
                 // Input has not opened: these bytes contain no narration. Never delete an
                 // existing healthy audio file that made create_new fail.
@@ -265,6 +289,38 @@ impl Writer {
                 Err(error)
             }
         }
+    }
+
+    fn start_writer(
+        path: PathBuf,
+        mut file: File,
+        lease: Arc<Lease>,
+        samples: Arc<Mutex<Samples>>,
+        error: Arc<Mutex<Option<String>>>,
+    ) -> Result<Self> {
+        let (stop, receiver) = std::sync::mpsc::channel();
+        let worker_lease = Arc::clone(&lease);
+        let worker = std::thread::Builder::new()
+            .name("apparent-narration".into())
+            .spawn(move || {
+                let _lease = worker_lease;
+                let result = write_stream(&mut file, &samples, receiver);
+                if let Err(ref failure) = result {
+                    let message =
+                        format!("Narration save failed: {failure:#}; saved prefix retained");
+                    crate::capture::engine::runtime::apparent_log(&message);
+                    if let Ok(mut error) = error.lock() {
+                        *error = Some(message);
+                    }
+                }
+                result
+            })?;
+        Ok(Self {
+            stop: Some(stop),
+            worker: Some(worker),
+            path,
+            lease,
+        })
     }
     fn join(&mut self) -> Result<()> {
         self.stop.take();
@@ -278,11 +334,22 @@ impl Writer {
     }
     pub fn finish(&mut self) -> Result<(Vec<u8>, Arc<Lease>)> {
         self.join().context(SaveFailure)?;
-        Ok((
-            std::fs::read(&self.path).map_err(anyhow::Error::from)
-                .stage(Stage::AudioWriterRead).context(SaveFailure)?,
-            Arc::clone(&self.lease),
-        ))
+        let bytes = self.read_saved_audio().map_err(anyhow::Error::from)
+            .stage(Stage::AudioWriterRead).context(SaveFailure)?;
+        Ok((bytes, Arc::clone(&self.lease)))
+    }
+
+    fn read_saved_audio(&self) -> std::io::Result<Vec<u8>> {
+        #[cfg(target_os = "linux")]
+        if let Some(mut file) = self.lease.prepared_file.as_ref() {
+            let metadata = file.metadata()?;
+            file.seek(SeekFrom::Start(0))?;
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes)?;
+            let _ = self.lease.saved_wav.set(metadata);
+            return Ok(bytes);
+        }
+        std::fs::read(&self.path)
     }
 }
 impl Drop for Writer {
@@ -341,7 +408,7 @@ fn write_stream(
         }
     }
 }
-fn header(bytes: u32) -> Vec<u8> {
+pub(crate) fn header(bytes: u32) -> Vec<u8> {
     let mut h =
         b"RIFF\0\0\0\0WAVEfmt \x10\0\0\0\x01\0\x01\0\x80\x3e\0\0\0\x7d\0\0\x02\0\x10\0data\0\0\0\0"
             .to_vec();

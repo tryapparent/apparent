@@ -4,7 +4,9 @@ use crate::capture::engine::sketch::{describe_event, describe_mark, settled_even
 
 #[path = "../../engine/native/src/frames/scene_pixels.rs"]
 mod scene_pixels;
-use scene_pixels::{THUMB_PIXELS, luma_thumbnail, scene_transition_diff, thumbnail_diff};
+#[cfg(test)]
+use scene_pixels::luma_thumbnail;
+use scene_pixels::{THUMB_PIXELS, luma_thumbnails, scene_transition_diff, thumbnail_diff};
 
 const FRAME_GAP_MS: u64 = 750;
 const ACTION_SETTLE_MS: u64 = 250;
@@ -140,10 +142,14 @@ impl FrameRef<'_> {
         }
     }
 
-    fn with_rgba<T>(self, read: impl FnOnce(&RgbaFrame) -> T) -> T {
+    fn with_rgba<T>(
+        self,
+        scratch: Option<&mut Vec<u8>>,
+        read: impl FnOnce(&RgbaFrame) -> T,
+    ) -> T {
         match self {
             Self::Raw(frame) => read(frame),
-            Self::Stored(frame) => frame.with_rgba(read),
+            Self::Stored(frame) => frame.with_rgba(scratch, read),
         }
     }
 
@@ -207,7 +213,7 @@ fn group_marks(
             .chunks(drawn.len().div_ceil(6).max(1))
             .map(|chunk| {
                 scope.spawn(move || -> Vec<_> {
-                    chunk.iter().map(|&f| (f, frames[f].with_rgba(luma_grid))).collect()
+                    chunk.iter().map(|&f| (f, frames[f].with_rgba(None, luma_grid))).collect()
                 })
             })
             .collect();
@@ -402,28 +408,7 @@ fn select_with_analysis(
         return Ok(SelectedFrames { frames: Vec::new(), anchors: Vec::new() });
     }
     frames.sort_by_key(|frame| frame.time());
-    let thumbnails = analysis.thumbnails.get_or_insert_with(|| {
-        if frames.len() >= 128 {
-            let chunk_size = frames.len().div_ceil(6).max(1);
-            std::thread::scope(|scope| {
-                let workers: Vec<_> = frames
-                    .chunks(chunk_size)
-                    .map(|chunk| {
-                        scope.spawn(move || -> Vec<[f32; THUMB_PIXELS]> {
-                            chunk.iter().map(|frame| frame.with_rgba(luma_thumbnail)).collect()
-                        })
-                    })
-                    .collect();
-                let mut out = Vec::with_capacity(frames.len());
-                for worker in workers {
-                    out.extend(worker.join().unwrap());
-                }
-                out
-            })
-        } else {
-            frames.iter().map(|frame| frame.with_rgba(luma_thumbnail)).collect()
-        }
-    });
+    let thumbnails = analysis.thumbnails.get_or_insert_with(|| luma_thumbnails(&frames));
     let settled = settled_events(events);
     let actions: Vec<u64> = settled
         .iter()

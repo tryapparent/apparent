@@ -886,40 +886,15 @@ pub(crate) fn note_rect_in_layout(
     Some(result.map(|v| v as i32))
 }
 
-#[derive(serde::Deserialize)]
-struct CursorPos {
-    x: f64,
-    y: f64,
-}
-
-/// A point in Hyprland's layout as XWayland's coordinates, which Apparent's windows and captures
-/// use. XWayland lays the monitors out by itself (`xrandr` can put a monitor at y 0 where
-/// Hyprland has it at y 1080), so the point is taken to the same place on the same output,
-/// found by name, and scaled by how big XWayland draws it. `x_monitors` is each output's name
-/// and X11 rectangle.
-fn to_x_space(
-    point: [f64; 2],
-    layout: &[Monitor],
-    x_monitors: &[(String, [f64; 4])],
-) -> Option<(f64, f64)> {
-    let monitor = layout.iter().find(|m| {
-        let (width, height) = m.layout_size();
-        point[0] >= m.x && point[0] < m.x + width && point[1] >= m.y && point[1] < m.y + height
-    })?;
-    let (_, rect) = x_monitors.iter().find(|(name, _)| *name == monitor.name)?;
-    let factor = rect[2] / monitor.layout_size().0;
-    Some((
-        rect[0] + (point[0] - monitor.x) * factor,
-        rect[1] + (point[1] - monitor.y) * factor,
-    ))
-}
+#[path = "../../../../engine/native/input/hyprland_cursor.rs"]
+mod cursor;
+#[cfg(test)]
+use cursor::to_x_space;
 
 /// Where the pointer is, in XWayland's coordinates. XWayland itself sees the pointer only over
 /// X11 windows and keeps the last place it saw it over the rest.
 pub fn cursor_in_x_space(x_monitors: &[(String, [f64; 4])]) -> Option<(f64, f64)> {
-    let cursor: CursorPos = serde_json::from_str(&request("j/cursorpos").ok()?).ok()?;
-    let layout: Vec<Monitor> = serde_json::from_str(&request("j/monitors").ok()?).ok()?;
-    to_x_space([cursor.x, cursor.y], &layout, x_monitors)
+    cursor::read(request, x_monitors)
 }
 
 /// Calls `reloaded` each time Hyprland reloads its config, which drops runtime binds. Returns

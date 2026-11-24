@@ -48,12 +48,30 @@ impl StoredFrame {
         Self::from(frame)
     }
 
-    pub(crate) fn with_rgba<T>(&self, read: impl FnOnce(&RgbaFrame) -> T) -> T {
+    pub(crate) fn with_rgba<T>(
+        &self,
+        _scratch: Option<&mut Vec<u8>>,
+        read: impl FnOnce(&RgbaFrame) -> T,
+    ) -> T {
         match &self.pixels {
             Pixels::Raw(frame) => read(frame),
             #[cfg(target_os = "linux")]
             Pixels::Qoi { encoded, badge_bottom_left } => {
-                read(&self.decode(encoded, *badge_bottom_left))
+                let Some(scratch) = _scratch else {
+                    return read(&self.decode(encoded, *badge_bottom_left));
+                };
+                let mut decoder =
+                    qoi::Decoder::new(encoded).expect("Internally encoded candidate frame");
+                let mut rgba = std::mem::take(scratch);
+                rgba.resize(decoder.required_buf_len(), 0);
+                decoder
+                    .decode_to_buf(&mut rgba)
+                    .expect("Internally encoded candidate frame");
+                let mut frame = RgbaFrame::new(self.t_ms, self.width, self.height, rgba);
+                frame.badge_bottom_left = *badge_bottom_left;
+                let result = read(&frame);
+                *scratch = frame.rgba;
+                result
             }
         }
     }
@@ -99,7 +117,17 @@ mod tests {
             panic!("Expected a compact capture frame");
         };
         assert!(encoded.len() < frame.rgba.len());
-        compacted.with_rgba(|decoded| assert_eq!(decoded.rgba, frame.rgba));
+        let mut scratch = Vec::new();
+        compacted.with_rgba(Some(&mut scratch), |decoded| assert_eq!(decoded.rgba, frame.rgba));
+
+        let smaller = RgbaFrame::new(455, 24, 16, [5, 129, 44, 22].repeat(24 * 16));
+        let smaller_stored = StoredFrame::from_capture(smaller.clone());
+        assert!(matches!(smaller_stored.pixels, Pixels::Qoi { .. }));
+        smaller_stored.with_rgba(Some(&mut scratch), |decoded| {
+            assert_eq!((decoded.t_ms, decoded.width, decoded.height), (455, 24, 16));
+            assert!(!decoded.badge_bottom_left);
+            assert_eq!(decoded.rgba, smaller.rgba);
+        });
         let decoded = compacted.into_rgba();
         assert_eq!((decoded.t_ms, decoded.width, decoded.height), (123, 64, 32));
         assert!(decoded.badge_bottom_left);
