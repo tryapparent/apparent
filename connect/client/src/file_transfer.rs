@@ -2,6 +2,52 @@
 use super::encryption::{Context as CryptoContext, v2};
 use super::*;
 impl Client {
+    pub fn list_recordings(&self, reader: Option<&str>, limit: u8) -> Result<Value> {
+        let (name, client, credential) = match reader {
+            Some("default") => ("default".to_owned(), self.clone(), self.read_credential()?),
+            Some(name) => {
+                let client = self.named_reader(name)?;
+                let credential = client.read_credential()?;
+                (name.to_owned(), client, credential)
+            }
+            None => match self.read_credential() {
+                Ok(credential) => ("default".to_owned(), self.clone(), credential),
+                Err(default_error) => {
+                    let mut approved = self.reader_profiles()?.into_iter().filter_map(|(name, client)| {
+                        let credential = client.read_credential().ok()?;
+                        Some((name, client, credential))
+                    });
+                    let reader = approved.next().ok_or_else(|| default_error.context(
+                        "Connect read approval required; run apparent connect readers to check profiles"
+                    ))?;
+                    ensure!(approved.next().is_none(),
+                        "Multiple Connect readers available; run apparent connect readers and choose --reader <name>");
+                    reader
+                }
+            },
+        };
+        let response = client.json_request(
+            &credential.server,
+            Some(&credential),
+            "GET",
+            &format!("/v1/captures?limit={limit}"),
+            None,
+            Duration::from_secs(30),
+            &|| !client.revocation_pending(),
+        )?;
+        let captures = response["captures"].as_array().context("Invalid Connect recording list")?;
+        ensure!(captures.len() <= usize::from(limit) && captures.iter().all(|capture| {
+            capture["id"].as_str().is_some_and(valid_id)
+                && matches!(capture["status"].as_str(), Some("pending" | "ready"))
+                && match (capture["recordedAt"].as_str(), capture["ageSeconds"].as_u64()) {
+                    (Some(time), Some(_)) => time.len() == 24 && time.bytes().all(|byte|
+                        byte.is_ascii_digit() || b"-T:.Z".contains(&byte)),
+                    (None, None) => capture["recordedAt"].is_null() && capture["ageSeconds"].is_null(),
+                    _ => false,
+                }
+        }), "Invalid Connect recording list");
+        Ok(json!({"reader": name, "captures": captures}))
+    }
     pub fn files(&self, id: &str) -> Result<Value> {
         self.list_files(id, Some("default"))
     }

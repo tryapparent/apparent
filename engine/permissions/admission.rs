@@ -14,13 +14,13 @@ pub(crate) enum ScreenSelection {
     FullDisplay,
 }
 
-pub(crate) fn screen_selection(supported: bool, saved: Option<bool>) -> ScreenSelection {
+pub(crate) fn screen_selection(supported: bool, direct_needs_opt_in: bool, saved: Option<bool>) -> ScreenSelection {
     let saved = match saved {
         None => 0,
         Some(true) => 1,
         Some(false) => 2,
     };
-    SCREEN_SELECTION[usize::from(supported) * 3 + saved]
+    SCREEN_SELECTION[usize::from(supported) * 6 + usize::from(direct_needs_opt_in) * 3 + saved]
 }
 
 pub(crate) fn save_picker(skip: bool) -> bool {

@@ -37,6 +37,7 @@ export interface CaptureRow {
  format: 'plaintext-v1' | 'apparent-encrypted-v1' | 'apparent-encrypted-v2';
  style_history?: number;
  reservation_seq: number; id: string; account_id: string; manifest: string; bytes: number;
+ recorded_at: number | null;
  status: 'pending' | 'ready' | 'deleted'; expires_at: number; pending_until: number;
 }
 export interface AttemptSnapshot { key: string; terminal: number }

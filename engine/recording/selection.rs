@@ -57,7 +57,15 @@ pub(crate) fn enabled_in(config: &crate::shared::handoff::Config) -> bool {
 pub(crate) fn preference(
     config: &crate::shared::handoff::Config,
 ) -> crate::permission_admission::ScreenSelection {
-    crate::permission_admission::screen_selection(supported(), config.experiments.get(PREFERENCE).copied())
+    #[cfg(target_os = "linux")]
+    let direct_needs_opt_in = crate::capture::desktop::linux::gnome();
+    #[cfg(not(target_os = "linux"))]
+    let direct_needs_opt_in = false;
+    crate::permission_admission::screen_selection(
+        supported(),
+        direct_needs_opt_in,
+        config.experiments.get(PREFERENCE).copied(),
+    )
 }
 
 pub(crate) struct DisplaySelection {

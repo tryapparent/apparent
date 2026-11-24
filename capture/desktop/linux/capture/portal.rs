@@ -5,6 +5,7 @@
 //! RemoteDesktop portal, which asks once too). On X11 the recording reads the X screen directly
 //! (`source_for`).
 
+use crate::capture::desktop::workflow::performance::{Startup, StartupPoint};
 use std::collections::HashMap;
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::path::PathBuf;
@@ -49,7 +50,7 @@ impl Drop for Stream {
 }
 
 /// Where to record `target` from.
-pub fn source_for(target: &TargetInfo, stopping: &AtomicBool) -> Result<Source> {
+pub(crate) fn source_for(target: &TargetInfo, stopping: &AtomicBool, startup: Option<&Startup>) -> Result<Source> {
     let f = target.frame;
     let rect = [f.x, f.y, f.width, f.height];
     anyhow::ensure!(target.mode != CaptureMode::Window || target.window_id.is_some(),
@@ -100,7 +101,7 @@ pub fn source_for(target: &TargetInfo, stopping: &AtomicBool) -> Result<Source> 
         super::super::shell::notify("Capture not started", MESSAGE);
         bail!(MESSAGE);
     }
-    let (session, token) = portal_screencast(window, Some(&key), stopping)?;
+    let (session, token) = portal_screencast(window, Some(&key), stopping, startup.cloned())?;
     if let Some(output) = output
         && !output_still_selected(output, &super::super::monitors(), monitors.len())
     {
@@ -131,7 +132,7 @@ pub fn source_for(target: &TargetInfo, stopping: &AtomicBool) -> Result<Source> 
 pub(crate) fn choose_display(stopping: &AtomicBool) -> Result<(TargetInfo, Source)> {
     anyhow::ensure!(super::super::wayland_session(), "The system screen picker requires Wayland");
     let monitors = super::super::monitors();
-    let (session, _) = portal_screencast(false, None, stopping)?;
+    let (session, _) = portal_screencast(false, None, stopping, None)?;
     anyhow::ensure!(session.portal_monitor, "Choose a display in the system screen picker");
     let output = picked_monitor(&monitors, session.mapping_id.as_deref(), super::super::hyprland())
         .context("The sharing portal did not identify the selected display")?;
@@ -277,113 +278,7 @@ fn validate_source_type(window: bool, actual: Option<ashpd::desktop::screencast:
 /// A display (or a window, `window`) through the ScreenCast portal. The first time, the
 /// desktop asks which; the answer is remembered (a restore token), so later recordings start
 /// without asking.
-fn portal_screencast(window: bool, restore_key: Option<&str>, stopping: &AtomicBool) -> Result<(Stream, Option<String>)> {
-    use ashpd::desktop::PersistMode;
-    use ashpd::desktop::screencast::{CursorMode, Screencast, SourceType};
-
-    let (ready_tx, ready_rx) = flume::bounded::<Result<(u32, OwnedFd, Option<[f64; 4]>, Option<String>, Option<String>, bool)>>(1);
-    let (stop_tx, stop_rx) = flume::bounded::<()>(1);
-    let request_key = restore_key.map(str::to_owned);
-    std::thread::Builder::new()
-        .name("apparent-portal-screencast".into())
-        .spawn(move || {
-            futures_lite::future::block_on(async move {
-                let run = async {
-                    let proxy = Screencast::new().await?;
-                    let session = proxy.create_session().await?;
-                    let request = async {
-                        let token = request_key.as_deref().and_then(saved_token);
-                        let kind = if window {
-                            SourceType::Window
-                        } else {
-                            SourceType::Monitor
-                        };
-                        proxy
-                            .select_sources(
-                                &session,
-                                CursorMode::Embedded,
-                                kind.into(),
-                                false,
-                                token.as_deref(),
-                                // Windows come and go: ask each time for one.
-                                if !window && request_key.is_some() {
-                                    PersistMode::ExplicitlyRevoked
-                                } else {
-                                    PersistMode::DoNot
-                                },
-                            )
-                            .await?;
-                        let streams = proxy.start(&session, None).await?.response()?;
-                        let token = streams.restore_token().map(str::to_owned);
-                        let stream = streams.streams().first().context("Nothing was shared")?;
-                        validate_source_type(window, stream.source_type())?;
-                        let portal_monitor = stream.source_type() == Some(SourceType::Monitor);
-                        if portal_monitor {
-                            apparent_log(format!("Screen sharing monitor metadata: position={:?}, size={:?}", stream.position(), stream.size()));
-                        }
-                        let rect = match (stream.position(), stream.size()) {
-                            (Some((x, y)), Some((w, h))) => {
-                                Some([f64::from(x), f64::from(y), f64::from(w), f64::from(h)])
-                            }
-                            _ => None,
-                        };
-                        let node = stream.pipe_wire_node_id();
-                        let mapping_id = stream.mapping_id().map(str::to_owned);
-                        let fd = proxy.open_pipe_wire_remote(&session).await?;
-                        anyhow::Ok((node, fd, rect, mapping_id, token, portal_monitor))
-                    };
-                    let cancelled = async {
-                        let _ = stop_rx.recv_async().await;
-                        bail!("Screen sharing was cancelled")
-                    };
-                    match futures_lite::future::race(request, cancelled).await {
-                        Ok((node, fd, rect, mapping_id, token, portal_monitor)) => anyhow::Ok((proxy, session, node, fd, rect, mapping_id, token, portal_monitor)),
-                        Err(error) => {
-                            let _ = session.close().await;
-                            Err(error)
-                        }
-                    }
-                };
-                match run.await {
-                    Ok((_proxy, session, node, fd, rect, mapping_id, token, portal_monitor)) => {
-                        let _ = ready_tx.send(Ok((node, fd, rect, mapping_id, token, portal_monitor)));
-                        let _ = stop_rx.recv_async().await;
-                        let _ = session.close().await;
-                    }
-                    Err(error) => {
-                        let _ = ready_tx.send(Err(error));
-                    }
-                }
-            });
-        })?;
-    // The first time the desktop asks which display, so wait for the person to choose.
-    let deadline = std::time::Instant::now() + Duration::from_secs(120);
-    let (node, fd, rect, mapping_id, token, portal_monitor) = loop {
-        if stopping.load(Ordering::Acquire) || std::time::Instant::now() >= deadline {
-            let _ = stop_tx.try_send(());
-            bail!("Screen sharing was cancelled or the dialog wasn't answered");
-        }
-        match ready_rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(Ok(stream)) => break stream,
-            Ok(Err(error)) => {
-                if let Some(key) = restore_key {
-                    save_token(key, None);
-                }
-                return Err(error);
-            }
-            Err(flume::RecvTimeoutError::Timeout) => {}
-            Err(error) => return Err(error.into()),
-        }
-    };
-    Ok((Stream {
-        node,
-        fd: Some(fd),
-        rect,
-        mapping_id,
-        portal_monitor,
-        stop: Some(stop_tx),
-    }, token))
-}
+include!("../../../../engine/recording/lifecycle/linux_portal_start.rs");
 
 // MARK: Shortcuts
 
@@ -452,6 +347,7 @@ pub fn global_shortcuts(
 }
 
 /// Whether every shortcut that was requested (paste only while it is set) came back bound.
+
 fn shortcuts_bound<'a>(
     paste: bool,
     shortcuts: impl Iterator<Item = (&'a str, &'a str)> + Clone,

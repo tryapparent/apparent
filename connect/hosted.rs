@@ -175,6 +175,30 @@ pub fn command(command: ConnectCommand) -> Result<()> {
             println!("{}",serde_json::to_string_pretty(&client.list_files(&id, reader.as_deref())?)?);
             Ok(())
         }
+        ConnectCommand::List { reader, limit, json } => {
+            let result = client.list_recordings(reader.as_deref(), limit)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                let captures = result["captures"].as_array().context("Invalid Connect recording list")?;
+                if captures.is_empty() {
+                    println!("No recordings in Connect for reader {}.", result["reader"]);
+                }
+                for capture in captures {
+                    let time = capture["recordedAt"].as_str().unwrap_or("Recording time unavailable");
+                    let age = match capture["ageSeconds"].as_u64() {
+                        Some(seconds @ 0..=59) => format!(" ({seconds}s ago)"),
+                        Some(seconds @ 60..=3599) => format!(" ({}m ago)", seconds / 60),
+                        Some(seconds @ 3600..=86399) => format!(" ({}h ago)", seconds / 3600),
+                        Some(seconds) => format!(" ({}d ago)", seconds / 86400),
+                        None => String::new(),
+                    };
+                    let state = if capture["status"] == "ready" { "ready" } else { "preparing" };
+                    println!("{}  {time}{age}  {state}", capture["id"].as_str().unwrap_or_default());
+                }
+            }
+            Ok(())
+        }
         ConnectCommand::Alternatives => {
             println!("{}", apparent_connect_client::Client::alternatives()?);
             Ok(())

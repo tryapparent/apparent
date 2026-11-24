@@ -7,6 +7,7 @@
 //! (gst-plugins-bad) and VA-API's. A missing encoder refuses to start a screen capture;
 //! a movie that fails after capture starts still retains the candidate frames.
 
+use crate::capture::desktop::workflow::performance::{Startup, StartupPoint};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -506,141 +507,6 @@ fn own_window_masks(ids: &[u32], frame: [f64; 4], candidate: (u32, u32)) -> Vec<
         .collect()
 }
 
-/// The recording thread: see `crate::capture::engine::runtime::Sampler`.
-pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
-    let Sampler {
-        target,
-        video_output_path,
-        pinned_movie_dir,
-        prepared_source,
-        started_at,
-        stopping,
-        urgent,
-        frames,
-        real_frame_seen,
-        startup_failed,
-        video_offset_ms,
-        excluded_window_ids,
-    } = sampler;
-    let long_edge = if target.mode == CaptureMode::Display {
-        2560.0
-    } else {
-        1280.0
-    };
-    let out = crate::capture::engine::runtime::capture_size(&target, long_edge);
-    let movie = video_output_path.as_deref().filter(|_| can_record_video());
-    let candidate = frames.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
-        .sampling_size(&target, movie.is_some());
-    let source = prepared_source.map_or_else(|| super::portal::source_for(&target, &stopping), Ok);
-    let recorder = source.and_then(|source| {
-        Recorder::new(&source, out, candidate, movie, pinned_movie_dir.as_ref(), started_at)
-            .map_err(|error| anyhow!("{error:#}"))
-            // The source (a portal session) lives as long as the recording.
-            .map(|recorder| (recorder, source))
-    });
-    let mut recorder = match recorder {
-        Ok(recorder) => {
-            apparent_log(format!(
-                "Recording {}x{} ({:?}){}",
-                out.0,
-                out.1,
-                target.mode,
-                if recorder.0.video { "" } else { ", no movie" }
-            ));
-            Some(recorder)
-        }
-        Err(error) => {
-            apparent_log(format!("Screen capture failed to start: {error:#}"));
-            startup_failed.store(true, Ordering::Release);
-            None
-        }
-    };
-    crate::capture::desktop::start_metric("sck_ready_ms", started_at);
-    let mut last_sample = Instant::now()
-        .checked_sub(crate::capture::engine::runtime::FRAME_SAMPLE_INTERVAL)
-        .unwrap_or_else(Instant::now);
-    let mut offset_set = false;
-    let records_others = !matches!(
-        recorder.as_ref().map(|(_, source)| source),
-        Some(Source::X11Window { .. })
-    );
-    let f = target.frame;
-    let mut masks = (Instant::now(), Vec::new());
-    let mut masks_read = false;
-    while !stopping.load(Ordering::Acquire) {
-        if records_others && (!masks_read || masks.0.elapsed() >= Duration::from_millis(500)) {
-            let ids = excluded_window_ids
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clone();
-            masks = (
-                Instant::now(),
-                own_window_masks(&ids, [f.x, f.y, f.width, f.height], candidate),
-            );
-            masks_read = true;
-        }
-        if let Some((r, _)) = recorder.as_ref() {
-            if let Some(error) = r.error() {
-                apparent_log(format!("Recording failed: {error}"));
-                // Publish before native teardown, which need not end the sampler thread.
-                startup_failed.store(true, Ordering::Release);
-                if let Some((r, _)) = recorder.take() {
-                    let _ = r.pipeline.set_state(gst::State::Null);
-                }
-            } else if !offset_set {
-                let first = r.first_frame_ms.load(Ordering::Acquire);
-                if first != u64::MAX {
-                    video_offset_ms.store(first, Ordering::Release);
-                    offset_set = true;
-                }
-            }
-        }
-        let is_urgent = urgent.swap(false, Ordering::AcqRel);
-        let interval = frames
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .interval();
-        if is_urgent || last_sample.elapsed() >= interval {
-            last_sample = Instant::now();
-            let t_ms = started_at.elapsed().as_millis() as u64;
-            let frame = match recorder.as_mut() {
-                // No frame from the compositor yet: look again on the next turn.
-                Some((r, _)) => r.candidate(t_ms, &masks.1),
-                None => None,
-            };
-            match frame {
-                Some(frame) => crate::capture::engine::runtime::push_candidate(
-                    &frames, &real_frame_seen, frame, is_urgent, true,
-                ),
-                None if is_urgent => urgent.store(true, Ordering::Release),
-                None => {}
-            }
-        }
-        std::thread::park_timeout(Duration::from_millis(8));
-    }
-    let (mut recorder, _source) = recorder?;
-    let _ = recorder.out;
-    let movie_file = recorder.movie_file.take();
-    let finished = recorder.finish();
-    if let Some(directory) = pinned_movie_dir.as_ref() {
-        let path = fd_path(directory).join("recording.mp4");
-        let owned = movie_file.as_ref().is_some_and(|file| file_matches_path(file, &path));
-        if finished && owned {
-            return video_output_path;
-        }
-        if owned {
-            let _ = std::fs::remove_file(path);
-        }
-    } else {
-        if finished {
-            return video_output_path;
-        }
-        if let Some(path) = &video_output_path {
-            let _ = std::fs::remove_file(path);
-        }
-    }
-    None
-}
 
 /// The movie's first audio track, 16 kHz mono, with silence before its first sample so audio
 /// time is movie time.
@@ -919,6 +785,7 @@ mod tests {
             Some(&movie),
             None,
             Instant::now(),
+            None,
         )
         .unwrap();
         let deadline = Instant::now() + Duration::from_secs(4);
@@ -981,6 +848,7 @@ mod tests {
             Some(&movie),
             None,
             Instant::now(),
+            None,
         )
         .unwrap();
         let deadline = Instant::now() + Duration::from_secs(4);

@@ -1,0 +1,24 @@
+{
+  "scenarios": [
+    {
+      "id": "list-and-inspect-connect-recording",
+      "description": "Resolve a recent Connect recording and use its ID and reader for inspection.",
+      "platforms": ["linux", "macos"],
+      "userEntryPoint": "Run apparent connect list --limit 1 --json or invoke /apparent in an agent with the skill installed.",
+      "prerequisites": [
+        "A candidate CLI, Node 22, a built Connect service and a private working directory."
+      ],
+      "runner": {
+        "path": "connect/service/test/native/reader-profiles.integration.ts",
+        "instructions": "From connect/service, build with npm run build, set APPARENT_CONNECT_TEST_BINARY to the absolute candidate CLI path and run node --test test/native/reader-profiles.integration.ts. Run npm test for pending, ordering, access and legacy timestamp coverage."
+      },
+      "expectedEvidence": [
+        "The candidate CLI lists the expected encrypted capture ID, recording timestamp, age and ready status for each explicitly selected reader.",
+        "The candidate CLI retrieves and inspects the recording by ID using the approved reader."
+      ],
+      "limits": [
+        "The fixture uses a local synthetic Connect service. It does not exercise a live account, agent slash-command registration or Desktop UI."
+      ]
+    }
+  ]
+}
