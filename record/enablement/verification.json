@@ -1,0 +1,30 @@
+{
+  "scenarios": [
+    {
+      "id": "record-to-clipboard",
+      "description": "Save a screen recording and verify that Apparent copies a reference to the saved bundle.",
+      "platforms": ["linux-hyprland"],
+      "userEntryPoint": "Start a screen recording and stop it. Wait for the completion state and the automatic clipboard handoff.",
+      "prerequisites": [
+        "A candidate build and a fresh disposable Hyprland guest with XWayland, ScreenCast/PipeWire and working H.264 decoding.",
+        "An isolated network and an operator available to approve native ScreenCast consent on the synthetic display if prompted."
+      ],
+      "runner": {
+        "path": "capture/desktop/scripts/linux/gui/gui-vm.py",
+        "scenario": "capture/desktop/scripts/linux/gui/capture-smoke.py",
+        "preflight": "capture/desktop/docs/native-testing.md#preflight-doctor-before-spending-a-guest-run",
+        "instructions": "capture/desktop/docs/native-testing.md#run-and-native-consent",
+        "evidenceInspection": "capture/desktop/docs/native-testing.md#retain-shut-down-then-inspect"
+      },
+      "expectedEvidence": [
+        "The retained capture-smoke-report.json shows PASS for saved_receipt, bundle_structure, completion_state, clipboard_handoff and completion_focus for the save take.",
+        "The retained completion-clipboard.txt contains the exact bundle path from the saved receipt. The saved bundle contains the changing synthetic scene and its movie decodes.",
+        "The second take reports cancelled_receipt and cancel_idle as PASS. The outer runner verifies artifact retention and cleans up its owned guest."
+      ],
+      "limits": [
+        "The scenario drives the running GUI through capture start, stop and cancel CLI commands. Picker, shortcut, capsule button and paste into another app are outside its coverage.",
+        "The clipboard and focus assertions are specific to Hyprland. Audio quality, ink and multi-display behavior require separate checks."
+      ]
+    }
+  ]
+}
