@@ -20,6 +20,8 @@ use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 
 use crate::capture::engine::runtime::{Sampler, apparent_log};
+use crate::capture::engine::runtime::recording::recorder::{fd_path, file_matches_path};
+use crate::linux_candidate::CandidateBranch;
 use crate::shared::model::{CaptureMode, RgbaFrame};
 
 const FPS: u32 = 30;
@@ -72,16 +74,13 @@ pub enum Source {
 /// The first H.264 encoder installed, with the settings that suit screen recordings.
 fn encoder() -> Option<&'static str> {
     [
-        "x264enc tune=zerolatency speed-preset=veryfast key-int-max=60 bitrate=6000",
+        "x264enc tune=zerolatency speed-preset=veryfast key-int-max=60 bitrate=6000 threads=2",
         "openh264enc complexity=low bitrate=6000000 gop-size=60",
         "vah264enc",
         "vaapih264enc",
     ]
     .into_iter()
-    .find(|launch| {
-        let name = launch.split_whitespace().next().unwrap_or_default();
-        gst::ElementFactory::find(name).is_some()
-    })
+    .find(|launch| gst::ElementFactory::find(launch.split_whitespace().next().unwrap_or_default()).is_some())
 }
 
 /// Whether a movie can be recorded: GStreamer runs and has an H.264 encoder.
@@ -319,103 +318,14 @@ struct Recorder {
     out: (u32, u32),
     candidate: (u32, u32),
     video: bool,
+    movie_file: Option<std::fs::File>,
     first_frame_ms: Arc<AtomicU64>,
     last: Option<Vec<u8>>,
 }
 
+include!("../../../../engine/recording/lifecycle/linux_media_start.rs");
+
 impl Recorder {
-    fn new(
-        source: &Source,
-        out: (u32, u32),
-        candidate: (u32, u32),
-        movie: Option<&Path>,
-        started_at: Instant,
-    ) -> Result<Self> {
-        init()?;
-        let encoder = movie.and(encoder());
-        let (w, h) = out;
-        let (cw, ch) = candidate;
-        let mut launch = format!(
-            "{} ! queue max-size-buffers=4 leaky=downstream ! videoconvert ! videoscale ! video/x-raw,width={w},height={h},pixel-aspect-ratio=1/1 ! tee name=t \
-             t. ! queue max-size-buffers=2 leaky=downstream ! videoconvert ! videoscale ! video/x-raw,format=RGBA,width={cw},height={ch},pixel-aspect-ratio=1/1 ! appsink name=candidates max-buffers=1 drop=true sync=false emit-signals=false",
-            source_launch(source)
-        );
-        if let Some(encoder) = encoder {
-            let output = movie_output();
-            launch.push_str(&format!(
-                " t. ! queue max-size-time=3000000000 max-size-buffers=0 max-size-bytes=0 ! videorate ! video/x-raw,framerate={FPS}/1 ! videoconvert ! video/x-raw,format=I420 ! {encoder} name=encoder ! h264parse ! {output} name=movie_sink",
-            ));
-        }
-        let pipeline = gst::parse::launch(&launch)
-            .with_context(|| format!("Could not build the recording pipeline: {launch}"))?
-            .downcast::<gst::Pipeline>()
-            .map_err(|_| anyhow!("Not a pipeline"))?;
-        if let Some(movie) = movie.filter(|_| encoder.is_some()) {
-            let location = movie.to_str().context("Invalid recording file path")?;
-            std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .open(movie)
-                .context("Could not create private recording file")?;
-            pipeline
-                .by_name("movie_sink")
-                .context("Recording pipeline has no movie sink")?
-                .set_property("location", location);
-        }
-        // The candidate sink can hold back pipeline EOS after the movie sink has finished.
-        // Forward child EOS so finish() can distinguish a completed MP4 from an unfinished one.
-        pipeline.set_property("message-forward", true);
-        if let (Source::PipeWire { crop: Some(crop), .. }, Some(element)) =
-            (source, pipeline.by_name("crop"))
-        {
-            crop_edges(&element, crop.rect);
-        }
-        let candidates = pipeline
-            .by_name("candidates")
-            .context("No candidate sink")?
-            .downcast::<gst_app::AppSink>()
-            .map_err(|_| anyhow!("Not an appsink"))?;
-        let first_frame_ms = Arc::new(AtomicU64::new(u64::MAX));
-        if let Some(sink) = pipeline
-            .by_name("encoder")
-            .and_then(|e| e.static_pad("sink"))
-        {
-            // The movie starts at its first frame: note when that was on the capture clock, and
-            // shift every frame so the movie's clock starts at zero.
-            let first = Arc::clone(&first_frame_ms);
-            let base = Mutex::new(None);
-            sink.add_probe(gst::PadProbeType::BUFFER, move |_, info| {
-                if let Some(gst::PadProbeData::Buffer(buffer)) = info.data.as_mut() {
-                    let mut base = base.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-                    let pts = buffer.pts();
-                    if base.is_none() && pts.is_some() && buffer.size() != 0 {
-                        *base = pts;
-                        first.store(started_at.elapsed().as_millis() as u64, Ordering::Release);
-                        crate::capture::desktop::start_metric("screen_first_frame_ms", started_at);
-                    }
-                    if let (Some(pts), Some(zero)) = (pts, *base) {
-                        let buffer = buffer.make_mut();
-                        buffer.set_pts(pts.saturating_sub(zero));
-                        buffer.set_dts(gst::ClockTime::NONE);
-                    }
-                }
-                gst::PadProbeReturn::Ok
-            });
-        }
-        pipeline
-            .set_state(gst::State::Playing)
-            .context("The recording pipeline wouldn't start")?;
-        Ok(Self {
-            pipeline,
-            candidates,
-            out,
-            candidate,
-            video: encoder.is_some(),
-            first_frame_ms,
-            last: None,
-        })
-    }
 
     /// An error the pipeline posted since the last look.
     fn error(&self) -> Option<String> {
@@ -601,6 +511,7 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
     let Sampler {
         target,
         video_output_path,
+        pinned_movie_dir,
         prepared_source,
         started_at,
         stopping,
@@ -622,7 +533,7 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
         .sampling_size(&target, movie.is_some());
     let source = prepared_source.map_or_else(|| super::portal::source_for(&target, &stopping), Ok);
     let recorder = source.and_then(|source| {
-        Recorder::new(&source, out, candidate, movie, started_at)
+        Recorder::new(&source, out, candidate, movie, pinned_movie_dir.as_ref(), started_at)
             .map_err(|error| anyhow!("{error:#}"))
             // The source (a portal session) lives as long as the recording.
             .map(|recorder| (recorder, source))
@@ -707,16 +618,28 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
         }
         std::thread::park_timeout(Duration::from_millis(8));
     }
-    let (recorder, _source) = recorder?;
+    let (mut recorder, _source) = recorder?;
     let _ = recorder.out;
-    if recorder.finish() {
-        video_output_path
+    let movie_file = recorder.movie_file.take();
+    let finished = recorder.finish();
+    if let Some(directory) = pinned_movie_dir.as_ref() {
+        let path = fd_path(directory).join("recording.mp4");
+        let owned = movie_file.as_ref().is_some_and(|file| file_matches_path(file, &path));
+        if finished && owned {
+            return video_output_path;
+        }
+        if owned {
+            let _ = std::fs::remove_file(path);
+        }
     } else {
+        if finished {
+            return video_output_path;
+        }
         if let Some(path) = &video_output_path {
             let _ = std::fs::remove_file(path);
         }
-        None
     }
+    None
 }
 
 /// The movie's first audio track, 16 kHz mono, with silence before its first sample so audio
@@ -994,6 +917,7 @@ mod tests {
             (640, 360),
             (320, 180),
             Some(&movie),
+            None,
             Instant::now(),
         )
         .unwrap();
@@ -1055,6 +979,7 @@ mod tests {
             (640, 360),
             (320, 180),
             Some(&movie),
+            None,
             Instant::now(),
         )
         .unwrap();

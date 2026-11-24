@@ -39,6 +39,43 @@ impl Drop for Fixture {
     }
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn chooser_storage_publication_rejects_a_valid_replacement_wav() -> Result<()> {
+    use crate::capture::engine::runtime::audio::audio::encode_wav_16k;
+    for replace_before_binding in [true, false] {
+        let fixture = Fixture::new();
+        let (_, mut bundle, summary) = fixture.build();
+        let root = Directory::open(&fixture.0, false)?;
+        let original = encode_wav_16k(&[0.25; 160])?;
+        let replacement = encode_wav_16k(&[0.75; 160])?;
+        root.write("audio.wav", &original)?;
+        bundle.audio = Some("audio.wav".into());
+        root.write("apparent.json", &serde_json::to_vec(&bundle)?)?;
+        root.write(IN_PROGRESS, b"pending")?;
+        let recorded = root.file("audio.wav")?;
+        let metadata = recorded.metadata()?;
+        let replace = || -> Result<()> {
+            root.rename_to("audio.wav", &root, "original.wav")?;
+            root.write("audio.wav", &replacement)
+        };
+        let failure = if replace_before_binding {
+            replace()?;
+            coordinate_captured(&fixture.0, &root.0, Some(&metadata)).err()
+        } else {
+            let _captured = coordinate_captured(&fixture.0, &root.0, Some(&metadata))?;
+            replace()?;
+            checked(&fixture.0, &bundle, &summary).err()
+        };
+        assert!(format!("{:#}", failure.context("Replacement WAV was accepted")?)
+            .contains("recorded audio was replaced or modified"));
+        assert_eq!(std::fs::read(fixture.0.join("original.wav"))?, original);
+        assert_eq!(std::fs::read(fixture.0.join("audio.wav"))?, replacement);
+        assert!(fixture.0.join(IN_PROGRESS).is_file());
+    }
+    Ok(())
+}
+
 #[test]
 fn publication_rejects_replaced_lock_on_reentry_and_final_cleanup() {
     for replace_during_validation in [false, true] {

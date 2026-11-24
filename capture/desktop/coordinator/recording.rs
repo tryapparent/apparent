@@ -1,3 +1,5 @@
+include!("../../../engine/recording/lifecycle/desktop_start.rs");
+
 use ui::electron_pill::{self as pill_state, Event as PillEvent};
 
 use crate::capture::engine::runtime::recording::recorder::{PreparedSource, selection as display_selection};
@@ -994,32 +996,12 @@ impl ApparentCoordinator {
         }, cx);
     }
 
-    fn choose_system_display(&mut self, cx: &mut Context<Self>) -> bool {
-        if self.lab || self.agent_capture_id.is_some()
-            || !display_selection::requested()
-        {
-            return false;
-        }
-        if crate::capture::desktop::workflow::shutdown::requested()
-            || self.is_recording() || self.source_is_stopping()
-        {
-            return true;
-        }
-        let Some(picker) = self.begin_system_display_picker() else { return true; };
-        cx.spawn(async move |entity, cx| {
-            let selected = picker.acquire(|| cx.background_executor().timer(Duration::from_millis(100))).await;
-            let _ = entity.update(cx, |coord, cx| match selected {
-                Some((target, source)) => coord.start_recording_from(|_| target, Some(source), cx),
-                None => coord.cancel_recording(cx),
-            });
-        }).detach();
-        true
-    }
-
     fn start_recording_from(
         &mut self,
         target: impl FnOnce(bool) -> TargetInfo,
         prepared_source: Option<PreparedSource>,
+        #[cfg(target_os = "linux")]
+        picker_storage: Option<crate::capture::engine::runtime::recording::recorder::ChooserStorage>,
         cx: &mut Context<Self>,
     ) {
         if display_selection::pending() { return; }
@@ -1093,7 +1075,11 @@ impl ApparentCoordinator {
         let bundle_dir = crate::shared::handoff::default_captures_dir().join(format!("{id}.apparent"));
         let admitted = self.admitted_microphone.take();
         let microphone_enabled = admitted.unwrap_or_else(crate::capture::engine::runtime::audio::mic::enabled);
-        let Ok(preparation) = ScreenCaptureSession::prepare_start(&bundle_dir, microphone_enabled)
+        #[cfg(target_os = "linux")]
+        let preparation = ScreenCaptureSession::prepare_picker_start(picker_storage, &bundle_dir, microphone_enabled);
+        #[cfg(not(target_os = "linux"))]
+        let preparation = ScreenCaptureSession::prepare_start(&bundle_dir, microphone_enabled);
+        let Ok(preparation) = preparation
             .inspect_err(|error| self.refuse_raw_protection(error, cx)) else { return; };
         self.telemetry.set_capture_mode(target.mode);
         self.telemetry.reset_for_session(target.frame);
@@ -1163,6 +1149,14 @@ impl ApparentCoordinator {
         );
         start_metric("metal_open_ms", stage);
         let Ok(preparation) = preparation.protect(&bundle_dir).inspect_err(|error| self.refuse_raw_protection(error, cx)) else { return; };
+        #[cfg(target_os = "linux")]
+        if workflow::shutdown::requested() {
+            if let Err(error) = preparation.abandon(&bundle_dir) {
+                apparent_log(format!("Failed startup shutdown cleanup: {error:#}"));
+            }
+            self.cancel_recording(cx);
+            return;
+        }
         self.publish_capture_busy();
         let stream_admission = crate::shared::handoff::experiment("localStreamingTranscription")
             .then(workflow::local_transcription::admission);
@@ -1171,7 +1165,7 @@ impl ApparentCoordinator {
         let (screen_session, audio_recorder, window_log) = match ScreenCaptureSession::start_tracks(
             &target, &bundle_dir, &self.telemetry, microphone_enabled, stream_admission,
             #[cfg(target_os = "linux")]
-            preparation.audio,
+            preparation,
             prepared_source,
         ) {
             Ok(tracks) => tracks,

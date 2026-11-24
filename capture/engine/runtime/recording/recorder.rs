@@ -15,6 +15,11 @@ use crate::stored_frame::StoredFrame;
 
 #[path = "../../../../engine/recording/start.rs"]
 mod start;
+#[cfg(target_os = "linux")]
+#[path = "../../../../engine/recording/lifecycle/chooser_storage.rs"]
+mod chooser_storage;
+#[cfg(target_os = "linux")]
+pub(crate) use chooser_storage::{ChooserStorage, fd_path, file_matches_path, verify_directory};
 #[path = "../../../../engine/recording/lifecycle/buffer.rs"]
 mod buffer;
 #[path = "../../../../engine/recording/lifecycle/stop.rs"]
@@ -154,6 +159,8 @@ pub(crate) struct Sampler {
     pub target: TargetInfo,
     pub video_output_path: Option<PathBuf>,
     #[cfg(target_os = "linux")]
+    pub pinned_movie_dir: Option<std::fs::File>,
+    #[cfg(target_os = "linux")]
     pub prepared_source: Option<PreparedSource>,
     /// Apparent's own windows to leave out of the recording.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -221,25 +228,12 @@ pub struct ScreenCaptureSession {
     native_stop: Option<Arc<AtomicBool>>,
     video_offset_ms: Arc<AtomicU64>,
     sampler_thread: Option<JoinHandle<Option<PathBuf>>>,
+    #[cfg(target_os = "linux")]
+    pub(crate) storage_dir: Option<std::fs::File>,
     _recording: crate::capture::engine::bundle::retention::Recording,
 }
 
 impl ScreenCaptureSession {
-    pub fn start(
-        target: TargetInfo,
-        video_output_path: Option<PathBuf>,
-        excluded_window_ids: Arc<Mutex<Vec<u32>>>,
-    ) -> anyhow::Result<Self> {
-        Self::start_with_exclusion_receipt(target, video_output_path, excluded_window_ids,
-            #[cfg(any(target_os = "macos", target_os = "linux"))]
-            None,
-            #[cfg(target_os = "macos")]
-            Arc::new(Mutex::new(Vec::new())),
-            #[cfg(any(target_os = "macos", target_os = "linux"))]
-            None,
-        )
-    }
-
     pub(crate) fn start_with_exclusion_receipt(
         target: TargetInfo,
         video_output_path: Option<PathBuf>,
@@ -250,9 +244,15 @@ impl ScreenCaptureSession {
         applied_excluded_window_ids: Arc<Mutex<Vec<u32>>>,
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         prepared_source: Option<PreparedSource>,
+        #[cfg(target_os = "linux")]
+        pinned_movie_dir: Option<std::fs::File>,
     ) -> anyhow::Result<Self> {
         super::super::ensure_recording_mode(target.mode)?;
-        if let Some(directory) = video_output_path.as_deref().and_then(std::path::Path::parent) {
+        #[cfg(target_os = "linux")]
+        let adopt_intent = pinned_movie_dir.is_none();
+        #[cfg(not(target_os = "linux"))]
+        let adopt_intent = true;
+        if adopt_intent && let Some(directory) = video_output_path.as_deref().and_then(std::path::Path::parent) {
             crate::capture::engine::bundle::recover::adopt_microphone_intent(directory, &target)?;
         }
         let started_at = Instant::now();
@@ -285,12 +285,16 @@ impl ScreenCaptureSession {
         let thread_startup_failed = Arc::clone(&startup_failed);
         let thread_offset = Arc::clone(&video_offset_ms);
         let sampler_target = target;
+        #[cfg(target_os = "linux")]
+        let storage_dir = pinned_movie_dir.as_ref().map(std::fs::File::try_clone).transpose()?;
         let sampler_thread = thread::Builder::new()
             .name("apparent-frame-sampler".into())
             .spawn(move || {
                 let sampler = Sampler {
                     target: sampler_target,
                     video_output_path,
+                    #[cfg(target_os = "linux")]
+                    pinned_movie_dir,
                     #[cfg(target_os = "linux")]
                     prepared_source,
                     excluded_window_ids,
@@ -310,8 +314,11 @@ impl ScreenCaptureSession {
                     return macos_picker::run(sampler, source, stop);
                 }
                 platform::run_sampler(sampler)
-            })
-            .ok();
+            });
+        #[cfg(target_os = "linux")]
+        let sampler_thread = if storage_dir.is_some() { Some(sampler_thread?) } else { sampler_thread.ok() };
+        #[cfg(not(target_os = "linux"))]
+        let sampler_thread = sampler_thread.ok();
 
         Ok(Self {
             started_at,
@@ -324,6 +331,8 @@ impl ScreenCaptureSession {
             native_stop,
             video_offset_ms,
             sampler_thread,
+            #[cfg(target_os = "linux")]
+            storage_dir,
             _recording: crate::capture::engine::bundle::retention::Recording::start(),
         })
     }
@@ -399,16 +408,6 @@ impl ScreenCaptureSession {
             video_ink,
         };
         (recording, sampling)
-    }
-}
-
-impl Drop for ScreenCaptureSession {
-    fn drop(&mut self) {
-        self.stopping.store(true, Ordering::Release);
-        if let Some(handle) = self.sampler_thread.take() {
-            handle.thread().unpark();
-            let _ = handle.join();
-        }
     }
 }
 

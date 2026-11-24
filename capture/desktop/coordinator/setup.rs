@@ -885,14 +885,6 @@ impl ApparentCoordinator {
         }
     }
 
-    pub fn start_recording_with_target(&mut self, target: impl FnOnce(bool) -> TargetInfo, cx: &mut Context<Self>) {
-        self.start_recording_from(
-            target,
-            None,
-            cx,
-        );
-    }
-
     pub fn record_screen_now(&mut self, cx: &mut Context<Self>) {
         if self.choose_system_display(cx) { return; }
         self.start_recording_with_target(|lab| {
@@ -974,38 +966,6 @@ impl ApparentCoordinator {
             self.island_morph = Morph::Switch;
             self.switch = Some(SwitchMorph { slide: None });
         }
-    }
-
-    fn discard_recording(&mut self) -> Option<(TargetInfo, Option<LaserOverlay>)> {
-        if let Some(rec) = &self.active_recording
-            && !matches!(rec.source, CaptureSource::Lab)
-            && let Err(error) = crate::capture::engine::bundle::recover::cancel(&rec.bundle_dir)
-        {
-            apparent_log(format!("Could not persist cancellation; capture is still active: {error:#}"));
-            return None;
-        }
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        if let Some(id) = self.agent_capture_id.take() {
-            self.agent_captures.set(&id, "cancelled", None, None);
-        }
-        self.report_capture = false;
-        let rec = self.active_recording.take()?;
-        self.note_ui = None;
-        let _ = self.telemetry.finish_session();
-        match rec.source {
-            CaptureSource::Screen { session, audio, .. } => {
-                let _ = session.stop();
-                if let Some(audio) = audio {
-                    let _ = audio.stop();
-                }
-            }
-            CaptureSource::Phone(session) => session.cancel(),
-            CaptureSource::Lab => return Some((rec.target, rec._metal_overlay)),
-        }
-        if let Err(error) = crate::capture::engine::bundle::recover::delete_cancelled(&rec.bundle_dir) {
-            apparent_log(format!("Cancelled assets could not be deleted at {}: {error:#}; recovery remains forbidden", rec.bundle_dir.display()));
-        }
-        Some((rec.target, rec._metal_overlay))
     }
 
     pub fn is_island_visible(&self) -> bool {
