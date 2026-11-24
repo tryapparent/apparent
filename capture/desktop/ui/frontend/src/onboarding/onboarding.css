@@ -198,6 +198,22 @@ html.native-onboarding-shell:has(.native-setup) .apparent-build-identity { top: 
 .native-coach:is([data-stage=whiteboard], [data-stage=stop]) {
   --coach-card-inset: max(24px, calc((100vw - 260px) / 2));
   inset-inline: var(--coach-card-inset);
+  padding-inline: 4px;
+  text-align: center;
+}
+.native-coach:is([data-stage=whiteboard], [data-stage=stop]) h1 {
+  padding-inline: 44px;
+}
+.native-coach:is([data-stage=whiteboard], [data-stage=stop]) .native-pill-guide {
+  margin-inline: auto;
+}
+.native-coach:is([data-stage=whiteboard], [data-stage=stop]) > :is(img, .frog-coach-actor) {
+  inset-inline: 0;
+  margin-inline: auto;
+  top: -59px;
+}
+.native-coach:is([data-stage=whiteboard], [data-stage=stop]) > .frog-coach-actor {
+  width: max-content;
 }
 .native-coach:is([data-stage=whiteboard], [data-stage=stop])[data-arrow=true]:before {
   left: calc(clamp(20px, calc(var(--coach-arrow) + 24px - var(--coach-card-inset)), 100% - 20px) - 9px);

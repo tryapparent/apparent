@@ -36,6 +36,15 @@ export class Placement {
     if (window.isDestroyed()) return;
     if (
       value.step === "try-it" &&
+      value.practice === "screen" &&
+      value.platform === "macos"
+    ) {
+      window.webContents.send("onboarding:state", value);
+      window.hide();
+      return;
+    }
+    if (
+      value.step === "try-it" &&
       (value.practice === "preparing" || value.practiceBoard)
     ) {
       window.hide();

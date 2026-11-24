@@ -122,8 +122,8 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 9
   assert.ok(minimum<before.y-25,'frog must rise visibly before landing');
   await expect.poll(()=>(output.match(/"action":"continue"/g)?.length??0)).toBe(penAdvancesBefore+1);
   assert.equal(output.match(/"action":"continue"/g)?.length,penAdvancesBefore+1);
-  send({step:'try-it',practice:'screen'});
-  await expect(page.getByRole('heading',{name:'Choose Screen.',exact:true})).toBeVisible();
+  send({step:'try-it',practice:'screen',platform:'macos'});
+  await expect(page.locator('main')).toHaveCount(0);
   send({step:'try-it',practice:'screen',platform:'linux'});
   await expect(page.getByRole('heading',{name:'Choose your display.',exact:true})).toBeVisible();
   await expect(page.locator('.native-control')).toHaveCount(0);
@@ -151,10 +151,21 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 9
           const button = el.querySelector(`[data-action=${action}]`)?.getBoundingClientRect();
           const row = el.querySelector('.pill-row')?.getBoundingClientRect();
           const content = el.querySelector('.native-coach-content')?.getBoundingClientRect();
-          return Boolean(pointer && button && row && content &&
-            Math.abs(pointer.left - (button.left + button.width / 2)) <= 1 &&
+          const mascot = el.querySelector(':scope > img')?.getBoundingClientRect();
+          const heading = el.querySelector('h1');
+          const close = el.querySelector('.native-finish-close')?.getBoundingClientRect();
+          if (!pointer || !button || !row || !content || !mascot || !heading || !close) return false;
+          const range = document.createRange();
+          range.selectNodeContents(heading);
+          const text = range.getBoundingClientRect();
+          const center = (rect: DOMRect) => rect.left + rect.width / 2;
+          return Math.abs(center(row) - center(content)) <= 1 &&
+            Math.abs(center(mascot) - center(content)) <= 1 &&
+            Math.abs(center(text) - center(content)) <= 1 &&
+            text.right <= close.left &&
+            Math.abs(pointer.left - center(button)) <= 1 &&
             Math.abs(pointer.top - (button.top + button.height / 2)) <= 1 &&
-            row.right <= content.right && pointer.bottom <= content.bottom);
+            row.right <= content.right && pointer.bottom <= content.bottom;
         }, action)).toBe(true);
         await page.locator('h1').click();
         if (evidence) await page.screenshot({ path: path.join(evidence, `${action}-coach-${scheme}-${width}.png`), omitBackground: true });
@@ -193,7 +204,7 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 9
   await expect(page.getByRole('heading', { name:'apparent lives here.', exact:true })).toBeVisible();
   await expect(page.getByText('Click the a in your menu bar, then Open Latest Capture.', { exact:true })).toBeVisible();
   await expect(page.locator('.native-coach')).toHaveAttribute('data-arrow','true');
-  for(const phase of ['screen','whiteboard','board-ink','screen-ink','stop','copied','paste','locate','complete','retry','copy-failed']){
+  for(const phase of ['whiteboard','board-ink','screen-ink','stop','copied','paste','locate','complete','retry','copy-failed']){
     send({step:'try-it',practice:phase});
     await expect(page.locator('.native-coach')).toHaveAttribute('data-stage',phase);
     if(phase==='screen-ink'){
@@ -365,8 +376,8 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 9
   assert.ok(Math.abs(keys.y+keys.height/2-260)<60,'keys are vertically centered in the compact setup');
   assert.equal(await page.locator('.native-setup section').evaluate(el=>el.scrollHeight>el.clientHeight),false);
   await expect(page.getByRole('button',{name:'Try a capture',exact:true})).toHaveCount(0);
-  send({step:'try-it',practice:'screen',firstCaptureRequired:true});
-  await expect(page.locator('.native-coach')).toBeVisible();
+  send({step:'try-it',practice:'screen',platform:'linux',firstCaptureRequired:true});
+  await expect(page.getByRole('heading', { name: 'Choose your display.' })).toBeVisible();
   await expect(page.locator('.native-setup')).toHaveCount(0);
   await expect.poll(()=>page.evaluate(()=>innerWidth)).toBeLessThan(760);
   send({step:'try-it',practice:null,firstCaptureRequired:true});

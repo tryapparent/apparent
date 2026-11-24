@@ -2,8 +2,6 @@
 .native-pill-example { position:relative;width:100%;overflow:clip; }
 .native-pill-example-surface { position:absolute;left:0;top:0;width:max-content;transform:scale(var(--preview-scale,1));transform-origin:top left; }
 .native-pill-pointer { position:absolute;left:0;top:0;width:22px;height:26px;fill:var(--apparent-paper);stroke:var(--apparent-carbon);stroke-width:1.4;pointer-events:none;animation:pill-guide-pointer 4s ease-in-out infinite; }
-@keyframes pill-guide-pointer {0%,10%{transform:translate(max(0px,calc(var(--target-x) - 32px)),calc(var(--target-y) + var(--pointer-travel, 12px)));}40%,85%{transform:translate(var(--target-x),var(--target-y));}100%{transform:translate(max(0px,calc(var(--target-x) - 32px)),calc(var(--target-y) + var(--pointer-travel, 12px)));}}
+@keyframes pill-guide-pointer {0%,10%{transform:translate(max(0px,calc(var(--target-x) - 32px)),calc(var(--target-y) + 12px));}40%,85%{transform:translate(var(--target-x),var(--target-y));}100%{transform:translate(max(0px,calc(var(--target-x) - 32px)),calc(var(--target-y) + 12px));}}
 @media(prefers-reduced-motion:reduce){.native-pill-pointer{animation:none;transform:translate(var(--target-x),var(--target-y));}}
 .native-control.native-pill-guide {margin:12px 0 0;padding:0;width:min(var(--pill-preview-width,500px),100%);max-width:100%;}
-
-.native-pill-guide[data-picker=true] { --pointer-travel:22px; }

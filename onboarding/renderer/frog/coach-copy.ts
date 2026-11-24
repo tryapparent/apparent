@@ -9,11 +9,8 @@ export function coachCopy(
   > = {
     start: { title: "One more time.", text: "" },
     screen: {
-      title: platform === "linux" ? "Choose your display." : "Choose Screen.",
-      text:
-        platform === "linux"
-          ? "Choose a display in the system sharing dialog."
-          : "Choose Screen in the capture controls. Whiteboard becomes available once recording starts.",
+      title: "Choose your display.",
+      text: "Choose a display in the system sharing dialog.",
     },
     whiteboard: { title: "Open Whiteboard.", text: "" },
     "board-ink": { title: "Draw on the whiteboard.", text: "" },
