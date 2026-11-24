@@ -22,6 +22,27 @@
       ]
     },
     {
+      "id": "focused-record-benchmark",
+      "description": "Compare verified recording startup or Stop-to-clipboard on two builds.",
+      "platforms": ["linux-hyprland"],
+      "userEntryPoint": "Press the physical Record shortcut to begin or finish a recording.",
+      "prerequisites": [
+        "Two AppImages, a sanitized Clanker guest template, and the same verified local English model.",
+        "Four independently retained reports ordered control, candidate, candidate, control."
+      ],
+      "runner": {
+        "path": "record/enablement/performance/score/run.ts",
+        "instructions": "record/enablement/performance/README.md#compare-start-or-stop"
+      },
+      "expectedEvidence": [
+        "A focused score with baseline 100 and both paired latency changes.",
+        "Start shows the visible-pill result. Stop shows the recording CPU, RAM, transcript and clipboard evidence."
+      ],
+      "limits": [
+        "Each comparison covers one Record lane. Qualification of an overall speed score requires the full journey."
+      ]
+    },
+    {
       "id": "record-to-clipboard",
       "description": "Save a screen recording and verify that Apparent copies a reference to the saved bundle.",
       "platforms": ["linux-hyprland"],

@@ -194,6 +194,7 @@ const resourceIntervals: Record<
   { recording: Interval; finalization: Interval }
 > = {};
 const resources: Receipt["resources"] = {};
+const stages: Record<string, Record<string, number>> = {};
 const fixtureIds = Object.keys(contract.captureFixtures).filter(
   (id) => id !== "portal-warmup",
 );
@@ -310,6 +311,37 @@ for (const id of fixtureIds) {
     intervals: measurement.interval ? [[measurement.interval]] : undefined,
   };
   const end = Math.max(saved, clipboard);
+  const finishFile = id + "-finish.json";
+  stages[id] = {
+    savedObservedMs: saved - stop,
+    clipboardObservedMs: clipboard - stop,
+  };
+  if (existsSync(resolve(artifacts, finishFile))) {
+    try {
+      const finish = JSON.parse(read(finishFile)) as Record<string, unknown>;
+      for (const key of [
+        "stopMs",
+        "selectMs",
+        "decodeMs",
+        "autocropMs",
+        "sheetMs",
+        "writeMs",
+        "transcribeMs",
+        "totalMs",
+      ]) {
+        const value = finish?.[key];
+        if (typeof value === "number" && Number.isFinite(value) && value >= 0)
+          stages[id][key] = value;
+      }
+    } catch (error) {
+      console.error(
+        "Unable to read optional engine timings for " +
+          id +
+          ": " +
+          String(error),
+      );
+    }
+  }
   resourceIntervals[id] = {
     recording: interval(live, stop, "guest-boottime"),
     finalization: interval(stop, end, "guest-boottime"),
@@ -344,6 +376,7 @@ console.log(
       waits,
       resources,
       resourceIntervals,
+      stages,
       ...(profileLane ? { diagnostic: true } : {}),
     },
     null,

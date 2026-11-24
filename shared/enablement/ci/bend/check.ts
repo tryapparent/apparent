@@ -1,7 +1,9 @@
+import assert from "node:assert/strict";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bendScratch, proofOptions } from "../../bend/build.ts";
 import { run } from "../../bend/toolchain.ts";
+import { benchmarkComparison } from "../../performance/comparison.ts";
 import { buildSparkleOutcomes } from "./build.ts";
 
 await bendScratch(async (scratch) => {
@@ -33,3 +35,21 @@ await bendScratch(async (scratch) => {
     scratch,
   );
 });
+
+const comparison = await benchmarkComparison(
+  [
+    [1000, 500, 700, 1400],
+    [900.001, 900.001, 905, 905],
+    [1, 3, 2, 2],
+  ],
+  [
+    [1152, 1024, 128],
+    [1152.001, 1024, 128],
+  ],
+  proofOptions(process.argv.slice(2)),
+);
+assert.deepEqual(
+  comparison.timings.map(({ score }) => score),
+  [50, 100, 166.67],
+);
+assert.deepEqual(comparison.permitted, [true, false]);

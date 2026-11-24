@@ -1,5 +1,38 @@
 # Native recording performance probe
 
+## Compare Start or Stop
+
+Record's focused benchmark measures one user wait at a time. Run the control
+and candidate AppImages in control, candidate, candidate, control order on the
+same quiet Clanker host. Keep the guest template, payload, model, settings,
+and input cadence identical. Keep each run in its own private directory.
+
+- For Start, set `APPARENT_BENCH_SURFACE=1` and `APPARENT_BENCH_MEDIA=1` for
+  the native runner. Save each `start-report.ts` result as JSON.
+- For Stop, set `APPARENT_BENCH_PROBE=threshold-27` for the native runner.
+  Save each `recording-report.ts` result as JSON.
+
+```sh
+node record/enablement/performance/score/run.ts start "$control_1" "$candidate_1" "$candidate_2" "$control_2"
+node record/enablement/performance/score/run.ts stop "$control_1" "$candidate_1" "$candidate_2" "$control_2"
+```
+
+Each command uses four verified, unprofiled reports. It divides the candidate
+mean by the control mean and scales the result to 100. Lower is better. Check
+the individual paired deltas before drawing a conclusion from a small change.
+Start's score uses first live media with the pill visible. It also reports
+the visible-pill wait separately. Stop's score uses the physical Finish to
+verified clipboard wait. It reports recording and finalization resources,
+checks recording CPU and RAM and transcript error, and rejects runs above 5%
+guest CPU steal. The optional stage fields show the native engine timings and
+guest observations of Saved and clipboard. Work can overlap, and these
+observations use a different clock from the physical Stop score.
+
+For the weighted cross-stream score, use the
+[full journey benchmark](../../../enablement/timing/journey/README.md).
+
+## Collect native reports
+
 This is the Record-owned Linux producer for the
 [journey benchmark](../../../enablement/timing/journey/README.md). It uses
 a disposable Omarchy VM, synthetic English audio, the normal recorder and
