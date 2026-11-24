@@ -7,6 +7,7 @@ mod movie;
 mod validate;
 
 use crate::shared::model::ApparentBundle;
+use crate::recording_trace::{self as trace, Operation};
 use anyhow::{Context, Result, ensure};
 use crate::capture::engine::runtime::recording::diagnostics::{Diagnose, Stage};
 pub(crate) use fs::Directory;
@@ -45,6 +46,7 @@ pub fn coordinate(path: &Path) -> Result<Coordination> {
 }
 
 fn coordinate_with_directory(path: &Path, pinned: Option<&File>) -> Result<Coordination> {
+    let _span = trace::span(Operation::PublicationLock);
     let path = fs::absolute(path)?;
     if let Some(lease) = HELD.with(|held| held.borrow().get(&path).and_then(Weak::upgrade)) {
         check_lease(&path, &lease)?;
@@ -204,14 +206,19 @@ fn checked_with(
     let guard = coordinate(path)?;
     let root = Directory::open(path, false)?;
     let before = root.0.metadata()?;
+    let validation_span = trace::span(Operation::PublicationValidate);
     let inventory = validate::Inventory::read(&root).stage(Stage::PublicationValidate)?;
     if let Some(expected_audio) = guard.lease.recorded_audio.get() {
         inventory.check_recorded_audio(expected_audio).stage(Stage::PublicationValidate)?;
     }
     let manifest = inventory.validate(path, expected, summary).stage(Stage::PublicationValidate)?;
+    drop(validation_span);
     after_validation()?;
     check_lease(path, &guard.lease)?;
-    inventory.sync_and_check(&root).stage(Stage::PublicationSync)?;
+    {
+        let _span = trace::span(Operation::PublicationSync);
+        inventory.sync_and_check(&root).stage(Stage::PublicationSync)?;
+    }
     ensure!(
         fs::same_directory(&before, &Directory::open(path, false)?.0.metadata()?),
         "bundle directory changed during publication"
@@ -281,7 +288,10 @@ pub(super) fn sync_movie_while<T>(
         Ok((root, leaf, file, before))
     })().stage(Stage::PublicationSync)?;
     std::thread::scope(|scope| {
-        let Ok(worker) = std::thread::Builder::new().spawn_scoped(scope, || file.sync_all()) else {
+        let Ok(worker) = std::thread::Builder::new().spawn_scoped(scope, trace::propagate(|| {
+            let _span = trace::span(Operation::PublicationSync);
+            file.sync_all()
+        })) else {
             return assemble();
         };
         let assembled = assemble();

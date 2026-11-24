@@ -50,6 +50,7 @@ struct Report {
     finalizer: Timing,
     recording_ms: u64,
     saved: bool,
+    stages: crate::recording_trace::Collected,
 }
 
 pub(crate) fn generation(config: &Value) -> Option<&str> {
@@ -68,6 +69,19 @@ fn consent() -> Option<String> {
 }
 
 impl RecordingPerformance {
+    pub(crate) fn finalize<T, E>(
+        performance: Option<Self>,
+        finish: Instant,
+        work: impl FnOnce() -> (Result<T, E>, u64),
+    ) -> (Result<T, E>, u64) {
+        let started = Instant::now();
+        let (result, stages) = crate::recording_trace::collect(performance.is_some(), work);
+        if let Some(performance) = performance {
+            performance.finish(finish, started, result.1, result.0.is_ok(), stages);
+        }
+        result
+    }
+
     pub(crate) fn begin(start: Instant) -> Option<Self> {
         crate::capture::desktop::workflow::error_reporting::compiled_token()?;
         let consent = consent()?;
@@ -108,6 +122,7 @@ impl RecordingPerformance {
         finalizer_started: Instant,
         recording_ms: u64,
         saved: bool,
+        stages: crate::recording_trace::Collected,
     ) {
         let Some(start) = self.ready else {
             return;
@@ -132,6 +147,7 @@ impl RecordingPerformance {
             finalizer,
             recording_ms,
             saved,
+            stages,
         };
         if let Some(sender) = sender() {
             let _ = sender.try_send(report);
@@ -176,7 +192,7 @@ fn payloads(report: &Report) -> (Value, Value) {
     ]});
     let scope = json!({"name":"apparent.recording"});
     let mut metrics = Vec::with_capacity(2);
-    let mut spans = Vec::with_capacity(3);
+    let mut spans = Vec::with_capacity(3 + report.stages.spans.len());
     for (index, timing) in [&report.start, &report.finish].into_iter().enumerate() {
         let ok = index == 0 || report.saved;
         let attributes = [
@@ -209,8 +225,19 @@ fn payloads(report: &Report) -> (Value, Value) {
         "spanId":"0000000000000002","parentSpanId":"0000000000000001",
         "name":report.finalizer.name,"kind":1,
         "startTimeUnixNano":report.finalizer.start.to_string(),
-        "endTimeUnixNano":report.finalizer.end.to_string()
+        "endTimeUnixNano":report.finalizer.end.to_string(),
+        "attributes":[{"key":"recording.spans_dropped","value":{"intValue":report.stages.dropped.to_string()}}]
     }));
+    for stage in &report.stages.spans {
+        spans.push(json!({
+            "traceId":report.trace_ids[1],
+            "spanId":format!("{:016x}", stage.id),
+            "parentSpanId":format!("{:016x}", stage.parent),
+            "name":stage.operation.name(),"kind":1,
+            "startTimeUnixNano":stage.start.to_string(),
+            "endTimeUnixNano":stage.end.to_string()
+        }));
+    }
     (
         json!({"resourceMetrics":[{"resource":resource,"scopeMetrics":[{"scope":scope,"metrics":metrics}]}]}),
         json!({"resourceSpans":[{"resource":resource,"scopeSpans":[{"scope":scope,"spans":spans}]}]}),
@@ -253,6 +280,21 @@ mod tests {
             },
             recording_ms: 89000,
             saved: false,
+            stages: crate::recording_trace::collect(true, || {
+                let _build =
+                    crate::recording_trace::span(crate::recording_trace::Operation::BundleBuild);
+                std::thread::scope(|scope| {
+                    scope
+                        .spawn(crate::recording_trace::propagate(|| {
+                            let _speech = crate::recording_trace::span(
+                                crate::recording_trace::Operation::Transcribe,
+                            );
+                        }))
+                        .join()
+                        .unwrap();
+                });
+            })
+            .1,
         };
         let (metrics, traces) = payloads(&report);
         let datapoint = &metrics["resourceMetrics"][0]["scopeMetrics"][0]["metrics"][0]["histogram"]
@@ -274,6 +316,34 @@ mod tests {
         assert_eq!(spans[1]["traceId"], spans[2]["traceId"]);
         assert_eq!(spans[1]["spanId"], spans[2]["parentSpanId"]);
         assert_eq!(spans[1]["status"]["code"], 2);
+        let details = spans.as_array().unwrap();
+        let build = details
+            .iter()
+            .find(|s| s["name"] == "recording.bundle.build")
+            .unwrap();
+        let speech = details
+            .iter()
+            .find(|s| s["name"] == "recording.transcribe")
+            .unwrap();
+        assert_eq!(build["parentSpanId"], spans[2]["spanId"]);
+        assert_eq!(speech["parentSpanId"], build["spanId"]);
+        assert_eq!(speech["traceId"], spans[1]["traceId"]);
+        for stage in [build, speech] {
+            assert_eq!(stage.as_object().unwrap().len(), 7);
+            assert!(stage["status"].is_null());
+            assert!(
+                stage["startTimeUnixNano"]
+                    .as_str()
+                    .unwrap()
+                    .parse::<u128>()
+                    .unwrap()
+                    <= stage["endTimeUnixNano"]
+                        .as_str()
+                        .unwrap()
+                        .parse::<u128>()
+                        .unwrap()
+            );
+        }
         assert!(!metrics.to_string().contains("private-generation"));
         assert!(!traces.to_string().contains("private-generation"));
     }

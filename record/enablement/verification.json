@@ -1,6 +1,27 @@
 {
   "scenarios": [
     {
+      "id": "recording-performance-spans",
+      "description": "Verify content-free nested finish spans and real bundle instrumentation without sending telemetry.",
+      "platforms": ["linux", "macos"],
+      "userEntryPoint": "Enable Share recording performance in Labs, finish a screen recording, and expand its Finish trace in PostHog.",
+      "prerequisites": [
+        "A prepared root Rust test build. Native PostHog acceptance additionally needs an opted-in release build."
+      ],
+      "runner": {
+        "path": "engine/diagnostics/performance/spans_tests.rs",
+        "instructions": "Run cargo test recording_trace, cargo test workflow::performance, and cargo test demo_bundle_saves_finish_trace_without_configuration with the repository build runner. These checks do not change consent or send reports."
+      },
+      "expectedEvidence": [
+        "Worker spans retain the same trace and their actual parents and overlap, with no spans from unrelated threads or disabled collection.",
+        "A real synthetic bundle build emits selection, crop, render, write, validation and durability spans.",
+        "The OTLP payload preserves nested IDs and exposes only bounded operation names, timestamps and a dropped-span count."
+      ],
+      "limits": [
+        "Host tests do not prove native capture or PostHog ingestion. A live accepted trace must be checked against its service.version."
+      ]
+    },
+    {
       "id": "record-to-clipboard",
       "description": "Save a screen recording and verify that Apparent copies a reference to the saved bundle.",
       "platforms": ["linux-hyprland"],

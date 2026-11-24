@@ -116,7 +116,7 @@ as a failure. Set the switch off to invalidate that recording's previous
 consent and any pending reports. A request already admitted may finish.
 
 Release builds configured with Apparent's PostHog project token send duration
-histograms and a few timing spans over OTLP HTTP to the EU project. Reports
+histograms and bounded timing spans over OTLP HTTP to the EU project. Reports
 include the build, operating system, length bucket, outcome, and timing
 timestamps. Trace IDs are random and scoped to Start or Finish. The capture
 content, paths, account identifiers, and consent revision stay local.
@@ -126,8 +126,17 @@ Enable Application Metrics in the PostHog project to ingest histograms.
 Use `recording.start.duration` and `recording.finish.duration` with
 `service.version`, `os.type`, and `outcome` to compare p50 and p95. Include
 the sample count when comparing releases. In distributed tracing, filter
-by `apparent-desktop` to see the Finish span and finalizer time beneath it.
-The local Perfetto benchmark remains available for stack-level diagnosis.
+by `apparent-desktop` and the trace's `service.version`, not only the currently
+installed version. Expand Finish → finalizer for native function boundaries:
+screen/audio/window shutdown, action context, notes wait, circle labels,
+transcription, visual preparation, keyframe selection and decode, cropping,
+contact sheets, artifact writes, whiteboard handoff, publication lock,
+validation and durability. Worker spans retain their parent and actual overlap;
+do not sum parallel durations. Operations that are skipped have no span. Child
+completion does not imply success; the Finish outcome remains authoritative.
+Each report retains at most 128 child spans, with `recording.spans_dropped` on
+the finalizer. These are instrumented timings, not automatic stack samples.
+The local Perfetto benchmark remains available for deeper stack-level diagnosis.
 
 For example, query Finish p95 after filtering to successful bundles.
 
