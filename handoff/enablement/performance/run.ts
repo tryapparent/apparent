@@ -1,3 +1,4 @@
+import { schedulerDiagnostic } from "./diagnostics/scheduler.ts";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
@@ -205,6 +206,32 @@ export async function runFocused(driver: Driver, args: string[]) {
           String((error as Error).stack ?? error),
         );
         throw error;
+      }
+    }
+    if (process.env.RUNNER_ENVIRONMENT === "github-hosted") {
+      try {
+        const diagnostic = await schedulerDiagnostic();
+        try {
+          await scenario({
+            ...provider,
+            host,
+            scratch: output,
+            warm,
+            traced,
+            diagnose: diagnostic.mark,
+          });
+        } finally {
+          await diagnostic.mark("after-cleanup");
+          await writeFile(
+            join(output, "scheduler-diagnostic.json"),
+            JSON.stringify(diagnostic.evidence, null, 2),
+          );
+        }
+      } catch (error) {
+        await writeFile(
+          join(output, "scheduler-diagnostic-error.txt"),
+          String(error),
+        );
       }
     }
     throw Error(

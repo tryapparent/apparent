@@ -16,6 +16,14 @@ waterfall spans in the run artifact. Hosted guest CPU and I/O pressure
 use the existing 5% limits. The enclosing host's pressure and SMT
 topology are outside the guest's visibility.
 
+When all four pressure attempts for a hosted trial slot fail, the driver
+takes a separate diagnostic replay and retains `scheduler-diagnostic.json`.
+It samples idle guest pressure before launch, process CPU and thread scheduler
+counters at the Electron and Handoff boundaries, and observer and cgroup
+accounting through cleanup. Snapshot work can perturb the replay. The file is
+unscored and cannot qualify a repeat. A missing counter or disabled scheduler
+accounting remains visible in the artifact.
+
 ## Local diagnostic replay
 
 Use a quiet machine with Node 22, the locked Desktop dependencies, Xvfb, and accessible Linux PSI and Electron process PSS counters. Build both revisions before taking measurements. On Clanker, use the shared build runner for the builds and keep artifacts in the private job root.
