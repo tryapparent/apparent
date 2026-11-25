@@ -13,8 +13,7 @@ window geometry, and native capture lifecycle.
 
 **Agents → Send recordings to T3 Code** saves `agents.t3DestinationPicker`.
 The picker starts off and enabling it still requires pairing before a send.
-**Ask for video proof** saves `agents.agentDemoVideo`, on by default for the
-next handoff. Both preferences keep reading their prior `experiments` keys.
+The preference also reads the prior `experiments.t3DestinationPicker` key.
 
 The picker uses T3's `server.getConfig` environment label for multiple
 computers. Missing, duplicate, or address-only names receive numeric
@@ -60,8 +59,9 @@ New recordings save timestamp labels with their keyframes. Copy, paste and T3
 send use those labels in compact prompts so the timestamps match the images.
 
 The format puts the timeline before the inspection command, with one line
-per timestamp. It keeps the setup link at the GitHub repository root and
-honors the Agents video preference. Local paths keep a short transfer cue.
+per timestamp. It keeps the setup link at the GitHub repository root. Visual handoffs always ask the
+agent for verified video proof of complex visible changes when it can record.
+Local paths keep a short transfer cue.
 Existing recordings keep their original frame labels.
 
 Record stores one display label per frame and uses it for the full and cropped

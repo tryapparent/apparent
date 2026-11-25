@@ -374,10 +374,10 @@ Error actions are left aligned with recovery first and Close second. Unknown
 preference outcomes require Refresh preference; dismissing never proves a save.
 
 Installed Settings routes Agents to the shared Electron shell on macOS and Linux.
-Desktop's `ui/frontend/src/settings/agents` owns preference defaults, save/readback
-workflow, recovery and fixed skill command. The private parent pipe exposes only
-the saved `experiments.agentDemoVideo` and `experiments.t3DestinationPicker`
-booleans (or absence), connection-presence facts and bounded errors;
+Desktop's `ui/frontend/src/settings/agents` provides the fixed skill command.
+Handoff owns the T3 preference, save/readback workflow and recovery. The private
+parent pipe exposes the saved T3 destination picker preference, sanitized
+connection facts and bounded errors;
 `settings/agents/mod.rs` uses the existing shared config transaction. No second
 config writer is introduced. Copy replaces the clipboard with the canonical
 command only after a successful main-process call; it never runs the command.
@@ -588,7 +588,7 @@ Launch at login writes `"launchAtLogin": true|false` to `config.json` before cha
 
 Agents › Command-line tool (`composition/command_line.rs`) links the app's own binary as `apparent` without asking for admin or replacing a different program. On Mac it symlinks the real app binary (which is how it finds the helper) into the first writable of `/opt/homebrew/bin`, `/usr/local/bin`, else `~/.local/bin`; Linux's installed AppImage provides a `~/.local/bin/apparent` link. A bare `apparent` from a terminal prints help instead of starting a second app. Agents › Agent skill shows `bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent` (`capture/agent/skills/apparent/SKILL.md`, also printed by `apparent skill`), which is the capture-reading skill. The separate `make-it-apparent` walkthrough is installed explicitly with `bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/make-it-apparent` (README › Agents); the default command does not guarantee its installation. This identity change does not migrate earlier captures, settings, OS permissions, or independently installed commands.
 
-Agents › Ask for a Apparent video on complex changes toggles `"experiments": {"agentDemoVideo": true|false}`. Absent is on; set it to false to disable. Settings preserves other experiment flags and config keys; the next copy or paste reads the file without a restart. It adds a conditional request to the copied/pasted agent prompt, not the archived `summary.md`; automatic session delivery has been removed. The agent should only demonstrate a result it can actually see and report if recording is unavailable.
+Visual handoff prompts ask the agent for verified video proof of complex visible changes when it can record. Old video-proof settings are ignored. The agent should demonstrate a result it can actually see and report if recording is unavailable.
 
 Inspect the installed Electron Settings in light and dark appearance. Exercise the shortcut editor and microphone states on their owning platforms. Run the Settings Electron smoke suite and `cargo test settings::`.
 

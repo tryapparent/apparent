@@ -17,7 +17,6 @@ export type PreferenceValues = {
   "storage.bundleDays": number | null;
   "storage.maximumMb": number;
   "permissions.skipScreenSelection": boolean;
-  "agents.agentDemoVideo": boolean;
   "agents.t3DestinationPicker": boolean;
   "labs.localStreamingTranscription": boolean;
   "labs.pushToTalk": boolean;

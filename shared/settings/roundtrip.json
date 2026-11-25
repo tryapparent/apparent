@@ -21,7 +21,6 @@
   "storage.bundleDays": null,
   "storage.maximumMb": 0,
   "permissions.skipScreenSelection": false,
-  "agents.agentDemoVideo": false,
   "agents.t3DestinationPicker": true,
   "labs.localStreamingTranscription": true,
   "labs.pushToTalk": true,

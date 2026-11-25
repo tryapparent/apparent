@@ -5,7 +5,6 @@ declare global {
   interface Window {
     apparentAgents: {
       read():Promise<PreferenceFacts>;
-      save(enabled:boolean):Promise<PreferenceFacts>;
       saveT3(enabled:boolean):Promise<PreferenceFacts>;
       previewT3(server:string):Promise<{preview:PairingPreview;error?:never}|{error:string;preview?:never}>;
       connectT3(id:string):Promise<T3ConnectionResult>;

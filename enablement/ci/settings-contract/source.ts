@@ -25,10 +25,6 @@ const rendererBridgeWriters = new Map([
     "capture/desktop/ui/frontend/src/settings/labs/labs.tsx",
     "window.apparentLabs.save",
   ],
-  [
-    "capture/desktop/ui/frontend/src/settings/agents/agents.tsx",
-    "window.apparentAgents.save",
-  ],
 ]);
 
 function boundAction(node: TreeNode): boolean {

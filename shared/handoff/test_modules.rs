@@ -941,58 +941,33 @@ mod tests {
         let archive = crate::capture::engine::sketch::summary_markdown(&bundle, &directory);
         let commands = "apparent fetch 0123456789abcdef0123456789abcdef --out ./0123456789abcdef0123456789abcdef.apparent --wait 120\napparent inspect ./0123456789abcdef0123456789abcdef.apparent\n";
         for hosted in [None, Some(commands)] {
-            for video in [false, true] {
-                let prompt = clipboard_summary_with_access(&bundle, &directory, video, hosted);
-                assert!(prompt.starts_with(hosted.unwrap_or("apparent inspect ")));
-                assert_eq!(prompt.contains("apparent connect alternatives"), hosted.is_none());
-                assert!(prompt.ends_with("“This is the last instruction”\n"));
-                assert!(prompt.find(CLI_INSTALL).unwrap() < prompt.find("[apparent ").unwrap());
-                assert_eq!(prompt.contains(DEMO_VIDEO_REQUEST), video);
-                if video {
-                    assert!(
-                        prompt.find(DEMO_VIDEO_REQUEST).unwrap()
-                            < prompt.find("[apparent ").unwrap()
-                    );
-                }
-                assert!(prompt.contains("Keep this note") && prompt.contains("Keep this warning"));
-                assert!(prompt.contains("#0 (0:00) “Please change this control”"));
-                assert!(!prompt.contains("connect login") && !prompt.contains("Cropped to:"));
-                assert!(!prompt.contains(crate::capture::engine::sketch::LOOK_AT_IMAGES));
-                assert_eq!(
-                    prompt.contains("Uncropped images are in frames-full/"),
-                    hosted.is_none()
-                );
-                if hosted.is_some() {
-                    assert!(prompt.contains("[apparent 0:07]"));
-                    assert!(!prompt.contains(&directory.to_string_lossy().to_string()));
-                } else {
-                    assert!(prompt.contains(&shell_quote(&directory.to_string_lossy())));
-                }
+            let prompt = clipboard_summary_with_access(&bundle, &directory, hosted);
+            assert!(prompt.starts_with(hosted.unwrap_or("apparent inspect ")));
+            assert_eq!(prompt.contains("apparent connect alternatives"), hosted.is_none());
+            assert!(prompt.ends_with("“This is the last instruction”\n"));
+            assert!(prompt.find(CLI_INSTALL).unwrap() < prompt.find("[apparent ").unwrap());
+            assert!(
+                prompt.find(DEMO_VIDEO_REQUEST).unwrap()
+                    < prompt.find("[apparent ").unwrap()
+            );
+            assert!(prompt.contains("Keep this note") && prompt.contains("Keep this warning"));
+            assert!(prompt.contains("#0 (0:00) “Please change this control”"));
+            assert!(!prompt.contains("connect login") && !prompt.contains("Cropped to:"));
+            assert!(!prompt.contains(crate::capture::engine::sketch::LOOK_AT_IMAGES));
+            assert_eq!(
+                prompt.contains("Uncropped images are in frames-full/"),
+                hosted.is_none()
+            );
+            if hosted.is_some() {
+                assert!(prompt.contains("[apparent 0:07]"));
+                assert!(!prompt.contains(&directory.to_string_lossy().to_string()));
+            } else {
+                assert!(prompt.contains(&shell_quote(&directory.to_string_lossy())));
             }
         }
         assert!(archive.contains("Cropped to: the activity"));
         assert!(archive.contains(&directory.to_string_lossy().to_string()));
         assert!(!archive.contains(CLI_INSTALL) && !archive.contains(DEMO_VIDEO_REQUEST));
-    }
-
-    #[test]
-    fn demo_video_setting_preserves_other_experiments_and_rejects_bad_config() {
-        let fixture = Fixture::new();
-        let path = fixture.0.join("config.json");
-        assert!(experiment_enabled_in(&load_config_from(&path), AGENT_DEMO_VIDEO));
-        fs::write(&path, r#"{"ingestToken":"private","experiments":{"other":true}}"#).unwrap();
-        assert!(experiment_enabled_in(&load_config_from(&path), AGENT_DEMO_VIDEO));
-        set_experiment_in(&path, AGENT_DEMO_VIDEO, true).unwrap();
-        let raw: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        assert_eq!(raw["ingestToken"], "private");
-        assert_eq!(raw["experiments"]["other"], true);
-        assert_eq!(load_config_from(&path).experiments.get(AGENT_DEMO_VIDEO), Some(&true));
-        set_experiment_in(&path, AGENT_DEMO_VIDEO, false).unwrap();
-        assert_eq!(load_config_from(&path).experiments.get(AGENT_DEMO_VIDEO), Some(&false));
-        assert!(!experiment_enabled_in(&load_config_from(&path), AGENT_DEMO_VIDEO));
-        fs::write(&path, b"{").unwrap();
-        assert!(set_experiment_in(&path, AGENT_DEMO_VIDEO, true).is_err());
-        assert_eq!(fs::read(&path).unwrap(), b"{");
     }
 
     #[test]

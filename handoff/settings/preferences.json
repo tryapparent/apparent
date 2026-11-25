@@ -1,13 +1,5 @@
 [
   {
-    "id": "agents.agentDemoVideo",
-    "label": "Ask for video proof",
-    "kind": "boolean",
-    "default": true,
-    "apply": "next-handoff",
-    "legacy": { "path": "experiments.agentDemoVideo", "lenient": true }
-  },
-  {
     "id": "agents.t3DestinationPicker",
     "label": "Send recordings to T3 Code",
     "kind": "boolean",

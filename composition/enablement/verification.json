@@ -22,6 +22,28 @@
       "limits": [
         "The Electron parent is synthetic. Native OS effects and installer behavior require their owning checks."
       ]
+    },
+    {
+      "id": "agents-settings-video-proof",
+      "description": "Verify the Agents pane after retirement of the video-proof preference.",
+      "platforms": ["linux", "macos"],
+      "userEntryPoint": "Open Settings → Agents. Copy the skill command and change Send recordings to T3 Code.",
+      "prerequisites": [
+        "The candidate Settings renderer built with locked dependencies and Electron.",
+        "Xvfb on Linux for the renderer fixture."
+      ],
+      "runner": {
+        "path": "capture/desktop/ui/frontend/tests/settings/agents/smoke.ts",
+        "scenario": "Installed Agents",
+        "instructions": "capture/desktop/docs/onboarding-and-settings.md#agents"
+      },
+      "expectedEvidence": [
+        "The pane has the skill command and T3 switch. The video-proof control is absent.",
+        "Keyboard copying, acknowledged T3 saves, and recovery still work. The native round trip preserves old video-proof config keys."
+      ],
+      "limits": [
+        "The renderer smoke uses a fixture parent. Run the separate Rust round trip for the actual Settings writer."
+      ]
     }
   ]
 }

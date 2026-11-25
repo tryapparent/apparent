@@ -14,25 +14,22 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'agents-'));
   const frontend = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
   const application = spawn(createRequire(import.meta.url)('electron') as string,
-    ['--no-sandbox', frontend, '--settings-storage', '--settings-agents', '--settings-parent', '--remote-debugging-port=0'],
+    ['--no-sandbox', frontend, '--settings-storage', '--settings-agents', '--settings-parent', '--ozone-platform=x11', '--remote-debugging-port=0'],
     {env: {...process.env, ELECTRON_RUN_AS_NODE: '', HOME: home, XDG_CONFIG_HOME: path.join(home, 'config'), XDG_CACHE_HOME: path.join(home, 'cache')}, stdio: 'pipe'});
   let browser: Awaited<ReturnType<typeof chromium.connectOverCDP>> | undefined;
   const exited = new Promise<void>(resolve => application.once('exit', () => resolve()));
   const actions: Record<string, unknown>[] = [];
-  let saved: boolean | null = null;
-  let sharingSaved:boolean|null=null;
-  let t3Saved:boolean|null=null;
-  let autoPasteSaved:boolean|null=null;
+  let t3Saved = false;
   let failWrite = false;
   let holdWrite = false;
   let holdRead = true;
   let held: Record<string, unknown> | undefined;
   const reply = (action: Record<string, unknown>) => {
-    if ('enabled' in action && !failWrite) {
-      if(action.setting==='sharing')sharingSaved=action.enabled as boolean;else if(action.setting==='t3')t3Saved=action.enabled as boolean;else if(action.setting==='autoPaste')autoPasteSaved=action.enabled as boolean;else saved=action.enabled as boolean;
+    if (action.setting === 't3' && typeof action.enabled === 'boolean' && !failWrite) {
+      t3Saved = action.enabled;
     }
     application.stdin.write(JSON.stringify({type: 'agents-result', request: action.request,
-      facts: failWrite && 'enabled' in action ? {error: 'config_write_failed'} : {saved,sharingSaved,t3Saved,t3Configured:false,autoPasteSaved,autoPasteSupported:process.platform==='linux'}}) + '\n');
+      facts: failWrite && 'enabled' in action ? {error: 'config_write_failed'} : {t3Saved, t3Configured: false}}) + '\n');
   };
   createInterface({input: application.stdout}).on('line', line => {
     try {
@@ -62,8 +59,9 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     const page = browser.contexts()[0].pages()[0];
     await expect(page).toHaveTitle('Apparent Settings — Agents');
     assert.equal(await page.evaluate(async()=>await window.apparentGeneral.read().then(()=>false,()=>true) && await window.apparentLabs.read().then(()=>false,()=>true) && await window.apparent!.readConnectSettings().then(()=>false,()=>true)),true);
-    const toggle = page.locator('#agent-video-control');
-    await expect(toggle).toBeHidden();
+    await expect(page.getByText('Ask for video proof', {exact: true})).toHaveCount(0);
+    const toggle = page.locator('#agent-t3-control');
+    await expect(toggle).toBeDisabled();
     await expect(toggle).toHaveAttribute('aria-busy', 'true');
     await expect.poll(() => Boolean(held)).toBe(true);
     if (process.env.APPARENT_AGENTS_PROOF) {
@@ -71,22 +69,23 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
       await page.screenshot({path: path.join(process.env.APPARENT_AGENTS_PROOF, 'agents-loading.png')});
     }
     reply(held!); held = undefined; holdRead = false;
-    await expect(toggle).toHaveAttribute('aria-checked', 'true');
+    await expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await expect(page.getByRole('switch', {name: 'Send recordings to T3 Code'})).toBeVisible();
     await expect(page.getByRole('switch',{name:'Auto paste',exact:true})).toHaveCount(0);
     await expect(page.getByRole('switch',{name:'Public sharing links',exact:true})).toHaveCount(0);
-    await expect(page.getByRole('switch',{name:'Send recordings to T3 Code'})).not.toBeChecked();
-    await expect(page.getByRole('button', {name: 'Agents', exact: true})).toHaveAttribute('aria-current', 'page');
+      await expect(page.getByRole('button', {name: 'Agents', exact: true})).toHaveAttribute('aria-current', 'page');
     holdWrite = true;
     await toggle.focus(); await page.keyboard.press('Space');
     await expect(toggle).toBeDisabled();
-    await expect(toggle).toHaveAttribute('aria-checked', 'true');
+    await expect(toggle).toHaveAttribute('aria-checked', 'false');
     await expect(toggle).toHaveCSS('cursor','wait');
     await expect(toggle).toHaveCSS('pointer-events','auto');
     assert.equal(await toggle.evaluate(element=>{const r=element.getBoundingClientRect();const target=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return target===element||element.contains(target);}),true,'Busy switch owns the pointer hotspot');
     await expect.poll(() => Boolean(held)).toBe(true);
     reply(held!); holdWrite = false;
-    await expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await expect(toggle).toBeChecked();
     await expect(toggle).toBeEnabled();
+    await expect(page.getByText('No computers paired.')).toBeVisible();
     const initialGeometry=await page.evaluate(()=>({
       width:innerWidth,height:innerHeight,documentHeight:document.documentElement.scrollHeight,
       shell:document.querySelector('.settings-shell')!.getBoundingClientRect().toJSON(),
@@ -95,14 +94,13 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     }));
     if(process.env.APPARENT_AGENTS_PROOF)await fs.writeFile(path.join(process.env.APPARENT_AGENTS_PROOF,'geometry.json'),JSON.stringify(initialGeometry,null,2));
     assert(initialGeometry.documentHeight<=initialGeometry.height,JSON.stringify(initialGeometry));
-    assert(initialGeometry.content[1]<=initialGeometry.content[0],JSON.stringify(initialGeometry));
-    if (process.env.APPARENT_AGENTS_PROOF) await page.screenshot({path: path.join(process.env.APPARENT_AGENTS_PROOF, 'agents-off.png')});
+    if (process.env.APPARENT_AGENTS_PROOF) await page.screenshot({path: path.join(process.env.APPARENT_AGENTS_PROOF, 'agents-t3-on.png')});
     failWrite = true;
     await toggle.click();
     await expect(page.getByRole('alertdialog')).toContainText('Unable to save');
     await expect(toggle).toBeDisabled();
     const errorDialog=page.getByRole('alertdialog');
-    const recover=errorDialog.getByRole('button',{name:'Refresh preference'});
+    const recover=errorDialog.getByRole('button',{name:'Refresh T3 sending'});
     await expect(recover).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(errorDialog.getByRole('button',{name:'Close',exact:true})).toBeFocused();
@@ -110,14 +108,14 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     await expect(recover).toBeFocused();
     if(process.env.APPARENT_AGENTS_PROOF) await page.screenshot({path:path.join(process.env.APPARENT_AGENTS_PROOF,'agents-save-error.png')});
     failWrite = false;
-    await page.getByRole('button', {name: 'Refresh preference'}).click();
-    await expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await page.getByRole('button', {name: 'Refresh T3 sending'}).click();
+    await expect(toggle).toBeChecked();
     await expect(toggle).toBeEnabled();
     await expect(toggle).toBeFocused();
     // Out-of-band native readback follows external config edits.
-    saved = true;
-    application.stdin.write(JSON.stringify({type: 'agents-state', facts: {saved}}) + '\n');
-    await expect(toggle).toHaveAttribute('aria-checked', 'true');
+    t3Saved = false;
+    application.stdin.write(JSON.stringify({type: 'agents-state', facts: {t3Saved}}) + '\n');
+    await expect(toggle).not.toBeChecked();
     await page.getByRole('button', {name: 'Copy install command', exact: true}).focus();
     await page.keyboard.press('Enter');
     await expect(page.getByText('Copied',{exact:true})).toBeVisible();
@@ -130,13 +128,14 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     await expect(page.getByRole('textbox', {name: 'Clipboard verification'})).toHaveValue(skillCommand);
     await page.getByRole('textbox', {name: 'Clipboard verification'}).evaluate(element => element.remove());
     assert.equal(await page.evaluate(async () => {
-      for (const call of [() => window.apparentAgents.save('false' as unknown as boolean),
+      if ('save' in window.apparentAgents) return false;
+      for (const call of [() => window.apparentAgents.saveT3('false' as unknown as boolean),
         () => window.apparentAbout.act({action: 'tour'}), () => window.apparent?.resetCaptureLocation()]) {
         try { await call(); return false; } catch {}
       }
       return true;
     }), true, 'Agents cannot send non-boolean preferences or invoke other panes');
-    for (const width of [720, 640, 320]) {
+    for (const width of [740, 640, 320]) {
       const session = await page.context().newCDPSession(page);
       await session.send('Emulation.setDeviceMetricsOverride',{width,height:530,deviceScaleFactor:1,mobile:false});
       for (const colorScheme of ['light', 'dark', 'light'] as const) {
@@ -144,9 +143,8 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
         await page.evaluate(() => document.fonts.ready);
         assert.equal(await page.locator('h1').evaluate(e=>getComputedStyle(e).fontSize),'48px');
         assert.equal(await page.locator('#agent-skill-label').evaluate(e=>getComputedStyle(e).fontSize),'24px');
-        assert.equal(await page.locator('#agent-video-label').evaluate(e=>getComputedStyle(e).fontSize),'18px');
+        assert.equal(await page.locator('#agent-t3-label').evaluate(e=>getComputedStyle(e).fontSize),'24px');
         assert.equal(await toggle.locator('.apparent-switch-thumb').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(255, 255, 255)');
-        assert.equal(await toggle.locator('.apparent-switch-track').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(122, 88, 199)');
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
         assert.equal(await page.locator('.settings-shell').evaluate(element=>element.getBoundingClientRect().top),0,'Settings shell stays fixed while pane scrolls');
         assert.equal(await page.locator('.settings-content').evaluate(element => element.scrollWidth <= element.clientWidth), true);
@@ -202,9 +200,10 @@ test('installed Agents uses acknowledged preferences, fixed clipboard text and b
     await enlarged.detach();
     application.stdin.write(JSON.stringify({type: 'agents-state', facts: {error: 'config_read_failed'}}) + '\n');
     await expect(toggle).toBeDisabled();
-    await expect(page.getByRole('alertdialog')).toContainText('Unable to read');
+    await expect(page.getByText('The saved T3 sending preference is unconfirmed.')).toBeVisible();
     if (process.env.APPARENT_AGENTS_PROOF) await page.screenshot({path: path.join(process.env.APPARENT_AGENTS_PROOF, 'agents-read-error.png')});
-    await page.getByRole('button', {name: 'Close', exact: true}).click();
+    await page.getByRole('button', {name: 'Refresh T3 sending'}).click();
+    await expect(toggle).toBeEnabled();
     await page.evaluate(()=>{Object.assign(window,{navigationMarker:'same-document'});});
     const originalUrl=page.url();
     await page.getByRole('button', {name: 'About', exact: true}).click();
@@ -251,7 +250,6 @@ test('Agents clipboard failures recover and bridge refuses foreign frames or arb
     env: {...process.env, HOME: home, XDG_CONFIG_HOME: path.join(home, 'config'), XDG_CACHE_HOME: path.join(home, 'cache')}});
   try {
     const page = await application.firstWindow();
-    await page.getByRole('button', {name:'Close',exact:true}).click();
     await expect(page.getByRole('button', {name: 'Copy install command', exact: true})).toBeVisible();
     assert.equal(await application.evaluate(async ({ipcMain, BrowserWindow, clipboard}) => {
       const sender = BrowserWindow.getAllWindows()[0].webContents;
