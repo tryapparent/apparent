@@ -146,7 +146,7 @@ const directoryPaths = {
   connect: [...common, ...independent, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, ...desktopPackagingInputs, 'connect/**', 'public/**',
     '.github/workflows/stream-connect.yml', 'enablement/release_gate.py'],
   public: [...common, ...independent, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/hermes.yml', 'public/**', '.github/workflows/stream-public.yml', 'README.md',
-    apparentSkill + '**', 'capture/' + apparentSkill + 'SKILL.md', 'capture/agent/docs/usage.md',
+    apparentSkill + '**', 'capture/agent/docs/usage.md',
     'capture/desktop/docs/guides/recording.md', 'capture/engine/docs/guides/processing.md'],
   hermes: [...common, ...independent, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/stream-public.yml', 'hermes/**', 'capture/agent/setup/**',
     frontend + 'src/hermes/**', '.github/workflows/hermes.yml'],
