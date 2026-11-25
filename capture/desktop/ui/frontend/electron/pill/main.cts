@@ -283,7 +283,7 @@ app.whenReady().then(()=>{
       if(linux){
         const paintBeforeShow=!visible&&!rendererReady;
         if(resized||paintBeforeShow)window.webContents.invalidate();
-        if(repaint||paintBeforeShow&&!shapePaint)shapePaint=paint();
+        if(repaint||paintBeforeShow&&!shapePaint&&current.phase!=='recording')shapePaint=paint();
         const pendingPaint=shapePaint;
         if(pendingPaint)await pendingPaint;
         if(stale())return false;

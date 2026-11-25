@@ -1,3 +1,5 @@
+include!("pending_desktop_start.rs");
+
 impl ApparentCoordinator {
     pub fn start_recording_with_target(&mut self, target: impl FnOnce(bool) -> TargetInfo, cx: &mut Context<Self>) {
         self.start_recording_from(
@@ -5,6 +7,8 @@ impl ApparentCoordinator {
             None,
             #[cfg(target_os = "linux")]
             None,
+            #[cfg(target_os = "linux")]
+            true,
             cx,
         );
     }
@@ -29,6 +33,8 @@ impl ApparentCoordinator {
                     Some(selected.source),
                     #[cfg(target_os = "linux")]
                     selected.storage,
+                    #[cfg(target_os = "linux")]
+                    false,
                     cx,
                 ),
                 None => coord.cancel_recording(cx),
@@ -121,6 +127,7 @@ impl ApparentCoordinator {
         prepared_source: Option<PreparedSource>,
         #[cfg(target_os = "linux")]
         picker_storage: Option<crate::capture::engine::runtime::recording::recorder::ChooserStorage>,
+        #[cfg(target_os = "linux")] allow_early_pill: bool,
         cx: &mut Context<Self>,
     ) {
         let recording_entered = Instant::now();
@@ -200,12 +207,25 @@ impl ApparentCoordinator {
         let bundle_dir = crate::shared::handoff::default_captures_dir().join(format!("{id}.apparent"));
         let admitted = self.admitted_microphone.take();
         let microphone_enabled = admitted.unwrap_or_else(crate::capture::engine::runtime::audio::mic::enabled);
+        let (target_rect, display_rect, centre) = ScreenCaptureSession::placement(target.frame);
+        self.display_rect = display_rect;
         #[cfg(target_os = "linux")]
-        let preparation = ScreenCaptureSession::prepare_picker_start(picker_storage, &bundle_dir, microphone_enabled);
+        let early_pill = allow_early_pill && user_started && quick && target.mode == CaptureMode::Display
+            && prepared_source.is_none() && picker_storage.is_none()
+            && self.onboarding.is_none() && !self.report_capture;
+        #[cfg(target_os = "linux")]
+        let preparation = ScreenCaptureSession::prepare_picker_start(picker_storage, &bundle_dir, microphone_enabled, early_pill);
         #[cfg(not(target_os = "linux"))]
         let preparation = ScreenCaptureSession::prepare_start(&bundle_dir, microphone_enabled);
-        let Ok(preparation) = preparation
-            .inspect_err(|error| self.refuse_raw_protection(error, cx)) else { return; };
+        let Ok(preparation) = preparation.inspect_err(|error| self.refuse_raw_protection(error, cx)) else { return; };
+        #[cfg(target_os = "linux")]
+        let cancellation = preparation.pending_cancellation.clone();
+        #[cfg(target_os = "linux")]
+        if let Some(cancellation) = &cancellation {
+            self.stopping_source = SourceTransition::Starting(cancellation.clone());
+            StartupPoint::PillRequested.record_in(startup.as_ref());
+            self.show_recording_island(cx);
+        }
         self.telemetry.set_capture_mode(target.mode);
         self.telemetry.reset_for_session(target.frame);
         #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -225,8 +245,6 @@ impl ApparentCoordinator {
             platform::picker_window_number(),
         );
         let stage = Instant::now();
-        let (target_rect, display_rect, centre) = ScreenCaptureSession::placement(target.frame);
-        self.display_rect = display_rect;
         #[cfg(target_os = "linux")]
         platform::cancel_pill_drag();
         if let Some(session) = &self.electron_pill {
@@ -264,10 +282,20 @@ impl ApparentCoordinator {
             } else { None }
         );
         start_metric("metal_open_ms", stage);
-        let Ok(preparation) = preparation.protect(&bundle_dir).inspect_err(|error| self.refuse_raw_protection(error, cx)) else { return; };
+        let draft = DesktopScreenStart {
+            target, bundle_dir, overlay: metal_overlay, microphone: microphone_enabled,
+            user_started, allow_notes: cfg!(target_os = "linux") || prepared_source.is_none(),
+            started, performance, startup,
+        };
+        #[cfg(target_os = "linux")]
+        if let Some(cancellation) = cancellation {
+            self.start_screen_in_background(draft, preparation, cancellation, cx);
+            return;
+        }
+        let Ok(preparation) = preparation.protect(&draft.bundle_dir).inspect_err(|error| self.refuse_raw_protection(error, cx)) else { return; };
         #[cfg(target_os = "linux")]
         if workflow::shutdown::requested() {
-            if let Err(error) = preparation.abandon(&bundle_dir) {
+            if let Err(error) = preparation.abandon(&draft.bundle_dir) {
                 apparent_log(format!("Failed startup shutdown cleanup: {error:#}"));
             }
             self.cancel_recording(cx);
@@ -276,22 +304,38 @@ impl ApparentCoordinator {
         self.publish_capture_busy();
         let stream_admission = crate::shared::handoff::experiment_preference("labs.localStreamingTranscription")
             .then(workflow::local_transcription::admission);
-        let allow_notes = cfg!(target_os = "linux") || prepared_source.is_none();
-        use crate::capture::engine::runtime::recording::recorder::StartError;
-        if let Some(trace) = &startup {
-            trace.record(StartupPoint::TracksEnter);
-        }
-        let (screen_session, audio_recorder, window_log) = match ScreenCaptureSession::start_tracks(
-            &target, &bundle_dir, &self.telemetry, microphone_enabled, stream_admission,
+        StartupPoint::TracksEnter.record_in(draft.startup.as_ref());
+        let tracks = ScreenCaptureSession::start_tracks(
+            &draft.target, &draft.bundle_dir, &self.telemetry, draft.microphone, stream_admission,
             #[cfg(target_os = "linux")]
             preparation,
             prepared_source,
-            startup.as_ref(),
-        ) {
+            draft.startup.as_ref(),
+        );
+        self.complete_screen_start(draft, tracks, false, cx);
+    }
+
+    fn complete_screen_start(
+        &mut self,
+        draft: DesktopScreenStart,
+        tracks: Result<ScreenTracks, StartError>,
+        shown: bool,
+        cx: &mut Context<Self>,
+    ) {
+        use workflow::performance::StartupPoint;
+        let DesktopScreenStart {
+            target, bundle_dir, overlay, microphone, user_started, allow_notes, started, performance, startup,
+        } = draft;
+        let (screen_session, audio_recorder, window_log) = match tracks {
             Ok(tracks) => tracks,
             Err(error) => {
                 use workflow::error_reporting::Failure;
                 let (message, failure) = match error {
+                    #[cfg(target_os = "linux")]
+                    StartError::Cancelled => {
+                        self.cancel_recording(cx);
+                        return;
+                    }
                     StartError::MicrophoneIntent(error) => (format!("Could not preserve silent capture intent: {error}"), None),
                     StartError::Audio(error) => (format!("Capture refused: narration could not be saved: {error:#}"), Some(Failure::AudioStart)),
                     StartError::Screen(error) => (format!("Capture refused: {error:#}"), Some(Failure::ScreenStart)),
@@ -328,13 +372,21 @@ impl ApparentCoordinator {
                 audio: audio_recorder,
                 windows: window_log,
             },
-            _metal_overlay: metal_overlay,
-            microphone_enabled,
+            _metal_overlay: overlay,
+            microphone_enabled: microphone,
         });
         if let Some(trace) = &startup {
-            trace.record(StartupPoint::PillRequested);
+            trace.record(StartupPoint::NotesReady);
         }
-        self.present_recording_island(cx);
+        if shown {
+            self.confirm_recording_started();
+            self.observe_recording_activity();
+            self.sync_electron_pill();
+            cx.notify();
+        } else {
+            StartupPoint::PillRequested.record_in(startup.as_ref());
+            self.present_recording_island(cx);
+        }
         start_metric("recording_start_ms", started);
     }
 

@@ -79,13 +79,13 @@ impl ApparentCoordinator {
 
         let final_whiteboard = self.whiteboard.borrow_mut().finish(cx, paper_time);
 
-        self.stopping_source = Some(generation);
+        self.stopping_source = SourceTransition::Releasing(generation);
         let (source_released, released) = flume::bounded(1);
         cx.spawn(async move |entity, cx| {
             let _ = released.recv_async().await;
             let _ = entity.update(cx, |coord, cx| {
-                if coord.stopping_source == Some(generation) {
-                    coord.stopping_source = None;
+                if matches!(coord.stopping_source, SourceTransition::Releasing(current) if current == generation) {
+                    coord.stopping_source = SourceTransition::Idle;
                     coord.apply_pill_event(PillEvent::SourceReleased);
                     cx.notify();
                 }
