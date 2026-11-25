@@ -369,6 +369,9 @@ async function execute() {
   run("create-benchmark-cgroup", "sudo", ["-n", "mkdir", scope]);
   benchmarkScope = scope;
   env.APPARENT_PUBLIC_BENCHMARK_CGROUP = scope;
+  env.APPARENT_PUBLIC_GUEST_CLOCK_TICKS = run("guest-clock-ticks", "getconf", [
+    "CLK_TCK",
+  ]).trim();
   if (!b) {
     json("post-build-idle", await idlePreflight());
     const proof = run("guest-interference-proof", process.execPath, [

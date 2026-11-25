@@ -12,6 +12,9 @@ Hosted replay seats the harness and Chromium in a dedicated guest cgroup.
 Root and cgroup CPU counters attribute CPU separately from unrelated work.
 An accepted block allows at most one quarter of one CPU outside that group
 over each measured wait, plus measured counter-read uncertainty. Observed
+negative lag between the guest and scope counters has its own bound of one
+guest clock accounting unit per logical CPU, plus measured read uncertainty.
+This bound does not increase the positive unrelated CPU allowance. Observed
 guest steal or cgroup throttling rejects the block. The guest-minus-cgroup
 I/O pressure lower bound must stay within 2% plus counter-read uncertainty.
 Total guest CPU PSI is diagnostic in hosted receipts. The local replay keeps
