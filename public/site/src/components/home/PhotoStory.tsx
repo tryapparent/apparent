@@ -6,8 +6,24 @@ export function PhotoStory() {
     </section>
     <section className="photo-story" id="photo-preview" aria-label="Dancing and cuddling with dogs">
       <div className="cutout-composition">
-        <div className="cutout-person dancing-cutout"><img src="/pond/simon-cutout.png" alt="Simon dancing, with the background removed" /><span className="cutout-ink">Simon dancing</span><svg viewBox="0 0 100 150" aria-hidden="true"><path d="M15 135 Q12 65 73 22 M54 26 L76 18 L74 42" /></svg></div>
-        <div className="cutout-person dog-cutout"><img src="/pond/olivia-dog-cutout.png" alt="Olivia cuddling her dog, with her clothes preserved and the background removed" /><span className="cutout-ink">Olivia cuddling<br />a dog</span><svg viewBox="0 0 120 100" aria-hidden="true"><path d="M20 15 Q78 5 85 74 M70 60 L86 78 L96 59" /></svg></div>
+        <div className="cutout-person dancing-cutout">
+          <picture>
+            <source type="image/webp"
+              srcSet="/pond/belief/simon-cutout-480.webp 480w, /pond/belief/simon-cutout-1440.webp 1440w"
+              sizes="(max-width: 600px) calc(100vw - 44px), min(645px, calc(59vw - 40px))" />
+            <img src="/pond/simon-cutout.png" width={1536} height={1024} loading="lazy" alt="Simon dancing, with the background removed" />
+          </picture>
+          <span className="cutout-ink">Simon dancing</span><svg viewBox="0 0 100 150" aria-hidden="true"><path d="M15 135 Q12 65 73 22 M54 26 L76 18 L74 42" /></svg>
+        </div>
+        <div className="cutout-person dog-cutout">
+          <picture>
+            <source type="image/webp"
+              srcSet="/pond/belief/olivia-dog-cutout-480.webp 480w, /pond/belief/olivia-dog-cutout-1212.webp 1212w"
+              sizes="(max-width: 600px) min(383px, calc(100vw - 44px)), min(448px, calc(41vw - 28px))" />
+            <img src="/pond/olivia-dog-cutout.png" width={1212} height={1298} loading="lazy" alt="Olivia cuddling her dog, with her clothes preserved and the background removed" />
+          </picture>
+          <span className="cutout-ink">Olivia cuddling<br />a dog</span><svg viewBox="0 0 120 100" aria-hidden="true"><path d="M20 15 Q78 5 85 74 M70 60 L86 78 L96 59" /></svg>
+        </div>
       </div>
       <div className="photo-caption"><span>us having fun</span><svg viewBox="0 0 260 60" aria-hidden="true"><path d="M18 39 C80 43 163 40 236 38" /></svg></div>
     </section>
