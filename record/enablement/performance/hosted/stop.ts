@@ -147,10 +147,37 @@ type WaterfallAttempt = {
   };
 };
 
+function retainWaterfall(evidence: string) {
+  const rawPath = join(evidence, "raw.json");
+  if (!existsSync(rawPath)) return;
+  const raw = json(rawPath);
+  waterfall(
+    join(evidence, "waterfall.html"),
+    "Hosted Record Stop",
+    "Each arm has its own host clock from replay launch to verified clipboard. Engine panels start at that arm's replay cutoff.",
+    raw.trials.flatMap(({ trace }: WaterfallAttempt, index: number) => {
+      const arm = "Arm " + (index + 1);
+      const host = { label: arm + " · host", rows: trace.host };
+      if (!trace.timeline) return [host];
+      const rows = trace.timeline.spans.map(({ name, startMs, endMs }) => ({
+        name,
+        fromMs: startMs,
+        toMs: endMs,
+      }));
+      return [host, { label: arm + " · replay cutoff", rows }];
+    }),
+  );
+}
+
 async function run(label: string, other?: string) {
-  await waitForQuietStart(AbortSignal.timeout(46_000));
+  const quiet = await waitForQuietStart(AbortSignal.timeout(46_000), [
+    "cpu",
+    "io",
+  ]);
+  receipt(join(job.evidence, label + "-quiet.json"), { windows: quiet });
   const output =
     mkdtempSync("/tmp/apparent-dev-record-hosted-stop-") + "-results";
+  const evidence = join(job.evidence, label);
   const before = hostCounters();
   const ticks = cpuSample();
   try {
@@ -170,12 +197,13 @@ async function run(label: string, other?: string) {
       },
     );
   } finally {
-    retain(output, join(job.evidence, label));
     receipt(join(job.evidence, label + "-host.json"), {
       before,
       after: hostCounters(),
       stealPercent: stealSince(ticks, cpuSample()),
     });
+    retain(output, evidence);
+    retainWaterfall(evidence);
   }
   assert.ok(json(join(job.evidence, label + "-host.json")).stealPercent <= 5);
   const report = json(join(output, "comparison.json"));
@@ -183,23 +211,6 @@ async function run(label: string, other?: string) {
   assert.equal(report.transcription, "whole-file");
   assert.equal(report.timingEndpoint, "replay-launch-to-verified-clipboard");
   if (!other) assert.equal(report.timing.score, 100);
-  const raw = json(join(output, "raw.json"));
-  waterfall(
-    join(job.evidence, label, "waterfall.html"),
-    "Hosted Record Stop",
-    "Each arm has its own host clock from replay launch to verified clipboard. Engine panels start at that arm's replay cutoff.",
-    raw.trials.flatMap(({ trace }: WaterfallAttempt, index: number) => {
-      const arm = "Arm " + (index + 1);
-      const host = { label: arm + " · host", rows: trace.host };
-      if (!trace.timeline) return [host];
-      const rows = trace.timeline.spans.map(({ name, startMs, endMs }) => ({
-        name,
-        fromMs: startMs,
-        toMs: endMs,
-      }));
-      return [host, { label: arm + " · replay cutoff", rows }];
-    }),
-  );
 }
 
 await run("baseline");

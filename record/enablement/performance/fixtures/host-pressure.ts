@@ -2,25 +2,40 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 
-export function schedulerPressureUs() {
+type PressureResource = "cpu" | "io";
+
+function pressureUs(resource: PressureResource) {
   const sample = /^some .*\btotal=(\d+)$/m.exec(
-    readFileSync("/proc/pressure/cpu", "utf8"),
+    readFileSync("/proc/pressure/" + resource, "utf8"),
   );
-  assert.ok(sample, "Linux CPU pressure counters are required");
+  assert.ok(sample, "Linux " + resource + " pressure counters are required");
   return Number(sample[1]);
 }
 
-export async function waitForQuietStart(signal: AbortSignal) {
+export function schedulerPressureUs() {
+  return pressureUs("cpu");
+}
+
+export async function waitForQuietStart(
+  signal: AbortSignal,
+  resources: readonly [PressureResource, ...PressureResource[]] = ["cpu"],
+) {
   const deadline = performance.now() + 45000;
-  let consecutive = 0;
+  let quiet: { resource: PressureResource; percent: number }[][] = [];
   while (performance.now() < deadline) {
     const start = performance.now();
-    const pressure = schedulerPressureUs();
+    const pressure = resources.map(pressureUs);
     await delay(1000, undefined, { signal });
-    const percent =
-      (schedulerPressureUs() - pressure) / ((performance.now() - start) * 10);
-    consecutive = percent <= 3 ? consecutive + 1 : 0;
-    if (consecutive === 3) return;
+    const current = resources.map(pressureUs);
+    const elapsed = (performance.now() - start) * 10;
+    const window = resources.map((resource, index) => ({
+      resource,
+      percent: (current[index] - pressure[index]) / elapsed,
+    }));
+    if (window.every(({ percent }) => percent >= 0 && percent <= 3)) {
+      quiet.push(window);
+      if (quiet.length === 3) return quiet;
+    } else quiet = [];
   }
-  throw Error("No quiet host CPU window before the picker-skipped shortcut");
+  throw Error("No quiet host " + resources.join(" and ") + " window");
 }
