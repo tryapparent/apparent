@@ -40,13 +40,15 @@ Open the spoken script with one sentence stating the viewer's question, the curr
 3. **Change** — Explain the cause and what was done about it. Show how the change addresses the cause in the same example. For unresolved work, say what has been tried or proposed and label any unconfirmed cause.
 4. **Now** — Show what happens today. State where the behavior is available and what the evidence verifies. If the problem persists, show the current failure or remaining gap.
 5. **Open** — Name the main risk, unanswered question or important untested case that affects the conclusion.
-6. **Action** — Name who does what next and why, or say “No action is needed.” Keep work assigned to the agent with the agent.
+6. **Action** — End the video by telling the viewer exactly what they need to do, or say “No action is needed from you.” Separately state the next step and who owns it. If nothing remains, say the work is complete. Keep work assigned to the agent with the agent.
+
+Put the verified delivery status in the spoken ending and captions. For implementation work, say whether it is on `main`, whether CI passed on the landed commit, and whether it was released or is available, when those milestones apply. Use current evidence for each claim. Say which milestone is pending or unknown when it affects the handoff. A local test establishes local behavior, a merge establishes integration, and release evidence establishes availability.
 
 Let the beats flow through the footage or explanatory visuals. A single sequence can carry several beats.
 
 Show one concrete example moving through the mechanism: parts doing something to each other, not a component inventory or tool log. For example, a hypothetical timeline can save an earlier volume, lower it temporarily, accept a person's new choice, then show a naive restore overwriting that choice. Label this a **hypothetical example**, not a current app defect. Check any source before applying it to a product; show proposed protections separately from verified behavior.
 
-During the final review, ask whether a viewer can explain who was affected, what changed for them or still happens, and how we know. If impact is unknown, the viewer should be able to tell what evidence is missing.
+During the final review, ask whether a viewer can explain who was affected, what changed for them or still happens, and how we know. If impact is unknown, the viewer should be able to tell what evidence is missing. Watch the ending on its own and confirm that the viewer can tell what is available, whether they need to act, and what happens next or whether the work is complete.
 
 Every mode needs timed, plain-spoken explanation, readable burned captions and editable timed text so the story works muted. Add synchronized generated voice by default unless the user requests silence or suitable narration already exists; disclose generated narration. Never play it through speakers during capture. Use only authorized speech services: do not send private text online or incur charges without permission. If narration is unavailable, report that production blocker; do not silently replace it with silence. An explicitly silent scenario can use captions alone, disclosed in the video and handoff.
 
