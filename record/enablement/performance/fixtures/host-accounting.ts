@@ -170,7 +170,8 @@ export function qualifyAccounting(
   const outsideCpuUs = Math.max(0, measuredBusyUs - workloadCpuUs);
   assert.ok(guestBusyUs >= 0 && measuredBusyUs >= 0 && workloadCpuUs >= 0);
   const lagAllowanceUs = (cpus * 2_000_000) / (subset?.clockTicks ?? 100);
-  if (measuredBusyUs + lagAllowanceUs < workloadCpuUs) {
+  const countersConsistent = measuredBusyUs + lagAllowanceUs >= workloadCpuUs;
+  if (!countersConsistent) {
     const counters = subset && {
       subset,
       elapsedUs,
