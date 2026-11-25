@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { hostname, release } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import {
   benchmarkComparison,
   type Matched,
@@ -335,7 +335,7 @@ for (const binary of control.sha256 === candidate.sha256
     .filter(
       ({ bundle }) =>
         bundle.startsWith(job + "/") ||
-        (hosted && bundle.startsWith(dirname(work) + "/")),
+        (hosted && bundle.startsWith(work + "/")),
     )
     .map((fixture) => {
       const index = join(fixture.bundle, "apparent.json");
