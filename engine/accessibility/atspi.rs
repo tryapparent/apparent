@@ -1,3 +1,6 @@
+#[path = "pin_tree.rs"]
+mod pin_tree;
+
 use std::time::Duration;
 
 use zbus::blocking::connection::Builder;
@@ -39,7 +42,7 @@ pub struct Object(String, OwnedObjectPath);
 pub struct Bus(Connection);
 
 impl Bus {
-    pub fn open() -> Option<Self> {
+    pub fn connect() -> Option<Self> {
         let desktop = Builder::session()
             .ok()?
             .method_timeout(REQUEST)
@@ -54,9 +57,15 @@ impl Bus {
             .method_timeout(REQUEST)
             .build()
             .ok()?;
+        Some(Self(connection))
+    }
+
+    pub fn open() -> Option<Self> {
+        let bus = Self::connect()?;
+        let connection = &bus.0;
         let registry =
-            Proxy::new(&connection, REGISTRY, "/org/a11y/atspi/registry", REGISTRY).ok()?;
-        let daemon = DBusProxy::new(&connection).ok()?;
+            Proxy::new(connection, REGISTRY, "/org/a11y/atspi/registry", REGISTRY).ok()?;
+        let daemon = DBusProxy::new(connection).ok()?;
         let rule = zbus::MatchRule::builder()
             .msg_type(zbus::message::Type::Signal)
             .interface("org.a11y.atspi.Event.Window")
@@ -72,7 +81,9 @@ impl Bus {
                 .call::<_, _, ()>("RegisterEvent", &(event, Vec::<String>::new(), ""))
                 .ok()?;
         }
-        Some(Self(connection))
+        drop(registry);
+        drop(daemon);
+        Some(bus)
     }
 
     fn proxy<'a>(&'a self, object: &'a Object, interface: &'static str) -> Option<Proxy<'a>> {
@@ -99,7 +110,17 @@ impl Bus {
         })
     }
 
+    pub fn is_showing(&self, object: &Object) -> bool {
+        self.state(object).is_some_and(|state| {
+            state & (VISIBLE | SHOWING | DEFUNCT) == VISIBLE | SHOWING
+        })
+    }
+
     pub fn active_tree(&self, pid: u32) -> Option<Object> {
+        self.window_tree(pid, None)
+    }
+
+    pub fn window_tree(&self, pid: u32, named_visible: Option<&str>) -> Option<Object> {
         let desktop = Object(REGISTRY.into(), OwnedObjectPath::try_from(ROOT).ok()?);
         let apps: Vec<Object> = self
             .proxy(&desktop, ACCESSIBLE)?
@@ -118,13 +139,20 @@ impl Bus {
                 return None;
             }
             for tree in windows {
-                if tree.0 != app.0 || !self.is_active(&tree) {
+                if tree.0 != app.0 {
                     continue;
                 }
-                let role: String = self
-                    .proxy(&tree, ACCESSIBLE)?
-                    .call("GetRoleName", &())
-                    .ok()?;
+                let accessible = self.proxy(&tree, ACCESSIBLE)?;
+                let matched = match named_visible {
+                    Some(title) => !title.is_empty() && self.is_showing(&tree)
+                        && accessible.get_property::<String>("Name").ok().as_deref() == Some(title),
+                    None => self.is_active(&tree),
+                };
+                if !matched {
+                    continue;
+                }
+                let role: String = accessible.call("GetRoleName", &()).ok()?;
+                drop(accessible);
                 if !matches!(role.as_str(), "frame" | "window" | "dialog") {
                     continue;
                 }
@@ -188,10 +216,18 @@ impl Bus {
         self.document_at(&frame, point, attribute)
     }
 
-    fn document_at(&self, frame: &Object, (x, y): (i32, i32), attribute: &str) -> Option<String> {
+    fn document_at(&self, frame: &Object, point: (i32, i32), attribute: &str) -> Option<String> {
+        self.documents_at_point(frame, point)?
+            .iter()
+            .rev()
+            .find_map(|document| self.document_url(document, attribute))
+            .or_else(|| self.document_url(&self.embedded_document_at(frame, point)?, attribute))
+    }
+
+    fn documents_at_point(&self, frame: &Object, (x, y): (i32, i32)) -> Option<Vec<Object>> {
         let mut hit: Object = self.proxy(frame, COMPONENT)?
             .call("GetAccessibleAtPoint", &(x, y, 1_u32)).ok()?;
-        let mut page = None;
+        let mut documents = Vec::new();
         for _ in 0..20 {
             if hit == *frame {
                 break;
@@ -201,19 +237,17 @@ impl Bus {
             }
             let accessible = self.proxy(&hit, ACCESSIBLE)?;
             let role: String = accessible.call("GetRoleName", &()).ok()?;
-            if role == "document web" {
-                page = self.document_url(&hit, attribute).or(page);
-            }
             let (bus, path) = accessible.get_property::<(String, OwnedObjectPath)>("Parent").ok()?;
             drop(accessible);
+            if role == "document web" {
+                documents.push(hit);
+            }
             hit = Object(bus, path);
         }
-        if hit != *frame {
-            return None;
-        }
-        if page.is_some() {
-            return page;
-        }
+        (hit == *frame).then_some(documents)
+    }
+
+    fn embedded_document_at(&self, frame: &Object, (x, y): (i32, i32)) -> Option<Object> {
         let relations: Vec<(u32, Vec<Object>)> =
             self.proxy(frame, ACCESSIBLE)?.call("GetRelationSet", &()).ok()?;
         let mut embedded = relations.into_iter().filter(|(kind, _)| *kind == 13)
@@ -224,10 +258,8 @@ impl Bus {
         }
         let (left, top, width, height): (i32, i32, i32, i32) =
             self.proxy(&document, COMPONENT)?.call("GetExtents", &(1_u32,)).ok()?;
-        if x < left || y < top || x >= left.saturating_add(width) || y >= top.saturating_add(height) {
-            return None;
-        }
-        self.document_url(&document, attribute)
+        (x >= left && y >= top && x < left.saturating_add(width) && y < top.saturating_add(height))
+            .then_some(document)
     }
 
     fn document_url(&self, document: &Object, attribute: &str) -> Option<String> {

@@ -143,6 +143,29 @@ pub(super) fn handoff_frames(bundle: &ApparentBundle, compact: bool) -> Option<V
         }
     }
     PageRun::flush(&mut pending, &policy, &mut previous_window, &mut rendered)?;
+    for (frame, text) in frames.iter().zip(&mut rendered) {
+        for mark in marks_on(frame, &bundle.marks) {
+            let Some(pin) = mark.pin else { continue };
+            let mut matches = bundle.action_context.iter().filter_map(|row| {
+                let observation = row.pin_window.as_ref()?;
+                (row.kind == ActionKind::Stroke && row.t == mark.t0 && observation.pin == pin)
+                    .then_some(observation)
+            });
+            if let Some(snapshot) = matches.next()
+                && matches.next().is_none()
+                && let Ok(elements) = serde_json::to_string(&snapshot.elements)
+                && let Ok(line) = policy.call("pinWindowLine", (
+                    crate::shared::model::format_clock(mark.t0),
+                    pin.to_string(),
+                    elements,
+                    snapshot.truncated,
+                ))
+                && !line.is_empty()
+            {
+                text.lines.push(line);
+            }
+        }
+    }
     Some(rendered)
 }
 
@@ -245,7 +268,7 @@ fn events<'a>(
         (change.t, ContextLine::plain(text))
     }));
     out.sort_by_key(|(t, _)| *t);
-    if bundle.action_context.is_empty() {
+    if !bundle.has_action_window_observations() {
         fold_repeats(out)
     } else {
         out

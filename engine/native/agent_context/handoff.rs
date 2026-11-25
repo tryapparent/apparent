@@ -24,7 +24,7 @@ impl<'a> WindowEvidence<'a> {
     pub(super) fn action(bundle: &ApparentBundle, nearby: Option<&'a ActionWindow>) -> Self {
         match nearby {
             Some(window) => Self::Nearby(window),
-            None if !bundle.action_context.is_empty() => Self::Unknown,
+            None if bundle.has_action_window_observations() => Self::Unknown,
             None => Self::None,
         }
     }
@@ -337,6 +337,7 @@ pub(super) fn open_handoff_policy() -> Option<EmbeddedPolicy> {
             "joinPageClicks",
             "pageHeading",
             "pageLine",
+            "pinWindowLine",
         ],
     )
     .ok()
