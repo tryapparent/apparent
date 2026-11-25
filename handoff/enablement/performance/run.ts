@@ -1,3 +1,4 @@
+import { hostedInterference, hostedMeter } from "./diagnostics/hosted-guard.ts";
 import { schedulerDiagnostic } from "./diagnostics/scheduler.ts";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -96,14 +97,31 @@ export async function runFocused(driver: Driver, args: string[]) {
   const qualifies = (pressure: Awaited<ReturnType<typeof preflight>>) =>
     pressure.cpuPercent <= policy.cpuPressurePercent &&
     pressure.ioPercent <= policy.ioPressurePercent;
+  const meter =
+    process.env.RUNNER_ENVIRONMENT === "github-hosted" && mode !== "pilot"
+      ? hostedMeter()
+      : null;
+  const interference = (
+    start: ReturnType<NonNullable<typeof meter>["snapshot"]>,
+    ioPercent: number,
+  ) =>
+    hostedInterference(
+      start,
+      meter!.snapshot(),
+      ioPercent,
+      policy.cpuPressurePercent,
+      policy.ioPressurePercent,
+    );
   if (mode !== "pilot") {
     const samples = [];
     const deadline = Date.now() + 120_000;
     let qualified = false;
     do {
+      const start = meter?.snapshot();
       const pressure = await preflight();
-      qualified = qualifies(pressure);
-      samples.push({ pressure, qualified });
+      const hosted = start && interference(start, pressure.ioPercent);
+      qualified = hosted?.qualified ?? qualifies(pressure);
+      samples.push({ pressure, hosted, qualified });
       if (!qualified && Date.now() < deadline) await setTimeout(6000);
     } while (!qualified && Date.now() < deadline);
     await writeFile(
@@ -166,6 +184,7 @@ export async function runFocused(driver: Driver, args: string[]) {
       const index = ++trialIndex;
       try {
         const start = await pressureSample();
+        const cpuStart = meter?.snapshot();
         const trial = await scenario({
           ...provider,
           host,
@@ -175,13 +194,15 @@ export async function runFocused(driver: Driver, args: string[]) {
           proof: mode === "pilot",
         });
         const pressure = pressureDelta(start, await pressureSample());
-        const qualifiedPressure = qualifies(pressure);
+        const hosted = cpuStart && interference(cpuStart, pressure.ioPercent);
+        const qualifiedPressure = hosted?.qualified ?? qualifies(pressure);
         await writeFile(
           join(output, `trial-${index}.json`),
           JSON.stringify(
             {
               ...trial,
               pressure,
+              hosted,
               qualifiedPressure,
             },
             null,
@@ -336,6 +357,7 @@ export async function runFocused(driver: Driver, args: string[]) {
   const outputReceipt = {
     schema: 1,
     benchmark: policy.version,
+    ...(meter && { pressureContract: "hosted-outside-cpu-v1" }),
     fixture,
     mode,
     runner: {

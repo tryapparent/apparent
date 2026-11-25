@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
   copyFileSync,
   mkdirSync,
@@ -8,6 +8,7 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { isAbsolute, join } from "node:path";
 
 const [control, candidate, evidence, ...extra] = process.argv.slice(2);
@@ -61,21 +62,69 @@ execFileSync(
   },
 );
 
-function measure(mode: "baseline" | "compare") {
-  const previous = new Set(readdirSync(work));
-  const result = spawnSync(
-    "xvfb-run",
+function scoped(args: string[]) {
+  return spawnSync(
+    "sudo",
     [
-      "-a",
-      process.execPath,
-      "composition/pill/enablement/focused-handoff.ts",
-      mode,
-      work,
-      control,
-      ...(mode === "compare" ? [candidate] : []),
+      "-n",
+      "systemd-run",
+      "--wait",
+      "--pipe",
+      "--collect",
+      "--same-dir",
+      "--service-type=exec",
+      "--property=CPUAccounting=yes",
+      "--unit=apparent-handoff-" + randomUUID() + ".service",
+      "--uid=" + process.getuid!(),
+      "--gid=" + process.getgid!(),
+      "--setenv=PATH=" + env.PATH,
+      "--setenv=HOME=" + env.HOME,
+      "--setenv=TMPDIR=" + temp,
+      "--setenv=RUNNER_TEMP=" + temp,
+      "--setenv=RUNNER_ENVIRONMENT=github-hosted",
+      "--",
+      ...args,
     ],
     { env, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
   );
+}
+
+const proof = "handoff/enablement/performance/diagnostics/guard-proof.ts";
+const signal = mkdtempSync(join(work, "proof-"));
+const outside = spawn(process.execPath, [proof, "outside", signal], {
+  env,
+  stdio: ["ignore", "ignore", "inherit"],
+});
+try {
+  const proofResult = scoped([
+    process.execPath,
+    proof,
+    "inside",
+    signal,
+    join(evidence, "hosted-guard-proof.json"),
+  ]);
+  if (proofResult.error) throw proofResult.error;
+  assert.equal(
+    proofResult.status,
+    0,
+    proofResult.stderr || "Hosted CPU accounting proof failed",
+  );
+} finally {
+  outside.kill();
+}
+
+function measure(mode: "baseline" | "compare") {
+  const previous = new Set(readdirSync(work));
+  const result = scoped([
+    "xvfb-run",
+    "-a",
+    process.execPath,
+    "composition/pill/enablement/focused-handoff.ts",
+    mode,
+    work,
+    control,
+    ...(mode === "compare" ? [candidate] : []),
+  ]);
   const target = join(evidence, mode);
   mkdirSync(target, { mode: 0o700 });
   writeFileSync(join(target, "stdout.log"), result.stdout ?? "");
