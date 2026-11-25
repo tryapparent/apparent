@@ -134,8 +134,6 @@ test("source homepage preserves accepted responsive layout and interactions", as
   const { extname } = await import("node:path")
   const { mkdir, writeFile } = await import("node:fs/promises")
   const { firefox } = await import("playwright-core")
-  // Pages replaces the single MP4 with immutable chunks. Exercise its actual
-  // compiled worker, not a missing-file response or a substitute source movie.
   const prepared = !existsSync(join(publicDir, movie.path.slice(1))) && existsSync(join(publicDir, "_routes.json"))
   const { Miniflare } = await import("miniflare")
   const movieRuntime = prepared ? new Miniflare({
@@ -149,7 +147,7 @@ test("source homepage preserves accepted responsive layout and interactions", as
   }) : null
   const movieOrigin = movieRuntime ? await movieRuntime.ready.catch(async error => { await movieRuntime.dispose(); throw error }) : null
   console.info(`Homepage browser fixture: ${prepared ? "compiled Pages movie worker" : "raw source movie"}`)
-  const types: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".webp": "image/webp", ".jpg": "image/jpeg", ".ttf": "font/ttf", ".mp4": "video/mp4", ".txt": "text/plain", ".md": "text/markdown" }
+  const types: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".webp": "image/webp", ".jpg": "image/jpeg", ".ttf": "font/ttf", ".woff2": "font/woff2", ".mp4": "video/mp4", ".txt": "text/plain", ".md": "text/markdown" }
   const server = createServer(async (request, response) => {
     const pathname = new URL(request.url!, "http://localhost").pathname
     const file = resolve(publicDir, "." + (pathname.endsWith("/") ? pathname + "index.html" : pathname))
@@ -348,6 +346,7 @@ test("source homepage preserves accepted responsive layout and interactions", as
             await control.filter({ hasText: /^Play$/ }).waitFor({ state: "attached" })
           }
           const player = page.locator("#demo iframe")
+          await player.scrollIntoViewIfNeeded()
           await page.waitForFunction(() => document.querySelector("#demo iframe")?.hasAttribute("src"))
           const embed = new URL((await player.getAttribute("src"))!)
           assert.equal(embed.origin + embed.pathname, "https://www.youtube-nocookie.com/embed/IXJVr0-PJ7k")

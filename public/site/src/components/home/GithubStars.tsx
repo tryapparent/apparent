@@ -1,27 +1,36 @@
-import { useEffect, useState } from "react"
+import { useCallback, useState } from "react"
 
 const REPO = "https://github.com/tryapparent/apparent"
 
 export function GithubStars() {
   const [stars, setStars] = useState<number | null>(null)
 
-  useEffect(() => {
+  const observeLoad = useCallback((link: HTMLAnchorElement | null) => {
+    if (!link) return
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 5000)
-    fetch("https://api.github.com/repos/tryapparent/apparent", {
-      signal: controller.signal,
-      credentials: "omit",
-      headers: { Accept: "application/vnd.github+json" },
-    })
-      .then((response) => response.ok ? response.json() : null)
-      .then((data) => {
-        if (!controller.signal.aborted && Number.isSafeInteger(data?.stargazers_count) && data.stargazers_count >= 0) {
-          setStars(data.stargazers_count)
-        }
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const loadStars = () => {
+      timeout = setTimeout(() => controller.abort(), 5000)
+      fetch("https://api.github.com/repos/tryapparent/apparent", {
+        signal: controller.signal,
+        credentials: "omit",
+        priority: "low",
+        headers: { Accept: "application/vnd.github+json" },
       })
-      .catch(() => { /* Keep the GitHub link when offline or rate-limited. */ })
-      .finally(() => clearTimeout(timeout))
+        .then((response) => response.ok ? response.json() : null)
+        .then((data) => {
+          if (!controller.signal.aborted && Number.isSafeInteger(data?.stargazers_count) && data.stargazers_count >= 0) {
+            setStars(data.stargazers_count)
+          }
+        })
+        .catch(() => { /* Keep the GitHub link when offline or rate-limited. */ })
+        .finally(() => clearTimeout(timeout))
+    }
+    if (document.readyState === "complete") loadStars()
+    else window.addEventListener("load", loadStars, { once: true })
+
     return () => {
+      window.removeEventListener("load", loadStars)
       controller.abort()
       clearTimeout(timeout)
     }
@@ -32,7 +41,7 @@ export function GithubStars() {
   }).format(stars)
 
   return (
-    <a className="github-stars" href={REPO}
+    <a ref={observeLoad} className="github-stars" href={REPO}
       aria-label={stars === null ? "Star apparent on GitHub" : `apparent on GitHub: ${stars.toLocaleString("en")} stars`}
       title={stars === null ? "Star apparent on GitHub" : `${stars.toLocaleString("en")} stars on GitHub`}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">

@@ -30,3 +30,10 @@ workspace/lockfile and all callers together; do not leave forwarding donors.
 
 The [homepage performance replay](browser-proof/homepage-performance/README.md) runs locally against
 the packaged Public build and verifies the setup clipboard and feature demo.
+
+Public verification also checks the homepage's preloaded Host Grotesk font,
+post-load GitHub star count and in-view YouTube player against the built site.
+The homepage WOFF2 is a lossless conversion of
+`public/site/public/assets/fonts/HostGrotesk-Variable.ttf` with
+`fonttools ttLib.woff2 compress`. The original font is licensed under the
+SIL Open Font License 1.1.
