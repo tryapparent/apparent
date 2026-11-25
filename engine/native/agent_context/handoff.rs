@@ -1,8 +1,9 @@
 use crate::embedded_policy::EmbeddedPolicy;
 use crate::shared::model::{
-    ActionKind, ActionWindow, ApparentBundle, Keyframe, Mark, Shape, format_clock,
+    ActionKind, ActionWindow, ApparentBundle, InteractionEvent, Keyframe, Mark, Shape, format_clock,
 };
 use crate::shared::routing::BROWSER_PAGE_EVENT_PREFIX;
+use std::collections::{HashMap, HashSet};
 
 const HANDOFF_LINE: &str = include_str!(concat!(env!("OUT_DIR"), "/agent-handoff-line.mjs"));
 
@@ -32,6 +33,7 @@ impl<'a> WindowEvidence<'a> {
 pub(super) struct ContextLine<'a> {
     pub(super) text: String,
     pub(super) window: WindowEvidence<'a>,
+    pub(super) page: Option<&'a str>,
 }
 
 impl<'a> ContextLine<'a> {
@@ -39,7 +41,174 @@ impl<'a> ContextLine<'a> {
         Self {
             text,
             window: WindowEvidence::None,
+            page: None,
         }
+    }
+}
+
+#[derive(Default)]
+pub(super) struct BrowserPages<'a> {
+    urls: HashMap<u64, &'a str>,
+    consumed: HashSet<u64>,
+}
+
+impl<'a> BrowserPages<'a> {
+    pub(super) fn collect(bundle: &'a ApparentBundle, compact: bool) -> Self {
+        if !compact || bundle.device.is_some() {
+            return Self::default();
+        }
+        let mut observations = HashMap::new();
+        for event in &bundle.events {
+            if let InteractionEvent::AppEvent { t, label } = event
+                && let Some(url) = label.strip_prefix(BROWSER_PAGE_EVENT_PREFIX)
+            {
+                observations.entry(*t).and_modify(|entry| *entry = None).or_insert(Some(url));
+            }
+        }
+        if observations.is_empty() {
+            return Self::default();
+        }
+        let mut actions = HashMap::<u64, usize>::new();
+        for t in bundle.events.iter().filter_map(|event| match event {
+            InteractionEvent::Click { t, .. } | InteractionEvent::Drag { t, .. } => Some(*t),
+            _ => None,
+        }).chain(bundle.strokes.iter().filter(|stroke| !stroke.laser).map(|stroke| stroke.t0)) {
+            *actions.entry(t).or_default() += 1;
+        }
+        let urls = observations.into_iter()
+            .filter_map(|(t, url)| {
+                let url = url?;
+                (actions.get(&t) == Some(&1)
+                    && crate::shared::routing::browser_page_url(url).as_deref() == Some(url))
+                    .then_some((t, url))
+            })
+            .collect();
+        Self { urls, consumed: HashSet::new() }
+    }
+
+    pub(super) fn url(&self, t: u64) -> Option<&'a str> {
+        self.urls.get(&t).copied()
+    }
+
+    pub(super) fn is_empty(&self) -> bool {
+        self.urls.is_empty()
+    }
+
+    pub(super) fn consumed(&self, t: u64) -> bool {
+        self.consumed.contains(&t)
+    }
+
+    pub(super) fn take(&mut self, t: u64) -> Option<&'a str> {
+        let url = self.url(t)?;
+        self.consumed.insert(t).then_some(url)
+    }
+
+    pub(super) fn take_mark(
+        &mut self,
+        policy: &EmbeddedPolicy,
+        bundle: &ApparentBundle,
+        mark: &Mark,
+    ) -> Option<&'a str> {
+        if self.is_empty() || mark.pin.is_some() {
+            return None;
+        }
+        let stamps = mark.strokes.iter()
+            .map(|&index| bundle.strokes.get(index).map(|stroke| stroke.t0))
+            .collect::<Option<Vec<_>>>()?;
+        let first = self.url(*stamps.first()?)?;
+        if stamps.iter().any(|&t| self.consumed(t)) {
+            return None;
+        }
+        if stamps.len() > 1 {
+            let pages: Vec<_> = stamps.iter().map(|&t| self.url(t).unwrap_or_default()).collect();
+            let json = serde_json::to_string(&pages).ok()?;
+            if policy.call("agreedPage", (json,)).ok()? != first {
+                return None;
+            }
+        }
+        self.consumed.extend(stamps);
+        Some(first)
+    }
+}
+
+pub(super) struct PageRun<'a> {
+    frame: usize,
+    url: &'a str,
+    scope: String,
+    window: Option<&'a ActionWindow>,
+    rows: Vec<(String, String)>,
+    multiple: bool,
+}
+
+impl<'a> PageRun<'a> {
+    pub(super) fn push(
+        pending: &mut Option<Self>,
+        policy: &EmbeddedPolicy,
+        frame: usize,
+        line: ContextLine<'a>,
+        url: &'a str,
+        previous: &mut Option<&'a ActionWindow>,
+        frames: &mut [FrameText],
+    ) -> Option<()> {
+        let (clock, text) = line.text.split_once(' ')?;
+        let window = match line.window {
+            WindowEvidence::Nearby(window) => Some(window),
+            _ => None,
+        };
+        let scope = match window {
+            Some(window) => {
+                let path_empty = url.split_once("://")
+                    .and_then(|(_, rest)| rest.split_once('/')).is_some_and(|(_, path)| path.is_empty());
+                let json = serde_json::to_string(&[None, Some(window)]).ok()?;
+                let heading = policy.call("windowHeading", (json,)).ok()?;
+                policy.call("pageScope", (path_empty, safe_window_text(&heading))).ok()?
+            }
+            None => String::new(),
+        };
+        if let Some(run) = pending.as_mut()
+            && policy.call("samePage", (run.url, run.scope.as_str(), url, scope.as_str())).ok()? == "yes"
+        {
+            run.multiple = true;
+            if let Some((clocks, body)) = run.rows.last_mut()
+                && policy.call("joinPageClicks", (body.as_str(), text)).ok()? == "yes"
+            {
+                clocks.push_str(", ");
+                clocks.push_str(clock);
+            } else {
+                run.rows.push((clock.to_owned(), text.to_owned()));
+            }
+            return Some(());
+        }
+        Self::flush(pending, policy, previous, frames)?;
+        *pending = Some(Self {
+            frame, url, scope, window, rows: vec![(clock.to_owned(), text.to_owned())], multiple: false,
+        });
+        Some(())
+    }
+
+    pub(super) fn flush(
+        pending: &mut Option<Self>,
+        policy: &EmbeddedPolicy,
+        previous: &mut Option<&'a ActionWindow>,
+        frames: &mut [FrameText],
+    ) -> Option<()> {
+        let Some(run) = pending.take() else { return Some(()); };
+        let out = &mut frames[run.frame].lines;
+        let within_window = !run.multiple && run.window.is_some() && run.window == *previous;
+        let scope = if within_window { "" } else { &run.scope };
+        let heading = policy.call("pageHeading", (run.url, scope)).ok()?;
+        if run.multiple {
+            out.push(heading.clone());
+        }
+        for (clock, text) in run.rows {
+            let inline = if run.multiple { "" } else { &heading };
+            let line = policy.call("pageLine", (clock, text, inline)).ok()?;
+            out.push(if run.multiple || within_window { format!("  {line}") } else { line });
+        }
+        if !within_window {
+            *previous = None;
+        }
+        Some(())
     }
 }
 
@@ -50,6 +219,8 @@ pub(super) fn fold_repeats(items: Vec<(u64, ContextLine<'_>)>) -> Vec<(u64, Cont
             Some((_, prev, last, count))
                 if prev.text == action.text
                     && t - *last < super::REPEAT_MS
+                    && prev.page.is_none()
+                    && action.page.is_none()
                     && !action.text.starts_with(BROWSER_PAGE_EVENT_PREFIX) =>
             {
                 *last = t;
@@ -156,6 +327,12 @@ pub(super) fn open_handoff_policy() -> Option<EmbeddedPolicy> {
             "windowHeading",
             "windowSuffix",
             "keepFrameHead",
+            "agreedPage",
+            "pageScope",
+            "samePage",
+            "joinPageClicks",
+            "pageHeading",
+            "pageLine",
         ],
     )
     .ok()

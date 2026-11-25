@@ -39,6 +39,34 @@ def compact_line(+kind: LineKind, clock: String, number: String, text: String, s
 def keep_frame_head(compact: Bool, scene: Bool, empty: Bool) -> Bool:
   Bool.and(empty, Bool.not(Bool.and(compact, scene)))
 
+def all_on_page(+url: String, pages: List<&2, String>) -> Bool:
+  match pages:
+    case []: True{}
+    case page <> rest: Bool.and(String.eq(url, page), all_on_page(url, rest))
+
+def agreed_page(pages: List<&2, String>) -> String:
+  match pages:
+    case +url <> rest: Bool.pick(String, all_on_page(url, rest), url, "")
+    case []: ""
+
+def page_scope(path_empty: Bool, nearby: String) -> String:
+  Bool.pick(String, path_empty, nearby, "")
+
+def same_page(+url: String, +scope: String, other_url: String, other_scope: String) -> Bool:
+  Bool.and(String.eq(url, other_url), String.eq(scope, other_scope))
+
+def join_page_clicks(+text: String, other: String) -> Bool:
+  Bool.and(String.eq(text, "clicked"), String.eq(text, other))
+
+def page_line(clock: String, text: String) -> String:
+  String.append(clock, String.append(" ", text))
+
+def page_heading(url: String, +scope: String) -> String:
+  String.append(url, Bool.pick(String, String.eq(scope, ""), "", String.append(" · ", scope)))
+
+def single_page_line(clock: String, text: String, heading: String) -> String:
+  String.append(page_line(clock, text), String.append(" · ", heading))
+
 type ObservedWindow is Data:
   Known{id: String, app: String, title: String}
   Unknown{}

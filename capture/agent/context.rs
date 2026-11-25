@@ -1,7 +1,10 @@
 use crate::embedded_policy::EmbeddedPolicy;
 #[path = "../../engine/native/agent_context/handoff.rs"]
 mod handoff;
-use handoff::{ContextLine, FrameText, WindowEvidence, fold_repeats, line, open_handoff_policy, render_context_line, window_near_mark};
+#[path = "../../engine/native/agent_context/timeline.rs"]
+mod timeline;
+use handoff::{ContextLine, FrameText, WindowEvidence, line, window_near_mark};
+use timeline::handoff_frames;
 pub(crate) use handoff::{append_frame, audio_notice, frame_is_flagged};
 use crate::shared::model::*;
 use crate::capture::engine::sketch::{
@@ -53,9 +56,10 @@ enum Item<'a> {
     Mark {
         mark: &'a Mark,
         number: Option<usize>,
+        page: Option<&'a str>,
     },
     Event(ContextLine<'a>),
-    Note { text: String },
+    Note { text: String, window: Option<&'a ActionWindow> },
 }
 
 struct Timed<'a> {
@@ -80,90 +84,6 @@ pub(crate) fn keyframe_texts(bundle: &ApparentBundle) -> Option<Vec<FrameText>> 
 
 pub(crate) fn compact_keyframe_texts(bundle: &ApparentBundle) -> Option<Vec<FrameText>> {
     handoff_frames(bundle, true)
-}
-
-fn handoff_frames(bundle: &ApparentBundle, compact: bool) -> Option<Vec<FrameText>> {
-    let frames = &bundle.keyframes;
-    if frames.is_empty() {
-        return None;
-    }
-    let policy = open_handoff_policy()?;
-    let words = frame_words(bundle);
-    let clicks: Vec<_> = frames.iter().map(|frame| click_anchor(frame, &bundle.events)).collect();
-    let starts = frame_starts(bundle, words.as_deref(), &clicks);
-    let owner = |t: u64| starts.iter().rposition(|&s| s <= t).unwrap_or(0);
-
-    let mut items: Vec<Vec<Timed>> = frames.iter().map(|_| Vec::new()).collect();
-    for (i, frame) in frames.iter().enumerate() {
-        let shared = marks_on(frame, &bundle.marks);
-        let numbered = shared.len() >= 2;
-        for (n, mark) in shared.into_iter().enumerate() {
-            items[i].push(Timed {
-                t: mark.t0,
-                item: Item::Mark {
-                    mark,
-                    number: numbered.then_some(n + 1),
-                },
-            });
-        }
-        if frame.reason == KeyframeReason::Click && clicks[i].is_none() {
-            let text = without_positions(&frame.event);
-            if !text.trim().is_empty() {
-                items[i].push(Timed { t: frame.t, item: Item::Event(ContextLine::plain(text)) });
-            }
-        }
-    }
-    for event in &bundle.events {
-        if let InteractionEvent::Note { t, pin, text, .. } = event {
-            items[owner(*t)].push(Timed {
-                t: *t,
-                item: Item::Note {
-                    text: crate::capture::engine::sketch::typed_note_text(bundle, *pin, text),
-                },
-            });
-        }
-    }
-    for (t, action) in events(bundle) {
-        items[owner(t)].push(Timed {
-            t,
-            item: Item::Event(action),
-        });
-    }
-
-    let mut previous_window = None;
-    let mut previous_screen = bundle.screen_at(0);
-    frames
-        .iter()
-        .enumerate()
-        .map(|(i, frame)| {
-            let mut timed = std::mem::take(&mut items[i]);
-            timed.sort_by_key(|item| item.t);
-            let lines = match &words {
-                Some(words) => interleave(&policy, bundle, &words[i], &timed, compact),
-                None => interleave_unsplit(&policy, bundle, frame.said.as_deref(), frame.t, &timed, compact),
-            }?;
-            let scene = frame.reason == KeyframeReason::SceneChange;
-            let keep_head = lines.is_empty()
-                && (!compact || policy.call("keepFrameHead", (compact, scene, true)).ok()? == "yes");
-            let head = match (!compact).then(|| changed_regions(bundle, i)).flatten() {
-                Some(changed) => format!("[{changed} changed]"),
-                None if keep_head => without_positions(&frame.event),
-                None => String::new(),
-            };
-            if compact {
-                let screen = bundle.screen_at(frame.t);
-                if !head.is_empty() || screen != previous_screen || frame_is_flagged(bundle, frame) {
-                    previous_window = None;
-                }
-                previous_screen = screen;
-            }
-            let mut rendered = Vec::new();
-            for line in lines {
-                render_context_line(&policy, compact, line, &mut previous_window, &mut rendered)?;
-            }
-            Some(FrameText { head, lines: rendered })
-        })
-        .collect()
 }
 
 #[derive(Clone, Debug)]
@@ -336,73 +256,6 @@ fn click_anchor(frame: &Keyframe, events: &[InteractionEvent]) -> Option<u64> {
         .max()
 }
 
-/// Everything besides marks that the summary shows inline, in time order, with repeats of one
-/// thing (a shortcut, a click on one control) folded into `×N` and a run of drags into one line.
-fn events(bundle: &ApparentBundle) -> Vec<(u64, ContextLine<'_>)> {
-    let settled = settled_events(&bundle.events);
-    // On a Mac capture these come from the dev page (`crate::page`), not an app.
-    let page_scrubs: Vec<u64> = settled
-        .iter()
-        .filter_map(|e| match e {
-            InteractionEvent::AppEvent { t, label }
-                if bundle.device.is_none() && label.contains(" scrubbed to ") =>
-            {
-                Some(*t)
-            }
-            _ => None,
-        })
-        .collect();
-    let mut out = Vec::new();
-    let mut drags = None::<DragRun<'_>>;
-    for event in &settled {
-        if let InteractionEvent::Drag { t, t1, .. } = event {
-            let reported = page_scrubs
-                .iter()
-                .any(|&s| s + SCRUB_MS >= *t && s <= t1 + SCRUB_MS);
-            if let Some(drag) = drag_text(event).filter(|_| !reported) {
-                let window = bundle.window_observed_near_action(ActionKind::Pointer, *t);
-                match &mut drags {
-                    Some(run) if run.joins(&drag, *t, window) => run.add(drag, *t1),
-                    _ => {
-                        out.extend(drags.take().map(|run| run.line(bundle)));
-                        drags = Some(DragRun::new(drag, *t, *t1, window));
-                    }
-                }
-            }
-            continue;
-        }
-        let line = match event {
-            InteractionEvent::AppEvent { t, label } if bundle.device.is_none() => {
-                Some((*t, ContextLine::plain(label.clone())))
-            }
-            // Window titles stay in apparent.json; the summary names apps only.
-            InteractionEvent::AppChange { t, app, .. } => Some((*t, ContextLine::plain(format!("switched to {app}")))),
-            other => event_text(other).map(|text| {
-                let window = event_context_kind(other).map_or(WindowEvidence::None, |kind| {
-                    WindowEvidence::action(bundle, bundle.window_observed_near_action(kind, other.timestamp_ms()))
-                });
-                (other.timestamp_ms(), ContextLine { text, window })
-            }),
-        };
-        out.extend(line);
-    }
-    out.extend(drags.map(|run| run.line(bundle)));
-    out.extend(window_changes(&bundle.windows).into_iter().map(|(t, text)| (t, ContextLine::plain(text))));
-    out.extend(bundle.context_changes.iter().map(|change| {
-        let text = match &change.value {
-            Some(value) => format!("{} → {}", one_line(&change.key), one_line(value)),
-            None => format!("{} cleared", one_line(&change.key)),
-        };
-        (change.t, ContextLine::plain(text))
-    }));
-    out.sort_by_key(|(t, _)| *t);
-    if bundle.action_context.is_empty() {
-        fold_repeats(out)
-    } else {
-        out
-    }
-}
-
 /// A drag worth a line: one that names what it moved, or an unnamed one that went far.
 #[derive(Clone, Debug, PartialEq)]
 struct Drag {
@@ -512,7 +365,7 @@ impl<'a> DragRun<'a> {
         if count > 1 && first.verb != "scrubbed" {
             text.push_str(&format!(" ×{count}"));
         }
-        (self.t, ContextLine { text, window: WindowEvidence::action(bundle, self.window) })
+        (self.t, ContextLine { text, window: WindowEvidence::action(bundle, self.window), page: None })
     }
 }
 
@@ -685,7 +538,7 @@ fn join_words(words: &[&WordTiming]) -> String {
 fn action_line<'a>(policy: &EmbeddedPolicy, bundle: &'a ApparentBundle, timed: &Timed<'a>, compact: bool) -> Option<ContextLine<'a>> {
     let t = timed.t;
     match &timed.item {
-        Item::Mark { mark, number } => {
+        Item::Mark { mark, number, page } => {
             let number = number.map(circled).unwrap_or_default();
             let nearby = window_near_mark(policy, bundle, mark)?;
             let text = if mark.shape == Shape::Circle {
@@ -694,13 +547,18 @@ fn action_line<'a>(policy: &EmbeddedPolicy, bundle: &'a ApparentBundle, timed: &
             } else {
                 line(policy, "Mark", t, &number, &mark_text(mark), "", compact)?
             };
-            Some(ContextLine { text, window: WindowEvidence::action(bundle, nearby) })
+            Some(ContextLine { text, window: WindowEvidence::action(bundle, nearby), page: *page })
         }
         Item::Event(action) => Some(ContextLine {
             text: line(policy, "Action", t, "", &action.text, "", compact)?,
             window: action.window,
+            page: action.page,
         }),
-        Item::Note { text } => line(policy, "Note", t, "", text, "", compact).map(ContextLine::plain),
+        Item::Note { text, window } => Some(ContextLine {
+            text: line(policy, "Note", t, "", text, "", compact)?,
+            window: window.map_or(WindowEvidence::None, WindowEvidence::Nearby),
+            page: None,
+        }),
     }
 }
 
