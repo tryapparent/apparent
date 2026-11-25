@@ -91,3 +91,9 @@ TMPDIR="$job/tmp" node handoff/enablement/performance/stop.ts \
 ```
 
 Pass `pending` instead of a baseline receipt to record that no qualified incumbent is available. The command uses the shipped journey Bend2 speed and stop decisions and reads the shipped matched repeat and window limits. Each tested idea must beat the guard-qualified incumbent on the aggregate and both repeats beyond frozen noise to advance the curve. The verdict reports active seconds, complete one-hour windows, early and recent gain rates, cutoff, and distinct tested ideas since the last accepted gain.
+
+## Linux Paste Last
+
+The [focused transcript draft benchmark](focused-paste/README.md) has its own
+manual gateway route and endpoint version. It measures the real Linux clipboard
+transfer and independent receipt in a focused editor.

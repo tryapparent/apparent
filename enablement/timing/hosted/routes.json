@@ -1,5 +1,6 @@
 {
   "handoff": "handoff/enablement/ci/hosted-performance.ts",
+  "handoff-focused-paste": "handoff/enablement/performance/focused-paste/hosted.ts",
   "onboarding": "onboarding/enablement/performance/hosted.ts",
   "connect": "connect/enablement/benchmark/hosted.ts",
   "agent": "agent/enablement/performance/hosted.ts",
