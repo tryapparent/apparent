@@ -14,6 +14,7 @@ import {
 import { availableParallelism } from "node:os";
 import { delimiter, isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { idlePreflight } from "./resources.ts";
 
 const inputs = process.argv.slice(2);
 assert(
@@ -220,13 +221,19 @@ function packageSite(
 type Site = ReturnType<typeof packageSite>;
 type Replay = {
   qualified: boolean;
+  diagnostic?: boolean;
   receipt: string;
   revision: string;
   packageSha256: string;
   receipts: { eligible: boolean; sampledChromiumPssKiB: number }[];
 };
 
-function replay(label: string, site: Site, options: string[]) {
+function replay(
+  label: string,
+  site: Site,
+  options: string[],
+  diagnostic = false,
+) {
   const before = snapshot();
   try {
     const result = JSON.parse(
@@ -242,7 +249,9 @@ function replay(label: string, site: Site, options: string[]) {
       ]),
     ) as Replay;
     assert(
-      result.qualified &&
+      (diagnostic
+        ? result.diagnostic && !result.qualified
+        : result.qualified) &&
         result.revision === site.sha &&
         /^[a-f0-9]{64}$/.test(result.packageSha256),
     );
@@ -251,7 +260,7 @@ function replay(label: string, site: Site, options: string[]) {
         realpathSync(result.receipt).startsWith(evidence + "/"),
     );
     const raw = JSON.parse(readFileSync(result.receipt, "utf8")) as Replay;
-    const eligible = raw.receipts.filter((row) => row.eligible);
+    const eligible = raw.receipts.filter((row) => diagnostic || row.eligible);
     assert(
       eligible.length && eligible.every((row) => row.sampledChromiumPssKiB > 0),
       "Chromium PSS was unavailable",
@@ -267,7 +276,7 @@ function replay(label: string, site: Site, options: string[]) {
   }
 }
 
-function execute() {
+async function execute() {
   const aSha = head("control-head", control);
   const bSha = head("candidate-head", candidate);
   const affinity = readFileSync("/proc/self/status", "utf8").match(
@@ -331,11 +340,44 @@ function execute() {
     aSha === bSha
       ? null
       : packageSite("candidate", candidate, bSha, environment);
-  const quiet = ["--mode", "quiet", "--runs", "5", "--max-blocks", "25"];
+  if (!b) {
+    json("post-build-idle", await idlePreflight());
+    const options = [
+      "--pressure-diagnostic",
+      "--mode",
+      "calibrate",
+      "--runs",
+      "1",
+      "--max-blocks",
+      "1",
+    ];
+    replay("pressure-a-first", a, options, true);
+    const preflight = [...options, "--idle-preflight"];
+    replay("pressure-b-first", a, preflight, true);
+    replay("pressure-b-repeat", a, preflight, true);
+    replay("pressure-a-repeat", a, options, true);
+  }
+  const quiet = [
+    "--mode",
+    "quiet",
+    "--runs",
+    "5",
+    "--max-blocks",
+    "25",
+    "--idle-preflight",
+  ];
   const controlOne = replay("noise-first", a, quiet);
   const controlTwo = replay("noise-second", a, quiet);
   const controls = [controlOne.receipt, controlTwo.receipt];
-  const trace = ["--mode", "trace", "--runs", "1", "--max-blocks", "8"];
+  const trace = [
+    "--mode",
+    "trace",
+    "--runs",
+    "1",
+    "--max-blocks",
+    "8",
+    "--idle-preflight",
+  ];
   replay("control-overhead", a, [
     "--mode",
     "calibrate",
@@ -343,6 +385,7 @@ function execute() {
     "2",
     "--max-blocks",
     "10",
+    "--idle-preflight",
   ]);
 
   let experiments: {
@@ -410,7 +453,7 @@ function execute() {
 }
 
 try {
-  execute();
+  await execute();
 } catch (error) {
   json("failure", {
     message: error instanceof Error ? error.message : String(error),

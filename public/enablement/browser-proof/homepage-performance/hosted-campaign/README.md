@@ -1,5 +1,14 @@
 # Public hosted campaign scoring
 
+Equal-SHA dispatches capture post-build idle guest CPU PSI and an unscored
+A/B/B/A harness diagnostic on the same Chromium and package. Each replay
+contains a quiet and a detailed cold/warm block with real clipboard verification.
+Its receipt separates the timed navigation from the surrounding observer work.
+B waits outside each measured interval for two consecutive 200 ms samples at
+or below 2% CPU pressure, capped at six samples. The hosted scorer uses this
+preflight with the same independent 2% guard inside every measured wait.
+Diagnostics are ineligible for campaign scoring even when their outputs verify.
+
 To score the hosted campaign across jobs, use the downloaded and independently
 verified evidence directories in a ledger beside the artifacts:
 
