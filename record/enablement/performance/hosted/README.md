@@ -51,6 +51,11 @@ and renderer entry before timing. After quiet CPU and I/O preflight, it
 launches each build once on private Xvfb and verifies its painted controls
 and Finish command. This preparation uses the ordinary Electron flags and
 allows up to ten seconds to observe the frame. Its timing is diagnostic only.
+If the first preparation sees neither readiness nor pixels while runner I/O
+pressure exceeds the quiet limit, the adapter retains the failure and tries
+one fresh preparation after another quiet window. The recovery uses the same
+Electron flags and must still verify the pixels and Finish. Setup failures,
+failures under quiet I/O and failed recovery stop the job.
 The measured batch starts after a separate quiet CPU and I/O preflight.
 Each timed cold attempt starts a new process with a fresh, isolated profile
 and uses the existing six-second observation limit. The operating system
