@@ -53,8 +53,9 @@ export function workflowContracts(paths: string[] | null, base: string, workflow
   return commands;
 }
 
-export function codexStopHookTests(head: string) {
-  const trackedHookTest = spawnSync('git', ['ls-tree', '--end-of-options', head, '--', codexStopHookTest], {cwd: fileURLToPath(new URL('../../', import.meta.url)), encoding: 'utf8'});
+export function codexStopHookTests(head: string, paths: string[] | null, cwd = fileURLToPath(new URL('../../', import.meta.url))) {
+  if (paths && !paths.some(path => path.startsWith('enablement/hooks/'))) return [];
+  const trackedHookTest = spawnSync('git', ['ls-tree', '--end-of-options', head, '--', codexStopHookTest], {cwd, encoding: 'utf8'});
   return trackedHookTest.status === 0 && trackedHookTest.stdout.startsWith('100644 blob ')
     ? [{argv: ['node', '--experimental-strip-types', '--test', codexStopHookTest], cwd: '.'}]
     : [];

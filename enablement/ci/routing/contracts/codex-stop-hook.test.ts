@@ -5,6 +5,8 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { selectRange } from "../../select.ts";
+import { codexStopHookTests } from "../../../local-tests/contracts.ts";
+import { codexStopHookTest } from "../../../../shared/enablement/ci/inputs.ts";
 
 function repository(
   action: (git: (...args: string[]) => string, dir: string) => void,
@@ -46,12 +48,23 @@ test("Codex Stop hook changes qualify separately from product admission tooling"
     git("commit", "-qm", "baseline");
     const base = git("rev-parse", "HEAD");
     writeFileSync(join(dir, hook), "export const enabled = true;");
+    writeFileSync(join(dir, codexStopHookTest), "export const source = true;");
     git("add", ".");
     git("commit", "-qm", "standalone hook");
     const helperHead = git("rev-parse", "HEAD");
     const helper = selectRange(base, helperHead, dir);
     assert.equal(helper.inputProofKnown, true);
     assert.deepEqual(helper.selected, ["tooling"]);
+    assert.deepEqual(
+      codexStopHookTests(helperHead, helper.paths, dir)
+        .flatMap((command) => command.argv)
+        .slice(-1),
+      [codexStopHookTest],
+    );
+    assert.deepEqual(
+      codexStopHookTests(helperHead, [".github/workflows/checks.yml"], dir),
+      [],
+    );
 
     writeFileSync(join(dir, "AGENTS.md"), "Updated handoff guidance");
     git("add", ".");

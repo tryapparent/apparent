@@ -71,10 +71,10 @@ export function fixtureMacCommands(): Command[] {
   ];
 }
 
-export function toolingCommands(head = 'HEAD'): Command[] {
+export function toolingCommands(head = 'HEAD', paths: string[] | null = null): Command[] {
   return [
     installCommand,
-    ...codexStopHookTests(head),
+    ...codexStopHookTests(head, paths),
     {argv: ['node', '--experimental-strip-types', '--test', 'enablement/posthog-fixer/test/service.test.ts', 'enablement/posthog-fixer/test/t3.test.ts'], cwd: '.'},
     {argv: ['python3', '-m', 'unittest', 'discover', '-s', 'enablement/directory-width/tests', '-p', 'test_*.py'], cwd: '.'},
   ];
@@ -111,7 +111,7 @@ export function commands(selected: Owner[], base: string, head: string, platform
   if (scope.local)
     for (const owner of affectedBendOwners(root, scope.paths))
       add(['node', bendDirectory(owner) + '/check.ts']);
-  if (selected.includes('tooling')) result.push(...toolingCommands(head));
+  if (selected.includes('tooling')) result.push(...toolingCommands(head, scope.paths));
   else if (selected.includes('desktop')) result.push(...installationContracts(scope.paths, scope.workflowControls));
   if (selected.includes('onboarding')) result.push(...onboardingCommands());
   if (selected.includes('capture')) {
